@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import typer
@@ -10,6 +11,9 @@ app = typer.Typer(
     help="AERO-KB — Knowledge Base as Code cho tài liệu hàng không.",
     no_args_is_help=True,
 )
+
+context_app = typer.Typer(help="Thao tác với block kb-context (citation máy-đọc-được).")
+app.add_typer(context_app, name="context")
 
 
 @app.callback()
@@ -164,3 +168,65 @@ def stats(
             f"{d.doc_id:<20} {d.n_sections:>8} {d.l1_tokens:>8} "
             f"{d.l2_tokens:>10} {d.l3_tokens:>10} {d.saving_pct:>7.1f}%"
         )
+
+
+@context_app.command("new")
+def context_new(
+    refs: str = typer.Option(
+        ..., "--refs", help="Refs phân cách dấu phẩy, vd 'arinc-424 §5.3,arinc-424 §5.3.2'"
+    ),
+    tags: str = typer.Option("", help="Tags, phân cách bằng dấu phẩy"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+) -> None:
+    """Sinh block kb-context pin tại HEAD — dán vào Jira ticket."""
+    from aero_kb import gitio, kbcontext
+    from aero_kb.query import get_section
+
+    try:
+        ref_list = [kbcontext.parse_ref(r) for r in refs.split(",") if r.strip()]
+        root = gitio.git_root(kb_dir.resolve())
+        version = gitio.head_commit(root)
+    except (kbcontext.KBContextError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    bad = [str(r) for r in ref_list
+           if get_section(kb_dir, r.doc_id, r.section_id) is None]
+    if bad:
+        typer.secho(
+            f"Ref không resolve được ở worktree: {', '.join(bad)}", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+    if gitio.is_dirty(root, kb_dir.resolve()):
+        typer.secho(
+            "[warn] .kb/ có thay đổi chưa commit — hash pin sẽ không chứa thay đổi đó",
+            fg=typer.colors.YELLOW,
+        )
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    ctx = kbcontext.KBContext(version=version, refs=ref_list, tags=tag_list)
+    typer.echo(kbcontext.render(ctx))
+
+
+@app.command()
+def resolve(
+    source: str = typer.Argument(
+        ..., help="File chứa block kb-context (hoặc '-' đọc từ stdin)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+) -> None:
+    """Resolve block kb-context: trả section đúng version pin + freshness."""
+    from aero_kb import gitio, kbcontext
+    from aero_kb.resolve import render_resolved, resolve_refs
+
+    text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    try:
+        ctx = kbcontext.parse(text)
+        results = resolve_refs(kb_dir, ctx)
+    except (kbcontext.KBContextError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(render_resolved(results, ctx.version))
+    if any(r.status == "broken" for r in results):
+        raise typer.Exit(1)
+    if any(r.status == "stale" for r in results):
+        raise typer.Exit(2)
