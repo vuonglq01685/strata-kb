@@ -5,12 +5,10 @@ query từ repo-a thấy: tài liệu domain hub (full L2) + summary repo-b [rem
 context new pin hub_version → amendment hub → resolve stale →
 repo-a commit thêm không publish → doctor bắt index lệch exit 1.
 """
-from pathlib import Path
-
 import pytest
 from typer.testing import CliRunner
 
-from aero_kb import gitio, models
+from aero_kb import models
 from aero_kb.cli import app
 from aero_kb.hub import resolve_hub
 from aero_kb.query import search
@@ -127,6 +125,16 @@ def test_context_new_resolve_stale_after_hub_amendment(fed_world, run_git, monke
 def test_doctor_detects_index_out_of_date(fed_world, run_git, monkeypatch):
     root_a = fed_world["repo_a"]["root"]
     kb_a = fed_world["repo_a"]["kb"]
+
+    # `kb doctor` tự suy ra repo_id từ tên git root (không nhận --repo-id).
+    # fed_world publish repo-a dưới id tường minh "repo-a", nên publish lại
+    # thêm một lần dưới repo_id mặc định (repo_id=None → tên git root) để
+    # trùng với repo_id mà CLI doctor sẽ suy ra — nếu không, doctor CLI chỉ
+    # thấy repo-id lạ 'chưa publish' (warning) chứ không thấy lệch.
+    from aero_kb.publish import publish
+
+    publish(kb_a, str(fed_world["bare"]), repo_id=None)
+
     # commit thêm ở repo-a mà không publish lại
     (root_a / "note.txt").write_text("x", encoding="utf-8")
     run_git(root_a, "add", "-A")
@@ -135,9 +143,11 @@ def test_doctor_detects_index_out_of_date(fed_world, run_git, monkeypatch):
     res = runner.invoke(
         app, ["doctor", "--kb-dir", str(kb_a), "--hub", str(fed_world["bare"])]
     )
-    # repo_id mặc định = tên git root; git_kb root là tmp dir tên ngẫu nhiên
-    # → doctor báo 'chưa publish' (warning) chứ không phải lệch. Kiểm tra lệch
-    # bằng check_hub trực tiếp với repo_id='repo-a':
+    assert res.exit_code == 1, res.output
+    assert "lệch" in res.output
+
+    # bao phủ thêm path repo-id tường minh, qua check_hub trực tiếp với
+    # repo_id='repo-a' (bản publish gốc trong fed_world):
     from aero_kb.doctor import check_hub
 
     handle = resolve_hub(str(fed_world["bare"]))
