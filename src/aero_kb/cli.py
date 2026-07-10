@@ -135,17 +135,28 @@ def query(
     tags: str = typer.Option("", help="Tags lọc doc, phân cách bằng dấu phẩy"),
     budget: int = typer.Option(2000, help="Token budget cho nội dung trả về"),
     kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+    ),
 ) -> None:
     """Tag match → BM25 → trả section L2 trong budget, kèm citation."""
     from aero_kb.query import search
 
+    handle = None
+    if hub:
+        from aero_kb.hub import resolve_hub
+
+        handle = resolve_hub(hub)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
-    results = search(kb_dir, text, tags=tag_list, budget=budget)
+    results = search(kb_dir, text, tags=tag_list, budget=budget, hub=handle)
     if not results:
         typer.echo("Không tìm thấy section phù hợp.")
         raise typer.Exit(0)
     for r in results:
-        typer.secho(f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk", bold=True)
+        mark = " [remote]" if r.source.startswith("remote:") else ""
+        typer.secho(
+            f"--- [{r.citation}]{mark} score={r.score:.2f} ~{r.tokens}tk", bold=True
+        )
         typer.echo(r.content)
         typer.echo("")
 
@@ -156,11 +167,19 @@ def get(
     section: str = typer.Argument(..., help="ID section, vd 5.3 hoặc §5.3"),
     level: str = typer.Option("l2", help="Tầng: l2 hoặc l3"),
     kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+    ),
 ) -> None:
     """Lấy chính xác một section ở tầng chỉ định."""
     from aero_kb.query import get_section
 
-    result = get_section(kb_dir, doc_id, section, level=level)
+    handle = None
+    if hub:
+        from aero_kb.hub import resolve_hub
+
+        handle = resolve_hub(hub)
+    result = get_section(kb_dir, doc_id, section, level=level, hub=handle)
     if result is None:
         typer.secho(f"Không thấy {doc_id} §{section}", fg=typer.colors.RED)
         raise typer.Exit(1)
