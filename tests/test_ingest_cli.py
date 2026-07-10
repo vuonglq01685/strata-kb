@@ -21,7 +21,9 @@ def _fake_parse(monkeypatch):
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
     monkeypatch.setattr(parser, "doc_to_items", lambda doc: FAKE_ITEMS)
-    monkeypatch.setattr(parser, "bookmark_ids", lambda pdf: {"5", "5.3", "5.9"})
+    monkeypatch.setattr(
+        parser, "bookmark_ids", lambda pdf, config=None: {"5", "5.3", "5.9"}
+    )
 
 
 def test_ingest_creates_kb_and_reports_warnings(tmp_path: Path, monkeypatch):

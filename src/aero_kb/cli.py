@@ -32,15 +32,33 @@ def ingest(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
     work_dir: Path = typer.Option(Path(".kb-work"), help="Thư mục cache trung gian"),
+    chapter_pattern: str = typer.Option(
+        "", help="Regex heading chương (mặc định: 'Chapter N', tự nhớ từ lần ingest trước)"
+    ),
+    appendix_pattern: str = typer.Option(
+        "", help="Regex heading appendix (mặc định: 'Appendix X', tự nhớ từ lần ingest trước)"
+    ),
 ) -> None:
     """Parse PDF → cắt section → sinh L3 + khung L1/L2 chờ summarize."""
     from aero_kb.ingest import parser, scaffold, sectioner
 
+    manifest_path = kb_dir / doc_id / "_manifest.yaml"
+    previous = None
+    if manifest_path.exists():
+        previous = models.load_yaml_model(manifest_path, models.Manifest).ingest
+    try:
+        heading_config = sectioner.resolve_heading_config(
+            chapter_pattern, appendix_pattern, previous
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+
     doc = parser.load_or_parse(pdf, work_dir / doc_id)
     items = parser.doc_to_items(doc)
-    units = sectioner.build_units(items)
+    units = sectioner.build_units(items, config=heading_config)
 
-    bm_ids = parser.bookmark_ids(pdf)
+    bm_ids = parser.bookmark_ids(pdf, heading_config)
     if bm_ids:
         for warning in parser.crosscheck({u.id for u in units}, bm_ids):
             typer.secho(f"  [warn] {warning}", fg=typer.colors.YELLOW)
@@ -56,6 +74,7 @@ def ingest(
         source_path=pdf,
         kb_dir=kb_dir,
         chapters=chapters,
+        heading_config=heading_config,
     )
     typer.echo(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "

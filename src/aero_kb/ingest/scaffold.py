@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from aero_kb import models
-from aero_kb.ingest.sectioner import SectionUnit
+from aero_kb.ingest.sectioner import HeadingConfig, SectionUnit
 from aero_kb.mdutils import count_tokens
 
 
@@ -41,6 +41,7 @@ def scaffold_doc(
     source_path: Path | None,
     kb_dir: Path,
     chapters: set[str] | None = None,
+    heading_config: HeadingConfig | None = None,
 ) -> ScaffoldReport:
     if chapters is not None:
         units = [u for u in units if u.chapter in chapters]
@@ -88,6 +89,7 @@ def scaffold_doc(
         if source_path and source_path.exists()
         else ""
     )
+    cfg = heading_config or HeadingConfig()
     manifest = models.Manifest(
         id=doc_id,
         title=title,
@@ -95,6 +97,9 @@ def scaffold_doc(
         ingested=date.today(),
         source_sha256=sha,
         sections=sections,
+        ingest=models.IngestConfig(
+            chapter_pattern=cfg.chapter_pattern, appendix_pattern=cfg.appendix_pattern
+        ),
     )
     models.save_yaml_model(doc_dir / "_manifest.yaml", manifest)
 
