@@ -8,6 +8,9 @@ on:
     paths: [".kb/**"]
 
 # Serialize runs: two quick merges must not race each other's push.
+# Note: GitHub keeps only the newest queued run per group — in a rapid
+# burst of merges an intermediate push's flips may wait until its
+# sections are next touched. Acceptable at this team's merge frequency.
 concurrency:
   group: kb-review
   cancel-in-progress: false

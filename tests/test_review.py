@@ -46,6 +46,11 @@ def test_approve_reports_missing_section(git_kb):
     assert report.flipped == []
 
 
+def test_approve_duplicate_missing_ids_reported_once(git_kb):
+    report = approve_sections(git_kb["kb"], "demo-doc", ["9.9", "9.9"])
+    assert report.missing == ["9.9"]
+
+
 def test_approve_unknown_doc_raises(git_kb):
     with pytest.raises(ValueError, match="missing-doc"):
         approve_sections(git_kb["kb"], "missing-doc")
