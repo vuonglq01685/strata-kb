@@ -7,6 +7,14 @@ import typer
 
 from aero_kb import models
 
+# Console Windows mặc định dùng cp1252 → crash UnicodeEncodeError khi in ký
+# tự '§'/tiếng Việt có dấu. Ép lại UTF-8 khi stream chưa ở UTF-8 (guarded:
+# một số stream test/redirect không có .reconfigure()).
+for _stream in (sys.stdout, sys.stderr):
+    _enc = getattr(_stream, "encoding", None) or ""
+    if _enc.lower().replace("-", "") != "utf8" and hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8")
+
 app = typer.Typer(
     help="AERO-KB — Knowledge Base as Code cho tài liệu hàng không.",
     no_args_is_help=True,
@@ -21,14 +29,18 @@ def main() -> None:
     """AERO-KB CLI."""
 
 
-def _resolve_hub_option(hub: str):
-    """'' → None; ngược lại resolve qua hub.resolve_hub (None nếu không truy cập được)."""
+def _resolve_hub_option(hub: str, quiet: bool = False):
+    """'' → None; ngược lại resolve qua hub.resolve_hub (None nếu không truy cập được).
+
+    quiet=True bỏ qua cảnh báo stderr ở đây — dùng khi caller (vd `doctor`,
+    qua check_hub) đã tự báo warning riêng, tránh cảnh báo đôi.
+    """
     if not hub:
         return None
     from aero_kb.hub import resolve_hub
 
     handle = resolve_hub(hub)
-    if handle is None:
+    if handle is None and not quiet:
         typer.secho(
             f"[warn] không truy cập được hub '{hub}' — chạy tiếp với KB cục bộ",
             fg=typer.colors.YELLOW,
@@ -394,7 +406,9 @@ def doctor(
     from aero_kb.doctor import check_context, check_hub, check_kb
 
     issues = check_kb(kb_dir)
-    handle = _resolve_hub_option(hub)
+    # quiet=True: check_hub() bên dưới tự báo warning "không truy cập được
+    # hub" riêng khi cần — tránh in cảnh báo đôi.
+    handle = _resolve_hub_option(hub, quiet=True)
     hub_stale = False
     if hub:  # chỉ check hub khi được khai --hub / env AERO_KB_HUB
         repo_root_name = None
