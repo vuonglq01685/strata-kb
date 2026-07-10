@@ -110,6 +110,8 @@ Mặc định `--against HEAD` — khớp flow amendment: re-ingest bản mới 
 - Section có ở cả hai bên: so summary (L1) và nội dung raw L3 → **changed** (cờ `summary`, `content`, hoặc cả hai).
 - Output nhóm theo loại, mỗi dòng một section kèm title — chính là danh sách SME cần review.
 
+Lưu ý: `kb diff` chỉ so L1 (summary) và L3 (raw) — không so L2, nên một sửa đổi chỉ chạm L2 sẽ không hiện ở đây dù `kb resolve` đã báo `stale` (§6).
+
 ## 8. `kb doctor` (`doctor.py`)
 
 Một lệnh, hai chế độ:
