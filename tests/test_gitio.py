@@ -52,3 +52,87 @@ def test_is_dirty(git_kb):
     assert not gitio.is_dirty(git_kb["root"], git_kb["kb"])
     (git_kb["kb"] / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     assert gitio.is_dirty(git_kb["root"], git_kb["kb"])
+
+
+# --- Phase 3: clone/pull/commit/push ---
+
+
+@pytest.fixture
+def bare_origin(tmp_path, run_git):
+    """Bare repo làm origin + một clone 'seed' đã commit 1 file."""
+    bare = tmp_path / "origin.git"
+    bare.mkdir()
+    run_git(bare, "init", "--bare")
+    seed = tmp_path / "seed"
+    run_git(tmp_path, "clone", str(bare), "seed")
+    (seed / "a.txt").write_text("v1", encoding="utf-8")
+    run_git(seed, "add", "-A")
+    run_git(seed, "commit", "-m", "v1")
+    run_git(seed, "push", "origin", "HEAD")
+    return {"bare": bare, "seed": seed}
+
+
+def test_clone_and_pull_roundtrip(tmp_path, run_git, bare_origin):
+    dest = tmp_path / "clone2"
+    gitio.clone(str(bare_origin["bare"]), dest)
+    assert (dest / "a.txt").read_text(encoding="utf-8") == "v1"
+    # origin có commit mới → pull thấy được
+    seed = bare_origin["seed"]
+    (seed / "a.txt").write_text("v2", encoding="utf-8")
+    run_git(seed, "add", "-A")
+    run_git(seed, "commit", "-m", "v2")
+    run_git(seed, "push", "origin", "HEAD")
+    gitio.pull(dest)
+    assert (dest / "a.txt").read_text(encoding="utf-8") == "v2"
+
+
+def test_clone_bad_url_raises(tmp_path):
+    with pytest.raises(gitio.GitError):
+        gitio.clone(str(tmp_path / "khong-ton-tai"), tmp_path / "dest")
+
+
+def test_commit_all_returns_false_when_clean(bare_origin, run_git):
+    seed = bare_origin["seed"]
+    run_git(seed, "config", "user.name", "test")
+    run_git(seed, "config", "user.email", "test@test.local")
+    assert gitio.commit_all(seed, "no-op") is False
+
+
+def test_commit_all_and_push(bare_origin, run_git, tmp_path):
+    seed = bare_origin["seed"]
+    run_git(seed, "config", "user.name", "test")
+    run_git(seed, "config", "user.email", "test@test.local")
+    (seed / "b.txt").write_text("new", encoding="utf-8")
+    assert gitio.commit_all(seed, "them b") is True
+    gitio.push(seed)
+    check = tmp_path / "check"
+    gitio.clone(str(bare_origin["bare"]), check)
+    assert (check / "b.txt").exists()
+
+
+def test_push_rejected_then_pull_rebase_recovers(tmp_path, run_git, bare_origin):
+    # clone2 tụt hậu so với origin → push fail → pull_rebase → push OK
+    dest = tmp_path / "clone2"
+    gitio.clone(str(bare_origin["bare"]), dest)
+    run_git(dest, "config", "user.name", "test")
+    run_git(dest, "config", "user.email", "test@test.local")
+    seed = bare_origin["seed"]
+    (seed / "a.txt").write_text("upstream", encoding="utf-8")
+    run_git(seed, "add", "-A")
+    run_git(seed, "commit", "-m", "upstream")
+    run_git(seed, "push", "origin", "HEAD")
+    (dest / "c.txt").write_text("local", encoding="utf-8")
+    gitio.commit_all(dest, "them c")
+    with pytest.raises(gitio.GitError):
+        gitio.push(dest)
+    gitio.pull_rebase(dest)
+    gitio.push(dest)
+
+
+def test_has_remote_and_remote_url(bare_origin, fixture_kb, run_git):
+    assert gitio.has_remote(bare_origin["seed"]) is True
+    assert gitio.remote_url(bare_origin["seed"]).endswith("origin.git")
+    root = fixture_kb.parent
+    run_git(root, "init")
+    assert gitio.has_remote(root) is False
+    assert gitio.remote_url(root) == ""
