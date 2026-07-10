@@ -119,24 +119,49 @@ def _subtree_md(node: _Node) -> str:
 
 
 def build_units(
-    items: list[DocItem], max_depth: int = 3, min_tokens: int = 200
+    items: list[DocItem],
+    max_depth: int = 3,
+    min_tokens: int = 200,
+    max_unit_tokens: int = 5000,
 ) -> list[SectionUnit]:
     root = _build_tree(items)
     units: list[SectionUnit] = []
 
     def walk(node: _Node) -> None:
-        kept: list[_Node] = []
-        folded: list[_Node] = []
-        for child in node.children:
-            if child.depth > max_depth or (
-                not child.children and count_tokens(_subtree_md(child)) < min_tokens
-            ):
-                folded.append(child)
-            else:
-                kept.append(child)
-        parts = ["\n\n".join(node.body)]
-        parts += [f"### {c.id} {c.title}\n\n{_subtree_md(c)}" for c in folded]
-        body_md = "\n\n".join(p for p in parts if p.strip())
+        def is_depth_fold(child: _Node) -> bool:
+            return child.depth > max_depth
+
+        def is_small_leaf(child: _Node) -> bool:
+            return (
+                not is_depth_fold(child)
+                and not child.children
+                and count_tokens(_subtree_md(child)) < min_tokens
+            )
+
+        def render(fold_predicate) -> str:
+            parts = ["\n\n".join(node.body)]
+            parts += [
+                f"### {c.id} {c.title}\n\n{_subtree_md(c)}"
+                for c in node.children
+                if fold_predicate(c)
+            ]
+            return "\n\n".join(p for p in parts if p.strip())
+
+        has_small_leaf = any(is_small_leaf(c) for c in node.children)
+
+        def all_folds(child: _Node) -> bool:
+            return is_depth_fold(child) or is_small_leaf(child)
+
+        if has_small_leaf and count_tokens(render(all_folds)) > max_unit_tokens:
+            # Folding every small leaf would push this parent's body past the
+            # cap -> fold none of them (all-or-nothing); depth folding is
+            # unconditional and still applies.
+            fold_predicate = is_depth_fold
+        else:
+            fold_predicate = all_folds
+
+        body_md = render(fold_predicate)
+        kept = [c for c in node.children if not fold_predicate(c)]
         if node.depth > 0 and body_md.strip():
             units.append(
                 SectionUnit(
