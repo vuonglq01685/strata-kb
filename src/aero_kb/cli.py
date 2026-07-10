@@ -189,6 +189,33 @@ def stats(
         )
 
 
+@app.command()
+def publish(
+    hub: str = typer.Option(
+        ..., "--hub", envvar="AERO_KB_HUB", help="URL hoặc path kb-hub"
+    ),
+    repo_id: str = typer.Option(
+        "", "--repo-id", help="ID repo trên hub (mặc định: tên thư mục git root)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+) -> None:
+    """Publish snapshot L0+L1 của repo này lên federation/<repo-id>/ trên hub."""
+    from aero_kb import gitio
+    from aero_kb.publish import PublishError
+    from aero_kb.publish import publish as publish_kb
+
+    try:
+        report = publish_kb(kb_dir, hub, repo_id=repo_id or None)
+    except (PublishError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    action = "push" if report.pushed else "commit tại chỗ (hub không có remote)"
+    typer.echo(
+        f"kb publish: {report.repo_id} @ {report.source_commit} — "
+        f"{report.n_docs} doc, {action}."
+    )
+
+
 @context_app.command("new")
 def context_new(
     refs: str = typer.Option(
