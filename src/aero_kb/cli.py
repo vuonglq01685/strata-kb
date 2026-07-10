@@ -303,7 +303,7 @@ def resolve(
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    typer.echo(render_resolved(results, ctx.version))
+    typer.echo(render_resolved(results))
     if any(r.status == "broken" for r in results):
         raise typer.Exit(1)
     if any(r.status == "stale" for r in results):
