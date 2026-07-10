@@ -149,3 +149,35 @@ def test_unmatched_heading_without_colon_still_fallback():
     units = build_units(items)
     assert len(units) == 1
     assert units[0].title == "FOREWORD"
+
+
+def test_small_leaf_folding_skipped_when_parent_would_exceed_cap():
+    # 30 con nho (moi con ~140 token) -> tong ~4200 + body cha ~700 > cap 4000
+    small = "Field definition body. " * 35  # ~140 token
+    items = [DocItem("heading", "5.0 NAVIGATION DATA", 1), DocItem("text", "Intro. " * 200)]
+    for i in range(1, 31):
+        items.append(DocItem("heading", f"5.{i} Field {i}", 2))
+        items.append(DocItem("text", small))
+    units = build_units(items, max_unit_tokens=4000)
+    ids = [u.id for u in units]
+    # tat ca 30 con giu nguyen lam unit rieng, khong bi nuot vao '5'
+    assert "5" in ids
+    assert all(f"5.{i}" in ids for i in range(1, 31))
+    u5 = next(u for u in units if u.id == "5")
+    assert "Field definition body." not in u5.body_md
+
+
+def test_small_leaf_folding_still_happens_under_cap():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),
+        DocItem("text", big),
+        DocItem("heading", "5.4 Airways", 2),
+        DocItem("text", big),
+        DocItem("heading", "5.4.1 Tiny", 3),
+        DocItem("text", "Very short."),
+    ]
+    units = build_units(items)  # default cap 5000, tong nho -> van gop
+    assert "5.4.1" not in [u.id for u in units]
+    u54 = next(u for u in units if u.id == "5.4")
+    assert "### 5.4.1 Tiny" in u54.body_md
