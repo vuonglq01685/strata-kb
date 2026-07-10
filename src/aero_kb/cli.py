@@ -190,6 +190,11 @@ def context_new(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
 
+    if not ref_list:
+        typer.secho(
+            "--refs rỗng — cần ít nhất 1 ref, vd 'arinc-424 §5.3'", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
     bad = [str(r) for r in ref_list
            if get_section(kb_dir, r.doc_id, r.section_id) is None]
     if bad:
@@ -201,6 +206,7 @@ def context_new(
         typer.secho(
             "[warn] .kb/ có thay đổi chưa commit — hash pin sẽ không chứa thay đổi đó",
             fg=typer.colors.YELLOW,
+            err=True,
         )
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     ctx = kbcontext.KBContext(version=version, refs=ref_list, tags=tag_list)
@@ -218,7 +224,14 @@ def resolve(
     from aero_kb import gitio, kbcontext
     from aero_kb.resolve import render_resolved, resolve_refs
 
-    text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        try:
+            text = Path(source).read_text(encoding="utf-8")
+        except OSError as exc:
+            typer.secho(f"không đọc được file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
     try:
         ctx = kbcontext.parse(text)
         results = resolve_refs(kb_dir, ctx)
