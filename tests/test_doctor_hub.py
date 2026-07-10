@@ -1,7 +1,21 @@
+import os
+import shutil
+import stat
+
 from aero_kb import gitio, models
 from aero_kb.doctor import check_hub
 from aero_kb.federation import FederationMeta
 from aero_kb.hub import HubHandle
+
+
+def _force_rmtree(path):
+    """rmtree chịu được file git object read-only trên Windows."""
+
+    def _on_rm_error(func, p, exc_info):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    shutil.rmtree(path, onerror=_on_rm_error)
 
 
 def _errors(issues):
@@ -99,3 +113,35 @@ def test_cli_doctor_hub_collision_exit_1(git_kb, hub_worktree, monkeypatch):
     )
     assert result.exit_code == 1
     assert "demo-doc" in result.output
+
+
+def test_cli_doctor_exit_2_when_hub_cache_stale_offline(
+    git_kb, hub_worktree, tmp_path, run_git, monkeypatch
+):
+    """Hub cache đã tạo nhưng origin biến mất (offline) → check_hub báo stale
+    → `kb doctor` exit 2 (không phải 1: đây là warning, không phải lỗi)."""
+    from typer.testing import CliRunner
+
+    from aero_kb.cli import app
+    from aero_kb.hub import resolve_hub
+
+    bare = tmp_path / "hub.git"
+    bare.mkdir()
+    run_git(bare, "init", "--bare")
+    run_git(hub_worktree, "remote", "add", "origin", str(bare))
+    run_git(hub_worktree, "push", "origin", "HEAD")
+
+    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("AERO_KB_HUB_TTL", "0")
+
+    handle = resolve_hub(str(bare))  # resolve 1 lần → tạo cache
+    assert handle is not None and handle.stale is False
+
+    _force_rmtree(bare)  # origin "offline"
+
+    monkeypatch.chdir(git_kb["root"])
+    result = CliRunner().invoke(
+        app, ["doctor", "--kb-dir", str(git_kb["kb"]), "--hub", str(bare)]
+    )
+    assert result.exit_code == 2, result.output
+    assert not gitio.is_dirty(git_kb["root"], git_kb["kb"])
