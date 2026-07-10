@@ -61,6 +61,11 @@ def _depth_of(sid: str) -> int:
 def _chapter_of(sid: str) -> str:
     if sid and sid[0].isdigit():
         return sid.split(".")[0]
+    # Namespaced appendix id like "app3-2.1" -> chapter "app3". Fallback
+    # ids ("x1", "app3-x1") have a non-digit after "-" and stay whole.
+    head, sep, rest = sid.partition("-")
+    if sep and rest[:1].isdigit():
+        return head
     return sid
 
 
@@ -77,6 +82,20 @@ def _build_tree(items: list[DocItem]) -> _Node:
             parsed = parse_section_id(item.text)
             if parsed:
                 sid, title = parsed
+                depth = _depth_of(sid)
+                top = stack[1] if len(stack) > 1 else None
+                if (
+                    sid[0].isdigit()
+                    and top is not None
+                    and not top.id[0].isdigit()
+                    and not _CHAPTER_RE.match(" ".join(item.text.split()))
+                ):
+                    # ICAO appendices restart numeric numbering ("1.",
+                    # "2.1"...). Namespace the id under the non-numeric
+                    # top-level node so appendix "2.1" becomes "app3-2.1"
+                    # and never collides with chapter section "2.1".
+                    sid = f"{top.id}-{sid}"
+                    depth += 1
                 if any(n.id == sid for n in stack):
                     # Heading repeats a node already open (self or ancestor),
                     # e.g. a running page header mid-section -> no-op so the
@@ -85,7 +104,6 @@ def _build_tree(items: list[DocItem]) -> _Node:
                 if sid in seen:
                     stack = list(seen[sid])
                     continue
-                depth = _depth_of(sid)
                 while stack[-1].depth >= depth:
                     stack.pop()
                 node = _Node(id=sid, title=title, depth=depth)
