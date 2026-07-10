@@ -14,6 +14,7 @@ class SectionChange:
     section_id: str
     title: str
     summary_changed: bool = False
+    prose_changed: bool = False
     content_changed: bool = False
 
 
@@ -34,6 +35,32 @@ def _raw_section(text: str | None, section_id: str) -> str | None:
     if text is None:
         return None
     return slice_section(text, section_id)
+
+
+def _level_changed(
+    root: Path,
+    against: str,
+    doc_dir: Path,
+    sec_id: str,
+    new_file: str,
+    old_file: str,
+    suffix: str,
+    cache_new: dict[str, str | None],
+    cache_old: dict[str, str | None],
+) -> bool:
+    """Compare one section's slice of a level file (worktree vs `against`)."""
+    if new_file not in cache_new:
+        path = doc_dir / f"{new_file}{suffix}"
+        cache_new[new_file] = (
+            path.read_text(encoding="utf-8") if path.exists() else None
+        )
+    new_text = _raw_section(cache_new[new_file], sec_id)
+    if old_file not in cache_old:
+        cache_old[old_file] = gitio.read_at(
+            root, against, doc_dir / f"{old_file}{suffix}"
+        )
+    old_text = _raw_section(cache_old[old_file], sec_id)
+    return (new_text or "").strip() != (old_text or "").strip()
 
 
 def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
@@ -64,33 +91,28 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
 
     raw_cache_old: dict[str, str | None] = {}
     raw_cache_new: dict[str, str | None] = {}
+    prose_cache_old: dict[str, str | None] = {}
+    prose_cache_new: dict[str, str | None] = {}
     for sec in new.sections:
         old_sec = old_by_id.get(sec.id)
         if old_sec is None:
             continue
         summary_changed = old_sec.summary.strip() != sec.summary.strip()
-
-        if sec.file not in raw_cache_new:
-            new_raw_path = doc_dir / f"{sec.file}.raw.md"
-            raw_cache_new[sec.file] = (
-                new_raw_path.read_text(encoding="utf-8")
-                if new_raw_path.exists()
-                else None
-            )
-        new_raw = _raw_section(raw_cache_new[sec.file], sec.id)
-        if old_sec.file not in raw_cache_old:
-            raw_cache_old[old_sec.file] = gitio.read_at(
-                root, against, doc_dir / f"{old_sec.file}.raw.md"
-            )
-        old_raw = _raw_section(raw_cache_old[old_sec.file], sec.id)
-        content_changed = (new_raw or "").strip() != (old_raw or "").strip()
-
-        if summary_changed or content_changed:
+        prose_changed = _level_changed(
+            root, against, doc_dir, sec.id, sec.file, old_sec.file,
+            ".md", prose_cache_new, prose_cache_old,
+        )
+        content_changed = _level_changed(
+            root, against, doc_dir, sec.id, sec.file, old_sec.file,
+            ".raw.md", raw_cache_new, raw_cache_old,
+        )
+        if summary_changed or prose_changed or content_changed:
             report.changed.append(
                 SectionChange(
                     sec.id,
                     sec.title,
                     summary_changed=summary_changed,
+                    prose_changed=prose_changed,
                     content_changed=content_changed,
                 )
             )
@@ -108,7 +130,11 @@ def render_diff(report: DiffReport) -> str:
     for c in report.changed:
         kinds = [
             k
-            for k, on in (("summary", c.summary_changed), ("content", c.content_changed))
+            for k, on in (
+                ("summary", c.summary_changed),
+                ("prose", c.prose_changed),
+                ("content", c.content_changed),
+            )
             if on
         ]
         lines.append(f"~ §{c.section_id} {c.title} ({', '.join(kinds)})")
