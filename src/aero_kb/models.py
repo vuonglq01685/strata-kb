@@ -24,6 +24,11 @@ class SectionEntry(BaseModel):
     tokens: SectionTokens = Field(default_factory=SectionTokens)
 
 
+class IngestConfig(BaseModel):
+    chapter_pattern: str
+    appendix_pattern: str
+
+
 class Manifest(BaseModel):
     id: str
     title: str
@@ -31,6 +36,7 @@ class Manifest(BaseModel):
     ingested: date | None = None
     source_sha256: str = ""
     sections: list[SectionEntry] = Field(default_factory=list)
+    ingest: IngestConfig | None = None
 
 
 class IndexEntry(BaseModel):

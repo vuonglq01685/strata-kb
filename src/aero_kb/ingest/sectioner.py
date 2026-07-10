@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from aero_kb import models
 from aero_kb.mdutils import count_tokens, extract_tables
 
 
@@ -31,18 +32,60 @@ class SectionUnit:
     tables: list[str]
 
 
-_CHAPTER_RE = re.compile(r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$", re.IGNORECASE)
-_APPENDIX_RE = re.compile(
-    r"^appendix\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$", re.IGNORECASE
-)
+DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
+DEFAULT_APPENDIX_PATTERN = r"^appendix\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
 _NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)[.\s]+(.*\S)\s*$")
 
 
-def parse_section_id(text: str) -> tuple[str, str] | None:
+def _compile_heading(name: str, pattern: str) -> re.Pattern[str]:
+    try:
+        rx = re.compile(pattern, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError(f"{name}: regex không hợp lệ — {exc}") from exc
+    if rx.groups < 2:
+        raise ValueError(f"{name}: cần ít nhất 2 capture group (định danh, title)")
+    return rx
+
+
+@dataclass
+class HeadingConfig:
+    """Quy ước heading của tài liệu. Default là quy ước tiếng Anh phổ biến
+    ("Chapter N", "Appendix X") — tài liệu dùng quy ước khác thì override
+    lúc ingest; config đã dùng được persist vào _manifest.yaml."""
+
+    chapter_pattern: str = DEFAULT_CHAPTER_PATTERN
+    appendix_pattern: str = DEFAULT_APPENDIX_PATTERN
+
+    def __post_init__(self) -> None:
+        self.chapter_re = _compile_heading("chapter_pattern", self.chapter_pattern)
+        self.appendix_re = _compile_heading("appendix_pattern", self.appendix_pattern)
+
+
+_DEFAULT_CONFIG = HeadingConfig()
+
+
+def resolve_heading_config(
+    chapter_pattern: str,
+    appendix_pattern: str,
+    previous: "models.IngestConfig | None",
+) -> HeadingConfig:
+    """Ưu tiên: arg tường minh > config cũ trong manifest (re-ingest) > default."""
+    prev_ch = previous.chapter_pattern if previous else DEFAULT_CHAPTER_PATTERN
+    prev_app = previous.appendix_pattern if previous else DEFAULT_APPENDIX_PATTERN
+    return HeadingConfig(
+        chapter_pattern=chapter_pattern or prev_ch,
+        appendix_pattern=appendix_pattern or prev_app,
+    )
+
+
+def parse_section_id(
+    text: str, config: HeadingConfig | None = None
+) -> tuple[str, str] | None:
+    cfg = config or _DEFAULT_CONFIG
     text = " ".join(text.split())
-    if m := _CHAPTER_RE.match(text):
+    if m := cfg.chapter_re.match(text):
         return m.group(1), (m.group(2) or text).strip()
-    if m := _APPENDIX_RE.match(text):
+    if m := cfg.appendix_re.match(text):
         return f"app{m.group(1).lower()}", (m.group(2) or text).strip()
     if m := _NUMBERED_RE.match(text):
         sid = m.group(1)
@@ -69,7 +112,8 @@ def _chapter_of(sid: str) -> str:
     return sid
 
 
-def _build_tree(items: list[DocItem]) -> _Node:
+def _build_tree(items: list[DocItem], config: HeadingConfig | None = None) -> _Node:
+    cfg = config or _DEFAULT_CONFIG
     root = _Node(id="", title="", depth=0)
     stack = [root]
     fallback_seq = 0
@@ -79,7 +123,7 @@ def _build_tree(items: list[DocItem]) -> _Node:
     seen: dict[str, list[_Node]] = {}
     for item in items:
         if item.kind == "heading":
-            parsed = parse_section_id(item.text)
+            parsed = parse_section_id(item.text, cfg)
             if parsed:
                 sid, title = parsed
                 depth = _depth_of(sid)
@@ -88,7 +132,7 @@ def _build_tree(items: list[DocItem]) -> _Node:
                     sid[0].isdigit()
                     and top is not None
                     and top.id.startswith("app")
-                    and not _CHAPTER_RE.match(" ".join(item.text.split()))
+                    and not cfg.chapter_re.match(" ".join(item.text.split()))
                 ):
                     # ICAO appendices restart numeric numbering ("1.",
                     # "2.1"...). Namespace the id under the appendix
@@ -149,8 +193,9 @@ def build_units(
     max_depth: int = 3,
     min_tokens: int = 200,
     max_unit_tokens: int = 5000,
+    config: HeadingConfig | None = None,
 ) -> list[SectionUnit]:
-    root = _build_tree(items)
+    root = _build_tree(items, config)
     units: list[SectionUnit] = []
 
     def walk(node: _Node) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aero_kb.ingest.sectioner import DocItem, parse_section_id
+from aero_kb.ingest.sectioner import DocItem, HeadingConfig, parse_section_id
 
 _HEADING_LABELS = {"section_header", "title"}
 _TEXT_LABELS = {"text", "paragraph", "list_item", "formula", "code", "caption"}
@@ -52,7 +52,7 @@ def doc_to_items(doc) -> list[DocItem]:
     return items
 
 
-def bookmark_ids(pdf_path: Path) -> set[str]:
+def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str]:
     from pypdf import PdfReader
 
     ids: set[str] = set()
@@ -63,7 +63,7 @@ def bookmark_ids(pdf_path: Path) -> set[str]:
                 walk(entry)
             else:
                 title = getattr(entry, "title", "") or ""
-                parsed = parse_section_id(title)
+                parsed = parse_section_id(title, config)
                 if parsed:
                     ids.add(parsed[0])
 
