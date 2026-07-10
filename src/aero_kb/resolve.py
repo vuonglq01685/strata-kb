@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from pydantic import ValidationError
 
 from aero_kb import gitio, models
 from aero_kb.kbcontext import KBContext, KBRef
@@ -33,7 +34,11 @@ def _worktree_section(kb_dir: Path, ref: KBRef) -> str | None:
     manifest_path = kb_dir / ref.doc_id / "_manifest.yaml"
     if not manifest_path.exists():
         return None
-    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    try:
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    except (yaml.YAMLError, ValidationError):
+        # Manifest worktree hỏng → coi như section không đọc được ở worktree
+        return None
     sec = next((s for s in manifest.sections if s.id == ref.section_id), None)
     if sec is None:
         return None
@@ -52,7 +57,12 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
         return _broken(ref, str(exc))
     if manifest_text is None:
         return _broken(ref, f"doc '{ref.doc_id}' không tồn tại tại rev {rev}")
-    manifest = models.Manifest.model_validate(yaml.safe_load(manifest_text) or {})
+    try:
+        manifest = models.Manifest.model_validate(yaml.safe_load(manifest_text) or {})
+    except (yaml.YAMLError, ValidationError) as exc:
+        return _broken(
+            ref, f"manifest '{ref.doc_id}' hỏng hoặc sai schema tại rev {rev}: {exc}"
+        )
     sec = next((s for s in manifest.sections if s.id == ref.section_id), None)
     if sec is None:
         return _broken(
@@ -71,7 +81,7 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
     now = _worktree_section(kb_dir, ref)
     if now is None:
         status: Status = "stale"
-        reason = "section không còn ở worktree (đã xóa hoặc đổi id)"
+        reason = "section không đọc được ở worktree (đã xóa, đổi id, hoặc manifest hỏng)"
     elif now.strip() != pinned.strip():
         status = "stale"
         reason = "nội dung L2 đã thay đổi so với bản pin (amendment sau khi BA viết)"
