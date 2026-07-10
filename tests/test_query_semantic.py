@@ -24,3 +24,12 @@ def test_no_embedder_no_crash_on_miss(fixture_kb):
     # BM25 miss hoàn toàn + không có embedder → trả rỗng, không exception
     results = search(fixture_kb, "zzz qqq xxx", embedder=None)
     assert results == []
+
+
+def test_garbage_query_semantic_returns_empty_not_nearest(fixture_kb):
+    # Query rác: BM25 miss + semantic fallback nhưng mọi score dưới sàn
+    # SEMANTIC_MIN_SCORE → không được nhồi kết quả gần-nhất-nhưng-vô-nghĩa
+    results = search(
+        fixture_kb, "zzz qqq xxx", semantic=True, embedder=FakeEmbedder()
+    )
+    assert results == []

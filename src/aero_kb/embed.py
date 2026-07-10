@@ -16,6 +16,8 @@ logger = logging.getLogger("aero_kb.embed")
 # trung tính, tinh chỉnh khi đo trên KB thật (spec Phase 3 §7).
 SEMANTIC_FALLBACK_THRESHOLD = 5.0
 
+SEMANTIC_MIN_SCORE = 0.6  # sàn score 1/(1+distance) — lọc kết quả gần-nhất-nhưng-không-liên-quan; tinh chỉnh khi đo thật
+
 _L2_HEAD_CHARS = 500  # phần đầu L2 đưa vào text embedding
 
 
@@ -128,6 +130,12 @@ def ensure_index(kb_dir: Path, db_path: Path, embedder: Embedder) -> int:
                 conn.execute("DELETE FROM vec_sections WHERE rowid = ?", (rowid,))
         if to_embed:
             vectors = embedder.embed([t[3] for t in to_embed])
+            for vec in vectors:
+                if len(vec) != embedder.dim:
+                    raise ValueError(
+                        f"embedder trả vector {len(vec)} chiều, kỳ vọng {embedder.dim} "
+                        "chiều (embedder.dim) — kiểm tra lại cấu hình embedder"
+                    )
             for (doc_id, sec_id, digest, _), vec in zip(to_embed, vectors):
                 old = stored.get((doc_id, sec_id))
                 if old is not None:
@@ -167,4 +175,8 @@ def semantic_search(
         ).fetchall()
     finally:
         conn.close()
-    return [(doc, sec, 1.0 / (1.0 + dist)) for doc, sec, dist in rows]
+    return [
+        (doc, sec, 1.0 / (1.0 + dist))
+        for doc, sec, dist in rows
+        if 1.0 / (1.0 + dist) >= SEMANTIC_MIN_SCORE
+    ]
