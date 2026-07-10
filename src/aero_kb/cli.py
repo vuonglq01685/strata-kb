@@ -243,3 +243,51 @@ def resolve(
         raise typer.Exit(1)
     if any(r.status == "stale" for r in results):
         raise typer.Exit(2)
+
+
+@app.command()
+def diff(
+    doc_id: str = typer.Argument(..., help="ID tài liệu"),
+    against: str = typer.Option("HEAD", help="Git rev để so, vd HEAD, a3f9c21"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+) -> None:
+    """So section added/removed/changed giữa worktree và một git rev."""
+    from aero_kb import gitio
+    from aero_kb.diff import diff_doc, render_diff
+
+    try:
+        report = diff_doc(kb_dir, doc_id, against=against)
+    except (ValueError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(render_diff(report))
+
+
+@app.command()
+def doctor(
+    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    context: str | None = typer.Option(
+        None, "--context", help="File chứa block kb-context (hoặc '-' đọc từ stdin)"
+    ),
+) -> None:
+    """Kiểm tra sức khỏe KB; kèm --context để check staleness của citation."""
+    from aero_kb.doctor import check_context, check_kb
+
+    issues = check_kb(kb_dir)
+    has_stale = False
+    if context is not None:
+        text = sys.stdin.read() if context == "-" else Path(context).read_text(
+            encoding="utf-8"
+        )
+        ctx_issues, results = check_context(kb_dir, text)
+        issues += ctx_issues
+        has_stale = any(r.status == "stale" for r in results)
+
+    for issue in issues:
+        color = typer.colors.RED if issue.level == "error" else typer.colors.YELLOW
+        typer.secho(f"[{issue.level}] {issue.message}", fg=color)
+    if any(i.level == "error" for i in issues):
+        raise typer.Exit(1)
+    if has_stale:
+        raise typer.Exit(2)
+    typer.echo("kb doctor: OK")
