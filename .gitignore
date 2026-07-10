@@ -1,3 +1,7 @@
+# ~/.gitignore_global của máy ignore *.md — repo này là docs-as-code,
+# markdown là sản phẩm chính nên phải bỏ chặn tại đây
+!*.md
+
 # Tài liệu gốc có bản quyền (ARINC, ICAO) — tuyệt đối không commit
 sources/
 
