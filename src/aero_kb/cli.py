@@ -376,15 +376,26 @@ def doctor(
     ),
 ) -> None:
     """Kiểm tra sức khỏe KB; kèm --context để check staleness của citation."""
-    from aero_kb.doctor import check_context, check_kb
+    from aero_kb.doctor import check_context, check_hub, check_kb
 
     issues = check_kb(kb_dir)
+    handle = _resolve_hub_option(hub)
+    hub_stale = False
+    if hub:  # chỉ check hub khi được khai --hub / env AERO_KB_HUB
+        repo_root_name = None
+        try:
+            from aero_kb import gitio as _gitio
+
+            repo_root_name = _gitio.git_root(kb_dir.resolve()).name
+        except Exception:
+            pass
+        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_root_name)
+        issues += hub_issues
     has_stale = False
     if context is not None:
         text = sys.stdin.read() if context == "-" else Path(context).read_text(
             encoding="utf-8"
         )
-        handle = _resolve_hub_option(hub)
         ctx_issues, results = check_context(kb_dir, text, hub=handle)
         issues += ctx_issues
         has_stale = any(r.status == "stale" for r in results)
@@ -394,6 +405,6 @@ def doctor(
         typer.secho(f"[{issue.level}] {issue.message}", fg=color)
     if any(i.level == "error" for i in issues):
         raise typer.Exit(1)
-    if has_stale:
+    if has_stale or hub_stale:
         raise typer.Exit(2)
     typer.echo("kb doctor: OK")
