@@ -42,7 +42,7 @@ def _worktree_section(kb_dir: Path, ref: KBRef) -> str | None:
     try:
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
     except (yaml.YAMLError, ValidationError):
-        # Manifest worktree hỏng → coi như section không đọc được ở worktree
+        # Worktree manifest is broken → treat the section as unreadable in the worktree
         return None
     sec = next((s for s in manifest.sections if s.id == ref.section_id), None)
     if sec is None:
@@ -62,33 +62,33 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
         return _broken(ref, str(exc), pinned_rev=rev)
     if manifest_text is None:
         return _broken(
-            ref, f"doc '{ref.doc_id}' không tồn tại tại rev {rev}", pinned_rev=rev
+            ref, f"doc '{ref.doc_id}' does not exist at rev {rev}", pinned_rev=rev
         )
     try:
         manifest = models.Manifest.model_validate(yaml.safe_load(manifest_text) or {})
     except (yaml.YAMLError, ValidationError) as exc:
         return _broken(
             ref,
-            f"manifest '{ref.doc_id}' hỏng hoặc sai schema tại rev {rev}: {exc}",
+            f"manifest '{ref.doc_id}' is broken or has an invalid schema at rev {rev}: {exc}",
             pinned_rev=rev,
         )
     sec = next((s for s in manifest.sections if s.id == ref.section_id), None)
     if sec is None:
         return _broken(
             ref,
-            f"§{ref.section_id} không có trong manifest '{ref.doc_id}' tại rev {rev}",
+            f"§{ref.section_id} is not in manifest '{ref.doc_id}' at rev {rev}",
             pinned_rev=rev,
         )
     l2_text = gitio.read_at(root, rev, kb_dir / ref.doc_id / f"{sec.file}.md")
     if l2_text is None:
         return _broken(
-            ref, f"file L2 '{sec.file}.md' không tồn tại tại rev {rev}", pinned_rev=rev
+            ref, f"L2 file '{sec.file}.md' does not exist at rev {rev}", pinned_rev=rev
         )
     pinned = slice_section(l2_text, ref.section_id)
     if pinned is None:
         return _broken(
             ref,
-            f"không slice được §{ref.section_id} trong '{sec.file}.md' tại rev {rev}",
+            f"could not slice §{ref.section_id} in '{sec.file}.md' at rev {rev}",
             pinned_rev=rev,
         )
 
@@ -96,10 +96,10 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
     now = _worktree_section(kb_dir, ref)
     if now is None:
         status: Status = "stale"
-        reason = "section không đọc được ở worktree (đã xóa, đổi id, hoặc manifest hỏng)"
+        reason = "section unreadable in worktree (deleted, id changed, or manifest broken)"
     elif now.strip() != pinned.strip():
         status = "stale"
-        reason = "nội dung L2 đã thay đổi so với bản pin (amendment sau khi BA viết)"
+        reason = "L2 content has changed since the pinned version (amendment after the BA wrote it)"
     else:
         status = "ok"
         reason = ""
@@ -118,8 +118,8 @@ def _resolve_hub_ref(hub: "HubHandle", ctx: KBContext, ref: KBRef) -> ResolvedRe
     if not ctx.hub_version:
         return _broken(
             ref,
-            "block thiếu 'hub_version' mà ref trỏ tài liệu hub — "
-            "chạy lại `kb context new` để pin hub",
+            "block is missing 'hub_version' but the ref points to a hub document — "
+            "rerun `kb context new` to pin the hub",
         )
     try:
         root = gitio.git_root(hub.kb_dir)
@@ -130,12 +130,12 @@ def _resolve_hub_ref(hub: "HubHandle", ctx: KBContext, ref: KBRef) -> ResolvedRe
 
 def _resolve_remote_ref(hub: "HubHandle | None", ctx: KBContext, ref: KBRef) -> ResolvedRef:
     if hub is None:
-        return _broken(ref, "ref trỏ repo khác nhưng không có --hub")
+        return _broken(ref, "ref points to another repo but --hub was not given")
     if not ctx.hub_version:
         return _broken(
             ref,
-            "block thiếu 'hub_version' mà ref trỏ repo khác — "
-            "chạy lại `kb context new` để pin hub",
+            "block is missing 'hub_version' but the ref points to another repo — "
+            "rerun `kb context new` to pin the hub",
         )
     rev = ctx.hub_version
     try:
@@ -149,25 +149,25 @@ def _resolve_remote_ref(hub: "HubHandle | None", ctx: KBContext, ref: KBRef) -> 
     if manifest_text is None:
         return _broken(
             ref,
-            f"repo '{ref.repo_id}' chưa publish doc '{ref.doc_id}' tại rev {rev}",
+            f"repo '{ref.repo_id}' has not published doc '{ref.doc_id}' at rev {rev}",
             pinned_rev=rev,
         )
     try:
         manifest = models.Manifest.model_validate(yaml.safe_load(manifest_text) or {})
     except (yaml.YAMLError, ValidationError) as exc:
         return _broken(
-            ref, f"manifest federation hỏng tại rev {rev}: {exc}", pinned_rev=rev
+            ref, f"federation manifest is broken at rev {rev}: {exc}", pinned_rev=rev
         )
     sec = next((s for s in manifest.sections if s.id == ref.section_id), None)
     if sec is None:
         return _broken(
             ref,
-            f"§{ref.section_id} không có trong index đã publish của '{ref.repo_id}' "
-            f"tại rev {rev}",
+            f"§{ref.section_id} is not in the published index of '{ref.repo_id}' "
+            f"at rev {rev}",
             pinned_rev=rev,
         )
     pinned_summary = sec.summary
-    # freshness: so với summary trong federation worktree hiện tại của hub
+    # freshness: compare against the summary in the hub's current federation worktree
     now_summary = None
     now_path = hub.federation_dir / ref.repo_id / "manifests" / f"{ref.doc_id}.yaml"
     if now_path.exists():
@@ -181,17 +181,17 @@ def _resolve_remote_ref(hub: "HubHandle | None", ctx: KBContext, ref: KBRef) -> 
             now_summary = None
     if now_summary is None:
         status: Status = "stale"
-        reason = "section không còn trong index federation hiện tại"
+        reason = "section is no longer in the current federation index"
     elif now_summary.strip() != pinned_summary.strip():
         status = "stale"
-        reason = "summary đã đổi trên hub sau khi pin (repo nguồn đã re-publish)"
+        reason = "summary has changed on the hub since it was pinned (source repo re-published)"
     else:
         status = "ok"
         reason = ""
     citation = f"{ref} ({manifest.revision})" if manifest.revision else str(ref)
     content = (
-        f"{pinned_summary}\n\n[remote] repo '{ref.repo_id}' — chỉ có summary L1; "
-        "đọc sâu tại repo nguồn."
+        f"{pinned_summary}\n\n[remote] repo '{ref.repo_id}' — L1 summary only; "
+        "read the full content at the source repo."
     )
     return ResolvedRef(
         ref=ref, status=status, citation=citation, content=content,
@@ -215,7 +215,7 @@ def resolve_refs(
     kb_abs = kb_dir.resolve()
     root = gitio.git_root(kb_abs)
     if hub is None:
-        # đường Phase 2 nguyên vẹn (ref remote → broken vì repo_id không có local)
+        # unchanged Phase 2 path (remote ref → broken since repo_id has no local match)
         return [
             _resolve_remote_ref(None, ctx, ref) if ref.repo_id
             else _resolve_one(kb_abs, root, ctx.version, ref)
@@ -228,7 +228,7 @@ def resolve_refs(
         if ref.repo_id:
             out.append(_resolve_remote_ref(hub, ctx, ref))
         elif ref.doc_id in local_ids or ref.doc_id not in hub_ids:
-            # local thắng collision; doc lạ → đường local Phase 2 (broken/stale cũ)
+            # local wins on collision; unknown doc → old local Phase 2 path (broken/stale)
             out.append(_resolve_one(kb_abs, root, ctx.version, ref))
         else:
             out.append(_resolve_hub_ref(hub, ctx, ref))
@@ -244,8 +244,8 @@ def render_resolved(results: list[ResolvedRef]) -> str:
             parts.append(f"!! {r.reason}")
         elif r.status == "stale":
             parts.append(
-                f"!! {r.reason} — chạy `kb diff {r.ref.doc_id} --against {rev}` "
-                "để xem thay đổi"
+                f"!! {r.reason} — run `kb diff {r.ref.doc_id} --against {rev}` "
+                "to see the changes"
             )
         if r.content:
             parts.append(r.content)

@@ -27,7 +27,7 @@ class FederatedRepo:
 
 
 def load_federation(federation_dir: Path) -> list[FederatedRepo]:
-    """Đọc mọi entry federation/<repo>/ — entry hỏng bị bỏ qua kèm warning."""
+    """Read every federation/<repo>/ entry — broken entries are skipped with a warning."""
     if not federation_dir.is_dir():
         return []
     repos: list[FederatedRepo] = []
@@ -36,14 +36,14 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
         index_path = child / "index.yaml"
         if not meta_path.exists() or not index_path.exists():
             logger.warning(
-                "federation/%s thiếu _meta.yaml hoặc index.yaml — bỏ qua", child.name
+                "federation/%s missing _meta.yaml or index.yaml — skipping", child.name
             )
             continue
         try:
             meta = models.load_yaml_model(meta_path, FederationMeta)
             index = models.load_yaml_model(index_path, models.KBIndex)
         except (yaml.YAMLError, ValidationError) as exc:
-            logger.warning("federation/%s hỏng — bỏ qua: %s", child.name, exc)
+            logger.warning("federation/%s is broken — skipping: %s", child.name, exc)
             continue
         manifests: dict[str, models.Manifest] = {}
         for mf in sorted((child / "manifests").glob("*.yaml")):
@@ -51,7 +51,7 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
                 manifest = models.load_yaml_model(mf, models.Manifest)
             except (yaml.YAMLError, ValidationError) as exc:
                 logger.warning(
-                    "federation/%s manifest '%s' hỏng — bỏ qua: %s",
+                    "federation/%s manifest '%s' is broken — skipping: %s",
                     child.name,
                     mf.name,
                     exc,

@@ -30,7 +30,7 @@ def test_context_new_rejects_unresolvable_ref(git_kb):
 
 def test_context_new_warns_when_kb_dirty(git_kb):
     (git_kb["kb"] / "demo-doc" / "ch1-records.md").write_text(
-        "## 1.1 Airspace Records\n\nsua chua commit\n\n## 1.2 Airway Records\n\nx\n",
+        "## 1.1 Airspace Records\n\nuncommitted edit\n\n## 1.2 Airway Records\n\nx\n",
         encoding="utf-8",
     )
     result = runner.invoke(
@@ -38,12 +38,12 @@ def test_context_new_warns_when_kb_dirty(git_kb):
         ["context", "new", "--refs", "demo-doc §1.1", "--kb-dir", str(git_kb["kb"])],
     )
     assert result.exit_code == 0
-    assert "chưa commit" in result.output
+    assert "uncommitted changes" in result.output
 
 
 def test_context_new_dirty_warning_goes_to_stderr_not_stdout(git_kb):
     (git_kb["kb"] / "demo-doc" / "ch1-records.md").write_text(
-        "## 1.1 Airspace Records\n\nsua chua commit\n\n## 1.2 Airway Records\n\nx\n",
+        "## 1.1 Airspace Records\n\nuncommitted edit\n\n## 1.2 Airway Records\n\nx\n",
         encoding="utf-8",
     )
     result = runner.invoke(
@@ -51,9 +51,9 @@ def test_context_new_dirty_warning_goes_to_stderr_not_stdout(git_kb):
         ["context", "new", "--refs", "demo-doc §1.1", "--kb-dir", str(git_kb["kb"])],
     )
     assert result.exit_code == 0
-    # stdout chỉ chứa block YAML thuần — pipe/copy không dính dòng warn
+    # stdout only contains the pure YAML block — pipe/copy doesn't pick up the warn line
     assert "[warn]" not in result.stdout
-    assert "chưa commit" in result.stderr
+    assert "uncommitted changes" in result.stderr
     ctx = kbcontext.parse(result.stdout)
     assert str(ctx.refs[0]) == "demo-doc §1.1"
 
@@ -63,7 +63,7 @@ def test_context_new_rejects_empty_refs(git_kb):
         app, ["context", "new", "--refs", ",,", "--kb-dir", str(git_kb["kb"])]
     )
     assert result.exit_code == 1
-    assert "rỗng" in result.output
+    assert "is empty" in result.output
     assert "kb-context:" not in result.stdout
 
 
@@ -77,7 +77,7 @@ def test_resolve_reads_block_from_file(git_kb, tmp_path_factory):
     result = runner.invoke(
         app, ["resolve", str(ticket), "--kb-dir", str(git_kb["kb"])]
     )
-    assert result.exit_code == 2  # có stale (§1.1), không broken
+    assert result.exit_code == 2  # has stale (§1.1), not broken
     assert "status=stale" in result.output
     assert "status=ok" in result.output
 
@@ -96,13 +96,13 @@ def test_resolve_broken_exits_1(git_kb, tmp_path_factory):
 
 
 def test_resolve_missing_file_exits_1_without_traceback(git_kb, tmp_path_factory):
-    missing = tmp_path_factory.mktemp("ticket") / "khong-ton-tai.md"
+    missing = tmp_path_factory.mktemp("ticket") / "does-not-exist.md"
     result = runner.invoke(
         app, ["resolve", str(missing), "--kb-dir", str(git_kb["kb"])]
     )
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "không đọc được file" in result.output
+    assert "could not read file" in result.output
     assert str(missing) in result.output
 
 

@@ -19,7 +19,7 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
         from docling_core.types.doc import DoclingDocument
     except ImportError as exc:
         raise RuntimeError(
-            "Docling chua duoc cai. Chay: pip install -e \".[ingest]\""
+            "Docling is not installed. Run: pip install -e \".[ingest]\""
         ) from exc
 
     cache = work_dir / "parsed.json"
@@ -76,11 +76,11 @@ def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str
 
 
 def _is_leaf_unit(uid: str, unit_ids: set[str]) -> bool:
-    """True neu khong co unit nao khac trong unit_ids la con chau cua uid.
+    """True if no other unit in unit_ids is a descendant of uid.
 
-    Mot unit la "leaf" (khong bi tach nho hon) khi no la unit sau cung
-    trong cay cho nhanh do -> moi bookmark con chau cua no coi nhu da
-    duoc gom vao body cua unit nay.
+    A unit is a "leaf" (not split any further) when it is the last unit
+    along that branch -> every bookmark that is a descendant of it is
+    treated as already folded into this unit's body.
     """
     return not any(
         other != uid and other.startswith(uid + ".") for other in unit_ids
@@ -105,5 +105,5 @@ def crosscheck(
             if covered:
                 break
         if not covered:
-            warnings.append(f"bookmark section '{bm}' khong thay trong cay da trich")
+            warnings.append(f"bookmark section '{bm}' not found in the extracted tree")
     return warnings

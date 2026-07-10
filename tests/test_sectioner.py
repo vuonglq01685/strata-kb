@@ -59,7 +59,7 @@ class TestBuildUnits:
     def test_small_leaf_merged_into_parent(self):
         items = _items_basic() + [
             DocItem("heading", "5.4.1 Tiny", 3),
-            DocItem("text", "Very short."),  # < 200 tokens -> gop vao 5.4
+            DocItem("text", "Very short."),  # < 200 tokens -> folded into 5.4
         ]
         units = build_units(items)
         assert "5.4.1" not in [u.id for u in units]
@@ -79,7 +79,7 @@ class TestBuildUnits:
         ]
         units = build_units(items)
         ids = [u.id for u in units]
-        assert "1.1.1.1" not in ids  # sau hon 3 cap -> gap vao 1.1.1
+        assert "1.1.1.1" not in ids  # deeper than 3 levels -> folded into 1.1.1
         u111 = next(u for u in units if u.id == "1.1.1")
         assert "Deep body." in u111.body_md
 
@@ -91,7 +91,7 @@ class TestBuildUnits:
         units = build_units(items)
         assert len(units) == 1
         assert units[0].title == "FOREWORD"
-        assert units[0].id  # co id fallback, khong rong
+        assert units[0].id  # has a fallback id, not empty
 
 
 def test_repeated_chapter_heading_reopens_node():
@@ -108,9 +108,9 @@ def test_repeated_chapter_heading_reopens_node():
     ]
     units = build_units(items)
     ids = [u.id for u in units]
-    assert ids == ["5", "5.1", "5.2"]  # khong nhan doi '5'
-    # '5' dang o tren stack khi running header lap lai -> no-op:
-    # noi dung tiep theo thuoc ve section dang mo (5.1), khong ve '5'.
+    assert ids == ["5", "5.1", "5.2"]  # '5' is not duplicated
+    # '5' is already on the stack when the running header repeats -> no-op:
+    # the following content belongs to the currently open section (5.1), not '5'.
     u51 = next(u for u in units if u.id == "5.1")
     assert "Page two chapter intro." in u51.body_md
 
@@ -122,7 +122,7 @@ def test_running_header_does_not_steal_continuation_text():
         DocItem("text", "Chapter intro."),
         DocItem("heading", "5.45 Some Field", 2),
         DocItem("text", big),
-        DocItem("heading", "5.0 NAVIGATION DATA", 1),  # running header giua trang
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),  # running header mid-page
         DocItem("text", "Continuation of 5.45 content."),
         DocItem("heading", "5.46 Next Field", 2),
         DocItem("text", big),
@@ -152,7 +152,7 @@ def test_label_heading_with_colon_demoted_to_text():
     items = [
         DocItem("heading", "5.93 Facility Characteristics", 2),
         DocItem("text", big),
-        DocItem("heading", "Source/Content:", 3),  # label bi Docling nhan nham la heading
+        DocItem("heading", "Source/Content:", 3),  # label Docling mistakes for a heading
         DocItem("text", "Derived from official sources."),
     ]
     units = build_units(items)
@@ -205,13 +205,13 @@ def test_front_matter_fallback_does_not_namespace_chapters():
     ]
     units = build_units(items)
     ids = [u.id for u in units]
-    assert "5" in ids and "5.3" in ids  # khong bi namespace duoi FOREWORD
+    assert "5" in ids and "5.3" in ids  # not namespaced under FOREWORD
     u53 = next(u for u in units if u.id == "5.3")
     assert u53.chapter == "5"
 
 
 def test_small_leaf_folding_skipped_when_parent_would_exceed_cap():
-    # 30 con nho (moi con ~140 token) -> tong ~4200 + body cha ~700 > cap 4000
+    # 30 small children (~140 tokens each) -> total ~4200 + parent body ~700 > cap 4000
     small = "Field definition body. " * 35  # ~140 token
     items = [DocItem("heading", "5.0 NAVIGATION DATA", 1), DocItem("text", "Intro. " * 200)]
     for i in range(1, 31):
@@ -219,7 +219,7 @@ def test_small_leaf_folding_skipped_when_parent_would_exceed_cap():
         items.append(DocItem("text", small))
     units = build_units(items, max_unit_tokens=4000)
     ids = [u.id for u in units]
-    # tat ca 30 con giu nguyen lam unit rieng, khong bi nuot vao '5'
+    # all 30 children stay as their own separate units, not swallowed into '5'
     assert "5" in ids
     assert all(f"5.{i}" in ids for i in range(1, 31))
     u5 = next(u for u in units if u.id == "5")
@@ -236,7 +236,7 @@ def test_small_leaf_folding_still_happens_under_cap():
         DocItem("heading", "5.4.1 Tiny", 3),
         DocItem("text", "Very short."),
     ]
-    units = build_units(items)  # default cap 5000, tong nho -> van gop
+    units = build_units(items)  # default cap 5000, small total -> still folds
     assert "5.4.1" not in [u.id for u in units]
     u54 = next(u for u in units if u.id == "5.4")
     assert "### 5.4.1 Tiny" in u54.body_md
