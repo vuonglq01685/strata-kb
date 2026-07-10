@@ -11,6 +11,8 @@ dependencies = [
     "tiktoken>=0.7",
     "pypdf>=4.0",
     "mcp>=1.2",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
