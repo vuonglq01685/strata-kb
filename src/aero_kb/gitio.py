@@ -62,3 +62,66 @@ def is_dirty(root: Path, subpath: Path) -> bool:
     rel = _relpath(root, subpath)
     proc = _run(root, "status", "--porcelain", "--", rel)
     return bool(proc.stdout.strip())
+
+
+def clone(url: str, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(
+        ["git", "clone", url, str(dest)], capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        raise GitError(f"clone '{url}' thất bại: {proc.stderr.strip()}")
+
+
+def pull(root: Path) -> None:
+    proc = _run(root, "pull", "--ff-only")
+    if proc.returncode != 0:
+        raise GitError(f"pull thất bại: {proc.stderr.strip()}")
+
+
+def pull_rebase(root: Path) -> None:
+    proc = _run(root, "pull", "--rebase")
+    if proc.returncode != 0:
+        raise GitError(f"pull --rebase thất bại: {proc.stderr.strip()}")
+
+
+def commit_all(root: Path, message: str) -> bool:
+    """`git add -A` + commit; False nếu working tree sạch (không có gì để commit)."""
+    _run(root, "add", "-A")
+    if not _run(root, "status", "--porcelain").stdout.strip():
+        return False
+    proc = _run(root, "commit", "-m", message)
+    if proc.returncode != 0:
+        raise GitError(f"commit thất bại: {proc.stderr.strip() or proc.stdout.strip()}")
+    return True
+
+
+def commit_paths(root: Path, message: str, paths: list[str]) -> bool:
+    """`git add -- <paths>` + commit giới hạn các path đó (path khác không bị đụng).
+
+    False nếu working tree sạch trong phạm vi `paths` (không có gì để commit).
+    Dùng khi cần chỉ stage một thư mục con (vd federation/) để tránh commit
+    nhầm rác nằm ngoài phạm vi (vd cache .kb-work/ trong clone hub).
+    """
+    _run(root, "add", "--", *paths)
+    if not _run(root, "status", "--porcelain", "--", *paths).stdout.strip():
+        return False
+    proc = _run(root, "commit", "-m", message, "--", *paths)
+    if proc.returncode != 0:
+        raise GitError(f"commit thất bại: {proc.stderr.strip() or proc.stdout.strip()}")
+    return True
+
+
+def push(root: Path) -> None:
+    proc = _run(root, "push", "origin", "HEAD")
+    if proc.returncode != 0:
+        raise GitError(f"push thất bại: {proc.stderr.strip()}")
+
+
+def has_remote(root: Path) -> bool:
+    return _run(root, "remote", "get-url", "origin").returncode == 0
+
+
+def remote_url(root: Path) -> str:
+    proc = _run(root, "remote", "get-url", "origin")
+    return proc.stdout.strip() if proc.returncode == 0 else ""

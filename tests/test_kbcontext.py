@@ -97,3 +97,62 @@ def test_parse_tags_scalar_raises_with_hint():
         kbcontext.parse(
             "kb-context:\n  version: abc1234\n  refs:\n    - a §1\n  tags: airspace\n"
         )
+
+
+# --- Phase 3: hub_version + repo-prefixed refs ---
+
+
+def test_parse_ref_with_repo_prefix():
+    ref = kbcontext.parse_ref("crew-ops:roster-sop §3.2")
+    assert ref.repo_id == "crew-ops"
+    assert ref.doc_id == "roster-sop"
+    assert ref.section_id == "3.2"
+    assert str(ref) == "crew-ops:roster-sop §3.2"
+
+
+def test_parse_ref_without_prefix_has_no_repo():
+    ref = kbcontext.parse_ref("arinc-424 §5.3")
+    assert ref.repo_id is None
+    assert str(ref) == "arinc-424 §5.3"
+
+
+def test_parse_block_with_hub_version():
+    text = """kb-context:
+  version: "4f2a91c"
+  hub_version: "a3f9c21"
+  refs:
+    - arinc-424 §5.3
+"""
+    ctx = kbcontext.parse(text)
+    assert ctx.version == "4f2a91c"
+    assert ctx.hub_version == "a3f9c21"
+
+
+def test_parse_block_without_hub_version_backward_compat():
+    text = """kb-context:
+  version: "4f2a91c"
+  refs:
+    - demo-doc §1.1
+"""
+    ctx = kbcontext.parse(text)
+    assert ctx.hub_version is None
+
+
+def test_render_with_hub_version_roundtrip():
+    ctx = kbcontext.KBContext(
+        version="4f2a91c",
+        hub_version="a3f9c21",
+        refs=[kbcontext.parse_ref("arinc-424 §5.3")],
+        tags=["arinc424"],
+    )
+    rendered = kbcontext.render(ctx)
+    assert 'hub_version: "a3f9c21"' in rendered
+    assert kbcontext.parse(rendered).hub_version == "a3f9c21"
+
+
+def test_render_without_hub_version_unchanged_format():
+    ctx = kbcontext.KBContext(
+        version="4f2a91c", refs=[kbcontext.parse_ref("demo-doc §1.1")]
+    )
+    rendered = kbcontext.render(ctx)
+    assert "hub_version" not in rendered

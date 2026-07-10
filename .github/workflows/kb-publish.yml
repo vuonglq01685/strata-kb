@@ -1,0 +1,23 @@
+# Mẫu CI publish index lên kb-hub — copy sang các repo con tham gia federation.
+# Yêu cầu secret KB_HUB_URL (URL hub kèm token, vd https://x-access-token:${TOKEN}@github.com/org/kb-hub.git)
+name: kb-publish
+on:
+  push:
+    branches: [main]
+    paths: [".kb/**"]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install aero-kb  # hoặc pip install -e . nếu repo chứa source
+      - name: Publish L0+L1 lên hub
+        run: kb publish --hub "${{ secrets.KB_HUB_URL }}" --repo-id "${{ github.event.repository.name }}"
+        env:
+          GIT_AUTHOR_NAME: kb-publish-ci
+          GIT_AUTHOR_EMAIL: ci@local
+          GIT_COMMITTER_NAME: kb-publish-ci
+          GIT_COMMITTER_EMAIL: ci@local

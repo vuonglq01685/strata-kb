@@ -143,7 +143,7 @@ AERO-KB/
 │
 ├── .mcp.json                 ← Khai báo MCP server cho Claude Code (Phase 2, xem mục 7.8)
 ├── src/aero_kb/              ← Mã nguồn của công cụ (chỉ dev cần đụng vào)
-│   ├── cli.py                       lệnh `kb` (đủ 10 lệnh, xem mục 7)
+│   ├── cli.py                       lệnh `kb` (đủ 11 lệnh, xem mục 7)
 │   ├── ingest/                      phần "cắt PDF thành section"
 │   ├── build.py                     phần "kiểm tra toàn vẹn"
 │   ├── query.py                     phần "tìm kiếm & trả lời"
@@ -152,7 +152,10 @@ AERO-KB/
 │   └── diff.py, doctor.py, gitio.py so sánh amendment + kiểm tra sức khỏe kho (Phase 2)
 │
 ├── .claude/skills/kb-summarize/    ← "công thức" hướng dẫn AI cách viết tóm tắt cho đúng chuẩn
+├── scripts/demo-federation.sh      ← script demo tự dựng kb-hub + 2 repo mẫu, chạy trọn vòng (Phase 3)
+├── .github/workflows/kb-publish.yml ← mẫu CI tự đẩy danh mục lên kb-hub khi `.kb/` đổi (Phase 3)
 ├── docs/                            ← tài liệu thiết kế, kế hoạch (dành cho người phát triển công cụ)
+│   └── deploy-remote-mcp.md                triển khai MCP server dùng chung qua HTTP (Phase 3)
 └── tests/                           ← bộ kiểm thử tự động của công cụ
 ```
 
@@ -188,7 +191,7 @@ pip install -e ".[ingest,dev]"
 kb --help
 ```
 
-Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `get`, `stats`, `context`, `resolve`, `diff`, `doctor`) — cài đặt thành công.
+Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `get`, `stats`, `publish`, `context`, `resolve`, `diff`, `doctor`) — cài đặt thành công.
 
 > **Lưu ý:** mỗi lần mở terminal mới để làm việc với dự án, phải chạy lại `source .venv/bin/activate` trước (dấu hiệu nhận biết: đầu dòng lệnh terminal có chữ `(.venv)`).
 
@@ -196,7 +199,7 @@ Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `
 
 ## 7. Từ điển lệnh `kb`
 
-Bảng dưới liệt kê các lệnh cốt lõi (có từ Phase 1) theo đúng thứ tự dùng trong một quy trình thực tế. Bốn lệnh mới của Phase 2 — `context new`, `resolve`, `diff`, `doctor` — xem mục [7.8](#78-phase-2--tích-hợp-workflow).
+Bảng dưới liệt kê các lệnh cốt lõi (có từ Phase 1) theo đúng thứ tự dùng trong một quy trình thực tế. Bốn lệnh mới của Phase 2 — `context new`, `resolve`, `diff`, `doctor` — xem mục [7.8](#78-phase-2--tích-hợp-workflow). Lệnh `kb publish` và cờ `--hub`/`--semantic` (Phase 3 — chia sẻ kho tri thức giữa nhiều repo) xem mục [7.9](#79-phase-3--federation--remote-mcp).
 
 | # | Lệnh | Dùng để làm gì | Ai chạy |
 |---|---|---|---|
@@ -204,9 +207,10 @@ Bảng dưới liệt kê các lệnh cốt lõi (có từ Phase 1) theo đúng 
 | 2 | `kb status` | Xem còn bao nhiêu section **chưa được tóm tắt** (`pending`) | Ai cũng chạy được, để biết còn việc gì |
 | 3 | *(skill `kb-summarize` trong Claude Code)* | AI điền phần tóm tắt vào chỗ trống | Chạy trong Claude Code, không phải lệnh terminal |
 | 4 | `kb build` | Kiểm tra toàn bộ kho: hết chỗ trống chưa, bảng có khớp không | Bắt buộc trước khi mở Pull Request |
-| 5 | `kb query` | Đặt câu hỏi tự nhiên, nhận lại đúng đoạn liên quan | Dùng hàng ngày để tra cứu |
+| 5 | `kb query` | Đặt câu hỏi tự nhiên, nhận lại đúng đoạn liên quan; thêm `--hub <url\|path>` để tìm cả trong kho dùng chung, `--semantic` để ép tìm theo ngữ nghĩa (Phase 3, xem mục [7.9](#79-phase-3--federation--remote-mcp)) | Dùng hàng ngày để tra cứu |
 | 6 | `kb get` | Lấy chính xác 1 section theo id (biết trước id) | Khi đã biết rõ mình cần section nào |
 | 7 | `kb stats` | Xem số liệu "từ" (token) từng tầng — bằng chứng tiết kiệm chi phí | Theo dõi, báo cáo |
+| 8 | `kb publish --hub <url\|path>` | Đẩy danh mục (L0) + mục lục (L1) của kho hiện tại lên kb-hub dùng chung — không đẩy nội dung tóm tắt/nguyên văn | CI tự động chạy mỗi khi có thay đổi trong `.kb/` (Phase 3) |
 
 ### 7.1 `kb ingest` — nạp một PDF vào hệ thống
 
@@ -362,7 +366,27 @@ Chạy `python -m aero_kb.mcp --kb .kb` (đã khai báo sẵn trong `.mcp.json` 
 4. Nếu kết quả báo `status=stale` (kho đã có amendment sau khi ticket được viết), Dev chạy `kb diff <doc-id> --against <rev-đã-pin>` để thấy chính xác section nào đổi, rồi trao đổi lại với BA xem AC có cần cập nhật không.
 5. `kb doctor --context <ticket>` dùng trong CI để tự động chặn/gắn cờ các ticket có citation `stale` trước khi merge, không cần người rà tay từng ticket.
 
-> **Ghi chú:** file `.mcp.json` cấu hình sẵn MCP server đã có trong repo — không cần thiết lập gì thêm để Claude Code nhận diện 3 tool trên. Tham số `--hub` của `python -m aero_kb.mcp` đã được đọc nhưng **chưa kích hoạt** — để dành cho Phase 3 (chia sẻ kho tri thức qua một kb-hub tập trung, dùng chung giữa nhiều repo).
+> **Ghi chú:** file `.mcp.json` cấu hình sẵn MCP server đã có trong repo — không cần thiết lập gì thêm để Claude Code nhận diện 3 tool trên. Tham số `--hub` của `python -m aero_kb.mcp` giờ đã **kích hoạt** — xem mục [7.9](#79-phase-3--federation--remote-mcp) ngay bên dưới.
+
+---
+
+### 7.9 Phase 3 — Federation & remote MCP
+
+Phase 2 giúp một kho tri thức "biết nói chuyện" với dev qua MCP và biết "ghim" trích dẫn. Phase 3 giải quyết bài toán tiếp theo: **một tài liệu chuẩn (ví dụ ARINC 424) thường liên quan đến nhiều repo khác nhau** (repo nav-data, repo crew-ops...) — không lẽ mỗi repo lại tự nạp và tự tóm tắt lại cùng một tài liệu đó? Phase 3 cho phép tài liệu domain sống **một bản duy nhất** ở một kho trung tâm gọi là **kb-hub**, còn các repo khác chỉ "tham chiếu" vào bản đó.
+
+**kb-hub là gì?** Đơn giản là một repo Git khác, có cấu trúc `.kb/` y hệt repo hiện tại, cộng thêm một thư mục `federation/` do máy tự sinh — chứa "danh mục của các danh mục": mỗi repo tham gia đóng góp một bản sao rút gọn (chỉ L0 + L1, không có nội dung tóm tắt/nguyên văn) để các repo khác biết "repo kia có tài liệu gì" mà không cần phải sang tận nơi. kb-hub không phải server chạy nền — vẫn chỉ là file `.yaml`/`.md` quản lý bằng Git, đúng triết lý docs-as-code như phần còn lại của hệ thống.
+
+**3 điểm mới cần biết:**
+
+1. **`kb publish --hub <url|path>`** — đẩy danh mục (L0) và mục lục (L1) của kho hiện tại lên kb-hub, để các repo khác "biết" mình có tài liệu gì. Không đẩy nội dung tóm tắt (L2) hay nguyên văn (L3) — hai tầng đó chỉ ở lại repo gốc. Chạy tay khi cần, hoặc tự động qua CI (xem mẫu `.github/workflows/kb-publish.yml`) mỗi khi `.kb/` đổi.
+2. **Cờ `--hub <url|path>`** trên `kb query`, `kb context new`, `kb resolve`, `kb doctor` — mở rộng phạm vi tìm/kiểm tra ra cả kb-hub, không chỉ kho cục bộ. Ví dụ `kb query "..." --hub https://.../kb-hub.git` trả về: tài liệu domain sống ở hub (đọc đầy đủ như tài liệu cục bộ) lẫn tóm tắt 1 câu của tài liệu bên các repo khác (đánh dấu `[remote]`, muốn đọc sâu phải sang đúng repo đó). Công cụ tự tải/giữ tươi một bản sao cục bộ của hub, không cần tự tay `git clone`.
+3. **Cờ `--semantic`** trên `kb query` — ép tra cứu theo **ý nghĩa câu hỏi** thay vì chỉ khớp từ khóa (BM25). Hữu ích khi câu hỏi diễn đạt khác từ ngữ trong tài liệu gốc nhưng cùng ý. Đây là bước tùy chọn cài thêm (`pip install -e ".[embed]"`) — nếu máy chưa cài, `kb query` vẫn chạy bình thường bằng khớp từ khóa như trước, không báo lỗi.
+
+**Block `kb-context` nay có thể "ghim" 2 phiên bản.** Nếu BA trích dẫn một section sống ở kb-hub, block sinh ra sẽ có thêm dòng `hub_version` bên cạnh `version` — ghim đúng bản của cả kho cục bộ lẫn kho trung tâm tại thời điểm viết. Các block Phase 2 cũ (chỉ có `version`) vẫn resolve đúng như trước, không cần sửa lại gì.
+
+**Tra cứu từ xa qua MCP không cần clone repo:** trước đây agent muốn dùng MCP phải clone repo về máy trước. Phase 3 cho phép chạy MCP server dạng "máy chủ dùng chung" qua HTTP (thay vì chỉ chạy cục bộ), có xác thực bằng token — hướng dẫn triển khai chi tiết ở [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
+
+**Muốn xem toàn bộ vòng đời hoạt động thật (2 repo cùng đóng góp vào 1 hub, tra cứu chéo, phát hiện tài liệu đã đổi mà trích dẫn cũ chưa cập nhật)?** Chạy thử `bash scripts/demo-federation.sh` — script tự dựng một hub và 2 repo mẫu trong thư mục tạm, chạy trọn vòng rồi tự dọn dẹp, không đụng đến dữ liệu thật của bạn.
 
 ---
 
@@ -425,10 +449,10 @@ Tính đến lần chạy thử nghiệm gần nhất (xem `docs/superpowers/spe
 
 ## 11. Giới hạn hiện tại & việc chưa làm
 
-Đây là bản **Phase 1 + Phase 2**, không phải bản hoàn chỉnh. Những gì **chưa** có:
+Đây là bản **Phase 1 + Phase 2 + Phase 3**, không phải bản hoàn chỉnh. Những gì **chưa** có:
 
-- Chưa có kb-hub tập trung để chia sẻ kho tri thức giữa nhiều repo (tham số `--hub` của MCP server đã đọc nhưng chưa kích hoạt) — để dành Phase 3.
-- Chưa hỗ trợ tìm kiếm theo ngữ nghĩa nâng cao (embedding search) — hiện dùng thuật toán khớp từ khóa cổ điển (BM25), đã đủ tốt cho quy mô hiện tại.
+- **Chưa tự sinh "hiểu biết về mã nguồn"** (ví dụ tự đọc OpenAPI, schema database, danh sách module của một hệ thống để đưa vào kho tri thức) — khác hẳn phạm vi hiện tại (tài liệu chuẩn hàng không dạng PDF), để dành cho một đợt phát triển riêng sau này.
+- **Xác thực HTTP MCP mới dừng ở bearer token** (một chuỗi bí mật cố định), chưa có đăng nhập kiểu OAuth/SSO — đủ dùng trong mạng nội bộ/VPN hiện tại, nhưng chưa phù hợp để mở ra Internet công khai.
 - Việc điền tóm tắt vẫn cần con người mở Claude Code và kích hoạt — chưa hoàn toàn tự động chạy nền.
 - Một số ít section (khoảng 2,4% của chương 5 ARINC, 6/~250 mục) chưa trích xuất được do lỗi đọc PDF — cần SME đối chiếu thủ công khi gặp.
 
@@ -466,4 +490,4 @@ Không. Xem mục 9 — review chỉ là đọc file `.md`/`.yaml` trên giao di
 
 ---
 
-*Tài liệu này mô tả trạng thái Phase 1 (PoC) + Phase 2 (tích hợp workflow) — cập nhật 2026-07-10. Chi tiết thiết kế kỹ thuật đầy đủ xem `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md` và `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`.*
+*Tài liệu này mô tả trạng thái Phase 1 (PoC) + Phase 2 (tích hợp workflow) + Phase 3 (federation & remote MCP) — cập nhật 2026-07-11. Chi tiết thiết kế kỹ thuật đầy đủ xem `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md` và `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`.*
