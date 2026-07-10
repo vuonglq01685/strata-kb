@@ -134,3 +134,63 @@ def git_kb(fixture_kb: Path, run_git) -> dict:
     run_git(root, "commit", "-m", "kb v2 - amendment 1.1")
     rev2 = run_git(root, "rev-parse", "--short", "HEAD")
     return {"root": root, "kb": fixture_kb, "rev1": rev1, "rev2": rev2}
+
+
+HUB_L2 = """## 5.3 Restrictive Airspace
+
+Restrictive airspace records: designation, type, multiple code, level.
+
+| Type | Meaning |
+|---|---|
+| P | Prohibited |
+| R | Restricted |
+"""
+
+
+@pytest.fixture
+def hub_worktree(tmp_path: Path, run_git) -> Path:
+    """Hub repo worktree: .kb/ có 1 doc domain 'arinc-424' + đã git commit."""
+    hub = tmp_path / "kb-hub"
+    doc_dir = hub / ".kb" / "arinc-424"
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "ch5-airspace.md").write_text(HUB_L2, encoding="utf-8")
+    (doc_dir / "ch5-airspace.raw.md").write_text(HUB_L2, encoding="utf-8")
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(
+            id="arinc-424",
+            title="ARINC 424",
+            revision="Supplement 22",
+            sections=[
+                models.SectionEntry(
+                    id="5.3",
+                    title="Restrictive Airspace",
+                    summary="Restrictive airspace: designation, type, multiple code.",
+                    status="reviewed",
+                    file="ch5-airspace",
+                )
+            ],
+        ),
+    )
+    models.save_yaml_model(
+        hub / ".kb" / "index.yaml",
+        models.KBIndex(
+            docs=[
+                models.IndexEntry(
+                    id="arinc-424",
+                    title="ARINC 424",
+                    revision="Supplement 22",
+                    tags=["arinc424", "airspace"],
+                    summary="Navigation database spec.",
+                )
+            ]
+        ),
+    )
+    (hub / "federation").mkdir()
+    (hub / "federation" / ".gitkeep").write_text("", encoding="utf-8")
+    run_git(hub, "init")
+    run_git(hub, "config", "user.name", "test")
+    run_git(hub, "config", "user.email", "test@test.local")
+    run_git(hub, "add", "-A")
+    run_git(hub, "commit", "-m", "hub v1")
+    return hub
