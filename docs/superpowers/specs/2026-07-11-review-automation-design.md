@@ -60,6 +60,7 @@ Chức năng: đổi `status: summarized → reviewed` trong `_manifest.yaml`.
 
 - **Chỉ flip section đang `summarized`.** Gặp section `pending` → bỏ qua + cảnh báo ra stderr (không thể duyệt cái chưa tóm tắt). Section đã `reviewed` → giữ nguyên (idempotent — chạy lại nhiều lần vẫn an toàn).
 - "Section thay đổi" trong chế độ `--all-changed` = tập `added ∪ changed` từ `DiffReport` (bất kỳ thay đổi nào ở summary/prose/content — xem §3.2).
+- `--all-changed` và `--against` **bắt buộc đi cùng nhau** (thiếu một trong hai → exit 1 kèm hướng dẫn). Không có default `HEAD` cho `--against`: trong CI worktree trùng HEAD nên default đó sẽ âm thầm không tìm thấy gì — một no-op sai lệch.
 - Ghi manifest bằng `models.save_yaml_model` (giữ format YAML hiện có).
 
 **Exit code:**
