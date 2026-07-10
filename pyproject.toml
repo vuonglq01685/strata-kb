@@ -10,11 +10,12 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "tiktoken>=0.7",
     "pypdf>=4.0",
+    "mcp>=1.2",
 ]
 
 [project.optional-dependencies]
 ingest = ["docling>=2.0"]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "anyio>=4.0"]
 
 [project.scripts]
 kb = "aero_kb.cli:app"
