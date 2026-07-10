@@ -7,6 +7,11 @@ on:
     branches: [main]
     paths: [".kb/**"]
 
+# Serialize runs: two quick merges must not race each other's push.
+concurrency:
+  group: kb-review
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
