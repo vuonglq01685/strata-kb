@@ -70,7 +70,7 @@ def create_server(config: ServerConfig) -> MCPServer:
             results = resolve_refs(config.kb_dir, ctx)
         except gitio.GitError as exc:
             return f"git lỗi: {exc}"
-        return render_resolved(results, ctx.version)
+        return render_resolved(results)
 
     return mcp
 
