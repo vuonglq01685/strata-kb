@@ -5,6 +5,16 @@ import pytest
 
 from aero_kb import models
 
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="chạy cả test tải model embedding thật",
+    )
+
+
 TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |\n| R | Restricted |"
 
 L2_CONTENT = f"""## 1.1 Airspace Records
