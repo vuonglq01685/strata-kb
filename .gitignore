@@ -1,0 +1,17 @@
+# Tài liệu gốc có bản quyền (ARINC, ICAO) — tuyệt đối không commit
+sources/
+
+# Sản phẩm trung gian của pipeline (Docling JSON, summarize jobs)
+.kb-work/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
