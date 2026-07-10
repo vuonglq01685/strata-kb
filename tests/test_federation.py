@@ -54,7 +54,7 @@ def test_load_two_repos(tmp_path):
 
 
 def test_missing_dir_returns_empty(tmp_path):
-    assert federation.load_federation(tmp_path / "khong-co") == []
+    assert federation.load_federation(tmp_path / "missing-dir") == []
 
 
 def test_broken_entry_skipped(tmp_path):
@@ -70,6 +70,6 @@ def test_broken_entry_skipped(tmp_path):
 def test_broken_manifest_skipped_entry_kept(tmp_path):
     fed = tmp_path / "federation"
     _write_entry(fed, "nav-data", "nav-mapping")
-    (fed / "nav-data" / "manifests" / "hong.yaml").write_text("::::", encoding="utf-8")
+    (fed / "nav-data" / "manifests" / "broken.yaml").write_text("::::", encoding="utf-8")
     repos = federation.load_federation(fed)
     assert list(repos[0].manifests) == ["nav-mapping"]

@@ -16,7 +16,7 @@ def test_diff_shows_changed_section(git_kb):
 
 def test_diff_unknown_doc_exits_1(git_kb):
     result = runner.invoke(
-        app, ["diff", "khong-co", "--kb-dir", str(git_kb["kb"])]
+        app, ["diff", "missing-doc", "--kb-dir", str(git_kb["kb"])]
     )
     assert result.exit_code == 1
 

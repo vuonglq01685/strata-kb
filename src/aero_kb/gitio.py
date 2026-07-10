@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 class GitError(RuntimeError):
-    """Lỗi khi gọi git: không phải repo, rev không tồn tại, path ngoài repo."""
+    """Error calling git: not a repo, rev doesn't exist, path outside the repo."""
 
 
 def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -19,7 +19,7 @@ def git_root(start: Path) -> Path:
     proc = _run(cwd, "rev-parse", "--show-toplevel")
     if proc.returncode != 0:
         raise GitError(
-            f"'{start}' không nằm trong git repo — resolve/diff/doctor --context cần KB được version bằng Git"
+            f"'{start}' is not inside a git repo — resolve/diff/doctor --context need a KB versioned with Git"
         )
     return Path(proc.stdout.strip()).resolve()
 
@@ -27,7 +27,7 @@ def git_root(start: Path) -> Path:
 def head_commit(root: Path) -> str:
     proc = _run(root, "rev-parse", "--short", "HEAD")
     if proc.returncode != 0:
-        raise GitError(f"không lấy được HEAD: {proc.stderr.strip()}")
+        raise GitError(f"could not get HEAD: {proc.stderr.strip()}")
     return proc.stdout.strip()
 
 
@@ -40,18 +40,18 @@ def _relpath(root: Path, path: Path) -> str:
     try:
         return path.resolve().relative_to(root).as_posix()
     except ValueError as exc:
-        raise GitError(f"'{path}' nằm ngoài git repo '{root}'") from exc
+        raise GitError(f"'{path}' is outside git repo '{root}'") from exc
 
 
 def read_at(root: Path, rev: str, path: Path) -> str | None:
-    """Nội dung file tại một rev; None nếu file không tồn tại ở rev đó.
+    """File content at a given rev; None if the file doesn't exist at that rev.
 
-    Raise GitError nếu rev không tồn tại (phân biệt với file thiếu —
-    git show trả cùng exit code cho cả hai).
+    Raises GitError if the rev doesn't exist (distinguishes it from a missing
+    file — git show returns the same exit code for both).
     """
     rel = _relpath(root, path)
     if not rev_exists(root, rev):
-        raise GitError(f"rev '{rev}' không tồn tại trong repo (force-push hoặc shallow clone?)")
+        raise GitError(f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)")
     proc = _run(root, "show", f"{rev}:{rel}")
     if proc.returncode != 0:
         return None
@@ -70,52 +70,53 @@ def clone(url: str, dest: Path) -> None:
         ["git", "clone", url, str(dest)], capture_output=True, text=True
     )
     if proc.returncode != 0:
-        raise GitError(f"clone '{url}' thất bại: {proc.stderr.strip()}")
+        raise GitError(f"clone '{url}' failed: {proc.stderr.strip()}")
 
 
 def pull(root: Path) -> None:
     proc = _run(root, "pull", "--ff-only")
     if proc.returncode != 0:
-        raise GitError(f"pull thất bại: {proc.stderr.strip()}")
+        raise GitError(f"pull failed: {proc.stderr.strip()}")
 
 
 def pull_rebase(root: Path) -> None:
     proc = _run(root, "pull", "--rebase")
     if proc.returncode != 0:
-        raise GitError(f"pull --rebase thất bại: {proc.stderr.strip()}")
+        raise GitError(f"pull --rebase failed: {proc.stderr.strip()}")
 
 
 def commit_all(root: Path, message: str) -> bool:
-    """`git add -A` + commit; False nếu working tree sạch (không có gì để commit)."""
+    """`git add -A` + commit; False if the working tree is clean (nothing to commit)."""
     _run(root, "add", "-A")
     if not _run(root, "status", "--porcelain").stdout.strip():
         return False
     proc = _run(root, "commit", "-m", message)
     if proc.returncode != 0:
-        raise GitError(f"commit thất bại: {proc.stderr.strip() or proc.stdout.strip()}")
+        raise GitError(f"commit failed: {proc.stderr.strip() or proc.stdout.strip()}")
     return True
 
 
 def commit_paths(root: Path, message: str, paths: list[str]) -> bool:
-    """`git add -- <paths>` + commit giới hạn các path đó (path khác không bị đụng).
+    """`git add -- <paths>` + commit limited to those paths (other paths untouched).
 
-    False nếu working tree sạch trong phạm vi `paths` (không có gì để commit).
-    Dùng khi cần chỉ stage một thư mục con (vd federation/) để tránh commit
-    nhầm rác nằm ngoài phạm vi (vd cache .kb-work/ trong clone hub).
+    False if the working tree is clean within the `paths` scope (nothing to commit).
+    Use when only a subdirectory (e.g. federation/) should be staged, to avoid
+    accidentally committing stray files outside that scope (e.g. the .kb-work/
+    cache in a hub clone).
     """
     _run(root, "add", "--", *paths)
     if not _run(root, "status", "--porcelain", "--", *paths).stdout.strip():
         return False
     proc = _run(root, "commit", "-m", message, "--", *paths)
     if proc.returncode != 0:
-        raise GitError(f"commit thất bại: {proc.stderr.strip() or proc.stdout.strip()}")
+        raise GitError(f"commit failed: {proc.stderr.strip() or proc.stdout.strip()}")
     return True
 
 
 def push(root: Path) -> None:
     proc = _run(root, "push", "origin", "HEAD")
     if proc.returncode != 0:
-        raise GitError(f"push thất bại: {proc.stderr.strip()}")
+        raise GitError(f"push failed: {proc.stderr.strip()}")
 
 
 def has_remote(root: Path) -> bool:

@@ -50,7 +50,7 @@ def test_search_includes_hub_domain_docs(fixture_kb, hub_worktree):
     hub_hits = [r for r in results if r.source == "hub"]
     assert hub_hits
     assert hub_hits[0].doc_id == "arinc-424"
-    assert "Restrictive" in hub_hits[0].content  # full L2, không phải summary
+    assert "Restrictive" in hub_hits[0].content  # full L2, not summary
     assert "arinc-424 §5.3" in hub_hits[0].citation
 
 
@@ -67,7 +67,7 @@ def test_search_federation_returns_summary_with_pointer(fixture_kb, hub_worktree
 
 
 def test_local_wins_doc_id_collision(fixture_kb, hub_worktree):
-    # hub cũng có doc 'demo-doc' → query chỉ trả bản local
+    # hub also has a 'demo-doc' → query returns only the local version
     hub_kb = hub_worktree / ".kb"
     index = models.load_yaml_model(hub_kb / "index.yaml", models.KBIndex)
     index.docs.append(
@@ -102,12 +102,12 @@ def test_tag_filter_applies_across_sources(fixture_kb, hub_worktree):
     handle = HubHandle(root=hub_worktree)
     results = search(fixture_kb, "restrictive airspace", tags=["arinc424"], hub=handle)
     assert results
-    assert all(r.source == "hub" for r in results)  # local doc không có tag arinc424
+    assert all(r.source == "hub" for r in results)  # local doc doesn't have the arinc424 tag
 
 
 def test_get_section_falls_back_to_hub(fixture_kb, hub_worktree):
     handle = HubHandle(root=hub_worktree)
-    assert get_section(fixture_kb, "arinc-424", "5.3") is None  # không hub → không thấy
+    assert get_section(fixture_kb, "arinc-424", "5.3") is None  # no hub → not found
     result = get_section(fixture_kb, "arinc-424", "5.3", hub=handle)
     assert result is not None
     assert result.source == "hub"

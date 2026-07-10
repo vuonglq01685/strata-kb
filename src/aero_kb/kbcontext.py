@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class KBContextError(ValueError):
-    """Block kb-context thiếu hoặc sai format."""
+    """kb-context block is missing or malformed."""
 
 
 class KBRef(BaseModel):
@@ -38,7 +38,7 @@ def parse_ref(text: str) -> KBRef:
     m = _REF_RE.match(" ".join(text.split()))
     if not m:
         raise KBContextError(
-            f"ref '{text}' sai format — cần '<doc-id> §<section-id>', vd 'arinc-424 §5.3'"
+            f"ref '{text}' has the wrong format — expected '<doc-id> §<section-id>', e.g. 'arinc-424 §5.3'"
         )
     return KBRef(
         doc_id=m.group("doc"), section_id=m.group("sec"), repo_id=m.group("repo")
@@ -46,7 +46,7 @@ def parse_ref(text: str) -> KBRef:
 
 
 def _extract_block(text: str) -> str:
-    """Cắt block kb-context đầu tiên theo indent — chấp nhận block lẫn trong ticket."""
+    """Extract the first kb-context block by indent — tolerates a block embedded in a ticket."""
     lines = text.splitlines()
     for i, line in enumerate(lines):
         m = _KEY_RE.match(line)
@@ -63,7 +63,7 @@ def _extract_block(text: str) -> str:
                 break
             block.append(follow[indent:])
         return "\n".join(block)
-    raise KBContextError("không tìm thấy block 'kb-context:' trong text")
+    raise KBContextError("no 'kb-context:' block found in the text")
 
 
 def parse(text: str) -> KBContext:
@@ -71,27 +71,27 @@ def parse(text: str) -> KBContext:
     try:
         data = yaml.safe_load(block)
     except yaml.YAMLError as exc:
-        raise KBContextError(f"block kb-context không phải YAML hợp lệ: {exc}") from exc
+        raise KBContextError(f"kb-context block is not valid YAML: {exc}") from exc
     payload = (data or {}).get("kb-context")
     if not isinstance(payload, dict):
-        raise KBContextError("block kb-context rỗng hoặc sai cấu trúc")
+        raise KBContextError("kb-context block is empty or malformed")
     version = str(payload.get("version") or "").strip()
     if not version:
-        raise KBContextError("kb-context thiếu 'version' (commit hash lúc BA viết)")
+        raise KBContextError("kb-context is missing 'version' (commit hash when the BA wrote it)")
     hub_version_raw = payload.get("hub_version")
     hub_version = str(hub_version_raw).strip() if hub_version_raw else None
     raw_refs = payload.get("refs") or []
     if not raw_refs:
-        raise KBContextError("kb-context thiếu 'refs' — phải cite ít nhất 1 section")
+        raise KBContextError("kb-context is missing 'refs' — must cite at least 1 section")
     if not isinstance(raw_refs, list):
         raise KBContextError(
-            "'refs' phải là danh sách YAML (mỗi ref một dòng '- ...')"
+            "'refs' must be a YAML list (one ref per line '- ...')"
         )
     refs = [parse_ref(str(r)) for r in raw_refs]
     raw_tags = payload.get("tags") or []
     if not isinstance(raw_tags, list):
         raise KBContextError(
-            "'tags' phải là danh sách YAML (mỗi tag một dòng '- ...' hoặc dạng [a, b])"
+            "'tags' must be a YAML list (one tag per line '- ...' or [a, b] form)"
         )
     tags = [str(t) for t in raw_tags]
     return KBContext(version=version, hub_version=hub_version, refs=refs, tags=tags)

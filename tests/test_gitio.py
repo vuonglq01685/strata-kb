@@ -32,7 +32,7 @@ def test_read_at_returns_old_content(git_kb):
 
 
 def test_read_at_missing_file_returns_none(git_kb):
-    path = git_kb["kb"] / "demo-doc" / "khong-ton-tai.md"
+    path = git_kb["kb"] / "demo-doc" / "does-not-exist.md"
     assert gitio.read_at(git_kb["root"], git_kb["rev1"], path) is None
 
 
@@ -43,7 +43,7 @@ def test_read_at_bad_rev_raises(git_kb):
 
 
 def test_read_at_path_outside_repo_raises(git_kb, tmp_path_factory):
-    outside = tmp_path_factory.mktemp("ngoai") / "x.md"
+    outside = tmp_path_factory.mktemp("outside") / "x.md"
     with pytest.raises(gitio.GitError):
         gitio.read_at(git_kb["root"], git_kb["rev1"], outside)
 
@@ -59,7 +59,7 @@ def test_is_dirty(git_kb):
 
 @pytest.fixture
 def bare_origin(tmp_path, run_git):
-    """Bare repo làm origin + một clone 'seed' đã commit 1 file."""
+    """Bare repo used as origin + a 'seed' clone that has committed 1 file."""
     bare = tmp_path / "origin.git"
     bare.mkdir()
     run_git(bare, "init", "--bare")
@@ -76,7 +76,7 @@ def test_clone_and_pull_roundtrip(tmp_path, run_git, bare_origin):
     dest = tmp_path / "clone2"
     gitio.clone(str(bare_origin["bare"]), dest)
     assert (dest / "a.txt").read_text(encoding="utf-8") == "v1"
-    # origin có commit mới → pull thấy được
+    # origin has a new commit → pull picks it up
     seed = bare_origin["seed"]
     (seed / "a.txt").write_text("v2", encoding="utf-8")
     run_git(seed, "add", "-A")
@@ -88,7 +88,7 @@ def test_clone_and_pull_roundtrip(tmp_path, run_git, bare_origin):
 
 def test_clone_bad_url_raises(tmp_path):
     with pytest.raises(gitio.GitError):
-        gitio.clone(str(tmp_path / "khong-ton-tai"), tmp_path / "dest")
+        gitio.clone(str(tmp_path / "does-not-exist"), tmp_path / "dest")
 
 
 def test_commit_all_returns_false_when_clean(bare_origin, run_git):
@@ -103,7 +103,7 @@ def test_commit_all_and_push(bare_origin, run_git, tmp_path):
     run_git(seed, "config", "user.name", "test")
     run_git(seed, "config", "user.email", "test@test.local")
     (seed / "b.txt").write_text("new", encoding="utf-8")
-    assert gitio.commit_all(seed, "them b") is True
+    assert gitio.commit_all(seed, "add b") is True
     gitio.push(seed)
     check = tmp_path / "check"
     gitio.clone(str(bare_origin["bare"]), check)
@@ -111,7 +111,7 @@ def test_commit_all_and_push(bare_origin, run_git, tmp_path):
 
 
 def test_push_rejected_then_pull_rebase_recovers(tmp_path, run_git, bare_origin):
-    # clone2 tụt hậu so với origin → push fail → pull_rebase → push OK
+    # clone2 lags behind origin → push fails → pull_rebase → push OK
     dest = tmp_path / "clone2"
     gitio.clone(str(bare_origin["bare"]), dest)
     run_git(dest, "config", "user.name", "test")
@@ -122,7 +122,7 @@ def test_push_rejected_then_pull_rebase_recovers(tmp_path, run_git, bare_origin)
     run_git(seed, "commit", "-m", "upstream")
     run_git(seed, "push", "origin", "HEAD")
     (dest / "c.txt").write_text("local", encoding="utf-8")
-    gitio.commit_all(dest, "them c")
+    gitio.commit_all(dest, "add c")
     with pytest.raises(gitio.GitError):
         gitio.push(dest)
     gitio.pull_rebase(dest)
@@ -138,15 +138,15 @@ def test_commit_paths_excludes_files_outside_paths(bare_origin, run_git):
     (seed / "outside.txt").write_text("out", encoding="utf-8")
     assert gitio.commit_paths(seed, "add federation", ["federation"]) is True
     status = run_git(seed, "status", "--porcelain")
-    assert "outside.txt" in status  # vẫn untracked, không bị commit nhầm
-    assert "federation" not in status  # đã commit, sạch
+    assert "outside.txt" in status  # still untracked, not committed by mistake
+    assert "federation" not in status  # committed, clean
 
 
 def test_commit_paths_returns_false_when_clean(bare_origin, run_git):
     seed = bare_origin["seed"]
     run_git(seed, "config", "user.name", "test")
     run_git(seed, "config", "user.email", "test@test.local")
-    # a.txt đã commit sẵn (bare_origin fixture) → không có gì đổi trong phạm vi
+    # a.txt is already committed (bare_origin fixture) → nothing changed in scope
     assert gitio.commit_paths(seed, "no-op", ["a.txt"]) is False
 
 

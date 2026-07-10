@@ -46,7 +46,7 @@ def test_ingest_creates_kb_and_reports_warnings(tmp_path: Path, monkeypatch):
         tmp_path / ".kb" / "arinc-424" / "_manifest.yaml", models.Manifest
     )
     assert [s.id for s in manifest.sections] == ["5", "5.3"]
-    assert "5.9" in result.output  # canh bao bookmark khong duoc cover
+    assert "5.9" in result.output  # bookmark-not-covered warning
 
 
 def test_status_lists_pending_sections(tmp_path: Path, monkeypatch):

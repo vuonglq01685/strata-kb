@@ -10,15 +10,15 @@ BLOCK = """kb-context:
   tags: [arinc424, airspace]
 """
 
-TICKET = f"""# TAL-1580 — Hiển thị pop-up Restrictive Airspace
+TICKET = f"""# TAL-1580 — Show Restrictive Airspace pop-up
 
-Là một dispatcher, tôi muốn click vào restrictive airspace.
+As a dispatcher, I want to click on a restrictive airspace.
 
 Acceptance criteria:
-- Hiển thị field P1 [arinc-424 §5.3]
+- Show field P1 [arinc-424 §5.3]
 
 {BLOCK}
-Ghi chú thêm sau block.
+Additional notes after the block.
 """
 
 
@@ -36,7 +36,7 @@ def test_parse_ref_without_section_mark():
 
 def test_parse_ref_invalid_raises_with_hint():
     with pytest.raises(kbcontext.KBContextError, match="§"):
-        kbcontext.parse_ref("chỉ-có-doc-id")
+        kbcontext.parse_ref("just-a-doc-id")
 
 
 def test_parse_pure_block():
@@ -54,7 +54,7 @@ def test_parse_block_embedded_in_ticket():
 
 def test_parse_missing_block_raises():
     with pytest.raises(kbcontext.KBContextError, match="kb-context"):
-        kbcontext.parse("ticket không có block nào")
+        kbcontext.parse("a ticket with no block at all")
 
 
 def test_parse_missing_version_raises():
@@ -75,8 +75,8 @@ def test_render_roundtrip():
 
 
 def test_render_roundtrip_leading_zero_version():
-    # Hash toàn chữ số với leading zero ("0123456") không được quote sẽ bị
-    # PyYAML parse thành số nguyên bát phân (octal), phá pin version.
+    # An all-digit hash with a leading zero ("0123456"), if left unquoted,
+    # gets parsed by PyYAML as an octal integer, corrupting the pinned version.
     ctx = kbcontext.KBContext(
         version="0123456", refs=[kbcontext.parse_ref("arinc-424 §5.3")]
     )
@@ -88,12 +88,12 @@ def test_render_roundtrip_leading_zero_version():
 
 
 def test_parse_refs_scalar_raises_with_hint():
-    with pytest.raises(kbcontext.KBContextError, match="danh sách"):
+    with pytest.raises(kbcontext.KBContextError, match="list"):
         kbcontext.parse("kb-context:\n  version: abc1234\n  refs: arinc-424 §5.3\n")
 
 
 def test_parse_tags_scalar_raises_with_hint():
-    with pytest.raises(kbcontext.KBContextError, match="danh sách"):
+    with pytest.raises(kbcontext.KBContextError, match="list"):
         kbcontext.parse(
             "kb-context:\n  version: abc1234\n  refs:\n    - a §1\n  tags: airspace\n"
         )

@@ -51,11 +51,11 @@ def test_build_fails_on_empty_summary(fixture_kb: Path):
 def test_build_fails_when_l3_table_missing_from_l2(fixture_kb: Path):
     l2_path = fixture_kb / "demo-doc" / "ch1-records.md"
     text = l2_path.read_text().replace("| P    | Prohibited |", "| P    | Permitted |")
-    # sua bang trong L2 -> khac L3 -> toan ven bang fail
+    # edit the table in L2 -> differs from L3 -> table integrity fails
     l2_path.write_text(text.replace("| P | Prohibited |", "| P | Permitted |"))
     report = build_kb(fixture_kb)
     assert not report.ok
-    assert any("bang" in e.lower() or "table" in e.lower() for e in report.errors)
+    assert any("table" in e.lower() for e in report.errors)
 
 
 def test_build_fails_when_section_missing_in_l2(fixture_kb: Path):

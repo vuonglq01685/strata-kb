@@ -9,7 +9,7 @@ from aero_kb.hub import HubHandle
 
 
 def _force_rmtree(path):
-    """rmtree chịu được file git object read-only trên Windows."""
+    """rmtree that tolerates read-only git object files on Windows."""
 
     def _on_rm_error(func, p, exc_info):
         os.chmod(p, stat.S_IWRITE)
@@ -42,7 +42,7 @@ def _fed_entry(hub_root, repo_id, source_commit, doc_id="local-doc"):
 def test_hub_unreachable_is_warning(git_kb):
     issues, stale = check_hub(git_kb["kb"], None)
     assert not _errors(issues)
-    assert any("không truy cập được" in w for w in _warnings(issues))
+    assert any("could not reach hub" in w for w in _warnings(issues))
     assert stale is False
 
 
@@ -62,8 +62,8 @@ def test_collision_local_hub_is_error_with_guidance(git_kb, hub_worktree):
     issues, _ = check_hub(git_kb["kb"], handle)
     collision = [e for e in _errors(issues) if "demo-doc" in e]
     assert collision
-    # hướng dẫn dọn dẹp từng bước phải nằm trong thông điệp
-    assert "xóa" in collision[0].lower()
+    # step-by-step cleanup guidance must be present in the message
+    assert "delete" in collision[0].lower()
     assert "kb context new" in collision[0]
 
 
@@ -71,7 +71,7 @@ def test_index_out_of_date_is_error(git_kb, hub_worktree):
     _fed_entry(hub_worktree, "repo-a", source_commit="0000000")
     handle = HubHandle(root=hub_worktree)
     issues, _ = check_hub(git_kb["kb"], handle, repo_id="repo-a")
-    assert any("lệch" in e for e in _errors(issues))
+    assert any("out of sync" in e for e in _errors(issues))
 
 
 def test_index_up_to_date_ok(git_kb, hub_worktree):
@@ -85,8 +85,8 @@ def test_index_up_to_date_ok(git_kb, hub_worktree):
 
 def test_not_published_is_warning(git_kb, hub_worktree):
     handle = HubHandle(root=hub_worktree)
-    issues, _ = check_hub(git_kb["kb"], handle, repo_id="chua-publish")
-    assert any("chưa publish" in w for w in _warnings(issues))
+    issues, _ = check_hub(git_kb["kb"], handle, repo_id="not-published")
+    assert any("has not published" in w for w in _warnings(issues))
 
 
 def test_federation_cross_collision_warning(git_kb, hub_worktree):
@@ -118,8 +118,8 @@ def test_cli_doctor_hub_collision_exit_1(git_kb, hub_worktree, monkeypatch):
 def test_cli_doctor_exit_2_when_hub_cache_stale_offline(
     git_kb, hub_worktree, tmp_path, run_git, monkeypatch
 ):
-    """Hub cache đã tạo nhưng origin biến mất (offline) → check_hub báo stale
-    → `kb doctor` exit 2 (không phải 1: đây là warning, không phải lỗi)."""
+    """Hub cache already created but origin disappears (offline) → check_hub
+    reports stale → `kb doctor` exits 2 (not 1: this is a warning, not an error)."""
     from typer.testing import CliRunner
 
     from aero_kb.cli import app
@@ -134,10 +134,10 @@ def test_cli_doctor_exit_2_when_hub_cache_stale_offline(
     monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
     monkeypatch.setenv("AERO_KB_HUB_TTL", "0")
 
-    handle = resolve_hub(str(bare))  # resolve 1 lần → tạo cache
+    handle = resolve_hub(str(bare))  # resolve once → creates the cache
     assert handle is not None and handle.stale is False
 
-    _force_rmtree(bare)  # origin "offline"
+    _force_rmtree(bare)  # origin goes "offline"
 
     monkeypatch.chdir(git_kb["root"])
     result = CliRunner().invoke(

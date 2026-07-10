@@ -27,7 +27,7 @@ def test_missing_token_401():
 
 
 def test_wrong_token_401():
-    resp = _client().get("/mcp", headers={"Authorization": "Bearer sai"})
+    resp = _client().get("/mcp", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 401
 
 
@@ -37,16 +37,17 @@ def test_correct_token_passes():
     assert resp.text == "ok"
 
 
-# --- F3: app HTTP thật (FastMCP streamable_http_app), không phải dummy app ---
+# --- F3: real HTTP app (FastMCP streamable_http_app), not the dummy app ---
 
 
 def test_http_initialize_handshake_real_app(fixture_kb):
-    """create_http_app thật nhận request MCP `initialize` qua middleware bearer.
+    """The real create_http_app accepts an MCP `initialize` request through the bearer middleware.
 
-    Dùng TestClient với lifespan (`with TestClient(app) as client`) để
-    session manager của FastMCP khởi động — nếu không, request treo/lỗi vì
-    session manager chưa chạy. Host header phải khớp allowlist DNS-rebinding
-    mặc định của FastMCP ("localhost:*"), nên dùng base_url có port rõ ràng.
+    Uses TestClient with lifespan (`with TestClient(app) as client`) so
+    FastMCP's session manager starts up — otherwise the request hangs/errors
+    because the session manager isn't running. The Host header must match
+    FastMCP's default DNS-rebinding allowlist ("localhost:*"), hence a
+    base_url with an explicit port.
     """
     from aero_kb.mcp import ServerConfig, create_http_app
 
@@ -71,7 +72,7 @@ def test_http_initialize_handshake_real_app(fixture_kb):
         assert resp.status_code == 200
         assert "serverInfo" in resp.text
 
-        # sai token trên app thật (không phải dummy) → middleware vẫn chặn 401
-        bad_headers = {**headers, "Authorization": "Bearer sai"}
+        # wrong token on the real app (not the dummy) → middleware still blocks with 401
+        bad_headers = {**headers, "Authorization": "Bearer wrong"}
         resp_bad = client.post("/mcp", json=payload, headers=bad_headers)
         assert resp_bad.status_code == 401

@@ -15,7 +15,7 @@ def test_search_finds_relevant_section_with_citation(fixture_kb: Path):
 
 def test_search_tag_filter_excludes_unmatched_docs(fixture_kb: Path):
     assert search(fixture_kb, "airspace", tags=["demo"])
-    # tag khong ton tai -> khong doc nao match -> khong co ket qua
+    # nonexistent tag -> no doc matches -> no results
     assert search(fixture_kb, "airspace", tags=["nonexistent-tag"]) == []
 
 
@@ -29,7 +29,7 @@ def test_search_respects_budget(fixture_kb: Path):
     unlimited = search(fixture_kb, "records structure", budget=100_000)
     assert len(unlimited) == 2
     tiny = search(fixture_kb, "records structure", budget=1)
-    assert len(tiny) == 1  # ket qua dau tien luon duoc tra, dung sau do
+    assert len(tiny) == 1  # the first result is always returned, then it stops
 
 
 def test_get_section_l2_and_l3(fixture_kb: Path):
@@ -52,4 +52,4 @@ def test_search_query_with_no_matching_terms_returns_empty(fixture_kb: Path):
 
 def test_search_excludes_sections_without_any_query_term(fixture_kb: Path):
     results = search(fixture_kb, "airspace designation", budget=100_000)
-    assert [r.section_id for r in results] == ["1.1"]  # 1.2 khong chua tu khoa nao
+    assert [r.section_id for r in results] == ["1.1"]  # 1.2 contains none of the query terms

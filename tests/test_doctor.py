@@ -28,13 +28,13 @@ def test_doc_in_index_without_manifest(fixture_kb: Path):
 
 
 def test_manifest_dir_not_in_index(fixture_kb: Path):
-    orphan = fixture_kb / "doc-la"
+    orphan = fixture_kb / "doc-x"
     orphan.mkdir()
     models.save_yaml_model(
-        orphan / "_manifest.yaml", models.Manifest(id="doc-la", title="Lạ")
+        orphan / "_manifest.yaml", models.Manifest(id="doc-x", title="Unknown")
     )
     issues = check_kb(fixture_kb)
-    assert any("doc-la" in m for m in _errors(issues))
+    assert any("doc-x" in m for m in _errors(issues))
 
 
 def test_section_file_missing(fixture_kb: Path):
@@ -45,15 +45,15 @@ def test_section_file_missing(fixture_kb: Path):
 
 def test_section_not_sliceable(fixture_kb: Path):
     l2 = fixture_kb / "demo-doc" / "ch1-records.md"
-    l2.write_text("## 9.9 Khac\n\nnoi dung khac", encoding="utf-8")
+    l2.write_text("## 9.9 Other\n\nother content", encoding="utf-8")
     issues = check_kb(fixture_kb)
     assert any("1.1" in m for m in _errors(issues))
 
 
 def test_orphan_md_file_warns(fixture_kb: Path):
-    (fixture_kb / "demo-doc" / "bo-roi.md").write_text("## x", encoding="utf-8")
+    (fixture_kb / "demo-doc" / "orphaned.md").write_text("## x", encoding="utf-8")
     issues = check_kb(fixture_kb)
-    assert any("bo-roi.md" in m for m in _warnings(issues))
+    assert any("orphaned.md" in m for m in _warnings(issues))
 
 
 def test_pending_sections_warn(fixture_kb: Path):
@@ -80,5 +80,5 @@ def test_check_context_broken_is_error(git_kb):
 
 
 def test_check_context_bad_block_is_error(git_kb):
-    issues, results = check_context(git_kb["kb"], "không có block")
+    issues, results = check_context(git_kb["kb"], "no block here")
     assert _errors(issues) and results == []

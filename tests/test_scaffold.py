@@ -49,8 +49,8 @@ def test_scaffold_writes_l3_l2_manifest_index(tmp_path: Path):
 
     l2 = (kb / "arinc-424" / "ch5-navigation-data.md").read_text()
     assert "<!-- TODO:summarize 5.3 -->" in l2
-    assert "Prohibited" in l2  # bang duoc code chep nguyen van vao L2
-    assert "Airspace body." not in l2  # van xuoi KHONG nam trong khung L2
+    assert "Prohibited" in l2  # table is copied verbatim into L2 by code
+    assert "Airspace body." not in l2  # prose is NOT included in the L2 scaffold
 
     manifest = models.load_yaml_model(
         kb / "arinc-424" / "_manifest.yaml", models.Manifest

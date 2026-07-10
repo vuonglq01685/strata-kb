@@ -34,10 +34,10 @@ class QueryResult:
 class _Candidate:
     doc: models.IndexEntry
     sec: models.SectionEntry
-    kb_dir: Path | None  # None = federation, không có L2 để nạp
+    kb_dir: Path | None  # None = federation, no L2 to load
     source: str
     citation: str
-    pointer: str = ""  # dòng chỉ về repo nguồn (chỉ remote)
+    pointer: str = ""  # line pointing back to the source repo (remote only)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -102,7 +102,7 @@ def _federation_candidates(
                 pointer = (
                     f"[remote] repo '{rid}'"
                     + (f" ({repo.meta.source_url})" if repo.meta.source_url else "")
-                    + " — chỉ có summary L1; đọc sâu tại repo nguồn."
+                    + " — L1 summary only; read the full content at the source repo."
                 )
                 out.append(
                     _Candidate(
@@ -129,7 +129,7 @@ def _gather_candidates(
     if hub is None:
         return candidates
     local_ids = {c.doc.id for c in candidates}
-    # local thắng khi collision: đọc index local đầy đủ (không lọc tag) để chặn
+    # local wins on collision: read the full local index (unfiltered by tag) to block
     index_path = kb_dir / "index.yaml"
     if index_path.exists():
         local_ids |= {
@@ -149,7 +149,7 @@ def search(
     budget: int = 2000,
     hub: "HubHandle | None" = None,
     semantic: bool = False,
-    embedder=None,  # aero_kb.embed.Embedder | None — tiêm được cho test
+    embedder=None,  # aero_kb.embed.Embedder | None — injectable for tests
 ) -> list[QueryResult]:
     corpus = _gather_candidates(kb_dir, tags, hub)
     if not corpus:
@@ -214,7 +214,7 @@ def _semantic_fallback(
     budget: int,
     embedder,
 ) -> list[QueryResult]:
-    """Bước 3 routing: KNN trên sqlite-vec, chỉ local + hub (có L2)."""
+    """Routing step 3: KNN over sqlite-vec, local + hub only (have L2)."""
     from aero_kb import embed as embed_mod
 
     if embedder is None:
@@ -223,7 +223,7 @@ def _semantic_fallback(
         return []
     by_key: dict[tuple[str, str, str], _Candidate] = {}
     for c in corpus:
-        if c.kb_dir is not None:  # bỏ federation
+        if c.kb_dir is not None:  # skip federation
             by_key[(c.source, c.doc.id, c.sec.id)] = c
     hits: list[tuple[str, str, str, float]] = []  # source, doc, sec, score
     stores: list[tuple[str, Path, Path]] = [
@@ -238,8 +238,8 @@ def _semantic_fallback(
                 db_path, embedder, text
             ):
                 hits.append((source, doc_id, sec_id, score))
-        except Exception as exc:  # embedding là tăng cường — không bao giờ gãy query
-            logger.warning("semantic search lỗi (%s) — bỏ qua: %s", source, exc)
+        except Exception as exc:  # embedding is best-effort — must never break the query
+            logger.warning("semantic search error (%s) — skipping: %s", source, exc)
     results: list[QueryResult] = []
     used = 0
     for source, doc_id, sec_id, score in sorted(hits, key=lambda h: -h[3]):
@@ -306,6 +306,6 @@ def get_section(
     if result is not None:
         return result
     if hub is not None and (hub.kb_dir / doc_id / "_manifest.yaml").exists():
-        # local thắng: chỉ rơi xuống hub khi local không có doc này
+        # local wins: only fall through to the hub when local has no such doc
         return _get_section_in(hub.kb_dir, doc_id, section_id, level, "hub")
     return None

@@ -35,13 +35,13 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
             path = doc_dir / name
             if not path.exists():
                 issues.append(
-                    Issue("error", f"{doc_id} §{sec.id}: thiếu file {layer} '{name}'")
+                    Issue("error", f"{doc_id} §{sec.id}: missing {layer} file '{name}'")
                 )
             elif slice_section(path.read_text(encoding="utf-8"), sec.id) is None:
                 issues.append(
                     Issue(
                         "error",
-                        f"{doc_id} §{sec.id}: không slice được section trong '{name}'",
+                        f"{doc_id} §{sec.id}: could not slice section in '{name}'",
                     )
                 )
     if pending:
@@ -49,7 +49,7 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
     for f in sorted(doc_dir.glob("*.md")):
         if f.name not in referenced:
             issues.append(
-                Issue("warning", f"{doc_id}: file mồ côi '{f.name}' không thuộc manifest")
+                Issue("warning", f"{doc_id}: orphan file '{f.name}' not in manifest")
             )
     return issues
 
@@ -57,7 +57,7 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
 def check_kb(kb_dir: Path) -> list[Issue]:
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
-        return [Issue("error", f"không có index.yaml trong '{kb_dir}'")]
+        return [Issue("error", f"no index.yaml in '{kb_dir}'")]
     index = models.load_yaml_model(index_path, models.KBIndex)
     index_ids = {d.id for d in index.docs}
 
@@ -67,7 +67,7 @@ def check_kb(kb_dir: Path) -> list[Issue]:
             issues.append(
                 Issue(
                     "error",
-                    f"doc '{entry.id}' có trong index nhưng thiếu _manifest.yaml",
+                    f"doc '{entry.id}' is in the index but missing _manifest.yaml",
                 )
             )
             continue
@@ -78,7 +78,7 @@ def check_kb(kb_dir: Path) -> list[Issue]:
             issues.append(
                 Issue(
                     "error",
-                    f"doc '{child.name}' có manifest nhưng không có trong index.yaml",
+                    f"doc '{child.name}' has a manifest but is not in index.yaml",
                 )
             )
     return issues
@@ -106,30 +106,30 @@ def check_context(
 
 
 _COLLISION_GUIDE = (
-    "doc '{doc}' có ở cả KB cục bộ lẫn hub — local đang thắng khi query. "
-    "Dọn dẹp: (1) xóa thư mục .kb/{doc}/ và entry '{doc}' trong .kb/index.yaml; "
-    "(2) commit; ref đã pin vẫn resolve theo version cũ; "
-    "(3) `kb context new` từ đó sẽ tự pin qua hub_version."
+    "doc '{doc}' exists in both the local KB and the hub — local wins on query. "
+    "Clean up: (1) delete the .kb/{doc}/ directory and the '{doc}' entry in .kb/index.yaml; "
+    "(2) commit; pinned refs still resolve to the old version; "
+    "(3) `kb context new` from then on will pin via hub_version automatically."
 )
 
 
 def check_hub(
     kb_dir: Path, handle: "HubHandle | None", repo_id: str | None = None
 ) -> tuple[list[Issue], bool]:
-    """Kiểm tra sức khỏe liên quan hub. Trả (issues, hub_stale)."""
+    """Check hub-related health. Returns (issues, hub_stale)."""
     from aero_kb.federation import load_federation
 
     if handle is None:
         return (
-            [Issue("warning", "không truy cập được hub — chạy với KB cục bộ")],
+            [Issue("warning", "could not reach hub — running with local KB")],
             False,
         )
     issues: list[Issue] = []
     hub_stale = False
     if handle.stale:
-        age = f"~{handle.age_seconds:.0f}s" if handle.age_seconds else "không rõ"
+        age = f"~{handle.age_seconds:.0f}s" if handle.age_seconds else "unknown"
         issues.append(
-            Issue("warning", f"hub cache stale (không pull được, tuổi {age})")
+            Issue("warning", f"hub cache is stale (pull failed, age {age})")
         )
         hub_stale = True
 
@@ -153,7 +153,7 @@ def check_hub(
         entry = next((r for r in repos if r.meta.repo_id == repo_id), None)
         if entry is None:
             issues.append(
-                Issue("warning", f"repo '{repo_id}' chưa publish index lên hub")
+                Issue("warning", f"repo '{repo_id}' has not published its index to the hub")
             )
         else:
             try:
@@ -165,9 +165,9 @@ def check_hub(
                 issues.append(
                     Issue(
                         "error",
-                        f"index trên hub lệch: federation/{repo_id} pin "
-                        f"{entry.meta.source_commit}, repo đang ở {head} — "
-                        "CI publish fail hoặc chưa chạy (`kb publish` để đồng bộ)",
+                        f"hub index out of sync: federation/{repo_id} is pinned at "
+                        f"{entry.meta.source_commit}, repo is now at {head} — "
+                        "CI publish failed or hasn't run yet (run `kb publish` to sync)",
                     )
                 )
     counts = Counter(d.id for r in repos for d in r.index.docs)
@@ -176,8 +176,8 @@ def check_hub(
             issues.append(
                 Issue(
                     "warning",
-                    f"doc-id '{doc_id}' xuất hiện ở {n} repo federation — "
-                    "query vẫn phân biệt được theo repo-id nhưng nên đổi tên",
+                    f"doc-id '{doc_id}' appears in {n} federation repos — "
+                    "query still disambiguates by repo-id, but consider renaming",
                 )
             )
     return issues, hub_stale
