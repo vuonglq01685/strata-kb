@@ -133,4 +133,6 @@ def test_render_resolved_marks_status(git_kb):
     text = render_resolved(results, git_kb["rev1"])
     assert f"@ {git_kb['rev1']}] status=stale" in text
     assert "status=ok" in text
-    assert "kb diff demo-doc" in text  # gợi ý xem thay đổi cho ref stale
+    # gợi ý xem thay đổi cho ref stale phải kèm --against đúng rev pin
+    # (bare `kb diff` mặc định --against HEAD → worktree sạch báo sai)
+    assert f"kb diff demo-doc --against {git_kb['rev1']}" in text
