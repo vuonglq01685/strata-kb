@@ -109,8 +109,29 @@ def test_repeated_chapter_heading_reopens_node():
     units = build_units(items)
     ids = [u.id for u in units]
     assert ids == ["5", "5.1", "5.2"]  # khong nhan doi '5'
+    # '5' dang o tren stack khi running header lap lai -> no-op:
+    # noi dung tiep theo thuoc ve section dang mo (5.1), khong ve '5'.
+    u51 = next(u for u in units if u.id == "5.1")
+    assert "Page two chapter intro." in u51.body_md
+
+
+def test_running_header_does_not_steal_continuation_text():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),
+        DocItem("text", "Chapter intro."),
+        DocItem("heading", "5.45 Some Field", 2),
+        DocItem("text", big),
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),  # running header giua trang
+        DocItem("text", "Continuation of 5.45 content."),
+        DocItem("heading", "5.46 Next Field", 2),
+        DocItem("text", big),
+    ]
+    units = build_units(items)
+    u545 = next(u for u in units if u.id == "5.45")
     u5 = next(u for u in units if u.id == "5")
-    assert "Page two chapter intro." in u5.body_md
+    assert "Continuation of 5.45 content." in u545.body_md
+    assert "Continuation of 5.45 content." not in u5.body_md
 
 
 def test_repeated_section_heading_merges_content():
