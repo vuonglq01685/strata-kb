@@ -15,7 +15,8 @@ dependencies = [
 
 [project.optional-dependencies]
 ingest = ["docling>=2.0"]
-dev = ["pytest>=8.0", "anyio>=4.0"]
+dev = ["pytest>=8.0", "anyio>=4.0", "sqlite-vec>=0.1.6"]
+embed = ["sqlite-vec>=0.1.6", "fastembed>=0.3"]
 
 [project.scripts]
 kb = "aero_kb.cli:app"
