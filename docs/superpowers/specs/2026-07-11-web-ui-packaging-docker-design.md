@@ -86,7 +86,7 @@ trả về app cha thay vì chỉ app MCP. Đường stdio không đổi.
 | `GET /api/docs/{doc}` | L1 — manifest: section (id, title, summary, status) |
 | `GET /api/docs/{doc}/sections/{section}?level=l2\|l3` | Nội dung 1 section + citation + số token |
 | `GET /api/search?q=…&tags=…&budget=…` | Kết quả BM25 như `kb_search`, JSON có cấu trúc (citation, score, tokens, content) |
-| `GET /api/health` | Trạng thái server + tuổi cache hub. **Không cần auth** (dùng cho healthcheck) |
+| `GET /api/health` | Trạng thái server + hub đã cấu hình hay chưa. **Không cần auth** (dùng cho healthcheck; phải rẻ — không được kéo theo git pull của hub) |
 
 Tham số `tags` là danh sách phân tách bằng dấu phẩy; `budget` mặc định 2000, giới hạn
 trên 20000; `level` mặc định `l2`.
@@ -116,7 +116,8 @@ HTML-escape trước khi chèn vào template (chống XSS từ nội dung KB).
 - `GET /ui/login`: form dán token. `POST /ui/login`: token đúng → set cookie
   `aero_kb_token` (HttpOnly, SameSite=Lax) → redirect `/ui`; token sai → hiện lại form
   với thông báo lỗi (không tiết lộ gì thêm).
-- Route không cần auth: đúng 2 cái — `/api/health` và `/ui/login`.
+- Route không cần auth: `/api/health`, `/ui/login`, và asset tĩnh `/ui/static/*`
+  (chỉ CSS — trang login cần nó; không phải dữ liệu KB).
 - Request tới `/ui/*` chưa có auth → redirect 302 về `/ui/login`;
   request tới `/api/*` và `/mcp` chưa có auth → 401 JSON như hiện tại.
 - Token vẫn lấy từ env `AERO_KB_HTTP_TOKEN`; thiếu env → từ chối khởi động
@@ -157,7 +158,7 @@ Nguyên tắc:
 - Template nhúng trong package tại `src/aero_kb/templates/init/`, đọc bằng
   `importlib.resources` (cùng cơ chế với web templates).
 - Không tự chạy `git init` hay commit.
-- Kết thúc in bước tiếp theo: `kb ingest source/<file>.pdf --doc-id <id>`.
+- Kết thúc in bước tiếp theo: `kb ingest source/<file>.pdf --id <id>`.
 - Nghiệm thu: `kb doctor` pass ngay trên bộ khung rỗng vừa tạo.
 
 ## 6. Docker
@@ -177,7 +178,7 @@ Nguyên tắc:
 ```yaml
 services:
   hub:
-    image: ghcr.io/<org>/aero-kb:latest   # dev: thay bằng build: .
+    image: ghcr.io/vuonglq01685/aero-kb:latest   # dev: thay bằng build: .
     ports: ["8321:8321"]
     env_file: .env                        # AERO_KB_HTTP_TOKEN
     volumes:
@@ -190,7 +191,6 @@ volumes:
   kb-model-cache:
 ```
 
-`<org>` được chốt khi implement theo GitHub org/user thật của repo.
 
 ### 6.3. Trải nghiệm người dùng mới
 
@@ -198,7 +198,7 @@ volumes:
 pip install aero-kb
 kb init && cp .env.example .env    # sửa token
 docker compose up -d               # hub chạy: http://localhost:8321/ui
-docker compose run --rm hub kb ingest source/my-doc.pdf --doc-id my-doc
+docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc
 ```
 
 ## 7. Đóng gói & publish
