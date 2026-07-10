@@ -24,7 +24,7 @@ def test_parse_args_defaults():
     assert config.hub is None
 
 
-def test_parse_args_hub_kept_but_inactive():
+def test_parse_args_hub():
     config = parse_args(["--kb", "x/.kb", "--hub", "git@host:kb-hub.git"])
     assert config.hub == "git@host:kb-hub.git"
 
@@ -101,3 +101,51 @@ async def test_kb_resolve_bad_block_returns_error_text(fixture_kb):
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool("kb_resolve", {"kb_context": "khong co block"})
         assert "kb-context" in _text(result)
+
+
+# --- Phase 3: hub kích hoạt ---
+
+
+def test_parse_args_transport_defaults():
+    config = parse_args([])
+    assert config.transport == "stdio"
+    assert config.port == 8321
+
+
+def test_parse_args_http():
+    config = parse_args(["--transport", "http", "--host", "0.0.0.0", "--port", "9000"])
+    assert config.transport == "http"
+    assert config.host == "0.0.0.0"
+    assert config.port == 9000
+
+
+@pytest.mark.anyio
+async def test_kb_search_reaches_hub_docs(fixture_kb, hub_worktree):
+    server = create_server(
+        ServerConfig(kb_dir=fixture_kb, hub=str(hub_worktree))
+    )
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search", {"query": "restrictive airspace designation"}
+        )
+        assert "arinc-424 §5.3" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_get_section_falls_back_to_hub(fixture_kb, hub_worktree):
+    server = create_server(
+        ServerConfig(kb_dir=fixture_kb, hub=str(hub_worktree))
+    )
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_get_section", {"doc": "arinc-424", "section": "5.3"}
+        )
+        assert "Restrictive" in _text(result)
+
+
+def test_main_http_without_token_fails_fast(monkeypatch):
+    from aero_kb.mcp import main
+
+    monkeypatch.delenv("AERO_KB_HTTP_TOKEN", raising=False)
+    with pytest.raises(SystemExit):
+        main(["--transport", "http"])
