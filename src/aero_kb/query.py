@@ -62,15 +62,25 @@ def search(
     if not corpus:
         return []
 
-    bm25 = BM25Plus([_tokenize(f"{s.title} {s.summary}") for _, s in corpus])
-    scores = bm25.get_scores(_tokenize(text))
-    ranked = sorted(zip(corpus, scores), key=lambda pair: -pair[1])
+    section_tokens = [_tokenize(f"{s.title} {s.summary}") for _, s in corpus]
+    bm25 = BM25Plus(section_tokens)
+    query_token_list = _tokenize(text)
+    query_tokens = set(query_token_list)
+    scores = bm25.get_scores(query_token_list)
+    ranked = sorted(
+        zip(corpus, section_tokens, scores), key=lambda triple: -triple[2]
+    )
 
     results: list[QueryResult] = []
     used = 0
-    for (doc, sec), score in ranked:
+    for (doc, sec), tokens, score in ranked:
         if score <= 0:
             break
+        if not query_tokens & set(tokens):
+            # BM25Plus adds an idf*delta baseline to every in-vocabulary
+            # query term, so sections sharing zero tokens with the query
+            # can still score > 0. Skip them explicitly.
+            continue
         l2_path = kb_dir / doc.id / f"{sec.file}.md"
         if not l2_path.exists():
             continue

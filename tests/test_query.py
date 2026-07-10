@@ -44,3 +44,12 @@ def test_get_section_l2_and_l3(fixture_kb: Path):
 def test_get_section_missing_returns_none(fixture_kb: Path):
     assert get_section(fixture_kb, "demo-doc", "9.9") is None
     assert get_section(fixture_kb, "no-such-doc", "1.1") is None
+
+
+def test_search_query_with_no_matching_terms_returns_empty(fixture_kb: Path):
+    assert search(fixture_kb, "zzz qqq nonexistent") == []
+
+
+def test_search_excludes_sections_without_any_query_term(fixture_kb: Path):
+    results = search(fixture_kb, "airspace designation", budget=100_000)
+    assert [r.section_id for r in results] == ["1.1"]  # 1.2 khong chua tu khoa nao
