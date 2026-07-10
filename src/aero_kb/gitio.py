@@ -96,6 +96,22 @@ def commit_all(root: Path, message: str) -> bool:
     return True
 
 
+def commit_paths(root: Path, message: str, paths: list[str]) -> bool:
+    """`git add -- <paths>` + commit giới hạn các path đó (path khác không bị đụng).
+
+    False nếu working tree sạch trong phạm vi `paths` (không có gì để commit).
+    Dùng khi cần chỉ stage một thư mục con (vd federation/) để tránh commit
+    nhầm rác nằm ngoài phạm vi (vd cache .kb-work/ trong clone hub).
+    """
+    _run(root, "add", "--", *paths)
+    if not _run(root, "status", "--porcelain", "--", *paths).stdout.strip():
+        return False
+    proc = _run(root, "commit", "-m", message, "--", *paths)
+    if proc.returncode != 0:
+        raise GitError(f"commit thất bại: {proc.stderr.strip() or proc.stdout.strip()}")
+    return True
+
+
 def push(root: Path) -> None:
     proc = _run(root, "push", "origin", "HEAD")
     if proc.returncode != 0:

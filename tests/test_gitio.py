@@ -129,6 +129,27 @@ def test_push_rejected_then_pull_rebase_recovers(tmp_path, run_git, bare_origin)
     gitio.push(dest)
 
 
+def test_commit_paths_excludes_files_outside_paths(bare_origin, run_git):
+    seed = bare_origin["seed"]
+    run_git(seed, "config", "user.name", "test")
+    run_git(seed, "config", "user.email", "test@test.local")
+    (seed / "federation").mkdir()
+    (seed / "federation" / "f.txt").write_text("in", encoding="utf-8")
+    (seed / "outside.txt").write_text("out", encoding="utf-8")
+    assert gitio.commit_paths(seed, "add federation", ["federation"]) is True
+    status = run_git(seed, "status", "--porcelain")
+    assert "outside.txt" in status  # vẫn untracked, không bị commit nhầm
+    assert "federation" not in status  # đã commit, sạch
+
+
+def test_commit_paths_returns_false_when_clean(bare_origin, run_git):
+    seed = bare_origin["seed"]
+    run_git(seed, "config", "user.name", "test")
+    run_git(seed, "config", "user.email", "test@test.local")
+    # a.txt đã commit sẵn (bare_origin fixture) → không có gì đổi trong phạm vi
+    assert gitio.commit_paths(seed, "no-op", ["a.txt"]) is False
+
+
 def test_has_remote_and_remote_url(bare_origin, fixture_kb, run_git):
     assert gitio.has_remote(bare_origin["seed"]) is True
     assert gitio.remote_url(bare_origin["seed"]).endswith("origin.git")

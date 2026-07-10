@@ -1,6 +1,7 @@
 import pytest
 
 from aero_kb import federation, gitio, models
+from aero_kb import hub as hub_mod
 from aero_kb.publish import PublishError, PublishReport, publish
 
 
@@ -102,3 +103,54 @@ def test_cli_publish_error_exit_1(git_kb, tmp_path, monkeypatch):
     monkeypatch.chdir(git_kb["root"])
     result = CliRunner().invoke(app, ["publish", "--hub", str(tmp_path / "x.git")])
     assert result.exit_code == 1
+
+
+# --- F1: sanitize repo_id trước rmtree (path traversal) ---
+
+
+def test_publish_repo_id_path_traversal_rejected(git_kb, hub_worktree):
+    with pytest.raises(PublishError):
+        publish(git_kb["kb"], str(hub_worktree), repo_id="../evil")
+    # không có tác dụng phụ trên filesystem: không thư mục nào bị tạo/xóa
+    # ngoài federation/ hợp lệ của hub_worktree
+    assert not (hub_worktree.parent / "evil").exists()
+    assert not (hub_worktree / "federation" / "evil").exists()
+
+
+def test_publish_repo_id_dotdot_rejected(git_kb, hub_worktree):
+    with pytest.raises(PublishError):
+        publish(git_kb["kb"], str(hub_worktree), repo_id="..")
+    # hub_worktree bản thân vẫn nguyên vẹn (không bị rmtree nhầm thành hub root)
+    assert (hub_worktree / ".kb" / "index.yaml").exists()
+    assert (hub_worktree / "federation").is_dir()
+
+
+def test_publish_repo_id_traversal_no_filesystem_effect(git_kb, hub_worktree):
+    before = sorted(p.name for p in hub_worktree.iterdir())
+    with pytest.raises(PublishError):
+        publish(git_kb["kb"], str(hub_worktree), repo_id="../../evil")
+    after = sorted(p.name for p in hub_worktree.iterdir())
+    assert before == after
+
+
+# --- F2: publish chỉ stage federation/ (không push rác .kb-work/embeddings.db) ---
+
+
+def test_publish_excludes_kb_work_garbage_from_hub(monkeypatch, tmp_path, git_kb, hub_bare):
+    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
+    # resolve_hub trước để lấy handle.root (clone cache) rồi rắc rác cache
+    # embeddings.db vào đó — mô phỏng `kb build` đã chạy trên worktree hub.
+    handle = hub_mod.resolve_hub(str(hub_bare))
+    assert handle is not None
+    (handle.root / ".kb-work").mkdir()
+    (handle.root / ".kb-work" / "embeddings.db").write_text("garbage", encoding="utf-8")
+
+    report = publish(git_kb["kb"], str(hub_bare), repo_id="repo-a")
+    assert report.pushed is True
+
+    check = tmp_path / "check"
+    gitio.clone(str(hub_bare), check)
+    assert not (check / ".kb-work").exists()
+    assert (check / "federation" / "repo-a" / "index.yaml").exists()
+    # rác vẫn còn cục bộ (untracked) — chỉ không bị đẩy lên hub
+    assert (handle.root / ".kb-work" / "embeddings.db").exists()
