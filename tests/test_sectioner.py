@@ -92,3 +92,60 @@ class TestBuildUnits:
         assert len(units) == 1
         assert units[0].title == "FOREWORD"
         assert units[0].id  # co id fallback, khong rong
+
+
+def test_repeated_chapter_heading_reopens_node():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),
+        DocItem("text", big),
+        DocItem("heading", "5.1 First Field", 2),
+        DocItem("text", big),
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),  # running page header
+        DocItem("text", "Page two chapter intro."),
+        DocItem("heading", "5.2 Second Field", 2),
+        DocItem("text", big),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert ids == ["5", "5.1", "5.2"]  # khong nhan doi '5'
+    u5 = next(u for u in units if u.id == "5")
+    assert "Page two chapter intro." in u5.body_md
+
+
+def test_repeated_section_heading_merges_content():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "5.7 Some Field", 2),
+        DocItem("text", big),
+        DocItem("heading", "5.7 Some Field", 2),  # page-break re-heading
+        DocItem("text", "Continued content."),
+    ]
+    units = build_units(items)
+    assert [u.id for u in units] == ["5.7"]
+    assert "Continued content." in units[0].body_md
+
+
+def test_label_heading_with_colon_demoted_to_text():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "5.93 Facility Characteristics", 2),
+        DocItem("text", big),
+        DocItem("heading", "Source/Content:", 3),  # label bi Docling nhan nham la heading
+        DocItem("text", "Derived from official sources."),
+    ]
+    units = build_units(items)
+    assert [u.id for u in units] == ["5.93"]
+    body = units[0].body_md
+    assert "**Source/Content:**" in body
+    assert "Derived from official sources." in body
+
+
+def test_unmatched_heading_without_colon_still_fallback():
+    items = [
+        DocItem("heading", "FOREWORD", 1),
+        DocItem("text", "Foreword body. " * 70),
+    ]
+    units = build_units(items)
+    assert len(units) == 1
+    assert units[0].title == "FOREWORD"

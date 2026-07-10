@@ -68,23 +68,42 @@ def _build_tree(items: list[DocItem]) -> _Node:
     root = _Node(id="", title="", depth=0)
     stack = [root]
     fallback_seq = 0
+    # sid -> saved stack path (root..node) from when the node was first seen.
+    # Lets a repeated heading (e.g. a running page header) reopen its
+    # original node instead of spawning a duplicate.
+    seen: dict[str, list[_Node]] = {}
     for item in items:
         if item.kind == "heading":
             parsed = parse_section_id(item.text)
             if parsed:
                 sid, title = parsed
+                if sid in seen:
+                    stack = list(seen[sid])
+                    continue
                 depth = _depth_of(sid)
+                while stack[-1].depth >= depth:
+                    stack.pop()
+                node = _Node(id=sid, title=title, depth=depth)
+                stack[-1].children.append(node)
+                stack.append(node)
+                seen[sid] = list(stack)
             else:
+                normalized = " ".join(item.text.split())
+                if normalized.endswith(":"):
+                    # Bold field label misclassified as a heading (e.g.
+                    # "Source/Content:") -- demote to text in current node.
+                    stack[-1].body.append(f"**{normalized}**")
+                    continue
                 fallback_seq += 1
                 parent = stack[-1]
                 sid = f"{parent.id}-x{fallback_seq}" if parent.id else f"x{fallback_seq}"
-                title = " ".join(item.text.split())
+                title = normalized
                 depth = parent.depth + 1
-            while stack[-1].depth >= depth:
-                stack.pop()
-            node = _Node(id=sid, title=title, depth=depth)
-            stack[-1].children.append(node)
-            stack.append(node)
+                while stack[-1].depth >= depth:
+                    stack.pop()
+                node = _Node(id=sid, title=title, depth=depth)
+                stack[-1].children.append(node)
+                stack.append(node)
         else:
             if item.text.strip():
                 stack[-1].body.append(item.text.strip())
