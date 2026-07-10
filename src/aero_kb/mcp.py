@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hmac
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +13,7 @@ from mcp.server.fastmcp import FastMCP as MCPServer
 from aero_kb import gitio, kbcontext, models
 from aero_kb.query import get_section, search
 from aero_kb.resolve import render_resolved, resolve_refs
+from aero_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
 
 @dataclass
@@ -82,35 +82,6 @@ def create_server(config: ServerConfig) -> MCPServer:
         return render_resolved(results)
 
     return mcp
-
-
-class BearerAuthMiddleware:
-    """Reject any HTTP request missing/mismatching 'Authorization: Bearer <token>' → 401."""
-
-    def __init__(self, app, token: str) -> None:
-        self.app = app
-        self.token = token
-
-    async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] == "http":
-            headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-            auth = headers.get("authorization", "")
-            if not hmac.compare_digest(auth, f"Bearer {self.token}"):
-                await send(
-                    {
-                        "type": "http.response.start",
-                        "status": 401,
-                        "headers": [(b"content-type", b"application/json")],
-                    }
-                )
-                await send(
-                    {
-                        "type": "http.response.body",
-                        "body": b'{"error": "unauthorized"}',
-                    }
-                )
-                return
-        await self.app(scope, receive, send)
 
 
 def create_http_app(config: ServerConfig, token: str):
