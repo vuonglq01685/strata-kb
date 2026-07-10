@@ -5,11 +5,12 @@ from aero_kb.diff import diff_doc, render_diff
 
 
 def test_changed_summary_detected(git_kb):
-    # fixture: §1.1's summary (L1) changes between rev1 and the worktree; L3 stays the same
+    # fixture: §1.1's summary (L1) + prose (L2) change between rev1 and the worktree; L3 stays the same
     report = diff_doc(git_kb["kb"], "demo-doc", against=git_kb["rev1"])
     assert [c.section_id for c in report.changed] == ["1.1"]
     assert report.changed[0].summary_changed is True
     assert report.changed[0].content_changed is False
+    assert report.changed[0].prose_changed is True
     assert not report.added and not report.removed
     assert report.has_changes
 
@@ -63,3 +64,22 @@ def test_render_diff_groups(git_kb):
     text = render_diff(report)
     assert "~ §1.1" in text
     assert "summary" in text
+
+
+def test_prose_changed_when_l2_edited(git_kb):
+    # edit ONLY the L2 prose of §1.2 — summary (L1) and raw (L3) untouched
+    l2 = git_kb["kb"] / "demo-doc" / "ch1-records.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace(
+            "airway record structure, route identifiers.",
+            "airway record structure, REVISED identifiers.",
+        ),
+        encoding="utf-8",
+    )
+    report = diff_doc(git_kb["kb"], "demo-doc", against="HEAD")
+    assert [c.section_id for c in report.changed] == ["1.2"]
+    change = report.changed[0]
+    assert change.prose_changed is True
+    assert change.summary_changed is False
+    assert change.content_changed is False
+    assert "prose" in render_diff(report)

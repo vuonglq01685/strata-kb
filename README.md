@@ -211,6 +211,7 @@ Bảng dưới liệt kê các lệnh cốt lõi (có từ Phase 1) theo đúng 
 | 6 | `kb get` | Lấy chính xác 1 section theo id (biết trước id) | Khi đã biết rõ mình cần section nào |
 | 7 | `kb stats` | Xem số liệu "từ" (token) từng tầng — bằng chứng tiết kiệm chi phí | Theo dõi, báo cáo |
 | 8 | `kb publish --hub <url\|path>` | Đẩy danh mục (L0) + mục lục (L1) của kho hiện tại lên kb-hub dùng chung — không đẩy nội dung tóm tắt/nguyên văn | CI tự động chạy mỗi khi có thay đổi trong `.kb/` (Phase 3) |
+| 9 | `kb approve` | Đóng dấu thẩm định: chuyển section `summarized → reviewed`. Dạng CI: `kb approve --all-changed --against <rev>` tự tìm các section thay đổi | Bình thường CI tự chạy sau khi PR merge vào `main` (workflow `kb-review`); chạy tay khi cần duyệt ngoài luồng PR |
 
 ### 7.1 `kb ingest` — nạp một PDF vào hệ thống
 
@@ -414,7 +415,8 @@ Bước 4 — Mở Pull Request trên GitHub
   → SME hàng không review (xem mục 9 — checklist review)
 
 Bước 5 — Merge
-  → Sau merge, các section chuyển trạng thái: summarized → reviewed
+  → CI (workflow kb-review) tự chạy `kb approve --all-changed` và commit lại:
+    các section vừa thay đổi chuyển trạng thái summarized → reviewed
   → Kho tri thức giờ đã có nội dung mới, sẵn sàng cho kb query
 ```
 
@@ -431,7 +433,7 @@ Nếu bạn được mời review một Pull Request thay đổi trong `.kb/`, �
 - [ ] **Câu tóm tắt 1 dòng trong `_manifest.yaml`** (tầng L1) — có nêu đúng "section này nói về cái gì" để sau này tìm kiếm ra được không?
 - [ ] Nếu thấy sai — **sửa trực tiếp trong file `.md` hoặc `.yaml` qua giao diện GitHub** (như sửa một tài liệu thường), rồi comment giải thích tại sao, hoặc yêu cầu người mở PR sửa lại.
 
-Sau khi PR được merge, phần bạn vừa duyệt sẽ chuyển trạng thái `status: reviewed` trong manifest — đánh dấu đây là nội dung đã qua thẩm định chuyên môn, không còn là bản nháp do AI viết.
+Sau khi PR được merge, CI (workflow `kb-review`) **tự động** chuyển các section vừa thay đổi sang `status: reviewed` trong manifest — đánh dấu đây là nội dung đã qua thẩm định chuyên môn, không còn là bản nháp do AI viết. Bạn không phải sửa tay dòng YAML nào.
 
 ---
 
@@ -455,6 +457,8 @@ Tính đến lần chạy thử nghiệm gần nhất (xem `docs/superpowers/spe
 - **Xác thực HTTP MCP mới dừng ở bearer token** (một chuỗi bí mật cố định), chưa có đăng nhập kiểu OAuth/SSO — đủ dùng trong mạng nội bộ/VPN hiện tại, nhưng chưa phù hợp để mở ra Internet công khai.
 - Việc điền tóm tắt vẫn cần con người mở Claude Code và kích hoạt — chưa hoàn toàn tự động chạy nền.
 - Một số ít section (khoảng 2,4% của chương 5 ARINC, 6/~250 mục) chưa trích xuất được do lỗi đọc PDF — cần SME đối chiếu thủ công khi gặp.
+- **`reviewed` nghĩa là "đã được merge vào `main`"**, không phải "có người thứ hai soi lại" — chỉ hợp lệ khi người dựng KB chính là SME (bối cảnh hiện tại). Nếu sau này người dựng KB ≠ người thẩm định, phải bật lại gate (CODEOWNERS + branch protection require review) trước khi tin vào ý nghĩa của `reviewed`. Xem `docs/superpowers/specs/2026-07-11-review-automation-design.md` §2.
+- **Trạng thái `reviewed` trên hub trễ một nhịp:** commit tự động của workflow `kb-review` không kích hoạt `kb-publish` (cơ chế chống lặp), nên bản snapshot trên kb-hub chỉ cập nhật `status` ở lần push nội dung kế tiếp. Không ảnh hưởng tra cứu (federation đọc tóm tắt L1, không đọc `status`).
 
 ---
 

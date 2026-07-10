@@ -1,0 +1,63 @@
+# Auto-mark sections reviewed after a PR merges into main.
+# Valid only while KB authors are the SMEs themselves ("merged = approved") —
+# see docs/superpowers/specs/2026-07-11-review-automation-design.md §2.
+name: kb-review
+on:
+  push:
+    branches: [main]
+    paths: [".kb/**"]
+
+# Serialize runs: two quick merges must not race each other's push.
+# Note: GitHub keeps only the newest queued run per group — in a rapid
+# burst of merges an intermediate push's flips may wait until its
+# sections are next touched. Acceptable at this team's merge frequency.
+concurrency:
+  group: kb-review
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    # Loop guard (layer 3): skip pushes authored by the bot itself.
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so `--against BEFORE` is always reachable.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Approve sections changed by this push
+        run: |
+          BEFORE="${{ github.event.before }}"
+          # Zero-SHA on force-push/branch-create → fall back to the merge
+          # commit's first parent; no parent at all → nothing to compare.
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+              || ! git rev-parse --verify --quiet "$BEFORE^{commit}" > /dev/null; then
+            if git rev-parse --verify --quiet "HEAD^" > /dev/null; then
+              BEFORE="HEAD^"
+            else
+              echo "No previous commit to compare against — skipping."
+              exit 0
+            fi
+          fi
+          kb approve --all-changed --against "$BEFORE"
+      - name: Commit status flips back to main
+        run: |
+          if git diff --quiet -- .kb; then
+            echo "No status changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          git add .kb
+          # Loop guard (layer 1): [skip ci]. Layer 2: pushes made with
+          # GITHUB_TOKEN do not trigger new workflow runs.
+          git commit -m "review: auto-mark reviewed @ ${SHORT_SHA} [skip ci]"
+          git push
