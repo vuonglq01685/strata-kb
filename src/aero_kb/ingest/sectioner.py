@@ -87,13 +87,16 @@ def _build_tree(items: list[DocItem]) -> _Node:
                 if (
                     sid[0].isdigit()
                     and top is not None
-                    and not top.id[0].isdigit()
+                    and top.id.startswith("app")
                     and not _CHAPTER_RE.match(" ".join(item.text.split()))
                 ):
                     # ICAO appendices restart numeric numbering ("1.",
-                    # "2.1"...). Namespace the id under the non-numeric
+                    # "2.1"...). Namespace the id under the appendix
                     # top-level node so appendix "2.1" becomes "app3-2.1"
                     # and never collides with chapter section "2.1".
+                    # Only appendix ("app*") nodes namespace: numeric
+                    # chapters after a front-matter fallback node
+                    # (FOREWORD -> "x1") must open normally at root.
                     sid = f"{top.id}-{sid}"
                     depth += 1
                 if any(n.id == sid for n in stack):
