@@ -84,3 +84,23 @@ def status(
         for sec in pending:
             typer.echo(f"  - §{sec.id} {sec.title} (file: {sec.file}.md)")
     typer.echo(f"Tổng: {total_pending} section pending.")
+
+
+@app.command()
+def build(
+    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    allow_pending: bool = typer.Option(
+        False, "--allow-pending", help="Không fail khi còn section pending"
+    ),
+) -> None:
+    """Validate KB: hết TODO, toàn vẹn bảng, cập nhật token counts."""
+    from aero_kb.build import build_kb
+
+    report = build_kb(kb_dir, allow_pending=allow_pending)
+    for warning in report.warnings:
+        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW)
+    for error in report.errors:
+        typer.secho(f"[error] {error}", fg=typer.colors.RED)
+    if not report.ok:
+        raise typer.Exit(1)
+    typer.echo("kb build: OK")
