@@ -3,11 +3,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rank_bm25 import BM25Plus
 
 from aero_kb import models
 from aero_kb.mdutils import count_tokens, slice_section
+
+if TYPE_CHECKING:
+    from aero_kb.hub import HubHandle
 
 
 @dataclass
@@ -19,6 +23,17 @@ class QueryResult:
     citation: str
     content: str
     tokens: int
+    source: str = "local"  # "local" | "hub" | "remote:<repo-id>"
+
+
+@dataclass
+class _Candidate:
+    doc: models.IndexEntry
+    sec: models.SectionEntry
+    kb_dir: Path | None  # None = federation, không có L2 để nạp
+    source: str
+    citation: str
+    pointer: str = ""  # dòng chỉ về repo nguồn (chỉ remote)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -30,39 +45,111 @@ def _citation(doc: models.IndexEntry | models.Manifest, section_id: str) -> str:
     return f"{base} ({doc.revision})" if doc.revision else base
 
 
-def search(
-    kb_dir: Path,
-    text: str,
-    tags: list[str] | None = None,
-    budget: int = 2000,
-) -> list[QueryResult]:
+def _filter_tags(
+    docs: list[models.IndexEntry], tags: list[str] | None
+) -> list[models.IndexEntry]:
+    if not tags:
+        return docs
+    tagset = {t.strip().lower() for t in tags}
+    return [
+        d for d in docs
+        if tagset & {t.lower() for t in d.tags} or d.id.lower() in tagset
+    ]
+
+
+def _local_candidates(
+    kb_dir: Path, tags: list[str] | None, source: str = "local"
+) -> list[_Candidate]:
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
         return []
     index = models.load_yaml_model(index_path, models.KBIndex)
-
-    docs = index.docs
-    if tags:
-        tagset = {t.strip().lower() for t in tags}
-        docs = [
-            d for d in index.docs
-            if tagset & {t.lower() for t in d.tags} or d.id.lower() in tagset
-        ]
-        if not docs:
-            return []
-
-    corpus: list[tuple[models.IndexEntry, models.SectionEntry]] = []
-    for doc in docs:
+    out: list[_Candidate] = []
+    for doc in _filter_tags(index.docs, tags):
         manifest_path = kb_dir / doc.id / "_manifest.yaml"
         if not manifest_path.exists():
             continue
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
         for sec in manifest.sections:
-            corpus.append((doc, sec))
+            out.append(
+                _Candidate(
+                    doc=doc, sec=sec, kb_dir=kb_dir, source=source,
+                    citation=_citation(doc, sec.id),
+                )
+            )
+    return out
+
+
+def _federation_candidates(
+    hub: "HubHandle", tags: list[str] | None
+) -> list[_Candidate]:
+    from aero_kb.federation import load_federation
+
+    out: list[_Candidate] = []
+    for repo in load_federation(hub.federation_dir):
+        rid = repo.meta.repo_id
+        for doc in _filter_tags(repo.index.docs, tags):
+            manifest = repo.manifests.get(doc.id)
+            if manifest is None:
+                continue
+            for sec in manifest.sections:
+                base = f"{rid}:{doc.id} §{sec.id}"
+                citation = f"{base} ({doc.revision})" if doc.revision else base
+                pointer = (
+                    f"[remote] repo '{rid}'"
+                    + (f" ({repo.meta.source_url})" if repo.meta.source_url else "")
+                    + " — chỉ có summary L1; đọc sâu tại repo nguồn."
+                )
+                out.append(
+                    _Candidate(
+                        doc=doc, sec=sec, kb_dir=None, source=f"remote:{rid}",
+                        citation=citation, pointer=pointer,
+                    )
+                )
+    return out
+
+
+def _candidate_content(c: _Candidate) -> str | None:
+    if c.kb_dir is None:
+        return f"{c.sec.summary}\n\n{c.pointer}"
+    l2_path = c.kb_dir / c.doc.id / f"{c.sec.file}.md"
+    if not l2_path.exists():
+        return None
+    return slice_section(l2_path.read_text(encoding="utf-8"), c.sec.id)
+
+
+def _gather_candidates(
+    kb_dir: Path, tags: list[str] | None, hub: "HubHandle | None"
+) -> list[_Candidate]:
+    candidates = _local_candidates(kb_dir, tags)
+    if hub is None:
+        return candidates
+    local_ids = {c.doc.id for c in candidates}
+    # local thắng khi collision: đọc index local đầy đủ (không lọc tag) để chặn
+    index_path = kb_dir / "index.yaml"
+    if index_path.exists():
+        local_ids |= {
+            d.id for d in models.load_yaml_model(index_path, models.KBIndex).docs
+        }
+    hub_candidates = [
+        c for c in _local_candidates(hub.kb_dir, tags, source="hub")
+        if c.doc.id not in local_ids
+    ]
+    return candidates + hub_candidates + _federation_candidates(hub, tags)
+
+
+def search(
+    kb_dir: Path,
+    text: str,
+    tags: list[str] | None = None,
+    budget: int = 2000,
+    hub: "HubHandle | None" = None,
+) -> list[QueryResult]:
+    corpus = _gather_candidates(kb_dir, tags, hub)
     if not corpus:
         return []
 
-    section_tokens = [_tokenize(f"{s.title} {s.summary}") for _, s in corpus]
+    section_tokens = [_tokenize(f"{c.sec.title} {c.sec.summary}") for c in corpus]
     bm25 = BM25Plus(section_tokens)
     query_token_list = _tokenize(text)
     query_tokens = set(query_token_list)
@@ -73,7 +160,7 @@ def search(
 
     results: list[QueryResult] = []
     used = 0
-    for (doc, sec), tokens, score in ranked:
+    for c, tokens, score in ranked:
         if score <= 0:
             break
         if not query_tokens & set(tokens):
@@ -81,10 +168,7 @@ def search(
             # query term, so sections sharing zero tokens with the query
             # can still score > 0. Skip them explicitly.
             continue
-        l2_path = kb_dir / doc.id / f"{sec.file}.md"
-        if not l2_path.exists():
-            continue
-        content = slice_section(l2_path.read_text(encoding="utf-8"), sec.id)
+        content = _candidate_content(c)
         if content is None:
             continue
         n_tokens = count_tokens(content)
@@ -92,13 +176,14 @@ def search(
             break
         results.append(
             QueryResult(
-                doc_id=doc.id,
-                section_id=sec.id,
-                title=sec.title,
+                doc_id=c.doc.id,
+                section_id=c.sec.id,
+                title=c.sec.title,
                 score=float(score),
-                citation=_citation(doc, sec.id),
+                citation=c.citation,
                 content=content,
                 tokens=n_tokens,
+                source=c.source,
             )
         )
         used += n_tokens
@@ -107,10 +192,9 @@ def search(
     return results
 
 
-def get_section(
-    kb_dir: Path, doc_id: str, section_id: str, level: str = "l2"
+def _get_section_in(
+    kb_dir: Path, doc_id: str, section_id: str, level: str, source: str
 ) -> QueryResult | None:
-    section_id = section_id.lstrip("§")
     manifest_path = kb_dir / doc_id / "_manifest.yaml"
     if not manifest_path.exists():
         return None
@@ -133,4 +217,22 @@ def get_section(
         citation=_citation(manifest, section_id),
         content=content,
         tokens=count_tokens(content),
+        source=source,
     )
+
+
+def get_section(
+    kb_dir: Path,
+    doc_id: str,
+    section_id: str,
+    level: str = "l2",
+    hub: "HubHandle | None" = None,
+) -> QueryResult | None:
+    section_id = section_id.lstrip("§")
+    result = _get_section_in(kb_dir, doc_id, section_id, level, "local")
+    if result is not None:
+        return result
+    if hub is not None and (hub.kb_dir / doc_id / "_manifest.yaml").exists():
+        # local thắng: chỉ rơi xuống hub khi local không có doc này
+        return _get_section_in(hub.kb_dir, doc_id, section_id, level, "hub")
+    return None
