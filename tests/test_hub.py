@@ -8,9 +8,9 @@ from aero_kb import hub
 
 
 def _force_rmtree(path: Path) -> None:
-    """shutil.rmtree, nhưng bỏ qua flag read-only mà git đặt trên
-    .git/objects/** — trên Windows, rmtree thường thất bại với
-    PermissionError khi xóa các file này (không xảy ra trên POSIX)."""
+    """shutil.rmtree, but ignoring the read-only flag git sets on
+    .git/objects/** — on Windows, rmtree usually fails with
+    PermissionError when deleting these files (doesn't happen on POSIX)."""
 
     def _clear_readonly(func, target, _exc_info):
         os.chmod(target, stat.S_IWRITE)
@@ -54,12 +54,12 @@ def test_fresh_cache_skips_pull(monkeypatch, tmp_path, hub_worktree, run_git):
     run_git(hub_worktree, "remote", "add", "origin", str(bare))
     run_git(hub_worktree, "push", "origin", "HEAD")
     h1 = hub.resolve_hub(str(bare))
-    # origin có commit mới ngay sau đó
+    # origin gets a new commit right after
     (hub_worktree / "new.txt").write_text("x", encoding="utf-8")
     run_git(hub_worktree, "add", "-A")
     run_git(hub_worktree, "commit", "-m", "new")
     run_git(hub_worktree, "push", "origin", "HEAD")
-    h2 = hub.resolve_hub(str(bare))  # marker còn tươi → không pull
+    h2 = hub.resolve_hub(str(bare))  # marker is still fresh → no pull
     assert not (h2.root / "new.txt").exists()
     assert h1.root == h2.root
 
@@ -91,7 +91,7 @@ def test_offline_uses_stale_cache(monkeypatch, tmp_path, hub_worktree, run_git):
     run_git(hub_worktree, "remote", "add", "origin", str(bare))
     run_git(hub_worktree, "push", "origin", "HEAD")
     hub.resolve_hub(str(bare))
-    _force_rmtree(bare)  # "offline"
+    _force_rmtree(bare)  # simulate "offline"
     h2 = hub.resolve_hub(str(bare))
     assert h2 is not None
     assert h2.stale is True
@@ -100,4 +100,4 @@ def test_offline_uses_stale_cache(monkeypatch, tmp_path, hub_worktree, run_git):
 
 def test_unreachable_without_cache_returns_none(monkeypatch, tmp_path):
     _use_cache(monkeypatch, tmp_path)
-    assert hub.resolve_hub(str(tmp_path / "khong-ton-tai.git")) is None
+    assert hub.resolve_hub(str(tmp_path / "does-not-exist.git")) is None

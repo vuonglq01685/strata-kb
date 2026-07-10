@@ -11,7 +11,7 @@ from aero_kb import gitio
 
 logger = logging.getLogger("aero_kb.hub")
 
-DEFAULT_TTL_SECONDS = 900  # 15 phút — override bằng env AERO_KB_HUB_TTL
+DEFAULT_TTL_SECONDS = 900  # 15 minutes — override with env AERO_KB_HUB_TTL
 
 
 @dataclass
@@ -53,25 +53,27 @@ def _touch_marker(marker: Path) -> None:
 
 
 def resolve_hub(hub: str) -> HubHandle | None:
-    """Path local có .kb/ → dùng thẳng; ngược lại clone/pull vào cache theo TTL.
+    """Local path with a .kb/ → use it directly; otherwise clone/pull into the cache per TTL.
 
-    None = không truy cập được hub và chưa có cache — caller chạy tiếp
-    chỉ với KB cục bộ (hub là tăng cường, không phải điều kiện sống).
+    None = the hub is unreachable and there is no cache yet — the caller
+    continues with the local KB only (the hub is an enhancement, not a
+    hard requirement).
     """
     direct = Path(hub)
     if direct.is_dir() and (direct / ".kb").is_dir():
         return HubHandle(root=direct.resolve())
 
     cache = _cache_base() / hashlib.sha1(hub.encode("utf-8")).hexdigest()[:12]
-    # Marker sống ngoài thư mục clone: `commit_all` (publish, Task 4) dùng
-    # `git add -A` trên hub — nếu marker nằm trong clone nó sẽ bị add nhầm.
+    # Marker lives outside the clone directory: `commit_all` (publish, Task 4)
+    # runs `git add -A` on the hub — if the marker were inside the clone it
+    # would get added by mistake.
     marker = cache.parent / f"{cache.name}.last-pull"
     if not cache.exists():
         try:
             gitio.clone(hub, cache)
         except gitio.GitError as exc:
             logger.warning(
-                "không clone được hub '%s' — chạy tiếp chỉ với KB cục bộ: %s", hub, exc
+                "could not clone hub '%s' — continuing with local KB only: %s", hub, exc
             )
             return None
         _touch_marker(marker)
@@ -86,7 +88,7 @@ def resolve_hub(hub: str) -> HubHandle | None:
         return HubHandle(root=cache, age_seconds=0.0)
     except gitio.GitError as exc:
         logger.warning(
-            "không pull được hub (offline?) — dùng cache cũ (tuổi ~%s giây): %s",
+            "could not pull hub (offline?) — using stale cache (age ~%s seconds): %s",
             f"{age:.0f}" if age is not None else "?",
             exc,
         )

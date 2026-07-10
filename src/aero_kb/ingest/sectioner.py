@@ -41,17 +41,17 @@ def _compile_heading(name: str, pattern: str) -> re.Pattern[str]:
     try:
         rx = re.compile(pattern, re.IGNORECASE)
     except re.error as exc:
-        raise ValueError(f"{name}: regex không hợp lệ — {exc}") from exc
+        raise ValueError(f"{name}: invalid regex — {exc}") from exc
     if rx.groups < 2:
-        raise ValueError(f"{name}: cần ít nhất 2 capture group (định danh, title)")
+        raise ValueError(f"{name}: needs at least 2 capture groups (identifier, title)")
     return rx
 
 
 @dataclass
 class HeadingConfig:
-    """Quy ước heading của tài liệu. Default là quy ước tiếng Anh phổ biến
-    ("Chapter N", "Appendix X") — tài liệu dùng quy ước khác thì override
-    lúc ingest; config đã dùng được persist vào _manifest.yaml."""
+    """Document heading convention. Defaults to the common English convention
+    ("Chapter N", "Appendix X") — documents using a different convention
+    override it at ingest time; the config used is persisted to _manifest.yaml."""
 
     chapter_pattern: str = DEFAULT_CHAPTER_PATTERN
     appendix_pattern: str = DEFAULT_APPENDIX_PATTERN
@@ -69,7 +69,7 @@ def resolve_heading_config(
     appendix_pattern: str,
     previous: "models.IngestConfig | None",
 ) -> HeadingConfig:
-    """Ưu tiên: arg tường minh > config cũ trong manifest (re-ingest) > default."""
+    """Priority: explicit arg > previous config in manifest (re-ingest) > default."""
     prev_ch = previous.chapter_pattern if previous else DEFAULT_CHAPTER_PATTERN
     prev_app = previous.appendix_pattern if previous else DEFAULT_APPENDIX_PATTERN
     return HeadingConfig(

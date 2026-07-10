@@ -7,20 +7,20 @@ import typer
 
 from aero_kb import models
 
-# Console Windows mặc định dùng cp1252 → crash UnicodeEncodeError khi in ký
-# tự '§'/tiếng Việt có dấu. Ép lại UTF-8 khi stream chưa ở UTF-8 (guarded:
-# một số stream test/redirect không có .reconfigure()).
+# Windows console defaults to cp1252 → UnicodeEncodeError crash when printing
+# '§'/accented characters. Force UTF-8 when the stream isn't already UTF-8
+# (guarded: some test/redirect streams lack .reconfigure()).
 for _stream in (sys.stdout, sys.stderr):
     _enc = getattr(_stream, "encoding", None) or ""
     if _enc.lower().replace("-", "") != "utf8" and hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8")
 
 app = typer.Typer(
-    help="AERO-KB — Knowledge Base as Code cho tài liệu hàng không.",
+    help="AERO-KB — Knowledge Base as Code for aviation documents.",
     no_args_is_help=True,
 )
 
-context_app = typer.Typer(help="Thao tác với block kb-context (citation máy-đọc-được).")
+context_app = typer.Typer(help="Operate on kb-context blocks (machine-readable citations).")
 app.add_typer(context_app, name="context")
 
 
@@ -30,10 +30,11 @@ def main() -> None:
 
 
 def _resolve_hub_option(hub: str, quiet: bool = False):
-    """'' → None; ngược lại resolve qua hub.resolve_hub (None nếu không truy cập được).
+    """'' → None; otherwise resolve via hub.resolve_hub (None if unreachable).
 
-    quiet=True bỏ qua cảnh báo stderr ở đây — dùng khi caller (vd `doctor`,
-    qua check_hub) đã tự báo warning riêng, tránh cảnh báo đôi.
+    quiet=True suppresses the stderr warning here — used when the caller
+    (e.g. `doctor`, via check_hub) already reports its own warning, to
+    avoid a duplicate.
     """
     if not hub:
         return None
@@ -42,7 +43,7 @@ def _resolve_hub_option(hub: str, quiet: bool = False):
     handle = resolve_hub(hub)
     if handle is None and not quiet:
         typer.secho(
-            f"[warn] không truy cập được hub '{hub}' — chạy tiếp với KB cục bộ",
+            f"[warn] could not reach hub '{hub}' — continuing with local KB",
             fg=typer.colors.YELLOW,
             err=True,
         )
@@ -51,23 +52,25 @@ def _resolve_hub_option(hub: str, quiet: bool = False):
 
 @app.command()
 def ingest(
-    pdf: Path = typer.Argument(..., help="File PDF nguồn"),
-    doc_id: str = typer.Option(..., "--id", help="ID tài liệu, vd arinc-424"),
-    tags: str = typer.Option("", help="Tags, phân cách bằng dấu phẩy"),
-    revision: str = typer.Option("", help="Bản sửa đổi, vd 'Supplement 22'"),
+    pdf: Path = typer.Argument(..., help="Source PDF file"),
+    doc_id: str = typer.Option(..., "--id", help="Document ID, e.g. arinc-424"),
+    tags: str = typer.Option("", help="Tags, comma-separated"),
+    revision: str = typer.Option("", help="Revision, e.g. 'Supplement 22'"),
     sections: str = typer.Option(
-        "", help="Chỉ scaffold các chương này, vd '5,6' (rỗng = tất cả)"
+        "", help="Only scaffold these chapters, e.g. '5,6' (empty = all)"
     ),
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
-    work_dir: Path = typer.Option(Path(".kb-work"), help="Thư mục cache trung gian"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    work_dir: Path = typer.Option(Path(".kb-work"), help="Intermediate cache directory"),
     chapter_pattern: str = typer.Option(
-        "", help="Regex heading chương (mặc định: 'Chapter N', tự nhớ từ lần ingest trước)"
+        "",
+        help="Chapter heading regex (default: 'Chapter N', remembered from the previous ingest)",
     ),
     appendix_pattern: str = typer.Option(
-        "", help="Regex heading appendix (mặc định: 'Appendix X', tự nhớ từ lần ingest trước)"
+        "",
+        help="Appendix heading regex (default: 'Appendix X', remembered from the previous ingest)",
     ),
 ) -> None:
-    """Parse PDF → cắt section → sinh L3 + khung L1/L2 chờ summarize."""
+    """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
     from aero_kb.ingest import parser, scaffold, sectioner
 
     manifest_path = kb_dir / doc_id / "_manifest.yaml"
@@ -106,19 +109,19 @@ def ingest(
     )
     typer.echo(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
-        f"{len(report.files)} files trong {kb_dir / report.doc_id}"
+        f"{len(report.files)} files in {kb_dir / report.doc_id}"
     )
-    typer.echo("Tiếp theo: mở Claude Code và chạy skill kb-summarize, rồi `kb build`.")
+    typer.echo("Next: open Claude Code and run the kb-summarize skill, then `kb build`.")
 
 
 @app.command()
 def status(
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
-    """Liệt kê các section đang chờ summarize (status=pending)."""
+    """List sections pending summarization (status=pending)."""
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
-        typer.echo("KB trống — chưa có index.yaml.")
+        typer.echo("KB is empty — no index.yaml yet.")
         raise typer.Exit(0)
     index = models.load_yaml_model(index_path, models.KBIndex)
     total_pending = 0
@@ -134,17 +137,17 @@ def status(
         )
         for sec in pending:
             typer.echo(f"  - §{sec.id} {sec.title} (file: {sec.file}.md)")
-    typer.echo(f"Tổng: {total_pending} section pending.")
+    typer.echo(f"Total: {total_pending} section(s) pending.")
 
 
 @app.command()
 def build(
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     allow_pending: bool = typer.Option(
-        False, "--allow-pending", help="Không fail khi còn section pending"
+        False, "--allow-pending", help="Don't fail while sections are still pending"
     ),
 ) -> None:
-    """Validate KB: hết TODO, toàn vẹn bảng, cập nhật token counts."""
+    """Validate KB: no TODOs left, table integrity, updated token counts."""
     from aero_kb.build import build_kb
 
     report = build_kb(kb_dir, allow_pending=allow_pending)
@@ -163,24 +166,24 @@ def build(
         if embedder is not None:
             n = ensure_index(kb_dir, db_path, embedder)
             if n:
-                typer.echo(f"embeddings.db: re-embed {n} section.")
+                typer.echo(f"embeddings.db: re-embed {n} section(s).")
     typer.echo("kb build: OK")
 
 
 @app.command()
 def query(
-    text: str = typer.Argument(..., help="Câu truy vấn"),
-    tags: str = typer.Option("", help="Tags lọc doc, phân cách bằng dấu phẩy"),
-    budget: int = typer.Option(2000, help="Token budget cho nội dung trả về"),
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    text: str = typer.Argument(..., help="Query text"),
+    tags: str = typer.Option("", help="Tags to filter docs by, comma-separated"),
+    budget: int = typer.Option(2000, help="Token budget for returned content"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+        "", "--hub", envvar="AERO_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
     semantic: bool = typer.Option(
-        False, "--semantic", help="Ép dùng embedding search (bước 3 routing)"
+        False, "--semantic", help="Force embedding search (routing step 3)"
     ),
 ) -> None:
-    """Tag match → BM25 → trả section L2 trong budget, kèm citation."""
+    """Tag match → BM25 → return L2 sections within budget, with citations."""
     from aero_kb.query import search
 
     handle = _resolve_hub_option(hub)
@@ -189,7 +192,7 @@ def query(
         kb_dir, text, tags=tag_list, budget=budget, hub=handle, semantic=semantic
     )
     if not results:
-        typer.echo("Không tìm thấy section phù hợp.")
+        typer.echo("No matching section found.")
         raise typer.Exit(0)
     for r in results:
         mark = " [remote]" if r.source.startswith("remote:") else ""
@@ -202,21 +205,21 @@ def query(
 
 @app.command()
 def get(
-    doc_id: str = typer.Argument(..., help="ID tài liệu"),
-    section: str = typer.Argument(..., help="ID section, vd 5.3 hoặc §5.3"),
-    level: str = typer.Option("l2", help="Tầng: l2 hoặc l3"),
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    section: str = typer.Argument(..., help="Section ID, e.g. 5.3 or §5.3"),
+    level: str = typer.Option("l2", help="Level: l2 or l3"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+        "", "--hub", envvar="AERO_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
 ) -> None:
-    """Lấy chính xác một section ở tầng chỉ định."""
+    """Fetch exactly one section at the given level."""
     from aero_kb.query import get_section
 
     handle = _resolve_hub_option(hub)
     result = get_section(kb_dir, doc_id, section, level=level, hub=handle)
     if result is None:
-        typer.secho(f"Không thấy {doc_id} §{section}", fg=typer.colors.RED)
+        typer.secho(f"Not found: {doc_id} §{section}", fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.secho(f"--- [{result.citation}] ~{result.tokens}tk", bold=True)
     typer.echo(result.content)
@@ -224,15 +227,15 @@ def get(
 
 @app.command()
 def stats(
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
-    """Token size từng tầng, từng tài liệu — theo dõi chi phí."""
+    """Token size per level, per document — for cost tracking."""
     from aero_kb.build import kb_stats
 
     l0_tokens, docs = kb_stats(kb_dir)
     typer.echo(f"L0 index.yaml: {l0_tokens} tokens")
     if not docs:
-        typer.echo("KB trống.")
+        typer.echo("KB is empty.")
         raise typer.Exit(0)
     header = f"{'doc':<20} {'sections':>8} {'L1':>8} {'L2':>10} {'L3':>10} {'saving':>8}"
     typer.echo(header)
@@ -246,14 +249,14 @@ def stats(
 @app.command()
 def publish(
     hub: str = typer.Option(
-        ..., "--hub", envvar="AERO_KB_HUB", help="URL hoặc path kb-hub"
+        ..., "--hub", envvar="AERO_KB_HUB", help="kb-hub URL or path"
     ),
     repo_id: str = typer.Option(
-        "", "--repo-id", help="ID repo trên hub (mặc định: tên thư mục git root)"
+        "", "--repo-id", help="Repo ID on the hub (default: git root directory name)"
     ),
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
-    """Publish snapshot L0+L1 của repo này lên federation/<repo-id>/ trên hub."""
+    """Publish this repo's L0+L1 snapshot to federation/<repo-id>/ on the hub."""
     from aero_kb import gitio
     from aero_kb.publish import PublishError
     from aero_kb.publish import publish as publish_kb
@@ -263,7 +266,7 @@ def publish(
     except (PublishError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    action = "push" if report.pushed else "commit tại chỗ (hub không có remote)"
+    action = "push" if report.pushed else "commit only (hub has no remote)"
     typer.echo(
         f"kb publish: {report.repo_id} @ {report.source_commit} — "
         f"{report.n_docs} doc, {action}."
@@ -273,15 +276,15 @@ def publish(
 @context_app.command("new")
 def context_new(
     refs: str = typer.Option(
-        ..., "--refs", help="Refs phân cách dấu phẩy, vd 'arinc-424 §5.3,arinc-424 §5.3.2'"
+        ..., "--refs", help="Comma-separated refs, e.g. 'arinc-424 §5.3,arinc-424 §5.3.2'"
     ),
-    tags: str = typer.Option("", help="Tags, phân cách bằng dấu phẩy"),
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    tags: str = typer.Option("", help="Tags, comma-separated"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+        "", "--hub", envvar="AERO_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
 ) -> None:
-    """Sinh block kb-context pin tại HEAD — dán vào Jira ticket."""
+    """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
     from aero_kb import gitio, kbcontext
     from aero_kb.query import get_section
 
@@ -295,7 +298,8 @@ def context_new(
 
     if not ref_list:
         typer.secho(
-            "--refs rỗng — cần ít nhất 1 ref, vd 'arinc-424 §5.3'", fg=typer.colors.RED
+            "--refs is empty — need at least 1 ref, e.g. 'arinc-424 §5.3'",
+            fg=typer.colors.RED,
         )
         raise typer.Exit(1)
 
@@ -319,12 +323,13 @@ def context_new(
             bad.append(str(r))
     if bad:
         typer.secho(
-            f"Ref không resolve được ở worktree: {', '.join(bad)}", fg=typer.colors.RED
+            f"Ref could not be resolved in worktree: {', '.join(bad)}",
+            fg=typer.colors.RED,
         )
         raise typer.Exit(1)
     if gitio.is_dirty(root, kb_dir.resolve()):
         typer.secho(
-            "[warn] .kb/ có thay đổi chưa commit — hash pin sẽ không chứa thay đổi đó",
+            "[warn] .kb/ has uncommitted changes — the pinned hash will not include them",
             fg=typer.colors.YELLOW,
             err=True,
         )
@@ -341,14 +346,14 @@ def context_new(
 @app.command()
 def resolve(
     source: str = typer.Argument(
-        ..., help="File chứa block kb-context (hoặc '-' đọc từ stdin)"
+        ..., help="File containing the kb-context block (or '-' to read from stdin)"
     ),
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+        "", "--hub", envvar="AERO_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
 ) -> None:
-    """Resolve block kb-context: trả section đúng version pin + freshness."""
+    """Resolve a kb-context block: return sections at the pinned version + freshness."""
     from aero_kb import gitio, kbcontext
     from aero_kb.resolve import render_resolved, resolve_refs
 
@@ -358,7 +363,7 @@ def resolve(
         try:
             text = Path(source).read_text(encoding="utf-8")
         except OSError as exc:
-            typer.secho(f"không đọc được file '{source}': {exc}", fg=typer.colors.RED)
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
     handle = _resolve_hub_option(hub)
     try:
@@ -376,11 +381,11 @@ def resolve(
 
 @app.command()
 def diff(
-    doc_id: str = typer.Argument(..., help="ID tài liệu"),
-    against: str = typer.Option("HEAD", help="Git rev để so, vd HEAD, a3f9c21"),
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    against: str = typer.Option("HEAD", help="Git rev to diff against, e.g. HEAD, a3f9c21"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
-    """So section added/removed/changed giữa worktree và một git rev."""
+    """Diff added/removed/changed sections between the worktree and a git rev."""
     from aero_kb import gitio
     from aero_kb.diff import diff_doc, render_diff
 
@@ -394,23 +399,23 @@ def diff(
 
 @app.command()
 def doctor(
-    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     context: str | None = typer.Option(
-        None, "--context", help="File chứa block kb-context (hoặc '-' đọc từ stdin)"
+        None, "--context", help="File containing the kb-context block (or '-' to read from stdin)"
     ),
     hub: str = typer.Option(
-        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+        "", "--hub", envvar="AERO_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
 ) -> None:
-    """Kiểm tra sức khỏe KB; kèm --context để check staleness của citation."""
+    """Check KB health; pass --context to check citation staleness."""
     from aero_kb.doctor import check_context, check_hub, check_kb
 
     issues = check_kb(kb_dir)
-    # quiet=True: check_hub() bên dưới tự báo warning "không truy cập được
-    # hub" riêng khi cần — tránh in cảnh báo đôi.
+    # quiet=True: check_hub() below reports its own "could not reach hub"
+    # warning when needed — avoids a duplicate warning.
     handle = _resolve_hub_option(hub, quiet=True)
     hub_stale = False
-    if hub:  # chỉ check hub khi được khai --hub / env AERO_KB_HUB
+    if hub:  # only check the hub when --hub / AERO_KB_HUB env is provided
         repo_root_name = None
         try:
             from aero_kb import gitio as _gitio

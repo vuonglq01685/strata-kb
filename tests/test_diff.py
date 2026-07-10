@@ -5,7 +5,7 @@ from aero_kb.diff import diff_doc, render_diff
 
 
 def test_changed_summary_detected(git_kb):
-    # fixture: §1.1 đổi summary (L1) giữa rev1 và worktree; L3 giữ nguyên
+    # fixture: §1.1's summary (L1) changes between rev1 and the worktree; L3 stays the same
     report = diff_doc(git_kb["kb"], "demo-doc", against=git_kb["rev1"])
     assert [c.section_id for c in report.changed] == ["1.1"]
     assert report.changed[0].summary_changed is True
@@ -35,7 +35,7 @@ def test_content_changed_when_raw_edited(git_kb):
 def test_added_and_removed_sections(git_kb):
     manifest_path = git_kb["kb"] / "demo-doc" / "_manifest.yaml"
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
-    kept = [s for s in manifest.sections if s.id != "1.2"]  # xóa 1.2
+    kept = [s for s in manifest.sections if s.id != "1.2"]  # remove 1.2
     kept.append(
         models.SectionEntry(id="1.3", title="Waypoint Records", file="ch1-records")
     )
@@ -54,8 +54,8 @@ def test_added_and_removed_sections(git_kb):
 
 
 def test_unknown_doc_raises(git_kb):
-    with pytest.raises(ValueError, match="khong-co"):
-        diff_doc(git_kb["kb"], "khong-co", against="HEAD")
+    with pytest.raises(ValueError, match="missing-doc"):
+        diff_doc(git_kb["kb"], "missing-doc", against="HEAD")
 
 
 def test_render_diff_groups(git_kb):

@@ -1,9 +1,9 @@
 import pytest
 
-# Contingency (xem task-9-brief.md Step 1 + src/aero_kb/mcp.py): SDK v2 (`mcp
-# import Client`) chưa release trên PyPI của môi trường này — dùng SDK v1
-# (mcp>=1.2) với client in-memory session `create_connected_server_and_client_session`
-# thay cho `mcp.Client`. API tương đương: list_tools()/call_tool(name, args).
+# Contingency (see task-9-brief.md Step 1 + src/aero_kb/mcp.py): SDK v2 (`mcp
+# import Client`) has no released build on PyPI for this environment — use SDK v1
+# (mcp>=1.2) with the in-memory client session `create_connected_server_and_client_session`
+# instead of `mcp.Client`. Equivalent API: list_tools()/call_tool(name, args).
 from mcp.shared.memory import create_connected_server_and_client_session as connect_client
 
 from aero_kb.mcp import ServerConfig, create_server, parse_args
@@ -56,7 +56,7 @@ async def test_kb_search_respects_budget(fixture_kb):
         small = await client.call_tool(
             "kb_search", {"query": "records structure", "budget": 1}
         )
-        # budget quá nhỏ → chỉ section đầu tiên được trả (search luôn trả >= 1)
+        # budget too small → only the first section is returned (search always returns >= 1)
         assert _text(small).count("--- [") == 1
         big = await client.call_tool(
             "kb_search", {"query": "records structure", "budget": 5000}
@@ -81,7 +81,7 @@ async def test_kb_get_section_unknown_doc_suggests(fixture_kb):
         result = await client.call_tool(
             "kb_get_section", {"doc": "demodoc", "section": "1.1"}
         )
-        assert "demo-doc" in _text(result)  # gợi ý doc hiện có
+        assert "demo-doc" in _text(result)  # hints at the available doc
 
 
 @pytest.mark.anyio
@@ -92,18 +92,18 @@ async def test_kb_resolve_reports_stale(git_kb):
         result = await client.call_tool("kb_resolve", {"kb_context": block})
         text = _text(result)
         assert "status=stale" in text
-        assert "designation and type fields" in text  # nội dung tại bản pin
+        assert "designation and type fields" in text  # content at the pinned version
 
 
 @pytest.mark.anyio
 async def test_kb_resolve_bad_block_returns_error_text(fixture_kb):
     server = create_server(ServerConfig(kb_dir=fixture_kb))
     async with connect_client(server, raise_exceptions=True) as client:
-        result = await client.call_tool("kb_resolve", {"kb_context": "khong co block"})
+        result = await client.call_tool("kb_resolve", {"kb_context": "no block here"})
         assert "kb-context" in _text(result)
 
 
-# --- Phase 3: hub kích hoạt ---
+# --- Phase 3: hub enabled ---
 
 
 def test_parse_args_transport_defaults():
