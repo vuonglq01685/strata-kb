@@ -130,7 +130,7 @@ def test_render_resolved_marks_status(git_kb):
     results = resolve_refs(
         git_kb["kb"], _ctx(git_kb["rev1"], "demo-doc §1.1", "demo-doc §1.2")
     )
-    text = render_resolved(results, git_kb["rev1"])
+    text = render_resolved(results)
     assert f"@ {git_kb['rev1']}] status=stale" in text
     assert "status=ok" in text
     # gợi ý xem thay đổi cho ref stale phải kèm --against đúng rev pin
