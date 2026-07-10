@@ -143,3 +143,24 @@ def get(
         raise typer.Exit(1)
     typer.secho(f"--- [{result.citation}] ~{result.tokens}tk", bold=True)
     typer.echo(result.content)
+
+
+@app.command()
+def stats(
+    kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+) -> None:
+    """Token size từng tầng, từng tài liệu — theo dõi chi phí."""
+    from aero_kb.build import kb_stats
+
+    l0_tokens, docs = kb_stats(kb_dir)
+    typer.echo(f"L0 index.yaml: {l0_tokens} tokens")
+    if not docs:
+        typer.echo("KB trống.")
+        raise typer.Exit(0)
+    header = f"{'doc':<20} {'sections':>8} {'L1':>8} {'L2':>10} {'L3':>10} {'saving':>8}"
+    typer.echo(header)
+    for d in docs:
+        typer.echo(
+            f"{d.doc_id:<20} {d.n_sections:>8} {d.l1_tokens:>8} "
+            f"{d.l2_tokens:>10} {d.l3_tokens:>10} {d.saving_pct:>7.1f}%"
+        )
