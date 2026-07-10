@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,8 @@ from aero_kb.mdutils import count_tokens, slice_section
 
 if TYPE_CHECKING:
     from aero_kb.hub import HubHandle
+
+logger = logging.getLogger("aero_kb.query")
 
 
 @dataclass
@@ -236,11 +239,7 @@ def _semantic_fallback(
             ):
                 hits.append((source, doc_id, sec_id, score))
         except Exception as exc:  # embedding là tăng cường — không bao giờ gãy query
-            import logging
-
-            logging.getLogger("aero_kb.query").warning(
-                "semantic search lỗi (%s) — bỏ qua: %s", source, exc
-            )
+            logger.warning("semantic search lỗi (%s) — bỏ qua: %s", source, exc)
     results: list[QueryResult] = []
     used = 0
     for source, doc_id, sec_id, score in sorted(hits, key=lambda h: -h[3]):

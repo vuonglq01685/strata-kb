@@ -143,7 +143,7 @@ AERO-KB/
 │
 ├── .mcp.json                 ← Khai báo MCP server cho Claude Code (Phase 2, xem mục 7.8)
 ├── src/aero_kb/              ← Mã nguồn của công cụ (chỉ dev cần đụng vào)
-│   ├── cli.py                       lệnh `kb` (đủ 10 lệnh, xem mục 7)
+│   ├── cli.py                       lệnh `kb` (đủ 11 lệnh, xem mục 7)
 │   ├── ingest/                      phần "cắt PDF thành section"
 │   ├── build.py                     phần "kiểm tra toàn vẹn"
 │   ├── query.py                     phần "tìm kiếm & trả lời"
