@@ -77,6 +77,11 @@ def _build_tree(items: list[DocItem]) -> _Node:
             parsed = parse_section_id(item.text)
             if parsed:
                 sid, title = parsed
+                if any(n.id == sid for n in stack):
+                    # Heading repeats a node already open (self or ancestor),
+                    # e.g. a running page header mid-section -> no-op so the
+                    # following content keeps accumulating where it belongs.
+                    continue
                 if sid in seen:
                     stack = list(seen[sid])
                     continue
