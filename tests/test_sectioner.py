@@ -193,6 +193,23 @@ def test_appendix_numeric_sections_namespaced():
     assert uapp.chapter == "app3"
 
 
+def test_front_matter_fallback_does_not_namespace_chapters():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "FOREWORD", 1),
+        DocItem("text", "Foreword body. " * 70),
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),
+        DocItem("text", "Chapter intro. " + big),
+        DocItem("heading", "5.3 Some Field", 2),
+        DocItem("text", big),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert "5" in ids and "5.3" in ids  # khong bi namespace duoi FOREWORD
+    u53 = next(u for u in units if u.id == "5.3")
+    assert u53.chapter == "5"
+
+
 def test_small_leaf_folding_skipped_when_parent_would_exceed_cap():
     # 30 con nho (moi con ~140 token) -> tong ~4200 + body cha ~700 > cap 4000
     small = "Field definition body. " * 35  # ~140 token
