@@ -577,7 +577,7 @@ def _items_basic() -> list[DocItem]:
         DocItem("text", long_text),
         DocItem("table", "| Code | Meaning |\n|---|---|\n| P | Prohibited |"),
         DocItem("heading", "5.4 Airways", 2),
-        DocItem("text", "Airways body. " * 60),
+        DocItem("text", "Airways body. " * 70),  # ~212 token, > nguong gop 200
     ]
 
 
