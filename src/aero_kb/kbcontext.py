@@ -73,13 +73,22 @@ def parse(text: str) -> KBContext:
     raw_refs = payload.get("refs") or []
     if not raw_refs:
         raise KBContextError("kb-context thiếu 'refs' — phải cite ít nhất 1 section")
+    if not isinstance(raw_refs, list):
+        raise KBContextError(
+            "'refs' phải là danh sách YAML (mỗi ref một dòng '- ...')"
+        )
     refs = [parse_ref(str(r)) for r in raw_refs]
-    tags = [str(t) for t in (payload.get("tags") or [])]
+    raw_tags = payload.get("tags") or []
+    if not isinstance(raw_tags, list):
+        raise KBContextError(
+            "'tags' phải là danh sách YAML (mỗi tag một dòng '- ...' hoặc dạng [a, b])"
+        )
+    tags = [str(t) for t in raw_tags]
     return KBContext(version=version, refs=refs, tags=tags)
 
 
 def render(ctx: KBContext) -> str:
-    lines = ["kb-context:", f"  version: {ctx.version}", "  refs:"]
+    lines = ["kb-context:", f'  version: "{ctx.version}"', "  refs:"]
     lines += [f"    - {ref}" for ref in ctx.refs]
     if ctx.tags:
         lines.append(f"  tags: [{', '.join(ctx.tags)}]")

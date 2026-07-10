@@ -14,7 +14,7 @@ def test_context_new_prints_block_with_head_hash(git_kb):
     )
     assert result.exit_code == 0
     assert "kb-context:" in result.output
-    assert f"version: {git_kb['rev2']}" in result.output
+    assert f'version: "{git_kb["rev2"]}"' in result.output
     assert "- demo-doc §1.1" in result.output
     assert "tags: [demo, airspace]" in result.output
 

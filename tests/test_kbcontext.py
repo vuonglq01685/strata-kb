@@ -72,3 +72,28 @@ def test_render_roundtrip():
     rendered = kbcontext.render(ctx)
     assert kbcontext.parse(rendered) == ctx
     assert "§5.3" in rendered
+
+
+def test_render_roundtrip_leading_zero_version():
+    # Hash toàn chữ số với leading zero ("0123456") không được quote sẽ bị
+    # PyYAML parse thành số nguyên bát phân (octal), phá pin version.
+    ctx = kbcontext.KBContext(
+        version="0123456", refs=[kbcontext.parse_ref("arinc-424 §5.3")]
+    )
+    rendered = kbcontext.render(ctx)
+    assert '"0123456"' in rendered
+    round_tripped = kbcontext.parse(rendered)
+    assert round_tripped.version == "0123456"
+    assert round_tripped == ctx
+
+
+def test_parse_refs_scalar_raises_with_hint():
+    with pytest.raises(kbcontext.KBContextError, match="danh sách"):
+        kbcontext.parse("kb-context:\n  version: abc1234\n  refs: arinc-424 §5.3\n")
+
+
+def test_parse_tags_scalar_raises_with_hint():
+    with pytest.raises(kbcontext.KBContextError, match="danh sách"):
+        kbcontext.parse(
+            "kb-context:\n  version: abc1234\n  refs:\n    - a §1\n  tags: airspace\n"
+        )

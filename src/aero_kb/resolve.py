@@ -112,7 +112,8 @@ def render_resolved(results: list[ResolvedRef], version: str) -> str:
             parts.append(f"!! {r.reason}")
         elif r.status == "stale":
             parts.append(
-                f"!! {r.reason} — chạy `kb diff {r.ref.doc_id}` để xem thay đổi"
+                f"!! {r.reason} — chạy `kb diff {r.ref.doc_id} --against {version}` "
+                "để xem thay đổi"
             )
         if r.content:
             parts.append(r.content)

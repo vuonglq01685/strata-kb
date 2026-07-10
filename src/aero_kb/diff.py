@@ -63,18 +63,21 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
     ]
 
     raw_cache_old: dict[str, str | None] = {}
+    raw_cache_new: dict[str, str | None] = {}
     for sec in new.sections:
         old_sec = old_by_id.get(sec.id)
         if old_sec is None:
             continue
         summary_changed = old_sec.summary.strip() != sec.summary.strip()
 
-        new_raw_path = doc_dir / f"{sec.file}.raw.md"
-        new_raw = (
-            slice_section(new_raw_path.read_text(encoding="utf-8"), sec.id)
-            if new_raw_path.exists()
-            else None
-        )
+        if sec.file not in raw_cache_new:
+            new_raw_path = doc_dir / f"{sec.file}.raw.md"
+            raw_cache_new[sec.file] = (
+                new_raw_path.read_text(encoding="utf-8")
+                if new_raw_path.exists()
+                else None
+            )
+        new_raw = _raw_section(raw_cache_new[sec.file], sec.id)
         if old_sec.file not in raw_cache_old:
             raw_cache_old[old_sec.file] = gitio.read_at(
                 root, against, doc_dir / f"{old_sec.file}.raw.md"
