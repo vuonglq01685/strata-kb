@@ -188,3 +188,13 @@ Theo TDD. PDF thật có bản quyền không được commit → test chạy tr
 | Bảng phức tạp (merged cells, xoay ngang) Docling xuất lệch | Kiểm tra mắt thường trong SME review; L3 luôn giữ bản trích để đối chiếu; ghi nhận case lỗi cho Phase 2 |
 | Summary bán thủ công khó lặp lại y hệt (hệ quả chọn Claude Code thay API) | Skill + ràng buộc văn phong cố định trong repo; `kb build` chặn thiếu sót; chấp nhận cho PoC, Phase sau có thể nâng lên API |
 | 639 section ARINC → khối lượng summarize lớn | `--sections` giới hạn phạm vi; quy tắc gộp giảm số đơn vị còn ~100–150 cho cả tài liệu, PoC chỉ làm 1 chương |
+
+## 10. Kết quả PoC (cập nhật 2026-07-10, sau acceptance run)
+
+**Đã ingest thật:** ARINC 424-22 chương 5 (325 section units, max 4.306 token/unit) + ICAO Annex 3 Ed 20 chương 2 (4 units). `kb build` pass (toàn vẹn bảng, 0 pending). Query trả đúng section kèm citation (`arinc-424 §5.213 (Supplement 22)`), cắt theo budget.
+
+**Số liệu (`kb stats`):** L0 = 187 token (< 1K ✓). ARINC ch5: L1 28.486 / L2 76.126 / L3 85.669 token. Một query điển hình trả 1–4 section L2 (~600–1.200 token) thay vì nạp raw document (~400K token cả tài liệu) — tiết kiệm ≥ 99% cho truy vấn, đạt mục tiêu ≥ 90%. Lưu ý: L2/L3 của ch5 chỉ chênh 11% vì chương này chủ yếu là bảng (bảng giữ nguyên văn ở cả hai tầng theo thiết kế).
+
+**5 fix sectioner phát sinh từ tài liệu thật** (đều có test): (1) running page header lặp mỗi trang → gộp node trùng id; (2) label kiểu "Source/Content:" bị nhận nhầm heading → demote thành text; (3) heading trùng của node đang mở là no-op để không cướp nội dung tiếp diễn; (4) appendix đánh số lại từ đầu → namespace `app3-2.1`; (5) thu hẹp namespace chỉ dưới appendix (không dưới front-matter fallback).
+
+**Vấn đề tồn đọng chấp nhận được ở PoC:** 6/~250 bookmark ch5 không trích được (~2,4%); nhiễu trích xuất Docling ở dải 5.312–5.320 (nội dung lệch id — cần SME đối chiếu); L1 manifest ARINC 28K token vượt mục tiêu 1–3K/tài liệu (chấp nhận được vì BM25 chạy bằng code phía server, agent không nạp cả manifest — cần tính lại cho MCP flow ở Phase 2).
