@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from aero_kb import models
+from aero_kb.mdutils import (
+    count_tokens,
+    extract_tables,
+    normalize_table,
+    slice_section,
+)
+
+TODO_MARKER = "<!-- TODO:summarize"
+
+
+@dataclass
+class BuildReport:
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+
+def build_kb(kb_dir: Path, allow_pending: bool = False) -> BuildReport:
+    report = BuildReport()
+    index_path = kb_dir / "index.yaml"
+    if not index_path.exists():
+        report.errors.append(f"khong thay {index_path}")
+        return report
+    index = models.load_yaml_model(index_path, models.KBIndex)
+
+    for entry in index.docs:
+        manifest_path = kb_dir / entry.id / "_manifest.yaml"
+        if not manifest_path.exists():
+            report.errors.append(f"{entry.id}: thieu _manifest.yaml")
+            continue
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        file_cache: dict[str, str] = {}
+
+        for sec in manifest.sections:
+            l2_text = _read_cached(kb_dir / entry.id / f"{sec.file}.md", file_cache)
+            l3_text = _read_cached(
+                kb_dir / entry.id / f"{sec.file}.raw.md", file_cache
+            )
+            ref = f"{entry.id} §{sec.id}"
+
+            l2_slice = slice_section(l2_text, sec.id) if l2_text else None
+            l3_slice = slice_section(l3_text, sec.id) if l3_text else None
+            if l2_slice is None or l3_slice is None:
+                report.errors.append(f"{ref}: khong tim thay section trong file L2/L3")
+                continue
+
+            is_pending = TODO_MARKER in l2_slice or not sec.summary.strip()
+            if is_pending:
+                msg = f"{ref}: con TODO marker hoac summary rong"
+                if allow_pending:
+                    report.warnings.append(msg)
+                else:
+                    report.errors.append(msg)
+
+            l2_tables = {normalize_table(t) for t in extract_tables(l2_slice)}
+            for table in extract_tables(l3_slice):
+                if normalize_table(table) not in l2_tables:
+                    report.errors.append(
+                        f"{ref}: bang trong L3 khong khop nguyen van voi L2 "
+                        f"(table integrity fail)"
+                    )
+                    break
+
+            sec.tokens = models.SectionTokens(
+                l2=count_tokens(l2_slice), l3=count_tokens(l3_slice)
+            )
+
+        models.save_yaml_model(manifest_path, manifest)
+
+    l0_tokens = count_tokens(index_path.read_text(encoding="utf-8"))
+    if l0_tokens > 1000:
+        report.warnings.append(
+            f"L0 index.yaml = {l0_tokens} token (> 1000, xem lai muc tieu spec)"
+        )
+    return report
+
+
+def _read_cached(path: Path, cache: dict[str, str]) -> str:
+    key = str(path)
+    if key not in cache:
+        cache[key] = path.read_text(encoding="utf-8") if path.exists() else ""
+    return cache[key]
