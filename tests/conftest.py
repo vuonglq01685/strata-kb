@@ -11,7 +11,7 @@ def pytest_addoption(parser):
         "--run-slow",
         action="store_true",
         default=False,
-        help="chạy cả test tải model embedding thật",
+        help="also run the tests that download a real embedding model",
     )
 
 
@@ -86,7 +86,7 @@ def fixture_kb(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def run_git():
-    """Callable chạy git trong một thư mục, identity cố định cho test."""
+    """Callable that runs git in a directory, with a fixed identity for tests."""
 
     def _run(root: Path, *args: str) -> str:
         proc = subprocess.run(
@@ -96,8 +96,8 @@ def run_git():
                 "user.name=test",
                 "-c",
                 "user.email=test@test.local",
-                # Bỏ qua global excludesFile của máy dev (vd: *.md bị ignore
-                # global) để fixture git độc lập với gitconfig người chạy test.
+                # Ignore the dev machine's global excludesFile (e.g. *.md ignored
+                # globally) so the git fixtures don't depend on the test runner's gitconfig.
                 "-c",
                 "core.excludesFile=",
                 *args,
@@ -114,11 +114,11 @@ def run_git():
 
 @pytest.fixture
 def git_kb(fixture_kb: Path, run_git) -> dict:
-    """Git repo chứa .kb/ với 2 commit — mô phỏng amendment.
+    """Git repo containing .kb/ with 2 commits — simulates an amendment.
 
-    Commit 1 (rev1): KB như fixture_kb — thời điểm BA viết requirement.
-    Commit 2 (rev2 = HEAD): §1.1 đổi nội dung L2 + summary (amendment đã merge).
-    Trả về: {"root", "kb", "rev1", "rev2"}.
+    Commit 1 (rev1): KB as in fixture_kb — the moment the BA wrote the requirement.
+    Commit 2 (rev2 = HEAD): §1.1's L2 content + summary changed (amendment merged).
+    Returns: {"root", "kb", "rev1", "rev2"}.
     """
     root = fixture_kb.parent
     run_git(root, "init")
@@ -159,7 +159,7 @@ Restrictive airspace records: designation, type, multiple code, level.
 
 @pytest.fixture
 def hub_worktree(tmp_path: Path, run_git) -> Path:
-    """Hub repo worktree: .kb/ có 1 doc domain 'arinc-424' + đã git commit."""
+    """Hub repo worktree: .kb/ has 1 domain doc 'arinc-424' + is git committed."""
     hub = tmp_path / "kb-hub"
     doc_dir = hub / ".kb" / "arinc-424"
     doc_dir.mkdir(parents=True)

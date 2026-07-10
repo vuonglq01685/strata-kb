@@ -13,7 +13,7 @@ _REPO_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 class PublishError(RuntimeError):
-    """Publish index lên hub thất bại."""
+    """Publishing the index to the hub failed."""
 
 
 @dataclass
@@ -27,11 +27,11 @@ class PublishReport:
 def publish(
     kb_dir: Path, hub_ref: str, repo_id: str | None = None, max_retries: int = 3
 ) -> PublishReport:
-    """Snapshot L0+L1 của repo hiện tại → federation/<repo-id>/ trên hub.
+    """Snapshot the current repo's L0+L1 → federation/<repo-id>/ on the hub.
 
-    Commit tại clone cache (hoặc worktree hub nếu --hub là path); push nếu
-    hub có remote origin. Push bị reject (race giữa 2 CI) → pull --rebase
-    rồi thử lại, tối đa max_retries lần.
+    Commits in the clone cache (or the hub worktree if --hub is a path); pushes
+    if the hub has a remote origin. If the push is rejected (race between two
+    CI runs) → pull --rebase and retry, up to max_retries times.
     """
     kb_abs = kb_dir.resolve()
     source_root = gitio.git_root(kb_abs)
@@ -39,20 +39,20 @@ def publish(
     rid = repo_id or source_root.name
     if not _REPO_ID_RE.fullmatch(rid) or rid in {".", ".."}:
         raise PublishError(
-            f"repo-id '{rid}' không hợp lệ — chỉ chữ/số/._- và không chứa dấu phân cách đường dẫn"
+            f"repo-id '{rid}' is invalid — only letters/digits/._- allowed, no path separators"
         )
 
     handle = hub_mod.resolve_hub(hub_ref)
     if handle is None:
-        raise PublishError(f"không truy cập được hub '{hub_ref}'")
+        raise PublishError(f"could not reach hub '{hub_ref}'")
 
     hub_index_path = handle.kb_dir / "index.yaml"
     if hub_index_path.exists():
         hub_index = models.load_yaml_model(hub_index_path, models.KBIndex)
         if rid in {d.id for d in hub_index.docs}:
             raise PublishError(
-                f"repo-id '{rid}' trùng doc-id tài liệu domain trong hub — "
-                "chọn --repo-id khác"
+                f"repo-id '{rid}' collides with a domain document's doc-id on the hub — "
+                "pick a different --repo-id"
             )
 
     local_index = models.load_yaml_model(kb_abs / "index.yaml", models.KBIndex)
@@ -60,7 +60,7 @@ def publish(
     fed_root = handle.federation_dir.resolve()
     if not dest.resolve().is_relative_to(fed_root):
         raise PublishError(
-            f"repo-id '{rid}' thoát khỏi thư mục federation/ trên hub — từ chối publish"
+            f"repo-id '{rid}' escapes the federation/ directory on the hub — refusing to publish"
         )
     if dest.exists():
         shutil.rmtree(dest)
@@ -91,7 +91,7 @@ def publish(
             except gitio.GitError:
                 if attempt == max_retries - 1:
                     raise PublishError(
-                        f"push hub thất bại sau {max_retries} lần thử (race?)"
+                        f"push to hub failed after {max_retries} attempts (race?)"
                     )
                 gitio.pull_rebase(handle.root)
     return PublishReport(

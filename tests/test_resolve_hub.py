@@ -15,7 +15,7 @@ def _ctx(version, *refs, hub_version=None):
 
 @pytest.fixture
 def hub_git(hub_worktree, run_git):
-    """Hub 2 commit: rev1 = bản gốc; rev2 (HEAD) = §5.3 sửa L2 (amendment)."""
+    """Hub with 2 commits: rev1 = original; rev2 (HEAD) = §5.3 L2 edit (amendment)."""
     rev1 = run_git(hub_worktree, "rev-parse", "--short", "HEAD")
     l2 = hub_worktree / ".kb" / "arinc-424" / "ch5-airspace.md"
     l2.write_text(
@@ -34,7 +34,7 @@ def hub_git(hub_worktree, run_git):
 def test_local_ref_without_hub_unchanged(git_kb):
     ctx = _ctx(git_kb["rev1"], "demo-doc §1.1")
     results = resolve_refs(git_kb["kb"], ctx)
-    assert results[0].status == "stale"  # amendment ở rev2 như fixture Phase 2
+    assert results[0].status == "stale"  # amendment at rev2, same as the Phase 2 fixture
     assert results[0].pinned_rev == git_kb["rev1"]
 
 
@@ -43,9 +43,9 @@ def test_hub_ref_resolves_at_hub_version(git_kb, hub_git):
     ctx = _ctx(git_kb["rev2"], "arinc-424 §5.3", hub_version=hub_git["rev1"])
     results = resolve_refs(git_kb["kb"], ctx, hub=handle)
     r = results[0]
-    assert r.status == "stale"  # hub đã amendment sau khi pin
+    assert r.status == "stale"  # hub was amended after the pin
     assert r.pinned_rev == hub_git["rev1"]
-    assert "NEW controlling agency" not in r.content  # đúng nội dung bản pin
+    assert "NEW controlling agency" not in r.content  # correct pinned content
     assert "Supplement 22" in r.citation
 
 
@@ -58,7 +58,7 @@ def test_hub_ref_ok_when_pinned_at_head(git_kb, hub_git):
 
 def test_hub_ref_missing_hub_version_broken(git_kb, hub_git):
     handle = HubHandle(root=hub_git["root"])
-    ctx = _ctx(git_kb["rev2"], "arinc-424 §5.3")  # không có hub_version
+    ctx = _ctx(git_kb["rev2"], "arinc-424 §5.3")  # no hub_version
     results = resolve_refs(git_kb["kb"], ctx, hub=handle)
     assert results[0].status == "broken"
     assert "hub_version" in results[0].reason
@@ -66,14 +66,14 @@ def test_hub_ref_missing_hub_version_broken(git_kb, hub_git):
 
 
 def test_hub_ref_without_hub_handle_broken_not_crash(git_kb):
-    # block cite doc hub nhưng chạy không có --hub → broken theo đường local Phase 2
+    # block cites a hub doc but runs without --hub → broken via the local Phase 2 path
     ctx = _ctx(git_kb["rev1"], "arinc-424 §5.3", hub_version="abc1234")
     results = resolve_refs(git_kb["kb"], ctx)
     assert results[0].status == "broken"
 
 
 def test_remote_ref_resolves_summary_from_federation(git_kb, hub_git, run_git):
-    # tạo federation entry trong hub rồi commit — rev3 chứa federation
+    # create a federation entry in the hub then commit — rev3 contains federation
     hub_root = hub_git["root"]
     from aero_kb.federation import FederationMeta
 

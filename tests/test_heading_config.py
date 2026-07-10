@@ -18,39 +18,39 @@ def test_custom_chapter_pattern():
     assert sectioner.parse_section_id("Section 5: Data Fields", config) == (
         "5", "Data Fields",
     )
-    # pattern mặc định không còn khớp khi bị override
+    # the default pattern no longer matches once overridden
     assert sectioner.parse_section_id("Chapter 5 Navigation", config) is None
 
 
-def test_invalid_regex_raises_vietnamese():
+def test_invalid_regex_raises():
     with pytest.raises(ValueError, match="regex"):
-        HeadingConfig(chapter_pattern=r"^chuong\s+(\d+")
+        HeadingConfig(chapter_pattern=r"^unit\s+(\d+")
 
 
 def test_too_few_groups_raises():
     with pytest.raises(ValueError, match="capture group"):
-        HeadingConfig(chapter_pattern=r"^chuong\s+\d+$")
+        HeadingConfig(chapter_pattern=r"^unit\s+\d+$")
 
 
 def test_resolve_heading_config_priority():
     prev = models.IngestConfig(
-        chapter_pattern=r"^phu luc\s+(\d+)\s+(.*)$",
+        chapter_pattern=r"^part\s+(\d+)\s+(.*)$",
         appendix_pattern=sectioner.DEFAULT_APPENDIX_PATTERN,
     )
-    # arg tường minh thắng manifest
-    cfg = sectioner.resolve_heading_config(r"^muc\s+(\d+)\s+(.*)$", "", prev)
-    assert cfg.chapter_pattern == r"^muc\s+(\d+)\s+(.*)$"
-    # không có arg → lấy từ manifest
+    # explicit arg wins over the manifest
+    cfg = sectioner.resolve_heading_config(r"^sec\s+(\d+)\s+(.*)$", "", prev)
+    assert cfg.chapter_pattern == r"^sec\s+(\d+)\s+(.*)$"
+    # no arg → taken from the manifest
     cfg = sectioner.resolve_heading_config("", "", prev)
     assert cfg.chapter_pattern == prev.chapter_pattern
-    # không có gì → default
+    # nothing at all → default
     cfg = sectioner.resolve_heading_config("", "", None)
     assert cfg.chapter_pattern == sectioner.DEFAULT_CHAPTER_PATTERN
 
 
 def test_scaffold_persists_ingest_config(tmp_path):
     units = [
-        SectionUnit(id="5", title="Data", chapter="5", body_md="noi dung", tables=[])
+        SectionUnit(id="5", title="Data", chapter="5", body_md="content", tables=[])
     ]
     config = HeadingConfig(chapter_pattern=r"^section\s+(\d+)\s*[.:]?\s*(.*)$")
     scaffold_doc(

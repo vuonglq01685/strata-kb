@@ -6,7 +6,7 @@ from aero_kb import embed
 
 
 class FakeEmbedder:
-    """Vector 4 chiều xác định trước theo từ khóa — không cần model thật."""
+    """Deterministic 4-dim vector based on keywords — no real model needed."""
 
     dim = 4
 
@@ -29,9 +29,9 @@ def test_ensure_index_builds_then_incremental(fixture_kb, tmp_path):
     db = tmp_path / "emb.db"
     fake = FakeEmbedder()
     n1 = embed.ensure_index(fixture_kb, db, fake)
-    assert n1 == 2  # demo-doc có 2 section
+    assert n1 == 2  # demo-doc has 2 sections
     n2 = embed.ensure_index(fixture_kb, db, fake)
-    assert n2 == 0  # không đổi → không re-embed
+    assert n2 == 0  # unchanged → no re-embed
 
 
 def test_ensure_index_reembeds_changed_section(fixture_kb, tmp_path):
@@ -54,13 +54,13 @@ def test_semantic_search_ranks_by_similarity(fixture_kb, tmp_path):
     hits = embed.semantic_search(db, fake, "airspace designation rules")
     assert hits
     assert hits[0][0] == "demo-doc"
-    assert hits[0][1] == "1.1"  # section airspace gần query hơn airway
+    assert hits[0][1] == "1.1"  # the airspace section is closer to the query than airway
     assert hits[0][2] > hits[-1][2] if len(hits) > 1 else True
 
 
 def test_semantic_search_filters_below_min_score(fixture_kb, tmp_path):
-    # query rác không khớp trục nào → vec [0,0,0,0.1], distance 1.0 tới mọi
-    # section (score 0.5) < SEMANTIC_MIN_SCORE (0.6) → không trả kết quả nào
+    # a garbage query matches no axis → vec [0,0,0,0.1], distance 1.0 to every
+    # section (score 0.5) < SEMANTIC_MIN_SCORE (0.6) → returns no results
     db = tmp_path / "emb.db"
     fake = FakeEmbedder()
     embed.ensure_index(fixture_kb, db, fake)
@@ -69,7 +69,7 @@ def test_semantic_search_filters_below_min_score(fixture_kb, tmp_path):
 
 
 class _BadDimEmbedder:
-    """Embedder lỗi cấu hình: khai dim=4 nhưng trả vector 3 chiều."""
+    """Misconfigured embedder: declares dim=4 but returns a 3-dim vector."""
 
     dim = 4
 
@@ -114,12 +114,12 @@ def test_default_embedder_none_when_missing(monkeypatch):
 
 @pytest.mark.skipif(
     "not config.getoption('--run-slow', default=False)",
-    reason="cần --run-slow (tải model ~100MB)",
+    reason="requires --run-slow (downloads a ~100MB model)",
 )
 def test_real_fastembed_roundtrip(fixture_kb, tmp_path):
     embedder = embed.default_embedder()
     if embedder is None:
-        pytest.skip("fastembed chưa cài")
+        pytest.skip("fastembed not installed")
     db = tmp_path / "emb.db"
     embed.ensure_index(fixture_kb, db, embedder)
     hits = embed.semantic_search(db, embedder, "controlled airspace zones")

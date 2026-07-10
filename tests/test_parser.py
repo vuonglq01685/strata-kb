@@ -37,8 +37,8 @@ def test_doc_to_items_maps_labels():
                 _StubLabel("table"),
                 table_md="| A | B |\n|---|---|\n| 1 | 2 |",
             ),
-            _StubItem(_StubLabel("page_footer"), text="Trang 5"),  # bi bo qua
-            _StubItem(_StubLabel("text"), text="   "),  # rong -> bo qua
+            _StubItem(_StubLabel("page_footer"), text="Page 5"),  # ignored
+            _StubItem(_StubLabel("text"), text="   "),  # empty -> ignored
         ]
     )
     items = parser.doc_to_items(doc)
@@ -56,7 +56,7 @@ def test_crosscheck_reports_missing_bookmark():
 
 
 def test_crosscheck_covered_by_prefix_not_reported():
-    # 5.3.2 nam trong unit 5.3 (bi gop) -> khong canh bao
+    # 5.3.2 is within unit 5.3 (folded together) -> no warning
     warnings = parser.crosscheck(unit_ids={"5", "5.3"}, bm_ids={"5.3.2"})
     assert warnings == []
 

@@ -28,14 +28,14 @@ def build_kb(kb_dir: Path, allow_pending: bool = False) -> BuildReport:
     report = BuildReport()
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
-        report.errors.append(f"khong thay {index_path}")
+        report.errors.append(f"not found: {index_path}")
         return report
     index = models.load_yaml_model(index_path, models.KBIndex)
 
     for entry in index.docs:
         manifest_path = kb_dir / entry.id / "_manifest.yaml"
         if not manifest_path.exists():
-            report.errors.append(f"{entry.id}: thieu _manifest.yaml")
+            report.errors.append(f"{entry.id}: missing _manifest.yaml")
             continue
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
         file_cache: dict[str, str] = {}
@@ -50,12 +50,12 @@ def build_kb(kb_dir: Path, allow_pending: bool = False) -> BuildReport:
             l2_slice = slice_section(l2_text, sec.id) if l2_text else None
             l3_slice = slice_section(l3_text, sec.id) if l3_text else None
             if l2_slice is None or l3_slice is None:
-                report.errors.append(f"{ref}: khong tim thay section trong file L2/L3")
+                report.errors.append(f"{ref}: section not found in the L2/L3 file")
                 continue
 
             is_pending = TODO_MARKER in l2_slice or not sec.summary.strip()
             if is_pending:
-                msg = f"{ref}: con TODO marker hoac summary rong"
+                msg = f"{ref}: still has a TODO marker or an empty summary"
                 if allow_pending:
                     report.warnings.append(msg)
                 else:
@@ -65,7 +65,7 @@ def build_kb(kb_dir: Path, allow_pending: bool = False) -> BuildReport:
             for table in extract_tables(l3_slice):
                 if normalize_table(table) not in l2_tables:
                     report.errors.append(
-                        f"{ref}: bang trong L3 khong khop nguyen van voi L2 "
+                        f"{ref}: table in L3 doesn't match L2 verbatim "
                         f"(table integrity fail)"
                     )
                     break
@@ -79,7 +79,7 @@ def build_kb(kb_dir: Path, allow_pending: bool = False) -> BuildReport:
     l0_tokens = count_tokens(index_path.read_text(encoding="utf-8"))
     if l0_tokens > 1000:
         report.warnings.append(
-            f"L0 index.yaml = {l0_tokens} token (> 1000, xem lai muc tieu spec)"
+            f"L0 index.yaml = {l0_tokens} tokens (> 1000, review the spec target)"
         )
     return report
 

@@ -12,13 +12,13 @@ from aero_kb.mdutils import slice_section
 
 logger = logging.getLogger("aero_kb.embed")
 
-# Ngưỡng BM25 top-score kích hoạt bước 3 (embedding fallback) — hằng số
-# trung tính, tinh chỉnh khi đo trên KB thật (spec Phase 3 §7).
+# BM25 top-score threshold that triggers step 3 (embedding fallback) — a
+# neutral constant, to be tuned once measured on a real KB (spec Phase 3 §7).
 SEMANTIC_FALLBACK_THRESHOLD = 5.0
 
-SEMANTIC_MIN_SCORE = 0.6  # sàn score 1/(1+distance) — lọc kết quả gần-nhất-nhưng-không-liên-quan; tinh chỉnh khi đo thật
+SEMANTIC_MIN_SCORE = 0.6  # score floor 1/(1+distance) — filters out nearest-but-irrelevant results; tune once measured for real
 
-_L2_HEAD_CHARS = 500  # phần đầu L2 đưa vào text embedding
+_L2_HEAD_CHARS = 500  # leading chunk of L2 fed into the embedding text
 
 
 class Embedder(Protocol):
@@ -28,7 +28,7 @@ class Embedder(Protocol):
 
 
 class _FastEmbedder:
-    """fastembed ONNX — bge-small-en-v1.5, 384 chiều, thuần local."""
+    """fastembed ONNX — bge-small-en-v1.5, 384 dimensions, fully local."""
 
     dim = 384
 
@@ -42,17 +42,17 @@ class _FastEmbedder:
 
 
 def default_embedder() -> Embedder | None:
-    """Embedder thật nếu đã cài [embed]; None (kèm log) nếu thiếu."""
+    """Real embedder if [embed] is installed; None (with a log) if missing."""
     try:
         return _FastEmbedder()
     except ImportError:
         logger.info(
-            "fastembed chưa cài — semantic search tắt, dùng BM25 "
-            "(bật bằng: pip install -e '.[embed]')"
+            "fastembed not installed — semantic search disabled, using BM25 "
+            "(enable with: pip install -e '.[embed]')"
         )
         return None
-    except Exception as exc:  # tải model fail (offline lần đầu...)
-        logger.warning("không khởi tạo được embedder — fallback BM25: %s", exc)
+    except Exception as exc:  # model download failed (first run offline...)
+        logger.warning("could not initialize embedder — falling back to BM25: %s", exc)
         return None
 
 
@@ -95,7 +95,7 @@ def _section_text(kb_dir: Path, doc_id: str, sec: models.SectionEntry) -> str:
 
 
 def ensure_index(kb_dir: Path, db_path: Path, embedder: Embedder) -> int:
-    """Build/refresh index tăng dần theo content-hash. Trả số section re-embed."""
+    """Incrementally build/refresh the index by content-hash. Returns the number of sections re-embedded."""
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
         return 0
@@ -123,7 +123,7 @@ def ensure_index(kb_dir: Path, db_path: Path, embedder: Embedder) -> int:
                 if key in stored and stored[key][1] == digest:
                     continue
                 to_embed.append((doc.id, sec.id, digest, text))
-        # xóa section không còn tồn tại
+        # delete sections that no longer exist
         for key, (rowid, _) in stored.items():
             if key not in seen:
                 conn.execute("DELETE FROM sections WHERE id = ?", (rowid,))
@@ -133,8 +133,8 @@ def ensure_index(kb_dir: Path, db_path: Path, embedder: Embedder) -> int:
             for vec in vectors:
                 if len(vec) != embedder.dim:
                     raise ValueError(
-                        f"embedder trả vector {len(vec)} chiều, kỳ vọng {embedder.dim} "
-                        "chiều (embedder.dim) — kiểm tra lại cấu hình embedder"
+                        f"embedder returned a {len(vec)}-dim vector, expected {embedder.dim} "
+                        "dims (embedder.dim) — check the embedder configuration"
                     )
             for (doc_id, sec_id, digest, _), vec in zip(to_embed, vectors):
                 old = stored.get((doc_id, sec_id))
@@ -161,7 +161,7 @@ def ensure_index(kb_dir: Path, db_path: Path, embedder: Embedder) -> int:
 def semantic_search(
     db_path: Path, embedder: Embedder, text: str, k: int = 10
 ) -> list[tuple[str, str, float]]:
-    """KNN trên index — trả (doc_id, section_id, score) giảm dần theo score."""
+    """KNN over the index — returns (doc_id, section_id, score) in descending score order."""
     if not db_path.exists():
         return []
     query_vec = embedder.embed([text])[0]

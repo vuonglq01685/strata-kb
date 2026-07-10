@@ -43,12 +43,12 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
 
     new_path = doc_dir / "_manifest.yaml"
     if not new_path.exists():
-        raise ValueError(f"doc '{doc_id}' không có trong worktree ({new_path})")
+        raise ValueError(f"doc '{doc_id}' is not in the worktree ({new_path})")
     new = models.load_yaml_model(new_path, models.Manifest)
 
     old_text = gitio.read_at(root, against, new_path)
     if old_text is None:
-        raise ValueError(f"doc '{doc_id}' không tồn tại tại rev '{against}'")
+        raise ValueError(f"doc '{doc_id}' does not exist at rev '{against}'")
     old = models.Manifest.model_validate(yaml.safe_load(old_text) or {})
 
     old_by_id = {s.id: s for s in old.sections}
@@ -99,8 +99,8 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
 
 def render_diff(report: DiffReport) -> str:
     if not report.has_changes:
-        return f"{report.doc_id}: không có thay đổi so với {report.against}"
-    lines = [f"{report.doc_id} — thay đổi so với {report.against}:"]
+        return f"{report.doc_id}: no changes since {report.against}"
+    lines = [f"{report.doc_id} — changes since {report.against}:"]
     for c in report.added:
         lines.append(f"+ §{c.section_id} {c.title}")
     for c in report.removed:
