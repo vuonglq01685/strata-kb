@@ -142,6 +142,16 @@ def build(
         typer.secho(f"[error] {error}", fg=typer.colors.RED)
     if not report.ok:
         raise typer.Exit(1)
+
+    db_path = kb_dir.resolve().parent / ".kb-work" / "embeddings.db"
+    if db_path.exists():
+        from aero_kb.embed import default_embedder, ensure_index
+
+        embedder = default_embedder()
+        if embedder is not None:
+            n = ensure_index(kb_dir, db_path, embedder)
+            if n:
+                typer.echo(f"embeddings.db: re-embed {n} section.")
     typer.echo("kb build: OK")
 
 
@@ -154,13 +164,18 @@ def query(
     hub: str = typer.Option(
         "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
     ),
+    semantic: bool = typer.Option(
+        False, "--semantic", help="Ép dùng embedding search (bước 3 routing)"
+    ),
 ) -> None:
     """Tag match → BM25 → trả section L2 trong budget, kèm citation."""
     from aero_kb.query import search
 
     handle = _resolve_hub_option(hub)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
-    results = search(kb_dir, text, tags=tag_list, budget=budget, hub=handle)
+    results = search(
+        kb_dir, text, tags=tag_list, budget=budget, hub=handle, semantic=semantic
+    )
     if not results:
         typer.echo("Không tìm thấy section phù hợp.")
         raise typer.Exit(0)

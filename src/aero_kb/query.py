@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from rank_bm25 import BM25Plus
 
 from aero_kb import models
+from aero_kb.embed import SEMANTIC_FALLBACK_THRESHOLD
 from aero_kb.mdutils import count_tokens, slice_section
 
 if TYPE_CHECKING:
@@ -144,6 +145,8 @@ def search(
     tags: list[str] | None = None,
     budget: int = 2000,
     hub: "HubHandle | None" = None,
+    semantic: bool = False,
+    embedder=None,  # aero_kb.embed.Embedder | None — tiêm được cho test
 ) -> list[QueryResult]:
     corpus = _gather_candidates(kb_dir, tags, hub)
     if not corpus:
@@ -184,6 +187,77 @@ def search(
                 content=content,
                 tokens=n_tokens,
                 source=c.source,
+            )
+        )
+        used += n_tokens
+        if used >= budget:
+            break
+
+    top_score = results[0].score if results else 0.0
+    if semantic or not results or top_score < SEMANTIC_FALLBACK_THRESHOLD:
+        semantic_results = _semantic_fallback(
+            kb_dir, hub, corpus, text, budget, embedder
+        )
+        if semantic_results:
+            return semantic_results
+    return results
+
+
+def _semantic_fallback(
+    kb_dir: Path,
+    hub: "HubHandle | None",
+    corpus: list[_Candidate],
+    text: str,
+    budget: int,
+    embedder,
+) -> list[QueryResult]:
+    """Bước 3 routing: KNN trên sqlite-vec, chỉ local + hub (có L2)."""
+    from aero_kb import embed as embed_mod
+
+    if embedder is None:
+        embedder = embed_mod.default_embedder()
+    if embedder is None:
+        return []
+    by_key: dict[tuple[str, str, str], _Candidate] = {}
+    for c in corpus:
+        if c.kb_dir is not None:  # bỏ federation
+            by_key[(c.source, c.doc.id, c.sec.id)] = c
+    hits: list[tuple[str, str, str, float]] = []  # source, doc, sec, score
+    stores: list[tuple[str, Path, Path]] = [
+        ("local", kb_dir, kb_dir.resolve().parent / ".kb-work" / "embeddings.db")
+    ]
+    if hub is not None:
+        stores.append(("hub", hub.kb_dir, hub.root / ".kb-work" / "embeddings.db"))
+    for source, source_kb, db_path in stores:
+        try:
+            embed_mod.ensure_index(source_kb, db_path, embedder)
+            for doc_id, sec_id, score in embed_mod.semantic_search(
+                db_path, embedder, text
+            ):
+                hits.append((source, doc_id, sec_id, score))
+        except Exception as exc:  # embedding là tăng cường — không bao giờ gãy query
+            import logging
+
+            logging.getLogger("aero_kb.query").warning(
+                "semantic search lỗi (%s) — bỏ qua: %s", source, exc
+            )
+    results: list[QueryResult] = []
+    used = 0
+    for source, doc_id, sec_id, score in sorted(hits, key=lambda h: -h[3]):
+        c = by_key.get((source, doc_id, sec_id))
+        if c is None:
+            continue
+        content = _candidate_content(c)
+        if content is None:
+            continue
+        n_tokens = count_tokens(content)
+        if results and used + n_tokens > budget:
+            break
+        results.append(
+            QueryResult(
+                doc_id=doc_id, section_id=sec_id, title=c.sec.title,
+                score=float(score), citation=c.citation, content=content,
+                tokens=n_tokens, source=c.source,
             )
         )
         used += n_tokens
