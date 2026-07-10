@@ -348,6 +348,8 @@ Chạy `python -m aero_kb.mcp --kb .kb` (đã khai báo sẵn trong `.mcp.json` 
 | `kb diff <doc-id> --against <rev>` | So section added/removed/changed của 1 tài liệu giữa worktree hiện tại và một git rev — dùng khi cần biết chính xác amendment đổi những gì | `0` OK (kể cả không có khác biệt), `1` lỗi (doc không tồn tại, rev không hợp lệ...) |
 | `kb doctor [--context <file\|->]` | Kiểm tra sức khỏe KB (mục lục hỏng, file thiếu...); thêm `--context` để kiểm luôn staleness của 1 citation | `0` OK, `1` có lỗi KB, `2` không lỗi nhưng citation `stale` — CI dùng mã này để phân biệt "cần BA xác nhận lại" |
 
+`kb resolve`/`kb doctor --context` phát hiện thay đổi trên nội dung L2 (tầng BA đọc); `kb diff` báo thay đổi trên summary L1 và nguyên văn L3 (phạm vi SME review). Một sửa đổi chỉ chạm L2 sẽ báo stale ở resolve nhưng không hiện trong diff.
+
 #### Flow BA → Jira → Dev
 
 1. BA chạy `kb context new --refs "<doc> §<section>"` sau khi đọc xong đoạn spec liên quan.
