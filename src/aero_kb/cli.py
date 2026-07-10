@@ -21,6 +21,22 @@ def main() -> None:
     """AERO-KB CLI."""
 
 
+def _resolve_hub_option(hub: str):
+    """'' → None; ngược lại resolve qua hub.resolve_hub (None nếu không truy cập được)."""
+    if not hub:
+        return None
+    from aero_kb.hub import resolve_hub
+
+    handle = resolve_hub(hub)
+    if handle is None:
+        typer.secho(
+            f"[warn] không truy cập được hub '{hub}' — chạy tiếp với KB cục bộ",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    return handle
+
+
 @app.command()
 def ingest(
     pdf: Path = typer.Argument(..., help="File PDF nguồn"),
@@ -142,11 +158,7 @@ def query(
     """Tag match → BM25 → trả section L2 trong budget, kèm citation."""
     from aero_kb.query import search
 
-    handle = None
-    if hub:
-        from aero_kb.hub import resolve_hub
-
-        handle = resolve_hub(hub)
+    handle = _resolve_hub_option(hub)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
     results = search(kb_dir, text, tags=tag_list, budget=budget, hub=handle)
     if not results:
@@ -174,11 +186,7 @@ def get(
     """Lấy chính xác một section ở tầng chỉ định."""
     from aero_kb.query import get_section
 
-    handle = None
-    if hub:
-        from aero_kb.hub import resolve_hub
-
-        handle = resolve_hub(hub)
+    handle = _resolve_hub_option(hub)
     result = get_section(kb_dir, doc_id, section, level=level, hub=handle)
     if result is None:
         typer.secho(f"Không thấy {doc_id} §{section}", fg=typer.colors.RED)
@@ -242,6 +250,9 @@ def context_new(
     ),
     tags: str = typer.Option("", help="Tags, phân cách bằng dấu phẩy"),
     kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+    ),
 ) -> None:
     """Sinh block kb-context pin tại HEAD — dán vào Jira ticket."""
     from aero_kb import gitio, kbcontext
@@ -260,8 +271,25 @@ def context_new(
             "--refs rỗng — cần ít nhất 1 ref, vd 'arinc-424 §5.3'", fg=typer.colors.RED
         )
         raise typer.Exit(1)
-    bad = [str(r) for r in ref_list
-           if get_section(kb_dir, r.doc_id, r.section_id) is None]
+
+    handle = _resolve_hub_option(hub)
+    bad: list[str] = []
+    needs_hub = False
+    for r in ref_list:
+        if r.repo_id:
+            found = handle is not None and (
+                handle.federation_dir / r.repo_id / "manifests" / f"{r.doc_id}.yaml"
+            ).exists()
+            needs_hub = True
+        else:
+            found = get_section(kb_dir, r.doc_id, r.section_id) is not None
+            if not found and handle is not None:
+                found = (
+                    get_section(kb_dir, r.doc_id, r.section_id, hub=handle) is not None
+                )
+                needs_hub = needs_hub or found
+        if not found:
+            bad.append(str(r))
     if bad:
         typer.secho(
             f"Ref không resolve được ở worktree: {', '.join(bad)}", fg=typer.colors.RED
@@ -273,8 +301,13 @@ def context_new(
             fg=typer.colors.YELLOW,
             err=True,
         )
+    hub_version = None
+    if needs_hub and handle is not None:
+        hub_version = gitio.head_commit(gitio.git_root(handle.root))
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-    ctx = kbcontext.KBContext(version=version, refs=ref_list, tags=tag_list)
+    ctx = kbcontext.KBContext(
+        version=version, hub_version=hub_version, refs=ref_list, tags=tag_list
+    )
     typer.echo(kbcontext.render(ctx))
 
 
@@ -284,6 +317,9 @@ def resolve(
         ..., help="File chứa block kb-context (hoặc '-' đọc từ stdin)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="Thư mục KB"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+    ),
 ) -> None:
     """Resolve block kb-context: trả section đúng version pin + freshness."""
     from aero_kb import gitio, kbcontext
@@ -297,9 +333,10 @@ def resolve(
         except OSError as exc:
             typer.secho(f"không đọc được file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
+    handle = _resolve_hub_option(hub)
     try:
         ctx = kbcontext.parse(text)
-        results = resolve_refs(kb_dir, ctx)
+        results = resolve_refs(kb_dir, ctx, hub=handle)
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -334,6 +371,9 @@ def doctor(
     context: str | None = typer.Option(
         None, "--context", help="File chứa block kb-context (hoặc '-' đọc từ stdin)"
     ),
+    hub: str = typer.Option(
+        "", "--hub", envvar="AERO_KB_HUB", help="URL/path kb-hub (rỗng = không dùng)"
+    ),
 ) -> None:
     """Kiểm tra sức khỏe KB; kèm --context để check staleness của citation."""
     from aero_kb.doctor import check_context, check_kb
@@ -344,7 +384,8 @@ def doctor(
         text = sys.stdin.read() if context == "-" else Path(context).read_text(
             encoding="utf-8"
         )
-        ctx_issues, results = check_context(kb_dir, text)
+        handle = _resolve_hub_option(hub)
+        ctx_issues, results = check_context(kb_dir, text, hub=handle)
         issues += ctx_issues
         has_stale = any(r.status == "stale" for r in results)
 

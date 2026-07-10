@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from aero_kb import gitio, kbcontext, models
 from aero_kb.mdutils import slice_section
 from aero_kb.resolve import ResolvedRef, resolve_refs
+
+if TYPE_CHECKING:
+    from aero_kb.hub import HubHandle
 
 
 @dataclass
@@ -81,14 +84,14 @@ def check_kb(kb_dir: Path) -> list[Issue]:
 
 
 def check_context(
-    kb_dir: Path, text: str
+    kb_dir: Path, text: str, hub: "HubHandle | None" = None
 ) -> tuple[list[Issue], list[ResolvedRef]]:
     try:
         ctx = kbcontext.parse(text)
     except kbcontext.KBContextError as exc:
         return [Issue("error", str(exc))], []
     try:
-        results = resolve_refs(kb_dir, ctx)
+        results = resolve_refs(kb_dir, ctx, hub=hub)
     except gitio.GitError as exc:
         return [Issue("error", str(exc))], []
 
