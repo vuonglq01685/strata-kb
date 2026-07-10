@@ -172,6 +172,27 @@ def test_unmatched_heading_without_colon_still_fallback():
     assert units[0].title == "FOREWORD"
 
 
+def test_appendix_numeric_sections_namespaced():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "CHAPTER 2. GENERAL PROVISIONS", 1),
+        DocItem("heading", "2.1 Objective", 2),
+        DocItem("text", big),
+        DocItem("heading", "Appendix 3 - Specifications", 1),
+        DocItem("heading", "2.1 Appendix section", 2),
+        DocItem("text", "Appendix-specific content. " + big),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert "2.1" in ids
+    assert "app3-2.1" in ids
+    u21 = next(u for u in units if u.id == "2.1")
+    assert "Appendix-specific content." not in u21.body_md
+    uapp = next(u for u in units if u.id == "app3-2.1")
+    assert "Appendix-specific content." in uapp.body_md
+    assert uapp.chapter == "app3"
+
+
 def test_small_leaf_folding_skipped_when_parent_would_exceed_cap():
     # 30 con nho (moi con ~140 token) -> tong ~4200 + body cha ~700 > cap 4000
     small = "Field definition body. " * 35  # ~140 token
