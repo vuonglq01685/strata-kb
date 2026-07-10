@@ -1020,7 +1020,7 @@ def crosscheck(
 ```
 Expected: 5 passed.
 
-**Lưu ý cho executor:** API Docling (`iterate_items`, `export_to_markdown(doc=...)`, `export_to_dict`, `model_validate_json`) viết theo docling>=2.0. Ở Task 12 (chạy thật lần đầu), nếu API lệch, dùng Context7 tra docs docling hiện hành và chỉ sửa trong `parser.py` — các module khác không đụng đến Docling.
+**Lưu ý cho executor:** Code `crosscheck` mẫu ở trên có bug (rule `bm.startswith(uid + ".")` không có leaf-guard sẽ mâu thuẫn với test đầu tiên) — bản implement thực tế dùng leaf-unit coverage rule: unit chỉ "hấp thụ" bookmark con khi unit đó là lá (không có unit con nào khác). API Docling (`iterate_items`, `export_to_markdown(doc=...)`, `export_to_dict`, `model_validate_json`) viết theo docling>=2.0. Ở Task 12 (chạy thật lần đầu), nếu API lệch, dùng Context7 tra docs docling hiện hành và chỉ sửa trong `parser.py` — các module khác không đụng đến Docling.
 
 - [ ] **Step 5: Commit**
 
