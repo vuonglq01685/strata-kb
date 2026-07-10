@@ -141,11 +141,15 @@ AERO-KB/
 ├── .kb-work/                ← File trung gian máy tự sinh khi parse PDF — bỏ qua, không cần quan tâm
 ├── .venv/                   ← Môi trường Python cài đặt — bỏ qua, không cần quan tâm
 │
+├── .mcp.json                 ← Khai báo MCP server cho Claude Code (Phase 2, xem mục 7.8)
 ├── src/aero_kb/              ← Mã nguồn của công cụ (chỉ dev cần đụng vào)
-│   ├── cli.py                       lệnh `kb` (ingest/status/build/query/get/stats)
+│   ├── cli.py                       lệnh `kb` (đủ 10 lệnh, xem mục 7)
 │   ├── ingest/                      phần "cắt PDF thành section"
 │   ├── build.py                     phần "kiểm tra toàn vẹn"
-│   └── query.py                     phần "tìm kiếm & trả lời"
+│   ├── query.py                     phần "tìm kiếm & trả lời"
+│   ├── mcp.py                       MCP server cho agent tra cứu (Phase 2)
+│   ├── kbcontext.py, resolve.py     block kb-context + resolve theo bản đã pin (Phase 2)
+│   └── diff.py, doctor.py, gitio.py so sánh amendment + kiểm tra sức khỏe kho (Phase 2)
 │
 ├── .claude/skills/kb-summarize/    ← "công thức" hướng dẫn AI cách viết tóm tắt cho đúng chuẩn
 ├── docs/                            ← tài liệu thiết kế, kế hoạch (dành cho người phát triển công cụ)
@@ -184,7 +188,7 @@ pip install -e ".[ingest,dev]"
 kb --help
 ```
 
-Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `get`, `stats`) — cài đặt thành công.
+Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `get`, `stats`, `context`, `resolve`, `diff`, `doctor`) — cài đặt thành công.
 
 > **Lưu ý:** mỗi lần mở terminal mới để làm việc với dự án, phải chạy lại `source .venv/bin/activate` trước (dấu hiệu nhận biết: đầu dòng lệnh terminal có chữ `(.venv)`).
 
@@ -192,7 +196,7 @@ Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `
 
 ## 7. Từ điển lệnh `kb`
 
-Toàn bộ công cụ chỉ có 6 lệnh. Bảng dưới liệt kê theo đúng thứ tự dùng trong một quy trình thực tế.
+Bảng dưới liệt kê các lệnh cốt lõi (có từ Phase 1) theo đúng thứ tự dùng trong một quy trình thực tế. Bốn lệnh mới của Phase 2 — `context new`, `resolve`, `diff`, `doctor` — xem mục [7.8](#78-phase-2--tích-hợp-workflow).
 
 | # | Lệnh | Dùng để làm gì | Ai chạy |
 |---|---|---|---|
