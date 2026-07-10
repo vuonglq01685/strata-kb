@@ -89,3 +89,42 @@ def _read_cached(path: Path, cache: dict[str, str]) -> str:
     if key not in cache:
         cache[key] = path.read_text(encoding="utf-8") if path.exists() else ""
     return cache[key]
+
+
+@dataclass
+class DocStats:
+    doc_id: str
+    n_sections: int
+    l1_tokens: int
+    l2_tokens: int
+    l3_tokens: int
+
+    @property
+    def saving_pct(self) -> float:
+        if self.l3_tokens == 0:
+            return 0.0
+        return 100.0 * (1 - self.l2_tokens / self.l3_tokens)
+
+
+def kb_stats(kb_dir: Path) -> tuple[int, list[DocStats]]:
+    index_path = kb_dir / "index.yaml"
+    if not index_path.exists():
+        return 0, []
+    l0_tokens = count_tokens(index_path.read_text(encoding="utf-8"))
+    index = models.load_yaml_model(index_path, models.KBIndex)
+    stats: list[DocStats] = []
+    for entry in index.docs:
+        manifest_path = kb_dir / entry.id / "_manifest.yaml"
+        if not manifest_path.exists():
+            continue
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        stats.append(
+            DocStats(
+                doc_id=entry.id,
+                n_sections=len(manifest.sections),
+                l1_tokens=count_tokens(manifest_path.read_text(encoding="utf-8")),
+                l2_tokens=sum(s.tokens.l2 for s in manifest.sections),
+                l3_tokens=sum(s.tokens.l3 for s in manifest.sections),
+            )
+        )
+    return l0_tokens, stats
