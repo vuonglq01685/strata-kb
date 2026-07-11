@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 from center_kb import models
 from center_kb.cli import app
-from center_kb.ingest.sectioner import DocItem
+from center_kb.ingest.sectioner import DocItem, Part
 
 runner = CliRunner()
 
@@ -13,6 +13,12 @@ FAKE_ITEMS = [
     DocItem("text", "Chapter intro. " * 60),
     DocItem("heading", "5.3 Restrictive Airspace", 2),
     DocItem("text", "Airspace body. " * 60),
+]
+
+BOOKMARK_ITEMS = [
+    DocItem("heading", "5.0 NAVIGATION DATA", 1, page=1),
+    DocItem("text", "Chapter intro. " * 60, page=1),
+    DocItem("text", "Flow body. " * 60, page=5),
 ]
 
 
@@ -24,6 +30,32 @@ def _fake_parse(monkeypatch):
     monkeypatch.setattr(
         parser, "bookmark_ids", lambda pdf, config=None: {"5", "5.3", "5.9"}
     )
+
+
+def _fake_parse_with_bookmark_parts(monkeypatch):
+    from center_kb.ingest import parser
+
+    monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc: BOOKMARK_ITEMS)
+    monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
+    monkeypatch.setattr(
+        parser,
+        "outline_parts",
+        lambda pdf, config=None: [Part("1", "INTRO", 1), Part("att1", "FLOW", 5)],
+    )
+
+
+def _fake_parse_outline_forbidden(monkeypatch):
+    from center_kb.ingest import parser
+
+    monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc: BOOKMARK_ITEMS)
+    monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
+
+    def _forbidden(pdf, config=None):
+        raise AssertionError("outline_parts must not be called with --no-bookmarks")
+
+    monkeypatch.setattr(parser, "outline_parts", _forbidden)
 
 
 def test_ingest_creates_kb_and_reports_warnings(tmp_path: Path, monkeypatch):
@@ -146,3 +178,29 @@ def test_ingest_failed_sections_still_exit_0(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "failed" in result.output
     assert "kb summarize" in result.output  # re-run hint
+
+
+def test_ingest_uses_bookmark_parts_when_available(tmp_path: Path, monkeypatch):
+    _fake_parse_with_bookmark_parts(monkeypatch)
+    _write_pdf(tmp_path)
+    result = runner.invoke(app, _ingest_args(tmp_path, ["--llm", "none"]))
+    assert result.exit_code == 0, result.output
+    assert "sectioning: bookmarks (2 parts)" in result.output
+    doc_dir = tmp_path / ".kb" / "arinc-424"
+    assert any(f.name.startswith("att1-") for f in doc_dir.glob("*.md"))
+    manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
+    assert manifest.ingest.used_bookmarks is True
+
+
+def test_ingest_no_bookmarks_flag_forces_regex_mode(tmp_path: Path, monkeypatch):
+    _fake_parse_outline_forbidden(monkeypatch)
+    _write_pdf(tmp_path)
+    result = runner.invoke(
+        app, _ingest_args(tmp_path, ["--llm", "none", "--no-bookmarks"])
+    )
+    assert result.exit_code == 0, result.output
+    assert "sectioning: heading patterns" in result.output
+    manifest = models.load_yaml_model(
+        tmp_path / ".kb" / "arinc-424" / "_manifest.yaml", models.Manifest
+    )
+    assert manifest.ingest.used_bookmarks is False
