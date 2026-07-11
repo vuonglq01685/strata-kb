@@ -1,8 +1,10 @@
+import json as _json
 from pathlib import Path
 
 import pytest
 
 from center_kb import models, summarize
+from center_kb.llm import RunnerError
 
 
 def make_kb(tmp_path: Path, statuses: dict[str, str]) -> Path:
@@ -94,3 +96,75 @@ def test_replace_marker_replaces_only_target_and_keeps_tables(tmp_path):
 def test_replace_marker_raises_when_marker_missing():
     with pytest.raises(ValueError):
         summarize.replace_marker("## 1.1 Alpha\n\ntext\n", "1.1", "s")
+
+
+class FakeRunner:
+    """Duck-typed stand-in for llm.Runner. Scripted replies per call order."""
+    name = "fake"
+
+    def __init__(self, reply=None, fail_ids=(), fail_times=2):
+        self._reply = reply
+        self._fail_ids = set(fail_ids)
+        self._fail_times = fail_times
+        self._fail_count: dict[str, int] = {}
+        self.calls: list[str] = []
+
+    def run(self, prompt: str) -> str:
+        self.calls.append(prompt)
+        for sid in self._fail_ids:
+            if f"Section {sid} " in prompt:
+                n = self._fail_count.get(sid, 0)
+                if n < self._fail_times:
+                    self._fail_count[sid] = n + 1
+                    raise RunnerError("boom")
+        if "one-line summaries" in prompt:  # doc-summary call
+            return _json.dumps({"summary": "Doc-level summary."})
+        return self._reply or _json.dumps(
+            {"l2_summary": "Condensed text.", "l1_summary": "One line."}
+        )
+
+
+def test_summarize_kb_fills_l2_manifest_and_doc_summary(tmp_path):
+    kb = make_kb(tmp_path, {})
+    report = summarize.summarize_kb(kb, FakeRunner(), max_workers=2)
+    assert sorted(report.summarized) == ["d1/1.1", "d1/1.2"]
+    assert report.failed == [] and report.ok
+    l2 = (kb / "d1" / "ch1.md").read_text(encoding="utf-8")
+    assert "TODO:summarize" not in l2
+    assert "Condensed text." in l2
+    assert "| P | Prohibited |" in l2  # table survived
+    manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
+    assert all(s.status == "summarized" for s in manifest.sections)
+    assert all(s.summary == "One line." for s in manifest.sections)
+    index = models.load_yaml_model(kb / "index.yaml", models.KBIndex)
+    assert index.docs[0].summary == "Doc-level summary."
+
+
+def test_summarize_kb_failed_section_stays_pending(tmp_path):
+    kb = make_kb(tmp_path, {})
+    report = summarize.summarize_kb(kb, FakeRunner(fail_ids={"1.2"}), max_workers=2)
+    assert report.summarized == ["d1/1.1"]
+    assert report.failed == ["d1/1.2"] and not report.ok
+    manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
+    by_id = {s.id: s for s in manifest.sections}
+    assert by_id["1.1"].status == "summarized"
+    assert by_id["1.2"].status == "pending"
+    l2 = (kb / "d1" / "ch1.md").read_text(encoding="utf-8")
+    assert "<!-- TODO:summarize 1.2 -->" in l2
+    index = models.load_yaml_model(kb / "index.yaml", models.KBIndex)
+    assert index.docs[0].summary == ""  # doc not complete → no doc summary
+
+
+def test_summarize_kb_retries_once_then_succeeds(tmp_path):
+    kb = make_kb(tmp_path, {})
+    runner = FakeRunner(fail_ids={"1.1"}, fail_times=1)  # fails once, retry OK
+    report = summarize.summarize_kb(kb, runner, max_workers=1)
+    assert report.ok and sorted(report.summarized) == ["d1/1.1", "d1/1.2"]
+
+
+def test_summarize_kb_no_pending_is_noop(tmp_path):
+    kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "reviewed"})
+    runner = FakeRunner()
+    report = summarize.summarize_kb(kb, runner)
+    assert report.summarized == [] and report.failed == []
+    assert runner.calls == []

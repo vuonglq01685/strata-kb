@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from center_kb import models
+from center_kb.llm import RunnerError
 from center_kb.mdutils import slice_section
 
 SECTION_PROMPT = """You are filling in summaries for a knowledge-base section.
@@ -105,3 +108,124 @@ def replace_marker(l2_text: str, section_id: str, summary: str) -> str:
     if marker not in l2_text:
         raise ValueError(f"marker not found: {marker}")
     return l2_text.replace(marker, summary, 1)
+
+
+@dataclass
+class SummarizeReport:
+    summarized: list[str] = field(default_factory=list)  # "doc-id/section-id"
+    failed: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.failed
+
+
+def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
+    prompt = build_section_prompt(section)
+    last: Exception | None = None
+    for _ in range(2):  # 1 try + exactly 1 retry (spec §3.3)
+        try:
+            return parse_json_reply(
+                runner.run(prompt), ("l2_summary", "l1_summary")
+            )
+        except (RunnerError, ValueError) as exc:
+            last = exc
+    raise RunnerError(str(last))
+
+
+def summarize_kb(
+    kb_dir: Path,
+    runner,
+    doc_id: str | None = None,
+    max_workers: int = 5,
+    on_progress: Callable[[str], None] | None = None,
+) -> SummarizeReport:
+    """Fill pending sections via the runner. Workers only call the LLM;
+    all file writes happen sequentially on the main thread."""
+    say = on_progress or (lambda _msg: None)
+    pending = collect_pending(kb_dir, doc_id)
+    report = SummarizeReport()
+    if not pending:
+        return report
+
+    results: dict[tuple[str, str], dict[str, str]] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_summarize_one, runner, s): s for s in pending}
+        for fut in as_completed(futures):
+            s = futures[fut]
+            key = f"{s.doc_id}/{s.section_id}"
+            try:
+                results[(s.doc_id, s.section_id)] = fut.result()
+            except RunnerError as exc:
+                report.failed.append(key)
+                say(f"[fail] {key}: {exc}")
+            else:
+                say(f"[ok] {key}")
+
+    _apply_results(kb_dir, results, report)
+    _fill_doc_summaries(kb_dir, runner, {s.doc_id for s in pending}, say)
+    report.summarized.sort()
+    report.failed.sort()
+    return report
+
+
+def _apply_results(
+    kb_dir: Path,
+    results: dict[tuple[str, str], dict[str, str]],
+    report: SummarizeReport,
+) -> None:
+    by_doc: dict[str, dict[str, dict[str, str]]] = {}
+    for (doc, sid), pair in results.items():
+        by_doc.setdefault(doc, {})[sid] = pair
+    for doc, pairs in by_doc.items():
+        manifest_path = kb_dir / doc / "_manifest.yaml"
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        l2_cache: dict[str, str] = {}
+        for sec in manifest.sections:
+            pair = pairs.get(sec.id)
+            if pair is None:
+                continue
+            key = f"{doc}/{sec.id}"
+            if sec.file not in l2_cache:
+                l2_cache[sec.file] = (kb_dir / doc / f"{sec.file}.md").read_text(
+                    encoding="utf-8"
+                )
+            try:
+                l2_cache[sec.file] = replace_marker(
+                    l2_cache[sec.file], sec.id, pair["l2_summary"]
+                )
+            except ValueError:
+                report.failed.append(key)
+                continue
+            sec.summary = pair["l1_summary"]
+            sec.status = "summarized"
+            report.summarized.append(key)
+        for stem, text in l2_cache.items():
+            (kb_dir / doc / f"{stem}.md").write_text(text, encoding="utf-8")
+        models.save_yaml_model(manifest_path, manifest)
+
+
+def _fill_doc_summaries(
+    kb_dir: Path, runner, doc_ids: set[str], say: Callable[[str], None]
+) -> None:
+    index_path = kb_dir / "index.yaml"
+    index = models.load_yaml_model(index_path, models.KBIndex)
+    changed = False
+    for entry in index.docs:
+        if entry.id not in doc_ids:
+            continue
+        manifest = models.load_yaml_model(
+            kb_dir / entry.id / "_manifest.yaml", models.Manifest
+        )
+        if any(s.status == "pending" for s in manifest.sections):
+            continue  # doc not complete yet
+        prompt = build_doc_prompt(entry.title, [s.summary for s in manifest.sections])
+        try:
+            reply = parse_json_reply(runner.run(prompt), ("summary",))
+        except (RunnerError, ValueError) as exc:
+            say(f"[warn] doc summary failed for {entry.id}: {exc}")
+            continue
+        entry.summary = reply["summary"]
+        changed = True
+    if changed:
+        models.save_yaml_model(index_path, index)
