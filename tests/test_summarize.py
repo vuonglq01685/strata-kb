@@ -275,3 +275,64 @@ def test_table_only_section_skips_llm():
         "l2_summary": "",
         "l1_summary": "Table-only section: Table Only.",
     }
+
+
+import json
+
+from center_kb.summarize import _max_chars, build_section_prompt
+
+
+def _prose_section(prose: str) -> PendingSection:
+    return PendingSection("doc1", "1", "Prose", "f1", prose, table_only=False)
+
+
+def test_max_chars_floor_and_ratio():
+    assert _max_chars("x" * 100) == 300          # floor wins
+    assert _max_chars("x" * 2000) == 700         # 0.35 ratio wins
+
+
+def test_prompt_contains_budget_and_table_rules():
+    sec = _prose_section("p" * 2000)
+    prompt = build_section_prompt(sec)
+    assert "at most 700 characters" in prompt
+    assert "[table omitted]" in prompt           # rule mentions the marker
+    assert "Never describe, list, or reconstruct table contents" in prompt
+
+
+class _ScriptedRunner:
+    """Returns queued replies; records prompts."""
+
+    name = "scripted"
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.prompts = []
+
+    def run(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.replies.pop(0)
+
+
+def _reply(l2: str) -> str:
+    return json.dumps({"l2_summary": l2, "l1_summary": "One line."})
+
+
+def test_length_guard_passes_short_reply():
+    runner = _ScriptedRunner([_reply("short summary")])
+    result = _summarize_one(runner, _prose_section("p" * 2000))
+    assert result["l2_summary"] == "short summary"
+    assert len(runner.prompts) == 1
+
+
+def test_length_guard_retries_then_accepts():
+    runner = _ScriptedRunner([_reply("x" * 800), _reply("y" * 100)])
+    result = _summarize_one(runner, _prose_section("p" * 2000))  # limit 700
+    assert result["l2_summary"] == "y" * 100
+    assert len(runner.prompts) == 2
+    assert "over the 700-character hard limit" in runner.prompts[1]
+
+
+def test_length_guard_fails_after_two_long_replies():
+    runner = _ScriptedRunner([_reply("x" * 800), _reply("z" * 800)])
+    with pytest.raises(RunnerError, match="too long"):
+        _summarize_one(runner, _prose_section("p" * 2000))

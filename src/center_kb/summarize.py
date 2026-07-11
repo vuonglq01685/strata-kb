@@ -15,6 +15,10 @@ SECTION_PROMPT = """You are filling in summaries for a knowledge-base section.
 
 Section {section_id} — {title}
 
+The source below is prose only — tables were removed and replaced with
+[table omitted] markers. The tables are preserved verbatim elsewhere; they
+are NOT your concern.
+
 <source>
 {l3_body}
 </source>
@@ -22,12 +26,14 @@ Section {section_id} — {title}
 Write two summaries of the source text, following ALL rules:
 - Write in English.
 - l2_summary: condense the prose to ~20-30% of the original length, keep the \
-logical structure.
+logical structure. HARD LIMIT: l2_summary must be at most {max_chars} \
+characters — if your draft is longer, compress harder before replying.
+- Never describe, list, or reconstruct table contents; ignore \
+[table omitted] markers entirely.
 - Preserve VERBATIM: codes (P, R, D...), record/field names (UR, PA...), \
 numeric values, units, cross-references (§x.y). Never paraphrase technical terms.
 - Do not invent anything that is not in the source. When unsure, keep the \
 original sentence.
-- Do not summarize, create, or delete tables (tables are handled separately).
 - l1_summary: one sentence, max 25 words, stating what the section covers and \
 what kind of data it contains.
 
@@ -114,9 +120,16 @@ def collect_pending(kb_dir: Path, doc_id: str | None = None) -> list[PendingSect
     return out
 
 
+def _max_chars(prose: str) -> int:
+    return max(300, int(0.35 * len(prose)))
+
+
 def build_section_prompt(section: PendingSection) -> str:
     return SECTION_PROMPT.format(
-        section_id=section.section_id, title=section.title, l3_body=section.l3_body
+        section_id=section.section_id,
+        title=section.title,
+        l3_body=section.l3_body,
+        max_chars=_max_chars(section.l3_body),
     )
 
 
@@ -164,15 +177,29 @@ def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
             "l2_summary": "",
             "l1_summary": f"Table-only section: {section.title}.",
         }
+    limit = _max_chars(section.l3_body)
     prompt = build_section_prompt(section)
     last: Exception | None = None
     for _ in range(2):  # 1 try + exactly 1 retry (spec §3.3)
         try:
-            return parse_json_reply(
+            reply = parse_json_reply(
                 runner.run(prompt), ("l2_summary", "l1_summary")
             )
         except (RunnerError, ValueError) as exc:
             last = exc
+            continue
+        if len(reply["l2_summary"]) <= limit:
+            return reply
+        last = ValueError(
+            f"l2_summary too long: {len(reply['l2_summary'])} chars"
+            f" > limit {limit}"
+        )
+        prompt = (
+            build_section_prompt(section)
+            + f"\n\nYour previous l2_summary was {len(reply['l2_summary'])}"
+            f" characters — over the {limit}-character hard limit."
+            " Reply again, compressed to fit."
+        )
     raise RunnerError(str(last))
 
 
