@@ -5,6 +5,7 @@ import pytest
 
 from center_kb import models, summarize
 from center_kb.llm import RunnerError
+from center_kb.summarize import collect_pending, rebuild_l2_scaffold, redo_reset, strip_tables
 
 
 def make_kb(tmp_path: Path, statuses: dict[str, str]) -> Path:
@@ -203,3 +204,183 @@ def test_summarize_kb_survives_bare_oserror_from_one_section(tmp_path):
     by_id = {s.id: s for s in manifest.sections}
     assert by_id["1.1"].status == "summarized"
     assert by_id["1.2"].status == "pending"
+
+
+def test_strip_tables_replaces_block_with_placeholder():
+    text = "intro line\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\noutro line"
+    out = strip_tables(text)
+    assert "| a | b |" not in out
+    assert out.count("[table omitted]") == 1
+    assert "intro line" in out and "outro line" in out
+
+
+def test_strip_tables_multiple_blocks_and_edges():
+    text = "| t1 |\n| x |\nprose between\n| t2 |\n| y |"
+    out = strip_tables(text)
+    assert out.count("[table omitted]") == 2
+    assert "prose between" in out
+    assert "| t1 |" not in out and "| y |" not in out
+
+
+def test_strip_tables_no_tables_is_identity_modulo_whitespace():
+    text = "just prose\n\nmore prose"
+    assert strip_tables(text) == text
+
+
+def test_collect_pending_strips_tables_and_flags_table_only(tmp_path):
+    kb = tmp_path / ".kb"
+    (kb / "doc1").mkdir(parents=True)
+    (kb / "index.yaml").write_text(
+        "docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8"
+    )
+    raw = (
+        "## 1 Prose Section\n\nSome prose here.\n\n| h |\n|---|\n| v |\n\n"
+        "## 2 Table Only\n\n| h2 |\n|----|\n| v2 |\n"
+    )
+    (kb / "doc1" / "f1.raw.md").write_text(raw, encoding="utf-8")
+    (kb / "doc1" / "_manifest.yaml").write_text(
+        "id: doc1\ntitle: Doc One\nrevision: ''\n"
+        "ingested: 2026-07-11\nsource_sha256: ''\n"
+        "ingest: {chapter_pattern: x, appendix_pattern: y}\n"
+        "sections:\n"
+        "- {id: '1', title: Prose Section, file: f1, status: pending}\n"
+        "- {id: '2', title: Table Only, file: f1, status: pending}\n",
+        encoding="utf-8",
+    )
+    pending = collect_pending(kb)
+    by_id = {p.section_id: p for p in pending}
+    assert "| h |" not in by_id["1"].l3_body
+    assert "[table omitted]" in by_id["1"].l3_body
+    assert "Some prose here." in by_id["1"].l3_body
+    assert by_id["1"].table_only is False
+    assert by_id["2"].table_only is True
+
+
+from center_kb.summarize import PendingSection, _summarize_one
+
+
+class _ExplodingRunner:
+    name = "exploding"
+
+    def run(self, prompt: str) -> str:  # pragma: no cover - must not be called
+        raise AssertionError("runner.run must not be called for table-only sections")
+
+
+def test_table_only_section_skips_llm():
+    sec = PendingSection(
+        "doc1", "2", "Table Only", "f1", "[table omitted]", table_only=True
+    )
+    result = _summarize_one(_ExplodingRunner(), sec)
+    assert result == {
+        "l2_summary": "",
+        "l1_summary": "Table-only section: Table Only.",
+    }
+
+
+import json
+
+from center_kb.summarize import _max_chars, build_section_prompt
+
+
+def _prose_section(prose: str) -> PendingSection:
+    return PendingSection("doc1", "1", "Prose", "f1", prose, table_only=False)
+
+
+def test_max_chars_floor_and_ratio():
+    assert _max_chars("x" * 100) == 300          # floor wins
+    assert _max_chars("x" * 2000) == 700         # 0.35 ratio wins
+
+
+def test_prompt_contains_budget_and_table_rules():
+    sec = _prose_section("p" * 2000)
+    prompt = build_section_prompt(sec)
+    assert "at most 700 characters" in prompt
+    assert "[table omitted]" in prompt           # rule mentions the marker
+    assert "Never describe, list, or reconstruct table contents" in prompt
+
+
+class _ScriptedRunner:
+    """Returns queued replies; records prompts."""
+
+    name = "scripted"
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.prompts = []
+
+    def run(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.replies.pop(0)
+
+
+def _reply(l2: str) -> str:
+    return json.dumps({"l2_summary": l2, "l1_summary": "One line."})
+
+
+def test_length_guard_passes_short_reply():
+    runner = _ScriptedRunner([_reply("short summary")])
+    result = _summarize_one(runner, _prose_section("p" * 2000))
+    assert result["l2_summary"] == "short summary"
+    assert len(runner.prompts) == 1
+
+
+def test_length_guard_retries_then_accepts():
+    runner = _ScriptedRunner([_reply("x" * 800), _reply("y" * 100)])
+    result = _summarize_one(runner, _prose_section("p" * 2000))  # limit 700
+    assert result["l2_summary"] == "y" * 100
+    assert len(runner.prompts) == 2
+    assert "over the 700-character hard limit" in runner.prompts[1]
+
+
+def test_length_guard_fails_after_two_long_replies():
+    runner = _ScriptedRunner([_reply("x" * 800), _reply("z" * 800)])
+    with pytest.raises(RunnerError, match="too long"):
+        _summarize_one(runner, _prose_section("p" * 2000))
+
+
+L2_WITH_SUMMARIES = (
+    "## 1 Prose Section\n\nAn old summary paragraph.\nSecond line of it.\n\n"
+    "| h |\n|---|\n| v |\n\n"
+    "## 2 Table Only\n\n| h2 |\n|----|\n| v2 |\n"
+)
+
+
+def test_rebuild_l2_scaffold_restores_markers_keeps_tables():
+    out = rebuild_l2_scaffold(L2_WITH_SUMMARIES)
+    assert "<!-- TODO:summarize 1 -->" in out
+    assert "<!-- TODO:summarize 2 -->" in out
+    assert "An old summary paragraph." not in out
+    assert "| h |" in out and "| v2 |" in out
+    # headings preserved
+    assert "## 1 Prose Section" in out and "## 2 Table Only" in out
+
+
+def test_rebuild_l2_scaffold_is_idempotent():
+    once = rebuild_l2_scaffold(L2_WITH_SUMMARIES)
+    assert rebuild_l2_scaffold(once) == once
+
+
+def test_redo_reset_flips_statuses_and_rewrites_l2(tmp_path):
+    kb = tmp_path / ".kb"
+    (kb / "doc1").mkdir(parents=True)
+    (kb / "index.yaml").write_text(
+        "docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8"
+    )
+    (kb / "doc1" / "f1.md").write_text(L2_WITH_SUMMARIES, encoding="utf-8")
+    (kb / "doc1" / "_manifest.yaml").write_text(
+        "id: doc1\ntitle: Doc One\nrevision: ''\n"
+        "ingested: 2026-07-11\nsource_sha256: ''\n"
+        "ingest: {chapter_pattern: x, appendix_pattern: y}\n"
+        "sections:\n"
+        "- {id: '1', title: Prose Section, file: f1, status: summarized, summary: old}\n"
+        "- {id: '2', title: Table Only, file: f1, status: reviewed, summary: old2}\n",
+        encoding="utf-8",
+    )
+    report = redo_reset(kb)
+    assert sorted(report.reset) == ["doc1/1", "doc1/2"]
+    assert report.reviewed_reset == 1
+    manifest_text = (kb / "doc1" / "_manifest.yaml").read_text(encoding="utf-8")
+    assert "summarized" not in manifest_text and "reviewed" not in manifest_text
+    l2 = (kb / "doc1" / "f1.md").read_text(encoding="utf-8")
+    assert "<!-- TODO:summarize 1 -->" in l2
+    assert "An old summary paragraph." not in l2

@@ -129,3 +129,16 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
         assert "l1|l2|l3" not in text
     assert "/kb-ingest" in quick
     assert "/kb-publish" in quick
+
+
+def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
+    init_repo(tmp_path)
+    skill = (
+        tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    instr = (
+        tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
+    ).read_text(encoding="utf-8")
+    for text in (skill, instr):
+        assert "Summarize the prose ONLY" in text
+        assert "Table-only section:" in text
