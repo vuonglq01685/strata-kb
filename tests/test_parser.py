@@ -88,6 +88,11 @@ def test_crosscheck_ignores_bookmarks_deeper_than_max_depth():
     assert warnings == []
 
 
+def test_crosscheck_covered_by_dash_namespaced_units():
+    warnings = parser.crosscheck(unit_ids={"att4-2.1", "att4-2.2"}, bm_ids={"att4"})
+    assert warnings == []
+
+
 def test_load_or_parse_without_docling_raises_helpful_error(tmp_path, monkeypatch):
     import builtins
 

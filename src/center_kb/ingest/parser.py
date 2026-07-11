@@ -182,6 +182,8 @@ def crosscheck(
                 covered = True
             elif uid.startswith(bm + "."):
                 covered = True
+            elif uid.startswith(bm + "-"):
+                covered = True
             if covered:
                 break
         if not covered:
