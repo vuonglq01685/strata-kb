@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Demo federation Phase 3: hub bare + 2 repo con, chạy trọn vòng.
-# Yêu cầu: đã `pip install -e .` và có git. Chạy từ root repo AERO-KB.
+# Yêu cầu: đã `pip install -e .` và có git. Chạy từ root repo CENTER-KB.
 set -euo pipefail
 
 # Trên Windows/Git Bash, console mặc định dùng codepage cp1252 — output có
@@ -9,8 +9,8 @@ set -euo pipefail
 export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 
 WORK=$(mktemp -d)
-export AERO_KB_HUB_CACHE="$WORK/cache"
-export AERO_KB_HUB_TTL=0
+export CENTER_KB_HUB_CACHE="$WORK/cache"
+export CENTER_KB_HUB_TTL=0
 trap 'rm -rf "$WORK"' EXIT
 echo "== Demo federation trong $WORK"
 
@@ -78,7 +78,7 @@ echo "$BLOCK"
 
 # --- 6. Amendment hub → resolve báo stale ---
 # `kb publish` (bước 3) đã push trực tiếp vào $BARE qua cache riêng của nó
-# (AERO_KB_HUB_CACHE), tách biệt với working copy $HUB dựng ở bước 1 — nên
+# (CENTER_KB_HUB_CACHE), tách biệt với working copy $HUB dựng ở bước 1 — nên
 # $HUB giờ đang sau $BARE vài commit, phải đồng bộ lại trước khi amend + push.
 git_c "$HUB" pull -q --ff-only origin HEAD
 sed -i.bak 's/multiple code, level./multiple code, level, NEW field./' \

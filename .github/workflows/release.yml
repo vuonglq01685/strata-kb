@@ -34,7 +34,7 @@ jobs:
           mkdir /tmp/kbtest && cd /tmp/kbtest
           /tmp/venv/bin/kb init
           /tmp/venv/bin/kb doctor
-          /tmp/venv/bin/python -c "from importlib import resources; resources.files('aero_kb').joinpath('templates/web/base.html').read_text(encoding='utf-8')"
+          /tmp/venv/bin/python -c "from importlib import resources; resources.files('center_kb').joinpath('templates/web/base.html').read_text(encoding='utf-8')"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -62,15 +62,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME} .
+        run: docker build -t ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME} .
       - name: Smoke test — serve an empty KB, health must answer, API must 401
         run: |
           mkdir -p /tmp/data/.kb
           echo "docs: []" > /tmp/data/.kb/index.yaml
           docker run -d --name kb -p 8321:8321 \
-            -e AERO_KB_HTTP_TOKEN=smoke-test-token \
+            -e CENTER_KB_HTTP_TOKEN=smoke-test-token \
             -v /tmp/data:/data \
-            ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME}
+            ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME}
           for i in $(seq 1 30); do
             curl -sf http://localhost:8321/api/health && break
             sleep 2
@@ -87,6 +87,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push tags
         run: |
-          docker tag ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME} ghcr.io/vuonglq01685/aero-kb:latest
-          docker push ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME}
-          docker push ghcr.io/vuonglq01685/aero-kb:latest
+          docker tag ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME} ghcr.io/vuonglq01685/center-kb:latest
+          docker push ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME}
+          docker push ghcr.io/vuonglq01685/center-kb:latest

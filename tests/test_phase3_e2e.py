@@ -8,10 +8,10 @@ repo-a commits more without publishing → doctor catches the index being out of
 import pytest
 from typer.testing import CliRunner
 
-from aero_kb import models
-from aero_kb.cli import app
-from aero_kb.hub import resolve_hub
-from aero_kb.query import search
+from center_kb import models
+from center_kb.cli import app
+from center_kb.hub import resolve_hub
+from center_kb.query import search
 
 runner = CliRunner()
 
@@ -19,8 +19,8 @@ runner = CliRunner()
 @pytest.fixture
 def fed_world(tmp_path, git_kb, hub_worktree, run_git, monkeypatch):
     """hub bare + repo-a (git_kb, publishes 'repo-a') + repo-b (publishes 'repo-b')."""
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("AERO_KB_HUB_TTL", "0")  # always pull — see the latest publish
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CENTER_KB_HUB_TTL", "0")  # always pull — see the latest publish
     bare = tmp_path / "hub.git"
     bare.mkdir()
     run_git(bare, "init", "--bare")
@@ -63,7 +63,7 @@ def fed_world(tmp_path, git_kb, hub_worktree, run_git, monkeypatch):
     run_git(repo_b, "add", "-A")
     run_git(repo_b, "commit", "-m", "repo-b v1")
 
-    from aero_kb.publish import publish
+    from center_kb.publish import publish
 
     publish(git_kb["kb"], str(bare), repo_id="repo-a")
     publish(kb_b, str(bare), repo_id="repo-b")
@@ -133,7 +133,7 @@ def test_doctor_detects_index_out_of_date(fed_world, run_git, monkeypatch):
     # → git root name) so it matches the repo_id the doctor CLI will infer —
     # otherwise the doctor CLI would only see an unknown repo-id as 'not yet
     # published' (warning) rather than out of sync.
-    from aero_kb.publish import publish
+    from center_kb.publish import publish
 
     publish(kb_a, str(fed_world["bare"]), repo_id=None)
 
@@ -150,7 +150,7 @@ def test_doctor_detects_index_out_of_date(fed_world, run_git, monkeypatch):
 
     # also cover the explicit repo-id path, directly via check_hub with
     # repo_id='repo-a' (the original publish in fed_world):
-    from aero_kb.doctor import check_hub
+    from center_kb.doctor import check_hub
 
     handle = resolve_hub(str(fed_world["bare"]))
     issues, _ = check_hub(kb_a, handle, repo_id="repo-a")

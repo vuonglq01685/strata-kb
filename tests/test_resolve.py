@@ -1,5 +1,5 @@
-from aero_kb import kbcontext, models
-from aero_kb.resolve import render_resolved, resolve_refs
+from center_kb import kbcontext, models
+from center_kb.resolve import render_resolved, resolve_refs
 
 
 def _ctx(version: str, *refs: str) -> kbcontext.KBContext:

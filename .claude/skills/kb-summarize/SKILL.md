@@ -5,7 +5,7 @@ description: Điền summary L0/L1/L2 cho các section đang pending trong .kb/ 
 
 # KB Summarize — điền tri thức vào khung .kb/
 
-Bạn là "nửa LLM" của pipeline AERO-KB. `kb ingest` đã sinh khung; nhiệm vụ
+Bạn là "nửa LLM" của pipeline CENTER-KB. `kb ingest` đã sinh khung; nhiệm vụ
 của bạn là điền phần summary. KHÔNG sửa bất kỳ thứ gì ngoài các vị trí nêu dưới.
 
 ## Quy trình

@@ -1,5 +1,5 @@
 [project]
-name = "aero-kb"
+name = "center-kb"
 version = "0.2.0"
 description = "Knowledge Base as Code cho tài liệu hàng không — 4 tầng L0-L3, MCP server + web UI"
 readme = "README.md"
@@ -33,18 +33,18 @@ dev = ["pytest>=8.0", "anyio>=4.0", "sqlite-vec>=0.1.6"]
 embed = ["sqlite-vec>=0.1.6", "fastembed>=0.3"]
 
 [project.scripts]
-kb = "aero_kb.cli:app"
+kb = "center_kb.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/vuonglq01685/AERO-KB"
-Issues = "https://github.com/vuonglq01685/AERO-KB/issues"
+Homepage = "https://github.com/vuonglq01685/CENTER-KB"
+Issues = "https://github.com/vuonglq01685/CENTER-KB/issues"
 
 [build-system]
 requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/aero_kb"]
+packages = ["src/center_kb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

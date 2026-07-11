@@ -2,8 +2,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from aero_kb.cli import app
-from aero_kb.initcmd import EXPECTED_FILES, init_repo
+from center_kb.cli import app
+from center_kb.initcmd import EXPECTED_FILES, init_repo
 
 runner = CliRunner()
 

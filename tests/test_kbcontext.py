@@ -1,6 +1,6 @@
 import pytest
 
-from aero_kb import kbcontext
+from center_kb import kbcontext
 
 BLOCK = """kb-context:
   version: a3f9c21

@@ -1,9 +1,9 @@
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from aero_kb.mcp import ServerConfig
-from aero_kb.web import ui
-from aero_kb.web.auth import COOKIE_NAME
+from center_kb.mcp import ServerConfig
+from center_kb.web import ui
+from center_kb.web.auth import COOKIE_NAME
 
 TOKEN = "secret-token"
 

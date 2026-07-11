@@ -1,7 +1,7 @@
 from typer.testing import CliRunner
 
-from aero_kb import kbcontext
-from aero_kb.cli import app
+from center_kb import kbcontext
+from center_kb.cli import app
 
 runner = CliRunner()
 

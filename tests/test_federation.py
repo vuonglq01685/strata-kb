@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aero_kb import federation, models
+from center_kb import federation, models
 
 
 def _write_entry(fed_dir: Path, repo_id: str, doc_id: str) -> None:

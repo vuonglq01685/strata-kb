@@ -1,4 +1,4 @@
-from aero_kb.ingest.sectioner import DocItem, build_units, parse_section_id
+from center_kb.ingest.sectioner import DocItem, build_units, parse_section_id
 
 
 class TestParseSectionId:

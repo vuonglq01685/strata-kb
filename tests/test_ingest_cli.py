@@ -2,9 +2,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from aero_kb import models
-from aero_kb.cli import app
-from aero_kb.ingest.sectioner import DocItem
+from center_kb import models
+from center_kb.cli import app
+from center_kb.ingest.sectioner import DocItem
 
 runner = CliRunner()
 
@@ -17,7 +17,7 @@ FAKE_ITEMS = [
 
 
 def _fake_parse(monkeypatch):
-    from aero_kb.ingest import parser
+    from center_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
     monkeypatch.setattr(parser, "doc_to_items", lambda doc: FAKE_ITEMS)

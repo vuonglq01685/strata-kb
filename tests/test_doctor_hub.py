@@ -2,10 +2,10 @@ import os
 import shutil
 import stat
 
-from aero_kb import gitio, models
-from aero_kb.doctor import check_hub
-from aero_kb.federation import FederationMeta
-from aero_kb.hub import HubHandle
+from center_kb import gitio, models
+from center_kb.doctor import check_hub
+from center_kb.federation import FederationMeta
+from center_kb.hub import HubHandle
 
 
 def _force_rmtree(path):
@@ -101,7 +101,7 @@ def test_federation_cross_collision_warning(git_kb, hub_worktree):
 def test_cli_doctor_hub_collision_exit_1(git_kb, hub_worktree, monkeypatch):
     from typer.testing import CliRunner
 
-    from aero_kb.cli import app
+    from center_kb.cli import app
 
     hub_kb = hub_worktree / ".kb"
     index = models.load_yaml_model(hub_kb / "index.yaml", models.KBIndex)
@@ -122,8 +122,8 @@ def test_cli_doctor_exit_2_when_hub_cache_stale_offline(
     reports stale → `kb doctor` exits 2 (not 1: this is a warning, not an error)."""
     from typer.testing import CliRunner
 
-    from aero_kb.cli import app
-    from aero_kb.hub import resolve_hub
+    from center_kb.cli import app
+    from center_kb.hub import resolve_hub
 
     bare = tmp_path / "hub.git"
     bare.mkdir()
@@ -131,8 +131,8 @@ def test_cli_doctor_exit_2_when_hub_cache_stale_offline(
     run_git(hub_worktree, "remote", "add", "origin", str(bare))
     run_git(hub_worktree, "push", "origin", "HEAD")
 
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("AERO_KB_HUB_TTL", "0")
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CENTER_KB_HUB_TTL", "0")
 
     handle = resolve_hub(str(bare))  # resolve once → creates the cache
     assert handle is not None and handle.stale is False

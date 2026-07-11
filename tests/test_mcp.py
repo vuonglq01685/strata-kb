@@ -1,12 +1,12 @@
 import pytest
 
-# Contingency (see task-9-brief.md Step 1 + src/aero_kb/mcp.py): SDK v2 (`mcp
+# Contingency (see task-9-brief.md Step 1 + src/center_kb/mcp.py): SDK v2 (`mcp
 # import Client`) has no released build on PyPI for this environment — use SDK v1
 # (mcp>=1.2) with the in-memory client session `create_connected_server_and_client_session`
 # instead of `mcp.Client`. Equivalent API: list_tools()/call_tool(name, args).
 from mcp.shared.memory import create_connected_server_and_client_session as connect_client
 
-from aero_kb.mcp import ServerConfig, create_server, parse_args
+from center_kb.mcp import ServerConfig, create_server, parse_args
 
 
 @pytest.fixture
@@ -144,8 +144,8 @@ async def test_kb_get_section_falls_back_to_hub(fixture_kb, hub_worktree):
 
 
 def test_main_http_without_token_fails_fast(monkeypatch):
-    from aero_kb.mcp import main
+    from center_kb.mcp import main
 
-    monkeypatch.delenv("AERO_KB_HTTP_TOKEN", raising=False)
+    monkeypatch.delenv("CENTER_KB_HTTP_TOKEN", raising=False)
     with pytest.raises(SystemExit):
         main(["--transport", "http"])

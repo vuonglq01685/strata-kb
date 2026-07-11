@@ -1,7 +1,7 @@
 import pytest
 
-from aero_kb import models
-from aero_kb.diff import diff_doc, render_diff
+from center_kb import models
+from center_kb.diff import diff_doc, render_diff
 
 
 def test_changed_summary_detected(git_kb):

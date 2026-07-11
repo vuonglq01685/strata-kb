@@ -4,7 +4,7 @@ import stat
 import time
 from pathlib import Path
 
-from aero_kb import hub
+from center_kb import hub
 
 
 def _force_rmtree(path: Path) -> None:
@@ -21,7 +21,7 @@ def _force_rmtree(path: Path) -> None:
 
 def _use_cache(monkeypatch, tmp_path: Path) -> Path:
     cache = tmp_path / "hub-cache"
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(cache))
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache))
     return cache
 
 
@@ -66,7 +66,7 @@ def test_fresh_cache_skips_pull(monkeypatch, tmp_path, hub_worktree, run_git):
 
 def test_expired_ttl_pulls(monkeypatch, tmp_path, hub_worktree, run_git):
     _use_cache(monkeypatch, tmp_path)
-    monkeypatch.setenv("AERO_KB_HUB_TTL", "0")
+    monkeypatch.setenv("CENTER_KB_HUB_TTL", "0")
     bare = tmp_path / "hub.git"
     bare.mkdir()
     run_git(bare, "init", "--bare")
@@ -84,7 +84,7 @@ def test_expired_ttl_pulls(monkeypatch, tmp_path, hub_worktree, run_git):
 
 def test_offline_uses_stale_cache(monkeypatch, tmp_path, hub_worktree, run_git):
     _use_cache(monkeypatch, tmp_path)
-    monkeypatch.setenv("AERO_KB_HUB_TTL", "0")
+    monkeypatch.setenv("CENTER_KB_HUB_TTL", "0")
     bare = tmp_path / "hub.git"
     bare.mkdir()
     run_git(bare, "init", "--bare")

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from aero_kb import models
+from center_kb import models
 
 
 def test_manifest_yaml_roundtrip(tmp_path: Path):

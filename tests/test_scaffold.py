@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from aero_kb import models
-from aero_kb.ingest.scaffold import chapter_stem, scaffold_doc, slugify
-from aero_kb.ingest.sectioner import SectionUnit
+from center_kb import models
+from center_kb.ingest.scaffold import chapter_stem, scaffold_doc, slugify
+from center_kb.ingest.sectioner import SectionUnit
 
 TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |"
 

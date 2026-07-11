@@ -7,7 +7,7 @@ right section, doctor exits 2.
 
 import pytest
 
-# Contingency (see task-9-brief.md Step 1 + src/aero_kb/mcp.py): SDK v2 (`mcp
+# Contingency (see task-9-brief.md Step 1 + src/center_kb/mcp.py): SDK v2 (`mcp
 # import Client`) has no released build on PyPI for this environment — use SDK v1
 # (mcp>=1.2) with the in-memory client session `create_connected_server_and_client_session`
 # instead of `mcp.Client`. Equivalent API: list_tools()/call_tool(name, args);
@@ -15,9 +15,9 @@ import pytest
 from mcp.shared.memory import create_connected_server_and_client_session as connect_client
 from typer.testing import CliRunner
 
-from aero_kb import models
-from aero_kb.cli import app
-from aero_kb.mcp import ServerConfig, create_server
+from center_kb import models
+from center_kb.cli import app
+from center_kb.mcp import ServerConfig, create_server
 
 runner = CliRunner()
 

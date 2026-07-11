@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aero_kb.build import build_kb, kb_stats
+from center_kb.build import build_kb, kb_stats
 
 
 def test_stats_reports_tokens_per_tier(fixture_kb: Path):
