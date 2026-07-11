@@ -37,7 +37,14 @@ def known_doc_ids(config: ServerConfig) -> list[str]:
     ids = [d.id for d in _index_docs(config.kb_dir)]
     hub = hub_handle(config)
     if hub is not None:
-        ids += [d.id for d in _index_docs(hub.kb_dir) if d.id not in set(ids)]
+        seen = set(ids)
+        ids += [d.id for d in _index_docs(hub.kb_dir) if d.id not in seen]
+        seen.update(ids)
+        from aero_kb.federation import load_federation
+
+        for repo in load_federation(hub.federation_dir):
+            ids += [d.id for d in repo.index.docs if d.id not in seen]
+            seen.update(d.id for d in repo.index.docs)
     return ids
 
 

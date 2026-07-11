@@ -19,7 +19,7 @@ def create_app(config: ServerConfig, token: str, mcp_server=None):
     """
 
     async def root(request: Request) -> RedirectResponse:
-        return RedirectResponse("/ui")
+        return RedirectResponse("/ui", status_code=302)
 
     routes: list = [Route("/", root, methods=["GET"])]
     routes += api.build_routes(config)

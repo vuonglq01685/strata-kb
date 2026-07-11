@@ -86,3 +86,9 @@ def test_docs_includes_hub_and_federation(fixture_kb, hub_worktree):
     by_id = {d["id"]: d for d in data["docs"]}
     assert by_id["demo-doc"]["source"] == "local"
     assert by_id["arinc-424"]["source"] == "hub"
+
+
+def test_doc_detail_404_hint_includes_hub_docs(fixture_kb, hub_worktree):
+    resp = _client(fixture_kb, hub=str(hub_worktree)).get("/api/docs/nope")
+    assert resp.status_code == 404
+    assert "arinc-424" in resp.json()["detail"]

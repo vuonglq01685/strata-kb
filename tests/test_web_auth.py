@@ -71,6 +71,18 @@ def test_malformed_cookie_header_is_401_not_crash():
     assert resp.status_code == 401
 
 
+def test_non_ascii_bearer_token_is_401_not_crash():
+    # httpx (0.28+) rejects non-ASCII str header values outright, so the
+    # non-ASCII bytes are passed directly to reach the ASGI app unmodified.
+    resp = _client().get("/api/docs", headers={"Authorization": "Bearer café".encode()})
+    assert resp.status_code == 401
+
+
+def test_non_ascii_cookie_token_is_401_not_crash():
+    resp = _client().get("/api/docs", headers={"Cookie": "aero_kb_token=café".encode()})
+    assert resp.status_code == 401
+
+
 def test_mcp_module_still_exports_bearer_alias():
     from aero_kb.mcp import BearerAuthMiddleware
 

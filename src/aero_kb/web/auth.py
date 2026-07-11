@@ -22,15 +22,21 @@ class TokenAuthMiddleware:
     def _authorized(self, scope) -> bool:
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
         auth = headers.get("authorization", "")
-        if hmac.compare_digest(auth, f"Bearer {self.token}"):
-            return True
+        try:
+            if hmac.compare_digest(auth, f"Bearer {self.token}"):
+                return True
+        except TypeError:
+            return False
         cookie = SimpleCookie()
         try:
             cookie.load(headers.get("cookie", ""))
         except CookieError:
             return False
         morsel = cookie.get(COOKIE_NAME)
-        return morsel is not None and hmac.compare_digest(morsel.value, self.token)
+        try:
+            return morsel is not None and hmac.compare_digest(morsel.value, self.token)
+        except TypeError:
+            return False
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":

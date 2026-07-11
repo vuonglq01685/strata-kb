@@ -10,7 +10,7 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 def test_root_redirects_to_ui(fixture_kb):
     client = TestClient(create_app(ServerConfig(kb_dir=fixture_kb), TOKEN))
     resp = client.get("/", headers=AUTH, follow_redirects=False)
-    assert resp.status_code in (302, 307)
+    assert resp.status_code == 302
     assert resp.headers["location"] == "/ui"
 
 
