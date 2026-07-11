@@ -94,10 +94,17 @@ def ingest(
         "",
         help="Appendix heading regex (default: 'Appendix X', remembered from the previous ingest)",
     ),
+    no_summarize: bool = typer.Option(
+        False, "--no-summarize", help="Skip the automatic LLM summarize step"
+    ),
+    llm: str = typer.Option(
+        "", "--llm", help="Runner: claude | copilot | none (default: auto-detect)"
+    ),
 ) -> None:
     """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
     from center_kb.ingest import parser, scaffold, sectioner
 
+    _validate_llm_choice(llm)
     manifest_path = kb_dir / doc_id / "_manifest.yaml"
     previous = None
     if manifest_path.exists():
@@ -136,7 +143,33 @@ def ingest(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
     )
-    typer.echo("Next: open Claude Code and run the kb-summarize skill, then `kb build`.")
+    if no_summarize or llm == "none":
+        typer.echo(
+            "Summarize skipped. Next: run `kb summarize` (or the kb-summarize "
+            "skill in Claude Code), then `kb build`."
+        )
+        return
+    report_s, reason = _run_summarize(kb_dir, llm, doc_id, max_workers=0)
+    if report_s is None:
+        _echo_no_runner(reason)
+        return
+    typer.echo(
+        f"{len(report_s.summarized)} summarized, {len(report_s.failed)} failed."
+    )
+    if report_s.failed:
+        typer.secho(
+            "Failed sections stay pending — re-run with: kb summarize",
+            fg=typer.colors.YELLOW,
+        )
+    from center_kb.build import build_kb
+
+    build_report = build_kb(kb_dir, allow_pending=bool(report_s.failed))
+    for err in build_report.errors:
+        typer.secho(f"  [build] {err}", fg=typer.colors.RED)
+    for warn in build_report.warnings:
+        typer.secho(f"  [build] {warn}", fg=typer.colors.YELLOW)
+    if build_report.ok:
+        typer.echo("kb build: OK")
 
 
 _LLM_CHOICES = ("", "claude", "copilot", "none")
