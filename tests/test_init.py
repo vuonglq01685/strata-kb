@@ -88,3 +88,20 @@ def test_init_scaffolds_kb_ingest_slash_command(tmp_path: Path):
         assert "NEVER run `kb ingest`" in text       # hard rule present
         assert "revision" in text and "tags" in text
         assert '"none" is a valid answer' in text
+
+
+def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
+    init_repo(tmp_path)
+    skill = tmp_path / ".claude" / "skills" / "kb-publish" / "SKILL.md"
+    prompt = tmp_path / ".github" / "prompts" / "kb-publish.prompt.md"
+    assert skill.is_file() and prompt.is_file()
+    skill_text = skill.read_text(encoding="utf-8")
+    prompt_text = prompt.read_text(encoding="utf-8")
+    assert "name: kb-publish" in skill_text
+    assert "mode: agent" in prompt_text
+    for text in (skill_text, prompt_text):
+        assert "NEVER run `kb approve` or `kb publish`" in text  # hard rule
+        assert "kb diff" in text
+        assert "kb status" in text
+        assert "CENTER_KB_HUB" in text
+        assert "kb doctor" in text
