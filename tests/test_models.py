@@ -58,3 +58,28 @@ def test_index_yaml_roundtrip(tmp_path: Path):
     loaded = models.load_yaml_model(path, models.KBIndex)
     assert loaded == index
     assert "arinc424" in path.read_text()
+
+
+def test_kbindex_without_llm_block_gets_defaults(tmp_path):
+    p = tmp_path / "index.yaml"
+    p.write_text("docs: []\n", encoding="utf-8")
+    index = models.load_yaml_model(p, models.KBIndex)
+    assert index.llm.runner == "auto"
+    assert index.llm.model == "sonnet-5"
+    assert index.llm.effort == "high"
+    assert index.llm.max_workers == 5
+    assert index.llm.timeout == 300
+
+
+def test_kbindex_llm_block_roundtrip(tmp_path):
+    p = tmp_path / "index.yaml"
+    p.write_text(
+        "docs: []\nllm:\n  runner: copilot\n  model: gpt-5\n  max_workers: 2\n",
+        encoding="utf-8",
+    )
+    index = models.load_yaml_model(p, models.KBIndex)
+    assert index.llm.runner == "copilot"
+    assert index.llm.model == "gpt-5"
+    assert index.llm.max_workers == 2
+    models.save_yaml_model(p, index)
+    assert "runner: copilot" in p.read_text(encoding="utf-8")

@@ -14,6 +14,8 @@ TEMPLATE_MAP: dict[str, str] = {
     "docker-compose.yml": "docker-compose.yml",
     ".env.example": "env.example",
     "QUICKSTART.md": "QUICKSTART.md",
+    ".claude/skills/kb-summarize/SKILL.md": "claude-skill-kb-summarize.md",
+    ".github/instructions/kb-summarize.instructions.md": "copilot-kb-summarize.instructions.md",
 }
 EXPECTED_FILES = list(TEMPLATE_MAP)
 
