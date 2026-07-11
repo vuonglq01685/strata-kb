@@ -88,6 +88,9 @@ def test_init_scaffolds_kb_ingest_slash_command(tmp_path: Path):
         assert "NEVER run `kb ingest`" in text       # hard rule present
         assert "revision" in text and "tags" in text
         assert '"none" is a valid answer' in text
+        assert "docker compose run --rm hub kb ingest" in text
+        assert "--no-summarize" in text
+        assert "docker info" in text
 
 
 def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
