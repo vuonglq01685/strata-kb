@@ -33,6 +33,37 @@ class SectionUnit:
     tables: list[str]
 
 
+@dataclass(frozen=True)
+class Part:
+    """One top-level segment of the document, taken from the PDF outline."""
+
+    id: str
+    title: str
+    page: int  # 1-based page where the part starts
+
+
+def split_by_parts(
+    items: list[DocItem], parts: list[Part]
+) -> list[tuple[Part, list[DocItem]]]:
+    """Bucket the item stream by part page ranges (parts sorted by page).
+
+    An item belongs to the last part whose page <= the item's page; items
+    without a page inherit the previous item's page; items before the first
+    part's page fall into the first part.
+    """
+    buckets: dict[str, list[DocItem]] = {p.id: [] for p in parts}
+    idx = 0
+    last_page: int | None = None
+    for item in items:
+        page = item.page if item.page is not None else last_page
+        if item.page is not None:
+            last_page = item.page
+        while idx + 1 < len(parts) and page is not None and page >= parts[idx + 1].page:
+            idx += 1
+        buckets[parts[idx].id].append(item)
+    return [(p, buckets[p.id]) for p in parts]
+
+
 DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
 DEFAULT_APPENDIX_PATTERN = r"^appendix\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
 DEFAULT_ATTACHMENT_PATTERN = r"^attachment\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
