@@ -275,6 +275,68 @@ def _apply_results(
         models.save_yaml_model(manifest_path, manifest)
 
 
+_SECTION_HEAD_RE = re.compile(r"^## (?P<sid>\S+)(\s|$)")
+
+
+def rebuild_l2_scaffold(l2_text: str) -> str:
+    """Rebuild the pre-summarize L2 scaffold from a filled L2 file.
+
+    Keeps `## <id> <title>` headings and table blocks; every section's
+    prose (old summaries, leftover markers) is replaced by its marker.
+    Deterministic and idempotent — used by `kb summarize --redo`.
+    """
+    out: list[str] = []
+    for line in l2_text.splitlines():
+        m = _SECTION_HEAD_RE.match(line)
+        if m:
+            out += [line, "", f"<!-- TODO:summarize {m.group('sid')} -->", ""]
+            continue
+        if line.lstrip().startswith("|"):
+            out.append(line)
+            continue
+        if line.strip() == "" and out and out[-1].lstrip().startswith("|"):
+            out.append("")  # keep the single blank that closes a table block
+        # anything else is prose/old summary/old marker -> dropped
+    return "\n".join(out)
+
+
+@dataclass
+class RedoReport:
+    reset: list[str] = field(default_factory=list)  # "doc-id/section-id"
+    reviewed_reset: int = 0
+
+
+def redo_reset(kb_dir: Path, doc_id: str | None = None) -> RedoReport:
+    """Reset summarized/reviewed sections to pending and restore L2 markers."""
+    index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
+    report = RedoReport()
+    for entry in index.docs:
+        if doc_id and entry.id != doc_id:
+            continue
+        manifest_path = kb_dir / entry.id / "_manifest.yaml"
+        if not manifest_path.exists():
+            continue
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        stems: set[str] = set()
+        for sec in manifest.sections:
+            if sec.status == "reviewed":
+                report.reviewed_reset += 1
+            if sec.status != "pending":
+                report.reset.append(f"{entry.id}/{sec.id}")
+            sec.status = "pending"
+            sec.summary = ""
+            stems.add(sec.file)
+        for stem in stems:
+            path = kb_dir / entry.id / f"{stem}.md"
+            if path.exists():
+                path.write_text(
+                    rebuild_l2_scaffold(path.read_text(encoding="utf-8")),
+                    encoding="utf-8",
+                )
+        models.save_yaml_model(manifest_path, manifest)
+    return report
+
+
 def _fill_doc_summaries(
     kb_dir: Path, runner, doc_ids: set[str], say: Callable[[str], None]
 ) -> None:

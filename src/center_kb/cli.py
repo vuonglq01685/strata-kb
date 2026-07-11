@@ -239,12 +239,28 @@ def summarize(
         0, help="Parallel LLM calls (default: llm.max_workers in index.yaml)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    redo: bool = typer.Option(
+        False,
+        "--redo",
+        help="Reset summarized/reviewed sections to pending (restoring L2 "
+        "markers) and re-summarize from scratch",
+    ),
 ) -> None:
     """Fill pending L1/L2 summaries by calling a headless LLM CLI (claude/copilot)."""
     _validate_llm_choice(llm)
     if not (kb_dir / "index.yaml").exists():
         typer.secho(f"not found: {kb_dir / 'index.yaml'}", fg=typer.colors.RED)
         raise typer.Exit(1)
+    if redo:
+        from center_kb.summarize import redo_reset
+
+        rr = redo_reset(kb_dir, doc_id or None)
+        typer.echo(f"redo: {len(rr.reset)} section(s) reset to pending")
+        if rr.reviewed_reset:
+            typer.secho(
+                f"[warn] {rr.reviewed_reset} reviewed section(s) were reset",
+                fg=typer.colors.YELLOW,
+            )
     report, reason = _run_summarize(kb_dir, llm, doc_id or None, max_workers)
     if report is None:
         _echo_no_runner(reason)
