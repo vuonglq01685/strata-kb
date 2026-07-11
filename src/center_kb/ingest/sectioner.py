@@ -12,6 +12,7 @@ class DocItem:
     kind: str  # "heading" | "text" | "table"
     text: str
     level: int = 0
+    page: int | None = None
 
 
 @dataclass

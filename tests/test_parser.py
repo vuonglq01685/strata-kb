@@ -9,11 +9,17 @@ class _StubLabel:
 
 
 @dataclass
+class _StubProv:
+    page_no: int
+
+
+@dataclass
 class _StubItem:
     label: _StubLabel
     text: str = ""
     level: int = 1
     table_md: str = ""
+    prov: list = None
 
     def export_to_markdown(self, doc=None):
         return self.table_md
@@ -45,6 +51,22 @@ def test_doc_to_items_maps_labels():
     assert [i.kind for i in items] == ["heading", "text", "table"]
     assert items[0].level == 2
     assert "| A | B |" in items[2].text
+
+
+def test_doc_to_items_carries_page_numbers():
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("section_header"),
+                text="1.0 INTRO",
+                prov=[_StubProv(page_no=21)],
+            ),
+            _StubItem(_StubLabel("text"), text="Body."),  # no prov -> page None
+        ]
+    )
+    items = parser.doc_to_items(doc)
+    assert items[0].page == 21
+    assert items[1].page is None
 
 
 def test_crosscheck_reports_missing_bookmark():
