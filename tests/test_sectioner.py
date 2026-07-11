@@ -24,6 +24,14 @@ class TestParseSectionId:
     def test_unmatched_returns_none(self):
         assert parse_section_id("FOREWORD") is None
 
+    def test_attachment_heading(self):
+        sid, title = parse_section_id("ATTACHMENT 5 PATH AND TERMINATOR")
+        assert sid == "att5"
+        assert title == "PATH AND TERMINATOR"
+
+    def test_attachment_heading_with_separator(self):
+        assert parse_section_id("Attachment 2: Datum List")[0] == "att2"
+
 
 def _items_basic() -> list[DocItem]:
     long_text = "Restrictive airspace body text. " * 60  # > 200 tokens
@@ -240,3 +248,36 @@ def test_small_leaf_folding_still_happens_under_cap():
     assert "5.4.1" not in [u.id for u in units]
     u54 = next(u for u in units if u.id == "5.4")
     assert "### 5.4.1 Tiny" in u54.body_md
+
+
+def test_attachment_numeric_sections_namespaced_in_flat_mode():
+    # NOTE: 80x keeps each leaf > 200 tokens (min_tokens) so it is NOT
+    # folded into its parent — same convention as _items_basic's comment.
+    items = [
+        DocItem("heading", "ATTACHMENT 1 FLOW DIAGRAM", 1),
+        DocItem("text", "Attachment intro. " * 80),
+        DocItem("heading", "2.1 Diagram Conventions", 2),
+        DocItem("text", "Convention body. " * 80),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert "att1" in ids
+    assert "att1-2.1" in ids          # namespaced — no collision with chapter 2.1
+    assert "2.1" not in ids
+
+
+def test_resolve_heading_config_attachment_priority():
+    from center_kb import models
+    from center_kb.ingest.sectioner import (
+        DEFAULT_ATTACHMENT_PATTERN,
+        resolve_heading_config,
+    )
+
+    cfg = resolve_heading_config("", "", "", None)
+    assert cfg.attachment_pattern == DEFAULT_ATTACHMENT_PATTERN
+    prev = models.IngestConfig(chapter_pattern="c", appendix_pattern="a")
+    assert prev.attachment_pattern == ""      # backward-compat default
+    assert prev.used_bookmarks is False
+    custom = r"^annex\s+(\d+)\s*(.*)$"
+    cfg2 = resolve_heading_config("", "", custom, None)
+    assert cfg2.attachment_pattern == custom

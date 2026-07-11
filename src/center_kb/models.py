@@ -27,6 +27,8 @@ class SectionEntry(BaseModel):
 class IngestConfig(BaseModel):
     chapter_pattern: str
     appendix_pattern: str
+    attachment_pattern: str = ""   # "" = default pattern (backward compat)
+    used_bookmarks: bool = False
 
 
 class Manifest(BaseModel):

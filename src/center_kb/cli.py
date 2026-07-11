@@ -111,7 +111,7 @@ def ingest(
         previous = models.load_yaml_model(manifest_path, models.Manifest).ingest
     try:
         heading_config = sectioner.resolve_heading_config(
-            chapter_pattern, appendix_pattern, previous
+            chapter_pattern, appendix_pattern, "", previous
         )
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
