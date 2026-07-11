@@ -16,6 +16,8 @@ TEMPLATE_MAP: dict[str, str] = {
     "QUICKSTART.md": "QUICKSTART.md",
     ".claude/skills/kb-summarize/SKILL.md": "claude-skill-kb-summarize.md",
     ".github/instructions/kb-summarize.instructions.md": "copilot-kb-summarize.instructions.md",
+    ".claude/skills/kb-ingest/SKILL.md": "claude-skill-kb-ingest.md",
+    ".github/prompts/kb-ingest.prompt.md": "copilot-kb-ingest.prompt.md",
 }
 EXPECTED_FILES = list(TEMPLATE_MAP)
 
