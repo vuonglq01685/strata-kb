@@ -29,6 +29,31 @@ def main() -> None:
     """AERO-KB CLI."""
 
 
+@app.command()
+def init(
+    path: Path = typer.Argument(Path("."), help="Target directory (default: current)"),
+    force: bool = typer.Option(False, "--force", help="Overwrite files that already exist"),
+) -> None:
+    """Scaffold a new KB repo: .kb/, federation/, config templates — ready for `kb ingest`."""
+    from aero_kb.initcmd import init_repo
+
+    report = init_repo(path, force=force)
+    for rel in report.created:
+        typer.echo(f"  created  {rel}")
+    for rel in report.skipped:
+        typer.secho(
+            f"  skipped  {rel} (exists — use --force to overwrite)",
+            fg=typer.colors.YELLOW,
+        )
+    typer.echo(
+        f"kb init: {len(report.created)} file(s) created, {len(report.skipped)} skipped."
+    )
+    typer.echo("Next steps:")
+    typer.echo("  1. cp .env.example .env    # then edit AERO_KB_HTTP_TOKEN")
+    typer.echo("  2. kb ingest source/<file>.pdf --id <doc-id>")
+    typer.echo("  (details: QUICKSTART.md)")
+
+
 def _resolve_hub_option(hub: str, quiet: bool = False):
     """'' → None; otherwise resolve via hub.resolve_hub (None if unreachable).
 
