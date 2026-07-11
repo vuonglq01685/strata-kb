@@ -43,7 +43,7 @@ integrity error, restore the table verbatim from the `.raw.md` file.
 - `kb status` — list docs and their pending sections
 - `kb build` — validate the KB (manifests, tables, tokens)
 - `kb query "<question>"` — BM25 search over the summaries
-- `kb get <doc> <section> [--level l1|l2|l3]` — read one section
+- `kb get <doc> <section> [--level l2|l3]` — read one section
 - `kb stats` — token counts per level
 - `kb diff <doc> --against <rev>` — changed sections vs a git rev
 - `kb approve <doc> --section <id>` — mark sections reviewed
