@@ -197,6 +197,10 @@ def _run_summarize(
 
     index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
     effective = llm_choice or index.llm.runner
+    # Looks redundant with detect_runner's own "none" handling, but it is
+    # load-bearing: it's what distinguishes the "disabled" reason returned
+    # here from the "missing" reason returned below when detect_runner
+    # can't find a runner. Don't collapse the two checks.
     if effective == "none":
         return None, "disabled"
     runner = llm_mod.detect_runner(llm_choice or None, index.llm)
