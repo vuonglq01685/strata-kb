@@ -39,6 +39,7 @@ Ghi chú hiện trạng (đã xác minh trong session):
 | 7 | Cổng xác nhận của /kb-publish | Agent trình diff cho user đọc; **không bao giờ tự `kb approve` hay `kb publish` khi user chưa xác nhận rõ ràng** (xác nhận một lần cho cả hai, nêu rõ trước khi hỏi). Hub URL: lấy `CENTER_KB_HUB`, chưa set thì hỏi — không đoán | Approve là phán quyết review của con người; publish là hành động outward-facing. |
 | 8 | Ngôn ngữ template | **Tiếng Anh** | Nhất quán quyết định #7 của spec auto-summarize (package general-purpose). |
 | 9 | Dogfood | Copy 4 file mới vào `.claude/skills/` + `.github/prompts/` của chính repo AERO-KB | Nhất quán quyết định #8 của spec auto-summarize: bản canonical ở `templates/init/`. |
+| 10 | Cách chạy `kb ingest` trong /kb-ingest | **Docker-first, fallback local.** Nếu Docker daemon chạy (`docker info` OK) và có `docker-compose.yml`: `docker compose run --rm hub kb ingest ... --no-summarize` — container không có LLM CLI nên truyền `--no-summarize` tường minh, agent tự điền summaries theo workflow kb-summarize rồi validate bằng `docker compose run --rm hub kb build`. Docker không sẵn sàng → fallback CLI local (`pip install "center-kb[ingest]"`), giữ auto-summarize. Chỉ áp dụng cho /kb-ingest — /kb-publish giữ local (cần git identity/ssh của máy thật) | Image Docker đã bundle ingest extra (docling) — chạy được không cần setup Python local; scaffold đã ship docker-compose.yml. |
 
 ## 3. Hành vi agent — /kb-ingest
 
@@ -49,10 +50,14 @@ Cả hai template (Claude skill + Copilot prompt) mô tả cùng workflow:
    không tồn tại → báo lỗi + list file có sẵn, không đoán mò.
 2. **Đề xuất + xác nhận (HARD RULE):** đề xuất `id`/`revision`/`tags` từ tên
    file, hỏi user xác nhận hoặc sửa. Chưa xác nhận đủ 3 giá trị → không chạy.
-3. **Chạy:** `kb ingest source/<file>.pdf --id <id> --tags <tags> --revision
-   <revision>`, tường thuật kết quả (số section, summarize OK/failed,
-   `kb build` OK). Section failed → chỉ user sang `kb summarize` /
-   skill kb-summarize.
+3. **Chạy (Docker-first — quyết định #10):** Docker sẵn sàng →
+   `docker compose run --rm hub kb ingest source/<file>.pdf --id <id>
+   --tags <tags> --revision <revision> --no-summarize`, sau đó agent tự
+   điền summaries (workflow kb-summarize) và validate bằng
+   `docker compose run --rm hub kb build`. Docker không sẵn sàng →
+   fallback local `kb ingest ...` (auto-summarize như cũ). Tường thuật
+   kết quả (số section, summarize OK/failed, `kb build` OK). Section
+   failed → chỉ user sang `kb summarize` / skill kb-summarize.
 
 Xử lý lỗi: `kb ingest` exit ≠ 0 → hiện nguyên stderr, không tự retry với
 tham số đoán.
