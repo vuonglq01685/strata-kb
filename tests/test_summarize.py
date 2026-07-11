@@ -254,3 +254,24 @@ def test_collect_pending_strips_tables_and_flags_table_only(tmp_path):
     assert "Some prose here." in by_id["1"].l3_body
     assert by_id["1"].table_only is False
     assert by_id["2"].table_only is True
+
+
+from center_kb.summarize import PendingSection, _summarize_one
+
+
+class _ExplodingRunner:
+    name = "exploding"
+
+    def run(self, prompt: str) -> str:  # pragma: no cover - must not be called
+        raise AssertionError("runner.run must not be called for table-only sections")
+
+
+def test_table_only_section_skips_llm():
+    sec = PendingSection(
+        "doc1", "2", "Table Only", "f1", "[table omitted]", table_only=True
+    )
+    result = _summarize_one(_ExplodingRunner(), sec)
+    assert result == {
+        "l2_summary": "",
+        "l1_summary": "Table-only section: Table Only.",
+    }

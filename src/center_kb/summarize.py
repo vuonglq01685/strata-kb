@@ -159,6 +159,11 @@ class SummarizeReport:
 
 
 def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
+    if section.table_only:
+        return {
+            "l2_summary": "",
+            "l1_summary": f"Table-only section: {section.title}.",
+        }
     prompt = build_section_prompt(section)
     last: Exception | None = None
     for _ in range(2):  # 1 try + exactly 1 retry (spec §3.3)
