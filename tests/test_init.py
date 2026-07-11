@@ -57,3 +57,17 @@ def test_quickstart_uses_correct_ingest_flag(tmp_path: Path):
     text = (tmp_path / "QUICKSTART.md").read_text(encoding="utf-8")
     assert "--id" in text
     assert "--doc-id" not in text
+
+
+def test_init_scaffolds_ai_integration_files(tmp_path: Path):
+    init_repo(tmp_path)
+    skill = tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
+    copilot = tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
+    assert skill.is_file() and copilot.is_file()
+    skill_text = skill.read_text(encoding="utf-8")
+    assert "name: kb-summarize" in skill_text
+    assert "VERBATIM" in skill_text            # writing rules present
+    assert "kb build" in skill_text
+    copilot_text = copilot.read_text(encoding="utf-8")
+    assert 'applyTo: ".kb/**"' in copilot_text
+    assert "25 words" in copilot_text
