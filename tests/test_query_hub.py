@@ -1,10 +1,10 @@
-from aero_kb import models
-from aero_kb.hub import HubHandle
-from aero_kb.query import get_section, search
+from center_kb import models
+from center_kb.hub import HubHandle
+from center_kb.query import get_section, search
 
 
 def _fed_entry(hub_root, repo_id, doc_id, summary):
-    from aero_kb.federation import FederationMeta
+    from center_kb.federation import FederationMeta
 
     entry = hub_root / "federation" / repo_id
     (entry / "manifests").mkdir(parents=True)
@@ -117,7 +117,7 @@ def test_get_section_falls_back_to_hub(fixture_kb, hub_worktree):
 def test_cli_query_with_hub(fixture_kb, hub_worktree):
     from typer.testing import CliRunner
 
-    from aero_kb.cli import app
+    from center_kb.cli import app
 
     result = CliRunner().invoke(
         app,

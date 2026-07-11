@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from aero_kb.cli import app
+from center_kb.cli import app
 
 runner = CliRunner()
 
@@ -8,4 +8,4 @@ runner = CliRunner()
 def test_cli_help_shows_app_description():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "AERO-KB" in result.output
+    assert "CENTER-KB" in result.output

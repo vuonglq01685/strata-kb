@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from aero_kb import models
+from center_kb import models
 
 
 def pytest_addoption(parser):

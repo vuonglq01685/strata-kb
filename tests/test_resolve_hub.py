@@ -1,8 +1,8 @@
 import pytest
 
-from aero_kb import gitio, kbcontext, models
-from aero_kb.hub import HubHandle
-from aero_kb.resolve import render_resolved, resolve_refs
+from center_kb import gitio, kbcontext, models
+from center_kb.hub import HubHandle
+from center_kb.resolve import render_resolved, resolve_refs
 
 
 def _ctx(version, *refs, hub_version=None):
@@ -75,7 +75,7 @@ def test_hub_ref_without_hub_handle_broken_not_crash(git_kb):
 def test_remote_ref_resolves_summary_from_federation(git_kb, hub_git, run_git):
     # create a federation entry in the hub then commit — rev3 contains federation
     hub_root = hub_git["root"]
-    from aero_kb.federation import FederationMeta
+    from center_kb.federation import FederationMeta
 
     entry = hub_root / "federation" / "crew-ops"
     (entry / "manifests").mkdir(parents=True)

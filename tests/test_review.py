@@ -1,7 +1,7 @@
 import pytest
 
-from aero_kb import gitio, models
-from aero_kb.review import approve_all_changed, approve_sections, changed_section_ids
+from center_kb import gitio, models
+from center_kb.review import approve_all_changed, approve_sections, changed_section_ids
 
 
 def _statuses(kb, doc_id="demo-doc"):

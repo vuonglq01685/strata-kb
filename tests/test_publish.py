@@ -1,8 +1,8 @@
 import pytest
 
-from aero_kb import federation, gitio, models
-from aero_kb import hub as hub_mod
-from aero_kb.publish import PublishError, PublishReport, publish
+from center_kb import federation, gitio, models
+from center_kb import hub as hub_mod
+from center_kb.publish import PublishError, PublishReport, publish
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def hub_bare(tmp_path, hub_worktree, run_git):
 
 
 def test_publish_to_hub_bare(monkeypatch, tmp_path, git_kb, hub_bare, run_git):
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     report = publish(git_kb["kb"], str(hub_bare))
     assert isinstance(report, PublishReport)
     assert report.n_docs == 1
@@ -46,7 +46,7 @@ def test_repo_id_collides_with_domain_doc(git_kb, hub_worktree):
 def test_push_race_retries_with_rebase(
     monkeypatch, tmp_path, git_kb, hub_bare, run_git, hub_worktree
 ):
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     publish(git_kb["kb"], str(hub_bare), repo_id="repo-a")  # creates the clone cache
     # hub_worktree syncs the just-published commit (cache already pushed) before
     # creating the race commit — otherwise pushing race.txt below would be
@@ -77,7 +77,7 @@ def test_push_race_retries_with_rebase(
 
 
 def test_unreachable_hub_raises(tmp_path, git_kb, monkeypatch):
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     with pytest.raises(PublishError):
         publish(git_kb["kb"], str(tmp_path / "does-not-exist.git"))
 
@@ -85,7 +85,7 @@ def test_unreachable_hub_raises(tmp_path, git_kb, monkeypatch):
 def test_cli_publish(git_kb, hub_worktree, monkeypatch):
     from typer.testing import CliRunner
 
-    from aero_kb.cli import app
+    from center_kb.cli import app
 
     monkeypatch.chdir(git_kb["root"])
     result = CliRunner().invoke(
@@ -98,9 +98,9 @@ def test_cli_publish(git_kb, hub_worktree, monkeypatch):
 def test_cli_publish_error_exit_1(git_kb, tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from aero_kb.cli import app
+    from center_kb.cli import app
 
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     monkeypatch.chdir(git_kb["root"])
     result = CliRunner().invoke(app, ["publish", "--hub", str(tmp_path / "x.git")])
     assert result.exit_code == 1
@@ -138,7 +138,7 @@ def test_publish_repo_id_traversal_no_filesystem_effect(git_kb, hub_worktree):
 
 
 def test_publish_excludes_kb_work_garbage_from_hub(monkeypatch, tmp_path, git_kb, hub_bare):
-    monkeypatch.setenv("AERO_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     # resolve_hub first to get handle.root (clone cache), then litter the cache
     # with embeddings.db — simulating `kb build` having run on the hub worktree.
     handle = hub_mod.resolve_hub(str(hub_bare))

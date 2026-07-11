@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aero_kb.query import get_section, search
+from center_kb.query import get_section, search
 
 
 def test_search_finds_relevant_section_with_citation(fixture_kb: Path):

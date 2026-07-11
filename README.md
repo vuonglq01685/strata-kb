@@ -1,4 +1,4 @@
-# AERO-KB — Kho tri thức hàng không "biết tự tóm tắt"
+# CENTER-KB — Kho tri thức hàng không "biết tự tóm tắt"
 
 > Tài liệu này viết cho người **không rành kỹ thuật** (SME hàng không, người review, người quản lý dự án). Nếu bạn chỉ cần đọc-hiểu hệ thống và biết cách review, đọc từ đầu đến hết là đủ. Nếu bạn cần chạy lệnh, phần [7](#7-từ-điển-lệnh-kb) và [8](#8-quy-trình-làm-việc-đầy-đủ-từng-bước) có ví dụ chạy thật, copy-paste được.
 
@@ -7,7 +7,7 @@
 ## Mục lục
 
 1. [Tóm tắt trong 30 giây](#1-tóm-tắt-trong-30-giây)
-2. [Vấn đề mà AERO-KB giải quyết](#2-vấn-đề-mà-aero-kb-giải-quyết)
+2. [Vấn đề mà CENTER-KB giải quyết](#2-vấn-đề-mà-center-kb-giải-quyết)
 3. [Ý tưởng cốt lõi: 4 tầng L0 → L1 → L2 → L3](#3-ý-tưởng-cốt-lõi-4-tầng-l0--l1--l2--l3)
 4. [Một tài liệu "đi" qua hệ thống như thế nào](#4-một-tài-liệu-đi-qua-hệ-thống-như-thế-nào)
 5. [Cấu trúc thư mục — cái gì nằm ở đâu](#5-cấu-trúc-thư-mục--cái-gì-nằm-ở-đâu)
@@ -24,7 +24,7 @@
 
 ## 1. Tóm tắt trong 30 giây
 
-AERO-KB lấy các tài liệu hàng không dạng PDF **dày hàng trăm trang** (ARINC 424, ICAO Annex 3, Annex 4, Doc 8896...) và biến chúng thành một **kho tri thức có cấu trúc** mà:
+CENTER-KB lấy các tài liệu hàng không dạng PDF **dày hàng trăm trang** (ARINC 424, ICAO Annex 3, Annex 4, Doc 8896...) và biến chúng thành một **kho tri thức có cấu trúc** mà:
 
 - **Con người** đọc được trực tiếp bằng file text/markdown thường (không cần phần mềm đặc biệt), review được qua Pull Request như review một tài liệu Word có track-changes.
 - **Trợ lý AI** (như Claude) tra cứu được **đúng đoạn cần thiết**, thay vì phải "nhồi" cả trăm nghìn từ của cả cuốn tài liệu vào mỗi câu hỏi — tiết kiệm **trên 90% chi phí** mỗi lần hỏi.
@@ -33,7 +33,7 @@ Không có server, không có database. Toàn bộ kho tri thức là các file 
 
 ---
 
-## 2. Vấn đề mà AERO-KB giải quyết
+## 2. Vấn đề mà CENTER-KB giải quyết
 
 Các tài liệu chuẩn hàng không có hai đặc điểm gây khó:
 
@@ -42,7 +42,7 @@ Các tài liệu chuẩn hàng không có hai đặc điểm gây khó:
 | **Rất dài** — ARINC 424 dày 487 trang, Annex 3 dày 224 trang | Không ai (người lẫn AI) đọc lại cả tài liệu mỗi khi cần tra 1 field cụ thể |
 | **Nhiều bảng biểu quan trọng đến từng ký tự** — mã hiệu, độ dài field, kiểu ký tự | Nếu tóm tắt bằng lời văn thông thường (kể cả bằng AI), rất dễ **chép sai một ký tự trong bảng** → sai lệch nguy hiểm cho hệ thống điều hướng bay |
 
-AERO-KB giải quyết đồng thời cả hai:
+CENTER-KB giải quyết đồng thời cả hai:
 
 - **Cắt nhỏ theo section** (ví dụ mỗi field của ARINC 424 là một section riêng: §5.129 "Restrictive Airspace Designation") để tra đúng chỗ, không tra cả file.
 - **Bảng biểu không bao giờ đi qua tay AI để "diễn giải lại"** — bảng được trích xuất y nguyên bằng code (không phải AI viết lại), và có một bước kiểm tra tự động đảm bảo bảng ở bản tóm tắt **khớp 100%** với bảng ở bản gốc. Đây là "chốt an toàn" quan trọng nhất của cả hệ thống (xem mục 3).
@@ -128,7 +128,7 @@ Nói ngắn gọn: **máy làm phần cơ khí** (cắt section, giữ bảng ng
 ## 5. Cấu trúc thư mục — cái gì nằm ở đâu
 
 ```
-AERO-KB/
+CENTER-KB/
 ├── .kb/                    ← ★ SẢN PHẨM CHÍNH — đây là thứ bạn review, đây là "kho tri thức"
 │   ├── index.yaml                          (tầng L0 — danh mục tổng)
 │   ├── arinc-424/
@@ -142,7 +142,7 @@ AERO-KB/
 ├── .venv/                   ← Môi trường Python cài đặt — bỏ qua, không cần quan tâm
 │
 ├── .mcp.json                 ← Khai báo MCP server cho Claude Code (Phase 2, xem mục 7.8)
-├── src/aero_kb/              ← Mã nguồn của công cụ (chỉ dev cần đụng vào)
+├── src/center_kb/              ← Mã nguồn của công cụ (chỉ dev cần đụng vào)
 │   ├── cli.py                       lệnh `kb` (đủ 11 lệnh, xem mục 7)
 │   ├── ingest/                      phần "cắt PDF thành section"
 │   ├── build.py                     phần "kiểm tra toàn vẹn"
@@ -175,7 +175,7 @@ Chỉ cần làm phần này nếu bạn muốn **tự chạy lệnh `kb` trên 
 
 ```bash
 # 1. Vào thư mục dự án
-cd AERO-KB
+cd CENTER-KB
 
 # 2. Tạo môi trường ảo Python (chỉ làm 1 lần)
 python3 -m venv .venv
@@ -197,14 +197,14 @@ Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `
 
 ### 6.1. Cài qua PyPI, web UI và Docker
 
-**Cài package** (khi đã publish): `pip install aero-kb` — có ngay lệnh `kb` và MCP server.
+**Cài package** (khi đã publish): `pip install center-kb` — có ngay lệnh `kb` và MCP server.
 Tạo repo KB mới: `kb init` (sinh sẵn `.kb/`, `federation/`, `.mcp.json`, workflow CI,
 `docker-compose.yml`, `QUICKSTART.md` — file nào đã có sẽ không bị ghi đè).
 
 **Web UI cho người tra tay:** cùng một tiến trình HTTP phục vụ cả agent lẫn người:
 
 ```bash
-AERO_KB_HTTP_TOKEN=bi-mat python -m aero_kb.mcp --hub . --transport http
+CENTER_KB_HTTP_TOKEN=bi-mat python -m center_kb.mcp --hub . --transport http
 # → agent:  http://<host>:8321/mcp   (Bearer token)
 # → REST:   http://<host>:8321/api/… (Bearer token hoặc cookie)
 # → người:  http://<host>:8321/ui    (đăng nhập bằng token, lưu cookie)
@@ -212,7 +212,7 @@ AERO_KB_HTTP_TOKEN=bi-mat python -m aero_kb.mcp --hub . --transport http
 
 **Docker:** `docker compose up -d` (image có sẵn cả bộ ingest docling);
 ingest ngay trong container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
-Khi release tag `v*`, CI tự publish lên PyPI + đẩy image `ghcr.io/vuonglq01685/aero-kb`.
+Khi release tag `v*`, CI tự publish lên PyPI + đẩy image `ghcr.io/vuonglq01685/center-kb`.
 
 ---
 
@@ -355,11 +355,11 @@ Cột `saving` là mức tiết kiệm giữa L2 và L3 **cho riêng tài liệu
 
 ### 7.8 Phase 2 — Tích hợp workflow
 
-Phase 2 mở rộng AERO-KB để tra cứu không chỉ dừng ở dòng lệnh: Claude Code (hoặc bất kỳ agent nào hỗ trợ MCP) có thể tra cứu kho tri thức trực tiếp qua **MCP server**, và một tài liệu (AC trong Jira, spec...) có thể **trích dẫn máy-đọc-được** một section cụ thể, "ghim" (pin) đúng phiên bản kho tại thời điểm viết — để phát hiện khi kho đổi (amendment) mà trích dẫn cũ chưa cập nhật theo.
+Phase 2 mở rộng CENTER-KB để tra cứu không chỉ dừng ở dòng lệnh: Claude Code (hoặc bất kỳ agent nào hỗ trợ MCP) có thể tra cứu kho tri thức trực tiếp qua **MCP server**, và một tài liệu (AC trong Jira, spec...) có thể **trích dẫn máy-đọc-được** một section cụ thể, "ghim" (pin) đúng phiên bản kho tại thời điểm viết — để phát hiện khi kho đổi (amendment) mà trích dẫn cũ chưa cập nhật theo.
 
 #### MCP server — 3 tool
 
-Chạy `python -m aero_kb.mcp --kb .kb` (đã khai báo sẵn trong `.mcp.json` ở gốc repo — Claude Code tự nhận, không cần cấu hình thêm).
+Chạy `python -m center_kb.mcp --kb .kb` (đã khai báo sẵn trong `.mcp.json` ở gốc repo — Claude Code tự nhận, không cần cấu hình thêm).
 
 | Tool | Dùng để làm gì | Tham số chính |
 |---|---|---|
@@ -386,7 +386,7 @@ Chạy `python -m aero_kb.mcp --kb .kb` (đã khai báo sẵn trong `.mcp.json` 
 4. Nếu kết quả báo `status=stale` (kho đã có amendment sau khi ticket được viết), Dev chạy `kb diff <doc-id> --against <rev-đã-pin>` để thấy chính xác section nào đổi, rồi trao đổi lại với BA xem AC có cần cập nhật không.
 5. `kb doctor --context <ticket>` dùng trong CI để tự động chặn/gắn cờ các ticket có citation `stale` trước khi merge, không cần người rà tay từng ticket.
 
-> **Ghi chú:** file `.mcp.json` cấu hình sẵn MCP server đã có trong repo — không cần thiết lập gì thêm để Claude Code nhận diện 3 tool trên. Tham số `--hub` của `python -m aero_kb.mcp` giờ đã **kích hoạt** — xem mục [7.9](#79-phase-3--federation--remote-mcp) ngay bên dưới.
+> **Ghi chú:** file `.mcp.json` cấu hình sẵn MCP server đã có trong repo — không cần thiết lập gì thêm để Claude Code nhận diện 3 tool trên. Tham số `--hub` của `python -m center_kb.mcp` giờ đã **kích hoạt** — xem mục [7.9](#79-phase-3--federation--remote-mcp) ngay bên dưới.
 
 ---
 
@@ -458,7 +458,7 @@ Sau khi PR được merge, CI (workflow `kb-review`) **tự động** chuyển c
 
 ## 10. Bằng chứng nó hoạt động (số liệu PoC thật)
 
-Tính đến lần chạy thử nghiệm gần nhất (xem `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md` mục 10 để biết đầy đủ):
+Tính đến lần chạy thử nghiệm gần nhất (xem `docs/superpowers/specs/2026-07-10-center-kb-phase1-design.md` mục 10 để biết đầy đủ):
 
 - **Đã nạp thật:** ARINC 424-22 chương 5 (325 section) + ICAO Annex 3 chương 2 (4 section).
 - **`kb build` PASS** — không có bảng nào sai lệch, không còn section nào bỏ dở.
@@ -493,7 +493,7 @@ Vì dự án dùng subscription Claude Code sẵn có thay vì trả tiền gọ
 Ba lớp bảo vệ: (1) AI bị ràng buộc quy tắc văn phong nghiêm ngặt (không suy diễn, giữ nguyên mã hiệu/số liệu); (2) bảng biểu — phần dễ sai nhất — **không bao giờ đi qua tay AI**, luôn do code chép nguyên văn và được kiểm tra khớp tự động; (3) **con người (SME) luôn review trước khi merge** — AI chỉ tạo bản nháp, không có quyền tự công bố nội dung cuối cùng.
 
 **"Token" là gì, sao cứ nhắc hoài?**
-Là đơn vị đo lượng văn bản mà một mô hình AI xử lý (gần giống số từ). Nó quyết định chi phí và tốc độ mỗi lần gọi AI. Kiến trúc 4 tầng của AERO-KB tồn tại chủ yếu để **giảm số token phải nạp** mỗi khi tra cứu, mà vẫn giữ được thông tin chính xác.
+Là đơn vị đo lượng văn bản mà một mô hình AI xử lý (gần giống số từ). Nó quyết định chi phí và tốc độ mỗi lần gọi AI. Kiến trúc 4 tầng của CENTER-KB tồn tại chủ yếu để **giảm số token phải nạp** mỗi khi tra cứu, mà vẫn giữ được thông tin chính xác.
 
 **Tôi có cần biết lập trình để review nội dung không?**
 Không. Xem mục 9 — review chỉ là đọc file `.md`/`.yaml` trên giao diện GitHub, hoàn toàn giống đọc một tài liệu văn bản có đánh dấu thay đổi.
@@ -513,4 +513,4 @@ Không. Xem mục 9 — review chỉ là đọc file `.md`/`.yaml` trên giao di
 
 ---
 
-*Tài liệu này mô tả trạng thái Phase 1 (PoC) + Phase 2 (tích hợp workflow) + Phase 3 (federation & remote MCP) — cập nhật 2026-07-11. Chi tiết thiết kế kỹ thuật đầy đủ xem `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md` và `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`.*
+*Tài liệu này mô tả trạng thái Phase 1 (PoC) + Phase 2 (tích hợp workflow) + Phase 3 (federation & remote MCP) — cập nhật 2026-07-11. Chi tiết thiết kế kỹ thuật đầy đủ xem `docs/superpowers/specs/2026-07-10-center-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-center-kb-phase2-design.md` và `docs/superpowers/specs/2026-07-10-center-kb-phase3-design.md`.*

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from aero_kb import models
-from aero_kb.build import build_kb
+from center_kb import models
+from center_kb.build import build_kb
 
 
 def test_build_ok_on_valid_kb(fixture_kb: Path):

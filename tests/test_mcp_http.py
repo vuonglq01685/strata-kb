@@ -7,7 +7,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from aero_kb.mcp import BearerAuthMiddleware
+from center_kb.mcp import BearerAuthMiddleware
 
 
 def _dummy_app():
@@ -49,7 +49,7 @@ def test_http_initialize_handshake_real_app(fixture_kb):
     FastMCP's default DNS-rebinding allowlist ("localhost:*"), hence a
     base_url with an explicit port.
     """
-    from aero_kb.mcp import ServerConfig, create_http_app
+    from center_kb.mcp import ServerConfig, create_http_app
 
     app = create_http_app(ServerConfig(kb_dir=fixture_kb), "secret-token")
     payload = {

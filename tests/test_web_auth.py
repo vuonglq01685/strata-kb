@@ -5,7 +5,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from aero_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
+from center_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def test_non_ascii_bearer_token_is_401_not_crash():
 
 
 def test_non_ascii_cookie_token_is_401_not_crash():
-    resp = _client().get("/api/docs", headers={"Cookie": "aero_kb_token=café".encode()})
+    resp = _client().get("/api/docs", headers={"Cookie": "center_kb_token=café".encode()})
     assert resp.status_code == 401
 
 
@@ -114,6 +114,6 @@ async def test_invalid_utf8_header_bytes_are_401_not_crash():
 
 
 def test_mcp_module_still_exports_bearer_alias():
-    from aero_kb.mcp import BearerAuthMiddleware
+    from center_kb.mcp import BearerAuthMiddleware
 
     assert BearerAuthMiddleware is TokenAuthMiddleware

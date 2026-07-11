@@ -1,9 +1,9 @@
 import pytest
 
-from aero_kb import models
-from aero_kb.ingest import sectioner
-from aero_kb.ingest.scaffold import scaffold_doc
-from aero_kb.ingest.sectioner import HeadingConfig, SectionUnit
+from center_kb import models
+from center_kb.ingest import sectioner
+from center_kb.ingest.scaffold import scaffold_doc
+from center_kb.ingest.sectioner import HeadingConfig, SectionUnit
 
 
 def test_default_config_matches_current_behavior():
@@ -65,7 +65,7 @@ def test_scaffold_persists_ingest_config(tmp_path):
 
 
 def test_build_units_accepts_config():
-    from aero_kb.ingest.sectioner import DocItem, build_units
+    from center_kb.ingest.sectioner import DocItem, build_units
 
     items = [
         DocItem("heading", "Section 1 Records", 1),

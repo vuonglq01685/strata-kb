@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aero_kb import gitio
+from center_kb import gitio
 
 
 def test_git_root_finds_repo_from_kb_dir(git_kb):

@@ -1,8 +1,8 @@
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from aero_kb.mcp import ServerConfig
-from aero_kb.web import api
+from center_kb.mcp import ServerConfig
+from center_kb.web import api
 
 
 def _client(fixture_kb, hub=None):

@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "aero-kb": {
-      "command": "python",
-      "args": ["-m", "aero_kb.mcp", "--kb", ".kb/"]
-    }
-  }
-}

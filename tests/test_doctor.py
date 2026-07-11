@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from aero_kb import models
-from aero_kb.doctor import check_context, check_kb
+from center_kb import models
+from center_kb.doctor import check_context, check_kb
 
 
 def _errors(issues):

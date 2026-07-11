@@ -1,4 +1,4 @@
-from aero_kb.query import search
+from center_kb.query import search
 
 from tests.test_embed import FakeEmbedder  # reuse the 4-dim fake
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from aero_kb.ingest import parser
+from center_kb.ingest import parser
 
 
 @dataclass

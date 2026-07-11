@@ -2,7 +2,7 @@ import pytest
 
 sqlite_vec = pytest.importorskip("sqlite_vec")
 
-from aero_kb import embed
+from center_kb import embed
 
 
 class FakeEmbedder:
@@ -35,7 +35,7 @@ def test_ensure_index_builds_then_incremental(fixture_kb, tmp_path):
 
 
 def test_ensure_index_reembeds_changed_section(fixture_kb, tmp_path):
-    from aero_kb import models
+    from center_kb import models
 
     db = tmp_path / "emb.db"
     fake = FakeEmbedder()
@@ -84,7 +84,7 @@ def test_ensure_index_raises_on_wrong_vector_dim(fixture_kb, tmp_path):
 
 
 def test_ensure_index_removes_deleted_section(fixture_kb, tmp_path):
-    from aero_kb import models
+    from center_kb import models
 
     db = tmp_path / "emb.db"
     fake = FakeEmbedder()

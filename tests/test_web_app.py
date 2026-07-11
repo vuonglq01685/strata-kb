@@ -1,7 +1,7 @@
 from starlette.testclient import TestClient
 
-from aero_kb.mcp import ServerConfig, create_http_app
-from aero_kb.web.app import create_app
+from center_kb.mcp import ServerConfig, create_http_app
+from center_kb.web.app import create_app
 
 TOKEN = "secret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
