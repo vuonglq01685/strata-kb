@@ -157,10 +157,18 @@ def _chapter_of(sid: str) -> str:
     return sid
 
 
-def _build_tree(items: list[DocItem], config: HeadingConfig | None = None) -> _Node:
+def _build_tree(
+    items: list[DocItem],
+    config: HeadingConfig | None = None,
+    part: Part | None = None,
+) -> _Node:
     cfg = config or _DEFAULT_CONFIG
     root = _Node(id="", title="", depth=0)
     stack = [root]
+    if part is not None and not part.id[:1].isdigit():
+        part_node = _Node(id=part.id, title=part.title, depth=1)
+        root.children.append(part_node)
+        stack.append(part_node)
     fallback_seq = 0
     # sid -> saved stack path (root..node) from when the node was first seen.
     # Lets a repeated heading (e.g. a running page header) reopen its
@@ -176,7 +184,10 @@ def _build_tree(items: list[DocItem], config: HeadingConfig | None = None) -> _N
                 if (
                     sid[0].isdigit()
                     and top is not None
-                    and top.id.startswith(("app", "att"))
+                    and (
+                        top.id.startswith(("app", "att"))
+                        or (part is not None and top.id == part.id)
+                    )
                     and not cfg.chapter_re.match(" ".join(item.text.split()))
                 ):
                     # ICAO appendices and attachments restart numeric
@@ -184,7 +195,8 @@ def _build_tree(items: list[DocItem], config: HeadingConfig | None = None) -> _N
                     # appendix/attachment top-level node so appendix "2.1"
                     # becomes "app3-2.1" and never collides with chapter
                     # section "2.1". Only appendix ("app*") and attachment
-                    # ("att*") nodes namespace: numeric chapters after a
+                    # ("att*") nodes namespace, plus a seeded part-root node
+                    # (per-part tree building): numeric chapters after a
                     # front-matter fallback node (FOREWORD -> "x1") must
                     # open normally at root.
                     sid = f"{top.id}-{sid}"
@@ -240,8 +252,29 @@ def build_units(
     min_tokens: int = 200,
     max_unit_tokens: int = 5000,
     config: HeadingConfig | None = None,
+    parts: list[Part] | None = None,
 ) -> list[SectionUnit]:
-    root = _build_tree(items, config)
+    if not parts:
+        root = _build_tree(items, config)
+        return _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, None)
+    units: list[SectionUnit] = []
+    for part, part_items in split_by_parts(items, parts):
+        if not part_items:
+            continue
+        root = _build_tree(part_items, config, part=part)
+        units += _units_from_tree(
+            root, max_depth, min_tokens, max_unit_tokens, part.id
+        )
+    return units
+
+
+def _units_from_tree(
+    root: _Node,
+    max_depth: int,
+    min_tokens: int,
+    max_unit_tokens: int,
+    chapter_override: str | None,
+) -> list[SectionUnit]:
     units: list[SectionUnit] = []
 
     def walk(node: _Node) -> None:
@@ -284,7 +317,11 @@ def build_units(
                 SectionUnit(
                     id=node.id,
                     title=node.title,
-                    chapter=_chapter_of(node.id),
+                    chapter=(
+                        chapter_override
+                        if chapter_override is not None
+                        else _chapter_of(node.id)
+                    ),
                     body_md=body_md,
                     tables=extract_tables(body_md),
                 )

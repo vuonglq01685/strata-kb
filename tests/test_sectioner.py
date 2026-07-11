@@ -310,3 +310,48 @@ def test_split_by_parts_item_before_first_part_page():
     items = [DocItem("text", "stray cover text", page=1)]
     result = split_by_parts(items, parts)
     assert [i.text for i in result[0][1]] == ["stray cover text"]
+
+
+def test_build_units_with_parts_assigns_part_chapter():
+    from center_kb.ingest.sectioner import Part
+
+    parts = [Part("front-matter", "Front Matter", 1), Part("1", "INTRODUCTION", 21)]
+    items = [
+        DocItem("heading", "FOREWORD", 1, page=4),
+        DocItem("text", "Foreword body. " * 60, page=4),
+        DocItem("heading", "1.0 INTRODUCTION", 1, page=21),
+        DocItem("text", "Chapter one body. " * 60, page=21),
+    ]
+    units = build_units(items, parts=parts)
+    chapters = {u.id: u.chapter for u in units}
+    # FOREWORD is a fallback under the seeded front-matter node
+    assert any(u.chapter == "front-matter" for u in units)
+    assert chapters.get("1") == "1"
+    # no top-level fake chapters
+    assert not any(u.chapter.startswith("x") for u in units)
+
+
+def test_build_units_with_parts_namespaces_attachment_numbering():
+    from center_kb.ingest.sectioner import Part
+
+    parts = [Part("2", "GLOSSARY", 25), Part("att1", "FLOW DIAGRAM", 331)]
+    items = [
+        DocItem("heading", "2.0 GLOSSARY", 1, page=25),
+        DocItem("text", "Glossary body. " * 60, page=25),
+        DocItem("heading", "ATTACHMENT 1 FLOW DIAGRAM", 1, page=331),
+        DocItem("text", "Attachment intro. " * 80, page=331),
+        DocItem("heading", "2.1 Diagram Conventions", 2, page=332),
+        # 80x keeps the leaf > min_tokens so it is not folded into att1
+        DocItem("text", "Convention body. " * 80, page=332),
+    ]
+    units = build_units(items, parts=parts)
+    ids = {u.id for u in units}
+    assert "att1-2.1" in ids           # namespaced under the attachment part
+    assert "2.1" not in ids            # chapter 2 never polluted
+    att_units = [u for u in units if u.chapter == "att1"]
+    assert {u.id for u in att_units} >= {"att1", "att1-2.1"}
+
+
+def test_build_units_without_parts_unchanged():
+    units = build_units(_items_basic())
+    assert [u.id for u in units] == ["5", "5.3", "5.4"]
