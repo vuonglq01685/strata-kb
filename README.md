@@ -195,6 +195,25 @@ Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `
 
 > **Lưu ý:** mỗi lần mở terminal mới để làm việc với dự án, phải chạy lại `source .venv/bin/activate` trước (dấu hiệu nhận biết: đầu dòng lệnh terminal có chữ `(.venv)`).
 
+### 6.1. Cài qua PyPI, web UI và Docker
+
+**Cài package** (khi đã publish): `pip install aero-kb` — có ngay lệnh `kb` và MCP server.
+Tạo repo KB mới: `kb init` (sinh sẵn `.kb/`, `federation/`, `.mcp.json`, workflow CI,
+`docker-compose.yml`, `QUICKSTART.md` — file nào đã có sẽ không bị ghi đè).
+
+**Web UI cho người tra tay:** cùng một tiến trình HTTP phục vụ cả agent lẫn người:
+
+```bash
+AERO_KB_HTTP_TOKEN=bi-mat python -m aero_kb.mcp --hub . --transport http
+# → agent:  http://<host>:8321/mcp   (Bearer token)
+# → REST:   http://<host>:8321/api/… (Bearer token hoặc cookie)
+# → người:  http://<host>:8321/ui    (đăng nhập bằng token, lưu cookie)
+```
+
+**Docker:** `docker compose up -d` (image có sẵn cả bộ ingest docling);
+ingest ngay trong container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
+Khi release tag `v*`, CI tự publish lên PyPI + đẩy image `ghcr.io/vuonglq01685/aero-kb`.
+
 ---
 
 ## 7. Từ điển lệnh `kb`
