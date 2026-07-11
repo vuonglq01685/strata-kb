@@ -8,8 +8,10 @@ Five steps from empty repo to a searchable knowledge base.
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
    (needs the ingest extra: `pip install "center-kb[ingest]"` — or run it
    inside Docker: `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc`)
-3. **Summarize** — open Claude Code in this repo and run the `kb-summarize`
-   skill for the pending sections, then validate: `kb build`
+3. **Summarize** — `kb ingest` does this automatically when the Claude Code or
+   GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
+   Manual fallback: run the `kb-summarize` skill in Claude Code, or
+   `kb summarize` later. Then validate: `kb build`
 4. **Serve the hub** — `docker compose up -d` → web UI at
    http://localhost:8321/ui (sign in with the token).
    Without Docker: `python -m center_kb.mcp --hub . --transport http`
