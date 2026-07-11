@@ -38,13 +38,13 @@ def test_resolve_heading_config_priority():
         appendix_pattern=sectioner.DEFAULT_APPENDIX_PATTERN,
     )
     # explicit arg wins over the manifest
-    cfg = sectioner.resolve_heading_config(r"^sec\s+(\d+)\s+(.*)$", "", prev)
+    cfg = sectioner.resolve_heading_config(r"^sec\s+(\d+)\s+(.*)$", "", "", prev)
     assert cfg.chapter_pattern == r"^sec\s+(\d+)\s+(.*)$"
     # no arg → taken from the manifest
-    cfg = sectioner.resolve_heading_config("", "", prev)
+    cfg = sectioner.resolve_heading_config("", "", "", prev)
     assert cfg.chapter_pattern == prev.chapter_pattern
     # nothing at all → default
-    cfg = sectioner.resolve_heading_config("", "", None)
+    cfg = sectioner.resolve_heading_config("", "", "", None)
     assert cfg.chapter_pattern == sectioner.DEFAULT_CHAPTER_PATTERN
 
 

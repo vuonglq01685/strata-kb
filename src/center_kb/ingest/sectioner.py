@@ -34,6 +34,7 @@ class SectionUnit:
 
 DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
 DEFAULT_APPENDIX_PATTERN = r"^appendix\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
+DEFAULT_ATTACHMENT_PATTERN = r"^attachment\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
 _NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)[.\s]+(.*\S)\s*$")
 
 
@@ -50,15 +51,20 @@ def _compile_heading(name: str, pattern: str) -> re.Pattern[str]:
 @dataclass
 class HeadingConfig:
     """Document heading convention. Defaults to the common English convention
-    ("Chapter N", "Appendix X") — documents using a different convention
-    override it at ingest time; the config used is persisted to _manifest.yaml."""
+    ("Chapter N", "Appendix X", "Attachment N") — documents using a different
+    convention override it at ingest time; the config used is persisted to
+    _manifest.yaml."""
 
     chapter_pattern: str = DEFAULT_CHAPTER_PATTERN
     appendix_pattern: str = DEFAULT_APPENDIX_PATTERN
+    attachment_pattern: str = DEFAULT_ATTACHMENT_PATTERN
 
     def __post_init__(self) -> None:
         self.chapter_re = _compile_heading("chapter_pattern", self.chapter_pattern)
         self.appendix_re = _compile_heading("appendix_pattern", self.appendix_pattern)
+        self.attachment_re = _compile_heading(
+            "attachment_pattern", self.attachment_pattern
+        )
 
 
 _DEFAULT_CONFIG = HeadingConfig()
@@ -67,14 +73,19 @@ _DEFAULT_CONFIG = HeadingConfig()
 def resolve_heading_config(
     chapter_pattern: str,
     appendix_pattern: str,
+    attachment_pattern: str,
     previous: "models.IngestConfig | None",
 ) -> HeadingConfig:
     """Priority: explicit arg > previous config in manifest (re-ingest) > default."""
     prev_ch = previous.chapter_pattern if previous else DEFAULT_CHAPTER_PATTERN
     prev_app = previous.appendix_pattern if previous else DEFAULT_APPENDIX_PATTERN
+    prev_att = (
+        previous.attachment_pattern if previous else ""
+    ) or DEFAULT_ATTACHMENT_PATTERN
     return HeadingConfig(
         chapter_pattern=chapter_pattern or prev_ch,
         appendix_pattern=appendix_pattern or prev_app,
+        attachment_pattern=attachment_pattern or prev_att,
     )
 
 
@@ -85,6 +96,8 @@ def parse_section_id(
     text = " ".join(text.split())
     if m := cfg.chapter_re.match(text):
         return m.group(1), (m.group(2) or text).strip()
+    if m := cfg.attachment_re.match(text):
+        return f"att{m.group(1).lower()}", (m.group(2) or text).strip()
     if m := cfg.appendix_re.match(text):
         return f"app{m.group(1).lower()}", (m.group(2) or text).strip()
     if m := _NUMBERED_RE.match(text):
@@ -131,16 +144,17 @@ def _build_tree(items: list[DocItem], config: HeadingConfig | None = None) -> _N
                 if (
                     sid[0].isdigit()
                     and top is not None
-                    and top.id.startswith("app")
+                    and top.id.startswith(("app", "att"))
                     and not cfg.chapter_re.match(" ".join(item.text.split()))
                 ):
-                    # ICAO appendices restart numeric numbering ("1.",
-                    # "2.1"...). Namespace the id under the appendix
-                    # top-level node so appendix "2.1" becomes "app3-2.1"
-                    # and never collides with chapter section "2.1".
-                    # Only appendix ("app*") nodes namespace: numeric
-                    # chapters after a front-matter fallback node
-                    # (FOREWORD -> "x1") must open normally at root.
+                    # ICAO appendices and attachments restart numeric
+                    # numbering ("1.", "2.1"...). Namespace the id under the
+                    # appendix/attachment top-level node so appendix "2.1"
+                    # becomes "app3-2.1" and never collides with chapter
+                    # section "2.1". Only appendix ("app*") and attachment
+                    # ("att*") nodes namespace: numeric chapters after a
+                    # front-matter fallback node (FOREWORD -> "x1") must
+                    # open normally at root.
                     sid = f"{top.id}-{sid}"
                     depth += 1
                 if any(n.id == sid for n in stack):
