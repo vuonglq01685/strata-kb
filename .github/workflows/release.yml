@@ -1,0 +1,92 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .[dev]
+      - run: pytest
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - name: Verify wheel is self-contained (templates + kb init + doctor)
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          mkdir /tmp/kbtest && cd /tmp/kbtest
+          /tmp/venv/bin/kb init
+          /tmp/venv/bin/kb doctor
+          /tmp/venv/bin/python -c "from importlib import resources; resources.files('aero_kb').joinpath('templates/web/base.html').read_text(encoding='utf-8')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME} .
+      - name: Smoke test — serve an empty KB, health must answer, API must 401
+        run: |
+          mkdir -p /tmp/data/.kb
+          echo "docs: []" > /tmp/data/.kb/index.yaml
+          docker run -d --name kb -p 8321:8321 \
+            -e AERO_KB_HTTP_TOKEN=smoke-test-token \
+            -v /tmp/data:/data \
+            ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME}
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8321/api/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:8321/api/health
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)
+          test "$code" = "401"
+          docker rm -f kb
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tags
+        run: |
+          docker tag ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME} ghcr.io/vuonglq01685/aero-kb:latest
+          docker push ghcr.io/vuonglq01685/aero-kb:${GITHUB_REF_NAME}
+          docker push ghcr.io/vuonglq01685/aero-kb:latest
