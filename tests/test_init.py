@@ -122,5 +122,7 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
             "kb publish", "kb resolve", "kb doctor",
         ):
             assert cmd in text, cmd
+        assert "--level l2|l3" in text
+        assert "l1|l2|l3" not in text
     assert "/kb-ingest" in quick
     assert "/kb-publish" in quick
