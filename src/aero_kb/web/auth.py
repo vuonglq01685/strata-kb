@@ -20,7 +20,10 @@ class TokenAuthMiddleware:
         self.token = token
 
     def _authorized(self, scope) -> bool:
-        headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+        headers = {
+            k.decode("latin-1").lower(): v.decode("latin-1")
+            for k, v in scope.get("headers", [])
+        }
         auth = headers.get("authorization", "")
         try:
             if hmac.compare_digest(auth, f"Bearer {self.token}"):
