@@ -186,7 +186,11 @@ def _build_tree(
                     and top is not None
                     and (
                         top.id.startswith(("app", "att"))
-                        or (part is not None and top.id == part.id)
+                        or (
+                            part is not None
+                            and not part.id[:1].isdigit()
+                            and top.id == part.id
+                        )
                     )
                     and not cfg.chapter_re.match(" ".join(item.text.split()))
                 ):

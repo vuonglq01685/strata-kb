@@ -355,3 +355,20 @@ def test_build_units_with_parts_namespaces_attachment_numbering():
 def test_build_units_without_parts_unchanged():
     units = build_units(_items_basic())
     assert [u.id for u in units] == ["5", "5.3", "5.4"]
+
+
+def test_build_units_numeric_part_subsections_keep_flat_ids():
+    from center_kb.ingest.sectioner import Part
+
+    parts = [Part("4", "RECORD LAYOUT", 41)]
+    items = [
+        DocItem("heading", "4.0 RECORD LAYOUT", 1, page=41),
+        DocItem("text", "Chapter body. " * 80, page=41),
+        DocItem("heading", "4.1 Record Types", 2, page=42),
+        DocItem("text", "Subsection body. " * 80, page=42),
+    ]
+    units = build_units(items, parts=parts)
+    ids = {u.id for u in units}
+    assert "4.1" in ids
+    assert "4-4.1" not in ids
+    assert all(u.chapter == "4" for u in units)
