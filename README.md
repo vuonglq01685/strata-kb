@@ -253,10 +253,16 @@ kb ingest sources/ARINC424-22.pdf \
 | `--tags` | Comma-separated classification labels for search filtering | No |
 | `--revision` | Edition/revision label, e.g. `"Supplement 22"` — appears in every later citation | No, but **recommended** |
 | `--sections` | Only process these chapters (e.g. `5,6`); empty = whole document | No |
+| `--chapter-pattern` / `--appendix-pattern` / `--attachment-pattern` | Heading regex overrides used when splitting by heading patterns (defaults: `Chapter N` / `Appendix X` / `Attachment N`; remembered from the previous ingest) | No |
+| `--no-bookmarks` | Ignore PDF bookmarks and force heading-pattern splitting | No |
+
+By default, `kb ingest` splits the PDF by its own **PDF bookmarks/TOC** — parts are named after the document's own outline (chapters, `ATTACHMENT N` → `attN`, front-matter, etc.). Pass `--no-bookmarks` to fall back to heading-pattern splitting instead (using `--chapter-pattern`/`--appendix-pattern`/`--attachment-pattern`, or their remembered defaults).
 
 The split/scaffold step itself **needs no AI** — fully automatic code. It takes seconds to tens of minutes depending on PDF length (first run is slower: downloads a page-layout model ~500MB; later runs reuse cache). Right after scaffolding, `kb ingest` also auto-runs the summarize step (see [7.3](#73-summarization-step)) via a headless LLM CLI unless `--no-summarize` is passed or `--llm none`.
 
 Result: a new `.kb/<id>/` directory with L1/L2/L3 files; every section starts as `pending`.
+
+**Re-ingest is a full replace, not incremental:** every `kb ingest` on an existing `--id` deletes all of that doc's existing `.md` files before writing the new split. `--sections` filters *which* chapters get (re)written this run — e.g. re-ingesting with `--sections 5` leaves the doc's `.kb/<id>/` directory containing only chapter 5's files; chapters previously ingested but omitted this time are gone, not preserved.
 
 ### 7.2 `kb status` — what's left undone
 

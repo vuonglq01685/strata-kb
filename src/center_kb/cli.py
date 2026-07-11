@@ -94,6 +94,15 @@ def ingest(
         "",
         help="Appendix heading regex (default: 'Appendix X', remembered from the previous ingest)",
     ),
+    attachment_pattern: str = typer.Option(
+        "",
+        help="Attachment heading regex (default: 'Attachment N', remembered from the previous ingest)",
+    ),
+    no_bookmarks: bool = typer.Option(
+        False,
+        "--no-bookmarks",
+        help="Ignore PDF bookmarks; split by heading patterns only",
+    ),
     no_summarize: bool = typer.Option(
         False, "--no-summarize", help="Skip the automatic LLM summarize step"
     ),
@@ -111,7 +120,7 @@ def ingest(
         previous = models.load_yaml_model(manifest_path, models.Manifest).ingest
     try:
         heading_config = sectioner.resolve_heading_config(
-            chapter_pattern, appendix_pattern, previous
+            chapter_pattern, appendix_pattern, attachment_pattern, previous
         )
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
@@ -119,7 +128,12 @@ def ingest(
 
     doc = parser.load_or_parse(pdf, work_dir / doc_id)
     items = parser.doc_to_items(doc)
-    units = sectioner.build_units(items, config=heading_config)
+    parts = None if no_bookmarks else parser.outline_parts(pdf, heading_config)
+    if parts:
+        typer.echo(f"sectioning: bookmarks ({len(parts)} parts)")
+    else:
+        typer.echo("sectioning: heading patterns")
+    units = sectioner.build_units(items, config=heading_config, parts=parts)
 
     bm_ids = parser.bookmark_ids(pdf, heading_config)
     if bm_ids:
@@ -138,6 +152,8 @@ def ingest(
         kb_dir=kb_dir,
         chapters=chapters,
         heading_config=heading_config,
+        part_titles={p.id: p.title for p in parts} if parts else None,
+        used_bookmarks=bool(parts),
     )
     typer.echo(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "

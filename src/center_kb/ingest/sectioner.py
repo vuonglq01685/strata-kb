@@ -12,6 +12,7 @@ class DocItem:
     kind: str  # "heading" | "text" | "table"
     text: str
     level: int = 0
+    page: int | None = None
 
 
 @dataclass
@@ -32,8 +33,40 @@ class SectionUnit:
     tables: list[str]
 
 
+@dataclass(frozen=True)
+class Part:
+    """One top-level segment of the document, taken from the PDF outline."""
+
+    id: str
+    title: str
+    page: int  # 1-based page where the part starts
+
+
+def split_by_parts(
+    items: list[DocItem], parts: list[Part]
+) -> list[tuple[Part, list[DocItem]]]:
+    """Bucket the item stream by part page ranges (parts sorted by page).
+
+    An item belongs to the last part whose page <= the item's page; items
+    without a page inherit the previous item's page; items before the first
+    part's page fall into the first part.
+    """
+    buckets: dict[str, list[DocItem]] = {p.id: [] for p in parts}
+    idx = 0
+    last_page: int | None = None
+    for item in items:
+        page = item.page if item.page is not None else last_page
+        if item.page is not None:
+            last_page = item.page
+        while idx + 1 < len(parts) and page is not None and page >= parts[idx + 1].page:
+            idx += 1
+        buckets[parts[idx].id].append(item)
+    return [(p, buckets[p.id]) for p in parts]
+
+
 DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
 DEFAULT_APPENDIX_PATTERN = r"^appendix\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
+DEFAULT_ATTACHMENT_PATTERN = r"^attachment\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
 _NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)[.\s]+(.*\S)\s*$")
 
 
@@ -50,15 +83,20 @@ def _compile_heading(name: str, pattern: str) -> re.Pattern[str]:
 @dataclass
 class HeadingConfig:
     """Document heading convention. Defaults to the common English convention
-    ("Chapter N", "Appendix X") — documents using a different convention
-    override it at ingest time; the config used is persisted to _manifest.yaml."""
+    ("Chapter N", "Appendix X", "Attachment N") — documents using a different
+    convention override it at ingest time; the config used is persisted to
+    _manifest.yaml."""
 
     chapter_pattern: str = DEFAULT_CHAPTER_PATTERN
     appendix_pattern: str = DEFAULT_APPENDIX_PATTERN
+    attachment_pattern: str = DEFAULT_ATTACHMENT_PATTERN
 
     def __post_init__(self) -> None:
         self.chapter_re = _compile_heading("chapter_pattern", self.chapter_pattern)
         self.appendix_re = _compile_heading("appendix_pattern", self.appendix_pattern)
+        self.attachment_re = _compile_heading(
+            "attachment_pattern", self.attachment_pattern
+        )
 
 
 _DEFAULT_CONFIG = HeadingConfig()
@@ -67,14 +105,19 @@ _DEFAULT_CONFIG = HeadingConfig()
 def resolve_heading_config(
     chapter_pattern: str,
     appendix_pattern: str,
+    attachment_pattern: str,
     previous: "models.IngestConfig | None",
 ) -> HeadingConfig:
     """Priority: explicit arg > previous config in manifest (re-ingest) > default."""
     prev_ch = previous.chapter_pattern if previous else DEFAULT_CHAPTER_PATTERN
     prev_app = previous.appendix_pattern if previous else DEFAULT_APPENDIX_PATTERN
+    prev_att = (
+        previous.attachment_pattern if previous else ""
+    ) or DEFAULT_ATTACHMENT_PATTERN
     return HeadingConfig(
         chapter_pattern=chapter_pattern or prev_ch,
         appendix_pattern=appendix_pattern or prev_app,
+        attachment_pattern=attachment_pattern or prev_att,
     )
 
 
@@ -85,6 +128,8 @@ def parse_section_id(
     text = " ".join(text.split())
     if m := cfg.chapter_re.match(text):
         return m.group(1), (m.group(2) or text).strip()
+    if m := cfg.attachment_re.match(text):
+        return f"att{m.group(1).lower()}", (m.group(2) or text).strip()
     if m := cfg.appendix_re.match(text):
         return f"app{m.group(1).lower()}", (m.group(2) or text).strip()
     if m := _NUMBERED_RE.match(text):
@@ -112,10 +157,18 @@ def _chapter_of(sid: str) -> str:
     return sid
 
 
-def _build_tree(items: list[DocItem], config: HeadingConfig | None = None) -> _Node:
+def _build_tree(
+    items: list[DocItem],
+    config: HeadingConfig | None = None,
+    part: Part | None = None,
+) -> _Node:
     cfg = config or _DEFAULT_CONFIG
     root = _Node(id="", title="", depth=0)
     stack = [root]
+    if part is not None and not part.id[:1].isdigit():
+        part_node = _Node(id=part.id, title=part.title, depth=1)
+        root.children.append(part_node)
+        stack.append(part_node)
     fallback_seq = 0
     # sid -> saved stack path (root..node) from when the node was first seen.
     # Lets a repeated heading (e.g. a running page header) reopen its
@@ -131,16 +184,25 @@ def _build_tree(items: list[DocItem], config: HeadingConfig | None = None) -> _N
                 if (
                     sid[0].isdigit()
                     and top is not None
-                    and top.id.startswith("app")
+                    and (
+                        top.id.startswith(("app", "att"))
+                        or (
+                            part is not None
+                            and not part.id[:1].isdigit()
+                            and top.id == part.id
+                        )
+                    )
                     and not cfg.chapter_re.match(" ".join(item.text.split()))
                 ):
-                    # ICAO appendices restart numeric numbering ("1.",
-                    # "2.1"...). Namespace the id under the appendix
-                    # top-level node so appendix "2.1" becomes "app3-2.1"
-                    # and never collides with chapter section "2.1".
-                    # Only appendix ("app*") nodes namespace: numeric
-                    # chapters after a front-matter fallback node
-                    # (FOREWORD -> "x1") must open normally at root.
+                    # ICAO appendices and attachments restart numeric
+                    # numbering ("1.", "2.1"...). Namespace the id under the
+                    # appendix/attachment top-level node so appendix "2.1"
+                    # becomes "app3-2.1" and never collides with chapter
+                    # section "2.1". Only appendix ("app*") and attachment
+                    # ("att*") nodes namespace, plus a seeded part-root node
+                    # (per-part tree building): numeric chapters after a
+                    # front-matter fallback node (FOREWORD -> "x1") must
+                    # open normally at root.
                     sid = f"{top.id}-{sid}"
                     depth += 1
                 if any(n.id == sid for n in stack):
@@ -194,8 +256,29 @@ def build_units(
     min_tokens: int = 200,
     max_unit_tokens: int = 5000,
     config: HeadingConfig | None = None,
+    parts: list[Part] | None = None,
 ) -> list[SectionUnit]:
-    root = _build_tree(items, config)
+    if not parts:
+        root = _build_tree(items, config)
+        return _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, None)
+    units: list[SectionUnit] = []
+    for part, part_items in split_by_parts(items, parts):
+        if not part_items:
+            continue
+        root = _build_tree(part_items, config, part=part)
+        units += _units_from_tree(
+            root, max_depth, min_tokens, max_unit_tokens, part.id
+        )
+    return units
+
+
+def _units_from_tree(
+    root: _Node,
+    max_depth: int,
+    min_tokens: int,
+    max_unit_tokens: int,
+    chapter_override: str | None,
+) -> list[SectionUnit]:
     units: list[SectionUnit] = []
 
     def walk(node: _Node) -> None:
@@ -238,7 +321,11 @@ def build_units(
                 SectionUnit(
                     id=node.id,
                     title=node.title,
-                    chapter=_chapter_of(node.id),
+                    chapter=(
+                        chapter_override
+                        if chapter_override is not None
+                        else _chapter_of(node.id)
+                    ),
                     body_md=body_md,
                     tables=extract_tables(body_md),
                 )

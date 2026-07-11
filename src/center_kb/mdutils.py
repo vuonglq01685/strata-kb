@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import tiktoken
 
@@ -8,6 +9,12 @@ _ENCODER = None
 
 _HEADING_RE = re.compile(r"^## (?P<sid>\S+)[ \t]+(?P<title>.+?)\s*$")
 _SEP_ROW_RE = re.compile(r"^\|[\s:|-]+\|$")
+
+
+def slugify(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    text = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
+    return text
 
 
 def count_tokens(text: str) -> int:

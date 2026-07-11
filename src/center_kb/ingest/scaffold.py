@@ -1,27 +1,21 @@
 from __future__ import annotations
 
 import hashlib
-import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 from center_kb import models
 from center_kb.ingest.sectioner import HeadingConfig, SectionUnit
-from center_kb.mdutils import count_tokens
+from center_kb.mdutils import count_tokens, slugify
 
-
-def slugify(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    text = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
-    return text
+__all__ = ["ScaffoldReport", "chapter_stem", "scaffold_doc", "slugify"]
 
 
 def chapter_stem(chapter: str, title: str) -> str:
     prefix = f"ch{chapter}" if chapter and chapter[0].isdigit() else chapter
     slug = slugify(title)[:40].rstrip("-")
-    return f"{prefix}-{slug}" if slug else prefix
+    return f"{prefix}-{slug}" if slug and slug != prefix else prefix
 
 
 @dataclass
@@ -42,12 +36,17 @@ def scaffold_doc(
     kb_dir: Path,
     chapters: set[str] | None = None,
     heading_config: HeadingConfig | None = None,
+    part_titles: dict[str, str] | None = None,
+    used_bookmarks: bool = False,
 ) -> ScaffoldReport:
     if chapters is not None:
         units = [u for u in units if u.chapter in chapters]
 
     doc_dir = kb_dir / doc_id
     doc_dir.mkdir(parents=True, exist_ok=True)
+
+    for stale in doc_dir.glob("*.md"):  # re-ingest may change the file split
+        stale.unlink()
 
     groups: dict[str, list[SectionUnit]] = {}
     for unit in units:
@@ -57,7 +56,8 @@ def scaffold_doc(
     files: list[str] = []
     for chapter, chapter_units in groups.items():
         head = next((u for u in chapter_units if u.id == chapter), chapter_units[0])
-        stem = chapter_stem(chapter, head.title)
+        stem_title = (part_titles or {}).get(chapter) or head.title
+        stem = chapter_stem(chapter, stem_title)
 
         l3_lines: list[str] = []
         l2_lines: list[str] = []
@@ -98,7 +98,10 @@ def scaffold_doc(
         source_sha256=sha,
         sections=sections,
         ingest=models.IngestConfig(
-            chapter_pattern=cfg.chapter_pattern, appendix_pattern=cfg.appendix_pattern
+            chapter_pattern=cfg.chapter_pattern,
+            appendix_pattern=cfg.appendix_pattern,
+            attachment_pattern=cfg.attachment_pattern,
+            used_bookmarks=used_bookmarks,
         ),
     )
     models.save_yaml_model(doc_dir / "_manifest.yaml", manifest)
