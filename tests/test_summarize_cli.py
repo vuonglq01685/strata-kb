@@ -66,11 +66,22 @@ def test_summarize_nothing_pending_exit_0(tmp_path: Path, monkeypatch):
 
 
 def test_summarize_redo_flag_resets_then_summarizes(tmp_path: Path, monkeypatch):
-    kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "summarized"})
+    kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "reviewed"})
     _patch_detect(monkeypatch, FakeRunner())
     result = runner.invoke(app, ["summarize", "--redo", "--kb-dir", str(kb)])
     assert result.exit_code == 0, result.output
-    assert "redo:" in result.output
+    assert "redo: 2 section(s) reset to pending" in result.output
+    assert "[warn] 1 reviewed section(s) were reset" in result.output
     assert "2 summarized, 0 failed." in result.output
     manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
     assert all(s.status == "summarized" for s in manifest.sections)
+
+
+def test_summarize_redo_no_runner_does_not_reset(tmp_path: Path, monkeypatch):
+    kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "summarized"})
+    _patch_detect(monkeypatch, None)
+    result = runner.invoke(app, ["summarize", "--redo", "--kb-dir", str(kb)])
+    assert result.exit_code == 1
+    assert "redo:" not in result.output
+    manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
+    assert all(s.status == "summarized" for s in manifest.sections)  # untouched
