@@ -36,6 +36,7 @@ def scaffold_doc(
     kb_dir: Path,
     chapters: set[str] | None = None,
     heading_config: HeadingConfig | None = None,
+    part_titles: dict[str, str] | None = None,
     used_bookmarks: bool = False,
 ) -> ScaffoldReport:
     if chapters is not None:
@@ -55,7 +56,8 @@ def scaffold_doc(
     files: list[str] = []
     for chapter, chapter_units in groups.items():
         head = next((u for u in chapter_units if u.id == chapter), chapter_units[0])
-        stem = chapter_stem(chapter, head.title)
+        stem_title = (part_titles or {}).get(chapter) or head.title
+        stem = chapter_stem(chapter, stem_title)
 
         l3_lines: list[str] = []
         l2_lines: list[str] = []

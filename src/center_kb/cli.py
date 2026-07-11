@@ -152,6 +152,7 @@ def ingest(
         kb_dir=kb_dir,
         chapters=chapters,
         heading_config=heading_config,
+        part_titles={p.id: p.title for p in parts} if parts else None,
         used_bookmarks=bool(parts),
     )
     typer.echo(
