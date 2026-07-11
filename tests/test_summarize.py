@@ -5,7 +5,7 @@ import pytest
 
 from center_kb import models, summarize
 from center_kb.llm import RunnerError
-from center_kb.summarize import collect_pending, strip_tables
+from center_kb.summarize import collect_pending, rebuild_l2_scaffold, redo_reset, strip_tables
 
 
 def make_kb(tmp_path: Path, statuses: dict[str, str]) -> Path:
@@ -336,3 +336,51 @@ def test_length_guard_fails_after_two_long_replies():
     runner = _ScriptedRunner([_reply("x" * 800), _reply("z" * 800)])
     with pytest.raises(RunnerError, match="too long"):
         _summarize_one(runner, _prose_section("p" * 2000))
+
+
+L2_WITH_SUMMARIES = (
+    "## 1 Prose Section\n\nAn old summary paragraph.\nSecond line of it.\n\n"
+    "| h |\n|---|\n| v |\n\n"
+    "## 2 Table Only\n\n| h2 |\n|----|\n| v2 |\n"
+)
+
+
+def test_rebuild_l2_scaffold_restores_markers_keeps_tables():
+    out = rebuild_l2_scaffold(L2_WITH_SUMMARIES)
+    assert "<!-- TODO:summarize 1 -->" in out
+    assert "<!-- TODO:summarize 2 -->" in out
+    assert "An old summary paragraph." not in out
+    assert "| h |" in out and "| v2 |" in out
+    # headings preserved
+    assert "## 1 Prose Section" in out and "## 2 Table Only" in out
+
+
+def test_rebuild_l2_scaffold_is_idempotent():
+    once = rebuild_l2_scaffold(L2_WITH_SUMMARIES)
+    assert rebuild_l2_scaffold(once) == once
+
+
+def test_redo_reset_flips_statuses_and_rewrites_l2(tmp_path):
+    kb = tmp_path / ".kb"
+    (kb / "doc1").mkdir(parents=True)
+    (kb / "index.yaml").write_text(
+        "docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8"
+    )
+    (kb / "doc1" / "f1.md").write_text(L2_WITH_SUMMARIES, encoding="utf-8")
+    (kb / "doc1" / "_manifest.yaml").write_text(
+        "id: doc1\ntitle: Doc One\nrevision: ''\n"
+        "ingested: 2026-07-11\nsource_sha256: ''\n"
+        "ingest: {chapter_pattern: x, appendix_pattern: y}\n"
+        "sections:\n"
+        "- {id: '1', title: Prose Section, file: f1, status: summarized, summary: old}\n"
+        "- {id: '2', title: Table Only, file: f1, status: reviewed, summary: old2}\n",
+        encoding="utf-8",
+    )
+    report = redo_reset(kb)
+    assert sorted(report.reset) == ["doc1/1", "doc1/2"]
+    assert report.reviewed_reset == 1
+    manifest_text = (kb / "doc1" / "_manifest.yaml").read_text(encoding="utf-8")
+    assert "summarized" not in manifest_text and "reviewed" not in manifest_text
+    l2 = (kb / "doc1" / "f1.md").read_text(encoding="utf-8")
+    assert "<!-- TODO:summarize 1 -->" in l2
+    assert "An old summary paragraph." not in l2

@@ -63,3 +63,14 @@ def test_summarize_nothing_pending_exit_0(tmp_path: Path, monkeypatch):
     result = runner.invoke(app, ["summarize", "--kb-dir", str(kb)])
     assert result.exit_code == 0
     assert "0" in result.output
+
+
+def test_summarize_redo_flag_resets_then_summarizes(tmp_path: Path, monkeypatch):
+    kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "summarized"})
+    _patch_detect(monkeypatch, FakeRunner())
+    result = runner.invoke(app, ["summarize", "--redo", "--kb-dir", str(kb)])
+    assert result.exit_code == 0, result.output
+    assert "redo:" in result.output
+    assert "2 summarized, 0 failed." in result.output
+    manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
+    assert all(s.status == "summarized" for s in manifest.sections)
