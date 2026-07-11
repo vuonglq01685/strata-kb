@@ -105,3 +105,22 @@ def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
         assert "kb status" in text
         assert "CENTER_KB_HUB" in text
         assert "kb doctor" in text
+
+
+def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
+    init_repo(tmp_path)
+    quick = (tmp_path / "QUICKSTART.md").read_text(encoding="utf-8")
+    instr = (
+        tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
+    ).read_text(encoding="utf-8")
+    for text in (quick, instr):
+        assert "## CLI reference" in text
+        # every kb command appears
+        for cmd in (
+            "kb init", "kb ingest", "kb summarize", "kb status", "kb build",
+            "kb query", "kb get", "kb stats", "kb diff", "kb approve",
+            "kb publish", "kb resolve", "kb doctor",
+        ):
+            assert cmd in text, cmd
+    assert "/kb-ingest" in quick
+    assert "/kb-publish" in quick

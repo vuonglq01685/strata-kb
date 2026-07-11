@@ -33,3 +33,21 @@ to fill in summaries (after `kb ingest`), follow these rules exactly.
 
 After editing, run `kb build` — it must pass. If it reports a table
 integrity error, restore the table verbatim from the `.raw.md` file.
+
+## CLI reference
+
+- `kb init` — scaffold a KB repo
+- `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
+  (prefer the `/kb-ingest` prompt in Copilot Chat)
+- `kb summarize` — fill pending summaries via a headless LLM CLI
+- `kb status` — list docs and their pending sections
+- `kb build` — validate the KB (manifests, tables, tokens)
+- `kb query "<question>"` — BM25 search over the summaries
+- `kb get <doc> <section> [--level l1|l2|l3]` — read one section
+- `kb stats` — token counts per level
+- `kb diff <doc> --against <rev>` — changed sections vs a git rev
+- `kb approve <doc> --section <id>` — mark sections reviewed
+  (prefer the `/kb-publish` prompt in Copilot Chat)
+- `kb publish --hub <hub>` — push the L0+L1 snapshot to the federation hub
+- `kb resolve <file>` — resolve a kb-context block and check freshness
+- `kb doctor` — sanity-check the setup
