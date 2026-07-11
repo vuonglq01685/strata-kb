@@ -16,7 +16,7 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8")
 
 app = typer.Typer(
-    help="CENTER-KB — Knowledge Base as Code for aviation documents.",
+    help="CENTER-KB — Knowledge Base as Code for large reference documents.",
     no_args_is_help=True,
 )
 

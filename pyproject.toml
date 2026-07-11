@@ -1,13 +1,13 @@
 [project]
 name = "center-kb"
-version = "0.2.0"
-description = "Knowledge Base as Code cho tài liệu hàng không — 4 tầng L0-L3, MCP server + web UI"
+version = "0.2.1"
+description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Lâm Quốc Vương" }]
-keywords = ["aviation", "knowledge-base", "mcp", "docs-as-code", "arinc-424", "icao"]
+keywords = ["knowledge-base", "mcp", "docs-as-code", "rag", "documentation", "ai-agents"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

@@ -1,238 +1,240 @@
-# CENTER-KB — Kho tri thức hàng không "biết tự tóm tắt"
+# CENTER-KB — A structured knowledge base that knows how to summarize itself
 
-> Tài liệu này viết cho người **không rành kỹ thuật** (SME hàng không, người review, người quản lý dự án). Nếu bạn chỉ cần đọc-hiểu hệ thống và biết cách review, đọc từ đầu đến hết là đủ. Nếu bạn cần chạy lệnh, phần [7](#7-từ-điển-lệnh-kb) và [8](#8-quy-trình-làm-việc-đầy-đủ-từng-bước) có ví dụ chạy thật, copy-paste được.
-
----
-
-## Mục lục
-
-1. [Tóm tắt trong 30 giây](#1-tóm-tắt-trong-30-giây)
-2. [Vấn đề mà CENTER-KB giải quyết](#2-vấn-đề-mà-center-kb-giải-quyết)
-3. [Ý tưởng cốt lõi: 4 tầng L0 → L1 → L2 → L3](#3-ý-tưởng-cốt-lõi-4-tầng-l0--l1--l2--l3)
-4. [Một tài liệu "đi" qua hệ thống như thế nào](#4-một-tài-liệu-đi-qua-hệ-thống-như-thế-nào)
-5. [Cấu trúc thư mục — cái gì nằm ở đâu](#5-cấu-trúc-thư-mục--cái-gì-nằm-ở-đâu)
-6. [Cài đặt (cho người chạy lần đầu)](#6-cài-đặt-cho-người-chạy-lần-đầu)
-7. [Từ điển lệnh `kb`](#7-từ-điển-lệnh-kb)
-8. [Quy trình làm việc đầy đủ, từng bước](#8-quy-trình-làm-việc-đầy-đủ-từng-bước)
-9. [Vai trò SME review — checklist](#9-vai-trò-sme-review--checklist)
-10. [Bằng chứng nó hoạt động (số liệu PoC thật)](#10-bằng-chứng-nó-hoạt-động-số-liệu-poc-thật)
-11. [Giới hạn hiện tại & việc chưa làm](#11-giới-hạn-hiện-tại--việc-chưa-làm)
-12. [Câu hỏi thường gặp (FAQ)](#12-câu-hỏi-thường-gặp-faq)
-13. [Gặp lỗi thì làm gì](#13-gặp-lỗi-thì-làm-gì)
+> This guide is written for **non-technical readers** (domain SMEs, reviewers, project managers). If you only need to understand the system and how to review, reading start to finish is enough. If you need to run commands, sections [7](#7-kb-command-dictionary) and [8](#8-end-to-end-workflow-step-by-step) have real, copy-paste examples.
+>
+> CENTER-KB is domain-agnostic — it turns *any* large, structured reference document (technical standards, regulations, internal specs, compliance manuals, engineering handbooks…) into a layered, AI-queryable, human-reviewable knowledge base. The worked examples throughout this guide happen to use an aviation standards dataset (ARINC 424, ICAO Annex 3) because that's the demo data bundled in this repo — nothing about the tool itself is aviation-specific. Swap in any PDF-based reference material for your own domain.
 
 ---
 
-## 1. Tóm tắt trong 30 giây
+## Table of contents
 
-CENTER-KB lấy các tài liệu hàng không dạng PDF **dày hàng trăm trang** (ARINC 424, ICAO Annex 3, Annex 4, Doc 8896...) và biến chúng thành một **kho tri thức có cấu trúc** mà:
-
-- **Con người** đọc được trực tiếp bằng file text/markdown thường (không cần phần mềm đặc biệt), review được qua Pull Request như review một tài liệu Word có track-changes.
-- **Trợ lý AI** (như Claude) tra cứu được **đúng đoạn cần thiết**, thay vì phải "nhồi" cả trăm nghìn từ của cả cuốn tài liệu vào mỗi câu hỏi — tiết kiệm **trên 90% chi phí** mỗi lần hỏi.
-
-Không có server, không có database. Toàn bộ kho tri thức là các file `.yaml` và `.md` nằm trong thư mục `.kb/`, được quản lý bằng Git y hệt code — đây là triết lý "**tài liệu như là code**" (docs-as-code).
+1. [30-second summary](#1-30-second-summary)
+2. [The problem CENTER-KB solves](#2-the-problem-center-kb-solves)
+3. [Core idea: 4 layers L0 → L1 → L2 → L3](#3-core-idea-4-layers-l0--l1--l2--l3)
+4. [How a document moves through the system](#4-how-a-document-moves-through-the-system)
+5. [Directory layout — what lives where](#5-directory-layout--what-lives-where)
+6. [Installation (first-time setup)](#6-installation-first-time-setup)
+7. [`kb` command dictionary](#7-kb-command-dictionary)
+8. [End-to-end workflow, step by step](#8-end-to-end-workflow-step-by-step)
+9. [SME review role — checklist](#9-sme-review-role--checklist)
+10. [Proof it works (real PoC numbers)](#10-proof-it-works-real-poc-numbers)
+11. [Current limits & unfinished work](#11-current-limits--unfinished-work)
+12. [FAQ](#12-faq)
+13. [What to do when something breaks](#13-what-to-do-when-something-breaks)
 
 ---
 
-## 2. Vấn đề mà CENTER-KB giải quyết
+## 1. 30-second summary
 
-Các tài liệu chuẩn hàng không có hai đặc điểm gây khó:
+CENTER-KB takes **hundreds-of-pages** reference documents — technical standards, regulations, internal specs, compliance manuals (this repo's demo data: ARINC 424, ICAO Annex 3) — and turns them into a **structured knowledge base** where:
 
-| Đặc điểm | Vì sao gây khó |
+- **People** can read plain text/markdown files (no special software) and review via Pull Request — like reviewing a Word doc with track changes.
+- **AI assistants** (such as Claude) can look up **exactly the needed passage**, instead of stuffing hundreds of thousands of tokens from the whole document into every question — saving **over 90% cost** per query.
+
+No server, no database. The entire knowledge base is `.yaml` and `.md` files under `.kb/`, managed with Git just like code — the "**docs as code**" philosophy.
+
+---
+
+## 2. The problem CENTER-KB solves
+
+Long reference documents — regardless of domain — share two painful traits:
+
+| Trait | Why it hurts |
 |---|---|
-| **Rất dài** — ARINC 424 dày 487 trang, Annex 3 dày 224 trang | Không ai (người lẫn AI) đọc lại cả tài liệu mỗi khi cần tra 1 field cụ thể |
-| **Nhiều bảng biểu quan trọng đến từng ký tự** — mã hiệu, độ dài field, kiểu ký tự | Nếu tóm tắt bằng lời văn thông thường (kể cả bằng AI), rất dễ **chép sai một ký tự trong bảng** → sai lệch nguy hiểm cho hệ thống điều hướng bay |
+| **Very long** — hundreds of pages is normal for a standard, regulation, or spec (this repo's demo: ARINC 424 is 487 pages, ICAO Annex 3 is 224) | Nobody (human or AI) re-reads the whole document just to look up one field |
+| **Tables that matter character-by-character** — codes, field lengths, character types, thresholds | If you summarize in prose (even with AI), it is easy to **miscopy one character in a table** → dangerous drift for whatever system relies on that data |
 
-CENTER-KB giải quyết đồng thời cả hai:
+CENTER-KB addresses both at once:
 
-- **Cắt nhỏ theo section** (ví dụ mỗi field của ARINC 424 là một section riêng: §5.129 "Restrictive Airspace Designation") để tra đúng chỗ, không tra cả file.
-- **Bảng biểu không bao giờ đi qua tay AI để "diễn giải lại"** — bảng được trích xuất y nguyên bằng code (không phải AI viết lại), và có một bước kiểm tra tự động đảm bảo bảng ở bản tóm tắt **khớp 100%** với bảng ở bản gốc. Đây là "chốt an toàn" quan trọng nhất của cả hệ thống (xem mục 3).
+- **Split by section** (e.g. in the demo data, each ARINC 424 field is its own section: §5.129 "Restrictive Airspace Designation") so lookup hits the right place, not the whole file.
+- **Tables never go through AI for "rephrasing"** — tables are extracted verbatim by code (not rewritten by AI), and an automated check ensures tables in the summary **match 100%** the original. This is the system's most important safety latch (see section 3).
 
 ---
 
-## 3. Ý tưởng cốt lõi: 4 tầng L0 → L1 → L2 → L3
+## 3. Core idea: 4 layers L0 → L1 → L2 → L3
 
-Hãy tưởng tượng một **bộ hồ sơ tra cứu** kiểu thư viện, có 4 lớp từ tổng quát đến chi tiết — giống hệt việc bạn tìm sách trong thư viện: nhìn danh mục phòng ban → nhìn mục lục cuốn sách → đọc tóm tắt chương → đọc nguyên văn.
+Think of a **library lookup stack** with 4 layers from coarse to fine — like finding a book: department catalog → book table of contents → chapter summary → full text.
 
-| Tầng | Tên gọi | Là cái gì | Kích thước | Ví dụ thật trong dự án này |
+| Layer | Name | What it is | Size | Example in this repo's demo data |
 |---|---|---|---|---|
-| **L0** | Danh mục tổng | Một file `index.yaml` duy nhất, liệt kê **mọi tài liệu** đang có trong kho: tên, phiên bản, tags, 1 câu mô tả | Cực nhỏ (187 "từ" cho toàn kho, xem mục 10) | `.kb/index.yaml` |
-| **L1** | Mục lục chi tiết | Với mỗi tài liệu, một file `_manifest.yaml` liệt kê **từng section**: id, tiêu đề, 1 câu tóm tắt (≤ 25 từ), trạng thái | Vài chục nghìn "từ" mỗi tài liệu | `.kb/arinc-424/_manifest.yaml` |
-| **L2** | Bản tóm tắt cô đọng | File `.md` — văn xuôi tiếng Anh cô đọng còn ~20–30% độ dài gốc, **bảng giữ nguyên văn 100%** | Trung bình | `.kb/arinc-424/ch5-navigation-data-field-definitions.md` |
-| **L3** | Bản gốc đầy đủ | File `.md` — toàn văn trích ra từ PDF, không cắt bớt gì | Lớn nhất | `.kb/arinc-424/ch5-navigation-data-field-definitions.raw.md` |
+| **L0** | Master catalog | A single `index.yaml` listing **every document** in the store: name, revision, tags, one-line description | Tiny (187 "tokens" for the whole store — see section 10) | `.kb/index.yaml` |
+| **L1** | Detailed TOC | Per document, a `_manifest.yaml` listing **each section**: id, title, one-line summary (≤ 25 words), status | Tens of thousands of tokens per document | `.kb/arinc-424/_manifest.yaml` |
+| **L2** | Condensed summary | `.md` file — English prose condensed to ~20–30% of original length, **tables kept verbatim 100%** | Medium | `.kb/arinc-424/ch5-navigation-data-field-definitions.md` |
+| **L3** | Full original | `.md` file — full text extracted from the PDF, nothing cut | Largest | `.kb/arinc-424/ch5-navigation-data-field-definitions.raw.md` |
 
-**Vì sao chia 4 tầng thay vì chỉ có 1 bản?**
-Một câu hỏi tra cứu thường chỉ cần đọc L0 (biết tài liệu nào liên quan) → L1 (biết section nào liên quan, gần như miễn phí vì chỉ là câu tóm tắt) → L2 (đọc nội dung cô đọng của đúng 1–4 section liên quan). Chỉ khi cần đối chiếu pháp lý/kỹ thuật tuyệt đối chính xác mới cần mở L3. Nhờ vậy AI trả lời câu hỏi mà chỉ cần "nạp" một phần rất nhỏ của cả kho tài liệu.
+**Why four layers instead of one copy?**
+A typical lookup only needs L0 (which docs matter) → L1 (which sections matter — almost free, one-line summaries) → L2 (condensed content of the 1–4 relevant sections). Only when you need absolute legal/technical fidelity do you open L3. That way an AI can answer while loading only a tiny slice of the whole store.
 
-### Ví dụ cụ thể — section §5.4 "Section Code"
+### Concrete example — section §5.4 "Section Code"
 
-**L1 (trong manifest, chỉ là 1 dòng tóm tắt để máy tìm kiếm dùng):**
+**L1 (in the manifest — one search-oriented summary line):**
 > Defines the Section Code field (SEC CODE) identifying the major navigation database section for a record, per Table 5-1, 1 alpha character.
 
-**L2 (văn xuôi cô đọng, đọc trong file `.md`):**
+**L2 (condensed prose in the `.md` file):**
 > The Section Code field (SEC CODE) defines the major section of the navigation system database in which a record resides, per the encoding scheme in Table 5-1. Used on all records; length 1 character; alpha.
 
-Và ngay bên dưới là **bảng Table 5-1 chép nguyên văn** — không hề bị AI viết lại, vì bảng do code trích xuất trực tiếp từ PDF.
+And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI, because code extracts it straight from the PDF.
 
-**Nguyên tắc bất khả xâm phạm:** bảng biểu **không bao giờ** do AI viết lại. AI chỉ được phép viết đoạn văn xuôi tóm tắt xung quanh bảng; chính bảng đó luôn được chương trình chép máy móc, y nguyên từ PDF gốc, ở cả tầng L2 lẫn L3. Trước khi một thay đổi được chấp nhận vào kho (`kb build`), hệ thống **tự động so khớp từng bảng ở L2 với L3** — nếu lệch dù chỉ một ký tự, `kb build` sẽ báo lỗi và chặn lại.
+**Non-negotiable rule:** tables are **never** rewritten by AI. AI may only write the prose summary around tables; the tables themselves are always machine-copied from the source PDF at both L2 and L3. Before a change is accepted into the store (`kb build`), the system **automatically diffs every L2 table against L3** — if even one character differs, `kb build` fails and blocks the change.
 
 ---
 
-## 4. Một tài liệu "đi" qua hệ thống như thế nào
+## 4. How a document moves through the system
 
 ```
-   PDF gốc (487 trang, có bản quyền)
+   Source PDF (487 pages, copyrighted)
           │
-          │  kb ingest   ← bước 1: máy làm tự động
+          │  kb ingest   ← step 1: machine, automatic
           ▼
-   Cắt PDF thành ~100–300 "section" nhỏ
-   (mỗi field/mục là 1 section, có id chuẩn: §5.3, §ch2, §app3...)
+   Split PDF into ~100–300 small "sections"
+   (each field/item is one section, with standard ids: §5.3, §ch2, §app3...)
           │
           ▼
-   Sinh sẵn:
-   - L3 (bản gốc) cho mọi section — XONG NGAY
-   - L2 (khung rỗng, có sẵn bảng + chỗ trống chờ viết tóm tắt)
-   - L1 (manifest, mỗi section status = "pending" — nghĩa là "đang chờ")
+   Pre-generate:
+   - L3 (original) for every section — DONE IMMEDIATELY
+   - L2 (empty scaffold: tables present + blanks for summaries)
+   - L1 (manifest, each section status = "pending")
           │
-          │  skill kb-summarize (chạy trong Claude Code)  ← bước 2: AI điền tóm tắt
+          │  kb-summarize skill (in Claude Code)  ← step 2: AI fills summaries
           ▼
-   Với từng section pending:
-   - Đọc L3 (bản gốc)
-   - Viết đoạn tóm tắt tiếng Anh vào L2
-   - Viết 1 câu tóm tắt vào L1 (manifest)
-   - Đổi status: pending → summarized
+   For each pending section:
+   - Read L3 (original)
+   - Write English summary into L2
+   - Write one-line summary into L1 (manifest)
+   - Flip status: pending → summarized
           │
-          │  kb build   ← bước 3: máy kiểm tra tự động, không thể bỏ qua
+          │  kb build   ← step 3: machine checks, cannot be skipped
           ▼
-   ✓ Không còn section nào "pending"
-   ✓ Mọi bảng ở L2 khớp 100% với bảng ở L3
-   ✓ Đếm lại số "từ" (token) từng tầng
+   ✓ No sections still "pending"
+   ✓ Every L2 table matches L3 100%
+   ✓ Recount tokens per layer
           │
-          │  Pull Request trên GitHub   ← bước 4: NGƯỜI review
+          │  Pull Request on GitHub   ← step 4: HUMAN review
           ▼
-   SME (chuyên gia hàng không) đọc diff, so với PDF gốc, sửa trực tiếp nếu cần
+   SME (domain expert) reads the diff, compares to the PDF, edits if needed
           │
           │  Merge
           ▼
-   status: summarized → reviewed.  Section này giờ sẵn sàng để AI tra cứu.
+   status: summarized → reviewed.  Section is now ready for AI lookup.
           │
-          │  kb query "câu hỏi..."   ← bước 5: dùng hàng ngày
+          │  kb query "your question..."   ← step 5: day-to-day use
           ▼
-   Trả về đúng 1–4 section liên quan nhất, kèm trích dẫn rõ ràng
-   (vd: arinc-424 §5.129 (Supplement 22))
+   Returns the 1–4 most relevant sections with clear citations
+   (e.g. arinc-424 §5.129 (Supplement 22))
 ```
 
-Nói ngắn gọn: **máy làm phần cơ khí** (cắt section, giữ bảng nguyên văn, kiểm tra toàn vẹn), **AI làm phần ngôn ngữ** (viết tóm tắt), **con người làm phần thẩm định cuối cùng** (review PR) — không bước nào được bỏ qua bước kiểm tra của bước sau.
+In short: **machines do the mechanical work** (sectioning, verbatim tables, integrity checks), **AI does the language work** (writing summaries), **humans do final sign-off** (PR review) — no step skips the check that follows it.
 
 ---
 
-## 5. Cấu trúc thư mục — cái gì nằm ở đâu
+## 5. Directory layout — what lives where
 
 ```
 CENTER-KB/
-├── .kb/                    ← ★ SẢN PHẨM CHÍNH — đây là thứ bạn review, đây là "kho tri thức"
-│   ├── index.yaml                          (tầng L0 — danh mục tổng)
+├── .kb/                    ← ★ MAIN PRODUCT — what you review; this is the "knowledge base"
+│   ├── index.yaml                          (L0 — master catalog)
 │   ├── arinc-424/
-│   │   ├── _manifest.yaml                  (tầng L1 — mục lục chi tiết)
-│   │   ├── ch5-navigation-...md            (tầng L2 — bản tóm tắt, ĐỌC FILE NÀY khi review)
-│   │   └── ch5-navigation-...raw.md        (tầng L3 — bản gốc đầy đủ, dùng để đối chiếu)
-│   └── icao-annex-3/  (cấu trúc tương tự)
+│   │   ├── _manifest.yaml                  (L1 — detailed TOC)
+│   │   ├── ch5-navigation-...md            (L2 — summary; READ THIS when reviewing)
+│   │   └── ch5-navigation-...raw.md        (L3 — full original; use to cross-check)
+│   └── icao-annex-3/  (same structure)
 │
-├── sources/                ← PDF gốc có bản quyền — KHÔNG được đưa lên Git (xem mục 12)
-├── .kb-work/                ← File trung gian máy tự sinh khi parse PDF — bỏ qua, không cần quan tâm
-├── .venv/                   ← Môi trường Python cài đặt — bỏ qua, không cần quan tâm
+├── sources/                ← Copyrighted source PDFs — NOT committed to Git (see FAQ)
+├── .kb-work/                ← Intermediate files from PDF parsing — ignore
+├── .venv/                   ← Python install environment — ignore
 │
-├── .mcp.json                 ← Khai báo MCP server cho Claude Code (Phase 2, xem mục 7.8)
-├── src/center_kb/              ← Mã nguồn của công cụ (chỉ dev cần đụng vào)
-│   ├── cli.py                       lệnh `kb` (đủ 11 lệnh, xem mục 7)
-│   ├── ingest/                      phần "cắt PDF thành section"
-│   ├── build.py                     phần "kiểm tra toàn vẹn"
-│   ├── query.py                     phần "tìm kiếm & trả lời"
-│   ├── mcp.py                       MCP server cho agent tra cứu (Phase 2)
-│   ├── kbcontext.py, resolve.py     block kb-context + resolve theo bản đã pin (Phase 2)
-│   └── diff.py, doctor.py, gitio.py so sánh amendment + kiểm tra sức khỏe kho (Phase 2)
+├── .mcp.json                 ← MCP server config for Claude Code (Phase 2, see §7.8)
+├── src/center_kb/              ← Tool source (devs only)
+│   ├── cli.py                       `kb` CLI (11 commands, see §7)
+│   ├── ingest/                      "split PDF into sections"
+│   ├── build.py                     integrity checks
+│   ├── query.py                     search & answer
+│   ├── mcp.py                       MCP server for agent lookup (Phase 2)
+│   ├── kbcontext.py, resolve.py     kb-context blocks + pin-aware resolve (Phase 2)
+│   └── diff.py, doctor.py, gitio.py amendment diff + store health (Phase 2)
 │
-├── .claude/skills/kb-summarize/    ← "công thức" hướng dẫn AI cách viết tóm tắt cho đúng chuẩn
-├── scripts/demo-federation.sh      ← script demo tự dựng kb-hub + 2 repo mẫu, chạy trọn vòng (Phase 3)
-├── .github/workflows/kb-publish.yml ← mẫu CI tự đẩy danh mục lên kb-hub khi `.kb/` đổi (Phase 3)
-├── docs/                            ← tài liệu thiết kế, kế hoạch (dành cho người phát triển công cụ)
-│   └── deploy-remote-mcp.md                triển khai MCP server dùng chung qua HTTP (Phase 3)
-└── tests/                           ← bộ kiểm thử tự động của công cụ
+├── .claude/skills/kb-summarize/    ← "recipe" teaching AI how to summarize correctly
+├── scripts/demo-federation.sh      ← demo: spins up kb-hub + 2 sample repos end-to-end (Phase 3)
+├── .github/workflows/kb-publish.yml ← CI sample: push catalog to kb-hub when `.kb/` changes (Phase 3)
+├── docs/                            ← design docs & plans (tool developers)
+│   └── deploy-remote-mcp.md                deploy a shared HTTP MCP server (Phase 3)
+└── tests/                           ← automated tests for the tool
 ```
 
-**Quy tắc ghi nhớ nhanh:** nếu bạn là SME review nội dung, bạn **chỉ cần quan tâm thư mục `.kb/`**. Mọi thứ khác (`.venv/`, `.kb-work/`, `src/`) là "máy móc bên trong", không liên quan đến việc đọc/review nội dung hàng không.
+**Quick rule:** if you are an SME reviewing content, you **only need `.kb/`**. Everything else (`.venv/`, `.kb-work/`, `src/`) is internal machinery, unrelated to reading/reviewing domain content.
 
 ---
 
-## 6. Cài đặt (cho người chạy lần đầu)
+## 6. Installation (first-time setup)
 
-Chỉ cần làm phần này nếu bạn muốn **tự chạy lệnh `kb` trên máy mình** (ví dụ để chạy `kb query` thử tra cứu, hoặc `kb build` để kiểm tra trước khi mở PR). Nếu bạn chỉ review PR trên GitHub, có thể **bỏ qua toàn bộ mục này**.
+Do this only if you want to **run `kb` on your machine** (e.g. try `kb query`, or `kb build` before opening a PR). If you only review PRs on GitHub, **skip this whole section**.
 
-### Yêu cầu
-- Máy đã cài **Python 3.11 trở lên** (dự án này dùng Python 3.13).
-- Đã cài **Git** và có quyền truy cập repo.
+### Requirements
+- **Python 3.11+** (this project uses Python 3.13).
+- **Git** installed, with access to the repo.
 
-### Các bước
+### Steps
 
 ```bash
-# 1. Vào thư mục dự án
+# 1. Enter the project directory
 cd CENTER-KB
 
-# 2. Tạo môi trường ảo Python (chỉ làm 1 lần)
+# 2. Create a Python virtualenv (once)
 python3 -m venv .venv
 
-# 3. Kích hoạt môi trường ảo (phải làm mỗi khi mở terminal mới)
+# 3. Activate it (every new terminal)
 source .venv/bin/activate
 
-# 4. Cài công cụ + các phần phụ thuộc
-#    (ingest = cần cho lệnh "kb ingest"; dev = cần để chạy bộ test)
+# 4. Install the tool + extras
+#    (ingest = needed for "kb ingest"; dev = needed to run tests)
 pip install -e ".[ingest,dev]"
 
-# 5. Kiểm tra cài đặt thành công
+# 5. Confirm install
 kb --help
 ```
 
-Nếu bước 5 in ra danh sách lệnh (`ingest`, `status`, `build`, `query`, `get`, `stats`, `publish`, `context`, `resolve`, `diff`, `doctor`) — cài đặt thành công.
+If step 5 prints the command list (`init`, `ingest`, `status`, `build`, `query`, `get`, `stats`, `publish`, `context`, `resolve`, `diff`, `approve`, `doctor`) — install succeeded.
 
-> **Lưu ý:** mỗi lần mở terminal mới để làm việc với dự án, phải chạy lại `source .venv/bin/activate` trước (dấu hiệu nhận biết: đầu dòng lệnh terminal có chữ `(.venv)`).
+> **Note:** every new terminal session, run `source .venv/bin/activate` again first (you'll see `(.venv)` in the prompt).
 
-### 6.1. Cài qua PyPI, web UI và Docker
+### 6.1. Install from PyPI, web UI, and Docker
 
-**Cài package** (khi đã publish): `pip install center-kb` — có ngay lệnh `kb` và MCP server.
-Tạo repo KB mới: `kb init` (sinh sẵn `.kb/`, `federation/`, `.mcp.json`, workflow CI,
-`docker-compose.yml`, `QUICKSTART.md` — file nào đã có sẽ không bị ghi đè).
+**Install the package** (once published): `pip install center-kb` — gives you the `kb` CLI and MCP server.
+Create a new KB repo: `kb init` (scaffolds `.kb/`, `federation/`, `.mcp.json`, CI workflow,
+`docker-compose.yml`, `QUICKSTART.md` — existing files are not overwritten).
 
-**Web UI cho người tra tay:** cùng một tiến trình HTTP phục vụ cả agent lẫn người:
+**Web UI for humans:** the same HTTP process serves agents and people:
 
 ```bash
-CENTER_KB_HTTP_TOKEN=bi-mat python -m center_kb.mcp --hub . --transport http
+CENTER_KB_HTTP_TOKEN=secret python -m center_kb.mcp --hub . --transport http
 # → agent:  http://<host>:8321/mcp   (Bearer token)
-# → REST:   http://<host>:8321/api/… (Bearer token hoặc cookie)
-# → người:  http://<host>:8321/ui    (đăng nhập bằng token, lưu cookie)
+# → REST:   http://<host>:8321/api/… (Bearer token or cookie)
+# → human:  http://<host>:8321/ui    (sign in with token; cookie stored)
 ```
 
-**Docker:** `docker compose up -d` (image có sẵn cả bộ ingest docling);
-ingest ngay trong container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
-Khi release tag `v*`, CI tự publish lên PyPI + đẩy image `ghcr.io/vuonglq01685/center-kb`.
+**Docker:** `docker compose up -d` (image includes the full docling ingest stack);
+ingest inside the container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
+On `v*` release tags, CI publishes to PyPI and pushes image `ghcr.io/vuonglq01685/center-kb`.
 
 ---
 
-## 7. Từ điển lệnh `kb`
+## 7. `kb` command dictionary
 
-Bảng dưới liệt kê các lệnh cốt lõi (có từ Phase 1) theo đúng thứ tự dùng trong một quy trình thực tế. Bốn lệnh mới của Phase 2 — `context new`, `resolve`, `diff`, `doctor` — xem mục [7.8](#78-phase-2--tích-hợp-workflow). Lệnh `kb publish` và cờ `--hub`/`--semantic` (Phase 3 — chia sẻ kho tri thức giữa nhiều repo) xem mục [7.9](#79-phase-3--federation--remote-mcp).
+The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp).
 
-| # | Lệnh | Dùng để làm gì | Ai chạy |
+| # | Command | Purpose | Who runs it |
 |---|---|---|---|
-| 1 | `kb ingest` | Đưa 1 PDF vào hệ thống: cắt thành section, sinh khung L1/L2/L3 | Người phụ trách nạp tài liệu mới |
-| 2 | `kb status` | Xem còn bao nhiêu section **chưa được tóm tắt** (`pending`) | Ai cũng chạy được, để biết còn việc gì |
-| 3 | *(skill `kb-summarize` trong Claude Code)* | AI điền phần tóm tắt vào chỗ trống | Chạy trong Claude Code, không phải lệnh terminal |
-| 4 | `kb build` | Kiểm tra toàn bộ kho: hết chỗ trống chưa, bảng có khớp không | Bắt buộc trước khi mở Pull Request |
-| 5 | `kb query` | Đặt câu hỏi tự nhiên, nhận lại đúng đoạn liên quan; thêm `--hub <url\|path>` để tìm cả trong kho dùng chung, `--semantic` để ép tìm theo ngữ nghĩa (Phase 3, xem mục [7.9](#79-phase-3--federation--remote-mcp)) | Dùng hàng ngày để tra cứu |
-| 6 | `kb get` | Lấy chính xác 1 section theo id (biết trước id) | Khi đã biết rõ mình cần section nào |
-| 7 | `kb stats` | Xem số liệu "từ" (token) từng tầng — bằng chứng tiết kiệm chi phí | Theo dõi, báo cáo |
-| 8 | `kb publish --hub <url\|path>` | Đẩy danh mục (L0) + mục lục (L1) của kho hiện tại lên kb-hub dùng chung — không đẩy nội dung tóm tắt/nguyên văn | CI tự động chạy mỗi khi có thay đổi trong `.kb/` (Phase 3) |
-| 9 | `kb approve` | Đóng dấu thẩm định: chuyển section `summarized → reviewed`. Dạng CI: `kb approve --all-changed --against <rev>` tự tìm các section thay đổi | Bình thường CI tự chạy sau khi PR merge vào `main` (workflow `kb-review`); chạy tay khi cần duyệt ngoài luồng PR |
+| 1 | `kb ingest` | Bring one PDF in: split into sections, scaffold L1/L2/L3 | Person loading a new document |
+| 2 | `kb status` | How many sections are still **unsummarized** (`pending`) | Anyone — to see remaining work |
+| 3 | *(skill `kb-summarize` in Claude Code)* | AI fills in the summary blanks | Runs in Claude Code, not a terminal command |
+| 4 | `kb build` | Validate the whole store: no blanks left, tables match | Required before opening a Pull Request |
+| 5 | `kb query` | Natural-language question → relevant passages; add `--hub <url\|path>` to search the shared hub, `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
+| 6 | `kb get` | Fetch exactly one section by id (when you already know it) | When you know the section id |
+| 7 | `kb stats` | Token counts per layer — cost-savings evidence | Tracking / reporting |
+| 8 | `kb publish --hub <url\|path>` | Push this store's catalog (L0) + TOC (L1) to the shared kb-hub — does not push summary/original content | CI on every `.kb/` change (Phase 3) |
+| 9 | `kb approve` | Sign-off stamp: flip section `summarized → reviewed`. CI form: `kb approve --all-changed --against <rev>` finds changed sections | Usually CI after PR merge to `main` (`kb-review` workflow); run manually for off-PR approvals |
 
-### 7.1 `kb ingest` — nạp một PDF vào hệ thống
+### 7.1 `kb ingest` — load a PDF into the system
 
 ```bash
 kb ingest sources/ARINC424-22.pdf \
@@ -242,61 +244,61 @@ kb ingest sources/ARINC424-22.pdf \
   --sections 5
 ```
 
-| Tham số | Ý nghĩa | Bắt buộc? |
+| Parameter | Meaning | Required? |
 |---|---|---|
-| `PDF` (tham số đầu, không có tên) | Đường dẫn tới file PDF nguồn | Có |
-| `--id` | Mã định danh ngắn gọn cho tài liệu, vd `arinc-424` | Có |
-| `--tags` | Nhãn phân loại, cách nhau bằng dấu phẩy, dùng để lọc khi tìm kiếm | Không |
-| `--revision` | Ghi rõ phiên bản/ấn bản, vd `"Supplement 22"` — sẽ xuất hiện trong mọi trích dẫn về sau | Không, nhưng **nên có** |
-| `--sections` | Chỉ xử lý những chương này (vd `5,6`); để trống = xử lý cả tài liệu | Không |
+| `PDF` (first positional arg) | Path to the source PDF | Yes |
+| `--id` | Short document id, e.g. `arinc-424` | Yes |
+| `--tags` | Comma-separated classification labels for search filtering | No |
+| `--revision` | Edition/revision label, e.g. `"Supplement 22"` — appears in every later citation | No, but **recommended** |
+| `--sections` | Only process these chapters (e.g. `5,6`); empty = whole document | No |
 
-Lệnh này **không cần AI**, chạy hoàn toàn tự động bằng code, mất vài giây đến vài chục phút tùy độ dài PDF (lần đầu chậm hơn vì phải tải mô hình nhận diện bố cục trang, ~500MB; các lần sau dùng lại cache).
+This command **needs no AI** — fully automatic code. It takes seconds to tens of minutes depending on PDF length (first run is slower: downloads a page-layout model ~500MB; later runs reuse cache).
 
-Kết quả: một thư mục mới `.kb/<id>/` với các file L1/L2/L3, mọi section ở trạng thái `pending`.
+Result: a new `.kb/<id>/` directory with L1/L2/L3 files; every section starts as `pending`.
 
-### 7.2 `kb status` — xem còn gì chưa xong
+### 7.2 `kb status` — what's left undone
 
 ```bash
 $ kb status
 arinc-424: 12/325 section pending
   - §5.312 Some Field Name (file: ch5-navigation-data-field-definitions.md)
   - §5.313 ...
-Tổng: 12 section pending.
+Total: 12 section pending.
 ```
 
-Dùng lệnh này để biết **còn bao nhiêu việc tóm tắt chưa làm xong** trước khi mở Claude Code.
+Use this to see **how much summarization work remains** before opening Claude Code.
 
-### 7.3 Bước điền tóm tắt (không phải lệnh terminal)
+### 7.3 Summarization step (not a terminal command)
 
-Đây là bước duy nhất do **AI (Claude)** thực hiện, thông qua một "công thức" viết sẵn tên `kb-summarize` (nằm ở `.claude/skills/kb-summarize/SKILL.md`). Người dùng chỉ cần mở Claude Code trong thư mục dự án và gõ yêu cầu tóm tắt — Claude sẽ tự chạy `kb status`, đọc từng section, viết tóm tắt theo đúng quy tắc văn phong đã định sẵn (giữ nguyên mọi mã hiệu, số liệu, không được "sáng tác" thêm), rồi lưu lại.
+This is the only step done by **AI (Claude)**, via a written "recipe" called `kb-summarize` (at `.claude/skills/kb-summarize/SKILL.md`). Open Claude Code in the project and ask it to summarize — Claude runs `kb status`, reads each section, writes summaries under fixed style rules (keep every code/number, no invention), and saves.
 
-Quy tắc quan trọng nhất mà AI phải tuân theo (đã lập trình cứng vào công thức):
-- **Viết tiếng Anh** (cùng ngôn ngữ với tài liệu gốc, để việc tìm kiếm chính xác nhất).
-- **Không được diễn giải lại** mã hiệu, tên field, số liệu, đơn vị đo, tham chiếu chéo (§x.y) — phải giữ y nguyên.
-- **Không được đụng vào bảng** đã có sẵn.
-- Nếu không chắc chắn về nội dung → giữ nguyên câu gốc, không suy diễn.
+Hard rules baked into the recipe:
+- **Write in English** (same language as the source, for best search accuracy).
+- **Do not rephrase** codes, field names, numbers, units, or cross-refs (§x.y) — keep them verbatim.
+- **Do not touch existing tables**.
+- If unsure → keep the original wording; do not invent.
 
-### 7.4 `kb build` — chốt chặn kiểm tra tự động
+### 7.4 `kb build` — automated gate
 
 ```bash
 $ kb build
 kb build: OK
 ```
 
-Nếu có lỗi, lệnh sẽ báo rõ và **thoát với mã lỗi** (không cho qua):
+On failure, it reports clearly and **exits non-zero** (does not pass):
 
 ```bash
 $ kb build
-[error] arinc-424 §5.129: bảng ở L2 không khớp bảng ở L3
+[error] arinc-424 §5.129: L2 table does not match L3 table
 ```
 
-Hai điều kiện để `kb build` PASS:
-1. **Không còn marker `TODO` hoặc summary rỗng** — nghĩa là mọi section đã được ai đó (AI hoặc người) điền tóm tắt.
-2. **Mọi bảng trong bản tóm tắt (L2) phải khớp y nguyên với bảng trong bản gốc (L3)** — đây là chốt an toàn quan trọng nhất, ngăn dữ liệu kỹ thuật bị sai lệch khi tóm tắt.
+Two conditions for `kb build` to PASS:
+1. **No remaining `TODO` markers or empty summaries** — every section has a summary (AI or human).
+2. **Every table in the summary (L2) must match the original (L3) exactly** — the main safety latch against technical drift during summarization.
 
-> Mẹo: khi đang tóm tắt dở (còn nhiều section `pending`), dùng `kb build --allow-pending` để kiểm tra các phần đã làm mà không bị chặn bởi các phần chưa làm.
+> Tip: while summarization is in progress (many `pending` sections), use `kb build --allow-pending` to validate finished parts without failing on unfinished ones.
 
-### 7.5 `kb query` — tra cứu bằng câu hỏi tự nhiên
+### 7.5 `kb query` — natural-language lookup
 
 ```bash
 $ kb query "restrictive airspace" --tags arinc424 --budget 400
@@ -318,26 +320,26 @@ government sources. ...
 ...
 ```
 
-| Tham số | Ý nghĩa |
+| Parameter | Meaning |
 |---|---|
-| `TEXT` (tham số đầu) | Câu hỏi/từ khóa tra cứu |
-| `--tags` | Chỉ tìm trong các tài liệu có tag này (lọc trước, không phải lọc theo section) |
-| `--budget` | Giới hạn số "từ" (token) tối đa trả về — càng nhỏ càng rẻ, càng lớn càng nhiều ngữ cảnh |
+| `TEXT` (first arg) | Question / search keywords |
+| `--tags` | Only search documents with these tags (pre-filter at doc level, not section) |
+| `--budget` | Max tokens returned — smaller = cheaper, larger = more context |
 
-Kết quả trả về luôn kèm **trích dẫn rõ ràng** dạng `<mã tài liệu> §<section> (<phiên bản>)` — ví dụ `arinc-424 §5.129 (Supplement 22)` — để biết chính xác thông tin lấy từ đâu, đối chiếu ngược lại tài liệu gốc khi cần.
+Results always include a **clear citation** of the form `<doc-id> §<section> (<revision>)` — e.g. `arinc-424 §5.129 (Supplement 22)` — so you know exactly where the info came from and can cross-check the source.
 
-Cách hoạt động bên trong (không cần hiểu để dùng, nhưng hữu ích để biết vì sao nó rẻ): trước tiên lọc theo `tags` ở tầng L0 (gần như miễn phí), sau đó xếp hạng các section liên quan bằng thuật toán tìm-kiếm-văn-bản cổ điển (BM25) trên các câu tóm tắt L1, cuối cùng mới nạp nội dung L2 của những section xếp hạng cao nhất, dừng lại khi chạm `--budget`. Không có bước nào gọi AI trong quá trình tra cứu này — hoàn toàn là code, nhanh và không tốn phí gọi mô hình AI.
+How it works under the hood (optional to know, useful for why it's cheap): first filter by `tags` at L0 (nearly free), then rank related sections with classic text search (BM25) over L1 one-liners, then load L2 content of the top hits until `--budget` is hit. No AI call during lookup — pure code, fast, no model cost.
 
-### 7.6 `kb get` — lấy đúng 1 section khi đã biết id
+### 7.6 `kb get` — fetch one section when you know the id
 
 ```bash
-kb get arinc-424 5.129 --level l2   # bản tóm tắt
-kb get arinc-424 5.129 --level l3   # bản gốc đầy đủ
+kb get arinc-424 5.129 --level l2   # summary
+kb get arinc-424 5.129 --level l3   # full original
 ```
 
-Dùng khi đã biết chính xác section cần xem (khác với `kb query` là tìm kiếm mù theo câu hỏi).
+Use when you already know the exact section (unlike `kb query`, which searches blind from a question).
 
-### 7.7 `kb stats` — số liệu token, bằng chứng tiết kiệm
+### 7.7 `kb stats` — token numbers, savings evidence
 
 ```bash
 $ kb stats
@@ -347,170 +349,170 @@ arinc-424                 325    28486      76126      85669    11.1%
 icao-annex-3                4      420       1778       2722    34.7%
 ```
 
-Cột `saving` là mức tiết kiệm giữa L2 và L3 **cho riêng tài liệu đó** — không phải mức tiết kiệm thật khi tra cứu (mức tiết kiệm thật cao hơn nhiều, xem mục 10, vì mỗi lần tra cứu chỉ nạp 1–4 section chứ không nạp cả L2).
+The `saving` column is the L2-vs-L3 saving **for that document alone** — not the real per-query saving (which is much higher; see section 10), because each query loads only 1–4 sections, not the whole L2.
 
-> "Token" là đơn vị đo lượng chữ mà một mô hình AI phải "đọc" — tạm hiểu gần đúng là số từ. Token càng ít, mỗi lần hỏi AI càng rẻ và càng nhanh.
+> A "token" is the unit of text an AI model must "read" — roughly like a word. Fewer tokens → cheaper and faster each AI call.
 
 ---
 
-### 7.8 Phase 2 — Tích hợp workflow
+### 7.8 Phase 2 — Workflow integration
 
-Phase 2 mở rộng CENTER-KB để tra cứu không chỉ dừng ở dòng lệnh: Claude Code (hoặc bất kỳ agent nào hỗ trợ MCP) có thể tra cứu kho tri thức trực tiếp qua **MCP server**, và một tài liệu (AC trong Jira, spec...) có thể **trích dẫn máy-đọc-được** một section cụ thể, "ghim" (pin) đúng phiên bản kho tại thời điểm viết — để phát hiện khi kho đổi (amendment) mà trích dẫn cũ chưa cập nhật theo.
+Phase 2 extends CENTER-KB beyond the CLI: Claude Code (or any MCP-capable agent) can query the knowledge base via an **MCP server**, and a document (Jira AC, spec…) can carry a **machine-readable citation** of a specific section, **pinning** the store version at write time — so you can detect when the store changed (amendment) while an old citation did not.
 
-#### MCP server — 3 tool
+#### MCP server — 3 tools
 
-Chạy `python -m center_kb.mcp --kb .kb` (đã khai báo sẵn trong `.mcp.json` ở gốc repo — Claude Code tự nhận, không cần cấu hình thêm).
+Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the repo root — Claude Code picks it up with no extra config).
 
-| Tool | Dùng để làm gì | Tham số chính |
+| Tool | Purpose | Main params |
 |---|---|---|
-| `kb_search` | Tìm section theo câu hỏi tự nhiên (tag match + BM25), trả nội dung L2 trong token budget | `query`, `tags`, `budget` |
-| `kb_get_section` | Lấy chính xác 1 section theo id, đã biết trước | `doc`, `section`, `level` (`l2`/`l3`) |
-| `kb_resolve` | Nhận block `kb-context` (hoặc cả ticket chứa block) — trả đúng section tại **phiên bản đã pin**, kèm trạng thái freshness `ok`/`stale`/`broken` | `kb_context` |
+| `kb_search` | Find sections by natural language (tag match + BM25), return L2 within a token budget | `query`, `tags`, `budget` |
+| `kb_get_section` | Fetch exactly one section by id | `doc`, `section`, `level` (`l2`/`l3`) |
+| `kb_resolve` | Accept a `kb-context` block (or a ticket containing one) — return the section at the **pinned version**, plus freshness `ok`/`stale`/`broken` | `kb_context` |
 
-#### 4 lệnh CLI mới
+#### 4 new CLI commands
 
-| Lệnh | Dùng để làm gì | Exit code |
+| Command | Purpose | Exit code |
 |---|---|---|
-| `kb context new --refs "<doc> §<section>,..."` | BA sinh block `kb-context` pin tại commit HEAD hiện tại — dán thẳng vào Jira ticket | `0` OK, `1` ref không resolve được / lỗi git |
-| `kb resolve <file\|->` | Đọc lại 1 block `kb-context` (từ file hoặc stdin), trả section đúng bản đã pin + freshness | `0` mọi ref `ok`, `1` có ref `broken`, `2` không broken nhưng có ref `stale` |
-| `kb diff <doc-id> --against <rev>` | So section added/removed/changed của 1 tài liệu giữa worktree hiện tại và một git rev — dùng khi cần biết chính xác amendment đổi những gì | `0` OK (kể cả không có khác biệt), `1` lỗi (doc không tồn tại, rev không hợp lệ...) |
-| `kb doctor [--context <file\|->]` | Kiểm tra sức khỏe KB (mục lục hỏng, file thiếu...); thêm `--context` để kiểm luôn staleness của 1 citation | `0` OK, `1` có lỗi KB, `2` không lỗi nhưng citation `stale` — CI dùng mã này để phân biệt "cần BA xác nhận lại" |
+| `kb context new --refs "<doc> §<section>,..."` | BA generates a `kb-context` block pinned at current HEAD — paste into a Jira ticket | `0` OK, `1` ref unresolvable / git error |
+| `kb resolve <file\|->` | Re-read a `kb-context` block (file or stdin), return pinned-version sections + freshness | `0` all refs `ok`, `1` any `broken`, `2` no broken but some `stale` |
+| `kb diff <doc-id> --against <rev>` | Diff added/removed/changed sections for one doc between the worktree and a git rev — what an amendment changed | `0` OK (even if empty), `1` error (missing doc, bad rev…) |
+| `kb doctor [--context <file\|->]` | KB health check (broken TOC, missing files…); add `--context` to also check citation staleness | `0` OK, `1` KB errors, `2` no KB error but citation `stale` — CI uses this to flag "BA needs to reconfirm" |
 
-`kb resolve`/`kb doctor --context` phát hiện thay đổi trên nội dung L2 (tầng BA đọc); `kb diff` báo thay đổi trên summary L1 và nguyên văn L3 (phạm vi SME review). Một sửa đổi chỉ chạm L2 sẽ báo stale ở resolve nhưng không hiện trong diff.
+`kb resolve` / `kb doctor --context` detect L2 content changes (what BAs read); `kb diff` reports L1 summary and L3 original changes (SME review scope). An L2-only edit shows stale on resolve but not in diff.
 
-#### Flow BA → Jira → Dev
+#### BA → Jira → Dev flow
 
-1. BA chạy `kb context new --refs "<doc> §<section>"` sau khi đọc xong đoạn spec liên quan.
-2. BA dán block `kb-context` được in ra vào mô tả/AC của ticket Jira — block này ghim sẵn commit hash hiện tại của kho.
-3. Dev mở ticket, agent (qua MCP) gọi `kb_resolve` với nội dung ticket — nhận đúng nội dung BA đã thấy lúc viết, không phải bản mới nhất nếu kho đã đổi.
-4. Nếu kết quả báo `status=stale` (kho đã có amendment sau khi ticket được viết), Dev chạy `kb diff <doc-id> --against <rev-đã-pin>` để thấy chính xác section nào đổi, rồi trao đổi lại với BA xem AC có cần cập nhật không.
-5. `kb doctor --context <ticket>` dùng trong CI để tự động chặn/gắn cờ các ticket có citation `stale` trước khi merge, không cần người rà tay từng ticket.
+1. BA runs `kb context new --refs "<doc> §<section>"` after reading the relevant spec passage.
+2. BA pastes the printed `kb-context` block into the Jira ticket description/AC — the block pins the current KB commit hash.
+3. Dev opens the ticket; the agent (via MCP) calls `kb_resolve` with the ticket body — gets exactly what the BA saw when writing, not a newer store version if the KB has since changed.
+4. If the result is `status=stale` (amendment after the ticket was written), Dev runs `kb diff <doc-id> --against <pinned-rev>` to see which sections changed, then checks with the BA whether the AC needs updating.
+5. `kb doctor --context <ticket>` in CI can automatically block/flag tickets with `stale` citations before merge, without humans scanning every ticket.
 
-> **Ghi chú:** file `.mcp.json` cấu hình sẵn MCP server đã có trong repo — không cần thiết lập gì thêm để Claude Code nhận diện 3 tool trên. Tham số `--hub` của `python -m center_kb.mcp` giờ đã **kích hoạt** — xem mục [7.9](#79-phase-3--federation--remote-mcp) ngay bên dưới.
+> **Note:** `.mcp.json` already configures the MCP server in-repo — no extra setup for Claude Code to see the three tools. The `--hub` flag on `python -m center_kb.mcp` is now **active** — see [7.9](#79-phase-3--federation--remote-mcp) below.
 
 ---
 
 ### 7.9 Phase 3 — Federation & remote MCP
 
-Phase 2 giúp một kho tri thức "biết nói chuyện" với dev qua MCP và biết "ghim" trích dẫn. Phase 3 giải quyết bài toán tiếp theo: **một tài liệu chuẩn (ví dụ ARINC 424) thường liên quan đến nhiều repo khác nhau** (repo nav-data, repo crew-ops...) — không lẽ mỗi repo lại tự nạp và tự tóm tắt lại cùng một tài liệu đó? Phase 3 cho phép tài liệu domain sống **một bản duy nhất** ở một kho trung tâm gọi là **kb-hub**, còn các repo khác chỉ "tham chiếu" vào bản đó.
+Phase 2 lets one knowledge store talk to developers via MCP and pin citations. Phase 3 solves the next problem: **one reference document often matters to many repos** (e.g. a shared technical standard used by a nav-data repo and a crew-ops repo alike) — you shouldn't ingest and summarize the same document in every repo. Phase 3 lets shared documents live as **a single copy** in a central store called **kb-hub**, while other repos only "reference" it.
 
-**kb-hub là gì?** Đơn giản là một repo Git khác, có cấu trúc `.kb/` y hệt repo hiện tại, cộng thêm một thư mục `federation/` do máy tự sinh — chứa "danh mục của các danh mục": mỗi repo tham gia đóng góp một bản sao rút gọn (chỉ L0 + L1, không có nội dung tóm tắt/nguyên văn) để các repo khác biết "repo kia có tài liệu gì" mà không cần phải sang tận nơi. kb-hub không phải server chạy nền — vẫn chỉ là file `.yaml`/`.md` quản lý bằng Git, đúng triết lý docs-as-code như phần còn lại của hệ thống.
+**What is kb-hub?** Simply another Git repo with the same `.kb/` layout, plus a machine-generated `federation/` directory — a "catalog of catalogs": each participating repo contributes a slim snapshot (L0 + L1 only, no summary/original content) so other repos know what that repo holds without visiting it. kb-hub is not a long-running server — still just `.yaml`/`.md` files in Git, same docs-as-code philosophy.
 
-**3 điểm mới cần biết:**
+**Three new things to know:**
 
-1. **`kb publish --hub <url|path>`** — đẩy danh mục (L0) và mục lục (L1) của kho hiện tại lên kb-hub, để các repo khác "biết" mình có tài liệu gì. Không đẩy nội dung tóm tắt (L2) hay nguyên văn (L3) — hai tầng đó chỉ ở lại repo gốc. Chạy tay khi cần, hoặc tự động qua CI (xem mẫu `.github/workflows/kb-publish.yml`) mỗi khi `.kb/` đổi.
-2. **Cờ `--hub <url|path>`** trên `kb query`, `kb context new`, `kb resolve`, `kb doctor` — mở rộng phạm vi tìm/kiểm tra ra cả kb-hub, không chỉ kho cục bộ. Ví dụ `kb query "..." --hub https://.../kb-hub.git` trả về: tài liệu domain sống ở hub (đọc đầy đủ như tài liệu cục bộ) lẫn tóm tắt 1 câu của tài liệu bên các repo khác (đánh dấu `[remote]`, muốn đọc sâu phải sang đúng repo đó). Công cụ tự tải/giữ tươi một bản sao cục bộ của hub, không cần tự tay `git clone`.
-3. **Cờ `--semantic`** trên `kb query` — ép tra cứu theo **ý nghĩa câu hỏi** thay vì chỉ khớp từ khóa (BM25). Hữu ích khi câu hỏi diễn đạt khác từ ngữ trong tài liệu gốc nhưng cùng ý. Đây là bước tùy chọn cài thêm (`pip install -e ".[embed]"`) — nếu máy chưa cài, `kb query` vẫn chạy bình thường bằng khớp từ khóa như trước, không báo lỗi.
+1. **`kb publish --hub <url|path>`** — push this store's catalog (L0) and TOC (L1) to kb-hub so other repos "know" what you hold. Does not push summaries (L2) or originals (L3) — those stay in the source repo. Run manually, or via CI (see `.github/workflows/kb-publish.yml`) on every `.kb/` change.
+2. **`--hub <url|path>`** on `kb query`, `kb context new`, `kb resolve`, `kb doctor` — expand search/checks to the kb-hub, not only the local store. Example: `kb query "..." --hub https://.../kb-hub.git` returns domain docs living on the hub (full content like local docs) plus one-line summaries of docs in other repos (marked `[remote]`; deep reads require that repo). The tool keeps a local hub clone fresh — no manual `git clone`.
+3. **`--semantic`** on `kb query` — force lookup by **question meaning** instead of keyword match alone (BM25). Useful when the question uses different words than the source but the same idea. Optional extra (`pip install -e ".[embed]"`) — without it, `kb query` still works with keyword match as before, no error.
 
-**Block `kb-context` nay có thể "ghim" 2 phiên bản.** Nếu BA trích dẫn một section sống ở kb-hub, block sinh ra sẽ có thêm dòng `hub_version` bên cạnh `version` — ghim đúng bản của cả kho cục bộ lẫn kho trung tâm tại thời điểm viết. Các block Phase 2 cũ (chỉ có `version`) vẫn resolve đúng như trước, không cần sửa lại gì.
+**`kb-context` blocks can now pin 2 versions.** If a BA cites a section that lives on kb-hub, the generated block includes `hub_version` next to `version` — pinning both local and central stores at write time. Older Phase 2 blocks (only `version`) still resolve as before; no migration needed.
 
-**Tra cứu từ xa qua MCP không cần clone repo:** trước đây agent muốn dùng MCP phải clone repo về máy trước. Phase 3 cho phép chạy MCP server dạng "máy chủ dùng chung" qua HTTP (thay vì chỉ chạy cục bộ), có xác thực bằng token — hướng dẫn triển khai chi tiết ở [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
+**Remote MCP lookup without cloning the repo:** previously an agent had to clone the repo first to use MCP. Phase 3 lets you run the MCP server as a shared HTTP service (not only local stdio), authenticated with a token — full deploy guide in [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
 
-**Muốn xem toàn bộ vòng đời hoạt động thật (2 repo cùng đóng góp vào 1 hub, tra cứu chéo, phát hiện tài liệu đã đổi mà trích dẫn cũ chưa cập nhật)?** Chạy thử `bash scripts/demo-federation.sh` — script tự dựng một hub và 2 repo mẫu trong thư mục tạm, chạy trọn vòng rồi tự dọn dẹp, không đụng đến dữ liệu thật của bạn.
+**Want to see the full lifecycle for real (2 repos contributing to one hub, cross-repo search, stale citations after amendments)?** Run `bash scripts/demo-federation.sh` — it builds a hub and 2 sample repos in a temp directory, runs end-to-end, then cleans up without touching your real data.
 
 ---
 
-## 8. Quy trình làm việc đầy đủ, từng bước
+## 8. End-to-end workflow, step by step
 
-Đây là kịch bản thực tế: thêm một tài liệu mới vào kho tri thức, từ PDF đến khi sẵn sàng dùng.
+Real scenario: add a new document to the knowledge base, from PDF to ready-to-use.
 
 ```
-Bước 1 — Nạp PDF (người phụ trách kỹ thuật chạy)
+Step 1 — Ingest PDF (technical owner runs)
   $ kb ingest sources/ARINC424-22.pdf --id arinc-424 \
       --tags arinc424,navdata --revision "Supplement 22" --sections 5
-  → Sinh ra .kb/arinc-424/ với 325 section, tất cả đang "pending"
+  → Creates .kb/arinc-424/ with 325 sections, all "pending"
 
-Bước 2 — Điền tóm tắt (mở Claude Code, dùng skill kb-summarize)
-  → Claude tự chạy kb status, đọc từng section, viết tóm tắt tiếng Anh
-  → Cứ 5–10 section, Claude tự kiểm tra bằng `kb build --allow-pending`
+Step 2 — Fill summaries (open Claude Code, use kb-summarize skill)
+  → Claude runs kb status, reads each section, writes English summaries
+  → Every 5–10 sections, Claude self-checks with `kb build --allow-pending`
 
-Bước 3 — Kiểm tra chốt chặn cuối
+Step 3 — Final gate check
   $ kb build
   kb build: OK
-  → Nếu FAIL, quay lại bước 2 sửa phần bị lỗi (thường là bảng bị đụng vào)
+  → On FAIL, go back to step 2 and fix (usually a table that was touched)
 
-Bước 4 — Mở Pull Request trên GitHub
-  → Diff hiển thị đúng các file .kb/*.yaml và .kb/*.md thay đổi
-  → SME hàng không review (xem mục 9 — checklist review)
+Step 4 — Open a Pull Request on GitHub
+  → Diff shows exactly the changed .kb/*.yaml and .kb/*.md files
+  → Domain SME reviews (see section 9 — review checklist)
 
-Bước 5 — Merge
-  → CI (workflow kb-review) tự chạy `kb approve --all-changed` và commit lại:
-    các section vừa thay đổi chuyển trạng thái summarized → reviewed
-  → Kho tri thức giờ đã có nội dung mới, sẵn sàng cho kb query
+Step 5 — Merge
+  → CI (kb-review workflow) runs `kb approve --all-changed` and commits:
+    changed sections flip summarized → reviewed
+  → Knowledge base now has new content, ready for kb query
 ```
 
 ---
 
-## 9. Vai trò SME review — checklist
+## 9. SME review role — checklist
 
-Nếu bạn được mời review một Pull Request thay đổi trong `.kb/`, đây là những gì cần làm — **không cần biết code, không cần chạy lệnh gì**, chỉ cần đọc diff trên GitHub như đọc một tài liệu Word có track-changes:
+If you were asked to review a Pull Request changing `.kb/`, this is what to do — **no coding, no commands**, just read the GitHub diff like a Word doc with track changes:
 
-- [ ] **Đọc phần văn xuôi mới (L2, file `.md` không có đuôi `.raw`)** — có đúng ý so với hiểu biết chuyên môn của bạn về nội dung này không?
-- [ ] **Đối chiếu với PDF gốc** (trong `sources/` hoặc bản PDF bạn có sẵn) — đoạn tóm tắt có bỏ sót điều gì quan trọng không, có "bịa" thêm điều gì không có trong bản gốc không?
-- [ ] **Kiểm tra mọi mã hiệu, tên field, số liệu, đơn vị đo** (vd `S/T`, `CUST/AREA`, độ dài field, kiểu ký tự) — phải **giữ nguyên y hệt bản gốc**, không được viết lại/diễn giải theo cách khác.
-- [ ] **Bảng biểu:** không cần kiểm tra bằng mắt xem bảng ở tóm tắt có khớp bảng gốc không — việc này `kb build` **đã tự động kiểm tra và chặn PR nếu sai** trước khi bạn thấy PR. Nhưng vẫn nên liếc qua xem bảng có bị Docling (công cụ đọc PDF) đọc lệch dòng/lệch cột so với bản PDF gốc không — đây là lỗi mà máy không tự phát hiện được.
-- [ ] **Câu tóm tắt 1 dòng trong `_manifest.yaml`** (tầng L1) — có nêu đúng "section này nói về cái gì" để sau này tìm kiếm ra được không?
-- [ ] Nếu thấy sai — **sửa trực tiếp trong file `.md` hoặc `.yaml` qua giao diện GitHub** (như sửa một tài liệu thường), rồi comment giải thích tại sao, hoặc yêu cầu người mở PR sửa lại.
+- [ ] **Read the new prose (L2, `.md` files without `.raw`)** — does it match your domain understanding of this content?
+- [ ] **Cross-check the source PDF** (in `sources/` or your own copy) — did the summary omit anything important, or invent anything not in the original?
+- [ ] **Check every code, field name, number, and unit** (e.g. `S/T`, `CUST/AREA`, field length, character type) — must stay **exactly as in the source**, not rephrased.
+- [ ] **Tables:** you don't need to eyeball whether summary tables match originals — `kb build` **already checks and blocks the PR if they don't** before you see it. Still glance for Docling (PDF reader) row/column misreads vs the PDF — machines don't catch those.
+- [ ] **One-line summaries in `_manifest.yaml`** (L1) — do they correctly say "what this section is about" so search can find them later?
+- [ ] If something is wrong — **edit the `.md` or `.yaml` file directly in the GitHub UI** (like editing a normal document), comment why, or ask the PR author to fix.
 
-Sau khi PR được merge, CI (workflow `kb-review`) **tự động** chuyển các section vừa thay đổi sang `status: reviewed` trong manifest — đánh dấu đây là nội dung đã qua thẩm định chuyên môn, không còn là bản nháp do AI viết. Bạn không phải sửa tay dòng YAML nào.
-
----
-
-## 10. Bằng chứng nó hoạt động (số liệu PoC thật)
-
-Tính đến lần chạy thử nghiệm gần nhất (xem `docs/superpowers/specs/2026-07-10-center-kb-phase1-design.md` mục 10 để biết đầy đủ):
-
-- **Đã nạp thật:** ARINC 424-22 chương 5 (325 section) + ICAO Annex 3 chương 2 (4 section).
-- **`kb build` PASS** — không có bảng nào sai lệch, không còn section nào bỏ dở.
-- **`kb query` trả đúng section, đúng trích dẫn** (vd `arinc-424 §5.213 (Supplement 22)`), cắt đúng theo giới hạn token yêu cầu.
-- **Mức tiết kiệm:** L0 (danh mục tổng) chỉ 187 token cho toàn kho. Một câu hỏi tra cứu thông thường trả về 1–4 section (~600–1.200 token) **thay vì phải nạp cả tài liệu gốc (~400.000 token)** — tiết kiệm **≥ 99%** cho mỗi lần tra cứu, vượt mục tiêu đề ra (≥ 90%).
-- **5 lỗi thực tế đã tìm ra và sửa** trong quá trình xử lý PDF thật (header lặp mỗi trang bị nhận nhầm thành heading, nhãn "Source/Content:" bị nhận nhầm thành tiêu đề section, v.v.) — đều đã có bài test tự động để không tái diễn.
+After the PR merges, CI (`kb-review` workflow) **automatically** flips the changed sections to `status: reviewed` in the manifest — marking content as SME-signed-off, not an AI draft. You don't hand-edit any YAML for that.
 
 ---
 
-## 11. Giới hạn hiện tại & việc chưa làm
+## 10. Proof it works (real PoC numbers)
 
-Đây là bản **Phase 1 + Phase 2 + Phase 3**, không phải bản hoàn chỉnh. Những gì **chưa** có:
+As of the latest trial run (see `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md` §10 for full detail):
 
-- **Chưa tự sinh "hiểu biết về mã nguồn"** (ví dụ tự đọc OpenAPI, schema database, danh sách module của một hệ thống để đưa vào kho tri thức) — khác hẳn phạm vi hiện tại (tài liệu chuẩn hàng không dạng PDF), để dành cho một đợt phát triển riêng sau này.
-- **Xác thực HTTP MCP mới dừng ở bearer token** (một chuỗi bí mật cố định), chưa có đăng nhập kiểu OAuth/SSO — đủ dùng trong mạng nội bộ/VPN hiện tại, nhưng chưa phù hợp để mở ra Internet công khai.
-- Việc điền tóm tắt vẫn cần con người mở Claude Code và kích hoạt — chưa hoàn toàn tự động chạy nền.
-- Một số ít section (khoảng 2,4% của chương 5 ARINC, 6/~250 mục) chưa trích xuất được do lỗi đọc PDF — cần SME đối chiếu thủ công khi gặp.
-- **`reviewed` nghĩa là "đã được merge vào `main`"**, không phải "có người thứ hai soi lại" — chỉ hợp lệ khi người dựng KB chính là SME (bối cảnh hiện tại). Nếu sau này người dựng KB ≠ người thẩm định, phải bật lại gate (CODEOWNERS + branch protection require review) trước khi tin vào ý nghĩa của `reviewed`. Xem `docs/superpowers/specs/2026-07-11-review-automation-design.md` §2.
-- **Trạng thái `reviewed` trên hub trễ một nhịp:** commit tự động của workflow `kb-review` không kích hoạt `kb-publish` (cơ chế chống lặp), nên bản snapshot trên kb-hub chỉ cập nhật `status` ở lần push nội dung kế tiếp. Không ảnh hưởng tra cứu (federation đọc tóm tắt L1, không đọc `status`).
-
----
-
-## 12. Câu hỏi thường gặp (FAQ)
-
-**Vì sao không thấy các file PDF gốc trong Git?**
-Vì các tài liệu này (ARINC, ICAO) có bản quyền — không được phép đưa lên kho mã nguồn dùng chung. Chúng chỉ tồn tại trên máy cục bộ trong thư mục `sources/`, đã được cấu hình để Git **luôn bỏ qua** thư mục này (không bao giờ commit nhầm).
-
-**Vì sao AI (Claude) viết tóm tắt mà không dùng thẳng ChatGPT/API nào đó?**
-Vì dự án dùng subscription Claude Code sẵn có thay vì trả tiền gọi API riêng — tiết kiệm chi phí cho giai đoạn thử nghiệm này. Việc này không ảnh hưởng đến chất lượng tóm tắt, chỉ ảnh hưởng đến cách vận hành (cần người mở Claude Code thay vì chạy hoàn toàn tự động).
-
-**Tóm tắt do AI viết — làm sao tin được nó không sai?**
-Ba lớp bảo vệ: (1) AI bị ràng buộc quy tắc văn phong nghiêm ngặt (không suy diễn, giữ nguyên mã hiệu/số liệu); (2) bảng biểu — phần dễ sai nhất — **không bao giờ đi qua tay AI**, luôn do code chép nguyên văn và được kiểm tra khớp tự động; (3) **con người (SME) luôn review trước khi merge** — AI chỉ tạo bản nháp, không có quyền tự công bố nội dung cuối cùng.
-
-**"Token" là gì, sao cứ nhắc hoài?**
-Là đơn vị đo lượng văn bản mà một mô hình AI xử lý (gần giống số từ). Nó quyết định chi phí và tốc độ mỗi lần gọi AI. Kiến trúc 4 tầng của CENTER-KB tồn tại chủ yếu để **giảm số token phải nạp** mỗi khi tra cứu, mà vẫn giữ được thông tin chính xác.
-
-**Tôi có cần biết lập trình để review nội dung không?**
-Không. Xem mục 9 — review chỉ là đọc file `.md`/`.yaml` trên giao diện GitHub, hoàn toàn giống đọc một tài liệu văn bản có đánh dấu thay đổi.
+- **Really ingested:** ARINC 424-22 chapter 5 (325 sections) + ICAO Annex 3 chapter 2 (4 sections).
+- **`kb build` PASS** — no mismatched tables, no unfinished sections.
+- **`kb query` returns the right section with the right citation** (e.g. `arinc-424 §5.213 (Supplement 22)`), truncated to the requested token budget.
+- **Savings:** L0 (master catalog) is only 187 tokens for the whole store. A typical query returns 1–4 sections (~600–1,200 tokens) **instead of loading the whole original (~400,000 tokens)** — **≥ 99%** savings per lookup, beating the ≥ 90% target.
+- **5 real bugs found and fixed** while processing real PDFs (repeated page headers mistaken for headings, "Source/Content:" labels mistaken for section titles, etc.) — each has an automated regression test.
 
 ---
 
-## 13. Gặp lỗi thì làm gì
+## 11. Current limits & unfinished work
 
-| Tình huống | Nguyên nhân thường gặp | Cách xử lý |
+This is **Phase 1 + Phase 2 + Phase 3**, not a finished product. Still missing:
+
+- **No auto-generated "source-code understanding"** (e.g. reading OpenAPI, DB schemas, module lists into the KB) — different scope from today's PDF-based reference-document ingestion; reserved for later work.
+- **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
+- Summarization still needs a human to open Claude Code and trigger it — not fully background-automated.
+- A small share of sections (~2.4% of ARINC chapter 5, 6/~250 items) failed PDF extraction — need manual SME cross-check when hit.
+- **`reviewed` means "merged into `main`"**, not "a second person re-checked" — valid when the KB builder is the SME (current context). If later builder ≠ reviewer, re-enable the gate (CODEOWNERS + branch protection requiring review) before trusting `reviewed`. See `docs/superpowers/specs/2026-07-11-review-automation-design.md` §2.
+- **`reviewed` status on the hub lags one beat:** the `kb-review` workflow's auto-commit does not trigger `kb-publish` (anti-loop), so the hub snapshot only updates `status` on the next content push. Lookup is unaffected (federation reads L1 summaries, not `status`).
+
+---
+
+## 12. FAQ
+
+**Why aren't the source PDFs in Git?**
+Source reference documents are frequently copyrighted or otherwise restricted — this repo's demo docs (ARINC, ICAO) are a good example — so they must not go into a shared source repo. They live only on local machines under `sources/`, configured so Git **always ignores** that directory (no accidental commit).
+
+**Why does Claude write summaries instead of ChatGPT/some API?**
+The project uses an existing Claude Code subscription instead of paying for a separate API — cheaper for this trial phase. It doesn't affect summary quality, only operations (a person opens Claude Code instead of fully unattended runs).
+
+**AI wrote the summary — how do we trust it isn't wrong?**
+Three layers of protection: (1) AI is bound by strict style rules (no invention; keep codes/numbers verbatim); (2) tables — the easiest place to err — **never go through AI**, always machine-copied and auto-verified; (3) **a human SME always reviews before merge** — AI only drafts; it cannot publish final content alone.
+
+**What is a "token", and why keep mentioning it?**
+It's the unit of text an AI model processes (roughly like a word). It drives cost and speed of each AI call. CENTER-KB's 4-layer architecture exists mainly to **cut tokens loaded per lookup** while keeping accuracy.
+
+**Do I need to code to review content?**
+No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, same as reading a marked-up text document.
+
+---
+
+## 13. What to do when something breaks
+
+| Situation | Likely cause | Fix |
 |---|---|---|
-| `kb build` báo lỗi "bảng không khớp" | Ai đó (thường là AI) lỡ sửa vào nội dung bảng khi viết tóm tắt | Mở file `.raw.md` (L3) của đúng section đó, copy lại bảng nguyên văn, dán đè vào file `.md` (L2) |
-| `kb build` báo còn `pending`/`TODO` | Chưa chạy xong bước điền tóm tắt (bước 2 ở mục 8) | Chạy `kb status` xem còn section nào, quay lại Claude Code chạy skill `kb-summarize` |
-| `kb ingest` chạy rất lâu (10–30 phút) lần đầu | Bình thường — công cụ đọc PDF (Docling) phải tải mô hình nhận diện bố cục (~500MB) lần đầu tiên | Chờ, hoặc kiểm tra kết nối mạng nếu đứng yên quá lâu. Các lần chạy sau trên cùng PDF sẽ dùng cache, nhanh hơn nhiều |
-| Lệnh `kb` báo "command not found" | Chưa kích hoạt môi trường ảo | Chạy `source .venv/bin/activate` trong thư mục dự án trước |
-| `kb query` không trả kết quả nào | Từ khóa không khớp tag/nội dung nào trong kho, hoặc `--budget` quá nhỏ | Thử bỏ `--tags`, hoặc tăng `--budget`, hoặc kiểm tra chính tả từ khóa (kho hiện dùng tiếng Anh) |
-| Không chắc file nào mới thay đổi trong PR | — | Xem tab "Files changed" trên GitHub — chỉ các file trong `.kb/` là nội dung cần review; thay đổi trong `src/`, `tests/` là phần công cụ, có thể để lại cho người phát triển |
+| `kb build` errors "table mismatch" | Someone (usually AI) edited table content while summarizing | Open that section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
+| `kb build` reports remaining `pending`/`TODO` | Summarization step (step 2 in §8) not finished | Run `kb status`, then back to Claude Code with the `kb-summarize` skill |
+| `kb ingest` is very slow (10–30 min) first time | Normal — Docling downloads a layout model (~500MB) on first use | Wait, or check network if stuck. Later runs on the same PDF use cache and are much faster |
+| `kb` says "command not found" | Virtualenv not activated | Run `source .venv/bin/activate` in the project directory first |
+| `kb query` returns nothing | Keywords match no tags/content, or `--budget` too small | Drop `--tags`, raise `--budget`, or check spelling (store content is English) |
+| Unsure which files changed in a PR | — | Use GitHub "Files changed" — only `.kb/` is content to review; `src/`/`tests/` changes are tool code for developers |
 
 ---
 
-*Tài liệu này mô tả trạng thái Phase 1 (PoC) + Phase 2 (tích hợp workflow) + Phase 3 (federation & remote MCP) — cập nhật 2026-07-11. Chi tiết thiết kế kỹ thuật đầy đủ xem `docs/superpowers/specs/2026-07-10-center-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-center-kb-phase2-design.md` và `docs/superpowers/specs/2026-07-10-center-kb-phase3-design.md`.*
+*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP) — updated 2026-07-11. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, and `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`.*
