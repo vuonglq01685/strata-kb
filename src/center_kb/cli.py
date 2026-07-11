@@ -184,16 +184,9 @@ def _validate_llm_choice(llm_choice: str) -> None:
         raise typer.Exit(2)
 
 
-def _run_summarize(
-    kb_dir: Path, llm_choice: str, doc_id: str | None, max_workers: int
-):
-    """Shared engine for `kb summarize` and `kb ingest`.
-
-    Returns (report | None, reason): report is None when no runner ran;
-    reason is "disabled" | "missing" | "" accordingly.
-    """
+def _resolve_runner(kb_dir: Path, llm_choice: str, max_workers: int):
+    """Returns (runner | None, reason, workers): reason is "disabled" | "missing" | ""."""
     import center_kb.llm as llm_mod
-    from center_kb.summarize import summarize_kb
 
     index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
     effective = llm_choice or index.llm.runner
@@ -202,11 +195,26 @@ def _run_summarize(
     # here from the "missing" reason returned below when detect_runner
     # can't find a runner. Don't collapse the two checks.
     if effective == "none":
-        return None, "disabled"
+        return None, "disabled", 0
     runner = llm_mod.detect_runner(llm_choice or None, index.llm)
     if runner is None:
-        return None, "missing"
-    workers = max_workers or index.llm.max_workers
+        return None, "missing", 0
+    return runner, "", max_workers or index.llm.max_workers
+
+
+def _run_summarize(
+    kb_dir: Path, llm_choice: str, doc_id: str | None, max_workers: int
+):
+    """Shared engine for `kb summarize` and `kb ingest`.
+
+    Returns (report | None, reason): report is None when no runner ran;
+    reason is "disabled" | "missing" | "" accordingly.
+    """
+    from center_kb.summarize import summarize_kb
+
+    runner, reason, workers = _resolve_runner(kb_dir, llm_choice, max_workers)
+    if runner is None:
+        return None, reason
     model = getattr(runner, "model", "")
     typer.echo(f"Summarizing with {runner.name} ({model}), {workers} workers…")
     report = summarize_kb(
@@ -239,12 +247,34 @@ def summarize(
         0, help="Parallel LLM calls (default: llm.max_workers in index.yaml)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    redo: bool = typer.Option(
+        False,
+        "--redo",
+        help="Reset summarized/reviewed sections to pending (restoring L2 "
+        "markers) and re-summarize from scratch",
+    ),
 ) -> None:
     """Fill pending L1/L2 summaries by calling a headless LLM CLI (claude/copilot)."""
     _validate_llm_choice(llm)
     if not (kb_dir / "index.yaml").exists():
         typer.secho(f"not found: {kb_dir / 'index.yaml'}", fg=typer.colors.RED)
         raise typer.Exit(1)
+    if redo:
+        from center_kb.summarize import redo_reset
+
+        # Resolve the runner BEFORE resetting: a redo must never wipe
+        # summaries when the subsequent run can't happen anyway.
+        runner_probe, reason, _ = _resolve_runner(kb_dir, llm, max_workers)
+        if runner_probe is None:
+            _echo_no_runner(reason)
+            raise typer.Exit(1)
+        rr = redo_reset(kb_dir, doc_id or None)
+        typer.echo(f"redo: {len(rr.reset)} section(s) reset to pending")
+        if rr.reviewed_reset:
+            typer.secho(
+                f"[warn] {rr.reviewed_reset} reviewed section(s) were reset",
+                fg=typer.colors.YELLOW,
+            )
     report, reason = _run_summarize(kb_dir, llm, doc_id or None, max_workers)
     if report is None:
         _echo_no_runner(reason)
