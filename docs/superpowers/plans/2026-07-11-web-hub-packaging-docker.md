@@ -437,7 +437,7 @@ git commit -m "feat: token auth middleware with cookie support for web UI"
 - Consumes: `aero_kb.mcp.ServerConfig` (fields: `kb_dir: Path`, `hub: str | None`); `aero_kb.query.search(kb_dir, text, tags=None, budget=2000, hub=None) -> list[QueryResult]`; `aero_kb.query.get_section(kb_dir, doc_id, section_id, level="l2", hub=None) -> QueryResult | None` (`QueryResult` fields: `doc_id, section_id, title, score, citation, content, tokens, source`); `aero_kb.models.load_yaml_model / KBIndex / Manifest`; `aero_kb.hub.resolve_hub(hub) -> HubHandle | None` (`HubHandle.kb_dir`, `.federation_dir`); `aero_kb.federation.load_federation(federation_dir)` → repos with `.meta.repo_id`, `.index.docs`, `.manifests: dict[str, Manifest]`.
 - Produces: `build_routes(config: ServerConfig) -> list[Route]` with:
   - `GET /api/health` → `{"status": "ok", "hub_configured": bool}`
-  - `GET /api/docs` → `{"docs": [{id,title,revision,tags,summary,source}]}` (source: `"local" | "hub" | "remote:<rid>"`; hub/remote deduped against local ids)
+  - `GET /api/docs` → `{"docs": [{id,title,revision,tags,summary,source}]}` (source: `"local" | "hub" | "remote:<rid>"`; hub deduped against local ids — local wins; federation entries always listed, namespaced by their repo id, matching `query._gather_candidates` semantics)
   - `GET /api/docs/{doc}` → `{"id","title","revision","repo","sections":[{id,title,summary,status}]}` (repo `""` for local/hub, `<rid>` for federation) or 404
   - `GET /api/docs/{doc}/sections/{section}?level=l2|l3` → `{"doc_id","section_id","title","citation","tokens","level","content","source"}` or 400/404
   - `GET /api/search?q=&tags=&budget=` → `{"query", "results":[{doc_id,section_id,title,score,citation,tokens,content,source}]}` or 400
