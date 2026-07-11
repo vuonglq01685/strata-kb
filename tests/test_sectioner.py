@@ -281,3 +281,32 @@ def test_resolve_heading_config_attachment_priority():
     custom = r"^annex\s+(\d+)\s*(.*)$"
     cfg2 = resolve_heading_config("", "", custom, None)
     assert cfg2.attachment_pattern == custom
+
+
+def test_split_by_parts_buckets_by_page():
+    from center_kb.ingest.sectioner import Part, split_by_parts
+
+    parts = [Part("front-matter", "Front Matter", 1), Part("1", "INTRO", 21),
+             Part("att1", "FLOW DIAGRAM", 331)]
+    items = [
+        DocItem("heading", "FOREWORD", 1, page=4),
+        DocItem("text", "no page follows previous", page=None),
+        DocItem("heading", "1.0 INTRO", 1, page=21),
+        DocItem("text", "chapter body", page=25),
+        DocItem("heading", "ATTACHMENT 1 FLOW DIAGRAM", 1, page=331),
+        DocItem("text", "att body", page=340),
+    ]
+    result = split_by_parts(items, parts)
+    by_id = {part.id: [i.text for i in bucket] for part, bucket in result}
+    assert by_id["front-matter"] == ["FOREWORD", "no page follows previous"]
+    assert by_id["1"] == ["1.0 INTRO", "chapter body"]
+    assert by_id["att1"] == ["ATTACHMENT 1 FLOW DIAGRAM", "att body"]
+
+
+def test_split_by_parts_item_before_first_part_page():
+    from center_kb.ingest.sectioner import Part, split_by_parts
+
+    parts = [Part("1", "INTRO", 21)]
+    items = [DocItem("text", "stray cover text", page=1)]
+    result = split_by_parts(items, parts)
+    assert [i.text for i in result[0][1]] == ["stray cover text"]
