@@ -96,3 +96,31 @@ def test_scaffold_reingest_replaces_index_entry(tmp_path: Path):
         )
     index = models.load_yaml_model(kb / "index.yaml", models.KBIndex)
     assert len(index.docs) == 1
+
+
+def test_chapter_stem_no_duplicate_when_slug_equals_prefix():
+    assert chapter_stem("errata", "ERRATA") == "errata"
+    assert chapter_stem("front-matter", "Front Matter") == "front-matter"
+    assert chapter_stem("att1", "FLOW DIAGRAM") == "att1-flow-diagram"
+
+
+def test_scaffold_reingest_removes_stale_files(tmp_path: Path):
+    kb = tmp_path / ".kb"
+    doc_dir = kb / "doc1"
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "ch9-fake-chapter.md").write_text("stale", encoding="utf-8")
+    (doc_dir / "ch9-fake-chapter.raw.md").write_text("stale", encoding="utf-8")
+    units = [
+        SectionUnit(
+            id="1", title="INTRO", chapter="1",
+            body_md="Body. " * 60, tables=[],
+        )
+    ]
+    scaffold_doc(
+        units, doc_id="doc1", title="Doc", tags=[], revision="",
+        source_path=None, kb_dir=kb,
+    )
+    names = {p.name for p in doc_dir.iterdir()}
+    assert "ch9-fake-chapter.md" not in names
+    assert "ch9-fake-chapter.raw.md" not in names
+    assert "ch1-intro.md" in names
