@@ -1,21 +1,15 @@
 from __future__ import annotations
 
 import hashlib
-import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 from center_kb import models
 from center_kb.ingest.sectioner import HeadingConfig, SectionUnit
-from center_kb.mdutils import count_tokens
+from center_kb.mdutils import count_tokens, slugify
 
-
-def slugify(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    text = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
-    return text
+__all__ = ["ScaffoldReport", "chapter_stem", "scaffold_doc", "slugify"]
 
 
 def chapter_stem(chapter: str, title: str) -> str:

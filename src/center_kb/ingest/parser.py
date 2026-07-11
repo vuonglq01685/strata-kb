@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from center_kb.ingest.sectioner import DocItem, HeadingConfig, parse_section_id
+from center_kb.ingest.sectioner import (
+    DocItem,
+    HeadingConfig,
+    Part,
+    parse_section_id,
+)
+from center_kb.mdutils import slugify
 
 _HEADING_LABELS = {"section_header", "title"}
 _TEXT_LABELS = {"text", "paragraph", "list_item", "formula", "code", "caption"}
@@ -81,6 +87,72 @@ def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str
     except Exception:
         return set()
     return ids
+
+
+def outline_parts(
+    pdf_path: Path, config: HeadingConfig | None = None
+) -> list[Part] | None:
+    """Extract top-level document parts from the PDF outline.
+
+    A bookmark is a part when its title parses as a chapter/attachment/
+    appendix at ANY depth (some PDFs nest chapters under a "TABLE OF
+    CONTENTS" entry) and its id has no sub-numbering. Unparsed TOP-LEVEL
+    entries become front matter (grouped, before the first match) or
+    named back-matter parts. Returns None (→ regex fallback) when there
+    is no usable outline.
+    """
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(str(pdf_path))
+        outline = reader.outline
+    except Exception:
+        return None
+
+    matched: list[Part] = []
+    seen_ids: set[str] = set()
+    top_unmatched: list[tuple[str, int]] = []
+
+    def walk(entries, depth: int) -> None:
+        for entry in entries:
+            if isinstance(entry, list):
+                walk(entry, depth + 1)
+                continue
+            title = " ".join(((getattr(entry, "title", "") or "")).split())
+            try:
+                page = reader.get_destination_page_number(entry) + 1
+            except Exception:
+                continue
+            parsed = parse_section_id(title, config)
+            if parsed and "." not in parsed[0]:
+                if parsed[0] not in seen_ids:
+                    seen_ids.add(parsed[0])
+                    matched.append(Part(parsed[0], parsed[1], page))
+            elif depth == 0 and not parsed:
+                top_unmatched.append((title, page))
+
+    walk(outline, 0)
+    if len(matched) < 2:
+        return None
+
+    matched.sort(key=lambda p: p.page)
+    first_page = matched[0].page
+    front = [(t, pg) for t, pg in top_unmatched if pg < first_page]
+    back = [(t, pg) for t, pg in top_unmatched if pg >= first_page]
+
+    parts = list(matched)
+    if front:
+        parts.append(Part("front-matter", "Front Matter", min(pg for _, pg in front)))
+        seen_ids.add("front-matter")
+    for title, pg in back:
+        pid = slugify(title)[:40].rstrip("-") or "part"
+        base, n = pid, 2
+        while pid in seen_ids:
+            pid, n = f"{base}-{n}", n + 1
+        seen_ids.add(pid)
+        parts.append(Part(pid, title, pg))
+    parts.sort(key=lambda p: p.page)
+    return parts
 
 
 def _is_leaf_unit(uid: str, unit_ids: set[str]) -> bool:
