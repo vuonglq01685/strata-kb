@@ -47,8 +47,17 @@ class IndexEntry(BaseModel):
     summary: str = ""
 
 
+class LLMConfig(BaseModel):
+    runner: Literal["auto", "claude", "copilot", "none"] = "auto"
+    model: str = "sonnet-5"
+    effort: str = "high"
+    max_workers: int = 5
+    timeout: int = 300
+
+
 class KBIndex(BaseModel):
     docs: list[IndexEntry] = Field(default_factory=list)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
 
 
 def load_yaml_model(path: Path, model: type[T]) -> T:

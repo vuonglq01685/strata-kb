@@ -94,10 +94,17 @@ def ingest(
         "",
         help="Appendix heading regex (default: 'Appendix X', remembered from the previous ingest)",
     ),
+    no_summarize: bool = typer.Option(
+        False, "--no-summarize", help="Skip the automatic LLM summarize step"
+    ),
+    llm: str = typer.Option(
+        "", "--llm", help="Runner: claude | copilot | none (default: auto-detect)"
+    ),
 ) -> None:
     """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
     from center_kb.ingest import parser, scaffold, sectioner
 
+    _validate_llm_choice(llm)
     manifest_path = kb_dir / doc_id / "_manifest.yaml"
     previous = None
     if manifest_path.exists():
@@ -136,7 +143,119 @@ def ingest(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
     )
-    typer.echo("Next: open Claude Code and run the kb-summarize skill, then `kb build`.")
+    if no_summarize or llm == "none":
+        typer.echo(
+            "Summarize skipped. Next: run `kb summarize` (or the kb-summarize "
+            "skill in Claude Code), then `kb build`."
+        )
+        return
+    report_s, reason = _run_summarize(kb_dir, llm, doc_id, max_workers=0)
+    if report_s is None:
+        _echo_no_runner(reason)
+        return
+    typer.echo(
+        f"{len(report_s.summarized)} summarized, {len(report_s.failed)} failed."
+    )
+    if report_s.failed:
+        typer.secho(
+            "Failed sections stay pending — re-run with: kb summarize",
+            fg=typer.colors.YELLOW,
+        )
+    from center_kb.build import build_kb
+
+    build_report = build_kb(kb_dir, allow_pending=bool(report_s.failed))
+    for err in build_report.errors:
+        typer.secho(f"  [build] {err}", fg=typer.colors.RED)
+    for warn in build_report.warnings:
+        typer.secho(f"  [build] {warn}", fg=typer.colors.YELLOW)
+    if build_report.ok:
+        typer.echo("kb build: OK")
+
+
+_LLM_CHOICES = ("", "claude", "copilot", "none")
+
+
+def _validate_llm_choice(llm_choice: str) -> None:
+    if llm_choice not in _LLM_CHOICES:
+        typer.secho(
+            f"--llm must be one of: claude, copilot, none (got '{llm_choice}')",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(2)
+
+
+def _run_summarize(
+    kb_dir: Path, llm_choice: str, doc_id: str | None, max_workers: int
+):
+    """Shared engine for `kb summarize` and `kb ingest`.
+
+    Returns (report | None, reason): report is None when no runner ran;
+    reason is "disabled" | "missing" | "" accordingly.
+    """
+    import center_kb.llm as llm_mod
+    from center_kb.summarize import summarize_kb
+
+    index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
+    effective = llm_choice or index.llm.runner
+    # Looks redundant with detect_runner's own "none" handling, but it is
+    # load-bearing: it's what distinguishes the "disabled" reason returned
+    # here from the "missing" reason returned below when detect_runner
+    # can't find a runner. Don't collapse the two checks.
+    if effective == "none":
+        return None, "disabled"
+    runner = llm_mod.detect_runner(llm_choice or None, index.llm)
+    if runner is None:
+        return None, "missing"
+    workers = max_workers or index.llm.max_workers
+    model = getattr(runner, "model", "")
+    typer.echo(f"Summarizing with {runner.name} ({model}), {workers} workers…")
+    report = summarize_kb(
+        kb_dir, runner, doc_id=doc_id, max_workers=workers,
+        on_progress=lambda msg: typer.echo(f"  {msg}"),
+    )
+    return report, ""
+
+
+def _echo_no_runner(reason: str) -> None:
+    if reason == "disabled":
+        typer.echo("LLM summarize is disabled (runner: none).")
+    else:
+        typer.secho(
+            "No LLM CLI found (tried: claude, copilot).", fg=typer.colors.YELLOW
+        )
+    typer.echo(
+        "Sections stay pending. Install Claude Code or GitHub Copilot CLI and "
+        "run `kb summarize`, or use the kb-summarize skill in Claude Code."
+    )
+
+
+@app.command()
+def summarize(
+    doc_id: str = typer.Argument("", help="Limit to one document (empty = all)"),
+    llm: str = typer.Option(
+        "", "--llm", help="Runner: claude | copilot | none (default: auto-detect)"
+    ),
+    max_workers: int = typer.Option(
+        0, help="Parallel LLM calls (default: llm.max_workers in index.yaml)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Fill pending L1/L2 summaries by calling a headless LLM CLI (claude/copilot)."""
+    _validate_llm_choice(llm)
+    if not (kb_dir / "index.yaml").exists():
+        typer.secho(f"not found: {kb_dir / 'index.yaml'}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    report, reason = _run_summarize(kb_dir, llm, doc_id or None, max_workers)
+    if report is None:
+        _echo_no_runner(reason)
+        raise typer.Exit(1)
+    typer.echo(f"{len(report.summarized)} summarized, {len(report.failed)} failed.")
+    if report.failed:
+        typer.secho(
+            "Some sections stay pending — re-run with: kb summarize",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(1)
 
 
 @app.command()
