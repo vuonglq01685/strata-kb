@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -42,6 +43,36 @@ Write ONE English sentence (max 30 words) summarizing what the whole document \
 covers. Reply with ONLY a JSON object:
 {{"summary": "..."}}"""
 
+TABLE_PLACEHOLDER = "[table omitted]"
+
+_IGNORABLE_LINE_RE = re.compile(
+    r"^(#{1,6} .*|" + re.escape(TABLE_PLACEHOLDER) + r"|\s*)$"
+)
+
+
+def strip_tables(text: str) -> str:
+    """Replace each contiguous table block with the placeholder.
+
+    A table line is any line whose lstrip() starts with '|' (same
+    convention as mdutils.extract_tables).
+    """
+    out: list[str] = []
+    in_table = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("|"):
+            if not in_table:
+                out.append(TABLE_PLACEHOLDER)
+                in_table = True
+            continue
+        in_table = False
+        out.append(line)
+    return "\n".join(out).strip()
+
+
+def _is_table_only(prose: str) -> bool:
+    """True when nothing but headings, placeholders and blanks remain."""
+    return all(_IGNORABLE_LINE_RE.match(line) for line in prose.splitlines())
+
 
 @dataclass(frozen=True)
 class PendingSection:
@@ -49,7 +80,8 @@ class PendingSection:
     section_id: str
     title: str
     file: str  # stem without extension
-    l3_body: str
+    l3_body: str  # prose only — tables replaced by TABLE_PLACEHOLDER
+    table_only: bool = False
 
 
 def collect_pending(kb_dir: Path, doc_id: str | None = None) -> list[PendingSection]:
@@ -72,7 +104,13 @@ def collect_pending(kb_dir: Path, doc_id: str | None = None) -> list[PendingSect
                     raw_path.read_text(encoding="utf-8") if raw_path.exists() else ""
                 )
             body = slice_section(raw_cache[sec.file], sec.id) or ""
-            out.append(PendingSection(entry.id, sec.id, sec.title, sec.file, body))
+            prose = strip_tables(body)
+            out.append(
+                PendingSection(
+                    entry.id, sec.id, sec.title, sec.file, prose,
+                    table_only=_is_table_only(prose),
+                )
+            )
     return out
 
 

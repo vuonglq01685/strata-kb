@@ -5,6 +5,7 @@ import pytest
 
 from center_kb import models, summarize
 from center_kb.llm import RunnerError
+from center_kb.summarize import collect_pending, strip_tables
 
 
 def make_kb(tmp_path: Path, statuses: dict[str, str]) -> Path:
@@ -203,3 +204,53 @@ def test_summarize_kb_survives_bare_oserror_from_one_section(tmp_path):
     by_id = {s.id: s for s in manifest.sections}
     assert by_id["1.1"].status == "summarized"
     assert by_id["1.2"].status == "pending"
+
+
+def test_strip_tables_replaces_block_with_placeholder():
+    text = "intro line\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\noutro line"
+    out = strip_tables(text)
+    assert "| a | b |" not in out
+    assert out.count("[table omitted]") == 1
+    assert "intro line" in out and "outro line" in out
+
+
+def test_strip_tables_multiple_blocks_and_edges():
+    text = "| t1 |\n| x |\nprose between\n| t2 |\n| y |"
+    out = strip_tables(text)
+    assert out.count("[table omitted]") == 2
+    assert "prose between" in out
+    assert "| t1 |" not in out and "| y |" not in out
+
+
+def test_strip_tables_no_tables_is_identity_modulo_whitespace():
+    text = "just prose\n\nmore prose"
+    assert strip_tables(text) == text
+
+
+def test_collect_pending_strips_tables_and_flags_table_only(tmp_path):
+    kb = tmp_path / ".kb"
+    (kb / "doc1").mkdir(parents=True)
+    (kb / "index.yaml").write_text(
+        "docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8"
+    )
+    raw = (
+        "## 1 Prose Section\n\nSome prose here.\n\n| h |\n|---|\n| v |\n\n"
+        "## 2 Table Only\n\n| h2 |\n|----|\n| v2 |\n"
+    )
+    (kb / "doc1" / "f1.raw.md").write_text(raw, encoding="utf-8")
+    (kb / "doc1" / "_manifest.yaml").write_text(
+        "id: doc1\ntitle: Doc One\nrevision: ''\n"
+        "ingested: 2026-07-11\nsource_sha256: ''\n"
+        "ingest: {chapter_pattern: x, appendix_pattern: y}\n"
+        "sections:\n"
+        "- {id: '1', title: Prose Section, file: f1, status: pending}\n"
+        "- {id: '2', title: Table Only, file: f1, status: pending}\n",
+        encoding="utf-8",
+    )
+    pending = collect_pending(kb)
+    by_id = {p.section_id: p for p in pending}
+    assert "| h |" not in by_id["1"].l3_body
+    assert "[table omitted]" in by_id["1"].l3_body
+    assert "Some prose here." in by_id["1"].l3_body
+    assert by_id["1"].table_only is False
+    assert by_id["2"].table_only is True
