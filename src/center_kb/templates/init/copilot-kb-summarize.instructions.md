@@ -21,6 +21,13 @@ to fill in summaries (after `kb ingest`), follow these rules exactly.
 ## Writing rules (mandatory)
 
 - Write in English.
+- Summarize the prose ONLY. Never describe, list, or reconstruct table
+  contents — the tables are already copied verbatim into the section.
+- If a section has no prose (heading + tables only): delete the marker
+  line (leave nothing) and set the manifest `summary` to
+  `Table-only section: <title>.` — do NOT invent prose about the tables.
+- Keep the L2 paragraph under ~35% of the original prose length. If your
+  draft is longer, compress harder.
 - L2 paragraph: ~20–30% of the original length, keep the logical structure.
 - Preserve VERBATIM: codes (P, R, D...), record/field names (UR, PA...),
   numeric values, units, cross-references (§x.y). Never paraphrase
