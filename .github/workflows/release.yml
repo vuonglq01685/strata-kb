@@ -16,6 +16,15 @@ jobs:
           python-version: "3.12"
       - run: pip install -e .[dev]
       - run: pytest
+        env:
+          # e2e tests exercise `kb publish`/`gitio.commit_*` against real git
+          # clones — those commits need an identity and CI runners have none
+          # configured anywhere (no ~/.gitconfig), unlike dev machines. Same
+          # env vars kb-publish.yml sets for real hub publishes.
+          GIT_AUTHOR_NAME: ci-test
+          GIT_AUTHOR_EMAIL: ci-test@local
+          GIT_COMMITTER_NAME: ci-test
+          GIT_COMMITTER_EMAIL: ci-test@local
 
   build:
     needs: test
