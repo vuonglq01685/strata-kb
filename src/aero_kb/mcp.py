@@ -85,9 +85,10 @@ def create_server(config: ServerConfig) -> MCPServer:
 
 
 def create_http_app(config: ServerConfig, token: str):
-    """FastMCP's streamable HTTP Starlette app, wrapped with bearer auth."""
-    server = create_server(config)
-    return BearerAuthMiddleware(server.streamable_http_app(), token)
+    """One ASGI app: MCP (streamable HTTP) + REST /api + HTML /ui, token-guarded."""
+    from aero_kb.web.app import create_app
+
+    return create_app(config, token, mcp_server=create_server(config))
 
 
 def parse_args(argv: list[str] | None = None) -> ServerConfig:
