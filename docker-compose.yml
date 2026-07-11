@@ -1,0 +1,16 @@
+services:
+  hub:
+    build: .
+    ports: ["8321:8321"]
+    env_file: .env
+    volumes:
+      - ./:/data
+      - kb-model-cache:/home/app/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8321/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+volumes:
+  kb-model-cache:

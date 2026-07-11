@@ -1,0 +1,15 @@
+.git
+.github
+.kb-work
+.pytest_cache
+.ruff_cache
+.superpowers
+.venv
+dist
+dist-check
+docs
+source
+tests
+*.pdf
+.coverage
+__pycache__
