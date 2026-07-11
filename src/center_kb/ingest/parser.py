@@ -14,6 +14,13 @@ def _label_value(item) -> str:
     return getattr(label, "value", None) or str(label)
 
 
+def _page_of(item) -> int | None:
+    prov = getattr(item, "prov", None)
+    if prov:
+        return getattr(prov[0], "page_no", None)
+    return None
+
+
 def load_or_parse(pdf_path: Path, work_dir: Path):
     try:
         from docling_core.types.doc import DoclingDocument
@@ -39,16 +46,17 @@ def doc_to_items(doc) -> list[DocItem]:
     items: list[DocItem] = []
     for item, _level in doc.iterate_items():
         label = _label_value(item)
+        page = _page_of(item)
         if label in _HEADING_LABELS:
             heading_level = getattr(item, "level", 1) if label == "section_header" else 1
-            items.append(DocItem("heading", item.text, heading_level))
+            items.append(DocItem("heading", item.text, heading_level, page=page))
         elif label == "table":
             md = item.export_to_markdown(doc=doc)
             if md and md.strip():
-                items.append(DocItem("table", md))
+                items.append(DocItem("table", md, page=page))
         elif label in _TEXT_LABELS:
             if item.text and item.text.strip():
-                items.append(DocItem("text", item.text))
+                items.append(DocItem("text", item.text, page=page))
     return items
 
 
