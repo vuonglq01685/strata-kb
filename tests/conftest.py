@@ -122,6 +122,8 @@ def git_kb(fixture_kb: Path, run_git) -> dict:
     """
     root = fixture_kb.parent
     run_git(root, "init")
+    run_git(root, "config", "user.name", "test")
+    run_git(root, "config", "user.email", "test@test.local")
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "kb v1")
     rev1 = run_git(root, "rev-parse", "--short", "HEAD")
