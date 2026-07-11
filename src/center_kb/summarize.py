@@ -156,7 +156,7 @@ def summarize_kb(
             key = f"{s.doc_id}/{s.section_id}"
             try:
                 results[(s.doc_id, s.section_id)] = fut.result()
-            except RunnerError as exc:
+            except Exception as exc:  # noqa: BLE001 — one section must never abort the batch
                 report.failed.append(key)
                 say(f"[fail] {key}: {exc}")
             else:

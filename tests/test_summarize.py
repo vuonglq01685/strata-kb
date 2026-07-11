@@ -168,3 +168,38 @@ def test_summarize_kb_no_pending_is_noop(tmp_path):
     report = summarize.summarize_kb(kb, runner)
     assert report.summarized == [] and report.failed == []
     assert runner.calls == []
+
+
+class OSErrorOnceRunner:
+    """Raises a bare OSError (e.g. E2BIG from subprocess.run) for one section
+    only; other sections succeed normally. Simulates argv-too-large or
+    executable-vanished failures that llm.Runner.run can let escape
+    uncaught — these must not abort the whole batch."""
+
+    name = "fake"
+
+    def __init__(self, fail_id: str):
+        self._fail_id = fail_id
+
+    def run(self, prompt: str) -> str:
+        if f"Section {self._fail_id} " in prompt:
+            raise OSError("E2BIG")
+        if "one-line summaries" in prompt:  # doc-summary call
+            return _json.dumps({"summary": "Doc-level summary."})
+        return _json.dumps(
+            {"l2_summary": "Condensed text.", "l1_summary": "One line."}
+        )
+
+
+def test_summarize_kb_survives_bare_oserror_from_one_section(tmp_path):
+    """A raw OSError (ARG_MAX overflow, vanished executable, etc.) from one
+    section's runner.run must not propagate out of summarize_kb and discard
+    the other section's successful result."""
+    kb = make_kb(tmp_path, {})
+    report = summarize.summarize_kb(kb, OSErrorOnceRunner(fail_id="1.2"), max_workers=2)
+    assert report.summarized == ["d1/1.1"]
+    assert report.failed == ["d1/1.2"] and not report.ok
+    manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
+    by_id = {s.id: s for s in manifest.sections}
+    assert by_id["1.1"].status == "summarized"
+    assert by_id["1.2"].status == "pending"
