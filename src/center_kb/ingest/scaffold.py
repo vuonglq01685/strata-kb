@@ -15,7 +15,7 @@ __all__ = ["ScaffoldReport", "chapter_stem", "scaffold_doc", "slugify"]
 def chapter_stem(chapter: str, title: str) -> str:
     prefix = f"ch{chapter}" if chapter and chapter[0].isdigit() else chapter
     slug = slugify(title)[:40].rstrip("-")
-    return f"{prefix}-{slug}" if slug else prefix
+    return f"{prefix}-{slug}" if slug and slug != prefix else prefix
 
 
 @dataclass
@@ -42,6 +42,9 @@ def scaffold_doc(
 
     doc_dir = kb_dir / doc_id
     doc_dir.mkdir(parents=True, exist_ok=True)
+
+    for stale in doc_dir.glob("*.md"):  # re-ingest may change the file split
+        stale.unlink()
 
     groups: dict[str, list[SectionUnit]] = {}
     for unit in units:
