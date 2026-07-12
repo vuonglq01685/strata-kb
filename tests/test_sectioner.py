@@ -32,6 +32,16 @@ class TestParseSectionId:
     def test_attachment_heading_with_separator(self):
         assert parse_section_id("Attachment 2: Datum List")[0] == "attachment-2"
 
+    def test_appendix_heading_with_dotted_number(self):
+        sid, title = parse_section_id("Appendix 2.1 — Lights to be Displayed by Aeroplanes")
+        assert sid == "appendix-2.1"
+        assert title == "Lights to be Displayed by Aeroplanes"
+
+    def test_attachment_heading_with_dotted_letter(self):
+        sid, title = parse_section_id("Attachment 2.A — Carriage and Use of Oxygen")
+        assert sid == "attachment-2.a"
+        assert title == "Carriage and Use of Oxygen"
+
 
 def _items_basic() -> list[DocItem]:
     long_text = "Restrictive airspace body text. " * 60  # > 200 tokens
@@ -304,6 +314,59 @@ def test_attachment_numeric_sections_namespaced_in_flat_mode():
     assert "attachment-1" in ids
     assert "attachment-1-2.1" in ids  # namespaced — no collision with chapter 2.1
     assert "2.1" not in ids
+
+
+def test_dotted_appendix_numbers_do_not_collide():
+    # Regression: "Appendix 2.1" and "Appendix 2.5" must stay distinct
+    # top-level nodes. The old identifier regex ([0-9A-Za-z]+, no dot)
+    # truncated both to "appendix-2", collapsing unrelated appendices
+    # into one node and colliding their internal numbered sub-clauses.
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "Appendix 2.1 — Lights to be Displayed by Aeroplanes", 1),
+        DocItem("heading", "1 TERMINOLOGY", 2),
+        DocItem("text", "Lights terminology body. " + big),
+        DocItem("heading", "Appendix 2.5 — Flight Recorders", 1),
+        DocItem("heading", "1 TERMINOLOGY", 2),
+        DocItem("text", "Flight recorder terminology body. " + big),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    # top-level appendix nodes carry no body of their own here (only a
+    # single non-small child) so they fold into their child unit, same
+    # convention as test_appendix_numeric_sections_namespaced.
+    assert "appendix-2.1-1" in ids
+    assert "appendix-2.5-1" in ids
+    u1 = next(u for u in units if u.id == "appendix-2.1-1")
+    u5 = next(u for u in units if u.id == "appendix-2.5-1")
+    assert "Lights terminology body." in u1.body_md
+    assert "Flight recorder terminology body." not in u1.body_md
+    assert "Flight recorder terminology body." in u5.body_md
+    assert "Lights terminology body." not in u5.body_md
+
+
+def test_dotted_attachment_letters_do_not_collide():
+    # Regression: "Attachment 2.A" and "Attachment 2.B" must stay distinct
+    # top-level nodes, same defect as dotted appendix numbers above.
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "Attachment 2.A — Carriage and Use of Oxygen", 1),
+        DocItem("heading", "1 OXYGEN SUPPLY", 2),
+        DocItem("text", "Oxygen supply body. " + big),
+        DocItem("heading", "Attachment 2.B — HUD/Vision Systems", 1),
+        DocItem("heading", "1 OXYGEN SUPPLY", 2),
+        DocItem("text", "Vision systems body. " + big),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert "attachment-2.a-1" in ids
+    assert "attachment-2.b-1" in ids
+    ua = next(u for u in units if u.id == "attachment-2.a-1")
+    ub = next(u for u in units if u.id == "attachment-2.b-1")
+    assert "Oxygen supply body." in ua.body_md
+    assert "Vision systems body." not in ua.body_md
+    assert "Vision systems body." in ub.body_md
+    assert "Oxygen supply body." not in ub.body_md
 
 
 def test_resolve_heading_config_attachment_priority():
