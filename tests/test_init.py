@@ -142,3 +142,20 @@ def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
     for text in (skill, instr):
         assert "Summarize the prose ONLY" in text
         assert "Table-only section:" in text
+
+
+def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
+    init_repo(tmp_path)
+    skill = (
+        tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "READ-ONLY" in skill                      # sub-agents never write
+    assert '"table_only"' in skill                   # JSON output contract
+    assert '"l2_summary"' in skill
+    assert '"l1_summary"' in skill
+    assert "batches of ~5" in skill                  # granularity
+    assert "at most 10" in skill                     # concurrency cap
+    assert "kb build --allow-pending" in skill       # per-wave verify
+    assert "single message" in skill                 # concurrent dispatch
+    assert "one retry only" in skill                 # error handling
+    assert "Do not edit many files in parallel" not in skill  # old rule gone
