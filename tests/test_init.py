@@ -129,6 +129,7 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
         assert "l1|l2|l3" not in text
     assert "/kb-ingest" in quick
     assert "/kb-publish" in quick
+    assert "/kb-summarize" in quick
 
 
 def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
@@ -142,3 +143,30 @@ def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
     for text in (skill, instr):
         assert "Summarize the prose ONLY" in text
         assert "Table-only section:" in text
+
+
+def test_init_scaffolds_kb_summarize_slash_command(tmp_path: Path):
+    init_repo(tmp_path)
+    command = tmp_path / ".claude" / "commands" / "kb-summarize.md"
+    assert command.is_file()
+    text = command.read_text(encoding="utf-8")
+    assert "kb-summarize" in text          # invokes the skill by name
+    assert "$ARGUMENTS" in text            # forwards the doc-id filter
+    assert "argument-hint" in text
+
+
+def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
+    init_repo(tmp_path)
+    skill = (
+        tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "READ-ONLY" in skill                      # sub-agents never write
+    assert '"table_only"' in skill                   # JSON output contract
+    assert '"l2_summary"' in skill
+    assert '"l1_summary"' in skill
+    assert "batches of ~5" in skill                  # granularity
+    assert "at most 10" in skill                     # concurrency cap
+    assert "kb build --allow-pending" in skill       # per-wave verify
+    assert "single message" in skill                 # concurrent dispatch
+    assert "one retry only" in skill                 # error handling
+    assert "Do not edit many files in parallel" not in skill  # old rule gone
