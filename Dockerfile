@@ -37,6 +37,13 @@ from docling.models.stages.ocr.rapid_ocr_model import RapidOcrModel; \
 RapidOcrModel(enabled=True, artifacts_path=None, \
     options=RapidOcrOptions(backend='torch', lang=['en']), \
     accelerator_options=AcceleratorOptions())"
+# docling's layout/table-structure models download from Hugging Face Hub on
+# first use, cached under $HOME/.cache/huggingface. That path is also the
+# mount point for the kb-model-cache volume (docker-compose.yml) — Docker
+# creates unpopulated volume mount points as root:root, so unless this
+# directory already exists (owned by `app`) in an image layer beforehand,
+# the non-root runtime user can never write there.
+RUN mkdir -p /home/app/.cache && chown app:app /home/app/.cache
 USER app
 WORKDIR /data
 EXPOSE 8321
