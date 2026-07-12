@@ -156,3 +156,58 @@ def test_render_without_hub_version_unchanged_format():
     )
     rendered = kbcontext.render(ctx)
     assert "hub_version" not in rendered
+
+
+# --- build_context_block() ---
+
+
+def test_build_context_block_single_ref_pins_head(git_kb):
+    block, warning = kbcontext.build_context_block(
+        git_kb["kb"], ["demo-doc §1.1"]
+    )
+    assert warning is None
+    assert "kb-context:" in block
+    assert f'version: "{git_kb["rev2"]}"' in block
+    assert "- demo-doc §1.1" in block
+
+
+def test_build_context_block_multi_ref(git_kb):
+    block, _ = kbcontext.build_context_block(
+        git_kb["kb"], ["demo-doc §1.1", "demo-doc §1.2"], tags=["demo", "airspace"]
+    )
+    assert "- demo-doc §1.1" in block
+    assert "- demo-doc §1.2" in block
+    assert "tags: [demo, airspace]" in block
+
+
+def test_build_context_block_rejects_unresolvable_ref(git_kb):
+    with pytest.raises(kbcontext.KBRefNotFoundError, match="9.9"):
+        kbcontext.build_context_block(git_kb["kb"], ["demo-doc §9.9"])
+
+
+def test_build_context_block_rejects_empty_refs(git_kb):
+    with pytest.raises(kbcontext.KBContextError, match="is empty"):
+        kbcontext.build_context_block(git_kb["kb"], [])
+
+
+def test_build_context_block_dirty_warning(git_kb):
+    (git_kb["kb"] / "demo-doc" / "ch1-records.md").write_text(
+        "## 1.1 Airspace Records\n\nuncommitted edit\n\n## 1.2 Airway Records\n\nx\n",
+        encoding="utf-8",
+    )
+    block, warning = kbcontext.build_context_block(git_kb["kb"], ["demo-doc §1.1"])
+    assert warning is not None
+    assert "uncommitted changes" in warning
+    assert "kb-context:" in block  # block is still produced alongside the warning
+
+
+def test_build_context_block_with_hub_ref_pins_hub_version(
+    git_kb, hub_worktree, run_git
+):
+    from center_kb.hub import HubHandle
+
+    hub_head = run_git(hub_worktree, "rev-parse", "--short", "HEAD")
+    block, _ = kbcontext.build_context_block(
+        git_kb["kb"], ["arinc-424 §5.3"], hub=HubHandle(root=hub_worktree)
+    )
+    assert f'hub_version: "{hub_head}"' in block
