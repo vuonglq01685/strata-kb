@@ -405,7 +405,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 4. If the result is `status=stale` (amendment after the ticket was written), Dev runs `kb diff <doc-id> --against <pinned-rev>` to see which sections changed, then checks with the BA whether the AC needs updating.
 5. `kb doctor --context <ticket>` in CI can automatically block/flag tickets with `stale` citations before merge, without humans scanning every ticket.
 
-> **Note:** `.mcp.json` already configures the MCP server in-repo — no extra setup for Claude Code to see the three tools. The `--hub` flag on `python -m center_kb.mcp` is now **active** — see [7.9](#79-phase-3--federation--remote-mcp) below.
+> **Note:** `.mcp.json` already configures the MCP server in-repo — no extra setup for Claude Code to see the four tools. The `--hub` flag on `python -m center_kb.mcp` is now **active** — see [7.9](#79-phase-3--federation--remote-mcp) below.
 
 ---
 
