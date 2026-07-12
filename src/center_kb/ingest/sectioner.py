@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 
 from center_kb import models
-from center_kb.mdutils import count_tokens, extract_tables
+from center_kb.mdutils import count_tokens, extract_tables, slugify
 
 
 @dataclass
@@ -22,6 +22,7 @@ class _Node:
     depth: int
     body: list[str] = field(default_factory=list)
     children: list["_Node"] = field(default_factory=list)
+    fallback: bool = False  # id synthesized from an unparsed heading
 
 
 @dataclass
@@ -129,9 +130,9 @@ def parse_section_id(
     if m := cfg.chapter_re.match(text):
         return m.group(1), (m.group(2) or text).strip()
     if m := cfg.attachment_re.match(text):
-        return f"att{m.group(1).lower()}", (m.group(2) or text).strip()
+        return f"attachment-{m.group(1).lower()}", (m.group(2) or text).strip()
     if m := cfg.appendix_re.match(text):
-        return f"app{m.group(1).lower()}", (m.group(2) or text).strip()
+        return f"appendix-{m.group(1).lower()}", (m.group(2) or text).strip()
     if m := _NUMBERED_RE.match(text):
         sid = m.group(1)
         if sid.endswith(".0") and sid.count(".") == 1:
@@ -146,15 +147,47 @@ def _depth_of(sid: str) -> int:
     return 1
 
 
-def _chapter_of(sid: str) -> str:
-    if sid and sid[0].isdigit():
-        return sid.split(".")[0]
-    # Namespaced appendix id like "app3-2.1" -> chapter "app3". Fallback
-    # ids ("x1", "app3-x1") have a non-digit after "-" and stay whole.
-    head, sep, rest = sid.partition("-")
-    if sep and rest[:1].isdigit():
-        return head
-    return sid
+def _fallback_slug(title: str) -> str:
+    """Human-readable id fragment for an unparsed heading. Empty when the
+    title has no usable characters, or would masquerade as a numbered
+    section id (e.g. a bare page number "123")."""
+    slug = slugify(title)[:40].rstrip("-")
+    if not slug or slug.replace("-", "").isdigit():
+        return ""
+    return slug
+
+
+def _split_front_matter(
+    items: list[DocItem], cfg: HeadingConfig
+) -> tuple[list[DocItem], list[DocItem]]:
+    """Split the stream where the document body starts; everything before
+    (cover, TOC, foreword) is front matter — kept out of chapter 1.
+
+    The body starts at the first "Chapter N" heading when the document uses
+    that convention — a numbered heading in the foreword ("1. Material
+    comprising the Annex proper") must not end the front matter. Without
+    that convention the body starts at the first top-level numbered heading
+    ("1.0 INTRODUCTION") or appendix/attachment, whichever comes first.
+    """
+    first_chapter: int | None = None
+    first_other: int | None = None
+    for i, item in enumerate(items):
+        if item.kind != "heading":
+            continue
+        text = " ".join(item.text.split())
+        if text.endswith(":"):  # list intro misread as heading, never structure
+            continue
+        if cfg.chapter_re.match(text):
+            first_chapter = i
+            break
+        if first_other is None:
+            parsed = parse_section_id(text, cfg)
+            if parsed and (not parsed[0][0].isdigit() or "." not in parsed[0]):
+                first_other = i
+    split = first_chapter if first_chapter is not None else first_other
+    if split is None:
+        return [], items
+    return items[:split], items[split:]
 
 
 def _build_tree(
@@ -176,7 +209,15 @@ def _build_tree(
     seen: dict[str, list[_Node]] = {}
     for item in items:
         if item.kind == "heading":
-            parsed = parse_section_id(item.text, cfg)
+            normalized = " ".join(item.text.split())
+            if normalized.endswith(":"):
+                # List intro / field label misclassified as a heading (e.g.
+                # "Source/Content:" or "1.Material comprising the Annex
+                # proper:") -- demote to text in the current node so it can
+                # never open a spurious section.
+                stack[-1].body.append(f"**{normalized}**")
+                continue
+            parsed = parse_section_id(normalized, cfg)
             if parsed:
                 sid, title = parsed
                 depth = _depth_of(sid)
@@ -185,24 +226,24 @@ def _build_tree(
                     sid[0].isdigit()
                     and top is not None
                     and (
-                        top.id.startswith(("app", "att"))
+                        top.id.startswith(("appendix-", "attachment-"))
                         or (
                             part is not None
                             and not part.id[:1].isdigit()
                             and top.id == part.id
                         )
                     )
-                    and not cfg.chapter_re.match(" ".join(item.text.split()))
+                    and not cfg.chapter_re.match(normalized)
                 ):
                     # ICAO appendices and attachments restart numeric
                     # numbering ("1.", "2.1"...). Namespace the id under the
                     # appendix/attachment top-level node so appendix "2.1"
-                    # becomes "app3-2.1" and never collides with chapter
-                    # section "2.1". Only appendix ("app*") and attachment
-                    # ("att*") nodes namespace, plus a seeded part-root node
+                    # becomes "appendix-3-2.1" and never collides with
+                    # chapter section "2.1". Only appendix and attachment
+                    # nodes namespace, plus a seeded part-root node
                     # (per-part tree building): numeric chapters after a
-                    # front-matter fallback node (FOREWORD -> "x1") must
-                    # open normally at root.
+                    # front-matter fallback node (FOREWORD) must open
+                    # normally at root.
                     sid = f"{top.id}-{sid}"
                     depth += 1
                 if any(n.id == sid for n in stack):
@@ -220,22 +261,29 @@ def _build_tree(
                 stack.append(node)
                 seen[sid] = list(stack)
             else:
-                normalized = " ".join(item.text.split())
-                if normalized.endswith(":"):
-                    # Bold field label misclassified as a heading (e.g.
-                    # "Source/Content:") -- demote to text in current node.
-                    stack[-1].body.append(f"**{normalized}**")
-                    continue
-                fallback_seq += 1
-                parent = stack[-1]
-                sid = f"{parent.id}-x{fallback_seq}" if parent.id else f"x{fallback_seq}"
-                title = normalized
-                depth = parent.depth + 1
-                while stack[-1].depth >= depth:
+                # Unparsed heading -> named after its title so SMEs can read
+                # the id. Consecutive fallbacks are siblings (never x1-x2-x3
+                # chains): pop any open fallback before attaching.
+                while stack[-1].fallback:
                     stack.pop()
-                node = _Node(id=sid, title=title, depth=depth)
-                stack[-1].children.append(node)
+                parent = stack[-1]
+                slug = _fallback_slug(normalized)
+                if not slug:
+                    fallback_seq += 1
+                    slug = f"x{fallback_seq}"
+                sid = f"{parent.id}-{slug}" if parent.id else slug
+                if any(n.id == sid for n in stack):
+                    continue
+                if sid in seen:
+                    # Same heading again (running page header) -> reopen.
+                    stack = list(seen[sid])
+                    continue
+                node = _Node(
+                    id=sid, title=normalized, depth=parent.depth + 1, fallback=True
+                )
+                parent.children.append(node)
                 stack.append(node)
+                seen[sid] = list(stack)
         else:
             if item.text.strip():
                 stack[-1].body.append(item.text.strip())
@@ -259,8 +307,20 @@ def build_units(
     parts: list[Part] | None = None,
 ) -> list[SectionUnit]:
     if not parts:
-        root = _build_tree(items, config)
-        return _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, None)
+        cfg = config or _DEFAULT_CONFIG
+        front, rest = _split_front_matter(items, cfg)
+        units = []
+        if front:
+            froot = _build_tree(
+                front, config, part=Part("front-matter", "Front Matter", 1)
+            )
+            units += _units_from_tree(
+                froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
+            )
+        root = _build_tree(rest, config)
+        return units + _units_from_tree(
+            root, max_depth, min_tokens, max_unit_tokens, None
+        )
     units: list[SectionUnit] = []
     for part, part_items in split_by_parts(items, parts):
         if not part_items:
@@ -281,7 +341,7 @@ def _units_from_tree(
 ) -> list[SectionUnit]:
     units: list[SectionUnit] = []
 
-    def walk(node: _Node) -> None:
+    def walk(node: _Node, chapter: str) -> None:
         def is_depth_fold(child: _Node) -> bool:
             return child.depth > max_depth
 
@@ -321,18 +381,16 @@ def _units_from_tree(
                 SectionUnit(
                     id=node.id,
                     title=node.title,
-                    chapter=(
-                        chapter_override
-                        if chapter_override is not None
-                        else _chapter_of(node.id)
-                    ),
+                    chapter=chapter,
                     body_md=body_md,
                     tables=extract_tables(body_md),
                 )
             )
         for child in kept:
-            walk(child)
+            walk(child, chapter)
 
     for top in root.children:
-        walk(top)
+        # A unit's chapter is the top-level node it lives under -- grouping
+        # follows the tree structure, never re-parsed from the id string.
+        walk(top, chapter_override if chapter_override is not None else top.id)
     return units

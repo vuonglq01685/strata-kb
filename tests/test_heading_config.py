@@ -10,7 +10,7 @@ def test_default_config_matches_current_behavior():
     assert sectioner.parse_section_id("Chapter 5 Navigation Data") == (
         "5", "Navigation Data",
     )
-    assert sectioner.parse_section_id("APPENDIX 3. Criteria") == ("app3", "Criteria")
+    assert sectioner.parse_section_id("APPENDIX 3. Criteria") == ("appendix-3", "Criteria")
 
 
 def test_custom_chapter_pattern():

@@ -41,7 +41,7 @@ def _fake_parse_with_bookmark_parts(monkeypatch):
     monkeypatch.setattr(
         parser,
         "outline_parts",
-        lambda pdf, config=None: [Part("1", "INTRO", 1), Part("att1", "FLOW", 5)],
+        lambda pdf, config=None: [Part("1", "INTRO", 1), Part("attachment-1", "FLOW", 5)],
     )
 
 
@@ -187,7 +187,7 @@ def test_ingest_uses_bookmark_parts_when_available(tmp_path: Path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "sectioning: bookmarks (2 parts)" in result.output
     doc_dir = tmp_path / ".kb" / "arinc-424"
-    assert any(f.name.startswith("att1-") for f in doc_dir.glob("*.md"))
+    assert any(f.name.startswith("attachment-1-") for f in doc_dir.glob("*.md"))
     manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
     assert manifest.ingest.used_bookmarks is True
 
