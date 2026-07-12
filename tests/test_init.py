@@ -144,6 +144,16 @@ def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
         assert "Table-only section:" in text
 
 
+def test_init_scaffolds_kb_summarize_slash_command(tmp_path: Path):
+    init_repo(tmp_path)
+    command = tmp_path / ".claude" / "commands" / "kb-summarize.md"
+    assert command.is_file()
+    text = command.read_text(encoding="utf-8")
+    assert "kb-summarize" in text          # invokes the skill by name
+    assert "$ARGUMENTS" in text            # forwards the doc-id filter
+    assert "argument-hint" in text
+
+
 def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
     init_repo(tmp_path)
     skill = (
