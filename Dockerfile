@@ -14,7 +14,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home app
 COPY --from=build /dist /tmp/dist
-RUN pip install --no-cache-dir "$(ls /tmp/dist/*.whl)[ingest]" && rm -rf /tmp/dist
+# docling → rapidocr pulls in full opencv-python, which needs X11 libs
+# (libxcb & co.) absent from python:slim. The headless build is cv2
+# API-compatible and needs none of them.
+RUN pip install --no-cache-dir "$(ls /tmp/dist/*.whl)[ingest]" && rm -rf /tmp/dist \
+    && pip uninstall -y opencv-python \
+    && pip install --no-cache-dir opencv-python-headless
 USER app
 WORKDIR /data
 EXPOSE 8321
