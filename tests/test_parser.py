@@ -113,6 +113,8 @@ def test_load_or_parse_without_docling_raises_helpful_error(tmp_path, monkeypatc
 
 
 def test_load_or_parse_pins_rapidocr_backend_and_language(tmp_path, monkeypatch):
+    # CI installs [dev] only (no docling). Stub the import graph so we can
+    # assert the OCR pin without the ingest extra.
     # docling's "auto" OCR mode picks rapidocr+torch in this install
     # (onnxruntime/easyocr/nemotron are not installed) but never forwards a
     # configured language to it, so English text is silently OCR'd with the
@@ -121,8 +123,8 @@ def test_load_or_parse_pins_rapidocr_backend_and_language(tmp_path, monkeypatch)
     # separate Dockerfile step that pre-bakes this exact engine's assets so
     # nothing needs downloading at runtime (root-owned site-packages dir is
     # not writable by the non-root runtime user).
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import RapidOcrOptions
+    import sys
+    import types
 
     captured = {}
 
@@ -133,6 +135,28 @@ def test_load_or_parse_pins_rapidocr_backend_and_language(tmp_path, monkeypatch)
     class _FakeResult:
         document = _FakeDoc()
 
+    class _FakeDoclingDocument:
+        @staticmethod
+        def model_validate_json(text):
+            return _FakeDoc()
+
+    class _InputFormat:
+        PDF = object()
+
+    class _RapidOcrOptions:
+        def __init__(self, backend=None, lang=None, **kwargs):
+            self.backend = backend
+            self.lang = lang
+
+    class _PdfPipelineOptions:
+        def __init__(self, ocr_options=None, artifacts_path=None, **kwargs):
+            self.ocr_options = ocr_options
+            self.artifacts_path = artifacts_path
+
+    class _PdfFormatOption:
+        def __init__(self, pipeline_options=None, **kwargs):
+            self.pipeline_options = pipeline_options
+
     class _FakeConverter:
         def __init__(self, format_options=None, **kwargs):
             captured["format_options"] = format_options
@@ -140,14 +164,33 @@ def test_load_or_parse_pins_rapidocr_backend_and_language(tmp_path, monkeypatch)
         def convert(self, path):
             return _FakeResult()
 
-    monkeypatch.setattr("docling.document_converter.DocumentConverter", _FakeConverter)
+    stubs = {
+        "docling_core": types.ModuleType("docling_core"),
+        "docling_core.types": types.ModuleType("docling_core.types"),
+        "docling_core.types.doc": types.ModuleType("docling_core.types.doc"),
+        "docling": types.ModuleType("docling"),
+        "docling.datamodel": types.ModuleType("docling.datamodel"),
+        "docling.datamodel.base_models": types.ModuleType("docling.datamodel.base_models"),
+        "docling.datamodel.pipeline_options": types.ModuleType(
+            "docling.datamodel.pipeline_options"
+        ),
+        "docling.document_converter": types.ModuleType("docling.document_converter"),
+    }
+    stubs["docling_core.types.doc"].DoclingDocument = _FakeDoclingDocument
+    stubs["docling.datamodel.base_models"].InputFormat = _InputFormat
+    stubs["docling.datamodel.pipeline_options"].PdfPipelineOptions = _PdfPipelineOptions
+    stubs["docling.datamodel.pipeline_options"].RapidOcrOptions = _RapidOcrOptions
+    stubs["docling.document_converter"].DocumentConverter = _FakeConverter
+    stubs["docling.document_converter"].PdfFormatOption = _PdfFormatOption
+    for name, mod in stubs.items():
+        monkeypatch.setitem(sys.modules, name, mod)
 
     parser.load_or_parse(tmp_path / "x.pdf", tmp_path / "work")
 
-    pdf_options = captured["format_options"][InputFormat.PDF]
+    pdf_options = captured["format_options"][_InputFormat.PDF]
     pipeline_options = pdf_options.pipeline_options
     ocr_options = pipeline_options.ocr_options
-    assert isinstance(ocr_options, RapidOcrOptions)
+    assert isinstance(ocr_options, _RapidOcrOptions)
     assert ocr_options.backend == "torch"
     assert ocr_options.lang == ["en"]
     assert pipeline_options.artifacts_path is None
