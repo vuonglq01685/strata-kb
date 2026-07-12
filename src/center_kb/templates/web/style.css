@@ -56,7 +56,8 @@ body {
   transition: color 120ms ease, background 120ms ease;
 }
 .topbar nav a:hover { color: var(--blue); background: var(--blue-soft); }
-main { max-width: 58rem; margin: 0 auto; padding: 2.25rem 1.5rem 3rem; }
+main { max-width: 76rem; margin: 0 auto; padding: 2.25rem 1.5rem 3rem; }
+.detail { max-width: 54rem; margin-inline: auto; }
 .foot {
   color: var(--muted); text-align: center;
   padding: 2.5rem 0 2rem; font-size: 0.8rem;
@@ -120,6 +121,10 @@ button:active { transform: translateY(1px); }
 }
 
 /* ---- chips & badges ---------------------------------------------------- */
+mark {
+  background: var(--amber-soft); color: var(--amber);
+  border-radius: 3px; padding: 0 0.15em; font-weight: 600;
+}
 .chips { margin: 0.4rem 0 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .chip {
   display: inline-block;
@@ -149,6 +154,15 @@ a.chip:hover { color: #fff; background: var(--blue); border-color: var(--blue); 
 .status-pending    { color: var(--amber); background: var(--amber-soft); border-color: #ecd9b0; }
 .status-summarized { color: var(--blue); background: var(--blue-soft); border-color: var(--blue-line); }
 .status-reviewed   { color: var(--green); background: var(--green-soft); border-color: #bfe2cb; }
+.match-badge {
+  display: inline-block;
+  font-family: var(--mono); font-size: 0.68rem; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  border-radius: 4px; padding: 0.08rem 0.45rem;
+  border: 1px solid transparent;
+}
+.match-keyword  { color: var(--muted); background: #f0eee9; border-color: var(--line-strong); }
+.match-semantic { color: var(--violet); background: var(--violet-soft); border-color: #d8cdf1; }
 
 /* ---- results & doc cards ----------------------------------------------- */
 .results { display: grid; gap: 0.9rem; }
