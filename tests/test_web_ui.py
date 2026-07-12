@@ -153,3 +153,23 @@ def test_home_query_highlights_matched_keywords(fixture_kb):
 def test_tag_only_search_has_no_highlight(fixture_kb):
     resp = _client(fixture_kb).get("/ui", params={"tags": "airspace"})
     assert "<mark>" not in resp.text
+
+
+def test_home_query_shows_keyword_match_badge(fixture_kb):
+    resp = _client(fixture_kb).get("/ui", params={"q": "airspace designation"})
+    assert 'class="match-badge match-keyword"' in resp.text
+
+
+def test_home_query_shows_semantic_match_badge_on_fallback(fixture_kb, monkeypatch):
+    from center_kb.query import QueryResult
+    from center_kb.web import ui as ui_module
+
+    fake_result = QueryResult(
+        doc_id="demo-doc", section_id="1.1", title="Airspace Records",
+        score=0.42, citation="demo-doc §1.1 (Rev 1)",
+        content="## 1.1 Airspace Records\n\nFuzzy semantic match.",
+        tokens=5, source="local", match_mode="semantic",
+    )
+    monkeypatch.setattr(ui_module, "search", lambda *a, **k: [fake_result])
+    resp = _client(fixture_kb).get("/ui", params={"q": "airspace designation"})
+    assert 'class="match-badge match-semantic"' in resp.text
