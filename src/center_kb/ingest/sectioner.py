@@ -66,8 +66,8 @@ def split_by_parts(
 
 
 DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
-DEFAULT_APPENDIX_PATTERN = r"^appendix\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
-DEFAULT_ATTACHMENT_PATTERN = r"^attachment\s+([0-9A-Za-z]+)\s*[.:–—-]?\s*(.*)$"
+DEFAULT_APPENDIX_PATTERN = r"^appendix\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$"
+DEFAULT_ATTACHMENT_PATTERN = r"^attachment\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$"
 _NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)[.\s]+(.*\S)\s*$")
 
 
