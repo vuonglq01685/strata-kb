@@ -142,3 +142,14 @@ def test_static_css(fixture_kb):
     resp = _client(fixture_kb).get("/ui/static/style.css")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/css")
+
+
+def test_home_query_highlights_matched_keywords(fixture_kb):
+    resp = _client(fixture_kb).get("/ui", params={"q": "airspace designation"})
+    assert "<mark>Airspace</mark>" in resp.text
+    assert "<mark>designation</mark>" in resp.text
+
+
+def test_tag_only_search_has_no_highlight(fixture_kb):
+    resp = _client(fixture_kb).get("/ui", params={"tags": "airspace"})
+    assert "<mark>" not in resp.text
