@@ -97,7 +97,7 @@ And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI
           │
           │  kb ingest auto-summarize (claude → copilot, auto-detect)
           │  ← step 2: AI fills summaries (--no-summarize to skip;
-          │    kb summarize to re-run/retry; kb-summarize skill = manual fallback)
+          │    kb summarize to re-run/retry; /kb-summarize = manual fallback)
           ▼
    For each pending section:
    - Read L3 (original)
@@ -228,7 +228,7 @@ The table below lists core commands (from Phase 1) in typical workflow order. Fo
 |---|---|---|---|
 | 1 | `kb ingest` | Bring one PDF in: split into sections, scaffold L1/L2/L3 | Person loading a new document |
 | 2 | `kb status` | How many sections are still **unsummarized** (`pending`) | Anyone — to see remaining work |
-| 3 | `kb summarize` | AI fills in the summary blanks via a headless LLM CLI (claude → copilot auto-detect); `kb ingest` runs this automatically unless `--no-summarize` | Automatic inside `kb ingest`; run directly to re-run/retry, or use the `kb-summarize` skill in Claude Code as manual fallback when no LLM CLI is installed |
+| 3 | `kb summarize` | AI fills in the summary blanks via a headless LLM CLI (claude → copilot auto-detect); `kb ingest` runs this automatically unless `--no-summarize` | Automatic inside `kb ingest`; run directly to re-run/retry, or run `/kb-summarize` in Claude Code as manual fallback when no LLM CLI is installed (parallel sub-agents draft, the orchestrator writes) |
 | 4 | `kb build` | Validate the whole store: no blanks left, tables match | Required before opening a Pull Request |
 | 5 | `kb query` | Natural-language question → relevant passages; add `--hub <url\|path>` to search the shared hub, `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
 | 6 | `kb get` | Fetch exactly one section by id (when you already know it) | When you know the section id |
@@ -278,7 +278,7 @@ Use this to see **how much summarization work remains** before opening Claude Co
 
 ### 7.3 Summarization step
 
-This is the only step done by **AI**. By default `kb ingest` runs it automatically right after scaffolding, calling a headless LLM CLI (`claude` → `copilot`, auto-detected on `PATH`; pin one with `--llm`, or `--llm none`/`--no-summarize` to skip). Re-run or retry failed sections anytime with `kb summarize`. If no LLM CLI is installed, sections stay `pending` — open Claude Code and run the `kb-summarize` skill (at `.claude/skills/kb-summarize/SKILL.md`) as the manual fallback: it runs `kb status`, reads each section, writes summaries under fixed style rules (keep every code/number, no invention), and saves.
+This is the only step done by **AI**. By default `kb ingest` runs it automatically right after scaffolding, calling a headless LLM CLI (`claude` → `copilot`, auto-detected on `PATH`; pin one with `--llm`, or `--llm none`/`--no-summarize` to skip). Re-run or retry failed sections anytime with `kb summarize`. If no LLM CLI is installed, sections stay `pending` — open Claude Code and run `/kb-summarize` (skill at `.claude/skills/kb-summarize/SKILL.md`) as the manual fallback: it runs `kb status`, fans the pending sections out to parallel read-only sub-agents (~5 sections each, max 10 at a time), then merges their summaries itself under fixed style rules (keep every code/number, no invention).
 
 Hard rules baked into the recipe:
 - **Write in English** (same language as the source, for best search accuracy).
@@ -434,8 +434,8 @@ Step 2 — Fill summaries (automatic — runs inside `kb ingest`)
   → kb ingest already called a headless LLM CLI for you (claude → copilot
     auto-detect); pass --no-summarize to skip, `kb summarize` to re-run/retry
   → No LLM CLI installed? Sections stay "pending" — open Claude Code and run
-    the kb-summarize skill as the manual fallback (self-checks every 5–10
-    sections with `kb build --allow-pending`)
+    `/kb-summarize` as the manual fallback (the per-wave `kb build
+    --allow-pending` still self-checks every ~5–10 sections)
 
 Step 3 — Final gate check
   $ kb build
@@ -518,7 +518,7 @@ No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, sa
 | Situation | Likely cause | Fix |
 |---|---|---|
 | `kb build` errors "table mismatch" | Someone (usually AI) edited table content while summarizing | Open that section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
-| `kb build` reports remaining `pending`/`TODO` | Summarization step (step 2 in §8) not finished, failed, or skipped (`--no-summarize`) | Run `kb status` to see what's left, then `kb summarize` to retry — or, with no LLM CLI installed, back to Claude Code with the `kb-summarize` skill |
+| `kb build` reports remaining `pending`/`TODO` | Summarization step (step 2 in §8) not finished, failed, or skipped (`--no-summarize`) | Run `kb status` to see what's left, then `kb summarize` to retry — or, with no LLM CLI installed, back to Claude Code with `/kb-summarize` |
 | `kb ingest` is very slow (10–30 min) first time | Normal — Docling downloads a layout model (~500MB) on first use | Wait, or check network if stuck. Later runs on the same PDF use cache and are much faster |
 | `kb` says "command not found" | Virtualenv not activated | Run `source .venv/bin/activate` in the project directory first |
 | `kb query` returns nothing | Keywords match no tags/content, or `--budget` too small | Drop `--tags`, raise `--budget`, or check spelling (store content is English) |
