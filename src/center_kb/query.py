@@ -28,6 +28,7 @@ class QueryResult:
     content: str
     tokens: int
     source: str = "local"  # "local" | "hub" | "remote:<repo-id>"
+    match_mode: str = "keyword"  # "keyword" | "semantic"
 
 
 @dataclass
@@ -40,7 +41,7 @@ class _Candidate:
     pointer: str = ""  # line pointing back to the source repo (remote only)
 
 
-def _tokenize(text: str) -> list[str]:
+def tokenize(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
@@ -161,9 +162,9 @@ def search(
     if not corpus:
         return []
 
-    section_tokens = [_tokenize(f"{c.sec.title} {c.sec.summary}") for c in corpus]
+    section_tokens = [tokenize(f"{c.sec.title} {c.sec.summary}") for c in corpus]
     bm25 = BM25Plus(section_tokens)
-    query_token_list = _tokenize(text)
+    query_token_list = tokenize(text)
     query_tokens = set(query_token_list)
     scores = bm25.get_scores(query_token_list)
     ranked = sorted(
@@ -265,7 +266,7 @@ def _semantic_fallback(
             QueryResult(
                 doc_id=doc_id, section_id=sec_id, title=c.sec.title,
                 score=float(score), citation=c.citation, content=content,
-                tokens=n_tokens, source=c.source,
+                tokens=n_tokens, source=c.source, match_mode="semantic",
             )
         )
         used += n_tokens
