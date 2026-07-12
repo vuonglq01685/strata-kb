@@ -12,8 +12,9 @@ Five steps from empty repo to a searchable knowledge base.
    inside Docker: `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc`)
 3. **Summarize** — `kb ingest` does this automatically when the Claude Code or
    GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
-   Manual fallback: run the `kb-summarize` skill in Claude Code, or
-   `kb summarize` later. Then validate: `kb build`
+   Manual fallback: run `/kb-summarize` in Claude Code (parallel
+   sub-agents fill the sections), or `kb summarize` later.
+   Then validate: `kb build`
 4. **Serve the hub** — `docker compose up -d` → web UI at
    http://localhost:8321/ui (sign in with the token).
    Without Docker: `python -m center_kb.mcp --hub . --transport http`
@@ -27,6 +28,7 @@ Five steps from empty repo to a searchable knowledge base.
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (in Claude Code / Copilot Chat: `/kb-ingest`)
 - `kb summarize` — fill pending summaries via a headless LLM CLI
+  (in Claude Code: `/kb-summarize`)
 - `kb status` — list docs and their pending sections
 - `kb build` — validate the KB (manifests, tables, tokens)
 - `kb query "<question>"` — BM25 search over the summaries

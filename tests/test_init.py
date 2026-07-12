@@ -129,6 +129,7 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
         assert "l1|l2|l3" not in text
     assert "/kb-ingest" in quick
     assert "/kb-publish" in quick
+    assert "/kb-summarize" in quick
 
 
 def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
