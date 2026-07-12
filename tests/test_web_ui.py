@@ -173,3 +173,17 @@ def test_home_query_shows_semantic_match_badge_on_fallback(fixture_kb, monkeypat
     monkeypatch.setattr(ui_module, "search", lambda *a, **k: [fake_result])
     resp = _client(fixture_kb).get("/ui", params={"q": "airspace designation"})
     assert 'class="match-badge match-semantic"' in resp.text
+
+
+def test_static_css_widens_main_and_defines_new_styles(fixture_kb):
+    resp = _client(fixture_kb).get("/ui/static/style.css")
+    assert "max-width: 76rem" in resp.text
+    assert ".detail" in resp.text
+    assert "mark {" in resp.text
+    assert ".match-keyword" in resp.text
+    assert ".match-semantic" in resp.text
+
+
+def test_section_page_wraps_content_in_detail_container(fixture_kb):
+    resp = _client(fixture_kb).get("/ui/docs/demo-doc/1.1")
+    assert 'class="detail"' in resp.text
