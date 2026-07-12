@@ -16,22 +16,36 @@ def test_init_creates_all_files(tmp_path: Path):
         assert (tmp_path / rel).is_file(), rel
 
 
-def test_init_is_idempotent_never_overwrites(tmp_path: Path):
+def test_init_refreshes_scaffold_but_protects_index(tmp_path: Path):
     init_repo(tmp_path)
-    marker = tmp_path / ".kb" / "index.yaml"
-    marker.write_text("docs: [{id: keep-me, title: X}]\n", encoding="utf-8")
+    index = tmp_path / ".kb" / "index.yaml"
+    index.write_text("docs: [{id: keep-me, title: X}]\n", encoding="utf-8")
+    skill = tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
+    skill.write_text("stale skill content\n", encoding="utf-8")
     report = init_repo(tmp_path)
     assert report.created == []
-    assert sorted(report.skipped) == sorted(EXPECTED_FILES)
-    assert "keep-me" in marker.read_text(encoding="utf-8")
+    assert report.skipped == [".kb/index.yaml"]
+    assert ".claude/skills/kb-summarize/SKILL.md" in report.updated
+    assert "keep-me" in index.read_text(encoding="utf-8")
+    assert "stale skill content" not in skill.read_text(encoding="utf-8")
 
 
-def test_init_force_overwrites(tmp_path: Path):
+def test_init_is_idempotent_when_already_current(tmp_path: Path):
+    init_repo(tmp_path)
+    report = init_repo(tmp_path)
+    assert report.created == []
+    assert report.updated == []
+    assert report.skipped == [".kb/index.yaml"]
+
+
+def test_init_force_overwrites_protected_data(tmp_path: Path):
     init_repo(tmp_path)
     marker = tmp_path / ".kb" / "index.yaml"
     marker.write_text("docs: [{id: gone, title: X}]\n", encoding="utf-8")
     report = init_repo(tmp_path, force=True)
-    assert sorted(report.created) == sorted(EXPECTED_FILES)
+    assert report.created == []
+    assert ".kb/index.yaml" in report.updated
+    assert report.skipped == []
     assert "gone" not in marker.read_text(encoding="utf-8")
 
 
@@ -50,6 +64,19 @@ def test_cli_init_reports_and_next_steps(tmp_path: Path):
     result2 = runner.invoke(app, ["init", str(tmp_path)])
     assert result2.exit_code == 0
     assert "skipped" in result2.output
+    assert "0 created" in result2.output
+    assert "0 updated" in result2.output
+    assert "1 skipped" in result2.output
+
+
+def test_cli_init_updates_stale_scaffold(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path)])
+    skill = tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
+    skill.write_text("stale\n", encoding="utf-8")
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "updated" in result.output
+    assert "stale" not in skill.read_text(encoding="utf-8")
 
 
 def test_quickstart_uses_correct_ingest_flag(tmp_path: Path):

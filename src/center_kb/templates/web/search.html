@@ -1,8 +1,19 @@
-<section class="search">
-  <form method="get" action="/ui">
-    <input type="search" name="q" value="$q" placeholder="Search the knowledge base…" autofocus>
-    <input type="text" name="tags" value="$tags" placeholder="tags (comma-separated)">
+<section class="search-panel">
+  <p class="panel-label">Search index</p>
+  <h1 class="panel-title">Find a section, cite it, trust it.</h1>
+  <form method="get" action="/ui" class="search-form">
+    <div class="field field-q">
+      <label for="q">Keywords</label>
+      <input type="search" id="q" name="q" value="$q" placeholder="e.g. restrictive airspace designation" autofocus>
+    </div>
+    <div class="field field-tags">
+      <label for="tags">Tags</label>
+      <input type="text" id="tags" name="tags" value="$tags" placeholder="met, arinc424, …">
+    </div>
     <button type="submit">Search</button>
   </form>
+  <p class="scope-note">scope: $scope · tags may be used alone to browse documents</p>
 </section>
+<section class="results">
 $results
+</section>

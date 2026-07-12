@@ -32,21 +32,28 @@ def main() -> None:
 @app.command()
 def init(
     path: Path = typer.Argument(Path("."), help="Target directory (default: current)"),
-    force: bool = typer.Option(False, "--force", help="Overwrite files that already exist"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Also overwrite protected data (.kb/index.yaml)",
+    ),
 ) -> None:
-    """Scaffold a new KB repo: .kb/, federation/, config templates — ready for `kb ingest`."""
+    """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
     from center_kb.initcmd import init_repo
 
     report = init_repo(path, force=force)
     for rel in report.created:
         typer.echo(f"  created  {rel}")
+    for rel in report.updated:
+        typer.echo(f"  updated  {rel}")
     for rel in report.skipped:
         typer.secho(
-            f"  skipped  {rel} (exists — use --force to overwrite)",
+            f"  skipped  {rel} (protected data — use --force to overwrite)",
             fg=typer.colors.YELLOW,
         )
     typer.echo(
-        f"kb init: {len(report.created)} file(s) created, {len(report.skipped)} skipped."
+        f"kb init: {len(report.created)} created, "
+        f"{len(report.updated)} updated, {len(report.skipped)} skipped."
     )
     typer.echo("Next steps:")
     typer.echo("  1. cp .env.example .env    # then edit CENTER_KB_HTTP_TOKEN")

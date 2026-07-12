@@ -48,9 +48,16 @@ def known_doc_ids(config: ServerConfig) -> list[str]:
     return ids
 
 
-def list_docs(config: ServerConfig) -> list[dict]:
-    """L0 across local + hub + federation, local wins on id collision."""
-    out = [{**d.model_dump(), "source": "local"} for d in _index_docs(config.kb_dir)]
+def list_docs(config: ServerConfig, include_local: bool = True) -> list[dict]:
+    """L0 across local + hub + federation, local wins on id collision.
+
+    include_local=False → published sources only (hub + federation).
+    """
+    out = (
+        [{**d.model_dump(), "source": "local"} for d in _index_docs(config.kb_dir)]
+        if include_local
+        else []
+    )
     hub = hub_handle(config)
     if hub is None:
         return out

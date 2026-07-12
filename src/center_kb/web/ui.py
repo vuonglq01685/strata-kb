@@ -37,23 +37,78 @@ def _e(text: str) -> str:
 
 
 def _status_span(status: str) -> str:
-    return f'<span class="status-{_e(status)}">{_e(status)}</span>'
+    return f'<span class="status-badge status-{_e(status)}">{_e(status)}</span>'
+
+
+def _chips(tags: list[str]) -> str:
+    if not tags:
+        return '<span class="chip chip-empty">no tags</span>'
+    return "".join(
+        f'<a class="chip" href="/ui?tags={quote(t)}">{_e(t)}</a>' for t in tags
+    )
+
+
+def _source_badge(source: str) -> str:
+    kind = "remote" if source.startswith("remote:") else source
+    return f'<span class="source-badge source-{_e(kind)}">{_e(source)}</span>'
 
 
 def _result_blocks(results) -> str:
     if not results:
-        return "<p>No matching section found — try dropping tags or changing keywords.</p>"
+        return (
+            '<div class="empty-state"><p>No matching section found.</p>'
+            "<p>Try dropping tags or changing keywords.</p></div>"
+        )
     blocks = []
     for r in results:
-        href = f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
+        if r.source.startswith("remote:"):
+            # federation carries L1 only — link to the doc's TOC page, not a
+            # section content page (which does not exist for remote docs)
+            href = f"/ui/docs/{quote(r.doc_id)}"
+        else:
+            href = f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
         blocks.append(
-            '<div class="result">'
-            f'<p><a class="cite" href="{href}">[{_e(r.citation)}]</a> '
-            f'<span class="score">score={r.score:.2f} · ~{r.tokens}tk · {_e(r.source)}</span></p>'
-            f"{md_render(r.content)}"
-            "</div>"
+            '<article class="result">'
+            '<header class="result-head">'
+            f'<a class="cite" href="{href}">{_e(r.citation)}</a>'
+            f"{_source_badge(r.source)}"
+            f'<span class="score">score {r.score:.2f} · ~{r.tokens} tk</span>'
+            "</header>"
+            f'<div class="result-body">{md_render(r.content)}</div>'
+            "</article>"
         )
     return "\n".join(blocks)
+
+
+def _doc_cards(docs: list[dict]) -> str:
+    if not docs:
+        return (
+            '<div class="empty-state"><p>No documents match those tags.</p>'
+            "<p>Check the tag spelling or browse all documents.</p></div>"
+        )
+    cards = []
+    for d in docs:
+        title = _e(d["title"]) or _e(d["id"])
+        # remote docs render too: the doc page shows their L1 TOC + repo note
+        name = f'<a href="/ui/docs/{quote(d["id"])}">{title}</a>'
+        rev = f'<span class="rev">{_e(d["revision"])}</span>' if d["revision"] else ""
+        cards.append(
+            '<article class="doc-card">'
+            f'<header class="result-head"><span class="doc-name">{name}</span> {rev}'
+            f"{_source_badge(d['source'])}</header>"
+            f'<p class="doc-summary">{_e(d["summary"])}</p>'
+            f'<p class="chips">{_chips(d["tags"])}</p>'
+            "</article>"
+        )
+    return "\n".join(cards)
+
+
+def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
+    tagset = {t.lower() for t in tags}
+    return [
+        d for d in docs
+        if tagset & {t.lower() for t in d["tags"]} or d["id"].lower() in tagset
+    ]
 
 
 def build_routes(config: ServerConfig, token: str) -> list[Route]:
@@ -76,33 +131,38 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
     async def home(request: Request) -> HTMLResponse:
         q = request.query_params.get("q", "").strip()
         raw_tags = request.query_params.get("tags", "").strip()
+        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+        hub = api.hub_handle(config)
+        # hub configured → search published knowledge only (hub + federation);
+        # no hub → this server *is* the knowledge source, search it directly.
+        include_local = hub is None
         results_html = ""
         if q:
-            tags = [t.strip() for t in raw_tags.split(",") if t.strip()] or None
             results = search(
-                config.kb_dir, q, tags=tags, budget=2000, hub=api.hub_handle(config)
+                config.kb_dir,
+                q,
+                tags=tags or None,
+                budget=2000,
+                hub=hub,
+                include_local=include_local,
             )
             results_html = _result_blocks(results)
+        elif tags:
+            docs = api.list_docs(config, include_local=include_local)
+            results_html = _doc_cards(_match_tags(docs, tags))
+        scope = (
+            "published knowledge · hub + federation"
+            if hub is not None
+            else "local knowledge base"
+        )
         body = _template("search.html").substitute(
-            q=_e(q), tags=_e(raw_tags), results=results_html
+            q=_e(q), tags=_e(raw_tags), scope=_e(scope), results=results_html
         )
         return _page("Search", body)
 
     async def docs_page(request: Request) -> HTMLResponse:
-        rows = []
-        for d in api.list_docs(config):
-            href = f"/ui/docs/{quote(d['id'])}"
-            link = (
-                f'<a href="{href}">{_e(d["id"])}</a>'
-                if not d["source"].startswith("remote:")
-                else _e(d["id"])
-            )
-            rows.append(
-                f"<tr><td>{link}</td><td>{_e(d['title'])}</td>"
-                f"<td>{_e(d['revision'])}</td><td>{_e(', '.join(d['tags']))}</td>"
-                f"<td>{_e(d['source'])}</td></tr>"
-            )
-        body = _template("docs.html").substitute(rows="\n".join(rows))
+        cards = _doc_cards(api.list_docs(config))
+        body = _template("docs.html").substitute(cards=cards)
         return _page("Documents", body)
 
     async def doc_page(request: Request) -> HTMLResponse:

@@ -24,7 +24,7 @@ Five steps from empty repo to a searchable knowledge base.
 
 ## CLI reference
 
-- `kb init` — scaffold a KB repo (this skeleton)
+- `kb init` — scaffold or refresh a KB repo (updates skills/templates; keeps `.kb/index.yaml`)
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (in Claude Code / Copilot Chat: `/kb-ingest`)
 - `kb summarize` — fill pending summaries via a headless LLM CLI
