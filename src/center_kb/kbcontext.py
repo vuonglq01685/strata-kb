@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from pydantic import BaseModel, Field
 
+if TYPE_CHECKING:
+    from center_kb.hub import HubHandle
+
 
 class KBContextError(ValueError):
     """kb-context block is missing or malformed."""
+
+
+class KBRefNotFoundError(KBContextError):
+    """A ref does not resolve to any known section in the local KB or hub."""
 
 
 class KBRef(BaseModel):
@@ -106,3 +115,70 @@ def render(ctx: KBContext) -> str:
     if ctx.tags:
         lines.append(f"  tags: [{', '.join(ctx.tags)}]")
     return "\n".join(lines)
+
+
+def build_context_block(
+    kb_dir: Path,
+    refs: list[str],
+    tags: list[str] | None = None,
+    hub: "HubHandle | None" = None,
+) -> tuple[str, str | None]:
+    """Validate refs, pin at the current git HEAD, and render a kb-context block.
+
+    Returns (block_text, dirty_warning). dirty_warning is a one-line string
+    when kb_dir has uncommitted changes, else None — callers decide where to
+    surface it (CLI: stderr; MCP: inline in the tool's text output, since it
+    has only one output channel).
+    """
+    from center_kb import gitio
+    from center_kb.query import get_section
+
+    ref_list = [parse_ref(r) for r in refs if r.strip()]
+    if not ref_list:
+        raise KBContextError(
+            "--refs is empty — need at least 1 ref, e.g. 'arinc-424 §5.3'"
+        )
+
+    root = gitio.git_root(kb_dir.resolve())
+    version = gitio.head_commit(root)
+
+    bad: list[str] = []
+    needs_hub = False
+    for r in ref_list:
+        if r.repo_id:
+            found = hub is not None and (
+                hub.federation_dir / r.repo_id / "manifests" / f"{r.doc_id}.yaml"
+            ).exists()
+            needs_hub = True
+        else:
+            found = get_section(kb_dir, r.doc_id, r.section_id) is not None
+            if not found and hub is not None:
+                found = (
+                    get_section(kb_dir, r.doc_id, r.section_id, hub=hub) is not None
+                )
+                needs_hub = needs_hub or found
+        if not found:
+            bad.append(str(r))
+    if bad:
+        raise KBRefNotFoundError(
+            f"Ref could not be resolved in worktree: {', '.join(bad)}"
+        )
+
+    hub_version = None
+    if needs_hub and hub is not None:
+        hub_version = gitio.head_commit(gitio.git_root(hub.root))
+
+    dirty_warning = None
+    if gitio.is_dirty(root, kb_dir.resolve()):
+        dirty_warning = (
+            "[warn] .kb/ has uncommitted changes — "
+            "the pinned hash will not include them"
+        )
+
+    ctx = KBContext(
+        version=version,
+        hub_version=hub_version,
+        refs=ref_list,
+        tags=[t.strip() for t in (tags or []) if t.strip()],
+    )
+    return render(ctx), dirty_warning
