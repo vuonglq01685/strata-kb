@@ -12,7 +12,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from center_kb.mcp import ServerConfig
-from center_kb.query import get_section, search
+from center_kb.query import get_section, search, tokenize
 from center_kb.web import api
 from center_kb.web.auth import COOKIE_NAME
 from center_kb.web.mdrender import render as md_render
@@ -53,7 +53,11 @@ def _source_badge(source: str) -> str:
     return f'<span class="source-badge source-{_e(kind)}">{_e(source)}</span>'
 
 
-def _result_blocks(results) -> str:
+def _match_badge(mode: str) -> str:
+    return f'<span class="match-badge match-{_e(mode)}">{_e(mode)}</span>'
+
+
+def _result_blocks(results, terms: set[str] | None = None) -> str:
     if not results:
         return (
             '<div class="empty-state"><p>No matching section found.</p>'
@@ -72,9 +76,10 @@ def _result_blocks(results) -> str:
             '<header class="result-head">'
             f'<a class="cite" href="{href}">{_e(r.citation)}</a>'
             f"{_source_badge(r.source)}"
+            f"{_match_badge(r.match_mode)}"
             f'<span class="score">score {r.score:.2f} · ~{r.tokens} tk</span>'
             "</header>"
-            f'<div class="result-body">{md_render(r.content)}</div>'
+            f'<div class="result-body">{md_render(r.content, terms=terms)}</div>'
             "</article>"
         )
     return "\n".join(blocks)
@@ -132,6 +137,7 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         q = request.query_params.get("q", "").strip()
         raw_tags = request.query_params.get("tags", "").strip()
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+        terms = set(tokenize(q)) if q else set()
         hub = api.hub_handle(config)
         # hub configured → search published knowledge only (hub + federation);
         # no hub → this server *is* the knowledge source, search it directly.
@@ -146,7 +152,7 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
                 hub=hub,
                 include_local=include_local,
             )
-            results_html = _result_blocks(results)
+            results_html = _result_blocks(results, terms)
         elif tags:
             docs = api.list_docs(config, include_local=include_local)
             results_html = _doc_cards(_match_tags(docs, tags))

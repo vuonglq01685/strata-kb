@@ -51,3 +51,34 @@ def test_mixed_document():
 
 def test_multiline_paragraph_joined():
     assert render("line one\nline two") == "<p>line one line two</p>"
+
+
+def test_highlight_matches_whole_word_case_insensitive_in_paragraph():
+    out = render("Restrictive Airspace designation rules.", terms={"airspace"})
+    assert out == "<p>Restrictive <mark>Airspace</mark> designation rules.</p>"
+
+
+def test_highlight_does_not_match_substring():
+    out = render("Restricted and restriction apply.", terms={"restrict"})
+    assert "<mark>" not in out
+
+
+def test_highlight_in_heading():
+    out = render("## 5.3 Restrictive Airspace", terms={"restrictive"})
+    assert out == "<h2>5.3 <mark>Restrictive</mark> Airspace</h2>"
+
+
+def test_highlight_in_table_cell():
+    md = "| Code | Meaning |\n|---|---|\n| P | Prohibited |"
+    out = render(md, terms={"prohibited"})
+    assert "<td><mark>Prohibited</mark></td>" in out
+
+
+def test_highlight_preserves_escaping_around_match():
+    out = render("Length <1> char & alpha restricted.", terms={"restricted"})
+    assert out == "<p>Length &lt;1&gt; char &amp; alpha <mark>restricted</mark>.</p>"
+
+
+def test_no_terms_behaves_like_before():
+    assert render("Plain text.") == "<p>Plain text.</p>"
+    assert render("Plain text.", terms=set()) == "<p>Plain text.</p>"
