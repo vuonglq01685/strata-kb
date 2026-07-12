@@ -69,6 +69,30 @@ def create_server(config: ServerConfig) -> MCPServer:
         return f"--- [{result.citation}] ~{result.tokens}tk\n{result.content}"
 
     @mcp.tool()
+    def kb_context_new(refs: list[str], tags: list[str] | None = None) -> str:
+        """Pin a kb-context citation block at the current KB commit, from 1+
+        refs like 'arinc-424 §5.129'. Call this only after the user has
+        confirmed which section(s) — out of everything kb_search returned —
+        actually belong in the story; paste the returned block into the
+        ticket. Citing 2-3 sections for one story is normal — pass every
+        confirmed ref in one call."""
+        try:
+            block, dirty_warning = kbcontext.build_context_block(
+                config.kb_dir, refs, tags=tags, hub=_hub()
+            )
+        except kbcontext.KBRefNotFoundError as exc:
+            known = _known_docs(config.kb_dir)
+            hint = f" Available docs: {known}." if known else ""
+            return f"{exc}{hint}"
+        except kbcontext.KBContextError as exc:
+            return str(exc)
+        except gitio.GitError as exc:
+            return str(exc)
+        if dirty_warning:
+            return f"{dirty_warning}\n\n{block}"
+        return block
+
+    @mcp.tool()
     def kb_resolve(kb_context: str) -> str:
         """Accept a kb-context block (or the raw ticket text containing one); return the cited sections at their pinned version + freshness ok/stale/broken."""
         try:

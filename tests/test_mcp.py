@@ -30,12 +30,12 @@ def test_parse_args_hub():
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_three_tools(fixture_kb):
+async def test_lists_exactly_four_tools(fixture_kb):
     server = create_server(ServerConfig(kb_dir=fixture_kb))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
         assert sorted(t.name for t in tools.tools) == [
-            "kb_get_section", "kb_resolve", "kb_search",
+            "kb_context_new", "kb_get_section", "kb_resolve", "kb_search",
         ]
 
 
@@ -149,3 +149,84 @@ def test_main_http_without_token_fails_fast(monkeypatch):
     monkeypatch.delenv("CENTER_KB_HTTP_TOKEN", raising=False)
     with pytest.raises(SystemExit):
         main(["--transport", "http"])
+
+
+# --- kb_context_new ---
+
+
+@pytest.mark.anyio
+async def test_kb_context_new_single_ref(git_kb):
+    server = create_server(ServerConfig(kb_dir=git_kb["kb"]))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_context_new", {"refs": ["demo-doc §1.1"]}
+        )
+        text = _text(result)
+        assert "kb-context:" in text
+        assert f'version: "{git_kb["rev2"]}"' in text
+        assert "- demo-doc §1.1" in text
+
+
+@pytest.mark.anyio
+async def test_kb_context_new_multi_ref(git_kb):
+    server = create_server(ServerConfig(kb_dir=git_kb["kb"]))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_context_new",
+            {"refs": ["demo-doc §1.1", "demo-doc §1.2"], "tags": ["demo"]},
+        )
+        text = _text(result)
+        assert "- demo-doc §1.1" in text
+        assert "- demo-doc §1.2" in text
+        assert "tags: [demo]" in text
+
+
+@pytest.mark.anyio
+async def test_kb_context_new_unresolvable_ref_returns_error_text(git_kb):
+    server = create_server(ServerConfig(kb_dir=git_kb["kb"]))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_context_new", {"refs": ["demo-doc §9.9"]}
+        )
+        text = _text(result)
+        assert "9.9" in text
+        assert "demo-doc" in text  # known-docs hint
+
+
+@pytest.mark.anyio
+async def test_kb_context_new_empty_refs_returns_error_text(git_kb):
+    server = create_server(ServerConfig(kb_dir=git_kb["kb"]))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_context_new", {"refs": []})
+        assert "is empty" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_context_new_dirty_warning_inline(git_kb):
+    (git_kb["kb"] / "demo-doc" / "ch1-records.md").write_text(
+        "## 1.1 Airspace Records\n\nuncommitted edit\n\n## 1.2 Airway Records\n\nx\n",
+        encoding="utf-8",
+    )
+    server = create_server(ServerConfig(kb_dir=git_kb["kb"]))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_context_new", {"refs": ["demo-doc §1.1"]}
+        )
+        text = _text(result)
+        assert "uncommitted changes" in text
+        assert "kb-context:" in text
+
+
+@pytest.mark.anyio
+async def test_kb_context_new_with_hub_ref_pins_hub_version(
+    git_kb, hub_worktree, run_git
+):
+    hub_head = run_git(hub_worktree, "rev-parse", "--short", "HEAD")
+    server = create_server(
+        ServerConfig(kb_dir=git_kb["kb"], hub=str(hub_worktree))
+    )
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_context_new", {"refs": ["arinc-424 §5.3"]}
+        )
+        assert f'hub_version: "{hub_head}"' in _text(result)
