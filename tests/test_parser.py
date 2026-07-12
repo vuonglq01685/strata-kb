@@ -89,7 +89,7 @@ def test_crosscheck_ignores_bookmarks_deeper_than_max_depth():
 
 
 def test_crosscheck_covered_by_dash_namespaced_units():
-    warnings = parser.crosscheck(unit_ids={"att4-2.1", "att4-2.2"}, bm_ids={"att4"})
+    warnings = parser.crosscheck(unit_ids={"attachment-4-2.1", "attachment-4-2.2"}, bm_ids={"attachment-4"})
     assert warnings == []
 
 
@@ -140,12 +140,12 @@ def test_outline_parts_extracts_and_orders_parts(tmp_path):
         ("front-matter", 1),   # COVER PAGE + TABLE OF CONTENTS grouped
         ("1", 3),
         ("2", 5),
-        ("att1", 7),
+        ("attachment-1", 7),
         ("supplement-22", 9),
         ("errata", 11),
     ]
     titles = {p.id: p.title for p in parts}
-    assert titles["att1"] == "FLOW DIAGRAM"
+    assert titles["attachment-1"] == "FLOW DIAGRAM"
     assert titles["front-matter"] == "Front Matter"
 
 

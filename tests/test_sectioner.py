@@ -19,18 +19,18 @@ class TestParseSectionId:
 
     def test_appendix_heading(self):
         sid, _ = parse_section_id("Appendix 3 — Meteorological tables")
-        assert sid == "app3"
+        assert sid == "appendix-3"
 
     def test_unmatched_returns_none(self):
         assert parse_section_id("FOREWORD") is None
 
     def test_attachment_heading(self):
         sid, title = parse_section_id("ATTACHMENT 5 PATH AND TERMINATOR")
-        assert sid == "att5"
+        assert sid == "attachment-5"
         assert title == "PATH AND TERMINATOR"
 
     def test_attachment_heading_with_separator(self):
-        assert parse_section_id("Attachment 2: Datum List")[0] == "att2"
+        assert parse_section_id("Attachment 2: Datum List")[0] == "attachment-2"
 
 
 def _items_basic() -> list[DocItem]:
@@ -91,7 +91,7 @@ class TestBuildUnits:
         u111 = next(u for u in units if u.id == "1.1.1")
         assert "Deep body." in u111.body_md
 
-    def test_unmatched_heading_gets_fallback_id(self):
+    def test_unmatched_heading_gets_slug_fallback_id(self):
         items = [
             DocItem("heading", "FOREWORD", 1),
             DocItem("text", "Foreword body. " * 60),
@@ -99,7 +99,47 @@ class TestBuildUnits:
         units = build_units(items)
         assert len(units) == 1
         assert units[0].title == "FOREWORD"
-        assert units[0].id  # has a fallback id, not empty
+        assert units[0].id == "foreword"  # human-readable slug, not x1
+
+    def test_consecutive_fallback_headings_are_siblings(self):
+        big = "Body text. " * 70
+        items = [
+            DocItem("heading", "FOREWORD", 1),
+            DocItem("text", big),
+            DocItem("heading", "Historical background", 1),
+            DocItem("text", big),
+            DocItem("heading", "Action by Contracting States", 1),
+            DocItem("text", big),
+        ]
+        units = build_units(items)
+        ids = [u.id for u in units]
+        # siblings, not an x1-x2-x3 chain
+        assert ids == [
+            "foreword",
+            "historical-background",
+            "action-by-contracting-states",
+        ]
+
+    def test_fallback_with_empty_slug_uses_counter(self):
+        items = [
+            DocItem("heading", "______________________", 1),
+            DocItem("text", "Divider page body. " * 60),
+        ]
+        units = build_units(items)
+        assert units[0].id == "x1"
+
+    def test_fallback_under_chapter_groups_into_chapter(self):
+        big = "Body text. " * 70
+        items = [
+            DocItem("heading", "CHAPTER 2. GENERAL SPECIFICATIONS", 1),
+            DocItem("text", big),
+            DocItem("heading", "Legend of symbols", 2),  # unparsed heading
+            DocItem("text", big),
+        ]
+        units = build_units(items)
+        u = next(u for u in units if u.title == "Legend of symbols")
+        assert u.id == "2-legend-of-symbols"
+        assert u.chapter == "2"  # same file group as chapter 2, no own file
 
 
 def test_repeated_chapter_heading_reopens_node():
@@ -193,12 +233,12 @@ def test_appendix_numeric_sections_namespaced():
     units = build_units(items)
     ids = [u.id for u in units]
     assert "2.1" in ids
-    assert "app3-2.1" in ids
+    assert "appendix-3-2.1" in ids
     u21 = next(u for u in units if u.id == "2.1")
     assert "Appendix-specific content." not in u21.body_md
-    uapp = next(u for u in units if u.id == "app3-2.1")
+    uapp = next(u for u in units if u.id == "appendix-3-2.1")
     assert "Appendix-specific content." in uapp.body_md
-    assert uapp.chapter == "app3"
+    assert uapp.chapter == "appendix-3"
 
 
 def test_front_matter_fallback_does_not_namespace_chapters():
@@ -261,8 +301,8 @@ def test_attachment_numeric_sections_namespaced_in_flat_mode():
     ]
     units = build_units(items)
     ids = [u.id for u in units]
-    assert "att1" in ids
-    assert "att1-2.1" in ids          # namespaced — no collision with chapter 2.1
+    assert "attachment-1" in ids
+    assert "attachment-1-2.1" in ids  # namespaced — no collision with chapter 2.1
     assert "2.1" not in ids
 
 
@@ -334,27 +374,91 @@ def test_build_units_with_parts_assigns_part_chapter():
 def test_build_units_with_parts_namespaces_attachment_numbering():
     from center_kb.ingest.sectioner import Part
 
-    parts = [Part("2", "GLOSSARY", 25), Part("att1", "FLOW DIAGRAM", 331)]
+    parts = [Part("2", "GLOSSARY", 25), Part("attachment-1", "FLOW DIAGRAM", 331)]
     items = [
         DocItem("heading", "2.0 GLOSSARY", 1, page=25),
         DocItem("text", "Glossary body. " * 60, page=25),
         DocItem("heading", "ATTACHMENT 1 FLOW DIAGRAM", 1, page=331),
         DocItem("text", "Attachment intro. " * 80, page=331),
         DocItem("heading", "2.1 Diagram Conventions", 2, page=332),
-        # 80x keeps the leaf > min_tokens so it is not folded into att1
+        # 80x keeps the leaf > min_tokens so it is not folded into attachment-1
         DocItem("text", "Convention body. " * 80, page=332),
     ]
     units = build_units(items, parts=parts)
     ids = {u.id for u in units}
-    assert "att1-2.1" in ids           # namespaced under the attachment part
+    assert "attachment-1-2.1" in ids   # namespaced under the attachment part
     assert "2.1" not in ids            # chapter 2 never polluted
-    att_units = [u for u in units if u.chapter == "att1"]
-    assert {u.id for u in att_units} >= {"att1", "att1-2.1"}
+    att_units = [u for u in units if u.chapter == "attachment-1"]
+    assert {u.id for u in att_units} >= {"attachment-1", "attachment-1-2.1"}
 
 
 def test_build_units_without_parts_unchanged():
     units = build_units(_items_basic())
     assert [u.id for u in units] == ["5", "5.3", "5.4"]
+
+
+def test_front_matter_split_before_first_chapter_heading():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "FOREWORD", 1),
+        DocItem("text", big),
+        # numbered heading inside the foreword must NOT become chapter 1
+        DocItem("heading", "1. Material comprising the Annex proper", 1),
+        DocItem("text", big),
+        DocItem("heading", "CHAPTER 1. DEFINITIONS", 1),
+        DocItem("text", big),
+        DocItem("heading", "1.1 Definitions", 2),
+        DocItem("text", big),
+    ]
+    units = build_units(items)
+    by_id = {u.id: u for u in units}
+    fm = [u for u in units if u.chapter == "front-matter"]
+    assert any(u.title == "FOREWORD" for u in fm)
+    # foreword's "1." heading namespaced under front-matter, not chapter 1
+    assert any(u.id.startswith("front-matter") and "Material" in u.title for u in fm)
+    assert by_id["1"].title == "DEFINITIONS"
+    assert by_id["1"].chapter == "1"
+    assert "Material comprising" not in by_id["1"].body_md
+    assert by_id["1.1"].chapter == "1"
+
+
+def test_front_matter_split_numbered_convention_doc():
+    # ARINC-style: no "Chapter N" wording, body starts at "1.0 ...", the
+    # only attachment sits at the END. The body must NOT become front matter.
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "FOREWORD", 1),
+        DocItem("text", big),
+        DocItem("heading", "1.0 INTRODUCTION", 1),
+        DocItem("text", big),
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),
+        DocItem("text", big),
+        DocItem("heading", "ATTACHMENT 1 FLOW DIAGRAM", 1),
+        DocItem("text", big),
+    ]
+    units = build_units(items)
+    chapters = {u.id: u.chapter for u in units}
+    assert chapters["1"] == "1"
+    assert chapters["5"] == "5"
+    assert chapters["attachment-1"] == "attachment-1"
+    fm = [u for u in units if u.chapter == "front-matter"]
+    assert [u.title for u in fm] == ["FOREWORD"]
+
+
+def test_numbered_heading_with_trailing_colon_demoted_to_text():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "CHAPTER 1. DEFINITIONS", 1),
+        DocItem("text", big),
+        # list-intro line Docling mistakes for a heading — must not open node "1"
+        DocItem("heading", "1.Material comprising the Annex proper:", 2),
+        DocItem("text", "a) Standards and Recommended Practices."),
+    ]
+    units = build_units(items)
+    assert [u.id for u in units] == ["1"]
+    body = units[0].body_md
+    assert "**1.Material comprising the Annex proper:**" in body
+    assert "a) Standards and Recommended Practices." in body
 
 
 def test_build_units_numeric_part_subsections_keep_flat_ids():

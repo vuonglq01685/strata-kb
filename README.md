@@ -87,7 +87,7 @@ And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI
           │  kb ingest   ← step 1: machine, automatic
           ▼
    Split PDF into ~100–300 small "sections"
-   (each field/item is one section, with standard ids: §5.3, §ch2, §app3...)
+   (each field/item is one section, with standard ids: §5.3, §ch2, §appendix-3...)
           │
           ▼
    Pre-generate:
@@ -256,7 +256,7 @@ kb ingest sources/ARINC424-22.pdf \
 | `--chapter-pattern` / `--appendix-pattern` / `--attachment-pattern` | Heading regex overrides used when splitting by heading patterns (defaults: `Chapter N` / `Appendix X` / `Attachment N`; remembered from the previous ingest) | No |
 | `--no-bookmarks` | Ignore PDF bookmarks and force heading-pattern splitting | No |
 
-By default, `kb ingest` splits the PDF by its own **PDF bookmarks/TOC** — parts are named after the document's own outline (chapters, `ATTACHMENT N` → `attN`, front-matter, etc.). Pass `--no-bookmarks` to fall back to heading-pattern splitting instead (using `--chapter-pattern`/`--appendix-pattern`/`--attachment-pattern`, or their remembered defaults).
+By default, `kb ingest` splits the PDF by its own **PDF bookmarks/TOC** — parts are named after the document's own outline (chapters, `APPENDIX N` → `appendix-N`, `ATTACHMENT N` → `attachment-N`, front-matter, etc.). Pass `--no-bookmarks` to fall back to heading-pattern splitting instead (using `--chapter-pattern`/`--appendix-pattern`/`--attachment-pattern`, or their remembered defaults). The heading-pattern path also buckets everything before the first chapter (cover, TOC, foreword) into a `front-matter` part, and headings it cannot parse get readable slug ids from their titles (e.g. `2-legend-of-symbols`) grouped into their parent chapter's file.
 
 The split/scaffold step itself **needs no AI** — fully automatic code. It takes seconds to tens of minutes depending on PDF length (first run is slower: downloads a page-layout model ~500MB; later runs reuse cache). Right after scaffolding, `kb ingest` also auto-runs the summarize step (see [7.3](#73-summarization-step)) via a headless LLM CLI unless `--no-summarize` is passed or `--llm none`.
 

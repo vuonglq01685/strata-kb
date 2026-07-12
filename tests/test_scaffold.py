@@ -27,7 +27,7 @@ def test_slugify():
 
 def test_chapter_stem():
     assert chapter_stem("5", "NAVIGATION DATA") == "ch5-navigation-data"
-    assert chapter_stem("app3", "Met tables") == "app3-met-tables"
+    assert chapter_stem("appendix-3", "Met tables") == "appendix-3-met-tables"
 
 
 def test_scaffold_writes_l3_l2_manifest_index(tmp_path: Path):
@@ -101,7 +101,7 @@ def test_scaffold_reingest_replaces_index_entry(tmp_path: Path):
 def test_chapter_stem_no_duplicate_when_slug_equals_prefix():
     assert chapter_stem("errata", "ERRATA") == "errata"
     assert chapter_stem("front-matter", "Front Matter") == "front-matter"
-    assert chapter_stem("att1", "FLOW DIAGRAM") == "att1-flow-diagram"
+    assert chapter_stem("attachment-1", "FLOW DIAGRAM") == "attachment-1-flow-diagram"
 
 
 def test_scaffold_reingest_removes_stale_files(tmp_path: Path):
