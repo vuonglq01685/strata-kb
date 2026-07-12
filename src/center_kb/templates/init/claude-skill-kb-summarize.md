@@ -74,8 +74,8 @@ every document with pending sections.
 - Write in **English**.
 - Summarize the prose ONLY. Never describe, list, or reconstruct table
   contents — the tables are already copied verbatim into the section.
-- If a section has no prose (heading + tables only): delete the marker
-  line (leave nothing) and set the manifest `summary` to
+- If a section has no prose (heading + tables only): report it as
+  table-only — set `"table_only": true` and the l1_summary to
   `Table-only section: <title>.` — do NOT invent prose about the tables.
 - Keep the L2 paragraph under ~35% of the original prose length. If your
   draft is longer, compress harder.
