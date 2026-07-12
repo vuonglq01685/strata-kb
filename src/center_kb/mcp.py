@@ -16,6 +16,11 @@ from center_kb.resolve import render_resolved, resolve_refs
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
 
+# Below this relative score gap between the top 2 kb_search results, both
+# are surfaced with a note instead of letting the top hit look unambiguous.
+AMBIGUOUS_SCORE_GAP = 0.20
+
+
 @dataclass
 class ServerConfig:
     kb_dir: Path
@@ -47,11 +52,27 @@ def create_server(config: ServerConfig) -> MCPServer:
     def kb_search(
         query: str, tags: list[str] | None = None, budget: int = 2000
     ) -> str:
-        """Find sections by tag match + BM25; return L2 content within the token budget, with citations."""
+        """Find sections by tag match + BM25 (falls back to semantic search);
+        return L2 content within the token budget, with citations. Returns
+        every relevant section found, not just the best match — when using
+        this to draft a User Story, show ALL returned sections (with their
+        citations) to the user and confirm which ones actually apply before
+        writing story content from them. Citing more than one section for a
+        single story is normal. Once confirmed, call kb_context_new with the
+        confirmed refs to pin them for the ticket."""
         results = search(config.kb_dir, query, tags=tags, budget=budget, hub=_hub())
         if not results:
             return "No matching section found — try dropping tags or changing keywords."
-        return "\n\n".join(
+        note = ""
+        if len(results) >= 2 and results[0].score > 0:
+            gap = (results[0].score - results[1].score) / results[0].score
+            if gap < AMBIGUOUS_SCORE_GAP:
+                note = (
+                    f"Note: [{results[0].citation}] and [{results[1].citation}] "
+                    "score closely — both may be relevant to your question; "
+                    "review each before citing.\n\n"
+                )
+        return note + "\n\n".join(
             f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk\n{r.content}"
             for r in results
         )

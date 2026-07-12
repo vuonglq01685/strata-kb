@@ -381,7 +381,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 
 | Tool | Purpose | Main params |
 |---|---|---|
-| `kb_search` | Find sections by natural language (tag match + BM25), return L2 within a token budget | `query`, `tags`, `budget` |
+| `kb_search` | Find sections by natural language (tag match + BM25), return L2 within a token budget — returns every relevant section found, not just the best match, and flags when the top two are close in score | `query`, `tags`, `budget` |
 | `kb_get_section` | Fetch exactly one section by id | `doc`, `section`, `level` (`l2`/`l3`) |
 | `kb_context_new` | Pin a `kb-context` citation block at the current KB commit, from 1+ confirmed refs — lets an agent do this from chat, without the BA opening a terminal | `refs`, `tags` |
 | `kb_resolve` | Accept a `kb-context` block (or a ticket containing one) — return the section at the **pinned version**, plus freshness `ok`/`stale`/`broken` | `kb_context` |

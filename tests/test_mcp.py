@@ -230,3 +230,33 @@ async def test_kb_context_new_with_hub_ref_pins_hub_version(
             "kb_context_new", {"refs": ["arinc-424 §5.3"]}
         )
         assert f'hub_version: "{hub_head}"' in _text(result)
+
+
+# --- kb_search ambiguity annotation ---
+
+
+@pytest.mark.anyio
+async def test_kb_search_notes_close_scores(fixture_kb):
+    # "records structure" scores demo-doc §1.1 and §1.2 exactly tied under
+    # BM25Plus on this fixture — the clearest possible ambiguous case.
+    server = create_server(ServerConfig(kb_dir=fixture_kb))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search", {"query": "records structure"}
+        )
+        text = _text(result)
+        assert "Note:" in text
+        assert "demo-doc §1.1" in text
+        assert "demo-doc §1.2" in text
+
+
+@pytest.mark.anyio
+async def test_kb_search_no_note_when_one_result_dominates(fixture_kb):
+    # "airspace designation" scores §1.1 well above §1.2 (~55% relative gap)
+    # on this fixture — not ambiguous.
+    server = create_server(ServerConfig(kb_dir=fixture_kb))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search", {"query": "airspace designation"}
+        )
+        assert "Note:" not in _text(result)
