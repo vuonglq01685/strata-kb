@@ -375,7 +375,7 @@ The `saving` column is the L2-vs-L3 saving **for that document alone** — not t
 
 Phase 2 extends CENTER-KB beyond the CLI: Claude Code (or any MCP-capable agent) can query the knowledge base via an **MCP server**, and a document (Jira AC, spec…) can carry a **machine-readable citation** of a specific section, **pinning** the store version at write time — so you can detect when the store changed (amendment) while an old citation did not.
 
-#### MCP server — 3 tools
+#### MCP server — 4 tools
 
 Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the repo root — Claude Code picks it up with no extra config).
 
@@ -383,6 +383,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 |---|---|---|
 | `kb_search` | Find sections by natural language (tag match + BM25), return L2 within a token budget | `query`, `tags`, `budget` |
 | `kb_get_section` | Fetch exactly one section by id | `doc`, `section`, `level` (`l2`/`l3`) |
+| `kb_context_new` | Pin a `kb-context` citation block at the current KB commit, from 1+ confirmed refs — lets an agent do this from chat, without the BA opening a terminal | `refs`, `tags` |
 | `kb_resolve` | Accept a `kb-context` block (or a ticket containing one) — return the section at the **pinned version**, plus freshness `ok`/`stale`/`broken` | `kb_context` |
 
 #### 4 new CLI commands
@@ -398,7 +399,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 
 #### BA → Jira → Dev flow
 
-1. BA runs `kb context new --refs "<doc> §<section>"` after reading the relevant spec passage.
+1. BA asks an AI assistant (chat, via MCP) to draft the story; the assistant calls `kb_search`, shows the BA every returned candidate section (not just the best match), and — once the BA confirms which one(s) apply — calls `kb_context_new` with those refs. (Or, working at a terminal: `kb context new --refs "<doc> §<section>"` does the same thing directly.)
 2. BA pastes the printed `kb-context` block into the Jira ticket description/AC — the block pins the current KB commit hash.
 3. Dev opens the ticket; the agent (via MCP) calls `kb_resolve` with the ticket body — gets exactly what the BA saw when writing, not a newer store version if the KB has since changed.
 4. If the result is `status=stale` (amendment after the ticket was written), Dev runs `kb diff <doc-id> --against <pinned-rev>` to see which sections changed, then checks with the BA whether the AC needs updating.
