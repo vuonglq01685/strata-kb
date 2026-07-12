@@ -369,6 +369,59 @@ def test_dotted_attachment_letters_do_not_collide():
     assert "Oxygen supply body." not in ub.body_md
 
 
+def test_scrambled_reading_order_orphans_reattach_to_true_parent():
+    # Regression: docling can emit a numbered sub-clause BEFORE its
+    # structural parent heading (reading-order artifact — confirmed via
+    # bbox in icao-annex-6-part-ii chapter 3, where 3.6.3.1.1/3.6.3.2/
+    # 3.6.3.2.1 physically preceded "## 3.6.3" in the extracted stream
+    # and wrongly attached to the still-open 3.6.2 instead). Each
+    # "orphan" heading must reattach under its true structural parent
+    # once that parent finally opens, not stay merged into the sibling
+    # that happened to be open at the time.
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "3.6.2 Aeroplanes on all flights", 2),
+        DocItem("text", "Sibling body. " + big),
+        DocItem("heading", "3.6.3.1.1 Applicability", 4),
+        DocItem("text", "Flight data recorder applicability body. " + big),
+        DocItem("heading", "3.6.3.2 Cockpit voice recorders", 3),
+        DocItem("text", "Voice recorder body. " + big),
+        DocItem("heading", "3.6.3.2.1 Applicability", 4),
+        DocItem("text", "Voice recorder applicability body. " + big),
+        DocItem("heading", "3.6.3 Flight recorders", 2),
+        DocItem("heading", "3.6.3.1 Flight data recorders", 3),
+        DocItem("text", "Flight data recorder body. " + big),
+    ]
+    # default max_depth=3 (same as real ingest) so 3.6.3.1/3.6.3.1.1/
+    # 3.6.3.2/3.6.3.2.1 (depth 4-5) fold into whatever they're attached
+    # to -- this is exactly how the bug surfaces as "contamination": a
+    # wrongly-attached deep node's content gets inlined into the wrong
+    # shallow parent's rendered body_md.
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert "3.6.2" in ids
+    assert "3.6.3" in ids
+
+    u362 = next(u for u in units if u.id == "3.6.2")
+    u363 = next(u for u in units if u.id == "3.6.3")
+
+    # 3.6.2 (the sibling that was wrongly left open) must stay clean
+    assert "Sibling body." in u362.body_md
+    assert "Flight data recorder applicability body." not in u362.body_md
+    assert "Voice recorder body." not in u362.body_md
+    assert "Voice recorder applicability body." not in u362.body_md
+    assert "Flight data recorder body." not in u362.body_md
+
+    # all four orphaned/descendant bodies land under the TRUE top-level
+    # ancestor 3.6.3, correctly nested (not flattened into 3.6.2)
+    assert "Flight data recorder applicability body." in u363.body_md
+    assert "Voice recorder body." in u363.body_md
+    assert "Voice recorder applicability body." in u363.body_md
+    assert "Flight data recorder body." in u363.body_md
+    assert "### 3.6.3.1.1" in u363.body_md
+    assert "### 3.6.3.2" in u363.body_md
+
+
 def test_resolve_heading_config_attachment_priority():
     from center_kb import models
     from center_kb.ingest.sectioner import (
