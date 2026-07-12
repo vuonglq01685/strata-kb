@@ -15,6 +15,7 @@ TEMPLATE_MAP: dict[str, str] = {
     ".env.example": "env.example",
     "QUICKSTART.md": "QUICKSTART.md",
     ".claude/skills/kb-summarize/SKILL.md": "claude-skill-kb-summarize.md",
+    ".claude/commands/kb-summarize.md": "claude-command-kb-summarize.md",
     ".github/instructions/kb-summarize.instructions.md": "copilot-kb-summarize.instructions.md",
     ".claude/skills/kb-ingest/SKILL.md": "claude-skill-kb-ingest.md",
     ".github/prompts/kb-ingest.prompt.md": "copilot-kb-ingest.prompt.md",
