@@ -88,6 +88,17 @@ def test_remote_result_links_to_doc_page_not_section(fixture_kb, hub_worktree):
     assert 'href="/ui/docs/roster-sop/3.2"' not in resp.text
 
 
+def test_docs_page_self_hub_labels_domain_docs_as_hub(fixture_kb):
+    # Self-hub deployment (Dockerfile CMD: --kb /data/.kb --hub /data) — kb_dir
+    # and hub.kb_dir are the SAME directory. The Browse page must label its own
+    # docs the same way the search page does (source=hub, not source=local),
+    # matching the "published knowledge" framing used once a hub is configured.
+    resp = _client(fixture_kb, hub=str(fixture_kb.parent)).get("/ui/docs")
+    assert "demo-doc" in resp.text
+    assert 'class="source-badge source-hub"' in resp.text
+    assert 'class="source-badge source-local"' not in resp.text
+
+
 def test_docs_page_renders_tag_chips(fixture_kb):
     resp = _client(fixture_kb).get("/ui/docs")
     assert 'class="chip' in resp.text

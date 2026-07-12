@@ -112,6 +112,47 @@ def test_load_or_parse_without_docling_raises_helpful_error(tmp_path, monkeypatc
         raise AssertionError("expected RuntimeError")
 
 
+def test_load_or_parse_pins_rapidocr_backend_and_language(tmp_path, monkeypatch):
+    # docling's "auto" OCR mode picks rapidocr+torch in this install
+    # (onnxruntime/easyocr/nemotron are not installed) but never forwards a
+    # configured language to it, so English text is silently OCR'd with the
+    # Chinese recognition model (drops inter-word spaces) unless pinned
+    # explicitly here. See docs/superpowers (2026-07-12 ingest fix) for the
+    # separate Dockerfile step that pre-bakes this exact engine's assets so
+    # nothing needs downloading at runtime (root-owned site-packages dir is
+    # not writable by the non-root runtime user).
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import RapidOcrOptions
+
+    captured = {}
+
+    class _FakeDoc:
+        def export_to_dict(self):
+            return {}
+
+    class _FakeResult:
+        document = _FakeDoc()
+
+    class _FakeConverter:
+        def __init__(self, format_options=None, **kwargs):
+            captured["format_options"] = format_options
+
+        def convert(self, path):
+            return _FakeResult()
+
+    monkeypatch.setattr("docling.document_converter.DocumentConverter", _FakeConverter)
+
+    parser.load_or_parse(tmp_path / "x.pdf", tmp_path / "work")
+
+    pdf_options = captured["format_options"][InputFormat.PDF]
+    pipeline_options = pdf_options.pipeline_options
+    ocr_options = pipeline_options.ocr_options
+    assert isinstance(ocr_options, RapidOcrOptions)
+    assert ocr_options.backend == "torch"
+    assert ocr_options.lang == ["en"]
+    assert pipeline_options.artifacts_path is None
+
+
 def _pdf_with_outline(tmp_path):
     from pypdf import PdfWriter
 

@@ -161,7 +161,9 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         return _page("Search", body)
 
     async def docs_page(request: Request) -> HTMLResponse:
-        cards = _doc_cards(api.list_docs(config))
+        # same scoping as home(): a hub configured → published knowledge only
+        include_local = api.hub_handle(config) is None
+        cards = _doc_cards(api.list_docs(config, include_local=include_local))
         body = _template("docs.html").substitute(cards=cards)
         return _page("Documents", body)
 

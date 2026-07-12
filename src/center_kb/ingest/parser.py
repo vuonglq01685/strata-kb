@@ -39,9 +39,30 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
     if cache.exists():
         return DoclingDocument.model_validate_json(cache.read_text(encoding="utf-8"))
 
-    from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
+    from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    result = DocumentConverter().convert(str(pdf_path))
+    # backend="torch" matches docling's own OCR auto-selection in this
+    # install (onnxruntime/easyocr/nemotron are not installed, torch is) —
+    # this pins the same engine already in use, not a new one.
+    # lang=["en"]: docling's "auto" OCR mode does not forward a configured
+    # language to the engine it selects, so this must be set explicitly —
+    # otherwise English text is silently OCR'd with the Chinese recognition
+    # model, which drops inter-word spaces on Latin-script text.
+    #
+    # No artifacts_path here: setting it opts the *entire* pipeline out of
+    # each model's own default resolution (layout/table models already
+    # resolve fine via HF Hub's ~/.cache) and requires every model to be
+    # pre-baked under one folder, not just OCR's. The Docker image instead
+    # pre-bakes only RapidOCR's own default asset location (see Dockerfile)
+    # so this exact engine finds everything without downloading anything.
+    ocr_options = RapidOcrOptions(backend="torch", lang=["en"])
+    pipeline_options = PdfPipelineOptions(ocr_options=ocr_options)
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
+    result = converter.convert(str(pdf_path))
     doc = result.document
     work_dir.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(doc.export_to_dict()), encoding="utf-8")
