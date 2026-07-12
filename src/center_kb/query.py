@@ -123,18 +123,23 @@ def _candidate_content(c: _Candidate) -> str | None:
 
 
 def _gather_candidates(
-    kb_dir: Path, tags: list[str] | None, hub: "HubHandle | None"
+    kb_dir: Path,
+    tags: list[str] | None,
+    hub: "HubHandle | None",
+    include_local: bool = True,
 ) -> list[_Candidate]:
-    candidates = _local_candidates(kb_dir, tags)
+    candidates = _local_candidates(kb_dir, tags) if include_local else []
     if hub is None:
         return candidates
-    local_ids = {c.doc.id for c in candidates}
-    # local wins on collision: read the full local index (unfiltered by tag) to block
-    index_path = kb_dir / "index.yaml"
-    if index_path.exists():
-        local_ids |= {
-            d.id for d in models.load_yaml_model(index_path, models.KBIndex).docs
-        }
+    local_ids: set[str] = set()
+    if include_local:
+        local_ids = {c.doc.id for c in candidates}
+        # local wins on collision: read the full local index (unfiltered by tag) to block
+        index_path = kb_dir / "index.yaml"
+        if index_path.exists():
+            local_ids |= {
+                d.id for d in models.load_yaml_model(index_path, models.KBIndex).docs
+            }
     hub_candidates = [
         c for c in _local_candidates(hub.kb_dir, tags, source="hub")
         if c.doc.id not in local_ids
@@ -150,8 +155,9 @@ def search(
     hub: "HubHandle | None" = None,
     semantic: bool = False,
     embedder=None,  # center_kb.embed.Embedder | None — injectable for tests
+    include_local: bool = True,  # False = published only (hub + federation)
 ) -> list[QueryResult]:
-    corpus = _gather_candidates(kb_dir, tags, hub)
+    corpus = _gather_candidates(kb_dir, tags, hub, include_local=include_local)
     if not corpus:
         return []
 
@@ -199,7 +205,7 @@ def search(
     top_score = results[0].score if results else 0.0
     if semantic or not results or top_score < SEMANTIC_FALLBACK_THRESHOLD:
         semantic_results = _semantic_fallback(
-            kb_dir, hub, corpus, text, budget, embedder
+            kb_dir, hub, corpus, text, budget, embedder, include_local=include_local
         )
         if semantic_results:
             return semantic_results
@@ -213,6 +219,7 @@ def _semantic_fallback(
     text: str,
     budget: int,
     embedder,
+    include_local: bool = True,
 ) -> list[QueryResult]:
     """Routing step 3: KNN over sqlite-vec, local + hub only (have L2)."""
     from center_kb import embed as embed_mod
@@ -226,9 +233,11 @@ def _semantic_fallback(
         if c.kb_dir is not None:  # skip federation
             by_key[(c.source, c.doc.id, c.sec.id)] = c
     hits: list[tuple[str, str, str, float]] = []  # source, doc, sec, score
-    stores: list[tuple[str, Path, Path]] = [
-        ("local", kb_dir, kb_dir.resolve().parent / ".kb-work" / "embeddings.db")
-    ]
+    stores: list[tuple[str, Path, Path]] = []
+    if include_local:
+        stores.append(
+            ("local", kb_dir, kb_dir.resolve().parent / ".kb-work" / "embeddings.db")
+        )
     if hub is not None:
         stores.append(("hub", hub.kb_dir, hub.root / ".kb-work" / "embeddings.db"))
     for source, source_kb, db_path in stores:

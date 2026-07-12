@@ -105,6 +105,57 @@ def test_tag_filter_applies_across_sources(fixture_kb, hub_worktree):
     assert all(r.source == "hub" for r in results)  # local doc doesn't have the arinc424 tag
 
 
+def test_search_published_only_excludes_local(fixture_kb, hub_worktree):
+    # include_local=False → only published sources (hub domain docs + federation)
+    handle = HubHandle(root=hub_worktree)
+    results = search(
+        fixture_kb, "restrictive airspace designation", hub=handle, include_local=False
+    )
+    assert results
+    assert all(r.source != "local" for r in results)
+    assert any(r.source == "hub" for r in results)
+
+
+def test_search_published_only_hub_not_blocked_by_local_collision(
+    fixture_kb, hub_worktree
+):
+    # local demo-doc exists, but with include_local=False the hub copy must appear
+    hub_kb = hub_worktree / ".kb"
+    index = models.load_yaml_model(hub_kb / "index.yaml", models.KBIndex)
+    index.docs.append(
+        models.IndexEntry(
+            id="demo-doc", title="Demo (hub copy)", tags=["demo", "airspace"],
+            summary="Hub copy of demo doc.",
+        )
+    )
+    models.save_yaml_model(hub_kb / "index.yaml", index)
+    (hub_kb / "demo-doc").mkdir()
+    (hub_kb / "demo-doc" / "ch1.md").write_text(
+        "## 1.1 Airspace Records\n\nHUB VERSION airspace records designation.\n",
+        encoding="utf-8",
+    )
+    models.save_yaml_model(
+        hub_kb / "demo-doc" / "_manifest.yaml",
+        models.Manifest(
+            id="demo-doc",
+            title="Demo (hub copy)",
+            sections=[
+                models.SectionEntry(
+                    id="1.1", title="Airspace Records",
+                    summary="HUB VERSION airspace records.", status="reviewed", file="ch1",
+                )
+            ],
+        ),
+    )
+    handle = HubHandle(root=hub_worktree)
+    results = search(
+        fixture_kb, "airspace records designation", hub=handle, include_local=False
+    )
+    demo_hits = [r for r in results if r.doc_id == "demo-doc"]
+    assert demo_hits
+    assert all(r.source == "hub" for r in demo_hits)
+
+
 def test_get_section_falls_back_to_hub(fixture_kb, hub_worktree):
     handle = HubHandle(root=hub_worktree)
     assert get_section(fixture_kb, "arinc-424", "5.3") is None  # no hub → not found

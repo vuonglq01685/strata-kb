@@ -24,24 +24,39 @@ TEMPLATE_MAP: dict[str, str] = {
 }
 EXPECTED_FILES = list(TEMPLATE_MAP)
 
+# User data — never refreshed by default; only overwritten with --force.
+PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml"})
+
 
 @dataclass
 class InitReport:
     created: list[str] = field(default_factory=list)
+    updated: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
 
 
 def init_repo(target: Path, force: bool = False) -> InitReport:
-    """Scaffold a KB repo. Never overwrites existing files unless force=True."""
+    """Scaffold a KB repo.
+
+    Default: create missing files and refresh scaffold templates whose content
+    changed. Protected data (``.kb/index.yaml``) is left alone unless
+    ``force=True``.
+    """
     base = resources.files("center_kb").joinpath("templates/init")
     report = InitReport()
     for rel, resource_name in TEMPLATE_MAP.items():
         dest = target / rel
-        if dest.exists() and not force:
-            report.skipped.append(rel)
+        text = base.joinpath(resource_name).read_text(encoding="utf-8")
+        if dest.exists():
+            if rel in PROTECTED_FILES and not force:
+                report.skipped.append(rel)
+                continue
+            if dest.read_text(encoding="utf-8") == text:
+                continue
+            dest.write_text(text, encoding="utf-8")
+            report.updated.append(rel)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        text = base.joinpath(resource_name).read_text(encoding="utf-8")
         dest.write_text(text, encoding="utf-8")
         report.created.append(rel)
     return report

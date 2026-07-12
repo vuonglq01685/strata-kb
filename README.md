@@ -203,7 +203,9 @@ If step 5 prints the command list (`init`, `ingest`, `status`, `build`, `query`,
 
 **Install the package** (once published): `pip install center-kb` — gives you the `kb` CLI and MCP server.
 Create a new KB repo: `kb init` (scaffolds `.kb/`, `federation/`, `.mcp.json`, CI workflow,
-`docker-compose.yml`, `QUICKSTART.md` — existing files are not overwritten).
+`docker-compose.yml`, `QUICKSTART.md`). Re-running after a package upgrade refreshes
+scaffold files (skills, prompts, templates); `.kb/index.yaml` is preserved unless
+`--force`.
 
 **Web UI for humans:** the same HTTP process serves agents and people:
 
@@ -213,6 +215,12 @@ CENTER_KB_HTTP_TOKEN=secret python -m center_kb.mcp --hub . --transport http
 # → REST:   http://<host>:8321/api/… (Bearer token or cookie)
 # → human:  http://<host>:8321/ui    (sign in with token; cookie stored)
 ```
+
+When a hub is configured (`--hub`), the `/ui` search covers **published knowledge
+only** — the hub's domain docs plus the `federation/` catalogs; the server's local
+working `.kb/` is excluded. Without a hub, `/ui` searches the local `.kb/` directly.
+Tags render as clickable chips, and a tag can be used alone (no keywords) to browse
+matching documents.
 
 **Docker:** `docker compose up -d` (image includes the full docling ingest stack);
 ingest inside the container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.

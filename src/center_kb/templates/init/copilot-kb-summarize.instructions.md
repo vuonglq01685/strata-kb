@@ -43,7 +43,7 @@ integrity error, restore the table verbatim from the `.raw.md` file.
 
 ## CLI reference
 
-- `kb init` — scaffold a KB repo
+- `kb init` — scaffold or refresh a KB repo (updates skills/templates; keeps `.kb/index.yaml`)
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (prefer the `/kb-ingest` prompt in Copilot Chat)
 - `kb summarize` — fill pending summaries via a headless LLM CLI
