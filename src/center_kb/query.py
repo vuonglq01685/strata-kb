@@ -28,6 +28,7 @@ class QueryResult:
     content: str
     tokens: int
     source: str = "local"  # "local" | "hub" | "remote:<repo-id>"
+    match_mode: str = "keyword"  # "keyword" | "semantic"
 
 
 @dataclass
@@ -265,7 +266,7 @@ def _semantic_fallback(
             QueryResult(
                 doc_id=doc_id, section_id=sec_id, title=c.sec.title,
                 score=float(score), citation=c.citation, content=content,
-                tokens=n_tokens, source=c.source,
+                tokens=n_tokens, source=c.source, match_mode="semantic",
             )
         )
         used += n_tokens

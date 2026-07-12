@@ -33,3 +33,12 @@ def test_garbage_query_semantic_returns_empty_not_nearest(fixture_kb):
         fixture_kb, "zzz qqq xxx", semantic=True, embedder=FakeEmbedder()
     )
     assert results == []
+
+
+def test_semantic_fallback_results_have_semantic_match_mode(fixture_kb):
+    results = search(
+        fixture_kb, "airspace controlled zones", semantic=True,
+        embedder=FakeEmbedder(),
+    )
+    assert results
+    assert all(r.match_mode == "semantic" for r in results)
