@@ -53,6 +53,10 @@ def _source_badge(source: str) -> str:
     return f'<span class="source-badge source-{_e(kind)}">{_e(source)}</span>'
 
 
+def _match_badge(mode: str) -> str:
+    return f'<span class="match-badge match-{_e(mode)}">{_e(mode)}</span>'
+
+
 def _result_blocks(results, terms: set[str] | None = None) -> str:
     if not results:
         return (
@@ -72,6 +76,7 @@ def _result_blocks(results, terms: set[str] | None = None) -> str:
             '<header class="result-head">'
             f'<a class="cite" href="{href}">{_e(r.citation)}</a>'
             f"{_source_badge(r.source)}"
+            f"{_match_badge(r.match_mode)}"
             f'<span class="score">score {r.score:.2f} · ~{r.tokens} tk</span>'
             "</header>"
             f'<div class="result-body">{md_render(r.content, terms=terms)}</div>'
