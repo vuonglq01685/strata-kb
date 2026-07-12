@@ -483,61 +483,20 @@ def context_new(
 ) -> None:
     """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
     from center_kb import gitio, kbcontext
-    from center_kb.query import get_section
 
+    handle = _resolve_hub_option(hub)
+    ref_strs = [r for r in refs.split(",") if r.strip()]
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     try:
-        ref_list = [kbcontext.parse_ref(r) for r in refs.split(",") if r.strip()]
-        root = gitio.git_root(kb_dir.resolve())
-        version = gitio.head_commit(root)
+        block, dirty_warning = kbcontext.build_context_block(
+            kb_dir, ref_strs, tags=tag_list, hub=handle
+        )
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-
-    if not ref_list:
-        typer.secho(
-            "--refs is empty — need at least 1 ref, e.g. 'arinc-424 §5.3'",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
-
-    handle = _resolve_hub_option(hub)
-    bad: list[str] = []
-    needs_hub = False
-    for r in ref_list:
-        if r.repo_id:
-            found = handle is not None and (
-                handle.federation_dir / r.repo_id / "manifests" / f"{r.doc_id}.yaml"
-            ).exists()
-            needs_hub = True
-        else:
-            found = get_section(kb_dir, r.doc_id, r.section_id) is not None
-            if not found and handle is not None:
-                found = (
-                    get_section(kb_dir, r.doc_id, r.section_id, hub=handle) is not None
-                )
-                needs_hub = needs_hub or found
-        if not found:
-            bad.append(str(r))
-    if bad:
-        typer.secho(
-            f"Ref could not be resolved in worktree: {', '.join(bad)}",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
-    if gitio.is_dirty(root, kb_dir.resolve()):
-        typer.secho(
-            "[warn] .kb/ has uncommitted changes — the pinned hash will not include them",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-    hub_version = None
-    if needs_hub and handle is not None:
-        hub_version = gitio.head_commit(gitio.git_root(handle.root))
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-    ctx = kbcontext.KBContext(
-        version=version, hub_version=hub_version, refs=ref_list, tags=tag_list
-    )
-    typer.echo(kbcontext.render(ctx))
+    if dirty_warning:
+        typer.secho(dirty_warning, fg=typer.colors.YELLOW, err=True)
+    typer.echo(block)
 
 
 @app.command()
