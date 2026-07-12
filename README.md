@@ -435,7 +435,7 @@ Step 2 — Fill summaries (automatic — runs inside `kb ingest`)
     auto-detect); pass --no-summarize to skip, `kb summarize` to re-run/retry
   → No LLM CLI installed? Sections stay "pending" — open Claude Code and run
     `/kb-summarize` as the manual fallback (the per-wave `kb build
-    --allow-pending` still self-checks every ~5–10 sections)
+    --allow-pending` self-checks after each wave of ≤ 10 sub-agents)
 
 Step 3 — Final gate check
   $ kb build
