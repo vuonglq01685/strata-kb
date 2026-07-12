@@ -207,6 +207,18 @@ def _build_tree(
     # Lets a repeated heading (e.g. a running page header) reopen its
     # original node instead of spawning a duplicate.
     seen: dict[str, list[_Node]] = {}
+    # numeric parent id -> orphan nodes buffered under it. Docling can
+    # emit a numbered sub-clause before its structural parent heading
+    # (a reading-order artifact, not a document defect -- e.g. a
+    # centered "3.6.3" heading physically above a left-margin "3.6.3.1.1"
+    # heading gets traversed out of order). When that happens the child
+    # would otherwise attach to whatever ancestor is still open (a
+    # sibling like "3.6.2"), contaminating it. Buffer it instead and
+    # splice it under its true parent once that parent opens; if the
+    # parent never opens (skip-level numbering is legitimate elsewhere
+    # in this corpus), attach it at the root at the end so content is
+    # never silently dropped.
+    pending_orphans: dict[str, list[_Node]] = {}
     for item in items:
         if item.kind == "heading":
             normalized = " ".join(item.text.split())
@@ -256,10 +268,32 @@ def _build_tree(
                     continue
                 while stack[-1].depth >= depth:
                     stack.pop()
+                anchor = stack[-1]
                 node = _Node(id=sid, title=title, depth=depth)
-                stack[-1].children.append(node)
+                # Detect the orphan pattern: a numeric id whose current
+                # attachment point is neither itself nor a real dotted/
+                # namespaced ancestor of it. A legitimate skip-level
+                # heading (child attaching under a valid but non-immediate
+                # ancestor) still passes this check, since the ancestor's
+                # id remains a genuine prefix of the child's id.
+                is_orphan = (
+                    sid[0].isdigit()
+                    and "." in sid
+                    and anchor is not root
+                    and anchor.id
+                    and sid != anchor.id
+                    and not sid.startswith(anchor.id + ".")
+                    and not sid.startswith(anchor.id + "-")
+                )
+                if is_orphan:
+                    parent_sid = sid.rsplit(".", 1)[0]
+                    pending_orphans.setdefault(parent_sid, []).append(node)
+                else:
+                    anchor.children.append(node)
                 stack.append(node)
                 seen[sid] = list(stack)
+                if sid in pending_orphans:
+                    node.children.extend(pending_orphans.pop(sid))
             else:
                 # Unparsed heading -> named after its title so SMEs can read
                 # the id. Consecutive fallbacks are siblings (never x1-x2-x3
@@ -287,6 +321,12 @@ def _build_tree(
         else:
             if item.text.strip():
                 stack[-1].body.append(item.text.strip())
+    # Any buffered orphan whose implied parent never showed up in this
+    # item stream (legitimate skip-level numbering, or a parent lost to
+    # some other extraction issue) still needs a home -- attach it at
+    # the root rather than lose it.
+    for orphans in pending_orphans.values():
+        root.children.extend(orphans)
     return root
 
 
