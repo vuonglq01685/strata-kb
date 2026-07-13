@@ -179,3 +179,29 @@ def seed_kb():
         return kb
 
     return _seed
+
+
+@pytest.fixture
+def published_repo(
+    tmp_path: Path, kb_run, seed_kb, stub_claude, bare_hub: Path, run_git
+) -> dict:
+    """Một repo đã đi trọn: init → seed → summarize → build → publish lên hub.
+
+    Trả về {"repo", "kb", "hub"}. Đây là trạng thái mà mọi lệnh đọc (query,
+    get, context, resolve, doctor) cần — vì từ v0.9 chúng chỉ đọc từ hub.
+    Dùng chung ở đây (không phải test_journey.py) vì Task 6
+    (tests-gate/e2e/test_server.py) cũng cần trạng thái này.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(repo, "init", "-b", "main")
+    kb_run("init", cwd=repo)
+    kb = seed_kb(repo, bare_hub)
+    kb_run("summarize", "--llm", "claude", "--kb-dir", str(kb),
+           cwd=repo, env=stub_claude)
+    kb_run("build", "--kb-dir", str(kb), cwd=repo)
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "kb v1")
+    kb_run("publish", "--direct", "--hub", str(bare_hub), "--repo-id", "e2e-repo",
+           "--kb-dir", str(kb), cwd=repo)
+    return {"repo": repo, "kb": kb, "hub": bare_hub}
