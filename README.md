@@ -578,9 +578,18 @@ Nó chạy đúng những gì CI chạy, theo bốn tầng:
    cài wheel vào venv sạch, kiểm tra version (`kb --version` khớp
    `pyproject.toml`, và khớp tag nếu đang release), và đảm bảo `tests/`,
    `.kb/`, `sources/` không lọt vào gói.
-3. **T3 (e2e trên artifact đã cài)** — chạy hành trình người dùng thật
-   (`kb init` → `ingest` → `publish` → …) từ **wheel đã cài**, không phải
-   source tree, trong một venv riêng không có `center-kb`.
+3. **T3 (e2e trên artifact đã cài)** — chạy hành trình người dùng thật từ
+   **wheel đã cài**, không phải source tree, trong một venv riêng không có
+   `center-kb`: `kb init` → nạp fixture đã "ingest xong" sẵn
+   (`tests-gate/fixtures/pending-kb/`, đóng vai đầu ra của `ingest`) →
+   `summarize` → `build` → `publish` → `query`/`get`/`context`/`resolve`/
+   `diff` → `doctor`. T3 **không** chạy `kb ingest` thật trên một PDF — nó
+   chỉ xác nhận đường lỗi của `ingest`: cài wheel trần (không có extra
+   `[ingest]`) rồi gọi `kb ingest` phải báo lỗi sạch ("Docling is not
+   installed"), không phải traceback. **Ingest PDF thật không nằm trong cửa
+   kiểm định** — nó cần extra `[ingest]` (docling + torch, ~2GB) *và* một PDF
+   bản quyền không bao giờ được commit vào repo (xem `sources/` ở mục 5), nên
+   không thể chạy trên CI runner.
 4. **T4 (regression)** — backward-compat với `.kb/` cũ (v0.7.0/v0.8.0/v0.9.0),
    hợp đồng MCP, golden output, và tương thích federation.
 
