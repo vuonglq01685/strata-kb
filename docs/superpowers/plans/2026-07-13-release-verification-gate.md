@@ -777,7 +777,13 @@ def test_fixture_file_tree_matches_scaffold_output(tmp_path):
 def test_fixture_markdown_matches_scaffold_output(tmp_path):
     generate(tmp_path / ".kb")
 
-    for name in ("ch1-records.md", "ch1-records.raw.md"):
+    # Không hardcode tên file: scaffold_doc().chapter_stem() slugify title của
+    # unit đầu chương, nên tên là ch1-airspace-records.*. Duyệt cây thật thay vì
+    # đoán — test_fixture_file_tree_matches_scaffold_output đã ghim tập tên rồi.
+    names = sorted(p.name for p in (FIXTURE / "demo-doc").glob("*.md"))
+    assert names, "fixture không có file .md nào"
+
+    for name in names:
         fresh = (tmp_path / ".kb" / "demo-doc" / name).read_text(encoding="utf-8")
         committed = (FIXTURE / "demo-doc" / name).read_text(encoding="utf-8")
         assert fresh == committed, f"{name} đã trôi khỏi đầu ra của scaffold_doc()"
@@ -1195,6 +1201,7 @@ Tạo `tests/test_check_package.py`:
 ```python
 from __future__ import annotations
 
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -1204,8 +1211,20 @@ sys.path.insert(0, str(REPO / "scripts"))
 from check_package import pyproject_version, tag_matches, wheel_offenders  # noqa: E402
 
 
-def test_pyproject_version_reads_the_declared_version():
-    assert pyproject_version(REPO) == "0.9.0"
+def test_pyproject_version_reads_the_declared_version(tmp_path):
+    # Dựng pyproject giả: test parser, KHÔNG ghim version thật của repo —
+    # hardcode một con số ở đây sẽ biến mọi lần bump version thành một test đỏ.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "center-kb"\nversion = "1.2.3"\n', encoding="utf-8"
+    )
+
+    assert pyproject_version(tmp_path) == "1.2.3"
+
+
+def test_pyproject_version_reads_this_repo():
+    version = pyproject_version(REPO)
+
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version), version
 
 
 def test_tag_matches_strips_the_v_prefix():
