@@ -31,7 +31,7 @@ def test_resolve_stale_after_republish(fed_hub, run_git):
     run_git(fed_hub, "commit", "-m", "amendment republished")
     results = resolve_refs(handle, ctx)
     assert results[0].status == "stale"
-    # nội dung trả về vẫn là bản pinned
+    # the returned content is still the pinned version
     assert "designation codes" in results[0].content
 
 
@@ -62,7 +62,7 @@ def test_resolve_unqualified_ambiguous_is_broken(fed_hub, run_git):
 def test_resolve_legacy_block_broken_with_hint(fed_hub):
     handle = HubHandle(root=fed_hub)
     ctx = KBContext(
-        version="deadbee",  # commit của repo local cũ — không có trong hub
+        version="deadbee",  # a commit of the old local repo — not in the hub
         refs=[KBRef(doc_id="arinc-424", section_id="5.3")],
     )
     results = resolve_refs(handle, ctx)

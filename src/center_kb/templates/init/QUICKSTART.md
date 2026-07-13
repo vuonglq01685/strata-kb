@@ -5,11 +5,11 @@ Five steps from empty repo to a searchable knowledge base.
 1. **Configure the token** — `cp .env.example .env`, then edit
    `CENTER_KB_HTTP_TOKEN` (any long random string).
 
-## Kết nối hub (bắt buộc)
+## Connect the hub (required)
 
-Điền `hub:` trong `.kb/config.yaml` (URL git hoặc đường dẫn kb-hub) và commit.
-`kb query` / MCP / Web UI CHỈ đọc từ federation của hub — nội dung mới chỉ
-xuất hiện sau khi `kb publish` và PR được merge trên hub.
+Fill in `hub:` in `.kb/config.yaml` (a git URL or a kb-hub path) and commit it.
+`kb query` / MCP / Web UI read ONLY from the hub's federation — new content
+appears only after `kb publish` and the PR is merged on the hub.
 
 2. **Ingest the first document** — put the PDF in `source/`, then:
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`

@@ -1,7 +1,7 @@
-# CI publish snapshot lên kb-hub (PR mode) — chạy khi .kb/ đổi trên main.
-# Hub đọc từ .kb/config.yaml (commit trong repo). Secrets cần có:
-#   KB_HUB_URL — URL hub kèm token đẩy branch (https://x-access-token:${TOKEN}@github.com/org/kb-hub.git)
-#   GH_TOKEN   — token có quyền tạo PR trên repo hub (cho `gh pr create`)
+# CI publishes a snapshot to kb-hub (PR mode) — runs when .kb/ changes on main.
+# The hub is read from .kb/config.yaml (committed in the repo). Required secrets:
+#   KB_HUB_URL — hub URL with a branch-push token (https://x-access-token:${TOKEN}@github.com/org/kb-hub.git)
+#   GH_TOKEN   — token allowed to open PRs on the hub repo (for `gh pr create`)
 name: kb-publish
 on:
   push:
@@ -15,8 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install center-kb  # hoặc pip install -e . nếu repo chứa source
-      - name: Publish snapshot → PR trên hub
+      - run: pip install center-kb  # or pip install -e . if the repo holds the source
+      - name: Publish snapshot → PR on the hub
         run: kb publish --hub "${{ secrets.KB_HUB_URL }}" --repo-id "${{ github.event.repository.name }}"
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}

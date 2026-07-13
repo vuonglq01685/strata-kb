@@ -51,7 +51,7 @@ def test_out_of_sync_aggregate_index_errors(git_kb, hub_worktree):
 
 
 def test_missing_aggregate_index_errors(git_kb, hub_worktree):
-    # hub_worktree chưa từng publish → chưa có federation/index.yaml
+    # hub_worktree has never been published to → no federation/index.yaml yet
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     assert any(i.level == "error" and "kb reindex" in i.message for i in issues)
 

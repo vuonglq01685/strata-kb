@@ -1,8 +1,8 @@
-"""HTTP + MCP trên artifact đã cài.
+"""HTTP + MCP against the installed artifact.
 
-Không có lệnh `kb serve` — server chạy qua `python -m center_kb.mcp`, đúng như
-CMD của Dockerfile. Nên ta gọi python CỦA VENV ARTIFACT, không phải python của
-runner.
+There is no `kb serve` command — the server runs via `python -m center_kb.mcp`,
+exactly as the Dockerfile's CMD does. So we invoke the python OF THE ARTIFACT
+VENV, not the runner's python.
 """
 
 from __future__ import annotations
@@ -52,14 +52,14 @@ def http_server(artifact, published_repo, free_port):
     try:
         while time.monotonic() < deadline:
             if proc.poll() is not None:
-                pytest.fail(f"server chết khi khởi động:\n{proc.stdout.read()}")
+                pytest.fail(f"server died during startup:\n{proc.stdout.read()}")
             try:
                 if _get(f"{base}/api/health")[0] == 200:
                     break
             except OSError:
                 time.sleep(0.3)
         else:
-            pytest.fail("server không trả lời /api/health trong 60s")
+            pytest.fail("server did not answer /api/health within 60s")
 
         yield base
     finally:
@@ -74,7 +74,7 @@ def test_health_is_open(http_server):
 
 
 def test_docs_require_a_token(http_server):
-    # Tài liệu có bản quyền — HTTP không token PHẢI bị chặn.
+    # The documents are copyrighted — HTTP without a token MUST be blocked.
     status, _ = _get(f"{http_server}/api/docs")
 
     assert status == 401
@@ -88,8 +88,9 @@ def test_docs_with_a_token_return_the_published_doc(http_server):
 
 
 def test_search_api_finds_the_seeded_section(http_server):
-    # Tham số query đã xác nhận lại với code thật: api_search() (web/api.py)
-    # đọc request.query_params.get("q", ...) — đúng với phỏng đoán của brief.
+    # The query parameter was double-checked against the real code: api_search()
+    # (web/api.py) reads request.query_params.get("q", ...) — matching the
+    # brief's guess.
     status, body = _get(f"{http_server}/api/search?q=airspace", token=TOKEN)
 
     assert status == 200

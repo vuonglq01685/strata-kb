@@ -1,12 +1,14 @@
-"""Ghim tests-gate/fixtures/pending-kb/ vào đầu ra THẬT của scaffold_doc().
+"""Pin tests-gate/fixtures/pending-kb/ to the REAL output of scaffold_doc().
 
-Hành trình e2e không chạy được `kb ingest` (cần docling ~2GB + PDF bản quyền),
-nên nó bắt đầu từ một fixture mô phỏng đầu ra của ingest. Test này là thứ giữ
-cho fixture đó không trôi khỏi sự thật: sinh lại vào tmp, so với cây đã commit.
+The e2e journey cannot run `kb ingest` (it needs docling ~2GB + a copyrighted
+PDF), so it starts from a fixture that simulates ingest's output. This test is
+what keeps that fixture from drifting away from the truth: regenerate into tmp,
+compare against the committed tree.
 
-ĐỎ NGHĨA LÀ GÌ: đầu ra của ingest đã đổi. Đừng sửa test. Chạy lại
-`python scripts/gen_e2e_fixture.py`, đọc kỹ diff, rồi commit fixture mới —
-và kiểm tra xem tests-gate/e2e/test_journey.py có còn đúng với hình dạng mới không.
+WHAT RED MEANS: ingest's output has changed. Do not fix the test. Re-run
+`python scripts/gen_e2e_fixture.py`, read the diff carefully, then commit the
+new fixture — and check whether tests-gate/e2e/test_journey.py is still correct
+against the new shape.
 """
 
 from __future__ import annotations
@@ -36,16 +38,17 @@ def test_fixture_file_tree_matches_scaffold_output(tmp_path):
 def test_fixture_markdown_matches_scaffold_output(tmp_path):
     generate(tmp_path / ".kb")
 
-    # Không hardcode tên file: scaffold_doc().chapter_stem() slugify title của
-    # unit đầu chương, nên tên là ch1-airspace-records.*. Duyệt cây thật thay vì
-    # đoán — test_fixture_file_tree_matches_scaffold_output đã ghim tập tên rồi.
+    # Do not hardcode the file names: scaffold_doc().chapter_stem() slugifies the
+    # title of the chapter's first unit, so the name is ch1-airspace-records.*.
+    # Walk the real tree instead of guessing — the set of names is already pinned
+    # by test_fixture_file_tree_matches_scaffold_output.
     names = sorted(p.name for p in (FIXTURE / "demo-doc").glob("*.md"))
-    assert names, "fixture không có file .md nào"
+    assert names, "the fixture has no .md files"
 
     for name in names:
         fresh = (tmp_path / ".kb" / "demo-doc" / name).read_text(encoding="utf-8")
         committed = (FIXTURE / "demo-doc" / name).read_text(encoding="utf-8")
-        assert fresh == committed, f"{name} đã trôi khỏi đầu ra của scaffold_doc()"
+        assert fresh == committed, f"{name} has drifted from scaffold_doc()'s output"
 
 
 def test_fixture_manifest_matches_scaffold_output(tmp_path):
@@ -57,7 +60,7 @@ def test_fixture_manifest_matches_scaffold_output(tmp_path):
     committed = yaml.safe_load(
         (FIXTURE / "demo-doc" / "_manifest.yaml").read_text(encoding="utf-8")
     )
-    # scaffold_doc đặt ingested=date.today() → trôi mỗi ngày, không phải tín hiệu.
+    # scaffold_doc sets ingested=date.today() → it drifts every day, not a signal.
     fresh.pop("ingested", None)
     committed.pop("ingested", None)
 
@@ -69,7 +72,7 @@ def test_fixture_index_matches_scaffold_output(tmp_path):
 
     fresh = yaml.safe_load((tmp_path / ".kb" / "index.yaml").read_text(encoding="utf-8"))
     committed = yaml.safe_load((FIXTURE / "index.yaml").read_text(encoding="utf-8"))
-    # Không có trường nào ở đây trôi theo ngày/giờ (khác với ingested trong
-    # _manifest.yaml) — không pop gì cả, so toàn bộ tài liệu.
+    # No field here drifts with the date/time (unlike ingested in _manifest.yaml)
+    # — pop nothing, compare the whole document.
 
-    assert fresh == committed, "index.yaml đã trôi khỏi đầu ra của scaffold_doc()"
+    assert fresh == committed, "index.yaml has drifted from scaffold_doc()'s output"

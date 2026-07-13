@@ -59,7 +59,7 @@ Think of a **library lookup stack** with 4 layers from coarse to fine — like f
 |---|---|---|---|---|
 | **L0** | Master catalog | A single `index.yaml` listing **every document** in the store: name, revision, tags, one-line description | Tiny (187 "tokens" for the whole store — see section 10) | `.kb/index.yaml` |
 | **L1** | Detailed TOC | Per document, a `_manifest.yaml` listing **each section**: id, title, one-line summary (≤ 25 words), status | Tens of thousands of tokens per document | `.kb/arinc-424/_manifest.yaml` |
-| **L2** | Condensed summary | `.md` file — English prose condensed to ~20–30% of original length, **tables kept verbatim 100%** | Medium | `.kb/arinc-424/ch5-navigation-data-field-definitions.md` |
+| **L2** | Condensed summary | `.md` file — prose condensed to ~20–30% of original length **in the source document's language**, **tables kept verbatim 100%** | Medium | `.kb/arinc-424/ch5-navigation-data-field-definitions.md` |
 | **L3** | Full original | `.md` file — full text extracted from the PDF, nothing cut | Largest | `.kb/arinc-424/ch5-navigation-data-field-definitions.raw.md` |
 
 **Why four layers instead of one copy?**
@@ -101,7 +101,7 @@ And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI
           ▼
    For each pending section:
    - Read L3 (original)
-   - Write English summary into L2
+   - Write summary into L2 (in the source's language)
    - Write one-line summary into L1 (manifest)
    - Flip status: pending → summarized
           │
@@ -243,11 +243,11 @@ The table below lists core commands (from Phase 1) in typical workflow order. Fo
 | 2 | `kb status` | How many sections are still **unsummarized** (`pending`) | Anyone — to see remaining work |
 | 3 | `kb summarize` | AI fills in the summary blanks via a headless LLM CLI (claude → copilot auto-detect); `kb ingest` runs this automatically unless `--no-summarize` | Automatic inside `kb ingest`; run directly to re-run/retry, or run `/kb-summarize` in Claude Code as manual fallback when no LLM CLI is installed (parallel sub-agents draft, the orchestrator writes) |
 | 4 | `kb build` | Validate the whole store: no blanks left, tables match | Required before opening a Pull Request |
-| 5 | `kb query` | Natural-language question → relevant passages **from the hub federation** (hub bắt buộc — `.kb/config.yaml`); add `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
+| 5 | `kb query` | Natural-language question → relevant passages **from the hub federation** (a hub is mandatory — set it in `.kb/config.yaml`); add `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
 | 6 | `kb get` | Fetch exactly one section by id (when you already know it) | When you know the section id |
 | 7 | `kb stats` | Token counts per layer — cost-savings evidence | Tracking / reporting |
-| 8 | `kb publish` | Mirror .kb/ (L0→L3) → PR trên hub (direct với hub local-path) | CI on every `.kb/` change (Phase 3) |
-| 9 | `kb reindex` | Đánh lại federation/index.yaml khi lệch | Sửa chữa |
+| 8 | `kb publish` | Mirror .kb/ (L0→L3) → a PR on the hub (commits directly on a local-path hub) | CI on every `.kb/` change (Phase 3) |
+| 9 | `kb reindex` | Rebuild federation/index.yaml when it has drifted out of sync | Repair |
 
 ### 7.1 `kb ingest` — load a PDF into the system
 
@@ -294,7 +294,7 @@ Use this to see **how much summarization work remains** before opening Claude Co
 This is the only step done by **AI**. By default `kb ingest` runs it automatically right after scaffolding, calling a headless LLM CLI (`claude` → `copilot`, auto-detected on `PATH`; pin one with `--llm`, or `--llm none`/`--no-summarize` to skip). Re-run or retry failed sections anytime with `kb summarize`. If no LLM CLI is installed, sections stay `pending` — open Claude Code and run `/kb-summarize` (skill at `.claude/skills/kb-summarize/SKILL.md`) as the manual fallback: it runs `kb status`, fans the pending sections out to parallel read-only sub-agents (~5 sections each, max 10 at a time), then merges their summaries itself under fixed style rules (keep every code/number, no invention).
 
 Hard rules baked into the recipe:
-- **Write in English** (same language as the source, for best search accuracy).
+- **Write in the source document's language** — never translate. A summary in a different language than its L3 source would share no vocabulary with it, and BM25 search would stop matching.
 - **Do not rephrase** codes, field names, numbers, units, or cross-refs (§x.y) — keep them verbatim.
 - **Do not touch existing tables**.
 - If unsure → keep the original wording; do not invent.
@@ -416,11 +416,12 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 
 ### 7.9 Phase 3 — Federation & remote MCP
 
-> **Kiến trúc hub-first (2026-07-13):** `kb query`, MCP và Web UI **chỉ đọc
-> `federation/` của hub** — `.kb/` local là bàn soạn thảo, không ai query vào.
-> `kb publish` mirror đầy đủ L0→L3 vào `federation/<repo-id>/`, đánh lại index
-> tổng `federation/index.yaml`, và (với hub GitHub) mở PR — merge PR là cổng
-> review duy nhất, nội dung chỉ search được sau khi merge. Chi tiết:
+> **Hub-first architecture (2026-07-13):** `kb query`, MCP and the Web UI **read
+> only the hub's `federation/`** — the local `.kb/` is a drafting desk, nobody
+> queries it. `kb publish` mirrors the full L0→L3 into `federation/<repo-id>/`,
+> rebuilds the aggregate `federation/index.yaml`, and (on a GitHub hub) opens a
+> PR — merging that PR is the single review gate, and content only becomes
+> searchable once it is merged. Details:
 > `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`.
 
 Phase 2 lets one knowledge store talk to developers via MCP and pin citations. Phase 3 solves the next problem: **one reference document often matters to many repos** (e.g. a shared technical standard used by a nav-data repo and a crew-ops repo alike) — you shouldn't ingest and summarize the same document in every repo. Phase 3 lets shared documents live as **a single copy** in a central store called **kb-hub**, while other repos only "reference" it.
@@ -433,7 +434,7 @@ Phase 2 lets one knowledge store talk to developers via MCP and pin citations. P
 2. **`kb query`, `kb context new`, `kb resolve`, `kb doctor`** — all read **only** `federation/` on the hub (never the local `.kb/`). The hub is mandatory, resolved from `.kb/config.yaml` (or `--hub`/`CENTER_KB_HUB` to override). Example: `kb query "..."` returns every matching section across every published repo, full L2 content — no `[remote]`-truncated entries, because federation already holds the full mirror. Doc ids that collide across repos need qualifying as `repo-id:doc-id` (the tool tells you when it's ambiguous). The tool keeps a local hub clone fresh — no manual `git clone`.
 3. **`--semantic`** on `kb query` — force lookup by **question meaning** instead of keyword match alone (BM25). Useful when the question uses different words than the source but the same idea. Optional extra (`pip install -e ".[embed]"`) — without it, `kb query` still works with keyword match as before, no error.
 
-**`kb-context` blocks pin one hub commit.** The generated block records the hub's `version` (HEAD at write time) and repo-qualified refs (`repo-id:doc-id §section`). `kb resolve` walks the hub's git history at that pinned commit to answer `ok`/`stale`/`broken`. Older two-version blocks (`version` + `hub_version`, from the pre-2026-07-13 design) resolve as `broken` with a hint to re-pin via `kb context new` — see the [Migration](#migration-sang-kiến-trúc-hub-first-v090) section below.
+**`kb-context` blocks pin one hub commit.** The generated block records the hub's `version` (HEAD at write time) and repo-qualified refs (`repo-id:doc-id §section`). `kb resolve` walks the hub's git history at that pinned commit to answer `ok`/`stale`/`broken`. Older two-version blocks (`version` + `hub_version`, from the pre-2026-07-13 design) resolve as `broken` with a hint to re-pin via `kb context new` — see the [Migration](#migration-to-the-hub-first-architecture-v090) section below.
 
 **Remote MCP lookup without cloning the repo:** previously an agent had to clone the repo first to use MCP. Phase 3 lets you run the MCP server as a shared HTTP service (not only local stdio), authenticated with a token — full deploy guide in [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
 
@@ -543,74 +544,79 @@ No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, sa
 | `kb build` reports remaining `pending`/`TODO` | Summarization step (step 2 in §8) not finished, failed, or skipped (`--no-summarize`) | Run `kb status` to see what's left, then `kb summarize` to retry — or, with no LLM CLI installed, back to Claude Code with `/kb-summarize` |
 | `kb ingest` is very slow (10–30 min) first time | Normal — Docling downloads a layout model (~500MB) on first use | Wait, or check network if stuck. Later runs on the same PDF use cache and are much faster |
 | `kb` says "command not found" | Virtualenv not activated | Run `source .venv/bin/activate` in the project directory first |
-| `kb query` returns nothing | Keywords match no tags/content, or `--budget` too small | Drop `--tags`, raise `--budget`, or check spelling (store content is English) |
+| `kb query` returns nothing | Keywords match no tags/content, or `--budget` too small | Drop `--tags`, raise `--budget`, or check spelling (the store keeps each document's own language — query in that language) |
 | Unsure which files changed in a PR | — | Use GitHub "Files changed" — only `.kb/` is content to review; `src/`/`tests/` changes are tool code for developers |
 
 ---
 
-## Migration sang kiến trúc hub-first (v0.9.0)
+## Migration to the hub-first architecture (v0.9.0)
 
-1. Nâng cấp CLI mọi nơi (`pip install -U center-kb`) — không chạy song song 2 version.
-2. Mỗi repo: thêm `.kb/config.yaml` (`hub:` + `repo_id:`), xóa
-   `.github/workflows/kb-review.yml`, thay `kb-publish.yml` bằng template mới
-   (`kb init` làm cả ba việc này).
-3. Mỗi repo (kể cả hub): chạy `kb publish` một lần — entry federation format cũ
-   được thay bằng mirror đầy đủ, index tổng hình thành.
-4. Hub GitHub: bật branch protection cho `main` (*require PR* + *require
+1. Upgrade the CLI everywhere (`pip install -U center-kb`) — do not run two versions side by side.
+2. In every repo: add `.kb/config.yaml` (`hub:` + `repo_id:`), delete
+   `.github/workflows/kb-review.yml`, and replace `kb-publish.yml` with the new
+   template (`kb init` does all three for you).
+3. In every repo (the hub included): run `kb publish` once — the old
+   federation-format entry is replaced by the full mirror, and the aggregate
+   index is created.
+4. On a GitHub hub: enable branch protection on `main` (*require PR* + *require
    branches up to date*).
-5. Ticket có block `kb-context` cũ (pin commit repo local): `kb_resolve` sẽ báo
-   `broken` kèm hint — re-pin bằng `kb_context_new` khi chạm vào ticket đó.
+5. Tickets carrying an old `kb-context` block (pinned to a local repo commit):
+   `kb_resolve` will report `broken` with a hint — re-pin with `kb_context_new`
+   the next time you touch that ticket.
 
 ---
 
 ## Release
 
-Trước khi tag, chạy toàn bộ cửa kiểm định trên máy:
+Before tagging, run the whole verification gate on your machine:
 
 ```bash
 ./scripts/gate.sh
 ```
 
-Nó chạy đúng những gì CI chạy, theo bốn tầng:
+It runs exactly what CI runs, in four tiers:
 
-1. **T1 (unit/integration)** — `pytest` trên source tree.
-2. **T2 (đóng gói)** — build wheel + sdist, `uv lock --check`, `twine check`,
-   cài wheel vào venv sạch, kiểm tra version (`kb --version` khớp
-   `pyproject.toml`, và khớp tag nếu đang release), và đảm bảo `tests/`,
-   `.kb/`, `sources/` không lọt vào gói.
-3. **T3 (e2e trên artifact đã cài)** — chạy hành trình người dùng thật từ
-   **wheel đã cài**, không phải source tree, trong một venv riêng không có
-   `center-kb`: `kb init` → nạp fixture đã "ingest xong" sẵn
-   (`tests-gate/fixtures/pending-kb/`, đóng vai đầu ra của `ingest`) →
+1. **T1 (unit/integration)** — `pytest` against the source tree.
+2. **T2 (packaging)** — build the wheel + sdist, `uv lock --check`, `twine check`,
+   install the wheel into a clean venv, check the version (`kb --version` matches
+   `pyproject.toml`, and matches the tag when releasing), and make sure `tests/`,
+   `.kb/` and `sources/` never sneak into the package.
+3. **T3 (e2e against the installed artifact)** — runs the real user journey from
+   the **installed wheel**, not the source tree, in a separate venv that has no
+   `center-kb`: `kb init` → load an already-"ingested" fixture
+   (`tests-gate/fixtures/pending-kb/`, standing in for the output of `ingest`) →
    `summarize` → `build` → `publish` → `query`/`get`/`context`/`resolve`/
-   `diff` → `doctor`. T3 **không** chạy `kb ingest` thật trên một PDF — nó
-   chỉ xác nhận đường lỗi của `ingest`: cài wheel trần (không có extra
-   `[ingest]`) rồi gọi `kb ingest` phải báo lỗi sạch ("Docling is not
-   installed"), không phải traceback. **Ingest PDF thật không nằm trong cửa
-   kiểm định** — nó cần extra `[ingest]` (docling + torch, ~2GB) *và* một PDF
-   bản quyền không bao giờ được commit vào repo (xem `sources/` ở mục 5), nên
-   không thể chạy trên CI runner.
-4. **T4 (regression)** — backward-compat với `.kb/` cũ (v0.7.0/v0.8.0/v0.9.0),
-   hợp đồng MCP, golden output, và tương thích federation.
+   `diff` → `doctor`. T3 does **not** run a real `kb ingest` on a PDF — it only
+   verifies `ingest`'s error path: install the bare wheel (without the `[ingest]`
+   extra), then calling `kb ingest` must fail cleanly ("Docling is not
+   installed"), not with a traceback. **A real PDF ingest is out of scope for the
+   gate** — it needs the `[ingest]` extra (docling + torch, ~2GB) *and* a
+   copyrighted PDF that must never be committed to the repo (see `sources/` in
+   section 5), so it cannot run on a CI runner.
+4. **T4 (regression)** — backward compatibility with older `.kb/` stores
+   (v0.7.0/v0.8.0/v0.9.0), the MCP contract, golden output, and federation
+   compatibility.
 
-Khi cửa xanh trên máy:
+Once the gate is green on your machine:
 
 ```bash
-# 1. Bump version trong pyproject.toml, rồi:
+# 1. Bump the version in pyproject.toml, then:
 uv lock
 git commit -am "chore: bump to X.Y.Z"
 
-# 2. Tag — CI chạy lại toàn bộ cửa (T1-T4 + build/smoke image), chỉ publish
-#    lên PyPI và chỉ retag image `:latest`/`:vX.Y.Z` khi MỌI THỨ xanh.
+# 2. Tag — CI re-runs the whole gate (T1-T4 + image build/smoke), and only
+#    publishes to PyPI and only retags the `:latest`/`:vX.Y.Z` image when
+#    EVERYTHING is green.
 git tag vX.Y.Z && git push --tags
 ```
 
-Tag không chạy gì khác so với PR — đó là chủ đích (`.github/workflows/_gate.yml`
-dùng chung cho cả hai). **Nếu cửa đỏ ở bất kỳ tầng nào, chưa có gì được
-publish**: PyPI là bất biến nên `release.yml` chỉ publish sau khi gate VÀ
-image Docker (build bằng `[ingest]` extra thật) đều xanh, và `:latest`/
-`:vX.Y.Z` trên GHCR chỉ được trỏ sau khi PyPI publish thành công. Cứ yên tâm
-xoá tag, sửa lỗi, rồi tag lại:
+A tag runs nothing different from a PR — that is deliberate
+(`.github/workflows/_gate.yml` is shared by both). **If the gate is red at any
+tier, nothing gets published**: PyPI is immutable, so `release.yml` only
+publishes after both the gate AND the Docker image (built with the real
+`[ingest]` extra) are green, and `:latest`/`:vX.Y.Z` on GHCR are only moved
+after the PyPI publish succeeds. So feel free to delete the tag, fix the
+problem, and tag again:
 
 ```bash
 git push --delete origin vX.Y.Z

@@ -1,8 +1,9 @@
-"""Cưỡng chế ranh giới tầng T3/T4.
+"""Enforces the T3/T4 tier boundary.
 
-Nếu file này đỏ, nghĩa là bộ e2e đã (trực tiếp hoặc gián tiếp qua conftest)
-với tay được vào source tree — và cả tầng đã âm thầm thoái hoá thành một bộ
-test in-process trá hình, mất sạch giá trị phát hiện lỗi đóng gói.
+If this file goes red, it means the e2e suite has (directly, or indirectly via
+conftest) reached into the source tree — and the whole tier has silently
+degraded into an in-process test suite in disguise, losing every bit of its
+value for catching packaging bugs.
 """
 
 from __future__ import annotations
@@ -13,9 +14,10 @@ import subprocess
 
 def test_center_kb_is_not_importable_from_the_runner():
     assert importlib.util.find_spec("center_kb") is None, (
-        "center_kb import được từ runner venv. Runner CHỈ được có pytest + "
-        "requirements-gate.txt; artifact nằm ở venv riêng ($KB_VENV). "
-        "Kiểm tra: bạn có lỡ chạy pytest bằng .venv của project không?"
+        "center_kb is importable from the runner venv. The runner may ONLY have "
+        "pytest + requirements-gate.txt; the artifact lives in its own venv "
+        "($KB_VENV). Check: did you accidentally run pytest with the project's "
+        ".venv?"
     )
 
 
@@ -25,4 +27,4 @@ def test_artifact_binary_runs(artifact):
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.strip(), "kb --version không in ra gì"
+    assert proc.stdout.strip(), "kb --version printed nothing"

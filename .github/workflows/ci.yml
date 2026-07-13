@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
 
-# PR push liên tiếp không xếp hàng đốt runner.
+# Back-to-back pushes to a PR must not queue up and burn runners.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -15,5 +15,5 @@ permissions:
 jobs:
   gate:
     uses: ./.github/workflows/_gate.yml
-    # tag rỗng → check_package.py bỏ qua khẳng định tag==version (chỉ có
-    # nghĩa lúc release).
+    # empty tag → check_package.py skips the tag==version assertion (it only
+    # makes sense at release time).

@@ -1,12 +1,14 @@
-"""Version MỚI phải đọc được .kb/ do version CŨ sinh ra.
+"""The NEW version must be able to read a .kb/ produced by an OLD version.
 
-Đây là hợp đồng đắt nhất của dự án: user đã commit .kb/ vào repo của họ. Đổi
-schema mà không migrate là làm vỡ hết.
+This is the most expensive contract the project has: users have committed .kb/
+into their own repos. Changing the schema without migrating breaks all of them.
 
-ĐỎ NGHĨA LÀ GÌ — và ĐỪNG SỬA TEST CHO XANH. Phải chọn một trong hai:
-  (a) viết migration để version mới đọc được định dạng cũ, hoặc
-  (b) đánh dấu xfail kèm ghi chú nêu rõ version nào phá và user phải làm gì.
-Không có quy tắc này thì cửa sẽ bị tắt tiếng dần trong ba tháng.
+WHAT RED MEANS — and DO NOT EDIT THE TEST TO MAKE IT GREEN. You must pick one of
+two options:
+  (a) write a migration so the new version can read the old format, or
+  (b) mark it xfail with a note stating exactly which version broke it and what
+      the user has to do.
+Without this rule, the gate will be quietly silenced within three months.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import yaml
 
 
 def _clone_hub(hub: Path, dest: Path) -> Path:
-    """Clone bare hub ra một working tree để đọc được nội dung đã push."""
+    """Clone the bare hub into a working tree so the pushed content is readable."""
     subprocess.run(
         ["git", "clone", "--quiet", str(hub), str(dest)],
         check=True, capture_output=True, text=True,
@@ -27,12 +29,13 @@ def _clone_hub(hub: Path, dest: Path) -> Path:
 
 
 def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
-    """Publish không chỉ phải exit 0 — nó phải MIRROR đúng .kb nguồn lên hub.
+    """Publish must not merely exit 0 — it must MIRROR the source .kb onto the hub.
 
-    `kb_run` mặc định check=True nên assert returncode==0 là code chết (đã
-    raise trước khi test body chạy tiếp). Cái đáng sợ hơn nhiều là publish
-    "thành công" (exit 0) nhưng âm thầm rơi rụng section hoặc ghi entry cụt —
-    nên test này đọc lại chính bản đã publish trên hub và so với nguồn.
+    `kb_run` defaults to check=True, so asserting returncode==0 would be dead
+    code (it already raised before the test body could continue). The far scarier
+    case is a publish that "succeeds" (exit 0) while silently dropping sections
+    or writing a truncated entry — so this test reads back the very copy
+    published on the hub and compares it against the source.
     """
     kb_run(
         "publish", "--direct", "--hub", str(legacy_kb["hub"]),
@@ -43,8 +46,8 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
     clone = _clone_hub(legacy_kb["hub"], tmp_path / "hub-clone")
     published = clone / "federation" / "legacy"
     assert published.is_dir(), (
-        f"{legacy_kb['tag']}: publish exit 0 nhưng federation/legacy/ "
-        "không xuất hiện trên hub"
+        f"{legacy_kb['tag']}: publish exited 0 but federation/legacy/ "
+        "did not show up on the hub"
     )
 
     source_kb = legacy_kb["kb"]
@@ -52,15 +55,17 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
         p.name for p in source_kb.iterdir()
         if p.is_dir() and (p / "_manifest.yaml").exists()
     )
-    assert doc_ids, f"{legacy_kb['tag']}: .kb nguồn không có doc nào — fixture hỏng?"
+    assert doc_ids, (
+        f"{legacy_kb['tag']}: the source .kb has no docs at all — broken fixture?"
+    )
 
     for doc_id in doc_ids:
         src_doc = source_kb / doc_id
         pub_doc = published / doc_id
         assert pub_doc.is_dir(), (
-            f"{legacy_kb['tag']}: doc '{doc_id}' có trong .kb nguồn nhưng "
-            "không xuất hiện trong federation/legacy đã publish — doc bị "
-            "rơi rụng lặng lẽ?"
+            f"{legacy_kb['tag']}: doc '{doc_id}' is in the source .kb but did "
+            "not show up in the published federation/legacy — was the doc "
+            "silently dropped?"
         )
 
         src_manifest = yaml.safe_load(
@@ -72,9 +77,9 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
         src_sections = src_manifest.get("sections", [])
         pub_sections = pub_manifest.get("sections", [])
         assert len(pub_sections) == len(src_sections), (
-            f"{legacy_kb['tag']}/{doc_id}: manifest đã publish có "
-            f"{len(pub_sections)} section, nguồn có {len(src_sections)} — "
-            "section bị nuốt lặng lẽ khi publish?"
+            f"{legacy_kb['tag']}/{doc_id}: the published manifest has "
+            f"{len(pub_sections)} sections, the source has {len(src_sections)} — "
+            "were sections silently swallowed during publish?"
         )
 
         l2_files = sorted(
@@ -82,42 +87,44 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
         )
         l3_files = sorted(src_doc.glob("*.raw.md"))
         assert l2_files and l3_files, (
-            f"{legacy_kb['tag']}/{doc_id}: nguồn không có file L2/L3 nào — "
-            "fixture hỏng?"
+            f"{legacy_kb['tag']}/{doc_id}: the source has no L2/L3 files at "
+            "all — broken fixture?"
         )
         for src_file in l2_files + l3_files:
             pub_file = pub_doc / src_file.name
             assert pub_file.exists(), (
-                f"{legacy_kb['tag']}/{doc_id}: file '{src_file.name}' có ở "
-                "nguồn nhưng không có trong bản publish"
+                f"{legacy_kb['tag']}/{doc_id}: file '{src_file.name}' exists in "
+                "the source but not in the published copy"
             )
             src_bytes = src_file.read_bytes()
             assert src_bytes, (
-                f"{legacy_kb['tag']}/{doc_id}: file nguồn '{src_file.name}' "
-                "rỗng — fixture hỏng?"
+                f"{legacy_kb['tag']}/{doc_id}: source file '{src_file.name}' is "
+                "empty — broken fixture?"
             )
             pub_bytes = pub_file.read_bytes()
             assert pub_bytes == src_bytes, (
-                f"{legacy_kb['tag']}/{doc_id}: nội dung '{src_file.name}' đã "
-                "publish khác nội dung nguồn — publish phải là mirror, "
-                "không phải transform"
+                f"{legacy_kb['tag']}/{doc_id}: the published content of "
+                f"'{src_file.name}' differs from the source content — publish "
+                "must be a mirror, not a transform"
             )
 
 
 def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run):
-    """Chỉ "không có Traceback" là sàn quá thấp: một lỗi đọc schema mà product
-    bắt được và báo sạch bằng `[error] ...` cũng không in Traceback, exit 1,
-    và vẫn qua test đó. Phải khẳng định doctor thực sự đọc được .kb cũ — tức
-    là in đúng dòng `kb doctor: OK` (chỉ in khi không có issue cấp error/stale).
+    """Merely "no Traceback" is far too low a bar: a schema-reading failure that
+    the product catches and reports cleanly as `[error] ...` also prints no
+    Traceback, exits 1, and still passes that test. We must assert that doctor
+    genuinely read the old .kb — i.e. that it printed the exact `kb doctor: OK`
+    line (only printed when there is no error/stale-level issue).
 
-    Nhưng riêng dòng "kb doctor: OK" cũng chưa đủ: xem cli.py::doctor — dòng
-    "OK" chỉ kiểm tra không có issue mức error/stale, KHÔNG kiểm tra có issue
-    mức warning hay không. Một `.kb/` cũ mà version mới chỉ đọc được nửa
-    đúng — phát sinh `[warning] ...` — vẫn lọt qua dòng OK đó. (Ví dụ thật:
-    bỏ qua bước `kb publish` khiến `check_hub` phát ra "repo has not
-    published to the hub yet" ở mức warning — không mức error — nên OK vẫn
-    in ra bình thường.) Vì vậy phải soi thẳng stdout: sau một `kb publish`
-    đúng, .kb cũ phải sạch tuyệt đối — không một dòng [warning]/[error] nào.
+    But the "kb doctor: OK" line alone is still not enough either: see
+    cli.py::doctor — the "OK" line only checks that there is no error/stale-level
+    issue, it does NOT check whether there is a warning-level issue. An old
+    `.kb/` that the new version reads only half correctly — emitting
+    `[warning] ...` — still slips past that OK line. (A real example: skipping the
+    `kb publish` step makes `check_hub` emit "repo has not published to the hub
+    yet" at warning level — not error level — so OK still prints as usual.) That
+    is why we must inspect stdout directly: after a correct `kb publish`, the old
+    .kb must be absolutely clean — not a single [warning]/[error] line.
     """
     kb_run("publish", "--direct", "--hub", str(legacy_kb["hub"]),
            "--repo-id", "legacy", "--kb-dir", str(legacy_kb["kb"]),
@@ -128,22 +135,25 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run):
                   cwd=legacy_kb["repo"], check=False)
 
     assert "Traceback" not in proc.stdout + proc.stderr, (
-        f"doctor vỡ trên .kb của {legacy_kb['tag']}"
+        f"doctor blew up on the .kb of {legacy_kb['tag']}"
     )
     assert "kb doctor: OK" in proc.stdout, (
-        f"doctor không in 'kb doctor: OK' trên .kb của {legacy_kb['tag']} — "
-        f"doctor đọc .kb cũ nhưng không xác nhận nó lành, hay chỉ đơn giản "
-        f"là không crash?\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+        f"doctor did not print 'kb doctor: OK' on the .kb of {legacy_kb['tag']} "
+        f"— did doctor read the old .kb but decline to certify it healthy, or "
+        f"did it merely not crash?"
+        f"\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     )
     assert "[warning]" not in proc.stdout, (
-        f"doctor in 'kb doctor: OK' nhưng vẫn có [warning] trên .kb của "
-        f"{legacy_kb['tag']} — OK không kiểm tra warning (xem cli.py::doctor), "
-        f"nên đây là bằng chứng version mới đọc .kb cũ chỉ đúng một phần\n"
+        f"doctor printed 'kb doctor: OK' yet still emitted a [warning] on the "
+        f".kb of {legacy_kb['tag']} — OK does not check for warnings (see "
+        f"cli.py::doctor), so this is evidence the new version reads the old .kb "
+        f"only partially correctly\n"
         f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     )
     assert "[error]" not in proc.stdout, (
-        f"doctor in 'kb doctor: OK' nhưng vẫn có [error] trên .kb của "
-        f"{legacy_kb['tag']}\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+        f"doctor printed 'kb doctor: OK' yet still emitted an [error] on the "
+        f".kb of {legacy_kb['tag']}"
+        f"\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     )
 
 
@@ -156,6 +166,6 @@ def test_new_binary_queries_a_legacy_kb(legacy_kb, kb_run):
                   "--kb-dir", str(legacy_kb["kb"]), cwd=legacy_kb["repo"])
 
     assert "No matching section found." not in proc.stdout, (
-        f"query trên .kb của {legacy_kb['tag']} không trả về gì — "
-        "section bị nuốt lặng?"
+        f"query against the .kb of {legacy_kb['tag']} returned nothing — were "
+        "sections silently swallowed?"
     )

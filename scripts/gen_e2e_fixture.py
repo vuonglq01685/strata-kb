@@ -1,11 +1,12 @@
-"""Sinh tests-gate/fixtures/pending-kb/ bằng CHÍNH scaffold_doc().
+"""Generate tests-gate/fixtures/pending-kb/ using scaffold_doc() ITSELF.
 
-Fixture này là "vết nối" của hành trình e2e: nó thế chỗ cho `kb ingest`, thứ
-không chạy được trong cửa release. Sinh nó bằng code thật (thay vì gõ tay) là
-nửa đầu của cách chống trôi; nửa sau là tests/test_ingest_seam.py (Task 4),
-chạy lại generator này và so với cây đã commit.
+This fixture is the "seam" of the e2e journey: it stands in for `kb ingest`,
+which cannot run inside the release gate. Generating it with the real code
+(instead of hand-typing it) is the first half of the anti-drift scheme; the
+second half is tests/test_ingest_seam.py (Task 4), which re-runs this generator
+and compares against the committed tree.
 
-Chạy: python scripts/gen_e2e_fixture.py [dest]
+Run: python scripts/gen_e2e_fixture.py [dest]
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ def generate(kb_dir: Path) -> None:
     if kb_dir.exists():
         shutil.rmtree(kb_dir)
     kb_dir.mkdir(parents=True)
-    # index.yaml phải tồn tại trước: scaffold_doc đọc-rồi-ghi nó.
+    # index.yaml must exist first: scaffold_doc reads-then-writes it.
     (kb_dir / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     scaffold_doc(
         UNITS,

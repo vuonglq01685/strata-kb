@@ -25,14 +25,15 @@ class FederationMeta(BaseModel):
 class FederatedRepo:
     meta: FederationMeta
     index: models.KBIndex
-    kb_dir: Path  # federation/<repo-id>/ — mirror .kb đầy đủ (L0→L3)
+    kb_dir: Path  # federation/<repo-id>/ — a full .kb mirror (L0→L3)
 
 
 def load_federation(federation_dir: Path) -> list[FederatedRepo]:
-    """Đọc mọi entry federation/<repo>/ theo layout mirror mới.
+    """Read every federation/<repo>/ entry in the new mirror layout.
 
-    Entry format cũ (Phase 3, thư mục 'manifests/') và entry hỏng bị skip kèm
-    warning — republish từ repo nguồn để nâng cấp.
+    Entries in the old format (Phase 3, a 'manifests/' directory) and broken
+    entries are skipped with a warning — republish from the source repo to
+    upgrade them.
     """
     if not federation_dir.is_dir():
         return []
@@ -63,10 +64,10 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
 
 
 def build_federation_index(federation_dir: Path) -> models.FederationIndex:
-    """Index tổng — deterministic 100% từ các snapshot con.
+    """The aggregate index — 100% deterministic from the sub-snapshots.
 
-    Thứ tự: repo_id tăng dần (load_federation đã sort), docs theo thứ tự
-    index gốc của từng repo.
+    Order: repo_id ascending (load_federation already sorts), docs in the order
+    of each repo's own index.
     """
     entries: list[models.FedIndexEntry] = []
     for repo in load_federation(federation_dir):

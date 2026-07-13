@@ -1,9 +1,9 @@
-"""tools/list là hợp đồng CỨNG với mọi agent đang cắm vào center-kb.
+"""tools/list is a HARD contract with every agent plugged into center-kb.
 
-ĐỎ NGHĨA LÀ GÌ: bạn vừa đổi bề mặt MCP. Nếu là cố ý, chạy lại với
-UPDATE_GOLDEN=1 và commit file golden mới — nó sẽ hiện rõ trong diff PR, và
-đó chính là mục đích: một thay đổi phá agent phải là một hành động CỐ Ý, nhìn
-thấy được, không phải một tác dụng phụ im lặng.
+WHAT RED MEANS: you just changed the MCP surface. If that was deliberate, re-run
+with UPDATE_GOLDEN=1 and commit the new golden file — it will show up plainly in
+the PR diff, and that is exactly the point: a change that breaks agents must be a
+DELIBERATE, visible act, not a silent side effect.
 """
 
 from __future__ import annotations
@@ -27,19 +27,20 @@ async def _list_tools(params):
 
 
 def _snapshot(tools) -> dict:
-    # Dump TOÀN BỘ field của Tool (Pydantic model), không liệt kê tay từng
-    # field — nếu SDK thêm outputSchema/title/annotations/icons/meta sau này,
-    # snapshot tự động bắt được thay đổi thay vì im lặng bỏ qua. by_alias=True
-    # để giữ tên trên wire (camelCase: inputSchema, outputSchema...) — đúng
-    # cái agent thực sự thấy, không phải tên field Python nội bộ.
-    # exclude_none=True giữ golden hiện tại gọn (mọi field chưa dùng đều None)
-    # nhưng bất kỳ field nào được SET sau này sẽ hiện ra trong snapshot.
+    # Dump EVERY field of Tool (a Pydantic model), rather than listing fields by
+    # hand — if the SDK later adds outputSchema/title/annotations/icons/meta, the
+    # snapshot catches the change automatically instead of silently ignoring it.
+    # by_alias=True keeps the on-the-wire names (camelCase: inputSchema,
+    # outputSchema...) — exactly what the agent actually sees, not the internal
+    # Python field names. exclude_none=True keeps the current golden compact
+    # (every unused field is None), but any field that gets SET later will show
+    # up in the snapshot.
     #
-    # Không còn cần chuẩn hóa "description" ở đây: src/center_kb/mcp.py giờ
-    # tự cleandoc() docstring ngay lúc đăng ký tool (xem _canonical_docstring
-    # trong create_server), nên description trên wire đã ổn định theo phiên
-    # bản Python NGAY TỪ NGUỒN — golden so khớp NGUYÊN VĂN mọi field, kể cả
-    # description, không còn lỗ hổng nào cần né.
+    # Normalizing "description" here is no longer needed: src/center_kb/mcp.py now
+    # cleandoc()s the docstring itself at tool-registration time (see
+    # _canonical_docstring in create_server), so the on-the-wire description is
+    # already stable across Python versions AT THE SOURCE — the golden compares
+    # every field VERBATIM, description included, with no loophole left to dodge.
     return {
         t.name: t.model_dump(exclude={"name"}, exclude_none=True, by_alias=True)
         for t in sorted(tools.tools, key=lambda t: t.name)
