@@ -11,6 +11,8 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,17 +61,25 @@ def strip_kind_warning():
     return _strip
 
 
+def venv_bin(venv: Path, name: str) -> Path:
+    """Path of an installed executable inside a venv, on any OS."""
+    if os.name == "nt":
+        exe = venv / "Scripts" / f"{name}.exe"
+        return exe if exe.exists() else venv / "Scripts" / name
+    return venv / "bin" / name
+
+
 @dataclass(frozen=True)
 class Artifact:
     venv: Path
 
     @property
     def kb(self) -> Path:
-        return self.venv / "bin" / "kb"
+        return venv_bin(self.venv, "kb")
 
     @property
     def python(self) -> Path:
-        return self.venv / "bin" / "python"
+        return venv_bin(self.venv, "python")
 
 
 @pytest.fixture(scope="session")
@@ -83,12 +93,13 @@ def artifact() -> Artifact:
             "KB_VENV is not set. The e2e/regression tiers run against the "
             "INSTALLED WHEEL, never against the source tree. Use: ./scripts/gate.sh"
         )
-    venv = Path(raw)
-    if not (venv / "bin" / "kb").exists():
+    art = Artifact(venv=Path(raw).resolve())
+    if not art.kb.exists():
         raise RuntimeError(
-            f"KB_VENV={venv} has no bin/kb — was the wheel installed into it?"
+            f"KB_VENV={art.venv} has no kb executable ({art.kb}) — "
+            "was the wheel installed into it?"
         )
-    return Artifact(venv=venv)
+    return art
 
 
 @pytest.fixture
@@ -109,6 +120,8 @@ def kb_run(artifact: Artifact):
             env=full_env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
         if check and proc.returncode != 0:
@@ -130,6 +143,8 @@ def run_git():
             env={**os.environ, **GIT_IDENTITY},
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
         return proc.stdout.strip()
@@ -139,15 +154,27 @@ def run_git():
 
 @pytest.fixture
 def stub_claude(tmp_path_factory) -> dict[str, str]:
-    """A shell script named `claude` put at the front of PATH. center_kb/llm.py
-    uses shutil.which("claude") to probe for the runner, so it only has to be on
-    PATH."""
+    """A fake `claude` on PATH, runnable on POSIX and Windows. center_kb/llm.py
+    probes with shutil.which("claude") — .cmd resolves via PATHEXT on Windows.
+    (Deliberately duplicated from tests/cli_stub.py: tests-gate must stay
+    self-contained.)"""
     bindir = tmp_path_factory.mktemp("stub-bin")
-    script = bindir / "claude"
-    script.write_text(
-        f"#!/bin/sh\ncat > /dev/null\necho '{CLAUDE_ENVELOPE}'\n", encoding="utf-8"
+    impl = bindir / "claude_impl.py"
+    impl.write_text(
+        f"import sys\nsys.stdin.read()\nsys.stdout.write({CLAUDE_ENVELOPE!r} + '\\n')\n",
+        encoding="utf-8", newline="\n",
     )
-    script.chmod(0o755)
+    if os.name == "nt":
+        (bindir / "claude.cmd").write_text(
+            f'@"{sys.executable}" "{impl}" %*\n', encoding="utf-8"
+        )
+    else:
+        script = bindir / "claude"
+        script.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{impl}" "$@"\n',
+            encoding="utf-8", newline="\n",
+        )
+        script.chmod(0o755)
     return {"PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}"}
 
 
@@ -201,8 +228,12 @@ def seed_kb():
                 shutil.copy2(src, dest)
         # kind: child — seeded repos model an authoring repo that publishes
         # to the hub; without it doctor warns "repo kind is not recorded".
+        # .as_posix(): embedding a raw WindowsPath (backslashes) inside a
+        # double-quoted YAML scalar makes the YAML scanner treat "\A", "\U" etc
+        # as escape sequences and crash when config.yaml is parsed later.
         (kb / "config.yaml").write_text(
-            f'hub: "{hub}"\nrepo_id: "e2e-repo"\nkind: "child"\n', encoding="utf-8"
+            f'hub: "{hub.as_posix()}"\nrepo_id: "e2e-repo"\nkind: "child"\n',
+            encoding="utf-8",
         )
         return kb
 
@@ -287,7 +318,8 @@ def _materialize_kb_at_tag(tag: str, dest_repo: Path, tmp_path: Path) -> Path:
         ["git", "archive", "--format=tar", "-o", str(archive), tag, ".kb"],
         cwd=REPO_ROOT, check=True, capture_output=True,
     )
-    subprocess.run(["tar", "-xf", str(archive)], cwd=dest_repo, check=True)
+    with tarfile.open(archive) as tf:
+        tf.extractall(dest_repo, filter="data")
     kb = dest_repo / ".kb"
     assert (kb / "index.yaml").exists(), f"{tag} has no .kb/index.yaml"
     return kb
@@ -306,7 +338,7 @@ def legacy_kb(request, tmp_path: Path, run_git, bare_hub) -> dict:
     kb = _materialize_kb_at_tag(tag, repo, tmp_path)
 
     (kb / "config.yaml").write_text(
-        f'hub: "{bare_hub}"\nrepo_id: "legacy"\n', encoding="utf-8"
+        f'hub: "{bare_hub.as_posix()}"\nrepo_id: "legacy"\n', encoding="utf-8"
     )
     run_git(repo, "init", "-b", "main")
     run_git(repo, "add", "-A")
@@ -328,7 +360,7 @@ def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
     kb = _materialize_kb_at_tag("v0.9.0", repo, tmp_path)  # Task 8
 
     (kb / "config.yaml").write_text(
-        f'hub: "{bare_hub}"\nrepo_id: "golden"\n', encoding="utf-8"
+        f'hub: "{bare_hub.as_posix()}"\nrepo_id: "golden"\n', encoding="utf-8"
     )
     run_git(repo, "init", "-b", "main")
     run_git(repo, "add", "-A")

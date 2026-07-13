@@ -274,7 +274,9 @@ def _apply_results(
             sec.status = "summarized"
             report.summarized.append(key)
         for stem, text in l2_cache.items():
-            (kb_dir / doc / f"{stem}.md").write_text(text, encoding="utf-8")
+            (kb_dir / doc / f"{stem}.md").write_text(
+                text, encoding="utf-8", newline="\n"
+            )
         models.save_yaml_model(manifest_path, manifest)
 
 
@@ -335,6 +337,7 @@ def redo_reset(kb_dir: Path, doc_id: str | None = None) -> RedoReport:
                 path.write_text(
                     rebuild_l2_scaffold(path.read_text(encoding="utf-8")),
                     encoding="utf-8",
+                    newline="\n",
                 )
         models.save_yaml_model(manifest_path, manifest)
     return report

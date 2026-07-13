@@ -99,7 +99,7 @@ def _record_kind(config_path: Path, kind: str) -> bool:
         return False
     if text and not text.endswith("\n"):
         text += "\n"
-    config_path.write_text(text + f"kind: {kind}\n", encoding="utf-8")
+    config_path.write_text(text + f"kind: {kind}\n", encoding="utf-8", newline="\n")
     return True
 
 
@@ -127,11 +127,11 @@ def init_repo(target: Path, kind: str, force: bool = False) -> InitReport:
                 continue
             if dest.read_text(encoding="utf-8") == text:
                 continue
-            dest.write_text(text, encoding="utf-8")
+            dest.write_text(text, encoding="utf-8", newline="\n")
             report.updated.append(rel)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8")
+        dest.write_text(text, encoding="utf-8", newline="\n")
         report.created.append(rel)
     if _record_kind(target / ".kb" / "config.yaml", kind):
         if ".kb/config.yaml" in report.skipped:
