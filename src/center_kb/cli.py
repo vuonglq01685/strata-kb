@@ -760,10 +760,10 @@ def doctor(
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
     from center_kb.config import effective_repo_id
-    from center_kb.doctor import check_context, check_hub, check_kb
+    from center_kb.doctor import check_context, check_hub, check_kb, check_kind
 
     handle = _hub_or_exit(hub, kb_dir)
-    issues = check_kb(kb_dir)
+    issues = check_kind(kb_dir) + check_kb(kb_dir)
     repo_id = effective_repo_id("", kb_dir)
     if not repo_id:
         try:
