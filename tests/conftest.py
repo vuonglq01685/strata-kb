@@ -206,3 +206,99 @@ def hub_worktree(tmp_path: Path, run_git) -> Path:
     run_git(hub, "add", "-A")
     run_git(hub, "commit", "-m", "hub v1")
     return hub
+
+
+def make_fed_entry(
+    federation_dir: Path,
+    repo_id: str,
+    doc_id: str,
+    *,
+    title: str = "",
+    tags: list[str] | None = None,
+    summary: str = "Doc summary.",
+    sec_id: str = "1.1",
+    sec_title: str = "Section One",
+    sec_summary: str = "Summary of section one.",
+    l2: str | None = None,
+    l3: str | None = None,
+    source_commit: str = "abc1234",
+    published_at: str = "2026-07-13T00:00:00+00:00",
+) -> Path:
+    """Ghi 1 entry federation format mới (mirror .kb đầy đủ L0→L3)."""
+    from center_kb.federation import FederationMeta
+
+    entry = federation_dir / repo_id
+    doc_dir = entry / doc_id
+    doc_dir.mkdir(parents=True)
+    body_l2 = l2 if l2 is not None else (
+        f"## {sec_id} {sec_title}\n\nCondensed content of {doc_id} {sec_id}.\n"
+    )
+    body_l3 = l3 if l3 is not None else (
+        f"## {sec_id} {sec_title}\n\nVerbatim content of {doc_id} {sec_id}.\n"
+    )
+    (doc_dir / "ch1.md").write_text(body_l2, encoding="utf-8")
+    (doc_dir / "ch1.raw.md").write_text(body_l3, encoding="utf-8")
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(
+            id=doc_id,
+            title=title or doc_id,
+            sections=[
+                models.SectionEntry(
+                    id=sec_id, title=sec_title, summary=sec_summary,
+                    status="summarized", file="ch1",
+                )
+            ],
+        ),
+    )
+    models.save_yaml_model(
+        entry / "index.yaml",
+        models.KBIndex(
+            docs=[
+                models.IndexEntry(
+                    id=doc_id, title=title or doc_id, tags=tags or [], summary=summary,
+                )
+            ]
+        ),
+    )
+    models.save_yaml_model(
+        entry / "_meta.yaml",
+        FederationMeta(
+            repo_id=repo_id, source_commit=source_commit, published_at=published_at,
+        ),
+    )
+    return entry
+
+
+@pytest.fixture
+def fed_hub(tmp_path: Path, run_git) -> Path:
+    """Hub git repo: federation/ có 2 repo published (layout mirror) + index tổng."""
+    from center_kb.federation import write_federation_index
+
+    hub = tmp_path / "kb-hub"
+    (hub / ".kb").mkdir(parents=True)
+    models.save_yaml_model(hub / ".kb" / "index.yaml", models.KBIndex())
+    fed = hub / "federation"
+    make_fed_entry(
+        fed, "icao-kb", "icao-annex-2",
+        tags=["icao", "airspace"],
+        sec_id="1.1", sec_title="Airspace Records",
+        sec_summary="Airspace record structure: designation, type, level.",
+        l2="## 1.1 Airspace Records\n\nCondensed: airspace designation and type fields.\n",
+        l3="## 1.1 Airspace Records\n\nFull raw text about airspace designation.\n",
+    )
+    make_fed_entry(
+        fed, "arinc-kb", "arinc-424",
+        tags=["arinc424"],
+        sec_id="5.3", sec_title="Restrictive Airspace",
+        sec_summary="Restrictive airspace: designation, type, multiple code.",
+        l2="## 5.3 Restrictive Airspace\n\nCondensed: restrictive airspace designation codes.\n",
+        l3="## 5.3 Restrictive Airspace\n\nFull raw restrictive airspace text.\n",
+    )
+    write_federation_index(fed)
+    run_git(hub, "init")
+    run_git(hub, "config", "user.name", "test")
+    run_git(hub, "config", "user.email", "test@test.local")
+    run_git(hub, "add", "-A")
+    run_git(hub, "commit", "-m", "hub v1")
+    return hub
