@@ -10,7 +10,8 @@ class GitError(RuntimeError):
 
 def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True
+        ["git", *args], cwd=root, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
 
 
@@ -67,7 +68,8 @@ def is_dirty(root: Path, subpath: Path) -> bool:
 def clone(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
-        ["git", "clone", url, str(dest)], capture_output=True, text=True
+        ["git", "clone", url, str(dest)], capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     if proc.returncode != 0:
         raise GitError(f"clone '{url}' failed: {proc.stderr.strip()}")

@@ -42,6 +42,7 @@ class Runner:
         try:
             proc = subprocess.run(
                 cmd, input=stdin, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
                 timeout=self.timeout, env=env,
             )
         except subprocess.TimeoutExpired as exc:
