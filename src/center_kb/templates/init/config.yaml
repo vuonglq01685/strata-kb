@@ -1,6 +1,0 @@
-# CENTER-KB — repo config (commit to git).
-# hub: git URL or kb-hub path — the ONLY read source for kb query / MCP / Web UI.
-#      Local .kb/ content only reaches readers after `kb publish` and the PR is merged.
-hub: ""
-# repo_id: repo name on the federation (empty = name of the git root directory)
-repo_id: ""

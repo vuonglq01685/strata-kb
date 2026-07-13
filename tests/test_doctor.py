@@ -137,3 +137,21 @@ def test_check_context_bad_block_is_error(fed_hub):
     hub = HubHandle(root=fed_hub)
     issues, results = check_context("no block here", hub)
     assert _errors(issues) and results == []
+
+
+def test_check_kind_warns_when_missing(tmp_path):
+    from center_kb.doctor import check_kind
+
+    # no config at all -> warn
+    issues = check_kind(tmp_path)
+    assert [i.level for i in issues] == ["warning"]
+    assert "kind" in issues[0].message
+
+    # kind present -> clean
+    (tmp_path / "config.yaml").write_text("kind: hub\nhub: '.'\n", encoding="utf-8")
+    assert check_kind(tmp_path) == []
+
+    # invalid kind value -> error, not a crash
+    (tmp_path / "config.yaml").write_text("kind: server\n", encoding="utf-8")
+    issues = check_kind(tmp_path)
+    assert [i.level for i in issues] == ["error"]

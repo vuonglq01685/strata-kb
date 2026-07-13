@@ -52,3 +52,33 @@ def test_effective_repo_id_priority_and_none(tmp_path):
     assert effective_repo_id("cli-id", kb) == "cli-id"
     assert effective_repo_id("", kb) == "cfg-id"
     assert effective_repo_id("", _kb(tmp_path / "other")) is None
+
+
+def test_config_kind_defaults_to_empty(tmp_path):
+    from center_kb.config import load_config
+
+    assert load_config(tmp_path).kind == ""  # no config.yaml at all
+    (tmp_path / "config.yaml").write_text("hub: /h\n", encoding="utf-8")
+    assert load_config(tmp_path).kind == ""  # legacy config without kind
+
+
+def test_config_kind_roundtrip(tmp_path):
+    from center_kb.config import load_config
+
+    (tmp_path / "config.yaml").write_text(
+        "hub: '.'\nrepo_id: my-repo\nkind: hub\n", encoding="utf-8"
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.kind == "hub"
+    assert cfg.hub == "."
+
+
+def test_config_kind_rejects_unknown_value(tmp_path):
+    import pytest
+    from pydantic import ValidationError
+
+    from center_kb.config import load_config
+
+    (tmp_path / "config.yaml").write_text("kind: server\n", encoding="utf-8")
+    with pytest.raises(ValidationError):
+        load_config(tmp_path)

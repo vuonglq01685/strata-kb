@@ -1,0 +1,11 @@
+# Child repo: Docker is for ONE-SHOT ingest runs, not a long-lived server.
+#   docker compose run --rm hub kb ingest source/<file>.pdf --id <doc-id> --no-summarize
+# The company-wide MCP HTTP server + Web UI run on the MAIN hub repo, not here.
+services:
+  hub:
+    image: ghcr.io/vuonglq01685/center-kb:latest
+    volumes:
+      - ./:/data
+      - kb-model-cache:/home/app/.cache
+volumes:
+  kb-model-cache:

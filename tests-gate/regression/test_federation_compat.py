@@ -77,12 +77,18 @@ def test_new_binary_queries_a_v090_federation(tmp_path, run_git, kb_run):
     )
 
 
-def test_new_binary_doctors_a_v090_federation(tmp_path, run_git, kb_run):
+def test_new_binary_doctors_a_v090_federation(
+    tmp_path, run_git, kb_run, strip_kind_warning
+):
     """Not just "no Traceback" — that bar is far too low (see the reasoning in
     test_kb_backcompat.py::test_new_binary_runs_doctor_on_a_legacy_kb). We must
     see the exact 'kb doctor: OK' line AND not a single [warning]/[error] line,
     to prove doctor genuinely read the thing — and did not merely fail to crash
-    on a federation/ it does not understand."""
+    on a federation/ it does not understand.
+
+    The bare reader .kb below has no `kind:` recorded, so the designed
+    "repo kind is not recorded" nudge is expected — see KIND_WARNING in
+    tests-gate/conftest.py. Every other warning still fails the gate."""
     hub = _hub_from_fixture(tmp_path, run_git)
     repo = tmp_path / "reader"
     (repo / ".kb").mkdir(parents=True)
@@ -100,7 +106,7 @@ def test_new_binary_doctors_a_v090_federation(tmp_path, run_git, kb_run):
         "v0.9.0 — unclear whether it read it correctly or merely did not crash\n"
         f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     )
-    assert "[warning]" not in proc.stdout, (
+    assert "[warning]" not in strip_kind_warning(proc.stdout), (
         "doctor printed 'kb doctor: OK' yet still emitted a [warning] on a "
         f"federation published by v0.9.0\n--- stdout ---\n{proc.stdout}"
     )
