@@ -207,10 +207,18 @@ If step 5 prints the command list (`init`, `ingest`, `status`, `build`, `query`,
 ### 6.1. Install from PyPI, web UI, and Docker
 
 **Install the package** (once published): `pip install center-kb` — gives you the `kb` CLI and MCP server.
-Create a new KB repo: `kb init` (scaffolds `.kb/`, `federation/`, `.mcp.json`, CI workflow,
-`docker-compose.yml`, `QUICKSTART.md`). Re-running after a package upgrade refreshes
-scaffold files (skills, prompts, templates); `.kb/index.yaml` is preserved unless
-`--force`.
+Create a new KB repo: `kb init` — it asks whether the repo is the **main hub**
+(hosts `federation/` + the shared MCP HTTP server + Web UI) or a **child**
+(authors and publishes to the hub) and scaffolds accordingly; non-interactive
+runs pass `--kind hub|child`. The choice is recorded as `kind:` in
+`.kb/config.yaml`, and re-runs reuse it. Hub repos then run `kb docker-setup`
+(or the `/kb-docker-setup` slash command) to create `.env` and generate the
+HTTP token. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
+and on the hub `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub
+Copilot, and Cursor**; MCP client wiring ships as `.mcp.json` (Claude Code)
+and `.cursor/mcp.json` (Cursor) — stdio on the hub, HTTP-with-env-vars on
+children. Re-running `kb init` refreshes scaffold files (skills, templates)
+and preserves `.kb/index.yaml` / `.kb/config.yaml` unless `--force`.
 
 **Web UI for humans:** the same HTTP process serves agents and people:
 
@@ -230,6 +238,9 @@ REST API all search **only** `federation/` on the hub — the server's local wor
 **Docker:** `docker compose up -d` (image includes the full docling ingest stack);
 ingest inside the container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
 On `v*` release tags, CI publishes to PyPI and pushes image `ghcr.io/vuonglq01685/center-kb`.
+First-time hub setup: `kb docker-setup` creates `.env` and generates
+`CENTER_KB_HTTP_TOKEN` (auto-generated for convenience — replace it with your
+own secret for real deployments).
 
 ---
 

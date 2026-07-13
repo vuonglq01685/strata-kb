@@ -110,6 +110,25 @@ def check_kb(kb_dir: Path) -> list[Issue]:
     return issues
 
 
+def check_kind(kb_dir: Path) -> list[Issue]:
+    """Warn when the repo's hub|child kind is not recorded in config.yaml."""
+    from center_kb.config import load_config
+
+    try:
+        kind = load_config(kb_dir).kind
+    except (yaml.YAMLError, ValidationError) as exc:
+        return [Issue("error", f"config.yaml is invalid: {_flatten(exc)}")]
+    if not kind:
+        return [
+            Issue(
+                "warning",
+                "repo kind is not recorded in .kb/config.yaml — run `kb init` "
+                "to record kind: hub|child",
+            )
+        ]
+    return []
+
+
 def check_context(
     text: str, hub: "HubHandle"
 ) -> tuple[list[Issue], list[ResolvedRef]]:

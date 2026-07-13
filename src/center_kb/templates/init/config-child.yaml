@@ -1,0 +1,11 @@
+# CENTER-KB — repo config (commit to git).
+# kind: this repo's role. "child" authors content locally and publishes it to
+#       the main hub; it does not host the company-wide MCP/Web service.
+kind: child
+# hub: git URL or kb-hub path of the MAIN HUB — the ONLY read source for
+#      kb query / MCP / Web UI. FILL THIS IN before publishing.
+#      Local .kb/ content only reaches readers after `kb publish` and the PR
+#      is merged on the hub.
+hub: ""
+# repo_id: repo name on the federation (pre-filled from the folder name)
+repo_id: "{repo_id}"

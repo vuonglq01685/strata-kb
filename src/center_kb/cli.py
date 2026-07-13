@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import sys
+from enum import Enum
 from pathlib import Path
 
 import typer
@@ -44,9 +45,79 @@ def main(
     """CENTER-KB CLI."""
 
 
+class RepoKind(str, Enum):
+    hub = "hub"
+    child = "child"
+
+
+KIND_DESCRIPTIONS = """\
+This repo can be one of two kinds:
+
+  hub   — Central knowledge hub. Hosts federation/, the single source of
+          truth for search. Runs the shared HTTP MCP server + Web UI
+          (docker compose up -d, port 8321). Receives publishes from child
+          repos — merging hub PRs is the review gate that makes content
+          searchable. May also keep its own .kb/ and publish itself.
+
+  child — Authoring repo. Ingest PDFs → summarize → kb build → kb publish
+          to the hub. Docker is only needed for one-shot ingest runs, not
+          for a long-lived server. Must point hub: in .kb/config.yaml at
+          the main hub. Does not host the company-wide MCP/Web service.
+"""
+
+
+def _stdin_isatty() -> bool:
+    return sys.stdin.isatty()
+
+
+def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
+    """persisted kind > --kind flag > interactive prompt > hard error."""
+    from center_kb.config import load_config
+
+    persisted = load_config(target / ".kb").kind
+    if persisted:
+        if kind_flag is not None and kind_flag.value != persisted:
+            typer.secho(
+                f"this repo is already initialized as '{persisted}' "
+                f"(.kb/config.yaml) — --kind {kind_flag.value} conflicts. "
+                "Edit .kb/config.yaml deliberately if you really mean to switch.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        return persisted
+    if kind_flag is not None:
+        return kind_flag.value
+    if _stdin_isatty():
+        typer.echo(KIND_DESCRIPTIONS)
+        # Own re-prompt loop: typer >= 0.26 vendors click, so passing the real
+        # click.Choice makes BadParameter escape typer.prompt instead of
+        # re-prompting.
+        while True:
+            answer = typer.prompt("Initialize this repo as (hub, child)")
+            answer = answer.strip().lower()
+            if answer in ("hub", "child"):
+                return answer
+            typer.secho(
+                f"Error: {answer!r} is not one of 'hub', 'child'.",
+                fg=typer.colors.RED,
+            )
+    typer.secho(
+        "kb init requires --kind hub|child when not running interactively.",
+        fg=typer.colors.RED,
+    )
+    raise typer.Exit(2)
+
+
 @app.command()
 def init(
     path: Path = typer.Argument(Path("."), help="Target directory (default: current)"),
+    kind: RepoKind | None = typer.Option(
+        None,
+        "--kind",
+        help="Repo kind: hub (hosts federation + the shared MCP/Web service) "
+        "or child (authors and publishes to the hub). Required on first init "
+        "when not running interactively.",
+    ),
     force: bool = typer.Option(
         False,
         "--force",
@@ -56,7 +127,8 @@ def init(
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
     from center_kb.initcmd import init_repo
 
-    report = init_repo(path, force=force)
+    resolved = _resolve_kind(path, kind)
+    report = init_repo(path, resolved, force=force)
     for rel in report.created:
         typer.echo(f"  created  {rel}")
     for rel in report.updated:
@@ -67,13 +139,67 @@ def init(
             fg=typer.colors.YELLOW,
         )
     typer.echo(
-        f"kb init: {len(report.created)} created, "
+        f"kb init ({resolved}): {len(report.created)} created, "
         f"{len(report.updated)} updated, {len(report.skipped)} skipped."
     )
     typer.echo("Next steps:")
-    typer.echo("  1. cp .env.example .env    # then edit CENTER_KB_HTTP_TOKEN")
-    typer.echo("  2. kb ingest source/<file>.pdf --id <doc-id>")
+    if resolved == "hub":
+        typer.echo(
+            "  1. kb docker-setup   (or /kb-docker-setup in your AI assistant)"
+            "  # .env + HTTP token"
+        )
+        typer.echo(
+            "  2. docker compose up -d    # MCP HTTP + Web UI at http://localhost:8321/ui"
+        )
+        typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>")
+    else:
+        typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
+        typer.echo("  2. kb ingest source/<file>.pdf --id <doc-id>    (or /kb-ingest)")
+        typer.echo("  3. kb publish    (or /kb-publish)")
     typer.echo("  (details: QUICKSTART.md)")
+
+
+@app.command("docker-setup")
+def docker_setup(
+    path: Path = typer.Argument(Path("."), help="Hub repo root (default: current)"),
+    force: bool = typer.Option(
+        False, "--force", help="Regenerate the token inside an existing .env"
+    ),
+) -> None:
+    """Hub only: create .env and generate CENTER_KB_HTTP_TOKEN for Docker HTTP serving."""
+    from center_kb import dockersetup
+
+    try:
+        try:
+            report = dockersetup.run_setup(path, regenerate=force)
+        except dockersetup.EnvExistsError:
+            if _stdin_isatty() and typer.confirm(
+                f"Found existing .env — regenerate {dockersetup.TOKEN_VAR}?"
+            ):
+                report = dockersetup.run_setup(path, regenerate=True)
+            else:
+                raise
+    except dockersetup.DockerSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    action = "created" if report.env_created else "updated"
+    typer.echo(
+        f".env {action} — {dockersetup.TOKEN_VAR} written (token not shown; see .env)."
+    )
+    if report.gitignore_updated:
+        typer.echo(".gitignore updated: added .env")
+    typer.secho(
+        "This token was auto-generated for convenience — replace it with your "
+        "own secret for real deployments, and store it in a secret manager.",
+        fg=typer.colors.YELLOW,
+    )
+    typer.echo("Next steps:")
+    typer.echo("  1. docker compose up -d")
+    typer.echo("  2. Open http://localhost:8321/ui (sign in with the token from .env)")
+    typer.echo("  3. Point remote MCP clients at the hub:")
+    typer.echo('     { "mcpServers": { "center-kb": { "type": "http",')
+    typer.echo('       "url": "http://<host>:8321/mcp",')
+    typer.echo('       "headers": { "Authorization": "Bearer <token>" } } } }')
 
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):
@@ -642,10 +768,10 @@ def doctor(
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
     from center_kb.config import effective_repo_id
-    from center_kb.doctor import check_context, check_hub, check_kb
+    from center_kb.doctor import check_context, check_hub, check_kb, check_kind
 
     handle = _hub_or_exit(hub, kb_dir)
-    issues = check_kb(kb_dir)
+    issues = check_kind(kb_dir) + check_kb(kb_dir)
     repo_id = effective_repo_id("", kb_dir)
     if not repo_id:
         try:
