@@ -62,3 +62,14 @@ def test_fixture_manifest_matches_scaffold_output(tmp_path):
     committed.pop("ingested", None)
 
     assert fresh == committed
+
+
+def test_fixture_index_matches_scaffold_output(tmp_path):
+    generate(tmp_path / ".kb")
+
+    fresh = yaml.safe_load((tmp_path / ".kb" / "index.yaml").read_text(encoding="utf-8"))
+    committed = yaml.safe_load((FIXTURE / "index.yaml").read_text(encoding="utf-8"))
+    # Không có trường nào ở đây trôi theo ngày/giờ (khác với ingested trong
+    # _manifest.yaml) — không pop gì cả, so toàn bộ tài liệu.
+
+    assert fresh == committed, "index.yaml đã trôi khỏi đầu ra của scaffold_doc()"
