@@ -83,3 +83,46 @@ def test_kbindex_llm_block_roundtrip(tmp_path):
     assert index.llm.max_workers == 2
     models.save_yaml_model(p, index)
     assert "runner: copilot" in p.read_text(encoding="utf-8")
+
+
+def test_federation_index_roundtrip(tmp_path):
+    from center_kb.models import (
+        FederationIndex,
+        FedIndexEntry,
+        load_yaml_model,
+        save_yaml_model,
+    )
+
+    idx = FederationIndex(
+        docs=[
+            FedIndexEntry(
+                repo_id="arinc-kb",
+                doc_id="arinc-424",
+                title="ARINC 424",
+                revision="Supplement 22",
+                tags=["arinc424"],
+                summary="Nav DB spec.",
+                source_commit="abc1234",
+                published_at="2026-07-13T00:00:00+00:00",
+            )
+        ]
+    )
+    path = tmp_path / "index.yaml"
+    save_yaml_model(path, idx)
+    loaded = load_yaml_model(path, FederationIndex)
+    assert loaded == idx
+
+
+def test_federation_index_defaults():
+    from center_kb.models import FederationIndex, FedIndexEntry
+
+    e = FedIndexEntry(repo_id="r", doc_id="d")
+    assert e.tags == [] and e.revision == "" and e.published_at == ""
+    assert FederationIndex().docs == []
+
+
+def test_section_status_still_parses_reviewed():
+    from center_kb.models import SectionEntry
+
+    sec = SectionEntry(id="1.1", title="T", file="ch1", status="reviewed")
+    assert sec.status == "reviewed"
