@@ -207,6 +207,27 @@ def published_repo(
     return {"repo": repo, "kb": kb, "hub": bare_hub}
 
 
+def _mcp_stdio_params(artifact: Artifact, kb: Path, hub: Path, repo: Path):
+    """Build StdioServerParameters for `python -m center_kb.mcp` in the
+    ARTIFACT venv (never the runner venv) — there is no `kb serve` command,
+    this is exactly the CMD the Dockerfile runs. Factored out so
+    mcp_stdio_params (Task 6, bound to published_repo) and
+    published_kb_mcp_params (Task 9, bound to published_kb) share one
+    invocation shape instead of drifting apart.
+
+    `mcp` (client SDK) is a RUNNER dependency (requirements-gate.txt) —
+    importing it here does not violate "no importing center_kb".
+    """
+    from mcp import StdioServerParameters
+
+    return StdioServerParameters(
+        command=str(artifact.python),
+        args=["-m", "center_kb.mcp", "--kb", str(kb), "--hub", str(hub)],
+        cwd=str(repo),
+        env={**os.environ},
+    )
+
+
 @pytest.fixture
 def mcp_stdio_params(artifact: Artifact, published_repo: dict):
     """StdioServerParameters trỏ vào `python -m center_kb.mcp` của venv ARTIFACT
@@ -214,21 +235,9 @@ def mcp_stdio_params(artifact: Artifact, published_repo: dict):
     CMD của Dockerfile. Dùng chung ở đây (không phải test_server.py) để Task
     9/10 tái dùng qua tests-gate/conftest.py mà không cần import chéo giữa
     các test module.
-
-    `mcp` (gói SDK client) là dependency của RUNNER (requirements-gate.txt),
-    import nó ở đây KHÔNG vi phạm quy tắc "không import center_kb".
     """
-    from mcp import StdioServerParameters
-
-    return StdioServerParameters(
-        command=str(artifact.python),
-        args=[
-            "-m", "center_kb.mcp",
-            "--kb", str(published_repo["kb"]),
-            "--hub", str(published_repo["hub"]),
-        ],
-        cwd=str(published_repo["repo"]),
-        env={**os.environ},
+    return _mcp_stdio_params(
+        artifact, published_repo["kb"], published_repo["hub"], published_repo["repo"]
     )
 
 
@@ -274,3 +283,37 @@ def legacy_kb(request, tmp_path: Path, run_git, bare_hub) -> dict:
     run_git(repo, "commit", "-m", f"legacy kb from {tag}")
 
     return {"tag": tag, "repo": repo, "kb": kb, "hub": bare_hub}
+
+
+# ---- Golden baseline (Task 9): một nền v0.9.0 cố định, đã publish ----
+
+
+@pytest.fixture
+def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
+    """KB v0.9.0 (lấy từ git history) đã publish lên hub — nền đóng băng cho
+    mọi golden. Không dùng legacy_kb vì nó parametrized theo 3 tag; golden cần
+    đúng MỘT nền cố định."""
+    repo = tmp_path / "golden-repo"
+    repo.mkdir()
+    kb = _materialize_kb_at_tag("v0.9.0", repo, tmp_path)  # Task 8
+
+    (kb / "config.yaml").write_text(
+        f'hub: "{bare_hub}"\nrepo_id: "golden"\n', encoding="utf-8"
+    )
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "golden kb")
+    kb_run("publish", "--direct", "--hub", str(bare_hub), "--repo-id", "golden",
+           "--kb-dir", str(kb), cwd=repo)
+    return {"repo": repo, "kb": kb, "hub": bare_hub}
+
+
+@pytest.fixture
+def published_kb_mcp_params(artifact: Artifact, published_kb: dict):
+    """StdioServerParameters bound to published_kb (Task 9's frozen v0.9.0
+    baseline) instead of published_repo — same shape as mcp_stdio_params
+    (Task 6), built via the shared _mcp_stdio_params helper so the two
+    fixtures can't silently drift apart."""
+    return _mcp_stdio_params(
+        artifact, published_kb["kb"], published_kb["hub"], published_kb["repo"]
+    )
