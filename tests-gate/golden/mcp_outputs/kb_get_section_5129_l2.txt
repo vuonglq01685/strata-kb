@@ -1,0 +1,12 @@
+--- [golden:arinc-424 §5.129 (Supplement 22)] ~246tk
+## 5.129 Restrictive Airspace Designation
+
+The Restrictive Airspace Designation field contains the number or name that uniquely identifies the restrictive airspace, derived from official government sources. The field contains a numeric number, or when designation is by name, the name up to 10 characters; when the name is longer than 10 characters, the 10th position contains an asterisk indicating the name field should be used for the full designator. Used On: Restrictive Airspace and Enroute Airway Flight Planning Continuation records. Length: 10 characters. Character Type: Alpha/numeric.
+
+| Field Content      | Field Content   | Field Content   | Field Content   |
+|--------------------|-----------------|-----------------|-----------------|
+| Charted Designator | ICAO            | Type            | Rest. Desig.    |
+| RJ(R)-116          | RJ              | R               | 116             |
+| R-2524             | K2              | R               | 2524            |
+| Crystal MOA        | K4              | M               | Crystal         |
+| Randolph MOA One B | K4              | M               | Randolph*       |
