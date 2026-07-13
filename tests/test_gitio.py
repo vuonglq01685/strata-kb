@@ -157,3 +157,49 @@ def test_has_remote_and_remote_url(bare_origin, fixture_kb, run_git):
     run_git(root, "init")
     assert gitio.has_remote(root) is False
     assert gitio.remote_url(root) == ""
+
+
+def test_branch_helpers_roundtrip(tmp_path, run_git):
+    from center_kb import gitio
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.txt").write_text("v1", encoding="utf-8")
+    run_git(root, "init")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "v1")
+    main = gitio.current_branch(root)
+
+    gitio.checkout_branch(root, "publish/demo", main)
+    assert gitio.current_branch(root) == "publish/demo"
+    (root / "a.txt").write_text("v2", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "v2")
+
+    gitio.checkout(root, main)
+    assert gitio.current_branch(root) == main
+    assert (root / "a.txt").read_text(encoding="utf-8") == "v1"
+
+    # checkout -B lần 2 reset branch về start_point
+    gitio.checkout_branch(root, "publish/demo", main)
+    assert (root / "a.txt").read_text(encoding="utf-8") == "v1"
+    gitio.checkout(root, main)
+
+
+def test_push_branch_to_local_bare_origin(tmp_path, run_git):
+    from center_kb import gitio
+
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    root = tmp_path / "repo"
+    run_git(tmp_path, "clone", str(origin), str(root))
+    run_git(root, "config", "user.name", "t")
+    run_git(root, "config", "user.email", "t@t")
+    (root / "a.txt").write_text("v1", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "v1")
+    gitio.push_branch(root, gitio.current_branch(root))
+    gitio.checkout_branch(root, "publish/demo", "HEAD")
+    gitio.push_branch(root, "publish/demo")
+    out = run_git(origin, "branch")
+    assert "publish/demo" in out
