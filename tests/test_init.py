@@ -69,15 +69,29 @@ def test_init_force_overwrites_protected_data(tmp_path: Path):
     assert "gone" not in marker.read_text(encoding="utf-8")
 
 
-def test_init_does_not_overwrite_config(tmp_path):
-    from center_kb.initcmd import init_repo
-
+def test_init_records_kind_in_legacy_config_without_touching_values(tmp_path):
     init_repo(tmp_path, "hub")
     cfg = tmp_path / ".kb" / "config.yaml"
-    cfg.write_text("hub: /my/hub\n", encoding="utf-8")
+    cfg.write_text("# my comment\nhub: /my/hub\n", encoding="utf-8")
     report = init_repo(tmp_path, "hub")
-    assert ".kb/config.yaml" in report.skipped
-    assert cfg.read_text(encoding="utf-8") == "hub: /my/hub\n"
+    text = cfg.read_text(encoding="utf-8")
+    assert text.startswith("# my comment\nhub: /my/hub\n")
+    assert "kind: hub" in text
+    assert ".kb/config.yaml (kind recorded)" in report.updated
+    assert ".kb/config.yaml" not in report.skipped
+
+
+def test_init_does_not_duplicate_kind_line(tmp_path):
+    init_repo(tmp_path, "hub")
+    cfg = tmp_path / ".kb" / "config.yaml"
+    report = init_repo(tmp_path, "hub")
+    text = cfg.read_text(encoding="utf-8")
+    # Count actual `kind:` assignment lines only; the template's own comment
+    # ("# kind: this repo's role...") also contains the substring "kind:",
+    # so a raw text.count("kind:") would always be 2 regardless of dupes.
+    kind_lines = [line for line in text.splitlines() if line.startswith("kind:")]
+    assert len(kind_lines) == 1
+    assert ".kb/config.yaml" in report.skipped  # normal protected skip
 
 
 def test_kb_doctor_on_fresh_skeleton_requires_hub(tmp_path: Path, monkeypatch):
