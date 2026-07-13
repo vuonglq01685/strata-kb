@@ -1,0 +1,181 @@
+"""Fixtures cho tầng T3 (e2e trên artifact đã cài).
+
+QUY TẮC BẤT DI BẤT DỊCH: file này và mọi file dưới tests-gate/e2e/ KHÔNG được
+import center_kb. Artifact chỉ được chạm tới qua subprocess.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import socket
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+# kb publish tạo commit thật. Runner CI không có ~/.gitconfig, nên git sẽ từ
+# chối commit nếu không có identity — cùng lý do release.yml đã set các biến
+# này cho job test.
+GIT_IDENTITY = {
+    "GIT_AUTHOR_NAME": "e2e",
+    "GIT_AUTHOR_EMAIL": "e2e@local",
+    "GIT_COMMITTER_NAME": "e2e",
+    "GIT_COMMITTER_EMAIL": "e2e@local",
+}
+
+# Payload hợp lệ cho CẢ prompt section lẫn prompt doc của kb summarize.
+# claude được gọi là: claude -p --model <m> --output-format json  (prompt qua
+# stdin), và --output-format json bọc trả lời trong {"type":"result","result":…}
+# — xem center_kb/llm.py:32 và :59.
+_INNER = json.dumps(
+    {
+        "l2_summary": "Condensed via stub.",
+        "l1_summary": "Stub line.",
+        "summary": "Stub doc summary.",
+    }
+)
+CLAUDE_ENVELOPE = json.dumps({"type": "result", "result": _INNER})
+
+
+@dataclass(frozen=True)
+class Artifact:
+    venv: Path
+
+    @property
+    def kb(self) -> Path:
+        return self.venv / "bin" / "kb"
+
+    @property
+    def python(self) -> Path:
+        return self.venv / "bin" / "python"
+
+
+@pytest.fixture(scope="session")
+def artifact() -> Artifact:
+    raw = os.environ.get("KB_VENV")
+    if not raw:
+        # RAISE, không skip. Một job CI xanh vì thu thập được 0 test là kiểu
+        # hỏng nguy hiểm nhất của một cửa release — nó cho cảm giác an toàn giả.
+        raise RuntimeError(
+            "KB_VENV chưa được set. Tầng e2e/regression chạy trên WHEEL ĐÃ CÀI, "
+            "không bao giờ trên source tree. Dùng: ./scripts/gate.sh"
+        )
+    venv = Path(raw)
+    if not (venv / "bin" / "kb").exists():
+        raise RuntimeError(f"KB_VENV={venv} không có bin/kb — wheel đã cài vào đó chưa?")
+    return Artifact(venv=venv)
+
+
+@pytest.fixture
+def kb_run(artifact: Artifact):
+    """Gọi binary kb thật bằng subprocess."""
+
+    def _run(
+        *args: str,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+        check: bool = True,
+        timeout: int = 180,
+    ) -> subprocess.CompletedProcess[str]:
+        full_env = {**os.environ, **GIT_IDENTITY, **(env or {})}
+        proc = subprocess.run(
+            [str(artifact.kb), *args],
+            cwd=cwd,
+            env=full_env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if check and proc.returncode != 0:
+            raise AssertionError(
+                f"kb {' '.join(args)} → exit {proc.returncode}\n"
+                f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+            )
+        return proc
+
+    return _run
+
+
+@pytest.fixture
+def run_git():
+    def _git(cwd: Path, *args: str) -> str:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env={**os.environ, **GIT_IDENTITY},
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return proc.stdout.strip()
+
+    return _git
+
+
+@pytest.fixture
+def stub_claude(tmp_path_factory) -> dict[str, str]:
+    """Shell script tên `claude` đặt đầu PATH. center_kb/llm.py dùng
+    shutil.which("claude") để dò runner, nên chỉ cần nó nằm trên PATH."""
+    bindir = tmp_path_factory.mktemp("stub-bin")
+    script = bindir / "claude"
+    script.write_text(
+        f"#!/bin/sh\ncat > /dev/null\necho '{CLAUDE_ENVELOPE}'\n", encoding="utf-8"
+    )
+    script.chmod(0o755)
+    return {"PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}"}
+
+
+@pytest.fixture
+def bare_hub(tmp_path: Path, run_git) -> Path:
+    """Hub bare git repo. PHẢI bare: `kb publish --direct` push vào main của
+    hub, và git từ chối push vào branch đang được checkout của một repo thường."""
+    work = tmp_path / "hub-work"
+    (work / ".kb").mkdir(parents=True)
+    (work / "federation").mkdir()
+    (work / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (work / "federation" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+
+    run_git(work, "init", "-b", "main")
+    run_git(work, "add", "-A")
+    run_git(work, "commit", "-m", "hub init")
+
+    bare = tmp_path / "hub.git"
+    run_git(tmp_path, "clone", "--bare", str(work), str(bare))
+    return bare
+
+
+@pytest.fixture
+def free_port() -> int:
+    """Xin một cổng trống thay vì hardcode 8321 — tránh đụng nhau khi chạy song song."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+# ---- KB seed (fixture sinh bởi scripts/gen_e2e_fixture.py — xem Task 3) ----
+# Hằng số + fixture đặt ở đây (conftest chung) thay vì trong test_journey.py, để
+# fixture `published_repo` (Task 5) dùng được mà không cần import chéo giữa các
+# test module.
+SEED_FIXTURE = Path(__file__).parent / "fixtures" / "pending-kb"
+
+
+@pytest.fixture
+def seed_kb():
+    """Đổ KB ở trạng thái 'ingest vừa xong' vào repo, và trỏ config.yaml vào hub."""
+
+    def _seed(repo: Path, hub: Path) -> Path:
+        kb = repo / ".kb"
+        for src in SEED_FIXTURE.rglob("*"):
+            if src.is_file():
+                dest = kb / src.relative_to(SEED_FIXTURE)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+        (kb / "config.yaml").write_text(
+            f'hub: "{hub}"\nrepo_id: "e2e-repo"\n', encoding="utf-8"
+        )
+        return kb
+
+    return _seed
