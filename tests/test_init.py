@@ -364,6 +364,84 @@ def test_init_scaffolds_kb_docker_setup_hub_only(tmp_path: Path):
     assert not (child_repo / ".github" / "prompts" / "kb-docker-setup.prompt.md").exists()
 
 
+def test_init_scaffolds_cursor_commands_and_rule(tmp_path: Path):
+    init_repo(tmp_path, "child")
+    for name in ("kb-ingest", "kb-publish", "kb-summarize"):
+        cmd = tmp_path / ".cursor" / "commands" / f"{name}.md"
+        assert cmd.is_file(), name
+        assert f"name: {name}" in cmd.read_text(encoding="utf-8")
+    ingest = (tmp_path / ".cursor" / "commands" / "kb-ingest.md").read_text(
+        encoding="utf-8"
+    )
+    assert "NEVER run `kb ingest`" in ingest
+    assert "docker compose run --rm hub kb ingest" in ingest
+    publish = (tmp_path / ".cursor" / "commands" / "kb-publish.md").read_text(
+        encoding="utf-8"
+    )
+    assert "NEVER run `kb publish`" in publish
+    rule = tmp_path / ".cursor" / "rules" / "kb-summarize.mdc"
+    assert rule.is_file()
+    rule_text = rule.read_text(encoding="utf-8")
+    assert "globs: .kb/**" in rule_text
+    assert "Summarize the prose ONLY" in rule_text
+    assert "Table-only section:" in rule_text
+
+
+def test_init_scaffolds_cursor_mcp_per_kind(tmp_path: Path):
+    hub_repo = tmp_path / "h"
+    child_repo = tmp_path / "c"
+    hub_repo.mkdir()
+    child_repo.mkdir()
+    init_repo(hub_repo, "hub")
+    init_repo(child_repo, "child")
+    hub_mcp = (hub_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8")
+    assert "center_kb.mcp" in hub_mcp                      # stdio, same as .mcp.json
+    assert hub_mcp == (hub_repo / ".mcp.json").read_text(encoding="utf-8")
+    child_mcp = (child_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8")
+    assert "${env:CENTER_KB_HUB_URL}/mcp" in child_mcp     # Cursor env syntax
+    assert "Bearer ${env:CENTER_KB_HTTP_TOKEN}" in child_mcp
+
+
+def test_assistant_slash_command_parity(tmp_path: Path):
+    """Every kb-* command exists for Claude, Copilot, and Cursor in each kind."""
+    common = ["kb-ingest", "kb-publish", "kb-summarize"]
+    layouts = {
+        "claude": lambda n: (
+            Path(".claude/commands") / f"{n}.md"
+            if n in ("kb-summarize", "kb-docker-setup")
+            else Path(".claude/skills") / n / "SKILL.md"
+        ),
+        "copilot": lambda n: (
+            Path(".github/instructions/kb-summarize.instructions.md")
+            if n == "kb-summarize"
+            else Path(".github/prompts") / f"{n}.prompt.md"
+        ),
+        "cursor": lambda n: Path(".cursor/commands") / f"{n}.md",
+    }
+    for kind, names in (("hub", common + ["kb-docker-setup"]), ("child", common)):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        for assistant, layout in layouts.items():
+            for name in names:
+                assert (repo / layout(name)).is_file(), (kind, assistant, name)
+
+
+def test_cursor_docker_setup_command_hub_only(tmp_path: Path):
+    hub_repo = tmp_path / "h"
+    child_repo = tmp_path / "c"
+    hub_repo.mkdir()
+    child_repo.mkdir()
+    init_repo(hub_repo, "hub")
+    init_repo(child_repo, "child")
+    cmd = hub_repo / ".cursor" / "commands" / "kb-docker-setup.md"
+    assert cmd.is_file()
+    text = cmd.read_text(encoding="utf-8")
+    assert "NEVER print" in text
+    assert "MAIN hub only" in text
+    assert not (child_repo / ".cursor" / "commands" / "kb-docker-setup.md").exists()
+
+
 def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
     init_repo(tmp_path, "hub")
     skill = (

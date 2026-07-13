@@ -21,6 +21,10 @@ COMMON_TEMPLATES: dict[str, str] = {
     ".claude/skills/kb-publish/SKILL.md": "claude-skill-kb-publish.md",
     ".github/prompts/kb-publish.prompt.md": "copilot-kb-publish.prompt.md",
     ".github/workflows/kb-publish.yml": "kb-publish.yml",
+    ".cursor/commands/kb-ingest.md": "cursor-kb-ingest.md",
+    ".cursor/commands/kb-publish.md": "cursor-kb-publish.md",
+    ".cursor/commands/kb-summarize.md": "cursor-kb-summarize.md",
+    ".cursor/rules/kb-summarize.mdc": "cursor-kb-summarize.mdc",
 }
 
 HUB_TEMPLATES: dict[str, str] = {
@@ -33,6 +37,8 @@ HUB_TEMPLATES: dict[str, str] = {
     ".claude/skills/kb-docker-setup/SKILL.md": "claude-skill-kb-docker-setup.md",
     ".claude/commands/kb-docker-setup.md": "claude-command-kb-docker-setup.md",
     ".github/prompts/kb-docker-setup.prompt.md": "copilot-kb-docker-setup.prompt.md",
+    ".cursor/commands/kb-docker-setup.md": "cursor-kb-docker-setup.md",
+    ".cursor/mcp.json": "mcp-hub.json",
 }
 
 # Filled in by the child-scaffold task; kept separate so hub and child can
@@ -42,6 +48,7 @@ CHILD_TEMPLATES: dict[str, str] = {
     "docker-compose.yml": "docker-compose-child.yml",
     ".mcp.json": "mcp-child.json",
     "QUICKSTART.md": "QUICKSTART-child.md",
+    ".cursor/mcp.json": "cursor-mcp-child.json",
 }
 
 # User data — never refreshed by default; only overwritten with --force.
