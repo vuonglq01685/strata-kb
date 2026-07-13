@@ -16,8 +16,10 @@ prepare the hub's `.env` + HTTP token.
 
 1. Make hub vs child a **required** choice when initializing a repo.
 2. Scaffold differently for each kind.
-3. Add a hub-only `kb docker-setup` CLI command with Claude/Copilot slash-command
-   wrappers that creates `.env` and auto-generates the HTTP token.
+3. Add a hub-only `kb docker-setup` CLI command with Claude/Copilot/Cursor
+   slash-command wrappers that creates `.env` and auto-generates the HTTP token.
+4. Extend assistant support from Claude Code + GitHub Copilot to also cover
+   Cursor (commands, `.kb/**` rule, MCP wiring) at feature parity.
 
 ## Non-goals (out of scope)
 
@@ -93,6 +95,10 @@ use `-hub` / `-child` suffixes.
 | kb-ingest skill + Copilot prompt | unchanged |
 | kb-publish skill + Copilot prompt | unchanged |
 | `.github/workflows/kb-publish.yml` | unchanged |
+| `.cursor/commands/kb-ingest.md` | `cursor-kb-ingest.md` (new) |
+| `.cursor/commands/kb-publish.md` | `cursor-kb-publish.md` (new) |
+| `.cursor/commands/kb-summarize.md` | `cursor-kb-summarize.md` (new) |
+| `.cursor/rules/kb-summarize.mdc` | `cursor-kb-summarize.mdc` (new) |
 
 ### HUB only
 
@@ -107,6 +113,8 @@ use `-hub` / `-child` suffixes.
 | `.claude/skills/kb-docker-setup/SKILL.md` | new | |
 | `.claude/commands/kb-docker-setup.md` | new | |
 | `.github/prompts/kb-docker-setup.prompt.md` | new | |
+| `.cursor/commands/kb-docker-setup.md` | `cursor-kb-docker-setup.md` (new) | |
+| `.cursor/mcp.json` | `cursor-mcp-hub.json` (new) | stdio, mirrors the hub `.mcp.json` |
 
 ### CHILD only
 
@@ -116,8 +124,34 @@ use `-hub` / `-child` suffixes.
 | `docker-compose.yml` | `docker-compose-child.yml` | same image/volumes; **no ports, no env_file, no healthcheck**; header comment frames it as one-shot ingest (`docker compose run --rm hub kb ingest …`). Service keeps the name `hub` so the shared kb-ingest skill text works for both kinds. |
 | `.mcp.json` | `mcp-child.json` | HTTP client: `"type": "http"`, `"url": "${CENTER_KB_HUB_URL}/mcp"`, `"Authorization": "Bearer ${CENTER_KB_HTTP_TOKEN}"` — env expansion means no secrets in git and the file stays byte-identical, so init re-runs keep refreshing it |
 | `QUICKSTART.md` | `QUICKSTART-child.md` | fill `hub:` → ingest → summarize/build → `kb publish`; documents the two env vars for MCP |
+| `.cursor/mcp.json` | `cursor-mcp-child.json` | HTTP client like `mcp-child.json`, but with Cursor's `${env:NAME}` interpolation syntax |
 
 Child gets **no** `.env.example`, `federation/`, or docker-setup bundle.
+
+### Cursor support
+
+Cursor becomes a third supported assistant, at parity with Claude Code and
+GitHub Copilot:
+
+- **Commands** (`.cursor/commands/<name>.md`, optional `name`/`description`
+  frontmatter): `kb-ingest`, `kb-publish`, `kb-summarize` in COMMON;
+  `kb-docker-setup` hub-only. Content is adapted from the Copilot prompt
+  variants (agent-agnostic instructions with the same hard rules — e.g.
+  "NEVER run `kb ingest`" for the ingest command). The Claude `SKILL.md`
+  files are deliberately **not** mirrored into `.cursor/skills/`: the
+  kb-summarize skill is a Claude-specific parallel sub-agent orchestrator
+  that Cursor cannot execute.
+- **Rule** (`.cursor/rules/kb-summarize.mdc`, `globs: .kb/**`): the summary
+  writing rules, mirroring `.github/instructions/kb-summarize.instructions.md`
+  (`applyTo: ".kb/**"`).
+- **MCP** (`.cursor/mcp.json`): Cursor does not read `.mcp.json`, so each
+  kind gets a Cursor variant of its MCP client config. Hub: stdio
+  (`python -m center_kb.mcp --kb .kb/`). Child: HTTP with
+  `"url": "${env:CENTER_KB_HUB_URL}/mcp"` and
+  `"Authorization": "Bearer ${env:CENTER_KB_HTTP_TOKEN}"` — Cursor's
+  interpolation syntax is `${env:NAME}`, unlike Claude's `${NAME}`, which is
+  why the child ships two MCP templates with the same semantics. Both stay
+  byte-static and refreshable, with the same no-secrets-in-git property.
 
 ### Templating
 
@@ -184,9 +218,10 @@ Behavior, in order:
      }
      ```
 
-**Wrappers** (hub scaffold only): `.claude/commands/kb-docker-setup.md` and
-`.github/prompts/kb-docker-setup.prompt.md` are thin — run `kb docker-setup`,
-relay its output, never print `.env` contents into chat.
+**Wrappers** (hub scaffold only): `.claude/commands/kb-docker-setup.md`,
+`.github/prompts/kb-docker-setup.prompt.md`, and
+`.cursor/commands/kb-docker-setup.md` are thin — run `kb docker-setup`, relay
+its output, never print `.env` contents into chat.
 `.claude/skills/kb-docker-setup/SKILL.md` carries the same rules plus the
 refusal behavior explanation.
 
@@ -196,9 +231,10 @@ refusal behavior explanation.
   wiring for the hub maintainer, not Docker.
 - Production hub serving: `python -m center_kb.mcp --hub <hub> --transport
   http` (or the Docker CMD) with `CENTER_KB_HTTP_TOKEN`.
-- `.mcp.json` is **client** config; the hub server process does not read it.
-  Child/BA machines point at the shared hub HTTP endpoint via the child
-  `.mcp.json` env-var template.
+- `.mcp.json` / `.cursor/mcp.json` are **client** config; the hub server
+  process does not read them. Child/BA machines point at the shared hub HTTP
+  endpoint via the child env-var templates (`${NAME}` for Claude Code,
+  `${env:NAME}` for Cursor).
 
 ## 6. Error handling summary
 
@@ -246,8 +282,16 @@ Extends the existing `tests/test_init.py` / `CliRunner` patterns.
   (invoke `kb docker-setup`, never print `.env` contents).
 - Both QUICKSTARTs: next steps match kind; hub mentions `/kb-docker-setup`;
   child mentions filling `hub:` and has no "serve the hub" step.
-- Child `.mcp.json` uses `${CENTER_KB_HUB_URL}` / `${CENTER_KB_HTTP_TOKEN}`.
+- Child `.mcp.json` uses `${CENTER_KB_HUB_URL}` / `${CENTER_KB_HTTP_TOKEN}`;
+  child `.cursor/mcp.json` uses `${env:CENTER_KB_HUB_URL}` /
+  `${env:CENTER_KB_HTTP_TOKEN}`.
 - Child compose has no `ports:`; service name stays `hub`.
+- Cursor templates: the three common commands + hub-only docker-setup command
+  carry the same hard rules as their Copilot counterparts (e.g.
+  "NEVER run `kb ingest`"); `cursor-kb-summarize.mdc` has `globs` targeting
+  `.kb/**` and the prose-only summary rules; assistant-parity assertion that
+  every kb-* slash command exists for Claude, Copilot, and Cursor in the
+  scaffold of each kind.
 - `test_templates.py` resource-existence check covers the new/renamed
   templates via the merged maps.
 
@@ -260,6 +304,9 @@ Extends the existing `tests/test_init.py` / `CliRunner` patterns.
   for the MCP client.
 - CLI reference in QUICKSTARTs/instructions gains `kb docker-setup` (hub
   QUICKSTART) and documents `kb init --kind`.
+- README/QUICKSTARTs name Cursor as a supported assistant alongside Claude
+  Code and GitHub Copilot (slash commands work in all three; MCP wiring via
+  `.mcp.json` for Claude Code and `.cursor/mcp.json` for Cursor).
 
 ## 9. Acceptance criteria
 
@@ -274,4 +321,6 @@ Extends the existing `tests/test_init.py` / `CliRunner` patterns.
   replace it; refuses on child/kind-less repos.
 - Tests cover both kinds, non-interactive `--kind`, the prompt path, and the
   docker-setup command + wrapper templates.
+- Cursor gets the same kb-* slash commands as Claude/Copilot, a `.kb/**`
+  summary-rules rule, and per-kind `.cursor/mcp.json` wiring.
 - README / QUICKSTART next steps match the chosen kind.
