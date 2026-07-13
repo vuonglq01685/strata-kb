@@ -102,27 +102,75 @@ def test_kb_doctor_on_fresh_skeleton_requires_hub(tmp_path: Path, monkeypatch):
     assert "config.yaml" in result.output
 
 
-def test_cli_init_reports_and_next_steps(tmp_path: Path):
-    result = runner.invoke(app, ["init", str(tmp_path)])
+def test_cli_init_hub_reports_and_next_steps(tmp_path: Path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "hub"])
     assert result.exit_code == 0
     assert "created" in result.output
-    assert "kb ingest" in result.output
+    assert "kb docker-setup" in result.output
+    assert "docker compose up -d" in result.output
+    # re-run: persisted kind, no flag needed, idempotent
     result2 = runner.invoke(app, ["init", str(tmp_path)])
     assert result2.exit_code == 0
-    assert "skipped" in result2.output
     assert "0 created" in result2.output
     assert "0 updated" in result2.output
     assert "2 skipped" in result2.output
 
 
+def test_cli_init_child_next_steps(tmp_path: Path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "child"])
+    assert result.exit_code == 0
+    assert "Fill hub:" in result.output
+    assert "kb publish" in result.output
+    assert "docker compose up -d" not in result.output
+
+
 def test_cli_init_updates_stale_scaffold(tmp_path: Path):
-    runner.invoke(app, ["init", str(tmp_path)])
+    runner.invoke(app, ["init", str(tmp_path), "--kind", "hub"])
     skill = tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
     skill.write_text("stale\n", encoding="utf-8")
-    result = runner.invoke(app, ["init", str(tmp_path)])
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "hub"])
     assert result.exit_code == 0
     assert "updated" in result.output
     assert "stale" not in skill.read_text(encoding="utf-8")
+
+
+def test_cli_init_non_interactive_requires_kind(tmp_path: Path):
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 2
+    assert "kb init requires --kind hub|child when not running interactively." in result.output
+
+
+def test_cli_init_conflicting_kind_errors(tmp_path: Path):
+    runner.invoke(app, ["init", str(tmp_path), "--kind", "child"])
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "hub"])
+    assert result.exit_code == 1
+    assert "already initialized as 'child'" in result.output
+    # nothing was scaffolded as hub
+    assert not (tmp_path / ".env.example").exists()
+
+
+def test_cli_init_interactive_prompt(tmp_path: Path, monkeypatch):
+    from center_kb import cli
+
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+    result = runner.invoke(app, ["init", str(tmp_path)], input="hub\n")
+    assert result.exit_code == 0
+    assert "Central knowledge hub" in result.output      # description shown
+    assert "Authoring repo" in result.output
+    assert (tmp_path / ".env.example").exists()
+
+
+def test_cli_init_interactive_prompt_rejects_invalid_then_accepts(
+    tmp_path: Path, monkeypatch
+):
+    from center_kb import cli
+
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+    result = runner.invoke(app, ["init", str(tmp_path)], input="server\nchild\n")
+    assert result.exit_code == 0
+    assert (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8").count(
+        "kind: child"
+    ) == 1
 
 
 @pytest.mark.parametrize("kind", ["hub", "child"])
