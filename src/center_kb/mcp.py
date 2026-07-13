@@ -222,6 +222,9 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
 
 
 def main(argv: list[str] | None = None) -> None:
+    from center_kb.utf8io import force_utf8_streams
+
+    force_utf8_streams()
     logging.basicConfig(level=logging.INFO)
     config = parse_args(argv)
     if config.transport == "http":
