@@ -1,0 +1,19 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Back-to-back pushes to a PR must not queue up and burn runners.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    uses: ./.github/workflows/_gate.yml
+    # empty tag → check_package.py skips the tag==version assertion (it only
+    # makes sense at release time).

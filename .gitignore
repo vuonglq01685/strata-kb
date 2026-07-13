@@ -1,11 +1,11 @@
-# ~/.gitignore_global của máy ignore *.md — repo này là docs-as-code,
-# markdown là sản phẩm chính nên phải bỏ chặn tại đây
+# The machine's ~/.gitignore_global ignores *.md — this repo is docs-as-code,
+# markdown is the main deliverable, so it must be un-ignored here
 !*.md
 
-# Tài liệu gốc có bản quyền (ARINC, ICAO) — tuyệt đối không commit
+# Copyrighted source documents (ARINC, ICAO) — ABSOLUTELY never commit
 sources/
 
-# Sản phẩm trung gian của pipeline (Docling JSON, summarize jobs)
+# Intermediate pipeline artifacts (Docling JSON, summarize jobs)
 .kb-work/
 
 # Python

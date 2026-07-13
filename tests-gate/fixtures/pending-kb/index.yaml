@@ -1,0 +1,14 @@
+docs:
+- id: demo-doc
+  title: Demo Document
+  revision: Rev 1
+  tags:
+  - demo
+  - airspace
+  summary: ''
+llm:
+  runner: auto
+  model: sonnet-5
+  effort: high
+  max_workers: 5
+  timeout: 300

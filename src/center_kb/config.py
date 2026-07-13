@@ -31,7 +31,9 @@ def load_config(kb_dir: Path) -> KBConfig:
 
 
 def require_hub(cli_value: str, kb_dir: Path) -> str:
-    """cli_value đã gộp env (typer envvar / mcp parse_args tự fold CENTER_KB_HUB)."""
+    """cli_value has env folded in already (typer envvar / mcp parse_args fold
+    CENTER_KB_HUB themselves).
+    """
     hub = cli_value or load_config(kb_dir).hub
     if not hub:
         raise HubConfigError(HUB_GUIDE)

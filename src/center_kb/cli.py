@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 import sys
 from pathlib import Path
 
@@ -24,8 +25,22 @@ context_app = typer.Typer(help="Operate on kb-context blocks (machine-readable c
 app.add_typer(context_app, name="context")
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(importlib.metadata.version("center-kb"))
+        raise typer.Exit()
+
+
 @app.callback()
-def main() -> None:
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed center-kb version and exit.",
+    ),
+) -> None:
     """CENTER-KB CLI."""
 
 
@@ -62,7 +77,7 @@ def init(
 
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):
-    """Hub bắt buộc: flag > env (typer envvar đã fold) > .kb/config.yaml."""
+    """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
     from center_kb.config import HubConfigError, require_hub
     from center_kb.hub import resolve_hub
 
@@ -138,7 +153,11 @@ def ingest(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
 
-    doc = parser.load_or_parse(pdf, work_dir / doc_id)
+    try:
+        doc = parser.load_or_parse(pdf, work_dir / doc_id)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
     items = parser.doc_to_items(doc)
     parts = None if no_bookmarks else parser.outline_parts(pdf, heading_config)
     if parts:
@@ -400,7 +419,7 @@ def get(
     section: str = typer.Argument(..., help="Section ID, e.g. 5.3 or §5.3"),
     level: str = typer.Option("l2", help="Level: l2 or l3"),
     repo: str = typer.Option(
-        "", "--repo", help="Repo ID khi doc-id trùng giữa các repo"
+        "", "--repo", help="Repo ID when the doc-id collides across repos"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
@@ -452,23 +471,23 @@ def publish(
     ),
     repo_id: str = typer.Option(
         "", "--repo-id",
-        help="Repo ID on the hub (default: config.yaml, rồi tên thư mục git root)",
+        help="Repo ID on the hub (default: config.yaml, then the git root dir name)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     pr: bool = typer.Option(
-        False, "--pr", help="Bắt buộc PR mode (cần gh + hub GitHub)"
+        False, "--pr", help="Force PR mode (requires gh + a GitHub hub)"
     ),
     direct: bool = typer.Option(
-        False, "--direct", help="Bắt buộc direct mode (push thẳng main của hub)"
+        False, "--direct", help="Force direct mode (push straight to the hub's main)"
     ),
 ) -> None:
-    """Mirror .kb/ (L0→L3) lên federation/<repo-id>/ của hub + đánh lại index tổng."""
+    """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
     from center_kb import gitio
     from center_kb import publish as publish_mod
     from center_kb.config import HubConfigError, effective_repo_id, require_hub
 
     if pr and direct:
-        typer.secho("--pr và --direct loại trừ nhau", fg=typer.colors.RED)
+        typer.secho("--pr and --direct are mutually exclusive", fg=typer.colors.RED)
         raise typer.Exit(2)
     mode = "pr" if pr else "direct" if direct else "auto"
     try:
@@ -503,9 +522,9 @@ def reindex(
         "", "--hub", envvar="CENTER_KB_HUB",
         help="kb-hub URL/path (default: .kb/config.yaml)",
     ),
-    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (để tìm config)"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (to find the config)"),
 ) -> None:
-    """Đánh lại federation/index.yaml từ các snapshot con (sửa index lệch)."""
+    """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
     from center_kb import gitio
     from center_kb.federation import write_federation_index
 

@@ -180,7 +180,7 @@ def test_branch_helpers_roundtrip(tmp_path, run_git):
     assert gitio.current_branch(root) == main
     assert (root / "a.txt").read_text(encoding="utf-8") == "v1"
 
-    # checkout -B lần 2 reset branch về start_point
+    # a second checkout -B resets the branch back to start_point
     gitio.checkout_branch(root, "publish/demo", main)
     assert (root / "a.txt").read_text(encoding="utf-8") == "v1"
     gitio.checkout(root, main)

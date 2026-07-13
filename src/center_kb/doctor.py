@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+import yaml
+from pydantic import ValidationError
+
 from center_kb import gitio, kbcontext, models
 from center_kb.mdutils import slice_section
 from center_kb.resolve import ResolvedRef, resolve_refs
@@ -19,11 +22,25 @@ class Issue:
     message: str
 
 
-def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
-    issues: list[Issue] = []
-    doc_dir = kb_dir / doc_id
-    manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
+def _flatten(exc: Exception) -> str:
+    """Collapse a (possibly multi-line) exception message to one scannable line."""
+    return " ".join(str(exc).split())
 
+
+def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
+    doc_dir = kb_dir / doc_id
+    try:
+        manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
+    except (yaml.YAMLError, ValidationError) as exc:
+        return [
+            Issue(
+                "error",
+                f"{doc_id}: _manifest.yaml is corrupt — fix or regenerate it: "
+                f"{_flatten(exc)}",
+            )
+        ]
+
+    issues: list[Issue] = []
     pending = 0
     referenced: set[str] = {"_manifest.yaml"}
     for sec in manifest.sections:
@@ -58,7 +75,16 @@ def check_kb(kb_dir: Path) -> list[Issue]:
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
         return [Issue("error", f"no index.yaml in '{kb_dir}'")]
-    index = models.load_yaml_model(index_path, models.KBIndex)
+    try:
+        index = models.load_yaml_model(index_path, models.KBIndex)
+    except (yaml.YAMLError, ValidationError) as exc:
+        return [
+            Issue(
+                "error",
+                f"index.yaml in '{kb_dir}' is corrupt — fix or regenerate it: "
+                f"{_flatten(exc)}",
+            )
+        ]
     index_ids = {d.id for d in index.docs}
 
     issues: list[Issue] = []
@@ -164,15 +190,25 @@ def check_hub(
             Issue("error", "federation/index.yaml is missing — run `kb reindex`")
         )
     else:
-        stored = models.load_yaml_model(index_path, models.FederationIndex)
-        if stored != build_federation_index(fed):
+        try:
+            stored = models.load_yaml_model(index_path, models.FederationIndex)
+        except (yaml.YAMLError, ValidationError) as exc:
             issues.append(
                 Issue(
                     "error",
-                    "federation/index.yaml is out of sync with the snapshots — "
-                    "run `kb reindex`",
+                    f"federation/index.yaml is corrupt — run `kb reindex`: "
+                    f"{_flatten(exc)}",
                 )
             )
+        else:
+            if stored != build_federation_index(fed):
+                issues.append(
+                    Issue(
+                        "error",
+                        "federation/index.yaml is out of sync with the snapshots — "
+                        "run `kb reindex`",
+                    )
+                )
 
     if repo_id:
         entry = fed / repo_id

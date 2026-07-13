@@ -24,7 +24,9 @@ are NOT your concern.
 </source>
 
 Write two summaries of the source text, following ALL rules:
-- Write in English.
+- Write both summaries in the SAME LANGUAGE as the source text above. Never \
+translate: if the source is English, answer in English; if it is Vietnamese, \
+answer in Vietnamese; and so on.
 - l2_summary: condense the prose to ~20-30% of the original length, keep the \
 logical structure. HARD LIMIT: l2_summary must be at most {max_chars} \
 characters — if your draft is longer, compress harder before replying.
@@ -45,8 +47,9 @@ document "{title}":
 
 {l1_lines}
 
-Write ONE English sentence (max 30 words) summarizing what the whole document \
-covers. Reply with ONLY a JSON object:
+Write ONE sentence (max 30 words) summarizing what the whole document covers, \
+in the SAME LANGUAGE as the section summaries above. Never translate. \
+Reply with ONLY a JSON object:
 {{"summary": "..."}}"""
 
 TABLE_PLACEHOLDER = "[table omitted]"
