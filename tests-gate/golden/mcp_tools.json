@@ -31,6 +31,19 @@
       ],
       "title": "kb_context_newArguments",
       "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_context_newOutput",
+      "type": "object"
     }
   },
   "kb_get_section": {
@@ -62,6 +75,19 @@
       ],
       "title": "kb_get_sectionArguments",
       "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_get_sectionOutput",
+      "type": "object"
     }
   },
   "kb_resolve": {
@@ -77,6 +103,19 @@
         "kb_context"
       ],
       "title": "kb_resolveArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_resolveOutput",
       "type": "object"
     }
   },
@@ -113,6 +152,19 @@
         "query"
       ],
       "title": "kb_searchArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_searchOutput",
       "type": "object"
     }
   }
