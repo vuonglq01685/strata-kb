@@ -27,11 +27,15 @@ async def _list_tools(params):
 
 
 def _snapshot(tools) -> dict:
+    # Dump TOÀN BỘ field của Tool (Pydantic model), không liệt kê tay từng
+    # field — nếu SDK thêm outputSchema/title/annotations/icons/meta sau này,
+    # snapshot tự động bắt được thay đổi thay vì im lặng bỏ qua. by_alias=True
+    # để giữ tên trên wire (camelCase: inputSchema, outputSchema...) — đúng
+    # cái agent thực sự thấy, không phải tên field Python nội bộ.
+    # exclude_none=True giữ golden hiện tại gọn (mọi field chưa dùng đều None)
+    # nhưng bất kỳ field nào được SET sau này sẽ hiện ra trong snapshot.
     return {
-        t.name: {
-            "description": (t.description or "").strip(),
-            "inputSchema": t.inputSchema,
-        }
+        t.name: t.model_dump(exclude={"name"}, exclude_none=True, by_alias=True)
         for t in sorted(tools.tools, key=lambda t: t.name)
     }
 
