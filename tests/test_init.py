@@ -24,7 +24,7 @@ def test_init_refreshes_scaffold_but_protects_index(tmp_path: Path):
     skill.write_text("stale skill content\n", encoding="utf-8")
     report = init_repo(tmp_path)
     assert report.created == []
-    assert report.skipped == [".kb/index.yaml"]
+    assert sorted(report.skipped) == sorted([".kb/index.yaml", ".kb/config.yaml"])
     assert ".claude/skills/kb-summarize/SKILL.md" in report.updated
     assert "keep-me" in index.read_text(encoding="utf-8")
     assert "stale skill content" not in skill.read_text(encoding="utf-8")
@@ -35,7 +35,7 @@ def test_init_is_idempotent_when_already_current(tmp_path: Path):
     report = init_repo(tmp_path)
     assert report.created == []
     assert report.updated == []
-    assert report.skipped == [".kb/index.yaml"]
+    assert sorted(report.skipped) == sorted([".kb/index.yaml", ".kb/config.yaml"])
 
 
 def test_init_force_overwrites_protected_data(tmp_path: Path):
@@ -49,11 +49,23 @@ def test_init_force_overwrites_protected_data(tmp_path: Path):
     assert "gone" not in marker.read_text(encoding="utf-8")
 
 
-def test_kb_doctor_passes_on_fresh_skeleton(tmp_path: Path):
+def test_init_does_not_overwrite_config(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path)
+    cfg = tmp_path / ".kb" / "config.yaml"
+    cfg.write_text("hub: /my/hub\n", encoding="utf-8")
+    report = init_repo(tmp_path)
+    assert ".kb/config.yaml" in report.skipped
+    assert cfg.read_text(encoding="utf-8") == "hub: /my/hub\n"
+
+
+def test_kb_doctor_on_fresh_skeleton_requires_hub(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("CENTER_KB_HUB", raising=False)
     init_repo(tmp_path)
     result = runner.invoke(app, ["doctor", "--kb-dir", str(tmp_path / ".kb")])
-    assert result.exit_code == 0
-    assert "kb doctor: OK" in result.output
+    assert result.exit_code == 1
+    assert "config.yaml" in result.output
 
 
 def test_cli_init_reports_and_next_steps(tmp_path: Path):
@@ -66,7 +78,7 @@ def test_cli_init_reports_and_next_steps(tmp_path: Path):
     assert "skipped" in result2.output
     assert "0 created" in result2.output
     assert "0 updated" in result2.output
-    assert "1 skipped" in result2.output
+    assert "2 skipped" in result2.output
 
 
 def test_cli_init_updates_stale_scaffold(tmp_path: Path):
@@ -130,7 +142,8 @@ def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
     assert "name: kb-publish" in skill_text
     assert "mode: agent" in prompt_text
     for text in (skill_text, prompt_text):
-        assert "NEVER run `kb approve` or `kb publish`" in text  # hard rule
+        assert "NEVER run `kb publish`" in text          # hard rule
+        assert "PR" in text                               # PR-mode publish
         assert "kb diff" in text
         assert "kb status" in text
         assert "CENTER_KB_HUB" in text
@@ -148,7 +161,7 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
         # every kb command appears
         for cmd in (
             "kb init", "kb ingest", "kb summarize", "kb status", "kb build",
-            "kb query", "kb get", "kb stats", "kb diff", "kb approve",
+            "kb query", "kb get", "kb stats", "kb diff",
             "kb publish", "kb resolve", "kb doctor",
         ):
             assert cmd in text, cmd

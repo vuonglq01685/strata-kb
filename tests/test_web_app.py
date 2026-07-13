@@ -7,29 +7,33 @@ TOKEN = "secret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
-def test_root_redirects_to_ui(fixture_kb):
-    client = TestClient(create_app(ServerConfig(kb_dir=fixture_kb), TOKEN))
+def _config(fed_hub) -> ServerConfig:
+    return ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
+
+
+def test_root_redirects_to_ui(fed_hub):
+    client = TestClient(create_app(_config(fed_hub), TOKEN))
     resp = client.get("/", headers=AUTH, follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/ui"
 
 
-def test_api_and_ui_reachable_through_one_app(fixture_kb):
-    client = TestClient(create_app(ServerConfig(kb_dir=fixture_kb), TOKEN))
+def test_api_and_ui_reachable_through_one_app(fed_hub):
+    client = TestClient(create_app(_config(fed_hub), TOKEN))
     assert client.get("/api/docs", headers=AUTH).status_code == 200
     assert client.get("/ui", headers=AUTH).status_code == 200
 
 
-def test_unauthenticated_api_401_ui_redirect(fixture_kb):
-    client = TestClient(create_app(ServerConfig(kb_dir=fixture_kb), TOKEN))
+def test_unauthenticated_api_401_ui_redirect(fed_hub):
+    client = TestClient(create_app(_config(fed_hub), TOKEN))
     assert client.get("/api/docs").status_code == 401
     resp = client.get("/ui", follow_redirects=False)
     assert resp.status_code == 302
 
 
-def test_full_http_app_serves_mcp_and_api_together(fixture_kb):
+def test_full_http_app_serves_mcp_and_api_together(fed_hub):
     """create_http_app: MCP handshake still works AND /api works on the same app."""
-    app = create_http_app(ServerConfig(kb_dir=fixture_kb), TOKEN)
+    app = create_http_app(_config(fed_hub), TOKEN)
     payload = {
         "jsonrpc": "2.0",
         "id": 1,

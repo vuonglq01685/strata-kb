@@ -7,10 +7,10 @@ from pathlib import Path
 # target relative path -> template resource name under templates/init/
 TEMPLATE_MAP: dict[str, str] = {
     ".kb/index.yaml": "index.yaml",
+    ".kb/config.yaml": "config.yaml",
     "federation/README.md": "federation-README.md",
     "source/.gitignore": "source-gitignore.txt",
     ".mcp.json": "mcp.json",
-    ".github/workflows/kb-review.yml": "kb-review.yml",
     "docker-compose.yml": "docker-compose.yml",
     ".env.example": "env.example",
     "QUICKSTART.md": "QUICKSTART.md",
@@ -21,11 +21,12 @@ TEMPLATE_MAP: dict[str, str] = {
     ".github/prompts/kb-ingest.prompt.md": "copilot-kb-ingest.prompt.md",
     ".claude/skills/kb-publish/SKILL.md": "claude-skill-kb-publish.md",
     ".github/prompts/kb-publish.prompt.md": "copilot-kb-publish.prompt.md",
+    ".github/workflows/kb-publish.yml": "kb-publish.yml",
 }
 EXPECTED_FILES = list(TEMPLATE_MAP)
 
 # User data — never refreshed by default; only overwritten with --force.
-PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml"})
+PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml", ".kb/config.yaml"})
 
 
 @dataclass
