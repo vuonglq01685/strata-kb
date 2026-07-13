@@ -32,7 +32,7 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
         from docling_core.types.doc import DoclingDocument
     except ImportError as exc:
         raise RuntimeError(
-            "Docling is not installed. Run: pip install -e \".[ingest]\""
+            "Docling is not installed. Run: pip install \"center-kb[ingest]\""
         ) from exc
 
     cache = work_dir / "parsed.json"
