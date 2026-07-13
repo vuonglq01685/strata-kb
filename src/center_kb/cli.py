@@ -151,6 +151,49 @@ def init(
     typer.echo("  (details: QUICKSTART.md)")
 
 
+@app.command("docker-setup")
+def docker_setup(
+    path: Path = typer.Argument(Path("."), help="Hub repo root (default: current)"),
+    force: bool = typer.Option(
+        False, "--force", help="Regenerate the token inside an existing .env"
+    ),
+) -> None:
+    """Hub only: create .env and generate CENTER_KB_HTTP_TOKEN for Docker HTTP serving."""
+    from center_kb import dockersetup
+
+    try:
+        try:
+            report = dockersetup.run_setup(path, regenerate=force)
+        except dockersetup.EnvExistsError:
+            if _stdin_isatty() and typer.confirm(
+                f"Found existing .env — regenerate {dockersetup.TOKEN_VAR}?"
+            ):
+                report = dockersetup.run_setup(path, regenerate=True)
+            else:
+                raise
+    except dockersetup.DockerSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    action = "created" if report.env_created else "updated"
+    typer.echo(
+        f".env {action} — {dockersetup.TOKEN_VAR} written (token not shown; see .env)."
+    )
+    if report.gitignore_updated:
+        typer.echo(".gitignore updated: added .env")
+    typer.secho(
+        "This token was auto-generated for convenience — replace it with your "
+        "own secret for real deployments, and store it in a secret manager.",
+        fg=typer.colors.YELLOW,
+    )
+    typer.echo("Next steps:")
+    typer.echo("  1. docker compose up -d")
+    typer.echo("  2. Open http://localhost:8321/ui (sign in with the token from .env)")
+    typer.echo("  3. Point remote MCP clients at the hub:")
+    typer.echo('     { "mcpServers": { "center-kb": { "type": "http",')
+    typer.echo('       "url": "http://<host>:8321/mcp",')
+    typer.echo('       "headers": { "Authorization": "Bearer <token>" } } } }')
+
+
 def _hub_or_exit(hub_flag: str, kb_dir: Path):
     """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
     from center_kb.config import HubConfigError, require_hub
