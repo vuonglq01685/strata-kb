@@ -12,10 +12,15 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from center_kb.mcp import ServerConfig
-from center_kb.query import get_section, search, tokenize
+from center_kb.query import AmbiguousDocError, get_section, search, tokenize
 from center_kb.web import api
 from center_kb.web.auth import COOKIE_NAME
 from center_kb.web.mdrender import render as md_render
+
+HUB_DOWN_HTML = '<div class="empty-state"><p>Hub unreachable.</p></div>'
+HUB_DOWN_PAGE = (
+    "<h1>503</h1><p>Hub unreachable — the federation is the only read source.</p>"
+)
 
 
 def _template(name: str) -> Template:
@@ -49,8 +54,7 @@ def _chips(tags: list[str]) -> str:
 
 
 def _source_badge(source: str) -> str:
-    kind = "remote" if source.startswith("remote:") else source
-    return f'<span class="source-badge source-{_e(kind)}">{_e(source)}</span>'
+    return f'<span class="source-badge source-remote">{_e(source)}</span>'
 
 
 def _match_badge(mode: str) -> str:
@@ -65,12 +69,7 @@ def _result_blocks(results, terms: set[str] | None = None) -> str:
         )
     blocks = []
     for r in results:
-        if r.source.startswith("remote:"):
-            # federation carries L1 only — link to the doc's TOC page, not a
-            # section content page (which does not exist for remote docs)
-            href = f"/ui/docs/{quote(r.doc_id)}"
-        else:
-            href = f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
+        href = f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}?repo={quote(r.source)}"
         blocks.append(
             '<article class="result">'
             '<header class="result-head">'
@@ -94,13 +93,13 @@ def _doc_cards(docs: list[dict]) -> str:
     cards = []
     for d in docs:
         title = _e(d["title"]) or _e(d["id"])
-        # remote docs render too: the doc page shows their L1 TOC + repo note
-        name = f'<a href="/ui/docs/{quote(d["id"])}">{title}</a>'
+        href = f"/ui/docs/{quote(d['id'])}?repo={quote(d['repo'])}"
+        name = f'<a href="{href}">{title}</a>'
         rev = f'<span class="rev">{_e(d["revision"])}</span>' if d["revision"] else ""
         cards.append(
             '<article class="doc-card">'
             f'<header class="result-head"><span class="doc-name">{name}</span> {rev}'
-            f"{_source_badge(d['source'])}</header>"
+            f"{_source_badge(d['repo'])}</header>"
             f'<p class="doc-summary">{_e(d["summary"])}</p>'
             f'<p class="chips">{_chips(d["tags"])}</p>'
             "</article>"
@@ -139,63 +138,45 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         terms = set(tokenize(q)) if q else set()
         hub = api.hub_handle(config)
-        # hub configured → search published knowledge only (hub + federation);
-        # no hub → this server *is* the knowledge source, search it directly.
-        include_local = hub is None
         results_html = ""
-        if q:
-            results = search(
-                config.kb_dir,
-                q,
-                tags=tags or None,
-                budget=2000,
-                hub=hub,
-                include_local=include_local,
-            )
+        if hub is None:
+            results_html = HUB_DOWN_HTML
+        elif q:
+            results = search(hub, q, tags=tags or None, budget=2000)
             results_html = _result_blocks(results, terms)
         elif tags:
-            docs = api.list_docs(config, include_local=include_local)
+            docs = api.list_docs(config) or []
             results_html = _doc_cards(_match_tags(docs, tags))
-        scope = (
-            "published knowledge · hub + federation"
-            if hub is not None
-            else "local knowledge base"
-        )
+        scope = "hub federation"
         body = _template("search.html").substitute(
             q=_e(q), tags=_e(raw_tags), scope=_e(scope), results=results_html
         )
         return _page("Search", body)
 
     async def docs_page(request: Request) -> HTMLResponse:
-        # same scoping as home(): a hub configured → published knowledge only
-        include_local = api.hub_handle(config) is None
-        cards = _doc_cards(api.list_docs(config, include_local=include_local))
+        cards = _doc_cards(api.list_docs(config) or [])
         body = _template("docs.html").substitute(cards=cards)
         return _page("Documents", body)
 
     async def doc_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
-        found = api.load_manifest(config, doc_id)
+        repo = request.query_params.get("repo") or None
+        try:
+            found = api.load_manifest(config, doc_id, repo=repo)
+        except AmbiguousDocError as exc:
+            return _page("Ambiguous document", f"<h1>400</h1><p>{_e(str(exc))}</p>", 400)
         if found is None:
             return _page("Not found", f"<h1>404</h1><p>Unknown doc '{_e(doc_id)}'.</p>", 404)
-        manifest, repo = found
+        manifest, rid = found
         rows = []
         for s in manifest.sections:
-            if repo:
-                cell = f"§{_e(s.id)}"  # federation: L1 only, no content page
-            else:
-                href = f"/ui/docs/{quote(doc_id)}/{quote(s.id)}"
-                cell = f'<a href="{href}">§{_e(s.id)}</a>'
+            href = f"/ui/docs/{quote(doc_id)}/{quote(s.id)}?repo={quote(rid)}"
+            cell = f'<a href="{href}">§{_e(s.id)}</a>'
             rows.append(
                 f"<tr><td>{cell}</td><td>{_e(s.title)}</td>"
                 f"<td>{_e(s.summary)}</td><td>{_status_span(s.status)}</td></tr>"
             )
-        repo_note = (
-            f'<p class="meta">[remote] repo \'{_e(repo)}\' — L1 summaries only; '
-            "read full content at the source repo.</p>"
-            if repo
-            else ""
-        )
+        repo_note = f'<p class="meta">repo: {_e(rid)}</p>'
         body = _template("doc.html").substitute(
             doc_id=_e(doc_id),
             title=_e(manifest.title),
@@ -211,9 +192,14 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         level = request.query_params.get("level", "l2")
         if level not in ("l2", "l3"):
             level = "l2"
-        result = get_section(
-            config.kb_dir, doc_id, section_id, level=level, hub=api.hub_handle(config)
-        )
+        repo = request.query_params.get("repo") or None
+        hub = api.hub_handle(config)
+        if hub is None:
+            return _page("Hub unreachable", HUB_DOWN_PAGE, 503)
+        try:
+            result = get_section(hub, doc_id, section_id, level=level, repo=repo)
+        except AmbiguousDocError as exc:
+            return _page("Ambiguous document", f"<h1>400</h1><p>{_e(str(exc))}</p>", 400)
         if result is None:
             return _page(
                 "Not found",
@@ -221,7 +207,10 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
                 404,
             )
         other = "l3" if level == "l2" else "l2"
-        toggle_href = f"/ui/docs/{quote(doc_id)}/{quote(section_id)}?level={other}"
+        toggle_href = (
+            f"/ui/docs/{quote(doc_id)}/{quote(section_id)}"
+            f"?level={other}&repo={quote(result.source)}"
+        )
         toggle = f'<a href="{toggle_href}">view {other.upper()}</a>'
         body = _template("section.html").substitute(
             doc_id=_e(doc_id),
