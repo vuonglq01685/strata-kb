@@ -47,7 +47,7 @@ def test_force_utf8_streams_skips_utf8_and_reconfigures_legacy(monkeypatch):
     monkeypatch.setattr(utf8io.sys, "stdout", modern)
     monkeypatch.setattr(utf8io.sys, "stderr", _FakeStream("UTF-8"))
     utf8io.force_utf8_streams()
-    assert legacy.calls == [{"encoding": "utf-8"}]
+    assert legacy.calls == [{"encoding": "utf-8", "errors": "replace"}]
     assert modern.calls == []
 
 

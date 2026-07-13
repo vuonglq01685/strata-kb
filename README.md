@@ -254,6 +254,8 @@ path limit. If you hit `FileNotFoundError` on long paths, enable long paths
 once: `git config --global core.longpaths true`, and set the registry key
 `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1`.
 
+`kb` also forces UTF-8 on stdin/stdout/stderr at startup on every OS, so piped I/O stays UTF-8 even under a non-UTF-8 locale (e.g. the Windows cp1252 console default).
+
 ---
 
 ## 7. `kb` command dictionary
