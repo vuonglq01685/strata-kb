@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from center_kb import ghio, gitio, models
