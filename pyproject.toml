@@ -46,5 +46,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/center_kb"]
 
+# sdist mặc định của hatchling là "mọi thứ không bị .gitignore" — .kb/ (chứa
+# text trích nguyên văn từ PDF bản quyền), docs/, tests/, .claude/ v.v. đều lọt
+# vào vì KHÔNG bị gitignore. only-include chặn duyệt thư mục từ root, chỉ cho
+# đúng src/ đi vào sdist. pyproject.toml, README, LICENSE được hatchling tự
+# thêm vô điều kiện (không thể loại trừ) nên không cần liệt kê ở đây.
+[tool.hatch.build.targets.sdist]
+only-include = ["src"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
