@@ -205,3 +205,28 @@ def published_repo(
     kb_run("publish", "--direct", "--hub", str(bare_hub), "--repo-id", "e2e-repo",
            "--kb-dir", str(kb), cwd=repo)
     return {"repo": repo, "kb": kb, "hub": bare_hub}
+
+
+@pytest.fixture
+def mcp_stdio_params(artifact: Artifact, published_repo: dict):
+    """StdioServerParameters trỏ vào `python -m center_kb.mcp` của venv ARTIFACT
+    (không phải venv runner) — không có lệnh `kb serve`, server chạy đúng như
+    CMD của Dockerfile. Dùng chung ở đây (không phải test_server.py) để Task
+    9/10 tái dùng qua tests-gate/conftest.py mà không cần import chéo giữa
+    các test module.
+
+    `mcp` (gói SDK client) là dependency của RUNNER (requirements-gate.txt),
+    import nó ở đây KHÔNG vi phạm quy tắc "không import center_kb".
+    """
+    from mcp import StdioServerParameters
+
+    return StdioServerParameters(
+        command=str(artifact.python),
+        args=[
+            "-m", "center_kb.mcp",
+            "--kb", str(published_repo["kb"]),
+            "--hub", str(published_repo["hub"]),
+        ],
+        cwd=str(published_repo["repo"]),
+        env={**os.environ},
+    )
