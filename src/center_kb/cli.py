@@ -8,14 +8,9 @@ from pathlib import Path
 import typer
 
 from center_kb import models
+from center_kb.utf8io import force_utf8_streams
 
-# Windows console defaults to cp1252 → UnicodeEncodeError crash when printing
-# '§'/accented characters. Force UTF-8 when the stream isn't already UTF-8
-# (guarded: some test/redirect streams lack .reconfigure()).
-for _stream in (sys.stdout, sys.stderr):
-    _enc = getattr(_stream, "encoding", None) or ""
-    if _enc.lower().replace("-", "") != "utf8" and hasattr(_stream, "reconfigure"):
-        _stream.reconfigure(encoding="utf-8")
+force_utf8_streams()
 
 app = typer.Typer(
     help="CENTER-KB — Knowledge Base as Code for large reference documents.",
