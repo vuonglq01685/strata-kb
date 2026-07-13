@@ -27,3 +27,28 @@ def test_subprocess_text_true_always_sets_utf8():
         f"subprocess text=True without encoding=\"utf-8\" in: {offenders} — "
         "on Windows this decodes with cp1252 and mojibakes UTF-8 output"
     )
+
+
+# Writers whose output is committed content (KB YAML, L2/L3 markdown,
+# templates) — CRLF from a Windows machine would churn hub diffs and skew
+# content hashes. hub.py (marker) and ingest/parser.py (cache) are local-only.
+COMMITTED_WRITERS = [
+    "models.py",
+    "initcmd.py",
+    "dockersetup.py",
+    "summarize.py",
+    "ingest/scaffold.py",
+]
+
+
+def test_committed_writers_force_lf_newline():
+    offenders = []
+    for rel in COMMITTED_WRITERS:
+        text = (SRC / rel).read_text(encoding="utf-8")
+        for m in re.finditer(re.escape("write_text("), text):
+            window = text[m.start(): m.start() + 300]
+            if 'newline="\\n"' not in window:
+                offenders.append(rel)
+    assert not offenders, (
+        f"write_text without newline=\"\\n\" in committed-content writers: {offenders}"
+    )

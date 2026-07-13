@@ -52,7 +52,7 @@ def run_setup(repo_root: Path, regenerate: bool = False) -> SetupReport:
         if base and not base.endswith("\n"):
             base += "\n"
         content = base + line + "\n"
-    env_path.write_text(content, encoding="utf-8")
+    env_path.write_text(content, encoding="utf-8", newline="\n")
     return SetupReport(
         env_created=env_created, gitignore_updated=_ensure_gitignored(repo_root)
     )
@@ -83,5 +83,5 @@ def _ensure_gitignored(repo_root: Path) -> bool:
     if any(line.strip() in (".env", "/.env") for line in lines):
         return False
     lines.append(".env")
-    gitignore.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    gitignore.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     return True
