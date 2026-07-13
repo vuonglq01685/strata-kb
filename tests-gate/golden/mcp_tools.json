@@ -1,0 +1,119 @@
+{
+  "kb_context_new": {
+    "description": "Pin a kb-context citation block at the current KB commit, from 1+\nrefs like 'arinc-424 \u00a75.129'. Call this only after the user has\nconfirmed which section(s) \u2014 out of everything kb_search returned \u2014\nactually belong in the story; paste the returned block into the\nticket. Citing 2-3 sections for one story is normal \u2014 pass every\nconfirmed ref in one call.",
+    "inputSchema": {
+      "properties": {
+        "refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Refs",
+          "type": "array"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        }
+      },
+      "required": [
+        "refs"
+      ],
+      "title": "kb_context_newArguments",
+      "type": "object"
+    }
+  },
+  "kb_get_section": {
+    "description": "Fetch exactly one section: level 'l2' (condensed) or 'l3' (verbatim).\n`doc` accepts 'repo:doc' form; pass `repo` when the doc id alone is\nambiguous across federation repos.",
+    "inputSchema": {
+      "properties": {
+        "doc": {
+          "title": "Doc",
+          "type": "string"
+        },
+        "level": {
+          "default": "l2",
+          "title": "Level",
+          "type": "string"
+        },
+        "repo": {
+          "default": "",
+          "title": "Repo",
+          "type": "string"
+        },
+        "section": {
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc",
+        "section"
+      ],
+      "title": "kb_get_sectionArguments",
+      "type": "object"
+    }
+  },
+  "kb_resolve": {
+    "description": "Accept a kb-context block (or the raw ticket text containing one); return the cited sections at their pinned version + freshness ok/stale/broken.",
+    "inputSchema": {
+      "properties": {
+        "kb_context": {
+          "title": "Kb Context",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kb_context"
+      ],
+      "title": "kb_resolveArguments",
+      "type": "object"
+    }
+  },
+  "kb_search": {
+    "description": "Find sections by tag match + BM25 (falls back to semantic search);\nreturn L2 content within the token budget, with citations. Returns\nevery relevant section found, not just the best match \u2014 when using\nthis to draft a User Story, show ALL returned sections (with their\ncitations) to the user and confirm which ones actually apply before\nwriting story content from them. Citing more than one section for a\nsingle story is normal. Once confirmed, call kb_context_new with the\nconfirmed refs to pin them for the ticket. Results come from the hub\nfederation \u2014 unpublished local content never appears.",
+    "inputSchema": {
+      "properties": {
+        "budget": {
+          "default": 2000,
+          "title": "Budget",
+          "type": "integer"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "kb_searchArguments",
+      "type": "object"
+    }
+  }
+}
