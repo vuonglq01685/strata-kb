@@ -109,6 +109,15 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run):
     bắt được và báo sạch bằng `[error] ...` cũng không in Traceback, exit 1,
     và vẫn qua test đó. Phải khẳng định doctor thực sự đọc được .kb cũ — tức
     là in đúng dòng `kb doctor: OK` (chỉ in khi không có issue cấp error/stale).
+
+    Nhưng riêng dòng "kb doctor: OK" cũng chưa đủ: xem cli.py::doctor — dòng
+    "OK" chỉ kiểm tra không có issue mức error/stale, KHÔNG kiểm tra có issue
+    mức warning hay không. Một `.kb/` cũ mà version mới chỉ đọc được nửa
+    đúng — phát sinh `[warning] ...` — vẫn lọt qua dòng OK đó. (Ví dụ thật:
+    bỏ qua bước `kb publish` khiến `check_hub` phát ra "repo has not
+    published to the hub yet" ở mức warning — không mức error — nên OK vẫn
+    in ra bình thường.) Vì vậy phải soi thẳng stdout: sau một `kb publish`
+    đúng, .kb cũ phải sạch tuyệt đối — không một dòng [warning]/[error] nào.
     """
     kb_run("publish", "--direct", "--hub", str(legacy_kb["hub"]),
            "--repo-id", "legacy", "--kb-dir", str(legacy_kb["kb"]),
@@ -125,6 +134,16 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run):
         f"doctor không in 'kb doctor: OK' trên .kb của {legacy_kb['tag']} — "
         f"doctor đọc .kb cũ nhưng không xác nhận nó lành, hay chỉ đơn giản "
         f"là không crash?\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+    )
+    assert "[warning]" not in proc.stdout, (
+        f"doctor in 'kb doctor: OK' nhưng vẫn có [warning] trên .kb của "
+        f"{legacy_kb['tag']} — OK không kiểm tra warning (xem cli.py::doctor), "
+        f"nên đây là bằng chứng version mới đọc .kb cũ chỉ đúng một phần\n"
+        f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+    )
+    assert "[error]" not in proc.stdout, (
+        f"doctor in 'kb doctor: OK' nhưng vẫn có [error] trên .kb của "
+        f"{legacy_kb['tag']}\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     )
 
 
