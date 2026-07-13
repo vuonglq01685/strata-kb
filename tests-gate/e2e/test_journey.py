@@ -181,3 +181,23 @@ def test_diff_detects_a_changed_section(published_repo, kb_run):
                   "--kb-dir", str(kb), cwd=repo)
 
     assert "1.1" in proc.stdout
+
+
+def test_ingest_without_docling_fails_cleanly(kb_run, seed_kb, bare_hub, tmp_path):
+    """Wheel base KHÔNG có extras [ingest]. User `pip install center-kb` rồi
+    chạy ingest sẽ đâm vào đúng đường này — nó phải là một câu tiếng người,
+    không phải traceback."""
+    kb_run("init", cwd=tmp_path)
+    seed_kb(tmp_path, bare_hub)
+    fake_pdf = tmp_path / "x.pdf"
+    fake_pdf.write_bytes(b"%PDF-1.4\n")
+
+    proc = kb_run("ingest", str(fake_pdf), "--id", "whatever",
+                  cwd=tmp_path, check=False)
+
+    assert proc.returncode != 0
+    combined = proc.stdout + proc.stderr
+    assert "Docling is not installed" in combined
+    assert "Traceback" not in combined, (
+        "ingest thiếu docling ném traceback thô vào mặt user:\n" + combined
+    )
