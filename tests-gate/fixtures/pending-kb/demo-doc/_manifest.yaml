@@ -1,0 +1,27 @@
+id: demo-doc
+title: Demo Document
+revision: Rev 1
+ingested: '2026-07-13'
+source_sha256: ''
+sections:
+- id: '1.1'
+  title: Airspace Records
+  summary: ''
+  status: pending
+  file: ch1-airspace-records
+  tokens:
+    l2: 0
+    l3: 29
+- id: '1.2'
+  title: Airway Records
+  summary: ''
+  status: pending
+  file: ch1-airspace-records
+  tokens:
+    l2: 0
+    l3: 18
+ingest:
+  chapter_pattern: ^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$
+  appendix_pattern: ^appendix\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$
+  attachment_pattern: ^attachment\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$
+  used_bookmarks: false
