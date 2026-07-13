@@ -1,0 +1,29 @@
+docs:
+- repo_id: golden
+  doc_id: arinc-424
+  title: ARINC 424 — Navigation System Data Base
+  revision: Supplement 22
+  tags:
+  - arinc424
+  - navdata
+  - airspace
+  - airport
+  - navaid
+  - airway
+  summary: 'Navigation data field definitions (Chapter 5): record fields, coding rules,
+    lengths and character types for airports, navaids, airways, airspace.'
+  source_commit: f6c3564
+  published_at: '2026-07-13T10:28:56+00:00'
+- repo_id: golden
+  doc_id: icao-annex-3
+  title: ICAO Annex 3 — Meteorological Service for International Air Navigation
+  revision: Ed 20
+  tags:
+  - icao
+  - annex3
+  - met
+  - meteorology
+  summary: 'General provisions (Chapter 2): objective and provision of meteorological
+    service, quality management, and notifications required from operators.'
+  source_commit: f6c3564
+  published_at: '2026-07-13T10:28:56+00:00'
