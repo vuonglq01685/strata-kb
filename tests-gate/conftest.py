@@ -93,7 +93,7 @@ def artifact() -> Artifact:
             "KB_VENV is not set. The e2e/regression tiers run against the "
             "INSTALLED WHEEL, never against the source tree. Use: ./scripts/gate.sh"
         )
-    art = Artifact(venv=Path(raw))
+    art = Artifact(venv=Path(raw).resolve())
     if not art.kb.exists():
         raise RuntimeError(
             f"KB_VENV={art.venv} has no kb executable ({art.kb}) — "

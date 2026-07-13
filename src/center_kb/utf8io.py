@@ -16,4 +16,4 @@ def force_utf8_streams() -> None:
         if encoding.lower().replace("-", "") != "utf8" and hasattr(
             stream, "reconfigure"
         ):
-            stream.reconfigure(encoding="utf-8")
+            stream.reconfigure(encoding="utf-8", errors="replace")
