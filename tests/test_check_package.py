@@ -54,6 +54,18 @@ def test_wheel_offenders_is_empty_for_a_clean_wheel(tmp_path):
     assert wheel_offenders(wheel) == []
 
 
+def test_wheel_offenders_allows_any_dist_info_version_suffix(tmp_path):
+    # dist-info tên đổi theo version ở mỗi build (vd 0.9.1, 1.0.0-rc1...) —
+    # allowlist so bằng suffix ".dist-info", không hardcode một version cụ
+    # thể, nên bất kỳ version nào cũng phải qua sạch.
+    wheel = _make_wheel(
+        tmp_path / "clean-9.9.9-py3-none-any.whl",
+        ["center_kb/__init__.py", "center_kb-9.9.9.dist-info/METADATA"],
+    )
+
+    assert wheel_offenders(wheel) == []
+
+
 def test_wheel_offenders_flags_tests_and_kb_and_sources(tmp_path):
     wheel = _make_wheel(
         tmp_path / "dirty-0.1-py3-none-any.whl",
@@ -66,6 +78,29 @@ def test_wheel_offenders_flags_tests_and_kb_and_sources(tmp_path):
     )
 
     assert sorted(wheel_offenders(wheel)) == [".kb", "sources", "tests"]
+
+
+def test_wheel_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path):
+    # Đây chính là lỗ hổng mà bản denylist cũ (FORBIDDEN_TOP_LEVEL) không bắt
+    # được: không ai liệt kê trước những tên này, nên chúng lọt qua im lặng.
+    # Allowlist bắt được vì nó không cần biết trước tên xấu.
+    wheel = _make_wheel(
+        tmp_path / "dirty2-0.1-py3-none-any.whl",
+        [
+            "center_kb/__init__.py",
+            "AERO-KB_Architecture_v0.1.pdf",
+            ".claude/settings.json",
+            ".github/workflows/ci.yml",
+            "scripts/check_package.py",
+        ],
+    )
+
+    assert sorted(wheel_offenders(wheel)) == [
+        ".claude",
+        ".github",
+        "AERO-KB_Architecture_v0.1.pdf",
+        "scripts",
+    ]
 
 
 def _make_sdist(path: Path, root: str, names: list[str]) -> Path:
@@ -82,12 +117,21 @@ def _make_sdist(path: Path, root: str, names: list[str]) -> Path:
 
 def test_sdist_offenders_is_empty_for_a_clean_sdist(tmp_path):
     # Không hardcode version thật của repo — root chỉ cần khớp cấu trúc
-    # `<name>-<version>/` mà sdist thật sự dùng.
+    # `<name>-<version>/` mà sdist thật sự dùng. .gitignore nằm trong danh
+    # sách vì hatchling tự thêm nó vô điều kiện vào mọi sdist (xác nhận bằng
+    # build thực tế) — không phải một offender.
     root = "clean-0.1"
     sdist = _make_sdist(
         tmp_path / f"{root}.tar.gz",
         root,
-        ["PKG-INFO", "pyproject.toml", "README.md", "LICENSE", "src/center_kb/__init__.py"],
+        [
+            "PKG-INFO",
+            "pyproject.toml",
+            "README.md",
+            "LICENSE",
+            ".gitignore",
+            "src/center_kb/__init__.py",
+        ],
     )
 
     assert sdist_offenders(sdist) == []
@@ -108,3 +152,28 @@ def test_sdist_offenders_flags_tests_and_kb_and_sources(tmp_path):
     )
 
     assert sorted(sdist_offenders(sdist)) == [".kb", "sources", "tests"]
+
+
+def test_sdist_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path):
+    # Cùng lỗ hổng như wheel (xem test tương ứng ở trên): những tên top-level
+    # này không nằm trong denylist cũ nên lọt qua im lặng; allowlist bắt được.
+    root = "dirty2-0.1"
+    sdist = _make_sdist(
+        tmp_path / f"{root}.tar.gz",
+        root,
+        [
+            "PKG-INFO",
+            "src/center_kb/__init__.py",
+            "AERO-KB_Architecture_v0.1.pdf",
+            ".claude/settings.json",
+            ".github/workflows/ci.yml",
+            "scripts/check_package.py",
+        ],
+    )
+
+    assert sorted(sdist_offenders(sdist)) == [
+        ".claude",
+        ".github",
+        "AERO-KB_Architecture_v0.1.pdf",
+        "scripts",
+    ]
