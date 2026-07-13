@@ -185,7 +185,7 @@ def search(hub, text, tags=None, budget=2000, semantic=False, embedder=None):
 | Không cài `fastembed` | FTS-only, log info (như `default_embedder` hiện tại) |
 | Model download fail | FTS-only, warning |
 | KNN leg lỗi runtime | catch + warning, trả FTS leg (giữ tinh thần "embedding best-effort" hiện tại) |
-| FTS leg lỗi / DB hỏng | xoá `search.db`, rebuild một lần; vẫn fail → raise |
+| FTS leg lỗi / DB hỏng | xoá `search.db`, rebuild một lần; vẫn fail → raise. **Windows:** close mọi connection trước khi unlink (file đang mở không xoá được), xoá kèm `-wal`/`-shm`; `PermissionError` khi unlink → raise lỗi rõ, không retry-loop (xem spec windows-support §R5) |
 | Federation trống | trả `[]` như hiện tại |
 | Hai process cùng sync | WAL + busy_timeout; sync idempotent (content-hash) — thua race chỉ tốn công, không sai dữ liệu |
 
