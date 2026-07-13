@@ -73,6 +73,7 @@ jobs:
   t3-e2e:
     name: T3 e2e trên artifact (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    needs: t2-package
     strategy:
       fail-fast: false
       matrix:
@@ -82,8 +83,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install build
-      - run: python -m build --wheel
+      # Tải ĐÚNG wheel mà t2-package đã build (từ sdist — cái thật sự lên
+      # PyPI, chịu chi phối bởi only-include của [tool.hatch.build.targets.sdist]),
+      # KHÔNG tự build lại từ tree. Build lại từ tree tạo ra một wheel khác
+      # nguồn với wheel được publish — hôm nay chúng trùng nội dung, nhưng
+      # không có gì áp đặt điều đó, và tầng này TỒN TẠI để black-box-test
+      # đúng artifact sẽ ship, không phải một artifact trông giống nó.
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
       - name: Venv artifact (CHỈ wheel)
         run: |
           python -m venv /tmp/artifact
@@ -98,6 +107,7 @@ jobs:
   t4-regression:
     name: T4 regression (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    needs: t2-package
     strategy:
       fail-fast: false
       matrix:
@@ -110,8 +120,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install build
-      - run: python -m build --wheel
+      # Cùng lý do như t3-e2e ở trên: dùng ĐÚNG wheel t2-package đã build từ
+      # sdist, không tự build lại từ tree.
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
       - name: Venv artifact (CHỈ wheel)
         run: |
           python -m venv /tmp/artifact
