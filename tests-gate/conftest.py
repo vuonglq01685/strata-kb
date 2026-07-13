@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import subprocess
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,17 +60,25 @@ def strip_kind_warning():
     return _strip
 
 
+def venv_bin(venv: Path, name: str) -> Path:
+    """Path of an installed executable inside a venv, on any OS."""
+    if os.name == "nt":
+        exe = venv / "Scripts" / f"{name}.exe"
+        return exe if exe.exists() else venv / "Scripts" / name
+    return venv / "bin" / name
+
+
 @dataclass(frozen=True)
 class Artifact:
     venv: Path
 
     @property
     def kb(self) -> Path:
-        return self.venv / "bin" / "kb"
+        return venv_bin(self.venv, "kb")
 
     @property
     def python(self) -> Path:
-        return self.venv / "bin" / "python"
+        return venv_bin(self.venv, "python")
 
 
 @pytest.fixture(scope="session")
@@ -83,12 +92,13 @@ def artifact() -> Artifact:
             "KB_VENV is not set. The e2e/regression tiers run against the "
             "INSTALLED WHEEL, never against the source tree. Use: ./scripts/gate.sh"
         )
-    venv = Path(raw)
-    if not (venv / "bin" / "kb").exists():
+    art = Artifact(venv=Path(raw))
+    if not art.kb.exists():
         raise RuntimeError(
-            f"KB_VENV={venv} has no bin/kb — was the wheel installed into it?"
+            f"KB_VENV={art.venv} has no kb executable ({art.kb}) — "
+            "was the wheel installed into it?"
         )
-    return Artifact(venv=venv)
+    return art
 
 
 @pytest.fixture
@@ -287,7 +297,8 @@ def _materialize_kb_at_tag(tag: str, dest_repo: Path, tmp_path: Path) -> Path:
         ["git", "archive", "--format=tar", "-o", str(archive), tag, ".kb"],
         cwd=REPO_ROOT, check=True, capture_output=True,
     )
-    subprocess.run(["tar", "-xf", str(archive)], cwd=dest_repo, check=True)
+    with tarfile.open(archive) as tf:
+        tf.extractall(dest_repo, filter="data")
     kb = dest_repo / ".kb"
     assert (kb / "index.yaml").exists(), f"{tag} has no .kb/index.yaml"
     return kb
