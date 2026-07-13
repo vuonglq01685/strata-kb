@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+import yaml
+from pydantic import ValidationError
+
 from center_kb import gitio, kbcontext, models
 from center_kb.mdutils import slice_section
 from center_kb.resolve import ResolvedRef, resolve_refs
@@ -164,15 +167,24 @@ def check_hub(
             Issue("error", "federation/index.yaml is missing — run `kb reindex`")
         )
     else:
-        stored = models.load_yaml_model(index_path, models.FederationIndex)
-        if stored != build_federation_index(fed):
+        try:
+            stored = models.load_yaml_model(index_path, models.FederationIndex)
+        except (yaml.YAMLError, ValidationError) as exc:
             issues.append(
                 Issue(
                     "error",
-                    "federation/index.yaml is out of sync with the snapshots — "
-                    "run `kb reindex`",
+                    f"federation/index.yaml is corrupt — run `kb reindex`: {exc}",
                 )
             )
+        else:
+            if stored != build_federation_index(fed):
+                issues.append(
+                    Issue(
+                        "error",
+                        "federation/index.yaml is out of sync with the snapshots — "
+                        "run `kb reindex`",
+                    )
+                )
 
     if repo_id:
         entry = fed / repo_id
