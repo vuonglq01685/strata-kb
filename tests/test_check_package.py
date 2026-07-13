@@ -18,8 +18,9 @@ from check_package import (  # noqa: E402
 
 
 def test_pyproject_version_reads_the_declared_version(tmp_path):
-    # Dựng pyproject giả: test parser, KHÔNG ghim version thật của repo —
-    # hardcode một con số ở đây sẽ biến mọi lần bump version thành một test đỏ.
+    # Build a fake pyproject: this tests the parser, it does NOT pin the repo's
+    # real version — hardcoding a number here would turn every version bump
+    # into a red test.
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "center-kb"\nversion = "1.2.3"\n', encoding="utf-8"
     )
@@ -55,9 +56,9 @@ def test_wheel_offenders_is_empty_for_a_clean_wheel(tmp_path):
 
 
 def test_wheel_offenders_allows_any_dist_info_version_suffix(tmp_path):
-    # dist-info tên đổi theo version ở mỗi build (vd 0.9.1, 1.0.0-rc1...) —
-    # allowlist so bằng suffix ".dist-info", không hardcode một version cụ
-    # thể, nên bất kỳ version nào cũng phải qua sạch.
+    # The dist-info name changes with the version on every build (e.g. 0.9.1,
+    # 1.0.0-rc1...) — the allowlist matches on the ".dist-info" suffix and does
+    # not hardcode a specific version, so any version must pass clean.
     wheel = _make_wheel(
         tmp_path / "clean-9.9.9-py3-none-any.whl",
         ["center_kb/__init__.py", "center_kb-9.9.9.dist-info/METADATA"],
@@ -81,9 +82,10 @@ def test_wheel_offenders_flags_tests_and_kb_and_sources(tmp_path):
 
 
 def test_wheel_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path):
-    # Đây chính là lỗ hổng mà bản denylist cũ (FORBIDDEN_TOP_LEVEL) không bắt
-    # được: không ai liệt kê trước những tên này, nên chúng lọt qua im lặng.
-    # Allowlist bắt được vì nó không cần biết trước tên xấu.
+    # This is exactly the hole the old denylist (FORBIDDEN_TOP_LEVEL) failed to
+    # catch: nobody listed these names ahead of time, so they slipped through
+    # silently. The allowlist catches them because it does not need to know the
+    # bad names in advance.
     wheel = _make_wheel(
         tmp_path / "dirty2-0.1-py3-none-any.whl",
         [
@@ -104,8 +106,8 @@ def test_wheel_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path)
 
 
 def _make_sdist(path: Path, root: str, names: list[str]) -> Path:
-    # sdist lồng mọi entry dưới một thư mục gốc `<root>/` — khác wheel, nơi
-    # các entry đã là top-level sẵn.
+    # An sdist nests every entry under a single root directory `<root>/` —
+    # unlike a wheel, where the entries are already top-level.
     with tarfile.open(path, "w:gz") as tf:
         for name in names:
             data = b"x"
@@ -116,10 +118,10 @@ def _make_sdist(path: Path, root: str, names: list[str]) -> Path:
 
 
 def test_sdist_offenders_is_empty_for_a_clean_sdist(tmp_path):
-    # Không hardcode version thật của repo — root chỉ cần khớp cấu trúc
-    # `<name>-<version>/` mà sdist thật sự dùng. .gitignore nằm trong danh
-    # sách vì hatchling tự thêm nó vô điều kiện vào mọi sdist (xác nhận bằng
-    # build thực tế) — không phải một offender.
+    # Do not hardcode the repo's real version — the root only has to match the
+    # `<name>-<version>/` structure that a real sdist actually uses. .gitignore
+    # is in the list because hatchling adds it unconditionally to every sdist
+    # (confirmed against a real build) — it is not an offender.
     root = "clean-0.1"
     sdist = _make_sdist(
         tmp_path / f"{root}.tar.gz",
@@ -155,8 +157,9 @@ def test_sdist_offenders_flags_tests_and_kb_and_sources(tmp_path):
 
 
 def test_sdist_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path):
-    # Cùng lỗ hổng như wheel (xem test tương ứng ở trên): những tên top-level
-    # này không nằm trong denylist cũ nên lọt qua im lặng; allowlist bắt được.
+    # The same hole as for the wheel (see the corresponding test above): these
+    # top-level names were not in the old denylist, so they slipped through
+    # silently; the allowlist catches them.
     root = "dirty2-0.1"
     sdist = _make_sdist(
         tmp_path / f"{root}.tar.gz",

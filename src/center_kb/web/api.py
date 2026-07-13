@@ -26,7 +26,7 @@ def _error(status: int, error: str, detail: str = "") -> JSONResponse:
 
 
 def list_docs(config: ServerConfig) -> list[dict] | None:
-    """None = hub unreachable (caller trả 503)."""
+    """None = hub unreachable (the caller returns 503)."""
     from center_kb.federation import load_federation
 
     hub = hub_handle(config)
@@ -47,7 +47,7 @@ def known_doc_ids(config: ServerConfig) -> list[str]:
 def load_manifest(
     config: ServerConfig, doc_id: str, repo: str | None = None
 ) -> tuple[models.Manifest, str] | None:
-    """Tìm manifest trong federation; raise AmbiguousDocError khi trùng doc-id."""
+    """Find a manifest in federation; raise AmbiguousDocError on doc-id collision."""
     from center_kb.federation import load_federation
 
     hub = hub_handle(config)

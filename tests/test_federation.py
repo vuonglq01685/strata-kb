@@ -41,7 +41,7 @@ def test_load_federation_skips_broken_entry(tmp_path, caplog):
     make_fed_entry(fed, "good-kb", "doc-a")
     bad = fed / "bad-kb"
     bad.mkdir(parents=True)
-    (bad / "index.yaml").write_text("docs: []\n", encoding="utf-8")  # thiếu _meta.yaml
+    (bad / "index.yaml").write_text("docs: []\n", encoding="utf-8")  # no _meta.yaml
     with caplog.at_level("WARNING"):
         repos = load_federation(fed)
     assert [r.meta.repo_id for r in repos] == ["good-kb"]

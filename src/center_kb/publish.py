@@ -33,11 +33,12 @@ class PublishReport:
 
 
 def _neutralize_excludes(root: Path) -> None:
-    """federation/ là nội dung mirror do publish() quản lý toàn bộ — không được
-    để core.excludesFile global của máy vận hành (vd editor ignore "*.md" toàn
-    cục) âm thầm loại file khỏi `git add`, khiến L2/L3 mất khỏi commit dù vẫn
-    "exists()" trên đĩa cục bộ. Set local (repo-scoped, không đụng gitconfig
-    global của user) — best-effort, publish vẫn tiếp tục nếu lệnh này lỗi.
+    """federation/ is mirrored content wholly managed by publish() — the operator
+    machine's global core.excludesFile (e.g. an editor ignoring "*.md" globally)
+    must not be allowed to silently drop files from `git add`, which would make
+    L2/L3 disappear from the commit even though they still "exists()" on the
+    local disk. Set it locally (repo-scoped, does not touch the user's global
+    gitconfig) — best-effort, publish still proceeds if this command fails.
     """
     subprocess.run(
         ["git", "config", "core.excludesFile", ""],
@@ -50,14 +51,14 @@ def _neutralize_excludes(root: Path) -> None:
 def _snapshot(
     kb_abs: Path, handle: hub_mod.HubHandle, rid: str, source_commit: str
 ) -> int:
-    """Mirror toàn bộ .kb/ → federation/<rid>/.
+    """Mirror the whole of .kb/ → federation/<rid>/.
 
-    Không ghi index.yaml tổng ở đây — xem publish()/_publish_direct(): commit
-    index.yaml tách riêng khỏi commit <rid>/ để 2 repo cùng publish lần đầu
-    vào 1 hub trống (federation/index.yaml chưa tồn tại) không bao giờ dính
-    xung đột "add/add" khi rebase (2 nhánh cùng tạo mới 1 file ở cùng path
-    với nội dung khác nhau là xung đột không tự merge được, bất kể chiến
-    lược rebase).
+    The aggregate index.yaml is NOT written here — see publish()/_publish_direct():
+    index.yaml is committed separately from the <rid>/ commit so that two repos
+    publishing for the first time into one empty hub (federation/index.yaml does
+    not exist yet) can never hit an "add/add" conflict on rebase (two branches
+    each newly creating one file at the same path with different content is a
+    conflict that cannot be auto-merged, whatever the rebase strategy).
     """
     dest = handle.federation_dir / rid
     fed_root = handle.federation_dir.resolve()
@@ -127,8 +128,8 @@ def _push_with_retry(handle: hub_mod.HubHandle, rid: str, max_retries: int) -> b
                     f"push to hub failed after {max_retries} attempts (race?)"
                 )
             gitio.pull_rebase(handle.root)
-            # repo khác vừa publish — index tổng trong commit của ta có thể
-            # thiếu docs của họ; regen (deterministic) rồi commit phần sửa
+            # another repo just published — the aggregate index in our commit may
+            # be missing their docs; regen (deterministic), then commit the fix
             federation.write_federation_index(handle.federation_dir)
             gitio.commit_paths(
                 handle.root,

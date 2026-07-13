@@ -224,7 +224,7 @@ def make_fed_entry(
     source_commit: str = "abc1234",
     published_at: str = "2026-07-13T00:00:00+00:00",
 ) -> Path:
-    """Ghi 1 entry federation format mới (mirror .kb đầy đủ L0→L3)."""
+    """Write one federation entry in the new format (full .kb mirror, L0→L3)."""
     from center_kb.federation import FederationMeta
 
     entry = federation_dir / repo_id
@@ -272,7 +272,8 @@ def make_fed_entry(
 
 @pytest.fixture
 def fed_hub(tmp_path: Path, run_git) -> Path:
-    """Hub git repo: federation/ có 2 repo published (layout mirror) + index tổng."""
+    """Hub git repo: federation/ has 2 published repos (mirror layout) + an
+    aggregate index."""
     from center_kb.federation import write_federation_index
 
     hub = tmp_path / "kb-hub"

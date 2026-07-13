@@ -64,7 +64,8 @@ def test_unreachable_hub_raises(git_kb, tmp_path, monkeypatch):
 
 
 def test_auto_mode_is_direct_for_local_path_hub(git_kb, hub_worktree, monkeypatch):
-    # dev machine có thể có gh thật — chặn để auto-detect chỉ phụ thuộc remote
+    # a dev machine may have a real gh — stub it out so auto-detect depends
+    # only on the remote
     monkeypatch.setattr(ghio, "gh_available", lambda: True)
     report = publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
     assert report.mode == "direct"
@@ -85,7 +86,7 @@ def test_pr_mode_pushes_branch_and_opens_pr(git_kb, hub_with_origin, monkeypatch
     assert report.mode == "pr"
     assert report.pr_url.endswith("/pull/7")
     assert calls["branch"] == "publish/demo-kb"
-    # worktree hub trở về branch gốc, main không dính commit publish
+    # the hub worktree returns to its original branch, main gets no publish commit
     assert not (hub_with_origin / "federation" / "demo-kb").exists()
     assert gitio.current_branch(hub_with_origin) in ("main", "master")
 

@@ -1,45 +1,49 @@
-"""Đóng băng OUTPUT trên một KB cố định (v0.9.0 từ git history).
+"""Freeze the OUTPUT against a fixed KB (v0.9.0 from git history).
 
-ĐỎ NGHĨA LÀ GÌ: hành vi đã đổi. Thường là do nâng cấp dependency (rank-bm25 đổi
-công thức ranking là ca kinh điển). Điều tra TRƯỚC, chỉ chạy UPDATE_GOLDEN=1
-sau khi đã hiểu tại sao nó đổi và xác nhận là mong muốn.
+WHAT RED MEANS: behavior changed. Usually because of a dependency upgrade
+(rank-bm25 changing its ranking formula is the classic case). Investigate FIRST,
+and only run UPDATE_GOLDEN=1 once you understand why it changed and have
+confirmed the change is wanted.
 
-HAI CÁCH SO TRONG FILE NÀY — đừng nhầm cái nào áp dụng cho test nào:
-  - `assert_golden()` (kb_search — cả bề mặt MCP lẫn CLI): so SAU khi
-    normalize() — pattern NOISE thay `score=<số>` bằng `score=<N>` trước khi
-    so. kb_search nhúng float BM25 thô (`score=12.34`) trên CẢ HAI bề mặt;
-    golden được sinh trên macOS còn CI chạy ubuntu, rank-bm25 tính qua numpy,
-    và thứ tự rút gọn (reduction order) của numpy có thể khác giữa các kiến
-    trúc — đóng băng đúng giá trị float sẽ làm golden vỡ vì lý do trình bày
-    (rounding, platform libm), không phải vì hành vi đổi. Một cửa đỏ ngẫu
-    nhiên là một cửa sẽ bị tắt, và một cửa bị tắt thì không bảo vệ gì cả.
-  - `assert_golden_exact()` (kb_get_section): so CHÍNH XÁC — chỉ `.strip()`,
-    KHÔNG normalize(). kb_get_section trả về đúng MỘT section và KHÔNG có
-    BM25 score trong output — không có gì biến động cần che, nên đây mới là
-    golden "hợp đồng MÁY" đúng nghĩa: chuỗi trả về của MCP tool được so
+TWO COMPARISON MODES IN THIS FILE — do not mix up which applies to which test:
+  - `assert_golden()` (kb_search — both the MCP and the CLI surface): compares
+    AFTER normalize() — the NOISE patterns replace `score=<number>` with
+    `score=<N>` before comparing. kb_search embeds the raw BM25 float
+    (`score=12.34`) on BOTH surfaces; the goldens were generated on macOS while
+    CI runs ubuntu, rank-bm25 computes through numpy, and numpy's reduction
+    order can differ between architectures — freezing the exact float value
+    would break the goldens for presentational reasons (rounding, platform
+    libm), not because behavior changed. A gate that goes red at random is a
+    gate that will get switched off, and a gate that is switched off protects
+    nothing.
+  - `assert_golden_exact()` (kb_get_section): compares EXACTLY — only `.strip()`,
+    NO normalize(). kb_get_section returns exactly ONE section and has NO BM25
+    score in its output — there is nothing volatile to mask, so this is the real
+    "MACHINE contract" golden: the MCP tool's returned string compared
     byte-for-byte.
 
-PHẠM VI BẢO VỆ CỦA assert_golden() (kb_search, MCP lẫn CLI) — đọc kỹ trước
-khi tin golden này:
-  - CÓ bảo vệ:
-    (a) thứ tự kết quả trả về + toàn bộ nội dung (citation, text L2, số
-        token) của từng kết quả — một nâng cấp rank-bm25 đổi công thức đủ để
-        đảo thứ tự hai hit gần điểm nhau, hoặc đổi tập kết quả lọt vào
-        budget, sẽ làm golden đỏ ngay cả khi mọi unit test khác vẫn xanh.
-    (b) note "score closely — both may be relevant..." mà
-        `src/center_kb/mcp.py::kb_search` chỉ phát ra khi khoảng cách TƯƠNG
-        ĐỐI giữa điểm hai kết quả đứng đầu nhỏ hơn `AMBIGUOUS_SCORE_GAP`
-        (0.20) — cụ thể: `gap = (results[0].score - results[1].score) /
-        results[0].score`, và note xuất hiện khi `gap < 0.20`. Một công thức
-        ranking đổi làm `gap` vượt/lọt ngưỡng đó sẽ làm note này xuất hiện,
-        biến mất, hoặc đổi citation — golden đỏ ngay cả khi thứ tự kết quả
-        không đổi.
-  - KHÔNG bảo vệ: giá trị số TUYỆT ĐỐI của `score=`. Một nâng cấp rank-bm25
-    đổi công thức nhưng tình cờ giữ nguyên CẢ thứ tự kết quả LẪN cách phân
-    loại "score closely" (chỉ đổi độ lớn tuyệt đối, không đổi thứ tự hay tỉ
-    lệ tương đối giữa top-2) sẽ KHÔNG bị bắt bởi golden này. Đây là điểm mù
-    còn lại — nói thẳng ra để người đọc sau biết chính xác lưới này bắt được
-    gì và không bắt được gì.
+WHAT assert_golden() ACTUALLY PROTECTS (kb_search, MCP and CLI alike) — read
+this carefully before trusting these goldens:
+  - IS protected:
+    (a) the order of the returned results + the entire content (citation, L2
+        text, token count) of each result — a rank-bm25 upgrade that changes
+        the formula enough to swap the order of two closely scored hits, or to
+        change which results fit into the budget, will turn the golden red even
+        when every other unit test stays green.
+    (b) the "score closely — both may be relevant..." note, which
+        `src/center_kb/mcp.py::kb_search` only emits when the RELATIVE gap
+        between the top two results' scores is smaller than
+        `AMBIGUOUS_SCORE_GAP` (0.20) — concretely: `gap = (results[0].score -
+        results[1].score) / results[0].score`, and the note appears when
+        `gap < 0.20`. A changed ranking formula that pushes `gap` across that
+        threshold will make this note appear, disappear, or change its citation
+        — golden red even when the result order did not change.
+  - NOT protected: the ABSOLUTE numeric value of `score=`. A rank-bm25 upgrade
+    that changes the formula but happens to preserve BOTH the result order AND
+    the "score closely" classification (changing only the absolute magnitude,
+    not the order nor the relative ratio between the top-2) will NOT be caught
+    by these goldens. That is the remaining blind spot — stated outright so that
+    a later reader knows exactly what this net does and does not catch.
 """
 
 from __future__ import annotations
@@ -51,7 +55,7 @@ from pathlib import Path
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
-# Phần biến động giữa các lần chạy — không phải tín hiệu hành vi.
+# The parts that vary between runs — not a behavioral signal.
 NOISE = [
     (re.compile(r"/tmp/[^\s\"']+"), "<TMP>"),
     (re.compile(r"\b[0-9a-f]{7,40}\b"), "<SHA>"),
@@ -72,29 +76,29 @@ def assert_golden(name: str, actual: str) -> None:
     if os.environ.get("UPDATE_GOLDEN") == "1":
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(actual, encoding="utf-8")
-    assert actual == path.read_text(encoding="utf-8"), f"{name} đã đổi"
+    assert actual == path.read_text(encoding="utf-8"), f"{name} changed"
 
 
 def assert_golden_exact(name: str, actual: str) -> None:
-    """So khớp CHÍNH XÁC — chỉ `.strip()`, không đi qua normalize()/NOISE.
+    """Compare EXACTLY — only `.strip()`, never going through normalize()/NOISE.
 
-    Dành riêng cho kb_get_section: output của nó không nhúng BM25 score hay
-    bất kỳ giá trị biến động nào khác, nên không có gì cần che trước khi so —
-    đây là golden "hợp đồng MÁY" thật sự (byte-for-byte), khác với
-    assert_golden() ở trên vốn phải normalize() trước vì kb_search nhúng
-    score thô."""
+    Reserved for kb_get_section: its output embeds no BM25 score nor any other
+    volatile value, so there is nothing to mask before comparing — this is the
+    genuine "MACHINE contract" golden (byte-for-byte), unlike assert_golden()
+    above, which has to normalize() first because kb_search embeds the raw
+    score."""
     path = GOLDEN / name
     actual = actual.strip() + "\n"
     if os.environ.get("UPDATE_GOLDEN") == "1":
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(actual, encoding="utf-8")
-    assert actual == path.read_text(encoding="utf-8"), f"{name} đã đổi"
+    assert actual == path.read_text(encoding="utf-8"), f"{name} changed"
 
 
 async def _call_mcp(params, tool: str, args: dict) -> str:
-    """params: StdioServerParameters — dựng sẵn bởi fixture
-    published_kb_mcp_params (tests-gate/conftest.py, Task 9) qua helper dùng
-    chung _mcp_stdio_params. Không tự dựng lại StdioServerParameters ở đây."""
+    """params: StdioServerParameters — prebuilt by the published_kb_mcp_params
+    fixture (tests-gate/conftest.py, Task 9) via the shared _mcp_stdio_params
+    helper. Do not rebuild StdioServerParameters here."""
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
 
@@ -124,13 +128,13 @@ def test_golden_kb_search_restrictive(published_kb_mcp_params):
 
 
 def test_golden_kb_get_section(published_kb_mcp_params):
-    """kb_get_section thật sự — không có BM25 score trong output nên so
-    CHÍNH XÁC (assert_golden_exact, không normalize()). §5.129 (Restrictive
-    Airspace Designation) là section có thật trong KB v0.9.0 đóng băng — đã
-    xác nhận qua các golden kb_search ở trên và qua git show trực tiếp lên
-    v0.9.0:.kb/arinc-424/ch5-navigation-data-field-definitions{,.raw}.md.
-    Test cả l2 (condensed) và l3 (verbatim, có bản quyền) để chứng minh việc
-    tách L2/L3 vẫn hoạt động thông suốt tới tận bề mặt MCP."""
+    """The real kb_get_section — no BM25 score in its output, so compare EXACTLY
+    (assert_golden_exact, no normalize()). §5.129 (Restrictive Airspace
+    Designation) is a section that genuinely exists in the frozen v0.9.0 KB —
+    confirmed via the kb_search goldens above and via git show directly against
+    v0.9.0:.kb/arinc-424/ch5-navigation-data-field-definitions{,.raw}.md. Both
+    l2 (condensed) and l3 (verbatim, copyrighted) are tested, to prove the L2/L3
+    split still works end to end all the way out to the MCP surface."""
     for level, golden_name in (
         ("l2", "mcp_outputs/kb_get_section_5129_l2.txt"),
         ("l3", "mcp_outputs/kb_get_section_5129_l3.txt"),

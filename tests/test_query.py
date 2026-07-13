@@ -41,7 +41,7 @@ def test_search_no_token_overlap_returns_empty(fed_hub):
 
 def test_search_budget_caps_results(fed_hub):
     results = search(_handle(fed_hub), "airspace designation type", budget=1)
-    assert len(results) == 1  # luôn trả >= 1 khi có match
+    assert len(results) == 1  # always returns >= 1 when there is a match
 
 
 def test_get_section_unqualified_unique(fed_hub):

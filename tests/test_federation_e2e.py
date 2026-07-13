@@ -1,4 +1,4 @@
-"""E2E: vòng đời publish-first — hub federation là single source of truth."""
+"""E2E: publish-first lifecycle — the hub federation is the single source of truth."""
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -66,24 +66,24 @@ def test_full_lifecycle(tmp_path, run_git):
     repo_a = _make_repo(tmp_path, run_git, "repo-alpha", "alpha-spec", "1.1", "alpha widget", hub)
     repo_b = _make_repo(tmp_path, run_git, "repo-beta", "beta-spec", "2.1", "beta gadget", hub)
 
-    # 1) publish cả 2 repo (direct — hub local-path); hub config đọc từ .kb/config.yaml
+    # 1) publish both repos (direct — local-path hub); hub config from .kb/config.yaml
     for repo in (repo_a, repo_b):
         r = runner.invoke(app, ["publish", "--kb-dir", str(repo / ".kb")])
         assert r.exit_code == 0, r.output
 
-    # 2) index tổng có đủ 2 repo
+    # 2) the aggregate index holds both repos
     idx = models.load_yaml_model(hub / "federation" / "index.yaml", models.FederationIndex)
     assert {(e.repo_id, e.doc_id) for e in idx.docs} == {
         ("repo-alpha", "alpha-spec"), ("repo-beta", "beta-spec"),
     }
 
-    # 3) search cross-repo từ repo A ra doc của repo B, full L2
+    # 3) cross-repo search from repo A finds repo B's doc, with full L2
     r = runner.invoke(app, ["query", "beta gadget", "--kb-dir", str(repo_a / ".kb")])
     assert r.exit_code == 0, r.output
     assert "repo-beta:beta-spec §2.1" in r.output
     assert "Condensed beta gadget" in r.output
 
-    # 4) get L3 verbatim qua hub
+    # 4) get L3 verbatim via the hub
     r = runner.invoke(
         app, ["get", "beta-spec", "2.1", "--level", "l3", "--kb-dir", str(repo_a / ".kb")]
     )
@@ -121,7 +121,7 @@ def test_full_lifecycle(tmp_path, run_git):
     assert r.exit_code == 2, r.output
     assert "stale" in r.output
 
-    # 7) doctor bắt index lệch, reindex sửa
+    # 7) doctor catches the out-of-sync index, reindex fixes it
     (hub / "federation" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     r = runner.invoke(app, ["doctor", "--kb-dir", str(repo_a / ".kb")])
     assert r.exit_code == 1

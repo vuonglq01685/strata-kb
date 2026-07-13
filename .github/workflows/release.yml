@@ -1,42 +1,45 @@
-# Release: tag v* → cửa đầy đủ (giống hệt PR, dùng chung _gate.yml) → rồi
-# mới release/publish. KHÔNG viết logic test riêng cho tag ở đây — xem BẤT
-# BIẾN đầu _gate.yml: PR và tag phải chạy cùng một cửa, không hơn không kém.
+# Release: tag v* → the full gate (identical to PR, sharing _gate.yml) → and
+# only then release/publish. Do NOT write tag-specific test logic here — see the
+# INVARIANT at the top of _gate.yml: PRs and tags must run the same gate, no
+# more and no less.
 #
-# Đồ thị phụ thuộc (cố ý — vá lỗ hổng L7):
+# Dependency graph (deliberate — it patches the L7 hole):
 #   gate → docker-verify → pypi → docker-release
 #
-# PyPI là bất biến (immutable) — một version đã publish thì KHÔNG BAO GIỜ
-# xoá hay ghi đè được. Vì vậy: KHÔNG có gì không-thể-hoàn-tác được phép xảy
-# ra trước khi TOÀN BỘ cửa (gate + docker-verify) đều xanh.
-#   - docker-verify build image bằng `pip install center-kb[ingest]` THẬT
-#     (xem Dockerfile) → đây chính là cửa gác cho các extra nặng (docling/
-#     torch/rapidocr): nếu [ingest] không resolve, PyPI sẽ không được chạm
-#     tới (pypi needs docker-verify).
-#   - docker-verify chỉ push tag `sha-<commit>` — vô hại: không phải tag ai
-#     đang dùng (`latest`/`vX.Y.Z`), có thể xoá khỏi GHCR bất cứ lúc nào, nên
-#     đây KHÔNG phải hành động không-thể-hoàn-tác.
-#   - `latest`/`vX.Y.Z` CHỈ được trỏ tới (docker-release — retag-only qua
-#     `docker buildx imagetools create`, KHÔNG build lại image) SAU KHI
-#     `pypi` publish thành công. Không job nào khác được phép push hai tag
-#     này.
+# PyPI is immutable — once a version is published it can NEVER be deleted or
+# overwritten. Therefore: NOTHING irreversible is allowed to happen before the
+# ENTIRE gate (gate + docker-verify) is green.
+#   - docker-verify builds the image with a REAL `pip install center-kb[ingest]`
+#     (see Dockerfile) → this is precisely the gatekeeper for the heavy extras
+#     (docling/torch/rapidocr): if [ingest] does not resolve, PyPI will not be
+#     touched at all (pypi needs docker-verify).
+#   - docker-verify only pushes the `sha-<commit>` tag — harmless: it is not a
+#     tag anyone is using (`latest`/`vX.Y.Z`), it can be deleted from GHCR at any
+#     time, so this is NOT an irreversible action.
+#   - `latest`/`vX.Y.Z` are ONLY pointed at (docker-release — retag-only via
+#     `docker buildx imagetools create`, it does NOT rebuild the image) AFTER
+#     `pypi` has published successfully. No other job is allowed to push these
+#     two tags.
 #
-# Sự cố Task 11 phát hiện, để nhớ mãi không lặp lại: `center-kb==0.9.0`
-# CHƯA BAO GIỜ lên PyPI (PyPI nhảy thẳng 0.8.0 → 0.9.1) vì ở quy trình CŨ,
-# `docker` chỉ `needs: test` và chạy song song `pypi` — khi `build`/`pypi`
-# fail (post-0.9 `kb doctor` cần `--hub`, xem d3d6e36), `docker` vẫn xanh và
-# đẩy `:latest` như không có chuyện gì, nên không ai nhận ra PyPI đã im lặng
-# thất bại. Đồ thị tuần tự ở đây tồn tại CHÍNH XÁC để việc đó không lặp lại:
-# nếu `pypi` đỏ, `docker-release` bị skip — không có image `:latest` mới nào
-# che một release PyPI không tồn tại.
+# The incident Task 11 uncovered, recorded so it is never repeated:
+# `center-kb==0.9.0` NEVER made it to PyPI (PyPI jumped straight from 0.8.0 →
+# 0.9.1) because in the OLD pipeline `docker` only had `needs: test` and ran in
+# parallel with `pypi` — when `build`/`pypi` failed (post-0.9 `kb doctor`
+# requires `--hub`, see d3d6e36), `docker` stayed green and pushed `:latest` as
+# if nothing had happened, so nobody noticed that PyPI had silently failed. The
+# sequential graph here exists EXACTLY so that cannot happen again: if `pypi` is
+# red, `docker-release` is skipped — no new `:latest` image papers over a PyPI
+# release that does not exist.
 #
-# LƯU Ý cho người định "tiện tay" sửa: `check_package.py` (chạy trong
-# gate/t2-package) CHỈ kiểm tra tag khớp `pyproject.toml` version + nội dung
-# gói (không lẫn tests/.kb/sources) — nó KHÔNG kiểm tra version đã tồn tại
-# trên PyPI hay chưa. Hàng rào chống publish-trùng-version đến từ chính PyPI
-# (immutable) + hành vi mặc định của `pypa/gh-action-pypi-publish` (fail
-# cứng nếu file đã tồn tại). KHÔNG bật `skip-existing: true` và KHÔNG thêm
-# `continue-on-error` vào job `pypi` — làm vậy là tái tạo lại đúng lỗ hổng
-# silent-failure ở trên.
+# NOTE for anyone tempted to "just tweak" this: `check_package.py` (run inside
+# gate/t2-package) ONLY verifies that the tag matches the `pyproject.toml`
+# version + the package contents (no tests/.kb/sources leaking in) — it does NOT
+# check whether the version already exists on PyPI. The barrier against
+# publishing a duplicate version comes from PyPI itself (immutable) + the default
+# behaviour of `pypa/gh-action-pypi-publish` (hard failure if the file already
+# exists). Do NOT turn on `skip-existing: true` and do NOT add
+# `continue-on-error` to the `pypi` job — doing so recreates exactly the
+# silent-failure hole described above.
 name: release
 on:
   push:
@@ -52,7 +55,7 @@ jobs:
       tag: ${{ github.ref_name }}
 
   docker-verify:
-    name: Build image + smoke (chưa phải tag release)
+    name: Build image + smoke (not a release tag yet)
     needs: gate
     runs-on: ubuntu-latest
     permissions:
@@ -66,13 +69,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build image (pip install center-kb[ingest] THẬT — xem Dockerfile)
+      - name: Build image (a REAL pip install center-kb[ingest] — see Dockerfile)
         run: docker build -t ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA} .
-      - name: Smoke — serve một KB rỗng; health phải trả lời, API phải 401
+      - name: Smoke — serve an empty KB; health must answer, the API must 401
         run: |
-          # Hub bắt buộc từ 0.9 (federation là nguồn đọc duy nhất) — CMD của
-          # Dockerfile chạy `--hub /data`, nên /data cần cả .kb/ lẫn
-          # federation/ mới boot được, không riêng .kb/ như trước 0.9.
+          # The hub is mandatory as of 0.9 (federation is the only read source) —
+          # the Dockerfile's CMD runs `--hub /data`, so /data needs both .kb/ and
+          # federation/ in order to boot, not just .kb/ as it did before 0.9.
           mkdir -p /tmp/data/.kb /tmp/data/federation
           echo "docs: []" > /tmp/data/.kb/index.yaml
           echo "docs: []" > /tmp/data/federation/index.yaml
@@ -88,11 +91,11 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)
           test "$code" = "401"
           docker rm -f kb
-      - name: Push tag sha- (vô hại — KHÔNG phải tag release, không ai kéo nó)
+      - name: Push the sha- tag (harmless — NOT a release tag, nobody pulls it)
         run: docker push ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA}
 
   pypi:
-    name: Publish PyPI (không thể hoàn tác — đi sau MỌI cửa)
+    name: Publish to PyPI (irreversible — comes after EVERY gate)
     needs: [gate, docker-verify]
     runs-on: ubuntu-latest
     environment: pypi
@@ -106,7 +109,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   docker-release:
-    name: Retag image → vX.Y.Z + latest (chỉ sau khi PyPI publish xong)
+    name: Retag image → vX.Y.Z + latest (only after PyPI has published)
     needs: pypi
     runs-on: ubuntu-latest
     permissions:
@@ -120,7 +123,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Retag (không build lại — chỉ copy manifest sang tag mới, vài giây)
+      - name: Retag (no rebuild — just copies the manifest to the new tags, seconds)
         run: |
           docker buildx imagetools create \
             --tag ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME} \

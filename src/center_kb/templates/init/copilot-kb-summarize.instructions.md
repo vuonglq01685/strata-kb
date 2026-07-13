@@ -20,7 +20,11 @@ to fill in summaries (after `kb ingest`), follow these rules exactly.
 
 ## Writing rules (mandatory)
 
-- Write in English.
+- Write every summary in the **same language as the source text** in the
+  matching `.raw.md` (L3) file — never translate. English source → English
+  summary; Vietnamese source → Vietnamese summary. The only exception is the
+  fixed `Table-only section: <title>.` label below, which stays in English so
+  that it matches what `kb summarize` writes for the same case.
 - Summarize the prose ONLY. Never describe, list, or reconstruct table
   contents — the tables are already copied verbatim into the section.
 - If a section has no prose (heading + tables only): delete the marker

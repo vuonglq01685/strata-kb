@@ -1,6 +1,7 @@
-"""Hành trình e2e đầy đủ trên wheel đã cài.
+"""The full e2e journey against the installed wheel.
 
-KHÔNG import center_kb ở đây. Artifact là hộp đen, chỉ chạm qua subprocess.
+Do NOT import center_kb here. The artifact is a black box, only ever touched
+through subprocess.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-# tests-gate/e2e/test_journey.py → lùi 2 cấp là gốc repo.
+# tests-gate/e2e/test_journey.py → two levels up is the repo root.
 REPO_ROOT = Path(__file__).parent.parent.parent
 
 
@@ -18,11 +19,12 @@ def read_manifest(kb: Path) -> dict:
 
 
 def l2_path(kb: Path, manifest: dict) -> Path:
-    """Đường dẫn file L2 chứa section đầu tiên.
+    """Path to the L2 file holding the first section.
 
-    Tên tệp (vd. 'ch1-airspace-records') là chi tiết triển khai của
-    scaffold_doc() (suy ra từ tiêu đề chương) — đọc lại từ manifest thay vì
-    đoán cứng, để test không trôi theo cách slugify() đặt tên tệp.
+    The filename (e.g. 'ch1-airspace-records') is an implementation detail of
+    scaffold_doc() (derived from the chapter title) — read it back from the
+    manifest instead of hardcoding a guess, so the test does not drift with the
+    way slugify() names files.
     """
     stem = manifest["sections"][0]["file"]
     return kb / "demo-doc" / f"{stem}.md"
@@ -31,7 +33,7 @@ def l2_path(kb: Path, manifest: dict) -> Path:
 def test_version_and_help(kb_run, tmp_path):
     version = kb_run("--version", cwd=tmp_path).stdout.strip()
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    # Đọc pyproject như file text — KHÔNG import center_kb.
+    # Read pyproject as a text file — do NOT import center_kb.
     declared = next(
         line.split("=", 1)[1].strip().strip('"')
         for line in pyproject.splitlines()
@@ -45,7 +47,7 @@ def test_version_and_help(kb_run, tmp_path):
         "stats", "publish", "reindex", "resolve", "diff", "doctor", "context",
     ]
     for name in expected:
-        assert name in help_out, f"lệnh '{name}' biến mất khỏi wheel"
+        assert name in help_out, f"command '{name}' vanished from the wheel"
 
 
 def test_init_scaffolds_a_kb(kb_run, tmp_path):
@@ -72,7 +74,7 @@ def test_summarize_then_build(kb_run, seed_kb, stub_claude, bare_hub, tmp_path):
     assert "TODO:summarize" not in l2
     assert "Condensed via stub." in l2
 
-    # kb build là LOCAL (validate không còn TODO) — chạy trước publish.
+    # kb build is LOCAL (validates that no TODO is left) — runs before publish.
     out = kb_run("build", "--kb-dir", str(kb), cwd=tmp_path).stdout
     assert "kb build: OK" in out
 
@@ -81,30 +83,31 @@ def test_publish_mirrors_all_levels_into_the_hub(published_repo, run_git, tmp_pa
     checkout = tmp_path / "hub-check"
     run_git(tmp_path, "clone", str(published_repo["hub"]), str(checkout))
 
-    # federation/<repo-id>/ mirror toàn bộ .kb/ nguồn — cùng layout, nên
-    # read_manifest/l2_path (đã dùng ở test_summarize_then_build) đọc thẳng
-    # được từ đây thay vì đoán cứng tên tệp.
+    # federation/<repo-id>/ mirrors the whole source .kb/ — same layout, so
+    # read_manifest/l2_path (already used in test_summarize_then_build) can read
+    # straight from here instead of hardcoding filename guesses.
     mirror = checkout / "federation" / "e2e-repo"
     assert (mirror / "demo-doc" / "_manifest.yaml").exists()
 
     manifest = read_manifest(mirror)
     l2 = l2_path(mirror, manifest)
-    assert l2.exists(), "thiếu L2"
+    assert l2.exists(), "L2 missing"
     l3 = l2.with_name(f"{l2.stem}.raw.md")
-    assert l3.exists(), "thiếu L3 (.raw.md)"
+    assert l3.exists(), "L3 (.raw.md) missing"
     assert (mirror / "_meta.yaml").exists()
     assert (checkout / "federation" / "index.yaml").exists()
 
-    # Tồn tại file không đủ — publish copy rỗng/sai nội dung vẫn qua được các
-    # assert phía trên. Soi nội dung: L2 phải là bản tóm tắt do stub_claude
-    # sinh ra (cùng literal với test_summarize_then_build), L3 phải là văn
-    # bản gốc verbatim (cùng literal "multiple code" với
-    # test_get_returns_both_levels, lấy từ fixtures/pending-kb/.../*.raw.md).
-    # Hai nội dung phải khác nhau — đó chính là lý do tách lớp L2/L3.
+    # File existence is not enough — a publish that copied empty/wrong content
+    # would still pass the asserts above. Inspect the content: L2 must be the
+    # summary produced by stub_claude (the same literal as in
+    # test_summarize_then_build), L3 must be the verbatim source text (the same
+    # "multiple code" literal as in test_get_returns_both_levels, taken from
+    # fixtures/pending-kb/.../*.raw.md). The two contents must differ — that is
+    # precisely the reason the L2/L3 layers are split apart.
     l2_text = l2.read_text(encoding="utf-8")
     l3_text = l3.read_text(encoding="utf-8")
-    assert "Condensed via stub." in l2_text, "L2 thiếu bản tóm tắt"
-    assert "multiple code" in l3_text, "L3 phải verbatim, không phải tóm tắt"
+    assert "Condensed via stub." in l2_text, "L2 is missing the summary"
+    assert "multiple code" in l3_text, "L3 must be verbatim, not a summary"
     assert l2_text != l3_text
 
 
@@ -113,13 +116,14 @@ def test_doctor_is_clean_after_publish(published_repo, kb_run):
                   "--kb-dir", str(published_repo["kb"]),
                   cwd=published_repo["repo"])
 
-    # returncode == 0 không đủ để phân biệt "publish sạch" với "chưa publish
-    # bao giờ": kb doctor chỉ đổi exit code khi có issue mức error hoặc
-    # stale — issue mức warning (vd. "repo ... has not published to the hub
-    # yet") vẫn để exit 0 VÀ vẫn in "kb doctor: OK" phía sau (xem
-    # cli.py::doctor — dòng in "OK" không kiểm tra warning). Nên phải soi
-    # thẳng stdout: sau một `kb publish` đúng, repo này phải sạch tuyệt đối —
-    # không một dòng [warning]/[error] nào.
+    # returncode == 0 is not enough to tell "published cleanly" apart from
+    # "never published at all": kb doctor only changes its exit code on issues at
+    # error or stale level — a warning-level issue (e.g. "repo ... has not
+    # published to the hub yet") still exits 0 AND still prints "kb doctor: OK"
+    # afterwards (see cli.py::doctor — the line printing "OK" does not check for
+    # warnings). So we have to inspect stdout directly: after a correct
+    # `kb publish`, this repo must be absolutely clean — not a single
+    # [warning]/[error] line.
     assert proc.returncode == 0, proc.stdout
     assert "kb doctor: OK" in proc.stdout, proc.stdout
     assert "[warning]" not in proc.stdout, proc.stdout
@@ -144,7 +148,7 @@ def test_get_returns_both_levels(published_repo, kb_run):
                 "--hub", str(hub), "--kb-dir", str(kb), cwd=repo).stdout
 
     assert "Condensed via stub." in l2
-    assert "multiple code" in l3, "L3 phải là verbatim, không phải bản tóm tắt"
+    assert "multiple code" in l3, "L3 must be verbatim, not the summary"
 
 
 def test_context_new_then_resolve_roundtrip(published_repo, kb_run, tmp_path):
@@ -160,7 +164,7 @@ def test_context_new_then_resolve_roundtrip(published_repo, kb_run, tmp_path):
     proc = kb_run("resolve", str(block_file), "--hub", str(hub),
                   "--kb-dir", str(kb), cwd=repo, check=False)
 
-    # exit 0 = ok, 2 = stale, 1 = broken. Vừa pin xong thì phải là ok.
+    # exit 0 = ok, 2 = stale, 1 = broken. Just pinned, so it must be ok.
     assert proc.returncode == 0, f"resolve → {proc.returncode}\n{proc.stdout}"
     assert "Condensed via stub." in proc.stdout
 
@@ -176,7 +180,7 @@ def test_diff_detects_a_changed_section(published_repo, kb_run):
         encoding="utf-8",
     )
 
-    # kb diff là local-git: so worktree với một git rev.
+    # kb diff is local-git: it compares the worktree against a git rev.
     proc = kb_run("diff", "demo-doc", "--against", "HEAD",
                   "--kb-dir", str(kb), cwd=repo)
 
@@ -184,9 +188,9 @@ def test_diff_detects_a_changed_section(published_repo, kb_run):
 
 
 def test_ingest_without_docling_fails_cleanly(kb_run, seed_kb, bare_hub, tmp_path):
-    """Wheel base KHÔNG có extras [ingest]. User `pip install center-kb` rồi
-    chạy ingest sẽ đâm vào đúng đường này — nó phải là một câu tiếng người,
-    không phải traceback."""
+    """The base wheel does NOT carry the [ingest] extras. A user who runs
+    `pip install center-kb` and then runs ingest lands on exactly this path — it
+    must be a human sentence, not a traceback."""
     kb_run("init", cwd=tmp_path)
     seed_kb(tmp_path, bare_hub)
     fake_pdf = tmp_path / "x.pdf"
@@ -199,5 +203,6 @@ def test_ingest_without_docling_fails_cleanly(kb_run, seed_kb, bare_hub, tmp_pat
     combined = proc.stdout + proc.stderr
     assert "Docling is not installed" in combined
     assert "Traceback" not in combined, (
-        "ingest thiếu docling ném traceback thô vào mặt user:\n" + combined
+        "ingest without docling threw a raw traceback in the user's face:\n"
+        + combined
     )

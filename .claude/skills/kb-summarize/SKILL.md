@@ -71,7 +71,11 @@ every document with pending sections.
 
 ## Writing rules (mandatory — copy verbatim into every sub-agent prompt)
 
-- Write in **English**.
+- Write both summaries in the **same language as the source text** you read
+  with `kb get ... --level l3` — never translate. English source → English
+  summary; Vietnamese source → Vietnamese summary. The only exception is the
+  fixed `Table-only section: <title>.` label below, which stays in English so
+  that it matches what `kb summarize` writes for the same case.
 - Summarize the prose ONLY. Never describe, list, or reconstruct table
   contents — the tables are already copied verbatim into the section.
 - If a section has no prose (heading + tables only): report it as

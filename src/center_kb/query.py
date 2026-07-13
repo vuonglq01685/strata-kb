@@ -19,7 +19,7 @@ logger = logging.getLogger("center_kb.query")
 
 
 class AmbiguousDocError(LookupError):
-    """doc_id tồn tại ở nhiều repo trong federation — cần qualify repo:doc."""
+    """doc_id exists in several federation repos — must be qualified as repo:doc."""
 
     def __init__(self, doc_id: str, repo_ids: list[str]) -> None:
         self.doc_id = doc_id
@@ -142,8 +142,8 @@ def search(
         if score <= 0:
             break
         if not query_tokens & set(tokens):
-            # BM25Plus cộng baseline idf*delta cho mọi term trong vocab —
-            # section không chung token nào với query vẫn có thể score > 0.
+            # BM25Plus adds a baseline idf*delta for every term in the vocab —
+            # a section sharing no token with the query can still score > 0.
             continue
         content = _candidate_content(c)
         if content is None:
@@ -182,7 +182,7 @@ def _semantic_fallback(
     budget: int,
     embedder,
 ) -> list[QueryResult]:
-    """Routing bước 3: KNN sqlite-vec trên từng repo trong federation."""
+    """Routing step 3: sqlite-vec KNN over each repo in the federation."""
     from center_kb import embed as embed_mod
     from center_kb.federation import load_federation
 
@@ -201,7 +201,7 @@ def _semantic_fallback(
                 db_path, embedder, text
             ):
                 hits.append((rid, doc_id, sec_id, score))
-        except Exception as exc:  # embedding best-effort — không được phá query
+        except Exception as exc:  # embedding is best-effort — must not break query
             logger.warning("semantic search error (%s) — skipping: %s", rid, exc)
     results: list[QueryResult] = []
     used = 0

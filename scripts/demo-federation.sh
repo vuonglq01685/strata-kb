@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Demo: hub federation = single source of truth.
-# Dựng kb-hub + 2 repo con trong thư mục tạm, publish (direct mode),
-# search cross-repo, citation pin, stale sau amendment. Tự dọn dẹp.
+# Build kb-hub + 2 child repos in a temp directory, publish (direct mode),
+# cross-repo search, citation pin, stale after amendment. Cleans up after itself.
 set -euo pipefail
 
 DEMO_DIR="$(mktemp -d)"
@@ -9,7 +9,7 @@ trap 'rm -rf "$DEMO_DIR"' EXIT
 export CENTER_KB_HUB_CACHE="$DEMO_DIR/.hub-cache"
 G() { git -C "$1" -c user.name=demo -c user.email=demo@local -c core.excludesFile= "${@:2}"; }
 
-echo "== 1. Dựng kb-hub =="
+echo "== 1. Build kb-hub =="
 HUB="$DEMO_DIR/kb-hub"
 mkdir -p "$HUB/.kb" "$HUB/federation"
 printf 'docs: []\n' > "$HUB/.kb/index.yaml"
@@ -42,30 +42,30 @@ EOF
   git init -q "$ROOT"; G "$ROOT" add -A; G "$ROOT" commit -qm "v1"
 }
 
-echo "== 2. Dựng 2 repo con =="
+echo "== 2. Build the 2 child repos =="
 make_repo repo-alpha alpha-spec 1.1 "alpha widget"
 make_repo repo-beta  beta-spec  2.1 "beta gadget"
 
-echo "== 3. Publish cả hai (direct mode — hub local path) =="
+echo "== 3. Publish both (direct mode — hub local path) =="
 kb publish --kb-dir "$DEMO_DIR/repo-alpha/.kb"
 kb publish --kb-dir "$DEMO_DIR/repo-beta/.kb"
 
-echo "== 4. Index tổng trên hub =="
+echo "== 4. Aggregate index on the hub =="
 cat "$HUB/federation/index.yaml"
 
-echo "== 5. Search cross-repo từ repo-alpha (chỉ đọc federation) =="
+echo "== 5. Cross-repo search from repo-alpha (reads federation only) =="
 kb query "beta gadget" --kb-dir "$DEMO_DIR/repo-alpha/.kb"
 
-echo "== 6. L3 verbatim qua hub =="
+echo "== 6. L3 verbatim via the hub =="
 kb get beta-spec 2.1 --level l3 --kb-dir "$DEMO_DIR/repo-alpha/.kb"
 
-echo "== 7. Pin citation tại HEAD hub =="
+echo "== 7. Pin citation at hub HEAD =="
 kb context new --refs "beta-spec §2.1" --kb-dir "$DEMO_DIR/repo-alpha/.kb" | tee "$DEMO_DIR/ticket.md"
 
-echo "== 8. Amendment ở repo-beta + republish → citation stale =="
+echo "== 8. Amendment in repo-beta + republish → citation stale =="
 sed -i.bak 's/Condensed beta/Condensed AMENDED beta/' "$DEMO_DIR/repo-beta/.kb/beta-spec/ch1.md"
 G "$DEMO_DIR/repo-beta" add -A; G "$DEMO_DIR/repo-beta" commit -qm "amendment"
 kb publish --kb-dir "$DEMO_DIR/repo-beta/.kb"
 kb resolve "$DEMO_DIR/ticket.md" --kb-dir "$DEMO_DIR/repo-alpha/.kb" || true
 
-echo "== Demo hoàn tất — hub federation là nguồn đọc duy nhất =="
+echo "== Demo complete — hub federation is the only read source =="

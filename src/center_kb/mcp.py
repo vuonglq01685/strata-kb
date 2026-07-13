@@ -199,9 +199,9 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
         prog="python -m center_kb.mcp", description="CENTER-KB MCP server"
     )
     ap.add_argument("--kb", type=Path, default=Path(".kb"),
-                    help="KB directory (chỉ để tìm .kb/config.yaml)")
+                    help="KB directory (only to find .kb/config.yaml)")
     ap.add_argument("--hub", default=None,
-                    help="kb-hub URL/path (default: env CENTER_KB_HUB, rồi .kb/config.yaml)")
+                    help="kb-hub URL/path (default: env CENTER_KB_HUB, then .kb/config.yaml)")
     ap.add_argument("--transport", choices=("stdio", "http"), default="stdio",
                     help="stdio (default) or http (requires CENTER_KB_HTTP_TOKEN)")
     ap.add_argument("--host", default="127.0.0.1", help="Host to bind when --transport http")

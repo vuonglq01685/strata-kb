@@ -136,7 +136,7 @@ def current_branch(root: Path) -> str:
 
 
 def checkout_branch(root: Path, name: str, start_point: str) -> None:
-    """Tạo/reset branch `name` tại `start_point` rồi switch sang nó (checkout -B)."""
+    """Create/reset branch `name` at `start_point`, then switch to it (checkout -B)."""
     proc = _run(root, "checkout", "-B", name, start_point)
     if proc.returncode != 0:
         raise GitError(f"checkout -B {name} failed: {proc.stderr.strip()}")
@@ -149,7 +149,7 @@ def checkout(root: Path, name: str) -> None:
 
 
 def push_branch(root: Path, branch: str) -> None:
-    """Force-push branch làm việc (publish/<rid> thuộc sở hữu của publisher)."""
+    """Force-push the working branch (publish/<rid> is owned by the publisher)."""
     proc = _run(root, "push", "--force", "origin", branch)
     if proc.returncode != 0:
         raise GitError(f"push branch '{branch}' failed: {proc.stderr.strip()}")

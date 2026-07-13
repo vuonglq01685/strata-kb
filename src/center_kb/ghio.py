@@ -18,7 +18,7 @@ def gh_available() -> bool:
 
 
 def pr_url_for_branch(root: Path, branch: str) -> str:
-    """URL của PR đang mở cho `branch`; '' nếu chưa có."""
+    """URL of the open PR for `branch`; '' if there is none yet."""
     proc = _run_gh(root, "pr", "view", branch, "--json", "url", "--jq", ".url")
     if proc.returncode != 0:
         return ""
