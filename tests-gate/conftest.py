@@ -39,6 +39,25 @@ _INNER = json.dumps(
 )
 CLAUDE_ENVELOPE = json.dumps({"type": "result", "result": _INNER})
 
+# Doctor deliberately warns when `kind:` is absent from .kb/config.yaml
+# (role-aware init, spec 2026-07-13) — every pre-role .kb upgrades into
+# exactly that state, so legacy fixtures MUST see this warning. The gate
+# tolerates this one warning and no other.
+KIND_WARNING = "repo kind is not recorded"
+
+
+@pytest.fixture
+def strip_kind_warning():
+    """Remove the expected kind warning from doctor output so the strict
+    'not a single [warning]' assertions keep guarding everything else."""
+
+    def _strip(stdout: str) -> str:
+        return "\n".join(
+            line for line in stdout.splitlines() if KIND_WARNING not in line
+        )
+
+    return _strip
+
 
 @dataclass(frozen=True)
 class Artifact:
@@ -180,8 +199,10 @@ def seed_kb():
                 dest = kb / src.relative_to(SEED_FIXTURE)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest)
+        # kind: child — seeded repos model an authoring repo that publishes
+        # to the hub; without it doctor warns "repo kind is not recorded".
         (kb / "config.yaml").write_text(
-            f'hub: "{hub}"\nrepo_id: "e2e-repo"\n', encoding="utf-8"
+            f'hub: "{hub}"\nrepo_id: "e2e-repo"\nkind: "child"\n', encoding="utf-8"
         )
         return kb
 
@@ -203,7 +224,7 @@ def published_repo(
     repo = tmp_path / "repo"
     repo.mkdir()
     run_git(repo, "init", "-b", "main")
-    kb_run("init", cwd=repo)
+    kb_run("init", "--kind", "child", cwd=repo)
     kb = seed_kb(repo, bare_hub)
     kb_run("summarize", "--llm", "claude", "--kb-dir", str(kb),
            cwd=repo, env=stub_claude)

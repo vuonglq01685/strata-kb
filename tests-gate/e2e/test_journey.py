@@ -51,14 +51,14 @@ def test_version_and_help(kb_run, tmp_path):
 
 
 def test_init_scaffolds_a_kb(kb_run, tmp_path):
-    kb_run("init", cwd=tmp_path)
+    kb_run("init", "--kind", "child", cwd=tmp_path)
 
     assert (tmp_path / ".kb" / "index.yaml").exists()
     assert (tmp_path / ".kb" / "config.yaml").exists()
 
 
 def test_summarize_then_build(kb_run, seed_kb, stub_claude, bare_hub, tmp_path):
-    kb_run("init", cwd=tmp_path)
+    kb_run("init", "--kind", "child", cwd=tmp_path)
     kb = seed_kb(tmp_path, bare_hub)
 
     before = read_manifest(kb)
@@ -191,7 +191,7 @@ def test_ingest_without_docling_fails_cleanly(kb_run, seed_kb, bare_hub, tmp_pat
     """The base wheel does NOT carry the [ingest] extras. A user who runs
     `pip install center-kb` and then runs ingest lands on exactly this path — it
     must be a human sentence, not a traceback."""
-    kb_run("init", cwd=tmp_path)
+    kb_run("init", "--kind", "child", cwd=tmp_path)
     seed_kb(tmp_path, bare_hub)
     fake_pdf = tmp_path / "x.pdf"
     fake_pdf.write_bytes(b"%PDF-1.4\n")

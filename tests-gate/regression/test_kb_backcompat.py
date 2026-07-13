@@ -109,7 +109,7 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
             )
 
 
-def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run):
+def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run, strip_kind_warning):
     """Merely "no Traceback" is far too low a bar: a schema-reading failure that
     the product catches and reports cleanly as `[error] ...` also prints no
     Traceback, exits 1, and still passes that test. We must assert that doctor
@@ -125,6 +125,11 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run):
     yet" at warning level — not error level — so OK still prints as usual.) That
     is why we must inspect stdout directly: after a correct `kb publish`, the old
     .kb must be absolutely clean — not a single [warning]/[error] line.
+
+    One deliberate exception: the "repo kind is not recorded" warning. Legacy
+    configs predate role-aware init, so doctor warning about the missing
+    `kind:` is the DESIGNED upgrade nudge, not a mis-read — see KIND_WARNING
+    in tests-gate/conftest.py.
     """
     kb_run("publish", "--direct", "--hub", str(legacy_kb["hub"]),
            "--repo-id", "legacy", "--kb-dir", str(legacy_kb["kb"]),
@@ -143,7 +148,7 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run):
         f"did it merely not crash?"
         f"\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     )
-    assert "[warning]" not in proc.stdout, (
+    assert "[warning]" not in strip_kind_warning(proc.stdout), (
         f"doctor printed 'kb doctor: OK' yet still emitted a [warning] on the "
         f".kb of {legacy_kb['tag']} — OK does not check for warnings (see "
         f"cli.py::doctor), so this is evidence the new version reads the old .kb "
