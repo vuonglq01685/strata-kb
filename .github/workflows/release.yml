@@ -1,3 +1,42 @@
+# Release: tag v* → cửa đầy đủ (giống hệt PR, dùng chung _gate.yml) → rồi
+# mới release/publish. KHÔNG viết logic test riêng cho tag ở đây — xem BẤT
+# BIẾN đầu _gate.yml: PR và tag phải chạy cùng một cửa, không hơn không kém.
+#
+# Đồ thị phụ thuộc (cố ý — vá lỗ hổng L7):
+#   gate → docker-verify → pypi → docker-release
+#
+# PyPI là bất biến (immutable) — một version đã publish thì KHÔNG BAO GIỜ
+# xoá hay ghi đè được. Vì vậy: KHÔNG có gì không-thể-hoàn-tác được phép xảy
+# ra trước khi TOÀN BỘ cửa (gate + docker-verify) đều xanh.
+#   - docker-verify build image bằng `pip install center-kb[ingest]` THẬT
+#     (xem Dockerfile) → đây chính là cửa gác cho các extra nặng (docling/
+#     torch/rapidocr): nếu [ingest] không resolve, PyPI sẽ không được chạm
+#     tới (pypi needs docker-verify).
+#   - docker-verify chỉ push tag `sha-<commit>` — vô hại: không phải tag ai
+#     đang dùng (`latest`/`vX.Y.Z`), có thể xoá khỏi GHCR bất cứ lúc nào, nên
+#     đây KHÔNG phải hành động không-thể-hoàn-tác.
+#   - `latest`/`vX.Y.Z` CHỈ được trỏ tới (docker-release — retag-only qua
+#     `docker buildx imagetools create`, KHÔNG build lại image) SAU KHI
+#     `pypi` publish thành công. Không job nào khác được phép push hai tag
+#     này.
+#
+# Sự cố Task 11 phát hiện, để nhớ mãi không lặp lại: `center-kb==0.9.0`
+# CHƯA BAO GIỜ lên PyPI (PyPI nhảy thẳng 0.8.0 → 0.9.1) vì ở quy trình CŨ,
+# `docker` chỉ `needs: test` và chạy song song `pypi` — khi `build`/`pypi`
+# fail (post-0.9 `kb doctor` cần `--hub`, xem d3d6e36), `docker` vẫn xanh và
+# đẩy `:latest` như không có chuyện gì, nên không ai nhận ra PyPI đã im lặng
+# thất bại. Đồ thị tuần tự ở đây tồn tại CHÍNH XÁC để việc đó không lặp lại:
+# nếu `pypi` đỏ, `docker-release` bị skip — không có image `:latest` mới nào
+# che một release PyPI không tồn tại.
+#
+# LƯU Ý cho người định "tiện tay" sửa: `check_package.py` (chạy trong
+# gate/t2-package) CHỈ kiểm tra tag khớp `pyproject.toml` version + nội dung
+# gói (không lẫn tests/.kb/sources) — nó KHÔNG kiểm tra version đã tồn tại
+# trên PyPI hay chưa. Hàng rào chống publish-trùng-version đến từ chính PyPI
+# (immutable) + hành vi mặc định của `pypa/gh-action-pypi-publish` (fail
+# cứng nếu file đã tồn tại). KHÔNG bật `skip-existing: true` và KHÔNG thêm
+# `continue-on-error` vào job `pypi` — làm vậy là tái tạo lại đúng lỗ hổng
+# silent-failure ở trên.
 name: release
 on:
   push:
@@ -7,54 +46,54 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e .[dev]
-      - run: pytest
-        env:
-          # e2e tests exercise `kb publish`/`gitio.commit_*` against real git
-          # clones — those commits need an identity and CI runners have none
-          # configured anywhere (no ~/.gitconfig), unlike dev machines. Same
-          # env vars kb-publish.yml sets for real hub publishes.
-          GIT_AUTHOR_NAME: ci-test
-          GIT_AUTHOR_EMAIL: ci-test@local
-          GIT_COMMITTER_NAME: ci-test
-          GIT_COMMITTER_EMAIL: ci-test@local
+  gate:
+    uses: ./.github/workflows/_gate.yml
+    with:
+      tag: ${{ github.ref_name }}
 
-  build:
-    needs: test
+  docker-verify:
+    name: Build image + smoke (chưa phải tag release)
+    needs: gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
-          python-version: "3.12"
-      - run: pip install build
-      - run: python -m build
-      - name: Verify wheel is self-contained (templates + kb init + doctor)
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image (pip install center-kb[ingest] THẬT — xem Dockerfile)
+        run: docker build -t ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA} .
+      - name: Smoke — serve một KB rỗng; health phải trả lời, API phải 401
         run: |
-          python -m venv /tmp/venv
-          /tmp/venv/bin/pip install dist/*.whl
-          # Hub is mandatory as of 0.9 (federation is the only read source).
-          mkdir -p /tmp/hub/.kb /tmp/hub/federation
-          echo "docs: []" > /tmp/hub/.kb/index.yaml
-          echo "docs: []" > /tmp/hub/federation/index.yaml
-          mkdir /tmp/kbtest && cd /tmp/kbtest
-          /tmp/venv/bin/kb init
-          /tmp/venv/bin/kb doctor --hub /tmp/hub
-          /tmp/venv/bin/python -c "from importlib import resources; resources.files('center_kb').joinpath('templates/web/base.html').read_text(encoding='utf-8')"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
+          # Hub bắt buộc từ 0.9 (federation là nguồn đọc duy nhất) — CMD của
+          # Dockerfile chạy `--hub /data`, nên /data cần cả .kb/ lẫn
+          # federation/ mới boot được, không riêng .kb/ như trước 0.9.
+          mkdir -p /tmp/data/.kb /tmp/data/federation
+          echo "docs: []" > /tmp/data/.kb/index.yaml
+          echo "docs: []" > /tmp/data/federation/index.yaml
+          docker run -d --name kb -p 8321:8321 \
+            -e CENTER_KB_HTTP_TOKEN=smoke-test-token \
+            -v /tmp/data:/data \
+            ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA}
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8321/api/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:8321/api/health
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)
+          test "$code" = "401"
+          docker rm -f kb
+      - name: Push tag sha- (vô hại — KHÔNG phải tag release, không ai kéo nó)
+        run: docker push ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA}
 
   pypi:
-    needs: build
+    name: Publish PyPI (không thể hoàn tác — đi sau MỌI cửa)
+    needs: [gate, docker-verify]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -66,40 +105,24 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
 
-  docker:
-    needs: test
+  docker-release:
+    name: Retag image → vX.Y.Z + latest (chỉ sau khi PyPI publish xong)
+    needs: pypi
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME} .
-      - name: Smoke test — serve an empty KB, health must answer, API must 401
-        run: |
-          mkdir -p /tmp/data/.kb
-          echo "docs: []" > /tmp/data/.kb/index.yaml
-          docker run -d --name kb -p 8321:8321 \
-            -e CENTER_KB_HTTP_TOKEN=smoke-test-token \
-            -v /tmp/data:/data \
-            ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME}
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:8321/api/health && break
-            sleep 2
-          done
-          curl -sf http://localhost:8321/api/health
-          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)
-          test "$code" = "401"
-          docker rm -f kb
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push tags
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Retag (không build lại — chỉ copy manifest sang tag mới, vài giây)
         run: |
-          docker tag ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME} ghcr.io/vuonglq01685/center-kb:latest
-          docker push ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME}
-          docker push ghcr.io/vuonglq01685/center-kb:latest
+          docker buildx imagetools create \
+            --tag ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME} \
+            --tag ghcr.io/vuonglq01685/center-kb:latest \
+            ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA}
