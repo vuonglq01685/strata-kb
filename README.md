@@ -563,4 +563,51 @@ No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, sa
 
 ---
 
+## Release
+
+Trước khi tag, chạy toàn bộ cửa kiểm định trên máy:
+
+```bash
+./scripts/gate.sh
+```
+
+Nó chạy đúng những gì CI chạy, theo bốn tầng:
+
+1. **T1 (unit/integration)** — `pytest` trên source tree.
+2. **T2 (đóng gói)** — build wheel + sdist, `uv lock --check`, `twine check`,
+   cài wheel vào venv sạch, kiểm tra version (`kb --version` khớp
+   `pyproject.toml`, và khớp tag nếu đang release), và đảm bảo `tests/`,
+   `.kb/`, `sources/` không lọt vào gói.
+3. **T3 (e2e trên artifact đã cài)** — chạy hành trình người dùng thật
+   (`kb init` → `ingest` → `publish` → …) từ **wheel đã cài**, không phải
+   source tree, trong một venv riêng không có `center-kb`.
+4. **T4 (regression)** — backward-compat với `.kb/` cũ (v0.7.0/v0.8.0/v0.9.0),
+   hợp đồng MCP, golden output, và tương thích federation.
+
+Khi cửa xanh trên máy:
+
+```bash
+# 1. Bump version trong pyproject.toml, rồi:
+uv lock
+git commit -am "chore: bump to X.Y.Z"
+
+# 2. Tag — CI chạy lại toàn bộ cửa (T1-T4 + build/smoke image), chỉ publish
+#    lên PyPI và chỉ retag image `:latest`/`:vX.Y.Z` khi MỌI THỨ xanh.
+git tag vX.Y.Z && git push --tags
+```
+
+Tag không chạy gì khác so với PR — đó là chủ đích (`.github/workflows/_gate.yml`
+dùng chung cho cả hai). **Nếu cửa đỏ ở bất kỳ tầng nào, chưa có gì được
+publish**: PyPI là bất biến nên `release.yml` chỉ publish sau khi gate VÀ
+image Docker (build bằng `[ingest]` extra thật) đều xanh, và `:latest`/
+`:vX.Y.Z` trên GHCR chỉ được trỏ sau khi PyPI publish thành công. Cứ yên tâm
+xoá tag, sửa lỗi, rồi tag lại:
+
+```bash
+git push --delete origin vX.Y.Z
+git tag -d vX.Y.Z
+```
+
+---
+
 *This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) — updated 2026-07-13. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, and `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`.*
