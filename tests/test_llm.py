@@ -1,19 +1,10 @@
 import json
-import stat
-from pathlib import Path
 
 import pytest
 
 from center_kb import llm
 from center_kb.models import LLMConfig
-
-
-def make_stub(tmp_path: Path, name: str, body: str) -> str:
-    """Create an executable shell script standing in for a real CLI."""
-    script = tmp_path / name
-    script.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR)
-    return str(script)
+from tests.cli_stub import echo, echo_after_stdin, write_cli_stub
 
 
 # --- detect_runner -----------------------------------------------------------
@@ -62,26 +53,33 @@ def test_runner_carries_config_values(monkeypatch):
 def test_claude_run_unwraps_json_envelope(tmp_path):
     inner = json.dumps({"l2_summary": "x", "l1_summary": "y"})
     envelope = json.dumps({"type": "result", "result": inner})
-    exe = make_stub(tmp_path, "claude", f"cat > /dev/null\necho '{envelope}'")
-    runner = llm.Runner("claude", exe, "sonnet-5", "high", 30)
+    exe = write_cli_stub(tmp_path, "claude", echo_after_stdin(envelope))
+    runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 30)
     assert json.loads(runner.run("prompt")) == {"l2_summary": "x", "l1_summary": "y"}
 
 
 def test_copilot_run_returns_plain_stdout(tmp_path):
-    exe = make_stub(tmp_path, "copilot", 'echo \'{"l2_summary": "a", "l1_summary": "b"}\'')
-    runner = llm.Runner("copilot", exe, "gpt-5", "high", 30)
+    exe = write_cli_stub(
+        tmp_path, "copilot", echo('{"l2_summary": "a", "l1_summary": "b"}')
+    )
+    runner = llm.Runner("copilot", str(exe), "gpt-5", "high", 30)
     assert '"l2_summary"' in runner.run("prompt")
 
 
 def test_run_raises_on_nonzero_exit(tmp_path):
-    exe = make_stub(tmp_path, "claude", "cat > /dev/null\nexit 3")
-    runner = llm.Runner("claude", exe, "sonnet-5", "high", 30)
+    exe = write_cli_stub(
+        tmp_path, "claude", "import sys\nsys.stdin.read()\nsys.exit(3)\n"
+    )
+    runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 30)
     with pytest.raises(llm.RunnerError):
         runner.run("prompt")
 
 
 def test_run_raises_on_timeout(tmp_path):
-    exe = make_stub(tmp_path, "claude", "cat > /dev/null\nsleep 5")
-    runner = llm.Runner("claude", exe, "sonnet-5", "high", 1)
+    exe = write_cli_stub(
+        tmp_path, "claude",
+        "import sys, time\nsys.stdin.read()\ntime.sleep(5)\n",
+    )
+    runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 1)
     with pytest.raises(llm.RunnerError):
         runner.run("prompt")

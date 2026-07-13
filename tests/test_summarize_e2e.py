@@ -1,11 +1,12 @@
 import json
-import stat
+import os
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from center_kb import models
 from center_kb.cli import app
+from tests.cli_stub import echo_after_stdin, write_cli_stub
 from tests.test_summarize import make_kb
 
 runner = CliRunner()
@@ -19,19 +20,16 @@ DOC_INNER = json.dumps(
 DOC_ENVELOPE = json.dumps({"type": "result", "result": DOC_INNER})
 
 
-def _install_stub_claude(tmp_path: Path, monkeypatch, body: str) -> None:
+def _install_stub_claude(tmp_path: Path, monkeypatch, payload: str) -> None:
     bindir = tmp_path / "bin"
-    bindir.mkdir()
-    script = bindir / "claude"
-    script.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("PATH", str(bindir), prepend=":")
+    write_cli_stub(bindir, "claude", echo_after_stdin(payload))
+    monkeypatch.setenv("PATH", str(bindir), prepend=os.pathsep)
 
 
 def test_kb_summarize_end_to_end_with_stub_claude(tmp_path, monkeypatch):
     kb = make_kb(tmp_path, {})
     # stub replies with a payload valid for BOTH section and doc prompts
-    _install_stub_claude(tmp_path, monkeypatch, f"cat > /dev/null\necho '{DOC_ENVELOPE}'")
+    _install_stub_claude(tmp_path, monkeypatch, DOC_ENVELOPE)
     result = runner.invoke(app, ["summarize", "--kb-dir", str(kb), "--llm", "claude"])
     assert result.exit_code == 0, result.output
     manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
@@ -44,7 +42,7 @@ def test_kb_summarize_end_to_end_with_stub_claude(tmp_path, monkeypatch):
 
 def test_kb_summarize_end_to_end_garbage_reply_fails_cleanly(tmp_path, monkeypatch):
     kb = make_kb(tmp_path, {})
-    _install_stub_claude(tmp_path, monkeypatch, "cat > /dev/null\necho 'not json'")
+    _install_stub_claude(tmp_path, monkeypatch, "not json")
     result = runner.invoke(app, ["summarize", "--kb-dir", str(kb), "--llm", "claude"])
     assert result.exit_code == 1
     assert "2 failed" in result.output
@@ -71,7 +69,7 @@ def test_kb_summarize_parallel_many_sections_manifest_consistent(tmp_path, monke
         kb / "index.yaml",
         models.KBIndex(docs=[models.IndexEntry(id="big", title="Big")]),
     )
-    _install_stub_claude(tmp_path, monkeypatch, f"cat > /dev/null\necho '{DOC_ENVELOPE}'")
+    _install_stub_claude(tmp_path, monkeypatch, DOC_ENVELOPE)
     result = runner.invoke(
         app, ["summarize", "--kb-dir", str(kb), "--llm", "claude", "--max-workers", "5"]
     )
