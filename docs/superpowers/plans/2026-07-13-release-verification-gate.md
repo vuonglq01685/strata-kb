@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Python floor: 3.11.** `requires-python = ">=3.11"`. Mọi tầng chạy matrix `{3.11, 3.12}` ở **cả** PR lẫn tag — không rút gọn trên PR, vì bất biến "tag không chạy gì mới" là điều kiện sống của thiết kế này.
-- **T3 (`tests-e2e/`) và T4 (`tests-regression/`) TUYỆT ĐỐI không được `import center_kb`**, kể cả gián tiếp qua conftest. Vi phạm ⇒ tầng đó âm thầm thoái hoá thành test source tree.
+- **T3 (`tests-gate/e2e/`) và T4 (`tests-gate/regression/`) TUYỆT ĐỐI không được `import center_kb`**, kể cả gián tiếp qua conftest. Vi phạm ⇒ tầng đó âm thầm thoái hoá thành test source tree.
 - **Runner venv không được cài `center-kb`.** Đây là điều kiện để canary `find_spec("center_kb") is None` có nghĩa.
 - **Không parse PDF thật, không tải model Hugging Face** ở bất kỳ đâu trong cửa. Cửa flaky vì mạng thì tệ hơn không có cửa.
 - **Không có `claude` CLI trên CI.** Mọi bước cần LLM phải dùng stub shell script đặt trên `PATH`.
@@ -26,13 +26,24 @@
 
 Ba điểm trong spec không thi hành được như viết. Ghi lại ở đây để người thực thi không tưởng là mình làm sai.
 
-**1. Bố cục thư mục: `tests-e2e/` và `tests-regression/` ở gốc repo, KHÔNG phải `tests/e2e/` và `tests/regression/`.**
+**1. Bố cục: một cây `tests-gate/` ở gốc repo với MỘT conftest chung, KHÔNG phải `tests/e2e/` + `tests/regression/`.**
 
 Spec §4.1 đặt chúng dưới `tests/`. Không được: `tests/conftest.py:6` có `from center_kb import models` ở **module scope**, và pytest nạp mọi `conftest.py` trên đường dẫn tổ tiên. Mọi thứ dưới `tests/` sẽ luôn import `center_kb` lúc collection → canary không bao giờ có thể xanh, và tầng T3/T4 mất sạch tính cô lập. Đưa ra ngoài là cách duy nhất cưỡng chế ranh giới bằng cấu trúc thay vì bằng kỷ luật.
 
+Và chỉ **một** thư mục `tests-gate/` với hai thư mục con, chứ không phải hai thư mục top-level tách rời: T3 và T4 dùng chung hầu hết fixture (`artifact`, `kb_run`, `run_git`, `bare_hub`, `free_port`). Hai thư mục top-level không chia sẻ được conftest, nên sẽ phải sao chép ~80 dòng — DRY thua, và mỗi lần đổi một fixture phải sửa hai nơi. Một `tests-gate/conftest.py` phục vụ cả hai thư mục con, ranh giới với `tests/` vẫn nguyên vẹn.
+
+```
+tests-gate/
+    conftest.py              ← MỘT conftest cho cả hai tầng
+    fixtures/pending-kb/
+    golden/
+    e2e/          → T3:  pytest tests-gate/e2e
+    regression/   → T4:  pytest tests-gate/regression
+```
+
 **2. Không cần marker `e2e`/`regression`, không cần đổi `addopts`.**
 
-Hệ quả của (1): `testpaths = ["tests"]` sẵn có đã loại `tests-e2e/` và `tests-regression/` khỏi lần chạy `pytest` trần. T3 = `pytest tests-e2e`, T4 = `pytest tests-regression`. Bỏ được toàn bộ cơ chế marker trong spec §4.2 — ít máy móc hơn, cùng kết quả. Yêu cầu "không thể xanh khi chạy 0 test" vẫn được đảm bảo: pytest trả **exit code 5** khi không thu thập được test nào, và fixture `artifact` **raise** nếu thiếu `KB_VENV`.
+Hệ quả của (1): `testpaths = ["tests"]` sẵn có đã loại `tests-gate/e2e/` và `tests-gate/regression/` khỏi lần chạy `pytest` trần. T3 = `pytest tests-gate/e2e`, T4 = `pytest tests-gate/regression`. Bỏ được toàn bộ cơ chế marker trong spec §4.2 — ít máy móc hơn, cùng kết quả. Yêu cầu "không thể xanh khi chạy 0 test" vẫn được đảm bảo: pytest trả **exit code 5** khi không thu thập được test nào, và fixture `artifact` **raise** nếu thiếu `KB_VENV`.
 
 **3. Thứ tự hành trình e2e: `publish` phải đứng trước `query`.**
 
@@ -44,25 +55,24 @@ Spec §5 xếp `query` (bước 5) trước `publish` (bước 6). Sai: từ v0.
 
 | File | Trách nhiệm |
 |---|---|
-| `tests-e2e/conftest.py` | Fixture `artifact` (`$KB_VENV`), `kb_run`, `stub_claude`, `bare_hub`, `run_git`, `free_port`. Không import `center_kb`. |
-| `tests-e2e/fixtures/pending-kb/` | KB seed ở trạng thái ingest vừa xong (`status: pending`, `<!-- TODO:summarize -->`). Sinh bởi `scripts/gen_e2e_fixture.py`, commit vào repo. |
-| `tests-e2e/test_canary.py` | Cưỡng chế ranh giới tầng: `center_kb` không import được ở runner; `$KB_VENV/bin/kb` chạy được. |
-| `tests-e2e/test_journey.py` | Hành trình đầy đủ (Task 3, 5, 6). |
-| `tests-regression/conftest.py` | Fixture `legacy_kb` (materialize từ `git archive <tag> .kb`), `mcp_stdio` client helper. |
-| `tests-regression/golden/mcp_tools.json` | Snapshot `tools/list` — so sánh chính xác. |
-| `tests-regression/golden/mcp_outputs/*.txt` | Snapshot chuỗi trả về của 3 MCP tool. |
-| `tests-regression/golden/cli_outputs/*.txt` | Snapshot stdout CLI (đã chuẩn hoá). |
-| `tests-regression/golden/federation-v0.9.0/` | Cây `federation/` sinh bởi v0.9.0 — fixture duy nhất được commit thay vì lấy từ git history. |
-| `tests-regression/test_kb_backcompat.py` | §6.1 spec. |
-| `tests-regression/test_mcp_contract.py` | §6.2 spec. |
-| `tests-regression/test_golden_output.py` | §6.3 spec. |
-| `tests-regression/test_federation_compat.py` | §6.4 spec. |
-| `scripts/gen_e2e_fixture.py` | Sinh `tests-e2e/fixtures/pending-kb/` bằng chính `scaffold_doc()` — nguồn sự thật cho hình dạng đầu ra của ingest. |
+| `tests-gate/conftest.py` | **Conftest duy nhất cho cả T3 lẫn T4.** Fixture `artifact` (`$KB_VENV`), `kb_run`, `run_git`, `stub_claude`, `bare_hub`, `free_port`, `seed_kb` (Task 2); `published_repo` (Task 5); `legacy_kb` + `_materialize_kb_at_tag` (Task 8); `published_kb` (Task 9). Không import `center_kb`. |
+| `tests-gate/fixtures/pending-kb/` | KB seed ở trạng thái ingest vừa xong (`status: pending`, `<!-- TODO:summarize -->`). Sinh bởi `scripts/gen_e2e_fixture.py`, commit vào repo. |
+| `tests-gate/e2e/test_canary.py` | Cưỡng chế ranh giới tầng: `center_kb` không import được ở runner; `$KB_VENV/bin/kb` chạy được. |
+| `tests-gate/e2e/test_journey.py` | Hành trình đầy đủ (Task 3, 5, 6). |
+| `tests-gate/golden/mcp_tools.json` | Snapshot `tools/list` — so sánh chính xác. |
+| `tests-gate/golden/mcp_outputs/*.txt` | Snapshot chuỗi trả về của 3 MCP tool. |
+| `tests-gate/golden/cli_outputs/*.txt` | Snapshot stdout CLI (đã chuẩn hoá). |
+| `tests-gate/golden/federation-v0.9.0/` | Cây `federation/` sinh bởi v0.9.0 — fixture duy nhất được commit thay vì lấy từ git history. |
+| `tests-gate/regression/test_kb_backcompat.py` | §6.1 spec. |
+| `tests-gate/regression/test_mcp_contract.py` | §6.2 spec. |
+| `tests-gate/regression/test_golden_output.py` | §6.3 spec. |
+| `tests-gate/regression/test_federation_compat.py` | §6.4 spec. |
+| `scripts/gen_e2e_fixture.py` | Sinh `tests-gate/fixtures/pending-kb/` bằng chính `scaffold_doc()` — nguồn sự thật cho hình dạng đầu ra của ingest. |
 | `scripts/check_package.py` | T2: version consistency + nội dung wheel. Thuần stdlib, chạy được độc lập. |
 | `scripts/gate.sh` | Chạy toàn bộ cửa trên máy dev bằng một lệnh. |
 | `requirements-gate.txt` | Dependency của **runner** venv (pytest, pyyaml, mcp). Không chứa `center-kb`. |
 | `tests/test_check_package.py` | T1: unit test cho `scripts/check_package.py`. |
-| `tests/test_ingest_seam.py` | T1: ghim `tests-e2e/fixtures/pending-kb/` vào đầu ra thật của `scaffold_doc()`. |
+| `tests/test_ingest_seam.py` | T1: ghim `tests-gate/fixtures/pending-kb/` vào đầu ra thật của `scaffold_doc()`. |
 | `.github/workflows/_gate.yml` | Reusable workflow chứa T1–T4. |
 | `.github/workflows/ci.yml` | PR + push `main` → `uses: _gate.yml`. |
 
@@ -168,8 +178,8 @@ Dựng bộ khung để T3/T4 chạy được, và **cưỡng chế ranh giới 
 
 **Files:**
 - Create: `requirements-gate.txt`
-- Create: `tests-e2e/conftest.py`
-- Create: `tests-e2e/test_canary.py`
+- Create: `tests-gate/conftest.py`
+- Create: `tests-gate/e2e/test_canary.py`
 - Create: `scripts/gate.sh`
 
 **Interfaces:**
@@ -180,7 +190,7 @@ Dựng bộ khung để T3/T4 chạy được, và **cưỡng chế ranh giới 
   - `stub_claude` fixture → `dict[str, str]` chứa `{"PATH": "<bindir>:<PATH gốc>"}`, merge vào `env` của `kb_run`.
   - `bare_hub` fixture → `Path` tới bare git repo có sẵn `.kb/index.yaml` + `federation/index.yaml`.
   - `free_port` fixture → `int`.
-  - Task 3, 5, 6 dùng toàn bộ các fixture trên. Task 8–11 dùng lại `artifact`, `run_git`, `free_port` qua `tests-regression/conftest.py`.
+  - Task 3, 5, 6 dùng toàn bộ các fixture trên. Task 8–11 dùng lại `artifact`, `run_git`, `free_port` qua `tests-gate/conftest.py`.
 
 - [ ] **Step 1: Khai báo dependency của runner venv**
 
@@ -189,7 +199,7 @@ Tạo `requirements-gate.txt`:
 ```
 # Dependency của RUNNER venv — môi trường chạy pytest cho tầng T3/T4.
 # TUYỆT ĐỐI KHÔNG thêm center-kb vào đây: runner phải không import được
-# package thì canary (tests-e2e/test_canary.py) mới có nghĩa.
+# package thì canary (tests-gate/e2e/test_canary.py) mới có nghĩa.
 pytest>=8.0
 pyyaml>=6.0
 mcp>=1.2
@@ -197,7 +207,7 @@ mcp>=1.2
 
 - [ ] **Step 2: Write the failing test (canary)**
 
-Tạo `tests-e2e/test_canary.py`:
+Tạo `tests-gate/e2e/test_canary.py`:
 
 ```python
 """Cưỡng chế ranh giới tầng T3/T4.
@@ -232,7 +242,7 @@ def test_artifact_binary_runs(artifact):
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `.venv/bin/pytest tests-e2e/test_canary.py -q`
+Run: `.venv/bin/pytest tests-gate/e2e/test_canary.py -q`
 Expected: FAIL — hai lý do cùng lúc, và cả hai đều đúng như thiết kế:
 1. `test_center_kb_is_not_importable_from_the_runner` đỏ vì `.venv` có `center-kb` cài editable.
 2. `test_artifact_binary_runs` lỗi vì fixture `artifact` chưa tồn tại.
@@ -241,12 +251,12 @@ Expected: FAIL — hai lý do cùng lúc, và cả hai đều đúng như thiế
 
 - [ ] **Step 4: Viết conftest**
 
-Tạo `tests-e2e/conftest.py`:
+Tạo `tests-gate/conftest.py`:
 
 ```python
 """Fixtures cho tầng T3 (e2e trên artifact đã cài).
 
-QUY TẮC BẤT DI BẤT DỊCH: file này và mọi file dưới tests-e2e/ KHÔNG được
+QUY TẮC BẤT DI BẤT DỊCH: file này và mọi file dưới tests-gate/e2e/ KHÔNG được
 import center_kb. Artifact chỉ được chạm tới qua subprocess.
 """
 
@@ -398,7 +408,35 @@ def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+# ---- KB seed (fixture sinh bởi scripts/gen_e2e_fixture.py — xem Task 3) ----
+# Hằng số + fixture đặt ở đây (conftest chung) thay vì trong test_journey.py, để
+# fixture `published_repo` (Task 5) dùng được mà không cần import chéo giữa các
+# test module.
+SEED_FIXTURE = Path(__file__).parent / "fixtures" / "pending-kb"
+
+
+@pytest.fixture
+def seed_kb():
+    """Đổ KB ở trạng thái 'ingest vừa xong' vào repo, và trỏ config.yaml vào hub."""
+
+    def _seed(repo: Path, hub: Path) -> Path:
+        kb = repo / ".kb"
+        for src in SEED_FIXTURE.rglob("*"):
+            if src.is_file():
+                dest = kb / src.relative_to(SEED_FIXTURE)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+        (kb / "config.yaml").write_text(
+            f'hub: "{hub}"\nrepo_id: "e2e-repo"\n', encoding="utf-8"
+        )
+        return kb
+
+    return _seed
 ```
+
+`shutil` phải có trong khối import ở đầu conftest.
 
 - [ ] **Step 5: Viết `scripts/gate.sh`**
 
@@ -433,22 +471,22 @@ python -m twine check --strict dist/*
 uv lock --check
 
 # Runner venv: pytest + deps, KHÔNG có center-kb. Đây là điều kiện để canary
-# (tests-e2e/test_canary.py) có nghĩa.
+# (tests-gate/e2e/test_canary.py) có nghĩa.
 echo "==> Dựng runner venv"
 python -m venv "$RUNNER"
 "$RUNNER/bin/pip" install --quiet -r requirements-gate.txt
 
 echo "==> T3: e2e trên artifact"
-KB_VENV="$ARTIFACT" "$RUNNER/bin/pytest" tests-e2e -q
+KB_VENV="$ARTIFACT" "$RUNNER/bin/pytest" tests-gate/e2e -q
 
 echo "==> T4: regression"
-KB_VENV="$ARTIFACT" "$RUNNER/bin/pytest" tests-regression -q
+KB_VENV="$ARTIFACT" "$RUNNER/bin/pytest" tests-gate/regression -q
 
 echo ""
 echo "✅ Cửa xanh. An toàn để tag."
 ```
 
-`scripts/check_package.py` chưa tồn tại (Task 7) và `tests-regression/` chưa tồn tại (Task 8+). Ở task này script sẽ dừng ở bước T2 — đó là hành vi đúng của `set -e`. Nó sẽ chạy trọn vẹn sau Task 11.
+`scripts/check_package.py` chưa tồn tại (Task 7) và `tests-gate/regression/` chưa tồn tại (Task 8+). Ở task này script sẽ dừng ở bước T2 — đó là hành vi đúng của `set -e`. Nó sẽ chạy trọn vẹn sau Task 11.
 
 - [ ] **Step 6: Chạy canary đúng cách và xác minh nó xanh**
 
@@ -456,25 +494,25 @@ echo "✅ Cửa xanh. An toàn để tag."
 python -m build
 python -m venv /tmp/kb-artifact && /tmp/kb-artifact/bin/pip install -q dist/*.whl
 python -m venv /tmp/kb-runner && /tmp/kb-runner/bin/pip install -q -r requirements-gate.txt
-KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-e2e -q
+KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/e2e -q
 ```
 
 Expected: **2 passed**. Cả hai canary xanh — `center_kb` không import được từ runner, và `kb --version` (Task 1) chạy được từ artifact.
 
 - [ ] **Step 7: Xác minh fixture raise khi thiếu `KB_VENV`**
 
-Run: `/tmp/kb-runner/bin/pytest tests-e2e/test_canary.py::test_artifact_binary_runs -q`
+Run: `/tmp/kb-runner/bin/pytest tests-gate/e2e/test_canary.py::test_artifact_binary_runs -q`
 Expected: ERROR với `RuntimeError: KB_VENV chưa được set…`, exit code khác 0. Đây là bằng chứng cho tiêu chí "không thể xanh khi chạy 0 test".
 
 - [ ] **Step 8: Xác minh `pytest` trần không bị ảnh hưởng**
 
 Run: `.venv/bin/pytest -q`
-Expected: 386 passed. `testpaths = ["tests"]` khiến `tests-e2e/` không bị thu thập — T1 không chậm đi chút nào.
+Expected: 386 passed. `testpaths = ["tests"]` khiến `tests-gate/e2e/` không bị thu thập — T1 không chậm đi chút nào.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add requirements-gate.txt tests-e2e/ scripts/gate.sh
+git add requirements-gate.txt tests-gate/e2e/ scripts/gate.sh
 git commit -m "test: add e2e artifact harness + tier-boundary canary"
 ```
 
@@ -486,14 +524,14 @@ Không chạy được `kb ingest` thật trong cửa (`parser.load_or_parse` im
 
 **Files:**
 - Create: `scripts/gen_e2e_fixture.py`
-- Create: `tests-e2e/fixtures/pending-kb/` (sinh ra, rồi commit)
-- Create: `tests-e2e/test_journey.py`
+- Create: `tests-gate/fixtures/pending-kb/` (sinh ra, rồi commit)
+- Create: `tests-gate/e2e/test_journey.py`
 
 **Interfaces:**
 - Consumes: `artifact`, `kb_run`, `stub_claude` (Task 2).
 - Produces:
-  - `tests-e2e/fixtures/pending-kb/` — cây `.kb` gồm `index.yaml`, `demo-doc/_manifest.yaml`, `demo-doc/ch1-records.md`, `demo-doc/ch1-records.raw.md`. Task 4 ghim nó; Task 5/6 dùng tiếp.
-  - `seed_kb(dest: Path, hub: Path) -> None` (helper trong `test_journey.py`) — copy fixture vào `dest/.kb` và ghi `hub:` vào `config.yaml`.
+  - `tests-gate/fixtures/pending-kb/` — cây `.kb` gồm `index.yaml`, `demo-doc/_manifest.yaml`, `demo-doc/ch1-records.md`, `demo-doc/ch1-records.raw.md`. Task 4 ghim nó; Task 5/6 dùng tiếp.
+  - `seed_kb` fixture (định nghĩa ở `tests-gate/conftest.py`, Task 2) → callable `_seed(repo: Path, hub: Path) -> Path`; copy fixture vào `repo/.kb` và ghi `hub:` vào `config.yaml`.
   - Doc id: `demo-doc`. Section ids: `1.1` (Airspace Records), `1.2` (Airway Records).
 
 - [ ] **Step 1: Viết generator**
@@ -501,7 +539,7 @@ Không chạy được `kb ingest` thật trong cửa (`parser.load_or_parse` im
 Tạo `scripts/gen_e2e_fixture.py`:
 
 ```python
-"""Sinh tests-e2e/fixtures/pending-kb/ bằng CHÍNH scaffold_doc().
+"""Sinh tests-gate/fixtures/pending-kb/ bằng CHÍNH scaffold_doc().
 
 Fixture này là "vết nối" của hành trình e2e: nó thế chỗ cho `kb ingest`, thứ
 không chạy được trong cửa release. Sinh nó bằng code thật (thay vì gõ tay) là
@@ -566,7 +604,7 @@ def generate(kb_dir: Path) -> None:
 
 if __name__ == "__main__":
     dest = Path(sys.argv[1]) if len(sys.argv) > 1 else (
-        Path(__file__).parent.parent / "tests-e2e" / "fixtures" / "pending-kb"
+        Path(__file__).parent.parent / "tests-gate" / "fixtures" / "pending-kb"
     )
     generate(dest)
     print(f"generated {dest}")
@@ -576,15 +614,15 @@ if __name__ == "__main__":
 
 ```bash
 .venv/bin/python scripts/gen_e2e_fixture.py
-find tests-e2e/fixtures/pending-kb -type f | sort
-cat tests-e2e/fixtures/pending-kb/demo-doc/ch1-records.md
+find tests-gate/fixtures/pending-kb -type f | sort
+cat tests-gate/fixtures/pending-kb/demo-doc/ch1-records.md
 ```
 
 Expected: 4 file — `index.yaml`, `demo-doc/_manifest.yaml`, `demo-doc/ch1-records.md`, `demo-doc/ch1-records.raw.md`. File `ch1-records.md` chứa `<!-- TODO:summarize 1.1 -->` và `<!-- TODO:summarize 1.2 -->`; `_manifest.yaml` có `status: pending` cho cả hai section. Nếu không đúng vậy, **dừng lại** — mọi thứ phía sau dựa vào hình dạng này.
 
 - [ ] **Step 3: Write the failing test (hành trình phần A)**
 
-Tạo `tests-e2e/test_journey.py`:
+Tạo `tests-gate/e2e/test_journey.py`:
 
 ```python
 """Hành trình e2e đầy đủ trên wheel đã cài.
@@ -594,26 +632,12 @@ KHÔNG import center_kb ở đây. Artifact là hộp đen, chỉ chạm qua sub
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import yaml
 
-FIXTURE = Path(__file__).parent / "fixtures" / "pending-kb"
-
-
-def seed_kb(repo: Path, hub: Path) -> Path:
-    """Đổ KB ở trạng thái 'ingest vừa xong' vào repo, và trỏ config.yaml vào hub."""
-    kb = repo / ".kb"
-    for src in FIXTURE.rglob("*"):
-        if src.is_file():
-            dest = kb / src.relative_to(FIXTURE)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-    (kb / "config.yaml").write_text(
-        f'hub: "{hub}"\nrepo_id: "e2e-repo"\n', encoding="utf-8"
-    )
-    return kb
+# tests-gate/e2e/test_journey.py → lùi 2 cấp là gốc repo.
+REPO_ROOT = Path(__file__).parent.parent.parent
 
 
 def read_manifest(kb: Path) -> dict:
@@ -622,9 +646,7 @@ def read_manifest(kb: Path) -> dict:
 
 def test_version_and_help(kb_run, tmp_path):
     version = kb_run("--version", cwd=tmp_path).stdout.strip()
-    pyproject = (Path(__file__).parent.parent / "pyproject.toml").read_text(
-        encoding="utf-8"
-    )
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     # Đọc pyproject như file text — KHÔNG import center_kb.
     declared = next(
         line.split("=", 1)[1].strip().strip('"')
@@ -649,7 +671,7 @@ def test_init_scaffolds_a_kb(kb_run, tmp_path):
     assert (tmp_path / ".kb" / "config.yaml").exists()
 
 
-def test_summarize_then_build(kb_run, stub_claude, bare_hub, tmp_path):
+def test_summarize_then_build(kb_run, seed_kb, stub_claude, bare_hub, tmp_path):
     kb_run("init", cwd=tmp_path)
     kb = seed_kb(tmp_path, bare_hub)
 
@@ -677,9 +699,9 @@ def test_summarize_then_build(kb_run, stub_claude, bare_hub, tmp_path):
 
 ```bash
 python -m build && python -m venv /tmp/kb-artifact && /tmp/kb-artifact/bin/pip install -q --force-reinstall dist/*.whl
-KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-e2e/test_journey.py -q
+KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/e2e/test_journey.py -q
 ```
-Expected: FAIL — `tests-e2e/fixtures/pending-kb` chưa được commit thì `FIXTURE` vẫn tồn tại trên đĩa (Step 2 đã sinh), nên test thực ra **nên PASS**. Nếu nó đỏ, đọc kỹ output: đó là lỗi thật (ví dụ `kb summarize` không nhận stub), không phải lỗi TDD-chưa-implement. Task này là *kiểm chứng hành vi đã có*, không phải xây tính năng mới — nên "test phải đỏ trước" không áp dụng; điều phải xác minh là **nó xanh vì đúng lý do**.
+Expected: FAIL — `tests-gate/fixtures/pending-kb` chưa được commit thì `FIXTURE` vẫn tồn tại trên đĩa (Step 2 đã sinh), nên test thực ra **nên PASS**. Nếu nó đỏ, đọc kỹ output: đó là lỗi thật (ví dụ `kb summarize` không nhận stub), không phải lỗi TDD-chưa-implement. Task này là *kiểm chứng hành vi đã có*, không phải xây tính năng mới — nên "test phải đỏ trước" không áp dụng; điều phải xác minh là **nó xanh vì đúng lý do**.
 
 - [ ] **Step 5: Xác minh nó xanh vì đúng lý do**
 
@@ -688,7 +710,7 @@ Chạy lại với `-v` và đọc output. Rồi cố tình phá để chứng m
 ```bash
 # Bỏ stub claude khỏi PATH → summarize phải hỏng
 KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest \
-  tests-e2e/test_journey.py::test_summarize_then_build -q -p no:randomly \
+  tests-gate/e2e/test_journey.py::test_summarize_then_build -q -p no:randomly \
   --override-ini=addopts= 2>&1 | head -5
 ```
 Sau đó tạm sửa `stub_claude` trong test thành `env={}` và chạy lại: expected FAIL (summarize không tìm thấy runner). **Hoàn nguyên sửa đổi này** trước khi commit. Mục đích: chứng minh test đang thực sự kiểm stub, không phải xanh giả.
@@ -696,7 +718,7 @@ Sau đó tạm sửa `stub_claude` trong test thành `env={}` và chạy lại: 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/gen_e2e_fixture.py tests-e2e/fixtures tests-e2e/test_journey.py
+git add scripts/gen_e2e_fixture.py tests-gate/fixtures tests-gate/e2e/test_journey.py
 git commit -m "test: e2e journey A — init, seed, summarize, build on the installed wheel"
 ```
 
@@ -710,14 +732,14 @@ Rủi ro của fixture seed là **trôi**: `kb ingest` đổi định dạng đ�
 - Create: `tests/test_ingest_seam.py`
 
 **Interfaces:**
-- Consumes: `scripts.gen_e2e_fixture.generate()` (Task 3), `tests-e2e/fixtures/pending-kb/` (Task 3).
+- Consumes: `scripts.gen_e2e_fixture.generate()` (Task 3), `tests-gate/fixtures/pending-kb/` (Task 3).
 
 - [ ] **Step 1: Write the failing test**
 
 Tạo `tests/test_ingest_seam.py`:
 
 ```python
-"""Ghim tests-e2e/fixtures/pending-kb/ vào đầu ra THẬT của scaffold_doc().
+"""Ghim tests-gate/fixtures/pending-kb/ vào đầu ra THẬT của scaffold_doc().
 
 Hành trình e2e không chạy được `kb ingest` (cần docling ~2GB + PDF bản quyền),
 nên nó bắt đầu từ một fixture mô phỏng đầu ra của ingest. Test này là thứ giữ
@@ -725,7 +747,7 @@ cho fixture đó không trôi khỏi sự thật: sinh lại vào tmp, so với 
 
 ĐỎ NGHĨA LÀ GÌ: đầu ra của ingest đã đổi. Đừng sửa test. Chạy lại
 `python scripts/gen_e2e_fixture.py`, đọc kỹ diff, rồi commit fixture mới —
-và kiểm tra xem tests-e2e/test_journey.py có còn đúng với hình dạng mới không.
+và kiểm tra xem tests-gate/e2e/test_journey.py có còn đúng với hình dạng mới không.
 """
 
 from __future__ import annotations
@@ -736,7 +758,7 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).parent.parent
-FIXTURE = REPO / "tests-e2e" / "fixtures" / "pending-kb"
+FIXTURE = REPO / "tests-gate" / "fixtures" / "pending-kb"
 
 sys.path.insert(0, str(REPO / "scripts"))
 from gen_e2e_fixture import generate  # noqa: E402
@@ -803,26 +825,25 @@ git commit -m "test: pin the e2e seed fixture to real scaffold_doc output"
 Từ v0.9, `kb query`/`get`/`context`/`resolve`/`doctor` đọc **chỉ** từ `federation/` của hub. Nên publish phải đứng trước. `kb diff` thì local-git, cần KB dir nằm trong một git repo có commit.
 
 **Files:**
-- Modify: `tests-e2e/test_journey.py`
+- Modify: `tests-gate/conftest.py` (thêm fixture `published_repo`)
+- Modify: `tests-gate/e2e/test_journey.py`
 
 **Interfaces:**
-- Consumes: `seed_kb()`, `read_manifest()` (Task 3); `bare_hub`, `run_git`, `stub_claude`, `kb_run` (Task 2).
+- Consumes: `seed_kb` fixture, `bare_hub`, `run_git`, `stub_claude`, `kb_run` (Task 2).
 - Produces: fixture `published_repo` → `dict` với khoá `repo: Path`, `kb: Path`, `hub: Path`. Task 6 dùng lại.
 
 - [ ] **Step 1: Thêm fixture `published_repo`**
 
-Thêm vào **`tests-e2e/conftest.py`** (cần `bare_hub` + `stub_claude`, và Task 6 cũng dùng):
+Thêm vào **`tests-gate/conftest.py`** (cần `bare_hub` + `stub_claude`, và Task 6 cũng dùng):
 
 ```python
 @pytest.fixture
-def published_repo(tmp_path: Path, kb_run, stub_claude, bare_hub, run_git) -> dict:
+def published_repo(tmp_path: Path, kb_run, seed_kb, stub_claude, bare_hub, run_git) -> dict:
     """Một repo đã đi trọn: init → seed → summarize → build → publish lên hub.
 
     Trả về {"repo", "kb", "hub"}. Đây là trạng thái mà mọi lệnh đọc (query,
     get, context, resolve, doctor) cần — vì từ v0.9 chúng chỉ đọc từ hub.
     """
-    from test_journey import seed_kb  # cùng thư mục, không import center_kb
-
     repo = tmp_path / "repo"
     repo.mkdir()
     run_git(repo, "init", "-b", "main")
@@ -838,11 +859,11 @@ def published_repo(tmp_path: Path, kb_run, stub_claude, bare_hub, run_git) -> di
     return {"repo": repo, "kb": kb, "hub": bare_hub}
 ```
 
-Để `from test_journey import seed_kb` chạy được, `tests-e2e/` cần là một thư mục pytest rootdir-relative bình thường — pytest chèn thư mục chứa test vào `sys.path` khi không có `__init__.py`. **Không** tạo `tests-e2e/__init__.py`.
+`published_repo` sống trong **conftest chung** (`tests-gate/conftest.py`) chứ không trong `test_journey.py`, vì Task 6 (`tests-gate/e2e/test_server.py`) cũng dùng nó. Nó lấy `seed_kb` qua fixture injection — không import chéo giữa các test module. **Không** tạo `__init__.py` ở bất kỳ đâu dưới `tests-gate/`.
 
 - [ ] **Step 2: Write the failing tests**
 
-Thêm vào cuối `tests-e2e/test_journey.py`:
+Thêm vào cuối `tests-gate/e2e/test_journey.py`:
 
 ```python
 def test_publish_mirrors_all_levels_into_the_hub(published_repo, run_git, tmp_path):
@@ -924,7 +945,7 @@ def test_diff_detects_a_changed_section(published_repo, kb_run, run_git):
 - [ ] **Step 3: Run and verify**
 
 ```bash
-KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-e2e/test_journey.py -q
+KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/e2e/test_journey.py -q
 ```
 Expected: 9 passed (3 từ Task 3 + 6 mới).
 
@@ -933,7 +954,7 @@ Nếu `test_publish_mirrors_all_levels_into_the_hub` đỏ vì git từ chối p
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests-e2e/conftest.py tests-e2e/test_journey.py
+git add tests-gate/conftest.py tests-gate/e2e/test_journey.py
 git commit -m "test: e2e journey B — publish, doctor, query, get, context/resolve, diff"
 ```
 
@@ -944,16 +965,16 @@ git commit -m "test: e2e journey B — publish, doctor, query, get, context/reso
 Ba bước cửa hiện tại bỏ trống hoàn toàn. HTTP + MCP là đường sống của Docker và của agent; bước suy giảm ingest là thứ **mọi** user `pip install center-kb` (không extras) đâm vào đầu tiên.
 
 **Files:**
-- Create: `tests-e2e/test_server.py`
-- Modify: `tests-e2e/test_journey.py`
+- Create: `tests-gate/e2e/test_server.py`
+- Modify: `tests-gate/e2e/test_journey.py`
 
 **Interfaces:**
 - Consumes: `published_repo`, `artifact`, `free_port`, `kb_run` (Task 2, 5).
-- Produces: helper `mcp_stdio_params(artifact, published_repo)` → `StdioServerParameters`. Task 9/10 dùng lại qua `tests-regression/conftest.py`.
+- Produces: helper `mcp_stdio_params(artifact, published_repo)` → `StdioServerParameters`. Task 9/10 dùng lại qua `tests-gate/conftest.py`.
 
 - [ ] **Step 1: Write the failing tests (HTTP)**
 
-Tạo `tests-e2e/test_server.py`:
+Tạo `tests-gate/e2e/test_server.py`:
 
 ```python
 """HTTP + MCP trên artifact đã cài.
@@ -1055,7 +1076,7 @@ def test_search_api_finds_the_seeded_section(http_server):
 - [ ] **Step 2: Run to verify**
 
 ```bash
-KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-e2e/test_server.py -q
+KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/e2e/test_server.py -q
 ```
 Expected: 4 passed.
 
@@ -1063,7 +1084,7 @@ Nếu `test_search_api_finds_the_seeded_section` đỏ vì tên tham số query 
 
 - [ ] **Step 3: Thêm MCP stdio**
 
-Thêm vào cuối `tests-e2e/test_server.py`:
+Thêm vào cuối `tests-gate/e2e/test_server.py`:
 
 ```python
 EXPECTED_TOOLS = {"kb_search", "kb_get_section", "kb_context_new", "kb_resolve"}
@@ -1107,15 +1128,15 @@ def test_mcp_stdio_exposes_exactly_the_four_tools(artifact, published_repo):
 
 - [ ] **Step 4: Run to verify**
 
-Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-e2e/test_server.py -q`
+Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/e2e/test_server.py -q`
 Expected: 5 passed. Server MCP chạy trong venv artifact; client chạy ở runner — đúng hình thù thật khi một agent cắm vào `center-kb`.
 
 - [ ] **Step 5: Thêm bước suy giảm ingest**
 
-Thêm vào cuối `tests-e2e/test_journey.py`:
+Thêm vào cuối `tests-gate/e2e/test_journey.py`:
 
 ```python
-def test_ingest_without_docling_fails_cleanly(kb_run, bare_hub, tmp_path):
+def test_ingest_without_docling_fails_cleanly(kb_run, seed_kb, bare_hub, tmp_path):
     """Wheel base KHÔNG có extras [ingest]. User `pip install center-kb` rồi
     chạy ingest sẽ đâm vào đúng đường này — nó phải là một câu tiếng người,
     không phải traceback."""
@@ -1137,7 +1158,7 @@ def test_ingest_without_docling_fails_cleanly(kb_run, bare_hub, tmp_path):
 
 - [ ] **Step 6: Run the whole e2e tier**
 
-Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-e2e -q`
+Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/e2e -q`
 Expected: 15 passed (2 canary + 10 journey + 5 server... đếm lại theo thực tế; điều cần khẳng định là **không có test nào đỏ và không có test nào bị skip**).
 
 Nếu `test_ingest_without_docling_fails_cleanly` đỏ vì có `Traceback`: đó là **một bug thật trong sản phẩm**, không phải lỗi test. Ghi lại, báo cho người review, đừng nới lỏng assertion.
@@ -1145,7 +1166,7 @@ Nếu `test_ingest_without_docling_fails_cleanly` đỏ vì có `Traceback`: đ�
 - [ ] **Step 7: Commit**
 
 ```bash
-git add tests-e2e/test_server.py tests-e2e/test_journey.py
+git add tests-gate/e2e/test_server.py tests-gate/e2e/test_journey.py
 git commit -m "test: e2e journey C — HTTP API, MCP stdio, ingest degradation path"
 ```
 
@@ -1253,7 +1274,7 @@ from pathlib import Path
 
 # Top-level path KHÔNG bao giờ được nằm trong wheel. `sources/` chứa PDF có bản
 # quyền — lọt vào wheel là phát tán ra PyPI.
-FORBIDDEN_TOP_LEVEL = {"tests", "tests-e2e", "tests-regression", ".kb", "sources", "docs"}
+FORBIDDEN_TOP_LEVEL = {"tests", "tests-gate", ".kb", "sources", "docs"}
 
 
 def pyproject_version(root: Path) -> str:
@@ -1378,146 +1399,51 @@ git commit -m "test: add package-integrity checks (version consistency, wheel co
 Tầng đắt nhất. `.kb/` được commit ở **mọi** tag (v0.7.0/v0.8.0/v0.9.0, nội dung ARINC-424 thật) — đây đúng là dữ liệu một user đang giữ trong repo của họ. Lấy thẳng từ git history, không bịa.
 
 **Files:**
-- Create: `tests-regression/conftest.py`
-- Create: `tests-regression/test_kb_backcompat.py`
+- Modify: `tests-gate/conftest.py` (thêm `legacy_kb` — conftest đã tồn tại từ Task 2)
+- Create: `tests-gate/regression/test_kb_backcompat.py`
 
 **Interfaces:**
-- Consumes: `artifact`, `kb_run`, `run_git`, `bare_hub`, `free_port` — **phải copy lại** vào `tests-regression/conftest.py` (hai thư mục top-level không chia sẻ conftest).
-- Produces: fixture `legacy_kb` (parametrized theo tag) → `dict` với `tag: str`, `repo: Path`, `kb: Path`, `hub: Path` (đã publish lên hub).
+- Consumes: `artifact`, `kb_run`, `run_git`, `bare_hub` — đã có sẵn trong conftest chung `tests-gate/conftest.py` (Task 2). Không viết lại.
+- Produces: fixture `legacy_kb` (parametrized theo tag) → `dict` với `tag: str`, `repo: Path`, `kb: Path`, `hub: Path`.
 
-- [ ] **Step 1: Viết conftest cho tầng regression**
+- [ ] **Step 1: Bổ sung `legacy_kb` vào conftest chung**
 
-Tạo `tests-regression/conftest.py`:
+`tests-gate/conftest.py` (Task 2) đã có `artifact`, `kb_run`, `run_git`, `bare_hub`, `free_port` —
+tầng regression dùng lại y nguyên, **không** viết conftest thứ hai. Chỉ thêm phần dưới đây
+vào cuối file (và `import subprocess` nếu chưa có ở đầu):
 
 ```python
-"""Fixtures cho tầng T4 (regression). Cùng quy tắc như tests-e2e: KHÔNG import center_kb.
-
-Ghi chú: file này lặp lại các fixture của tests-e2e/conftest.py. Đó là cố ý —
-gộp chúng vào một package dùng chung sẽ cần một __init__.py và một sys.path
-hack, và làm mờ đúng cái ranh giới mà hai thư mục này tồn tại để giữ. Trùng
-lặp một ít conftest rẻ hơn là mờ ranh giới.
-"""
-
-from __future__ import annotations
-
-import os
-import socket
-import subprocess
-from dataclasses import dataclass
-from pathlib import Path
-
-import pytest
-
 LEGACY_TAGS = ["v0.7.0", "v0.8.0", "v0.9.0"]
 
-GIT_IDENTITY = {
-    "GIT_AUTHOR_NAME": "regression",
-    "GIT_AUTHOR_EMAIL": "regression@local",
-    "GIT_COMMITTER_NAME": "regression",
-    "GIT_COMMITTER_EMAIL": "regression@local",
-}
-
+# tests-gate/conftest.py → lùi 1 cấp là gốc repo.
 REPO_ROOT = Path(__file__).parent.parent
 
 
-@dataclass(frozen=True)
-class Artifact:
-    venv: Path
+def _materialize_kb_at_tag(tag: str, dest_repo: Path, tmp_path: Path) -> Path:
+    """Bung .kb/ đúng như nó tồn tại ở một git tag, vào một repo trống.
 
-    @property
-    def kb(self) -> Path:
-        return self.venv / "bin" / "kb"
-
-    @property
-    def python(self) -> Path:
-        return self.venv / "bin" / "python"
-
-
-@pytest.fixture(scope="session")
-def artifact() -> Artifact:
-    raw = os.environ.get("KB_VENV")
-    if not raw:
-        raise RuntimeError("KB_VENV chưa được set. Dùng: ./scripts/gate.sh")
-    venv = Path(raw)
-    if not (venv / "bin" / "kb").exists():
-        raise RuntimeError(f"KB_VENV={venv} không có bin/kb")
-    return Artifact(venv=venv)
-
-
-@pytest.fixture
-def kb_run(artifact: Artifact):
-    def _run(*args: str, cwd: Path, env: dict[str, str] | None = None,
-             check: bool = True, timeout: int = 180) -> subprocess.CompletedProcess[str]:
-        full_env = {**os.environ, **GIT_IDENTITY, **(env or {})}
-        proc = subprocess.run(
-            [str(artifact.kb), *args], cwd=cwd, env=full_env,
-            capture_output=True, text=True, timeout=timeout,
-        )
-        if check and proc.returncode != 0:
-            raise AssertionError(
-                f"kb {' '.join(args)} → exit {proc.returncode}\n"
-                f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
-            )
-        return proc
-
-    return _run
-
-
-@pytest.fixture
-def run_git():
-    def _git(cwd: Path, *args: str) -> str:
-        proc = subprocess.run(
-            ["git", *args], cwd=cwd, env={**os.environ, **GIT_IDENTITY},
-            capture_output=True, text=True, check=True,
-        )
-        return proc.stdout.strip()
-
-    return _git
-
-
-@pytest.fixture
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-@pytest.fixture
-def bare_hub(tmp_path: Path, run_git) -> Path:
-    work = tmp_path / "hub-work"
-    (work / ".kb").mkdir(parents=True)
-    (work / "federation").mkdir()
-    (work / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
-    (work / "federation" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
-    run_git(work, "init", "-b", "main")
-    run_git(work, "add", "-A")
-    run_git(work, "commit", "-m", "hub init")
-    bare = tmp_path / "hub.git"
-    run_git(tmp_path, "clone", "--bare", str(work), str(bare))
-    return bare
-
-
-@pytest.fixture(params=LEGACY_TAGS, ids=LEGACY_TAGS)
-def legacy_kb(request, tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
-    """Materialize .kb/ như nó tồn tại ở một tag cũ, rồi publish lên hub bằng
-    binary MỚI. Đây là mô phỏng đúng thứ user sẽ làm sau khi `pip install -U`:
-    họ có .kb/ cũ trong repo, và chạy version mới lên nó.
-
-    Cần `fetch-depth: 0` trên CI để tag tồn tại.
-    """
-    tag = request.param
-    repo = tmp_path / f"legacy-{tag}"
-    repo.mkdir()
-
+    Cần `fetch-depth: 0` trên CI để tag tồn tại."""
     archive = tmp_path / f"{tag}.tar"
     subprocess.run(
         ["git", "archive", "--format=tar", "-o", str(archive), tag, ".kb"],
         cwd=REPO_ROOT, check=True, capture_output=True,
     )
-    subprocess.run(["tar", "-xf", str(archive)], cwd=repo, check=True)
-
-    kb = repo / ".kb"
+    subprocess.run(["tar", "-xf", str(archive)], cwd=dest_repo, check=True)
+    kb = dest_repo / ".kb"
     assert (kb / "index.yaml").exists(), f"{tag} không có .kb/index.yaml"
+    return kb
+
+
+@pytest.fixture(params=LEGACY_TAGS, ids=LEGACY_TAGS)
+def legacy_kb(request, tmp_path: Path, run_git, bare_hub) -> dict:
+    """Materialize .kb/ như nó tồn tại ở một tag cũ, trong một git repo trỏ vào hub.
+
+    Mô phỏng đúng thứ user làm sau khi `pip install -U`: họ có .kb/ cũ trong repo,
+    và chạy version MỚI lên nó."""
+    tag = request.param
+    repo = tmp_path / f"legacy-{tag}"
+    repo.mkdir()
+    kb = _materialize_kb_at_tag(tag, repo, tmp_path)
 
     (kb / "config.yaml").write_text(
         f'hub: "{bare_hub}"\nrepo_id: "legacy"\n', encoding="utf-8"
@@ -1529,9 +1455,11 @@ def legacy_kb(request, tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
     return {"tag": tag, "repo": repo, "kb": kb, "hub": bare_hub}
 ```
 
+`_materialize_kb_at_tag` được tách ra vì Task 9 dùng lại nó cho fixture `published_kb`.
+
 - [ ] **Step 2: Write the failing test**
 
-Tạo `tests-regression/test_kb_backcompat.py`:
+Tạo `tests-gate/regression/test_kb_backcompat.py`:
 
 ```python
 """Version MỚI phải đọc được .kb/ do version CŨ sinh ra.
@@ -1589,7 +1517,7 @@ def test_new_binary_queries_a_legacy_kb(legacy_kb, kb_run):
 - [ ] **Step 3: Run and read the result carefully**
 
 ```bash
-KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-regression/test_kb_backcompat.py -v
+KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/regression/test_kb_backcompat.py -v
 ```
 Expected: 9 passed (3 test × 3 tag).
 
@@ -1598,7 +1526,7 @@ Expected: 9 passed (3 test × 3 tag).
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests-regression/conftest.py tests-regression/test_kb_backcompat.py
+git add tests-gate/conftest.py tests-gate/regression/test_kb_backcompat.py
 git commit -m "test: regression — new binary must read .kb/ from v0.7.0/v0.8.0/v0.9.0"
 ```
 
@@ -1609,14 +1537,14 @@ git commit -m "test: regression — new binary must read .kb/ from v0.7.0/v0.8.0
 Hợp đồng cứng với mọi agent đang cắm vào `center-kb`. Đổi tên tool, bỏ field, đổi kiểu tham số ⇒ phải đỏ.
 
 **Files:**
-- Create: `tests-regression/test_mcp_contract.py`
-- Create: `tests-regression/golden/mcp_tools.json` (sinh ra rồi commit)
+- Create: `tests-gate/regression/test_mcp_contract.py`
+- Create: `tests-gate/golden/mcp_tools.json` (sinh ra rồi commit)
 
 **Interfaces:**
 - Consumes: `artifact` (Task 8 conftest).
 - Produces: `published_kb` fixture (một KB đã publish, dùng chung cho Task 9 + 10).
 
-- [ ] **Step 1: Thêm fixture `published_kb` vào `tests-regression/conftest.py`**
+- [ ] **Step 1: Thêm fixture `published_kb` vào `tests-gate/conftest.py`**
 
 ```python
 @pytest.fixture
@@ -1626,14 +1554,8 @@ def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
     đúng MỘT nền cố định."""
     repo = tmp_path / "golden-repo"
     repo.mkdir()
-    archive = tmp_path / "v0.9.0.tar"
-    subprocess.run(
-        ["git", "archive", "--format=tar", "-o", str(archive), "v0.9.0", ".kb"],
-        cwd=REPO_ROOT, check=True, capture_output=True,
-    )
-    subprocess.run(["tar", "-xf", str(archive)], cwd=repo, check=True)
+    kb = _materialize_kb_at_tag("v0.9.0", repo, tmp_path)  # Task 8
 
-    kb = repo / ".kb"
     (kb / "config.yaml").write_text(
         f'hub: "{bare_hub}"\nrepo_id: "golden"\n', encoding="utf-8"
     )
@@ -1647,7 +1569,7 @@ def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
 
 - [ ] **Step 2: Write the test (golden chưa có → sẽ đỏ)**
 
-Tạo `tests-regression/test_mcp_contract.py`:
+Tạo `tests-gate/regression/test_mcp_contract.py`:
 
 ```python
 """tools/list là hợp đồng CỨNG với mọi agent đang cắm vào center-kb.
@@ -1665,7 +1587,7 @@ import json
 import os
 from pathlib import Path
 
-GOLDEN = Path(__file__).parent / "golden" / "mcp_tools.json"
+GOLDEN = Path(__file__).parent.parent / "golden" / "mcp_tools.json"
 
 
 async def _list_tools(artifact, published_kb):
@@ -1713,20 +1635,20 @@ def test_mcp_tool_contract_is_unchanged(artifact, published_kb):
 
 - [ ] **Step 3: Run to verify it fails**
 
-Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-regression/test_mcp_contract.py -q`
+Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/regression/test_mcp_contract.py -q`
 Expected: FAIL — `FileNotFoundError: .../golden/mcp_tools.json`.
 
 - [ ] **Step 4: Sinh golden và soi kỹ**
 
 ```bash
-KB_VENV=/tmp/kb-artifact UPDATE_GOLDEN=1 /tmp/kb-runner/bin/pytest tests-regression/test_mcp_contract.py -q
-cat tests-regression/golden/mcp_tools.json
+KB_VENV=/tmp/kb-artifact UPDATE_GOLDEN=1 /tmp/kb-runner/bin/pytest tests-gate/regression/test_mcp_contract.py -q
+cat tests-gate/golden/mcp_tools.json
 ```
 Expected: file chứa **đúng 4 khoá** — `kb_context_new`, `kb_get_section`, `kb_resolve`, `kb_search` — mỗi khoá có `description` và `inputSchema`. Kiểm bằng mắt: `kb_search.inputSchema` phải có `query` (string, required), `tags`, `budget`. Nếu thấy tool lạ hoặc thiếu tool, **dừng lại** — golden sai từ đầu thì nó gác nhầm thứ mãi mãi.
 
 - [ ] **Step 5: Run again to verify it passes**
 
-Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-regression/test_mcp_contract.py -q`
+Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/regression/test_mcp_contract.py -q`
 Expected: 1 passed.
 
 - [ ] **Step 6: Chứng minh nó có răng**
@@ -1737,7 +1659,7 @@ Expected: FAIL với diff cho thấy `kb_search` biến mất và `kb_find` xu�
 - [ ] **Step 7: Commit**
 
 ```bash
-git add tests-regression/conftest.py tests-regression/test_mcp_contract.py tests-regression/golden/mcp_tools.json
+git add tests-gate/conftest.py tests-gate/regression/test_mcp_contract.py tests-gate/golden/mcp_tools.json
 git commit -m "test: regression — freeze the MCP tools/list contract"
 ```
 
@@ -1748,15 +1670,15 @@ git commit -m "test: regression — freeze the MCP tools/list contract"
 Giá trị lớn nhất của tầng này không phải bắt lỗi code của bạn, mà bắt **nâng cấp dependency**: `rank-bm25` đổi công thức ⇒ thứ tự kết quả đổi ⇒ golden đỏ. Không có nó thì kiểu vỡ này tuyệt đối im lặng.
 
 **Files:**
-- Create: `tests-regression/test_golden_output.py`
-- Create: `tests-regression/golden/mcp_outputs/*.txt`, `tests-regression/golden/cli_outputs/*.txt` (sinh ra rồi commit)
+- Create: `tests-gate/regression/test_golden_output.py`
+- Create: `tests-gate/golden/mcp_outputs/*.txt`, `tests-gate/golden/cli_outputs/*.txt` (sinh ra rồi commit)
 
 **Interfaces:**
 - Consumes: `artifact`, `kb_run`, `published_kb` (Task 8, 9).
 
 - [ ] **Step 1: Write the test**
 
-Tạo `tests-regression/test_golden_output.py`:
+Tạo `tests-gate/regression/test_golden_output.py`:
 
 ```python
 """Đóng băng OUTPUT trên một KB cố định (v0.9.0 từ git history).
@@ -1777,7 +1699,7 @@ import os
 import re
 from pathlib import Path
 
-GOLDEN = Path(__file__).parent / "golden"
+GOLDEN = Path(__file__).parent.parent / "golden"
 
 # Phần biến động giữa các lần chạy — không phải tín hiệu hành vi.
 NOISE = [
@@ -1845,15 +1767,15 @@ def test_golden_cli_query(published_kb, kb_run):
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-regression/test_golden_output.py -q`
+Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/regression/test_golden_output.py -q`
 Expected: FAIL — golden chưa tồn tại.
 
 - [ ] **Step 3: Sinh golden và ĐỌC KỸ**
 
 ```bash
-KB_VENV=/tmp/kb-artifact UPDATE_GOLDEN=1 /tmp/kb-runner/bin/pytest tests-regression/test_golden_output.py -q
-cat tests-regression/golden/cli_outputs/query_airspace.txt
-cat tests-regression/golden/mcp_outputs/kb_search_airspace.txt
+KB_VENV=/tmp/kb-artifact UPDATE_GOLDEN=1 /tmp/kb-runner/bin/pytest tests-gate/regression/test_golden_output.py -q
+cat tests-gate/golden/cli_outputs/query_airspace.txt
+cat tests-gate/golden/mcp_outputs/kb_search_airspace.txt
 ```
 
 Kiểm bằng mắt hai điều, **cả hai đều bắt buộc**:
@@ -1863,15 +1785,15 @@ Kiểm bằng mắt hai điều, **cả hai đều bắt buộc**:
 - [ ] **Step 4: Chạy hai lần liên tiếp để chứng minh không flaky**
 
 ```bash
-KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-regression/test_golden_output.py -q
-KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-regression/test_golden_output.py -q
+KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/regression/test_golden_output.py -q
+KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/regression/test_golden_output.py -q
 ```
 Expected: 3 passed, cả hai lần. Golden chạy trên `tmp_path` khác nhau mỗi lần — nếu lần hai đỏ, bộ chuẩn hoá còn thủng.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests-regression/test_golden_output.py tests-regression/golden/
+git add tests-gate/regression/test_golden_output.py tests-gate/golden/
 git commit -m "test: regression — freeze MCP tool outputs and CLI query output"
 ```
 
@@ -1882,8 +1804,8 @@ git commit -m "test: regression — freeze MCP tool outputs and CLI query output
 Snapshot `federation/` do v0.9.0 sinh ra phải được binary mới đọc đúng. Đây là fixture **duy nhất** được commit thay vì lấy từ git history — vì `federation/` không nằm trong repo này, nó nằm trên hub.
 
 **Files:**
-- Create: `tests-regression/golden/federation-v0.9.0/` (sinh một lần rồi commit)
-- Create: `tests-regression/test_federation_compat.py`
+- Create: `tests-gate/golden/federation-v0.9.0/` (sinh một lần rồi commit)
+- Create: `tests-gate/regression/test_federation_compat.py`
 
 **Interfaces:**
 - Consumes: `artifact`, `kb_run`, `run_git` (Task 8).
@@ -1921,17 +1843,17 @@ GIT_COMMITTER_NAME=gen GIT_COMMITTER_EMAIL=gen@local \
 # Lấy cây federation/ ra khỏi hub bare
 cd "$OLDPWD"
 git clone -q "$WORK/hub.git" "$WORK/hubout"
-rm -rf tests-regression/golden/federation-v0.9.0
-mkdir -p tests-regression/golden/federation-v0.9.0
-cp -r "$WORK/hubout/federation/." tests-regression/golden/federation-v0.9.0/
-find tests-regression/golden/federation-v0.9.0 -type f | sort
+rm -rf tests-gate/golden/federation-v0.9.0
+mkdir -p tests-gate/golden/federation-v0.9.0
+cp -r "$WORK/hubout/federation/." tests-gate/golden/federation-v0.9.0/
+find tests-gate/golden/federation-v0.9.0 -type f | sort
 ```
 
 Expected: `index.yaml` + `golden/_meta.yaml` + `golden/index.yaml` + `golden/<doc-id>/{_manifest.yaml, *.md, *.raw.md}`. Nếu trống, dừng lại — fixture rỗng gác nhầm.
 
 - [ ] **Step 2: Write the failing test**
 
-Tạo `tests-regression/test_federation_compat.py`:
+Tạo `tests-gate/regression/test_federation_compat.py`:
 
 ```python
 """Binary MỚI phải đọc được federation/ do v0.9.0 publish.
@@ -1949,7 +1871,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-FIXTURE = Path(__file__).parent / "golden" / "federation-v0.9.0"
+FIXTURE = Path(__file__).parent.parent / "golden" / "federation-v0.9.0"
 
 
 def _hub_from_fixture(tmp_path: Path, run_git) -> Path:
@@ -1992,7 +1914,7 @@ def test_new_binary_doctors_a_v090_federation(tmp_path, run_git, kb_run):
 
 - [ ] **Step 3: Run and verify**
 
-Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-regression/test_federation_compat.py -q`
+Run: `KB_VENV=/tmp/kb-artifact /tmp/kb-runner/bin/pytest tests-gate/regression/test_federation_compat.py -q`
 Expected: 2 passed.
 
 - [ ] **Step 4: Chạy trọn cửa lần đầu bằng `gate.sh`**
@@ -2003,7 +1925,7 @@ Expected: chạy hết T1 → T2 → T3 → T4 và in `✅ Cửa xanh. An toàn 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests-regression/golden/federation-v0.9.0 tests-regression/test_federation_compat.py
+git add tests-gate/golden/federation-v0.9.0 tests-gate/regression/test_federation_compat.py
 git commit -m "test: regression — new binary must read a federation published by v0.9.0"
 ```
 
@@ -2119,8 +2041,8 @@ jobs:
         run: |
           python -m venv /tmp/runner
           /tmp/runner/bin/pip install --quiet -r requirements-gate.txt
-      - name: pytest tests-e2e
-        run: KB_VENV=/tmp/artifact /tmp/runner/bin/pytest tests-e2e -q
+      - name: pytest tests-gate/e2e
+        run: KB_VENV=/tmp/artifact /tmp/runner/bin/pytest tests-gate/e2e -q
 
   t4-regression:
     name: T4 regression (py${{ matrix.python }})
@@ -2147,8 +2069,8 @@ jobs:
         run: |
           python -m venv /tmp/runner
           /tmp/runner/bin/pip install --quiet -r requirements-gate.txt
-      - name: pytest tests-regression
-        run: KB_VENV=/tmp/artifact /tmp/runner/bin/pytest tests-regression -q
+      - name: pytest tests-gate/regression
+        run: KB_VENV=/tmp/artifact /tmp/runner/bin/pytest tests-gate/regression -q
 ```
 
 - [ ] **Step 2: Viết `ci.yml`**
@@ -2420,6 +2342,6 @@ git commit -m "docs: document the gated release workflow"
 
 Không có mục nào của spec thiếu task.
 
-**Type consistency** — tên hàm/fixture dùng xuyên suốt: `artifact` (`.venv`/`.kb`/`.python`), `kb_run(*args, cwd=, env=, check=, timeout=)`, `run_git(cwd, *args)`, `stub_claude → dict`, `bare_hub → Path`, `free_port → int`, `published_repo → dict{repo,kb,hub}` (tests-e2e), `published_kb → dict{repo,kb,hub}` (tests-regression), `legacy_kb → dict{tag,repo,kb,hub}`, `seed_kb(repo, hub) → Path`, `pyproject_version(root)`, `tag_matches(tag, version)`, `wheel_offenders(wheel)`, `check(venv, dist, root, tag)`, `generate(kb_dir)`. Khớp giữa nơi định nghĩa và nơi dùng.
+**Type consistency** — tên hàm/fixture dùng xuyên suốt: `artifact` (`.venv`/`.kb`/`.python`), `kb_run(*args, cwd=, env=, check=, timeout=)`, `run_git(cwd, *args)`, `stub_claude → dict`, `bare_hub → Path`, `free_port → int`, `published_repo → dict{repo,kb,hub}` (e2e), `published_kb → dict{repo,kb,hub}` (regression), `legacy_kb → dict{tag,repo,kb,hub}`, `seed_kb` fixture → callable `(repo, hub) → Path`, `pyproject_version(root)`, `tag_matches(tag, version)`, `wheel_offenders(wheel)`, `check(venv, dist, root, tag)`, `generate(kb_dir)`. Khớp giữa nơi định nghĩa và nơi dùng.
 
-**Ghi chú có chủ đích:** `published_repo` (tests-e2e) và `published_kb` (tests-regression) là hai fixture khác nhau, không phải lỗi đặt tên: cái đầu dựng KB từ fixture seed tổng hợp; cái sau dựng từ `.kb` thật của tag v0.9.0 để làm nền đóng băng cho golden.
+**Ghi chú có chủ đích:** `published_repo` và `published_kb` (cùng sống trong `tests-gate/conftest.py`) là hai fixture khác nhau, không phải lỗi đặt tên: cái đầu dựng KB từ fixture seed tổng hợp; cái sau dựng từ `.kb` thật của tag v0.9.0 để làm nền đóng băng cho golden.
