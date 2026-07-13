@@ -75,3 +75,86 @@ def test_summarize_then_build(kb_run, seed_kb, stub_claude, bare_hub, tmp_path):
     # kb build là LOCAL (validate không còn TODO) — chạy trước publish.
     out = kb_run("build", "--kb-dir", str(kb), cwd=tmp_path).stdout
     assert "kb build: OK" in out
+
+
+def test_publish_mirrors_all_levels_into_the_hub(published_repo, run_git, tmp_path):
+    checkout = tmp_path / "hub-check"
+    run_git(tmp_path, "clone", str(published_repo["hub"]), str(checkout))
+
+    # federation/<repo-id>/ mirror toàn bộ .kb/ nguồn — cùng layout, nên
+    # read_manifest/l2_path (đã dùng ở test_summarize_then_build) đọc thẳng
+    # được từ đây thay vì đoán cứng tên tệp.
+    mirror = checkout / "federation" / "e2e-repo"
+    assert (mirror / "demo-doc" / "_manifest.yaml").exists()
+
+    manifest = read_manifest(mirror)
+    l2 = l2_path(mirror, manifest)
+    assert l2.exists(), "thiếu L2"
+    assert l2.with_name(f"{l2.stem}.raw.md").exists(), "thiếu L3 (.raw.md)"
+    assert (mirror / "_meta.yaml").exists()
+    assert (checkout / "federation" / "index.yaml").exists()
+
+
+def test_doctor_is_clean_after_publish(published_repo, kb_run):
+    proc = kb_run("doctor", "--hub", str(published_repo["hub"]),
+                  "--kb-dir", str(published_repo["kb"]),
+                  cwd=published_repo["repo"])
+
+    assert proc.returncode == 0, proc.stdout
+
+
+def test_query_reads_from_the_hub(published_repo, kb_run):
+    proc = kb_run("query", "airspace", "--hub", str(published_repo["hub"]),
+                  "--kb-dir", str(published_repo["kb"]),
+                  cwd=published_repo["repo"])
+
+    assert "No matching section found." not in proc.stdout
+    assert "Condensed via stub." in proc.stdout
+
+
+def test_get_returns_both_levels(published_repo, kb_run):
+    repo, kb, hub = published_repo["repo"], published_repo["kb"], published_repo["hub"]
+
+    l2 = kb_run("get", "demo-doc", "1.1", "--level", "l2",
+                "--hub", str(hub), "--kb-dir", str(kb), cwd=repo).stdout
+    l3 = kb_run("get", "demo-doc", "1.1", "--level", "l3",
+                "--hub", str(hub), "--kb-dir", str(kb), cwd=repo).stdout
+
+    assert "Condensed via stub." in l2
+    assert "multiple code" in l3, "L3 phải là verbatim, không phải bản tóm tắt"
+
+
+def test_context_new_then_resolve_roundtrip(published_repo, kb_run, tmp_path):
+    repo, kb, hub = published_repo["repo"], published_repo["kb"], published_repo["hub"]
+
+    block = kb_run("context", "new", "--refs", "demo-doc §1.1",
+                   "--hub", str(hub), "--kb-dir", str(kb), cwd=repo).stdout
+    assert "kb-context" in block
+
+    block_file = tmp_path / "ticket.md"
+    block_file.write_text(block, encoding="utf-8")
+
+    proc = kb_run("resolve", str(block_file), "--hub", str(hub),
+                  "--kb-dir", str(kb), cwd=repo, check=False)
+
+    # exit 0 = ok, 2 = stale, 1 = broken. Vừa pin xong thì phải là ok.
+    assert proc.returncode == 0, f"resolve → {proc.returncode}\n{proc.stdout}"
+    assert "Condensed via stub." in proc.stdout
+
+
+def test_diff_detects_a_changed_section(published_repo, kb_run):
+    repo, kb = published_repo["repo"], published_repo["kb"]
+    manifest = read_manifest(kb)
+    l2 = l2_path(kb, manifest)
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace(
+            "Condensed via stub.", "Condensed via stub. Amended."
+        ),
+        encoding="utf-8",
+    )
+
+    # kb diff là local-git: so worktree với một git rev.
+    proc = kb_run("diff", "demo-doc", "--against", "HEAD",
+                  "--kb-dir", str(kb), cwd=repo)
+
+    assert "1.1" in proc.stdout
