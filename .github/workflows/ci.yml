@@ -1,0 +1,19 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# PR push liên tiếp không xếp hàng đốt runner.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    uses: ./.github/workflows/_gate.yml
+    # tag rỗng → check_package.py bỏ qua khẳng định tag==version (chỉ có
+    # nghĩa lúc release).
