@@ -5,7 +5,6 @@ import sys
 from enum import Enum
 from pathlib import Path
 
-import click
 import typer
 
 from center_kb import models
@@ -90,9 +89,18 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         return kind_flag.value
     if _stdin_isatty():
         typer.echo(KIND_DESCRIPTIONS)
-        return typer.prompt(
-            "Initialize this repo as", type=click.Choice(["hub", "child"])
-        )
+        # Own re-prompt loop: typer >= 0.26 vendors click, so passing the real
+        # click.Choice makes BadParameter escape typer.prompt instead of
+        # re-prompting.
+        while True:
+            answer = typer.prompt("Initialize this repo as (hub, child)")
+            answer = answer.strip().lower()
+            if answer in ("hub", "child"):
+                return answer
+            typer.secho(
+                f"Error: {answer!r} is not one of 'hub', 'child'.",
+                fg=typer.colors.RED,
+            )
     typer.secho(
         "kb init requires --kind hub|child when not running interactively.",
         fg=typer.colors.RED,
