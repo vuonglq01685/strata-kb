@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import stat
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,6 +53,23 @@ def _neutralize_excludes(root: Path) -> None:
     )
 
 
+def _rmtree_force(path: Path) -> None:
+    """shutil.rmtree that clears the Windows read-only attribute and retries.
+
+    onexc is the 3.12+ replacement for onerror — both accept the same
+    (func, path, exc) shape here, only the exc argument differs.
+    """
+
+    def _clear_and_retry(func, p, _exc) -> None:
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_clear_and_retry)
+    else:
+        shutil.rmtree(path, onerror=_clear_and_retry)
+
+
 def _snapshot(
     kb_abs: Path, handle: hub_mod.HubHandle, rid: str, source_commit: str
 ) -> int:
@@ -70,7 +90,7 @@ def _snapshot(
         )
     local_index = models.load_yaml_model(kb_abs / "index.yaml", models.KBIndex)
     if dest.exists():
-        shutil.rmtree(dest)
+        _rmtree_force(dest)
     shutil.copytree(kb_abs, dest)
     meta = federation.FederationMeta(
         repo_id=rid,
