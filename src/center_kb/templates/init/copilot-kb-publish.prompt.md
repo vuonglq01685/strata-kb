@@ -3,10 +3,10 @@ mode: agent
 description: Review and publish the local KB to the federation hub — diff vs the published snapshot, confirm, then kb publish (PR on the hub). Use when asked to publish the KB or push knowledge to the hub.
 ---
 
-# /kb-publish — diff → confirm → publish (PR trên hub)
+# /kb-publish — diff → confirm → publish (PR on the hub)
 
-Hub federation là single source of truth: nội dung chỉ search được sau khi
-PR publish được merge trên hub. `.kb/` local chỉ là bàn soạn thảo.
+The hub federation is the single source of truth: content is searchable only
+after the publish PR is merged on the hub. Local `.kb/` is just a drafting desk.
 
 NEVER run `kb publish` until the user has explicitly confirmed, after
 seeing the diff, that the current .kb/ state should be published.

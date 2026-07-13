@@ -51,9 +51,23 @@ def test_out_of_sync_aggregate_index_errors(git_kb, hub_worktree):
 
 
 def test_missing_aggregate_index_errors(git_kb, hub_worktree):
-    # hub_worktree chưa từng publish → chưa có federation/index.yaml
+    # hub_worktree has never been published to → no federation/index.yaml yet
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     assert any(i.level == "error" and "kb reindex" in i.message for i in issues)
+
+
+def test_corrupt_aggregate_index_errors(git_kb, hub_worktree):
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
+    (hub_worktree / "federation" / "index.yaml").write_text(
+        "docs: [1, 2\n", encoding="utf-8"
+    )
+    issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb")
+    assert any(
+        i.level == "error" and "corrupt" in i.message and "kb reindex" in i.message
+        for i in issues
+    )
+    # multi-line ParserError text must be collapsed to a single scannable line
+    assert all("\n" not in i.message for i in issues)
 
 
 def test_old_format_entry_warns(git_kb, hub_worktree):

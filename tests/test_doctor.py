@@ -66,6 +66,52 @@ def test_pending_sections_warn(fixture_kb: Path):
     assert any("pending" in m for m in _warnings(issues))
 
 
+def test_corrupt_index_errors(fixture_kb: Path):
+    (fixture_kb / "index.yaml").write_text("docs: [1, 2\n", encoding="utf-8")
+    issues = check_kb(fixture_kb)
+    assert any(
+        i.level == "error" and "index.yaml" in i.message and "corrupt" in i.message
+        for i in issues
+    )
+    # multi-line ParserError text must be collapsed to a single scannable line
+    assert all("\n" not in i.message for i in issues)
+
+
+def test_corrupt_manifest_does_not_abort_other_docs(fixture_kb: Path):
+    # A second, otherwise-clean doc with a real (unrelated) problem, so we can
+    # prove check_kb keeps checking docs after the corrupt manifest instead
+    # of aborting the whole run.
+    second_dir = fixture_kb / "second-doc"
+    second_dir.mkdir()
+    (second_dir / "ch1.md").write_text("## 2.1 Foo\n\nCondensed.\n", encoding="utf-8")
+    models.save_yaml_model(
+        second_dir / "_manifest.yaml",
+        models.Manifest(
+            id="second-doc",
+            title="Second Doc",
+            sections=[
+                models.SectionEntry(
+                    id="2.1", title="Foo", file="ch1", status="summarized"
+                )
+            ],
+        ),
+    )  # no ch1.raw.md -> a genuine "missing L3 file" issue
+    index_path = fixture_kb / "index.yaml"
+    index = models.load_yaml_model(index_path, models.KBIndex)
+    index.docs.append(models.IndexEntry(id="second-doc", title="Second Doc"))
+    models.save_yaml_model(index_path, index)
+
+    (fixture_kb / "demo-doc" / "_manifest.yaml").write_text(
+        "id: [1, 2\n", encoding="utf-8"
+    )
+
+    issues = check_kb(fixture_kb)
+    errors = _errors(issues)
+    assert any("demo-doc" in m and "corrupt" in m for m in errors)
+    assert any("second-doc" in m and "ch1.raw.md" in m for m in errors)
+    assert all("\n" not in m for m in errors)
+
+
 def test_check_context_stale_is_warning(fed_hub):
     hub = HubHandle(root=fed_hub)
     block, _ = kbcontext.build_context_block(hub, ["arinc-kb:arinc-424 §5.3"])

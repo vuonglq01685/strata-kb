@@ -121,10 +121,10 @@ def build_context_block(
     refs: list[str],
     tags: list[str] | None = None,
 ) -> tuple[str, str | None]:
-    """Validate refs trên hub federation, auto-qualify repo id, pin HEAD hub.
+    """Validate refs against the hub federation, auto-qualify repo id, pin hub HEAD.
 
-    Returns (block_text, stale_warning): stale_warning là một dòng cảnh báo
-    khi hub cache đang stale (offline), ngược lại None.
+    Returns (block_text, stale_warning): stale_warning is a one-line warning
+    when the hub cache is stale (offline), otherwise None.
     """
     from center_kb import gitio, models
     from center_kb.federation import load_federation

@@ -6,7 +6,7 @@ runner = CliRunner()
 
 
 def test_query_reads_federation_only(fed_hub, fixture_kb):
-    # fixture_kb chứa demo-doc CHƯA publish — không được xuất hiện
+    # fixture_kb holds demo-doc, which is NOT published — it must not show up
     result = runner.invoke(
         app,
         ["query", "restrictive airspace designation",

@@ -29,7 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ingest = ["docling>=2.0"]
-dev = ["pytest>=8.0", "anyio>=4.0", "sqlite-vec>=0.1.6"]
+dev = ["pytest>=8.0", "anyio>=4.0", "sqlite-vec>=0.1.6", "twine>=5.0", "build>=1.2"]
 embed = ["sqlite-vec>=0.1.6", "fastembed>=0.3"]
 
 [project.scripts]
@@ -45,6 +45,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/center_kb"]
+
+# hatchling's default sdist is "everything not covered by .gitignore" — .kb/
+# (which holds text quoted verbatim from copyrighted PDFs), docs/, tests/,
+# .claude/ etc. would all slip in because they are NOT gitignored. only-include
+# stops the directory walk at the root and lets only src/ into the sdist.
+# pyproject.toml, README and LICENSE are added by hatchling unconditionally
+# (they cannot be excluded), so they need not be listed here.
+[tool.hatch.build.targets.sdist]
+only-include = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

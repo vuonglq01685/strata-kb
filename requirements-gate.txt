@@ -1,0 +1,7 @@
+# Dependencies of the RUNNER venv — the environment that runs pytest for the
+# T3/T4 tiers. ABSOLUTELY do NOT add center-kb here: the runner must be unable
+# to import the package, otherwise the canary (tests-gate/e2e/test_canary.py) is
+# meaningless.
+pytest>=8.0
+pyyaml>=6.0
+mcp>=1.2
