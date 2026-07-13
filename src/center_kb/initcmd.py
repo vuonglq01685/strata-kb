@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -43,6 +44,8 @@ CHILD_TEMPLATES: dict[str, str] = {
 # User data — never refreshed by default; only overwritten with --force.
 PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml", ".kb/config.yaml"})
 
+_KIND_LINE = re.compile(r"^kind:", re.MULTILINE)
+
 
 def template_map(kind: str) -> dict[str, str]:
     if kind not in KINDS:
@@ -67,6 +70,23 @@ def _render(resource_name: str, text: str, repo_id: str) -> str:
     if resource_name.startswith("config-"):
         return text.format(repo_id=repo_id)
     return text
+
+
+def _record_kind(config_path: Path, kind: str) -> bool:
+    """Append `kind:` to a pre-existing config.yaml that lacks it.
+
+    Narrow exception to the protected-file skip: only ever ADDS the missing
+    line, never rewrites user content (comments and values survive).
+    """
+    if not config_path.exists():
+        return False
+    text = config_path.read_text(encoding="utf-8")
+    if _KIND_LINE.search(text):
+        return False
+    if text and not text.endswith("\n"):
+        text += "\n"
+    config_path.write_text(text + f"kind: {kind}\n", encoding="utf-8")
+    return True
 
 
 def init_repo(target: Path, kind: str, force: bool = False) -> InitReport:
@@ -99,4 +119,8 @@ def init_repo(target: Path, kind: str, force: bool = False) -> InitReport:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
         report.created.append(rel)
+    if _record_kind(target / ".kb" / "config.yaml", kind):
+        if ".kb/config.yaml" in report.skipped:
+            report.skipped.remove(".kb/config.yaml")
+        report.updated.append(".kb/config.yaml (kind recorded)")
     return report
