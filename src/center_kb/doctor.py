@@ -85,14 +85,14 @@ def check_kb(kb_dir: Path) -> list[Issue]:
 
 
 def check_context(
-    kb_dir: Path, text: str, hub: "HubHandle | None" = None
+    text: str, hub: "HubHandle"
 ) -> tuple[list[Issue], list[ResolvedRef]]:
     try:
         ctx = kbcontext.parse(text)
     except kbcontext.KBContextError as exc:
         return [Issue("error", str(exc))], []
     try:
-        results = resolve_refs(kb_dir, ctx, hub=hub)
+        results = resolve_refs(hub, ctx)
     except gitio.GitError as exc:
         return [Issue("error", str(exc))], []
 
@@ -105,23 +105,36 @@ def check_context(
     return issues, results
 
 
-_COLLISION_GUIDE = (
-    "doc '{doc}' exists in both the local KB and the hub — local wins on query. "
-    "Clean up: (1) delete the .kb/{doc}/ directory and the '{doc}' entry in .kb/index.yaml; "
-    "(2) commit; pinned refs still resolve to the old version; "
-    "(3) `kb context new` from then on will pin via hub_version automatically."
-)
+def _kb_tree_digest(root: Path) -> str:
+    """Deterministic digest of a .kb tree (excludes _meta.yaml — snapshot-only)."""
+    import hashlib
+
+    h = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.name == "_meta.yaml":
+            continue
+        h.update(path.relative_to(root).as_posix().encode("utf-8"))
+        h.update(b"\0")
+        h.update(path.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
 
 
 def check_hub(
     kb_dir: Path, handle: "HubHandle | None", repo_id: str | None = None
 ) -> tuple[list[Issue], bool]:
-    """Check hub-related health. Returns (issues, hub_stale)."""
-    from center_kb.federation import load_federation
+    """Hub-first health. Returns (issues, hub_stale)."""
+    from center_kb.federation import build_federation_index, load_federation
 
     if handle is None:
         return (
-            [Issue("warning", "could not reach hub — running with local KB")],
+            [
+                Issue(
+                    "error",
+                    "could not reach hub — the federation is the only read "
+                    "source; check the network or the hub path",
+                )
+            ],
             False,
         )
     issues: list[Issue] = []
@@ -133,51 +146,62 @@ def check_hub(
         )
         hub_stale = True
 
-    local_ids: set[str] = set()
-    index_path = kb_dir / "index.yaml"
-    if index_path.exists():
-        local_ids = {
-            d.id for d in models.load_yaml_model(index_path, models.KBIndex).docs
-        }
-    hub_index_path = handle.kb_dir / "index.yaml"
-    hub_ids: set[str] = set()
-    if hub_index_path.exists():
-        hub_ids = {
-            d.id for d in models.load_yaml_model(hub_index_path, models.KBIndex).docs
-        }
-    for doc in sorted(local_ids & hub_ids):
-        issues.append(Issue("error", _COLLISION_GUIDE.format(doc=doc)))
-
-    repos = load_federation(handle.federation_dir)
-    if repo_id:
-        entry = next((r for r in repos if r.meta.repo_id == repo_id), None)
-        if entry is None:
-            issues.append(
-                Issue("warning", f"repo '{repo_id}' has not published its index to the hub")
-            )
-        else:
-            try:
-                head = gitio.head_commit(gitio.git_root(kb_dir.resolve()))
-            except gitio.GitError as exc:
-                head = ""
-                issues.append(Issue("warning", str(exc)))
-            if head and entry.meta.source_commit != head:
+    fed = handle.federation_dir
+    if fed.is_dir():
+        for child in sorted(p for p in fed.iterdir() if p.is_dir()):
+            if (child / "manifests").is_dir():
                 issues.append(
                     Issue(
-                        "error",
-                        f"hub index out of sync: federation/{repo_id} is pinned at "
-                        f"{entry.meta.source_commit}, repo is now at {head} — "
-                        "CI publish failed or hasn't run yet (run `kb publish` to sync)",
+                        "warning",
+                        f"federation/{child.name} uses the old slim layout — "
+                        "run `kb publish` from that repo to upgrade it",
                     )
                 )
-    counts = Counter(d.id for r in repos for d in r.index.docs)
+
+    index_path = fed / "index.yaml"
+    if not index_path.exists():
+        issues.append(
+            Issue("error", "federation/index.yaml is missing — run `kb reindex`")
+        )
+    else:
+        stored = models.load_yaml_model(index_path, models.FederationIndex)
+        if stored != build_federation_index(fed):
+            issues.append(
+                Issue(
+                    "error",
+                    "federation/index.yaml is out of sync with the snapshots — "
+                    "run `kb reindex`",
+                )
+            )
+
+    if repo_id:
+        entry = fed / repo_id
+        if not entry.is_dir():
+            issues.append(
+                Issue(
+                    "warning",
+                    f"repo '{repo_id}' has not published to the hub yet — run `kb publish`",
+                )
+            )
+        elif _kb_tree_digest(kb_dir.resolve()) != _kb_tree_digest(entry):
+            issues.append(
+                Issue(
+                    "warning",
+                    f"local .kb differs from the published snapshot "
+                    f"federation/{repo_id} — run `kb publish`",
+                )
+            )
+
+    counts = Counter(
+        d.id for r in load_federation(fed) for d in r.index.docs
+    )
     for doc_id, n in sorted(counts.items()):
         if n > 1:
             issues.append(
                 Issue(
                     "warning",
                     f"doc-id '{doc_id}' appears in {n} federation repos — "
-                    "query still disambiguates by repo-id, but consider renaming",
+                    "refs must be repo-qualified (repo:doc)",
                 )
             )
     return issues, hub_stale
