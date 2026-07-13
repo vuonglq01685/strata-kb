@@ -66,6 +66,8 @@ def test_corrupt_aggregate_index_errors(git_kb, hub_worktree):
         i.level == "error" and "corrupt" in i.message and "kb reindex" in i.message
         for i in issues
     )
+    # multi-line ParserError text must be collapsed to a single scannable line
+    assert all("\n" not in i.message for i in issues)
 
 
 def test_old_format_entry_warns(git_kb, hub_worktree):
