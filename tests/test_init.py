@@ -80,7 +80,6 @@ def test_init_does_not_overwrite_config(tmp_path):
     assert cfg.read_text(encoding="utf-8") == "hub: /my/hub\n"
 
 
-@pytest.mark.xfail(reason="child templates land in the next task", strict=True)
 def test_kb_doctor_on_fresh_skeleton_requires_hub(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CENTER_KB_HUB", raising=False)
     init_repo(tmp_path, "child")
@@ -112,8 +111,9 @@ def test_cli_init_updates_stale_scaffold(tmp_path: Path):
     assert "stale" not in skill.read_text(encoding="utf-8")
 
 
-def test_quickstart_uses_correct_ingest_flag(tmp_path: Path):
-    init_repo(tmp_path, "hub")
+@pytest.mark.parametrize("kind", ["hub", "child"])
+def test_quickstart_uses_correct_ingest_flag(tmp_path: Path, kind: str):
+    init_repo(tmp_path, kind)
     text = (tmp_path / "QUICKSTART.md").read_text(encoding="utf-8")
     assert "--id" in text
     assert "--doc-id" not in text
@@ -171,8 +171,9 @@ def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
         assert "kb doctor" in text
 
 
-def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
-    init_repo(tmp_path, "hub")
+@pytest.mark.parametrize("kind", ["hub", "child"])
+def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path, kind: str):
+    init_repo(tmp_path, kind)
     quick = (tmp_path / "QUICKSTART.md").read_text(encoding="utf-8")
     instr = (
         tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
@@ -191,6 +192,64 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
     assert "/kb-ingest" in quick
     assert "/kb-publish" in quick
     assert "/kb-summarize" in quick
+
+
+def test_init_child_creates_child_files_only(tmp_path: Path):
+    report = init_repo(tmp_path, "child")
+    assert sorted(report.created) == sorted(expected_files("child"))
+    # child never hosts federation or the long-lived server
+    assert not (tmp_path / "federation").exists()
+    assert not (tmp_path / ".env.example").exists()
+    # authoring skills are still there
+    assert (tmp_path / ".claude" / "skills" / "kb-ingest" / "SKILL.md").is_file()
+    assert (tmp_path / ".github" / "workflows" / "kb-publish.yml").is_file()
+
+
+def test_init_child_config_points_at_no_hub_yet(tmp_path: Path):
+    repo = tmp_path / "my-child-repo"
+    repo.mkdir()
+    init_repo(repo, "child")
+    text = (repo / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "kind: child" in text
+    assert 'hub: ""' in text
+    assert 'repo_id: "my-child-repo"' in text
+
+
+def test_child_compose_is_ingest_only(tmp_path: Path):
+    init_repo(tmp_path, "child")
+    text = (tmp_path / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "hub:" in text          # service name stays `hub` (shared skill text)
+    assert "ports:" not in text    # no long-lived HTTP server
+    assert "env_file" not in text
+    assert "healthcheck" not in text
+    assert "docker compose run --rm hub kb ingest" in text
+
+
+def test_child_mcp_json_uses_env_expansion(tmp_path: Path):
+    init_repo(tmp_path, "child")
+    text = (tmp_path / ".mcp.json").read_text(encoding="utf-8")
+    assert '"type": "http"' in text
+    assert "${CENTER_KB_HUB_URL}/mcp" in text
+    assert "Bearer ${CENTER_KB_HTTP_TOKEN}" in text
+
+
+def test_quickstarts_match_kind(tmp_path: Path):
+    hub_repo = tmp_path / "h"
+    child_repo = tmp_path / "c"
+    hub_repo.mkdir()
+    child_repo.mkdir()
+    init_repo(hub_repo, "hub")
+    init_repo(child_repo, "child")
+    hub_q = (hub_repo / "QUICKSTART.md").read_text(encoding="utf-8")
+    child_q = (child_repo / "QUICKSTART.md").read_text(encoding="utf-8")
+    assert "kb docker-setup" in hub_q
+    assert "docker compose up -d" in hub_q
+    assert "kb docker-setup" not in child_q
+    assert "docker compose up -d" not in child_q
+    assert "hub:" in child_q and "kb publish" in child_q
+    for text in (hub_q, child_q):
+        assert "## CLI reference" in text
+        assert "/kb-ingest" in text and "/kb-publish" in text
 
 
 def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):

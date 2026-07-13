@@ -1,41 +1,40 @@
-# CENTER-KB Quickstart
+# CENTER-KB Quickstart (main hub)
 
-Five steps from empty repo to a searchable knowledge base.
+This repo IS the hub: it hosts `federation/` (the single source of truth for
+search) and runs the shared HTTP MCP server + Web UI. Child repos publish
+into it; merging their PRs here is the review gate.
 
-1. **Configure the token** — `cp .env.example .env`, then edit
-   `CENTER_KB_HTTP_TOKEN` (any long random string).
-
-## Connect the hub (required)
-
-Fill in `hub:` in `.kb/config.yaml` (a git URL or a kb-hub path) and commit it.
-`kb query` / MCP / Web UI read ONLY from the hub's federation — new content
-appears only after `kb publish` and the PR is merged on the hub.
-
-2. **Ingest the first document** — put the PDF in `source/`, then:
-   `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
-   In Claude Code or Copilot Chat, prefer the `/kb-ingest` slash command —
-   it asks for the id/tags/revision so you don't have to remember flags.
-   (needs the ingest extra: `pip install "center-kb[ingest]"` — or run it
-   inside Docker: `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc`)
-3. **Summarize** — `kb ingest` does this automatically when the Claude Code or
-   GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
-   Manual fallback: run `/kb-summarize` in Claude Code (parallel
-   sub-agents draft the summaries), or `kb summarize` later.
-   Then validate: `kb build`
-4. **Serve the hub** — `docker compose up -d` → web UI at
+1. **Configure the token** — run `kb docker-setup` (in Claude Code / Copilot
+   Chat / Cursor: `/kb-docker-setup`). It creates `.env` and generates
+   `CENTER_KB_HTTP_TOKEN`. The token is auto-generated for convenience —
+   replace it with your own secret for real deployments. Manual fallback:
+   `cp .env.example .env`, then edit the token yourself.
+2. **Serve the hub** — `docker compose up -d` → web UI at
    http://localhost:8321/ui (sign in with the token).
    Without Docker: `python -m center_kb.mcp --hub . --transport http`
    (requires the `CENTER_KB_HTTP_TOKEN` env var).
-5. **Query** — `kb query "your question"`, the web UI, or point Claude Code
-   at `.mcp.json` (MCP over stdio) / the HTTP endpoint.
+3. **Ingest this repo's own documents (optional)** — the hub may keep its own
+   `.kb/`: put the PDF in `source/`, then
+   `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
+   (prefer the `/kb-ingest` slash command; or run inside Docker:
+   `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc`)
+   Summaries: automatic with a local LLM CLI, or `/kb-summarize`; validate
+   with `kb build`; then `kb publish` mirrors into `federation/<repo-id>/`.
+4. **Query** — `kb query "your question"`, the web UI, or MCP. The local
+   `.mcp.json` / `.cursor/mcp.json` run the stdio server for the hub
+   maintainer; remote clients (child repos, BA machines) use the HTTP
+   endpoint instead:
+   `http://<host>:8321/mcp` with header `Authorization: Bearer <token>`.
 
 ## CLI reference
 
-- `kb init` — scaffold or refresh a KB repo (updates skills/templates; keeps `.kb/index.yaml`)
+- `kb init` — scaffold or refresh a KB repo (asks hub|child; updates skills/templates; keeps `.kb/index.yaml`)
+- `kb docker-setup` — hub only: create `.env` + generate the HTTP token
+  (in your assistant: `/kb-docker-setup`)
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
-  (in Claude Code / Copilot Chat: `/kb-ingest`)
+  (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
 - `kb summarize` — fill pending summaries via a headless LLM CLI
-  (in Claude Code: `/kb-summarize`)
+  (in your assistant: `/kb-summarize`)
 - `kb status` — list docs and their pending sections
 - `kb build` — validate the KB (manifests, tables, tokens)
 - `kb query "<question>"` — BM25 search over the summaries
@@ -44,6 +43,6 @@ appears only after `kb publish` and the PR is merged on the hub.
 - `kb diff <doc> --against <rev>` — changed sections vs a git rev
 - `kb publish` — mirror `.kb/` to the federation hub (hub from
   `.kb/config.yaml` or `--hub`); opens a PR on the hub by default
-  (in Claude Code / Copilot Chat: `/kb-publish` runs diff → confirm → publish)
+  (in your assistant: `/kb-publish` runs diff → confirm → publish)
 - `kb resolve <file>` — resolve a kb-context block and check freshness
 - `kb doctor` — sanity-check the setup
