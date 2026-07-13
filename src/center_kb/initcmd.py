@@ -10,7 +10,6 @@ TEMPLATE_MAP: dict[str, str] = {
     "federation/README.md": "federation-README.md",
     "source/.gitignore": "source-gitignore.txt",
     ".mcp.json": "mcp.json",
-    ".github/workflows/kb-review.yml": "kb-review.yml",
     "docker-compose.yml": "docker-compose.yml",
     ".env.example": "env.example",
     "QUICKSTART.md": "QUICKSTART.md",
