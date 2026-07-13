@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -21,6 +22,7 @@ class HubConfigError(RuntimeError):
 class KBConfig(BaseModel):
     hub: str = ""
     repo_id: str = ""
+    kind: Literal["", "hub", "child"] = ""
 
 
 def load_config(kb_dir: Path) -> KBConfig:
