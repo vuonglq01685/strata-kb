@@ -1,28 +1,48 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from center_kb.cli import app
-from center_kb.initcmd import EXPECTED_FILES, init_repo
+from center_kb.initcmd import expected_files, init_repo
 
 runner = CliRunner()
 
 
-def test_init_creates_all_files(tmp_path: Path):
-    report = init_repo(tmp_path)
-    assert sorted(report.created) == sorted(EXPECTED_FILES)
+def test_init_hub_creates_all_hub_files(tmp_path: Path):
+    report = init_repo(tmp_path, "hub")
+    assert sorted(report.created) == sorted(expected_files("hub"))
     assert report.skipped == []
-    for rel in EXPECTED_FILES:
+    for rel in expected_files("hub"):
         assert (tmp_path / rel).is_file(), rel
+    # hub-only artifacts present
+    assert (tmp_path / "federation" / "README.md").is_file()
+    assert (tmp_path / ".env.example").is_file()
+
+
+def test_init_rejects_unknown_kind(tmp_path: Path):
+    with pytest.raises(ValueError):
+        init_repo(tmp_path, "server")
+
+
+def test_init_hub_config_has_kind_and_repo_id(tmp_path: Path):
+    repo = tmp_path / "my-hub-repo"
+    repo.mkdir()
+    init_repo(repo, "hub")
+    text = (repo / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "kind: hub" in text
+    assert 'hub: "."' in text
+    assert 'repo_id: "my-hub-repo"' in text
+    assert "{repo_id}" not in text
 
 
 def test_init_refreshes_scaffold_but_protects_index(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     index = tmp_path / ".kb" / "index.yaml"
     index.write_text("docs: [{id: keep-me, title: X}]\n", encoding="utf-8")
     skill = tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
     skill.write_text("stale skill content\n", encoding="utf-8")
-    report = init_repo(tmp_path)
+    report = init_repo(tmp_path, "hub")
     assert report.created == []
     assert sorted(report.skipped) == sorted([".kb/index.yaml", ".kb/config.yaml"])
     assert ".claude/skills/kb-summarize/SKILL.md" in report.updated
@@ -31,18 +51,18 @@ def test_init_refreshes_scaffold_but_protects_index(tmp_path: Path):
 
 
 def test_init_is_idempotent_when_already_current(tmp_path: Path):
-    init_repo(tmp_path)
-    report = init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
+    report = init_repo(tmp_path, "hub")
     assert report.created == []
     assert report.updated == []
     assert sorted(report.skipped) == sorted([".kb/index.yaml", ".kb/config.yaml"])
 
 
 def test_init_force_overwrites_protected_data(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     marker = tmp_path / ".kb" / "index.yaml"
     marker.write_text("docs: [{id: gone, title: X}]\n", encoding="utf-8")
-    report = init_repo(tmp_path, force=True)
+    report = init_repo(tmp_path, "hub", force=True)
     assert report.created == []
     assert ".kb/index.yaml" in report.updated
     assert report.skipped == []
@@ -52,17 +72,18 @@ def test_init_force_overwrites_protected_data(tmp_path: Path):
 def test_init_does_not_overwrite_config(tmp_path):
     from center_kb.initcmd import init_repo
 
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     cfg = tmp_path / ".kb" / "config.yaml"
     cfg.write_text("hub: /my/hub\n", encoding="utf-8")
-    report = init_repo(tmp_path)
+    report = init_repo(tmp_path, "hub")
     assert ".kb/config.yaml" in report.skipped
     assert cfg.read_text(encoding="utf-8") == "hub: /my/hub\n"
 
 
+@pytest.mark.xfail(reason="child templates land in the next task", strict=True)
 def test_kb_doctor_on_fresh_skeleton_requires_hub(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CENTER_KB_HUB", raising=False)
-    init_repo(tmp_path)
+    init_repo(tmp_path, "child")
     result = runner.invoke(app, ["doctor", "--kb-dir", str(tmp_path / ".kb")])
     assert result.exit_code == 1
     assert "config.yaml" in result.output
@@ -92,14 +113,14 @@ def test_cli_init_updates_stale_scaffold(tmp_path: Path):
 
 
 def test_quickstart_uses_correct_ingest_flag(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     text = (tmp_path / "QUICKSTART.md").read_text(encoding="utf-8")
     assert "--id" in text
     assert "--doc-id" not in text
 
 
 def test_init_scaffolds_ai_integration_files(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     skill = tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
     copilot = tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
     assert skill.is_file() and copilot.is_file()
@@ -113,7 +134,7 @@ def test_init_scaffolds_ai_integration_files(tmp_path: Path):
 
 
 def test_init_scaffolds_kb_ingest_slash_command(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     skill = tmp_path / ".claude" / "skills" / "kb-ingest" / "SKILL.md"
     prompt = tmp_path / ".github" / "prompts" / "kb-ingest.prompt.md"
     assert skill.is_file() and prompt.is_file()
@@ -133,7 +154,7 @@ def test_init_scaffolds_kb_ingest_slash_command(tmp_path: Path):
 
 
 def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     skill = tmp_path / ".claude" / "skills" / "kb-publish" / "SKILL.md"
     prompt = tmp_path / ".github" / "prompts" / "kb-publish.prompt.md"
     assert skill.is_file() and prompt.is_file()
@@ -151,7 +172,7 @@ def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
 
 
 def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     quick = (tmp_path / "QUICKSTART.md").read_text(encoding="utf-8")
     instr = (
         tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
@@ -173,7 +194,7 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path):
 
 
 def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     skill = (
         tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
     ).read_text(encoding="utf-8")
@@ -186,7 +207,7 @@ def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
 
 
 def test_init_scaffolds_kb_summarize_slash_command(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     command = tmp_path / ".claude" / "commands" / "kb-summarize.md"
     assert command.is_file()
     text = command.read_text(encoding="utf-8")
@@ -196,7 +217,7 @@ def test_init_scaffolds_kb_summarize_slash_command(tmp_path: Path):
 
 
 def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
-    init_repo(tmp_path)
+    init_repo(tmp_path, "hub")
     skill = (
         tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
     ).read_text(encoding="utf-8")

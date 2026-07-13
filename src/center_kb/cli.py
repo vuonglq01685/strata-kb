@@ -56,7 +56,7 @@ def init(
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
     from center_kb.initcmd import init_repo
 
-    report = init_repo(path, force=force)
+    report = init_repo(path, "hub", force=force)
     for rel in report.created:
         typer.echo(f"  created  {rel}")
     for rel in report.updated:
