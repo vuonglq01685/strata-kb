@@ -90,9 +90,22 @@ def test_publish_mirrors_all_levels_into_the_hub(published_repo, run_git, tmp_pa
     manifest = read_manifest(mirror)
     l2 = l2_path(mirror, manifest)
     assert l2.exists(), "thiếu L2"
-    assert l2.with_name(f"{l2.stem}.raw.md").exists(), "thiếu L3 (.raw.md)"
+    l3 = l2.with_name(f"{l2.stem}.raw.md")
+    assert l3.exists(), "thiếu L3 (.raw.md)"
     assert (mirror / "_meta.yaml").exists()
     assert (checkout / "federation" / "index.yaml").exists()
+
+    # Tồn tại file không đủ — publish copy rỗng/sai nội dung vẫn qua được các
+    # assert phía trên. Soi nội dung: L2 phải là bản tóm tắt do stub_claude
+    # sinh ra (cùng literal với test_summarize_then_build), L3 phải là văn
+    # bản gốc verbatim (cùng literal "multiple code" với
+    # test_get_returns_both_levels, lấy từ fixtures/pending-kb/.../*.raw.md).
+    # Hai nội dung phải khác nhau — đó chính là lý do tách lớp L2/L3.
+    l2_text = l2.read_text(encoding="utf-8")
+    l3_text = l3.read_text(encoding="utf-8")
+    assert "Condensed via stub." in l2_text, "L2 thiếu bản tóm tắt"
+    assert "multiple code" in l3_text, "L3 phải verbatim, không phải tóm tắt"
+    assert l2_text != l3_text
 
 
 def test_doctor_is_clean_after_publish(published_repo, kb_run):
@@ -100,7 +113,17 @@ def test_doctor_is_clean_after_publish(published_repo, kb_run):
                   "--kb-dir", str(published_repo["kb"]),
                   cwd=published_repo["repo"])
 
+    # returncode == 0 không đủ để phân biệt "publish sạch" với "chưa publish
+    # bao giờ": kb doctor chỉ đổi exit code khi có issue mức error hoặc
+    # stale — issue mức warning (vd. "repo ... has not published to the hub
+    # yet") vẫn để exit 0 VÀ vẫn in "kb doctor: OK" phía sau (xem
+    # cli.py::doctor — dòng in "OK" không kiểm tra warning). Nên phải soi
+    # thẳng stdout: sau một `kb publish` đúng, repo này phải sạch tuyệt đối —
+    # không một dòng [warning]/[error] nào.
     assert proc.returncode == 0, proc.stdout
+    assert "kb doctor: OK" in proc.stdout, proc.stdout
+    assert "[warning]" not in proc.stdout, proc.stdout
+    assert "[error]" not in proc.stdout, proc.stdout
 
 
 def test_query_reads_from_the_hub(published_repo, kb_run):
