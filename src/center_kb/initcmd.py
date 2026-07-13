@@ -76,9 +76,13 @@ class InitReport:
 
 
 def _render(resource_name: str, text: str, repo_id: str) -> str:
-    """Config templates carry a {repo_id} placeholder; everything else is static."""
+    """Config templates carry a {repo_id} placeholder; everything else is static.
+
+    Uses a plain substring replace (not str.format) so a future config
+    template containing literal `{`/`}` can't raise.
+    """
     if resource_name.startswith("config-"):
-        return text.format(repo_id=repo_id)
+        return text.replace("{repo_id}", repo_id)
     return text
 
 

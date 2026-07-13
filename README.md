@@ -217,7 +217,8 @@ HTTP token. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
 and on the hub `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub
 Copilot, and Cursor**; MCP client wiring ships as `.mcp.json` (Claude Code)
 and `.cursor/mcp.json` (Cursor) — stdio on the hub, HTTP-with-env-vars on
-children.
+children. Re-running `kb init` refreshes scaffold files (skills, templates)
+and preserves `.kb/index.yaml` / `.kb/config.yaml` unless `--force`.
 
 **Web UI for humans:** the same HTTP process serves agents and people:
 
