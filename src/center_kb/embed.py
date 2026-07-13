@@ -48,7 +48,7 @@ def default_embedder() -> Embedder | None:
     except ImportError:
         logger.info(
             "fastembed not installed — semantic search disabled, using BM25 "
-            "(enable with: pip install -e '.[embed]')"
+            '(enable with: pip install "center-kb[embed]")'
         )
         return None
     except Exception as exc:  # model download failed (first run offline...)
