@@ -15,12 +15,20 @@ on:
 
 jobs:
   t1-tests:
-    name: T1 unit/integration (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+    name: T1 unit/integration (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
+        include:
+          # Windows on the python floor+ceiling only — OS-specific risk does
+          # not multiply with python minor; 3.12 is covered on ubuntu.
+          - os: windows-latest
+            python: "3.11"
+          - os: windows-latest
+            python: "3.13"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -72,13 +80,17 @@ jobs:
           path: dist/
 
   t3-e2e:
-    name: T3 e2e on the artifact (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+    name: T3 e2e on the artifact (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
     needs: t2-package
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python: "3.12"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -96,24 +108,35 @@ jobs:
           name: dist
           path: dist
       - name: Artifact venv (wheel ONLY)
+        shell: bash
         run: |
-          python -m venv /tmp/artifact
-          /tmp/artifact/bin/pip install --quiet dist/*.whl
+          BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
+          python -m venv .venv-artifact
+          ".venv-artifact/$BIN/pip" install --quiet dist/*.whl
       - name: Runner venv (pytest, WITHOUT center-kb)
+        shell: bash
         run: |
-          python -m venv /tmp/runner
-          /tmp/runner/bin/pip install --quiet -r requirements-gate.txt
+          BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
+          python -m venv .venv-runner
+          ".venv-runner/$BIN/pip" install --quiet -r requirements-gate.txt
       - name: pytest tests-gate/e2e
-        run: KB_VENV=/tmp/artifact /tmp/runner/bin/pytest tests-gate/e2e -q
+        shell: bash
+        run: |
+          BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
+          KB_VENV=.venv-artifact ".venv-runner/$BIN/pytest" tests-gate/e2e -q
 
   t4-regression:
-    name: T4 regression (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+    name: T4 regression (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
     needs: t2-package
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python: "3.12"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -130,12 +153,19 @@ jobs:
           name: dist
           path: dist
       - name: Artifact venv (wheel ONLY)
+        shell: bash
         run: |
-          python -m venv /tmp/artifact
-          /tmp/artifact/bin/pip install --quiet dist/*.whl
+          BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
+          python -m venv .venv-artifact
+          ".venv-artifact/$BIN/pip" install --quiet dist/*.whl
       - name: Runner venv (pytest, WITHOUT center-kb)
+        shell: bash
         run: |
-          python -m venv /tmp/runner
-          /tmp/runner/bin/pip install --quiet -r requirements-gate.txt
+          BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
+          python -m venv .venv-runner
+          ".venv-runner/$BIN/pip" install --quiet -r requirements-gate.txt
       - name: pytest tests-gate/regression
-        run: KB_VENV=/tmp/artifact /tmp/runner/bin/pytest tests-gate/regression -q
+        shell: bash
+        run: |
+          BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
+          KB_VENV=.venv-artifact ".venv-runner/$BIN/pytest" tests-gate/regression -q
