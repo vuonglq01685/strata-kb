@@ -30,6 +30,9 @@ HUB_TEMPLATES: dict[str, str] = {
     "federation/README.md": "federation-README.md",
     ".mcp.json": "mcp-hub.json",
     "QUICKSTART.md": "QUICKSTART-hub.md",
+    ".claude/skills/kb-docker-setup/SKILL.md": "claude-skill-kb-docker-setup.md",
+    ".claude/commands/kb-docker-setup.md": "claude-command-kb-docker-setup.md",
+    ".github/prompts/kb-docker-setup.prompt.md": "copilot-kb-docker-setup.prompt.md",
 }
 
 # Filled in by the child-scaffold task; kept separate so hub and child can
