@@ -40,9 +40,13 @@ jobs:
         run: |
           python -m venv /tmp/venv
           /tmp/venv/bin/pip install dist/*.whl
+          # Hub is mandatory as of 0.9 (federation is the only read source).
+          mkdir -p /tmp/hub/.kb /tmp/hub/federation
+          echo "docs: []" > /tmp/hub/.kb/index.yaml
+          echo "docs: []" > /tmp/hub/federation/index.yaml
           mkdir /tmp/kbtest && cd /tmp/kbtest
           /tmp/venv/bin/kb init
-          /tmp/venv/bin/kb doctor
+          /tmp/venv/bin/kb doctor --hub /tmp/hub
           /tmp/venv/bin/python -c "from importlib import resources; resources.files('center_kb').joinpath('templates/web/base.html').read_text(encoding='utf-8')"
       - uses: actions/upload-artifact@v4
         with:
