@@ -244,6 +244,18 @@ own secret for real deployments).
 
 ---
 
+## Windows
+
+Windows is fully supported — `pip install center-kb` and every `kb` command
+run natively (CI gates every release on `windows-latest`).
+
+One OS-level note: very deep KB trees can exceed the legacy 260-character
+path limit. If you hit `FileNotFoundError` on long paths, enable long paths
+once: `git config --global core.longpaths true`, and set the registry key
+`HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1`.
+
+---
+
 ## 7. `kb` command dictionary
 
 The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp).
