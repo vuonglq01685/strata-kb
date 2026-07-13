@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 import sys
 from pathlib import Path
 
@@ -24,8 +25,22 @@ context_app = typer.Typer(help="Operate on kb-context blocks (machine-readable c
 app.add_typer(context_app, name="context")
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(importlib.metadata.version("center-kb"))
+        raise typer.Exit()
+
+
 @app.callback()
-def main() -> None:
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed center-kb version and exit.",
+    ),
+) -> None:
     """CENTER-KB CLI."""
 
 
