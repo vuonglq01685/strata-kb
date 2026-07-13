@@ -80,8 +80,12 @@ def scaffold_doc(
                 )
             )
 
-        (doc_dir / f"{stem}.raw.md").write_text("\n".join(l3_lines), encoding="utf-8")
-        (doc_dir / f"{stem}.md").write_text("\n".join(l2_lines), encoding="utf-8")
+        (doc_dir / f"{stem}.raw.md").write_text(
+            "\n".join(l3_lines), encoding="utf-8", newline="\n"
+        )
+        (doc_dir / f"{stem}.md").write_text(
+            "\n".join(l2_lines), encoding="utf-8", newline="\n"
+        )
         files += [f"{stem}.md", f"{stem}.raw.md"]
 
     sha = (

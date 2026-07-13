@@ -87,4 +87,4 @@ def save_yaml_model(path: Path, obj: BaseModel) -> None:
     text = yaml.safe_dump(
         obj.model_dump(mode="json"), allow_unicode=True, sort_keys=False
     )
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
