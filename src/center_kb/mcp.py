@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import logging
 import os
 from dataclasses import dataclass
@@ -47,6 +48,23 @@ HUB_DOWN = (
 )
 
 
+def _canonical_docstring(fn):
+    """Normalize `fn.__doc__` with `inspect.cleandoc` before FastMCP reads it
+    as the MCP `description` (`Tool.from_function` uses `fn.__doc__` verbatim
+    — see mcp.server.fastmcp.tools.base). This is not test scaffolding: the
+    wheel ships `.py` sources, not `.pyc`, so each tool's docstring is
+    compiled by whichever CPython the *user* runs the server under, not by
+    the interpreter that built the wheel. CPython 3.13+ auto-dedents
+    multi-line docstrings at compile time (gh-81283); 3.11/3.12 keep the
+    source's leading whitespace as-is. Left alone, the exact same wheel would
+    hand different agents different `description` strings depending only on
+    their local Python — a real inconsistency in the MCP wire contract.
+    Canonicalizing here, at registration time, makes the emitted description
+    identical on every supported interpreter."""
+    fn.__doc__ = inspect.cleandoc(fn.__doc__ or "")
+    return fn
+
+
 def create_server(config: ServerConfig) -> MCPServer:
     mcp = MCPServer("center-kb")
 
@@ -62,6 +80,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         return ""
 
     @mcp.tool()
+    @_canonical_docstring
     def kb_search(
         query: str, tags: list[str] | None = None, budget: int = 2000
     ) -> str:
@@ -95,6 +114,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         )
 
     @mcp.tool()
+    @_canonical_docstring
     def kb_get_section(
         doc: str, section: str, level: str = "l2", repo: str = ""
     ) -> str:
@@ -122,6 +142,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         )
 
     @mcp.tool()
+    @_canonical_docstring
     def kb_context_new(refs: list[str], tags: list[str] | None = None) -> str:
         """Pin a kb-context citation block at the current KB commit, from 1+
         refs like 'arinc-424 §5.129'. Call this only after the user has
@@ -147,6 +168,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         return block
 
     @mcp.tool()
+    @_canonical_docstring
     def kb_resolve(kb_context: str) -> str:
         """Accept a kb-context block (or the raw ticket text containing one); return the cited sections at their pinned version + freshness ok/stale/broken."""
         hub = _hub()
