@@ -230,3 +230,47 @@ def mcp_stdio_params(artifact: Artifact, published_repo: dict):
         cwd=str(published_repo["repo"]),
         env={**os.environ},
     )
+
+
+# ---- Regression fixtures (Task 8): .kb/ đúng như nó tồn tại ở một tag cũ ----
+
+LEGACY_TAGS = ["v0.7.0", "v0.8.0", "v0.9.0"]
+
+# tests-gate/conftest.py → lùi 1 cấp là gốc repo.
+REPO_ROOT = Path(__file__).parent.parent
+
+
+def _materialize_kb_at_tag(tag: str, dest_repo: Path, tmp_path: Path) -> Path:
+    """Bung .kb/ đúng như nó tồn tại ở một git tag, vào một repo trống.
+
+    Cần `fetch-depth: 0` trên CI để tag tồn tại."""
+    archive = tmp_path / f"{tag}.tar"
+    subprocess.run(
+        ["git", "archive", "--format=tar", "-o", str(archive), tag, ".kb"],
+        cwd=REPO_ROOT, check=True, capture_output=True,
+    )
+    subprocess.run(["tar", "-xf", str(archive)], cwd=dest_repo, check=True)
+    kb = dest_repo / ".kb"
+    assert (kb / "index.yaml").exists(), f"{tag} không có .kb/index.yaml"
+    return kb
+
+
+@pytest.fixture(params=LEGACY_TAGS, ids=LEGACY_TAGS)
+def legacy_kb(request, tmp_path: Path, run_git, bare_hub) -> dict:
+    """Materialize .kb/ như nó tồn tại ở một tag cũ, trong một git repo trỏ vào hub.
+
+    Mô phỏng đúng thứ user làm sau khi `pip install -U`: họ có .kb/ cũ trong repo,
+    và chạy version MỚI lên nó."""
+    tag = request.param
+    repo = tmp_path / f"legacy-{tag}"
+    repo.mkdir()
+    kb = _materialize_kb_at_tag(tag, repo, tmp_path)
+
+    (kb / "config.yaml").write_text(
+        f'hub: "{bare_hub}"\nrepo_id: "legacy"\n', encoding="utf-8"
+    )
+    run_git(repo, "init", "-b", "main")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", f"legacy kb from {tag}")
+
+    return {"tag": tag, "repo": repo, "kb": kb, "hub": bare_hub}
