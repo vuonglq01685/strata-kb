@@ -1,19 +1,16 @@
 ---
 name: kb-publish
-description: Review and publish KB changes to the federation hub — diff changed sections, approve after user confirmation, then kb publish. Use when asked to publish the KB, push to the hub, or approve reviewed sections.
+description: Review and publish the local KB to the federation hub — diff vs the published snapshot, confirm, then kb publish (PR on the hub). Use when asked to publish the KB or push knowledge to the hub.
 ---
 
-# KB Publish — review → approve → publish
+# KB Publish — diff → confirm → publish (PR trên hub)
 
-You drive the federation step of the CENTER-KB pipeline. Approving a
-section is a human review verdict; publishing is outward-facing. You
-execute both — the user decides both.
+Hub federation là single source of truth: nội dung chỉ search được sau khi
+PR publish được merge trên hub. `.kb/` local chỉ là bàn soạn thảo.
 
 <HARD-RULE>
-NEVER run `kb approve` or `kb publish` until the user has explicitly
-confirmed, after seeing the diff, which sections to approve and which hub
-to publish to. One explicit confirmation covers both — state clearly what
-will happen before asking.
+NEVER run `kb publish` until the user has explicitly confirmed, after
+seeing the diff, that the current .kb/ state should be published.
 </HARD-RULE>
 
 ## Workflow
@@ -21,19 +18,18 @@ will happen before asking.
 1. **Check state.** Run `kb status`. If any section is still `pending`,
    stop and tell the user to summarize first (`kb summarize`, or the
    kb-summarize skill).
-2. **Show the diff.** For each doc with changes, run
-   `kb diff <doc-id> --against HEAD` (use another git rev if the user
-   names one) and present the added/changed sections for review.
-3. **Confirm — the gate.** State exactly which sections will be approved
-   and which hub will receive the publish. The hub is `CENTER_KB_HUB` if
-   set; if not set, ask for the hub URL/path — never guess. Then ask for
-   one explicit go/no-go and wait.
-4. **Execute** (only after confirmation):
-   `kb approve <doc-id> --section <id>` (repeat `--section` per section),
-   then `kb publish --hub <hub>`. Relay the result: repo-id, source
-   commit, doc count, push vs commit-only.
+2. **Show what will be published.** Run `kb doctor` — it reports whether
+   local .kb differs from the published snapshot. For each doc with
+   changes, run `kb diff <doc-id> --against HEAD` (use another git rev if
+   the user names one) and present the added/changed sections.
+3. **Confirm — the gate.** State the hub (from `.kb/config.yaml`, or
+   `CENTER_KB_HUB` if set) and that a publish PR will be opened on it
+   (local-path hub → direct push). Ask for one explicit go/no-go and wait.
+4. **Execute** (only after confirmation): `kb publish`. Relay the result:
+   repo-id, source commit, doc count, and the **PR URL** — remind the user
+   the content goes live when that PR is merged on the hub.
 5. **Errors.**
-   - `kb approve` warnings about pending or missing sections → show them
-     verbatim; NEVER edit `_manifest.yaml` by hand to force a status.
-   - `kb publish` git/hub errors → show the stderr and suggest
-     `kb doctor`.
+   - Missing hub config → tell the user to fill `hub:` in `.kb/config.yaml`.
+   - `gh` missing in PR mode → install GitHub CLI, or `kb publish --direct`
+     only if direct pushes are allowed for this hub.
+   - Other git/hub errors → show the stderr and suggest `kb doctor`.

@@ -40,7 +40,7 @@ def test_correct_token_passes():
 # --- F3: real HTTP app (FastMCP streamable_http_app), not the dummy app ---
 
 
-def test_http_initialize_handshake_real_app(fixture_kb):
+def test_http_initialize_handshake_real_app(fixture_kb, tmp_path):
     """The real create_http_app accepts an MCP `initialize` request through the bearer middleware.
 
     Uses TestClient with lifespan (`with TestClient(app) as client`) so
@@ -51,7 +51,9 @@ def test_http_initialize_handshake_real_app(fixture_kb):
     """
     from center_kb.mcp import ServerConfig, create_http_app
 
-    app = create_http_app(ServerConfig(kb_dir=fixture_kb), "secret-token")
+    app = create_http_app(
+        ServerConfig(kb_dir=fixture_kb, hub=str(tmp_path)), "secret-token"
+    )
     payload = {
         "jsonrpc": "2.0",
         "id": 1,

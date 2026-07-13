@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
@@ -118,67 +117,65 @@ def render(ctx: KBContext) -> str:
 
 
 def build_context_block(
-    kb_dir: Path,
+    hub: "HubHandle",
     refs: list[str],
     tags: list[str] | None = None,
-    hub: "HubHandle | None" = None,
 ) -> tuple[str, str | None]:
-    """Validate refs, pin at the current git HEAD, and render a kb-context block.
+    """Validate refs trên hub federation, auto-qualify repo id, pin HEAD hub.
 
-    Returns (block_text, dirty_warning). dirty_warning is a one-line string
-    when kb_dir has uncommitted changes, else None — callers decide where to
-    surface it (CLI: stderr; MCP: inline in the tool's text output, since it
-    has only one output channel).
+    Returns (block_text, stale_warning): stale_warning là một dòng cảnh báo
+    khi hub cache đang stale (offline), ngược lại None.
     """
-    from center_kb import gitio
-    from center_kb.query import get_section
+    from center_kb import gitio, models
+    from center_kb.federation import load_federation
+    from center_kb.query import AmbiguousDocError
 
     ref_list = [parse_ref(r) for r in refs if r.strip()]
     if not ref_list:
         raise KBContextError(
-            "--refs is empty — need at least 1 ref, e.g. 'arinc-424 §5.3'"
+            "--refs is empty — need at least 1 ref, e.g. 'arinc-kb:arinc-424 §5.3'"
         )
 
-    root = gitio.git_root(kb_dir.resolve())
-    version = gitio.head_commit(root)
-
+    repos = load_federation(hub.federation_dir)
+    by_rid = {r.meta.repo_id: r for r in repos}
     bad: list[str] = []
-    needs_hub = False
-    for r in ref_list:
-        if r.repo_id:
-            found = hub is not None and (
-                hub.federation_dir / r.repo_id / "manifests" / f"{r.doc_id}.yaml"
-            ).exists()
-            needs_hub = True
-        else:
-            found = get_section(kb_dir, r.doc_id, r.section_id) is not None
-            if not found and hub is not None:
-                found = (
-                    get_section(kb_dir, r.doc_id, r.section_id, hub=hub) is not None
-                )
-                needs_hub = needs_hub or found
+    for ref in ref_list:
+        if ref.repo_id is None:
+            holders = [
+                r.meta.repo_id
+                for r in repos
+                if (r.kb_dir / ref.doc_id / "_manifest.yaml").exists()
+            ]
+            if len(holders) > 1:
+                raise KBContextError(str(AmbiguousDocError(ref.doc_id, holders)))
+            if not holders:
+                bad.append(str(ref))
+                continue
+            ref.repo_id = holders[0]
+        repo = by_rid.get(ref.repo_id)
+        found = False
+        if repo is not None:
+            manifest_path = repo.kb_dir / ref.doc_id / "_manifest.yaml"
+            if manifest_path.exists():
+                manifest = models.load_yaml_model(manifest_path, models.Manifest)
+                found = any(s.id == ref.section_id for s in manifest.sections)
         if not found:
-            bad.append(str(r))
+            bad.append(str(ref))
     if bad:
         raise KBRefNotFoundError(
-            f"Ref could not be resolved in worktree: {', '.join(bad)}"
+            f"Ref could not be resolved in the hub federation: {', '.join(bad)}"
         )
 
-    hub_version = None
-    if needs_hub and hub is not None:
-        hub_version = gitio.head_commit(gitio.git_root(hub.root))
-
-    dirty_warning = None
-    if gitio.is_dirty(root, kb_dir.resolve()):
-        dirty_warning = (
-            "[warn] .kb/ has uncommitted changes — "
-            "the pinned hash will not include them"
+    version = gitio.head_commit(gitio.git_root(hub.root))
+    warning = None
+    if hub.stale:
+        age = f"~{hub.age_seconds:.0f}s" if hub.age_seconds else "unknown age"
+        warning = (
+            f"[warn] hub cache is stale ({age}) — the pinned hash may lag the hub"
         )
-
     ctx = KBContext(
         version=version,
-        hub_version=hub_version,
         refs=ref_list,
         tags=[t.strip() for t in (tags or []) if t.strip()],
     )
-    return render(ctx), dirty_warning
+    return render(ctx), warning

@@ -1,0 +1,6 @@
+# CENTER-KB — cấu hình repo (commit vào git).
+# hub: URL git hoặc đường dẫn kb-hub — nguồn đọc DUY NHẤT của kb query / MCP / Web UI.
+#      Nội dung .kb/ local chỉ tồn tại với người đọc sau khi `kb publish` và PR được merge.
+hub: ""
+# repo_id: tên repo trên federation (bỏ trống = tên thư mục git root)
+repo_id: ""

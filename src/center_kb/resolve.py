@@ -114,124 +114,40 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
     )
 
 
-def _resolve_hub_ref(hub: "HubHandle", ctx: KBContext, ref: KBRef) -> ResolvedRef:
-    if not ctx.hub_version:
-        return _broken(
-            ref,
-            "block is missing 'hub_version' but the ref points to a hub document — "
-            "rerun `kb context new` to pin the hub",
-        )
-    try:
-        root = gitio.git_root(hub.kb_dir)
-    except gitio.GitError as exc:
-        return _broken(ref, str(exc))
-    return _resolve_one(hub.kb_dir, root, ctx.hub_version, ref)
+def resolve_refs(hub: "HubHandle", ctx: KBContext) -> list[ResolvedRef]:
+    from center_kb.federation import load_federation
 
-
-def _resolve_remote_ref(hub: "HubHandle | None", ctx: KBContext, ref: KBRef) -> ResolvedRef:
-    if hub is None:
-        return _broken(ref, "ref points to another repo but --hub was not given")
-    if not ctx.hub_version:
-        return _broken(
-            ref,
-            "block is missing 'hub_version' but the ref points to another repo — "
-            "rerun `kb context new` to pin the hub",
+    root = gitio.git_root(hub.root)
+    if not gitio.rev_exists(root, ctx.version):
+        reason = (
+            f"pinned commit {ctx.version} does not exist on the hub — the block "
+            "was pinned under the old local-first architecture (or hub history "
+            "was rewritten); re-pin with kb_context_new"
         )
-    rev = ctx.hub_version
-    try:
-        root = gitio.git_root(hub.root)
-        manifest_text = gitio.read_at(
-            root, rev,
-            hub.federation_dir / ref.repo_id / "manifests" / f"{ref.doc_id}.yaml",
-        )
-    except gitio.GitError as exc:
-        return _broken(ref, str(exc), pinned_rev=rev)
-    if manifest_text is None:
-        return _broken(
-            ref,
-            f"repo '{ref.repo_id}' has not published doc '{ref.doc_id}' at rev {rev}",
-            pinned_rev=rev,
-        )
-    try:
-        manifest = models.Manifest.model_validate(yaml.safe_load(manifest_text) or {})
-    except (yaml.YAMLError, ValidationError) as exc:
-        return _broken(
-            ref, f"federation manifest is broken at rev {rev}: {exc}", pinned_rev=rev
-        )
-    sec = next((s for s in manifest.sections if s.id == ref.section_id), None)
-    if sec is None:
-        return _broken(
-            ref,
-            f"§{ref.section_id} is not in the published index of '{ref.repo_id}' "
-            f"at rev {rev}",
-            pinned_rev=rev,
-        )
-    pinned_summary = sec.summary
-    # freshness: compare against the summary in the hub's current federation worktree
-    now_summary = None
-    now_path = hub.federation_dir / ref.repo_id / "manifests" / f"{ref.doc_id}.yaml"
-    if now_path.exists():
-        try:
-            now_manifest = models.load_yaml_model(now_path, models.Manifest)
-            now_sec = next(
-                (s for s in now_manifest.sections if s.id == ref.section_id), None
-            )
-            now_summary = now_sec.summary if now_sec else None
-        except (yaml.YAMLError, ValidationError):
-            now_summary = None
-    if now_summary is None:
-        status: Status = "stale"
-        reason = "section is no longer in the current federation index"
-    elif now_summary.strip() != pinned_summary.strip():
-        status = "stale"
-        reason = "summary has changed on the hub since it was pinned (source repo re-published)"
-    else:
-        status = "ok"
-        reason = ""
-    citation = f"{ref} ({manifest.revision})" if manifest.revision else str(ref)
-    content = (
-        f"{pinned_summary}\n\n[remote] repo '{ref.repo_id}' — L1 summary only; "
-        "read the full content at the source repo."
-    )
-    return ResolvedRef(
-        ref=ref, status=status, citation=citation, content=content,
-        tokens=count_tokens(content), reason=reason, pinned_rev=rev,
-    )
+        return [_broken(ref, reason, pinned_rev=ctx.version) for ref in ctx.refs]
 
-
-def _doc_ids(kb_dir: Path) -> set[str]:
-    index_path = kb_dir / "index.yaml"
-    if not index_path.exists():
-        return set()
-    try:
-        return {d.id for d in models.load_yaml_model(index_path, models.KBIndex).docs}
-    except (yaml.YAMLError, ValidationError):
-        return set()
-
-
-def resolve_refs(
-    kb_dir: Path, ctx: KBContext, hub: "HubHandle | None" = None
-) -> list[ResolvedRef]:
-    kb_abs = kb_dir.resolve()
-    root = gitio.git_root(kb_abs)
-    if hub is None:
-        # unchanged Phase 2 path (remote ref → broken since repo_id has no local match)
-        return [
-            _resolve_remote_ref(None, ctx, ref) if ref.repo_id
-            else _resolve_one(kb_abs, root, ctx.version, ref)
-            for ref in ctx.refs
-        ]
-    local_ids = _doc_ids(kb_abs)
-    hub_ids = _doc_ids(hub.kb_dir)
+    repos = load_federation(hub.federation_dir)
     out: list[ResolvedRef] = []
     for ref in ctx.refs:
-        if ref.repo_id:
-            out.append(_resolve_remote_ref(hub, ctx, ref))
-        elif ref.doc_id in local_ids or ref.doc_id not in hub_ids:
-            # local wins on collision; unknown doc → old local Phase 2 path (broken/stale)
-            out.append(_resolve_one(kb_abs, root, ctx.version, ref))
-        else:
-            out.append(_resolve_hub_ref(hub, ctx, ref))
+        if ref.repo_id is None:
+            holders = [
+                r.meta.repo_id
+                for r in repos
+                if (r.kb_dir / ref.doc_id / "_manifest.yaml").exists()
+            ]
+            if len(holders) != 1:
+                out.append(
+                    _broken(
+                        ref,
+                        "ref has no repo id and cannot be disambiguated in the "
+                        "current federation — re-pin with kb_context_new",
+                    )
+                )
+                continue
+            ref.repo_id = holders[0]
+        out.append(
+            _resolve_one(hub.federation_dir / ref.repo_id, root, ctx.version, ref)
+        )
     return out
 
 

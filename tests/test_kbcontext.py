@@ -1,6 +1,14 @@
 import pytest
 
 from center_kb import kbcontext
+from center_kb.hub import HubHandle
+from center_kb.kbcontext import (
+    KBContextError,
+    KBRefNotFoundError,
+    build_context_block,
+    parse,
+)
+from tests.conftest import make_fed_entry
 
 BLOCK = """kb-context:
   version: a3f9c21
@@ -161,53 +169,45 @@ def test_render_without_hub_version_unchanged_format():
 # --- build_context_block() ---
 
 
-def test_build_context_block_single_ref_pins_head(git_kb):
-    block, warning = kbcontext.build_context_block(
-        git_kb["kb"], ["demo-doc §1.1"]
-    )
+def test_build_block_pins_hub_head_and_qualifies(fed_hub, run_git):
+    block, warning = build_context_block(HubHandle(root=fed_hub), ["arinc-424 §5.3"])
+    head = run_git(fed_hub, "rev-parse", "--short", "HEAD")
+    assert f'version: "{head}"' in block
+    assert "- arinc-kb:arinc-424 §5.3" in block
+    assert "hub_version" not in block
     assert warning is None
-    assert "kb-context:" in block
-    assert f'version: "{git_kb["rev2"]}"' in block
-    assert "- demo-doc §1.1" in block
+    assert parse(block).refs[0].repo_id == "arinc-kb"
 
 
-def test_build_context_block_multi_ref(git_kb):
-    block, _ = kbcontext.build_context_block(
-        git_kb["kb"], ["demo-doc §1.1", "demo-doc §1.2"], tags=["demo", "airspace"]
+def test_build_block_multiple_refs_and_tags(fed_hub):
+    block, _ = build_context_block(
+        HubHandle(root=fed_hub),
+        ["arinc-kb:arinc-424 §5.3", "icao-annex-2 §1.1"],
+        tags=["airspace"],
     )
-    assert "- demo-doc §1.1" in block
-    assert "- demo-doc §1.2" in block
-    assert "tags: [demo, airspace]" in block
+    assert "- arinc-kb:arinc-424 §5.3" in block
+    assert "- icao-kb:icao-annex-2 §1.1" in block
+    assert "tags: [airspace]" in block
 
 
-def test_build_context_block_rejects_unresolvable_ref(git_kb):
-    with pytest.raises(kbcontext.KBRefNotFoundError, match="9.9"):
-        kbcontext.build_context_block(git_kb["kb"], ["demo-doc §9.9"])
+def test_build_block_unknown_ref_raises(fed_hub):
+    with pytest.raises(KBRefNotFoundError):
+        build_context_block(HubHandle(root=fed_hub), ["ghost-doc §9.9"])
 
 
-def test_build_context_block_rejects_empty_refs(git_kb):
-    with pytest.raises(kbcontext.KBContextError, match="is empty"):
-        kbcontext.build_context_block(git_kb["kb"], [])
+def test_build_block_unknown_section_raises(fed_hub):
+    with pytest.raises(KBRefNotFoundError):
+        build_context_block(HubHandle(root=fed_hub), ["arinc-424 §9.9"])
 
 
-def test_build_context_block_dirty_warning(git_kb):
-    (git_kb["kb"] / "demo-doc" / "ch1-records.md").write_text(
-        "## 1.1 Airspace Records\n\nuncommitted edit\n\n## 1.2 Airway Records\n\nx\n",
-        encoding="utf-8",
-    )
-    block, warning = kbcontext.build_context_block(git_kb["kb"], ["demo-doc §1.1"])
-    assert warning is not None
-    assert "uncommitted changes" in warning
-    assert "kb-context:" in block  # block is still produced alongside the warning
+def test_build_block_ambiguous_doc_raises(fed_hub):
+    make_fed_entry(fed_hub / "federation", "dup-kb", "arinc-424", sec_id="5.3")
+    with pytest.raises(KBContextError) as exc:
+        build_context_block(HubHandle(root=fed_hub), ["arinc-424 §5.3"])
+    assert "dup-kb:arinc-424" in str(exc.value)
 
 
-def test_build_context_block_with_hub_ref_pins_hub_version(
-    git_kb, hub_worktree, run_git
-):
-    from center_kb.hub import HubHandle
-
-    hub_head = run_git(hub_worktree, "rev-parse", "--short", "HEAD")
-    block, _ = kbcontext.build_context_block(
-        git_kb["kb"], ["arinc-424 §5.3"], hub=HubHandle(root=hub_worktree)
-    )
-    assert f'hub_version: "{hub_head}"' in block
+def test_build_block_stale_hub_warns(fed_hub):
+    handle = HubHandle(root=fed_hub, stale=True, age_seconds=120.0)
+    _, warning = build_context_block(handle, ["arinc-kb:arinc-424 §5.3"])
+    assert warning is not None and "stale" in warning

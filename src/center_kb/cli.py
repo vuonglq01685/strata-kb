@@ -61,23 +61,28 @@ def init(
     typer.echo("  (details: QUICKSTART.md)")
 
 
-def _resolve_hub_option(hub: str, quiet: bool = False):
-    """'' → None; otherwise resolve via hub.resolve_hub (None if unreachable).
-
-    quiet=True suppresses the stderr warning here — used when the caller
-    (e.g. `doctor`, via check_hub) already reports its own warning, to
-    avoid a duplicate.
-    """
-    if not hub:
-        return None
+def _hub_or_exit(hub_flag: str, kb_dir: Path):
+    """Hub bắt buộc: flag > env (typer envvar đã fold) > .kb/config.yaml."""
+    from center_kb.config import HubConfigError, require_hub
     from center_kb.hub import resolve_hub
 
-    handle = resolve_hub(hub)
-    if handle is None and not quiet:
+    try:
+        hub_ref = require_hub(hub_flag, kb_dir)
+    except HubConfigError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    handle = resolve_hub(hub_ref)
+    if handle is None:
         typer.secho(
-            f"[warn] could not reach hub '{hub}' — continuing with local KB",
-            fg=typer.colors.YELLOW,
-            err=True,
+            f"could not reach hub '{hub_ref}' and no cache exists — "
+            "check the network or the hub path",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    if handle.stale:
+        age = f"~{handle.age_seconds:.0f}s" if handle.age_seconds else "unknown age"
+        typer.secho(
+            f"[warn] hub cache is stale ({age})", fg=typer.colors.YELLOW, err=True
         )
     return handle
 
@@ -354,16 +359,6 @@ def build(
         typer.secho(f"[error] {error}", fg=typer.colors.RED)
     if not report.ok:
         raise typer.Exit(1)
-
-    db_path = kb_dir.resolve().parent / ".kb-work" / "embeddings.db"
-    if db_path.exists():
-        from center_kb.embed import default_embedder, ensure_index
-
-        embedder = default_embedder()
-        if embedder is not None:
-            n = ensure_index(kb_dir, db_path, embedder)
-            if n:
-                typer.echo(f"embeddings.db: re-embed {n} section(s).")
     typer.echo("kb build: OK")
 
 
@@ -383,18 +378,17 @@ def query(
     """Tag match → BM25 → return L2 sections within budget, with citations."""
     from center_kb.query import search
 
-    handle = _resolve_hub_option(hub)
+    handle = _hub_or_exit(hub, kb_dir)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
     results = search(
-        kb_dir, text, tags=tag_list, budget=budget, hub=handle, semantic=semantic
+        handle, text, tags=tag_list, budget=budget, semantic=semantic
     )
     if not results:
         typer.echo("No matching section found.")
         raise typer.Exit(0)
     for r in results:
-        mark = " [remote]" if r.source.startswith("remote:") else ""
         typer.secho(
-            f"--- [{r.citation}]{mark} score={r.score:.2f} ~{r.tokens}tk", bold=True
+            f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk", bold=True
         )
         typer.echo(r.content)
         typer.echo("")
@@ -405,16 +399,23 @@ def get(
     doc_id: str = typer.Argument(..., help="Document ID"),
     section: str = typer.Argument(..., help="Section ID, e.g. 5.3 or §5.3"),
     level: str = typer.Option("l2", help="Level: l2 or l3"),
+    repo: str = typer.Option(
+        "", "--repo", help="Repo ID khi doc-id trùng giữa các repo"
+    ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
         "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
 ) -> None:
     """Fetch exactly one section at the given level."""
-    from center_kb.query import get_section
+    from center_kb.query import AmbiguousDocError, get_section
 
-    handle = _resolve_hub_option(hub)
-    result = get_section(kb_dir, doc_id, section, level=level, hub=handle)
+    handle = _hub_or_exit(hub, kb_dir)
+    try:
+        result = get_section(handle, doc_id, section, level=level, repo=repo or None)
+    except AmbiguousDocError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
     if result is None:
         typer.secho(f"Not found: {doc_id} §{section}", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -446,28 +447,85 @@ def stats(
 @app.command()
 def publish(
     hub: str = typer.Option(
-        ..., "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL or path"
+        "", "--hub", envvar="CENTER_KB_HUB",
+        help="kb-hub URL/path (default: .kb/config.yaml)",
     ),
     repo_id: str = typer.Option(
-        "", "--repo-id", help="Repo ID on the hub (default: git root directory name)"
+        "", "--repo-id",
+        help="Repo ID on the hub (default: config.yaml, rồi tên thư mục git root)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    pr: bool = typer.Option(
+        False, "--pr", help="Bắt buộc PR mode (cần gh + hub GitHub)"
+    ),
+    direct: bool = typer.Option(
+        False, "--direct", help="Bắt buộc direct mode (push thẳng main của hub)"
+    ),
 ) -> None:
-    """Publish this repo's L0+L1 snapshot to federation/<repo-id>/ on the hub."""
+    """Mirror .kb/ (L0→L3) lên federation/<repo-id>/ của hub + đánh lại index tổng."""
     from center_kb import gitio
-    from center_kb.publish import PublishError
-    from center_kb.publish import publish as publish_kb
+    from center_kb import publish as publish_mod
+    from center_kb.config import HubConfigError, effective_repo_id, require_hub
 
+    if pr and direct:
+        typer.secho("--pr và --direct loại trừ nhau", fg=typer.colors.RED)
+        raise typer.Exit(2)
+    mode = "pr" if pr else "direct" if direct else "auto"
     try:
-        report = publish_kb(kb_dir, hub, repo_id=repo_id or None)
-    except (PublishError, gitio.GitError) as exc:
+        hub_ref = require_hub(hub, kb_dir)
+        report = publish_mod.publish(
+            kb_dir, hub_ref,
+            repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
+        )
+    except (HubConfigError, publish_mod.PublishError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
+    if report.mode == "pr":
+        if report.pr_url:
+            typer.echo(
+                f"kb publish: {report.repo_id} @ {report.source_commit} — "
+                f"{report.n_docs} doc, PR: {report.pr_url}"
+            )
+            typer.echo("Content goes live when the PR is merged on the hub.")
+        else:
+            typer.echo("kb publish: nothing changed — no PR needed.")
+        return
     action = "push" if report.pushed else "commit only (hub has no remote)"
     typer.echo(
         f"kb publish: {report.repo_id} @ {report.source_commit} — "
         f"{report.n_docs} doc, {action}."
     )
+
+
+@app.command()
+def reindex(
+    hub: str = typer.Option(
+        "", "--hub", envvar="CENTER_KB_HUB",
+        help="kb-hub URL/path (default: .kb/config.yaml)",
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (để tìm config)"),
+) -> None:
+    """Đánh lại federation/index.yaml từ các snapshot con (sửa index lệch)."""
+    from center_kb import gitio
+    from center_kb.federation import write_federation_index
+
+    handle = _hub_or_exit(hub, kb_dir)
+    write_federation_index(handle.federation_dir)
+    committed = gitio.commit_paths(
+        handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
+    )
+    if not committed:
+        typer.echo("kb reindex: index already consistent — nothing to do")
+        return
+    if gitio.has_remote(handle.root):
+        try:
+            gitio.push(handle.root)
+        except gitio.GitError as exc:
+            typer.secho(
+                f"reindex committed but push failed: {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+    typer.echo("kb reindex: federation/index.yaml rebuilt")
 
 
 @context_app.command("new")
@@ -484,18 +542,18 @@ def context_new(
     """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
     from center_kb import gitio, kbcontext
 
-    handle = _resolve_hub_option(hub)
+    handle = _hub_or_exit(hub, kb_dir)
     ref_strs = [r for r in refs.split(",") if r.strip()]
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     try:
-        block, dirty_warning = kbcontext.build_context_block(
-            kb_dir, ref_strs, tags=tag_list, hub=handle
+        block, stale_warning = kbcontext.build_context_block(
+            handle, ref_strs, tags=tag_list
         )
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    if dirty_warning:
-        typer.secho(dirty_warning, fg=typer.colors.YELLOW, err=True)
+    if stale_warning:
+        typer.secho(stale_warning, fg=typer.colors.YELLOW, err=True)
     typer.echo(block)
 
 
@@ -521,10 +579,10 @@ def resolve(
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
-    handle = _resolve_hub_option(hub)
+    handle = _hub_or_exit(hub, kb_dir)
     try:
         ctx = kbcontext.parse(text)
-        results = resolve_refs(kb_dir, ctx, hub=handle)
+        results = resolve_refs(handle, ctx)
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -554,87 +612,6 @@ def diff(
 
 
 @app.command()
-def approve(
-    doc_id: str = typer.Argument(
-        "", help="Document ID (optional with --all-changed: empty = scan all docs)"
-    ),
-    section: list[str] = typer.Option(
-        [], "--section", help="Section ID(s) to approve, e.g. 5.3 (repeatable)"
-    ),
-    all_changed: bool = typer.Option(
-        False,
-        "--all-changed",
-        help="Approve the sections added/changed vs --against (CI mode)",
-    ),
-    against: str = typer.Option(
-        "", "--against", help="Git rev to compare with (required with --all-changed)"
-    ),
-    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
-) -> None:
-    """Mark sections as reviewed (status: summarized → reviewed)."""
-    from center_kb import gitio
-    from center_kb.review import approve_all_changed, approve_sections
-
-    if all_changed != bool(against):
-        typer.secho(
-            "--all-changed and --against must be used together, "
-            "e.g. `kb approve --all-changed --against HEAD^`",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
-    if all_changed and section:
-        typer.secho(
-            "--section cannot be combined with --all-changed", fg=typer.colors.RED
-        )
-        raise typer.Exit(1)
-    if not all_changed and not doc_id:
-        typer.secho(
-            "DOC_ID is required unless --all-changed is used", fg=typer.colors.RED
-        )
-        raise typer.Exit(1)
-
-    try:
-        if all_changed:
-            reports = approve_all_changed(kb_dir, against, doc_id=doc_id or None)
-        else:
-            reports = [approve_sections(kb_dir, doc_id, list(section) or None)]
-    except (ValueError, gitio.GitError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    flipped_total = 0
-    has_missing = False
-    for rep in reports:
-        for sid in rep.skipped_pending:
-            typer.secho(
-                f"[warn] {rep.doc_id} §{sid} is still pending — cannot approve",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-        for sid in rep.missing:
-            has_missing = True
-            typer.secho(
-                f"[error] {rep.doc_id} §{sid} not found in manifest",
-                fg=typer.colors.RED,
-            )
-        if rep.flipped:
-            flipped_total += len(rep.flipped)
-            ids = ", ".join(f"§{sid}" for sid in rep.flipped)
-            typer.echo(f"{rep.doc_id}: {len(rep.flipped)} section(s) → reviewed: {ids}")
-
-    if has_missing:
-        raise typer.Exit(1)
-    if flipped_total == 0:
-        if all_changed:
-            typer.echo("kb approve: nothing to approve")
-        else:
-            typer.secho(
-                "kb approve: no summarized section to approve", fg=typer.colors.RED
-            )
-            raise typer.Exit(1)
-
-
-@app.command()
 def doctor(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     context: str | None = typer.Option(
@@ -645,29 +622,27 @@ def doctor(
     ),
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
+    from center_kb.config import effective_repo_id
     from center_kb.doctor import check_context, check_hub, check_kb
 
+    handle = _hub_or_exit(hub, kb_dir)
     issues = check_kb(kb_dir)
-    # quiet=True: check_hub() below reports its own "could not reach hub"
-    # warning when needed — avoids a duplicate warning.
-    handle = _resolve_hub_option(hub, quiet=True)
-    hub_stale = False
-    if hub:  # only check the hub when --hub / CENTER_KB_HUB env is provided
-        repo_root_name = None
+    repo_id = effective_repo_id("", kb_dir)
+    if not repo_id:
         try:
             from center_kb import gitio as _gitio
 
-            repo_root_name = _gitio.git_root(kb_dir.resolve()).name
+            repo_id = _gitio.git_root(kb_dir.resolve()).name
         except Exception:
-            pass
-        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_root_name)
-        issues += hub_issues
+            repo_id = None
+    hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id)
+    issues += hub_issues
     has_stale = False
     if context is not None:
         text = sys.stdin.read() if context == "-" else Path(context).read_text(
             encoding="utf-8"
         )
-        ctx_issues, results = check_context(kb_dir, text, hub=handle)
+        ctx_issues, results = check_context(text, handle)
         issues += ctx_issues
         has_stale = any(r.status == "stale" for r in results)
 

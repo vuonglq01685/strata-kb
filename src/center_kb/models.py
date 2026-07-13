@@ -62,6 +62,21 @@ class KBIndex(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
 
 
+class FedIndexEntry(BaseModel):
+    repo_id: str
+    doc_id: str
+    title: str = ""
+    revision: str = ""
+    tags: list[str] = Field(default_factory=list)
+    summary: str = ""
+    source_commit: str = ""
+    published_at: str = ""
+
+
+class FederationIndex(BaseModel):
+    docs: list[FedIndexEntry] = Field(default_factory=list)
+
+
 def load_yaml_model(path: Path, model: type[T]) -> T:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return model.model_validate(data)

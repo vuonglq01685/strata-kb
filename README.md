@@ -111,18 +111,23 @@ And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI
    ✓ Every L2 table matches L3 100%
    ✓ Recount tokens per layer
           │
-          │  Pull Request on GitHub   ← step 4: HUMAN review
+          │  Pull Request on GitHub (this repo)   ← step 4: HUMAN review
           ▼
    SME (domain expert) reads the diff, compares to the PDF, edits if needed
           │
-          │  Merge
+          │  Merge into this repo's main
           ▼
-   status: summarized → reviewed.  Section is now ready for AI lookup.
+   .kb/ updated locally — NOT yet searchable anywhere.
           │
-          │  kb query "your question..."   ← step 5: day-to-day use
+          │  kb publish   ← step 5: mirror to the hub + open a PR there
+          ▼
+   Hub PR merges (or direct-push on a local-path hub) → federation/ updated —
+   this is the single review gate that makes content live.
+          │
+          │  kb query "your question..."   ← step 6: day-to-day use (reads the hub only)
           ▼
    Returns the 1–4 most relevant sections with clear citations
-   (e.g. arinc-424 §5.129 (Supplement 22))
+   (e.g. repo-id:arinc-424 §5.129 (Supplement 22))
 ```
 
 In short: **machines do the mechanical work** (sectioning, verbatim tables, integrity checks), **AI does the language work** (writing summaries), **humans do final sign-off** (PR review) — no step skips the check that follows it.
@@ -195,7 +200,7 @@ pip install -e ".[ingest,dev]"
 kb --help
 ```
 
-If step 5 prints the command list (`init`, `ingest`, `status`, `build`, `query`, `get`, `stats`, `publish`, `context`, `resolve`, `diff`, `approve`, `doctor`) — install succeeded.
+If step 5 prints the command list (`init`, `ingest`, `status`, `build`, `query`, `get`, `stats`, `publish`, `reindex`, `context`, `resolve`, `diff`, `doctor`) — install succeeded.
 
 > **Note:** every new terminal session, run `source .venv/bin/activate` again first (you'll see `(.venv)` in the prompt).
 
@@ -216,11 +221,11 @@ CENTER_KB_HTTP_TOKEN=secret python -m center_kb.mcp --hub . --transport http
 # → human:  http://<host>:8321/ui    (sign in with token; cookie stored)
 ```
 
-When a hub is configured (`--hub`), the `/ui` search covers **published knowledge
-only** — the hub's domain docs plus the `federation/` catalogs; the server's local
-working `.kb/` is excluded. Without a hub, `/ui` searches the local `.kb/` directly.
-Tags render as clickable chips, and a tag can be used alone (no keywords) to browse
-matching documents.
+The hub is **mandatory** — resolved from `--hub`, `CENTER_KB_HUB`, or `.kb/config.yaml`
+(in that order); the server refuses to start without one. `/ui`, the MCP tools, and the
+REST API all search **only** `federation/` on the hub — the server's local working
+`.kb/` is never queried. Tags render as clickable chips, and a tag can be used alone
+(no keywords) to browse matching documents.
 
 **Docker:** `docker compose up -d` (image includes the full docling ingest stack);
 ingest inside the container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
@@ -238,11 +243,11 @@ The table below lists core commands (from Phase 1) in typical workflow order. Fo
 | 2 | `kb status` | How many sections are still **unsummarized** (`pending`) | Anyone — to see remaining work |
 | 3 | `kb summarize` | AI fills in the summary blanks via a headless LLM CLI (claude → copilot auto-detect); `kb ingest` runs this automatically unless `--no-summarize` | Automatic inside `kb ingest`; run directly to re-run/retry, or run `/kb-summarize` in Claude Code as manual fallback when no LLM CLI is installed (parallel sub-agents draft, the orchestrator writes) |
 | 4 | `kb build` | Validate the whole store: no blanks left, tables match | Required before opening a Pull Request |
-| 5 | `kb query` | Natural-language question → relevant passages; add `--hub <url\|path>` to search the shared hub, `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
+| 5 | `kb query` | Natural-language question → relevant passages **from the hub federation** (hub bắt buộc — `.kb/config.yaml`); add `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
 | 6 | `kb get` | Fetch exactly one section by id (when you already know it) | When you know the section id |
 | 7 | `kb stats` | Token counts per layer — cost-savings evidence | Tracking / reporting |
-| 8 | `kb publish --hub <url\|path>` | Push this store's catalog (L0) + TOC (L1) to the shared kb-hub — does not push summary/original content | CI on every `.kb/` change (Phase 3) |
-| 9 | `kb approve` | Sign-off stamp: flip section `summarized → reviewed`. CI form: `kb approve --all-changed --against <rev>` finds changed sections | Usually CI after PR merge to `main` (`kb-review` workflow); run manually for off-PR approvals |
+| 8 | `kb publish` | Mirror .kb/ (L0→L3) → PR trên hub (direct với hub local-path) | CI on every `.kb/` change (Phase 3) |
+| 9 | `kb reindex` | Đánh lại federation/index.yaml khi lệch | Sửa chữa |
 
 ### 7.1 `kb ingest` — load a PDF into the system
 
@@ -411,17 +416,24 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 
 ### 7.9 Phase 3 — Federation & remote MCP
 
+> **Kiến trúc hub-first (2026-07-13):** `kb query`, MCP và Web UI **chỉ đọc
+> `federation/` của hub** — `.kb/` local là bàn soạn thảo, không ai query vào.
+> `kb publish` mirror đầy đủ L0→L3 vào `federation/<repo-id>/`, đánh lại index
+> tổng `federation/index.yaml`, và (với hub GitHub) mở PR — merge PR là cổng
+> review duy nhất, nội dung chỉ search được sau khi merge. Chi tiết:
+> `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`.
+
 Phase 2 lets one knowledge store talk to developers via MCP and pin citations. Phase 3 solves the next problem: **one reference document often matters to many repos** (e.g. a shared technical standard used by a nav-data repo and a crew-ops repo alike) — you shouldn't ingest and summarize the same document in every repo. Phase 3 lets shared documents live as **a single copy** in a central store called **kb-hub**, while other repos only "reference" it.
 
-**What is kb-hub?** Simply another Git repo with the same `.kb/` layout, plus a machine-generated `federation/` directory — a "catalog of catalogs": each participating repo contributes a slim snapshot (L0 + L1 only, no summary/original content) so other repos know what that repo holds without visiting it. kb-hub is not a long-running server — still just `.yaml`/`.md` files in Git, same docs-as-code philosophy.
+**What is kb-hub?** Simply another Git repo with the same `.kb/` layout, plus a machine-generated `federation/` directory — a "catalog of catalogs": each participating repo mirrors its **full** `.kb/` (L0→L3, not just a slim snapshot) under `federation/<repo-id>/`, plus an aggregate `federation/index.yaml` listing every doc across every repo. kb-hub is not a long-running server — still just `.yaml`/`.md` files in Git, same docs-as-code philosophy.
 
 **Three new things to know:**
 
-1. **`kb publish --hub <url|path>`** — push this store's catalog (L0) and TOC (L1) to kb-hub so other repos "know" what you hold. Does not push summaries (L2) or originals (L3) — those stay in the source repo. Run manually, or via CI (see `.github/workflows/kb-publish.yml`) on every `.kb/` change.
-2. **`--hub <url|path>`** on `kb query`, `kb context new`, `kb resolve`, `kb doctor` — expand search/checks to the kb-hub, not only the local store. Example: `kb query "..." --hub https://.../kb-hub.git` returns domain docs living on the hub (full content like local docs) plus one-line summaries of docs in other repos (marked `[remote]`; deep reads require that repo). The tool keeps a local hub clone fresh — no manual `git clone`.
+1. **`kb publish`** — mirrors this store's full `.kb/` (L0→L3) into `federation/<repo-id>/` on the hub and rebuilds `federation/index.yaml`. The hub is read from `.kb/config.yaml` (`hub:` + `repo_id:`), not a CLI flag — `--hub`/`--repo-id` only override it. On a GitHub hub it opens/updates a Pull Request there (`--pr`); on a local-path hub it commits directly (`--direct`); with neither flag it auto-picks direct for local-path hubs. Run manually, or via CI (see `.github/workflows/kb-publish.yml`) on every `.kb/` change.
+2. **`kb query`, `kb context new`, `kb resolve`, `kb doctor`** — all read **only** `federation/` on the hub (never the local `.kb/`). The hub is mandatory, resolved from `.kb/config.yaml` (or `--hub`/`CENTER_KB_HUB` to override). Example: `kb query "..."` returns every matching section across every published repo, full L2 content — no `[remote]`-truncated entries, because federation already holds the full mirror. Doc ids that collide across repos need qualifying as `repo-id:doc-id` (the tool tells you when it's ambiguous). The tool keeps a local hub clone fresh — no manual `git clone`.
 3. **`--semantic`** on `kb query` — force lookup by **question meaning** instead of keyword match alone (BM25). Useful when the question uses different words than the source but the same idea. Optional extra (`pip install -e ".[embed]"`) — without it, `kb query` still works with keyword match as before, no error.
 
-**`kb-context` blocks can now pin 2 versions.** If a BA cites a section that lives on kb-hub, the generated block includes `hub_version` next to `version` — pinning both local and central stores at write time. Older Phase 2 blocks (only `version`) still resolve as before; no migration needed.
+**`kb-context` blocks pin one hub commit.** The generated block records the hub's `version` (HEAD at write time) and repo-qualified refs (`repo-id:doc-id §section`). `kb resolve` walks the hub's git history at that pinned commit to answer `ok`/`stale`/`broken`. Older two-version blocks (`version` + `hub_version`, from the pre-2026-07-13 design) resolve as `broken` with a hint to re-pin via `kb context new` — see the [Migration](#migration-sang-kiến-trúc-hub-first-v090) section below.
 
 **Remote MCP lookup without cloning the repo:** previously an agent had to clone the repo first to use MCP. Phase 3 lets you run the MCP server as a shared HTTP service (not only local stdio), authenticated with a token — full deploy guide in [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
 
@@ -451,14 +463,16 @@ Step 3 — Final gate check
   kb build: OK
   → On FAIL, go back to step 2 and fix (usually a table that was touched)
 
-Step 4 — Open a Pull Request on GitHub
+Step 4 — Open a Pull Request on GitHub (this repo)
   → Diff shows exactly the changed .kb/*.yaml and .kb/*.md files
   → Domain SME reviews (see section 9 — review checklist)
 
-Step 5 — Merge
-  → CI (kb-review workflow) runs `kb approve --all-changed` and commits:
-    changed sections flip summarized → reviewed
-  → Knowledge base now has new content, ready for kb query
+Step 5 — Merge, then publish to the hub
+  → Merge lands .kb/ on this repo's main — still not searchable anywhere
+  → `kb publish` mirrors .kb/ (L0→L3) to federation/<repo-id>/ on the hub and
+    opens a PR there (CI can do this automatically — kb-publish.yml)
+  → Merging THAT PR on the hub is the single review gate: only then is the
+    content live for kb query / MCP / Web UI
 ```
 
 ---
@@ -474,7 +488,7 @@ If you were asked to review a Pull Request changing `.kb/`, this is what to do �
 - [ ] **One-line summaries in `_manifest.yaml`** (L1) — do they correctly say "what this section is about" so search can find them later?
 - [ ] If something is wrong — **edit the `.md` or `.yaml` file directly in the GitHub UI** (like editing a normal document), comment why, or ask the PR author to fix.
 
-After the PR merges, CI (`kb-review` workflow) **automatically** flips the changed sections to `status: reviewed` in the manifest — marking content as SME-signed-off, not an AI draft. You don't hand-edit any YAML for that.
+After this PR merges, the change lands on this repo's `main` — that's the SME sign-off, not an AI draft. It is **not yet searchable**: run `kb publish` (or let CI's `kb-publish.yml` do it) to mirror the content onto the hub. That opens a second PR *on the hub*; merging it is what makes the content live for `kb query`/MCP/Web (see [7.9](#79-phase-3--federation--remote-mcp)).
 
 ---
 
@@ -498,8 +512,7 @@ This is **Phase 1 + Phase 2 + Phase 3**, not a finished product. Still missing:
 - **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
 - Summarization still needs a human to open Claude Code and trigger it — not fully background-automated.
 - A small share of sections (~2.4% of ARINC chapter 5, 6/~250 items) failed PDF extraction — need manual SME cross-check when hit.
-- **`reviewed` means "merged into `main`"**, not "a second person re-checked" — valid when the KB builder is the SME (current context). If later builder ≠ reviewer, re-enable the gate (CODEOWNERS + branch protection requiring review) before trusting `reviewed`. See `docs/superpowers/specs/2026-07-11-review-automation-design.md` §2.
-- **`reviewed` status on the hub lags one beat:** the `kb-review` workflow's auto-commit does not trigger `kb-publish` (anti-loop), so the hub snapshot only updates `status` on the next content push. Lookup is unaffected (federation reads L1 summaries, not `status`).
+- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically anymore (`kb approve` and the `kb-review` auto-commit workflow are gone). The operative review gate is now the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo still wants a per-section "SME re-checked" marker, set `status: reviewed` by hand before merging the source PR — CENTER-KB does not enforce it.
 
 ---
 
@@ -535,4 +548,19 @@ No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, sa
 
 ---
 
-*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP) — updated 2026-07-11. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, and `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`.*
+## Migration sang kiến trúc hub-first (v0.9.0)
+
+1. Nâng cấp CLI mọi nơi (`pip install -U center-kb`) — không chạy song song 2 version.
+2. Mỗi repo: thêm `.kb/config.yaml` (`hub:` + `repo_id:`), xóa
+   `.github/workflows/kb-review.yml`, thay `kb-publish.yml` bằng template mới
+   (`kb init` làm cả ba việc này).
+3. Mỗi repo (kể cả hub): chạy `kb publish` một lần — entry federation format cũ
+   được thay bằng mirror đầy đủ, index tổng hình thành.
+4. Hub GitHub: bật branch protection cho `main` (*require PR* + *require
+   branches up to date*).
+5. Ticket có block `kb-context` cũ (pin commit repo local): `kb_resolve` sẽ báo
+   `broken` kèm hint — re-pin bằng `kb_context_new` khi chạm vào ticket đó.
+
+---
+
+*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) — updated 2026-07-13. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, and `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`.*

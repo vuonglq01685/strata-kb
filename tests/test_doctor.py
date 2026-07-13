@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from center_kb import models
+from center_kb import gitio, kbcontext, models
 from center_kb.doctor import check_context, check_kb
+from center_kb.hub import HubHandle
 
 
 def _errors(issues):
@@ -65,20 +66,28 @@ def test_pending_sections_warn(fixture_kb: Path):
     assert any("pending" in m for m in _warnings(issues))
 
 
-def test_check_context_stale_is_warning(git_kb):
-    block = f"kb-context:\n  version: {git_kb['rev1']}\n  refs:\n    - demo-doc §1.1\n"
-    issues, results = check_context(git_kb["kb"], block)
+def test_check_context_stale_is_warning(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    block, _ = kbcontext.build_context_block(hub, ["arinc-kb:arinc-424 §5.3"])
+    l2 = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "ch1.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8") + "\nEdited after publish.\n", encoding="utf-8"
+    )
+    issues, results = check_context(block, hub)
     assert results[0].status == "stale"
     assert _warnings(issues) and not _errors(issues)
 
 
-def test_check_context_broken_is_error(git_kb):
-    block = f"kb-context:\n  version: {git_kb['rev2']}\n  refs:\n    - demo-doc §9.9\n"
-    issues, results = check_context(git_kb["kb"], block)
+def test_check_context_broken_is_error(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    rev = gitio.head_commit(gitio.git_root(fed_hub))
+    block = f"kb-context:\n  version: {rev}\n  refs:\n    - arinc-kb:arinc-424 §9.9\n"
+    issues, results = check_context(block, hub)
     assert results[0].status == "broken"
     assert _errors(issues)
 
 
-def test_check_context_bad_block_is_error(git_kb):
-    issues, results = check_context(git_kb["kb"], "no block here")
+def test_check_context_bad_block_is_error(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    issues, results = check_context("no block here", hub)
     assert _errors(issues) and results == []

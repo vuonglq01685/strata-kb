@@ -126,3 +126,30 @@ def has_remote(root: Path) -> bool:
 def remote_url(root: Path) -> str:
     proc = _run(root, "remote", "get-url", "origin")
     return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def current_branch(root: Path) -> str:
+    proc = _run(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if proc.returncode != 0:
+        raise GitError(f"could not get current branch: {proc.stderr.strip()}")
+    return proc.stdout.strip()
+
+
+def checkout_branch(root: Path, name: str, start_point: str) -> None:
+    """Tạo/reset branch `name` tại `start_point` rồi switch sang nó (checkout -B)."""
+    proc = _run(root, "checkout", "-B", name, start_point)
+    if proc.returncode != 0:
+        raise GitError(f"checkout -B {name} failed: {proc.stderr.strip()}")
+
+
+def checkout(root: Path, name: str) -> None:
+    proc = _run(root, "checkout", name)
+    if proc.returncode != 0:
+        raise GitError(f"checkout {name} failed: {proc.stderr.strip()}")
+
+
+def push_branch(root: Path, branch: str) -> None:
+    """Force-push branch làm việc (publish/<rid> thuộc sở hữu của publisher)."""
+    proc = _run(root, "push", "--force", "origin", branch)
+    if proc.returncode != 0:
+        raise GitError(f"push branch '{branch}' failed: {proc.stderr.strip()}")

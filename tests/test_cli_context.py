@@ -1,95 +1,80 @@
 from typer.testing import CliRunner
 
-from center_kb import kbcontext
 from center_kb.cli import app
 
 runner = CliRunner()
 
 
-def test_context_new_prints_block_with_head_hash(git_kb):
+def test_context_new_prints_block_with_head_hash(fed_hub, fixture_kb, run_git):
+    hub_head = run_git(fed_hub, "rev-parse", "--short", "HEAD")
     result = runner.invoke(
         app,
-        ["context", "new", "--refs", "demo-doc §1.1,demo-doc §1.2",
-         "--tags", "demo,airspace", "--kb-dir", str(git_kb["kb"])],
+        ["context", "new", "--refs", "arinc-kb:arinc-424 §5.3",
+         "--tags", "demo,airspace", "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
     )
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert "kb-context:" in result.output
-    assert f'version: "{git_kb["rev2"]}"' in result.output
-    assert "- demo-doc §1.1" in result.output
+    assert f'version: "{hub_head}"' in result.output
+    assert "- arinc-kb:arinc-424 §5.3" in result.output
     assert "tags: [demo, airspace]" in result.output
 
 
-def test_context_new_rejects_unresolvable_ref(git_kb):
+def test_context_new_rejects_unresolvable_ref(fed_hub, fixture_kb):
     result = runner.invoke(
         app,
-        ["context", "new", "--refs", "demo-doc §9.9", "--kb-dir", str(git_kb["kb"])],
+        ["context", "new", "--refs", "arinc-424 §9.9",
+         "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
     )
     assert result.exit_code == 1
     assert "9.9" in result.output
 
 
-def test_context_new_warns_when_kb_dirty(git_kb):
-    (git_kb["kb"] / "demo-doc" / "ch1-records.md").write_text(
-        "## 1.1 Airspace Records\n\nuncommitted edit\n\n## 1.2 Airway Records\n\nx\n",
-        encoding="utf-8",
-    )
+def test_context_new_rejects_empty_refs(fed_hub, fixture_kb):
     result = runner.invoke(
         app,
-        ["context", "new", "--refs", "demo-doc §1.1", "--kb-dir", str(git_kb["kb"])],
-    )
-    assert result.exit_code == 0
-    assert "uncommitted changes" in result.output
-
-
-def test_context_new_dirty_warning_goes_to_stderr_not_stdout(git_kb):
-    (git_kb["kb"] / "demo-doc" / "ch1-records.md").write_text(
-        "## 1.1 Airspace Records\n\nuncommitted edit\n\n## 1.2 Airway Records\n\nx\n",
-        encoding="utf-8",
-    )
-    result = runner.invoke(
-        app,
-        ["context", "new", "--refs", "demo-doc §1.1", "--kb-dir", str(git_kb["kb"])],
-    )
-    assert result.exit_code == 0
-    # stdout only contains the pure YAML block — pipe/copy doesn't pick up the warn line
-    assert "[warn]" not in result.stdout
-    assert "uncommitted changes" in result.stderr
-    ctx = kbcontext.parse(result.stdout)
-    assert str(ctx.refs[0]) == "demo-doc §1.1"
-
-
-def test_context_new_rejects_empty_refs(git_kb):
-    result = runner.invoke(
-        app, ["context", "new", "--refs", ",,", "--kb-dir", str(git_kb["kb"])]
+        ["context", "new", "--refs", ",,", "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
     )
     assert result.exit_code == 1
     assert "is empty" in result.output
     assert "kb-context:" not in result.stdout
 
 
-def test_resolve_reads_block_from_file(git_kb, tmp_path_factory):
+def test_resolve_reads_block_from_file(fed_hub, fixture_kb, run_git, tmp_path_factory):
+    rev1 = run_git(fed_hub, "rev-parse", "--short", "HEAD")
+    l2 = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "ch1.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace(
+            "Condensed: restrictive airspace designation codes.",
+            "Condensed: restrictive airspace designation codes, amended.",
+        ),
+        encoding="utf-8",
+    )
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "amend arinc-424 5.3")
+
     ticket = tmp_path_factory.mktemp("ticket") / "tal-1.md"
     ticket.write_text(
-        f"# TAL-1\n\nkb-context:\n  version: {git_kb['rev1']}\n  refs:\n"
-        "    - demo-doc §1.1\n    - demo-doc §1.2\n",
+        f'kb-context:\n  version: "{rev1}"\n  refs:\n'
+        "    - arinc-kb:arinc-424 §5.3\n    - icao-kb:icao-annex-2 §1.1\n",
         encoding="utf-8",
     )
     result = runner.invoke(
-        app, ["resolve", str(ticket), "--kb-dir", str(git_kb["kb"])]
+        app, ["resolve", str(ticket), "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)]
     )
-    assert result.exit_code == 2  # has stale (§1.1), not broken
+    assert result.exit_code == 2  # has stale (arinc-424 §5.3), not broken
     assert "status=stale" in result.output
     assert "status=ok" in result.output
 
 
-def test_resolve_broken_exits_1(git_kb, tmp_path_factory):
+def test_resolve_broken_exits_1(fed_hub, fixture_kb, run_git, tmp_path_factory):
+    hub_head = run_git(fed_hub, "rev-parse", "--short", "HEAD")
     ticket = tmp_path_factory.mktemp("ticket") / "tal-2.md"
     ticket.write_text(
-        f"kb-context:\n  version: {git_kb['rev2']}\n  refs:\n    - demo-doc §9.9\n",
+        f'kb-context:\n  version: "{hub_head}"\n  refs:\n    - arinc-kb:arinc-424 §9.9\n',
         encoding="utf-8",
     )
     result = runner.invoke(
-        app, ["resolve", str(ticket), "--kb-dir", str(git_kb["kb"])]
+        app, ["resolve", str(ticket), "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)]
     )
     assert result.exit_code == 1
     assert "status=broken" in result.output
@@ -106,10 +91,15 @@ def test_resolve_missing_file_exits_1_without_traceback(git_kb, tmp_path_factory
     assert str(missing) in result.output
 
 
-def test_resolve_stdin(git_kb):
-    block = f"kb-context:\n  version: {git_kb['rev2']}\n  refs:\n    - demo-doc §1.2\n"
+def test_resolve_stdin(fed_hub, fixture_kb, run_git):
+    hub_head = run_git(fed_hub, "rev-parse", "--short", "HEAD")
+    block = (
+        f'kb-context:\n  version: "{hub_head}"\n  refs:\n'
+        "    - icao-kb:icao-annex-2 §1.1\n"
+    )
     result = runner.invoke(
-        app, ["resolve", "-", "--kb-dir", str(git_kb["kb"])], input=block
+        app, ["resolve", "-", "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+        input=block,
     )
     assert result.exit_code == 0
     assert "status=ok" in result.output

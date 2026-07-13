@@ -4,6 +4,13 @@ Five steps from empty repo to a searchable knowledge base.
 
 1. **Configure the token** — `cp .env.example .env`, then edit
    `CENTER_KB_HTTP_TOKEN` (any long random string).
+
+## Kết nối hub (bắt buộc)
+
+Điền `hub:` trong `.kb/config.yaml` (URL git hoặc đường dẫn kb-hub) và commit.
+`kb query` / MCP / Web UI CHỈ đọc từ federation của hub — nội dung mới chỉ
+xuất hiện sau khi `kb publish` và PR được merge trên hub.
+
 2. **Ingest the first document** — put the PDF in `source/`, then:
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
    In Claude Code or Copilot Chat, prefer the `/kb-ingest` slash command —
@@ -35,8 +42,8 @@ Five steps from empty repo to a searchable knowledge base.
 - `kb get <doc> <section> [--level l2|l3]` — read one section
 - `kb stats` — token counts per level
 - `kb diff <doc> --against <rev>` — changed sections vs a git rev
-- `kb approve <doc> --section <id>` — mark sections reviewed
-  (in Claude Code / Copilot Chat: `/kb-publish` runs diff → approve → publish)
-- `kb publish --hub <hub>` — push the L0+L1 snapshot to the federation hub
+- `kb publish` — mirror `.kb/` to the federation hub (hub from
+  `.kb/config.yaml` or `--hub`); opens a PR on the hub by default
+  (in Claude Code / Copilot Chat: `/kb-publish` runs diff → confirm → publish)
 - `kb resolve <file>` — resolve a kb-context block and check freshness
 - `kb doctor` — sanity-check the setup

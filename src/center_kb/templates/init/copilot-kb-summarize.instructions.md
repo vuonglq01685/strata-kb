@@ -53,8 +53,7 @@ integrity error, restore the table verbatim from the `.raw.md` file.
 - `kb get <doc> <section> [--level l2|l3]` — read one section
 - `kb stats` — token counts per level
 - `kb diff <doc> --against <rev>` — changed sections vs a git rev
-- `kb approve <doc> --section <id>` — mark sections reviewed
-  (prefer the `/kb-publish` prompt in Copilot Chat)
-- `kb publish --hub <hub>` — push the L0+L1 snapshot to the federation hub
+- `kb publish` — mirror .kb/ (L0→L3) to the federation hub and open a PR
+  (prefer the `/kb-publish` prompt in Copilot Chat) — the PR is the review gate
 - `kb resolve <file>` — resolve a kb-context block and check freshness
 - `kb doctor` — sanity-check the setup
