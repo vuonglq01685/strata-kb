@@ -512,10 +512,12 @@ def query(
         "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
     semantic: bool = typer.Option(
-        False, "--semantic", help="Force embedding search (routing step 3)"
+        False,
+        "--semantic",
+        help="Warn when embeddings are unavailable (hybrid runs both legs automatically)",
     ),
 ) -> None:
-    """Tag match → BM25 → return L2 sections within budget, with citations."""
+    """Hybrid search (FTS5 keyword + semantic KNN, RRF-fused) → L2 sections within budget, with citations."""
     from center_kb.query import search
 
     handle = _hub_or_exit(hub, kb_dir)

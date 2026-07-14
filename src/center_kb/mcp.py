@@ -84,7 +84,7 @@ def create_server(config: ServerConfig) -> MCPServer:
     def kb_search(
         query: str, tags: list[str] | None = None, budget: int = 2000
     ) -> str:
-        """Find sections by tag match + BM25 (falls back to semantic search);
+        """Find sections by hybrid search (FTS5 keyword + semantic KNN, RRF-fused);
         return L2 content within the token budget, with citations. Returns
         every relevant section found, not just the best match — when using
         this to draft a User Story, show ALL returned sections (with their

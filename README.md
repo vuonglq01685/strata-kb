@@ -319,7 +319,7 @@ Use this to see **how much summarization work remains** before opening Claude Co
 This is the only step done by **AI**. By default `kb ingest` runs it automatically right after scaffolding, calling a headless LLM CLI (`claude` → `copilot`, auto-detected on `PATH`; pin one with `--llm`, or `--llm none`/`--no-summarize` to skip). Re-run or retry failed sections anytime with `kb summarize`. If no LLM CLI is installed, sections stay `pending` — open Claude Code and run `/kb-summarize` (skill at `.claude/skills/kb-summarize/SKILL.md`) as the manual fallback: it runs `kb status`, fans the pending sections out to parallel read-only sub-agents (~5 sections each, max 10 at a time), then merges their summaries itself under fixed style rules (keep every code/number, no invention).
 
 Hard rules baked into the recipe:
-- **Write in the source document's language** — never translate. A summary in a different language than its L3 source would share no vocabulary with it, and BM25 search would stop matching.
+- **Write in the source document's language** — never translate. A summary in a different language than its L3 source would share no vocabulary with it, and keyword search would stop matching.
 - **Do not rephrase** codes, field names, numbers, units, or cross-refs (§x.y) — keep them verbatim.
 - **Do not touch existing tables**.
 - If unsure → keep the original wording; do not invent.
@@ -374,7 +374,7 @@ government sources. ...
 
 Results always include a **clear citation** of the form `<doc-id> §<section> (<revision>)` — e.g. `arinc-424 §5.129 (Supplement 22)` — so you know exactly where the info came from and can cross-check the source.
 
-How it works under the hood (optional to know, useful for why it's cheap): first filter by `tags` at L0 (nearly free), then rank related sections with classic text search (BM25) over L1 one-liners, then load L2 content of the top hits until `--budget` is hit. No AI call during lookup — pure code, fast, no model cost.
+How it works under the hood (optional to know, useful for why it's cheap): first filter by `tags` at L0 (nearly free), then rank related sections with a persistent hybrid index (SQLite FTS5 keyword search + optional semantic KNN, fused with RRF), then load L2 content of the top hits until `--budget` is hit. No AI call during lookup — pure code, fast, no model cost.
 
 ### 7.6 `kb get` — fetch one section when you know the id
 
@@ -411,7 +411,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 
 | Tool | Purpose | Main params |
 |---|---|---|
-| `kb_search` | Find sections by natural language (tag match + BM25), return L2 within a token budget — returns every relevant section found, not just the best match, and flags when the top two are close in score | `query`, `tags`, `budget` |
+| `kb_search` | Find sections by natural language (tag match + hybrid FTS5/semantic search), return L2 within a token budget — returns every relevant section found, not just the best match, and flags when the top two are close in score | `query`, `tags`, `budget` |
 | `kb_get_section` | Fetch exactly one section by id | `doc`, `section`, `level` (`l2`/`l3`) |
 | `kb_context_new` | Pin a `kb-context` citation block at the current KB commit, from 1+ confirmed refs — lets an agent do this from chat, without the BA opening a terminal | `refs`, `tags` |
 | `kb_resolve` | Accept a `kb-context` block (or a ticket containing one) — return the section at the **pinned version**, plus freshness `ok`/`stale`/`broken` | `kb_context` |
@@ -457,7 +457,7 @@ Phase 2 lets one knowledge store talk to developers via MCP and pin citations. P
 
 1. **`kb publish`** — mirrors this store's full `.kb/` (L0→L3) into `federation/<repo-id>/` on the hub and rebuilds `federation/index.yaml`. The hub is read from `.kb/config.yaml` (`hub:` + `repo_id:`), not a CLI flag — `--hub`/`--repo-id` only override it. On a GitHub hub it opens/updates a Pull Request there (`--pr`); on a local-path hub it commits directly (`--direct`); with neither flag it auto-picks direct for local-path hubs. Run manually, or via CI (see `.github/workflows/kb-publish.yml`) on every `.kb/` change.
 2. **`kb query`, `kb context new`, `kb resolve`, `kb doctor`** — all read **only** `federation/` on the hub (never the local `.kb/`). The hub is mandatory, resolved from `.kb/config.yaml` (or `--hub`/`CENTER_KB_HUB` to override). Example: `kb query "..."` returns every matching section across every published repo, full L2 content — no `[remote]`-truncated entries, because federation already holds the full mirror. Doc ids that collide across repos need qualifying as `repo-id:doc-id` (the tool tells you when it's ambiguous). The tool keeps a local hub clone fresh — no manual `git clone`.
-3. **`--semantic`** on `kb query` — force lookup by **question meaning** instead of keyword match alone (BM25). Useful when the question uses different words than the source but the same idea. Optional extra (`pip install -e ".[embed]"`) — without it, `kb query` still works with keyword match as before, no error.
+3. **`--semantic`** on `kb query` — hybrid search already combines keyword and meaning when the embed extra is installed; `--semantic` now only warns clearly when embeddings are unavailable. Optional extra (`pip install -e ".[embed]"`) — without it, `kb query` still works with keyword match, no error.
 
 **`kb-context` blocks pin one hub commit.** The generated block records the hub's `version` (HEAD at write time) and repo-qualified refs (`repo-id:doc-id §section`). `kb resolve` walks the hub's git history at that pinned commit to answer `ok`/`stale`/`broken`. Older two-version blocks (`version` + `hub_version`, from the pre-2026-07-13 design) resolve as `broken` with a hint to re-pin via `kb context new` — see the [Migration](#migration-to-the-hub-first-architecture-v090) section below.
 
