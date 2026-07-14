@@ -428,6 +428,76 @@ def fts_search(
     return [(rowid, score) for rowid, score in conn.execute(sql, params)]
 
 
+def _tagged_rowids(
+    conn: sqlite3.Connection, rowids: list[int], tag_list: list[str]
+) -> set[int]:
+    if not rowids:
+        return set()
+    ph_rows = ",".join("?" * len(rowids))
+    ph_tags = ",".join("?" * len(tag_list))
+    rows = conn.execute(
+        f"SELECT s.id FROM sections s WHERE s.id IN ({ph_rows}) AND EXISTS ("
+        "SELECT 1 FROM doc_tags t WHERE t.repo_id = s.repo_id "
+        f"AND t.doc_id = s.doc_id AND t.tag IN ({ph_tags}))",
+        [*rowids, *tag_list],
+    )
+    return {r[0] for r in rows}
+
+
+def knn_search(
+    conn: sqlite3.Connection,
+    embedder: Embedder,
+    text: str,
+    tags: list[str] | None = None,
+    k: int = K_LEG,
+) -> list[tuple[int, float]]:
+    """Semantic leg — (section_rowid, score) best-first, score = 1/(1+distance),
+    đã lọc SEMANTIC_MIN_SCORE. vec0 không pre-filter tag → over-fetch rồi lọc."""
+    if not _has_vec_table(conn):
+        return []
+    query_vec = embedder.embed([text])[0]
+    tag_list = _norm_tags(tags)
+    fetch_k = k * _KNN_OVERFETCH if tag_list else k
+    rows = conn.execute(
+        "SELECT rowid, distance FROM vec_sections "
+        "WHERE embedding MATCH ? AND k = ? ORDER BY distance",
+        (_serialize(query_vec), fetch_k),
+    ).fetchall()
+    hits = [
+        (rowid, 1.0 / (1.0 + dist))
+        for rowid, dist in rows
+        if 1.0 / (1.0 + dist) >= SEMANTIC_MIN_SCORE
+    ]
+    if tag_list:
+        allowed = _tagged_rowids(conn, [h[0] for h in hits], tag_list)
+        hits = [h for h in hits if h[0] in allowed]
+    return hits[:k]
+
+
+def rrf_merge(
+    fts_hits: list[tuple[int, float]],
+    knn_hits: list[tuple[int, float]],
+    k: int = RRF_K,
+) -> list[tuple[int, float, str]]:
+    """Reciprocal Rank Fusion: score = Σ 1/(k + rank) trên các leg chứa rowid.
+    Trả (rowid, score, mode) sort giảm dần theo score, tie-break rowid tăng dần."""
+    scores: dict[int, float] = {}
+    legs: dict[int, set[str]] = {}
+    for mode, hits in (("keyword", fts_hits), ("semantic", knn_hits)):
+        for rank, (rowid, _leg_score) in enumerate(hits, start=1):
+            scores[rowid] = scores.get(rowid, 0.0) + 1.0 / (k + rank)
+            legs.setdefault(rowid, set()).add(mode)
+
+    def _mode(rowid: int) -> str:
+        m = legs[rowid]
+        return "hybrid" if len(m) == 2 else next(iter(m))
+
+    return sorted(
+        ((rowid, score, _mode(rowid)) for rowid, score in scores.items()),
+        key=lambda t: (-t[1], t[0]),
+    )
+
+
 def load_sections(
     conn: sqlite3.Connection, rowids: Iterable[int]
 ) -> dict[int, SectionRow]:

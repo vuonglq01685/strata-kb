@@ -329,3 +329,63 @@ def test_tokenize_moved_to_searchdb():
         "5",
         "3",
     ]
+
+
+def test_knn_search_ranks_and_min_score(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    emb = FakeEmbedder()
+    conn = searchdb.open_fresh(hub, emb)
+    try:
+        # 'corridor' → axis airspace: cả 2 section airspace đều match
+        hits = searchdb.knn_search(conn, emb, "corridor clearance")
+        assert len(hits) == 2
+        assert all(score >= 0.6 for _, score in hits)  # SEMANTIC_MIN_SCORE
+        # garbage: mọi score dưới ngưỡng → rỗng, không pad nearest-but-irrelevant
+        assert searchdb.knn_search(conn, emb, "zzz qqq xxx") == []
+    finally:
+        conn.close()
+
+
+def test_knn_search_tag_filter_post_knn(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    emb = FakeEmbedder()
+    conn = searchdb.open_fresh(hub, emb)
+    try:
+        hits = searchdb.knn_search(conn, emb, "corridor", tags=["arinc424"])
+        rows = searchdb.load_sections(conn, [h[0] for h in hits])
+        assert rows and all(r.repo_id == "arinc-kb" for r in rows.values())
+    finally:
+        conn.close()
+
+
+def test_knn_search_without_vec_table_returns_empty(fed_hub):
+    conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)  # chưa từng embed
+    try:
+        assert searchdb.knn_search(conn, FakeEmbedder(), "corridor") == []
+    finally:
+        conn.close()
+
+
+def test_rrf_merge_modes_and_order():
+    fts = [(1, 9.0), (2, 5.0)]
+    knn = [(2, 0.9), (3, 0.8)]
+    fused = searchdb.rrf_merge(fts, knn)
+    by_id = {rowid: (score, mode) for rowid, score, mode in fused}
+    assert by_id[2][1] == "hybrid"
+    assert by_id[1][1] == "keyword"
+    assert by_id[3][1] == "semantic"
+    # rowid 2 xuất hiện ở cả 2 leg → score cao nhất
+    assert fused[0][0] == 2
+    assert fused[0][1] == pytest.approx(1 / 62 + 1 / 61)
+    # tie (1 và 3 cùng 1/61? không — 1 rank1 fts = 1/61, 3 rank2 knn = 1/62)
+    assert by_id[1][0] == pytest.approx(1 / 61)
+    assert by_id[3][0] == pytest.approx(1 / 62)
+
+
+def test_rrf_merge_single_leg_and_tie_determinism():
+    assert searchdb.rrf_merge([], []) == []
+    only_fts = searchdb.rrf_merge([(7, 3.0)], [])
+    assert only_fts == [(7, pytest.approx(1 / 61), "keyword")]
+    # tie score → sort theo rowid tăng dần, deterministic
+    tie = searchdb.rrf_merge([(5, 1.0)], [(4, 1.0)])
+    assert [t[0] for t in tie] == [4, 5]
