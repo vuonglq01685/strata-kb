@@ -228,3 +228,69 @@ def _publish_pr(
     finally:
         gitio.checkout(handle.root, original)
     return PublishReport(rid, source_commit, n_docs, True, mode="pr", pr_url=url)
+
+
+def _default_get_json(url: str) -> tuple[int, dict]:
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            import json as json_mod
+
+            return resp.status, json_mod.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        return exc.code, {}
+    except OSError:
+        return 0, {}
+
+
+def publish_via_intake(
+    kb_dir: Path,
+    intake_url: str,
+    repo_id: str | None,
+    poll_interval: float = 5.0,
+    timeout: float = 600.0,
+    http_get_json=None,
+) -> str:
+    """Dev-machine intake flow: tag kb-publish/<ts>, push, poll for the PR URL.
+
+    Zero secrets: the tag push uses the developer's normal child-repo git
+    access; the child's CI (OIDC) does the actual upload.
+    """
+    import time as time_mod
+    import urllib.parse
+
+    get_json = http_get_json or _default_get_json
+    kb_abs = kb_dir.resolve()
+    root = gitio.git_root(kb_abs)
+    if gitio.is_dirty(root, kb_abs):
+        raise PublishError(
+            ".kb/ has uncommitted changes — commit them first "
+            "(the child CI publishes the tagged commit, not the working tree)"
+        )
+    rid = repo_id or root.name
+    commit = gitio.head_commit(root)
+    tag_name = f"kb-publish/{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
+    gitio.tag(root, tag_name)
+    gitio.push_tag(root, tag_name)
+    status_url = (
+        f"{intake_url.rstrip('/')}/intake/status?"
+        + urllib.parse.urlencode({"repo_id": rid, "commit": commit})
+    )
+    deadline = time_mod.monotonic() + timeout
+    while time_mod.monotonic() <= deadline:
+        status, data = get_json(status_url)
+        if status == 200:
+            if data.get("state") == "done":
+                return data.get("pr_url", "")
+            if data.get("state") == "error":
+                raise PublishError(f"intake rejected the publish: {data.get('detail')}")
+        if poll_interval:
+            time_mod.sleep(poll_interval)
+        elif status != 200:
+            break  # test mode (poll_interval=0): one loop is enough while unknown
+    raise PublishError(
+        f"timed out waiting for the intake — check the Actions run for tag "
+        f"'{tag_name}' in the child repo's GitHub Actions logs"
+    )
