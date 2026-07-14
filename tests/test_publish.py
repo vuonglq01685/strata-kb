@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from center_kb import ghio, gitio, models
@@ -117,6 +119,34 @@ def test_pr_mode_without_gh_raises_with_two_exits(git_kb, hub_with_origin, monke
     with pytest.raises(PublishError) as exc:
         publish(git_kb["kb"], str(hub_with_origin), repo_id="demo-kb", mode="pr")
     assert "gh" in str(exc.value) and "--direct" in str(exc.value)
+
+
+def test_publish_twice_no_change_is_noop(git_kb, hub_worktree, run_git):
+    """2nd publish with no source change: no new hub commit, _meta.yaml unchanged."""
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
+    meta_path = hub_worktree / "federation" / "demo-kb" / "_meta.yaml"
+    meta_before = meta_path.read_text(encoding="utf-8")
+    log_before = run_git(hub_worktree, "log", "--oneline")
+
+    time.sleep(1.1)  # published_at has second resolution — cross a tick so a
+    # timestamp-only rewrite (old rmtree+copytree behavior) would be visible
+    report = publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
+
+    assert meta_path.read_text(encoding="utf-8") == meta_before
+    log_after = run_git(hub_worktree, "log", "--oneline")
+    assert log_after == log_before
+    assert report.n_docs >= 0  # report still returns normally
+
+
+def test_publish_removed_file_deleted_on_hub(git_kb, hub_worktree):
+    extra = git_kb["kb"] / "stray.md"
+    extra.write_text("temp", encoding="utf-8")
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
+    assert (hub_worktree / "federation" / "demo-kb" / "stray.md").exists()
+
+    extra.unlink()
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
+    assert not (hub_worktree / "federation" / "demo-kb" / "stray.md").exists()
 
 
 def test_direct_push_race_reindexes_after_rebase(git_kb, hub_with_origin, run_git, tmp_path):

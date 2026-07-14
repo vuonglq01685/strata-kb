@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
-import shutil
-import stat
 import subprocess
-import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,27 +52,19 @@ def _neutralize_excludes(root: Path) -> None:
     )
 
 
-def _rmtree_force(path: Path) -> None:
-    """shutil.rmtree that clears the Windows read-only attribute and retries.
-
-    onexc is the 3.12+ replacement for onerror — both accept the same
-    (func, path, exc) shape here, only the exc argument differs.
-    """
-
-    def _clear_and_retry(func, p, _exc) -> None:
-        os.chmod(p, stat.S_IWRITE)
-        func(p)
-
-    if sys.version_info >= (3, 12):
-        shutil.rmtree(path, onexc=_clear_and_retry)
-    else:
-        shutil.rmtree(path, onerror=_clear_and_retry)
-
-
 def _snapshot(
-    kb_abs: Path, handle: hub_mod.HubHandle, rid: str, source_commit: str
-) -> int:
-    """Mirror the whole of .kb/ → federation/<rid>/.
+    kb_abs: Path,
+    handle: hub_mod.HubHandle,
+    rid: str,
+    source_commit: str,
+    source_url: str | None = None,
+) -> tuple[int, bool]:
+    """Sync .kb/ → federation/<rid>/ by hash-diff; return (n_docs, changed).
+
+    changed=False: content on the hub already matches the local snapshot byte
+    for byte — nothing is written, not even _meta.yaml (published_at only
+    moves when content actually changed, so a back-to-back 2nd publish is a
+    true no-op: no commit, no PR).
 
     The aggregate index.yaml is NOT written here — see publish()/_publish_direct():
     index.yaml is committed separately from the <rid>/ commit so that two repos
@@ -85,6 +73,8 @@ def _snapshot(
     each newly creating one file at the same path with different content is a
     conflict that cannot be auto-merged, whatever the rebase strategy).
     """
+    from center_kb import hashsync
+
     dest = handle.federation_dir / rid
     fed_root = handle.federation_dir.resolve()
     if not dest.resolve().is_relative_to(fed_root):
@@ -92,17 +82,24 @@ def _snapshot(
             f"repo-id '{rid}' escapes the federation/ directory on the hub — refusing to publish"
         )
     local_index = models.load_yaml_model(kb_abs / "index.yaml", models.KBIndex)
-    if dest.exists():
-        _rmtree_force(dest)
-    shutil.copytree(kb_abs, dest)
+    local_man = hashsync.build_manifest(kb_abs)
+    dest_man = hashsync.build_manifest(dest, exclude=("_meta.yaml",))
+    changed, deleted = hashsync.diff_manifests(local_man, dest_man)
+    if not changed and not deleted:
+        return len(local_index.docs), False
+    hashsync.apply_sync(kb_abs, dest, changed, deleted)
     meta = federation.FederationMeta(
         repo_id=rid,
-        source_url=gitio.remote_url(gitio.git_root(kb_abs)),
+        source_url=(
+            source_url
+            if source_url is not None
+            else gitio.remote_url(gitio.git_root(kb_abs))
+        ),
         source_commit=source_commit,
         published_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
     )
     models.save_yaml_model(dest / "_meta.yaml", meta)
-    return len(local_index.docs)
+    return len(local_index.docs), True
 
 
 def publish(
@@ -171,7 +168,7 @@ def _publish_direct(
     source_commit: str,
     max_retries: int,
 ) -> PublishReport:
-    n_docs = _snapshot(kb_abs, handle, rid, source_commit)
+    n_docs, changed = _snapshot(kb_abs, handle, rid, source_commit)
     # Commit the <rid>/ mirror on its own path first — rebasing this against
     # a concurrent publisher's commit never conflicts (disjoint paths), even
     # when both are populating federation/ for the very first time.
@@ -212,7 +209,7 @@ def _publish_pr(
     original = gitio.current_branch(handle.root)
     try:
         gitio.checkout_branch(handle.root, branch, original)
-        n_docs = _snapshot(kb_abs, handle, rid, source_commit)
+        n_docs, changed = _snapshot(kb_abs, handle, rid, source_commit)
         federation.write_federation_index(handle.federation_dir)
         committed = gitio.commit_paths(
             handle.root, f"publish: {rid} @ {source_commit}", ["federation"]
