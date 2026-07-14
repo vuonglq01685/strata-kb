@@ -174,6 +174,118 @@ def test_auth_middleware_exempts_intake():
     assert "/intake/" in auth.EXEMPT_PREFIXES
 
 
+def test_publish_archive_as_text_field_400(client):
+    """archive sent as plain form text (no file upload) -> 400, not 500."""
+    c, pem = client
+    resp = c.post(
+        "/intake/publish",
+        headers={"Authorization": f"Bearer {_jwt(pem)}"},
+        data={
+            "meta": json.dumps({"source_commit": "abc1234", "deletes": []}),
+            "archive": "not-a-file",
+        },
+    )
+    assert resp.status_code == 400
+    assert "file upload" in resp.json()["detail"]
+
+
+def test_publish_invalid_registry_503(client, hub_with_registry):
+    """Corrupt registry.yaml on the hub -> intake fails closed with 503."""
+    c, pem = client
+    (hub_with_registry / "federation" / "registry.yaml").write_text(
+        "repos: [unclosed, sequence\n", encoding="utf-8"
+    )
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 503
+    assert resp.json()["error"] == "intake_rejected"
+
+
+def test_publish_git_error_maps_502_and_records_error(client, monkeypatch):
+    from center_kb import gitio
+
+    def boom(*args, **kwargs):
+        raise gitio.GitError("boom")
+
+    c, pem = client
+    monkeypatch.setattr(intake, "intake_publish", boom)
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 502
+    assert resp.json()["error"] == "publish_failed"
+    st = c.get("/intake/status", params={"repo_id": "flight-docs", "commit": "abc1234"})
+    assert st.status_code == 200
+    assert st.json()["state"] == "error"
+
+
+# ---- integration: production-shaped stack (TokenAuthMiddleware + routes) ----
+
+
+@pytest.fixture
+def full_stack(hub_with_registry, keypair, tmp_path, monkeypatch):
+    """Mount /intake/* behind TokenAuthMiddleware exactly as create_app does,
+    plus one non-intake route to bound the exemption's blast radius."""
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    from center_kb.web.auth import TokenAuthMiddleware
+
+    pem, pub = keypair
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    cfg = intake.IntakeConfig(
+        hub_ref=str(hub_with_registry),
+        audience=AUD,
+        creds=ghapp.AppCreds("1", "unused"),
+        key_resolver=lambda t: pub,
+        http=FakeHTTP(
+            [(200, {"id": 1}), (201, {"token": "t"}), (201, {"html_url": "u/pull/9"})]
+        ),
+        push_via_token_url=False,
+        status_path=tmp_path / "status.json",
+    )
+    store = intake.StatusStore(cfg.status_path)
+
+    async def dummy(request):
+        return JSONResponse({"ok": True})
+
+    routes = intake_routes.build_intake_routes(cfg, store)
+    routes.append(Route("/api/dummy", dummy, methods=["GET"]))
+    app = TokenAuthMiddleware(Starlette(routes=routes), token="secret-mcp-token")
+    return TestClient(app), pem
+
+
+def test_stack_intake_gets_pass_middleware_without_mcp_token(full_stack):
+    c, _ = full_stack
+    resp = c.get("/intake/manifest", params={"repo_id": "flight-docs"})
+    assert resp.status_code == 200
+    assert resp.json() == {"files": {}}
+    # 404 from the route handler, not 401 from the middleware
+    st = c.get("/intake/status", params={"repo_id": "x", "commit": "y"})
+    assert st.status_code == 404
+    assert st.json() == {"state": "unknown"}
+
+
+def test_stack_publish_no_bearer_401(full_stack):
+    c, _ = full_stack
+    resp = c.post("/intake/publish")
+    assert resp.status_code == 401
+    assert resp.json()["error"] == "missing_token"
+
+
+def test_stack_publish_garbage_jwt_401(full_stack):
+    c, _ = full_stack
+    resp = _post(c, "not.a.valid.jwt")
+    assert resp.status_code == 401
+    assert "OIDC token rejected" in resp.json()["detail"]
+
+
+def test_stack_non_intake_route_still_requires_mcp_token(full_stack):
+    c, _ = full_stack
+    resp = c.get("/api/dummy")
+    assert resp.status_code == 401
+    ok = c.get("/api/dummy", headers={"Authorization": "Bearer secret-mcp-token"})
+    assert ok.status_code == 200
+
+
 def test_intake_config_from_env(tmp_path, monkeypatch):
     monkeypatch.delenv("CENTER_KB_GH_APP_ID", raising=False)
     assert intake.intake_config_from_env("hub") is None

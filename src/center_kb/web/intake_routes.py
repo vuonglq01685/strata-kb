@@ -77,6 +77,11 @@ def build_intake_routes(
             upload = form.get("archive")
             if upload is None:
                 raise intake.IntakeError(400, "multipart field 'archive' required")
+            if not hasattr(upload, "read"):
+                # plain text form field, not an UploadFile
+                raise intake.IntakeError(
+                    400, "multipart field 'archive' must be a file upload"
+                )
             archive = await upload.read()
         except intake.IntakeError as exc:
             return _err(exc)
