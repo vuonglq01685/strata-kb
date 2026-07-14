@@ -57,3 +57,6 @@ only-include = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "real_embedder: test dùng default_embedder thật (fastembed) — bị autouse fixture bỏ qua",
+]

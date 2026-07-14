@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import logging
-import re
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rank_bm25 import BM25Plus
-
 from center_kb import models
-from center_kb.embed import SEMANTIC_FALLBACK_THRESHOLD
 from center_kb.mdutils import count_tokens, slice_section
+from center_kb.searchdb import tokenize  # noqa: F401 — re-export (web/ui.py import)
 
 if TYPE_CHECKING:
     from center_kb.hub import HubHandle
+    from center_kb.searchdb import SectionRow
 
 logger = logging.getLogger("center_kb.query")
 
@@ -41,78 +40,51 @@ class QueryResult:
     content: str
     tokens: int
     source: str = ""  # repo-id trong federation
-    match_mode: str = "keyword"  # "keyword" | "semantic"
+    match_mode: str = "keyword"  # "keyword" | "semantic" | "hybrid"
 
 
-@dataclass
-class _Candidate:
-    doc: models.IndexEntry
-    sec: models.SectionEntry
-    kb_dir: Path  # federation/<repo-id>/ (mirror .kb)
-    source: str  # repo-id
-    citation: str
+def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
+    base = f"{repo_id}:{doc_id} §{section_id}"
+    return f"{base} ({revision})" if revision else base
 
 
-def tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", text.lower())
-
-
-def _citation(
-    repo_id: str, doc: models.IndexEntry | models.Manifest, section_id: str
-) -> str:
-    base = f"{repo_id}:{doc.id} §{section_id}"
-    return f"{base} ({doc.revision})" if doc.revision else base
-
-
-def _filter_tags(
-    docs: list[models.IndexEntry], tags: list[str] | None
-) -> list[models.IndexEntry]:
-    if not tags:
-        return docs
-    tagset = {t.strip().lower() for t in tags}
-    return [
-        d for d in docs
-        if tagset & {t.lower() for t in d.tags} or d.id.lower() in tagset
-    ]
-
-
-def _repo_candidates(
-    repo_kb: Path, repo_id: str, tags: list[str] | None
-) -> list[_Candidate]:
-    index_path = repo_kb / "index.yaml"
-    if not index_path.exists():
-        return []
-    index = models.load_yaml_model(index_path, models.KBIndex)
-    out: list[_Candidate] = []
-    for doc in _filter_tags(index.docs, tags):
-        manifest_path = repo_kb / doc.id / "_manifest.yaml"
-        if not manifest_path.exists():
-            continue
-        manifest = models.load_yaml_model(manifest_path, models.Manifest)
-        for sec in manifest.sections:
-            out.append(
-                _Candidate(
-                    doc=doc, sec=sec, kb_dir=repo_kb, source=repo_id,
-                    citation=_citation(repo_id, doc, sec.id),
-                )
-            )
-    return out
-
-
-def _gather_candidates(hub: "HubHandle", tags: list[str] | None) -> list[_Candidate]:
-    from center_kb.federation import load_federation
-
-    out: list[_Candidate] = []
-    for repo in load_federation(hub.federation_dir):
-        out += _repo_candidates(repo.kb_dir, repo.meta.repo_id, tags)
-    return out
-
-
-def _candidate_content(c: _Candidate) -> str | None:
-    l2_path = c.kb_dir / c.doc.id / f"{c.sec.file}.md"
+def _row_content(hub: "HubHandle", row: "SectionRow") -> str | None:
+    l2_path = hub.federation_dir / row.repo_id / row.doc_id / f"{row.file}.md"
     if not l2_path.exists():
         return None
-    return slice_section(l2_path.read_text(encoding="utf-8"), c.sec.id)
+    return slice_section(l2_path.read_text(encoding="utf-8"), row.section_id)
+
+
+def _search_index(
+    hub: "HubHandle", embedder, text: str, tags: list[str] | None
+) -> tuple[list[tuple[int, float, str]], dict[int, "SectionRow"]]:
+    """Chạy 2 leg + RRF trên index. DB hỏng giữa chừng → xoá, rebuild đúng
+    một lần; vẫn fail → raise (spec §5)."""
+    from center_kb import searchdb
+
+    for attempt in (1, 2):
+        conn = searchdb.open_fresh(hub, embedder)
+        try:
+            fts_hits = searchdb.fts_search(conn, text, tags)
+            knn_hits: list[tuple[int, float]] = []
+            if embedder is not None:
+                try:
+                    knn_hits = searchdb.knn_search(conn, embedder, text, tags)
+                except sqlite3.DatabaseError:
+                    raise  # index hỏng — để nhánh rebuild xử lý
+                except Exception as exc:  # embedding best-effort, không vỡ query
+                    logger.warning("semantic leg failed — keyword only: %s", exc)
+            fused = searchdb.rrf_merge(fts_hits, knn_hits)
+            return fused, searchdb.load_sections(conn, [r for r, _, _ in fused])
+        except sqlite3.DatabaseError as exc:
+            conn.close()  # Windows: close trước khi unlink
+            if attempt == 2:
+                raise
+            logger.warning("search.db corrupt — rebuilding once: %s", exc)
+            searchdb.delete_db(hub)
+        finally:
+            conn.close()
+    raise AssertionError("unreachable")
 
 
 def search(
@@ -123,93 +95,24 @@ def search(
     semantic: bool = False,
     embedder=None,  # center_kb.embed.Embedder | None — injectable cho test
 ) -> list[QueryResult]:
-    corpus = _gather_candidates(hub, tags)
-    if not corpus:
-        return []
-
-    section_tokens = [tokenize(f"{c.sec.title} {c.sec.summary}") for c in corpus]
-    bm25 = BM25Plus(section_tokens)
-    query_token_list = tokenize(text)
-    query_tokens = set(query_token_list)
-    scores = bm25.get_scores(query_token_list)
-    ranked = sorted(
-        zip(corpus, section_tokens, scores), key=lambda triple: -triple[2]
-    )
-
-    results: list[QueryResult] = []
-    used = 0
-    for c, tokens, score in ranked:
-        if score <= 0:
-            break
-        if not query_tokens & set(tokens):
-            # BM25Plus adds a baseline idf*delta for every term in the vocab —
-            # a section sharing no token with the query can still score > 0.
-            continue
-        content = _candidate_content(c)
-        if content is None:
-            continue
-        n_tokens = count_tokens(content)
-        if results and used + n_tokens > budget:
-            break
-        results.append(
-            QueryResult(
-                doc_id=c.doc.id,
-                section_id=c.sec.id,
-                title=c.sec.title,
-                score=float(score),
-                citation=c.citation,
-                content=content,
-                tokens=n_tokens,
-                source=c.source,
-            )
-        )
-        used += n_tokens
-        if used >= budget:
-            break
-
-    top_score = results[0].score if results else 0.0
-    if semantic or not results or top_score < SEMANTIC_FALLBACK_THRESHOLD:
-        semantic_results = _semantic_fallback(hub, corpus, text, budget, embedder)
-        if semantic_results:
-            return semantic_results
-    return results
-
-
-def _semantic_fallback(
-    hub: "HubHandle",
-    corpus: list[_Candidate],
-    text: str,
-    budget: int,
-    embedder,
-) -> list[QueryResult]:
-    """Routing step 3: sqlite-vec KNN over each repo in the federation."""
     from center_kb import embed as embed_mod
-    from center_kb.federation import load_federation
 
     if embedder is None:
         embedder = embed_mod.default_embedder()
-    if embedder is None:
-        return []
-    by_key = {(c.source, c.doc.id, c.sec.id): c for c in corpus}
-    hits: list[tuple[str, str, str, float]] = []  # rid, doc, sec, score
-    for repo in load_federation(hub.federation_dir):
-        rid = repo.meta.repo_id
-        db_path = hub.root / ".kb-work" / f"embeddings-{rid}.db"
-        try:
-            embed_mod.ensure_index(repo.kb_dir, db_path, embedder)
-            for doc_id, sec_id, score in embed_mod.semantic_search(
-                db_path, embedder, text
-            ):
-                hits.append((rid, doc_id, sec_id, score))
-        except Exception as exc:  # embedding is best-effort — must not break query
-            logger.warning("semantic search error (%s) — skipping: %s", rid, exc)
+    if semantic and embedder is None:
+        logger.warning(
+            "semantic search requested but no embedder is available — "
+            'keyword results only (enable with: pip install "center-kb[embed]")'
+        )
+    fused, rows = _search_index(hub, embedder, text, tags)
+
     results: list[QueryResult] = []
     used = 0
-    for rid, doc_id, sec_id, score in sorted(hits, key=lambda h: -h[3]):
-        c = by_key.get((rid, doc_id, sec_id))
-        if c is None:
+    for rowid, score, mode in fused:
+        row = rows.get(rowid)
+        if row is None:
             continue
-        content = _candidate_content(c)
+        content = _row_content(hub, row)
         if content is None:
             continue
         n_tokens = count_tokens(content)
@@ -217,9 +120,17 @@ def _semantic_fallback(
             break
         results.append(
             QueryResult(
-                doc_id=doc_id, section_id=sec_id, title=c.sec.title,
-                score=float(score), citation=c.citation, content=content,
-                tokens=n_tokens, source=rid, match_mode="semantic",
+                doc_id=row.doc_id,
+                section_id=row.section_id,
+                title=row.title,
+                score=score,
+                citation=_citation(
+                    row.repo_id, row.doc_id, row.doc_revision, row.section_id
+                ),
+                content=content,
+                tokens=n_tokens,
+                source=row.repo_id,
+                match_mode=mode,
             )
         )
         used += n_tokens
@@ -250,7 +161,7 @@ def _get_section_in(
         section_id=section_id,
         title=sec.title,
         score=0.0,
-        citation=_citation(repo_id, manifest, section_id),
+        citation=_citation(repo_id, manifest.id, manifest.revision, section_id),
         content=content,
         tokens=count_tokens(content),
         source=repo_id,

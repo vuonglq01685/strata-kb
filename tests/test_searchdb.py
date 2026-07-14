@@ -382,6 +382,24 @@ def test_rrf_merge_modes_and_order():
     assert by_id[3][0] == pytest.approx(1 / 62)
 
 
+@pytest.mark.real_embedder
+@pytest.mark.skipif(
+    "not config.getoption('--run-slow', default=False)",
+    reason="requires --run-slow (downloads a ~100MB model)",
+)
+def test_real_fastembed_roundtrip(fed_hub):
+    from center_kb.embed import default_embedder
+    from center_kb.query import search
+
+    embedder = default_embedder()
+    if embedder is None:
+        pytest.skip("fastembed not installed")
+    results = search(
+        HubHandle(root=fed_hub), "controlled airspace zones", embedder=embedder
+    )
+    assert results and results[0].source in {"arinc-kb", "icao-kb"}
+
+
 def test_rrf_merge_single_leg_and_tie_determinism():
     assert searchdb.rrf_merge([], []) == []
     only_fts = searchdb.rrf_merge([(7, 3.0)], [])

@@ -40,6 +40,22 @@ def pytest_addoption(parser):
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_real_embedder(request, monkeypatch):
+    """search() giờ resolve default_embedder() eager mỗi query — unit test phải
+    hermetic: máy dev có fastembed cũng không được load/download model thật.
+    Bỏ qua khi test đánh dấu real_embedder hoặc chạy --run-slow."""
+    if request.node.get_closest_marker("real_embedder") or request.config.getoption(
+        "--run-slow"
+    ):
+        yield
+        return
+    from center_kb import embed
+
+    monkeypatch.setattr(embed, "default_embedder", lambda: None)
+    yield
+
+
 TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |\n| R | Restricted |"
 
 L2_CONTENT = f"""## 1.1 Airspace Records
