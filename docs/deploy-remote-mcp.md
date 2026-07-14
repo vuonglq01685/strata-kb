@@ -4,6 +4,11 @@ Goal: BAs query the KB via MCP without cloning the repo (Phase 3 spec §10).
 
 ## Internal server
 
+Note: hub clones used by the server/publishers should keep `core.autocrlf=false`
+(the tool sets this repo-locally during publish/intake; a global
+`autocrlf=true` on other hub clones degrades no-op detection but not
+correctness).
+
 1. Clone the hub: `git clone <kb-hub-url> /srv/kb-hub`
 2. Install the tool: `pip install center-kb` (add `.[embed]` if you want semantic search)
 3. Set a token: `export CENTER_KB_HTTP_TOKEN=$(openssl rand -hex 24)` — store it in a secret manager
@@ -45,7 +50,11 @@ the PR itself using a GitHub App.
    off, read-only MCP still works.
 3. Register each child on the hub: add `owner/repo: repo-id` under `repos:`
    in `federation/registry.yaml` (a normal PR — also your review gate for who
-   may contribute).
+   may contribute). **Warning:** the `repo-id` here must exactly match
+   `repo_id:` in the child's `.kb/config.yaml`. On mismatch, publish still
+   succeeds and the PR opens, but the dev CLI will time out waiting for a PR
+   that actually opened, and uploads lose incrementality (every publish
+   becomes a full upload).
 4. Install deps on the server: `pip install "center-kb[server]"`.
 
 `/intake/*` is exempt from `CENTER_KB_HTTP_TOKEN` (children don't hold that

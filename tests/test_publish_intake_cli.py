@@ -203,3 +203,17 @@ class TestCIPublish:
             cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
         assert "unreachable" in str(exc.value)
         assert "connection refused" in str(exc.value)
+
+    def test_token_endpoint_down_raises_clean_error(self, child, monkeypatch):
+        root, _ = child
+        self._env(monkeypatch)
+        http = FakeHTTP(
+            {
+                "https://kb.test/intake/manifest": (200, {"files": {}}),
+                "https://actions.local/token": (0, b"connection refused"),
+            }
+        )
+        with pytest.raises(cipublish.CIPublishError) as exc:
+            cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+        assert "unreachable" in str(exc.value)
+        assert "connection refused" in str(exc.value)
