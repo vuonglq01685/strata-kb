@@ -1,49 +1,37 @@
 """Freeze the OUTPUT against a fixed KB (v0.9.0 from git history).
 
-WHAT RED MEANS: behavior changed. Usually because of a dependency upgrade
-(rank-bm25 changing its ranking formula is the classic case). Investigate FIRST,
-and only run UPDATE_GOLDEN=1 once you understand why it changed and have
+WHAT RED MEANS: behavior changed. Usually because a dependency or the ranking
+pipeline changed (the hybrid FTS5+RRF rework is the classic case). Investigate
+FIRST, and only run UPDATE_GOLDEN=1 once you understand why it changed and have
 confirmed the change is wanted.
 
 TWO COMPARISON MODES IN THIS FILE — do not mix up which applies to which test:
   - `assert_golden()` (kb_search — both the MCP and the CLI surface): compares
-    AFTER normalize() — the NOISE patterns replace `score=<number>` with
-    `score=<N>` before comparing. kb_search embeds the raw BM25 float
-    (`score=12.34`) on BOTH surfaces; the goldens were generated on macOS while
-    CI runs ubuntu, rank-bm25 computes through numpy, and numpy's reduction
-    order can differ between architectures — freezing the exact float value
-    would break the goldens for presentational reasons (rounding, platform
-    libm), not because behavior changed. A gate that goes red at random is a
+    AFTER normalize() — the NOISE patterns mask paths, SHAs, and timestamps.
+    Since the hybrid-search rework, kb_search prints `match=<mode>` (a
+    deterministic RRF leg label) instead of a raw score float, so ranking
+    output itself has no platform-volatile number anymore; normalize() stays
+    for the path/SHA/timestamp noise only. A gate that goes red at random is a
     gate that will get switched off, and a gate that is switched off protects
     nothing.
   - `assert_golden_exact()` (kb_get_section): compares EXACTLY — only `.strip()`,
-    NO normalize(). kb_get_section returns exactly ONE section and has NO BM25
-    score in its output — there is nothing volatile to mask, so this is the real
-    "MACHINE contract" golden: the MCP tool's returned string compared
-    byte-for-byte.
+    NO normalize(). kb_get_section returns exactly ONE section with nothing
+    volatile in it, so this is the real "MACHINE contract" golden: the MCP
+    tool's returned string compared byte-for-byte.
 
-WHAT assert_golden() ACTUALLY PROTECTS (kb_search, MCP and CLI alike) — read
-this carefully before trusting these goldens:
-  - IS protected:
-    (a) the order of the returned results + the entire content (citation, L2
-        text, token count) of each result — a rank-bm25 upgrade that changes
-        the formula enough to swap the order of two closely scored hits, or to
-        change which results fit into the budget, will turn the golden red even
-        when every other unit test stays green.
-    (b) the "score closely — both may be relevant..." note, which
-        `src/center_kb/mcp.py::kb_search` only emits when the RELATIVE gap
-        between the top two results' scores is smaller than
-        `AMBIGUOUS_SCORE_GAP` (0.20) — concretely: `gap = (results[0].score -
-        results[1].score) / results[0].score`, and the note appears when
-        `gap < 0.20`. A changed ranking formula that pushes `gap` across that
-        threshold will make this note appear, disappear, or change its citation
-        — golden red even when the result order did not change.
-  - NOT protected: the ABSOLUTE numeric value of `score=`. A rank-bm25 upgrade
-    that changes the formula but happens to preserve BOTH the result order AND
-    the "score closely" classification (changing only the absolute magnitude,
-    not the order nor the relative ratio between the top-2) will NOT be caught
-    by these goldens. That is the remaining blind spot — stated outright so that
-    a later reader knows exactly what this net does and does not catch.
+WHAT assert_golden() ACTUALLY PROTECTS (kb_search, MCP and CLI alike):
+  - the order of the returned results + the entire content (citation, L2 text,
+    match mode, token count) of each result — an FTS5/RRF change that swaps
+    the order of two closely ranked hits, changes which leg matched, or
+    changes which results fit into the budget, turns the golden red even when
+    every other unit test stays green.
+  - the "score closely — both may be relevant..." note, which
+    `src/center_kb/mcp.py::_ambiguity_note` only emits when the top two
+    results are both dual-leg ("hybrid") and within `_AMBIGUOUS_MIN_RATIO` of
+    each other, or exactly tied. A ranking change that crosses that boundary
+    makes the note appear/disappear — golden red even if the order held.
+  - NOT protected: the absolute RRF score values — they are not printed at
+    all. Rank order and leg composition are the behavioral contract now.
 """
 
 from __future__ import annotations
@@ -55,12 +43,13 @@ from pathlib import Path
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
-# The parts that vary between runs — not a behavioral signal.
+# The parts that vary between runs — not a behavioral signal. (The old
+# `score=<float>` mask is gone: kb_search now prints the deterministic
+# `match=<mode>` label instead of a raw score.)
 NOISE = [
     (re.compile(r"/tmp/[^\s\"']+"), "<TMP>"),
     (re.compile(r"\b[0-9a-f]{7,40}\b"), "<SHA>"),
     (re.compile(r"\d{4}-\d{2}-\d{2}T[\d:.+]+"), "<TS>"),
-    (re.compile(r"score=\d+\.\d+"), "score=<N>"),
 ]
 
 
@@ -82,11 +71,10 @@ def assert_golden(name: str, actual: str) -> None:
 def assert_golden_exact(name: str, actual: str) -> None:
     """Compare EXACTLY — only `.strip()`, never going through normalize()/NOISE.
 
-    Reserved for kb_get_section: its output embeds no BM25 score nor any other
-    volatile value, so there is nothing to mask before comparing — this is the
-    genuine "MACHINE contract" golden (byte-for-byte), unlike assert_golden()
-    above, which has to normalize() first because kb_search embeds the raw
-    score."""
+    Reserved for kb_get_section: its output embeds no volatile value at all,
+    so there is nothing to mask before comparing — this is the genuine
+    "MACHINE contract" golden (byte-for-byte), unlike assert_golden() above,
+    which normalize()s paths/SHAs/timestamps first."""
     path = GOLDEN / name
     actual = actual.strip() + "\n"
     if os.environ.get("UPDATE_GOLDEN") == "1":

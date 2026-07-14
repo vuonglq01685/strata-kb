@@ -52,3 +52,41 @@ def test_default_embedder_cached_per_process(monkeypatch):
         _reset_cache()  # không rò CountingEmbedder cached sang test khác
     assert first is second
     assert inits["n"] == 1
+
+
+@pytest.mark.real_embedder
+def test_default_embedder_thread_safe_single_init(monkeypatch):
+    # MCP/web server đa luồng — check-then-set không lock sẽ init ONNX model
+    # nhiều lần (chậm + leak instance)
+    import threading
+    import time
+
+    inits = []
+
+    class SlowEmbedder:
+        dim = 4
+        name = "slow"
+
+        def __init__(self) -> None:
+            time.sleep(0.05)
+            inits.append(1)
+
+        def embed(self, texts):
+            return [[0.0] * 4 for _ in texts]
+
+    monkeypatch.setattr(embed, "_FastEmbedder", SlowEmbedder)
+    _reset_cache()
+    got = []
+    try:
+        threads = [
+            threading.Thread(target=lambda: got.append(embed.default_embedder()))
+            for _ in range(4)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        _reset_cache()
+    assert len(inits) == 1
+    assert len({id(g) for g in got}) == 1

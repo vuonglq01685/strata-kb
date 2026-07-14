@@ -89,14 +89,19 @@ def _load_vec(conn: sqlite3.Connection) -> bool:
 def is_lock_error(exc: sqlite3.Error) -> bool:
     """Tranh chấp lock tạm thời (process khác đang ghi) — không phải corruption,
     tuyệt đối không được xoá index."""
-    return isinstance(exc, sqlite3.OperationalError) and (
-        "locked" in str(exc) or "busy" in str(exc)
-    )
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    name = getattr(exc, "sqlite_errorname", "") or ""  # Python >= 3.11
+    if name:
+        # SQLITE_BUSY(_SNAPSHOT...), SQLITE_LOCKED(_SHAREDCACHE),
+        # SQLITE_PROTOCOL ("locking protocol" — substring match trượt)
+        return name.startswith(("SQLITE_BUSY", "SQLITE_LOCKED", "SQLITE_PROTOCOL"))
+    return "locked" in str(exc) or "busy" in str(exc)
 
 
 def _raw_connect(path: Path) -> tuple[sqlite3.Connection, bool]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=_BUSY_TIMEOUT_MS / 1000)
     try:
         vec_loaded = _load_vec(conn)
         conn.execute("PRAGMA journal_mode=WAL")
@@ -163,19 +168,31 @@ def delete_db(hub: "HubHandle") -> None:
         p.unlink(missing_ok=True)
 
 
+def _has_schema(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+    ).fetchone()
+    return row is not None
+
+
 def open_db(hub: "HubHandle") -> sqlite3.Connection:
     """Mở index, tạo schema nếu thiếu. DB hỏng / schema_version lệch /
-    có vec_sections nhưng sqlite-vec không cài → xoá + rebuild đúng một lần."""
+    có vec_sections nhưng sqlite-vec không cài → xoá + rebuild đúng một lần.
+
+    Warm path (schema đã có) chỉ ĐỌC — không cầm write lock, để query chạy
+    song song với một sync dài đang ghi (spec §3.2)."""
     path = db_path(hub)
     last_exc: Exception | None = None
     for attempt in (1, 2):
         conn: sqlite3.Connection | None = None
         try:
             conn, vec_loaded = _raw_connect(path)
-            _create_schema(conn)
-            ver = conn.execute(
+            if not _has_schema(conn):
+                _create_schema(conn)  # cold — cần write; dưới lock sẽ raise
+            row = conn.execute(
                 "SELECT value FROM meta WHERE key='schema_version'"
-            ).fetchone()[0]
+            ).fetchone()
+            ver = row[0] if row else None  # schema dở dang → rebuild nhánh dưới
             if ver == SCHEMA_VERSION and (vec_loaded or not _has_vec_table(conn)):
                 return conn
             reason = (
@@ -272,24 +289,28 @@ def _sync_repo(
             ).hexdigest()
             old = stored.get(key)
             if old is not None and old[1] == digest:
-                # content_hash chỉ hash _embed_text(...) (title+summary+body) —
-                # title/file/doc_revision có thể đổi (rename, bump revision)
-                # mà không đổi nội dung section; giữ content_hash semantics
-                # nguyên vẹn nhưng vẫn refresh 3 cột này để citation/path
-                # không bị lệch (không rewrite FTS, không re-embed).
+                # content_hash phủ title+summary+body — hash trùng nghĩa là
+                # title không đổi; chỉ file/doc_revision có thể drift (rename
+                # file L2, bump revision) mà không đổi nội dung. Refresh 2 cột
+                # đó để citation/path không lệch (không rewrite FTS, không
+                # re-embed).
                 conn.execute(
-                    "UPDATE sections SET title = ?, file = ?, doc_revision = ? "
-                    "WHERE id = ? AND (title != ? OR file != ? OR doc_revision != ?)",
-                    (
-                        sec.title, sec.file, doc.revision, old[0],
-                        sec.title, sec.file, doc.revision,
-                    ),
+                    "UPDATE sections SET file = ?, doc_revision = ? "
+                    "WHERE id = ? AND (file != ? OR doc_revision != ?)",
+                    (sec.file, doc.revision, old[0], sec.file, doc.revision),
                 )
                 continue
-            if old is not None:
-                # delete + insert (rowid mới) — vec-backfill Task 3 dựa vào
-                # rowid mới thiếu embedding để biết cần re-embed
-                _delete_section(conn, old[0])
+            # delete + insert (rowid mới) — vec-backfill dựa vào rowid mới
+            # thiếu embedding để biết cần re-embed. Xoá theo natural key chứ
+            # không theo rowid snapshot `stored`: process khác có thể đã thay
+            # row từ lúc đọc snapshot — thua race phải idempotent, không được
+            # vỡ UNIQUE (spec §5: thua race chỉ tốn công, không sai dữ liệu).
+            for (cur_id,) in conn.execute(
+                "SELECT id FROM sections WHERE repo_id = ? AND doc_id = ? "
+                "AND section_id = ?",
+                (rid, doc.id, sec.id),
+            ).fetchall():
+                _delete_section(conn, cur_id)
             cur = conn.execute(
                 "INSERT INTO sections(repo_id, doc_id, section_id, title, file, "
                 "doc_revision, content_hash) VALUES(?, ?, ?, ?, ?, ?, ?)",
@@ -342,10 +363,19 @@ def _sync_vectors(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_dim', ?)",
             (str(embedder.dim),),
         )
-    if not (table_created or model_changed) and meta.get("vec_coverage") == "complete":
+        # đánh dấu dirty CÙNG transaction với meta model mới: commit batch đầu
+        # sẽ seal meta — nếu backfill ngắt giữa chừng mà coverage vẫn
+        # 'complete' của model cũ thì lỗ hổng vector bị giấu vĩnh viễn
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('vec_coverage', 'dirty')"
+        )
+    elif meta.get("vec_coverage") == "complete":
         return  # không có section mới, model không đổi → khỏi anti-join O(N)
     # Anti-join tìm rowid thiếu embedding — KHÔNG load FTS text ở đây: mỗi
-    # search() gọi open_fresh → _sync_vectors; chỉ SELECT text khi có rowid thiếu.
+    # search() gọi open_fresh → _sync_vectors; chỉ SELECT text khi có rowid
+    # thiếu, và chunk theo _EMBED_BATCH: 1 bind/section trong 1 câu IN(...)
+    # vỡ SQLITE_MAX_VARIABLE_NUMBER (32766 ở build mặc định) trước khi tới
+    # scope target 100k, và fetchall toàn corpus text ăn RAM vô ích.
     missing_ids = [
         r[0]
         for r in conn.execute(
@@ -353,19 +383,14 @@ def _sync_vectors(
             "ON v.rowid = s.id WHERE v.rowid IS NULL"
         )
     ]
-    if not missing_ids:
-        conn.execute(
-            "INSERT OR REPLACE INTO meta(key, value) VALUES('vec_coverage', 'complete')"
-        )
-        return
-    placeholders = ",".join("?" * len(missing_ids))
-    missing = conn.execute(
-        "SELECT s.id, f.title, f.summary, f.body_head FROM sections s "
-        f"JOIN fts f ON f.rowid = s.id WHERE s.id IN ({placeholders})",
-        missing_ids,
-    ).fetchall()
-    for start in range(0, len(missing), _EMBED_BATCH):
-        batch = missing[start : start + _EMBED_BATCH]
+    for start in range(0, len(missing_ids), _EMBED_BATCH):
+        chunk = missing_ids[start : start + _EMBED_BATCH]
+        placeholders = ",".join("?" * len(chunk))
+        batch = conn.execute(
+            "SELECT s.id, f.title, f.summary, f.body_head FROM sections s "
+            f"JOIN fts f ON f.rowid = s.id WHERE s.id IN ({placeholders})",
+            chunk,
+        ).fetchall()
         vectors = embedder.embed(
             [_embed_text(title, summary, body) for _, title, summary, body in batch]
         )

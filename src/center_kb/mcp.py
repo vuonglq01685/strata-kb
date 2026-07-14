@@ -18,18 +18,22 @@ from center_kb.resolve import render_resolved, resolve_refs
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
 
+_AMBIGUOUS_MIN_RATIO = 0.8  # top-2 "sát nhau" khi score sau >= 80% score đầu
+
+
 def _ambiguity_note(results) -> str:
     """Nhắc review cả 2 kết quả đầu khi thật sự khó phân định.
 
     RRF score không mang magnitude như BM25: rank kề nhau cùng leg luôn cách
     ~1.6% tương đối (1/61 vs 1/62) nên so gap tương đối bắn note gần như mọi
-    query. Ambiguous thật khi cả hai đều được 2 leg xác nhận (hybrid) hoặc
-    score bằng hệt nhau (tie)."""
+    query. Ambiguous thật khi cả hai đều được 2 leg xác nhận (hybrid) VÀ
+    score thật sự sát nhau, hoặc score bằng hệt (tie)."""
     if len(results) < 2:
         return ""
     top, second = results[0], results[1]
     both_hybrid = top.match_mode == "hybrid" and second.match_mode == "hybrid"
-    if not both_hybrid and top.score != second.score:
+    close = second.score >= _AMBIGUOUS_MIN_RATIO * top.score
+    if not (both_hybrid and close) and top.score != second.score:
         return ""
     return (
         f"Note: [{top.citation}] and [{second.citation}] "
@@ -116,7 +120,7 @@ def create_server(config: ServerConfig) -> MCPServer:
             return "No matching section found — try dropping tags or changing keywords."
         note = _stale_note(hub) + _ambiguity_note(results)
         return note + "\n\n".join(
-            f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk\n{r.content}"
+            f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk\n{r.content}"
             for r in results
         )
 

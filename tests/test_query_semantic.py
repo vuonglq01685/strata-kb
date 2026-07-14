@@ -161,6 +161,31 @@ def test_locked_db_error_propagates_without_delete(fed_hub, monkeypatch):
     assert deleted == []
 
 
+def test_search_serves_stale_index_when_sync_locked(fed_hub, monkeypatch):
+    # sync dài đang giữ writer lock + fingerprint lệch (có việc phải sync) —
+    # query phục vụ index hiện có (stale) thay vì fail sau busy_timeout
+    import sqlite3
+
+    from center_kb import models, searchdb
+    from center_kb.federation import FederationMeta
+
+    hub = HubHandle(root=fed_hub)
+    assert search(hub, "restrictive airspace")  # build index
+    meta_path = fed_hub / "federation" / "arinc-kb" / "_meta.yaml"
+    meta = models.load_yaml_model(meta_path, FederationMeta)
+    meta.published_at = "2026-07-14T09:00:00+00:00"  # fingerprint lệch
+    models.save_yaml_model(meta_path, meta)
+    monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
+    holder = sqlite3.connect(searchdb.db_path(hub))
+    holder.execute("BEGIN IMMEDIATE")
+    try:
+        results = search(hub, "restrictive airspace")
+    finally:
+        holder.rollback()
+        holder.close()
+    assert results  # không raise — trả kết quả từ index cũ
+
+
 def test_corrupt_db_rebuilt_once_transparently(fed_hub):
     from center_kb import searchdb
 

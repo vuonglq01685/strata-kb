@@ -166,3 +166,24 @@ async def test_kb_search_no_note_for_ordinary_keyword_ranking(fed_hub):
             "kb_search", {"query": "airspace designation type"}
         )
         assert "score closely" not in _text(result)  # 2 kết quả keyword rank kề
+
+
+def test_ambiguity_note_silent_for_distant_hybrid_pair():
+    # cả hai hybrid nhưng score cách xa (top rank đầu cả 2 leg vs hạng ~40)
+    # — không phải "score closely"
+    from center_kb.mcp import _ambiguity_note
+
+    assert _ambiguity_note([_qr("hybrid", 0.0328), _qr("hybrid", 0.020)]) == ""
+
+
+@pytest.mark.anyio
+async def test_kb_search_shows_match_mode_not_raw_score(fed_hub):
+    # RRF score tuyệt đối (0.02/0.03) vô nghĩa với người đọc — hiển thị
+    # match mode thay vì số thô (đồng bộ với web UI)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search", {"query": "restrictive airspace designation"}
+        )
+        assert "match=keyword" in _text(result)
+        assert "score=" not in _text(result)

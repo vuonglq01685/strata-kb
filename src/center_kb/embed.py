@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import struct
+import threading
 from typing import Protocol
 
 logger = logging.getLogger("center_kb.embed")
@@ -35,6 +36,7 @@ class _FastEmbedder:
 
 _UNRESOLVED = object()  # sentinel — phân biệt "chưa resolve" với "resolve ra None"
 _default_cache: object = _UNRESOLVED
+_default_lock = threading.Lock()
 
 
 def _reset_default_cache() -> None:
@@ -46,11 +48,16 @@ def _reset_default_cache() -> None:
 def default_embedder() -> Embedder | None:
     """Real embedder if [embed] is installed; None (with a log) if missing.
 
-    Cached per process — kể cả kết quả None (model init fail): MCP/web server
-    gọi search() mỗi request, không được load lại ONNX model mỗi lần."""
+    Cached per process — kể cả kết quả None (model init fail, vd offline lúc
+    start): MCP/web server gọi search() mỗi request, không được load lại ONNX
+    model mỗi lần. Đánh đổi có chủ đích (KISS, không TTL): server start
+    offline thì semantic leg tắt tới khi restart. Lock chống double-init ONNX
+    khi server đa luồng nhận request đồng thời."""
     global _default_cache
     if _default_cache is _UNRESOLVED:
-        _default_cache = _resolve_default()
+        with _default_lock:
+            if _default_cache is _UNRESOLVED:
+                _default_cache = _resolve_default()
     return _default_cache  # type: ignore[return-value]
 
 

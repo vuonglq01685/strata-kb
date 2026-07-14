@@ -68,9 +68,9 @@ def test_open_db_rebuilds_on_corrupt_file(tmp_path):
         conn.close()
 
 
-def test_open_db_locked_raises_and_keeps_index(tmp_path, monkeypatch):
-    # database is locked = tranh chấp tạm thời, KHÔNG phải corruption —
-    # không được xoá index (process khác đang ghi dở; spec §3.2 đọc song song)
+def test_open_db_warm_read_only_under_writer_lock(tmp_path, monkeypatch):
+    # schema đã có → open_db không được ghi gì — query phải chạy song song
+    # với một sync dài đang giữ writer lock (spec §3.2), index không bị đụng
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
     conn.execute("INSERT INTO repos VALUES('r', 'fp')")
@@ -80,16 +80,31 @@ def test_open_db_locked_raises_and_keeps_index(tmp_path, monkeypatch):
     holder = sqlite3.connect(searchdb.db_path(hub))
     holder.execute("BEGIN IMMEDIATE")  # giữ write lock như một sync đang chạy
     try:
+        conn = searchdb.open_db(hub)  # đọc thuần — không đợi, không lỗi
+        try:
+            assert conn.execute("SELECT COUNT(*) FROM repos").fetchone() == (1,)
+        finally:
+            conn.close()
+    finally:
+        holder.rollback()
+        holder.close()
+
+
+def test_open_db_cold_locked_raises_instead_of_rebuild(tmp_path, monkeypatch):
+    # chưa có schema thì open_db phải ghi — gặp lock: raise, tuyệt đối không
+    # coi là corruption mà xoá file (process khác đang tạo index)
+    hub = _handle(tmp_path)
+    path = searchdb.db_path(hub)
+    path.parent.mkdir(parents=True)
+    monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
+    holder = sqlite3.connect(path)
+    holder.execute("BEGIN IMMEDIATE")  # lock trên file chưa có schema
+    try:
         with pytest.raises(sqlite3.OperationalError):
             searchdb.open_db(hub)
     finally:
         holder.rollback()
         holder.close()
-    conn = searchdb.open_db(hub)
-    try:
-        assert conn.execute("SELECT COUNT(*) FROM repos").fetchone() == (1,)
-    finally:
-        conn.close()
 
 
 def test_open_db_corrupt_rebuild_leaves_no_open_connection(tmp_path, monkeypatch):
@@ -397,6 +412,133 @@ def test_sync_strict_raises_on_embedder_failure(fed_hub):
 
     with pytest.raises(RuntimeError):
         searchdb.sync(HubHandle(root=fed_hub), Broken())
+
+
+def test_interrupted_model_change_backfill_resumes(fed_hub, monkeypatch):
+    # đổi model → drop/recreate vec + seal meta model mới ở commit batch đầu;
+    # nếu backfill bị ngắt giữa chừng, vec_coverage phải dirty — sync sau
+    # quét tiếp, không được kẹt 'complete' còn sót từ model cũ
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, FakeEmbedder())  # model cũ, coverage complete
+
+    class NewModel(FakeEmbedder):
+        name = "fake-4d-v2"
+
+    class FlakyNewModel(NewModel):
+        calls = 0
+
+        def embed(self, texts):
+            type(self).calls += 1
+            if type(self).calls > 1:
+                raise RuntimeError("interrupted mid-backfill")
+            return super().embed(texts)
+
+    monkeypatch.setattr(searchdb, "_EMBED_BATCH", 1)
+    with pytest.raises(RuntimeError):
+        searchdb.sync(hub, FlakyNewModel())  # batch 1 commit rồi nổ
+    report = searchdb.sync(hub, NewModel())  # cùng model mới, chạy lành
+    assert report.embedded == 1  # phần thiếu được quét tiếp
+    conn = searchdb.open_db(hub)
+    try:
+        n_sec = conn.execute("SELECT COUNT(*) FROM sections").fetchone()[0]
+        n_vec = conn.execute("SELECT COUNT(*) FROM vec_sections").fetchone()[0]
+        assert n_vec == n_sec == 2
+    finally:
+        conn.close()
+
+
+def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
+    # spec §5: thua race chỉ tốn công — không được vỡ UNIQUE (rồi bị query
+    # path coi là corruption mà xoá index process thắng đang ghi)
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    entry = fed_hub / "federation" / "arinc-kb"
+    l2 = entry / "arinc-424" / "ch1.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace("designation codes", "RACE codes"),
+        encoding="utf-8",
+    )
+    _bump_meta(entry)
+    real_parts = searchdb._section_parts
+    fired = {"done": False}
+
+    def hook(kb_dir, doc_id, sec):
+        if not fired["done"]:
+            fired["done"] = True
+            searchdb.sync(hub, None)  # process B thắng race trên connection riêng
+        return real_parts(kb_dir, doc_id, sec)
+
+    monkeypatch.setattr(searchdb, "_section_parts", hook)
+    searchdb.sync(hub, None)  # A thua race — phải idempotent, không nổ
+    conn = searchdb.open_db(hub)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM sections").fetchone() == (2,)
+        assert conn.execute("SELECT COUNT(*) FROM fts").fetchone() == (2,)
+    finally:
+        conn.close()
+
+
+def test_vector_backfill_survives_low_sql_variable_limit(tmp_path, monkeypatch):
+    # nhiều build SQLite giới hạn SQLITE_MAX_VARIABLE_NUMBER=32766 — backfill
+    # 100k section phải chunk IN(...) thay vì 1 bind/section trong 1 câu SQL
+    from center_kb.federation import FederationMeta
+
+    hub = _handle(tmp_path)
+    entry = tmp_path / "federation" / "big-kb"
+    doc_dir = entry / "big-doc"
+    doc_dir.mkdir(parents=True)
+    secs, body = [], []
+    for i in range(10):
+        sid = f"1.{i}"
+        secs.append(
+            models.SectionEntry(
+                id=sid, title=f"S{i}", summary=f"summary {i}",
+                status="summarized", file="ch1",
+            )
+        )
+        body.append(f"## {sid} S{i}\n\ncontent {i}\n")
+    (doc_dir / "ch1.md").write_text("\n".join(body), encoding="utf-8")
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(id="big-doc", title="Big", sections=secs),
+    )
+    models.save_yaml_model(
+        entry / "index.yaml",
+        models.KBIndex(docs=[models.IndexEntry(id="big-doc", title="Big", summary="s")]),
+    )
+    models.save_yaml_model(
+        entry / "_meta.yaml",
+        FederationMeta(
+            repo_id="big-kb", source_commit="abc1234",
+            published_at="2026-07-13T00:00:00+00:00",
+        ),
+    )
+    real_raw = searchdb._raw_connect
+
+    def limited(path):
+        conn, vec = real_raw(path)
+        conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 8)
+        return conn, vec
+
+    monkeypatch.setattr(searchdb, "_raw_connect", limited)
+    monkeypatch.setattr(searchdb, "_EMBED_BATCH", 4)  # chunk phải lọt limit 8
+    report = searchdb.sync(hub, FakeEmbedder())
+    assert report.embedded == 10
+
+
+def test_is_lock_error_matches_by_errorname():
+    # SQLITE_PROTOCOL hiện là "locking protocol" — substring "locked"/"busy"
+    # trượt → từng bị coi là corruption. Match theo sqlite_errorname.
+    class _ProtocolErr(sqlite3.OperationalError):
+        sqlite_errorname = "SQLITE_PROTOCOL"
+
+    class _NoSuchTable(sqlite3.OperationalError):
+        sqlite_errorname = "SQLITE_ERROR"
+
+    assert searchdb.is_lock_error(_ProtocolErr("locking protocol"))
+    assert searchdb.is_lock_error(sqlite3.OperationalError("database is locked"))
+    assert not searchdb.is_lock_error(_NoSuchTable("no such table: x"))
+    assert not searchdb.is_lock_error(sqlite3.DatabaseError("malformed"))
 
 
 def test_sync_commits_per_repo_midway_failure_keeps_finished_repos(fed_hub):

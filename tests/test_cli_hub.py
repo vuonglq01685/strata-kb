@@ -106,3 +106,23 @@ def test_reindex_builds_search_db(fed_hub, git_kb):
     assert result.exit_code == 0
     assert (fed_hub / ".kb-work" / "search.db").exists()
     assert "search index" in result.output
+
+
+def test_reindex_commits_index_before_search_sync(fed_hub, git_kb, run_git, monkeypatch):
+    # sync (embed) nổ vẫn phải lộ lỗi, nhưng federation/index.yaml rebuilt
+    # không được nằm uncommitted — commit trước, sync sau
+    from center_kb import searchdb as searchdb_mod
+
+    (fed_hub / "federation" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "corrupt index")
+
+    def boom(handle, embedder):
+        raise RuntimeError("embed exploded")
+
+    monkeypatch.setattr(searchdb_mod, "sync", boom)
+    result = runner.invoke(
+        app, ["reindex", "--hub", str(fed_hub), "--kb-dir", str(git_kb["kb"])]
+    )
+    assert result.exit_code != 0  # lỗi embed strict — phải lộ
+    assert run_git(fed_hub, "status", "--porcelain", "--", "federation") == ""

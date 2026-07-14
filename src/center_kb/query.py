@@ -67,7 +67,15 @@ def _search_index(
         try:
             # open_fresh nằm TRONG try — corruption lộ ra lúc freshness sync
             # cũng phải được rebuild-once như corruption lúc query (spec §5)
-            conn = searchdb.open_fresh(hub, embedder)
+            try:
+                conn = searchdb.open_fresh(hub, embedder)
+            except sqlite3.OperationalError as exc:
+                if not searchdb.is_lock_error(exc):
+                    raise
+                # process khác đang giữ writer lock (sync dài) — phục vụ index
+                # hiện có (stale) thay vì fail sau busy_timeout (spec §3.2)
+                logger.warning("search.db busy — serving existing index: %s", exc)
+                conn = searchdb.open_db(hub)
             fts_hits = searchdb.fts_search(conn, text, tags)
             knn_hits: list[tuple[int, float]] = []
             if embedder is not None:

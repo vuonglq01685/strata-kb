@@ -530,7 +530,7 @@ def query(
         raise typer.Exit(0)
     for r in results:
         typer.secho(
-            f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk", bold=True
+            f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk", bold=True
         )
         typer.echo(r.content)
         typer.echo("")
@@ -654,13 +654,15 @@ def reindex(
 
     handle = _hub_or_exit(hub, kb_dir)
     write_federation_index(handle.federation_dir)
+    # commit index.yaml TRƯỚC khi sync search index: sync strict có thể nổ
+    # (lỗi embed) — không được để index rebuilt nằm uncommitted
+    committed = gitio.commit_paths(
+        handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
+    )
     sreport = searchdb.sync(handle, default_embedder())
     typer.echo(
         f"kb reindex: search index — {sreport.sections_updated} updated, "
         f"{sreport.sections_deleted} removed, {sreport.embedded} embedded"
-    )
-    committed = gitio.commit_paths(
-        handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
     )
     if not committed:
         typer.echo("kb reindex: index already consistent — nothing to do")
