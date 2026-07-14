@@ -646,11 +646,17 @@ def reindex(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (to find the config)"),
 ) -> None:
     """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
-    from center_kb import gitio
+    from center_kb import gitio, searchdb
+    from center_kb.embed import default_embedder
     from center_kb.federation import write_federation_index
 
     handle = _hub_or_exit(hub, kb_dir)
     write_federation_index(handle.federation_dir)
+    sreport = searchdb.sync(handle, default_embedder())
+    typer.echo(
+        f"kb reindex: search index — {sreport.sections_updated} updated, "
+        f"{sreport.sections_deleted} removed, {sreport.embedded} embedded"
+    )
     committed = gitio.commit_paths(
         handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
     )

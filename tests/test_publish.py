@@ -15,6 +15,11 @@ def hub_with_origin(hub_worktree, run_git, tmp_path):
     return hub_worktree
 
 
+def test_publish_direct_refreshes_search_db(git_kb, hub_worktree):
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+    assert (hub_worktree / ".kb-work" / "search.db").exists()
+
+
 def test_direct_publish_mirrors_full_tree(git_kb, hub_worktree):
     report = publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
     assert report.mode == "direct"
@@ -89,6 +94,7 @@ def test_pr_mode_pushes_branch_and_opens_pr(git_kb, hub_with_origin, monkeypatch
     # the hub worktree returns to its original branch, main gets no publish commit
     assert not (hub_with_origin / "federation" / "demo-kb").exists()
     assert gitio.current_branch(hub_with_origin) in ("main", "master")
+    assert not (hub_with_origin / ".kb-work" / "search.db").exists()
 
 
 def test_pr_mode_updates_existing_pr_without_creating(git_kb, hub_with_origin, monkeypatch):

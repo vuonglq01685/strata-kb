@@ -97,3 +97,12 @@ def test_publish_cli_prints_pr_url(git_kb, hub_worktree, monkeypatch):
 def test_approve_command_removed(fixture_kb):
     result = runner.invoke(app, ["approve", "demo-doc"])
     assert result.exit_code == 2  # typer: no such command
+
+
+def test_reindex_builds_search_db(fed_hub, git_kb):
+    result = runner.invoke(
+        app, ["reindex", "--hub", str(fed_hub), "--kb-dir", str(git_kb["kb"])]
+    )
+    assert result.exit_code == 0
+    assert (fed_hub / ".kb-work" / "search.db").exists()
+    assert "search index" in result.output

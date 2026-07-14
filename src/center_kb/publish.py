@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -12,6 +13,8 @@ from pathlib import Path
 
 from center_kb import federation, ghio, gitio, models
 from center_kb import hub as hub_mod
+
+logger = logging.getLogger("center_kb.publish")
 
 _REPO_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -187,6 +190,13 @@ def _publish_direct(
     )
     if idx_committed:
         pushed = _push_with_retry(handle, rid, max_retries) or pushed
+    from center_kb import searchdb
+    from center_kb.embed import default_embedder
+
+    try:
+        searchdb.sync(handle, default_embedder())
+    except Exception as exc:  # eager refresh best-effort — query sau rebuild lazy
+        logger.warning("search index refresh failed: %s", exc)
     return PublishReport(rid, source_commit, n_docs, pushed, mode="direct")
 
 
