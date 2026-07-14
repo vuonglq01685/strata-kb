@@ -23,6 +23,7 @@ _L2_HEAD_CHARS = 500  # leading chunk of L2 fed into the embedding text
 
 class Embedder(Protocol):
     dim: int
+    name: str
 
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
@@ -31,11 +32,12 @@ class _FastEmbedder:
     """fastembed ONNX — bge-small-en-v1.5, 384 dimensions, fully local."""
 
     dim = 384
+    name = "BAAI/bge-small-en-v1.5"
 
     def __init__(self) -> None:
         from fastembed import TextEmbedding
 
-        self._model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        self._model = TextEmbedding(model_name=self.name)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [list(map(float, v)) for v in self._model.embed(texts)]
