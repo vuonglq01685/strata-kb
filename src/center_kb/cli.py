@@ -512,10 +512,12 @@ def query(
         "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
     semantic: bool = typer.Option(
-        False, "--semantic", help="Force embedding search (routing step 3)"
+        False,
+        "--semantic",
+        help="Warn when embeddings are unavailable (hybrid runs both legs automatically)",
     ),
 ) -> None:
-    """Tag match → BM25 → return L2 sections within budget, with citations."""
+    """Hybrid search (FTS5 keyword + semantic KNN, RRF-fused) → L2 sections within budget, with citations."""
     from center_kb.query import search
 
     handle = _hub_or_exit(hub, kb_dir)
@@ -528,7 +530,7 @@ def query(
         raise typer.Exit(0)
     for r in results:
         typer.secho(
-            f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk", bold=True
+            f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk", bold=True
         )
         typer.echo(r.content)
         typer.echo("")
@@ -646,13 +648,21 @@ def reindex(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (to find the config)"),
 ) -> None:
     """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
-    from center_kb import gitio
+    from center_kb import gitio, searchdb
+    from center_kb.embed import default_embedder
     from center_kb.federation import write_federation_index
 
     handle = _hub_or_exit(hub, kb_dir)
     write_federation_index(handle.federation_dir)
+    # commit index.yaml TRƯỚC khi sync search index: sync strict có thể nổ
+    # (lỗi embed) — không được để index rebuilt nằm uncommitted
     committed = gitio.commit_paths(
         handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
+    )
+    sreport = searchdb.sync(handle, default_embedder())
+    typer.echo(
+        f"kb reindex: search index — {sreport.sections_updated} updated, "
+        f"{sreport.sections_deleted} removed, {sreport.embedded} embedded"
     )
     if not committed:
         typer.echo("kb reindex: index already consistent — nothing to do")

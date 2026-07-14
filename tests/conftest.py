@@ -6,6 +6,31 @@ import pytest
 from center_kb import models
 
 
+class FakeEmbedder:
+    """Vector 4 chiều deterministic theo marker word — không cần model thật.
+
+    'corridor' cùng axis với 'airspace' để test semantic-leg tìm được section
+    airspace từ query không chứa keyword nào trùng FTS.
+    """
+
+    dim = 4
+    name = "fake-4d"
+
+    def embed(self, texts):
+        out = []
+        for t in texts:
+            t = t.lower()
+            out.append(
+                [
+                    1.0 if ("airspace" in t or "corridor" in t) else 0.0,
+                    1.0 if "airway" in t else 0.0,
+                    1.0 if "roster" in t else 0.0,
+                    0.1,
+                ]
+            )
+        return out
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--run-slow",
@@ -13,6 +38,22 @@ def pytest_addoption(parser):
         default=False,
         help="also run the tests that download a real embedding model",
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_embedder(request, monkeypatch):
+    """search() giờ resolve default_embedder() eager mỗi query — unit test phải
+    hermetic: máy dev có fastembed cũng không được load/download model thật.
+    Bỏ qua khi test đánh dấu real_embedder hoặc chạy --run-slow."""
+    if request.node.get_closest_marker("real_embedder") or request.config.getoption(
+        "--run-slow"
+    ):
+        yield
+        return
+    from center_kb import embed
+
+    monkeypatch.setattr(embed, "default_embedder", lambda: None)
+    yield
 
 
 TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |\n| R | Restricted |"

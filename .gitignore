@@ -12,6 +12,7 @@ sources/
 __pycache__/
 *.pyc
 .venv/
+.venv
 venv/
 .venv-artifact/
 .venv-runner/
@@ -24,3 +25,6 @@ build/
 
 # SDD scratch
 .superpowers/
+
+# Git worktrees (SDD isolation)
+.worktrees/

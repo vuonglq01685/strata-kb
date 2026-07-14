@@ -246,6 +246,16 @@ def test_home_query_shows_keyword_match_badge(fed_hub):
     assert 'class="match-badge match-keyword"' in resp.text
 
 
+def test_result_head_hides_raw_rrf_score(fed_hub):
+    # RRF score ~0.016-0.033 → "score 0.02" cho mọi kết quả = vô nghĩa với
+    # người đọc; badge match-mode + token count là đủ
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "airspace designation"}
+    )
+    assert "score 0.0" not in resp.text
+    assert "tk</span>" in resp.text  # token count vẫn hiển thị
+
+
 def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch):
     from center_kb.query import QueryResult
     from center_kb.web import ui as ui_module

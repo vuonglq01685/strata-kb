@@ -18,9 +18,28 @@ from center_kb.resolve import render_resolved, resolve_refs
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
 
-# Below this relative score gap between the top 2 kb_search results, both
-# are surfaced with a note instead of letting the top hit look unambiguous.
-AMBIGUOUS_SCORE_GAP = 0.20
+_AMBIGUOUS_MIN_RATIO = 0.8  # top-2 "sát nhau" khi score sau >= 80% score đầu
+
+
+def _ambiguity_note(results) -> str:
+    """Nhắc review cả 2 kết quả đầu khi thật sự khó phân định.
+
+    RRF score không mang magnitude như BM25: rank kề nhau cùng leg luôn cách
+    ~1.6% tương đối (1/61 vs 1/62) nên so gap tương đối bắn note gần như mọi
+    query. Ambiguous thật khi cả hai đều được 2 leg xác nhận (hybrid) VÀ
+    score thật sự sát nhau, hoặc score bằng hệt (tie)."""
+    if len(results) < 2:
+        return ""
+    top, second = results[0], results[1]
+    both_hybrid = top.match_mode == "hybrid" and second.match_mode == "hybrid"
+    close = second.score >= _AMBIGUOUS_MIN_RATIO * top.score
+    if not (both_hybrid and close) and top.score != second.score:
+        return ""
+    return (
+        f"Note: [{top.citation}] and [{second.citation}] "
+        "score closely — both may be relevant to your question; "
+        "review each before citing.\n\n"
+    )
 
 
 @dataclass
@@ -84,7 +103,7 @@ def create_server(config: ServerConfig) -> MCPServer:
     def kb_search(
         query: str, tags: list[str] | None = None, budget: int = 2000
     ) -> str:
-        """Find sections by tag match + BM25 (falls back to semantic search);
+        """Find sections by hybrid search (FTS5 keyword + semantic KNN, RRF-fused);
         return L2 content within the token budget, with citations. Returns
         every relevant section found, not just the best match — when using
         this to draft a User Story, show ALL returned sections (with their
@@ -99,17 +118,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         results = search(hub, query, tags=tags, budget=budget)
         if not results:
             return "No matching section found — try dropping tags or changing keywords."
-        note = _stale_note(hub)
-        if len(results) >= 2 and results[0].score > 0:
-            gap = (results[0].score - results[1].score) / results[0].score
-            if gap < AMBIGUOUS_SCORE_GAP:
-                note += (
-                    f"Note: [{results[0].citation}] and [{results[1].citation}] "
-                    "score closely — both may be relevant to your question; "
-                    "review each before citing.\n\n"
-                )
+        note = _stale_note(hub) + _ambiguity_note(results)
         return note + "\n\n".join(
-            f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk\n{r.content}"
+            f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk\n{r.content}"
             for r in results
         )
 
