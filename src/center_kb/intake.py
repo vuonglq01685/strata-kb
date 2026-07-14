@@ -90,7 +90,12 @@ def safe_extract(data: bytes, dest: Path, max_bytes: int = DEFAULT_MAX_TAR) -> N
     dest_resolved = dest.resolve()
     with tf:
         total = 0
-        for member in tf.getmembers():
+        # Lazy iteration: `for member in tf` reads one header at a time, so the
+        # cumulative cap below aborts after ~max_bytes decompressed. getmembers()
+        # would walk (decompress) the ENTIRE archive up front just to list
+        # headers -- a crafted tar bomb could force tens of GB of decompression
+        # before the cap ever ran.
+        for member in tf:
             if not member.isreg():
                 raise IntakeError(
                     400, f"tar member '{member.name}' is not a regular file"
