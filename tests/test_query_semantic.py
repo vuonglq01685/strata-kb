@@ -72,6 +72,74 @@ def test_knn_leg_error_falls_back_to_keyword(fed_hub, caplog):
     assert all(r.match_mode == "keyword" for r in results)
 
 
+class BrokenEmbedder(FakeEmbedder):
+    """Nổ ngay lần embed đầu tiên — mô phỏng onnx runtime fail lúc sync."""
+
+    def embed(self, texts):
+        raise RuntimeError("onnx runtime blew up")
+
+
+def test_embedder_failure_during_sync_degrades_to_keyword(fed_hub, caplog):
+    # spec §5: embedding best-effort — embed fail lúc lazy sync không được
+    # giết query; FTS leg vẫn phải trả kết quả
+    from center_kb import searchdb
+
+    hub = HubHandle(root=fed_hub)
+    with caplog.at_level("WARNING", logger="center_kb.searchdb"):
+        results = search(hub, "restrictive airspace", embedder=BrokenEmbedder())
+    assert results
+    assert all(r.match_mode == "keyword" for r in results)
+    assert any("vector sync failed" in r.message for r in caplog.records)
+    # FTS/sections work phải được commit dù embed fail — không sync lại từ đầu
+    conn = searchdb.open_db(hub)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM sections").fetchone()[0] > 0
+    finally:
+        conn.close()
+
+
+def test_corruption_during_freshness_sync_rebuilds_once(fed_hub, monkeypatch):
+    # corruption lộ ra trong freshness sync (qua open_db meta check nhưng
+    # DML fail) cũng phải rebuild-once như corruption lúc query (spec §5)
+    import sqlite3
+
+    from center_kb import searchdb
+
+    hub = HubHandle(root=fed_hub)
+    search(hub, "airspace")  # build index
+    real_open_fresh = searchdb.open_fresh
+    calls = {"n": 0}
+
+    def flaky(hub_, embedder):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.DatabaseError("database disk image is malformed")
+        return real_open_fresh(hub_, embedder)
+
+    monkeypatch.setattr(searchdb, "open_fresh", flaky)
+    results = search(hub, "restrictive airspace designation")
+    assert results
+    assert calls["n"] == 2  # lần 1 hỏng → rebuild → lần 2 thành công
+
+
+def test_sqlite_vec_load_failure_degrades_to_keyword(fed_hub, monkeypatch):
+    # Python build thiếu loadable-extension support (enable_load_extension
+    # vắng / load fail) → FTS-only, không vỡ toàn bộ search (spec §5)
+    import sqlite_vec as vec_mod
+
+    def broken_load(conn):
+        raise AttributeError(
+            "'sqlite3.Connection' object has no attribute 'enable_load_extension'"
+        )
+
+    monkeypatch.setattr(vec_mod, "load", broken_load)
+    results = search(
+        HubHandle(root=fed_hub), "airspace designation", embedder=FakeEmbedder()
+    )
+    assert results
+    assert all(r.match_mode == "keyword" for r in results)
+
+
 def test_locked_db_error_propagates_without_delete(fed_hub, monkeypatch):
     # database is locked trong lúc query = process khác đang sync —
     # phải raise, tuyệt đối không xoá index đang được ghi (spec §3.2)

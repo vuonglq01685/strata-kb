@@ -33,8 +33,28 @@ class _FastEmbedder:
         return [list(map(float, v)) for v in self._model.embed(texts)]
 
 
+_UNRESOLVED = object()  # sentinel — phân biệt "chưa resolve" với "resolve ra None"
+_default_cache: object = _UNRESOLVED
+
+
+def _reset_default_cache() -> None:
+    """Chỉ dùng trong test."""
+    global _default_cache
+    _default_cache = _UNRESOLVED
+
+
 def default_embedder() -> Embedder | None:
-    """Real embedder if [embed] is installed; None (with a log) if missing."""
+    """Real embedder if [embed] is installed; None (with a log) if missing.
+
+    Cached per process — kể cả kết quả None (model init fail): MCP/web server
+    gọi search() mỗi request, không được load lại ONNX model mỗi lần."""
+    global _default_cache
+    if _default_cache is _UNRESOLVED:
+        _default_cache = _resolve_default()
+    return _default_cache  # type: ignore[return-value]
+
+
+def _resolve_default() -> Embedder | None:
     try:
         return _FastEmbedder()
     except ImportError:

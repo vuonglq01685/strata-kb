@@ -63,8 +63,11 @@ def _search_index(
     from center_kb import searchdb
 
     for attempt in (1, 2):
-        conn = searchdb.open_fresh(hub, embedder)
+        conn: sqlite3.Connection | None = None
         try:
+            # open_fresh nằm TRONG try — corruption lộ ra lúc freshness sync
+            # cũng phải được rebuild-once như corruption lúc query (spec §5)
+            conn = searchdb.open_fresh(hub, embedder)
             fts_hits = searchdb.fts_search(conn, text, tags)
             knn_hits: list[tuple[int, float]] = []
             if embedder is not None:
@@ -77,13 +80,16 @@ def _search_index(
             fused = searchdb.rrf_merge(fts_hits, knn_hits)
             return fused, searchdb.load_sections(conn, [r for r, _, _ in fused])
         except sqlite3.DatabaseError as exc:
-            conn.close()  # Windows: close trước khi unlink
+            if conn is not None:
+                conn.close()  # Windows: close trước khi unlink
+                conn = None
             if attempt == 2 or searchdb.is_lock_error(exc):
                 raise  # lock = process khác đang ghi — không phải corruption
             logger.warning("search.db corrupt — rebuilding once: %s", exc)
             searchdb.delete_db(hub)
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
     raise AssertionError("unreachable")
 
 

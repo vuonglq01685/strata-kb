@@ -57,10 +57,12 @@ def db_path(hub: "HubHandle") -> Path:
     return hub.root / ".kb-work" / DB_NAME
 
 
-def _vec_available() -> bool:
+def _conn_vec_loaded(conn: sqlite3.Connection) -> bool:
+    """Extension vec0 có load được trên connection NÀY không — import sqlite_vec
+    thành công chưa đủ (Python build có thể thiếu loadable-extension support)."""
     try:
-        import sqlite_vec  # noqa: F401
-    except ImportError:
+        conn.execute("SELECT vec_version()")
+    except sqlite3.OperationalError:
         return False
     return True
 
@@ -70,9 +72,17 @@ def _load_vec(conn: sqlite3.Connection) -> bool:
         import sqlite_vec
     except ImportError:
         return False
-    conn.enable_load_extension(True)
-    sqlite_vec.load(conn)
-    conn.enable_load_extension(False)
+    try:
+        conn.enable_load_extension(True)
+        try:
+            sqlite_vec.load(conn)
+        finally:
+            conn.enable_load_extension(False)
+    except (AttributeError, sqlite3.OperationalError) as exc:
+        # Python build thiếu loadable-extension support / extension load fail
+        # → degrade FTS-only thay vì vỡ toàn bộ search (spec §5)
+        logger.warning("sqlite-vec could not be loaded — semantic leg disabled: %s", exc)
+        return False
     return True
 
 
@@ -308,7 +318,7 @@ def _sync_repo(
 def _sync_vectors(
     conn: sqlite3.Connection, embedder: Embedder | None, report: SyncReport
 ) -> None:
-    if embedder is None or not _vec_available():
+    if embedder is None or not _conn_vec_loaded(conn):
         return
     meta = dict(conn.execute("SELECT key, value FROM meta"))
     model_stale = _has_vec_table(conn) and (
@@ -386,7 +396,11 @@ def _cleanup_legacy(hub: "HubHandle") -> None:
 
 
 def _sync_conn(
-    conn: sqlite3.Connection, hub: "HubHandle", embedder: Embedder | None
+    conn: sqlite3.Connection,
+    hub: "HubHandle",
+    embedder: Embedder | None,
+    *,
+    vectors_strict: bool = True,
 ) -> SyncReport:
     report = SyncReport()
     repos = load_federation(hub.federation_dir)
@@ -406,12 +420,23 @@ def _sync_conn(
             (repo.meta.repo_id, fp),
         )
         report.repos_synced += 1
-    _sync_vectors(conn, embedder, report)
-    # DDL (CREATE/DROP TABLE) auto-commits in sqlite3 regardless — only DML
-    # (INSERT/UPDATE/DELETE) leaves an open transaction, so this skips a
-    # pointless commit/fsync on a fully warm sync with nothing to persist.
+    # commit FTS/sections TRƯỚC khi embed — embed fail không được rollback phần
+    # keyword. Guard in_transaction: warm sync không ghi gì thì khỏi commit/fsync.
     if conn.in_transaction:
         conn.commit()
+    try:
+        _sync_vectors(conn, embedder, report)
+        if conn.in_transaction:
+            conn.commit()
+    except sqlite3.DatabaseError:
+        raise  # index hỏng — để tầng trên rebuild/raise, không nuốt
+    except Exception as exc:
+        if vectors_strict:
+            raise  # kb reindex phải thấy lỗi embed
+        if conn.in_transaction:
+            conn.rollback()
+        # spec §5: embedding best-effort — query degrade về FTS leg
+        logger.warning("vector sync failed — keyword search only: %s", exc)
     _cleanup_legacy(hub)
     return report
 
@@ -426,10 +451,11 @@ def sync(hub: "HubHandle", embedder: Embedder | None) -> SyncReport:
 
 
 def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connection:
-    """Open + lazy freshness check (sync incremental nếu lệch), trả connection."""
+    """Open + lazy freshness check (sync incremental nếu lệch), trả connection.
+    Embed fail ở đây không giết query — degrade FTS-only (vectors_strict=False)."""
     conn = open_db(hub)
     try:
-        _sync_conn(conn, hub, embedder)
+        _sync_conn(conn, hub, embedder, vectors_strict=False)
     except BaseException:
         conn.close()
         raise

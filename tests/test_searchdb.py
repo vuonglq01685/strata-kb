@@ -389,6 +389,16 @@ def test_sync_raises_on_wrong_vector_dim(fed_hub):
         searchdb.sync(HubHandle(root=fed_hub), _BadDimEmbedder())
 
 
+def test_sync_strict_raises_on_embedder_failure(fed_hub):
+    # kb reindex phải thấy lỗi embed (strict) — chỉ query path mới degrade
+    class Broken(FakeEmbedder):
+        def embed(self, texts):
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        searchdb.sync(HubHandle(root=fed_hub), Broken())
+
+
 def test_fts_search_ranks_and_filters(fed_hub):
     conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)
     try:
