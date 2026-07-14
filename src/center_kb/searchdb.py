@@ -16,6 +16,7 @@ from center_kb.embed import (
     Embedder,
     _serialize,
 )
+from center_kb.federation import load_federation
 from center_kb.mdutils import slice_section
 
 if TYPE_CHECKING:
@@ -172,3 +173,169 @@ def open_db(hub: "HubHandle") -> sqlite3.Connection:
         logger.warning("rebuilding search.db (%s)", reason)
         delete_db(hub)
     raise AssertionError("unreachable")
+
+
+def _repo_fingerprint(repo_dir: Path) -> str:
+    h = hashlib.sha256()
+    for name in ("_meta.yaml", "index.yaml"):
+        h.update((repo_dir / name).read_bytes())
+    return h.hexdigest()
+
+
+def _section_parts(
+    kb_dir: Path, doc_id: str, sec: models.SectionEntry
+) -> tuple[str, str, str]:
+    """(title, summary, body_head) — body_head = 500 ký tự đầu L2."""
+    body = ""
+    l2_path = kb_dir / doc_id / f"{sec.file}.md"
+    if l2_path.exists():
+        content = slice_section(l2_path.read_text(encoding="utf-8"), sec.id)
+        if content:
+            body = content[:_L2_HEAD_CHARS]
+    return sec.title, sec.summary, body
+
+
+def _embed_text(title: str, summary: str, body: str) -> str:
+    """Cùng format text với embed._section_text cũ — dùng cho content_hash + embedding."""
+    text = f"{title}\n{summary}"
+    return f"{text}\n{body}" if body else text
+
+
+def _delete_section(conn: sqlite3.Connection, rowid: int) -> None:
+    conn.execute("DELETE FROM sections WHERE id = ?", (rowid,))
+    conn.execute("DELETE FROM fts WHERE rowid = ?", (rowid,))
+    if _has_vec_table(conn):
+        conn.execute("DELETE FROM vec_sections WHERE rowid = ?", (rowid,))
+
+
+def _drop_repo(conn: sqlite3.Connection, repo_id: str) -> int:
+    rowids = [
+        r[0]
+        for r in conn.execute("SELECT id FROM sections WHERE repo_id = ?", (repo_id,))
+    ]
+    for rowid in rowids:
+        _delete_section(conn, rowid)
+    conn.execute("DELETE FROM doc_tags WHERE repo_id = ?", (repo_id,))
+    return len(rowids)
+
+
+def _sync_repo(
+    conn: sqlite3.Connection, repo: "FederatedRepo", report: SyncReport
+) -> None:
+    rid = repo.meta.repo_id
+    stored = {
+        (doc_id, sec_id): (rowid, chash)
+        for rowid, doc_id, sec_id, chash in conn.execute(
+            "SELECT id, doc_id, section_id, content_hash FROM sections "
+            "WHERE repo_id = ?",
+            (rid,),
+        )
+    }
+    seen: set[tuple[str, str]] = set()
+    for doc in repo.index.docs:
+        manifest_path = repo.kb_dir / doc.id / "_manifest.yaml"
+        if not manifest_path.exists():
+            continue
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        for sec in manifest.sections:
+            key = (doc.id, sec.id)
+            seen.add(key)
+            title, summary, body = _section_parts(repo.kb_dir, doc.id, sec)
+            digest = hashlib.sha256(
+                _embed_text(title, summary, body).encode("utf-8")
+            ).hexdigest()
+            old = stored.get(key)
+            if old is not None and old[1] == digest:
+                continue
+            if old is not None:
+                # delete + insert (rowid mới) — vec-backfill Task 3 dựa vào
+                # rowid mới thiếu embedding để biết cần re-embed
+                _delete_section(conn, old[0])
+            cur = conn.execute(
+                "INSERT INTO sections(repo_id, doc_id, section_id, title, file, "
+                "doc_revision, content_hash) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                (rid, doc.id, sec.id, sec.title, sec.file, doc.revision, digest),
+            )
+            conn.execute(
+                "INSERT INTO fts(rowid, title, summary, body_head) "
+                "VALUES(?, ?, ?, ?)",
+                (cur.lastrowid, title, summary, body),
+            )
+            report.sections_updated += 1
+    for key, (rowid, _) in stored.items():
+        if key not in seen:
+            _delete_section(conn, rowid)
+            report.sections_deleted += 1
+    conn.execute("DELETE FROM doc_tags WHERE repo_id = ?", (rid,))
+    for doc in repo.index.docs:
+        for tag in {t.strip().lower() for t in doc.tags} | {doc.id.lower()}:
+            conn.execute(
+                "INSERT OR IGNORE INTO doc_tags(repo_id, doc_id, tag) "
+                "VALUES(?, ?, ?)",
+                (rid, doc.id, tag),
+            )
+
+
+def _sync_vectors(
+    conn: sqlite3.Connection, embedder: Embedder | None, report: SyncReport
+) -> None:
+    """Task 3 implement — stub để sync() gọi được từ Task 2."""
+
+
+def _cleanup_legacy(hub: "HubHandle") -> None:
+    """Dọn embeddings-<rid>.db của kiến trúc cũ — cache thuần, bỏ rơi (spec §4)."""
+    work = hub.root / ".kb-work"
+    if not work.is_dir():
+        return
+    for p in work.glob("embeddings-*.db"):
+        try:
+            p.unlink()
+        except OSError:  # đang bị process khác giữ (Windows) — lần sau dọn tiếp
+            pass
+
+
+def _sync_conn(
+    conn: sqlite3.Connection, hub: "HubHandle", embedder: Embedder | None
+) -> SyncReport:
+    report = SyncReport()
+    repos = load_federation(hub.federation_dir)
+    live_ids = {r.meta.repo_id for r in repos}
+    stored_fp = dict(conn.execute("SELECT repo_id, fingerprint FROM repos"))
+    for rid in sorted(set(stored_fp) - live_ids):
+        report.sections_deleted += _drop_repo(conn, rid)
+        conn.execute("DELETE FROM repos WHERE repo_id = ?", (rid,))
+    for repo in repos:
+        fp = _repo_fingerprint(repo.kb_dir)
+        if stored_fp.get(repo.meta.repo_id) == fp:
+            continue  # repo không đổi — 0 manifest parse
+        _sync_repo(conn, repo, report)
+        conn.execute(
+            "INSERT INTO repos(repo_id, fingerprint) VALUES(?, ?) "
+            "ON CONFLICT(repo_id) DO UPDATE SET fingerprint = excluded.fingerprint",
+            (repo.meta.repo_id, fp),
+        )
+        report.repos_synced += 1
+    _sync_vectors(conn, embedder, report)
+    conn.commit()
+    _cleanup_legacy(hub)
+    return report
+
+
+def sync(hub: "HubHandle", embedder: Embedder | None) -> SyncReport:
+    """Incremental sync: repo fingerprint → skip/diff theo content-hash."""
+    conn = open_db(hub)
+    try:
+        return _sync_conn(conn, hub, embedder)
+    finally:
+        conn.close()
+
+
+def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connection:
+    """Open + lazy freshness check (sync incremental nếu lệch), trả connection."""
+    conn = open_db(hub)
+    try:
+        _sync_conn(conn, hub, embedder)
+    except BaseException:
+        conn.close()
+        raise
+    return conn
