@@ -1,6 +1,6 @@
 [project]
 name = "center-kb"
-version = "0.9.1"
+version = "0.10.0"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
