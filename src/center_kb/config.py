@@ -23,6 +23,7 @@ class KBConfig(BaseModel):
     hub: str = ""
     repo_id: str = ""
     kind: Literal["", "hub", "child"] = ""
+    intake: str = ""  # intake service base URL — child publishes via OIDC CI
 
 
 def load_config(kb_dir: Path) -> KBConfig:

@@ -1,12 +1,14 @@
-# CI publishes a snapshot to kb-hub (PR mode) — runs when .kb/ changes on main.
-# The hub is read from .kb/config.yaml (committed in the repo). Required secrets:
-#   KB_HUB_URL — hub URL with a branch-push token (https://x-access-token:${TOKEN}@github.com/org/kb-hub.git)
-#   GH_TOKEN   — token allowed to open PRs on the hub repo (for `gh pr create`)
+# CI publishes to the kb-hub via the intake service — OIDC, zero secrets.
+# Trigger: `kb publish` on a dev machine creates and pushes a kb-publish/* tag.
+# Requirements: `intake: <url>` in .kb/config.yaml (committed). No GH_TOKEN,
+# no KB_HUB_URL — the intake service holds the only hub credential.
 name: kb-publish
 on:
   push:
-    branches: [main]
-    paths: [".kb/**"]
+    tags: ["kb-publish/*"]
+permissions:
+  id-token: write   # OIDC JWT — proves "I am this repo's workflow" to the intake
+  contents: read
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -15,12 +17,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install center-kb  # or pip install -e . if the repo holds the source
-      - name: Publish snapshot → PR on the hub
-        run: kb publish --hub "${{ secrets.KB_HUB_URL }}" --repo-id "${{ github.event.repository.name }}"
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GIT_AUTHOR_NAME: kb-publish-ci
-          GIT_AUTHOR_EMAIL: ci@local
-          GIT_COMMITTER_NAME: kb-publish-ci
-          GIT_COMMITTER_EMAIL: ci@local
+      - run: pip install center-kb
+      - name: Publish snapshot → PR on the hub (via intake)
+        run: kb ci-publish

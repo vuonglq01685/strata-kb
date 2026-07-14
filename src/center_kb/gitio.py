@@ -155,3 +155,27 @@ def push_branch(root: Path, branch: str) -> None:
     proc = _run(root, "push", "--force", "origin", branch)
     if proc.returncode != 0:
         raise GitError(f"push branch '{branch}' failed: {proc.stderr.strip()}")
+
+
+def tag(root: Path, name: str) -> None:
+    proc = _run(root, "tag", name)
+    if proc.returncode != 0:
+        raise GitError(f"tag '{name}' failed: {proc.stderr.strip()}")
+
+
+def push_tag(root: Path, name: str) -> None:
+    proc = _run(root, "push", "origin", f"refs/tags/{name}")
+    if proc.returncode != 0:
+        raise GitError(f"push tag '{name}' failed: {proc.stderr.strip()}")
+
+
+def push_branch_url(root: Path, url: str, branch: str) -> None:
+    """Force-push `branch` to an explicit remote URL.
+
+    The URL may embed a short-lived credential (x-access-token) — it is
+    scrubbed from any error message so tokens never reach logs.
+    """
+    proc = _run(root, "push", "--force", url, f"{branch}:{branch}")
+    if proc.returncode != 0:
+        detail = proc.stderr.strip().replace(url, "<hub-url>")
+        raise GitError(f"push branch '{branch}' failed: {detail}")
