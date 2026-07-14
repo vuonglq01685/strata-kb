@@ -2,10 +2,12 @@ import sqlite3
 
 import pytest
 
+sqlite_vec = pytest.importorskip("sqlite_vec")  # noqa: F401
+
 from center_kb import models, searchdb
 from center_kb.federation import FederationMeta
 from center_kb.hub import HubHandle
-from tests.conftest import make_fed_entry
+from tests.conftest import FakeEmbedder, make_fed_entry
 
 
 def _handle(tmp_path) -> HubHandle:
@@ -200,3 +202,80 @@ def test_sync_empty_federation(tmp_path):
     hub = _handle(tmp_path)
     report = searchdb.sync(hub, None)
     assert report.sections_updated == 0
+
+
+def _vec_count(hub):
+    conn = searchdb.open_db(hub)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM vec_sections").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_sync_embeds_all_sections(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    report = searchdb.sync(hub, FakeEmbedder())
+    assert report.embedded == 2
+    assert _vec_count(hub) == 2
+    conn = searchdb.open_db(hub)
+    try:
+        meta = dict(conn.execute("SELECT key, value FROM meta"))
+        assert meta["embed_model"] == "fake-4d"
+        assert meta["embed_dim"] == "4"
+    finally:
+        conn.close()
+
+
+def test_sync_without_embedder_then_backfill(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    r1 = searchdb.sync(hub, None)  # FTS-only
+    assert r1.embedded == 0
+    r2 = searchdb.sync(hub, FakeEmbedder())  # embedder xuất hiện → embed bù
+    assert r2.embedded == 2
+    assert r2.sections_updated == 0  # không re-parse manifest
+
+
+def test_sync_reembeds_only_changed_section(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, FakeEmbedder())
+    entry = fed_hub / "federation" / "arinc-kb"
+    manifest_path = entry / "arinc-424" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.sections[0].summary = "Restrictive airspace corridors updated."
+    models.save_yaml_model(manifest_path, manifest)
+    _bump_meta(entry)
+    report = searchdb.sync(hub, FakeEmbedder())
+    assert report.embedded == 1
+    assert _vec_count(hub) == 2  # row cũ xoá, row mới thêm
+
+
+def test_sync_model_change_rebuilds_vec_table(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, FakeEmbedder())
+
+    class V2(FakeEmbedder):
+        name = "fake-4d-v2"
+
+    report = searchdb.sync(hub, V2())
+    assert report.embedded == 2  # re-embed toàn bộ
+    conn = searchdb.open_db(hub)
+    try:
+        meta = dict(conn.execute("SELECT key, value FROM meta"))
+        assert meta["embed_model"] == "fake-4d-v2"
+    finally:
+        conn.close()
+
+
+class _BadDimEmbedder:
+    """Khai dim=4 nhưng trả vector 3 chiều."""
+
+    dim = 4
+    name = "bad-dim"
+
+    def embed(self, texts):
+        return [[0.0, 0.0, 0.0] for _ in texts]
+
+
+def test_sync_raises_on_wrong_vector_dim(fed_hub):
+    with pytest.raises(ValueError):
+        searchdb.sync(HubHandle(root=fed_hub), _BadDimEmbedder())

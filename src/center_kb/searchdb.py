@@ -279,7 +279,52 @@ def _sync_repo(
 def _sync_vectors(
     conn: sqlite3.Connection, embedder: Embedder | None, report: SyncReport
 ) -> None:
-    """Task 3 implement — stub để sync() gọi được từ Task 2."""
+    if embedder is None or not _vec_available():
+        return
+    meta = dict(conn.execute("SELECT key, value FROM meta"))
+    if _has_vec_table(conn) and (
+        meta.get("embed_model") != embedder.name
+        or meta.get("embed_dim") != str(embedder.dim)
+    ):
+        conn.execute("DROP TABLE vec_sections")  # đổi model/dim → rebuild bảng vec
+    if not _has_vec_table(conn):
+        conn.execute(
+            f"CREATE VIRTUAL TABLE vec_sections USING vec0("
+            f"embedding float[{embedder.dim}])"
+        )
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_model', ?)",
+        (embedder.name,),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_dim', ?)",
+        (str(embedder.dim),),
+    )
+    have = {r[0] for r in conn.execute("SELECT rowid FROM vec_sections")}
+    missing = [
+        row
+        for row in conn.execute(
+            "SELECT s.id, f.title, f.summary, f.body_head "
+            "FROM sections s JOIN fts f ON f.rowid = s.id"
+        )
+        if row[0] not in have
+    ]
+    for start in range(0, len(missing), _EMBED_BATCH):
+        batch = missing[start : start + _EMBED_BATCH]
+        vectors = embedder.embed(
+            [_embed_text(title, summary, body) for _, title, summary, body in batch]
+        )
+        for (rowid, *_), vec in zip(batch, vectors):
+            if len(vec) != embedder.dim:
+                raise ValueError(
+                    f"embedder returned a {len(vec)}-dim vector, expected "
+                    f"{embedder.dim} dims (embedder.dim) — check the embedder"
+                )
+            conn.execute(
+                "INSERT INTO vec_sections(rowid, embedding) VALUES(?, ?)",
+                (rowid, _serialize(vec)),
+            )
+        report.embedded += len(batch)
 
 
 def _cleanup_legacy(hub: "HubHandle") -> None:
