@@ -76,7 +76,7 @@ def _result_blocks(results, terms: set[str] | None = None) -> str:
             f'<a class="cite" href="{href}">{_e(r.citation)}</a>'
             f"{_source_badge(r.source)}"
             f"{_match_badge(r.match_mode)}"
-            f'<span class="score">score {r.score:.2f} · ~{r.tokens} tk</span>'
+            f'<span class="score">~{r.tokens} tk</span>'
             "</header>"
             f'<div class="result-body">{md_render(r.content, terms=terms)}</div>'
             "</article>"

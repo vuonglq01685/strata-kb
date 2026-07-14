@@ -321,11 +321,11 @@ def _sync_vectors(
     if embedder is None or not _conn_vec_loaded(conn):
         return
     meta = dict(conn.execute("SELECT key, value FROM meta"))
-    model_stale = _has_vec_table(conn) and (
+    model_changed = (
         meta.get("embed_model") != embedder.name
         or meta.get("embed_dim") != str(embedder.dim)
     )
-    if model_stale:
+    if _has_vec_table(conn) and model_changed:
         conn.execute("DROP TABLE vec_sections")  # đổi model/dim → rebuild bảng vec
     table_created = not _has_vec_table(conn)
     if table_created:
@@ -333,11 +333,7 @@ def _sync_vectors(
             f"CREATE VIRTUAL TABLE vec_sections USING vec0("
             f"embedding float[{embedder.dim}])"
         )
-    if (
-        table_created
-        or meta.get("embed_model") != embedder.name
-        or meta.get("embed_dim") != str(embedder.dim)
-    ):
+    if table_created or model_changed:
         conn.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_model', ?)",
             (embedder.name,),
@@ -346,10 +342,10 @@ def _sync_vectors(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_dim', ?)",
             (str(embedder.dim),),
         )
+    if not (table_created or model_changed) and meta.get("vec_coverage") == "complete":
+        return  # không có section mới, model không đổi → khỏi anti-join O(N)
     # Anti-join tìm rowid thiếu embedding — KHÔNG load FTS text ở đây: mỗi
-    # search() gọi open_fresh → _sync_vectors, nên full-scan sections JOIN fts
-    # trên mọi query (warm hay không) từng là O(N) mỗi lần dù không có gì phải
-    # embed. Chỉ SELECT text sau khi biết chắc có rowid thiếu.
+    # search() gọi open_fresh → _sync_vectors; chỉ SELECT text khi có rowid thiếu.
     missing_ids = [
         r[0]
         for r in conn.execute(
@@ -358,6 +354,9 @@ def _sync_vectors(
         )
     ]
     if not missing_ids:
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('vec_coverage', 'complete')"
+        )
         return
     placeholders = ",".join("?" * len(missing_ids))
     missing = conn.execute(
@@ -381,6 +380,12 @@ def _sync_vectors(
                 (rowid, _serialize(vec)),
             )
         report.embedded += len(batch)
+        conn.commit()  # per batch — cold build bị ngắt giữ lại batch đã embed
+    # chỉ đánh dấu complete khi toàn bộ backfill xong — fail giữa chừng để
+    # dirty cho lần sync sau quét tiếp
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES('vec_coverage', 'complete')"
+    )
 
 
 def _cleanup_legacy(hub: "HubHandle") -> None:
@@ -409,10 +414,13 @@ def _sync_conn(
     for rid in sorted(set(stored_fp) - live_ids):
         report.sections_deleted += _drop_repo(conn, rid)
         conn.execute("DELETE FROM repos WHERE repo_id = ?", (rid,))
+    if conn.in_transaction:
+        conn.commit()
     for repo in repos:
         fp = _repo_fingerprint(repo.kb_dir)
         if stored_fp.get(repo.meta.repo_id) == fp:
             continue  # repo không đổi — 0 manifest parse
+        before_updated = report.sections_updated
         _sync_repo(conn, repo, report)
         conn.execute(
             "INSERT INTO repos(repo_id, fingerprint) VALUES(?, ?) "
@@ -420,9 +428,17 @@ def _sync_conn(
             (repo.meta.repo_id, fp),
         )
         report.repos_synced += 1
-    # commit FTS/sections TRƯỚC khi embed — embed fail không được rollback phần
-    # keyword. Guard in_transaction: warm sync không ghi gì thì khỏi commit/fsync.
-    if conn.in_transaction:
+        if report.sections_updated > before_updated:
+            # rowid mới chưa có embedding — cho phép _sync_vectors bỏ qua
+            # anti-join O(N) khi không có gì mới (chỉ INSERT tạo lỗ;
+            # delete xoá vec row kèm, metadata refresh giữ nguyên rowid)
+            conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) "
+                "VALUES('vec_coverage', 'dirty')"
+            )
+        # commit per repo: sync bị ngắt giữ lại repo đã xong, và thu hẹp
+        # writer-lock window cho process đọc song song. Đồng thời đảm bảo
+        # FTS/sections đã bền trước phase embed — embed fail không rollback.
         conn.commit()
     try:
         _sync_vectors(conn, embedder, report)
@@ -463,6 +479,9 @@ def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connectio
 
 
 def tokenize(text: str) -> list[str]:
+    # ASCII-only trong khi corpus được FTS index bằng unicode61 — term
+    # non-ASCII (vd tiếng Việt) có trong index nhưng query không chạm tới.
+    # Chấp nhận: corpus aviation spec tiếng Anh; mở rộng khi có nhu cầu thật.
     return re.findall(r"[a-z0-9]+", text.lower())
 
 

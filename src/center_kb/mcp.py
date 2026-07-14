@@ -18,9 +18,24 @@ from center_kb.resolve import render_resolved, resolve_refs
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
 
-# Below this relative score gap between the top 2 kb_search results, both
-# are surfaced with a note instead of letting the top hit look unambiguous.
-AMBIGUOUS_SCORE_GAP = 0.20
+def _ambiguity_note(results) -> str:
+    """Nhắc review cả 2 kết quả đầu khi thật sự khó phân định.
+
+    RRF score không mang magnitude như BM25: rank kề nhau cùng leg luôn cách
+    ~1.6% tương đối (1/61 vs 1/62) nên so gap tương đối bắn note gần như mọi
+    query. Ambiguous thật khi cả hai đều được 2 leg xác nhận (hybrid) hoặc
+    score bằng hệt nhau (tie)."""
+    if len(results) < 2:
+        return ""
+    top, second = results[0], results[1]
+    both_hybrid = top.match_mode == "hybrid" and second.match_mode == "hybrid"
+    if not both_hybrid and top.score != second.score:
+        return ""
+    return (
+        f"Note: [{top.citation}] and [{second.citation}] "
+        "score closely — both may be relevant to your question; "
+        "review each before citing.\n\n"
+    )
 
 
 @dataclass
@@ -99,15 +114,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         results = search(hub, query, tags=tags, budget=budget)
         if not results:
             return "No matching section found — try dropping tags or changing keywords."
-        note = _stale_note(hub)
-        if len(results) >= 2 and results[0].score > 0:
-            gap = (results[0].score - results[1].score) / results[0].score
-            if gap < AMBIGUOUS_SCORE_GAP:
-                note += (
-                    f"Note: [{results[0].citation}] and [{results[1].citation}] "
-                    "score closely — both may be relevant to your question; "
-                    "review each before citing.\n\n"
-                )
+        note = _stale_note(hub) + _ambiguity_note(results)
         return note + "\n\n".join(
             f"--- [{r.citation}] score={r.score:.2f} ~{r.tokens}tk\n{r.content}"
             for r in results

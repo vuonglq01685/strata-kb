@@ -399,6 +399,65 @@ def test_sync_strict_raises_on_embedder_failure(fed_hub):
         searchdb.sync(HubHandle(root=fed_hub), Broken())
 
 
+def test_sync_commits_per_repo_midway_failure_keeps_finished_repos(fed_hub):
+    # cold sync bị ngắt giữa chừng không được mất repo đã xong — commit per
+    # repo (đồng thời thu hẹp writer-lock window cho process đọc song song)
+    hub = HubHandle(root=fed_hub)
+    # load_federation sort theo tên: arinc-kb sync trước, icao-kb hỏng → nổ sau
+    bad = fed_hub / "federation" / "icao-kb" / "icao-annex-2" / "_manifest.yaml"
+    bad.write_text("{{{ not valid yaml", encoding="utf-8")
+    with pytest.raises(Exception):
+        searchdb.sync(hub, None)
+    conn = searchdb.open_db(hub)
+    try:
+        repos = [r[0] for r in conn.execute("SELECT repo_id FROM repos")]
+        assert repos == ["arinc-kb"]
+        n = conn.execute(
+            "SELECT COUNT(*) FROM sections WHERE repo_id = 'arinc-kb'"
+        ).fetchone()[0]
+        assert n == 1
+    finally:
+        conn.close()
+
+
+def test_warm_sync_skips_vector_scan_when_coverage_complete(fed_hub):
+    # anti-join dò rowid thiếu embedding từng chạy O(N) MỖI query dù warm —
+    # meta 'vec_coverage=complete' phải skip nó khi không có section mới
+    hub = HubHandle(root=fed_hub)
+    emb = FakeEmbedder()
+    searchdb.sync(hub, emb)
+    conn = searchdb.open_db(hub)
+    conn.execute(
+        "DELETE FROM vec_sections WHERE rowid = (SELECT MIN(id) FROM sections)"
+    )
+    conn.commit()
+    conn.close()
+    searchdb.sync(hub, emb)  # warm no-op — không được quét lại
+    conn = searchdb.open_db(hub)
+    try:
+        n_sec = conn.execute("SELECT COUNT(*) FROM sections").fetchone()[0]
+        n_vec = conn.execute("SELECT COUNT(*) FROM vec_sections").fetchone()[0]
+        assert n_vec == n_sec - 1  # lỗ nhân tạo còn nguyên = scan đã skip
+    finally:
+        conn.close()
+    # section đổi nội dung → insert mới → coverage dirty → scan lại, vá cả lỗ
+    entry = fed_hub / "federation" / "arinc-kb"
+    l2 = entry / "arinc-424" / "ch1.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace("designation codes", "NEW codes"),
+        encoding="utf-8",
+    )
+    _bump_meta(entry)  # đổi fingerprint để repo không bị skip
+    searchdb.sync(hub, emb)
+    conn = searchdb.open_db(hub)
+    try:
+        n_sec = conn.execute("SELECT COUNT(*) FROM sections").fetchone()[0]
+        n_vec = conn.execute("SELECT COUNT(*) FROM vec_sections").fetchone()[0]
+        assert n_vec == n_sec
+    finally:
+        conn.close()
+
+
 def test_fts_search_ranks_and_filters(fed_hub):
     conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)
     try:
