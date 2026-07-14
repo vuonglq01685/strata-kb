@@ -152,6 +152,39 @@ def test_intake_publish_applies_deletes(hub, monkeypatch):
     _git(hub, "checkout", "main")
 
 
+def test_intake_publish_after_merge_resets_branch_from_main(hub, monkeypatch):
+    """PR merged xong, publish tiếp: branch phải reset từ main mới (không
+    reuse branch cũ diverged trước merge)."""
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    http = FakeHTTP(
+        [
+            (200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/1"}),
+            (200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/2"}),
+        ]
+    )
+    cfg = _cfg(hub, http)
+    intake.intake_publish(
+        cfg, "flight-docs", "aaa", "acme/flight-docs", [], _kb_archive()
+    )
+    _git(hub, "merge", "publish/flight-docs")
+    # publish 2 với nội dung đổi 1 file
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        content = b"docs:\n- id: doc-a\n  title: Doc A v2\n"
+        info = tarfile.TarInfo("index.yaml")
+        info.size = len(content)
+        tf.addfile(info, io.BytesIO(content))
+    pr = intake.intake_publish(
+        cfg, "flight-docs", "bbb", "acme/flight-docs", [], buf.getvalue()
+    )
+    assert pr.endswith("/pull/2")
+    # branch mới phải ngồi trên main đã merge, không phải history cũ
+    merge_base = _git(hub, "merge-base", "publish/flight-docs", "main").strip()
+    main_sha = _git(hub, "rev-parse", "main").strip()
+    assert merge_base == main_sha
+
+
 def test_hub_manifest_excludes_meta(hub, monkeypatch):
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")

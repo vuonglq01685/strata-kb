@@ -253,21 +253,29 @@ def intake_publish(
             logger.warning("hub pull failed -- publishing against cached main")
         original = gitio.current_branch(handle.root)
         branch = f"publish/{rid}"
+        # Checked while still on `original` (main): does the rid already
+        # exist on main? True after the publish PR merged.
+        dest_on_main = dest.exists()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_kb = Path(tmp) / "kb"
             tmp_kb.mkdir()
             safe_extract(archive, tmp_kb, cfg.max_tar_bytes)
             try:
-                # Reuse the branch across successive publishes of the same
-                # rid so an unmerged PR accumulates snapshots (and a second,
-                # identical publish diffs against its own prior write and
-                # is a true no-op) instead of getting reset to `original`
-                # (main) -- which would always look "changed" because
-                # federation/<rid> does not exist on main until merged.
-                if gitio.rev_exists(handle.root, branch):
-                    gitio.checkout(handle.root, branch)
-                else:
+                # Hybrid checkout rule:
+                # - rid already on main (PR merged), or no local branch yet:
+                #   reset -B from main. Post-merge, a stale publish/<rid>
+                #   would predate the merge -- reusing it makes the next PR
+                #   diff show already-merged content against an old merge
+                #   base and invites add/add conflicts under
+                #   "require branches up to date" protection.
+                # - rid NOT on main + branch exists (PR still pending):
+                #   reuse the branch, so an unmerged PR accumulates
+                #   snapshots and a byte-identical re-publish diffs against
+                #   its own prior write and stays a true no-op ("").
+                if dest_on_main or not gitio.rev_exists(handle.root, branch):
                     gitio.checkout_branch(handle.root, branch, original)
+                else:
+                    gitio.checkout(handle.root, branch)
                 # upload is incremental -- every file in the archive counts as changed
                 local_man = hashsync.build_manifest(tmp_kb)
                 hashsync.apply_sync(tmp_kb, dest, sorted(local_man), deletes)
