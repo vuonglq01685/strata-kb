@@ -94,7 +94,7 @@ class TestPublishViaIntake:
 
 
 class FakeHTTP:
-    """(method, url) → (status, json-dict). Ghi lại body POST."""
+    """(method, url) -> (status, json-encoded dict or raw bytes). Records POST bodies."""
 
     def __init__(self, table):
         self.table = table
@@ -105,8 +105,18 @@ class FakeHTTP:
             self.posted.append((url, headers, body))
         for prefix, resp in self.table.items():
             if url.startswith(prefix):
+                if isinstance(resp[1], bytes):
+                    return resp[0], resp[1]
                 return resp[0], json.dumps(resp[1]).encode()
         raise AssertionError(f"unexpected url {url}")
+
+
+def _archive_from_multipart(body: bytes) -> bytes:
+    """Pull the raw tar.gz bytes out of the multipart POST body."""
+    marker = b"Content-Type: application/gzip\r\n\r\n"
+    start = body.index(marker) + len(marker)
+    end = body.rindex(b"\r\n--kb-")
+    return body[start:end]
 
 
 class TestCIPublish:
@@ -143,8 +153,10 @@ class TestCIPublish:
         assert out == "https://gh/pull/8"
         url, headers, body = http.posted[0]
         assert headers["Authorization"] == "Bearer oidc-jwt"
-        # body multipart chứa index.yaml trong archive
-        assert b"index.yaml" in body
+        # the multipart body's archive part is a gzip tar containing index.yaml
+        archive = _archive_from_multipart(body)
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
+            assert "index.yaml" in tf.getnames()
 
     def test_manifest_endpoint_down_falls_back_to_full_upload(self, child, monkeypatch):
         root, _ = child
@@ -159,4 +171,35 @@ class TestCIPublish:
             }
         )
         out = cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
-        assert out == "https://gh/pull/8"  # vẫn publish, upload full
+        assert out == "https://gh/pull/8"  # still publishes: full upload
+
+    def test_manifest_connection_down_falls_back_to_full_upload(self, child, monkeypatch):
+        root, _ = child
+        self._env(monkeypatch)
+        http = FakeHTTP(
+            {
+                "https://kb.test/intake/manifest": (0, b"connection refused"),
+                "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+                "https://kb.test/intake/publish": (
+                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/9"},
+                ),
+            }
+        )
+        out = cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+        assert out == "https://gh/pull/9"
+        assert len(http.posted) == 1
+
+    def test_post_connection_down_raises_clean_error(self, child, monkeypatch):
+        root, _ = child
+        self._env(monkeypatch)
+        http = FakeHTTP(
+            {
+                "https://kb.test/intake/manifest": (200, {"files": {}}),
+                "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+                "https://kb.test/intake/publish": (0, b"connection refused"),
+            }
+        )
+        with pytest.raises(cipublish.CIPublishError) as exc:
+            cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+        assert "unreachable" in str(exc.value)
+        assert "connection refused" in str(exc.value)

@@ -24,6 +24,12 @@ class CIPublishError(RuntimeError):
     """ci-publish failed — the Actions job should go red."""
 
 
+def _decode(raw) -> str:
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return str(raw)
+
+
 def _default_http(method: str, url: str, headers: dict, body: bytes | None):
     req = urllib.request.Request(url, method=method, data=body, headers=headers)
     try:
@@ -31,6 +37,11 @@ def _default_http(method: str, url: str, headers: dict, body: bytes | None):
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
+    except (urllib.error.URLError, OSError) as exc:
+        # Connection-level failure (DNS, refused, timeout): status 0 so the
+        # manifest GET can fall back to a full upload, while POST/token paths
+        # turn it into a loud CIPublishError with this text as the detail.
+        return 0, str(exc).encode("utf-8")
 
 
 def _request_oidc_token(audience: str, http) -> str:
@@ -43,6 +54,8 @@ def _request_oidc_token(audience: str, http) -> str:
         )
     url = f"{req_url}&audience={urllib.parse.quote(audience, safe='')}"
     status, raw = http("GET", url, {"Authorization": f"Bearer {req_tok}"}, None)
+    if status == 0:
+        raise CIPublishError(f"OIDC token endpoint unreachable: {_decode(raw)}")
     if status != 200:
         raise CIPublishError(f"OIDC token request failed: HTTP {status}")
     return json.loads(raw)["value"]
@@ -61,12 +74,8 @@ def _fetch_remote_manifest(intake_url: str, rid: str, http) -> dict[str, str]:
 
 
 def _build_archive(kb_abs: Path, changed: list[str]) -> bytes:
-    # compresslevel=0: KB snapshots are small text/markdown deltas, and the
-    # server (intake.safe_extract) opens with "r:gz" regardless of the level
-    # used to write it — an uncompressed (stored) gzip stream is still a
-    # valid, fully compliant .tar.gz.
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz", compresslevel=0) as tf:
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
         for rel in changed:
             tf.add(kb_abs / rel, arcname=rel, recursive=False)
     return buf.getvalue()
@@ -124,11 +133,13 @@ def run(
         {"Authorization": f"Bearer {token}", "Content-Type": content_type},
         body,
     )
+    if status == 0:
+        raise CIPublishError(f"intake unreachable: {_decode(raw)}")
     if status != 200:
         try:
             detail = json.loads(raw).get("detail", "")
         except (json.JSONDecodeError, AttributeError):
-            detail = raw[:200] if isinstance(raw, bytes) else str(raw)
+            detail = _decode(raw[:200] if isinstance(raw, bytes) else raw)
         raise CIPublishError(f"intake rejected the publish (HTTP {status}): {detail}")
     pr_url = json.loads(raw).get("pr_url", "")
     print(f"PR: {pr_url}" if pr_url else "published (no content change on the hub)")
