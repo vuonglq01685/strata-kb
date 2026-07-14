@@ -246,6 +246,19 @@ def _sync_repo(
             ).hexdigest()
             old = stored.get(key)
             if old is not None and old[1] == digest:
+                # content_hash chỉ hash _embed_text(...) (title+summary+body) —
+                # title/file/doc_revision có thể đổi (rename, bump revision)
+                # mà không đổi nội dung section; giữ content_hash semantics
+                # nguyên vẹn nhưng vẫn refresh 3 cột này để citation/path
+                # không bị lệch (không rewrite FTS, không re-embed).
+                conn.execute(
+                    "UPDATE sections SET title = ?, file = ?, doc_revision = ? "
+                    "WHERE id = ? AND (title != ? OR file != ? OR doc_revision != ?)",
+                    (
+                        sec.title, sec.file, doc.revision, old[0],
+                        sec.title, sec.file, doc.revision,
+                    ),
+                )
                 continue
             if old is not None:
                 # delete + insert (rowid mới) — vec-backfill Task 3 dựa vào
@@ -282,33 +295,50 @@ def _sync_vectors(
     if embedder is None or not _vec_available():
         return
     meta = dict(conn.execute("SELECT key, value FROM meta"))
-    if _has_vec_table(conn) and (
+    model_stale = _has_vec_table(conn) and (
         meta.get("embed_model") != embedder.name
         or meta.get("embed_dim") != str(embedder.dim)
-    ):
+    )
+    if model_stale:
         conn.execute("DROP TABLE vec_sections")  # đổi model/dim → rebuild bảng vec
-    if not _has_vec_table(conn):
+    table_created = not _has_vec_table(conn)
+    if table_created:
         conn.execute(
             f"CREATE VIRTUAL TABLE vec_sections USING vec0("
             f"embedding float[{embedder.dim}])"
         )
-    conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_model', ?)",
-        (embedder.name,),
-    )
-    conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_dim', ?)",
-        (str(embedder.dim),),
-    )
-    have = {r[0] for r in conn.execute("SELECT rowid FROM vec_sections")}
-    missing = [
-        row
-        for row in conn.execute(
-            "SELECT s.id, f.title, f.summary, f.body_head "
-            "FROM sections s JOIN fts f ON f.rowid = s.id"
+    if (
+        table_created
+        or meta.get("embed_model") != embedder.name
+        or meta.get("embed_dim") != str(embedder.dim)
+    ):
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_model', ?)",
+            (embedder.name,),
         )
-        if row[0] not in have
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_dim', ?)",
+            (str(embedder.dim),),
+        )
+    # Anti-join tìm rowid thiếu embedding — KHÔNG load FTS text ở đây: mỗi
+    # search() gọi open_fresh → _sync_vectors, nên full-scan sections JOIN fts
+    # trên mọi query (warm hay không) từng là O(N) mỗi lần dù không có gì phải
+    # embed. Chỉ SELECT text sau khi biết chắc có rowid thiếu.
+    missing_ids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT s.id FROM sections s LEFT JOIN vec_sections v "
+            "ON v.rowid = s.id WHERE v.rowid IS NULL"
+        )
     ]
+    if not missing_ids:
+        return
+    placeholders = ",".join("?" * len(missing_ids))
+    missing = conn.execute(
+        "SELECT s.id, f.title, f.summary, f.body_head FROM sections s "
+        f"JOIN fts f ON f.rowid = s.id WHERE s.id IN ({placeholders})",
+        missing_ids,
+    ).fetchall()
     for start in range(0, len(missing), _EMBED_BATCH):
         batch = missing[start : start + _EMBED_BATCH]
         vectors = embedder.embed(
@@ -361,7 +391,11 @@ def _sync_conn(
         )
         report.repos_synced += 1
     _sync_vectors(conn, embedder, report)
-    conn.commit()
+    # DDL (CREATE/DROP TABLE) auto-commits in sqlite3 regardless — only DML
+    # (INSERT/UPDATE/DELETE) leaves an open transaction, so this skips a
+    # pointless commit/fsync on a fully warm sync with nothing to persist.
+    if conn.in_transaction:
+        conn.commit()
     _cleanup_legacy(hub)
     return report
 

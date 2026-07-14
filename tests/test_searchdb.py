@@ -160,6 +160,39 @@ def test_sync_unchanged_content_rewrites_nothing(fed_hub):
     assert report.sections_updated == 0
 
 
+def test_sync_content_hash_hit_refreshes_stale_section_metadata(fed_hub):
+    """content_hash chỉ hash title+summary+body — doc_revision/title/file có
+    thể lệch khỏi hub hiện tại (rename, bump revision) mà hash không đổi.
+    Phải refresh 3 cột này (citation/path đúng) mà không rewrite FTS/re-embed."""
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    entry = fed_hub / "federation" / "arinc-kb"
+    index_path = entry / "index.yaml"
+    index = models.load_yaml_model(index_path, models.KBIndex)
+    index.docs[0].revision = "Supplement 23"  # bump revision, content giữ nguyên
+    models.save_yaml_model(index_path, index)
+    manifest_path = entry / "arinc-424" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.sections[0].file = "ch1-renamed"  # rename file, content giữ nguyên
+    models.save_yaml_model(manifest_path, manifest)
+    (entry / "arinc-424" / "ch1-renamed.md").write_text(
+        (entry / "arinc-424" / "ch1.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    report = searchdb.sync(hub, None)
+    assert report.repos_synced == 1
+    assert report.sections_updated == 0  # nội dung section không đổi — không rewrite
+    conn = searchdb.open_db(hub)
+    try:
+        row = conn.execute(
+            "SELECT doc_revision, file FROM sections WHERE repo_id='arinc-kb'"
+        ).fetchone()
+        assert row == ("Supplement 23", "ch1-renamed")
+        assert conn.execute("SELECT COUNT(*) FROM fts").fetchone() == (2,)
+    finally:
+        conn.close()
+
+
 def test_sync_deletes_removed_section_and_repo(fed_hub):
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
@@ -247,6 +280,34 @@ def test_sync_reembeds_only_changed_section(fed_hub):
     report = searchdb.sync(hub, FakeEmbedder())
     assert report.embedded == 1
     assert _vec_count(hub) == 2  # row cũ xoá, row mới thêm
+
+
+def test_sync_warm_full_vec_coverage_skips_embed_call(fed_hub):
+    """Mọi search() gọi open_fresh → _sync_vectors — với embedder có mặt, sync
+    warm (đã embed đủ) trước đây phải load TOÀN BỘ sections JOIN fts vào Python
+    để tìm rowid thiếu embedding, mỗi lần search. Warm sync giờ không được gọi
+    embedder.embed() (spy đếm) và report.embedded phải = 0."""
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, FakeEmbedder())  # cold: embed toàn bộ, vec coverage đủ
+
+    class CountingEmbedder(FakeEmbedder):
+        def __init__(self):
+            self.calls = 0
+
+        def embed(self, texts):
+            self.calls += 1
+            return super().embed(texts)
+
+    counting = CountingEmbedder()
+    report = searchdb.sync(hub, counting)  # warm: vec coverage đã đủ
+    assert report.embedded == 0
+    assert counting.calls == 0  # không gọi embedder.embed() — không có gì để embed
+
+    conn = searchdb.open_fresh(hub, counting)  # lazy check qua open_fresh cũng vậy
+    try:
+        assert counting.calls == 0
+    finally:
+        conn.close()
 
 
 def test_sync_model_change_rebuilds_vec_table(fed_hub):

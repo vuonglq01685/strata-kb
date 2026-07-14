@@ -1,4 +1,9 @@
-Note: [golden:arinc-424 §5.129 (Supplement 22)] and [golden:arinc-424 §5.126 (Supplement 22)] score closely — both may be relevant to your question; review each before citing.
+Note: [golden:arinc-424 §5.126 (Supplement 22)] and [golden:arinc-424 §5.129 (Supplement 22)] score closely — both may be relevant to your question; review each before citing.
+
+--- [golden:arinc-424 §5.126 (Supplement 22)] score=<N> ~103tk
+## 5.126 Restrictive Airspace Name
+
+The Restrictive Airspace Name field contains the name of the restrictive airspace when assigned, derived from official government sources. The name, if assigned, is entered in the first record only; if source does not assign a name, the field may be blank. Used On: Restrictive Airspace records. Length: 30 characters. Character Type: Alpha/numeric. Examples: RANDOLPH ONE MOA, SAMBURU GAME RESERVE.
 
 --- [golden:arinc-424 §5.129 (Supplement 22)] score=<N> ~246tk
 ## 5.129 Restrictive Airspace Designation
@@ -12,11 +17,6 @@ The Restrictive Airspace Designation field contains the number or name that uniq
 | R-2524             | K2              | R               | 2524            |
 | Crystal MOA        | K4              | M               | Crystal         |
 | Randolph MOA One B | K4              | M               | Randolph*       |
-
---- [golden:arinc-424 §5.126 (Supplement 22)] score=<N> ~103tk
-## 5.126 Restrictive Airspace Name
-
-The Restrictive Airspace Name field contains the name of the restrictive airspace when assigned, derived from official government sources. The name, if assigned, is entered in the first record only; if source does not assign a name, the field may be blank. Used On: Restrictive Airspace records. Length: 30 characters. Character Type: Alpha/numeric. Examples: RANDOLPH ONE MOA, SAMBURU GAME RESERVE.
 
 --- [golden:arinc-424 §5.174 (Supplement 22)] score=<N> ~131tk
 ## 5.174 Restrictive Airspace Link Continuation (LC)
@@ -41,20 +41,15 @@ The Restrictive Airspace Type field indicates the type of Airspace in which the 
 | Warning                  | W       |
 | Unspecified or Unknown   | U       |
 
---- [golden:arinc-424 §5.140 (Supplement 22)] score=<N> ~125tk
-## 5.140 Controlling Agency
-
-Some Restrictive Airspace areas are designated joint use, and IFR operations in the area may be authorized by the controlling agency when it is not being utilized by the using agency. The name of the Controlling Agency is derived from official government sources and shown on the first record only; if no Controlling Agency is specified, the field may be blank. Used On: Controlled Airspace, Restrictive Airspace Continuation record. Length: 25 characters. Character Type: Alpha/numeric. Examples: LAX, ARTCC, Lumpur ACC, Butterworth APP.
-
---- [golden:arinc-424 §5.132 (Supplement 22)] score=<N> ~141tk
-## 5.132 NOTAM
-
-Restrictive Airspace areas may not have established active times and are activated by NOTAM, or may be active by NOTAM in addition to established times. Active times by NOTAM are derived from official government source. On primary records, the area is active only by NOTAM and there is no continuation record. On continuation records, the area is active by NOTAM in addition to the established times. The field contains the alpha character N to indicate either condition; otherwise the field is blank. Used On: Controlled Airspace, Restrictive Airspace, and Restrictive Airspace Continuation records. Length: 1 character. Character Type: Alpha.
-
 --- [golden:arinc-424 §5.133 (Supplement 22)] score=<N> ~105tk
 ## 5.133 Unit Indicator (UNIT IND)
 
 Restrictive Airspace lower and upper limits are specified as above Mean Sea Level (MSL) or Above Ground Level (AGL); this field permits the unit of measurement to be indicated. The units of lower and upper limits are derived from official government source. The alpha character M indicates MSL and the alpha character A indicates AGL. Used On: Controlled Airspace, Restrictive Airspace records. Length: 1 character. Character Type: Alpha.
+
+--- [golden:arinc-424 §5.140 (Supplement 22)] score=<N> ~125tk
+## 5.140 Controlling Agency
+
+Some Restrictive Airspace areas are designated joint use, and IFR operations in the area may be authorized by the controlling agency when it is not being utilized by the using agency. The name of the Controlling Agency is derived from official government sources and shown on the first record only; if no Controlling Agency is specified, the field may be blank. Used On: Controlled Airspace, Restrictive Airspace Continuation record. Length: 25 characters. Character Type: Alpha/numeric. Examples: LAX, ARTCC, Lumpur ACC, Butterworth APP.
 
 --- [golden:arinc-424 §5.119 (Supplement 22)] score=<N> ~131tk
 ## 5.119 Arc Distance (ARC DIST)
@@ -65,3 +60,28 @@ The Arc Distance field defines the distance in nautical miles from the Arc Origi
 ## 5.130 Multiple Code (MULTI CD)
 
 The Multiple Code field is used to indicate Restrictive Airspace Areas or MSA Centers having the same designator but subdivided or differently divided by lateral and/or vertical detail. It is used when official government publications for Restrictive Airspace divide an area with the same designator into different areas of activation, altitude or other defining characteristics; for MSA Centers, it provides different sectorization and altitudes for MSAs published with the same center. The field contains an alpha/numeric character uniquely identifying each area or MSA: the first affected record could contain A and multiple primary records could contain B, C, D, 0, 1, etc., as required. Used On: Controlled Airspace, Restrictive Airspace, Airport and Heliport MSA Center, Airport and Heliport SID/STAR/Approach, and Enroute Airway Flight Planning Continuation Records. Length: 1 character. Character Type: Alpha/numeric.
+
+--- [golden:arinc-424 §5.121 (Supplement 22)] score=<N> ~199tk
+## 5.121 Lower/Upper Limit
+
+Special Use Airspace is described by both lateral and vertical boundaries; the Lower/Upper Limit fields contain the lower and upper limits of the FIR/UIR or Restrictive Airspace being described, derived from official government sources. The field may contain altitude (all numeric), flight levels (alpha/numeric, alpha characters FL followed by altitude in hundreds of feet), or an all-alpha entry, entered on the first record only of each FIR/UIR or Restrictive Airspace being described. Used On: FIR/UIR, Restrictive Airspace, and Controlled Airspace records. Length: 5 characters. Character Type: Alpha/numeric. Examples: all numeric 05000, 25000; alpha/numeric FL245, FL450; all alpha NOTSP (Not Specified), UNLTD (unlimited), GND (Ground), MSL (Mean Sea Level), NOTAM (Restrictive Airspace only).
+
+--- [golden:arinc-424 §5.132 (Supplement 22)] score=<N> ~141tk
+## 5.132 NOTAM
+
+Restrictive Airspace areas may not have established active times and are activated by NOTAM, or may be active by NOTAM in addition to established times. Active times by NOTAM are derived from official government source. On primary records, the area is active only by NOTAM and there is no continuation record. On continuation records, the area is active by NOTAM in addition to the established times. The field contains the alpha character N to indicate either condition; otherwise the field is blank. Used On: Controlled Airspace, Restrictive Airspace, and Restrictive Airspace Continuation records. Length: 1 character. Character Type: Alpha.
+
+--- [golden:arinc-424 §5.19 (Supplement 22)] score=<N> ~68tk
+## 5.19 Level (LEVEL)
+
+The Level field (LEVEL) defines the airway structure an Enroute Airway, Preferred Route, Restrictive Airspace, or Controlled Airspace record belongs to: B for All Altitudes, H for High Level Airways, L for Low Level Airways. Length 1 character; alpha.
+
+--- [golden:arinc-424 §5.285 (Supplement 22)] score=<N> ~105tk
+## 5.285 Time Narrative
+
+Definition/Description: the Time Narrative field provides Time of Operations and/or Conditions of Operations in narrative form when source information cannot be formatted per Section 5.195. Source/Content: content derived from official government sources. Used On: Enroute Airway Restriction, Enroute/Airport/Heliport Communications, Restrictive Airspace, Controlled Airspace and Preferred Route Continuation Records. Length: 100 characters max (per record). Character Type: Alpha/numeric.
+
+--- [golden:arinc-424 §5.120 (Supplement 22)] score=<N> ~113tk
+## 5.120 Arc Bearing (ARC BRG)
+
+The Arc Bearing field contains the true bearing from the Arc Origin position to the beginning of the arc. Derived from official government sources when available, in degrees and tenths of a degree with the decimal point suppressed; entered only when Boundary Via is A, C, L, or R. Used On: FIR/UIR, Restrictive Airspace, and Controlled Airspace records. Length: 4 characters. Character Type: Numeric. Examples: 0900, 1800, 3450.

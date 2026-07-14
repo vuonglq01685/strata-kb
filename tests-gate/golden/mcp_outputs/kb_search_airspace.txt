@@ -1,32 +1,37 @@
-Note: [golden:arinc-424 §5.129 (Supplement 22)] and [golden:arinc-424 §5.126 (Supplement 22)] score closely — both may be relevant to your question; review each before citing.
+Note: [golden:arinc-424 §5.217 (Supplement 22)] and [golden:arinc-424 §5.215 (Supplement 22)] score closely — both may be relevant to your question; review each before citing.
 
---- [golden:arinc-424 §5.129 (Supplement 22)] score=<N> ~246tk
-## 5.129 Restrictive Airspace Designation
+--- [golden:arinc-424 §5.217 (Supplement 22)] score=<N> ~299tk
+## 5.217 Controlled Airspace Indicator (CTLD ARSP IND)
 
-The Restrictive Airspace Designation field contains the number or name that uniquely identifies the restrictive airspace, derived from official government sources. The field contains a numeric number, or when designation is by name, the name up to 10 characters; when the name is longer than 10 characters, the 10th position contains an asterisk indicating the name field should be used for the full designator. Used On: Restrictive Airspace and Enroute Airway Flight Planning Continuation records. Length: 10 characters. Character Type: Alpha/numeric.
+The Controlled Airspace Indicator field indicates whether an airport is associated with terminal-type controlled airspace, such as TMA/TCA, Radar Area, or Class B/C Airspace (USA), determined from official government publications describing lateral limits. The Controlled Airspace Airport/ICAO fields identify the airport for which terminal-controlled airspace is included in the Controlled Airspace Section; this field holds one of the codes in the table below (A, C, M, R, T), or is blank if the airport has no such association. The Controlled Airspace Airport/ICAO may differ from the record airport. Control Zones (CTR), though provided as Controlled Airspace, are not referenced this way in the Airport Flight Planning Continuation Record. Used On: Airport Flight Planning Continuation Records. Length: 1 character. Character Type: Alpha.
 
-| Field Content      | Field Content   | Field Content   | Field Content   |
-|--------------------|-----------------|-----------------|-----------------|
-| Charted Designator | ICAO            | Type            | Rest. Desig.    |
-| RJ(R)-116          | RJ              | R               | 116             |
-| R-2524             | K2              | R               | 2524            |
-| Crystal MOA        | K4              | M               | Crystal         |
-| Randolph MOA One B | K4              | M               | Randolph*       |
-
---- [golden:arinc-424 §5.126 (Supplement 22)] score=<N> ~103tk
-## 5.126 Restrictive Airspace Name
-
-The Restrictive Airspace Name field contains the name of the restrictive airspace when assigned, derived from official government sources. The name, if assigned, is entered in the first record only; if source does not assign a name, the field may be blank. Used On: Restrictive Airspace records. Length: 30 characters. Character Type: Alpha/numeric. Examples: RANDOLPH ONE MOA, SAMBURU GAME RESERVE.
+| Field Content   | Description                                                            |
+|-----------------|------------------------------------------------------------------------|
+| A               | The Airport is within or below the lateral limits of Class C Airspace. |
+| C               | The Airport is within or below the lateral limits of a CTA.            |
+| M               | The Airport is within or below the lateral limits of a TMA or TCA.     |
+| R               | The Airport is within or below the lateral limits Radar Zone.          |
+| T               | The Airport is within or below the lateral limits of Class B Airspace. |
 
 --- [golden:arinc-424 §5.215 (Supplement 22)] score=<N> ~78tk
 ## 5.215 Controlled Airspace Classification (ARSP CLASS)
 
 The Controlled Airspace Classification field contains an alpha character for the published classification of the controlled airspace, when assigned, derived from official government sources; blank if source provides no classification. Used On: Controlled Airspace records. Length: 1 character. Character Type: Alpha. Examples: B, C, G, Blank.
 
+--- [golden:arinc-424 §5.214 (Supplement 22)] score=<N> ~224tk
+## 5.214 Controlled Airspace Center (ARSP CNTR)
+
+The Controlled Airspace Center field defines the navigation element on which the controlled airspace is predicated, though not necessarily centered; where the airspace is undefined, the Region Identifier is used, and the field then contains the ICAO Identification code for that airspace. The center is determined during record construction — e.g., New York Class B Airspace uses the Kennedy Airport identifier KJFK — and may contain a Navaid, Enroute Waypoint, Heliport, or Airport Identifier. A Region Identifier is derived from official government source or ICAO Document 7910, Location Indicators, when no controlling authority is published and the airspace serves more than one airport. Commentary (5.214-x91): if no suitable published Navaid, Waypoint, Airport, or Region Identifier exists, data suppliers may create a center waypoint for this field. Used On: Controlled Airspace records. Length: 5 characters. Character Type: Alpha/numeric. Examples: OTR, FISHS, KJFK, EGTT.
+
 --- [golden:arinc-424 §5.216 (Supplement 22)] score=<N> ~88tk
 ## 5.216 Controlled Airspace Name (ARSP NAME)
 
 The Controlled Airspace Name field contains the name of the controlled airspace when assigned, derived from official government sources; the name is entered only in the first record and may be blank if source assigns none. Used On: Controlled Airspace records. Length: 30 characters. Character Type: Alpha/numeric. Examples: DENVER CLASS B, OAKLAND OCTA.
+
+--- [golden:arinc-424 §5.126 (Supplement 22)] score=<N> ~103tk
+## 5.126 Restrictive Airspace Name
+
+The Restrictive Airspace Name field contains the name of the restrictive airspace when assigned, derived from official government sources. The name, if assigned, is entered in the first record only; if source does not assign a name, the field may be blank. Used On: Restrictive Airspace records. Length: 30 characters. Character Type: Alpha/numeric. Examples: RANDOLPH ONE MOA, SAMBURU GAME RESERVE.
 
 --- [golden:arinc-424 §5.213 (Supplement 22)] score=<N> ~227tk
 ## 5.213 Controlled Airspace Type (ARSP TYPE)
@@ -41,6 +46,19 @@ The Controlled Airspace Type field indicates the type of controlled airspace, de
 | R               | Radar Zone or Radar Area (was TRSA within the USA)                    |
 | T               | Class B Airspace (Was TCA with the USA)                               |
 | Z               | Class D Airspace within the USA, Control Zone, ICAO Designation (CTR) |
+
+--- [golden:arinc-424 §5.129 (Supplement 22)] score=<N> ~246tk
+## 5.129 Restrictive Airspace Designation
+
+The Restrictive Airspace Designation field contains the number or name that uniquely identifies the restrictive airspace, derived from official government sources. The field contains a numeric number, or when designation is by name, the name up to 10 characters; when the name is longer than 10 characters, the 10th position contains an asterisk indicating the name field should be used for the full designator. Used On: Restrictive Airspace and Enroute Airway Flight Planning Continuation records. Length: 10 characters. Character Type: Alpha/numeric.
+
+| Field Content      | Field Content   | Field Content   | Field Content   |
+|--------------------|-----------------|-----------------|-----------------|
+| Charted Designator | ICAO            | Type            | Rest. Desig.    |
+| RJ(R)-116          | RJ              | R               | 116             |
+| R-2524             | K2              | R               | 2524            |
+| Crystal MOA        | K4              | M               | Crystal         |
+| Randolph MOA One B | K4              | M               | Randolph*       |
 
 --- [golden:arinc-424 §5.128 (Supplement 22)] score=<N> ~215tk
 ## 5.128 Restrictive Airspace Type (REST TYPE)
@@ -65,35 +83,12 @@ The Restrictive Airspace Type field indicates the type of Airspace in which the 
 
 The Restrictive Airspace Link Continuation (LC) field indicates cases where not all Enroute Airway to Restrictive Airspace Links can be stored in the Flight Planning Continuation Record defined in 4.6.3 (more than four area links required). When an additional Continuation Record (per Section 4.1.6.4) is needed to provide further links, this field contains alpha character Y to indicate that status. Used On: Enroute Airway Flight Planning Continuation records. Length: 1 character. Character Type: Alpha.
 
---- [golden:arinc-424 §5.214 (Supplement 22)] score=<N> ~224tk
-## 5.214 Controlled Airspace Center (ARSP CNTR)
+--- [golden:arinc-424 §5.133 (Supplement 22)] score=<N> ~105tk
+## 5.133 Unit Indicator (UNIT IND)
 
-The Controlled Airspace Center field defines the navigation element on which the controlled airspace is predicated, though not necessarily centered; where the airspace is undefined, the Region Identifier is used, and the field then contains the ICAO Identification code for that airspace. The center is determined during record construction — e.g., New York Class B Airspace uses the Kennedy Airport identifier KJFK — and may contain a Navaid, Enroute Waypoint, Heliport, or Airport Identifier. A Region Identifier is derived from official government source or ICAO Document 7910, Location Indicators, when no controlling authority is published and the airspace serves more than one airport. Commentary (5.214-x91): if no suitable published Navaid, Waypoint, Airport, or Region Identifier exists, data suppliers may create a center waypoint for this field. Used On: Controlled Airspace records. Length: 5 characters. Character Type: Alpha/numeric. Examples: OTR, FISHS, KJFK, EGTT.
-
---- [golden:arinc-424 §5.217 (Supplement 22)] score=<N> ~299tk
-## 5.217 Controlled Airspace Indicator (CTLD ARSP IND)
-
-The Controlled Airspace Indicator field indicates whether an airport is associated with terminal-type controlled airspace, such as TMA/TCA, Radar Area, or Class B/C Airspace (USA), determined from official government publications describing lateral limits. The Controlled Airspace Airport/ICAO fields identify the airport for which terminal-controlled airspace is included in the Controlled Airspace Section; this field holds one of the codes in the table below (A, C, M, R, T), or is blank if the airport has no such association. The Controlled Airspace Airport/ICAO may differ from the record airport. Control Zones (CTR), though provided as Controlled Airspace, are not referenced this way in the Airport Flight Planning Continuation Record. Used On: Airport Flight Planning Continuation Records. Length: 1 character. Character Type: Alpha.
-
-| Field Content   | Description                                                            |
-|-----------------|------------------------------------------------------------------------|
-| A               | The Airport is within or below the lateral limits of Class C Airspace. |
-| C               | The Airport is within or below the lateral limits of a CTA.            |
-| M               | The Airport is within or below the lateral limits of a TMA or TCA.     |
-| R               | The Airport is within or below the lateral limits Radar Zone.          |
-| T               | The Airport is within or below the lateral limits of Class B Airspace. |
+Restrictive Airspace lower and upper limits are specified as above Mean Sea Level (MSL) or Above Ground Level (AGL); this field permits the unit of measurement to be indicated. The units of lower and upper limits are derived from official government source. The alpha character M indicates MSL and the alpha character A indicates AGL. Used On: Controlled Airspace, Restrictive Airspace records. Length: 1 character. Character Type: Alpha.
 
 --- [golden:arinc-424 §5.140 (Supplement 22)] score=<N> ~125tk
 ## 5.140 Controlling Agency
 
 Some Restrictive Airspace areas are designated joint use, and IFR operations in the area may be authorized by the controlling agency when it is not being utilized by the using agency. The name of the Controlling Agency is derived from official government sources and shown on the first record only; if no Controlling Agency is specified, the field may be blank. Used On: Controlled Airspace, Restrictive Airspace Continuation record. Length: 25 characters. Character Type: Alpha/numeric. Examples: LAX, ARTCC, Lumpur ACC, Butterworth APP.
-
---- [golden:arinc-424 §5.132 (Supplement 22)] score=<N> ~141tk
-## 5.132 NOTAM
-
-Restrictive Airspace areas may not have established active times and are activated by NOTAM, or may be active by NOTAM in addition to established times. Active times by NOTAM are derived from official government source. On primary records, the area is active only by NOTAM and there is no continuation record. On continuation records, the area is active by NOTAM in addition to the established times. The field contains the alpha character N to indicate either condition; otherwise the field is blank. Used On: Controlled Airspace, Restrictive Airspace, and Restrictive Airspace Continuation records. Length: 1 character. Character Type: Alpha.
-
---- [golden:arinc-424 §5.133 (Supplement 22)] score=<N> ~105tk
-## 5.133 Unit Indicator (UNIT IND)
-
-Restrictive Airspace lower and upper limits are specified as above Mean Sea Level (MSL) or Above Ground Level (AGL); this field permits the unit of measurement to be indicated. The units of lower and upper limits are derived from official government source. The alpha character M indicates MSL and the alpha character A indicates AGL. Used On: Controlled Airspace, Restrictive Airspace records. Length: 1 character. Character Type: Alpha.
