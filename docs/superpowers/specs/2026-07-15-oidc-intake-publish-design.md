@@ -18,6 +18,7 @@ Tiêu chí hoàn thành:
 4. Child A không thể mạo danh child B (ghi đè `federation/<rid-của-B>/`) dù cầm JWT hợp lệ của chính nó.
 5. Đăng ký child mới không cần đụng server: một PR sửa `federation/registry.yaml` trên hub.
 6. Hai mode cũ giữ nguyên: **direct** (hub local-path — demo/test) và **PR mode gh** (ai vốn có write hub: chính hub, maintainer).
+7. Chi phí upload/copy mỗi publish tỉ lệ với **kích thước thay đổi**, không phải kích thước KB; publish không có gì đổi là no-op (không commit, không PR).
 
 Ngoài phạm vi:
 
@@ -37,14 +38,15 @@ Ngoài phạm vi:
 | 5 | Máy dev theo dõi kết quả | **Poll `GET /intake/status`** của service — không poll GitHub API | Giữ zero GitHub auth kể cả khi child private. Service biết PR nó vừa mở. |
 | 6 | Allowlist | **`federation/registry.yaml` trong hub repo**: map `owner/repo → repo_id` | Server đọc từ hub clone (tự tươi theo pull). Đăng ký = PR, cũng qua review, không đụng server. `repo_id` lấy từ registry — không tin payload. |
 | 7 | Chống PR spam | Branch `publish/<rid>` cố định, force-push cập nhật PR đang mở | Mỗi child tối đa 1 PR mở trên hub (cơ chế sẵn có của PR mode, tái dùng). |
+| 8 | Transport & copy ở scale lớn | **Incremental sync bằng content-hash manifest** — upload/copy ∝ kích thước thay đổi, không ∝ kích thước KB; diff rỗng → no-op (không commit, không PR, không đổi `_meta.yaml`) | Phòng xa cho KB hàng triệu entry: tarball full mỗi publish không scale. Git vốn dedup blob không đổi — incremental chữa tầng vận chuyển/I-O, không phải tầng diff. No-op detection tiện thể loại nốt diff ồn cố hữu của `published_at`. |
 
 ## 3. Kiến trúc & luồng dữ liệu
 
 **4 thành phần:**
 
-1. **Child repo** — zero secret. Workflow `kb-publish.yml` (scaffold bởi `kb init`): `on: push: tags: ['kb-publish/*']`; `permissions: id-token: write, contents: read`; steps: checkout tag, pack `.kb/` tarball, xin OIDC JWT với `audience` = intake URL, POST tarball + JWT + source commit lên `POST /intake/publish`.
+1. **Child repo** — zero secret. Workflow `kb-publish.yml` (scaffold bởi `kb init`): `on: push: tags: ['kb-publish/*']`; `permissions: id-token: write, contents: read`; steps: checkout tag, xin OIDC JWT với `audience` = intake URL, `GET /intake/manifest?repo_id=` lấy `{path → sha256}` hiện tại trên hub, hash `.kb/` local, so sánh → tarball **chỉ file đổi/mới** + delete-list, POST lên `POST /intake/publish`. Diff rỗng → kết thúc "nothing to publish", không POST. Manifest endpoint lỗi → fallback upload full (đường chậm nhưng đúng).
 2. **Máy dev** — `kb publish` (config có `intake:`): kiểm `.kb/` đã commit sạch → tạo tag `kb-publish/<utc-timestamp>` trỏ HEAD → `git push origin <tag>` → poll `GET /intake/status?repo_id=...&commit=...` tới khi có PR URL → in ra.
-3. **Intake** (trong HTTP server): verify JWT → tra registry ra `repo_id` → safe-extract tarball vào temp → chạy lõi publish PR-mode trên hub clone của server → mint GitHub App installation token → push branch `publish/<rid>` → mở PR qua REST API (không cần `gh` CLI server-side) → ghi status.
+3. **Intake** (trong HTTP server): verify JWT → tra registry ra `repo_id` → safe-extract tarball vào temp → **apply có chủ đích** vào `federation/<rid>/` trên hub clone: ghi file đổi, xóa file trong delete-list (mỗi path qua guard `is_relative_to`), không `rmtree + copytree` → regen index → mint GitHub App installation token → push branch `publish/<rid>` → mở PR qua REST API (không cần `gh` CLI server-side) → ghi status. Request cùng `repo_id` được serialize (lock per repo) — hai publish song song của một repo không giẫm nhau.
 4. **Hub** — GitHub App install; branch protection main giữ nguyên; merge PR = cổng review duy nhất.
 
 **Luồng:**
@@ -71,7 +73,9 @@ dev sửa .kb/ → commit + push child
 
 **Chống mạo danh giữa child:** `repo_id` chỉ lấy từ registry theo claim `repository`. Không trường nào trong payload quyết định đường ghi.
 
-**Giới hạn payload:** tarball cap 50 MB (config được); safe-extract — chặn `..`, đường dẫn tuyệt đối, symlink/hardlink, chỉ file thường; đích qua guard `is_relative_to` (như `_snapshot` hiện có).
+**Giới hạn payload:** tarball cap 50 MB (config được — incremental nên tarball thường nhỏ; cap chủ yếu chặn upload full bất thường); safe-extract — chặn `..`, đường dẫn tuyệt đối, symlink/hardlink, chỉ file thường; mọi path (kể cả delete-list) qua guard `is_relative_to` (như `_snapshot` hiện có).
+
+**Manifest endpoint:** `GET /intake/manifest?repo_id=` trả `{path → sha256}` của đúng `federation/<rid>/` — chỉ metadata (path + hash), không nội dung tri thức; cùng giả định mạng nội bộ như status endpoint. Child ~100k file → manifest ~10 MB JSON, chấp nhận.
 
 **GitHub App:** private key chỉ trên server (env trỏ file / secret manager). Mỗi request mint installation token (~1h), dùng xong bỏ. Leak installation token = ghi branch không bảo vệ + mở PR — main vẫn có branch protection.
 
@@ -82,12 +86,18 @@ dev sửa .kb/ → commit + push child
 ```
 src/center_kb/
 ├── intake.py       # MỚI — verify OIDC JWT (JWKS cache), registry lookup,
-│                   #   safe-extract tarball, gọi lõi publish, status store (in-memory + file)
+│                   #   safe-extract tarball, apply incremental (ghi đổi + xóa theo delete-list),
+│                   #   manifest endpoint, lock per repo_id, status store (in-memory + file)
+├── hashsync.py     # MỚI — build manifest {path → sha256} của một cây; diff hai manifest
+│                   #   → (changed, deleted); sync có chủ đích thay rmtree+copytree.
+│                   #   Dùng chung: CI child (client), intake (server), direct mode (local)
 ├── ghapp.py        # MỚI — GitHub App: mint app JWT, đổi installation token,
 │                   #   mở PR qua REST API; fake-able cho test
 ├── publish.py      # sửa — tách _publish_pr thành lõi nhận credential provider:
 │                   #   gh CLI (dev có write) | App token (intake). Thêm mode "intake"
-│                   #   phía CLI: tag kb-publish/<ts> + push + poll status
+│                   #   phía CLI: tag kb-publish/<ts> + push + poll status.
+│                   #   _snapshot đổi sang hashsync (direct/PR mode local cũng incremental;
+│                   #   diff rỗng → no-op, không đổi _meta.yaml)
 ├── models.py       # sửa — +Registry {github_repo → repo_id}, +IntakeStatus
 ├── federation.py   # sửa — đọc/validate federation/registry.yaml
 ├── mcp.py          # sửa — create_http_app gắn /intake/publish + /intake/status;
@@ -113,10 +123,14 @@ Chọn mode publish: `.kb/config.yaml` có `intake:` → intake mode; không có
 | `kb publish` local: `.kb/` dirty | lỗi liệt kê file chưa commit, không tạo tag |
 | Poll status timeout | in link Actions run của child + hướng dẫn xem log |
 | Registry YAML hỏng trên hub | intake trả 503 "registry invalid" — fail đóng, không fail mở |
+| Manifest endpoint lỗi/timeout | CI child fallback upload full `.kb/` — chậm nhưng đúng, log warn |
+| Diff rỗng (không gì đổi) | CI in "nothing to publish", exit 0, không POST; hub không có commit/PR mới |
+| Delete-list chứa path ngoài `federation/<rid>/` | 400, không xóa gì |
 
 ## 7. Testing
 
-- **`intake.py`:** JWT ký bằng RSA key test, JWKS fake local — phủ từng nhánh chặn (chữ ký, iss, aud, exp, ref, registry). Tarball: traversal, symlink, oversize, tar bomb cap.
+- **`intake.py`:** JWT ký bằng RSA key test, JWKS fake local — phủ từng nhánh chặn (chữ ký, iss, aud, exp, ref, registry). Tarball: traversal, symlink, oversize, tar bomb cap. Delete-list: path ngoài subtree bị chặn.
+- **`hashsync.py`:** manifest deterministic (path sort, hash ổn định CRLF-safe); diff đúng (changed/deleted/empty); sync áp lên cây thật cho kết quả byte-identical với copytree; diff rỗng → không chạm đĩa, `_meta.yaml` giữ nguyên.
 - **`ghapp.py`:** HTTP fake ghi lại request, trả installation token + PR URL giả.
 - **End-to-end intake:** POST vào `create_http_app` test client, hub local-path — verify branch `publish/<rid>`, snapshot, index tổng, status endpoint trả PR URL.
 - **CLI:** `kb publish` intake mode trên repo tmp — tag đúng format `kb-publish/<ts>`, push đúng remote, poll parse đúng, dirty tree bị chặn.
