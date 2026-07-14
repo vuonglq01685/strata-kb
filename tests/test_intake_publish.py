@@ -167,7 +167,9 @@ def test_intake_publish_after_merge_resets_branch_from_main(hub, monkeypatch):
     intake.intake_publish(
         cfg, "flight-docs", "aaa", "acme/flight-docs", [], _kb_archive()
     )
-    _git(hub, "merge", "publish/flight-docs")
+    # --no-ff: merge commit thật (như GitHub merge mặc định) — fast-forward
+    # sẽ làm assert merge-base vô nghĩa (branch cũ vẫn là ancestor của main)
+    _git(hub, "merge", "--no-ff", "--no-edit", "publish/flight-docs")
     # publish 2 với nội dung đổi 1 file
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
@@ -185,6 +187,26 @@ def test_intake_publish_after_merge_resets_branch_from_main(hub, monkeypatch):
     assert merge_base == main_sha
 
 
+def test_intake_publish_after_merge_identical_content_is_noop(hub, monkeypatch):
+    """PR merged xong, republish nội dung y hệt: branch reset từ main đã có
+    content nên porcelain sạch → trả "", không gọi GitHub API nào."""
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    http1 = FakeHTTP(
+        [(200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/1"})]
+    )
+    intake.intake_publish(
+        _cfg(hub, http1), "flight-docs", "aaa", "acme/flight-docs", [], _kb_archive()
+    )
+    _git(hub, "merge", "--no-ff", "--no-edit", "publish/flight-docs")
+    http2 = FakeHTTP([])
+    pr = intake.intake_publish(
+        _cfg(hub, http2), "flight-docs", "aaa", "acme/flight-docs", [], _kb_archive()
+    )
+    assert pr == ""
+    assert http2.requests == []
+
+
 def test_hub_manifest_excludes_meta(hub, monkeypatch):
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
@@ -196,8 +218,9 @@ def test_hub_manifest_excludes_meta(hub, monkeypatch):
     )
     # manifest đọc từ branch main — chưa merge nên rỗng là đúng;
     # đọc từ working tree sau checkout branch thì có file. hub_manifest đọc
-    # trạng thái main (đã merge) — mô phỏng bằng merge branch vào main:
-    _git(hub, "merge", "publish/flight-docs")
+    # trạng thái main (đã merge) — mô phỏng bằng merge branch vào main
+    # (--no-ff như GitHub merge mặc định):
+    _git(hub, "merge", "--no-ff", "--no-edit", "publish/flight-docs")
     man = intake.hub_manifest(str(hub), "flight-docs")
     assert "index.yaml" in man
     assert "_meta.yaml" not in man

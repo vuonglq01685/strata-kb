@@ -272,6 +272,10 @@ def intake_publish(
                 #   reuse the branch, so an unmerged PR accumulates
                 #   snapshots and a byte-identical re-publish diffs against
                 #   its own prior write and stays a true no-op ("").
+                # Accepted trade-off: once the rid exists on main, a resend
+                # of identical *pending* (unmerged-PR) content is no longer
+                # detected as a no-op -- it re-commits on the fresh branch
+                # and converges via create_or_get_pr's 422 reuse path.
                 if dest_on_main or not gitio.rev_exists(handle.root, branch):
                     gitio.checkout_branch(handle.root, branch, original)
                 else:
