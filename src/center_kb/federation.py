@@ -12,6 +12,21 @@ from center_kb import models
 logger = logging.getLogger("center_kb.federation")
 
 FEDERATION_INDEX_NAME = "index.yaml"
+REGISTRY_NAME = "registry.yaml"
+
+
+class RegistryError(RuntimeError):
+    """federation/registry.yaml is unreadable — intake must fail closed."""
+
+
+def load_registry(federation_dir: Path) -> models.Registry:
+    path = federation_dir / REGISTRY_NAME
+    if not path.exists():
+        return models.Registry()
+    try:
+        return models.load_yaml_model(path, models.Registry)
+    except (yaml.YAMLError, ValidationError) as exc:
+        raise RegistryError(f"federation/{REGISTRY_NAME} is invalid: {exc}") from exc
 
 
 class FederationMeta(BaseModel):

@@ -136,7 +136,10 @@ dependencies = [
 dev = [
     { name = "anyio" },
     { name = "build" },
+    { name = "httpx" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pytest" },
+    { name = "python-multipart" },
     { name = "sqlite-vec" },
     { name = "twine" },
 ]
@@ -147,6 +150,10 @@ embed = [
 ingest = [
     { name = "docling" },
 ]
+server = [
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "python-multipart" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -154,10 +161,15 @@ requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.2" },
     { name = "docling", marker = "extra == 'ingest'", specifier = ">=2.0" },
     { name = "fastembed", marker = "extra == 'embed'", specifier = ">=0.3" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.2" },
     { name = "pydantic", specifier = ">=2.7" },
+    { name = "pyjwt", extras = ["crypto"], marker = "extra == 'dev'", specifier = ">=2.8" },
+    { name = "pyjwt", extras = ["crypto"], marker = "extra == 'server'", specifier = ">=2.8" },
     { name = "pypdf", specifier = ">=4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "python-multipart", marker = "extra == 'dev'", specifier = ">=0.0.9" },
+    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.9" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlite-vec", marker = "extra == 'dev'", specifier = ">=0.1.6" },
     { name = "sqlite-vec", marker = "extra == 'embed'", specifier = ">=0.1.6" },
@@ -167,7 +179,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
-provides-extras = ["ingest", "dev", "embed"]
+provides-extras = ["ingest", "dev", "embed", "server"]
 
 [[package]]
 name = "certifi"

@@ -9,3 +9,4 @@ kind: child
 hub: ""
 # repo_id: repo name on the federation (pre-filled from the folder name)
 repo_id: "{repo_id}"
+# intake: https://kb.internal:8321   # enable publishing via OIDC CI (zero secrets in this repo)

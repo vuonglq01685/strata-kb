@@ -162,7 +162,7 @@ CENTER-KB/
 │
 ├── .claude/skills/kb-summarize/    ← "recipe" teaching AI how to summarize correctly
 ├── scripts/demo-federation.sh      ← demo: spins up kb-hub + 2 sample repos end-to-end (Phase 3)
-├── .github/workflows/kb-publish.yml ← CI sample: push catalog to kb-hub when `.kb/` changes (Phase 3)
+├── .github/workflows/kb-publish.yml ← CI sample: publish to kb-hub on `kb-publish/*` tags created by `kb publish` (Phase 3)
 ├── docs/                            ← design docs & plans (tool developers)
 │   └── deploy-remote-mcp.md                deploy a shared HTTP MCP server (Phase 3)
 └── tests/                           ← automated tests for the tool

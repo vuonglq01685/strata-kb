@@ -77,6 +77,12 @@ class FederationIndex(BaseModel):
     docs: list[FedIndexEntry] = Field(default_factory=list)
 
 
+class Registry(BaseModel):
+    """federation/registry.yaml — allowlist: GitHub 'owner/repo' → repo_id on the hub."""
+
+    repos: dict[str, str] = Field(default_factory=dict)
+
+
 def load_yaml_model(path: Path, model: type[T]) -> T:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return model.model_validate(data)

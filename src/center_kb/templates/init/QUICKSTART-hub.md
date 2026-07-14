@@ -25,6 +25,18 @@ into it; merging their PRs here is the review gate.
    maintainer; remote clients (child repos, BA machines) use the HTTP
    endpoint instead:
    `http://<host>:8321/mcp` with header `Authorization: Bearer <token>`.
+5. **Register child repos (optional)** — lets child repos publish from CI via
+   OIDC with zero secrets, instead of pushing directly. Create
+   `federation/registry.yaml` on the hub with one line per child:
+   `owner/repo: repo-id` under a `repos:` key. Then install a GitHub App on
+   the hub repo (permissions `Contents: Read and write` + `Pull requests:
+   Read and write`) and set `CENTER_KB_GH_APP_ID`, `CENTER_KB_GH_APP_KEY`,
+   `CENTER_KB_INTAKE_AUDIENCE` on the server — see
+   `docs/deploy-remote-mcp.md` § "Publish intake" for the full setup.
+   **Warning:** `repo-id` here must exactly match `repo_id:` in the child's
+   `.kb/config.yaml`. On mismatch, publish still succeeds and the PR opens,
+   but the dev CLI will time out waiting for a PR that actually opened, and
+   uploads lose incrementality (every publish becomes a full upload).
 
 ## CLI reference
 

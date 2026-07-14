@@ -199,10 +199,15 @@ def create_server(config: ServerConfig) -> MCPServer:
 
 
 def create_http_app(config: ServerConfig, token: str):
-    """One ASGI app: MCP (streamable HTTP) + REST /api + HTML /ui, token-guarded."""
+    """One ASGI app: MCP (streamable HTTP) + REST /api + HTML /ui + /intake, token-guarded."""
+    from center_kb.intake import intake_config_from_env
     from center_kb.web.app import create_app
 
-    return create_app(config, token, mcp_server=create_server(config))
+    return create_app(
+        config, token,
+        mcp_server=create_server(config),
+        intake_cfg=intake_config_from_env(config.hub),
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> ServerConfig:

@@ -5,7 +5,7 @@ from http.cookies import CookieError, SimpleCookie
 
 COOKIE_NAME = "center_kb_token"
 EXEMPT_PATHS = ("/api/health", "/ui/login")
-EXEMPT_PREFIXES = ("/ui/static/",)
+EXEMPT_PREFIXES = ("/ui/static/", "/intake/")
 
 
 class TokenAuthMiddleware:

@@ -277,6 +277,25 @@ def test_init_child_config_points_at_no_hub_yet(tmp_path: Path):
     assert 'repo_id: "my-child-repo"' in text
 
 
+def test_child_kb_publish_workflow_uses_oidc_intake(tmp_path: Path):
+    init_repo(tmp_path, "child")
+    content = (
+        tmp_path / ".github" / "workflows" / "kb-publish.yml"
+    ).read_text(encoding="utf-8")
+    assert 'tags: ["kb-publish/*"]' in content
+    assert "id-token: write" in content
+    assert "kb ci-publish" in content
+    assert "secrets.GH_TOKEN" not in content
+    assert "secrets.KB_HUB_URL" not in content
+    assert "branches: [main]" not in content
+
+
+def test_child_config_documents_intake(tmp_path: Path):
+    init_repo(tmp_path, "child")
+    text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "intake:" in text
+
+
 def test_child_compose_is_ingest_only(tmp_path: Path):
     init_repo(tmp_path, "child")
     text = (tmp_path / "docker-compose.yml").read_text(encoding="utf-8")

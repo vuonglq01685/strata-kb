@@ -607,11 +607,28 @@ def publish(
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
     from center_kb import gitio
     from center_kb import publish as publish_mod
-    from center_kb.config import HubConfigError, effective_repo_id, require_hub
+    from center_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
 
     if pr and direct:
         typer.secho("--pr and --direct are mutually exclusive", fg=typer.colors.RED)
         raise typer.Exit(2)
+
+    cfg = load_config(kb_dir)
+    if cfg.intake and not pr and not direct:
+        try:
+            pr_url = publish_mod.publish_via_intake(
+                kb_dir, cfg.intake, effective_repo_id(repo_id, kb_dir)
+            )
+        except (publish_mod.PublishError, gitio.GitError) as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if pr_url:
+            typer.echo(f"kb publish: PR on the hub — {pr_url}")
+            typer.echo("Content goes live when the PR is merged on the hub.")
+        else:
+            typer.echo("kb publish: done (no PR URL reported).")
+        return
+
     mode = "pr" if pr else "direct" if direct else "auto"
     try:
         hub_ref = require_hub(hub, kb_dir)
@@ -637,6 +654,33 @@ def publish(
         f"kb publish: {report.repo_id} @ {report.source_commit} — "
         f"{report.n_docs} doc, {action}."
     )
+
+
+@app.command(name="ci-publish")
+def ci_publish(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    repo_id: str = typer.Option("", "--repo-id", help="Repo ID on the hub (default: config)"),
+    intake: str = typer.Option(
+        "", "--intake", envvar="CENTER_KB_INTAKE",
+        help="Intake base URL (default: .kb/config.yaml `intake:`)",
+    ),
+) -> None:
+    """Publish from the child's CI via OIDC — no secrets. Run by kb-publish.yml."""
+    from center_kb import cipublish, gitio
+    from center_kb.config import effective_repo_id, load_config
+
+    url = intake or load_config(kb_dir).intake
+    if not url:
+        typer.secho(
+            "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(2)
+    try:
+        cipublish.run(kb_dir, url, effective_repo_id(repo_id, kb_dir))
+    except (cipublish.CIPublishError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
 
 
 @app.command()
