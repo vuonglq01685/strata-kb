@@ -173,6 +173,33 @@ class IntakeConfig:
     push_via_token_url: bool = True  # False in tests: push plain origin, no token URL
 
 
+def intake_config_from_env(hub_ref: str) -> IntakeConfig | None:
+    """Build IntakeConfig from env; None (intake disabled, read server still runs)
+    when any of the three vars is missing or the PEM is unreadable."""
+    import os
+
+    app_id = os.environ.get("CENTER_KB_GH_APP_ID", "")
+    key_path = os.environ.get("CENTER_KB_GH_APP_KEY", "")
+    audience = os.environ.get("CENTER_KB_INTAKE_AUDIENCE", "")
+    if not (app_id and key_path and audience):
+        logger.info(
+            "intake disabled -- set CENTER_KB_GH_APP_ID, CENTER_KB_GH_APP_KEY, "
+            "CENTER_KB_INTAKE_AUDIENCE to enable /intake/publish"
+        )
+        return None
+    try:
+        pem = Path(key_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.error("intake disabled -- cannot read App key '%s': %s", key_path, exc)
+        return None
+    return IntakeConfig(
+        hub_ref=hub_ref,
+        audience=audience,
+        creds=ghapp.AppCreds(app_id=app_id, private_key_pem=pem),
+        status_path=hub_mod._cache_base() / "intake-status.json",
+    )
+
+
 def _resolve_hub_or_503(hub_ref: str) -> hub_mod.HubHandle:
     handle = hub_mod.resolve_hub(hub_ref)
     if handle is None:

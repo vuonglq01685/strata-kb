@@ -12,10 +12,12 @@ from center_kb.web import api, ui
 from center_kb.web.auth import TokenAuthMiddleware
 
 
-def create_app(config: ServerConfig, token: str, mcp_server=None):
-    """One ASGI app: / → /ui redirect, /api/*, /ui/*, and /mcp (mounted FastMCP).
+def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=None):
+    """One ASGI app: / → /ui redirect, /api/*, /ui/*, /intake/* (optional), and
+    /mcp (mounted FastMCP).
 
     mcp_server=None (unit tests): no /mcp branch, no lifespan requirement.
+    intake_cfg=None (default): no /intake/* routes — publish intake disabled.
     """
 
     async def root(request: Request) -> RedirectResponse:
@@ -24,6 +26,12 @@ def create_app(config: ServerConfig, token: str, mcp_server=None):
     routes: list = [Route("/", root, methods=["GET"])]
     routes += api.build_routes(config)
     routes += ui.build_routes(config, token)
+    if intake_cfg is not None:
+        from center_kb import intake as intake_mod
+        from center_kb.web import intake_routes
+
+        store = intake_mod.StatusStore(intake_cfg.status_path)
+        routes += intake_routes.build_intake_routes(intake_cfg, store)
 
     lifespan = None
     if mcp_server is not None:
