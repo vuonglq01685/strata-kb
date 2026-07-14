@@ -24,3 +24,6 @@ build/
 
 # SDD scratch
 .superpowers/
+
+# Git worktrees (SDD isolation)
+.worktrees/
