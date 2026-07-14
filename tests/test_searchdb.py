@@ -279,3 +279,53 @@ class _BadDimEmbedder:
 def test_sync_raises_on_wrong_vector_dim(fed_hub):
     with pytest.raises(ValueError):
         searchdb.sync(HubHandle(root=fed_hub), _BadDimEmbedder())
+
+
+def test_fts_search_ranks_and_filters(fed_hub):
+    conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)
+    try:
+        hits = searchdb.fts_search(conn, "restrictive airspace designation")
+        assert hits  # (rowid, score) sort best-first
+        rows = searchdb.load_sections(conn, [h[0] for h in hits])
+        assert rows[hits[0][0]].repo_id == "arinc-kb"  # nhiều term trùng nhất
+        assert all(h[1] > 0 for h in hits)
+        # cả hai repo đều chứa 'airspace'
+        hits_all = searchdb.fts_search(conn, "airspace")
+        assert len(hits_all) == 2
+    finally:
+        conn.close()
+
+
+def test_fts_search_tag_filter_in_sql(fed_hub):
+    conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)
+    try:
+        hits = searchdb.fts_search(conn, "airspace", tags=["arinc424"])
+        rows = searchdb.load_sections(conn, [h[0] for h in hits])
+        assert rows and all(r.repo_id == "arinc-kb" for r in rows.values())
+        # doc_id cũng hoạt động như tag
+        hits2 = searchdb.fts_search(conn, "airspace", tags=["icao-annex-2"])
+        rows2 = searchdb.load_sections(conn, [h[0] for h in hits2])
+        assert rows2 and all(r.repo_id == "icao-kb" for r in rows2.values())
+    finally:
+        conn.close()
+
+
+def test_fts_search_escapes_fts_syntax(fed_hub):
+    conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)
+    try:
+        # không được nổ syntax error với input chứa cú pháp FTS5
+        for q in ['NEAR(airspace records)', 'title:"x" OR *', 'a"b', "air-space"]:
+            searchdb.fts_search(conn, q)  # chỉ cần không raise
+        assert searchdb.fts_search(conn, "") == []
+        assert searchdb.fts_search(conn, "!!! ???") == []
+    finally:
+        conn.close()
+
+
+def test_tokenize_moved_to_searchdb():
+    assert searchdb.tokenize("Restrictive-Airspace §5.3") == [
+        "restrictive",
+        "airspace",
+        "5",
+        "3",
+    ]

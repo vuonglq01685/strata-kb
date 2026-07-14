@@ -384,3 +384,60 @@ def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connectio
         conn.close()
         raise
     return conn
+
+
+def tokenize(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _norm_tags(tags: list[str] | None) -> list[str]:
+    return sorted({t.strip().lower() for t in tags or [] if t.strip()})
+
+
+def _fts_match(text: str) -> str:
+    """Query text → FTS5 MATCH string: quote từng token, OR semantics.
+    User input không bao giờ chạm cú pháp FTS trực tiếp."""
+    return " OR ".join(f'"{tok}"' for tok in tokenize(text))
+
+
+def fts_search(
+    conn: sqlite3.Connection,
+    text: str,
+    tags: list[str] | None = None,
+    k: int = K_LEG,
+) -> list[tuple[int, float]]:
+    """Keyword leg — (section_rowid, score) best-first; score = -bm25 (dương)."""
+    match = _fts_match(text)
+    if not match:
+        return []
+    sql = (
+        "SELECT fts.rowid, -bm25(fts) FROM fts "
+        "JOIN sections s ON s.id = fts.rowid WHERE fts MATCH ?"
+    )
+    params: list[object] = [match]
+    tag_list = _norm_tags(tags)
+    if tag_list:
+        placeholders = ",".join("?" * len(tag_list))
+        sql += (
+            " AND EXISTS (SELECT 1 FROM doc_tags t WHERE t.repo_id = s.repo_id"
+            f" AND t.doc_id = s.doc_id AND t.tag IN ({placeholders}))"
+        )
+        params += tag_list
+    sql += " ORDER BY bm25(fts) LIMIT ?"  # bm25 nhỏ hơn = khớp tốt hơn
+    params.append(k)
+    return [(rowid, score) for rowid, score in conn.execute(sql, params)]
+
+
+def load_sections(
+    conn: sqlite3.Connection, rowids: Iterable[int]
+) -> dict[int, SectionRow]:
+    ids = list(rowids)
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        "SELECT id, repo_id, doc_id, section_id, title, file, doc_revision "
+        f"FROM sections WHERE id IN ({placeholders})",
+        ids,
+    )
+    return {r[0]: SectionRow(*r) for r in rows}
