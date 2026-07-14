@@ -9,6 +9,8 @@ the hub's `federation/`.
 1. **Point at the main hub** — fill `hub:` in `.kb/config.yaml` (a git URL
    or a kb-hub path) and commit it. New content appears in search only after
    `kb publish` and the PR is merged on the hub.
+   Optionally also fill `intake:` (the hub's intake service URL) to publish
+   from CI via OIDC instead — zero secrets on this repo (see step 4).
 
 ## Author and publish
 
@@ -23,9 +25,14 @@ the hub's `federation/`.
    GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
    Manual fallback: `/kb-summarize` in your assistant, or `kb summarize` later.
    Then validate: `kb build`
-4. **Publish** — `kb publish` mirrors `.kb/` to the hub and opens a PR there
-   (in your assistant: `/kb-publish` runs diff → confirm → publish). Merging
-   that PR on the hub makes the content searchable.
+4. **Publish** — with `hub:` only, `kb publish` mirrors `.kb/` to the hub and
+   opens a PR there directly (in your assistant: `/kb-publish` runs diff →
+   confirm → publish). With `intake:` set, `kb publish` instead: commits your
+   changes must already be clean, then creates and pushes a `kb-publish/<ts>`
+   tag — the `kb-publish.yml` workflow in this repo picks it up, authenticates
+   to the intake with a GitHub Actions OIDC token (no `GH_TOKEN` / `KB_HUB_URL`
+   secrets needed on this repo), and opens the PR on the hub. Either way,
+   merging that PR on the hub makes the content searchable.
 
 ## Query (reads the hub)
 

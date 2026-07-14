@@ -25,6 +25,33 @@ Goal: BAs query the KB via MCP without cloning the repo (Phase 3 spec §10).
     [Install]
     WantedBy=multi-user.target
 
+## Publish intake (OIDC → PR on the hub)
+
+The same server can accept publishes from child repos with **zero secrets on
+the children**. Child CI authenticates with a GitHub Actions OIDC JWT; the
+server verifies it, checks `federation/registry.yaml` on the hub, and opens
+the PR itself using a GitHub App.
+
+1. Create a GitHub App (hub owner): permissions `Contents: Read and write` +
+   `Pull requests: Read and write`; install it on the hub repo only.
+   Download the private key PEM.
+2. Extra env for the server:
+
+       Environment=CENTER_KB_GH_APP_ID=<app id>
+       Environment=CENTER_KB_GH_APP_KEY=/etc/center-kb/app-key.pem
+       Environment=CENTER_KB_INTAKE_AUDIENCE=https://kb.internal:8321
+
+   All three present → `/intake/*` routes turn on. Any missing → intake stays
+   off, read-only MCP still works.
+3. Register each child on the hub: add `owner/repo: repo-id` under `repos:`
+   in `federation/registry.yaml` (a normal PR — also your review gate for who
+   may contribute).
+4. Install deps on the server: `pip install "center-kb[server]"`.
+
+`/intake/*` is exempt from `CENTER_KB_HTTP_TOKEN` (children don't hold that
+token): POST /intake/publish is OIDC-authenticated; GET manifest/status carry
+only path+hash metadata — same internal-network assumption as the MCP itself.
+
 ## Client config (Claude Code / Cowork)
 
     {
