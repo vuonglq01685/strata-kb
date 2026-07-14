@@ -92,5 +92,5 @@ every document with pending sections.
   sentence.
 - Do NOT summarize tables, create new tables, or delete tables.
 - L1 summary (manifest): one sentence ≤ 25 words stating what the section
-  covers and what kind of data it contains (so BM25 matches technical
+  covers and what kind of data it contains (so keyword search matches technical
   keywords).

@@ -120,3 +120,70 @@ async def test_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool("kb_search", {"query": "anything"})
         assert "hub unreachable" in _text(result)
+
+
+def _qr(mode: str, score: float, cite: str = "r:d §1"):
+    from center_kb.query import QueryResult
+
+    return QueryResult(
+        doc_id="d", section_id="1", title="t", score=score,
+        citation=cite, content="c", tokens=1, match_mode=mode,
+    )
+
+
+def test_ambiguity_note_silent_for_single_leg_adjacent_ranks():
+    # RRF: rank kề nhau cùng leg luôn cách ~1.6% — gap tương đối chỉ tạo noise
+    from center_kb.mcp import _ambiguity_note
+
+    note = _ambiguity_note([_qr("keyword", 1 / 61), _qr("keyword", 1 / 62)])
+    assert note == ""
+
+
+def test_ambiguity_note_fires_when_top2_both_hybrid():
+    # cả hai được 2 leg xác nhận → ambiguous thật, đáng nhắc review cả hai
+    from center_kb.mcp import _ambiguity_note
+
+    note = _ambiguity_note(
+        [_qr("hybrid", 0.032, "a:x §1"), _qr("hybrid", 0.031, "b:y §2")]
+    )
+    assert "score closely" in note
+    assert "a:x §1" in note and "b:y §2" in note
+
+
+def test_ambiguity_note_fires_on_exact_tie():
+    from center_kb.mcp import _ambiguity_note
+
+    assert "score closely" in _ambiguity_note(
+        [_qr("keyword", 0.016), _qr("keyword", 0.016)]
+    )
+
+
+@pytest.mark.anyio
+async def test_kb_search_no_note_for_ordinary_keyword_ranking(fed_hub):
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search", {"query": "airspace designation type"}
+        )
+        assert "score closely" not in _text(result)  # 2 kết quả keyword rank kề
+
+
+def test_ambiguity_note_silent_for_distant_hybrid_pair():
+    # cả hai hybrid nhưng score cách xa (top rank đầu cả 2 leg vs hạng ~40)
+    # — không phải "score closely"
+    from center_kb.mcp import _ambiguity_note
+
+    assert _ambiguity_note([_qr("hybrid", 0.0328), _qr("hybrid", 0.020)]) == ""
+
+
+@pytest.mark.anyio
+async def test_kb_search_shows_match_mode_not_raw_score(fed_hub):
+    # RRF score tuyệt đối (0.02/0.03) vô nghĩa với người đọc — hiển thị
+    # match mode thay vì số thô (đồng bộ với web UI)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search", {"query": "restrictive airspace designation"}
+        )
+        assert "match=keyword" in _text(result)
+        assert "score=" not in _text(result)
