@@ -76,12 +76,24 @@ def _load_vec(conn: sqlite3.Connection) -> bool:
     return True
 
 
+def is_lock_error(exc: sqlite3.Error) -> bool:
+    """Tranh chấp lock tạm thời (process khác đang ghi) — không phải corruption,
+    tuyệt đối không được xoá index."""
+    return isinstance(exc, sqlite3.OperationalError) and (
+        "locked" in str(exc) or "busy" in str(exc)
+    )
+
+
 def _raw_connect(path: Path) -> tuple[sqlite3.Connection, bool]:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
-    vec_loaded = _load_vec(conn)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+    try:
+        vec_loaded = _load_vec(conn)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+    except BaseException:
+        conn.close()  # file hỏng: không close thì Windows không unlink được
+        raise
     return conn, vec_loaded
 
 
@@ -162,6 +174,10 @@ def open_db(hub: "HubHandle") -> sqlite3.Connection:
                 else "vec_sections exists but sqlite-vec is not installed"
             )
         except sqlite3.DatabaseError as exc:
+            if is_lock_error(exc):
+                if conn is not None:
+                    conn.close()
+                raise
             last_exc = exc
             reason = str(exc)
         if conn is not None:

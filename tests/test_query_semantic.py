@@ -72,6 +72,27 @@ def test_knn_leg_error_falls_back_to_keyword(fed_hub, caplog):
     assert all(r.match_mode == "keyword" for r in results)
 
 
+def test_locked_db_error_propagates_without_delete(fed_hub, monkeypatch):
+    # database is locked trong lúc query = process khác đang sync —
+    # phải raise, tuyệt đối không xoá index đang được ghi (spec §3.2)
+    import sqlite3
+
+    from center_kb import searchdb
+
+    hub = HubHandle(root=fed_hub)
+    search(hub, "airspace")  # build index
+
+    def locked(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(searchdb, "fts_search", locked)
+    deleted: list[object] = []
+    monkeypatch.setattr(searchdb, "delete_db", lambda h: deleted.append(h))
+    with pytest.raises(sqlite3.OperationalError):
+        search(hub, "airspace")
+    assert deleted == []
+
+
 def test_corrupt_db_rebuilt_once_transparently(fed_hub):
     from center_kb import searchdb
 

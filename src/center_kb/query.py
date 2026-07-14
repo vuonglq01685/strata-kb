@@ -78,8 +78,8 @@ def _search_index(
             return fused, searchdb.load_sections(conn, [r for r, _, _ in fused])
         except sqlite3.DatabaseError as exc:
             conn.close()  # Windows: close trước khi unlink
-            if attempt == 2:
-                raise
+            if attempt == 2 or searchdb.is_lock_error(exc):
+                raise  # lock = process khác đang ghi — không phải corruption
             logger.warning("search.db corrupt — rebuilding once: %s", exc)
             searchdb.delete_db(hub)
         finally:

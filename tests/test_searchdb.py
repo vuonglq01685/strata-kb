@@ -68,6 +68,53 @@ def test_open_db_rebuilds_on_corrupt_file(tmp_path):
         conn.close()
 
 
+def test_open_db_locked_raises_and_keeps_index(tmp_path, monkeypatch):
+    # database is locked = tranh chấp tạm thời, KHÔNG phải corruption —
+    # không được xoá index (process khác đang ghi dở; spec §3.2 đọc song song)
+    hub = _handle(tmp_path)
+    conn = searchdb.open_db(hub)
+    conn.execute("INSERT INTO repos VALUES('r', 'fp')")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
+    holder = sqlite3.connect(searchdb.db_path(hub))
+    holder.execute("BEGIN IMMEDIATE")  # giữ write lock như một sync đang chạy
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            searchdb.open_db(hub)
+    finally:
+        holder.rollback()
+        holder.close()
+    conn = searchdb.open_db(hub)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM repos").fetchone() == (1,)
+    finally:
+        conn.close()
+
+
+def test_open_db_corrupt_rebuild_leaves_no_open_connection(tmp_path, monkeypatch):
+    # connection mở dở trên file hỏng phải được close trước delete_db —
+    # Windows không unlink được file đang mở (spec windows-support §R5)
+    hub = _handle(tmp_path)
+    path = searchdb.db_path(hub)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"this is not a sqlite database at all")
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def tracking_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", tracking_connect)
+    conn = searchdb.open_db(hub)
+    conn.close()
+    for c in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            c.execute("SELECT 1")
+
+
 def test_delete_db_removes_wal_shm(tmp_path):
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
