@@ -370,6 +370,7 @@ def test_init_scaffolds_kb_docker_setup_both_kinds(tmp_path: Path):
         for text in (skill_text, prompt.read_text(encoding="utf-8")):
             assert "kb docker-setup" in text  # wraps the CLI
             assert "NEVER print" in text      # secret-hygiene rule
+        assert "mode: agent" in prompt.read_text(encoding="utf-8")
         command_text = command.read_text(encoding="utf-8")
         assert "kb-docker-setup" in command_text  # invokes the skill by name
 

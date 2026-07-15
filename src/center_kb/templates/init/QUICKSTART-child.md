@@ -23,7 +23,8 @@ the hub's `federation/`.
    `kb docker-setup` (in your assistant: `/kb-docker-setup`). It checks
    Docker and pulls the CENTER-KB image so ingest runs fully inside Docker —
    no local Python needed. Skip it if you install the ingest extra locally
-   instead (`pip install "center-kb[ingest]"`).
+   instead (`pip install "center-kb[ingest]"`). Without Docker installed,
+   pass `--no-docker` to just print the commands.
 3. **Ingest the first document** — put the PDF in `source/`, then:
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
    In Claude Code, Copilot Chat, or Cursor, prefer the `/kb-ingest` slash
