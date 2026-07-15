@@ -356,31 +356,22 @@ def test_init_scaffolds_kb_summarize_slash_command(tmp_path: Path):
     assert "argument-hint" in text
 
 
-def test_init_scaffolds_kb_docker_setup_hub_only(tmp_path: Path):
-    hub_repo = tmp_path / "h"
-    child_repo = tmp_path / "c"
-    hub_repo.mkdir()
-    child_repo.mkdir()
-    init_repo(hub_repo, "hub")
-    init_repo(child_repo, "child")
-    skill = hub_repo / ".claude" / "skills" / "kb-docker-setup" / "SKILL.md"
-    command = hub_repo / ".claude" / "commands" / "kb-docker-setup.md"
-    prompt = hub_repo / ".github" / "prompts" / "kb-docker-setup.prompt.md"
-    assert skill.is_file() and command.is_file() and prompt.is_file()
-    skill_text = skill.read_text(encoding="utf-8")
-    prompt_text = prompt.read_text(encoding="utf-8")
-    assert "name: kb-docker-setup" in skill_text
-    assert "mode: agent" in prompt_text
-    for text in (skill_text, prompt_text):
-        assert "kb docker-setup" in text          # wraps the CLI
-        assert "NEVER print" in text              # secret stays out of chat
-        assert "auto-generated" in text           # replace-token warning relayed
-        assert "MAIN hub only" in text            # refusal explained
-    command_text = command.read_text(encoding="utf-8")
-    assert "kb-docker-setup" in command_text      # invokes the skill by name
-    # child scaffold ships none of it
-    assert not (child_repo / ".claude" / "skills" / "kb-docker-setup").exists()
-    assert not (child_repo / ".github" / "prompts" / "kb-docker-setup.prompt.md").exists()
+def test_init_scaffolds_kb_docker_setup_both_kinds(tmp_path: Path):
+    for kind in ("hub", "child"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        skill = repo / ".claude" / "skills" / "kb-docker-setup" / "SKILL.md"
+        command = repo / ".claude" / "commands" / "kb-docker-setup.md"
+        prompt = repo / ".github" / "prompts" / "kb-docker-setup.prompt.md"
+        assert skill.exists() and command.exists() and prompt.exists(), kind
+        skill_text = skill.read_text(encoding="utf-8")
+        assert "name: kb-docker-setup" in skill_text
+        for text in (skill_text, prompt.read_text(encoding="utf-8")):
+            assert "kb docker-setup" in text  # wraps the CLI
+            assert "NEVER print" in text      # secret-hygiene rule
+        command_text = command.read_text(encoding="utf-8")
+        assert "kb-docker-setup" in command_text  # invokes the skill by name
 
 
 def test_init_scaffolds_cursor_commands_and_rule(tmp_path: Path):
@@ -437,7 +428,8 @@ def test_assistant_slash_command_parity(tmp_path: Path):
         ),
         "cursor": lambda n: Path(".cursor/commands") / f"{n}.md",
     }
-    for kind, names in (("hub", common + ["kb-docker-setup"]), ("child", common)):
+    common = common + ["kb-docker-setup"]
+    for kind, names in (("hub", common), ("child", common)):
         repo = tmp_path / kind
         repo.mkdir()
         init_repo(repo, kind)
@@ -446,19 +438,18 @@ def test_assistant_slash_command_parity(tmp_path: Path):
                 assert (repo / layout(name)).is_file(), (kind, assistant, name)
 
 
-def test_cursor_docker_setup_command_hub_only(tmp_path: Path):
+def test_cursor_docker_setup_command_both_kinds(tmp_path: Path):
     hub_repo = tmp_path / "h"
     child_repo = tmp_path / "c"
     hub_repo.mkdir()
     child_repo.mkdir()
     init_repo(hub_repo, "hub")
     init_repo(child_repo, "child")
-    cmd = hub_repo / ".cursor" / "commands" / "kb-docker-setup.md"
-    assert cmd.is_file()
-    text = cmd.read_text(encoding="utf-8")
-    assert "NEVER print" in text
-    assert "MAIN hub only" in text
-    assert not (child_repo / ".cursor" / "commands" / "kb-docker-setup.md").exists()
+    for repo in (hub_repo, child_repo):
+        cmd = repo / ".cursor" / "commands" / "kb-docker-setup.md"
+        assert cmd.is_file()
+        text = cmd.read_text(encoding="utf-8")
+        assert "NEVER print" in text
 
 
 def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):

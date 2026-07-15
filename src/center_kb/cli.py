@@ -141,16 +141,20 @@ def init(
     if resolved == "hub":
         typer.echo(
             "  1. kb docker-setup   (or /kb-docker-setup in your AI assistant)"
-            "  # .env + HTTP token"
+            "  # .env + HTTP token + docker compose up -d"
         )
         typer.echo(
-            "  2. docker compose up -d    # MCP HTTP + Web UI at http://localhost:8321/ui"
+            "  2. Open http://localhost:8321/ui    # Web UI (MCP HTTP on the same port)"
         )
         typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>")
     else:
         typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
-        typer.echo("  2. kb ingest source/<file>.pdf --id <doc-id>    (or /kb-ingest)")
-        typer.echo("  3. kb publish    (or /kb-publish)")
+        typer.echo(
+            "  2. kb docker-setup   (or /kb-docker-setup)"
+            "  # optional: pull the Docker ingest image"
+        )
+        typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>    (or /kb-ingest)")
+        typer.echo("  4. kb publish    (or /kb-publish)")
     typer.echo("  (details: QUICKSTART.md)")
 
 
