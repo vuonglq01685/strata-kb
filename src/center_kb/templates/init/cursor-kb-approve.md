@@ -17,7 +17,7 @@ Hard rules:
 
 ## Workflow
 
-1. Run `kb status`; show documents with pending vs summarized counts
+1. Run `kb status`; show documents with pending vs total counts
    (`pending` cannot be approved — use /kb-summarize first).
 2. Confirm scope: `kb approve <doc-id>`, or
    `kb approve <doc-id> --section <id>` (repeatable), or

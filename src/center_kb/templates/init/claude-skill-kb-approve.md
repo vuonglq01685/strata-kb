@@ -21,7 +21,7 @@ Hard rules:
 ## Workflow
 
 1. Run `kb status` and show the user the documents and how many sections
-   are pending vs summarized. `pending` sections cannot be approved —
+   are still pending vs total. `pending` sections cannot be approved —
    point the user at `/kb-summarize` for those.
 2. Confirm the scope: whole doc (`kb approve <doc-id>`), specific
    sections (`kb approve <doc-id> --section <id> --section <id>`), or
