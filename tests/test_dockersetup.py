@@ -11,6 +11,26 @@ runner = CliRunner()
 TOKEN_RE = re.compile(r"^CENTER_KB_HTTP_TOKEN=([0-9a-f]{48})$", re.MULTILINE)
 
 
+def _mock_docker(monkeypatch, ready: bool, up_rc: int = 0, pull_rc: int = 0):
+    """Neutralize real Docker in CLI tests; record compose calls."""
+    from center_kb import dockersetup
+
+    calls: list[str] = []
+    monkeypatch.setattr(dockersetup, "docker_ready", lambda: ready)
+
+    def fake_up(path):
+        calls.append("up")
+        return up_rc
+
+    def fake_pull(path):
+        calls.append("pull")
+        return pull_rc
+
+    monkeypatch.setattr(dockersetup, "compose_up", fake_up)
+    monkeypatch.setattr(dockersetup, "compose_pull", fake_pull)
+    return calls
+
+
 def test_run_setup_creates_env_with_token(tmp_path: Path):
     from center_kb.dockersetup import run_setup
 
@@ -88,7 +108,8 @@ def test_run_setup_adds_env_to_gitignore(tmp_path: Path):
     assert not report2.gitignore_updated
 
 
-def test_cli_docker_setup_happy_path_never_prints_token(tmp_path: Path):
+def test_cli_docker_setup_happy_path_never_prints_token(tmp_path: Path, monkeypatch):
+    _mock_docker(monkeypatch, ready=False)
     init_repo(tmp_path, "hub")
     result = runner.invoke(app, ["docker-setup", str(tmp_path)])
     assert result.exit_code == 0
@@ -101,15 +122,18 @@ def test_cli_docker_setup_happy_path_never_prints_token(tmp_path: Path):
     assert "Bearer <token>" in result.output
 
 
-def test_cli_docker_setup_refuses_child(tmp_path: Path):
+def test_cli_docker_setup_child_pulls_image_no_env(tmp_path: Path, monkeypatch):
+    calls = _mock_docker(monkeypatch, ready=True)
     init_repo(tmp_path, "child")
     result = runner.invoke(app, ["docker-setup", str(tmp_path)])
-    assert result.exit_code == 1
-    assert "child" in result.output
+    assert result.exit_code == 0
+    assert calls == ["pull"]
     assert not (tmp_path / ".env").exists()
+    assert "docker compose run --rm hub kb ingest" in result.output
 
 
-def test_cli_docker_setup_existing_env_needs_force(tmp_path: Path):
+def test_cli_docker_setup_existing_env_needs_force(tmp_path: Path, monkeypatch):
+    _mock_docker(monkeypatch, ready=False)
     init_repo(tmp_path, "hub")
     (tmp_path / ".env").write_text("CENTER_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
     result = runner.invoke(app, ["docker-setup", str(tmp_path)])
@@ -124,9 +148,157 @@ def test_cli_docker_setup_existing_env_needs_force(tmp_path: Path):
 def test_cli_docker_setup_tty_confirm_regenerates(tmp_path: Path, monkeypatch):
     from center_kb import cli
 
+    _mock_docker(monkeypatch, ready=False)
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     init_repo(tmp_path, "hub")
     (tmp_path / ".env").write_text("CENTER_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
     result = runner.invoke(app, ["docker-setup", str(tmp_path)], input="y\n")
     assert result.exit_code == 0
     assert "mine" not in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
+def test_cli_docker_setup_hub_runs_compose_up(tmp_path: Path, monkeypatch):
+    calls = _mock_docker(monkeypatch, ready=True)
+    init_repo(tmp_path, "hub")
+    result = runner.invoke(app, ["docker-setup", str(tmp_path)])
+    assert result.exit_code == 0
+    assert calls == ["up"]
+    assert "http://localhost:8321/ui" in result.output
+    token = TOKEN_RE.search((tmp_path / ".env").read_text(encoding="utf-8")).group(1)
+    assert token not in result.output
+
+
+def test_cli_docker_setup_hub_compose_failure_exits_nonzero(
+    tmp_path: Path, monkeypatch
+):
+    _mock_docker(monkeypatch, ready=True, up_rc=1)
+    init_repo(tmp_path, "hub")
+    result = runner.invoke(app, ["docker-setup", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "docker compose up failed" in result.output
+    # .env was still written before compose ran
+    assert TOKEN_RE.search((tmp_path / ".env").read_text(encoding="utf-8"))
+
+
+def test_cli_docker_setup_hub_no_docker_flag_skips_compose(
+    tmp_path: Path, monkeypatch
+):
+    calls = _mock_docker(monkeypatch, ready=True)
+    init_repo(tmp_path, "hub")
+    result = runner.invoke(app, ["docker-setup", str(tmp_path), "--no-docker"])
+    assert result.exit_code == 0
+    assert calls == []
+    assert "docker compose up -d" in result.output  # manual next steps
+
+
+def test_cli_docker_setup_child_without_docker_fails(tmp_path: Path, monkeypatch):
+    _mock_docker(monkeypatch, ready=False)
+    init_repo(tmp_path, "child")
+    result = runner.invoke(app, ["docker-setup", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "Docker not detected" in result.output
+
+
+def test_cli_docker_setup_child_pull_failure_exits_nonzero(
+    tmp_path: Path, monkeypatch
+):
+    _mock_docker(monkeypatch, ready=True, pull_rc=1)
+    init_repo(tmp_path, "child")
+    result = runner.invoke(app, ["docker-setup", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "docker compose pull failed" in result.output
+
+
+def test_cli_docker_setup_child_no_docker_flag_skips_pull(
+    tmp_path: Path, monkeypatch
+):
+    calls = _mock_docker(monkeypatch, ready=False)
+    init_repo(tmp_path, "child")
+    result = runner.invoke(app, ["docker-setup", str(tmp_path), "--no-docker"])
+    assert result.exit_code == 0
+    assert calls == []
+    assert "docker compose run --rm hub kb ingest" in result.output
+
+
+def test_cli_docker_setup_kindless_fails(tmp_path: Path, monkeypatch):
+    _mock_docker(monkeypatch, ready=True)
+    result = runner.invoke(app, ["docker-setup", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "kb init" in result.output
+
+
+def test_repo_kind_reads_config(tmp_path: Path):
+    import pytest
+
+    from center_kb.dockersetup import DockerSetupError, repo_kind
+
+    hub = tmp_path / "h"
+    hub.mkdir()
+    init_repo(hub, "hub")
+    assert repo_kind(hub) == "hub"
+
+    child = tmp_path / "c"
+    child.mkdir()
+    init_repo(child, "child")
+    assert repo_kind(child) == "child"
+
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    with pytest.raises(DockerSetupError, match="kb init"):
+        repo_kind(bare)
+
+
+def test_docker_ready_false_when_cli_missing(monkeypatch):
+    import subprocess
+
+    from center_kb import dockersetup
+
+    def boom(*args, **kwargs):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert dockersetup.docker_ready() is False
+
+
+def test_docker_ready_true_on_zero_exit(monkeypatch):
+    import subprocess
+
+    from center_kb import dockersetup
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert dockersetup.docker_ready() is True
+    assert calls == [["docker", "info"]]
+
+
+def test_compose_helpers_run_in_repo_root(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    from center_kb import dockersetup
+
+    seen = []
+
+    def fake_run(cmd, **kwargs):
+        seen.append((cmd, kwargs.get("cwd")))
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert dockersetup.compose_up(tmp_path) == 0
+    assert dockersetup.compose_pull(tmp_path) == 0
+    assert seen == [
+        (["docker", "compose", "up", "-d"], tmp_path),
+        (["docker", "compose", "pull"], tmp_path),
+    ]

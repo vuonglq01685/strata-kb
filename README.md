@@ -211,11 +211,13 @@ Create a new KB repo: `kb init` — it asks whether the repo is the **main hub**
 (hosts `federation/` + the shared MCP HTTP server + Web UI) or a **child**
 (authors and publishes to the hub) and scaffolds accordingly; non-interactive
 runs pass `--kind hub|child`. The choice is recorded as `kind:` in
-`.kb/config.yaml`, and re-runs reuse it. Hub repos then run `kb docker-setup`
-(or the `/kb-docker-setup` slash command) to create `.env` and generate the
-HTTP token. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
-and on the hub `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub
-Copilot, and Cursor**; MCP client wiring ships as `.mcp.json` (Claude Code)
+`.kb/config.yaml`, and re-runs reuse it. Then run `kb docker-setup` (or the
+`/kb-docker-setup` slash command): on the hub it creates `.env`, generates
+the HTTP token, and starts the service (`docker compose up -d`); on a child
+it pulls the ingest image for one-shot Docker ingest. Slash commands
+(`/kb-ingest`, `/kb-summarize`, `/kb-publish`, `/kb-docker-setup`) are
+scaffolded for **Claude Code, GitHub Copilot, and Cursor**; MCP client
+wiring ships as `.mcp.json` (Claude Code)
 and `.cursor/mcp.json` (Cursor) — stdio on the hub, HTTP-with-env-vars on
 children. Re-running `kb init` refreshes scaffold files (skills, templates)
 and preserves `.kb/index.yaml` / `.kb/config.yaml` unless `--force`.
@@ -238,9 +240,10 @@ REST API all search **only** `federation/` on the hub — the server's local wor
 **Docker:** `docker compose up -d` (image includes the full docling ingest stack);
 ingest inside the container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
 On `v*` release tags, CI publishes to PyPI and pushes image `ghcr.io/vuonglq01685/center-kb`.
-First-time hub setup: `kb docker-setup` creates `.env` and generates
+First-time setup: `kb docker-setup` — on the hub it creates `.env`, generates
 `CENTER_KB_HTTP_TOKEN` (auto-generated for convenience — replace it with your
-own secret for real deployments).
+own secret for real deployments) and runs `docker compose up -d`; on a child
+it pulls the image so ingest needs no local Python.
 
 ---
 
@@ -343,6 +346,9 @@ Two conditions for `kb build` to PASS:
 2. **Every table in the summary (L2) must match the original (L3) exactly** — the main safety latch against technical drift during summarization.
 
 > Tip: while summarization is in progress (many `pending` sections), use `kb build --allow-pending` to validate finished parts without failing on unfinished ones.
+
+`kb approve` marks summarized sections as `reviewed` after an SME check
+(slash command: `/kb-approve`).
 
 ### 7.5 `kb query` — natural-language lookup
 
@@ -538,7 +544,7 @@ This is **Phase 1 + Phase 2 + Phase 3**, not a finished product. Still missing:
 - **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
 - Summarization still needs a human to open Claude Code and trigger it — not fully background-automated.
 - A small share of sections (~2.4% of ARINC chapter 5, 6/~250 items) failed PDF extraction — need manual SME cross-check when hit.
-- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically anymore (`kb approve` and the `kb-review` auto-commit workflow are gone). The operative review gate is now the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo still wants a per-section "SME re-checked" marker, set `status: reviewed` by hand before merging the source PR — CENTER-KB does not enforce it.
+- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically; `kb approve` (`/kb-approve`) is a manual, SME-triggered flip, not an automated one, and the `kb-review` auto-commit CI workflow stays gone. The operative review gate is still the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo wants a per-section "SME re-checked" marker, run `kb approve` (or set `status: reviewed` by hand) before merging the source PR — CENTER-KB does not enforce it.
 
 ---
 

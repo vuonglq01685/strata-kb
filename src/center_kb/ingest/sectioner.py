@@ -222,6 +222,11 @@ def _build_tree(
     for item in items:
         if item.kind == "heading":
             normalized = " ".join(item.text.split())
+            if not any(ch.isalnum() for ch in normalized):
+                # Horizontal-rule / footnote-separator artifact ("_____",
+                # "---"): pure graphics, no content -- skip entirely so it
+                # never opens a fallback node.
+                continue
             if normalized.endswith(":"):
                 # List intro / field label misclassified as a heading (e.g.
                 # "Source/Content:" or "1.Material comprising the Annex

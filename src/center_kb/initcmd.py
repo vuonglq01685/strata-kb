@@ -25,6 +25,14 @@ COMMON_TEMPLATES: dict[str, str] = {
     ".cursor/commands/kb-publish.md": "cursor-kb-publish.md",
     ".cursor/commands/kb-summarize.md": "cursor-kb-summarize.md",
     ".cursor/rules/kb-summarize.mdc": "cursor-kb-summarize.mdc",
+    ".claude/skills/kb-docker-setup/SKILL.md": "claude-skill-kb-docker-setup.md",
+    ".claude/commands/kb-docker-setup.md": "claude-command-kb-docker-setup.md",
+    ".github/prompts/kb-docker-setup.prompt.md": "copilot-kb-docker-setup.prompt.md",
+    ".cursor/commands/kb-docker-setup.md": "cursor-kb-docker-setup.md",
+    ".claude/skills/kb-approve/SKILL.md": "claude-skill-kb-approve.md",
+    ".claude/commands/kb-approve.md": "claude-command-kb-approve.md",
+    ".github/prompts/kb-approve.prompt.md": "copilot-kb-approve.prompt.md",
+    ".cursor/commands/kb-approve.md": "cursor-kb-approve.md",
 }
 
 HUB_TEMPLATES: dict[str, str] = {
@@ -34,10 +42,6 @@ HUB_TEMPLATES: dict[str, str] = {
     "federation/README.md": "federation-README.md",
     ".mcp.json": "mcp-hub.json",
     "QUICKSTART.md": "QUICKSTART-hub.md",
-    ".claude/skills/kb-docker-setup/SKILL.md": "claude-skill-kb-docker-setup.md",
-    ".claude/commands/kb-docker-setup.md": "claude-command-kb-docker-setup.md",
-    ".github/prompts/kb-docker-setup.prompt.md": "copilot-kb-docker-setup.prompt.md",
-    ".cursor/commands/kb-docker-setup.md": "cursor-kb-docker-setup.md",
     ".cursor/mcp.json": "mcp-hub.json",
 }
 
