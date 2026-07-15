@@ -881,6 +881,87 @@ def diff(
 
 
 @app.command()
+def approve(
+    doc_id: str = typer.Argument(
+        "", help="Document ID (optional with --all-changed: empty = scan all docs)"
+    ),
+    section: list[str] = typer.Option(
+        [], "--section", help="Section ID(s) to approve, e.g. 5.3 (repeatable)"
+    ),
+    all_changed: bool = typer.Option(
+        False,
+        "--all-changed",
+        help="Approve the sections added/changed vs --against (CI mode)",
+    ),
+    against: str = typer.Option(
+        "", "--against", help="Git rev to compare with (required with --all-changed)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Mark sections as reviewed (status: summarized → reviewed)."""
+    from center_kb import gitio
+    from center_kb.review import approve_all_changed, approve_sections
+
+    if all_changed != bool(against):
+        typer.secho(
+            "--all-changed and --against must be used together, "
+            "e.g. `kb approve --all-changed --against HEAD^`",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    if all_changed and section:
+        typer.secho(
+            "--section cannot be combined with --all-changed", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+    if not all_changed and not doc_id:
+        typer.secho(
+            "DOC_ID is required unless --all-changed is used", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+
+    try:
+        if all_changed:
+            reports = approve_all_changed(kb_dir, against, doc_id=doc_id or None)
+        else:
+            reports = [approve_sections(kb_dir, doc_id, list(section) or None)]
+    except (ValueError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    flipped_total = 0
+    has_missing = False
+    for rep in reports:
+        for sid in rep.skipped_pending:
+            typer.secho(
+                f"[warn] {rep.doc_id} §{sid} is still pending — cannot approve",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+        for sid in rep.missing:
+            has_missing = True
+            typer.secho(
+                f"[error] {rep.doc_id} §{sid} not found in manifest",
+                fg=typer.colors.RED,
+            )
+        if rep.flipped:
+            flipped_total += len(rep.flipped)
+            ids = ", ".join(f"§{sid}" for sid in rep.flipped)
+            typer.echo(f"{rep.doc_id}: {len(rep.flipped)} section(s) → reviewed: {ids}")
+
+    if has_missing:
+        raise typer.Exit(1)
+    if flipped_total == 0:
+        if all_changed:
+            typer.echo("kb approve: nothing to approve")
+        else:
+            typer.secho(
+                "kb approve: no summarized section to approve", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+
+
+@app.command()
 def doctor(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     context: str | None = typer.Option(
