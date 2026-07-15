@@ -29,6 +29,10 @@ COMMON_TEMPLATES: dict[str, str] = {
     ".claude/commands/kb-docker-setup.md": "claude-command-kb-docker-setup.md",
     ".github/prompts/kb-docker-setup.prompt.md": "copilot-kb-docker-setup.prompt.md",
     ".cursor/commands/kb-docker-setup.md": "cursor-kb-docker-setup.md",
+    ".claude/skills/kb-approve/SKILL.md": "claude-skill-kb-approve.md",
+    ".claude/commands/kb-approve.md": "claude-command-kb-approve.md",
+    ".github/prompts/kb-approve.prompt.md": "copilot-kb-approve.prompt.md",
+    ".cursor/commands/kb-approve.md": "cursor-kb-approve.md",
 }
 
 HUB_TEMPLATES: dict[str, str] = {

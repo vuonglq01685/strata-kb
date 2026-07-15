@@ -375,6 +375,30 @@ def test_init_scaffolds_kb_docker_setup_both_kinds(tmp_path: Path):
         assert "kb-docker-setup" in command_text  # invokes the skill by name
 
 
+def test_init_scaffolds_kb_approve_both_kinds(tmp_path: Path):
+    for kind in ("hub", "child"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        skill = repo / ".claude" / "skills" / "kb-approve" / "SKILL.md"
+        command = repo / ".claude" / "commands" / "kb-approve.md"
+        prompt = repo / ".github" / "prompts" / "kb-approve.prompt.md"
+        cursor = repo / ".cursor" / "commands" / "kb-approve.md"
+        assert skill.exists() and command.exists() and prompt.exists(), kind
+        assert cursor.exists(), kind
+        skill_text = skill.read_text(encoding="utf-8")
+        assert "name: kb-approve" in skill_text
+        assert "mode: agent" in prompt.read_text(encoding="utf-8")
+        for text in (
+            skill_text,
+            prompt.read_text(encoding="utf-8"),
+            cursor.read_text(encoding="utf-8"),
+        ):
+            assert "kb approve" in text            # wraps the CLI
+            assert "_manifest.yaml" in text        # forbids hand-editing rule
+        assert "kb-approve" in command.read_text(encoding="utf-8")
+
+
 def test_init_scaffolds_cursor_commands_and_rule(tmp_path: Path):
     init_repo(tmp_path, "child")
     for name in ("kb-ingest", "kb-publish", "kb-summarize"):
@@ -419,7 +443,7 @@ def test_assistant_slash_command_parity(tmp_path: Path):
     layouts = {
         "claude": lambda n: (
             Path(".claude/commands") / f"{n}.md"
-            if n in ("kb-summarize", "kb-docker-setup")
+            if n in ("kb-summarize", "kb-docker-setup", "kb-approve")
             else Path(".claude/skills") / n / "SKILL.md"
         ),
         "copilot": lambda n: (
@@ -429,7 +453,7 @@ def test_assistant_slash_command_parity(tmp_path: Path):
         ),
         "cursor": lambda n: Path(".cursor/commands") / f"{n}.md",
     }
-    common = common + ["kb-docker-setup"]
+    common = common + ["kb-docker-setup", "kb-approve"]
     for kind, names in (("hub", common), ("child", common)):
         repo = tmp_path / kind
         repo.mkdir()

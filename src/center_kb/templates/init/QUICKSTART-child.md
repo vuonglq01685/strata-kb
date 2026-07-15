@@ -36,6 +36,8 @@ the hub's `federation/`.
    GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
    Manual fallback: `/kb-summarize` in your assistant, or `kb summarize` later.
    Then validate: `kb build`
+   After checking the summaries, mark them reviewed:
+   `kb approve <doc-id>` (in your assistant: `/kb-approve`).
 5. **Publish** — with `hub:` only, `kb publish` mirrors `.kb/` to the hub and
    opens a PR there directly (in your assistant: `/kb-publish` runs diff →
    confirm → publish). With `intake:` set, `kb publish` requires a clean
@@ -64,6 +66,9 @@ the hub's `federation/`.
   (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
 - `kb summarize` — fill pending summaries via a headless LLM CLI
   (in your assistant: `/kb-summarize`)
+- `kb approve <doc-id> [--section <id>]` — mark summarized sections as
+  reviewed after SME check; `--all-changed --against <rev>` approves what
+  changed since a rev (in your assistant: `/kb-approve`)
 - `kb status` — list docs and their pending sections
 - `kb build` — validate the KB (manifests, tables, tokens)
 - `kb query "<question>"` — hybrid search (keyword + semantic) over the summaries

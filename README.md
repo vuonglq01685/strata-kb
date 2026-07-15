@@ -347,6 +347,9 @@ Two conditions for `kb build` to PASS:
 
 > Tip: while summarization is in progress (many `pending` sections), use `kb build --allow-pending` to validate finished parts without failing on unfinished ones.
 
+`kb approve` marks summarized sections as `reviewed` after an SME check
+(slash command: `/kb-approve`).
+
 ### 7.5 `kb query` — natural-language lookup
 
 ```bash
@@ -541,7 +544,7 @@ This is **Phase 1 + Phase 2 + Phase 3**, not a finished product. Still missing:
 - **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
 - Summarization still needs a human to open Claude Code and trigger it — not fully background-automated.
 - A small share of sections (~2.4% of ARINC chapter 5, 6/~250 items) failed PDF extraction — need manual SME cross-check when hit.
-- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically anymore (`kb approve` and the `kb-review` auto-commit workflow are gone). The operative review gate is now the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo still wants a per-section "SME re-checked" marker, set `status: reviewed` by hand before merging the source PR — CENTER-KB does not enforce it.
+- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically; `kb approve` (`/kb-approve`) is a manual, SME-triggered flip, not an automated one, and the `kb-review` auto-commit CI workflow stays gone. The operative review gate is still the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo wants a per-section "SME re-checked" marker, run `kb approve` (or set `status: reviewed` by hand) before merging the source PR — CENTER-KB does not enforce it.
 
 ---
 

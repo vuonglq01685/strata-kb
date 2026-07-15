@@ -48,6 +48,9 @@ into it; merging their PRs here is the review gate.
   (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
 - `kb summarize` — fill pending summaries via a headless LLM CLI
   (in your assistant: `/kb-summarize`)
+- `kb approve <doc-id> [--section <id>]` — mark summarized sections as
+  reviewed after SME check; `--all-changed --against <rev>` approves what
+  changed since a rev (in your assistant: `/kb-approve`)
 - `kb status` — list docs and their pending sections
 - `kb build` — validate the KB (manifests, tables, tokens)
 - `kb query "<question>"` — hybrid search (keyword + semantic) over the summaries
