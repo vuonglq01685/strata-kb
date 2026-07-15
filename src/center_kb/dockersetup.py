@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,17 +59,44 @@ def run_setup(repo_root: Path, regenerate: bool = False) -> SetupReport:
     )
 
 
-def _require_hub_kind(repo_root: Path) -> None:
+def repo_kind(repo_root: Path) -> str:
+    """Return the recorded repo kind ('hub' | 'child'); raise when unset."""
     kind = load_config(repo_root / ".kb").kind
-    if kind == "child":
-        raise DockerSetupError(
-            "this repo is a child — kb docker-setup prepares the MAIN hub "
-            "(the repo that hosts federation/ and the shared MCP/Web service)"
-        )
-    if kind != "hub":
+    if kind not in ("hub", "child"):
         raise DockerSetupError(
             "repo kind is not recorded — run `kb init` first "
             "(it records kind: hub|child in .kb/config.yaml)"
+        )
+    return kind
+
+
+def docker_ready() -> bool:
+    """True when the Docker CLI exists and the daemon answers `docker info`."""
+    try:
+        return (
+            subprocess.run(["docker", "info"], capture_output=True, timeout=30)
+            .returncode
+            == 0
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def compose_up(repo_root: Path) -> int:
+    """`docker compose up -d` in the repo root; output streams to the console."""
+    return subprocess.run(["docker", "compose", "up", "-d"], cwd=repo_root).returncode
+
+
+def compose_pull(repo_root: Path) -> int:
+    """`docker compose pull` in the repo root; output streams to the console."""
+    return subprocess.run(["docker", "compose", "pull"], cwd=repo_root).returncode
+
+
+def _require_hub_kind(repo_root: Path) -> None:
+    if repo_kind(repo_root) == "child":
+        raise DockerSetupError(
+            "this repo is a child — kb docker-setup prepares the MAIN hub "
+            "(the repo that hosts federation/ and the shared MCP/Web service)"
         )
 
 

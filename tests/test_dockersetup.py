@@ -130,3 +130,80 @@ def test_cli_docker_setup_tty_confirm_regenerates(tmp_path: Path, monkeypatch):
     result = runner.invoke(app, ["docker-setup", str(tmp_path)], input="y\n")
     assert result.exit_code == 0
     assert "mine" not in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
+def test_repo_kind_reads_config(tmp_path: Path):
+    import pytest
+
+    from center_kb.dockersetup import DockerSetupError, repo_kind
+
+    hub = tmp_path / "h"
+    hub.mkdir()
+    init_repo(hub, "hub")
+    assert repo_kind(hub) == "hub"
+
+    child = tmp_path / "c"
+    child.mkdir()
+    init_repo(child, "child")
+    assert repo_kind(child) == "child"
+
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    with pytest.raises(DockerSetupError, match="kb init"):
+        repo_kind(bare)
+
+
+def test_docker_ready_false_when_cli_missing(monkeypatch):
+    import subprocess
+
+    from center_kb import dockersetup
+
+    def boom(*args, **kwargs):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert dockersetup.docker_ready() is False
+
+
+def test_docker_ready_true_on_zero_exit(monkeypatch):
+    import subprocess
+
+    from center_kb import dockersetup
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert dockersetup.docker_ready() is True
+    assert calls == [["docker", "info"]]
+
+
+def test_compose_helpers_run_in_repo_root(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    from center_kb import dockersetup
+
+    seen = []
+
+    def fake_run(cmd, **kwargs):
+        seen.append((cmd, kwargs.get("cwd")))
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert dockersetup.compose_up(tmp_path) == 0
+    assert dockersetup.compose_pull(tmp_path) == 0
+    assert seen == [
+        (["docker", "compose", "up", "-d"], tmp_path),
+        (["docker", "compose", "pull"], tmp_path),
+    ]
