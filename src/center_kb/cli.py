@@ -156,12 +156,29 @@ def init(
 
 @app.command("docker-setup")
 def docker_setup(
-    path: Path = typer.Argument(Path("."), help="Hub repo root (default: current)"),
+    path: Path = typer.Argument(Path("."), help="Repo root (default: current)"),
     force: bool = typer.Option(
-        False, "--force", help="Regenerate the token inside an existing .env"
+        False, "--force", help="Hub: regenerate the token inside an existing .env"
+    ),
+    no_docker: bool = typer.Option(
+        False, "--no-docker", help="Prepare files only; skip docker commands"
     ),
 ) -> None:
-    """Hub only: create .env and generate CENTER_KB_HTTP_TOKEN for Docker HTTP serving."""
+    """Prepare this repo for Docker — hub: .env + token + start the service; child: pull the ingest image."""
+    from center_kb import dockersetup
+
+    try:
+        kind = dockersetup.repo_kind(path)
+    except dockersetup.DockerSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if kind == "hub":
+        _docker_setup_hub(path, force, no_docker)
+    else:
+        _docker_setup_child(path, no_docker)
+
+
+def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
     from center_kb import dockersetup
 
     try:
@@ -188,13 +205,67 @@ def docker_setup(
         "own secret for real deployments, and store it in a secret manager.",
         fg=typer.colors.YELLOW,
     )
-    typer.echo("Next steps:")
-    typer.echo("  1. docker compose up -d")
-    typer.echo("  2. Open http://localhost:8321/ui (sign in with the token from .env)")
-    typer.echo("  3. Point remote MCP clients at the hub:")
-    typer.echo('     { "mcpServers": { "center-kb": { "type": "http",')
-    typer.echo('       "url": "http://<host>:8321/mcp",')
-    typer.echo('       "headers": { "Authorization": "Bearer <token>" } } } }')
+    if not no_docker and dockersetup.docker_ready():
+        typer.echo("Starting the hub: docker compose up -d")
+        if dockersetup.compose_up(path) != 0:
+            typer.secho(
+                "docker compose up failed — see output above.", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        typer.echo(
+            "Hub running — Web UI: http://localhost:8321/ui "
+            "(sign in with the token from .env)"
+        )
+    else:
+        if not no_docker:
+            typer.secho(
+                "Docker not detected — start Docker Desktop, then run the steps "
+                "below yourself.",
+                fg=typer.colors.YELLOW,
+            )
+        typer.echo("Next steps:")
+        typer.echo("  1. docker compose up -d")
+        typer.echo(
+            "  2. Open http://localhost:8321/ui (sign in with the token from .env)"
+        )
+    typer.echo("Point remote MCP clients at the hub:")
+    typer.echo('  { "mcpServers": { "center-kb": { "type": "http",')
+    typer.echo('    "url": "http://<host>:8321/mcp",')
+    typer.echo('    "headers": { "Authorization": "Bearer <token>" } } } }')
+
+
+def _docker_setup_child(path: Path, no_docker: bool) -> None:
+    from center_kb import dockersetup
+
+    typer.echo(
+        "Child repo: Docker runs one-shot ingest (the image bundles the full "
+        "docling stack — no local Python needed)."
+    )
+    if not no_docker:
+        if not dockersetup.docker_ready():
+            typer.secho(
+                "Docker not detected — install/start Docker Desktop, then re-run "
+                "kb docker-setup.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        typer.echo("Pulling the ingest image: docker compose pull")
+        if dockersetup.compose_pull(path) != 0:
+            typer.secho(
+                "docker compose pull failed — see output above.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+    typer.echo("Ingest a document:")
+    typer.echo(
+        "  docker compose run --rm hub kb ingest source/<file>.pdf "
+        "--id <doc-id> --no-summarize"
+    )
+    typer.echo(
+        "Note: the first ingest downloads layout/table models into the "
+        "kb-model-cache volume (one-time wait)."
+    )
+    typer.echo("(The shared MCP server + Web UI run on the MAIN hub, not here.)")
 
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):
