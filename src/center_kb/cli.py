@@ -141,27 +141,48 @@ def init(
     if resolved == "hub":
         typer.echo(
             "  1. kb docker-setup   (or /kb-docker-setup in your AI assistant)"
-            "  # .env + HTTP token"
+            "  # .env + HTTP token + docker compose up -d"
         )
         typer.echo(
-            "  2. docker compose up -d    # MCP HTTP + Web UI at http://localhost:8321/ui"
+            "  2. Open http://localhost:8321/ui    # Web UI (MCP HTTP on the same port)"
         )
         typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>")
     else:
         typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
-        typer.echo("  2. kb ingest source/<file>.pdf --id <doc-id>    (or /kb-ingest)")
-        typer.echo("  3. kb publish    (or /kb-publish)")
+        typer.echo(
+            "  2. kb docker-setup   (or /kb-docker-setup)"
+            "  # optional: pull the Docker ingest image"
+        )
+        typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>    (or /kb-ingest)")
+        typer.echo("  4. kb publish    (or /kb-publish)")
     typer.echo("  (details: QUICKSTART.md)")
 
 
 @app.command("docker-setup")
 def docker_setup(
-    path: Path = typer.Argument(Path("."), help="Hub repo root (default: current)"),
+    path: Path = typer.Argument(Path("."), help="Repo root (default: current)"),
     force: bool = typer.Option(
-        False, "--force", help="Regenerate the token inside an existing .env"
+        False, "--force", help="Hub: regenerate the token inside an existing .env"
+    ),
+    no_docker: bool = typer.Option(
+        False, "--no-docker", help="Prepare files only; skip docker commands"
     ),
 ) -> None:
-    """Hub only: create .env and generate CENTER_KB_HTTP_TOKEN for Docker HTTP serving."""
+    """Prepare this repo for Docker — hub: .env + token + start the service; child: pull the ingest image."""
+    from center_kb import dockersetup
+
+    try:
+        kind = dockersetup.repo_kind(path)
+    except dockersetup.DockerSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if kind == "hub":
+        _docker_setup_hub(path, force, no_docker)
+    else:
+        _docker_setup_child(path, no_docker)
+
+
+def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
     from center_kb import dockersetup
 
     try:
@@ -188,13 +209,67 @@ def docker_setup(
         "own secret for real deployments, and store it in a secret manager.",
         fg=typer.colors.YELLOW,
     )
-    typer.echo("Next steps:")
-    typer.echo("  1. docker compose up -d")
-    typer.echo("  2. Open http://localhost:8321/ui (sign in with the token from .env)")
-    typer.echo("  3. Point remote MCP clients at the hub:")
-    typer.echo('     { "mcpServers": { "center-kb": { "type": "http",')
-    typer.echo('       "url": "http://<host>:8321/mcp",')
-    typer.echo('       "headers": { "Authorization": "Bearer <token>" } } } }')
+    if not no_docker and dockersetup.docker_ready():
+        typer.echo("Starting the hub: docker compose up -d")
+        if dockersetup.compose_up(path) != 0:
+            typer.secho(
+                "docker compose up failed — see output above.", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        typer.echo(
+            "Hub running — Web UI: http://localhost:8321/ui "
+            "(sign in with the token from .env)"
+        )
+    else:
+        if not no_docker:
+            typer.secho(
+                "Docker not detected — start Docker Desktop, then run the steps "
+                "below yourself.",
+                fg=typer.colors.YELLOW,
+            )
+        typer.echo("Next steps:")
+        typer.echo("  1. docker compose up -d")
+        typer.echo(
+            "  2. Open http://localhost:8321/ui (sign in with the token from .env)"
+        )
+    typer.echo("Point remote MCP clients at the hub:")
+    typer.echo('  { "mcpServers": { "center-kb": { "type": "http",')
+    typer.echo('    "url": "http://<host>:8321/mcp",')
+    typer.echo('    "headers": { "Authorization": "Bearer <token>" } } } }')
+
+
+def _docker_setup_child(path: Path, no_docker: bool) -> None:
+    from center_kb import dockersetup
+
+    typer.echo(
+        "Child repo: Docker runs one-shot ingest (the image bundles the full "
+        "docling stack — no local Python needed)."
+    )
+    if not no_docker:
+        if not dockersetup.docker_ready():
+            typer.secho(
+                "Docker not detected — install/start Docker Desktop, then re-run "
+                "kb docker-setup.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        typer.echo("Pulling the ingest image: docker compose pull")
+        if dockersetup.compose_pull(path) != 0:
+            typer.secho(
+                "docker compose pull failed — see output above.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+    typer.echo("Ingest a document:")
+    typer.echo(
+        "  docker compose run --rm hub kb ingest source/<file>.pdf "
+        "--id <doc-id> --no-summarize"
+    )
+    typer.echo(
+        "Note: the first ingest downloads layout/table models into the "
+        "kb-model-cache volume (one-time wait)."
+    )
+    typer.echo("(The shared MCP server + Web UI run on the MAIN hub, not here.)")
 
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):
@@ -803,6 +878,87 @@ def diff(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.echo(render_diff(report))
+
+
+@app.command()
+def approve(
+    doc_id: str = typer.Argument(
+        "", help="Document ID (optional with --all-changed: empty = scan all docs)"
+    ),
+    section: list[str] = typer.Option(
+        [], "--section", help="Section ID(s) to approve, e.g. 5.3 (repeatable)"
+    ),
+    all_changed: bool = typer.Option(
+        False,
+        "--all-changed",
+        help="Approve the sections added/changed vs --against (CI mode)",
+    ),
+    against: str = typer.Option(
+        "", "--against", help="Git rev to compare with (required with --all-changed)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Mark sections as reviewed (status: summarized → reviewed)."""
+    from center_kb import gitio
+    from center_kb.review import approve_all_changed, approve_sections
+
+    if all_changed != bool(against):
+        typer.secho(
+            "--all-changed and --against must be used together, "
+            "e.g. `kb approve --all-changed --against HEAD^`",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    if all_changed and section:
+        typer.secho(
+            "--section cannot be combined with --all-changed", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+    if not all_changed and not doc_id:
+        typer.secho(
+            "DOC_ID is required unless --all-changed is used", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+
+    try:
+        if all_changed:
+            reports = approve_all_changed(kb_dir, against, doc_id=doc_id or None)
+        else:
+            reports = [approve_sections(kb_dir, doc_id, list(section) or None)]
+    except (ValueError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    flipped_total = 0
+    has_missing = False
+    for rep in reports:
+        for sid in rep.skipped_pending:
+            typer.secho(
+                f"[warn] {rep.doc_id} §{sid} is still pending — cannot approve",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+        for sid in rep.missing:
+            has_missing = True
+            typer.secho(
+                f"[error] {rep.doc_id} §{sid} not found in manifest",
+                fg=typer.colors.RED,
+            )
+        if rep.flipped:
+            flipped_total += len(rep.flipped)
+            ids = ", ".join(f"§{sid}" for sid in rep.flipped)
+            typer.echo(f"{rep.doc_id}: {len(rep.flipped)} section(s) → reviewed: {ids}")
+
+    if has_missing:
+        raise typer.Exit(1)
+    if flipped_total == 0:
+        if all_changed:
+            typer.echo("kb approve: nothing to approve")
+        else:
+            typer.secho(
+                "kb approve: no summarized section to approve", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
 
 
 @app.command()

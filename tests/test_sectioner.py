@@ -131,8 +131,13 @@ class TestBuildUnits:
         ]
 
     def test_fallback_with_empty_slug_uses_counter(self):
+        # A bare page-number heading slugifies to an all-digit string, which
+        # _fallback_slug() rejects (would masquerade as a numbered section
+        # id) -- falls back to the "x1" counter. (A pure-symbol heading like
+        # "_____" is covered separately: it is dropped entirely, see
+        # test_symbol_only_heading_is_dropped.)
         items = [
-            DocItem("heading", "______________________", 1),
+            DocItem("heading", "1234567890123", 1),
             DocItem("text", "Divider page body. " * 60),
         ]
         units = build_units(items)
@@ -592,3 +597,21 @@ def test_build_units_numeric_part_subsections_keep_flat_ids():
     assert "4.1" in ids
     assert "4-4.1" not in ids
     assert all(u.chapter == "4" for u in units)
+
+
+def test_symbol_only_heading_is_dropped():
+    # A PDF horizontal-rule/footnote line ("_____") that docling misreads as
+    # a heading must not open a fallback node (no "-x1" ids) nor leak into
+    # the body text.
+    items = [
+        DocItem("heading", "8.0 INSTRUMENTS", 1),
+        DocItem("text", "Chapter body text. " * 60),
+        DocItem("heading", "_____________", 2),
+        DocItem("heading", "8.4 Navigation lights", 2),
+        DocItem("text", "Lights body text. " * 70),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert ids == ["8", "8.4"]
+    assert all("x1" not in i for i in ids)
+    assert "___" not in units[0].body_md
