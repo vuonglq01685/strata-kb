@@ -10,7 +10,7 @@ the hub's `federation/`.
    or a kb-hub path) and commit it. New content appears in search only after
    `kb publish` and the PR is merged on the hub.
    Optionally also fill `intake:` (the hub's intake service URL) to publish
-   from CI via OIDC instead — zero secrets on this repo (see step 4).
+   from CI via OIDC instead — zero secrets on this repo (see step 5).
    **Warning:** `repo_id:` in this file must exactly match the id this repo
    is registered under in the hub's `federation/registry.yaml`. On mismatch,
    publish still succeeds and the PR opens, but the dev CLI will time out
@@ -19,18 +19,23 @@ the hub's `federation/`.
 
 ## Author and publish
 
-2. **Ingest the first document** — put the PDF in `source/`, then:
+2. **Pull the ingest image (optional but recommended)** — run
+   `kb docker-setup` (in your assistant: `/kb-docker-setup`). It checks
+   Docker and pulls the CENTER-KB image so ingest runs fully inside Docker —
+   no local Python needed. Skip it if you install the ingest extra locally
+   instead (`pip install "center-kb[ingest]"`).
+3. **Ingest the first document** — put the PDF in `source/`, then:
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
    In Claude Code, Copilot Chat, or Cursor, prefer the `/kb-ingest` slash
    command — it asks for the id/tags/revision so you don't have to remember
    flags. (needs the ingest extra: `pip install "center-kb[ingest]"` — or run
    it inside Docker, no local Python needed:
    `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc --no-summarize`)
-3. **Summarize** — `kb ingest` does this automatically when the Claude Code or
+4. **Summarize** — `kb ingest` does this automatically when the Claude Code or
    GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
    Manual fallback: `/kb-summarize` in your assistant, or `kb summarize` later.
    Then validate: `kb build`
-4. **Publish** — with `hub:` only, `kb publish` mirrors `.kb/` to the hub and
+5. **Publish** — with `hub:` only, `kb publish` mirrors `.kb/` to the hub and
    opens a PR there directly (in your assistant: `/kb-publish` runs diff →
    confirm → publish). With `intake:` set, `kb publish` requires a clean
    committed `.kb/`, then tags and pushes a `kb-publish/<ts>` tag — the
@@ -41,7 +46,7 @@ the hub's `federation/`.
 
 ## Query (reads the hub)
 
-5. **Query** — `kb query "your question"` (hub from `.kb/config.yaml`), the
+6. **Query** — `kb query "your question"` (hub from `.kb/config.yaml`), the
    hub's web UI, or MCP. `.mcp.json` (Claude Code) and `.cursor/mcp.json`
    (Cursor) are pre-wired to the hub's HTTP endpoint — set two environment
    variables locally:
@@ -51,6 +56,9 @@ the hub's `federation/`.
 ## CLI reference
 
 - `kb init` — scaffold or refresh a KB repo (asks hub|child; updates skills/templates; keeps `.kb/index.yaml`)
+- `kb docker-setup` — child: check Docker + pull the ingest image; on the
+  hub it also creates `.env` + token and starts the service
+  (in your assistant: `/kb-docker-setup`)
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
 - `kb summarize` — fill pending summaries via a headless LLM CLI

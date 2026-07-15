@@ -211,11 +211,13 @@ Create a new KB repo: `kb init` — it asks whether the repo is the **main hub**
 (hosts `federation/` + the shared MCP HTTP server + Web UI) or a **child**
 (authors and publishes to the hub) and scaffolds accordingly; non-interactive
 runs pass `--kind hub|child`. The choice is recorded as `kind:` in
-`.kb/config.yaml`, and re-runs reuse it. Hub repos then run `kb docker-setup`
-(or the `/kb-docker-setup` slash command) to create `.env` and generate the
-HTTP token. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
-and on the hub `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub
-Copilot, and Cursor**; MCP client wiring ships as `.mcp.json` (Claude Code)
+`.kb/config.yaml`, and re-runs reuse it. Then run `kb docker-setup` (or the
+`/kb-docker-setup` slash command): on the hub it creates `.env`, generates
+the HTTP token, and starts the service (`docker compose up -d`); on a child
+it pulls the ingest image for one-shot Docker ingest. Slash commands
+(`/kb-ingest`, `/kb-summarize`, `/kb-publish`, `/kb-docker-setup`) are
+scaffolded for **Claude Code, GitHub Copilot, and Cursor**; MCP client
+wiring ships as `.mcp.json` (Claude Code)
 and `.cursor/mcp.json` (Cursor) — stdio on the hub, HTTP-with-env-vars on
 children. Re-running `kb init` refreshes scaffold files (skills, templates)
 and preserves `.kb/index.yaml` / `.kb/config.yaml` unless `--force`.
@@ -238,9 +240,10 @@ REST API all search **only** `federation/` on the hub — the server's local wor
 **Docker:** `docker compose up -d` (image includes the full docling ingest stack);
 ingest inside the container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
 On `v*` release tags, CI publishes to PyPI and pushes image `ghcr.io/vuonglq01685/center-kb`.
-First-time hub setup: `kb docker-setup` creates `.env` and generates
+First-time setup: `kb docker-setup` — on the hub it creates `.env`, generates
 `CENTER_KB_HTTP_TOKEN` (auto-generated for convenience — replace it with your
-own secret for real deployments).
+own secret for real deployments) and runs `docker compose up -d`; on a child
+it pulls the image so ingest needs no local Python.
 
 ---
 

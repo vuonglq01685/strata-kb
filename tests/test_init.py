@@ -325,7 +325,7 @@ def test_quickstarts_match_kind(tmp_path: Path):
     child_q = (child_repo / "QUICKSTART.md").read_text(encoding="utf-8")
     assert "kb docker-setup" in hub_q
     assert "docker compose up -d" in hub_q
-    assert "kb docker-setup" not in child_q
+    assert "kb docker-setup" in child_q
     assert "docker compose up -d" not in child_q
     assert "hub:" in child_q and "kb publish" in child_q
     for text in (hub_q, child_q):

@@ -4,28 +4,28 @@ This repo IS the hub: it hosts `federation/` (the single source of truth for
 search) and runs the shared HTTP MCP server + Web UI. Child repos publish
 into it; merging their PRs here is the review gate.
 
-1. **Configure the token** — run `kb docker-setup` (in Claude Code / Copilot
-   Chat / Cursor: `/kb-docker-setup`). It creates `.env` and generates
-   `CENTER_KB_HTTP_TOKEN`. The token is auto-generated for convenience —
-   replace it with your own secret for real deployments. Manual fallback:
-   `cp .env.example .env`, then edit the token yourself.
-2. **Serve the hub** — `docker compose up -d` → web UI at
-   http://localhost:8321/ui (sign in with the token).
-   Without Docker: `python -m center_kb.mcp --hub . --transport http`
+1. **Set up Docker serving** — run `kb docker-setup` (in Claude Code /
+   Copilot Chat / Cursor: `/kb-docker-setup`). It creates `.env`, generates
+   `CENTER_KB_HTTP_TOKEN`, and starts the service (`docker compose up -d`) —
+   web UI at http://localhost:8321/ui (sign in with the token). The token is
+   auto-generated for convenience — replace it with your own secret for real
+   deployments. Manual fallback: `cp .env.example .env`, edit the token,
+   then `docker compose up -d`. Without Docker:
+   `python -m center_kb.mcp --hub . --transport http`
    (requires the `CENTER_KB_HTTP_TOKEN` env var).
-3. **Ingest this repo's own documents (optional)** — the hub may keep its own
+2. **Ingest this repo's own documents (optional)** — the hub may keep its own
    `.kb/`: put the PDF in `source/`, then
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
    (prefer the `/kb-ingest` slash command; or run inside Docker:
    `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc`)
    Summaries: automatic with a local LLM CLI, or `/kb-summarize`; validate
    with `kb build`; then `kb publish` mirrors into `federation/<repo-id>/`.
-4. **Query** — `kb query "your question"`, the web UI, or MCP. The local
+3. **Query** — `kb query "your question"`, the web UI, or MCP. The local
    `.mcp.json` / `.cursor/mcp.json` run the stdio server for the hub
    maintainer; remote clients (child repos, BA machines) use the HTTP
    endpoint instead:
    `http://<host>:8321/mcp` with header `Authorization: Bearer <token>`.
-5. **Register child repos (optional)** — lets child repos publish from CI via
+4. **Register child repos (optional)** — lets child repos publish from CI via
    OIDC with zero secrets, instead of pushing directly. Create
    `federation/registry.yaml` on the hub with one line per child:
    `owner/repo: repo-id` under a `repos:` key. Then install a GitHub App on
@@ -41,7 +41,8 @@ into it; merging their PRs here is the review gate.
 ## CLI reference
 
 - `kb init` — scaffold or refresh a KB repo (asks hub|child; updates skills/templates; keeps `.kb/index.yaml`)
-- `kb docker-setup` — hub only: create `.env` + generate the HTTP token
+- `kb docker-setup` — prepare Docker: hub creates `.env` + the HTTP token and
+  starts the service; child repos pull the ingest image
   (in your assistant: `/kb-docker-setup`)
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
