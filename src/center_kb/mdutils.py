@@ -17,6 +17,15 @@ def slugify(text: str) -> str:
     return text
 
 
+def slugify_id(text: str) -> str:
+    """Unicode-aware slug for section ids: keep letters/digits of every
+    script (slugify() drops non-ASCII entirely — CJK/Cyrillic titles would
+    vanish). File names keep using slugify(); this is for ids only."""
+    text = unicodedata.normalize("NFKC", text)
+    slug = re.sub(r"[\W_]+", "-", text).strip("-").lower()
+    return slug[:40].rstrip("-")
+
+
 def count_tokens(text: str) -> int:
     global _ENCODER
     if _ENCODER is None:

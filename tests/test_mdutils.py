@@ -60,3 +60,28 @@ def test_normalize_table_detects_value_change():
     a = "| Code | Meaning |\n|---|---|\n| P | Prohibited |"
     b = "| Code | Meaning |\n|---|---|\n| P | Permitted |"
     assert mdutils.normalize_table(a) != mdutils.normalize_table(b)
+
+
+def test_slugify_id_keeps_cjk():
+    assert mdutils.slugify_id("表5-6 データ概要") == "表5-6-データ概要"
+
+
+def test_slugify_id_keeps_cyrillic():
+    assert mdutils.slugify_id("ЧАСТЬ 1") == "часть-1"
+
+
+def test_slugify_id_keeps_vietnamese_diacritics():
+    assert mdutils.slugify_id("Bảng tổng hợp dữ liệu") == "bảng-tổng-hợp-dữ-liệu"
+
+
+def test_slugify_id_strips_symbols_and_underscores():
+    assert mdutils.slugify_id("__Table: 5-6 (final)__") == "table-5-6-final"
+
+
+def test_slugify_id_empty_when_no_word_chars():
+    assert mdutils.slugify_id("***") == ""
+
+
+def test_slugify_id_caps_at_40_chars():
+    out = mdutils.slugify_id("a" * 80)
+    assert out == "a" * 40
