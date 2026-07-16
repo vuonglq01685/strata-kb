@@ -149,6 +149,51 @@ def test_publish_removed_file_deleted_on_hub(git_kb, hub_worktree):
     assert not (hub_worktree / "federation" / "demo-kb" / "stray.md").exists()
 
 
+def test_warn_legacy_ids_flags_xn_sections(tmp_path, caplog):
+    import logging
+
+    from center_kb import models, publish
+
+    doc_dir = tmp_path / "kb" / "old-doc"
+    doc_dir.mkdir(parents=True)
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(
+            id="old-doc",
+            title="Old Doc",
+            sections=[
+                models.SectionEntry(id="5.6", title="Real", file="ch5"),
+                models.SectionEntry(id="5.6-x74", title="Commentary", file="ch5"),
+            ],
+        ),
+    )
+    with caplog.at_level(logging.WARNING, logger="center_kb.publish"):
+        hits = publish.warn_legacy_ids(tmp_path / "kb")
+    assert hits == ["old-doc §5.6-x74"]
+    assert any("re-ingest" in r.message for r in caplog.records)
+
+
+def test_warn_legacy_ids_clean_kb_silent(tmp_path, caplog):
+    import logging
+
+    from center_kb import models, publish
+
+    doc_dir = tmp_path / "kb" / "clean-doc"
+    doc_dir.mkdir(parents=True)
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(
+            id="clean-doc",
+            title="Clean",
+            sections=[models.SectionEntry(id="5.6-commentary", title="C", file="ch5")],
+        ),
+    )
+    with caplog.at_level(logging.WARNING, logger="center_kb.publish"):
+        hits = publish.warn_legacy_ids(tmp_path / "kb")
+    assert hits == []
+    assert not caplog.records
+
+
 def test_direct_push_race_reindexes_after_rebase(git_kb, hub_with_origin, run_git, tmp_path):
     rival = tmp_path / "rival-clone"
     run_git(tmp_path, "clone", str(tmp_path / "hub-origin.git"), str(rival))
