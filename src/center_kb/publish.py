@@ -96,7 +96,32 @@ def _snapshot(
         return len(local_index.docs), False
     hashsync.apply_sync(kb_abs, dest, changed, deleted)
     if active_store is not None:
-        assetstore.divert_and_record(dest, active_store, deleted)
+        try:
+            assetstore.divert_and_record(dest, active_store, deleted)
+        except assetstore.AssetStoreError:
+            # apply_sync above already wrote asset bytes (and any other
+            # changed/deleted files) into the hub clone's working tree
+            # before this failed. Left uncleaned, a retry with a healthy
+            # store would build_manifest(dest) == the child's manifest
+            # (bytes already match) and early-return "unchanged" BEFORE
+            # ever reaching divert again -- and _publish_direct/_publish_pr
+            # would then git-add + commit those leftover binaries straight
+            # into hub git. Restore federation/ to its last committed
+            # state before re-raising (mirrors intake.intake_publish's
+            # matching guard for the same failure mode).
+            co = gitio._run(handle.root, "checkout", "--", "federation")
+            if co.returncode != 0:
+                logger.warning(
+                    "git checkout -- federation failed while restoring "
+                    "after an asset store failure: %s", co.stderr.strip()
+                )
+            cl = gitio._run(handle.root, "clean", "-fd", "--", "federation")
+            if cl.returncode != 0:
+                logger.warning(
+                    "git clean -fd -- federation failed while restoring "
+                    "after an asset store failure: %s", cl.stderr.strip()
+                )
+            raise
     meta = federation.FederationMeta(
         repo_id=rid,
         source_url=(

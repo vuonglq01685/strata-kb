@@ -253,7 +253,12 @@ def hub_manifest(hub_ref: str, rid: str) -> dict[str, str]:
     man = hashsync.build_manifest(
         dest, exclude=("_meta.yaml", assetstore.RECORD_NAME)
     )
-    man.update(assetstore.synthesized_asset_entries(dest))
+    # Gate synthesis on the hub's own configured store, same rule
+    # publish._snapshot applies (active_store is not None) -- a hub with no
+    # asset_store block has no diverted assets to synthesize entries for.
+    store = assetstore.store_for_hub(handle)
+    if store is not None:
+        man.update(assetstore.synthesized_asset_entries(dest))
     return man
 
 
@@ -318,6 +323,15 @@ def intake_publish(
                     gitio.checkout(handle.root, branch)
                 # upload is incremental -- every file in the archive counts as changed
                 local_man = hashsync.build_manifest(tmp_kb)
+                # _assets.yaml is a hub-owned record (merged: existing ∪ new −
+                # deletes in divert_and_record below) -- a child-supplied
+                # _assets.yaml in the uploaded tar must never be synced
+                # verbatim, or a malicious/stale upload could overwrite the
+                # hub's own bookkeeping of what was diverted to the store.
+                local_man.pop(assetstore.RECORD_NAME, None)
+                child_record = tmp_kb / assetstore.RECORD_NAME
+                if child_record.exists():
+                    child_record.unlink()
                 hashsync.apply_sync(tmp_kb, dest, sorted(local_man), deletes)
                 active_store = (
                     store if store is not None else assetstore.store_for_hub(handle)

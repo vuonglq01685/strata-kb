@@ -306,3 +306,39 @@ def test_snapshot_upload_failure_raises_before_any_write_is_kept(tmp_path, hub_w
 
     with pytest.raises(assetstore.AssetStoreError):
         publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=_FailingStore())
+
+
+def test_snapshot_store_outage_then_retry_never_commits_binaries(tmp_path, hub_worktree):
+    """Regression: a store outage mid-divert must not leave un-diverted asset
+    bytes sitting in the hub clone's working tree. Left dirty, a retry with a
+    healthy store would see dest's manifest already match the child's (bytes
+    already copied by apply_sync before the outage) and early-return
+    "unchanged" *before* ever reaching divert again -- so _publish_direct /
+    _publish_pr would git-add + commit the leftover PNG straight into hub git.
+    """
+    from center_kb import publish
+
+    kb_abs = _child_kb_with_asset(tmp_path)
+    handle = HubHandle(root=hub_worktree)
+
+    class _FailingStore(assetstore.MemoryStore):
+        def put(self, name, data):
+            raise assetstore.AssetStoreError("bucket down")
+
+    # 1st attempt: every put fails
+    with pytest.raises(assetstore.AssetStoreError):
+        publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=_FailingStore())
+
+    # working tree restored: no leftover asset bytes, porcelain clean under federation
+    status = gitio._run(
+        handle.root, "status", "--porcelain", "--", "federation"
+    ).stdout.strip()
+    assert status == ""
+
+    # 2nd attempt with a healthy store: diverts for real
+    store = assetstore.MemoryStore()
+    n_docs, changed = publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    assert changed
+    assert store.get(f"{SHA_Y}.png") == b"YBYTES"  # asset uploaded
+    dest = handle.federation_dir / "rid-a"
+    assert not list(dest.rglob("*.png"))  # no binaries left in the tree

@@ -334,6 +334,14 @@ def test_intake_upload_failure_leaves_no_dirty_leftovers(hub_root, monkeypatch):
 def test_hub_manifest_synthesizes_assets_and_hides_record(hub_root, monkeypatch):
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    # hub_manifest() gates synthesis on the hub's own configured store (same
+    # rule as publish._snapshot) -- the intake_publish call below bypasses
+    # that via the store= test seam, but hub_manifest always reads
+    # store_for_hub(handle), so the hub needs a real asset_store block for
+    # the gated synthesis path to fire.
+    (hub_root / ".kb" / "config.yaml").write_text(
+        "asset_store:\n  mode: s3\n  bucket: kb-assets\n", encoding="utf-8"
+    )
     intake.intake_publish(
         _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [],
         _archive_with_asset(), store=assetstore.MemoryStore(),
@@ -344,6 +352,35 @@ def test_hub_manifest_synthesizes_assets_and_hides_record(hub_root, monkeypatch)
     assert man[f"doc1/assets/{SHA_X}.png"] == SHA_X
     assert "_assets.yaml" not in man
     assert "_meta.yaml" not in man
+
+
+def test_intake_child_supplied_assets_record_is_ignored(hub_root, monkeypatch):
+    """A malicious/stale tar can carry its own _assets.yaml at the rid root --
+    it must never be synced verbatim into the hub-owned record. Only genuinely
+    diverted assets (merged by divert_and_record) may end up in the record.
+    """
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    bogus_record = models.AssetsRecord(assets=["doc1/assets/" + "e" * 64 + ".evil.png"])
+    archive = _tar_bytes(
+        {
+            "doc1/ch1-intro.md": b"text",
+            f"doc1/assets/{SHA_X}.png": b"PNGBYTES",
+            assetstore.RECORD_NAME: (
+                b"assets:\n- " + bogus_record.assets[0].encode() + b"\n"
+            ),
+        }
+    )
+    intake.intake_publish(
+        _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [], archive,
+        store=assetstore.MemoryStore(),
+    )
+    _git(hub_root, "checkout", "publish/child-a")
+    dest = hub_root / "federation" / "child-a"
+    rec = models.load_yaml_model(dest / assetstore.RECORD_NAME, models.AssetsRecord)
+    assert bogus_record.assets[0] not in rec.assets
+    assert rec.assets == [f"doc1/assets/{SHA_X}.png"]
+    _git(hub_root, "checkout", "main")
 
 
 def test_intake_deletes_cannot_touch_assets_record(hub_root, monkeypatch):
