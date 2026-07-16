@@ -25,13 +25,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("center_kb.searchdb")
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 K_LEG = 50  # top-k mỗi leg đưa vào RRF
 RRF_K = 60  # hằng số RRF chuẩn
 DB_NAME = "search.db"
 _KNN_OVERFETCH = 4  # vec0 không pre-filter tag được — over-fetch rồi lọc sau
 _EMBED_BATCH = 256  # số section mỗi lần gọi embedder.embed()
 _BUSY_TIMEOUT_MS = 5000
+# bm25 column weights (title, summary, body_l2, body_l3) — title mạnh nhất,
+# L3 yếu nhất để section raw dài không lấn át title/summary match (spec §3).
+_BM25_WEIGHTS = "4.0, 2.0, 1.5, 1.0"
 
 
 @dataclass(frozen=True)
@@ -143,7 +146,7 @@ def _create_schema(conn: sqlite3.Connection) -> None:
     # FTS5 thường (lưu text) — contentless bị loại vì không DELETE/UPDATE được
     conn.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5("
-        "title, summary, body_head, tokenize='unicode61')"
+        "title, summary, body_l2, body_l3, tokenize='unicode61')"
     )
     conn.execute(
         "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
@@ -227,21 +230,34 @@ def _repo_fingerprint(repo_dir: Path) -> str:
 
 def _section_parts(
     kb_dir: Path, doc_id: str, sec: models.SectionEntry
-) -> tuple[str, str, str]:
-    """(title, summary, body_head) — body_head = 500 ký tự đầu L2."""
-    body = ""
+) -> tuple[str, str, str, str]:
+    """(title, summary, body_l2, body_l3) — body_l2 = FULL L2 slice (summary
+    + tables, không cap), body_l3 = full L3 slice từ .raw.md."""
+    body_l2 = ""
     l2_path = kb_dir / doc_id / f"{sec.file}.md"
     if l2_path.exists():
-        content = slice_section(l2_path.read_text(encoding="utf-8"), sec.id)
-        if content:
-            body = content[:_L2_HEAD_CHARS]
-    return sec.title, sec.summary, body
+        body_l2 = slice_section(l2_path.read_text(encoding="utf-8"), sec.id) or ""
+    body_l3 = ""
+    l3_path = kb_dir / doc_id / f"{sec.file}.raw.md"
+    if l3_path.exists():
+        body_l3 = slice_section(l3_path.read_text(encoding="utf-8"), sec.id) or ""
+    else:
+        logger.warning("raw L3 missing — FTS indexes L2 only: %s", l3_path)
+    return sec.title, sec.summary, body_l2, body_l3
 
 
 def _embed_text(title: str, summary: str, body: str) -> str:
-    """Cùng format text với embed._section_text cũ — dùng cho content_hash + embedding."""
+    """Cùng format text với embed._section_text cũ — dùng cho embedding (body
+    luôn cap ở _L2_HEAD_CHARS, giới hạn input model embed)."""
     text = f"{title}\n{summary}"
     return f"{text}\n{body}" if body else text
+
+
+def _content_digest(title: str, summary: str, body_l2: str, body_l3: str) -> str:
+    """Change-detection hash — phủ MỌI cột FTS (embed text thì vẫn capped:
+    hash và embed tách nhau từ schema v2)."""
+    joined = "\n".join((title, summary, body_l2, body_l3))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 
 def _delete_section(conn: sqlite3.Connection, rowid: int) -> None:
@@ -283,17 +299,17 @@ def _sync_repo(
         for sec in manifest.sections:
             key = (doc.id, sec.id)
             seen.add(key)
-            title, summary, body = _section_parts(repo.kb_dir, doc.id, sec)
-            digest = hashlib.sha256(
-                _embed_text(title, summary, body).encode("utf-8")
-            ).hexdigest()
+            title, summary, body_l2, body_l3 = _section_parts(
+                repo.kb_dir, doc.id, sec
+            )
+            digest = _content_digest(title, summary, body_l2, body_l3)
             old = stored.get(key)
             if old is not None and old[1] == digest:
-                # content_hash phủ title+summary+body — hash trùng nghĩa là
-                # title không đổi; chỉ file/doc_revision có thể drift (rename
-                # file L2, bump revision) mà không đổi nội dung. Refresh 2 cột
-                # đó để citation/path không lệch (không rewrite FTS, không
-                # re-embed).
+                # content_hash phủ title+summary+body_l2+body_l3 — hash trùng
+                # nghĩa là nội dung không đổi; chỉ file/doc_revision có thể
+                # drift (rename file L2, bump revision) mà không đổi nội
+                # dung. Refresh 2 cột đó để citation/path không lệch (không
+                # rewrite FTS, không re-embed).
                 conn.execute(
                     "UPDATE sections SET file = ?, doc_revision = ? "
                     "WHERE id = ? AND (file != ? OR doc_revision != ?)",
@@ -317,9 +333,9 @@ def _sync_repo(
                 (rid, doc.id, sec.id, sec.title, sec.file, doc.revision, digest),
             )
             conn.execute(
-                "INSERT INTO fts(rowid, title, summary, body_head) "
-                "VALUES(?, ?, ?, ?)",
-                (cur.lastrowid, title, summary, body),
+                "INSERT INTO fts(rowid, title, summary, body_l2, body_l3) "
+                "VALUES(?, ?, ?, ?, ?)",
+                (cur.lastrowid, title, summary, body_l2, body_l3),
             )
             report.sections_updated += 1
     for key, (rowid, _) in stored.items():
@@ -387,12 +403,15 @@ def _sync_vectors(
         chunk = missing_ids[start : start + _EMBED_BATCH]
         placeholders = ",".join("?" * len(chunk))
         batch = conn.execute(
-            "SELECT s.id, f.title, f.summary, f.body_head FROM sections s "
+            "SELECT s.id, f.title, f.summary, f.body_l2 FROM sections s "
             f"JOIN fts f ON f.rowid = s.id WHERE s.id IN ({placeholders})",
             chunk,
         ).fetchall()
         vectors = embedder.embed(
-            [_embed_text(title, summary, body) for _, title, summary, body in batch]
+            [
+                _embed_text(title, summary, body[:_L2_HEAD_CHARS])
+                for _, title, summary, body in batch
+            ]
         )
         for (rowid, *_), vec in zip(batch, vectors):
             if len(vec) != embedder.dim:
@@ -531,7 +550,7 @@ def fts_search(
     if not match:
         return []
     sql = (
-        "SELECT fts.rowid, -bm25(fts) FROM fts "
+        f"SELECT fts.rowid, -bm25(fts, {_BM25_WEIGHTS}) FROM fts "
         "JOIN sections s ON s.id = fts.rowid WHERE fts MATCH ?"
     )
     params: list[object] = [match]
@@ -543,7 +562,7 @@ def fts_search(
             f" AND t.doc_id = s.doc_id AND t.tag IN ({placeholders}))"
         )
         params += tag_list
-    sql += " ORDER BY bm25(fts) LIMIT ?"  # bm25 nhỏ hơn = khớp tốt hơn
+    sql += f" ORDER BY bm25(fts, {_BM25_WEIGHTS}) LIMIT ?"  # bm25 nhỏ = khớp tốt
     params.append(k)
     return [(rowid, score) for rowid, score in conn.execute(sql, params)]
 
