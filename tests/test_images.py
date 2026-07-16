@@ -51,3 +51,26 @@ def test_image_ref_sanitizes_alt():
     assert "[point]" not in ref
     assert ref.endswith(f"](assets/{'a' * 64}.png)")
     assert images.image_ref("", "b" * 64 + ".webp") == f"![](assets/{'b' * 64}.webp)"
+
+
+def test_resolve_description_priority():
+    assert images.resolve_description("Figure 5-1. Holding", "ocr junk") == "Figure 5-1. Holding"
+    assert images.resolve_description("  ", "VOR DME") == "VOR DME"
+    assert images.resolve_description("", "ab") == ""      # below MIN_OCR_CHARS
+    assert images.resolve_description("", "") == ""
+    assert images.resolve_description("a  b\n c", "") == "a b c"  # whitespace collapsed
+
+
+def test_ocr_image_returns_empty_on_missing_engine(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def block_rapidocr(name, *a, **kw):
+        if name.startswith("rapidocr"):
+            raise ImportError(name)
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", block_rapidocr)
+    monkeypatch.setattr(images, "_OCR_ENGINE", None)
+    assert images.ocr_image(_img(32, 32)) == ""

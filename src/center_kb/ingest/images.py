@@ -54,3 +54,38 @@ def _sanitize_alt(text: str) -> str:
 
 def image_ref(desc: str, filename: str) -> str:
     return f"![{_sanitize_alt(desc)}](assets/{filename})"
+
+
+_OCR_ENGINE = None  # lazily-initialized RapidOCR singleton (heavy to build)
+
+
+def resolve_description(caption: str, ocr_text: str) -> str:
+    """First deterministic source wins; empty when none — never fabricate."""
+    cap = " ".join((caption or "").split())
+    if cap:
+        return cap
+    ocr = " ".join((ocr_text or "").split())
+    if len(ocr) >= MIN_OCR_CHARS:
+        return ocr
+    return ""
+
+
+def ocr_image(img) -> str:
+    """OCR the image crop with RapidOCR (already the pipeline's engine).
+    Any failure → '' (a missing description is better than a wrong one)."""
+    global _OCR_ENGINE
+    try:
+        import numpy as np
+        from rapidocr import RapidOCR
+    except ImportError:
+        logger.warning("rapidocr unavailable — OCR description source disabled")
+        return ""
+    try:
+        if _OCR_ENGINE is None:
+            _OCR_ENGINE = RapidOCR()
+        out = _OCR_ENGINE(np.asarray(img.convert("RGB")))
+        txts = getattr(out, "txts", None) or ()
+        return " ".join(t.strip() for t in txts if t and t.strip())
+    except Exception as exc:  # noqa: BLE001 — OCR must never abort an ingest
+        logger.warning("OCR failed on image: %s", exc)
+        return ""
