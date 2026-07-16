@@ -82,3 +82,36 @@ def test_config_kind_rejects_unknown_value(tmp_path):
     (tmp_path / "config.yaml").write_text("kind: server\n", encoding="utf-8")
     with pytest.raises(ValidationError):
         load_config(tmp_path)
+
+
+def test_asset_store_defaults_to_none(tmp_path):
+    (tmp_path / "config.yaml").write_text("hub: '.'\n", encoding="utf-8")
+    cfg = load_config(tmp_path)
+    assert cfg.asset_store.mode == "none"
+    assert cfg.asset_store.prefix == "assets/"
+
+
+def test_asset_store_parses_s3_block(tmp_path):
+    (tmp_path / "config.yaml").write_text(
+        "hub: '.'\n"
+        "asset_store:\n"
+        "  mode: s3\n"
+        "  bucket: kb-assets\n"
+        "  region: ap-southeast-1\n"
+        "  endpoint: https://minio.local:9000\n",
+        encoding="utf-8",
+    )
+    store_cfg = load_config(tmp_path).asset_store
+    assert store_cfg.mode == "s3"
+    assert store_cfg.bucket == "kb-assets"
+    assert store_cfg.region == "ap-southeast-1"
+    assert store_cfg.endpoint == "https://minio.local:9000"
+    assert store_cfg.prefix == "assets/"
+
+
+def test_asset_store_rejects_unknown_mode(tmp_path):
+    (tmp_path / "config.yaml").write_text(
+        "asset_store:\n  mode: ftp\n", encoding="utf-8"
+    )
+    with pytest.raises(Exception):
+        load_config(tmp_path)
