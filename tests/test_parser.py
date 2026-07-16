@@ -1,6 +1,11 @@
 from dataclasses import dataclass, field
 
+import pytest
+
 from center_kb.ingest import parser
+
+PIL = pytest.importorskip("PIL")
+from PIL import Image
 
 
 @dataclass
@@ -20,9 +25,17 @@ class _StubItem:
     level: int = 1
     table_md: str = ""
     prov: list = None
+    image: object = None
+    caption: str = ""
 
     def export_to_markdown(self, doc=None):
         return self.table_md
+
+    def get_image(self, doc):
+        return self.image
+
+    def caption_text(self, doc):
+        return self.caption
 
 
 @dataclass
@@ -246,3 +259,62 @@ def test_outline_parts_returns_none_without_outline(tmp_path):
 
 def test_outline_parts_returns_none_for_missing_file(tmp_path):
     assert parser.outline_parts(tmp_path / "nope.pdf") is None
+
+
+def test_doc_to_items_emits_image_with_caption_description(tmp_path):
+    img = Image.new("RGB", (32, 32), (0, 0, 0))
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=12)],
+                image=img,
+                caption="Figure 5-1. Holding pattern",
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert len(items) == 1
+    it = items[0]
+    assert it.kind == "image" and it.page == 12
+    assert it.text.startswith("![Figure 5-1. Holding pattern](assets/")
+    name = it.text.split("(assets/")[1].rstrip(")")
+    assert (tmp_path / name).exists()
+
+
+def test_doc_to_items_skips_pictures_without_assets_dir():
+    img = Image.new("RGB", (32, 32), (0, 0, 0))
+    doc = _StubDoc(
+        items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=1)], image=img)]
+    )
+    assert parser.doc_to_items(doc) == []
+
+
+def test_doc_to_items_image_failure_skips_not_raises(tmp_path):
+    class _BrokenImageItem(_StubItem):
+        def get_image(self, doc):
+            raise ValueError("boom")
+
+    doc = _StubDoc(
+        items=[_BrokenImageItem(_StubLabel("picture"), prov=[_StubProv(page_no=1)])]
+    )
+    assert parser.doc_to_items(doc, assets_dir=tmp_path) == []
+
+
+def test_doc_to_items_clears_stale_assets(tmp_path):
+    (tmp_path / "deadbeef.png").write_bytes(b"old")
+    doc = _StubDoc(items=[])
+    parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert not (tmp_path / "deadbeef.png").exists()
+
+
+def test_doc_to_items_empty_description_kept(tmp_path, monkeypatch):
+    from center_kb.ingest import images
+
+    monkeypatch.setattr(images, "ocr_image", lambda img: "")
+    img = Image.new("RGB", (32, 32), (0, 0, 0))
+    doc = _StubDoc(
+        items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=3)], image=img)]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert items[0].text.startswith("![](assets/")
