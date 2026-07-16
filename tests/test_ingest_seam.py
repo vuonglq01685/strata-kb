@@ -16,13 +16,23 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
+from typer.testing import CliRunner
+
+from center_kb.cli import app
+from tests.test_parser import _StubDoc, _StubItem, _StubLabel, _StubProv
 
 REPO = Path(__file__).parent.parent
 FIXTURE = REPO / "tests-gate" / "fixtures" / "pending-kb"
 
 sys.path.insert(0, str(REPO / "scripts"))
 from gen_e2e_fixture import generate  # noqa: E402
+
+PIL = pytest.importorskip("PIL")
+from PIL import Image  # noqa: E402
+
+runner = CliRunner()
 
 
 def _tree(root: Path) -> set[str]:
@@ -76,3 +86,55 @@ def test_fixture_index_matches_scaffold_output(tmp_path):
     # — pop nothing, compare the whole document.
 
     assert fresh == committed, "index.yaml has drifted from scaffold_doc()'s output"
+
+
+def test_ingest_writes_assets_and_l3_ref(tmp_path, monkeypatch):
+    """End-to-end seam: `kb ingest` must thread assets_dir through to the real
+    parser.doc_to_items() so a picture item lands as a saved asset file AND
+    an image markdown reference in the section's raw L3. Only load_or_parse
+    is stubbed here — doc_to_items runs for real, unlike test_ingest_cli.py
+    which stubs doc_to_items itself and never touches the assets seam."""
+    from center_kb.ingest import parser
+
+    fake_doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("section_header"),
+                text="5.0 NAVIGATION DATA",
+                level=1,
+                prov=[_StubProv(page_no=1)],
+            ),
+            _StubItem(
+                _StubLabel("text"),
+                text="Chapter intro text.",
+                prov=[_StubProv(page_no=1)],
+            ),
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                caption="Figure 5-1. Holding pattern",
+            ),
+        ]
+    )
+    monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: fake_doc)
+
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+    kb_dir = tmp_path / ".kb"
+    result = runner.invoke(
+        app,
+        [
+            "ingest", str(pdf),
+            "--id", "demo",
+            "--kb-dir", str(kb_dir),
+            "--work-dir", str(tmp_path / ".kb-work"),
+            "--no-summarize",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    assets = list((kb_dir / "demo" / "assets").iterdir())
+    assert len(assets) == 1
+    l3 = next((kb_dir / "demo").glob("*.raw.md")).read_text(encoding="utf-8")
+    assert f"](assets/{assets[0].name})" in l3

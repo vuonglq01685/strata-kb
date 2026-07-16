@@ -354,7 +354,7 @@ def ingest(
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    items = parser.doc_to_items(doc)
+    items = parser.doc_to_items(doc, assets_dir=kb_dir / doc_id / "assets")
     parts = None if no_bookmarks else parser.outline_parts(pdf, heading_config)
     if parts:
         typer.echo(f"sectioning: bookmarks ({len(parts)} parts)")
