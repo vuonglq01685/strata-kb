@@ -89,3 +89,30 @@ def ocr_image(img) -> str:
     except Exception as exc:  # noqa: BLE001 — OCR must never abort an ingest
         logger.warning("OCR failed on image: %s", exc)
         return ""
+
+
+def phash(img):
+    """64-bit perceptual hash (imagehash default hash_size=8)."""
+    import imagehash
+
+    return imagehash.phash(img.convert("RGB"))
+
+
+@dataclass
+class LegendMap:
+    """Icon↔meaning map parsed from the document's own legend table.
+    Matching is perceptual-hash only — deterministic, no model."""
+
+    entries: list[tuple[object, str]] = field(default_factory=list)
+
+    def add(self, img, meaning: str) -> None:
+        text = " ".join((meaning or "").split())
+        if text:
+            self.entries.append((phash(img), text))
+
+    def match(self, img) -> str | None:
+        if not self.entries:
+            return None
+        h = phash(img)
+        best = min(self.entries, key=lambda e: h - e[0])
+        return best[1] if (h - best[0]) <= PHASH_MAX_DISTANCE else None
