@@ -77,7 +77,7 @@ Deletes: a child that stops referencing an asset drops it from its manifest; the
 Spec A's `/assets/{name}` route resolves via `_find_asset` (local dirs, positive-hit cache, threadpool). Spec B extends the resolution chain:
 
 1. local hit (`.kb/`, `federation/`) → serve (keeps in-git assets from `mode: none` hubs working, and makes later migration a resolver-only change);
-2. miss + store configured → `store.get(name)`; hit → write to disk cache `~/.center-kb/asset-cache/<name>` (content-addressed → immutable, no invalidation), serve; subsequent requests hit the cache path;
+2. miss + store configured → `store.get(name)`; hit → write to disk cache `<hub cache base>/asset-cache/<name>` (content-addressed → immutable, no invalidation), serve; subsequent requests hit the cache path. The hub cache base is the same directory the hub clone cache lives under — `~/.center-kb/hub` by default, overridable with `CENTER_KB_HUB_CACHE` — so the asset cache defaults to `~/.center-kb/hub/asset-cache/<name>`;
 3. store raised → 503; store miss → 404. Disk-cache write failure → still serve the fetched bytes, log a warning.
 
 Auth, name validation, headers, and threadpool behavior are unchanged from spec A.
