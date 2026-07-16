@@ -41,6 +41,7 @@ class QueryResult:
     tokens: int
     source: str = ""  # repo-id trong federation
     match_mode: str = "keyword"  # "keyword" | "semantic" | "hybrid"
+    snippet: str = ""  # trích L3 quanh match khi term không hiện trong L2
 
 
 def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
@@ -53,6 +54,38 @@ def _row_content(hub: "HubHandle", row: "SectionRow") -> str | None:
     if not l2_path.exists():
         return None
     return slice_section(l2_path.read_text(encoding="utf-8"), row.section_id)
+
+
+_SNIPPET_WINDOW = 150  # chars mỗi bên quanh hit đầu tiên trong L3
+
+
+def _l3_snippet(
+    hub: "HubHandle", row: "SectionRow", terms: list[str], content: str
+) -> str:
+    """Match nằm ở L3 (fold/tail) mà content L2 không chứa term nào → trích
+    cửa sổ quanh hit đầu tiên để người dùng thấy vì sao section này khớp."""
+    lower = content.lower()
+    if not terms or any(t in lower for t in terms):
+        return ""
+    raw_path = (
+        hub.federation_dir / row.repo_id / row.doc_id / f"{row.file}.raw.md"
+    )
+    if not raw_path.exists():
+        return ""
+    raw = slice_section(raw_path.read_text(encoding="utf-8"), row.section_id)
+    if not raw:
+        return ""
+    raw_lower = raw.lower()
+    for term in terms:
+        pos = raw_lower.find(term)
+        if pos < 0:
+            continue
+        start = max(0, pos - _SNIPPET_WINDOW)
+        end = min(len(raw), pos + len(term) + _SNIPPET_WINDOW)
+        prefix = "…" if start > 0 else ""
+        suffix = "…" if end < len(raw) else ""
+        return f"{prefix}{raw[start:end].strip()}{suffix}"
+    return ""
 
 
 def _search_index(
@@ -119,6 +152,7 @@ def search(
             'keyword results only (enable with: pip install "center-kb[embed]")'
         )
     fused, rows = _search_index(hub, embedder, text, tags)
+    terms = tokenize(text)
 
     results: list[QueryResult] = []
     used = 0
@@ -129,7 +163,8 @@ def search(
         content = _row_content(hub, row)
         if content is None:
             continue
-        n_tokens = count_tokens(content)
+        snippet = "" if mode == "semantic" else _l3_snippet(hub, row, terms, content)
+        n_tokens = count_tokens(content) + (count_tokens(snippet) if snippet else 0)
         if results and used + n_tokens > budget:
             break
         results.append(
@@ -145,6 +180,7 @@ def search(
                 tokens=n_tokens,
                 source=row.repo_id,
                 match_mode=mode,
+                snippet=snippet,
             )
         )
         used += n_tokens
