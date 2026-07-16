@@ -155,3 +155,42 @@ def test_scaffold_stem_falls_back_without_part_titles(tmp_path: Path):
         source_path=None, kb_dir=kb,
     )
     assert "ch4-general.md" in report.files
+
+
+def test_l2_gets_figure_description_text(tmp_path: Path):
+    sha = "d" * 64
+    unit = SectionUnit(
+        id="5.1",
+        title="Symbols",
+        chapter="5",
+        body_md=f"Intro.\n\n![Holding pattern](assets/{sha}.webp)",
+        tables=[],
+        page=12,
+    )
+    scaffold_doc(
+        [unit], doc_id="doc", title="T", tags=[], revision="r1",
+        source_path=None, kb_dir=tmp_path,
+    )
+    l2 = (tmp_path / "doc" / "ch5-symbols.md").read_text(encoding="utf-8")
+    l3 = (tmp_path / "doc" / "ch5-symbols.raw.md").read_text(encoding="utf-8")
+    assert "Figure: Holding pattern" in l2
+    assert f"![Holding pattern](assets/{sha}.webp)" in l3
+    assert f"![Holding pattern](assets/{sha}.webp)" not in l2  # figures stay text-only in L2
+
+
+def test_table_icon_cell_identical_in_l2_and_l3(tmp_path: Path):
+    sha = "e" * 64
+    row = f"| ![VOR](assets/{sha}.png) | VOR station |"
+    table = "| Symbol | Meaning |\n| --- | --- |\n" + row
+    unit = SectionUnit(
+        id="5.2", title="Legend", chapter="5",
+        body_md=f"See legend.\n\n{table}", tables=[table], page=13,
+    )
+    scaffold_doc(
+        [unit], doc_id="doc", title="T", tags=[], revision="r1",
+        source_path=None, kb_dir=tmp_path,
+    )
+    l2 = (tmp_path / "doc" / "ch5-legend.md").read_text(encoding="utf-8")
+    l3 = (tmp_path / "doc" / "ch5-legend.raw.md").read_text(encoding="utf-8")
+    assert row in l2 and row in l3        # byte-identical cell in both layers
+    assert "Figure: VOR" not in l2        # table icons are not figure lines

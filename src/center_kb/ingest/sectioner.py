@@ -12,7 +12,7 @@ logger = logging.getLogger("center_kb.ingest.sectioner")
 
 @dataclass
 class DocItem:
-    kind: str  # "heading" | "text" | "table"
+    kind: str  # "heading" | "text" | "table" | "image"
     text: str
     level: int = 0
     page: int | None = None
@@ -26,6 +26,7 @@ class _Node:
     body: list[str] = field(default_factory=list)
     children: list["_Node"] = field(default_factory=list)
     fallback: bool = False  # id synthesized from an unparsed heading
+    page: int | None = None  # page of the heading that opened this node
 
 
 @dataclass
@@ -35,6 +36,7 @@ class SectionUnit:
     chapter: str
     body_md: str
     tables: list[str]
+    page: int | None = None
 
 
 @dataclass(frozen=True)
@@ -222,7 +224,10 @@ def _build_tree(
     # in this corpus), attach it at the root at the end so content is
     # never silently dropped.
     pending_orphans: dict[str, list[_Node]] = {}
+    last_page: int | None = None
     for item in items:
+        if item.page is not None:
+            last_page = item.page
         if item.kind == "heading":
             normalized = " ".join(item.text.split())
             if not any(ch.isalnum() for ch in normalized):
@@ -277,7 +282,7 @@ def _build_tree(
                 while stack[-1].depth >= depth:
                     stack.pop()
                 anchor = stack[-1]
-                node = _Node(id=sid, title=title, depth=depth)
+                node = _Node(id=sid, title=title, depth=depth, page=last_page)
                 # Detect the orphan pattern: a numeric id whose current
                 # attachment point is neither itself nor a real dotted/
                 # namespaced ancestor of it. A legitimate skip-level
@@ -332,7 +337,8 @@ def _build_tree(
                     stack = list(seen[sid])
                     continue
                 node = _Node(
-                    id=sid, title=normalized, depth=parent.depth + 1, fallback=True
+                    id=sid, title=normalized, depth=parent.depth + 1,
+                    fallback=True, page=last_page,
                 )
                 parent.children.append(node)
                 stack.append(node)
@@ -357,6 +363,24 @@ def _subtree_md(node: _Node) -> str:
     return "\n\n".join(p for p in parts if p.strip())
 
 
+def order_units(units: list[SectionUnit]) -> list[SectionUnit]:
+    """Stable-sort units by heading page (forward-filled).
+
+    Docling can emit headings out of physical order on complex layouts;
+    anchoring each unit to its heading's page restores TOC order. Units
+    without a page inherit the previous unit's page, so front matter and
+    part seeds keep their position. Body items are NOT re-sorted — docling's
+    in-page reading order (multi-column aware) is better than a bbox sort.
+    """
+    keyed: list[tuple[int, int]] = []
+    last = 0
+    for i, unit in enumerate(units):
+        if unit.page is not None:
+            last = unit.page
+        keyed.append((last, i))
+    return [u for _, u in sorted(zip(keyed, units), key=lambda t: t[0])]
+
+
 def build_units(
     items: list[DocItem],
     max_depth: int = 3,
@@ -377,9 +401,9 @@ def build_units(
                 froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
             )
         root = _build_tree(rest, config)
-        return units + _units_from_tree(
+        return order_units(units + _units_from_tree(
             root, max_depth, min_tokens, max_unit_tokens, None
-        )
+        ))
     units: list[SectionUnit] = []
     for part, part_items in split_by_parts(items, parts):
         if not part_items:
@@ -388,7 +412,7 @@ def build_units(
         units += _units_from_tree(
             root, max_depth, min_tokens, max_unit_tokens, part.id
         )
-    return units
+    return order_units(units)
 
 
 def _units_from_tree(
@@ -443,6 +467,7 @@ def _units_from_tree(
                     chapter=chapter,
                     body_md=body_md,
                     tables=extract_tables(body_md),
+                    page=node.page,
                 )
             )
         for child in kept:

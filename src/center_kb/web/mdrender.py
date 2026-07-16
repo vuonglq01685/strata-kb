@@ -1,11 +1,12 @@
 # src/center_kb/web/mdrender.py
 """Minimal markdown→HTML for the exact subset used in L2/L3 files.
 
-Supported: #..###### headings, blank-line paragraphs, GitHub pipe tables.
-Table cells are escaped but never reworded/reflowed — the project's
-inviolable rule is that tables render character-for-character. Optional
-keyword highlighting wraps matched whole words in <mark> without altering
-any other character.
+Supported: #..###### headings, blank-line paragraphs, GitHub pipe tables,
+and sha-named asset images (as standalone blocks or table cells). Table
+cells are escaped but never reworded/reflowed — the project's inviolable
+rule is that tables render character-for-character. Optional keyword
+highlighting wraps matched whole words in <mark> without altering any
+other character.
 """
 from __future__ import annotations
 
@@ -15,6 +16,14 @@ import re
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
+_IMG_LINE_RE = re.compile(
+    r"^!\[([^\]]*)\]\(assets/([0-9a-f]{64}\.(?:png|webp))\)$"
+)
+
+
+def _img_tag(m: re.Match[str]) -> str:
+    alt, name = m.group(1), m.group(2)
+    return f'<img src="/assets/{name}" alt="{html.escape(alt, quote=True)}" loading="lazy">'
 
 
 def _cells(row: str) -> list[str]:
@@ -47,10 +56,17 @@ def _render_table(rows: list[str], terms: set[str]) -> str:
         if has_header and i == 1:
             continue
         tag = "th" if (has_header and i == 0) else "td"
-        cells = "".join(f"<{tag}>{_highlight(c, terms)}</{tag}>" for c in _cells(row))
+        cells = "".join(f"<{tag}>{_cell_html(c, terms)}</{tag}>" for c in _cells(row))
         out.append(f"<tr>{cells}</tr>")
     out.append("</table>")
     return "".join(out)
+
+
+def _cell_html(cell: str, terms: set[str]) -> str:
+    m = _IMG_LINE_RE.match(cell)
+    if m:
+        return _img_tag(m)
+    return _highlight(cell, terms)
 
 
 def render(md: str, terms: set[str] | None = None) -> str:
@@ -74,6 +90,12 @@ def render(md: str, terms: set[str] | None = None) -> str:
                 table.append(lines[i])
                 i += 1
             blocks.append(_render_table(table, terms))
+            continue
+        m_img = _IMG_LINE_RE.match(line.strip())
+        if m_img:
+            flush_para()
+            blocks.append(_img_tag(m_img))
+            i += 1
             continue
         m = _HEADING_RE.match(line)
         if m:
