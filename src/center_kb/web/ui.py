@@ -8,6 +8,9 @@ from importlib import resources
 from string import Template
 from urllib.parse import quote
 
+from pathlib import Path
+
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
@@ -239,6 +242,27 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         return Response(css, media_type="text/css")
 
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
+    asset_cache: dict[str, Path] = {}
+
+    def _find_asset(hub, name: str) -> Path | None:
+        """Resolve a content-addressed asset filename to a path.
+
+        Positive hits only are cached: content-addressed files are immutable
+        once written, so a cached hit stays valid for the process lifetime
+        (re-verified with is_file() in case the file vanished). Misses are
+        never cached — a later publish can add the asset.
+        """
+        cached = asset_cache.get(name)
+        if cached is not None and cached.is_file():
+            return cached
+        for base in (hub.kb_dir, hub.federation_dir):
+            if not base.is_dir():
+                continue
+            # content-addressed name → any hit is THE asset (natural dedupe)
+            for path in base.glob(f"**/assets/{name}"):
+                asset_cache[name] = path
+                return path
+        return None
 
     async def asset(request: Request) -> Response:
         name = request.path_params["name"]
@@ -247,18 +271,16 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         hub = api.hub_handle(config)
         if hub is None:
             return Response("hub unreachable", status_code=503)
-        for base in (hub.kb_dir, hub.federation_dir):
-            if not base.is_dir():
-                continue
-            # content-addressed name → any hit is THE asset (natural dedupe)
-            for path in base.glob(f"**/assets/{name}"):
-                media = "image/png" if name.endswith(".png") else "image/webp"
-                return Response(
-                    path.read_bytes(),
-                    media_type=media,
-                    headers={"Cache-Control": "private, max-age=31536000, immutable"},
-                )
-        return Response("not found", status_code=404)
+        path = await run_in_threadpool(_find_asset, hub, name)
+        if path is None:
+            return Response("not found", status_code=404)
+        media = "image/png" if name.endswith(".png") else "image/webp"
+        data = await run_in_threadpool(path.read_bytes)
+        return Response(
+            data,
+            media_type=media,
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
 
     return [
         Route("/ui", home, methods=["GET"]),

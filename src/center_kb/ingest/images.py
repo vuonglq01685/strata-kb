@@ -1,9 +1,12 @@
 """Image asset handling for ingest: classification, compression,
 content-addressed saving, and deterministic descriptions.
 
-Descriptions come only from the source document (caption → OCR → legend
-match) — never generated. sha256 is computed over the stored (compressed)
-bytes so the filename is stable and hub verification is byte-exact.
+Descriptions come only from the source document (caption → OCR) — never
+generated. Legend-based matching (`LegendMap` below) is staged infrastructure
+and not yet wired into the pipeline; it activates after a per-document PoC
+validates docling's in-cell icon detection. sha256 is computed over the
+stored (compressed) bytes so the filename is stable and hub verification is
+byte-exact.
 """
 from __future__ import annotations
 

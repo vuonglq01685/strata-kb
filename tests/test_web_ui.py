@@ -371,3 +371,30 @@ def test_asset_route_hub_unreachable_503(tmp_path, monkeypatch):
         f"/assets/{'a' * 64}.png", headers=AUTH_HEADERS
     )
     assert resp.status_code == 503
+
+
+def test_asset_route_second_request_hits_cache(fed_hub):
+    sha = "b" * 64
+    assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / f"{sha}.png").write_bytes(b"PNGDATA2")
+    client = _authed_client(fed_hub / ".kb", str(fed_hub))
+    first = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
+    second = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.content == b"PNGDATA2"
+    assert second.content == first.content
+
+
+def test_asset_route_does_not_cache_misses(fed_hub):
+    sha = "c" * 64
+    client = _authed_client(fed_hub / ".kb", str(fed_hub))
+    miss = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
+    assert miss.status_code == 404
+    assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / f"{sha}.png").write_bytes(b"PNGDATA3")
+    hit = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
+    assert hit.status_code == 200
+    assert hit.content == b"PNGDATA3"
