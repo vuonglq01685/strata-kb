@@ -1,10 +1,19 @@
 import pytest
 
+from center_kb import models
+from center_kb.federation import FederationMeta
 from center_kb.hub import HubHandle
 from center_kb.query import search
 from tests.conftest import FakeEmbedder
 
 pytest.importorskip("sqlite_vec")
+
+
+def _bump_meta(entry, stamp="2026-07-14T09:00:00+00:00"):
+    meta_path = entry / "_meta.yaml"
+    meta = models.load_yaml_model(meta_path, FederationMeta)
+    meta.published_at = stamp
+    models.save_yaml_model(meta_path, meta)
 
 
 def test_hybrid_both_legs_match_mode_hybrid(fed_hub):
@@ -194,3 +203,43 @@ def test_corrupt_db_rebuilt_once_transparently(fed_hub):
     searchdb.db_path(hub).write_bytes(b"corrupted")
     results = search(hub, "restrictive airspace designation")  # rebuild + trả kết quả
     assert results
+
+
+def test_search_snippet_when_match_only_in_l3(fed_hub):
+    entry = fed_hub / "federation" / "arinc-kb"
+    (entry / "arinc-424" / "ch1.raw.md").write_text(
+        "## 5.3 Restrictive Airspace\n\nRaw text.\n\n"
+        "### 5.3-notes Folded notes\n\nUnique fact GRYPHON42 lives here only.\n",
+        encoding="utf-8",
+    )
+    _bump_meta(entry)
+    hub = HubHandle(root=fed_hub)
+    results = search(hub, "GRYPHON42", embedder=None)
+    assert len(results) == 1
+    r = results[0]
+    assert "gryphon42" not in r.content.lower()  # L2 không chứa term
+    assert "GRYPHON42" in r.snippet
+    assert r.snippet.startswith("…") or r.snippet.startswith("##")
+
+
+def test_search_no_snippet_when_term_in_l2(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    results = search(hub, "restrictive designation", embedder=None)
+    assert results
+    assert results[0].snippet == ""
+
+
+def test_search_snippet_counts_into_budget(fed_hub):
+    entry = fed_hub / "federation" / "arinc-kb"
+    (entry / "arinc-424" / "ch1.raw.md").write_text(
+        "## 5.3 Restrictive Airspace\n\nRaw text.\n\n"
+        "### 5.3-notes Folded notes\n\nUnique fact GRYPHON42 lives here only.\n",
+        encoding="utf-8",
+    )
+    _bump_meta(entry)
+    hub = HubHandle(root=fed_hub)
+    results = search(hub, "GRYPHON42", embedder=None)
+    from center_kb.mdutils import count_tokens
+
+    r = results[0]
+    assert r.tokens == count_tokens(r.content) + count_tokens(r.snippet)

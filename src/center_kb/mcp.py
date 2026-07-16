@@ -121,6 +121,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         note = _stale_note(hub) + _ambiguity_note(results)
         return note + "\n\n".join(
             f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk\n{r.content}"
+            + (f"\nraw match: {r.snippet}" if r.snippet else "")
             for r in results
         )
 

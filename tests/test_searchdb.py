@@ -153,6 +153,106 @@ def _bump_meta(entry, stamp="2026-07-14T09:00:00+00:00"):
     models.save_yaml_model(meta_path, meta)
 
 
+def test_fts_indexes_l2_beyond_500_chars(fed_hub):
+    # table nằm SAU summary dài — ngoài cửa sổ body_head cũ
+    entry = fed_hub / "federation" / "arinc-kb"
+    l2 = entry / "arinc-424" / "ch1.md"
+    l2.write_text(
+        "## 5.3 Restrictive Airspace\n\n"
+        + ("Prose padding sentence. " * 30)  # > 500 chars
+        + "\n\n| Part | Torque |\n|---|---|\n| BOLTQX9 | 12 Nm |\n",
+        encoding="utf-8",
+    )
+    _bump_meta(entry)
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    conn = searchdb.open_db(hub)
+    try:
+        hits = searchdb.fts_search(conn, "BOLTQX9")
+        assert len(hits) == 1
+    finally:
+        conn.close()
+
+
+def test_fts_indexes_l3_only_terms(fed_hub):
+    # term chỉ tồn tại trong raw L3 (section fold) — L2 summary không nhắc
+    entry = fed_hub / "federation" / "arinc-kb"
+    l3 = entry / "arinc-424" / "ch1.raw.md"
+    l3.write_text(
+        "## 5.3 Restrictive Airspace\n\nFull raw text.\n\n"
+        "### 5.3-notes Folded notes\n\nUnique term ZEBRAFOLD77 here.\n",
+        encoding="utf-8",
+    )
+    _bump_meta(entry)
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    conn = searchdb.open_db(hub)
+    try:
+        hits = searchdb.fts_search(conn, "ZEBRAFOLD77")
+        assert len(hits) == 1
+    finally:
+        conn.close()
+
+
+def test_sync_reindexes_when_only_l3_changes(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    entry = fed_hub / "federation" / "arinc-kb"
+    l3 = entry / "arinc-424" / "ch1.raw.md"
+    l3.write_text(
+        l3.read_text(encoding="utf-8") + "\nAppended raw-only fact QUOKKA55.\n",
+        encoding="utf-8",
+    )
+    _bump_meta(entry)
+    report = searchdb.sync(hub, None)
+    assert report.sections_updated == 1  # hash phủ body_l3 → re-index
+
+
+def test_sync_survives_missing_raw_md(fed_hub):
+    entry = fed_hub / "federation" / "arinc-kb"
+    (entry / "arinc-424" / "ch1.raw.md").unlink()
+    _bump_meta(entry)
+    hub = HubHandle(root=fed_hub)
+    report = searchdb.sync(hub, None)
+    assert report.sections_updated >= 1  # không fail, body_l3 rỗng
+    conn = searchdb.open_db(hub)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM fts").fetchone() == (2,)
+    finally:
+        conn.close()
+
+
+def test_bm25_title_match_outranks_l3_only_match(fed_hub, tmp_path):
+    fed = fed_hub / "federation"
+    make_fed_entry(
+        fed, "title-kb", "title-doc",
+        sec_id="1.1", sec_title="Corridor Spacing",
+        sec_summary="About corridor spacing.",
+        l2="## 1.1 Corridor Spacing\n\nCondensed corridor text.\n",
+        l3="## 1.1 Corridor Spacing\n\nRaw corridor text.\n",
+    )
+    make_fed_entry(
+        fed, "body-kb", "body-doc",
+        sec_id="2.1", sec_title="Unrelated Title",
+        sec_summary="Unrelated summary.",
+        l2="## 2.1 Unrelated Title\n\nUnrelated condensed.\n",
+        l3="## 2.1 Unrelated Title\n\ncorridor corridor corridor mentioned in raw.\n",
+    )
+    from center_kb.federation import write_federation_index
+
+    write_federation_index(fed)
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    conn = searchdb.open_db(hub)
+    try:
+        hits = searchdb.fts_search(conn, "corridor")
+        rows = searchdb.load_sections(conn, [h[0] for h in hits])
+        ranked = [rows[h[0]].section_id for h in hits]
+        assert ranked.index("1.1") < ranked.index("2.1")  # title+summary thắng L3 spam
+    finally:
+        conn.close()
+
+
 def test_sync_builds_sections_fts_tags(fed_hub):
     hub = HubHandle(root=fed_hub)
     report = searchdb.sync(hub, None)
@@ -223,8 +323,8 @@ def test_sync_unchanged_content_rewrites_nothing(fed_hub):
 
 
 def test_sync_content_hash_hit_refreshes_stale_section_metadata(fed_hub):
-    """content_hash chỉ hash title+summary+body — doc_revision/title/file có
-    thể lệch khỏi hub hiện tại (rename, bump revision) mà hash không đổi.
+    """content_hash phủ title+summary+body_l2+body_l3 — doc_revision/title/file
+    có thể lệch khỏi hub hiện tại (rename, bump revision) mà hash không đổi.
     Phải refresh 3 cột này (citation/path đúng) mà không rewrite FTS/re-embed."""
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
@@ -239,6 +339,10 @@ def test_sync_content_hash_hit_refreshes_stale_section_metadata(fed_hub):
     models.save_yaml_model(manifest_path, manifest)
     (entry / "arinc-424" / "ch1-renamed.md").write_text(
         (entry / "arinc-424" / "ch1.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (entry / "arinc-424" / "ch1-renamed.raw.md").write_text(
+        (entry / "arinc-424" / "ch1.raw.md").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     report = searchdb.sync(hub, None)

@@ -273,6 +273,34 @@ def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch)
     assert 'class="match-badge match-semantic"' in resp.text
 
 
+def test_home_query_shows_escaped_snippet_when_present(fed_hub, monkeypatch):
+    from center_kb.query import QueryResult
+    from center_kb.web import ui as ui_module
+
+    fake_result = QueryResult(
+        doc_id="demo-doc", section_id="1.1", title="Airspace Records",
+        score=0.42, citation="demo-doc §1.1 (Rev 1)",
+        content="## 1.1 Airspace Records\n\nCondensed match.",
+        tokens=5, source="local", match_mode="keyword",
+        snippet="raw <b>GRYPHON42</b> context",
+    )
+    monkeypatch.setattr(ui_module, "search", lambda *a, **k: [fake_result])
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "airspace designation"}
+    )
+    assert 'class="result-snippet"' in resp.text
+    assert "raw match:" in resp.text
+    assert "&lt;b&gt;GRYPHON42&lt;/b&gt;" in resp.text
+    assert "<b>GRYPHON42</b>" not in resp.text
+
+
+def test_home_query_hides_snippet_block_when_empty(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "airspace designation"}
+    )
+    assert "result-snippet" not in resp.text
+
+
 def test_static_css_widens_main_and_defines_new_styles(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/static/style.css")
     assert "max-width: 76rem" in resp.text

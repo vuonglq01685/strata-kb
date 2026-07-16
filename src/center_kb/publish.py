@@ -13,6 +13,7 @@ from center_kb import hub as hub_mod
 logger = logging.getLogger("center_kb.publish")
 
 _REPO_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_LEGACY_ID_RE = re.compile(r"(^|-)x\d+$")
 
 PR_BODY_TEMPLATE = (
     "Publish snapshot of repo '{rid}' @ {commit}.\n\n"
@@ -102,6 +103,27 @@ def _snapshot(
     return len(local_index.docs), True
 
 
+def warn_legacy_ids(kb_dir: Path) -> list[str]:
+    """Id x{n} là fallback opaque của CLI cũ (< 2debcbc) hoặc heading không
+    slug được — cảnh báo để repo re-ingest bằng CLI mới. Không reject: data
+    cũ vẫn hợp lệ, chỉ kém đọc (spec §6b)."""
+    hits: list[str] = []
+    for man_path in sorted(kb_dir.glob("*/_manifest.yaml")):
+        manifest = models.load_yaml_model(man_path, models.Manifest)
+        hits += [
+            f"{manifest.id} §{sec.id}"
+            for sec in manifest.sections
+            if _LEGACY_ID_RE.search(sec.id)
+        ]
+    if hits:
+        logger.warning(
+            "legacy synthetic section ids — re-ingest these docs with the "
+            "current CLI to get readable ids: %s",
+            ", ".join(hits),
+        )
+    return hits
+
+
 def publish(
     kb_dir: Path,
     hub_ref: str,
@@ -110,6 +132,7 @@ def publish(
     mode: str = "auto",
 ) -> PublishReport:
     kb_abs = kb_dir.resolve()
+    warn_legacy_ids(kb_abs)
     source_root = gitio.git_root(kb_abs)
     source_commit = gitio.head_commit(source_root)
     rid = repo_id or source_root.name
