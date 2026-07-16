@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hmac
 import html
+import re
 from importlib import resources
 from string import Template
 from urllib.parse import quote
@@ -237,6 +238,28 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         )
         return Response(css, media_type="text/css")
 
+    asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
+
+    async def asset(request: Request) -> Response:
+        name = request.path_params["name"]
+        if not asset_name_re.match(name):
+            return Response("not found", status_code=404)
+        hub = api.hub_handle(config)
+        if hub is None:
+            return Response("hub unreachable", status_code=503)
+        for base in (hub.kb_dir, hub.federation_dir):
+            if not base.is_dir():
+                continue
+            # content-addressed name → any hit is THE asset (natural dedupe)
+            for path in base.glob(f"**/assets/{name}"):
+                media = "image/png" if name.endswith(".png") else "image/webp"
+                return Response(
+                    path.read_bytes(),
+                    media_type=media,
+                    headers={"Cache-Control": "private, max-age=31536000, immutable"},
+                )
+        return Response("not found", status_code=404)
+
     return [
         Route("/ui", home, methods=["GET"]),
         Route("/ui/login", login_get, methods=["GET"]),
@@ -245,4 +268,5 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),
         Route("/ui/docs/{doc}/{section}", section_page, methods=["GET"]),
         Route("/ui/static/style.css", static_css, methods=["GET"]),
+        Route("/assets/{name}", asset, methods=["GET"]),
     ]
