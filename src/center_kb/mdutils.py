@@ -49,6 +49,28 @@ def slice_section(md: str, section_id: str) -> str | None:
     return "\n".join(lines[start:]).strip()
 
 
+_SUBHEADING_RE = re.compile(r"^### (?P<sid>\S+)[ \t]+(?P<title>.+?)\s*$")
+
+
+def slice_subsection(md: str, section_id: str) -> str | None:
+    """Slice a folded child ('### <id> <title>' inside a unit body) — ends at
+    the next '###'/'##' heading. slice_section() only addresses '## ' units;
+    folded children need this."""
+    lines = md.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        m = _SUBHEADING_RE.match(line)
+        if m and m.group("sid") == section_id:
+            start = i
+            break
+    if start is None:
+        return None
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith(("## ", "### ")):
+            return "\n".join(lines[start:j]).strip()
+    return "\n".join(lines[start:]).strip()
+
+
 def extract_tables(md: str) -> list[str]:
     tables: list[str] = []
     current: list[str] = []
