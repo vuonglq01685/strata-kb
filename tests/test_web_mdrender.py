@@ -82,3 +82,30 @@ def test_highlight_preserves_escaping_around_match():
 def test_no_terms_behaves_like_before():
     assert render("Plain text.") == "<p>Plain text.</p>"
     assert render("Plain text.", terms=set()) == "<p>Plain text.</p>"
+
+
+def test_render_block_image():
+    sha = "a" * 64
+    out = render(f"![Holding pattern](assets/{sha}.webp)")
+    assert f'<img src="/assets/{sha}.webp" alt="Holding pattern" loading="lazy">' in out
+    assert "<p>![" not in out
+
+
+def test_render_image_in_table_cell():
+    sha = "b" * 64
+    md = "| Symbol | Meaning |\n| --- | --- |\n" + f"| ![VOR](assets/{sha}.png) | VOR station |"
+    out = render(md)
+    assert f'<td><img src="/assets/{sha}.png" alt="VOR" loading="lazy"></td>' in out
+    assert "<td>VOR station</td>" in out
+
+
+def test_render_non_asset_image_ref_stays_escaped_text():
+    out = render("![x](http://evil/x.png)")
+    assert "<img" not in out
+    assert "![x](http://evil/x.png)" in out.replace("&quot;", '"')
+
+
+def test_render_image_alt_is_escaped():
+    sha = "c" * 64
+    out = render(f'![a"b<c>](assets/{sha}.png)')
+    assert 'alt="a&quot;b&lt;c&gt;"' in out
