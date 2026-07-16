@@ -199,6 +199,10 @@ a.chip:hover { color: #fff; background: var(--blue); border-color: var(--blue); 
 .result-body { font-size: 0.95rem; overflow-x: auto; }
 .result-body > :first-child { margin-top: 0.2rem; }
 .result-body > :last-child { margin-bottom: 0.2rem; }
+.result-snippet {
+  margin-top: 0.5rem; font-family: var(--mono); font-size: 0.72rem;
+  color: var(--muted);
+}
 .doc-name { font-size: 1.02rem; font-weight: 650; }
 .doc-name a { color: var(--ink); text-decoration: none; }
 .doc-name a:hover { color: var(--blue); }
