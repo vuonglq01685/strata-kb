@@ -84,6 +84,26 @@ def extract_tables(md: str) -> list[str]:
     return tables
 
 
+_IMAGE_MD_RE = re.compile(r"!\[([^\]]*)\]\(assets/[0-9a-f]{64}\.(?:png|webp)\)")
+
+
+def extract_image_descs(md: str) -> list[str]:
+    """Alt-texts of standalone image refs, in order, deduped, blanks dropped.
+
+    Table rows are skipped: table icons already reach L2 inside the copied
+    table, byte-identical — they must not also become 'Figure:' lines.
+    """
+    descs: list[str] = []
+    for line in md.splitlines():
+        if line.lstrip().startswith("|"):
+            continue
+        for m in _IMAGE_MD_RE.finditer(line):
+            alt = m.group(1).strip()
+            if alt and alt not in descs:
+                descs.append(alt)
+    return descs
+
+
 def normalize_table(table_md: str) -> str:
     rows: list[str] = []
     for line in table_md.splitlines():
