@@ -1,5 +1,6 @@
 import pytest
 
+from center_kb import models
 from center_kb.hub import HubHandle
 from center_kb.query import AmbiguousDocError, get_section, search
 from tests.conftest import make_fed_entry
@@ -73,3 +74,53 @@ def test_get_section_ambiguous_raises_with_candidates(fed_hub):
 def test_get_section_missing_returns_none(fed_hub):
     assert get_section(_handle(fed_hub), "ghost", "1.1") is None
     assert get_section(_handle(fed_hub), "arinc-424", "9.9") is None
+
+
+def test_get_section_folded_id_l3_returns_subtree(fed_hub):
+    entry = fed_hub / "federation" / "arinc-kb"
+    (entry / "arinc-424" / "ch1.raw.md").write_text(
+        "## 5.3 Restrictive Airspace\n\nParent raw.\n\n"
+        "### 5.3.1 Folded torque\n\nTorque 12 Nm bolt XYZ.\n\n"
+        "### 5.3.2 Folded other\n\nOther text.\n",
+        encoding="utf-8",
+    )
+    hub = HubHandle(root=fed_hub)
+    r = get_section(hub, "arinc-424", "5.3.1", level="l3")
+    assert r is not None
+    assert r.section_id == "5.3.1"
+    assert "Torque 12 Nm" in r.content
+    assert "Folded other" not in r.content
+    assert "§5.3.1" in r.citation
+
+
+def test_get_section_folded_id_l2_returns_parent(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    r = get_section(hub, "arinc-424", "5.3.1", level="l2")
+    assert r is not None
+    assert r.section_id == "5.3"  # L2 không có anchor con — trả parent, không nói dối
+    assert "§5.3" in r.citation
+
+
+def test_get_section_folded_id_unknown_returns_none(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    assert get_section(hub, "arinc-424", "9.9.9", level="l3") is None
+
+
+def test_get_section_prefix_picks_longest_parent(fed_hub):
+    # manifest có cả "5" lẫn "5.3" → "5.3.1" phải chọn "5.3"
+    entry = fed_hub / "federation" / "arinc-kb"
+    manifest_path = entry / "arinc-424" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.sections.insert(
+        0, models.SectionEntry(id="5", title="Chapter Five", file="ch1")
+    )
+    models.save_yaml_model(manifest_path, manifest)
+    (entry / "arinc-424" / "ch1.raw.md").write_text(
+        "## 5 Chapter Five\n\nChapter body.\n\n"
+        "## 5.3 Restrictive Airspace\n\nParent raw.\n\n"
+        "### 5.3.1 Folded torque\n\nTorque 12 Nm bolt XYZ.\n",
+        encoding="utf-8",
+    )
+    hub = HubHandle(root=fed_hub)
+    r = get_section(hub, "arinc-424", "5.3.1", level="l3")
+    assert r is not None and "Torque 12 Nm" in r.content

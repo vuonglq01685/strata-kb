@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 
 from center_kb import models
-from center_kb.mdutils import count_tokens, extract_tables, slugify
+from center_kb.mdutils import count_tokens, extract_tables, slugify_id
+
+logger = logging.getLogger("center_kb.ingest.sectioner")
 
 
 @dataclass
@@ -151,7 +154,7 @@ def _fallback_slug(title: str) -> str:
     """Human-readable id fragment for an unparsed heading. Empty when the
     title has no usable characters, or would masquerade as a numbered
     section id (e.g. a bare page number "123")."""
-    slug = slugify(title)[:40].rstrip("-")
+    slug = slugify_id(title)
     if not slug or slug.replace("-", "").isdigit():
         return ""
     return slug
@@ -308,8 +311,19 @@ def _build_tree(
                 parent = stack[-1]
                 slug = _fallback_slug(normalized)
                 if not slug:
+                    if any(ch.isdigit() for ch in normalized):
+                        # Bare page number leaked in as a heading — content
+                        # noise, not structure: demote to body text so it
+                        # never opens an opaque x{n} section.
+                        stack[-1].body.append(normalized)
+                        continue
                     fallback_seq += 1
                     slug = f"x{fallback_seq}"
+                    logger.warning(
+                        "synthetic fallback id %r for unparsed heading %r",
+                        slug,
+                        normalized,
+                    )
                 sid = f"{parent.id}-{slug}" if parent.id else slug
                 if any(n.id == sid for n in stack):
                     continue

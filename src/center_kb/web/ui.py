@@ -79,7 +79,12 @@ def _result_blocks(results, terms: set[str] | None = None) -> str:
             f'<span class="score">~{r.tokens} tk</span>'
             "</header>"
             f'<div class="result-body">{md_render(r.content, terms=terms)}</div>'
-            "</article>"
+            + (
+                f'<div class="result-snippet">raw match: {_e(r.snippet)}</div>'
+                if r.snippet
+                else ""
+            )
+            + "</article>"
         )
     return "\n".join(blocks)
 

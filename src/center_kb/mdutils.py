@@ -17,6 +17,15 @@ def slugify(text: str) -> str:
     return text
 
 
+def slugify_id(text: str) -> str:
+    """Unicode-aware slug for section ids: keep letters/digits of every
+    script (slugify() drops non-ASCII entirely — CJK/Cyrillic titles would
+    vanish). File names keep using slugify(); this is for ids only."""
+    text = unicodedata.normalize("NFKC", text)
+    slug = re.sub(r"[\W_]+", "-", text).strip("-").lower()
+    return slug[:40].rstrip("-")
+
+
 def count_tokens(text: str) -> int:
     global _ENCODER
     if _ENCODER is None:
@@ -36,6 +45,28 @@ def slice_section(md: str, section_id: str) -> str | None:
         return None
     for j in range(start + 1, len(lines)):
         if lines[j].startswith("## "):
+            return "\n".join(lines[start:j]).strip()
+    return "\n".join(lines[start:]).strip()
+
+
+_SUBHEADING_RE = re.compile(r"^### (?P<sid>\S+)[ \t]+(?P<title>.+?)\s*$")
+
+
+def slice_subsection(md: str, section_id: str) -> str | None:
+    """Slice a folded child ('### <id> <title>' inside a unit body) — ends at
+    the next '###'/'##' heading. slice_section() only addresses '## ' units;
+    folded children need this."""
+    lines = md.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        m = _SUBHEADING_RE.match(line)
+        if m and m.group("sid") == section_id:
+            start = i
+            break
+    if start is None:
+        return None
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith(("## ", "### ")):
             return "\n".join(lines[start:j]).strip()
     return "\n".join(lines[start:]).strip()
 

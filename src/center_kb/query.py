@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from center_kb import models
-from center_kb.mdutils import count_tokens, slice_section
+from center_kb.mdutils import count_tokens, slice_section, slice_subsection
 from center_kb.searchdb import tokenize  # noqa: F401 — re-export (web/ui.py import)
 
 if TYPE_CHECKING:
@@ -41,6 +41,7 @@ class QueryResult:
     tokens: int
     source: str = ""  # repo-id trong federation
     match_mode: str = "keyword"  # "keyword" | "semantic" | "hybrid"
+    snippet: str = ""  # trích L3 quanh match khi term không hiện trong L2
 
 
 def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
@@ -53,6 +54,38 @@ def _row_content(hub: "HubHandle", row: "SectionRow") -> str | None:
     if not l2_path.exists():
         return None
     return slice_section(l2_path.read_text(encoding="utf-8"), row.section_id)
+
+
+_SNIPPET_WINDOW = 150  # chars mỗi bên quanh hit đầu tiên trong L3
+
+
+def _l3_snippet(
+    hub: "HubHandle", row: "SectionRow", terms: list[str], content: str
+) -> str:
+    """Match nằm ở L3 (fold/tail) mà content L2 không chứa term nào → trích
+    cửa sổ quanh hit đầu tiên để người dùng thấy vì sao section này khớp."""
+    lower = content.lower()
+    if not terms or any(t in lower for t in terms):
+        return ""
+    raw_path = (
+        hub.federation_dir / row.repo_id / row.doc_id / f"{row.file}.raw.md"
+    )
+    if not raw_path.exists():
+        return ""
+    raw = slice_section(raw_path.read_text(encoding="utf-8"), row.section_id)
+    if not raw:
+        return ""
+    raw_lower = raw.lower()
+    for term in terms:
+        pos = raw_lower.find(term)
+        if pos < 0:
+            continue
+        start = max(0, pos - _SNIPPET_WINDOW)
+        end = min(len(raw), pos + len(term) + _SNIPPET_WINDOW)
+        prefix = "…" if start > 0 else ""
+        suffix = "…" if end < len(raw) else ""
+        return f"{prefix}{raw[start:end].strip()}{suffix}"
+    return ""
 
 
 def _search_index(
@@ -119,6 +152,7 @@ def search(
             'keyword results only (enable with: pip install "center-kb[embed]")'
         )
     fused, rows = _search_index(hub, embedder, text, tags)
+    terms = tokenize(text)
 
     results: list[QueryResult] = []
     used = 0
@@ -129,7 +163,8 @@ def search(
         content = _row_content(hub, row)
         if content is None:
             continue
-        n_tokens = count_tokens(content)
+        snippet = "" if mode == "semantic" else _l3_snippet(hub, row, terms, content)
+        n_tokens = count_tokens(content) + (count_tokens(snippet) if snippet else 0)
         if results and used + n_tokens > budget:
             break
         results.append(
@@ -145,12 +180,65 @@ def search(
                 tokens=n_tokens,
                 source=row.repo_id,
                 match_mode=mode,
+                snippet=snippet,
             )
         )
         used += n_tokens
         if used >= budget:
             break
     return results
+
+
+def _parent_entry(
+    manifest: models.Manifest, section_id: str
+) -> models.SectionEntry | None:
+    """Folded id không có entry riêng — parent là entry có id là prefix dài
+    nhất của id yêu cầu, cắt tại '.' hoặc '-' ('3.2.1' → '3.2';
+    '5.6-commentary' → '5.6')."""
+    best: models.SectionEntry | None = None
+    for s in manifest.sections:
+        if section_id.startswith((s.id + ".", s.id + "-")):
+            if best is None or len(s.id) > len(best.id):
+                best = s
+    return best
+
+
+def _folded_result(
+    repo_kb: Path,
+    repo_id: str,
+    manifest: models.Manifest,
+    doc_id: str,
+    section_id: str,
+    level: str,
+) -> QueryResult | None:
+    parent = _parent_entry(manifest, section_id)
+    if parent is None:
+        return None
+    if level != "l3":
+        # L2 không có anchor con (summary phủ cả folded child) — trả parent
+        # với citation id parent, không nói dối vị trí.
+        return _get_section_in(repo_kb, repo_id, doc_id, parent.id, level)
+    path = repo_kb / doc_id / f"{parent.file}.raw.md"
+    if not path.exists():
+        return None
+    parent_md = slice_section(path.read_text(encoding="utf-8"), parent.id)
+    if parent_md is None:
+        return None
+    content = slice_subsection(parent_md, section_id)
+    if content is None:
+        return None
+    head = content.splitlines()[0].split(None, 2)
+    title = head[2] if len(head) == 3 else parent.title
+    return QueryResult(
+        doc_id=doc_id,
+        section_id=section_id,
+        title=title,
+        score=0.0,
+        citation=_citation(repo_id, manifest.id, manifest.revision, section_id),
+        content=content,
+        tokens=count_tokens(content),
+        source=repo_id,
+    )
 
 
 def _get_section_in(
@@ -162,7 +250,9 @@ def _get_section_in(
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     sec = next((s for s in manifest.sections if s.id == section_id), None)
     if sec is None:
-        return None
+        return _folded_result(
+            repo_kb, repo_id, manifest, doc_id, section_id, level
+        )
     suffix = ".raw.md" if level == "l3" else ".md"
     path = repo_kb / doc_id / f"{sec.file}{suffix}"
     if not path.exists():

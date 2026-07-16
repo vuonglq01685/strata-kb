@@ -608,6 +608,8 @@ def query(
             f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk", bold=True
         )
         typer.echo(r.content)
+        if r.snippet:
+            typer.secho(f"raw match: {r.snippet}", dim=True)
         typer.echo("")
 
 
