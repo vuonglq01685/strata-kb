@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from center_kb import federation, ghapp, gitio, hashsync, models
+from center_kb import assetstore, federation, ghapp, gitio, hashsync, models
 from center_kb import hub as hub_mod
 
 logger = logging.getLogger("center_kb.intake")
@@ -250,7 +250,11 @@ def _neutralize_line_endings(root: Path) -> None:
 def hub_manifest(hub_ref: str, rid: str) -> dict[str, str]:
     handle = _resolve_hub_or_503(hub_ref)
     dest = _dest_for_rid(handle.federation_dir, rid)
-    return hashsync.build_manifest(dest, exclude=("_meta.yaml",))
+    man = hashsync.build_manifest(
+        dest, exclude=("_meta.yaml", assetstore.RECORD_NAME)
+    )
+    man.update(assetstore.synthesized_asset_entries(dest))
+    return man
 
 
 def intake_publish(
@@ -260,15 +264,20 @@ def intake_publish(
     source_repo_full: str,
     deletes: list[str],
     archive: bytes,
+    store=None,
 ) -> str:
     """Apply an uploaded snapshot on branch publish/<rid> and open the hub PR.
 
     Returns the PR URL, or "" when the snapshot changes nothing.
+
+    `store` is a test seam -- None means use the hub's own configured store
+    (`assetstore.store_for_hub`), which is None (spec A behavior, unchanged)
+    when the hub declares no `asset_store` block.
     """
     from center_kb import publish as publish_mod
 
     http = cfg.http or ghapp._default_http
-    deletes = [d for d in deletes if d != "_meta.yaml"]
+    deletes = [d for d in deletes if d not in ("_meta.yaml", assetstore.RECORD_NAME)]
     with repo_lock(rid):
         handle = _resolve_hub_or_503(cfg.hub_ref)
         dest = _dest_for_rid(handle.federation_dir, rid)
@@ -310,6 +319,27 @@ def intake_publish(
                 # upload is incremental -- every file in the archive counts as changed
                 local_man = hashsync.build_manifest(tmp_kb)
                 hashsync.apply_sync(tmp_kb, dest, sorted(local_man), deletes)
+                active_store = (
+                    store if store is not None else assetstore.store_for_hub(handle)
+                )
+                if active_store is not None:
+                    try:
+                        assetstore.divert_and_record(dest, active_store, deletes)
+                    except assetstore.AssetStoreError as exc:
+                        # Nothing committed yet, but apply_sync above already
+                        # wrote uncommitted changes under federation/ -- and
+                        # this branch may be reused verbatim (untouched) on
+                        # the next publish attempt for the same rid (the
+                        # unmerged-PR case in the hybrid checkout rule below).
+                        # Leftover dirty/untracked content here would survive
+                        # into that attempt: it can fool the dest.exists()
+                        # check above into treating the rid as already on
+                        # main, and stray files could ride along uncommitted
+                        # into a later, unrelated commit. Restore federation/
+                        # to its last committed state before aborting.
+                        gitio._run(handle.root, "checkout", "--", "federation")
+                        gitio._run(handle.root, "clean", "-fd", "--", "federation")
+                        raise IntakeError(502, f"asset store upload failed: {exc}")
                 dirty = gitio._run(
                     handle.root, "status", "--porcelain", "--", "federation"
                 ).stdout.strip()
