@@ -7,6 +7,7 @@ returns no store and leaves all existing behavior unchanged.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from center_kb import config as config_mod
@@ -16,6 +17,9 @@ logger = logging.getLogger("center_kb.assetstore")
 
 _MEDIA = {".png": "image/png", ".webp": "image/webp"}
 _IMMUTABLE = "private, max-age=31536000, immutable"
+
+RECORD_NAME = "_assets.yaml"
+_ASSET_NAME_RE = re.compile(r"^([0-9a-f]{64})\.(?:png|webp)$")
 
 
 class AssetStoreError(RuntimeError):
@@ -126,3 +130,60 @@ def store_for_hub(handle):
     """The hub repo's own config declares its storage mode — read it from
     the hub clone so children and the intake server need no local config."""
     return from_config(config_mod.load_config(handle.kb_dir).asset_store)
+
+
+def divert_assets(tree_root: Path, store) -> list[str]:
+    """Upload every content-addressed asset under tree_root and strip it
+    from the tree. Returns sorted relative posix paths. Any store failure
+    raises AssetStoreError — the caller must not have committed yet."""
+    diverted: list[str] = []
+    for path in sorted(tree_root.rglob("assets/*")):
+        if not path.is_file() or not _ASSET_NAME_RE.match(path.name):
+            continue
+        store.put(path.name, path.read_bytes())
+        rel = path.relative_to(tree_root).as_posix()
+        path.unlink()
+        diverted.append(rel)
+        try:
+            path.parent.rmdir()  # only succeeds when now empty
+        except OSError:
+            pass
+    return sorted(diverted)
+
+
+def _load_record(dest: Path) -> "models.AssetsRecord":
+    record_path = dest / RECORD_NAME
+    if not record_path.exists():
+        return models.AssetsRecord()
+    try:
+        return models.load_yaml_model(record_path, models.AssetsRecord)
+    except Exception as exc:  # noqa: BLE001 — corrupt record self-heals
+        logger.warning("%s unreadable (%s) — treating as empty", record_path, exc)
+        return models.AssetsRecord()
+
+
+def divert_and_record(dest: Path, store, deletes: list[str] | None = None) -> list[str]:
+    """Divert assets under dest, then merge the record: existing ∪ new − deletes.
+    Intake uploads are incremental, so a plain overwrite would drop
+    previously-diverted assets from the record."""
+    diverted = divert_assets(dest, store)
+    merged = sorted(
+        (set(_load_record(dest).assets) | set(diverted)) - set(deletes or [])
+    )
+    record_path = dest / RECORD_NAME
+    if merged:
+        models.save_yaml_model(record_path, models.AssetsRecord(assets=merged))
+    elif record_path.exists():
+        record_path.unlink()
+    return diverted
+
+
+def synthesized_asset_entries(dest: Path) -> dict[str, str]:
+    """Manifest entries for diverted assets: {relpath: sha}, sha taken from
+    the filename — exact by spec A construction, no bytes needed."""
+    entries: dict[str, str] = {}
+    for rel in _load_record(dest).assets:
+        m = _ASSET_NAME_RE.match(Path(rel).name)
+        if m:
+            entries[rel] = m.group(1)
+    return entries
