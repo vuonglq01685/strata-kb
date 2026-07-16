@@ -212,3 +212,19 @@ def test_synthesized_asset_entries_empty_when_no_record(tmp_path):
     root = tmp_path / "rid"
     root.mkdir()
     assert assetstore.synthesized_asset_entries(root) == {}
+
+
+def test_divert_then_synthesis_roundtrip_no_rediff(tmp_path):
+    from center_kb import hashsync
+
+    child = _tree(tmp_path)  # child-side snapshot (assets present)
+    dest = tmp_path / "dest"
+    local_man = hashsync.build_manifest(child)
+    changed, deleted = hashsync.diff_manifests(local_man, {})
+    hashsync.apply_sync(child, dest, changed, deleted)
+    assetstore.divert_and_record(dest, assetstore.MemoryStore(), deleted)
+
+    hub_man = hashsync.build_manifest(dest, exclude=("_meta.yaml", assetstore.RECORD_NAME))
+    hub_man.update(assetstore.synthesized_asset_entries(dest))
+    changed2, deleted2 = hashsync.diff_manifests(local_man, hub_man)
+    assert changed2 == [] and deleted2 == []
