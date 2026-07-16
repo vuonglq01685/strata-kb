@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import hashlib
+
+import pytest
+
+PIL = pytest.importorskip("PIL")
+from PIL import Image  # noqa: E402
+
+from center_kb.ingest import images  # noqa: E402
+
+
+def _img(w: int, h: int, color=(200, 30, 30)) -> Image.Image:
+    return Image.new("RGB", (w, h), color)
+
+
+def test_classify_icon_vs_figure():
+    assert images.classify(64, 64) == "icon"
+    assert images.classify(images.ICON_MAX_DIM_PX, 10) == "icon"
+    assert images.classify(images.ICON_MAX_DIM_PX + 1, 10) == "figure"
+    assert images.classify(800, 600) == "figure"
+
+
+def test_encode_icon_is_png_and_figure_is_webp():
+    icon_bytes, icon_ext = images.encode_image(_img(32, 32))
+    fig_bytes, fig_ext = images.encode_image(_img(500, 400))
+    assert icon_ext == "png" and icon_bytes[:8] == b"\x89PNG\r\n\x1a\n"
+    assert fig_ext == "webp" and fig_bytes[:4] == b"RIFF"
+
+
+def test_encode_is_deterministic():
+    a, _ = images.encode_image(_img(32, 32))
+    b, _ = images.encode_image(_img(32, 32))
+    assert a == b
+
+
+def test_save_asset_content_addressed_and_idempotent(tmp_path):
+    name = images.save_asset(_img(32, 32), tmp_path)
+    data = (tmp_path / name).read_bytes()
+    sha, ext = name.rsplit(".", 1)
+    assert sha == hashlib.sha256(data).hexdigest()
+    assert ext == "png"
+    again = images.save_asset(_img(32, 32), tmp_path)
+    assert again == name
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+def test_image_ref_sanitizes_alt():
+    ref = images.image_ref("Compulsory | reporting [point]", "a" * 64 + ".png")
+    assert "|" not in ref.split("](")[0]
+    assert "[point]" not in ref
+    assert ref.endswith(f"](assets/{'a' * 64}.png)")
+    assert images.image_ref("", "b" * 64 + ".webp") == f"![](assets/{'b' * 64}.webp)"
