@@ -26,7 +26,7 @@ def _fake_parse(monkeypatch):
     from center_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc: FAKE_ITEMS)
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None: FAKE_ITEMS)
     monkeypatch.setattr(
         parser, "bookmark_ids", lambda pdf, config=None: {"5", "5.3", "5.9"}
     )
@@ -36,7 +36,7 @@ def _fake_parse_with_bookmark_parts(monkeypatch):
     from center_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc: BOOKMARK_ITEMS)
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None: BOOKMARK_ITEMS)
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
     monkeypatch.setattr(
         parser,
@@ -49,7 +49,7 @@ def _fake_parse_outline_forbidden(monkeypatch):
     from center_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc: BOOKMARK_ITEMS)
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None: BOOKMARK_ITEMS)
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
 
     def _forbidden(pdf, config=None):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from center_kb import models
 from center_kb.ingest.sectioner import HeadingConfig, SectionUnit
-from center_kb.mdutils import count_tokens, slugify
+from center_kb.mdutils import count_tokens, extract_image_descs, slugify
 
 __all__ = ["ScaffoldReport", "chapter_stem", "scaffold_doc", "slugify"]
 
@@ -71,6 +71,8 @@ def scaffold_doc(
             ]
             for table in unit.tables:
                 l2_lines += [table, ""]
+            for desc in extract_image_descs(unit.body_md):
+                l2_lines += [f"Figure: {desc}", ""]
             sections.append(
                 models.SectionEntry(
                     id=unit.id,

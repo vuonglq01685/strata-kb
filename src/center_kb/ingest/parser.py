@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from center_kb.ingest.sectioner import (
@@ -10,6 +11,8 @@ from center_kb.ingest.sectioner import (
     parse_section_id,
 )
 from center_kb.mdutils import slugify
+
+logger = logging.getLogger("center_kb.ingest.parser")
 
 _HEADING_LABELS = {"section_header", "title"}
 _TEXT_LABELS = {"text", "paragraph", "list_item", "formula", "code", "caption"}
@@ -35,7 +38,7 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
             "Docling is not installed. Run: pip install \"center-kb[ingest]\""
         ) from exc
 
-    cache = work_dir / "parsed.json"
+    cache = work_dir / "parsed-v2.json"  # v2: includes generated picture images
     if cache.exists():
         return DoclingDocument.model_validate_json(cache.read_text(encoding="utf-8"))
 
@@ -58,7 +61,11 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
     # pre-bakes only RapidOCR's own default asset location (see Dockerfile)
     # so this exact engine finds everything without downloading anything.
     ocr_options = RapidOcrOptions(backend="torch", lang=["en"])
-    pipeline_options = PdfPipelineOptions(ocr_options=ocr_options)
+    pipeline_options = PdfPipelineOptions(
+        ocr_options=ocr_options,
+        generate_picture_images=True,
+        images_scale=2.0,
+    )
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
     )
@@ -69,8 +76,11 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
     return doc
 
 
-def doc_to_items(doc) -> list[DocItem]:
+def doc_to_items(doc, assets_dir: Path | None = None) -> list[DocItem]:
     items: list[DocItem] = []
+    if assets_dir is not None and assets_dir.exists():
+        for stale in assets_dir.iterdir():  # re-ingest: assets are re-derived
+            stale.unlink()
     for item, _level in doc.iterate_items():
         label = _label_value(item)
         page = _page_of(item)
@@ -81,10 +91,38 @@ def doc_to_items(doc) -> list[DocItem]:
             md = item.export_to_markdown(doc=doc)
             if md and md.strip():
                 items.append(DocItem("table", md, page=page))
+        elif label == "picture":
+            if assets_dir is None:
+                continue
+            md = _picture_md(item, doc, assets_dir)
+            if md:
+                items.append(DocItem("image", md, page=page))
         elif label in _TEXT_LABELS:
             if item.text and item.text.strip():
                 items.append(DocItem("text", item.text, page=page))
     return items
+
+
+def _picture_md(item, doc, assets_dir: Path) -> str | None:
+    """One picture → saved asset + markdown ref, or None on any failure.
+    A lost image must never abort the ingest."""
+    from center_kb.ingest import images
+
+    try:
+        img = item.get_image(doc)
+        if img is None:
+            return None
+        try:
+            caption = item.caption_text(doc) or ""
+        except Exception:
+            caption = ""
+        ocr_text = "" if caption.strip() else images.ocr_image(img)
+        desc = images.resolve_description(caption, ocr_text)
+        filename = images.save_asset(img, assets_dir)
+        return images.image_ref(desc, filename)
+    except Exception as exc:  # noqa: BLE001 — skip the image, keep the text
+        logger.warning("picture on page %s skipped: %s", _page_of(item), exc)
+        return None
 
 
 def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str]:

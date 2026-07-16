@@ -650,6 +650,46 @@ def test_build_units_numeric_part_subsections_keep_flat_ids():
     assert all(u.chapter == "4" for u in units)
 
 
+def test_image_item_lands_in_section_body():
+    items = [
+        DocItem("heading", "2.1 Symbols", page=10),
+        DocItem("text", "Intro.", page=10),
+        DocItem("image", "![VOR](assets/" + "a" * 64 + ".png)", page=10),
+    ]
+    units = build_units(items)
+    unit = next(u for u in units if u.id == "2.1")
+    assert "![VOR](assets/" in unit.body_md
+    assert unit.body_md.index("Intro.") < unit.body_md.index("![VOR]")
+
+
+def test_units_ordered_by_heading_page_not_emission_order():
+    # docling emitted 2.10 (page 40) before 2.2 (page 20) — layout artifact.
+    # Bodies are padded past min_tokens (200) so 2.10/2.2 stay standalone
+    # units instead of folding into "2" as small leaves — the folding
+    # decision is orthogonal to ordering and must not mask this test.
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "2 GENERAL", page=10),
+        DocItem("text", "chapter body. " + big, page=10),
+        DocItem("heading", "2.10 Last topic", page=40),
+        DocItem("text", "late body. " + big, page=40),
+        DocItem("heading", "2.2 Early topic", page=20),
+        DocItem("text", "early body. " + big, page=20),
+    ]
+    units = build_units(items)
+    ids = [u.id for u in units]
+    assert ids.index("2.2") < ids.index("2.10")
+
+
+def test_order_units_is_stable_and_forward_fills_pages():
+    from center_kb.ingest.sectioner import SectionUnit, order_units
+
+    a = SectionUnit(id="1", title="A", chapter="1", body_md="x", tables=[], page=5)
+    b = SectionUnit(id="1.1", title="B", chapter="1", body_md="x", tables=[], page=None)
+    c = SectionUnit(id="1.2", title="C", chapter="1", body_md="x", tables=[], page=5)
+    assert order_units([a, b, c]) == [a, b, c]  # None inherits 5; stable order kept
+
+
 def test_symbol_only_heading_is_dropped():
     # A PDF horizontal-rule/footnote line ("_____") that docling misreads as
     # a heading must not open a fallback node (no "-x1" ids) nor leak into
