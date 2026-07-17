@@ -60,7 +60,8 @@ configures asset storage of its own.
   assets already exist in git, `kb assets migrate` diverts them rid by rid
   (idempotent, commits `federation/`); then `kb assets verify` confirms
   every `_assets.yaml` record resolves and every markdown reference is
-  covered.
+  covered. That commit is local only — `kb assets migrate` never pushes, so
+  push it like any other hub commit if the hub has a remote.
 - **Manual rollback (s3 → none)** — for each rid, download every
   `assets/<sha>` named in that rid's `_assets.yaml` back into its tree,
   delete the `_assets.yaml` files, set `mode: none`, and commit. The

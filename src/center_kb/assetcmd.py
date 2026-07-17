@@ -144,4 +144,5 @@ def verify_assets(handle, store=None) -> VerifyReport:
         label for name, label in recorded.items() if name not in referenced
     )
     report.dangling_refs = sorted(set(report.dangling_refs))
+    report.missing_records.sort()
     return report

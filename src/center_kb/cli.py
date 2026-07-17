@@ -850,6 +850,7 @@ def migrate(
         typer.echo("nothing to migrate — no in-git assets under federation/")
     elif report.committed:
         typer.echo("committed: assets: migrate to object store")
+        typer.echo("(commit is local — push to publish if the hub has a remote)")
 
 
 @assets_app.command()

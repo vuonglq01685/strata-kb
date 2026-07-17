@@ -440,7 +440,7 @@ def test_init_scaffolds_cursor_mcp_per_kind(tmp_path: Path):
 
 def test_assistant_slash_command_parity(tmp_path: Path):
     """Every kb-* command exists for Claude, Copilot, and Cursor in each kind."""
-    common = ["kb-ingest", "kb-publish", "kb-summarize"]
+    common = ["kb-ingest", "kb-publish", "kb-summarize", "kb-init"]
     layouts = {
         "claude": lambda n: (
             Path(".claude/commands") / f"{n}.md"
