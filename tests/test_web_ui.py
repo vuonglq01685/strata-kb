@@ -2,6 +2,7 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
+from center_kb import assetstore
 from center_kb.mcp import ServerConfig
 from center_kb.web import ui
 from center_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
@@ -32,15 +33,22 @@ def _client(kb_dir, hub: str) -> TestClient:
     return TestClient(Starlette(routes=ui.build_routes(config, TOKEN)))
 
 
-def _authed_client(kb_dir, hub: str) -> TestClient:
+def _authed_client(kb_dir, hub: str, store_factory=None) -> TestClient:
     """Like _client, but wrapped in TokenAuthMiddleware.
 
     Only the /assets route needs this: it's the one route in this module that
     must enforce auth by default (not in EXEMPT_PATHS/EXEMPT_PREFIXES), so its
     tests need the middleware layer present to observe 401s.
+
+    `store_factory` is a test seam threaded through to `build_routes` — it
+    lets asset-store fallthrough tests inject a fake store instead of the
+    real `assetstore.store_for_hub` default.
     """
     config = ServerConfig(kb_dir=kb_dir, hub=hub)
-    app = TokenAuthMiddleware(Starlette(routes=ui.build_routes(config, TOKEN)), TOKEN)
+    app = TokenAuthMiddleware(
+        Starlette(routes=ui.build_routes(config, TOKEN, store_factory=store_factory)),
+        TOKEN,
+    )
     return TestClient(app)
 
 
@@ -398,3 +406,51 @@ def test_asset_route_does_not_cache_misses(fed_hub):
     hit = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
     assert hit.status_code == 200
     assert hit.content == b"PNGDATA3"
+
+
+def test_asset_route_falls_through_to_store(fed_hub, tmp_path, monkeypatch):
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    sha = "9" * 64
+    store = assetstore.MemoryStore()
+    store.put(f"{sha}.webp", b"WEBPBYTES")
+    client = _authed_client(
+        fed_hub / ".kb", str(fed_hub), store_factory=lambda handle: store
+    )
+    resp = client.get(f"/assets/{sha}.webp", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/webp"
+    assert resp.content == b"WEBPBYTES"
+    # cached on disk for the next request
+    assert (
+        tmp_path / "hubcache" / "asset-cache" / f"{sha}.webp"
+    ).read_bytes() == b"WEBPBYTES"
+
+
+def test_asset_route_store_miss_404_and_error_503(fed_hub, tmp_path, monkeypatch):
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+
+    class _Boom(assetstore.MemoryStore):
+        def get(self, name):
+            raise assetstore.AssetStoreError("down")
+
+    client_miss = _authed_client(
+        fed_hub / ".kb", str(fed_hub), store_factory=lambda handle: assetstore.MemoryStore()
+    )
+    assert (
+        client_miss.get(f"/assets/{'8' * 64}.png", headers=AUTH_HEADERS).status_code
+        == 404
+    )
+    client_err = _authed_client(
+        fed_hub / ".kb", str(fed_hub), store_factory=lambda handle: _Boom()
+    )
+    assert (
+        client_err.get(f"/assets/{'8' * 64}.png", headers=AUTH_HEADERS).status_code
+        == 503
+    )
+
+
+def test_asset_route_no_store_behaves_as_before(fed_hub):
+    client = _authed_client(fed_hub / ".kb", str(fed_hub))  # store_factory default
+    assert (
+        client.get(f"/assets/{'7' * 64}.png", headers=AUTH_HEADERS).status_code == 404
+    )

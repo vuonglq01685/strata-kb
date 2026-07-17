@@ -1,9 +1,13 @@
+import hashlib
+import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
-from center_kb import ghio, gitio, models
+from center_kb import assetstore, ghio, gitio, models
 from center_kb.federation import FederationMeta, write_federation_index
+from center_kb.hub import HubHandle
 from center_kb.publish import PublishError, publish
 from tests.conftest import make_fed_entry
 
@@ -214,3 +218,127 @@ def test_direct_push_race_reindexes_after_rebase(git_kb, hub_with_origin, run_gi
         ("demo-kb", "demo-doc"),
         ("other-kb", "other-doc"),
     }
+
+
+# Real content hash: spec A guarantees filename sha == sha256(bytes) — the
+# no-op test below depends on this invariant (synthesized_asset_entries()
+# derives its "hash" from the filename, not the bytes).
+SHA_Y = hashlib.sha256(b"YBYTES").hexdigest()
+
+
+def _child_kb_with_asset(tmp_path) -> Path:
+    """A git-backed child .kb/ (doc1, one section) plus a content-addressed
+    image asset under doc1/assets/ — for _snapshot() divert tests.
+
+    _snapshot() only needs `gitio.git_root()` to resolve (for the
+    source_url default) — a bare `git init` with no commits is enough.
+    """
+    root = tmp_path / "child"
+    kb = root / ".kb"
+    doc_dir = kb / "doc1"
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "ch1.md").write_text("## 1.1 Doc One\n\nBody text.\n", encoding="utf-8")
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(
+            id="doc1",
+            title="Doc One",
+            sections=[
+                models.SectionEntry(
+                    id="1.1", title="Doc One", summary="s",
+                    status="summarized", file="ch1",
+                )
+            ],
+        ),
+    )
+    models.save_yaml_model(
+        kb / "index.yaml",
+        models.KBIndex(
+            docs=[models.IndexEntry(id="doc1", title="Doc One", summary="s")]
+        ),
+    )
+    assets_dir = doc_dir / "assets"
+    assets_dir.mkdir()
+    (assets_dir / f"{SHA_Y}.png").write_bytes(b"YBYTES")
+    subprocess.run(
+        ["git", "init"], cwd=root, capture_output=True, text=True, check=True
+    )
+    return kb
+
+
+def test_snapshot_diverts_assets_and_keeps_child_intact(tmp_path, hub_worktree):
+    from center_kb import publish
+
+    kb_abs = _child_kb_with_asset(tmp_path)
+    handle = HubHandle(root=hub_worktree)
+    store = assetstore.MemoryStore()
+    n_docs, changed = publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    assert changed
+    dest = handle.federation_dir / "rid-a"
+    assert store.get(f"{SHA_Y}.png") == b"YBYTES"
+    assert not (dest / "doc1" / "assets" / f"{SHA_Y}.png").exists()
+    rec = models.load_yaml_model(dest / "_assets.yaml", models.AssetsRecord)
+    assert rec.assets == [f"doc1/assets/{SHA_Y}.png"]
+    # the child's live .kb is untouched
+    assert (kb_abs / "doc1" / "assets" / f"{SHA_Y}.png").exists()
+
+
+def test_snapshot_second_publish_is_noop_with_store(tmp_path, hub_worktree):
+    from center_kb import publish
+
+    kb_abs = _child_kb_with_asset(tmp_path)
+    handle = HubHandle(root=hub_worktree)
+    store = assetstore.MemoryStore()
+    publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    n_docs, changed = publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    assert not changed  # synthesized entries make diverted assets look present
+
+
+def test_snapshot_upload_failure_raises_before_any_write_is_kept(tmp_path, hub_worktree):
+    from center_kb import publish
+
+    kb_abs = _child_kb_with_asset(tmp_path)
+    handle = HubHandle(root=hub_worktree)
+
+    class _FailingStore(assetstore.MemoryStore):
+        def put(self, name, data):
+            raise assetstore.AssetStoreError("bucket down")
+
+    with pytest.raises(assetstore.AssetStoreError):
+        publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=_FailingStore())
+
+
+def test_snapshot_store_outage_then_retry_never_commits_binaries(tmp_path, hub_worktree):
+    """Regression: a store outage mid-divert must not leave un-diverted asset
+    bytes sitting in the hub clone's working tree. Left dirty, a retry with a
+    healthy store would see dest's manifest already match the child's (bytes
+    already copied by apply_sync before the outage) and early-return
+    "unchanged" *before* ever reaching divert again -- so _publish_direct /
+    _publish_pr would git-add + commit the leftover PNG straight into hub git.
+    """
+    from center_kb import publish
+
+    kb_abs = _child_kb_with_asset(tmp_path)
+    handle = HubHandle(root=hub_worktree)
+
+    class _FailingStore(assetstore.MemoryStore):
+        def put(self, name, data):
+            raise assetstore.AssetStoreError("bucket down")
+
+    # 1st attempt: every put fails
+    with pytest.raises(assetstore.AssetStoreError):
+        publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=_FailingStore())
+
+    # working tree restored: no leftover asset bytes, porcelain clean under federation
+    status = gitio._run(
+        handle.root, "status", "--porcelain", "--", "federation"
+    ).stdout.strip()
+    assert status == ""
+
+    # 2nd attempt with a healthy store: diverts for real
+    store = assetstore.MemoryStore()
+    n_docs, changed = publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    assert changed
+    assert store.get(f"{SHA_Y}.png") == b"YBYTES"  # asset uploaded
+    dest = handle.federation_dir / "rid-a"
+    assert not list(dest.rglob("*.png"))  # no binaries left in the tree
