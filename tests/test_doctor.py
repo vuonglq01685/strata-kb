@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from center_kb import gitio, kbcontext, models
+from center_kb import doctor, gitio, kbcontext, models
 from center_kb.doctor import check_context, check_kb
 from center_kb.hub import HubHandle
 
@@ -155,3 +155,55 @@ def test_check_kind_warns_when_missing(tmp_path):
     (tmp_path / "config.yaml").write_text("kind: server\n", encoding="utf-8")
     issues = check_kind(tmp_path)
     assert [i.level for i in issues] == ["error"]
+
+
+def _hub_cfg(tmp_path, block: str) -> Path:
+    kb = tmp_path / ".kb"
+    kb.mkdir(parents=True, exist_ok=True)
+    (kb / "config.yaml").write_text("kind: hub\n" + block, encoding="utf-8")
+    return kb
+
+
+def test_asset_store_none_mode_no_issues(tmp_path):
+    kb = _hub_cfg(tmp_path, "asset_store:\n  mode: none\n")
+    assert doctor.check_asset_store(kb, None) == []
+
+
+def test_asset_store_missing_block_no_issues(tmp_path):
+    kb = _hub_cfg(tmp_path, "")
+    assert doctor.check_asset_store(kb, None) == []
+
+
+def test_asset_store_s3_empty_bucket_errors(tmp_path):
+    kb = _hub_cfg(tmp_path, "asset_store:\n  mode: s3\n")
+    issues = doctor.check_asset_store(kb, None)
+    assert any(i.level == "error" and "bucket" in i.message for i in issues)
+
+
+def test_asset_store_s3_probe_ok(tmp_path):
+    from center_kb import assetstore
+
+    kb = _hub_cfg(tmp_path, "asset_store:\n  mode: s3\n  bucket: b\n")
+    assert doctor.check_asset_store(kb, None, store=assetstore.MemoryStore()) == []
+
+
+def test_asset_store_s3_probe_failure_errors(tmp_path):
+    from center_kb import assetstore
+
+    class _Down(assetstore.MemoryStore):
+        def exists(self, name):
+            raise assetstore.AssetStoreError("connect timeout")
+
+    kb = _hub_cfg(tmp_path, "asset_store:\n  mode: s3\n  bucket: b\n")
+    issues = doctor.check_asset_store(kb, None, store=_Down())
+    assert any(i.level == "error" and "connect timeout" in i.message for i in issues)
+
+
+def test_asset_store_none_mode_size_warning(tmp_path, monkeypatch):
+    kb = _hub_cfg(tmp_path, "asset_store:\n  mode: none\n")
+    assets = kb / "doc1" / "assets"
+    assets.mkdir(parents=True)
+    (assets / ("a" * 64 + ".png")).write_bytes(b"x" * 2048)
+    monkeypatch.setattr(doctor, "ASSET_SIZE_WARN_BYTES", 1024)
+    issues = doctor.check_asset_store(kb, None)
+    assert any(i.level == "warning" and "s3" in i.message for i in issues)
