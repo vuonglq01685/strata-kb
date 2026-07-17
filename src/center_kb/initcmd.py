@@ -33,6 +33,10 @@ COMMON_TEMPLATES: dict[str, str] = {
     ".claude/commands/kb-approve.md": "claude-command-kb-approve.md",
     ".github/prompts/kb-approve.prompt.md": "copilot-kb-approve.prompt.md",
     ".cursor/commands/kb-approve.md": "cursor-kb-approve.md",
+    ".claude/skills/kb-init/SKILL.md": "claude-skill-kb-init.md",
+    ".claude/commands/kb-init.md": "claude-command-kb-init.md",
+    ".github/prompts/kb-init.prompt.md": "copilot-kb-init.prompt.md",
+    ".cursor/commands/kb-init.md": "cursor-kb-init.md",
 }
 
 HUB_TEMPLATES: dict[str, str] = {

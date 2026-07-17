@@ -552,3 +552,14 @@ def test_cli_init_assets_rejected_for_child(tmp_path: Path):
     )
     assert result.exit_code == 2
     assert "hub" in result.output
+
+
+def test_init_scaffolds_kb_init_command_templates(tmp_path):
+    initcmd.init_repo(tmp_path, "hub")
+    for rel in (
+        ".claude/skills/kb-init/SKILL.md",
+        ".claude/commands/kb-init.md",
+        ".github/prompts/kb-init.prompt.md",
+        ".cursor/commands/kb-init.md",
+    ):
+        assert (tmp_path / rel).is_file(), rel
