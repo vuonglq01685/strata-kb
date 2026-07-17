@@ -146,7 +146,7 @@ Third repo kind alongside `hub` and `child` (role-aware init, v0.3 §role-aware)
 | Path | Source template | Purpose |
 |---|---|---|
 | `.kb/config.yaml` | `config-ba.yaml` (new) | `kind: ba` + hub URL |
-| `.mcp.json` | `mcp-child.json` (reuse) | HTTP MCP → shared server (`${CENTER_KB_MCP_URL}` + token env) |
+| `.mcp.json` | `mcp-child.json` (reuse) | HTTP MCP → shared server (`${CENTER_KB_HUB_URL}` + token env) |
 | `.cursor/mcp.json` | `cursor-mcp-child.json` (reuse) | same, for Cursor |
 | 4 × `ba-ticket-author` wrappers | Component D | the skill |
 | `docs/tickets/TEMPLATE.md` | `ticket-template.md` | reference template |
@@ -156,7 +156,7 @@ Third repo kind alongside `hub` and `child` (role-aware init, v0.3 §role-aware)
 
 Explicitly NOT scaffolded on `ba`: kb-ingest / kb-summarize / kb-approve / kb-publish / kb-docker-setup wrappers, `kb-publish.yml`, source-dir gitignore. And symmetrically: nothing from Phase 4 is added to hub/child scaffolds. Implementation note: `initcmd` grows a per-kind template map (`BA_TEMPLATES`, NOT merged into `COMMON_TEMPLATES`); `KINDS`/`template_map()` go from 2-way to 3-way; the interactive kind prompt (`_resolve_kind`) gains the third option; `config.KBConfig.kind` Literal gains `"ba"` — kind validation lives in that pydantic Literal, so without this one-line change `load_config` rejects `kind: ba`; `doctor.check_kind` itself needs no change.
 
-`QUICKSTART-BA.md` content (one page): setup once — install, clone-or-init, two env vars (`CENTER_KB_MCP_URL`, `CENTER_KB_HTTP_TOKEN`), open in Claude Code; per ticket — the 6-step flow of §7; DoR rules — what lint enforces, what stays the BA's judgment (AC citations).
+`QUICKSTART-BA.md` content (one page): setup once — install, clone-or-init, two env vars (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`), open in Claude Code; per ticket — the 6-step flow of §7; DoR rules — what lint enforces, what stays the BA's judgment (AC citations).
 
 ## 9. Component F — CI DoR gate (`kb-ticket-lint.yml`)
 

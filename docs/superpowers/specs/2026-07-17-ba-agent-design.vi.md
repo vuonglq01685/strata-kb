@@ -145,7 +145,7 @@ Kind thứ ba bên cạnh `hub` và `child` (đúng triết lý role-aware init 
 | Đường dẫn | Template nguồn | Mục đích |
 |---|---|---|
 | `.kb/config.yaml` | `config-ba.yaml` (mới) | `kind: ba` + hub URL |
-| `.mcp.json` | `mcp-child.json` (tái dùng) | HTTP MCP → server dùng chung (`${CENTER_KB_MCP_URL}` + token env) |
+| `.mcp.json` | `mcp-child.json` (tái dùng) | HTTP MCP → server dùng chung (`${CENTER_KB_HUB_URL}` + token env) |
 | `.cursor/mcp.json` | `cursor-mcp-child.json` (tái dùng) | như trên, cho Cursor |
 | 4 × wrapper `ba-ticket-author` | Thành phần D | skill |
 | `docs/tickets/TEMPLATE.md` | `ticket-template.md` | template tham chiếu |
@@ -155,7 +155,7 @@ Kind thứ ba bên cạnh `hub` và `child` (đúng triết lý role-aware init 
 
 KHÔNG scaffold trên `ba`: wrapper kb-ingest / kb-summarize / kb-approve / kb-publish / kb-docker-setup, `kb-publish.yml`, gitignore thư mục nguồn. Và đối xứng lại: Phase 4 không thêm gì vào scaffold hub/child. Ghi chú implement: `initcmd` thêm map template theo kind (`BA_TEMPLATES`, KHÔNG merge vào `COMMON_TEMPLATES`); `KINDS`/`template_map()` từ 2-way thành 3-way; prompt hỏi kind (`_resolve_kind`) thêm lựa chọn thứ ba; Literal `config.KBConfig.kind` thêm `"ba"` — validation kind nằm ở chính pydantic Literal này, thiếu một dòng đó thì `load_config` từ chối `kind: ba`; bản thân `doctor.check_kind` không cần đổi.
 
-Nội dung `QUICKSTART-BA.md` (một trang): Setup một lần — install, clone-hoặc-init, 2 biến môi trường (`CENTER_KB_MCP_URL`, `CENTER_KB_HTTP_TOKEN`), mở bằng Claude Code; Mỗi ticket — flow 6 bước ở §7; Quy tắc DoR — lint enforce gì, cái gì vẫn là judgment của BA (citation trong AC).
+Nội dung `QUICKSTART-BA.md` (một trang): Setup một lần — install, clone-hoặc-init, 2 biến môi trường (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`), mở bằng Claude Code; Mỗi ticket — flow 6 bước ở §7; Quy tắc DoR — lint enforce gì, cái gì vẫn là judgment của BA (citation trong AC).
 
 ## 9. Thành phần F — CI DoR gate (`kb-ticket-lint.yml`)
 
