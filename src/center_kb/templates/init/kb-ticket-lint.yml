@@ -1,0 +1,46 @@
+# CI Definition-of-Ready gate: every pull request that touches tickets/
+# must pass `kb ticket lint` before it can merge. The hub is a repo
+# variable and any auth token a repo secret — never hardcoded here,
+# mirroring how kb-publish.yml keeps credentials out of the workflow file
+# (documents behind the hub are copyrighted).
+name: kb-ticket-lint
+on:
+  pull_request:
+    paths: ["tickets/**.md"]
+permissions:
+  contents: read
+env:
+  CENTER_KB_HUB: ${{ vars.CENTER_KB_HUB }}
+  KB_HUB_TOKEN: ${{ secrets.KB_HUB_TOKEN }}
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install center-kb
+      - name: Authenticate the hub URL (private hub only)
+        if: env.KB_HUB_TOKEN != ''
+        run: |
+          echo "CENTER_KB_HUB=https://x-access-token:${KB_HUB_TOKEN}@${CENTER_KB_HUB#https://}" >> "$GITHUB_ENV"
+      - name: Lint changed tickets (Definition of Ready)
+        run: |
+          changed=$(git diff --name-only "origin/${BASE_REF}..." -- 'tickets/*.md' 'tickets/**/*.md')
+          if [ -z "$changed" ]; then
+            echo "::notice::no ticket files changed under tickets/ — DoR lint skipped"
+            exit 0
+          fi
+          status=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            echo "::group::kb ticket lint $f"
+            kb ticket lint "$f" --hub "$CENTER_KB_HUB" || status=1
+            echo "::endgroup::"
+          done <<< "$changed"
+          exit "$status"

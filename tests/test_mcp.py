@@ -3,8 +3,12 @@ from mcp.shared.memory import (
     create_connected_server_and_client_session as connect_client,
 )
 
+from center_kb import gitio
+from center_kb.hub import HubHandle
+from center_kb.kbcontext import build_context_block
 from center_kb.mcp import ServerConfig, create_server, parse_args
 from tests.conftest import make_fed_entry
+from tests.test_ticketlint import REFS, _build_ticket
 
 
 @pytest.fixture
@@ -46,13 +50,34 @@ def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_four_tools(fed_hub):
+async def test_lists_exactly_five_tools(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
         assert sorted(t.name for t in tools.tools) == [
             "kb_context_new", "kb_get_section", "kb_resolve", "kb_search",
+            "kb_ticket_lint",
         ]
+
+
+# Snapshot of the core four tools' wire contract (name -> parameter names).
+# kb_ticket_lint is new (Task 3) and must not perturb these.
+_CORE_FOUR_PARAMS = {
+    "kb_search": {"query", "tags", "budget"},
+    "kb_get_section": {"doc", "section", "level", "repo"},
+    "kb_context_new": {"refs", "tags"},
+    "kb_resolve": {"kb_context"},
+}
+
+
+@pytest.mark.anyio
+async def test_core_four_tool_signatures_unchanged(fed_hub):
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        tools = await client.list_tools()
+        by_name = {t.name: t for t in tools.tools}
+        for name, params in _CORE_FOUR_PARAMS.items():
+            assert set(by_name[name].inputSchema["properties"]) == params
 
 
 @pytest.mark.anyio
@@ -110,6 +135,61 @@ async def test_context_new_and_resolve_roundtrip(fed_hub):
             "kb_resolve", {"kb_context": _text(block)}
         )
         assert "status=ok" in _text(resolved)
+
+
+def _golden_ticket(fed_hub) -> str:
+    block, warning = build_context_block(
+        HubHandle(root=fed_hub), REFS, tags=["airspace"]
+    )
+    assert warning is None
+    return _build_ticket(block)
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_golden_ticket_passes(fed_hub):
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_ticket_lint", {"ticket_markdown": _golden_ticket(fed_hub)}
+        )
+        assert "DoR: PASS" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_broken_ref_fails(fed_hub):
+    block, warning = build_context_block(
+        HubHandle(root=fed_hub), REFS, tags=["airspace"]
+    )
+    assert warning is None
+    rev = gitio.head_commit(gitio.git_root(fed_hub))
+    bad_block = (
+        f"kb-context:\n  version: {rev}\n  refs:\n    - arinc-kb:arinc-424 §9.9\n"
+    )
+    text = _build_ticket(
+        block,
+        overrides={
+            "## KB context": f"```yaml\n{bad_block}```",
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Show something per arinc-kb:arinc-424 §9.9"
+            ),
+        },
+    )
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_ticket_lint", {"ticket_markdown": text})
+        assert "DoR: FAIL" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
+    server = create_server(config)
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_ticket_lint", {"ticket_markdown": "# T\n"}
+        )
+        assert "hub unreachable" in _text(result)
 
 
 @pytest.mark.anyio

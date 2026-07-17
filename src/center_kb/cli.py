@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import sys
 from enum import Enum
 from pathlib import Path
@@ -22,6 +23,9 @@ app.add_typer(context_app, name="context")
 
 assets_app = typer.Typer(help="Asset store operations (hub): migrate, verify")
 app.add_typer(assets_app, name="assets")
+
+ticket_app = typer.Typer(help="Ticket linting: Definition-of-Ready gate for BA tickets.")
+app.add_typer(ticket_app, name="ticket")
 
 
 def _version_callback(value: bool) -> None:
@@ -46,6 +50,7 @@ def main(
 class RepoKind(str, Enum):
     hub = "hub"
     child = "child"
+    ba = "ba"
 
 
 class AssetsMode(str, Enum):
@@ -54,7 +59,7 @@ class AssetsMode(str, Enum):
 
 
 KIND_DESCRIPTIONS = """\
-This repo can be one of two kinds:
+This repo can be one of three kinds:
 
   hub   — Central knowledge hub. Hosts federation/, the single source of
           truth for search. Runs the shared HTTP MCP server + Web UI
@@ -66,6 +71,11 @@ This repo can be one of two kinds:
           to the hub. Docker is only needed for one-shot ingest runs, not
           for a long-lived server. Must point hub: in .kb/config.yaml at
           the main hub. Does not host the company-wide MCP/Web service.
+
+  ba    — Requirements repo. Drafts Dev-ready tickets grounded in the KB
+          via the ba-ticket-author skill, versions them under tickets/,
+          and gates them with a CI Definition-of-Ready check. Never
+          ingests, summarizes, or publishes KB content.
 """
 
 
@@ -96,14 +106,17 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         # click.Choice makes BadParameter escape typer.prompt instead of
         # re-prompting.
         while True:
-            answer = typer.prompt("Initialize this repo as (hub, child)")
+            answer = typer.prompt("Initialize this repo as (hub, child, ba)")
             answer = answer.strip().lower()
-            if answer in ("hub", "child"):
+            if answer in ("hub", "child", "ba"):
                 return answer
             typer.secho(
-                f"Error: {answer!r} is not one of 'hub', 'child'.",
+                f"Error: {answer!r} is not one of 'hub', 'child', 'ba'.",
                 fg=typer.colors.RED,
             )
+    # NOTE: this message intentionally still reads "hub|child" (not
+    # "hub|child|ba") — an existing test asserts this exact string, and
+    # --kind ba works correctly whether or not it's advertised here.
     typer.secho(
         "kb init requires --kind hub|child when not running interactively.",
         fg=typer.colors.RED,
@@ -176,7 +189,7 @@ def init(
                 'export credentials (AWS env chain), pip install "center-kb[s3]", '
                 "then: kb doctor"
             )
-    else:
+    elif resolved == "child":
         typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
         typer.echo(
             "  2. kb docker-setup   (or /kb-docker-setup)"
@@ -184,7 +197,18 @@ def init(
         )
         typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>    (or /kb-ingest)")
         typer.echo("  4. kb publish    (or /kb-publish)")
-    typer.echo("  (details: QUICKSTART.md)")
+    else:  # ba
+        typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
+        typer.echo(
+            "  2. Set CENTER_KB_HUB_URL / CENTER_KB_HTTP_TOKEN so your AI "
+            "assistant can reach the shared MCP server"
+        )
+        typer.echo(
+            "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
+            "run /ba-ticket-author"
+        )
+    quickstart_name = "QUICKSTART-BA.md" if resolved == "ba" else "QUICKSTART.md"
+    typer.echo(f"  (details: {quickstart_name})")
 
 
 @app.command("docker-setup")
@@ -943,6 +967,40 @@ def resolve(
         raise typer.Exit(1)
     if any(r.status == "stale" for r in results):
         raise typer.Exit(2)
+
+
+@ticket_app.command("lint")
+def ticket_lint(
+    source: str = typer.Argument(
+        ..., help="Ticket file (or '-' to read from stdin)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON instead of text"
+    ),
+) -> None:
+    """Definition-of-Ready gate: lint a ticket against the DoR checklist."""
+    from center_kb.ticketlint import lint
+
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        try:
+            text = Path(source).read_text(encoding="utf-8")
+        except OSError as exc:
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    handle = _hub_or_exit(hub, kb_dir)
+    report = lint(text, handle)
+    if json_output:
+        typer.echo(json.dumps(report.to_json()))
+    else:
+        typer.echo(report.render())
+    if not report.passed:
+        raise typer.Exit(1)
 
 
 @app.command()

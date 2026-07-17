@@ -167,5 +167,34 @@
       "title": "kb_searchOutput",
       "type": "object"
     }
+  },
+  "kb_ticket_lint": {
+    "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, and kb-context refs\nresolving at their pinned version. Run this before handing the\nticket to the BA; fix errors and re-run until PASS.",
+    "inputSchema": {
+      "properties": {
+        "ticket_markdown": {
+          "title": "Ticket Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket_markdown"
+      ],
+      "title": "kb_ticket_lintArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_ticket_lintOutput",
+      "type": "object"
+    }
   }
 }

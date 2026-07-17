@@ -33,7 +33,7 @@ class AssetStoreConfig(BaseModel):
 class KBConfig(BaseModel):
     hub: str = ""
     repo_id: str = ""
-    kind: Literal["", "hub", "child"] = ""
+    kind: Literal["", "hub", "child", "ba"] = ""
     intake: str = ""  # intake service base URL — child publishes via OIDC CI
     asset_store: AssetStoreConfig = AssetStoreConfig()
 

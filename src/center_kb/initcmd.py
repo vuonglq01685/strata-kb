@@ -7,7 +7,8 @@ from pathlib import Path
 
 KIND_HUB = "hub"
 KIND_CHILD = "child"
-KINDS = (KIND_HUB, KIND_CHILD)
+KIND_BA = "ba"
+KINDS = (KIND_HUB, KIND_CHILD, KIND_BA)
 
 # target relative path -> template resource name under templates/init/
 COMMON_TEMPLATES: dict[str, str] = {
@@ -59,6 +60,25 @@ CHILD_TEMPLATES: dict[str, str] = {
     ".cursor/mcp.json": "cursor-mcp-child.json",
 }
 
+# Kind `ba` — requirements repo. It consumes the shared KB (via the
+# ba-ticket-author skill + MCP) and versions tickets; it authors no KB
+# documents itself, so it carries none of the ingest/summarize/publish
+# machinery. Deliberately NOT merged with COMMON_TEMPLATES (spec §8): a ba
+# repo gets exactly this set, nothing from the hub/child authoring stack.
+BA_TEMPLATES: dict[str, str] = {
+    ".kb/config.yaml": "config-ba.yaml",
+    ".mcp.json": "mcp-child.json",
+    ".cursor/mcp.json": "cursor-mcp-child.json",
+    ".claude/skills/ba-ticket-author/SKILL.md": "claude-skill-ba-ticket-author.md",
+    ".claude/commands/ba-ticket-author.md": "claude-command-ba-ticket-author.md",
+    ".github/prompts/ba-ticket-author.prompt.md": "copilot-ba-ticket-author.prompt.md",
+    ".cursor/commands/ba-ticket-author.md": "cursor-ba-ticket-author.md",
+    "docs/tickets/TEMPLATE.md": "ticket-template.md",
+    "tickets/.gitkeep": "tickets-gitkeep.txt",
+    ".github/workflows/kb-ticket-lint.yml": "kb-ticket-lint.yml",
+    "QUICKSTART-BA.md": "QUICKSTART-ba.md",
+}
+
 # User data — never refreshed by default; only overwritten with --force.
 PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml", ".kb/config.yaml"})
 
@@ -85,6 +105,8 @@ _ASSET_BLOCKS = {
 def template_map(kind: str) -> dict[str, str]:
     if kind not in KINDS:
         raise ValueError(f"kind must be one of {KINDS}, got '{kind}'")
+    if kind == KIND_BA:
+        return dict(BA_TEMPLATES)
     extra = HUB_TEMPLATES if kind == KIND_HUB else CHILD_TEMPLATES
     return {**COMMON_TEMPLATES, **extra}
 

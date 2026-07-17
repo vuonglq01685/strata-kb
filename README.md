@@ -207,20 +207,30 @@ If step 5 prints the command list (`init`, `ingest`, `status`, `build`, `query`,
 ### 6.1. Install from PyPI, web UI, and Docker
 
 **Install the package** (once published): `pip install center-kb` — gives you the `kb` CLI and MCP server.
-Create a new KB repo: `kb init` — it asks whether the repo is the **main hub**
-(hosts `federation/` + the shared MCP HTTP server + Web UI) or a **child**
-(authors and publishes to the hub) and scaffolds accordingly; non-interactive
-runs pass `--kind hub|child`. The choice is recorded as `kind:` in
-`.kb/config.yaml`, and re-runs reuse it. Then run `kb docker-setup` (or the
-`/kb-docker-setup` slash command): on the hub it creates `.env`, generates
-the HTTP token, and starts the service (`docker compose up -d`); on a child
-it pulls the ingest image for one-shot Docker ingest. Slash commands
-(`/kb-ingest`, `/kb-summarize`, `/kb-publish`, `/kb-docker-setup`) are
-scaffolded for **Claude Code, GitHub Copilot, and Cursor**; MCP client
-wiring ships as `.mcp.json` (Claude Code)
-and `.cursor/mcp.json` (Cursor) — stdio on the hub, HTTP-with-env-vars on
-children. Re-running `kb init` refreshes scaffold files (skills, templates)
-and preserves `.kb/index.yaml` / `.kb/config.yaml` unless `--force`.
+Create a new KB repo: `kb init` — it asks which of three kinds the repo is,
+scaffolds accordingly, and records the choice as `kind:` in
+`.kb/config.yaml` (re-runs reuse it); non-interactive runs pass
+`--kind hub|child|ba`.
+
+| Kind | Purpose |
+|---|---|
+| `hub` | Central knowledge hub. Hosts `federation/` — the single source of truth for search — and runs the shared HTTP MCP server + Web UI. Receives publishes from child repos; merging hub PRs is the review gate that makes content searchable. |
+| `child` | Authoring repo. Ingest PDFs → summarize → `kb build` → `kb publish` to the hub. Must point `hub:` in `.kb/config.yaml` at the main hub; does not host the company-wide MCP/Web service. |
+| `ba` | Requirements repo (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)). Drafts Dev-ready tickets grounded in the KB via the `ba-ticket-author` skill, versions them under `tickets/`, and gates them with a CI Definition-of-Ready check (`kb ticket lint`). Never ingests, summarizes, or publishes KB content. |
+
+Then run `kb docker-setup` (or the `/kb-docker-setup` slash command) on a
+hub or child repo: on the hub it creates `.env`, generates the HTTP token,
+and starts the service (`docker compose up -d`); on a child it pulls the
+ingest image for one-shot Docker ingest — a `ba` repo needs neither Docker
+nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
+`/kb-docker-setup`) are scaffolded for **Claude Code, GitHub Copilot, and
+Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` instead,
+see [7.10](#710-phase-4--ba-ticket-authoring)); MCP client wiring ships as
+`.mcp.json` (Claude Code)
+and `.cursor/mcp.json` (Cursor) on every kind — stdio on the hub,
+HTTP-with-env-vars on child and `ba` repos. Re-running `kb init` refreshes
+scaffold files (skills, templates) and preserves `.kb/index.yaml` /
+`.kb/config.yaml` unless `--force`.
 
 **Web UI for humans:** the same HTTP process serves agents and people:
 
@@ -263,7 +273,7 @@ once: `git config --global core.longpaths true`, and set the registry key
 
 ## 7. `kb` command dictionary
 
-The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp).
+The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` (Phase 4 — BA ticket authoring, a `ba`-kind repo only) is in [7.10](#710-phase-4--ba-ticket-authoring).
 
 | # | Command | Purpose | Who runs it |
 |---|---|---|---|
@@ -413,7 +423,7 @@ The `saving` column is the L2-vs-L3 saving **for that document alone** — not t
 
 Phase 2 extends CENTER-KB beyond the CLI: Claude Code (or any MCP-capable agent) can query the knowledge base via an **MCP server**, and a document (Jira AC, spec…) can carry a **machine-readable citation** of a specific section, **pinning** the store version at write time — so you can detect when the store changed (amendment) while an old citation did not.
 
-#### MCP server — 4 tools
+#### MCP server — 5 tools
 
 Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the repo root — Claude Code picks it up with no extra config).
 
@@ -423,6 +433,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 | `kb_get_section` | Fetch exactly one section by id | `doc`, `section`, `level` (`l2`/`l3`) |
 | `kb_context_new` | Pin a `kb-context` citation block at the current KB commit, from 1+ confirmed refs — lets an agent do this from chat, without the BA opening a terminal | `refs`, `tags` |
 | `kb_resolve` | Accept a `kb-context` block (or a ticket containing one) — return the section at the **pinned version**, plus freshness `ok`/`stale`/`broken` | `kb_context` |
+| `kb_ticket_lint` | Definition-of-Ready gate (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)): lint a draft ticket's Markdown against required sections, story/AC/diagram structure, and `kb-context` refs resolving at their pinned version — run before handing the ticket to the BA, fix errors, and re-run until it reports PASS | `ticket_markdown` |
 
 #### 4 new CLI commands
 
@@ -474,6 +485,18 @@ Phase 2 lets one knowledge store talk to developers via MCP and pin citations. P
 **Remote MCP lookup without cloning the repo:** previously an agent had to clone the repo first to use MCP. Phase 3 lets you run the MCP server as a shared HTTP service (not only local stdio), authenticated with a token — full deploy guide in [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
 
 **Want to see the full lifecycle for real (2 repos contributing to one hub, cross-repo search, stale citations after amendments)?** Run `bash scripts/demo-federation.sh` — it builds a hub and 2 sample repos in a temp directory, runs end-to-end, then cleans up without touching your real data.
+
+---
+
+### 7.10 Phase 4 — BA ticket authoring
+
+Phase 4 adds a third `kind`, `ba` — a requirements repo that never ingests, summarizes, or publishes KB content, but drafts Dev-ready tickets grounded in it. The `ba-ticket-author` skill/command/prompt (Claude Code, GitHub Copilot, Cursor) runs a six-step pipeline: **Intake** (the BA describes the business need — capability, role, value) → **Ground** (`kb_search` surfaces candidate sections; the BA reviews and picks which apply) → **Draft** (fills the ticket template — story, ACs, use cases, sequence + business-flow Mermaid diagrams — citing `doc-id §section` for every claim that touches a standard) → **Pin** (`kb_context_new` embeds the returned `## KB context` block, pinned at the hub's current commit) → **Lint** (`kb ticket lint` — the Definition-of-Ready gate — runs and re-runs until it reports `DoR: PASS`) → **BA review** (the draft lands in `tickets/<ticket-id>.md`; the BA reads it, commits it, and pastes it into Jira themselves). The agent never pushes to Jira or opens tickets on its own — Markdown out, human-in-the-loop by design. Every pull request touching `tickets/**.md` on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml` in CI, which fails the check unless `kb ticket lint` reports PASS for every changed ticket (branch protection on the repo then blocks the merge); `kb_ticket_lint` is the fifth MCP tool (see [7.8](#78-phase-2--workflow-integration) above), so an agent can run the same gate over MCP instead of a terminal.
+
+| Command | Purpose | Exit code |
+|---|---|---|
+| `kb ticket lint <file\|-> [--hub <url>] [--json]` | Definition-of-Ready gate: required sections present, every `## KB context` ref resolves at its pinned hub commit, every inline `doc-id §section` citation is backed by a pinned ref (and vice versa) | `0` PASS, `1` FAIL |
+
+Scaffold a `ba` repo with `kb init --kind ba`; see `QUICKSTART-BA.md` (generated into the repo) for the full setup, including the two environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that wire the assistant to the hub's MCP server, and the CI variable/secret (`CENTER_KB_HUB`, `KB_HUB_TOKEN`) the lint workflow needs.
 
 ---
 
@@ -542,7 +565,7 @@ As of the latest trial run (see `docs/superpowers/specs/2026-07-10-aero-kb-phase
 
 ## 11. Current limits & unfinished work
 
-This is **Phase 1 + Phase 2 + Phase 3**, not a finished product. Still missing:
+This is **Phase 1 + Phase 2 + Phase 3 + Phase 4**, not a finished product. Still missing:
 
 - **No auto-generated "source-code understanding"** (e.g. reading OpenAPI, DB schemas, module lists into the KB) — different scope from today's PDF-based reference-document ingestion; reserved for later work.
 - **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
@@ -660,4 +683,4 @@ git tag -d vX.Y.Z
 
 ---
 
-*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) — updated 2026-07-13. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, and `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`.*
+*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) + Phase 4 (BA ticket authoring) — updated 2026-07-17. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`, and `docs/superpowers/specs/2026-07-17-ba-agent-design.md`.*
