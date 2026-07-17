@@ -20,6 +20,9 @@ app = typer.Typer(
 context_app = typer.Typer(help="Operate on kb-context blocks (machine-readable citations).")
 app.add_typer(context_app, name="context")
 
+assets_app = typer.Typer(help="Asset store operations (hub): migrate, verify")
+app.add_typer(assets_app, name="assets")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -823,6 +826,30 @@ def reindex(
             )
             raise typer.Exit(1)
     typer.echo("kb reindex: federation/index.yaml rebuilt")
+
+
+@assets_app.command()
+def migrate(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Move in-git federation assets to the configured object store (none → s3)."""
+    from center_kb import assetcmd, assetstore
+
+    handle = _hub_or_exit(hub, kb_dir)
+    try:
+        report = assetcmd.migrate_assets(handle)
+    except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    for rid, n in sorted(report.per_rid.items()):
+        typer.echo(f"  {rid}: {n} asset(s) migrated")
+    if not report.per_rid:
+        typer.echo("nothing to migrate — no in-git assets under federation/")
+    elif report.committed:
+        typer.echo("committed: assets: migrate to object store")
 
 
 @context_app.command("new")
