@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from center_kb import initcmd
 from center_kb.cli import app
 from center_kb.initcmd import expected_files, init_repo
 
@@ -439,7 +440,7 @@ def test_init_scaffolds_cursor_mcp_per_kind(tmp_path: Path):
 
 def test_assistant_slash_command_parity(tmp_path: Path):
     """Every kb-* command exists for Claude, Copilot, and Cursor in each kind."""
-    common = ["kb-ingest", "kb-publish", "kb-summarize"]
+    common = ["kb-ingest", "kb-publish", "kb-summarize", "kb-init"]
     layouts = {
         "claude": lambda n: (
             Path(".claude/commands") / f"{n}.md"
@@ -492,3 +493,73 @@ def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
     assert "single message" in skill                 # concurrent dispatch
     assert "one retry only" in skill                 # error handling
     assert "Do not edit many files in parallel" not in skill  # old rule gone
+
+
+def test_record_asset_store_appends_s3_block(tmp_path: Path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("kind: hub\nhub: '.'\n", encoding="utf-8")
+    assert initcmd.record_asset_store(cfg, "s3") == "recorded"
+    text = cfg.read_text(encoding="utf-8")
+    assert "kind: hub" in text  # existing content preserved
+    assert "asset_store:" in text and "mode: s3" in text
+    assert 'bucket: ""' in text and 'prefix: "assets/"' in text
+    # parses into the spec B model
+    from center_kb import config as config_mod
+
+    assert config_mod.load_config(tmp_path).asset_store.mode == "s3"
+
+
+def test_record_asset_store_appends_none_block(tmp_path: Path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("kind: hub\n", encoding="utf-8")
+    assert initcmd.record_asset_store(cfg, "none") == "recorded"
+    from center_kb import config as config_mod
+
+    assert config_mod.load_config(tmp_path).asset_store.mode == "none"
+
+
+def test_record_asset_store_never_rewrites_existing_block(tmp_path: Path):
+    cfg = tmp_path / "config.yaml"
+    original = "kind: hub\nasset_store:\n  mode: s3\n  bucket: my-bucket\n"
+    cfg.write_text(original, encoding="utf-8")
+    assert initcmd.record_asset_store(cfg, "none") == "exists"
+    assert cfg.read_text(encoding="utf-8") == original
+
+
+def test_record_asset_store_missing_config(tmp_path: Path):
+    assert initcmd.record_asset_store(tmp_path / "config.yaml", "s3") == "no-config"
+
+
+def test_init_repo_assets_records_block_and_reports(tmp_path: Path):
+    initcmd.init_repo(tmp_path, "hub")
+    report = initcmd.init_repo(tmp_path, "hub", assets="s3")
+    assert any("asset_store recorded" in u for u in report.updated)
+    text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "mode: s3" in text
+
+
+def test_init_repo_assets_exists_notes_left_unchanged(tmp_path: Path):
+    initcmd.init_repo(tmp_path, "hub", assets="s3")
+    report = initcmd.init_repo(tmp_path, "hub", assets="none")
+    assert any("left unchanged" in n for n in report.notes)
+    text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "mode: s3" in text and "mode: none" not in text
+
+
+def test_cli_init_assets_rejected_for_child(tmp_path: Path):
+    result = runner.invoke(
+        app, ["init", str(tmp_path), "--kind", "child", "--assets", "s3"]
+    )
+    assert result.exit_code == 2
+    assert "hub" in result.output
+
+
+def test_init_scaffolds_kb_init_command_templates(tmp_path):
+    initcmd.init_repo(tmp_path, "hub")
+    for rel in (
+        ".claude/skills/kb-init/SKILL.md",
+        ".claude/commands/kb-init.md",
+        ".github/prompts/kb-init.prompt.md",
+        ".cursor/commands/kb-init.md",
+    ):
+        assert (tmp_path / rel).is_file(), rel

@@ -129,6 +129,50 @@ def check_kind(kb_dir: Path) -> list[Issue]:
     return []
 
 
+ASSET_SIZE_WARN_BYTES = 100 * 1024 * 1024
+
+
+def check_asset_store(kb_dir: Path, handle, store=None) -> list[Issue]:
+    """Storage health per asset_store mode; [] when the block is absent."""
+    from center_kb import assetstore
+    from center_kb.config import load_config
+
+    try:
+        cfg = load_config(kb_dir).asset_store
+    except Exception:  # noqa: BLE001 — check_kind already reports invalid config
+        return []
+    if cfg.mode == "none":
+        total = 0
+        roots = [kb_dir]
+        if handle is not None:
+            roots.append(handle.federation_dir)
+        for root in roots:
+            if not root.is_dir():
+                continue
+            total += sum(
+                p.stat().st_size for p in root.glob("**/assets/*") if p.is_file()
+            )
+        if total > ASSET_SIZE_WARN_BYTES:
+            return [
+                Issue(
+                    "warning",
+                    f"in-git assets total {total // (1024 * 1024)} MB — consider "
+                    "asset_store mode: s3 (kb assets migrate) or git-LFS",
+                )
+            ]
+        return []
+    if store is None:
+        try:
+            store = assetstore.from_config(cfg)
+        except assetstore.AssetStoreError as exc:
+            return [Issue("error", f"asset_store: {_flatten(exc)}")]
+    try:
+        store.exists(assetstore.PROBE_NAME)
+    except assetstore.AssetStoreError as exc:
+        return [Issue("error", f"asset store unreachable: {_flatten(exc)}")]
+    return []
+
+
 def check_context(
     text: str, hub: "HubHandle"
 ) -> tuple[list[Issue], list[ResolvedRef]]:
