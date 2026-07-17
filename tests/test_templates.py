@@ -56,6 +56,8 @@ def test_ba_ticket_author_templates_carry_the_hard_rules_markers():
     for name in BA_TICKET_AUTHOR_TEMPLATES:
         text = _read_init_template(name)
         assert "never push to jira" in text.lower(), name
+        assert "never tick" in text.lower(), name
+        assert "definition of ready" in text.lower(), name
         assert "kb_context_new" in text, name
         assert "kb ticket lint" in text, name
         assert "tickets/" in text, name

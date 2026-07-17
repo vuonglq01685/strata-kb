@@ -13,4 +13,5 @@ mandatory for standard claims; pin only BA-confirmed refs via
 `kb_context_new`; unverifiable code detail becomes
 `%%TODO: verify against codebase%%`, never invented; `kb ticket lint`
 must report `DoR: PASS` before handover; never push to Jira — the BA
-publishes.
+publishes; never tick a Definition of Ready checkbox yourself — only
+the BA confirms DoR items.

@@ -58,5 +58,9 @@ for it during Intake.
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - Lint must report `DoR: PASS` before handover; report remaining
   warnings to the BA — do not hand over a failing ticket silently.
+- Never tick a Definition of Ready checkbox yourself — only the BA
+  confirms DoR items. Fixing a lint error is not the same as confirming
+  DoR; leave every `## Definition of Ready` checkbox unchecked for the
+  BA.
 - English template headings are never localized; write the ticket body
   in the BA's working language.
