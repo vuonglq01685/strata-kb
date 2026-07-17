@@ -83,6 +83,14 @@ class Registry(BaseModel):
     repos: dict[str, str] = Field(default_factory=dict)
 
 
+class AssetsRecord(BaseModel):
+    """Relative paths of assets diverted to the object store for one rid.
+    The filename's sha256 IS the file content's sha256 (spec A), so hub
+    manifests can synthesize exact entries without holding the bytes."""
+
+    assets: list[str] = []
+
+
 def load_yaml_model(path: Path, model: type[T]) -> T:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return model.model_validate(data)

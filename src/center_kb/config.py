@@ -19,11 +19,23 @@ class HubConfigError(RuntimeError):
     """The hub is mandatory (federation is the only read source) but not configured."""
 
 
+class AssetStoreConfig(BaseModel):
+    """Object-store settings for image assets (spec B). Credentials never
+    live here — boto3's standard chain (env / instance role) supplies them."""
+
+    mode: Literal["none", "s3"] = "none"
+    bucket: str = ""
+    region: str = ""
+    endpoint: str = ""  # S3-compatible endpoint (MinIO, R2); empty = AWS
+    prefix: str = "assets/"
+
+
 class KBConfig(BaseModel):
     hub: str = ""
     repo_id: str = ""
     kind: Literal["", "hub", "child"] = ""
     intake: str = ""  # intake service base URL — child publishes via OIDC CI
+    asset_store: AssetStoreConfig = AssetStoreConfig()
 
 
 def load_config(kb_dir: Path) -> KBConfig:

@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import hmac
 import html
+import logging
+import os
 import re
+import tempfile
 from importlib import resources
 from string import Template
 from urllib.parse import quote
@@ -15,11 +18,15 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
+from center_kb import assetstore
+from center_kb import hub as hub_mod
 from center_kb.mcp import ServerConfig
 from center_kb.query import AmbiguousDocError, get_section, search, tokenize
 from center_kb.web import api
 from center_kb.web.auth import COOKIE_NAME
 from center_kb.web.mdrender import render as md_render
+
+logger = logging.getLogger("center_kb.web.ui")
 
 HUB_DOWN_HTML = '<div class="empty-state"><p>Hub unreachable.</p></div>'
 HUB_DOWN_PAGE = (
@@ -124,7 +131,9 @@ def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
     ]
 
 
-def build_routes(config: ServerConfig, token: str) -> list[Route]:
+def build_routes(
+    config: ServerConfig, token: str, store_factory=None
+) -> list[Route]:
     async def login_get(request: Request) -> HTMLResponse:
         body = _template("login.html").substitute(error="")
         return _page("Sign in", body)
@@ -244,6 +253,18 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
     asset_cache: dict[str, Path] = {}
 
+    resolve_store = store_factory or assetstore.store_for_hub
+    store_cache: dict[str, object] = {}  # hub root → store (or None), built once
+
+    def _store_for(hub):
+        key = str(hub.root)
+        if key not in store_cache:
+            store_cache[key] = resolve_store(hub)
+        return store_cache[key]
+
+    def _disk_cache_dir() -> Path:
+        return hub_mod._cache_base() / "asset-cache"
+
     def _find_asset(hub, name: str) -> Path | None:
         """Resolve a content-addressed asset filename to a path.
 
@@ -251,6 +272,11 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         once written, so a cached hit stays valid for the process lifetime
         (re-verified with is_file() in case the file vanished). Misses are
         never cached — a later publish can add the asset.
+
+        Local dirs miss → fall through to the object store (if configured):
+        a store hit is written to the on-disk cache and served from there on
+        subsequent requests. A store lookup failure raises AssetStoreError,
+        which propagates to the handler for a 503 response.
         """
         cached = asset_cache.get(name)
         if cached is not None and cached.is_file():
@@ -262,6 +288,26 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
             for path in base.glob(f"**/assets/{name}"):
                 asset_cache[name] = path
                 return path
+        cache_file = _disk_cache_dir() / name
+        if cache_file.is_file():
+            asset_cache[name] = cache_file
+            return cache_file
+        store = _store_for(hub)
+        if store is not None:
+            data = store.get(name)  # AssetStoreError propagates to the handler
+            if data is not None:
+                target = cache_file
+                try:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                except OSError as exc:
+                    logger.warning("asset disk cache write failed: %s", exc)
+                    fd, tmp_name = tempfile.mkstemp(suffix=Path(name).suffix)
+                    with os.fdopen(fd, "wb") as fh:
+                        fh.write(data)
+                    target = Path(tmp_name)
+                asset_cache[name] = target
+                return target
         return None
 
     async def asset(request: Request) -> Response:
@@ -271,7 +317,11 @@ def build_routes(config: ServerConfig, token: str) -> list[Route]:
         hub = api.hub_handle(config)
         if hub is None:
             return Response("hub unreachable", status_code=503)
-        path = await run_in_threadpool(_find_asset, hub, name)
+        try:
+            path = await run_in_threadpool(_find_asset, hub, name)
+        except assetstore.AssetStoreError as exc:
+            logger.warning("asset store lookup failed: %s", exc)
+            return Response("asset store unavailable", status_code=503)
         if path is None:
             return Response("not found", status_code=404)
         media = "image/png" if name.endswith(".png") else "image/webp"

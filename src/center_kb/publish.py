@@ -59,6 +59,7 @@ def _snapshot(
     rid: str,
     source_commit: str,
     source_url: str | None = None,
+    store=None,
 ) -> tuple[int, bool]:
     """Sync .kb/ → federation/<rid>/ by hash-diff; return (n_docs, changed).
 
@@ -74,7 +75,7 @@ def _snapshot(
     each newly creating one file at the same path with different content is a
     conflict that cannot be auto-merged, whatever the rebase strategy).
     """
-    from center_kb import hashsync
+    from center_kb import assetstore, hashsync
 
     dest = handle.federation_dir / rid
     fed_root = handle.federation_dir.resolve()
@@ -82,13 +83,45 @@ def _snapshot(
         raise PublishError(
             f"repo-id '{rid}' escapes the federation/ directory on the hub — refusing to publish"
         )
+    active_store = store if store is not None else assetstore.store_for_hub(handle)
     local_index = models.load_yaml_model(kb_abs / "index.yaml", models.KBIndex)
     local_man = hashsync.build_manifest(kb_abs)
-    dest_man = hashsync.build_manifest(dest, exclude=("_meta.yaml",))
+    dest_man = hashsync.build_manifest(
+        dest, exclude=("_meta.yaml", assetstore.RECORD_NAME)
+    )
+    if active_store is not None:
+        dest_man.update(assetstore.synthesized_asset_entries(dest))
     changed, deleted = hashsync.diff_manifests(local_man, dest_man)
     if not changed and not deleted:
         return len(local_index.docs), False
     hashsync.apply_sync(kb_abs, dest, changed, deleted)
+    if active_store is not None:
+        try:
+            assetstore.divert_and_record(dest, active_store, deleted)
+        except assetstore.AssetStoreError:
+            # apply_sync above already wrote asset bytes (and any other
+            # changed/deleted files) into the hub clone's working tree
+            # before this failed. Left uncleaned, a retry with a healthy
+            # store would build_manifest(dest) == the child's manifest
+            # (bytes already match) and early-return "unchanged" BEFORE
+            # ever reaching divert again -- and _publish_direct/_publish_pr
+            # would then git-add + commit those leftover binaries straight
+            # into hub git. Restore federation/ to its last committed
+            # state before re-raising (mirrors intake.intake_publish's
+            # matching guard for the same failure mode).
+            co = gitio._run(handle.root, "checkout", "--", "federation")
+            if co.returncode != 0:
+                logger.warning(
+                    "git checkout -- federation failed while restoring "
+                    "after an asset store failure: %s", co.stderr.strip()
+                )
+            cl = gitio._run(handle.root, "clean", "-fd", "--", "federation")
+            if cl.returncode != 0:
+                logger.warning(
+                    "git clean -fd -- federation failed while restoring "
+                    "after an asset store failure: %s", cl.stderr.strip()
+                )
+            raise
     meta = federation.FederationMeta(
         repo_id=rid,
         source_url=(
