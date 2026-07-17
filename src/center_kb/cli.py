@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import sys
 from enum import Enum
 from pathlib import Path
@@ -22,6 +23,9 @@ app.add_typer(context_app, name="context")
 
 assets_app = typer.Typer(help="Asset store operations (hub): migrate, verify")
 app.add_typer(assets_app, name="assets")
+
+ticket_app = typer.Typer(help="Ticket linting: Definition-of-Ready gate for BA tickets.")
+app.add_typer(ticket_app, name="ticket")
 
 
 def _version_callback(value: bool) -> None:
@@ -943,6 +947,40 @@ def resolve(
         raise typer.Exit(1)
     if any(r.status == "stale" for r in results):
         raise typer.Exit(2)
+
+
+@ticket_app.command("lint")
+def ticket_lint(
+    source: str = typer.Argument(
+        ..., help="Ticket file (or '-' to read from stdin)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON instead of text"
+    ),
+) -> None:
+    """Definition-of-Ready gate: lint a ticket against the DoR checklist."""
+    from center_kb.ticketlint import lint
+
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        try:
+            text = Path(source).read_text(encoding="utf-8")
+        except OSError as exc:
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    handle = _hub_or_exit(hub, kb_dir)
+    report = lint(text, handle)
+    if json_output:
+        typer.echo(json.dumps(report.to_json()))
+    else:
+        typer.echo(report.render())
+    if not report.passed:
+        raise typer.Exit(1)
 
 
 @app.command()
