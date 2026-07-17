@@ -852,6 +852,33 @@ def migrate(
         typer.echo("committed: assets: migrate to object store")
 
 
+@assets_app.command()
+def verify(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Check asset coverage: records vs store, markdown refs, orphans."""
+    from center_kb import assetcmd, assetstore
+
+    handle = _hub_or_exit(hub, kb_dir)
+    try:
+        report = assetcmd.verify_assets(handle)
+    except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    for label in report.missing_records:
+        typer.secho(f"[missing] recorded but not in store: {label}", fg=typer.colors.RED)
+    for label in report.dangling_refs:
+        typer.secho(f"[dangling] referenced but unresolvable: {label}", fg=typer.colors.RED)
+    for label in report.orphans:
+        typer.echo(f"[orphan] recorded but never referenced: {label}")
+    if not report.ok:
+        raise typer.Exit(1)
+    typer.echo("kb assets verify: OK")
+
+
 @context_app.command("new")
 def context_new(
     refs: str = typer.Option(

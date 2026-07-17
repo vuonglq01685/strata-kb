@@ -128,3 +128,56 @@ def test_migrate_failure_restores_failed_rid(hub_root_two_assets):
     ).stdout.strip()
     assert status == ""  # nothing staged, nothing left dirty
     assert not (hub_root / "federation" / "rid-a" / "_assets.yaml").exists()
+
+
+def _migrated_hub(hub_root) -> assetstore.MemoryStore:
+    store = assetstore.MemoryStore()
+    assetcmd.migrate_assets(HubHandle(root=hub_root), store=store)
+    return store
+
+
+def test_verify_ok_after_migrate(hub_root):
+    store = _migrated_hub(hub_root)
+    report = assetcmd.verify_assets(HubHandle(root=hub_root), store=store)
+    assert report.ok
+    assert report.missing_records == [] and report.dangling_refs == []
+
+
+def test_verify_reports_missing_record_entry(hub_root):
+    store = _migrated_hub(hub_root)
+    store.data.clear()  # bytes vanished from the bucket
+    report = assetcmd.verify_assets(HubHandle(root=hub_root), store=store)
+    assert not report.ok
+    assert any(SHA in m for m in report.missing_records)
+    assert any(SHA in d for d in report.dangling_refs)
+
+
+def test_verify_reports_dangling_ref(hub_root):
+    store = _migrated_hub(hub_root)
+    ghost = "9" * 64
+    md = hub_root / "federation" / "rid-a" / "doc1" / "ch1.md"
+    md.write_text(md.read_text(encoding="utf-8") + f"![g](assets/{ghost}.png)\n", encoding="utf-8")
+    report = assetcmd.verify_assets(HubHandle(root=hub_root), store=store)
+    assert any(ghost in d for d in report.dangling_refs)
+
+
+def test_verify_reports_orphan_record_entry(hub_root):
+    store = _migrated_hub(hub_root)
+    md = hub_root / "federation" / "rid-a" / "doc1" / "ch1.md"
+    md.write_text("no refs anymore\n", encoding="utf-8")
+    report = assetcmd.verify_assets(HubHandle(root=hub_root), store=store)
+    assert report.ok  # orphans are informational only
+    assert any(SHA in o for o in report.orphans)
+
+
+def test_verify_local_mode_checks_files(hub_root):
+    # mode none: record entries must resolve as local files
+    (hub_root / ".kb" / "config.yaml").write_text(
+        "kind: hub\nasset_store:\n  mode: none\n", encoding="utf-8"
+    )
+    dest = hub_root / "federation" / "rid-a"
+    models.save_yaml_model(
+        dest / "_assets.yaml", models.AssetsRecord(assets=["doc1/assets/" + "8" * 64 + ".png"])
+    )
+    report = assetcmd.verify_assets(HubHandle(root=hub_root))
+    assert not report.ok and report.missing_records
