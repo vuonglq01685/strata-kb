@@ -563,3 +563,242 @@ def test_init_scaffolds_kb_init_command_templates(tmp_path):
         ".cursor/commands/kb-init.md",
     ):
         assert (tmp_path / rel).is_file(), rel
+
+
+# --- Phase 4: kind `ba` (BA requirements repo) ------------------------------
+
+_BA_SPEC_8_PATHS = (
+    ".kb/config.yaml",
+    ".mcp.json",
+    ".cursor/mcp.json",
+    ".claude/skills/ba-ticket-author/SKILL.md",
+    ".claude/commands/ba-ticket-author.md",
+    ".github/prompts/ba-ticket-author.prompt.md",
+    ".cursor/commands/ba-ticket-author.md",
+    "docs/tickets/TEMPLATE.md",
+    "tickets/.gitkeep",
+    ".github/workflows/kb-ticket-lint.yml",
+    "QUICKSTART-BA.md",
+)
+
+# The exact hub/child expected-file sets as they existed before this plan —
+# used to assert Phase 4 added nothing to hub/child (byte-for-byte).
+_PRE_PHASE4_HUB_FILES = [
+    ".claude/commands/kb-approve.md",
+    ".claude/commands/kb-docker-setup.md",
+    ".claude/commands/kb-init.md",
+    ".claude/commands/kb-summarize.md",
+    ".claude/skills/kb-approve/SKILL.md",
+    ".claude/skills/kb-docker-setup/SKILL.md",
+    ".claude/skills/kb-ingest/SKILL.md",
+    ".claude/skills/kb-init/SKILL.md",
+    ".claude/skills/kb-publish/SKILL.md",
+    ".claude/skills/kb-summarize/SKILL.md",
+    ".cursor/commands/kb-approve.md",
+    ".cursor/commands/kb-docker-setup.md",
+    ".cursor/commands/kb-ingest.md",
+    ".cursor/commands/kb-init.md",
+    ".cursor/commands/kb-publish.md",
+    ".cursor/commands/kb-summarize.md",
+    ".cursor/mcp.json",
+    ".cursor/rules/kb-summarize.mdc",
+    ".env.example",
+    ".github/instructions/kb-summarize.instructions.md",
+    ".github/prompts/kb-approve.prompt.md",
+    ".github/prompts/kb-docker-setup.prompt.md",
+    ".github/prompts/kb-ingest.prompt.md",
+    ".github/prompts/kb-init.prompt.md",
+    ".github/prompts/kb-publish.prompt.md",
+    ".github/workflows/kb-publish.yml",
+    ".kb/config.yaml",
+    ".kb/index.yaml",
+    ".mcp.json",
+    "QUICKSTART.md",
+    "docker-compose.yml",
+    "federation/README.md",
+    "source/.gitignore",
+]
+
+_PRE_PHASE4_CHILD_FILES = [
+    ".claude/commands/kb-approve.md",
+    ".claude/commands/kb-docker-setup.md",
+    ".claude/commands/kb-init.md",
+    ".claude/commands/kb-summarize.md",
+    ".claude/skills/kb-approve/SKILL.md",
+    ".claude/skills/kb-docker-setup/SKILL.md",
+    ".claude/skills/kb-ingest/SKILL.md",
+    ".claude/skills/kb-init/SKILL.md",
+    ".claude/skills/kb-publish/SKILL.md",
+    ".claude/skills/kb-summarize/SKILL.md",
+    ".cursor/commands/kb-approve.md",
+    ".cursor/commands/kb-docker-setup.md",
+    ".cursor/commands/kb-ingest.md",
+    ".cursor/commands/kb-init.md",
+    ".cursor/commands/kb-publish.md",
+    ".cursor/commands/kb-summarize.md",
+    ".cursor/mcp.json",
+    ".cursor/rules/kb-summarize.mdc",
+    ".github/instructions/kb-summarize.instructions.md",
+    ".github/prompts/kb-approve.prompt.md",
+    ".github/prompts/kb-docker-setup.prompt.md",
+    ".github/prompts/kb-ingest.prompt.md",
+    ".github/prompts/kb-init.prompt.md",
+    ".github/prompts/kb-publish.prompt.md",
+    ".github/workflows/kb-publish.yml",
+    ".kb/config.yaml",
+    ".kb/index.yaml",
+    ".mcp.json",
+    "QUICKSTART.md",
+    "docker-compose.yml",
+    "source/.gitignore",
+]
+
+
+def test_init_kind_ba_scaffolds_minimal_set(tmp_path: Path):
+    report = init_repo(tmp_path, "ba")
+    assert sorted(report.created) == sorted(expected_files("ba"))
+    for rel in _BA_SPEC_8_PATHS:
+        assert (tmp_path / rel).is_file(), rel
+    # authoring wrappers are explicitly NOT on kind `ba`
+    for name in ("kb-ingest", "kb-summarize", "kb-approve", "kb-publish", "kb-docker-setup"):
+        assert not (tmp_path / ".claude" / "skills" / name).exists(), name
+        assert not (tmp_path / ".claude" / "commands" / f"{name}.md").exists(), name
+        assert not (tmp_path / ".github" / "prompts" / f"{name}.prompt.md").exists(), name
+        assert not (tmp_path / ".cursor" / "commands" / f"{name}.md").exists(), name
+    assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
+    assert not (tmp_path / "source").exists()
+    assert not (tmp_path / "federation").exists()
+    assert not (tmp_path / ".env.example").exists()
+    text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "kind: ba" in text
+
+
+def test_init_rejects_unknown_kind_still_excludes_ba_typos(tmp_path: Path):
+    with pytest.raises(ValueError):
+        init_repo(tmp_path, "BA")
+
+
+def test_hub_child_unchanged_by_phase4(tmp_path: Path):
+    assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
+    assert sorted(expected_files("child")) == sorted(_PRE_PHASE4_CHILD_FILES)
+    hub_repo = tmp_path / "h"
+    child_repo = tmp_path / "c"
+    hub_repo.mkdir()
+    child_repo.mkdir()
+    init_repo(hub_repo, "hub")
+    init_repo(child_repo, "child")
+    for repo in (hub_repo, child_repo):
+        assert not (repo / ".claude" / "skills" / "ba-ticket-author").exists()
+        assert not (repo / ".claude" / "commands" / "ba-ticket-author.md").exists()
+        assert not (repo / ".github" / "prompts" / "ba-ticket-author.prompt.md").exists()
+        assert not (repo / ".cursor" / "commands" / "ba-ticket-author.md").exists()
+        assert not (repo / "docs" / "tickets" / "TEMPLATE.md").exists()
+        assert not (repo / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
+
+
+def test_init_ba_config_has_kind_and_repo_id(tmp_path: Path):
+    repo = tmp_path / "my-ba-repo"
+    repo.mkdir()
+    init_repo(repo, "ba")
+    text = (repo / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "kind: ba" in text
+    assert 'hub: ""' in text
+    assert 'repo_id: "my-ba-repo"' in text
+    assert "{repo_id}" not in text
+
+
+def test_ba_mcp_json_reuses_child_template(tmp_path: Path):
+    ba_repo = tmp_path / "b"
+    child_repo = tmp_path / "c"
+    ba_repo.mkdir()
+    child_repo.mkdir()
+    init_repo(ba_repo, "ba")
+    init_repo(child_repo, "child")
+    assert (ba_repo / ".mcp.json").read_text(encoding="utf-8") == (
+        child_repo / ".mcp.json"
+    ).read_text(encoding="utf-8")
+    assert (ba_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8") == (
+        child_repo / ".cursor" / "mcp.json"
+    ).read_text(encoding="utf-8")
+
+
+def test_kb_ticket_lint_workflow_content(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    content = (
+        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
+    ).read_text(encoding="utf-8")
+    assert "pull_request" in content
+    assert 'paths: ["tickets/**.md"]' in content
+    assert "pip install center-kb" in content
+    assert "kb ticket lint" in content
+    assert "vars.CENTER_KB_HUB" in content
+    assert "secrets.KB_HUB_TOKEN" in content
+    # no hardcoded credential/URL — only GH Actions expressions
+    assert "kb.internal" not in content
+    assert "example.com" not in content
+    assert "ghp_" not in content  # no literal token-shaped string
+
+
+def test_quickstart_ba_content(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    text = (tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8")
+    assert "pip install center-kb" in text
+    assert "CENTER_KB_HUB_URL" in text
+    assert "CENTER_KB_HTTP_TOKEN" in text
+    assert "/ba-ticket-author" in text
+    assert "tickets/" in text
+    assert "DoR" in text
+    assert "Definition of Ready" in text
+    assert "branch" in text.lower()  # branch-protection note
+
+
+def test_cli_init_ba_next_steps(tmp_path: Path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "ba"])
+    assert result.exit_code == 0
+    assert "created" in result.output
+    assert "ba-ticket-author" in result.output
+    assert "QUICKSTART-BA.md" in result.output
+    assert "kb docker-setup" not in result.output
+    assert "kb ingest" not in result.output
+
+
+def test_cli_init_assets_rejected_for_ba(tmp_path: Path):
+    result = runner.invoke(
+        app, ["init", str(tmp_path), "--kind", "ba", "--assets", "s3"]
+    )
+    assert result.exit_code == 2
+    assert "hub" in result.output
+
+
+def test_resolve_kind_interactive_accepts_ba(tmp_path: Path, monkeypatch):
+    from center_kb import cli
+
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+    result = runner.invoke(app, ["init", str(tmp_path)], input="ba\n")
+    assert result.exit_code == 0
+    text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert text.count("kind: ba") == 1
+    assert (tmp_path / "QUICKSTART-BA.md").exists()
+
+
+def test_resolve_kind_interactive_rejects_invalid_then_accepts_ba(
+    tmp_path: Path, monkeypatch
+):
+    from center_kb import cli
+
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+    result = runner.invoke(app, ["init", str(tmp_path)], input="server\nba\n")
+    assert result.exit_code == 0
+    assert (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8").count(
+        "kind: ba"
+    ) == 1
+
+
+def test_config_load_accepts_kind_ba(tmp_path: Path):
+    from center_kb.config import load_config
+
+    kb_dir = tmp_path / ".kb"
+    kb_dir.mkdir()
+    (kb_dir / "config.yaml").write_text("kind: ba\nhub: ''\n", encoding="utf-8")
+    cfg = load_config(kb_dir)
+    assert cfg.kind == "ba"
