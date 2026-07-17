@@ -21,6 +21,10 @@ _IMMUTABLE = "private, max-age=31536000, immutable"
 RECORD_NAME = "_assets.yaml"
 _ASSET_NAME_RE = re.compile(r"^([0-9a-f]{64})\.(?:png|webp)$")
 
+# Well-known nonexistent key for reachability probes (doctor, kb assets):
+# a clean "not found" proves bucket + credentials + endpoint work.
+PROBE_NAME = "0" * 64 + ".png"
+
 
 class AssetStoreError(RuntimeError):
     """Store unreachable / misconfigured / operation failed."""
