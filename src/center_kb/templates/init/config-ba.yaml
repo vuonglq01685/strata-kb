@@ -1,0 +1,14 @@
+# CENTER-KB — repo config (commit to git).
+# kind: this repo's role. "ba" is a requirements repo — it drafts and
+#       versions tickets grounded in the shared KB via the
+#       ba-ticket-author skill; it never ingests, summarizes, or
+#       publishes KB content (that's what `child` repos do, reviewed on
+#       the `hub`).
+kind: ba
+# hub: git URL or kb-hub path of the MAIN HUB — used by `kb ticket lint`
+#      and `kb query` to ground tickets in cited, versioned facts.
+#      FILL THIS IN before drafting tickets.
+hub: ""
+# repo_id: repo name on the federation (pre-filled from the folder name;
+#          informational only — a ba repo never publishes)
+repo_id: "{repo_id}"

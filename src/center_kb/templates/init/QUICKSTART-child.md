@@ -80,3 +80,5 @@ the hub's `federation/`.
   (in your assistant: `/kb-publish` runs diff → confirm → publish)
 - `kb resolve <file>` — resolve a kb-context block and check freshness
 - `kb doctor` — sanity-check the setup
+- `kb ticket lint <file|->` — Definition-of-Ready gate for BA tickets (in
+  your assistant: part of /ba-ticket-author)

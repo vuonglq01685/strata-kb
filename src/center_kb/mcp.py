@@ -15,6 +15,7 @@ from mcp.server.fastmcp import FastMCP as MCPServer
 from center_kb import gitio, kbcontext
 from center_kb.query import get_section, search
 from center_kb.resolve import render_resolved, resolve_refs
+from center_kb.ticketlint import lint as lint_ticket
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
 
@@ -195,6 +196,19 @@ def create_server(config: ServerConfig) -> MCPServer:
         except gitio.GitError as exc:
             return f"git error: {exc}"
         return _stale_note(hub) + render_resolved(results)
+
+    @mcp.tool()
+    @_canonical_docstring
+    def kb_ticket_lint(ticket_markdown: str) -> str:
+        """Lint a draft ticket against the Definition of Ready: required
+        structure, story format, ACs, Mermaid diagrams, and kb-context refs
+        resolving at their pinned version. Run this before handing the
+        ticket to the BA; fix errors and re-run until PASS."""
+        hub = _hub()
+        if hub is None:
+            return HUB_DOWN
+        report = lint_ticket(ticket_markdown, hub)
+        return _stale_note(hub) + report.render()
 
     return mcp
 
