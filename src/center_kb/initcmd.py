@@ -60,6 +60,23 @@ PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml", ".kb/config.yaml"
 
 _KIND_LINE = re.compile(r"^kind:", re.MULTILINE)
 
+ASSET_MODES = ("none", "s3")
+_ASSET_STORE_LINE = re.compile(r"^asset_store:", re.MULTILINE)
+
+_ASSET_BLOCKS = {
+    "none": "asset_store:\n  mode: none\n",
+    "s3": (
+        "asset_store:\n"
+        "  # Object store for image assets. Fill bucket (and endpoint for\n"
+        "  # MinIO/R2); credentials come from the environment (boto3 chain).\n"
+        "  mode: s3\n"
+        '  bucket: ""\n'
+        '  region: ""\n'
+        '  endpoint: ""\n'
+        '  prefix: "assets/"\n'
+    ),
+}
+
 
 def template_map(kind: str) -> dict[str, str]:
     if kind not in KINDS:
@@ -77,6 +94,7 @@ class InitReport:
     created: list[str] = field(default_factory=list)
     updated: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 def _render(resource_name: str, text: str, repo_id: str) -> str:
@@ -107,7 +125,28 @@ def _record_kind(config_path: Path, kind: str) -> bool:
     return True
 
 
-def init_repo(target: Path, kind: str, force: bool = False) -> InitReport:
+def record_asset_store(config_path: Path, mode: str) -> str:
+    """Append an asset_store block to config.yaml when absent.
+
+    Append-only, like _record_kind: an existing block is the operator's
+    data and is never rewritten. Returns "recorded" | "exists" | "no-config".
+    """
+    if mode not in ASSET_MODES:
+        raise ValueError(f"assets mode must be one of {ASSET_MODES}, got '{mode}'")
+    if not config_path.exists():
+        return "no-config"
+    text = config_path.read_text(encoding="utf-8")
+    if _ASSET_STORE_LINE.search(text):
+        return "exists"
+    if text and not text.endswith("\n"):
+        text += "\n"
+    config_path.write_text(text + _ASSET_BLOCKS[mode], encoding="utf-8", newline="\n")
+    return "recorded"
+
+
+def init_repo(
+    target: Path, kind: str, force: bool = False, assets: str | None = None
+) -> InitReport:
     """Scaffold a KB repo as the given kind (hub | child).
 
     Default: create missing files and refresh scaffold templates whose content
@@ -141,4 +180,12 @@ def init_repo(target: Path, kind: str, force: bool = False) -> InitReport:
         if ".kb/config.yaml" in report.skipped:
             report.skipped.remove(".kb/config.yaml")
         report.updated.append(".kb/config.yaml (kind recorded)")
+    if assets is not None:
+        outcome = record_asset_store(target / ".kb" / "config.yaml", assets)
+        if outcome == "recorded":
+            report.updated.append(".kb/config.yaml (asset_store recorded)")
+        elif outcome == "exists":
+            report.notes.append(
+                "asset_store already configured in .kb/config.yaml — left unchanged"
+            )
     return report

@@ -45,6 +45,11 @@ class RepoKind(str, Enum):
     child = "child"
 
 
+class AssetsMode(str, Enum):
+    none = "none"
+    s3 = "s3"
+
+
 KIND_DESCRIPTIONS = """\
 This repo can be one of two kinds:
 
@@ -118,12 +123,25 @@ def init(
         "--force",
         help="Also overwrite protected data (.kb/index.yaml)",
     ),
+    assets: AssetsMode | None = typer.Option(
+        None,
+        "--assets",
+        help="Hub asset storage: none (assets in git, default) or s3 "
+        "(object store — spec B). Hub kind only.",
+    ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
     from center_kb.initcmd import init_repo
 
     resolved = _resolve_kind(path, kind)
-    report = init_repo(path, resolved, force=force)
+    if assets is not None and resolved != "hub":
+        typer.secho(
+            "--assets applies to hubs only — a child never configures asset "
+            "storage (bytes ride the publish transport to the hub).",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(2)
+    report = init_repo(path, resolved, force=force, assets=assets.value if assets else None)
     for rel in report.created:
         typer.echo(f"  created  {rel}")
     for rel in report.updated:
@@ -133,6 +151,8 @@ def init(
             f"  skipped  {rel} (protected data — use --force to overwrite)",
             fg=typer.colors.YELLOW,
         )
+    for note in report.notes:
+        typer.secho(f"  note     {note}", fg=typer.colors.YELLOW)
     typer.echo(
         f"kb init ({resolved}): {len(report.created)} created, "
         f"{len(report.updated)} updated, {len(report.skipped)} skipped."
@@ -147,6 +167,12 @@ def init(
             "  2. Open http://localhost:8321/ui    # Web UI (MCP HTTP on the same port)"
         )
         typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>")
+        if assets is AssetsMode.s3:
+            typer.echo(
+                "  4. Assets (s3): fill bucket/region/endpoint in .kb/config.yaml, "
+                'export credentials (AWS env chain), pip install "center-kb[s3]", '
+                "then: kb doctor"
+            )
     else:
         typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
         typer.echo(
