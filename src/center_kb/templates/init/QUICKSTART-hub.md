@@ -38,6 +38,38 @@ into it; merging their PRs here is the review gate.
    but the dev CLI will time out waiting for a PR that actually opened, and
    uploads lose incrementality (every publish becomes a full upload).
 
+## Asset storage
+
+Image assets (`assets/<sha256>.png|webp`, referenced from markdown) live
+either in git or in an S3-compatible object store, per `asset_store.mode` in
+the hub's `.kb/config.yaml`. Configured once, hub-side — a child never
+configures asset storage of its own.
+
+- **`mode: none`** (the default) — assets stay in git under
+  `federation/<rid>/assets/` and `.kb/<doc>/assets/`. Fine for a compressed
+  corpus; `kb doctor` warns once the total crosses ~100 MB, suggesting
+  `mode: s3` (`kb assets migrate`) or git-LFS.
+- **Switching to s3** — create a **private** bucket (block public access),
+  then credentials scoped to Get/Put/Head on the `assets/` prefix only.
+  Export them via the standard AWS env chain (`AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY` / region) — set `endpoint` in the config instead
+  for MinIO/R2 or another S3-compatible host. Install the extra:
+  `pip install "center-kb[s3]"`. Run `kb init --assets s3` (or hand-edit the
+  `asset_store:` block already in `.kb/config.yaml`) and fill in `bucket` /
+  `region` / `endpoint`. `kb doctor` confirms the store is reachable. If
+  assets already exist in git, `kb assets migrate` diverts them rid by rid
+  (idempotent, commits `federation/`); then `kb assets verify` confirms
+  every `_assets.yaml` record resolves and every markdown reference is
+  covered.
+- **Manual rollback (s3 → none)** — for each rid, download every
+  `assets/<sha>` named in that rid's `_assets.yaml` back into its tree,
+  delete the `_assets.yaml` files, set `mode: none`, and commit. The
+  local-first resolver keeps serving throughout, so there's no downtime.
+- **Large `mode: none` corpora** — if s3 isn't an option but the repo is
+  outgrowing plain git, git-LFS for `assets/**` is a reasonable alternative;
+  `center-kb` doesn't manage LFS itself, but the local-first read path works
+  either way.
+
 ## CLI reference
 
 - `kb init` — scaffold or refresh a KB repo (asks hub|child; updates skills/templates; keeps `.kb/index.yaml`)
