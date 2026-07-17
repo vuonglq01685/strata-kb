@@ -97,7 +97,13 @@ def test_search_api_finds_the_seeded_section(http_server):
     assert "Condensed via stub." in body
 
 
-EXPECTED_TOOLS = {"kb_search", "kb_get_section", "kb_context_new", "kb_resolve"}
+EXPECTED_TOOLS = {
+    "kb_search",
+    "kb_get_section",
+    "kb_context_new",
+    "kb_resolve",
+    "kb_ticket_lint",
+}
 
 
 async def _handshake(params):
@@ -112,7 +118,7 @@ async def _handshake(params):
             return tools, hit
 
 
-def test_mcp_stdio_exposes_exactly_the_four_tools(mcp_stdio_params):
+def test_mcp_stdio_exposes_exactly_the_five_tools(mcp_stdio_params):
     tools, hit = asyncio.run(_handshake(mcp_stdio_params))
 
     assert {t.name for t in tools.tools} == EXPECTED_TOOLS
