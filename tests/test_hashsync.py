@@ -23,7 +23,7 @@ class TestBuildManifest:
         _write(tmp_path, "a/one.md", "one")
         man = hashsync.build_manifest(tmp_path)
         assert list(man) == ["a/one.md", "b/two.md"]
-        # sha256("one") — giá trị cố định, manifest phải deterministic
+        # sha256("one") — fixed value, the manifest must be deterministic
         assert man["a/one.md"] == (
             "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"
         )

@@ -104,8 +104,8 @@ def test_reindex_builds_search_db(fed_hub, git_kb):
 
 
 def test_reindex_commits_index_before_search_sync(fed_hub, git_kb, run_git, monkeypatch):
-    # sync (embed) nổ vẫn phải lộ lỗi, nhưng federation/index.yaml rebuilt
-    # không được nằm uncommitted — commit trước, sync sau
+    # a sync (embed) blowup must still surface the error, but the rebuilt
+    # federation/index.yaml must not sit uncommitted — commit first, sync after
     from center_kb import searchdb as searchdb_mod
 
     (fed_hub / "federation" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
@@ -119,5 +119,5 @@ def test_reindex_commits_index_before_search_sync(fed_hub, git_kb, run_git, monk
     result = runner.invoke(
         app, ["reindex", "--hub", str(fed_hub), "--kb-dir", str(git_kb["kb"])]
     )
-    assert result.exit_code != 0  # lỗi embed strict — phải lộ
+    assert result.exit_code != 0  # strict embed error — must surface
     assert run_git(fed_hub, "status", "--porcelain", "--", "federation") == ""

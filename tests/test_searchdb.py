@@ -30,7 +30,7 @@ def test_open_db_creates_schema(tmp_path):
             "SELECT value FROM meta WHERE key='schema_version'"
         ).fetchone()
         assert ver == (searchdb.SCHEMA_VERSION,)
-        # WAL + busy_timeout đã set (spec §3.2)
+        # WAL + busy_timeout already set (spec §3.2)
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
     finally:
@@ -45,7 +45,7 @@ def test_open_db_rebuilds_on_schema_version_mismatch(tmp_path):
     conn.execute("INSERT INTO repos VALUES('old-repo', 'fp')")
     conn.commit()
     conn.close()
-    conn = searchdb.open_db(hub)  # version lệch → xoá + tạo lại
+    conn = searchdb.open_db(hub)  # version mismatch → delete + recreate
     try:
         assert conn.execute("SELECT COUNT(*) FROM repos").fetchone() == (0,)
         ver = conn.execute(
@@ -69,8 +69,8 @@ def test_open_db_rebuilds_on_corrupt_file(tmp_path):
 
 
 def test_open_db_warm_read_only_under_writer_lock(tmp_path, monkeypatch):
-    # schema đã có → open_db không được ghi gì — query phải chạy song song
-    # với một sync dài đang giữ writer lock (spec §3.2), index không bị đụng
+    # schema already exists → open_db must not write anything — query must run in
+    # parallel with a long sync holding the writer lock (spec §3.2), index untouched
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
     conn.execute("INSERT INTO repos VALUES('r', 'fp')")
@@ -78,9 +78,9 @@ def test_open_db_warm_read_only_under_writer_lock(tmp_path, monkeypatch):
     conn.close()
     monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
     holder = sqlite3.connect(searchdb.db_path(hub))
-    holder.execute("BEGIN IMMEDIATE")  # giữ write lock như một sync đang chạy
+    holder.execute("BEGIN IMMEDIATE")  # hold write lock like a running sync
     try:
-        conn = searchdb.open_db(hub)  # đọc thuần — không đợi, không lỗi
+        conn = searchdb.open_db(hub)  # pure read — no waiting, no error
         try:
             assert conn.execute("SELECT COUNT(*) FROM repos").fetchone() == (1,)
         finally:
@@ -91,14 +91,14 @@ def test_open_db_warm_read_only_under_writer_lock(tmp_path, monkeypatch):
 
 
 def test_open_db_cold_locked_raises_instead_of_rebuild(tmp_path, monkeypatch):
-    # chưa có schema thì open_db phải ghi — gặp lock: raise, tuyệt đối không
-    # coi là corruption mà xoá file (process khác đang tạo index)
+    # without a schema, open_db must write — on lock: raise, absolutely never
+    # treat it as corruption and delete the file (another process is creating the index)
     hub = _handle(tmp_path)
     path = searchdb.db_path(hub)
     path.parent.mkdir(parents=True)
     monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
     holder = sqlite3.connect(path)
-    holder.execute("BEGIN IMMEDIATE")  # lock trên file chưa có schema
+    holder.execute("BEGIN IMMEDIATE")  # lock on a file with no schema yet
     try:
         with pytest.raises(sqlite3.OperationalError):
             searchdb.open_db(hub)
@@ -108,8 +108,8 @@ def test_open_db_cold_locked_raises_instead_of_rebuild(tmp_path, monkeypatch):
 
 
 def test_open_db_corrupt_rebuild_leaves_no_open_connection(tmp_path, monkeypatch):
-    # connection mở dở trên file hỏng phải được close trước delete_db —
-    # Windows không unlink được file đang mở (spec windows-support §R5)
+    # a half-open connection on the corrupt file must be closed before delete_db —
+    # Windows cannot unlink an open file (spec windows-support §R5)
     hub = _handle(tmp_path)
     path = searchdb.db_path(hub)
     path.parent.mkdir(parents=True)
@@ -137,7 +137,7 @@ def test_delete_db_removes_wal_shm(tmp_path):
     conn.commit()
     conn.close()
     path = searchdb.db_path(hub)
-    # tạo file -wal/-shm giả để chắc chắn bị dọn
+    # create fake -wal/-shm files to make sure they get cleaned up
     (path.parent / (path.name + "-wal")).touch()
     (path.parent / (path.name + "-shm")).touch()
     searchdb.delete_db(hub)
@@ -154,7 +154,7 @@ def _bump_meta(entry, stamp="2026-07-14T09:00:00+00:00"):
 
 
 def test_fts_indexes_l2_beyond_500_chars(fed_hub):
-    # table nằm SAU summary dài — ngoài cửa sổ body_head cũ
+    # table sits AFTER a long summary — outside the old body_head window
     entry = fed_hub / "federation" / "arinc-kb"
     l2 = entry / "arinc-424" / "ch1.md"
     l2.write_text(
@@ -175,7 +175,7 @@ def test_fts_indexes_l2_beyond_500_chars(fed_hub):
 
 
 def test_fts_indexes_l3_only_terms(fed_hub):
-    # term chỉ tồn tại trong raw L3 (section fold) — L2 summary không nhắc
+    # term exists only in raw L3 (section fold) — L2 summary never mentions it
     entry = fed_hub / "federation" / "arinc-kb"
     l3 = entry / "arinc-424" / "ch1.raw.md"
     l3.write_text(
@@ -205,7 +205,7 @@ def test_sync_reindexes_when_only_l3_changes(fed_hub):
     )
     _bump_meta(entry)
     report = searchdb.sync(hub, None)
-    assert report.sections_updated == 1  # hash phủ body_l3 → re-index
+    assert report.sections_updated == 1  # hash covers body_l3 → re-index
 
 
 def test_sync_survives_missing_raw_md(fed_hub):
@@ -214,7 +214,7 @@ def test_sync_survives_missing_raw_md(fed_hub):
     _bump_meta(entry)
     hub = HubHandle(root=fed_hub)
     report = searchdb.sync(hub, None)
-    assert report.sections_updated >= 1  # không fail, body_l3 rỗng
+    assert report.sections_updated >= 1  # no failure, body_l3 empty
     conn = searchdb.open_db(hub)
     try:
         assert conn.execute("SELECT COUNT(*) FROM fts").fetchone() == (2,)
@@ -248,7 +248,7 @@ def test_bm25_title_match_outranks_l3_only_match(fed_hub, tmp_path):
         hits = searchdb.fts_search(conn, "corridor")
         rows = searchdb.load_sections(conn, [h[0] for h in hits])
         ranked = [rows[h[0]].section_id for h in hits]
-        assert ranked.index("1.1") < ranked.index("2.1")  # title+summary thắng L3 spam
+        assert ranked.index("1.1") < ranked.index("2.1")  # title+summary beats L3 spam
     finally:
         conn.close()
 
@@ -257,7 +257,7 @@ def test_sync_builds_sections_fts_tags(fed_hub):
     hub = HubHandle(root=fed_hub)
     report = searchdb.sync(hub, None)
     assert report.repos_synced == 2
-    assert report.sections_updated == 2  # mỗi repo fixture có 1 section
+    assert report.sections_updated == 2  # each fixture repo has 1 section
     conn = searchdb.open_db(hub)
     try:
         rows = conn.execute(
@@ -291,7 +291,7 @@ def test_sync_fingerprint_skip_reparses_nothing(fed_hub, monkeypatch):
         return real(path, model)
 
     monkeypatch.setattr(models, "load_yaml_model", spy)
-    report = searchdb.sync(hub, None)  # không repo nào đổi
+    report = searchdb.sync(hub, None)  # no repo changed
     assert report.repos_synced == 0
     assert report.sections_updated == 0
     assert manifest_loads == []  # 0 manifest parse (spec §3.4)
@@ -305,7 +305,7 @@ def test_sync_updates_only_changed_section(fed_hub):
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     manifest.sections[0].summary = "Changed summary about corridors."
     models.save_yaml_model(manifest_path, manifest)
-    _bump_meta(entry)  # publish thật luôn bump published_at
+    _bump_meta(entry)  # a real publish always bumps published_at
     report = searchdb.sync(hub, None)
     assert report.repos_synced == 1
     assert report.sections_updated == 1
@@ -313,7 +313,7 @@ def test_sync_updates_only_changed_section(fed_hub):
 
 
 def test_sync_unchanged_content_rewrites_nothing(fed_hub):
-    # fingerprint đổi (re-publish) nhưng content-hash từng section giữ nguyên
+    # fingerprint changes (re-publish) but each section's content-hash stays the same
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
     _bump_meta(fed_hub / "federation" / "arinc-kb")
@@ -323,19 +323,19 @@ def test_sync_unchanged_content_rewrites_nothing(fed_hub):
 
 
 def test_sync_content_hash_hit_refreshes_stale_section_metadata(fed_hub):
-    """content_hash phủ title+summary+body_l2+body_l3 — doc_revision/title/file
-    có thể lệch khỏi hub hiện tại (rename, bump revision) mà hash không đổi.
-    Phải refresh 3 cột này (citation/path đúng) mà không rewrite FTS/re-embed."""
+    """content_hash covers title+summary+body_l2+body_l3 — doc_revision/title/file
+    can drift from the current hub (rename, bump revision) without the hash changing.
+    Must refresh these 3 columns (correct citation/path) without rewriting FTS/re-embedding."""
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
     entry = fed_hub / "federation" / "arinc-kb"
     index_path = entry / "index.yaml"
     index = models.load_yaml_model(index_path, models.KBIndex)
-    index.docs[0].revision = "Supplement 23"  # bump revision, content giữ nguyên
+    index.docs[0].revision = "Supplement 23"  # bump revision, content unchanged
     models.save_yaml_model(index_path, index)
     manifest_path = entry / "arinc-424" / "_manifest.yaml"
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
-    manifest.sections[0].file = "ch1-renamed"  # rename file, content giữ nguyên
+    manifest.sections[0].file = "ch1-renamed"  # rename file, content unchanged
     models.save_yaml_model(manifest_path, manifest)
     (entry / "arinc-424" / "ch1-renamed.md").write_text(
         (entry / "arinc-424" / "ch1.md").read_text(encoding="utf-8"),
@@ -347,7 +347,7 @@ def test_sync_content_hash_hit_refreshes_stale_section_metadata(fed_hub):
     )
     report = searchdb.sync(hub, None)
     assert report.repos_synced == 1
-    assert report.sections_updated == 0  # nội dung section không đổi — không rewrite
+    assert report.sections_updated == 0  # section content unchanged — no rewrite
     conn = searchdb.open_db(hub)
     try:
         row = conn.execute(
@@ -362,7 +362,7 @@ def test_sync_content_hash_hit_refreshes_stale_section_metadata(fed_hub):
 def test_sync_deletes_removed_section_and_repo(fed_hub):
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
-    # xoá hẳn repo icao-kb khỏi federation
+    # remove repo icao-kb from the federation entirely
     import shutil
 
     shutil.rmtree(fed_hub / "federation" / "icao-kb")
@@ -386,7 +386,7 @@ def test_sync_removes_legacy_embedding_dbs(fed_hub):
     legacy.parent.mkdir(parents=True, exist_ok=True)
     legacy.write_bytes(b"old cache")
     searchdb.sync(hub, None)
-    assert not legacy.exists()  # spec §4: dọn cache cũ best-effort
+    assert not legacy.exists()  # spec §4: clean up old caches best-effort
 
 
 def test_open_fresh_returns_synced_connection(fed_hub):
@@ -429,9 +429,9 @@ def test_sync_without_embedder_then_backfill(fed_hub):
     hub = HubHandle(root=fed_hub)
     r1 = searchdb.sync(hub, None)  # FTS-only
     assert r1.embedded == 0
-    r2 = searchdb.sync(hub, FakeEmbedder())  # embedder xuất hiện → embed bù
+    r2 = searchdb.sync(hub, FakeEmbedder())  # embedder appears → backfill embeddings
     assert r2.embedded == 2
-    assert r2.sections_updated == 0  # không re-parse manifest
+    assert r2.sections_updated == 0  # no manifest re-parse
 
 
 def test_sync_reembeds_only_changed_section(fed_hub):
@@ -445,16 +445,16 @@ def test_sync_reembeds_only_changed_section(fed_hub):
     _bump_meta(entry)
     report = searchdb.sync(hub, FakeEmbedder())
     assert report.embedded == 1
-    assert _vec_count(hub) == 2  # row cũ xoá, row mới thêm
+    assert _vec_count(hub) == 2  # old row deleted, new row added
 
 
 def test_sync_warm_full_vec_coverage_skips_embed_call(fed_hub):
-    """Mọi search() gọi open_fresh → _sync_vectors — với embedder có mặt, sync
-    warm (đã embed đủ) trước đây phải load TOÀN BỘ sections JOIN fts vào Python
-    để tìm rowid thiếu embedding, mỗi lần search. Warm sync giờ không được gọi
-    embedder.embed() (spy đếm) và report.embedded phải = 0."""
+    """Every search() calls open_fresh → _sync_vectors — with an embedder present,
+    a warm sync (fully embedded) previously had to load ALL sections JOIN fts into
+    Python to find rowids missing embeddings, on every search. A warm sync must now
+    not call embedder.embed() (counting spy) and report.embedded must be 0."""
     hub = HubHandle(root=fed_hub)
-    searchdb.sync(hub, FakeEmbedder())  # cold: embed toàn bộ, vec coverage đủ
+    searchdb.sync(hub, FakeEmbedder())  # cold: embed everything, vec coverage complete
 
     class CountingEmbedder(FakeEmbedder):
         def __init__(self):
@@ -465,11 +465,11 @@ def test_sync_warm_full_vec_coverage_skips_embed_call(fed_hub):
             return super().embed(texts)
 
     counting = CountingEmbedder()
-    report = searchdb.sync(hub, counting)  # warm: vec coverage đã đủ
+    report = searchdb.sync(hub, counting)  # warm: vec coverage already complete
     assert report.embedded == 0
-    assert counting.calls == 0  # không gọi embedder.embed() — không có gì để embed
+    assert counting.calls == 0  # no embedder.embed() call — nothing to embed
 
-    conn = searchdb.open_fresh(hub, counting)  # lazy check qua open_fresh cũng vậy
+    conn = searchdb.open_fresh(hub, counting)  # lazy check via open_fresh, same thing
     try:
         assert counting.calls == 0
     finally:
@@ -484,7 +484,7 @@ def test_sync_model_change_rebuilds_vec_table(fed_hub):
         name = "fake-4d-v2"
 
     report = searchdb.sync(hub, V2())
-    assert report.embedded == 2  # re-embed toàn bộ
+    assert report.embedded == 2  # re-embed everything
     conn = searchdb.open_db(hub)
     try:
         meta = dict(conn.execute("SELECT key, value FROM meta"))
@@ -494,7 +494,7 @@ def test_sync_model_change_rebuilds_vec_table(fed_hub):
 
 
 class _BadDimEmbedder:
-    """Khai dim=4 nhưng trả vector 3 chiều."""
+    """Declares dim=4 but returns 3-dimensional vectors."""
 
     dim = 4
     name = "bad-dim"
@@ -509,7 +509,7 @@ def test_sync_raises_on_wrong_vector_dim(fed_hub):
 
 
 def test_sync_strict_raises_on_embedder_failure(fed_hub):
-    # kb reindex phải thấy lỗi embed (strict) — chỉ query path mới degrade
+    # kb reindex must see the embed error (strict) — only the query path degrades
     class Broken(FakeEmbedder):
         def embed(self, texts):
             raise RuntimeError("boom")
@@ -519,11 +519,11 @@ def test_sync_strict_raises_on_embedder_failure(fed_hub):
 
 
 def test_interrupted_model_change_backfill_resumes(fed_hub, monkeypatch):
-    # đổi model → drop/recreate vec + seal meta model mới ở commit batch đầu;
-    # nếu backfill bị ngắt giữa chừng, vec_coverage phải dirty — sync sau
-    # quét tiếp, không được kẹt 'complete' còn sót từ model cũ
+    # model change → drop/recreate vec + seal the new model meta at the first batch
+    # commit; if backfill is interrupted midway, vec_coverage must be dirty — the next
+    # sync keeps scanning, must not get stuck on a leftover 'complete' from the old model
     hub = HubHandle(root=fed_hub)
-    searchdb.sync(hub, FakeEmbedder())  # model cũ, coverage complete
+    searchdb.sync(hub, FakeEmbedder())  # old model, coverage complete
 
     class NewModel(FakeEmbedder):
         name = "fake-4d-v2"
@@ -539,9 +539,9 @@ def test_interrupted_model_change_backfill_resumes(fed_hub, monkeypatch):
 
     monkeypatch.setattr(searchdb, "_EMBED_BATCH", 1)
     with pytest.raises(RuntimeError):
-        searchdb.sync(hub, FlakyNewModel())  # batch 1 commit rồi nổ
-    report = searchdb.sync(hub, NewModel())  # cùng model mới, chạy lành
-    assert report.embedded == 1  # phần thiếu được quét tiếp
+        searchdb.sync(hub, FlakyNewModel())  # batch 1 commits, then blows up
+    report = searchdb.sync(hub, NewModel())  # same new model, clean run
+    assert report.embedded == 1  # the missing part gets picked up by the scan
     conn = searchdb.open_db(hub)
     try:
         n_sec = conn.execute("SELECT COUNT(*) FROM sections").fetchone()[0]
@@ -552,8 +552,9 @@ def test_interrupted_model_change_backfill_resumes(fed_hub, monkeypatch):
 
 
 def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
-    # spec §5: thua race chỉ tốn công — không được vỡ UNIQUE (rồi bị query
-    # path coi là corruption mà xoá index process thắng đang ghi)
+    # spec §5: losing the race only wastes work — must not break UNIQUE (and then
+    # have the query path treat it as corruption and delete the index the winning
+    # process is writing)
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
     entry = fed_hub / "federation" / "arinc-kb"
@@ -569,11 +570,11 @@ def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
     def hook(kb_dir, doc_id, sec):
         if not fired["done"]:
             fired["done"] = True
-            searchdb.sync(hub, None)  # process B thắng race trên connection riêng
+            searchdb.sync(hub, None)  # process B wins the race on its own connection
         return real_parts(kb_dir, doc_id, sec)
 
     monkeypatch.setattr(searchdb, "_section_parts", hook)
-    searchdb.sync(hub, None)  # A thua race — phải idempotent, không nổ
+    searchdb.sync(hub, None)  # A loses the race — must be idempotent, no blow-up
     conn = searchdb.open_db(hub)
     try:
         assert conn.execute("SELECT COUNT(*) FROM sections").fetchone() == (2,)
@@ -583,8 +584,8 @@ def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
 
 
 def test_vector_backfill_survives_low_sql_variable_limit(tmp_path, monkeypatch):
-    # nhiều build SQLite giới hạn SQLITE_MAX_VARIABLE_NUMBER=32766 — backfill
-    # 100k section phải chunk IN(...) thay vì 1 bind/section trong 1 câu SQL
+    # many SQLite builds cap SQLITE_MAX_VARIABLE_NUMBER=32766 — backfilling
+    # 100k sections must chunk IN(...) instead of 1 bind/section in a single SQL statement
     from center_kb.federation import FederationMeta
 
     hub = _handle(tmp_path)
@@ -625,14 +626,14 @@ def test_vector_backfill_survives_low_sql_variable_limit(tmp_path, monkeypatch):
         return conn, vec
 
     monkeypatch.setattr(searchdb, "_raw_connect", limited)
-    monkeypatch.setattr(searchdb, "_EMBED_BATCH", 4)  # chunk phải lọt limit 8
+    monkeypatch.setattr(searchdb, "_EMBED_BATCH", 4)  # chunks must fit within limit 8
     report = searchdb.sync(hub, FakeEmbedder())
     assert report.embedded == 10
 
 
 def test_is_lock_error_matches_by_errorname():
-    # SQLITE_PROTOCOL hiện là "locking protocol" — substring "locked"/"busy"
-    # trượt → từng bị coi là corruption. Match theo sqlite_errorname.
+    # SQLITE_PROTOCOL renders as "locking protocol" — substring "locked"/"busy"
+    # misses → used to be treated as corruption. Match by sqlite_errorname.
     class _ProtocolErr(sqlite3.OperationalError):
         sqlite_errorname = "SQLITE_PROTOCOL"
 
@@ -646,10 +647,10 @@ def test_is_lock_error_matches_by_errorname():
 
 
 def test_sync_commits_per_repo_midway_failure_keeps_finished_repos(fed_hub):
-    # cold sync bị ngắt giữa chừng không được mất repo đã xong — commit per
-    # repo (đồng thời thu hẹp writer-lock window cho process đọc song song)
+    # a cold sync interrupted midway must not lose finished repos — commit per
+    # repo (also narrows the writer-lock window for concurrently reading processes)
     hub = HubHandle(root=fed_hub)
-    # load_federation sort theo tên: arinc-kb sync trước, icao-kb hỏng → nổ sau
+    # load_federation sorts by name: arinc-kb syncs first, broken icao-kb blows up after
     bad = fed_hub / "federation" / "icao-kb" / "icao-annex-2" / "_manifest.yaml"
     bad.write_text("{{{ not valid yaml", encoding="utf-8")
     with pytest.raises(Exception):
@@ -667,8 +668,9 @@ def test_sync_commits_per_repo_midway_failure_keeps_finished_repos(fed_hub):
 
 
 def test_warm_sync_skips_vector_scan_when_coverage_complete(fed_hub):
-    # anti-join dò rowid thiếu embedding từng chạy O(N) MỖI query dù warm —
-    # meta 'vec_coverage=complete' phải skip nó khi không có section mới
+    # the anti-join probing for rowids missing embeddings used to run O(N) on EVERY
+    # query even warm — meta 'vec_coverage=complete' must skip it when there are no
+    # new sections
     hub = HubHandle(root=fed_hub)
     emb = FakeEmbedder()
     searchdb.sync(hub, emb)
@@ -678,22 +680,22 @@ def test_warm_sync_skips_vector_scan_when_coverage_complete(fed_hub):
     )
     conn.commit()
     conn.close()
-    searchdb.sync(hub, emb)  # warm no-op — không được quét lại
+    searchdb.sync(hub, emb)  # warm no-op — must not rescan
     conn = searchdb.open_db(hub)
     try:
         n_sec = conn.execute("SELECT COUNT(*) FROM sections").fetchone()[0]
         n_vec = conn.execute("SELECT COUNT(*) FROM vec_sections").fetchone()[0]
-        assert n_vec == n_sec - 1  # lỗ nhân tạo còn nguyên = scan đã skip
+        assert n_vec == n_sec - 1  # artificial hole intact = scan was skipped
     finally:
         conn.close()
-    # section đổi nội dung → insert mới → coverage dirty → scan lại, vá cả lỗ
+    # section content changes → new insert → coverage dirty → rescan, patches the hole too
     entry = fed_hub / "federation" / "arinc-kb"
     l2 = entry / "arinc-424" / "ch1.md"
     l2.write_text(
         l2.read_text(encoding="utf-8").replace("designation codes", "NEW codes"),
         encoding="utf-8",
     )
-    _bump_meta(entry)  # đổi fingerprint để repo không bị skip
+    _bump_meta(entry)  # change fingerprint so the repo is not skipped
     searchdb.sync(hub, emb)
     conn = searchdb.open_db(hub)
     try:
@@ -710,9 +712,9 @@ def test_fts_search_ranks_and_filters(fed_hub):
         hits = searchdb.fts_search(conn, "restrictive airspace designation")
         assert hits  # (rowid, score) sort best-first
         rows = searchdb.load_sections(conn, [h[0] for h in hits])
-        assert rows[hits[0][0]].repo_id == "arinc-kb"  # nhiều term trùng nhất
+        assert rows[hits[0][0]].repo_id == "arinc-kb"  # most matching terms
         assert all(h[1] > 0 for h in hits)
-        # cả hai repo đều chứa 'airspace'
+        # both repos contain 'airspace'
         hits_all = searchdb.fts_search(conn, "airspace")
         assert len(hits_all) == 2
     finally:
@@ -725,7 +727,7 @@ def test_fts_search_tag_filter_in_sql(fed_hub):
         hits = searchdb.fts_search(conn, "airspace", tags=["arinc424"])
         rows = searchdb.load_sections(conn, [h[0] for h in hits])
         assert rows and all(r.repo_id == "arinc-kb" for r in rows.values())
-        # doc_id cũng hoạt động như tag
+        # doc_id also works as a tag
         hits2 = searchdb.fts_search(conn, "airspace", tags=["icao-annex-2"])
         rows2 = searchdb.load_sections(conn, [h[0] for h in hits2])
         assert rows2 and all(r.repo_id == "icao-kb" for r in rows2.values())
@@ -736,9 +738,9 @@ def test_fts_search_tag_filter_in_sql(fed_hub):
 def test_fts_search_escapes_fts_syntax(fed_hub):
     conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)
     try:
-        # không được nổ syntax error với input chứa cú pháp FTS5
+        # must not blow up with a syntax error on input containing FTS5 syntax
         for q in ['NEAR(airspace records)', 'title:"x" OR *', 'a"b', "air-space"]:
-            searchdb.fts_search(conn, q)  # chỉ cần không raise
+            searchdb.fts_search(conn, q)  # just must not raise
         assert searchdb.fts_search(conn, "") == []
         assert searchdb.fts_search(conn, "!!! ???") == []
     finally:
@@ -759,11 +761,11 @@ def test_knn_search_ranks_and_min_score(fed_hub):
     emb = FakeEmbedder()
     conn = searchdb.open_fresh(hub, emb)
     try:
-        # 'corridor' → axis airspace: cả 2 section airspace đều match
+        # 'corridor' → airspace axis: both airspace sections match
         hits = searchdb.knn_search(conn, emb, "corridor clearance")
         assert len(hits) == 2
         assert all(score >= 0.6 for _, score in hits)  # SEMANTIC_MIN_SCORE
-        # garbage: mọi score dưới ngưỡng → rỗng, không pad nearest-but-irrelevant
+        # garbage: every score below threshold → empty, no nearest-but-irrelevant padding
         assert searchdb.knn_search(conn, emb, "zzz qqq xxx") == []
     finally:
         conn.close()
@@ -782,7 +784,7 @@ def test_knn_search_tag_filter_post_knn(fed_hub):
 
 
 def test_knn_search_without_vec_table_returns_empty(fed_hub):
-    conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)  # chưa từng embed
+    conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)  # never embedded
     try:
         assert searchdb.knn_search(conn, FakeEmbedder(), "corridor") == []
     finally:
@@ -797,10 +799,10 @@ def test_rrf_merge_modes_and_order():
     assert by_id[2][1] == "hybrid"
     assert by_id[1][1] == "keyword"
     assert by_id[3][1] == "semantic"
-    # rowid 2 xuất hiện ở cả 2 leg → score cao nhất
+    # rowid 2 appears in both legs → highest score
     assert fused[0][0] == 2
     assert fused[0][1] == pytest.approx(1 / 62 + 1 / 61)
-    # tie (1 và 3 cùng 1/61? không — 1 rank1 fts = 1/61, 3 rank2 knn = 1/62)
+    # tie (1 and 3 both 1/61? no — 1 rank1 fts = 1/61, 3 rank2 knn = 1/62)
     assert by_id[1][0] == pytest.approx(1 / 61)
     assert by_id[3][0] == pytest.approx(1 / 62)
 
@@ -827,6 +829,6 @@ def test_rrf_merge_single_leg_and_tie_determinism():
     assert searchdb.rrf_merge([], []) == []
     only_fts = searchdb.rrf_merge([(7, 3.0)], [])
     assert only_fts == [(7, pytest.approx(1 / 61), "keyword")]
-    # tie score → sort theo rowid tăng dần, deterministic
+    # tie score → sort by ascending rowid, deterministic
     tie = searchdb.rrf_merge([(5, 1.0)], [(4, 1.0)])
     assert [t[0] for t in tie] == [4, 5]

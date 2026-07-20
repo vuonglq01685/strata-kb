@@ -195,164 +195,186 @@ def _split_front_matter(
     return items[:split], items[split:]
 
 
+class _TreeBuilder:
+    """One pass over DocItems -> section tree. State that the old inline loop
+    shared across branches (open-node stack, seen paths, buffered orphans)
+    lives on the instance so each heading kind gets its own focused method."""
+
+    def __init__(self, cfg: HeadingConfig, part: Part | None) -> None:
+        self.cfg = cfg
+        self.part = part
+        self.root = _Node(id="", title="", depth=0)
+        self.stack: list[_Node] = [self.root]
+        if part is not None and not part.id[:1].isdigit():
+            part_node = _Node(id=part.id, title=part.title, depth=1)
+            self.root.children.append(part_node)
+            self.stack.append(part_node)
+        self.fallback_seq = 0
+        # sid -> saved stack path (root..node) from when the node was first
+        # seen. Lets a repeated heading (e.g. a running page header) reopen
+        # its original node instead of spawning a duplicate.
+        self.seen: dict[str, list[_Node]] = {}
+        # numeric parent id -> orphan nodes buffered under it. Docling can
+        # emit a numbered sub-clause before its structural parent heading
+        # (a reading-order artifact, not a document defect -- e.g. a
+        # centered "3.6.3" heading physically above a left-margin "3.6.3.1.1"
+        # heading gets traversed out of order). When that happens the child
+        # would otherwise attach to whatever ancestor is still open (a
+        # sibling like "3.6.2"), contaminating it. Buffer it instead and
+        # splice it under its true parent once that parent opens; if the
+        # parent never opens (skip-level numbering is legitimate elsewhere
+        # in this corpus), attach it at the root at the end so content is
+        # never silently dropped.
+        self.pending_orphans: dict[str, list[_Node]] = {}
+        self.last_page: int | None = None
+
+    def feed(self, item: DocItem) -> None:
+        if item.page is not None:
+            self.last_page = item.page
+        if item.kind != "heading":
+            if item.text.strip():
+                self.stack[-1].body.append(item.text.strip())
+            return
+        normalized = " ".join(item.text.split())
+        if not any(ch.isalnum() for ch in normalized):
+            # Horizontal-rule / footnote-separator artifact ("_____",
+            # "---"): pure graphics, no content -- skip entirely so it
+            # never opens a fallback node.
+            return
+        if normalized.endswith(":"):
+            # List intro / field label misclassified as a heading (e.g.
+            # "Source/Content:" or "1.Material comprising the Annex
+            # proper:") -- demote to text in the current node so it can
+            # never open a spurious section.
+            self.stack[-1].body.append(f"**{normalized}**")
+            return
+        parsed = parse_section_id(normalized, self.cfg)
+        if parsed:
+            self._attach_parsed(normalized, *parsed)
+        else:
+            self._attach_fallback(normalized)
+
+    def _namespace(self, sid: str, depth: int, normalized: str) -> tuple[str, int]:
+        """ICAO appendices and attachments restart numeric numbering ("1.",
+        "2.1"...). Namespace the id under the appendix/attachment top-level
+        node so appendix "2.1" becomes "appendix-3-2.1" and never collides
+        with chapter section "2.1". Only appendix and attachment nodes
+        namespace, plus a seeded part-root node (per-part tree building):
+        numeric chapters after a front-matter fallback node (FOREWORD) must
+        open normally at root."""
+        top = self.stack[1] if len(self.stack) > 1 else None
+        if (
+            sid[0].isdigit()
+            and top is not None
+            and (
+                top.id.startswith(("appendix-", "attachment-"))
+                or (
+                    self.part is not None
+                    and not self.part.id[:1].isdigit()
+                    and top.id == self.part.id
+                )
+            )
+            and not self.cfg.chapter_re.match(normalized)
+        ):
+            return f"{top.id}-{sid}", depth + 1
+        return sid, depth
+
+    def _attach_parsed(self, normalized: str, sid: str, title: str) -> None:
+        depth = _depth_of(sid)
+        sid, depth = self._namespace(sid, depth, normalized)
+        if any(n.id == sid for n in self.stack):
+            # Heading repeats a node already open (self or ancestor),
+            # e.g. a running page header mid-section -> no-op so the
+            # following content keeps accumulating where it belongs.
+            return
+        if sid in self.seen:
+            self.stack = list(self.seen[sid])
+            return
+        while self.stack[-1].depth >= depth:
+            self.stack.pop()
+        anchor = self.stack[-1]
+        node = _Node(id=sid, title=title, depth=depth, page=self.last_page)
+        # Detect the orphan pattern: a numeric id whose current
+        # attachment point is neither itself nor a real dotted/
+        # namespaced ancestor of it. A legitimate skip-level
+        # heading (child attaching under a valid but non-immediate
+        # ancestor) still passes this check, since the ancestor's
+        # id remains a genuine prefix of the child's id.
+        is_orphan = (
+            sid[0].isdigit()
+            and "." in sid
+            and anchor is not self.root
+            and anchor.id
+            and sid != anchor.id
+            and not sid.startswith(anchor.id + ".")
+            and not sid.startswith(anchor.id + "-")
+        )
+        if is_orphan:
+            parent_sid = sid.rsplit(".", 1)[0]
+            self.pending_orphans.setdefault(parent_sid, []).append(node)
+        else:
+            anchor.children.append(node)
+        self.stack.append(node)
+        self.seen[sid] = list(self.stack)
+        if sid in self.pending_orphans:
+            node.children.extend(self.pending_orphans.pop(sid))
+
+    def _attach_fallback(self, normalized: str) -> None:
+        # Unparsed heading -> named after its title so SMEs can read
+        # the id. Consecutive fallbacks are siblings (never x1-x2-x3
+        # chains): pop any open fallback before attaching.
+        while self.stack[-1].fallback:
+            self.stack.pop()
+        parent = self.stack[-1]
+        slug = _fallback_slug(normalized)
+        if not slug:
+            if any(ch.isdigit() for ch in normalized):
+                # Bare page number leaked in as a heading — content
+                # noise, not structure: demote to body text so it
+                # never opens an opaque x{n} section.
+                self.stack[-1].body.append(normalized)
+                return
+            self.fallback_seq += 1
+            slug = f"x{self.fallback_seq}"
+            logger.warning(
+                "synthetic fallback id %r for unparsed heading %r",
+                slug,
+                normalized,
+            )
+        sid = f"{parent.id}-{slug}" if parent.id else slug
+        if any(n.id == sid for n in self.stack):
+            return
+        if sid in self.seen:
+            # Same heading again (running page header) -> reopen.
+            self.stack = list(self.seen[sid])
+            return
+        node = _Node(
+            id=sid, title=normalized, depth=parent.depth + 1,
+            fallback=True, page=self.last_page,
+        )
+        parent.children.append(node)
+        self.stack.append(node)
+        self.seen[sid] = list(self.stack)
+
+    def finish(self) -> _Node:
+        # Any buffered orphan whose implied parent never showed up in this
+        # item stream (legitimate skip-level numbering, or a parent lost to
+        # some other extraction issue) still needs a home -- attach it at
+        # the root rather than lose it.
+        for orphans in self.pending_orphans.values():
+            self.root.children.extend(orphans)
+        return self.root
+
+
 def _build_tree(
     items: list[DocItem],
     config: HeadingConfig | None = None,
     part: Part | None = None,
 ) -> _Node:
-    cfg = config or _DEFAULT_CONFIG
-    root = _Node(id="", title="", depth=0)
-    stack = [root]
-    if part is not None and not part.id[:1].isdigit():
-        part_node = _Node(id=part.id, title=part.title, depth=1)
-        root.children.append(part_node)
-        stack.append(part_node)
-    fallback_seq = 0
-    # sid -> saved stack path (root..node) from when the node was first seen.
-    # Lets a repeated heading (e.g. a running page header) reopen its
-    # original node instead of spawning a duplicate.
-    seen: dict[str, list[_Node]] = {}
-    # numeric parent id -> orphan nodes buffered under it. Docling can
-    # emit a numbered sub-clause before its structural parent heading
-    # (a reading-order artifact, not a document defect -- e.g. a
-    # centered "3.6.3" heading physically above a left-margin "3.6.3.1.1"
-    # heading gets traversed out of order). When that happens the child
-    # would otherwise attach to whatever ancestor is still open (a
-    # sibling like "3.6.2"), contaminating it. Buffer it instead and
-    # splice it under its true parent once that parent opens; if the
-    # parent never opens (skip-level numbering is legitimate elsewhere
-    # in this corpus), attach it at the root at the end so content is
-    # never silently dropped.
-    pending_orphans: dict[str, list[_Node]] = {}
-    last_page: int | None = None
+    builder = _TreeBuilder(config or _DEFAULT_CONFIG, part)
     for item in items:
-        if item.page is not None:
-            last_page = item.page
-        if item.kind == "heading":
-            normalized = " ".join(item.text.split())
-            if not any(ch.isalnum() for ch in normalized):
-                # Horizontal-rule / footnote-separator artifact ("_____",
-                # "---"): pure graphics, no content -- skip entirely so it
-                # never opens a fallback node.
-                continue
-            if normalized.endswith(":"):
-                # List intro / field label misclassified as a heading (e.g.
-                # "Source/Content:" or "1.Material comprising the Annex
-                # proper:") -- demote to text in the current node so it can
-                # never open a spurious section.
-                stack[-1].body.append(f"**{normalized}**")
-                continue
-            parsed = parse_section_id(normalized, cfg)
-            if parsed:
-                sid, title = parsed
-                depth = _depth_of(sid)
-                top = stack[1] if len(stack) > 1 else None
-                if (
-                    sid[0].isdigit()
-                    and top is not None
-                    and (
-                        top.id.startswith(("appendix-", "attachment-"))
-                        or (
-                            part is not None
-                            and not part.id[:1].isdigit()
-                            and top.id == part.id
-                        )
-                    )
-                    and not cfg.chapter_re.match(normalized)
-                ):
-                    # ICAO appendices and attachments restart numeric
-                    # numbering ("1.", "2.1"...). Namespace the id under the
-                    # appendix/attachment top-level node so appendix "2.1"
-                    # becomes "appendix-3-2.1" and never collides with
-                    # chapter section "2.1". Only appendix and attachment
-                    # nodes namespace, plus a seeded part-root node
-                    # (per-part tree building): numeric chapters after a
-                    # front-matter fallback node (FOREWORD) must open
-                    # normally at root.
-                    sid = f"{top.id}-{sid}"
-                    depth += 1
-                if any(n.id == sid for n in stack):
-                    # Heading repeats a node already open (self or ancestor),
-                    # e.g. a running page header mid-section -> no-op so the
-                    # following content keeps accumulating where it belongs.
-                    continue
-                if sid in seen:
-                    stack = list(seen[sid])
-                    continue
-                while stack[-1].depth >= depth:
-                    stack.pop()
-                anchor = stack[-1]
-                node = _Node(id=sid, title=title, depth=depth, page=last_page)
-                # Detect the orphan pattern: a numeric id whose current
-                # attachment point is neither itself nor a real dotted/
-                # namespaced ancestor of it. A legitimate skip-level
-                # heading (child attaching under a valid but non-immediate
-                # ancestor) still passes this check, since the ancestor's
-                # id remains a genuine prefix of the child's id.
-                is_orphan = (
-                    sid[0].isdigit()
-                    and "." in sid
-                    and anchor is not root
-                    and anchor.id
-                    and sid != anchor.id
-                    and not sid.startswith(anchor.id + ".")
-                    and not sid.startswith(anchor.id + "-")
-                )
-                if is_orphan:
-                    parent_sid = sid.rsplit(".", 1)[0]
-                    pending_orphans.setdefault(parent_sid, []).append(node)
-                else:
-                    anchor.children.append(node)
-                stack.append(node)
-                seen[sid] = list(stack)
-                if sid in pending_orphans:
-                    node.children.extend(pending_orphans.pop(sid))
-            else:
-                # Unparsed heading -> named after its title so SMEs can read
-                # the id. Consecutive fallbacks are siblings (never x1-x2-x3
-                # chains): pop any open fallback before attaching.
-                while stack[-1].fallback:
-                    stack.pop()
-                parent = stack[-1]
-                slug = _fallback_slug(normalized)
-                if not slug:
-                    if any(ch.isdigit() for ch in normalized):
-                        # Bare page number leaked in as a heading — content
-                        # noise, not structure: demote to body text so it
-                        # never opens an opaque x{n} section.
-                        stack[-1].body.append(normalized)
-                        continue
-                    fallback_seq += 1
-                    slug = f"x{fallback_seq}"
-                    logger.warning(
-                        "synthetic fallback id %r for unparsed heading %r",
-                        slug,
-                        normalized,
-                    )
-                sid = f"{parent.id}-{slug}" if parent.id else slug
-                if any(n.id == sid for n in stack):
-                    continue
-                if sid in seen:
-                    # Same heading again (running page header) -> reopen.
-                    stack = list(seen[sid])
-                    continue
-                node = _Node(
-                    id=sid, title=normalized, depth=parent.depth + 1,
-                    fallback=True, page=last_page,
-                )
-                parent.children.append(node)
-                stack.append(node)
-                seen[sid] = list(stack)
-        else:
-            if item.text.strip():
-                stack[-1].body.append(item.text.strip())
-    # Any buffered orphan whose implied parent never showed up in this
-    # item stream (legitimate skip-level numbering, or a parent lost to
-    # some other extraction issue) still needs a home -- attach it at
-    # the root rather than lose it.
-    for orphans in pending_orphans.values():
-        root.children.extend(orphans)
-    return root
+        builder.feed(item)
+    return builder.finish()
 
 
 def _subtree_md(node: _Node) -> str:
@@ -392,16 +414,16 @@ def build_units(
     if not parts:
         cfg = config or _DEFAULT_CONFIG
         front, rest = _split_front_matter(items, cfg)
-        units = []
+        front_units: list[SectionUnit] = []
         if front:
             froot = _build_tree(
                 front, config, part=Part("front-matter", "Front Matter", 1)
             )
-            units += _units_from_tree(
+            front_units = _units_from_tree(
                 froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
             )
         root = _build_tree(rest, config)
-        return order_units(units + _units_from_tree(
+        return order_units(front_units + _units_from_tree(
             root, max_depth, min_tokens, max_unit_tokens, None
         ))
     units: list[SectionUnit] = []

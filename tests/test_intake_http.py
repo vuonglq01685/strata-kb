@@ -42,7 +42,7 @@ def keypair():
 
 @pytest.fixture
 def hub_with_registry(tmp_path):
-    """Hub local có registry ánh xạ acme/flight-docs → flight-docs."""
+    """Local hub with a registry mapping acme/flight-docs → flight-docs."""
     bare = tmp_path / "origin.git"
     seed = tmp_path / "seed"
     seed.mkdir()
@@ -155,11 +155,38 @@ def test_publish_bad_ref_403(client):
     assert resp.status_code == 403
 
 
+def _get_manifest(client, token, rid="flight-docs"):
+    return client.get(
+        "/intake/manifest",
+        params={"repo_id": rid},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
 def test_manifest_unknown_repo_returns_empty(client):
-    c, _ = client
-    resp = c.get("/intake/manifest", params={"repo_id": "flight-docs"})
+    c, pem = client
+    resp = _get_manifest(c, _jwt(pem))
     assert resp.status_code == 200
     assert resp.json() == {"files": {}}
+
+
+def test_manifest_no_token_401(client):
+    c, _ = client
+    resp = c.get("/intake/manifest", params={"repo_id": "flight-docs"})
+    assert resp.status_code == 401
+
+
+def test_manifest_repo_id_of_another_tenant_403(client):
+    """Valid OIDC for acme/flight-docs must not read another repo's manifest."""
+    c, pem = client
+    resp = _get_manifest(c, _jwt(pem), rid="other-tenant")
+    assert resp.status_code == 403
+
+
+def test_manifest_bad_ref_403(client):
+    c, pem = client
+    resp = _get_manifest(c, _jwt(pem, ref="refs/heads/main"))
+    assert resp.status_code == 403
 
 
 def test_status_unknown_404(client):
@@ -168,10 +195,13 @@ def test_status_unknown_404(client):
     assert resp.status_code == 404
 
 
-def test_auth_middleware_exempts_intake():
+def test_auth_middleware_exempts_exact_intake_paths_only():
+    """No prefix wildcard: a future /intake/* route must not be exposed by accident."""
     from center_kb.web import auth
 
-    assert "/intake/" in auth.EXEMPT_PREFIXES
+    assert all(not p.startswith("/intake") for p in auth.EXEMPT_PREFIXES)
+    for path in ("/intake/publish", "/intake/manifest", "/intake/status"):
+        assert path in auth.EXEMPT_PATHS
 
 
 def test_publish_archive_as_text_field_400(client):
@@ -198,6 +228,42 @@ def test_publish_invalid_registry_503(client, hub_with_registry):
     resp = _post(c, _jwt(pem))
     assert resp.status_code == 503
     assert resp.json()["error"] == "intake_rejected"
+
+
+def test_publish_rate_limited_429(hub_with_registry, keypair, tmp_path, monkeypatch):
+    from center_kb.web.ratelimit import SlidingWindowLimiter
+
+    pem, pub = keypair
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    cfg = intake.IntakeConfig(
+        hub_ref=str(hub_with_registry),
+        audience=AUD,
+        creds=ghapp.AppCreds("1", "unused"),
+        key_resolver=lambda t: pub,
+        http=FakeHTTP([(200, {"id": 1}), (201, {"token": "t"}), (201, {"html_url": "u/pull/9"})]),
+        push_via_token_url=False,
+        status_path=tmp_path / "status.json",
+    )
+    store = intake.StatusStore(cfg.status_path)
+    routes = intake_routes.build_intake_routes(
+        cfg, store, publish_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60)
+    )
+    c = TestClient(Starlette(routes=routes))
+    assert _post(c, _jwt(pem)).status_code == 200
+    limited = _post(c, _jwt(pem))
+    assert limited.status_code == 429
+
+
+def test_publish_traversal_delete_maps_400_not_500(client):
+    """A crafted deletes path is rejected fail-closed — must be a clean 4xx."""
+    c, pem = client
+    resp = _post(c, _jwt(pem), deletes=["../../outside.txt"])
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "intake_rejected"
+    st = c.get("/intake/status", params={"repo_id": "flight-docs", "commit": "abc1234"})
+    assert st.status_code == 200
+    assert st.json()["state"] == "error"
 
 
 def test_publish_git_error_maps_502_and_records_error(client, monkeypatch):
@@ -254,14 +320,25 @@ def full_stack(hub_with_registry, keypair, tmp_path, monkeypatch):
 
 
 def test_stack_intake_gets_pass_middleware_without_mcp_token(full_stack):
-    c, _ = full_stack
-    resp = c.get("/intake/manifest", params={"repo_id": "flight-docs"})
+    c, pem = full_stack
+    # manifest: middleware lets it through, the route itself enforces OIDC
+    resp = _get_manifest(c, _jwt(pem))
     assert resp.status_code == 200
     assert resp.json() == {"files": {}}
+    no_token = c.get("/intake/manifest", params={"repo_id": "flight-docs"})
+    assert no_token.status_code == 401
+    assert no_token.json()["error"] == "missing_token"
+    # status: public by design (zero-secret dev polling, keyed by rid+commit);
     # 404 from the route handler, not 401 from the middleware
     st = c.get("/intake/status", params={"repo_id": "x", "commit": "y"})
     assert st.status_code == 404
     assert st.json() == {"state": "unknown"}
+
+
+def test_stack_unknown_intake_path_still_requires_mcp_token(full_stack):
+    c, _ = full_stack
+    resp = c.get("/intake/other")
+    assert resp.status_code == 401
 
 
 def test_stack_publish_no_bearer_401(full_stack):
@@ -299,6 +376,6 @@ def test_intake_config_from_env(tmp_path, monkeypatch):
     assert cfg.creds.app_id == "1234"
     assert cfg.creds.private_key_pem == "PEM"
     assert cfg.audience == AUD
-    # PEM path hỏng → None (fail closed), không raise
+    # broken PEM path → None (fail closed), no raise
     monkeypatch.setenv("CENTER_KB_GH_APP_KEY", str(tmp_path / "missing.pem"))
     assert intake.intake_config_from_env("hub") is None

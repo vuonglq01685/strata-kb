@@ -283,6 +283,13 @@ def intake_publish(
 
     http = cfg.http or ghapp._default_http
     deletes = [d for d in deletes if d not in ("_meta.yaml", assetstore.RECORD_NAME)]
+    # deletes is caller-supplied: reject escapes before any lock/clone/write
+    # (hashsync._guard would also catch this later, but fail-fast keeps the
+    # hub clone untouched and maps to a clean 400).
+    for rel in deletes:
+        p = Path(rel)
+        if p.is_absolute() or ".." in p.parts:
+            raise IntakeError(400, f"delete path '{rel}' escapes the repo snapshot")
     with repo_lock(rid):
         handle = _resolve_hub_or_503(cfg.hub_ref)
         dest = _dest_for_rid(handle.federation_dir, rid)
@@ -332,7 +339,14 @@ def intake_publish(
                 child_record = tmp_kb / assetstore.RECORD_NAME
                 if child_record.exists():
                     child_record.unlink()
-                hashsync.apply_sync(tmp_kb, dest, sorted(local_man), deletes)
+                try:
+                    hashsync.apply_sync(tmp_kb, dest, sorted(local_man), deletes)
+                except hashsync.HashSyncError as exc:
+                    # Same restore as the AssetStoreError path below: a partial
+                    # sync must not leave uncommitted content on the branch.
+                    gitio._run(handle.root, "checkout", "--", "federation")
+                    gitio._run(handle.root, "clean", "-fd", "--", "federation")
+                    raise IntakeError(400, str(exc)) from exc
                 active_store = (
                     store if store is not None else assetstore.store_for_hub(handle)
                 )

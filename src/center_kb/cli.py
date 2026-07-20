@@ -327,6 +327,7 @@ def _docker_setup_child(path: Path, no_docker: bool) -> None:
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):
     """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
+    from center_kb import gitio
     from center_kb.config import HubConfigError, require_hub
     from center_kb.hub import resolve_hub
 
@@ -338,7 +339,7 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     handle = resolve_hub(hub_ref)
     if handle is None:
         typer.secho(
-            f"could not reach hub '{hub_ref}' and no cache exists — "
+            f"could not reach hub '{gitio.redact_url(hub_ref)}' and no cache exists — "
             "check the network or the hub path",
             fg=typer.colors.RED,
         )
@@ -387,54 +388,31 @@ def ingest(
     ),
 ) -> None:
     """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
-    from center_kb.ingest import parser, scaffold, sectioner
+    from center_kb import ingestcmd
 
     _validate_llm_choice(llm)
-    manifest_path = kb_dir / doc_id / "_manifest.yaml"
-    previous = None
-    if manifest_path.exists():
-        previous = models.load_yaml_model(manifest_path, models.Manifest).ingest
-    try:
-        heading_config = sectioner.resolve_heading_config(
-            chapter_pattern, appendix_pattern, attachment_pattern, previous
-        )
-    except ValueError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    try:
-        doc = parser.load_or_parse(pdf, work_dir / doc_id)
-    except RuntimeError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
-    items = parser.doc_to_items(doc, assets_dir=kb_dir / doc_id / "assets")
-    parts = None if no_bookmarks else parser.outline_parts(pdf, heading_config)
-    if parts:
-        typer.echo(f"sectioning: bookmarks ({len(parts)} parts)")
-    else:
-        typer.echo("sectioning: heading patterns")
-    units = sectioner.build_units(items, config=heading_config, parts=parts)
-
-    bm_ids = parser.bookmark_ids(pdf, heading_config)
-    if bm_ids:
-        for warning in parser.crosscheck({u.id for u in units}, bm_ids):
-            typer.secho(f"  [warn] {warning}", fg=typer.colors.YELLOW)
-
-    chapters = {s.strip() for s in sections.split(",") if s.strip()} or None
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-    report = scaffold.scaffold_doc(
-        units,
+    opts = ingestcmd.IngestOptions(
+        pdf=pdf,
         doc_id=doc_id,
-        title=doc_id if not hasattr(doc, "name") else (getattr(doc, "name", "") or doc_id),
-        tags=tag_list,
+        tags=tags,
         revision=revision,
-        source_path=pdf,
+        sections=sections,
         kb_dir=kb_dir,
-        chapters=chapters,
-        heading_config=heading_config,
-        part_titles={p.id: p.title for p in parts} if parts else None,
-        used_bookmarks=bool(parts),
+        work_dir=work_dir,
+        chapter_pattern=chapter_pattern,
+        appendix_pattern=appendix_pattern,
+        attachment_pattern=attachment_pattern,
+        no_bookmarks=no_bookmarks,
     )
+    try:
+        report = ingestcmd.run_ingest(
+            opts,
+            echo=typer.echo,
+            warn=lambda msg: typer.secho(f"  [warn] {msg}", fg=typer.colors.YELLOW),
+        )
+    except (ValueError, RuntimeError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
     typer.echo(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
@@ -828,8 +806,8 @@ def reindex(
 
     handle = _hub_or_exit(hub, kb_dir)
     write_federation_index(handle.federation_dir)
-    # commit index.yaml TRƯỚC khi sync search index: sync strict có thể nổ
-    # (lỗi embed) — không được để index rebuilt nằm uncommitted
+    # commit index.yaml BEFORE syncing the search index: the strict sync can blow
+    # up (embed failure) — the rebuilt index must not be left uncommitted
     committed = gitio.commit_paths(
         handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
     )

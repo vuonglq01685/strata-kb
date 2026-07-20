@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from center_kb import models
 
@@ -35,7 +35,7 @@ class KBConfig(BaseModel):
     repo_id: str = ""
     kind: Literal["", "hub", "child", "ba"] = ""
     intake: str = ""  # intake service base URL — child publishes via OIDC CI
-    asset_store: AssetStoreConfig = AssetStoreConfig()
+    asset_store: AssetStoreConfig = Field(default_factory=AssetStoreConfig)
 
 
 def load_config(kb_dir: Path) -> KBConfig:

@@ -58,6 +58,27 @@ def _fake_parse_outline_forbidden(monkeypatch):
     monkeypatch.setattr(parser, "outline_parts", _forbidden)
 
 
+def test_ingest_rejects_traversal_doc_id_before_touching_paths(
+    tmp_path: Path, monkeypatch
+):
+    _fake_parse(monkeypatch)
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+    result = runner.invoke(
+        app,
+        [
+            "ingest", str(pdf),
+            "--id", "../evil",
+            "--kb-dir", str(tmp_path / ".kb"),
+            "--work-dir", str(tmp_path / ".kb-work"),
+            "--llm", "none",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "invalid" in result.output
+    assert not (tmp_path / "evil").exists()
+
+
 def test_ingest_creates_kb_and_reports_warnings(tmp_path: Path, monkeypatch):
     _fake_parse(monkeypatch)
     pdf = tmp_path / "doc.pdf"

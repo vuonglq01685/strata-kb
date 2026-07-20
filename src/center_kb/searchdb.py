@@ -26,14 +26,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger("center_kb.searchdb")
 
 SCHEMA_VERSION = "2"
-K_LEG = 50  # top-k mỗi leg đưa vào RRF
-RRF_K = 60  # hằng số RRF chuẩn
+K_LEG = 50  # top-k per leg fed into RRF
+RRF_K = 60  # standard RRF constant
 DB_NAME = "search.db"
-_KNN_OVERFETCH = 4  # vec0 không pre-filter tag được — over-fetch rồi lọc sau
-_EMBED_BATCH = 256  # số section mỗi lần gọi embedder.embed()
+_KNN_OVERFETCH = 4  # vec0 cannot pre-filter by tag — over-fetch, then filter after
+_EMBED_BATCH = 256  # sections per embedder.embed() call
 _BUSY_TIMEOUT_MS = 5000
-# bm25 column weights (title, summary, body_l2, body_l3) — title mạnh nhất,
-# L3 yếu nhất để section raw dài không lấn át title/summary match (spec §3).
+# bm25 column weights (title, summary, body_l2, body_l3) — title strongest,
+# L3 weakest so long raw sections do not drown out title/summary matches (spec §3).
 _BM25_WEIGHTS = "4.0, 2.0, 1.5, 1.0"
 
 
@@ -61,8 +61,9 @@ def db_path(hub: "HubHandle") -> Path:
 
 
 def _conn_vec_loaded(conn: sqlite3.Connection) -> bool:
-    """Extension vec0 có load được trên connection NÀY không — import sqlite_vec
-    thành công chưa đủ (Python build có thể thiếu loadable-extension support)."""
+    """Whether the vec0 extension is loaded on THIS connection — a successful
+    sqlite_vec import is not enough (the Python build may lack loadable-extension
+    support)."""
     try:
         conn.execute("SELECT vec_version()")
     except sqlite3.OperationalError:
@@ -82,22 +83,22 @@ def _load_vec(conn: sqlite3.Connection) -> bool:
         finally:
             conn.enable_load_extension(False)
     except (AttributeError, sqlite3.OperationalError) as exc:
-        # Python build thiếu loadable-extension support / extension load fail
-        # → degrade FTS-only thay vì vỡ toàn bộ search (spec §5)
+        # Python build lacks loadable-extension support / extension failed to
+        # load → degrade to FTS-only instead of breaking search entirely (spec §5)
         logger.warning("sqlite-vec could not be loaded — semantic leg disabled: %s", exc)
         return False
     return True
 
 
 def is_lock_error(exc: sqlite3.Error) -> bool:
-    """Tranh chấp lock tạm thời (process khác đang ghi) — không phải corruption,
-    tuyệt đối không được xoá index."""
+    """Transient lock contention (another process is writing) — not corruption;
+    the index must never be deleted for this."""
     if not isinstance(exc, sqlite3.OperationalError):
         return False
     name = getattr(exc, "sqlite_errorname", "") or ""  # Python >= 3.11
     if name:
         # SQLITE_BUSY(_SNAPSHOT...), SQLITE_LOCKED(_SHAREDCACHE),
-        # SQLITE_PROTOCOL ("locking protocol" — substring match trượt)
+        # SQLITE_PROTOCOL ("locking protocol" — the substring match misses it)
         return name.startswith(("SQLITE_BUSY", "SQLITE_LOCKED", "SQLITE_PROTOCOL"))
     return "locked" in str(exc) or "busy" in str(exc)
 
@@ -110,7 +111,7 @@ def _raw_connect(path: Path) -> tuple[sqlite3.Connection, bool]:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
     except BaseException:
-        conn.close()  # file hỏng: không close thì Windows không unlink được
+        conn.close()  # corrupt file: without a close, Windows cannot unlink it
         raise
     return conn, vec_loaded
 
@@ -143,7 +144,7 @@ CREATE TABLE IF NOT EXISTS doc_tags(
 
 def _create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL)
-    # FTS5 thường (lưu text) — contentless bị loại vì không DELETE/UPDATE được
+    # regular FTS5 (stores text) — contentless ruled out: no DELETE/UPDATE support
     conn.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5("
         "title, summary, body_l2, body_l3, tokenize='unicode61')"
@@ -163,9 +164,9 @@ def _has_vec_table(conn: sqlite3.Connection) -> bool:
 
 
 def delete_db(hub: "HubHandle") -> None:
-    """Xoá file index (kèm -wal/-shm). Caller phải close mọi connection trước
-    (Windows không unlink được file đang mở — spec windows-support §R5).
-    PermissionError → propagate, không retry."""
+    """Delete the index file (plus -wal/-shm). The caller must close every
+    connection first (Windows cannot unlink an open file — spec windows-support
+    §R5). PermissionError → propagate, no retry."""
     path = db_path(hub)
     for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
         p.unlink(missing_ok=True)
@@ -179,11 +180,12 @@ def _has_schema(conn: sqlite3.Connection) -> bool:
 
 
 def open_db(hub: "HubHandle") -> sqlite3.Connection:
-    """Mở index, tạo schema nếu thiếu. DB hỏng / schema_version lệch /
-    có vec_sections nhưng sqlite-vec không cài → xoá + rebuild đúng một lần.
+    """Open the index, creating the schema if missing. Corrupt DB /
+    schema_version mismatch / vec_sections present but sqlite-vec not installed
+    → delete + rebuild exactly once.
 
-    Warm path (schema đã có) chỉ ĐỌC — không cầm write lock, để query chạy
-    song song với một sync dài đang ghi (spec §3.2)."""
+    The warm path (schema already present) only READS — it takes no write lock,
+    so queries can run in parallel with a long sync that is writing (spec §3.2)."""
     path = db_path(hub)
     last_exc: Exception | None = None
     for attempt in (1, 2):
@@ -191,11 +193,11 @@ def open_db(hub: "HubHandle") -> sqlite3.Connection:
         try:
             conn, vec_loaded = _raw_connect(path)
             if not _has_schema(conn):
-                _create_schema(conn)  # cold — cần write; dưới lock sẽ raise
+                _create_schema(conn)  # cold — needs write; raises under lock
             row = conn.execute(
                 "SELECT value FROM meta WHERE key='schema_version'"
             ).fetchone()
-            ver = row[0] if row else None  # schema dở dang → rebuild nhánh dưới
+            ver = row[0] if row else None  # half-built schema → rebuild branch below
             if ver == SCHEMA_VERSION and (vec_loaded or not _has_vec_table(conn)):
                 return conn
             reason = (
@@ -211,7 +213,7 @@ def open_db(hub: "HubHandle") -> sqlite3.Connection:
             last_exc = exc
             reason = str(exc)
         if conn is not None:
-            conn.close()  # Windows: close trước khi unlink
+            conn.close()  # Windows: close before unlink
         if attempt == 2:
             raise RuntimeError(
                 f"search.db unusable even after a rebuild: {reason}"
@@ -232,7 +234,7 @@ def _section_parts(
     kb_dir: Path, doc_id: str, sec: models.SectionEntry
 ) -> tuple[str, str, str, str]:
     """(title, summary, body_l2, body_l3) — body_l2 = FULL L2 slice (summary
-    + tables, không cap), body_l3 = full L3 slice từ .raw.md."""
+    + tables, no cap), body_l3 = full L3 slice from .raw.md."""
     body_l2 = ""
     l2_path = kb_dir / doc_id / f"{sec.file}.md"
     if l2_path.exists():
@@ -247,15 +249,15 @@ def _section_parts(
 
 
 def _embed_text(title: str, summary: str, body: str) -> str:
-    """Cùng format text với embed._section_text cũ — dùng cho embedding (body
-    luôn cap ở _L2_HEAD_CHARS, giới hạn input model embed)."""
+    """Same text format as the old embed._section_text — used for embedding (body
+    always capped at _L2_HEAD_CHARS, bounding the embedding model input)."""
     text = f"{title}\n{summary}"
     return f"{text}\n{body}" if body else text
 
 
 def _content_digest(title: str, summary: str, body_l2: str, body_l3: str) -> str:
-    """Change-detection hash — phủ MỌI cột FTS (embed text thì vẫn capped:
-    hash và embed tách nhau từ schema v2)."""
+    """Change-detection hash — covers EVERY FTS column (the embed text stays
+    capped: hash and embed were decoupled as of schema v2)."""
     joined = "\n".join((title, summary, body_l2, body_l3))
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
@@ -305,22 +307,23 @@ def _sync_repo(
             digest = _content_digest(title, summary, body_l2, body_l3)
             old = stored.get(key)
             if old is not None and old[1] == digest:
-                # content_hash phủ title+summary+body_l2+body_l3 — hash trùng
-                # nghĩa là nội dung không đổi; chỉ file/doc_revision có thể
-                # drift (rename file L2, bump revision) mà không đổi nội
-                # dung. Refresh 2 cột đó để citation/path không lệch (không
-                # rewrite FTS, không re-embed).
+                # content_hash covers title+summary+body_l2+body_l3 — an equal
+                # hash means the content is unchanged; only file/doc_revision
+                # can drift (L2 file rename, revision bump) without a content
+                # change. Refresh those 2 columns so citation/path stay accurate
+                # (no FTS rewrite, no re-embed).
                 conn.execute(
                     "UPDATE sections SET file = ?, doc_revision = ? "
                     "WHERE id = ? AND (file != ? OR doc_revision != ?)",
                     (sec.file, doc.revision, old[0], sec.file, doc.revision),
                 )
                 continue
-            # delete + insert (rowid mới) — vec-backfill dựa vào rowid mới
-            # thiếu embedding để biết cần re-embed. Xoá theo natural key chứ
-            # không theo rowid snapshot `stored`: process khác có thể đã thay
-            # row từ lúc đọc snapshot — thua race phải idempotent, không được
-            # vỡ UNIQUE (spec §5: thua race chỉ tốn công, không sai dữ liệu).
+            # delete + insert (new rowid) — the vec backfill relies on new
+            # rowids lacking an embedding to know what needs re-embedding.
+            # Delete by natural key, not by the `stored` rowid snapshot: another
+            # process may have replaced the row since the snapshot was read —
+            # losing the race must be idempotent and must not break UNIQUE
+            # (spec §5: losing the race only wastes work, never corrupts data).
             for (cur_id,) in conn.execute(
                 "SELECT id FROM sections WHERE repo_id = ? AND doc_id = ? "
                 "AND section_id = ?",
@@ -363,7 +366,7 @@ def _sync_vectors(
         or meta.get("embed_dim") != str(embedder.dim)
     )
     if _has_vec_table(conn) and model_changed:
-        conn.execute("DROP TABLE vec_sections")  # đổi model/dim → rebuild bảng vec
+        conn.execute("DROP TABLE vec_sections")  # model/dim change → rebuild vec table
     table_created = not _has_vec_table(conn)
     if table_created:
         conn.execute(
@@ -379,19 +382,21 @@ def _sync_vectors(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('embed_dim', ?)",
             (str(embedder.dim),),
         )
-        # đánh dấu dirty CÙNG transaction với meta model mới: commit batch đầu
-        # sẽ seal meta — nếu backfill ngắt giữa chừng mà coverage vẫn
-        # 'complete' của model cũ thì lỗ hổng vector bị giấu vĩnh viễn
+        # mark dirty in the SAME transaction as the new model meta: the first
+        # batch commit seals the meta — if the backfill is interrupted mid-way
+        # while coverage still says 'complete' from the old model, the vector
+        # gaps stay hidden forever
         conn.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('vec_coverage', 'dirty')"
         )
     elif meta.get("vec_coverage") == "complete":
-        return  # không có section mới, model không đổi → khỏi anti-join O(N)
-    # Anti-join tìm rowid thiếu embedding — KHÔNG load FTS text ở đây: mỗi
-    # search() gọi open_fresh → _sync_vectors; chỉ SELECT text khi có rowid
-    # thiếu, và chunk theo _EMBED_BATCH: 1 bind/section trong 1 câu IN(...)
-    # vỡ SQLITE_MAX_VARIABLE_NUMBER (32766 ở build mặc định) trước khi tới
-    # scope target 100k, và fetchall toàn corpus text ăn RAM vô ích.
+        return  # no new sections, model unchanged → skip the O(N) anti-join
+    # Anti-join finds rowids missing an embedding — do NOT load FTS text here:
+    # every search() calls open_fresh → _sync_vectors; only SELECT text when
+    # rowids are missing, and chunk by _EMBED_BATCH: 1 bind/section in a single
+    # IN(...) statement blows SQLITE_MAX_VARIABLE_NUMBER (32766 on default
+    # builds) well before the 100k scope target, and fetchall of the whole
+    # corpus text burns RAM for nothing.
     missing_ids = [
         r[0]
         for r in conn.execute(
@@ -424,23 +429,24 @@ def _sync_vectors(
                 (rowid, _serialize(vec)),
             )
         report.embedded += len(batch)
-        conn.commit()  # per batch — cold build bị ngắt giữ lại batch đã embed
-    # chỉ đánh dấu complete khi toàn bộ backfill xong — fail giữa chừng để
-    # dirty cho lần sync sau quét tiếp
+        conn.commit()  # per batch — an interrupted cold build keeps embedded batches
+    # only mark complete once the entire backfill is done — a mid-way failure
+    # leaves it dirty so the next sync resumes the scan
     conn.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES('vec_coverage', 'complete')"
     )
 
 
 def _cleanup_legacy(hub: "HubHandle") -> None:
-    """Dọn embeddings-<rid>.db của kiến trúc cũ — cache thuần, bỏ rơi (spec §4)."""
+    """Clean up embeddings-<rid>.db from the old architecture — pure cache,
+    abandoned (spec §4)."""
     work = hub.root / ".kb-work"
     if not work.is_dir():
         return
     for p in work.glob("embeddings-*.db"):
         try:
             p.unlink()
-        except OSError:  # đang bị process khác giữ (Windows) — lần sau dọn tiếp
+        except OSError:  # held by another process (Windows) — clean up next time
             pass
 
 
@@ -463,7 +469,7 @@ def _sync_conn(
     for repo in repos:
         fp = _repo_fingerprint(repo.kb_dir)
         if stored_fp.get(repo.meta.repo_id) == fp:
-            continue  # repo không đổi — 0 manifest parse
+            continue  # repo unchanged — 0 manifest parses
         before_updated = report.sections_updated
         _sync_repo(conn, repo, report)
         conn.execute(
@@ -473,36 +479,37 @@ def _sync_conn(
         )
         report.repos_synced += 1
         if report.sections_updated > before_updated:
-            # rowid mới chưa có embedding — cho phép _sync_vectors bỏ qua
-            # anti-join O(N) khi không có gì mới (chỉ INSERT tạo lỗ;
-            # delete xoá vec row kèm, metadata refresh giữ nguyên rowid)
+            # new rowids have no embedding yet — lets _sync_vectors skip the
+            # O(N) anti-join when nothing is new (only INSERTs create gaps;
+            # deletes remove the vec row too, metadata refresh keeps the rowid)
             conn.execute(
                 "INSERT OR REPLACE INTO meta(key, value) "
                 "VALUES('vec_coverage', 'dirty')"
             )
-        # commit per repo: sync bị ngắt giữ lại repo đã xong, và thu hẹp
-        # writer-lock window cho process đọc song song. Đồng thời đảm bảo
-        # FTS/sections đã bền trước phase embed — embed fail không rollback.
+        # commit per repo: an interrupted sync keeps the repos already done, and
+        # narrows the writer-lock window for concurrently reading processes. It
+        # also guarantees FTS/sections are durable before the embed phase — an
+        # embed failure does not roll them back.
         conn.commit()
     try:
         _sync_vectors(conn, embedder, report)
         if conn.in_transaction:
             conn.commit()
     except sqlite3.DatabaseError:
-        raise  # index hỏng — để tầng trên rebuild/raise, không nuốt
+        raise  # index corrupt — let the layer above rebuild/raise, do not swallow
     except Exception as exc:
         if vectors_strict:
-            raise  # kb reindex phải thấy lỗi embed
+            raise  # kb reindex must see embed failures
         if conn.in_transaction:
             conn.rollback()
-        # spec §5: embedding best-effort — query degrade về FTS leg
+        # spec §5: embedding is best-effort — queries degrade to the FTS leg
         logger.warning("vector sync failed — keyword search only: %s", exc)
     _cleanup_legacy(hub)
     return report
 
 
 def sync(hub: "HubHandle", embedder: Embedder | None) -> SyncReport:
-    """Incremental sync: repo fingerprint → skip/diff theo content-hash."""
+    """Incremental sync: repo fingerprint → skip/diff by content-hash."""
     conn = open_db(hub)
     try:
         return _sync_conn(conn, hub, embedder)
@@ -511,8 +518,9 @@ def sync(hub: "HubHandle", embedder: Embedder | None) -> SyncReport:
 
 
 def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connection:
-    """Open + lazy freshness check (sync incremental nếu lệch), trả connection.
-    Embed fail ở đây không giết query — degrade FTS-only (vectors_strict=False)."""
+    """Open + lazy freshness check (incremental sync if stale), return the
+    connection. An embed failure here does not kill the query — degrade to
+    FTS-only (vectors_strict=False)."""
     conn = open_db(hub)
     try:
         _sync_conn(conn, hub, embedder, vectors_strict=False)
@@ -523,9 +531,10 @@ def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connectio
 
 
 def tokenize(text: str) -> list[str]:
-    # ASCII-only trong khi corpus được FTS index bằng unicode61 — term
-    # non-ASCII (vd tiếng Việt) có trong index nhưng query không chạm tới.
-    # Chấp nhận: corpus aviation spec tiếng Anh; mở rộng khi có nhu cầu thật.
+    # ASCII-only while the corpus is FTS-indexed with unicode61 — non-ASCII
+    # terms (e.g. Vietnamese) exist in the index but queries never reach them.
+    # Accepted: the corpus is English-language aviation specs; extend when a
+    # real need arises.
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
@@ -534,8 +543,8 @@ def _norm_tags(tags: list[str] | None) -> list[str]:
 
 
 def _fts_match(text: str) -> str:
-    """Query text → FTS5 MATCH string: quote từng token, OR semantics.
-    User input không bao giờ chạm cú pháp FTS trực tiếp."""
+    """Query text → FTS5 MATCH string: quote each token, OR semantics.
+    User input never touches FTS syntax directly."""
     return " OR ".join(f'"{tok}"' for tok in tokenize(text))
 
 
@@ -545,7 +554,7 @@ def fts_search(
     tags: list[str] | None = None,
     k: int = K_LEG,
 ) -> list[tuple[int, float]]:
-    """Keyword leg — (section_rowid, score) best-first; score = -bm25 (dương)."""
+    """Keyword leg — (section_rowid, score) best-first; score = -bm25 (positive)."""
     match = _fts_match(text)
     if not match:
         return []
@@ -562,7 +571,7 @@ def fts_search(
             f" AND t.doc_id = s.doc_id AND t.tag IN ({placeholders}))"
         )
         params += tag_list
-    sql += f" ORDER BY bm25(fts, {_BM25_WEIGHTS}) LIMIT ?"  # bm25 nhỏ = khớp tốt
+    sql += f" ORDER BY bm25(fts, {_BM25_WEIGHTS}) LIMIT ?"  # lower bm25 = better match
     params.append(k)
     return [(rowid, score) for rowid, score in conn.execute(sql, params)]
 
@@ -591,7 +600,8 @@ def knn_search(
     k: int = K_LEG,
 ) -> list[tuple[int, float]]:
     """Semantic leg — (section_rowid, score) best-first, score = 1/(1+distance),
-    đã lọc SEMANTIC_MIN_SCORE. vec0 không pre-filter tag → over-fetch rồi lọc."""
+    already filtered by SEMANTIC_MIN_SCORE. vec0 cannot pre-filter by tag →
+    over-fetch, then filter."""
     if not _has_vec_table(conn):
         return []
     query_vec = embedder.embed([text])[0]
@@ -618,8 +628,9 @@ def rrf_merge(
     knn_hits: list[tuple[int, float]],
     k: int = RRF_K,
 ) -> list[tuple[int, float, str]]:
-    """Reciprocal Rank Fusion: score = Σ 1/(k + rank) trên các leg chứa rowid.
-    Trả (rowid, score, mode) sort giảm dần theo score, tie-break rowid tăng dần."""
+    """Reciprocal Rank Fusion: score = Σ 1/(k + rank) over the legs containing
+    the rowid. Returns (rowid, score, mode) sorted by descending score,
+    ties broken by ascending rowid."""
     scores: dict[int, float] = {}
     legs: dict[int, set[str]] = {}
     for mode, hits in (("keyword", fts_hits), ("semantic", knn_hits)):

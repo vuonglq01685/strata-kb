@@ -22,7 +22,7 @@ def rsa_pem() -> str:
 
 
 class FakeHTTP:
-    """Ghi lại request; trả response theo hàng đợi [(status, dict), ...]."""
+    """Records requests; returns responses from a queue of [(status, dict), ...]."""
 
     def __init__(self, responses):
         self.responses = list(responses)

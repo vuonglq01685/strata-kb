@@ -34,13 +34,13 @@ class _FastEmbedder:
         return [list(map(float, v)) for v in self._model.embed(texts)]
 
 
-_UNRESOLVED = object()  # sentinel — phân biệt "chưa resolve" với "resolve ra None"
+_UNRESOLVED = object()  # sentinel — distinguishes "not resolved yet" from "resolved to None"
 _default_cache: object = _UNRESOLVED
 _default_lock = threading.Lock()
 
 
 def _reset_default_cache() -> None:
-    """Chỉ dùng trong test."""
+    """Test use only."""
     global _default_cache
     _default_cache = _UNRESOLVED
 
@@ -48,11 +48,12 @@ def _reset_default_cache() -> None:
 def default_embedder() -> Embedder | None:
     """Real embedder if [embed] is installed; None (with a log) if missing.
 
-    Cached per process — kể cả kết quả None (model init fail, vd offline lúc
-    start): MCP/web server gọi search() mỗi request, không được load lại ONNX
-    model mỗi lần. Đánh đổi có chủ đích (KISS, không TTL): server start
-    offline thì semantic leg tắt tới khi restart. Lock chống double-init ONNX
-    khi server đa luồng nhận request đồng thời."""
+    Cached per process — including a None result (model init failure, e.g.
+    offline at start): the MCP/web server calls search() on every request and
+    must not reload the ONNX model each time. Deliberate trade-off (KISS, no
+    TTL): if the server starts offline, the semantic leg stays off until
+    restart. The lock prevents double-initializing ONNX when a multi-threaded
+    server takes concurrent requests."""
     global _default_cache
     if _default_cache is _UNRESOLVED:
         with _default_lock:

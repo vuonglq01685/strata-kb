@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import hmac
+import logging
 from http.cookies import CookieError, SimpleCookie
 
+logger = logging.getLogger("center_kb.web.auth")
+
 COOKIE_NAME = "center_kb_token"
-EXEMPT_PATHS = ("/api/health", "/ui/login")
-EXEMPT_PREFIXES = ("/ui/static/", "/intake/")
+# Exact intake paths only — no /intake/ prefix wildcard, so a future intake
+# route is auth-gated by default. publish + manifest enforce OIDC themselves;
+# status is public by design (zero-secret dev polling, keyed by rid+commit).
+EXEMPT_PATHS = (
+    "/api/health",
+    "/ui/login",
+    "/intake/publish",
+    "/intake/manifest",
+    "/intake/status",
+)
+EXEMPT_PREFIXES = ("/ui/static/",)
 
 
 class TokenAuthMiddleware:
@@ -54,6 +66,7 @@ class TokenAuthMiddleware:
             await self.app(scope, receive, send)
             return
         if path == "/" or path.startswith("/ui"):
+            # anonymous browser hit — normal flow, redirect without logging
             await send(
                 {
                     "type": "http.response.start",
@@ -63,6 +76,13 @@ class TokenAuthMiddleware:
             )
             await send({"type": "http.response.body", "body": b""})
             return
+        client = scope.get("client")
+        logger.warning(
+            "unauthorized request: %s %s from %s",
+            scope.get("method", "?"),
+            path,
+            client[0] if client else "unknown",
+        )
         await send(
             {
                 "type": "http.response.start",

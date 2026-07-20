@@ -248,8 +248,8 @@ def _apply_results(
     report: SummarizeReport,
 ) -> None:
     by_doc: dict[str, dict[str, dict[str, str]]] = {}
-    for (doc, sid), pair in results.items():
-        by_doc.setdefault(doc, {})[sid] = pair
+    for (doc, sid), result in results.items():
+        by_doc.setdefault(doc, {})[sid] = result
     for doc, pairs in by_doc.items():
         manifest_path = kb_dir / doc / "_manifest.yaml"
         manifest = models.load_yaml_model(manifest_path, models.Manifest)

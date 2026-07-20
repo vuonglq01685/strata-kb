@@ -192,10 +192,10 @@ def test_digit_only_heading_demoted_to_body():
 
 
 def test_last_resort_xn_id_logs_warning(caplog):
-    # any(ch.isalnum()) gate chặn heading thuần ký hiệu — ép slug rỗng bằng
-    # ký tự alnum mà \w không giữ là không tồn tại, nên mô phỏng qua heading
-    # chữ + slug rỗng nhân tạo: monkeypatch không cần — dùng title chỉ có "_"
-    # bị gate chặn; test này khóa CONTRACT: nếu x{n} được sinh thì phải warn.
+    # the any(ch.isalnum()) gate blocks symbol-only headings — an alnum char that
+    # \w drops (to force an empty slug) does not exist, so simulate via a text
+    # heading + an artificially empty slug: no monkeypatch needed — a "_"-only
+    # title is gate-blocked; this test locks the CONTRACT: if x{n} is generated, warn.
     import logging
 
     with caplog.at_level(logging.WARNING, logger="center_kb.ingest.sectioner"):
@@ -204,7 +204,7 @@ def test_last_resort_xn_id_logs_warning(caplog):
             DocItem(kind="text", text="Parent body."),
         ]
         build_units(items, min_tokens=1)
-    # không heading nào rơi last-resort → không warning nào được phát
+    # no heading falls to the last resort → no warning is emitted
     assert not [r for r in caplog.records if "fallback id" in r.message]
 
 

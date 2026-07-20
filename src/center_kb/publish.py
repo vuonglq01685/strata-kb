@@ -137,9 +137,9 @@ def _snapshot(
 
 
 def warn_legacy_ids(kb_dir: Path) -> list[str]:
-    """Id x{n} là fallback opaque của CLI cũ (< 2debcbc) hoặc heading không
-    slug được — cảnh báo để repo re-ingest bằng CLI mới. Không reject: data
-    cũ vẫn hợp lệ, chỉ kém đọc (spec §6b)."""
+    """x{n} ids are the opaque fallback of the old CLI (< 2debcbc) or of headings
+    that could not be slugged — warn so the repo re-ingests with the new CLI.
+    No reject: old data is still valid, just less readable (spec §6b)."""
     hits: list[str] = []
     for man_path in sorted(kb_dir.glob("*/_manifest.yaml")):
         manifest = models.load_yaml_model(man_path, models.Manifest)
@@ -175,7 +175,7 @@ def publish(
         )
     handle = hub_mod.resolve_hub(hub_ref)
     if handle is None:
-        raise PublishError(f"could not reach hub '{hub_ref}'")
+        raise PublishError(f"could not reach hub '{gitio.redact_url(hub_ref)}'")
     _neutralize_excludes(handle.root)
 
     if mode == "auto":

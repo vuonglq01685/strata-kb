@@ -88,7 +88,7 @@ class AssetsRecord(BaseModel):
     The filename's sha256 IS the file content's sha256 (spec A), so hub
     manifests can synthesize exact entries without holding the bytes."""
 
-    assets: list[str] = []
+    assets: list[str] = Field(default_factory=list)
 
 
 def load_yaml_model(path: Path, model: type[T]) -> T:
