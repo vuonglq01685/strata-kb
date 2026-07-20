@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from center_kb import models
 from center_kb.ingest.scaffold import chapter_stem, scaffold_doc, slugify
 from center_kb.ingest.sectioner import SectionUnit
@@ -28,6 +30,22 @@ def test_slugify():
 def test_chapter_stem():
     assert chapter_stem("5", "NAVIGATION DATA") == "ch5-navigation-data"
     assert chapter_stem("appendix-3", "Met tables") == "appendix-3-met-tables"
+
+
+@pytest.mark.parametrize("bad_id", ["../evil", "a/b", "..", ".", "", ".hidden"])
+def test_scaffold_rejects_doc_id_with_path_separators(tmp_path: Path, bad_id: str):
+    """doc_id becomes a directory name under .kb/ — never a path."""
+    with pytest.raises(ValueError, match="doc"):
+        scaffold_doc(
+            _units(),
+            doc_id=bad_id,
+            title="X",
+            tags=[],
+            revision="r",
+            source_path=None,
+            kb_dir=tmp_path / ".kb",
+        )
+    assert not (tmp_path / "evil").exists()
 
 
 def test_scaffold_writes_l3_l2_manifest_index(tmp_path: Path):

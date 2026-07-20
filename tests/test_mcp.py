@@ -212,7 +212,7 @@ def _qr(mode: str, score: float, cite: str = "r:d §1"):
 
 
 def test_ambiguity_note_silent_for_single_leg_adjacent_ranks():
-    # RRF: rank kề nhau cùng leg luôn cách ~1.6% — gap tương đối chỉ tạo noise
+    # RRF: adjacent ranks within one leg always differ ~1.6% — a relative gap only adds noise
     from center_kb.mcp import _ambiguity_note
 
     note = _ambiguity_note([_qr("keyword", 1 / 61), _qr("keyword", 1 / 62)])
@@ -220,7 +220,7 @@ def test_ambiguity_note_silent_for_single_leg_adjacent_ranks():
 
 
 def test_ambiguity_note_fires_when_top2_both_hybrid():
-    # cả hai được 2 leg xác nhận → ambiguous thật, đáng nhắc review cả hai
+    # both confirmed by 2 legs → genuinely ambiguous, worth prompting review of both
     from center_kb.mcp import _ambiguity_note
 
     note = _ambiguity_note(
@@ -245,12 +245,12 @@ async def test_kb_search_no_note_for_ordinary_keyword_ranking(fed_hub):
         result = await client.call_tool(
             "kb_search", {"query": "airspace designation type"}
         )
-        assert "score closely" not in _text(result)  # 2 kết quả keyword rank kề
+        assert "score closely" not in _text(result)  # 2 keyword results at adjacent ranks
 
 
 def test_ambiguity_note_silent_for_distant_hybrid_pair():
-    # cả hai hybrid nhưng score cách xa (top rank đầu cả 2 leg vs hạng ~40)
-    # — không phải "score closely"
+    # both hybrid but scores far apart (top rank in both legs vs rank ~40)
+    # — not "score closely"
     from center_kb.mcp import _ambiguity_note
 
     assert _ambiguity_note([_qr("hybrid", 0.0328), _qr("hybrid", 0.020)]) == ""
@@ -258,8 +258,8 @@ def test_ambiguity_note_silent_for_distant_hybrid_pair():
 
 @pytest.mark.anyio
 async def test_kb_search_shows_match_mode_not_raw_score(fed_hub):
-    # RRF score tuyệt đối (0.02/0.03) vô nghĩa với người đọc — hiển thị
-    # match mode thay vì số thô (đồng bộ với web UI)
+    # absolute RRF scores (0.02/0.03) are meaningless to the reader — show
+    # the match mode instead of raw numbers (in sync with the web UI)
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool(

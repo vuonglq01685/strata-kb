@@ -7,7 +7,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Lâm Quốc Vương" }]
-keywords = ["knowledge-base", "mcp", "docs-as-code", "rag", "docume1ntation", "ai-agents"]
+keywords = ["knowledge-base", "mcp", "docs-as-code", "rag", "documentation", "ai-agents"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -31,7 +31,7 @@ ingest = ["docling>=2.0", "imagehash>=4.3", "Pillow>=10.0"]
 dev = [
     "pytest>=8.0", "anyio>=4.0", "sqlite-vec>=0.1.6", "twine>=5.0", "build>=1.2",
     "PyJWT[crypto]>=2.8", "python-multipart>=0.0.9", "httpx>=0.27",
-    "imagehash>=4.3", "Pillow>=10.0",
+    "imagehash>=4.3", "Pillow>=10.0", "ruff>=0.15",
 ]
 embed = ["sqlite-vec>=0.1.6", "fastembed>=0.3"]
 server = ["PyJWT[crypto]>=2.8", "python-multipart>=0.0.9"]
@@ -60,8 +60,12 @@ packages = ["src/center_kb"]
 [tool.hatch.build.targets.sdist]
 only-include = ["src"]
 
+[tool.ruff.lint.per-file-ignores]
+# pytest.importorskip must run before the guarded import
+"tests/*" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "real_embedder: test dùng default_embedder thật (fastembed) — bị autouse fixture bỏ qua",
+    "real_embedder: test uses the real default_embedder (fastembed) — skipped by the autouse fixture",
 ]

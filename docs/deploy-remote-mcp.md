@@ -57,9 +57,12 @@ the PR itself using a GitHub App.
    becomes a full upload).
 4. Install deps on the server: `pip install "center-kb[server]"`.
 
-`/intake/*` is exempt from `CENTER_KB_HTTP_TOKEN` (children don't hold that
-token): POST /intake/publish is OIDC-authenticated; GET manifest/status carry
-only path+hash metadata — same internal-network assumption as the MCP itself.
+The three intake routes are exempt from `CENTER_KB_HTTP_TOKEN` (children don't
+hold that token): POST /intake/publish and GET /intake/manifest are
+OIDC-authenticated — a child can only diff/publish its own registered repo-id.
+GET /intake/status is public by design (the zero-secret dev CLI polls it) and
+returns only state/PR URL keyed by repo-id + commit — same internal-network
+assumption as the MCP itself.
 
 ## Client config (Claude Code / Cowork)
 

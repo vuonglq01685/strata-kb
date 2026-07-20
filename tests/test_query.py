@@ -97,7 +97,7 @@ def test_get_section_folded_id_l2_returns_parent(fed_hub):
     hub = HubHandle(root=fed_hub)
     r = get_section(hub, "arinc-424", "5.3.1", level="l2")
     assert r is not None
-    assert r.section_id == "5.3"  # L2 không có anchor con — trả parent, không nói dối
+    assert r.section_id == "5.3"  # L2 has no child anchor — return the parent, don't lie
     assert "§5.3" in r.citation
 
 
@@ -107,7 +107,7 @@ def test_get_section_folded_id_unknown_returns_none(fed_hub):
 
 
 def test_get_section_prefix_picks_longest_parent(fed_hub):
-    # manifest có cả "5" lẫn "5.3" → "5.3.1" phải chọn "5.3"
+    # manifest has both "5" and "5.3" → "5.3.1" must pick "5.3"
     entry = fed_hub / "federation" / "arinc-kb"
     manifest_path = entry / "arinc-424" / "_manifest.yaml"
     manifest = models.load_yaml_model(manifest_path, models.Manifest)

@@ -73,7 +73,9 @@ def resolve_hub(hub: str) -> HubHandle | None:
             gitio.clone(hub, cache)
         except gitio.GitError as exc:
             logger.warning(
-                "could not clone hub '%s' — continuing with local KB only: %s", hub, exc
+                "could not clone hub '%s' — continuing with local KB only: %s",
+                gitio.redact_url(hub),
+                exc,
             )
             return None
         _touch_marker(marker)

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Perf smoke cho hybrid search index — chạy tay, KHÔNG phải CI gate.
+"""Perf smoke for the hybrid search index — run manually, NOT a CI gate.
 
     python scripts/perf_search_smoke.py --sections 5000
     python scripts/perf_search_smoke.py --sections 100000 --repos 20
 
-Mục tiêu (spec §2): keyword leg < 100ms, hybrid query < 300ms (warm).
+Targets (spec §2): keyword leg < 100ms, hybrid query < 300ms (warm).
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from center_kb.query import search
 
 
 class HashEmbedder:
-    """Embedder rẻ deterministic — token hash vào 64 dim, normalize."""
+    """Cheap deterministic embedder — tokens hashed into 64 dims, normalized."""
 
     dim = 64
     name = "hash-64"

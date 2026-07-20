@@ -179,9 +179,14 @@ def outline_parts(
                 continue
             title = " ".join(((getattr(entry, "title", "") or "")).split())
             try:
-                page = reader.get_destination_page_number(entry) + 1
-            except Exception:
+                page_index = reader.get_destination_page_number(entry)
+            except Exception as exc:
+                logger.debug("bookmark '%s' skipped — bad destination: %s", title, exc)
                 continue
+            if page_index is None:  # pypdf: destination without a page number
+                logger.debug("bookmark '%s' skipped — no destination page", title)
+                continue
+            page = page_index + 1
             parsed = parse_section_id(title, config)
             if parsed and "." not in parsed[0]:
                 if parsed[0] not in seen_ids:
