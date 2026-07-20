@@ -21,7 +21,7 @@ def _git(cwd: Path, *args: str) -> str:
 
 @pytest.fixture
 def hub(tmp_path):
-    """Hub = local clone có origin bare — giống hub cache của server."""
+    """Hub = local clone with a bare origin — like the server's hub cache."""
     bare = tmp_path / "hub-origin.git"
     seed = tmp_path / "seed"
     seed.mkdir()
@@ -94,15 +94,15 @@ def test_intake_publish_creates_branch_and_pr(hub, monkeypatch):
         cfg, "flight-docs", "abc1234", "acme/flight-docs", [], _kb_archive()
     )
     assert pr.endswith("/pull/7")
-    # branch publish/flight-docs tồn tại trên origin, chứa snapshot + _meta + index tổng
+    # branch publish/flight-docs exists on origin, contains snapshot + _meta + aggregate index
     _git(hub, "checkout", "publish/flight-docs")
     fed = hub / "federation" / "flight-docs"
     assert (fed / "index.yaml").exists()
     assert (fed / "_meta.yaml").exists()
     meta = (fed / "_meta.yaml").read_text(encoding="utf-8")
-    assert "acme/flight-docs" in meta  # source_url từ claims, không từ payload
+    assert "acme/flight-docs" in meta  # source_url from claims, not from payload
     assert (hub / "federation" / "index.yaml").exists()
-    # về lại main sau khi xong
+    # back to main when done
     _git(hub, "checkout", "main")
 
 
@@ -115,7 +115,7 @@ def test_intake_publish_nothing_changed_returns_empty(hub, monkeypatch):
     intake.intake_publish(
         _cfg(hub, http1), "flight-docs", "abc1234", "acme/flight-docs", [], _kb_archive()
     )
-    # lần 2 nội dung y hệt → không gọi GitHub API nào, trả ""
+    # 2nd run with identical content → no GitHub API calls, returns ""
     http2 = FakeHTTP([])
     pr = intake.intake_publish(
         _cfg(hub, http2), "flight-docs", "abc1234", "acme/flight-docs", [], _kb_archive()
@@ -136,7 +136,7 @@ def test_intake_publish_applies_deletes(hub, monkeypatch):
     intake.intake_publish(
         cfg, "flight-docs", "aaa", "acme/flight-docs", [], _kb_archive()
     )
-    # publish 2: xoá doc-a/_manifest.yaml
+    # publish 2: delete doc-a/_manifest.yaml
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
         content = b"docs: []\n"
@@ -153,8 +153,8 @@ def test_intake_publish_applies_deletes(hub, monkeypatch):
 
 
 def test_intake_publish_after_merge_resets_branch_from_main(hub, monkeypatch):
-    """PR merged xong, publish tiếp: branch phải reset từ main mới (không
-    reuse branch cũ diverged trước merge)."""
+    """After the PR is merged, publishing again: the branch must reset from the new
+    main (not reuse the old branch that diverged before the merge)."""
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     http = FakeHTTP(
@@ -167,10 +167,10 @@ def test_intake_publish_after_merge_resets_branch_from_main(hub, monkeypatch):
     intake.intake_publish(
         cfg, "flight-docs", "aaa", "acme/flight-docs", [], _kb_archive()
     )
-    # --no-ff: merge commit thật (như GitHub merge mặc định) — fast-forward
-    # sẽ làm assert merge-base vô nghĩa (branch cũ vẫn là ancestor của main)
+    # --no-ff: real merge commit (like GitHub's default merge) — fast-forward would
+    # make the merge-base assert meaningless (old branch still an ancestor of main)
     _git(hub, "merge", "--no-ff", "--no-edit", "publish/flight-docs")
-    # publish 2 với nội dung đổi 1 file
+    # publish 2 with content changing 1 file
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
         content = b"docs:\n- id: doc-a\n  title: Doc A v2\n"
@@ -181,15 +181,16 @@ def test_intake_publish_after_merge_resets_branch_from_main(hub, monkeypatch):
         cfg, "flight-docs", "bbb", "acme/flight-docs", [], buf.getvalue()
     )
     assert pr.endswith("/pull/2")
-    # branch mới phải ngồi trên main đã merge, không phải history cũ
+    # the new branch must sit on the merged main, not the old history
     merge_base = _git(hub, "merge-base", "publish/flight-docs", "main").strip()
     main_sha = _git(hub, "rev-parse", "main").strip()
     assert merge_base == main_sha
 
 
 def test_intake_publish_after_merge_identical_content_is_noop(hub, monkeypatch):
-    """PR merged xong, republish nội dung y hệt: branch reset từ main đã có
-    content nên porcelain sạch → trả "", không gọi GitHub API nào."""
+    """After the PR is merged, republishing identical content: the branch resets from
+    a main that already has the content so porcelain is clean → returns "", no GitHub
+    API calls."""
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     http1 = FakeHTTP(
@@ -216,10 +217,10 @@ def test_hub_manifest_excludes_meta(hub, monkeypatch):
     intake.intake_publish(
         _cfg(hub, http), "flight-docs", "aaa", "acme/flight-docs", [], _kb_archive()
     )
-    # manifest đọc từ branch main — chưa merge nên rỗng là đúng;
-    # đọc từ working tree sau checkout branch thì có file. hub_manifest đọc
-    # trạng thái main (đã merge) — mô phỏng bằng merge branch vào main
-    # (--no-ff như GitHub merge mặc định):
+    # the manifest is read from the main branch — not merged yet, so empty is correct;
+    # reading the working tree after checking out the branch does show files.
+    # hub_manifest reads the state of main (post-merge) — simulated by merging the
+    # branch into main (--no-ff like GitHub's default merge):
     _git(hub, "merge", "--no-ff", "--no-edit", "publish/flight-docs")
     man = intake.hub_manifest(str(hub), "flight-docs")
     assert "index.yaml" in man

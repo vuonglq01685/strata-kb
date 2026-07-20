@@ -91,6 +91,31 @@ def test_login_wrong_token_shows_error_no_cookie(fed_hub):
     assert "Invalid token" in resp.text
 
 
+def test_login_failure_is_logged(fed_hub, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="center_kb.web.ui"):
+        _client(fed_hub / ".kb", str(fed_hub)).post(
+            "/ui/login", data={"token": "wrong"}
+        )
+    assert "login" in caplog.text.lower()
+    # the submitted value must never be logged (it may be a near-miss token)
+    assert "wrong" not in caplog.text
+
+
+def test_login_rate_limited_after_repeated_failures(fed_hub):
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    for _ in range(5):
+        resp = c.post("/ui/login", data={"token": "wrong"})
+        assert resp.status_code == 200
+    limited = c.post("/ui/login", data={"token": "wrong"})
+    assert limited.status_code == 429
+    # correct token also refused while limited — limiter keys on the client,
+    # a brute-forcer must not confirm a hit inside the lockout window
+    still = c.post("/ui/login", data={"token": TOKEN}, follow_redirects=False)
+    assert still.status_code == 429
+
+
 def test_home_shows_search_form(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui")
     assert resp.status_code == 200
@@ -268,13 +293,13 @@ def test_home_query_shows_keyword_match_badge(fed_hub):
 
 
 def test_result_head_hides_raw_rrf_score(fed_hub):
-    # RRF score ~0.016-0.033 → "score 0.02" cho mọi kết quả = vô nghĩa với
-    # người đọc; badge match-mode + token count là đủ
+    # RRF scores ~0.016-0.033 → "score 0.02" on every result = meaningless to
+    # the reader; the match-mode badge + token count are enough
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui", params={"q": "airspace designation"}
     )
     assert "score 0.0" not in resp.text
-    assert "tk</span>" in resp.text  # token count vẫn hiển thị
+    assert "tk</span>" in resp.text  # token count still shown
 
 
 def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch):

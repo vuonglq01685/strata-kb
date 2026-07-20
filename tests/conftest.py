@@ -7,10 +7,10 @@ from center_kb import models
 
 
 class FakeEmbedder:
-    """Vector 4 chiều deterministic theo marker word — không cần model thật.
+    """Deterministic 4-dimensional vector keyed on marker words — no real model needed.
 
-    'corridor' cùng axis với 'airspace' để test semantic-leg tìm được section
-    airspace từ query không chứa keyword nào trùng FTS.
+    'corridor' shares an axis with 'airspace' so the semantic leg can find the
+    airspace section from a query that contains no keyword matching FTS.
     """
 
     dim = 4
@@ -42,9 +42,9 @@ def pytest_addoption(parser):
 
 @pytest.fixture(autouse=True)
 def _no_real_embedder(request, monkeypatch):
-    """search() giờ resolve default_embedder() eager mỗi query — unit test phải
-    hermetic: máy dev có fastembed cũng không được load/download model thật.
-    Bỏ qua khi test đánh dấu real_embedder hoặc chạy --run-slow."""
+    """search() now resolves default_embedder() eagerly on every query — unit tests
+    must be hermetic: a dev machine with fastembed must not load/download the real
+    model. Skipped for tests marked real_embedder or when running --run-slow."""
     if request.node.get_closest_marker("real_embedder") or request.config.getoption(
         "--run-slow"
     ):

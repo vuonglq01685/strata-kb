@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -9,7 +10,19 @@ from center_kb import models
 from center_kb.ingest.sectioner import HeadingConfig, SectionUnit
 from center_kb.mdutils import count_tokens, extract_image_descs, slugify
 
-__all__ = ["ScaffoldReport", "chapter_stem", "scaffold_doc", "slugify"]
+__all__ = ["ScaffoldReport", "chapter_stem", "scaffold_doc", "slugify", "validate_doc_id"]
+
+# Same shape as publish._REPO_ID_RE: doc_id is a directory name under .kb/,
+# never a path — no separators, no leading dot.
+_DOC_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def validate_doc_id(doc_id: str) -> None:
+    if not _DOC_ID_RE.fullmatch(doc_id) or doc_id in {".", ".."}:
+        raise ValueError(
+            f"doc id '{doc_id}' is invalid — only letters/digits/._- allowed, "
+            "no path separators"
+        )
 
 
 def chapter_stem(chapter: str, title: str) -> str:
@@ -39,6 +52,7 @@ def scaffold_doc(
     part_titles: dict[str, str] | None = None,
     used_bookmarks: bool = False,
 ) -> ScaffoldReport:
+    validate_doc_id(doc_id)
     if chapters is not None:
         units = [u for u in units if u.chapter in chapters]
 

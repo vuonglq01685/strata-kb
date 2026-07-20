@@ -19,16 +19,17 @@ from center_kb.ticketlint import lint as lint_ticket
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
 
-_AMBIGUOUS_MIN_RATIO = 0.8  # top-2 "sát nhau" khi score sau >= 80% score đầu
+_AMBIGUOUS_MIN_RATIO = 0.8  # top-2 are "close" when the 2nd score >= 80% of the 1st
 
 
 def _ambiguity_note(results) -> str:
-    """Nhắc review cả 2 kết quả đầu khi thật sự khó phân định.
+    """Prompt a review of both top results when they are genuinely hard to separate.
 
-    RRF score không mang magnitude như BM25: rank kề nhau cùng leg luôn cách
-    ~1.6% tương đối (1/61 vs 1/62) nên so gap tương đối bắn note gần như mọi
-    query. Ambiguous thật khi cả hai đều được 2 leg xác nhận (hybrid) VÀ
-    score thật sự sát nhau, hoặc score bằng hệt (tie)."""
+    RRF scores carry no magnitude the way BM25 does: adjacent ranks within one
+    leg always sit ~1.6% apart in relative terms (1/61 vs 1/62), so a
+    relative-gap comparison would fire the note on almost every query. Truly
+    ambiguous means both results are confirmed by both legs (hybrid) AND the
+    scores are genuinely close, or the scores are exactly equal (tie)."""
     if len(results) < 2:
         return ""
     top, second = results[0], results[1]

@@ -39,9 +39,9 @@ class QueryResult:
     citation: str
     content: str
     tokens: int
-    source: str = ""  # repo-id trong federation
+    source: str = ""  # repo-id within the federation
     match_mode: str = "keyword"  # "keyword" | "semantic" | "hybrid"
-    snippet: str = ""  # trích L3 quanh match khi term không hiện trong L2
+    snippet: str = ""  # L3 excerpt around the match when no term appears in L2
 
 
 def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
@@ -56,14 +56,14 @@ def _row_content(hub: "HubHandle", row: "SectionRow") -> str | None:
     return slice_section(l2_path.read_text(encoding="utf-8"), row.section_id)
 
 
-_SNIPPET_WINDOW = 150  # chars mỗi bên quanh hit đầu tiên trong L3
+_SNIPPET_WINDOW = 150  # chars on each side of the first hit in L3
 
 
 def _l3_snippet(
     hub: "HubHandle", row: "SectionRow", terms: list[str], content: str
 ) -> str:
-    """Match nằm ở L3 (fold/tail) mà content L2 không chứa term nào → trích
-    cửa sổ quanh hit đầu tiên để người dùng thấy vì sao section này khớp."""
+    """The match lives in L3 (fold/tail) while the L2 content contains no term →
+    excerpt a window around the first hit so the user sees why this section matched."""
     lower = content.lower()
     if not terms or any(t in lower for t in terms):
         return ""
@@ -91,22 +91,24 @@ def _l3_snippet(
 def _search_index(
     hub: "HubHandle", embedder, text: str, tags: list[str] | None
 ) -> tuple[list[tuple[int, float, str]], dict[int, "SectionRow"]]:
-    """Chạy 2 leg + RRF trên index. DB hỏng giữa chừng → xoá, rebuild đúng
-    một lần; vẫn fail → raise (spec §5)."""
+    """Run both legs + RRF on the index. DB corrupt mid-way → delete, rebuild
+    exactly once; still failing → raise (spec §5)."""
     from center_kb import searchdb
 
     for attempt in (1, 2):
         conn: sqlite3.Connection | None = None
         try:
-            # open_fresh nằm TRONG try — corruption lộ ra lúc freshness sync
-            # cũng phải được rebuild-once như corruption lúc query (spec §5)
+            # open_fresh sits INSIDE the try — corruption surfacing during the
+            # freshness sync must get the same rebuild-once handling as
+            # corruption during a query (spec §5)
             try:
                 conn = searchdb.open_fresh(hub, embedder)
             except sqlite3.OperationalError as exc:
                 if not searchdb.is_lock_error(exc):
                     raise
-                # process khác đang giữ writer lock (sync dài) — phục vụ index
-                # hiện có (stale) thay vì fail sau busy_timeout (spec §3.2)
+                # another process holds the writer lock (long sync) — serve the
+                # existing (stale) index instead of failing after busy_timeout
+                # (spec §3.2)
                 logger.warning("search.db busy — serving existing index: %s", exc)
                 conn = searchdb.open_db(hub)
             fts_hits = searchdb.fts_search(conn, text, tags)
@@ -115,17 +117,17 @@ def _search_index(
                 try:
                     knn_hits = searchdb.knn_search(conn, embedder, text, tags)
                 except sqlite3.DatabaseError:
-                    raise  # index hỏng — để nhánh rebuild xử lý
-                except Exception as exc:  # embedding best-effort, không vỡ query
+                    raise  # index corrupt — let the rebuild branch handle it
+                except Exception as exc:  # embedding best-effort, must not break the query
                     logger.warning("semantic leg failed — keyword only: %s", exc)
             fused = searchdb.rrf_merge(fts_hits, knn_hits)
             return fused, searchdb.load_sections(conn, [r for r, _, _ in fused])
         except sqlite3.DatabaseError as exc:
             if conn is not None:
-                conn.close()  # Windows: close trước khi unlink
+                conn.close()  # Windows: close before unlink
                 conn = None
             if attempt == 2 or searchdb.is_lock_error(exc):
-                raise  # lock = process khác đang ghi — không phải corruption
+                raise  # lock = another process is writing — not corruption
             logger.warning("search.db corrupt — rebuilding once: %s", exc)
             searchdb.delete_db(hub)
         finally:
@@ -140,7 +142,7 @@ def search(
     tags: list[str] | None = None,
     budget: int = 2000,
     semantic: bool = False,
-    embedder=None,  # center_kb.embed.Embedder | None — injectable cho test
+    embedder=None,  # center_kb.embed.Embedder | None — injectable for tests
 ) -> list[QueryResult]:
     from center_kb import embed as embed_mod
 
@@ -192,9 +194,9 @@ def search(
 def _parent_entry(
     manifest: models.Manifest, section_id: str
 ) -> models.SectionEntry | None:
-    """Folded id không có entry riêng — parent là entry có id là prefix dài
-    nhất của id yêu cầu, cắt tại '.' hoặc '-' ('3.2.1' → '3.2';
-    '5.6-commentary' → '5.6')."""
+    """A folded id has no entry of its own — the parent is the entry whose id
+    is the longest prefix of the requested id, cut at '.' or '-' ('3.2.1' →
+    '3.2'; '5.6-commentary' → '5.6')."""
     best: models.SectionEntry | None = None
     for s in manifest.sections:
         if section_id.startswith((s.id + ".", s.id + "-")):
@@ -215,8 +217,8 @@ def _folded_result(
     if parent is None:
         return None
     if level != "l3":
-        # L2 không có anchor con (summary phủ cả folded child) — trả parent
-        # với citation id parent, không nói dối vị trí.
+        # L2 has no child anchor (the summary covers the folded child) — return
+        # the parent with the parent's citation id; do not lie about the location.
         return _get_section_in(repo_kb, repo_id, doc_id, parent.id, level)
     path = repo_kb / doc_id / f"{parent.file}.raw.md"
     if not path.exists():

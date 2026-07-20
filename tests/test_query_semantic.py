@@ -17,7 +17,7 @@ def _bump_meta(entry, stamp="2026-07-14T09:00:00+00:00"):
 
 
 def test_hybrid_both_legs_match_mode_hybrid(fed_hub):
-    # 'airspace' trúng cả FTS (title/summary) lẫn KNN (axis 0) → hybrid
+    # 'airspace' hits both FTS (title/summary) and KNN (axis 0) → hybrid
     results = search(
         HubHandle(root=fed_hub), "restrictive airspace", embedder=FakeEmbedder()
     )
@@ -27,8 +27,8 @@ def test_hybrid_both_legs_match_mode_hybrid(fed_hub):
 
 
 def test_semantic_only_when_no_keyword_overlap(fed_hub):
-    # 'corridor' không có trong corpus (FTS miss) nhưng FakeEmbedder map cùng
-    # axis với 'airspace' → chỉ KNN leg trả → match_mode semantic
+    # 'corridor' is absent from the corpus (FTS miss) but FakeEmbedder maps to the
+    # same axis as 'airspace' → only the KNN leg returns → match_mode semantic
     results = search(
         HubHandle(root=fed_hub), "corridor clearance", embedder=FakeEmbedder()
     )
@@ -38,7 +38,7 @@ def test_semantic_only_when_no_keyword_overlap(fed_hub):
 
 def test_keyword_only_without_embedder(fed_hub):
     results = search(HubHandle(root=fed_hub), "airspace designation type")
-    assert results  # autouse fixture ép default_embedder → None
+    assert results  # autouse fixture forces default_embedder → None
     assert all(r.match_mode == "keyword" for r in results)
 
 
@@ -47,7 +47,7 @@ def test_no_embedder_no_crash_on_miss(fed_hub):
 
 
 def test_garbage_query_semantic_returns_empty_not_nearest(fed_hub):
-    # mọi KNN score dưới SEMANTIC_MIN_SCORE → không pad kết quả gần-mà-vô-nghĩa
+    # every KNN score below SEMANTIC_MIN_SCORE → no near-but-meaningless result padding
     results = search(
         HubHandle(root=fed_hub), "zzz qqq xxx", semantic=True, embedder=FakeEmbedder()
     )
@@ -57,7 +57,7 @@ def test_garbage_query_semantic_returns_empty_not_nearest(fed_hub):
 def test_semantic_flag_without_embedder_warns(fed_hub, caplog):
     with caplog.at_level("WARNING", logger="center_kb.query"):
         results = search(HubHandle(root=fed_hub), "airspace", semantic=True)
-    assert results  # vẫn trả FTS leg
+    assert results  # FTS leg still returns
     assert any("semantic" in r.message.lower() for r in caplog.records)
 
 
@@ -66,7 +66,7 @@ def test_knn_leg_error_falls_back_to_keyword(fed_hub, caplog):
         calls = 0
 
         def embed(self, texts):
-            # lần 1 (sync) chạy được, lần 2 (query vector) nổ
+            # call 1 (sync) works, call 2 (query vector) blows up
             type(self).calls += 1
             if type(self).calls > 1:
                 raise RuntimeError("boom")
@@ -77,20 +77,20 @@ def test_knn_leg_error_falls_back_to_keyword(fed_hub, caplog):
             HubHandle(root=fed_hub), "restrictive airspace",
             embedder=ExplodingEmbedder(),
         )
-    assert results  # keyword leg vẫn trả
+    assert results  # keyword leg still returns
     assert all(r.match_mode == "keyword" for r in results)
 
 
 class BrokenEmbedder(FakeEmbedder):
-    """Nổ ngay lần embed đầu tiên — mô phỏng onnx runtime fail lúc sync."""
+    """Blows up on the very first embed — simulates onnx runtime failing during sync."""
 
     def embed(self, texts):
         raise RuntimeError("onnx runtime blew up")
 
 
 def test_embedder_failure_during_sync_degrades_to_keyword(fed_hub, caplog):
-    # spec §5: embedding best-effort — embed fail lúc lazy sync không được
-    # giết query; FTS leg vẫn phải trả kết quả
+    # spec §5: embedding is best-effort — an embed failure during lazy sync must not
+    # kill the query; the FTS leg must still return results
     from center_kb import searchdb
 
     hub = HubHandle(root=fed_hub)
@@ -99,7 +99,7 @@ def test_embedder_failure_during_sync_degrades_to_keyword(fed_hub, caplog):
     assert results
     assert all(r.match_mode == "keyword" for r in results)
     assert any("vector sync failed" in r.message for r in caplog.records)
-    # FTS/sections work phải được commit dù embed fail — không sync lại từ đầu
+    # FTS/sections work must be committed even if embed fails — no full re-sync
     conn = searchdb.open_db(hub)
     try:
         assert conn.execute("SELECT COUNT(*) FROM sections").fetchone()[0] > 0
@@ -108,8 +108,8 @@ def test_embedder_failure_during_sync_degrades_to_keyword(fed_hub, caplog):
 
 
 def test_corruption_during_freshness_sync_rebuilds_once(fed_hub, monkeypatch):
-    # corruption lộ ra trong freshness sync (qua open_db meta check nhưng
-    # DML fail) cũng phải rebuild-once như corruption lúc query (spec §5)
+    # corruption surfacing during freshness sync (passes the open_db meta check but
+    # DML fails) must also rebuild-once like corruption during query (spec §5)
     import sqlite3
 
     from center_kb import searchdb
@@ -128,12 +128,12 @@ def test_corruption_during_freshness_sync_rebuilds_once(fed_hub, monkeypatch):
     monkeypatch.setattr(searchdb, "open_fresh", flaky)
     results = search(hub, "restrictive airspace designation")
     assert results
-    assert calls["n"] == 2  # lần 1 hỏng → rebuild → lần 2 thành công
+    assert calls["n"] == 2  # call 1 broken → rebuild → call 2 succeeds
 
 
 def test_sqlite_vec_load_failure_degrades_to_keyword(fed_hub, monkeypatch):
-    # Python build thiếu loadable-extension support (enable_load_extension
-    # vắng / load fail) → FTS-only, không vỡ toàn bộ search (spec §5)
+    # Python build lacking loadable-extension support (enable_load_extension
+    # missing / load fails) → FTS-only, must not break search entirely (spec §5)
     import sqlite_vec as vec_mod
 
     def broken_load(conn):
@@ -150,8 +150,8 @@ def test_sqlite_vec_load_failure_degrades_to_keyword(fed_hub, monkeypatch):
 
 
 def test_locked_db_error_propagates_without_delete(fed_hub, monkeypatch):
-    # database is locked trong lúc query = process khác đang sync —
-    # phải raise, tuyệt đối không xoá index đang được ghi (spec §3.2)
+    # database is locked during a query = another process is syncing —
+    # must raise, absolutely never delete an index that is being written (spec §3.2)
     import sqlite3
 
     from center_kb import searchdb
@@ -171,8 +171,8 @@ def test_locked_db_error_propagates_without_delete(fed_hub, monkeypatch):
 
 
 def test_search_serves_stale_index_when_sync_locked(fed_hub, monkeypatch):
-    # sync dài đang giữ writer lock + fingerprint lệch (có việc phải sync) —
-    # query phục vụ index hiện có (stale) thay vì fail sau busy_timeout
+    # a long sync holds the writer lock + fingerprint mismatch (there is sync work) —
+    # query serves the existing (stale) index instead of failing after busy_timeout
     import sqlite3
 
     from center_kb import models, searchdb
@@ -182,7 +182,7 @@ def test_search_serves_stale_index_when_sync_locked(fed_hub, monkeypatch):
     assert search(hub, "restrictive airspace")  # build index
     meta_path = fed_hub / "federation" / "arinc-kb" / "_meta.yaml"
     meta = models.load_yaml_model(meta_path, FederationMeta)
-    meta.published_at = "2026-07-14T09:00:00+00:00"  # fingerprint lệch
+    meta.published_at = "2026-07-14T09:00:00+00:00"  # fingerprint mismatch
     models.save_yaml_model(meta_path, meta)
     monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
     holder = sqlite3.connect(searchdb.db_path(hub))
@@ -192,7 +192,7 @@ def test_search_serves_stale_index_when_sync_locked(fed_hub, monkeypatch):
     finally:
         holder.rollback()
         holder.close()
-    assert results  # không raise — trả kết quả từ index cũ
+    assert results  # no raise — returns results from the old index
 
 
 def test_corrupt_db_rebuilt_once_transparently(fed_hub):
@@ -201,7 +201,7 @@ def test_corrupt_db_rebuilt_once_transparently(fed_hub):
     hub = HubHandle(root=fed_hub)
     search(hub, "airspace")  # build index
     searchdb.db_path(hub).write_bytes(b"corrupted")
-    results = search(hub, "restrictive airspace designation")  # rebuild + trả kết quả
+    results = search(hub, "restrictive airspace designation")  # rebuild + return results
     assert results
 
 
@@ -217,7 +217,7 @@ def test_search_snippet_when_match_only_in_l3(fed_hub):
     results = search(hub, "GRYPHON42", embedder=None)
     assert len(results) == 1
     r = results[0]
-    assert "gryphon42" not in r.content.lower()  # L2 không chứa term
+    assert "gryphon42" not in r.content.lower()  # L2 does not contain the term
     assert "GRYPHON42" in r.snippet
     assert r.snippet.startswith("…") or r.snippet.startswith("##")
 

@@ -152,7 +152,7 @@ CENTER-KB/
 │
 ├── .mcp.json                 ← MCP server config for Claude Code (Phase 2, see §7.8)
 ├── src/center_kb/              ← Tool source (devs only)
-│   ├── cli.py                       `kb` CLI (11 commands, see §7)
+│   ├── cli.py                       `kb` CLI (19 commands, see §7)
 │   ├── ingest/                      "split PDF into sections"
 │   ├── build.py                     integrity checks
 │   ├── query.py                     search & answer
@@ -200,7 +200,7 @@ pip install -e ".[ingest,dev]"
 kb --help
 ```
 
-If step 5 prints the command list (`init`, `ingest`, `status`, `build`, `query`, `get`, `stats`, `publish`, `reindex`, `context`, `resolve`, `diff`, `doctor`) — install succeeded.
+If step 5 prints the command list (`init`, `docker-setup`, `ingest`, `summarize`, `status`, `build`, `query`, `get`, `stats`, `publish`, `ci-publish`, `reindex`, `resolve`, `diff`, `approve`, `doctor`, `context`, `assets`, `ticket`) — install succeeded.
 
 > **Note:** every new terminal session, run `source .venv/bin/activate` again first (you'll see `(.venv)` in the prompt).
 

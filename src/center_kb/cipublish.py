@@ -61,12 +61,16 @@ def _request_oidc_token(audience: str, http) -> str:
     return json.loads(raw)["value"]
 
 
-def _fetch_remote_manifest(intake_url: str, rid: str, http) -> dict[str, str]:
+def _fetch_remote_manifest(
+    intake_url: str, rid: str, token: str, http
+) -> dict[str, str]:
     url = (
         f"{intake_url.rstrip('/')}/intake/manifest?"
         + urllib.parse.urlencode({"repo_id": rid})
     )
-    status, raw = http("GET", url, {}, None)
+    # The manifest endpoint is OIDC-gated (same audience as publish) so one
+    # child can never diff another child's tree.
+    status, raw = http("GET", url, {"Authorization": f"Bearer {token}"}, None)
     if status != 200:
         print(f"[warn] manifest endpoint returned {status} — falling back to full upload")
         return {}
@@ -113,7 +117,12 @@ def run(
     rid = repo_id or root.name
     commit = gitio.head_commit(root)
 
-    remote_man = _fetch_remote_manifest(intake_url, rid, http)
+    # Token first: the manifest diff GET below authenticates with the same
+    # OIDC JWT as the publish POST.
+    audience = intake_url.rstrip("/")
+    token = (token_requester or _request_oidc_token)(audience, http)
+
+    remote_man = _fetch_remote_manifest(intake_url, rid, token, http)
     local_man = hashsync.build_manifest(kb_abs)
     changed, deleted = hashsync.diff_manifests(local_man, remote_man)
     if not changed and not deleted:
@@ -121,8 +130,6 @@ def run(
         return ""
     print(f"publishing {len(changed)} changed file(s), {len(deleted)} deletion(s)")
 
-    audience = intake_url.rstrip("/")
-    token = (token_requester or _request_oidc_token)(audience, http)
     archive = _build_archive(kb_abs, changed)
     body, content_type = _multipart(
         {"source_commit": commit, "deletes": deleted}, archive

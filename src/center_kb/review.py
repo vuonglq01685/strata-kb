@@ -35,11 +35,12 @@ def approve_sections(
         targets = [s.id for s in manifest.sections]
     else:
         seen: set[str] = set()
-        report.missing = [
-            sid
-            for sid in section_ids
-            if sid not in by_id and not (sid in seen or seen.add(sid))
-        ]
+        missing: list[str] = []
+        for sid in section_ids:
+            if sid not in by_id and sid not in seen:
+                seen.add(sid)
+                missing.append(sid)
+        report.missing = missing
         targets = [sid for sid in section_ids if sid in by_id]
 
     for sid in targets:

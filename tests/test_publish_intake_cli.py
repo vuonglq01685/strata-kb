@@ -99,8 +99,10 @@ class FakeHTTP:
     def __init__(self, table):
         self.table = table
         self.posted = []
+        self.calls = []
 
     def __call__(self, method, url, headers, body):
+        self.calls.append((method, url, headers))
         if method == "POST":
             self.posted.append((url, headers, body))
         for prefix, resp in self.table.items():
@@ -132,10 +134,33 @@ class TestCIPublish:
         from center_kb import hashsync
 
         local = hashsync.build_manifest(root / ".kb")
-        http = FakeHTTP({"https://kb.test/intake/manifest": (200, {"files": local})})
+        http = FakeHTTP(
+            {
+                "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+                "https://kb.test/intake/manifest": (200, {"files": local}),
+            }
+        )
         out = cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
         assert out == ""
         assert http.posted == []
+
+    def test_manifest_request_carries_oidc_token(self, child, monkeypatch):
+        """/intake/manifest is OIDC-gated on the hub — the diff GET must authenticate."""
+        root, _ = child
+        self._env(monkeypatch)
+        http = FakeHTTP(
+            {
+                "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+                "https://kb.test/intake/manifest": (200, {"files": {}}),
+                "https://kb.test/intake/publish": (
+                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
+                ),
+            }
+        )
+        cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+        manifest_calls = [c for c in http.calls if "/intake/manifest" in c[1]]
+        assert manifest_calls
+        assert manifest_calls[0][2].get("Authorization") == "Bearer oidc-jwt"
 
     def test_posts_changed_files_and_returns_pr(self, child, monkeypatch):
         root, _ = child

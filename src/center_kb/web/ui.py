@@ -25,6 +25,11 @@ from center_kb.query import AmbiguousDocError, get_section, search, tokenize
 from center_kb.web import api
 from center_kb.web.auth import COOKIE_NAME
 from center_kb.web.mdrender import render as md_render
+from center_kb.web.ratelimit import (
+    LOGIN_MAX_ATTEMPTS,
+    LOGIN_WINDOW_SECONDS,
+    SlidingWindowLimiter,
+)
 
 logger = logging.getLogger("center_kb.web.ui")
 
@@ -132,19 +137,34 @@ def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
 
 
 def build_routes(
-    config: ServerConfig, token: str, store_factory=None
+    config: ServerConfig, token: str, store_factory=None, login_limiter=None
 ) -> list[Route]:
+    limiter = login_limiter or SlidingWindowLimiter(
+        LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS
+    )
+
     async def login_get(request: Request) -> HTMLResponse:
         body = _template("login.html").substitute(error="")
         return _page("Sign in", body)
 
     async def login_post(request: Request) -> Response:
+        client_ip = request.client.host if request.client else "unknown"
+        # Checked before the token compare: a brute-forcer must not learn of
+        # a hit inside the lockout window.
+        if not limiter.allow(client_ip):
+            logger.warning("login rate-limited for %s", client_ip)
+            body = _template("login.html").substitute(
+                error='<p class="error">Too many attempts — try again later.</p>'
+            )
+            return _page("Sign in", body, status=429)
         form = await request.form()
         submitted = str(form.get("token", ""))
         if hmac.compare_digest(submitted, token):
             resp = RedirectResponse("/ui", status_code=303)
             resp.set_cookie(COOKIE_NAME, submitted, httponly=True, samesite="lax")
             return resp
+        # never log the submitted value — it may be a near-miss of the token
+        logger.warning("failed login attempt from %s", client_ip)
         body = _template("login.html").substitute(
             error='<p class="error">Invalid token.</p>'
         )

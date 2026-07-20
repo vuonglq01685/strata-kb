@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
+
+# `user:pass@` / `x-access-token:<token>@` in any URL — CI templates pass
+# credential-bearing hub URLs, and git echoes the remote URL in its stderr.
+_URL_CRED_RE = re.compile(r"(\w+://)[^@/\s]+@")
 
 
 class GitError(RuntimeError):
     """Error calling git: not a repo, rev doesn't exist, path outside the repo."""
+
+
+def redact_url(text: str) -> str:
+    """Strip embedded credentials from every URL in `text`.
+
+    Must be applied to anything that can reach a log, exception message, or
+    CLI output and may contain a remote URL (the URL itself or git stderr,
+    which echoes it) — tokens must never land in CI logs.
+    """
+    return _URL_CRED_RE.sub(r"\1<redacted>@", text)
 
 
 def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -72,19 +87,19 @@ def clone(url: str, dest: Path) -> None:
         encoding="utf-8", errors="replace",
     )
     if proc.returncode != 0:
-        raise GitError(f"clone '{url}' failed: {proc.stderr.strip()}")
+        raise GitError(redact_url(f"clone '{url}' failed: {proc.stderr.strip()}"))
 
 
 def pull(root: Path) -> None:
     proc = _run(root, "pull", "--ff-only")
     if proc.returncode != 0:
-        raise GitError(f"pull failed: {proc.stderr.strip()}")
+        raise GitError(redact_url(f"pull failed: {proc.stderr.strip()}"))
 
 
 def pull_rebase(root: Path) -> None:
     proc = _run(root, "pull", "--rebase")
     if proc.returncode != 0:
-        raise GitError(f"pull --rebase failed: {proc.stderr.strip()}")
+        raise GitError(redact_url(f"pull --rebase failed: {proc.stderr.strip()}"))
 
 
 def commit_all(root: Path, message: str) -> bool:
@@ -118,7 +133,7 @@ def commit_paths(root: Path, message: str, paths: list[str]) -> bool:
 def push(root: Path) -> None:
     proc = _run(root, "push", "origin", "HEAD")
     if proc.returncode != 0:
-        raise GitError(f"push failed: {proc.stderr.strip()}")
+        raise GitError(redact_url(f"push failed: {proc.stderr.strip()}"))
 
 
 def has_remote(root: Path) -> bool:
@@ -154,7 +169,7 @@ def push_branch(root: Path, branch: str) -> None:
     """Force-push the working branch (publish/<rid> is owned by the publisher)."""
     proc = _run(root, "push", "--force", "origin", branch)
     if proc.returncode != 0:
-        raise GitError(f"push branch '{branch}' failed: {proc.stderr.strip()}")
+        raise GitError(redact_url(f"push branch '{branch}' failed: {proc.stderr.strip()}"))
 
 
 def tag(root: Path, name: str) -> None:
@@ -166,7 +181,7 @@ def tag(root: Path, name: str) -> None:
 def push_tag(root: Path, name: str) -> None:
     proc = _run(root, "push", "origin", f"refs/tags/{name}")
     if proc.returncode != 0:
-        raise GitError(f"push tag '{name}' failed: {proc.stderr.strip()}")
+        raise GitError(redact_url(f"push tag '{name}' failed: {proc.stderr.strip()}"))
 
 
 def push_branch_url(root: Path, url: str, branch: str) -> None:
@@ -177,5 +192,5 @@ def push_branch_url(root: Path, url: str, branch: str) -> None:
     """
     proc = _run(root, "push", "--force", url, f"{branch}:{branch}")
     if proc.returncode != 0:
-        detail = proc.stderr.strip().replace(url, "<hub-url>")
+        detail = redact_url(proc.stderr.strip().replace(url, "<hub-url>"))
         raise GitError(f"push branch '{branch}' failed: {detail}")

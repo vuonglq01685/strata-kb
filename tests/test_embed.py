@@ -24,13 +24,13 @@ def test_default_embedder_none_when_missing(monkeypatch):
     _reset_cache()
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert embed.default_embedder() is None
-    _reset_cache()  # không để None cached rò sang test khác
+    _reset_cache()  # don't let the cached None leak into other tests
 
 
 @pytest.mark.real_embedder
 def test_default_embedder_cached_per_process(monkeypatch):
-    # MCP/web server gọi search() mỗi request — không được init lại
-    # ONNX model (hàng trăm ms tới vài giây) mỗi lần
+    # MCP/web server calls search() on every request — must not re-init the
+    # ONNX model (hundreds of ms to a few seconds) each time
     inits = {"n": 0}
 
     class CountingEmbedder:
@@ -49,15 +49,15 @@ def test_default_embedder_cached_per_process(monkeypatch):
         first = embed.default_embedder()
         second = embed.default_embedder()
     finally:
-        _reset_cache()  # không rò CountingEmbedder cached sang test khác
+        _reset_cache()  # don't leak the cached CountingEmbedder into other tests
     assert first is second
     assert inits["n"] == 1
 
 
 @pytest.mark.real_embedder
 def test_default_embedder_thread_safe_single_init(monkeypatch):
-    # MCP/web server đa luồng — check-then-set không lock sẽ init ONNX model
-    # nhiều lần (chậm + leak instance)
+    # MCP/web server is multithreaded — check-then-set without a lock would
+    # init the ONNX model multiple times (slow + leaked instances)
     import threading
     import time
 
