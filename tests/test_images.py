@@ -76,6 +76,68 @@ def test_ocr_image_returns_empty_on_missing_engine(monkeypatch):
     assert images.ocr_image(_img(32, 32)) == ""
 
 
+def test_ocr_image_pins_pipeline_torch_engine(monkeypatch):
+    # rapidocr's own default config is onnxruntime + Chinese; the Docker
+    # image ships torch only (parser pins backend="torch", lang=["en"]), so
+    # a bare RapidOCR() raises "onnxruntime is not installed" and every OCR
+    # description is silently lost. Assert the engine is built with the same
+    # pin the pipeline uses. Stubs: CI installs [dev] only (no rapidocr).
+    import sys
+    import types
+
+    captured = {}
+
+    class _EngineType:
+        ONNXRUNTIME = object()
+        TORCH = object()
+
+    class _LangDet:
+        EN = object()
+
+    class _LangRec:
+        EN = object()
+
+    class _ModelType:
+        MOBILE = object()
+
+    class _OCRVersion:
+        PPOCRV4 = object()
+
+    class _Out:
+        txts = ("VOR", " DME ")
+
+    class _FakeRapidOCR:
+        def __init__(self, params=None):
+            captured["params"] = params or {}
+
+        def __call__(self, arr):
+            return _Out()
+
+    rapidocr_mod = types.ModuleType("rapidocr")
+    rapidocr_mod.RapidOCR = _FakeRapidOCR
+    rapidocr_mod.EngineType = _EngineType
+    utils_mod = types.ModuleType("rapidocr.utils")
+    typings_mod = types.ModuleType("rapidocr.utils.typings")
+    typings_mod.LangDet = _LangDet
+    typings_mod.LangRec = _LangRec
+    typings_mod.ModelType = _ModelType
+    typings_mod.OCRVersion = _OCRVersion
+    monkeypatch.setitem(sys.modules, "rapidocr", rapidocr_mod)
+    monkeypatch.setitem(sys.modules, "rapidocr.utils", utils_mod)
+    monkeypatch.setitem(sys.modules, "rapidocr.utils.typings", typings_mod)
+    monkeypatch.setattr(images, "_OCR_ENGINE", None)
+
+    assert images.ocr_image(_img(32, 32)) == "VOR DME"
+
+    params = captured["params"]
+    for stage in ("Det", "Cls", "Rec"):
+        assert params[f"{stage}.engine_type"] is _EngineType.TORCH
+        assert params[f"{stage}.ocr_version"] is _OCRVersion.PPOCRV4
+        assert params[f"{stage}.model_type"] is _ModelType.MOBILE
+    assert params["Det.lang_type"] is _LangDet.EN
+    assert params["Rec.lang_type"] is _LangRec.EN
+
+
 imagehash = pytest.importorskip("imagehash")
 
 
