@@ -56,6 +56,63 @@ def test_approve_unknown_doc_raises(git_kb):
         approve_sections(git_kb["kb"], "missing-doc")
 
 
+def _dup_doc(kb):
+    """Doc whose section ids repeat across parts (regulatory numbering restarts
+    per part): id '1' and '1.1' each occur once in partA and once in partB.
+    Mirrors ICAO Annex 8, where §-numbers restart inside every Part."""
+    doc_dir = kb / "dup-doc"
+    doc_dir.mkdir()
+    for part in ("partA", "partB"):
+        (doc_dir / f"{part}.md").write_text("## 1 X\n\ncondensed.\n", encoding="utf-8")
+        (doc_dir / f"{part}.raw.md").write_text("## 1 X\n\nraw.\n", encoding="utf-8")
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(
+            id="dup-doc",
+            title="Dup Doc",
+            sections=[
+                models.SectionEntry(id="1", title="A one", summary="s", status="summarized", file="partA"),
+                models.SectionEntry(id="1.1", title="A oneone", summary="s", status="summarized", file="partA"),
+                models.SectionEntry(id="1", title="B one", summary="s", status="summarized", file="partB"),
+                models.SectionEntry(id="1.1", title="B oneone", summary="s", status="summarized", file="partB"),
+            ],
+        ),
+    )
+
+
+def _section_statuses(kb, doc_id):
+    """Ordered (file, id) → status — does NOT collapse duplicate ids."""
+    manifest = models.load_yaml_model(kb / doc_id / "_manifest.yaml", models.Manifest)
+    return {(s.file, s.id): s.status for s in manifest.sections}
+
+
+def test_approve_flips_every_duplicate_id_section(git_kb):
+    _dup_doc(git_kb["kb"])
+    report = approve_sections(git_kb["kb"], "dup-doc")
+    assert report.flipped == ["1", "1.1", "1", "1.1"]
+    assert set(_section_statuses(git_kb["kb"], "dup-doc").values()) == {"reviewed"}
+
+
+def test_approve_duplicate_ids_idempotent(git_kb):
+    _dup_doc(git_kb["kb"])
+    approve_sections(git_kb["kb"], "dup-doc")
+    report = approve_sections(git_kb["kb"], "dup-doc")
+    assert report.flipped == []
+    assert set(_section_statuses(git_kb["kb"], "dup-doc").values()) == {"reviewed"}
+
+
+def test_approve_section_reaches_all_occurrences_of_id(git_kb):
+    _dup_doc(git_kb["kb"])
+    report = approve_sections(git_kb["kb"], "dup-doc", ["1"])
+    assert report.flipped == ["1", "1"]
+    assert _section_statuses(git_kb["kb"], "dup-doc") == {
+        ("partA", "1"): "reviewed",
+        ("partA", "1.1"): "summarized",
+        ("partB", "1"): "reviewed",
+        ("partB", "1.1"): "summarized",
+    }
+
+
 def _add_new_doc(kb, register_in_index: bool) -> None:
     """A doc present in the worktree but absent at every committed rev."""
     doc_dir = kb / "new-doc"

@@ -28,28 +28,29 @@ def approve_sections(
     if not manifest_path.exists():
         raise ValueError(f"doc '{doc_id}' is not in the worktree ({manifest_path})")
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
-    by_id = {s.id: s for s in manifest.sections}
 
     report = ApproveReport(doc_id=doc_id)
+    # Iterate sections directly rather than a {id: section} dict: section ids
+    # are NOT unique (regulatory docs restart §-numbering inside each part), so
+    # keying on id alone collapses every duplicate to one entry and strands the
+    # rest in `summarized` forever. `wanted=None` means "every section".
     if section_ids is None:
-        targets = [s.id for s in manifest.sections]
+        wanted: set[str] | None = None
     else:
-        seen: set[str] = set()
-        missing: list[str] = []
-        for sid in section_ids:
-            if sid not in by_id and sid not in seen:
-                seen.add(sid)
-                missing.append(sid)
-        report.missing = missing
-        targets = [sid for sid in section_ids if sid in by_id]
+        wanted = set(section_ids)
+        present = {s.id for s in manifest.sections}
+        report.missing = [
+            sid for sid in dict.fromkeys(section_ids) if sid not in present
+        ]
 
-    for sid in targets:
-        sec = by_id[sid]
+    for sec in manifest.sections:
+        if wanted is not None and sec.id not in wanted:
+            continue
         if sec.status == "summarized":
             sec.status = "reviewed"
-            report.flipped.append(sid)
+            report.flipped.append(sec.id)
         elif sec.status == "pending":
-            report.skipped_pending.append(sid)
+            report.skipped_pending.append(sec.id)
 
     if report.flipped:
         models.save_yaml_model(manifest_path, manifest)
