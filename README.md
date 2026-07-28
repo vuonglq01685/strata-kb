@@ -216,7 +216,7 @@ scaffolds accordingly, and records the choice as `kind:` in
 |---|---|
 | `hub` | Central knowledge hub. Hosts `federation/` — the single source of truth for search — and runs the shared HTTP MCP server + Web UI. Receives publishes from child repos; merging hub PRs is the review gate that makes content searchable. |
 | `child` | Authoring repo. Ingest PDFs → summarize → `kb build` → `kb publish` to the hub. Must point `hub:` in `.kb/config.yaml` at the main hub; does not host the company-wide MCP/Web service. |
-| `ba` | Requirements repo (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)). Drafts Dev-ready tickets grounded in the KB via the `ba-ticket-author` skill, versions them under `tickets/`, and gates them with a CI Definition-of-Ready check (`kb ticket lint`). Never ingests, summarizes, or publishes KB content. |
+| `ba` | Requirements repo (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)). Drafts Dev-ready tickets — and, upstream of them for large features, epic-level mission plans (Phase 4.1) — grounded in the KB via the `ba-ticket-author` and `ba-mission-plan` skills, versions them under `tickets/` and `missions/`, and gates both with CI Definition-of-Ready checks (`kb ticket lint`, `kb mission lint`). Never ingests, summarizes, or publishes KB content. |
 
 Then run `kb docker-setup` (or the `/kb-docker-setup` slash command) on a
 hub or child repo: on the hub it creates `.env`, generates the HTTP token,
@@ -224,8 +224,9 @@ and starts the service (`docker compose up -d`); on a child it pulls the
 ingest image for one-shot Docker ingest — a `ba` repo needs neither Docker
 nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
 `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub Copilot, and
-Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` instead,
-see [7.10](#710-phase-4--ba-ticket-authoring)); MCP client wiring ships as
+Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` and
+`/ba-mission-plan` instead, see [7.10](#710-phase-4--ba-ticket-authoring));
+MCP client wiring ships as
 `.mcp.json` (Claude Code)
 and `.cursor/mcp.json` (Cursor) on every kind — stdio on the hub,
 HTTP-with-env-vars on child and `ba` repos. Re-running `kb init` refreshes
@@ -273,7 +274,7 @@ once: `git config --global core.longpaths true`, and set the registry key
 
 ## 7. `kb` command dictionary
 
-The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` (Phase 4 — BA ticket authoring, a `ba`-kind repo only) is in [7.10](#710-phase-4--ba-ticket-authoring).
+The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` and `kb mission lint` (Phase 4 — BA ticket/mission authoring, a `ba`-kind repo only) are in [7.10](#710-phase-4--ba-ticket-authoring).
 
 | # | Command | Purpose | Who runs it |
 |---|---|---|---|
@@ -490,11 +491,16 @@ Phase 2 lets one knowledge store talk to developers via MCP and pin citations. P
 
 ### 7.10 Phase 4 — BA ticket authoring
 
-Phase 4 adds a third `kind`, `ba` — a requirements repo that never ingests, summarizes, or publishes KB content, but drafts Dev-ready tickets grounded in it. The `ba-ticket-author` skill/command/prompt (Claude Code, GitHub Copilot, Cursor) runs a six-step pipeline: **Intake** (the BA describes the business need — capability, role, value) → **Ground** (`kb_search` surfaces candidate sections; the BA reviews and picks which apply) → **Draft** (fills the ticket template — story, ACs, use cases, sequence + business-flow Mermaid diagrams — citing `doc-id §section` for every claim that touches a standard) → **Pin** (`kb_context_new` embeds the returned `## KB context` block, pinned at the hub's current commit) → **Lint** (`kb ticket lint` — the Definition-of-Ready gate — runs and re-runs until it reports `DoR: PASS`) → **BA review** (the draft lands in `tickets/<ticket-id>.md`; the BA reads it, commits it, and pastes it into Jira themselves). The agent never pushes to Jira or opens tickets on its own — Markdown out, human-in-the-loop by design. Every pull request touching `tickets/**.md` on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml` in CI, which fails the check unless `kb ticket lint` reports PASS for every changed ticket (branch protection on the repo then blocks the merge); `kb_ticket_lint` is the fifth MCP tool (see [7.8](#78-phase-2--workflow-integration) above), so an agent can run the same gate over MCP instead of a terminal.
+Phase 4 adds a third `kind`, `ba` — a requirements repo that never ingests, summarizes, or publishes KB content, but drafts Dev-ready tickets grounded in it. The `ba-ticket-author` skill/command/prompt (Claude Code, GitHub Copilot, Cursor) runs a seven-step pipeline: **Intake** (the BA describes the business need — capability, role, value) → **Parent mission** (optional — if the BA names a parent mission, the agent reads its `missions/<mission-id>.md`, takes the story title from the US backlog row, and writes a `> Parent mission: <mission-id>` line directly under the ticket's title, saving the ticket as `tickets/<mission-id>-US<n>.md` so the back-link check below can find it) → **Ground** (`kb_search` surfaces candidate sections; the BA reviews and picks which apply) → **Draft** (fills the ticket template — story, ACs, use cases, sequence + business-flow Mermaid diagrams — citing `doc-id §section` for every claim that touches a standard) → **Pin** (`kb_context_new` embeds the returned `## KB context` block, pinned at the hub's current commit) → **Lint** (`kb ticket lint` — the Definition-of-Ready gate — runs and re-runs until it reports `DoR: PASS`) → **BA review** (the draft lands in `tickets/<ticket-id>.md`; the BA reads it, commits it, and pastes it into Jira themselves). The agent never pushes to Jira or opens tickets on its own — Markdown out, human-in-the-loop by design. `kb_ticket_lint` is the fifth MCP tool (see [7.8](#78-phase-2--workflow-integration) above), so an agent can run the same gate over MCP instead of a terminal.
+
+**Mission plans (Phase 4.1)** sit *upstream* of that ticket flow, for a feature that spans several User Stories (small work still goes straight to a ticket — a mission is never mandatory). The `ba-mission-plan` skill/command/prompt runs **Intake → Ground → Draft → Split → Pin → Lint → Review**, saving `missions/M-<slug>.md`: a required-structure document carrying a C4 **Level 1** (System Context) *and* **Level 2** (Container) Mermaid diagram, plus a US backlog whose ids derive from the mission id. `kb mission lint` is the second Definition-of-Ready gate — required structure, both diagrams present, a well-formed backlog, and every citation resolving at the pinned hub version; a `0/N US drafted` coverage warning is expected and normal before any ticket exists. The mission↔ticket relationship is deliberately loose: the mission holds the authoritative US backlog, and a ticket that implements one row may *optionally* name its parent with a `> Parent mission: <mission-id>` line directly under its title, saved as `tickets/<mission-id>-US<n>.md` so `kb ticket lint`'s back-link check can find it — dropping the line is valid, just untraceable. Mission lint is deliberately **CLI-only, no MCP tool** (its distinguishing checks need filesystem access to the sibling `tickets/` directory that the shared MCP server does not have), so the MCP tool count is unchanged at **5** — `kb_ticket_lint` is still the only lint-related tool.
+
+Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml` in CI — the workflow and job name stay `kb-ticket-lint` even though the gate now covers both directories, because branch protection on already-provisioned BA repos keys on that name and renaming it would leave them blocked on a check that never runs again. The trigger is deliberately not `paths`-filtered to `tickets/**.md`/`missions/**.md`: GitHub never synthesizes a passing status for a job that never started, so filtering a *required* check's trigger would leave any PR touching neither directory waiting forever. Instead the job always starts, and its one step inspects the PR's own diff and dispatches by directory, `kb ticket lint` for a changed ticket and `kb mission lint` for a changed mission — exiting 0 with a notice when nothing under either directory changed, and otherwise failing unless every changed file reports PASS (branch protection on the repo then blocks the merge).
 
 | Command | Purpose | Exit code |
 |---|---|---|
 | `kb ticket lint <file\|-> [--hub <url>] [--json]` | Definition-of-Ready gate: required sections present, every `## KB context` ref resolves at its pinned hub commit, every inline `doc-id §section` citation is backed by a pinned ref (and vice versa) | `0` PASS, `1` FAIL |
+| `kb mission lint <file\|-> [--hub <url>] [--json]` | Mission Definition-of-Ready gate: required structure, C4 L1 + L2 diagrams present, a well-formed backlog whose ids derive from the mission id, every citation resolving at its pinned hub commit | `0` PASS, `1` FAIL |
 
 Scaffold a `ba` repo with `kb init --kind ba`; see `QUICKSTART-BA.md` (generated into the repo) for the full setup, including the two environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that wire the assistant to the hub's MCP server, and the CI variable/secret (`CENTER_KB_HUB`, `KB_HUB_TOKEN`) the lint workflow needs.
 
@@ -621,6 +627,17 @@ No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, sa
 5. Tickets carrying an old `kb-context` block (pinned to a local repo commit):
    `kb_resolve` will report `broken` with a hint — re-pin with `kb_context_new`
    the next time you touch that ticket.
+
+---
+
+## Release notes (v0.13.0)
+
+Alongside the new mission-plan flow (Phase 4.1, see [7.10](#710-phase-4--ba-ticket-authoring)), this release changes four behaviors of the already-shipped `kb ticket lint` — a minor bump because everything is additive and `REQUIRED_HEADINGS` (the one thing the spec treats as breaking) is unchanged, but these four are worth knowing about:
+
+1. **The diagram check is stricter.** `kb ticket lint`'s Mermaid check now requires the diagram-type keyword (e.g. `sequenceDiagram`, `flowchart`) at the **start of a line** inside the fence, not merely present anywhere in it. A hand-authored diagram that only mentions the keyword inside a node label (e.g. `A["flowchart of the flow"]`) now fails where it previously passed; the scaffolded `ticket-template.md` is unaffected — its keywords already sit at column 0.
+2. **`--json` output gained a `notes` key.** The envelope is now `{"pass", "errors", "warnings", "notes"}`. Notes record checks that could not run (e.g. no hub configured); they never affect `pass` and existing consumers that only read `pass`/`errors`/`warnings` are unaffected.
+3. **A citation-parsing bug is fixed.** The inline citation pattern used to absorb a sentence-ending period into the section id, so a ticket citing `arinc-424 §5.3.` at the end of a sentence got a spurious lint error *and* a spurious "never cited" warning even though the pinned ref matched. Those tickets now pass.
+4. **A required heading inside a fenced code block no longer counts as present.** `check_headings` (shared by `kb ticket lint` and the new `kb mission lint`) used to scan every line of the document for a required heading, including lines inside a ` ``` ` fence — so a ticket or mission that pasted a reference document (e.g. `TEMPLATE.md`) into a fenced block as an example would pass the required-heading check without actually containing that section itself. Fences are now stripped before the scan, the same way citation scanning already strips them. A ticket that only passed because a required heading sat inside a fence now correctly fails with a "missing required heading" error; move the real heading out of the fence to fix it.
 
 ---
 

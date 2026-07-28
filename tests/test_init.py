@@ -1,11 +1,33 @@
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from center_kb import initcmd
 from center_kb.cli import app
 from center_kb.initcmd import expected_files, init_repo
+from tests.cli_stub import write_cli_stub
+
+# The CI dispatch step under test is a bash script, and the workflow that
+# runs it is `runs-on: ubuntu-latest` — it never executes on Windows in
+# production, so skipping there is the contract, not a coverage gap.
+#
+# The platform check is NOT redundant with the `which` check. On a GitHub
+# Windows runner `shutil.which("bash")` resolves to
+# C:\Windows\System32\bash.exe — the WSL launcher stub — which exits 1
+# printing "Windows Subsystem for Linux has no installed distributions" in
+# UTF-16, rather than running the script. A bash that exists but is not a
+# shell defeats a presence-only guard, which is exactly how these four
+# tests reached CI red on Windows while passing everywhere else.
+_needs_bash = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="the dispatch step is a bash script; its workflow is ubuntu-only",
+)
 
 runner = CliRunner()
 
@@ -728,7 +750,14 @@ def test_kb_ticket_lint_workflow_content(tmp_path: Path):
         tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
     ).read_text(encoding="utf-8")
     assert "pull_request" in content
-    assert 'paths: ["tickets/**.md"]' in content
+    # Deliberately NOT `paths`-filtered: GitHub never synthesizes a passing
+    # status for a job that never started, so filtering the trigger of a
+    # *required* check would leave a PR touching neither tickets/ nor
+    # missions/ waiting forever. The job must always start; the one lint
+    # step below decides for itself whether there was anything to check.
+    # (Checks the literal old trigger filter, not the substring 'paths:' —
+    # that substring also appears in this file's own explanatory comments.)
+    assert 'paths: ["tickets/**.md", "missions/**.md"]' not in content
     assert "pip install center-kb" in content
     assert "kb ticket lint" in content
     assert "vars.CENTER_KB_HUB" in content
@@ -802,3 +831,544 @@ def test_config_load_accepts_kind_ba(tmp_path: Path):
     (kb_dir / "config.yaml").write_text("kind: ba\nhub: ''\n", encoding="utf-8")
     cfg = load_config(kb_dir)
     assert cfg.kind == "ba"
+
+
+def test_ba_kind_scaffolds_the_mission_plan_set(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    mission_template = tmp_path / "docs" / "missions" / "TEMPLATE.md"
+    assert mission_template.is_file()
+    assert (tmp_path / "missions" / ".gitkeep").is_file()
+    assert (tmp_path / "tickets" / ".gitkeep").is_file()
+    # the scaffolded file must be the mission template, not merely present —
+    # a mistyped BA_TEMPLATES source (e.g. pointing at ticket-template.md)
+    # would still satisfy an existence-only assertion.
+    assert "## US backlog" in mission_template.read_text(encoding="utf-8")
+
+
+def test_hub_and_child_do_not_gain_mission_artifacts(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    for kind in ("hub", "child"):
+        target = tmp_path / kind
+        target.mkdir()
+        init_repo(target, kind)
+        assert not (target / "missions").exists()
+        assert not (target / "docs" / "missions").exists()
+        for rel in (
+            ".claude/skills/ba-mission-plan/SKILL.md",
+            ".claude/commands/ba-mission-plan.md",
+            ".github/prompts/ba-mission-plan.prompt.md",
+            ".cursor/commands/ba-mission-plan.md",
+        ):
+            assert not (target / rel).exists(), rel
+
+
+def test_ba_kind_scaffolds_the_mission_plan_skill(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in (
+        ".claude/skills/ba-mission-plan/SKILL.md",
+        ".claude/commands/ba-mission-plan.md",
+        ".github/prompts/ba-mission-plan.prompt.md",
+        ".cursor/commands/ba-mission-plan.md",
+    ):
+        assert (tmp_path / rel).is_file(), rel
+
+
+def test_every_mission_wrapper_carries_the_no_silent_skip_rule(tmp_path):
+    """kb mission lint has no MCP fallback, so 'kb unavailable is not a
+    PASS' must appear in all four wrappers — it is the only thing standing
+    between a missing binary and a silently unlinted mission."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in (
+        ".claude/skills/ba-mission-plan/SKILL.md",
+        ".claude/commands/ba-mission-plan.md",
+        ".github/prompts/ba-mission-plan.prompt.md",
+        ".cursor/commands/ba-mission-plan.md",
+    ):
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "is not a PASS" in text, rel
+
+
+def test_mission_wrappers_reference_the_required_headings(tmp_path):
+    """Checked across all four wrappers, not just the Claude Code skill:
+    the Copilot and Cursor wrappers each carry a SECOND copy of the
+    required-heading list in their preamble, above '## Workflow' — outside
+    the byte-identity slice that `test_mission_wrapper_workflow_bodies_are
+    _byte_identical` enforces. Hard-coding the skill path here would leave
+    that second copy able to drift from `REQUIRED_MISSION_HEADINGS`
+    undetected."""
+    from center_kb import mission
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    for rel in _MISSION_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        for heading in mission.REQUIRED_MISSION_HEADINGS:
+            name = heading.removeprefix("## ")
+            assert name in text, f"{rel}: missing {name!r}"
+
+
+_MISSION_WRAPPER_PATHS = (
+    ".claude/skills/ba-mission-plan/SKILL.md",
+    ".claude/commands/ba-mission-plan.md",
+    ".github/prompts/ba-mission-plan.prompt.md",
+    ".cursor/commands/ba-mission-plan.md",
+)
+
+_TICKET_WRAPPER_PATHS = (
+    ".claude/skills/ba-ticket-author/SKILL.md",
+    ".claude/commands/ba-ticket-author.md",
+    ".github/prompts/ba-ticket-author.prompt.md",
+    ".cursor/commands/ba-ticket-author.md",
+)
+
+
+def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
+    """The four ba-mission-plan wrappers are supposed to be byte-identical
+    from '## Workflow' to end of file — that property is the whole point
+    of shipping four near-duplicate documents. A substring/heading check
+    can pass while the bodies silently fork per host; only an exact slice
+    comparison catches that drift."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    slices = []
+    for rel in _MISSION_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        idx = text.index("## Workflow")
+        slices.append(text[idx:])
+
+    first = slices[0]
+    for rel, body in zip(_MISSION_WRAPPER_PATHS, slices):
+        assert body == first, f"{rel} Workflow body drifted from the others"
+
+
+def test_ticket_wrappers_document_the_refs_inheritance_rule(tmp_path):
+    """Regression guard for the parent-mission refs-inheritance rule. Three
+    parts of the rule can each go missing independently from exactly one
+    wrapper and stay undetected unless all three are asserted here: the
+    'starting candidates only' phrase (dropping it would draft with the
+    mission's full kb-context copied wholesale instead of pinning fresh
+    refs), the `> Parent mission:` back-link line (dropping it breaks the
+    ticket-lint back-link check), and the `tickets/<mission-id>-US<n>.md`
+    filename convention (dropping it means the back-link check can't find
+    the ticket at all)."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in _TICKET_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "starting candidates" in text.lower(), rel
+        assert "> Parent mission: <mission-id>" in text, rel
+        assert "tickets/<mission-id>-US<n>.md" in text, rel
+
+
+def test_mission_wrappers_carry_the_never_auto_rules(tmp_path):
+    """Both 'never auto-generate' (ticket files from the backlog) and
+    'never auto-pick' (ambiguous kb_search candidates) are load-bearing
+    hard rules with no lint-time enforcement — a wrapper that drops either
+    one relies entirely on the agent's own restraint."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in _MISSION_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8").lower()
+        assert "never auto-generate" in text, rel
+        assert "never auto-pick" in text, rel
+
+
+def test_ci_gate_covers_both_tickets_and_missions(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    wf = (
+        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
+    ).read_text(encoding="utf-8")
+
+    # The trigger itself is not paths-filtered (see
+    # test_kb_ticket_lint_workflow_content) — coverage of both directories
+    # lives in the dispatch step's own `git diff` pathspec instead.
+    assert "tickets/*.md" in wf
+    assert "missions/*.md" in wf
+    assert "kb ticket lint" in wf
+    assert "kb mission lint" in wf
+
+
+def test_ci_gate_job_name_is_frozen(tmp_path):
+    """Branch protection on provisioned BA repos keys on the job name.
+    Renaming it leaves those repos waiting forever on a required check
+    that never runs again."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    wf_path = tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
+    assert wf_path.is_file()
+    wf = wf_path.read_text(encoding="utf-8")
+    assert "name: kb-ticket-lint" in wf
+    assert "\n  lint:\n" in wf
+
+
+def test_ci_gate_has_no_hardcoded_credentials(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    wf = (
+        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
+    ).read_text(encoding="utf-8")
+    assert "secrets.KB_HUB_TOKEN" in wf
+    assert "ghp_" not in wf
+
+
+# --- CI gate: execute the real dispatch loop, not a substring check --------
+#
+# The three tests above are pure substring checks against the rendered YAML
+# text. They pass unchanged if the `case` arms are swapped, if `status` never
+# aggregates a failure, or if a non-ASCII/deleted path is silently skipped —
+# exactly the two bugs that reached review. This section extracts the actual
+# final step's `run:` script from the rendered workflow and executes it with
+# bash against a hermetic git repo, so the dispatch logic itself is exercised.
+
+
+def _git(cwd: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8"
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout
+
+
+def _extract_lint_dispatch_script(tmp_path: Path) -> str:
+    """Scaffold a `ba` repo and pull the lint job's `Lint changed ...` step
+    `run:` body out of the *rendered* workflow YAML — the exact script CI
+    executes. Selected by step *name* rather than `steps[-1]` so this keeps
+    finding the right script even if another step is appended later."""
+    repo = tmp_path / "ba-scaffold"
+    init_repo(repo, "ba")
+    wf_text = (
+        repo / ".github" / "workflows" / "kb-ticket-lint.yml"
+    ).read_text(encoding="utf-8")
+    data = yaml.safe_load(wf_text)
+    steps = data["jobs"]["lint"]["steps"]
+    for step in steps:
+        if "Lint changed" in step.get("name", ""):
+            return step["run"]
+    raise AssertionError("no step with 'Lint changed' in its name in kb-ticket-lint.yml")
+
+
+# The literal git-diff-into-tempfile block from the workflow's dispatch
+# script. Used by `_replace_git_diff_with_synthetic_paths` below to swap in a
+# synthetic path list for the loud-fallback-arm test, since that arm can
+# never be reached through a *real* `git diff` — its own pathspec already
+# confines every emitted path to tickets/ or missions/.
+_GIT_DIFF_BLOCK = (
+    "git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR \\\n"
+    '  "origin/${BASE_REF}..." \\\n'
+    "  -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md' \\\n"
+    '  > "$RUNNER_TEMP/changed.nul"\n'
+)
+
+
+def _replace_git_diff_with_synthetic_paths(run_script: str, paths: list[str]) -> str:
+    assert _GIT_DIFF_BLOCK in run_script, (
+        "the workflow's git-diff block text changed — update _GIT_DIFF_BLOCK "
+        "to match kb-ticket-lint.yml"
+    )
+    printf_args = " ".join(f"'{p}'" for p in paths)
+    replacement = f'printf \'%s\\0\' {printf_args} > "$RUNNER_TEMP/changed.nul"\n'
+    return run_script.replace(_GIT_DIFF_BLOCK, replacement)
+
+
+_KB_STUB_BODY = (
+    "import os, sys\n"
+    "log = os.environ.get('KB_STUB_LOG')\n"
+    "if log:\n"
+    "    with open(log, 'a', encoding='utf-8') as fh:\n"
+    "        fh.write('\\t'.join(sys.argv[1:]) + '\\n')\n"
+    "fail_markers = [m for m in os.environ.get('KB_STUB_FAIL', '').split(os.pathsep) if m]\n"
+    "sys.exit(1 if any(a in fail_markers for a in sys.argv[1:]) else 0)\n"
+)
+
+
+@_needs_bash
+def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
+    """Run the CI workflow's real final step under `bash -e` (the same
+    invocation GitHub Actions uses for a `run:` block), not a substring
+    match. Sets up a git repo that mimics a checked-out PR: a base commit
+    with a ticket (`tickets/keep.md`), then a single PR commit that retires
+    that ticket (deletes it — the file exists in the base commit, so it is a
+    genuine two-endpoint deletion, not an add+delete pair invisible to
+    `origin/main...HEAD`), adds a new ticket, and adds a mission whose
+    filename is non-ASCII (Vietnamese). A stub `kb` on PATH records every
+    invocation's argv and can be told to fail for a specific path via
+    KB_STUB_FAIL.
+
+    Verifies:
+    - a `missions/*` path dispatches to `kb mission lint`, a `tickets/*`
+      path dispatches to `kb ticket lint` (the pairing, not just presence);
+    - the non-ASCII mission filename IS linted (Important 1 — it must not
+      be silently skipped by the `*) continue ;;` fallback);
+    - the deleted ticket (present in the base commit, absent from the PR
+      commit) is never invoked at all, and does not fail the job
+      (Important 2 — this only exercises anything because the deleted path
+      actually exists at one diff endpoint, unlike a same-PR add+delete);
+    - configuring the surviving ticket to fail makes the whole step exit
+      non-zero (status aggregation actually works).
+    """
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+
+    (repo / "tickets").mkdir()
+    (repo / "tickets" / "keep.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "tickets/keep.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    # PR commit: retire the ticket that existed in the base commit (delete),
+    # add a new ticket, add a non-ASCII mission filename — the exact repro
+    # from Important 1's bug report.
+    _git(repo, "rm", "-q", "tickets/keep.md")
+    (repo / "missions").mkdir(exist_ok=True)
+    (repo / "missions" / "M-Đăng-nhập.md").write_text("mission\n", encoding="utf-8")
+    (repo / "tickets").mkdir(exist_ok=True)
+    (repo / "tickets" / "T-new.md").write_text("new ticket\n", encoding="utf-8")
+    _git(repo, "add", "missions/M-Đăng-nhập.md", "tickets/T-new.md")
+    _git(repo, "commit", "-q", "-m", "pr: retire+add ticket, add mission")
+
+    bindir = tmp_path / "bin"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    log_path = tmp_path / "kb.log"
+
+    base_env = {
+        **os.environ,
+        "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "BASE_REF": "main",
+        "CENTER_KB_HUB": "https://example.invalid/hub",
+        "KB_STUB_LOG": str(log_path),
+        "RUNNER_TEMP": str(tmp_path),
+    }
+
+    # --- Run 1: nothing configured to fail. ---
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={**base_env, "KB_STUB_FAIL": ""},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+
+    # Dispatch pairing: missions/ -> mission lint, tickets/ -> ticket lint.
+    assert (
+        "mission\tlint\tmissions/M-Đăng-nhập.md\t--hub\thttps://example.invalid/hub"
+        in log_lines
+    )
+    assert (
+        "ticket\tlint\ttickets/T-new.md\t--hub\thttps://example.invalid/hub"
+        in log_lines
+    )
+    # The deleted ticket was never handed to `kb` at all.
+    assert not any("keep.md" in line for line in log_lines)
+
+    # --- Run 2: the surviving ticket is configured to fail lint. ---
+    log_path.unlink()
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={**base_env, "KB_STUB_FAIL": "tickets/T-new.md"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    # Both files were still attempted (one failure does not short-circuit
+    # the loop) even though the job as a whole must fail.
+    assert any("missions/M-Đăng-nhập.md" in line for line in log_lines)
+    assert any("tickets/T-new.md" in line for line in log_lines)
+
+
+@_needs_bash
+def test_ci_gate_step_aborts_on_failing_git_diff(tmp_path):
+    """Important A regression test.
+
+    `done < <(git ... -z ...)` (process substitution) makes the substitution's
+    exit status unobservable: if `git diff` fails outright (stale/empty
+    BASE_REF, `origin/<base>` absent, any git error), it writes to stderr,
+    produces zero records, the loop never runs, `count` stays 0, and the step
+    printed the "no ticket or mission files changed" notice and exited 0 — a
+    green check on a diff that was never computed. The fix runs `git diff` as
+    a plain foreground command redirected into a temp file, so a failure
+    trips `bash -e` (the same invocation GitHub Actions uses) immediately.
+
+    Reproduces the failure by pointing BASE_REF at a branch that has no
+    corresponding `refs/remotes/origin/<BASE_REF>` — the same shape as a
+    stale or empty BASE_REF in real CI.
+    """
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo-bad-base-ref"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+    (repo / "tickets").mkdir()
+    (repo / "tickets" / "keep.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "tickets/keep.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    # Deliberately no `refs/remotes/origin/<BASE_REF>` — the failure mode.
+
+    # A stub `kb` on PATH, logging every invocation. Any non-zero exit here
+    # is consistent with `kb` itself failing lint on a real file — asserting
+    # only `returncode != 0` (as this test used to) would pass just as
+    # happily on that unrelated failure mode, so the abort cause must be
+    # pinned to the `git diff` itself, and `kb` must be proven unreached.
+    bindir = tmp_path / "bin"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    log_path = tmp_path / "kb.log"
+
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BASE_REF": "no-such-branch",
+            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
+            "RUNNER_TEMP": str(tmp_path),
+        },
+        capture_output=True,
+        text=True,
+    )
+    # Pin the abort cause to the failing `git diff` itself (git's own exit
+    # code for a fatal error, e.g. an unresolvable revision, is 128) rather
+    # than accepting any non-zero exit — which would equally accept `kb`
+    # itself failing lint on some file, a completely different bug.
+    assert result.returncode != 0 and "fatal" in result.stderr, (
+        "a failing `git diff` (bad BASE_REF) must abort the step instead of "
+        f"falling through to the empty-diff notice and exiting 0: "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    # It must NOT print the "nothing changed" notice — that would assert a
+    # DoR lint pass/skip that never actually happened.
+    assert "no ticket or mission files changed" not in result.stdout
+    # `kb` must never have been invoked: the abort happens before the
+    # dispatch loop, on the `git diff` populating the changed-files list.
+    assert not log_path.exists(), log_path.read_text(encoding="utf-8")
+
+
+@_needs_bash
+def test_ci_gate_prints_notice_and_exits_zero_when_nothing_changed(tmp_path):
+    """Minor 7 (first uncovered branch): the empty-diff path — a PR that
+    touches no tickets/missions files at all — had no test. Assert it prints
+    the skip notice and exits 0."""
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo-empty-diff"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    (repo / "README.md").write_text("base\nchanged\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-q", "-m", "pr: unrelated change")
+
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "BASE_REF": "main",
+            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "RUNNER_TEMP": str(tmp_path),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "::notice::no ticket or mission files changed — DoR lint skipped"
+        in result.stdout
+    )
+
+
+@_needs_bash
+def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
+    """Minor 6/7 (second uncovered branch): the `*) ... status=1 ;
+    continue ;;` fallback arm can never be reached through a *real* `git
+    diff` — its own pathspec ('tickets/*.md' etc.) already confines every
+    emitted path to tickets/ or missions/, as the workflow's own comment now
+    explains. Exercise the arm directly by swapping the git-diff-population
+    line for a literal synthetic NUL-separated path list (leaving the loop,
+    case dispatch, and status/count aggregation untouched), so a future
+    pathspec widening that lets an unrelated path through would still be
+    caught by this test.
+    """
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    run_script = _replace_git_diff_with_synthetic_paths(
+        run_script, ["tickets/T-new.md", "docs/other.md", "missions/M-new.md"]
+    )
+    script_path = tmp_path / "lint-step-synthetic.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo-synthetic"
+    (repo / "tickets").mkdir(parents=True)
+    (repo / "missions").mkdir()
+    (repo / "tickets" / "T-new.md").write_text("new\n", encoding="utf-8")
+    (repo / "missions" / "M-new.md").write_text("mission\n", encoding="utf-8")
+
+    bindir = tmp_path / "bin-synthetic"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    log_path = tmp_path / "kb-synthetic.log"
+
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BASE_REF": "main",
+            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
+            "KB_STUB_FAIL": "",
+            "RUNNER_TEMP": str(tmp_path),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "unrecognised path 'docs/other.md'" in result.stdout
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert not any("docs/other.md" in line for line in log_lines)
+    # The loop did not short-circuit: both matched paths on either side of
+    # the unrecognised one were still dispatched.
+    assert any("tickets/T-new.md" in line for line in log_lines)
+    assert any("missions/M-new.md" in line for line in log_lines)

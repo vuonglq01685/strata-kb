@@ -100,14 +100,14 @@ Module mới `src/center_kb/ticketlint.py` (engine, không phụ thuộc CLI) tr
 | 1 | Đủ mọi heading bắt buộc (hằng từ `ticket.py`) | error |
 | 2 | User Story khớp `As a … I want … so that …` (không phân biệt hoa thường, đa dòng) | error |
 | 3 | ≥ 1 mục checkbox Acceptance Criteria | error |
-| 4 | `## Sequence diagram` có fence ```` ```mermaid ```` chứa `sequenceDiagram`; `## Business flow` có fence chứa `flowchart` | error |
+| 4 | `## Sequence diagram` có fence ```` ```mermaid ```` chứa `sequenceDiagram` ở đầu dòng; `## Business flow` có fence chứa `flowchart` ở đầu dòng (siết lại ở Phase 4.1 để một init directive có thể đứng trước loại diagram, trong khi từ khóa chôn trong nhãn node không còn được tính) | error |
 | 5 | Block `kb-context` parse được (`kbcontext.parse`) | error |
 | 6 | Mọi ref resolve tại version đã pin — ủy quyền `doctor.check_context` | error (broken) / warning (stale) |
 | 7 | Nhất quán: citation inline `doc §sec` trong thân bài phải có trong `kb-context.refs` | error |
 | 8 | Nhất quán ngược: ref đã pin phải được cite ít nhất một lần trong thân bài | warning |
 | 9 | AC không có citation nào | warning (lint không phán được AC có chạm chuẩn ngành không) |
 
-Exit code: 1 nếu có error, ngược lại 0 (warning vẫn in). `--json` xuất `{"pass": bool, "errors": [...], "warnings": [...]}` cho agent/CI. Output người đọc theo style `kb doctor` + dòng chốt `DoR: PASS|FAIL`. Toàn bộ xử lý UTF-8 (thân bài tiếng Việt + ký tự `§` trên console Windows — áp `utf8io`; test phải cover ticket thân tiếng Việt).
+Exit code: 1 nếu có error, ngược lại 0 (warning vẫn in). `--json` xuất `{"pass": bool, "errors": [...], "warnings": [...], "notes": [...]}` cho agent/CI (`notes` thêm ở Phase 4.1 — ghi lại các check KHÔNG chạy được, ví dụ không có filesystem path; không bao giờ ảnh hưởng `pass`). Output người đọc theo style `kb doctor` + dòng chốt `DoR: PASS|FAIL`. Toàn bộ xử lý UTF-8 (thân bài tiếng Việt + ký tự `§` trên console Windows — áp `utf8io`; test phải cover ticket thân tiếng Việt).
 
 Trích citation inline (check 7) dùng regex thận trọng khớp ngữ nghĩa `kbcontext._REF_RE`; ref không có repo qualifier khớp với ref đã pin mang bất kỳ qualifier nào.
 

@@ -17,7 +17,7 @@ BA_TICKET_AUTHOR_TEMPLATES = [
 ]
 
 BA_TICKET_AUTHOR_PIPELINE_STEPS = (
-    "Intake", "Ground", "Draft", "Pin", "Lint", "Review",
+    "Intake", "Parent mission", "Ground", "Draft", "Pin", "Lint", "Review",
 )
 
 
@@ -45,7 +45,7 @@ def test_ba_ticket_author_templates_exist_as_package_resources():
         assert base.joinpath(name).is_file(), name
 
 
-def test_ba_ticket_author_templates_carry_the_six_pipeline_steps():
+def test_ba_ticket_author_templates_carry_the_seven_pipeline_steps():
     for name in BA_TICKET_AUTHOR_TEMPLATES:
         text = _read_init_template(name)
         for step in BA_TICKET_AUTHOR_PIPELINE_STEPS:

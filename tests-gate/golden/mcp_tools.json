@@ -169,7 +169,7 @@
     }
   },
   "kb_ticket_lint": {
-    "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, and kb-context refs\nresolving at their pinned version. Run this before handing the\nticket to the BA; fix errors and re-run until PASS.",
+    "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, kb-context refs\nresolving at their pinned version, and the optional\n'> Parent mission:' back-link's id format. Over MCP the back-link's\nexistence and backlog-membership checks are skipped (no repo\nfilesystem access to the sibling missions/ directory) and reported\nas a note, not a failure \u2014 run the CLI (`kb ticket lint`) for the\nfull check. Run this before handing the ticket to the BA; fix\nerrors and re-run until PASS.",
     "inputSchema": {
       "properties": {
         "ticket_markdown": {

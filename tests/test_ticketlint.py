@@ -154,6 +154,28 @@ def test_missing_heading_errors(fed_hub: Path, golden_block: str, heading: str):
     assert any(heading in msg for msg in _errors(report))
 
 
+def test_heading_inside_a_fence_is_reported_missing(
+    fed_hub: Path, golden_block: str
+):
+    """A required heading quoted inside a fenced code block — e.g. a BA
+    pasting a reference ticket into their own document as a worked example
+    — must not satisfy the presence check. Regression test for the
+    fence-aware `lintcore.check_headings` fix (shared with `kb mission
+    lint`)."""
+    text = _build_ticket(golden_block)
+    fenced = text.replace(
+        "## Summary\n", "```markdown\n## Summary\n```\n", 1
+    )
+    assert fenced != text  # sanity: the replace actually matched
+
+    report = ticketlint.lint(fenced, _hub(fed_hub))
+
+    assert report.passed is False
+    assert any(
+        "missing required heading: '## Summary'" in m for m in _errors(report)
+    )
+
+
 def test_missing_title_errors(fed_hub: Path, golden_block: str):
     text = _build_ticket(golden_block, title="Not a title line")
     report = ticketlint.lint(text, _hub(fed_hub))
@@ -339,6 +361,34 @@ def test_ac_without_citation_warns(fed_hub: Path, golden_block: str):
     )
 
 
+def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
+    fed_hub: Path, golden_block: str
+):
+    """Ties the INLINE_CITE_RE trailing-period fix (lintcore.py, commit
+    01e4ac2) to the actual gates it feeds: `_check_ac_citations` and
+    `check_citation_consistency`. An AC whose citation ends the sentence
+    ('... arinc-kb:arinc-424 §5.3.') must be recognized as cited and as
+    resolving the pinned ref — not reported as an uncited AC, nor as an
+    unresolved citation."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Show airspace type per arinc-kb:arinc-424 §5.3.\n"
+                "- [ ] AC2: Show ICAO designation per icao-kb:icao-annex-2 "
+                "§1.1"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("has no citation" in msg for msg in _warnings(report))
+    assert not any(
+        "not in kb-context refs" in msg for msg in _errors(report)
+    )
+    assert report.passed is True
+    assert report.issues == []
+
+
 # --- passed / to_json ---
 
 
@@ -356,7 +406,7 @@ def test_passed_false_iff_error_present(fed_hub: Path, golden_block: str):
 def test_to_json_shape(fed_hub: Path, golden_block: str):
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     data = report.to_json()
-    assert set(data.keys()) == {"pass", "errors", "warnings"}
+    assert set(data.keys()) == {"pass", "errors", "warnings", "notes"}
     assert data["pass"] is True
     assert data["errors"] == []
     assert isinstance(data["warnings"], list)
@@ -402,3 +452,247 @@ def test_template_headings_match_contract():
     content = template_path.read_text(encoding="utf-8")
     for heading in ticket.REQUIRED_HEADINGS:
         assert content.count(heading) == 1, heading
+
+
+# --- check 10: parent mission back-link ---
+
+
+def _mission_doc(mission_id: str, us_ids: list[str]) -> str:
+    rows = "\n".join(f"| {u} | Story {u} |" for u in us_ids)
+    return (
+        f"# Mission {mission_id}\n\n"
+        f"> Mission: {mission_id}\n\n"
+        "## US backlog\n"
+        "| US ID | Title |\n"
+        "|---|---|\n"
+        f"{rows}\n"
+    )
+
+
+def test_ticket_without_parent_mission_line_is_unaffected(
+    fed_hub: Path, golden_block: str
+):
+    """REQUIRED_HEADINGS is untouched and the back-link is optional, so
+    every pre-existing ticket keeps passing with no edit."""
+    report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
+    assert report.passed is True
+    assert report.notes == []
+
+
+def test_valid_parent_mission_passes(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    (missions / "M-airspace-filter.md").write_text(
+        _mission_doc("M-airspace-filter", ["M-airspace-filter-US1"]),
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is True, _errors(report)
+    assert report.notes == []
+
+
+def test_missing_mission_file_errors(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any("mission file not found" in m for m in _errors(report))
+
+
+def test_unreadable_mission_file_errors_instead_of_crashing(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """A mission .md saved as non-UTF-8 (e.g. cp1252, plausible when a BA
+    pastes a smart quote) must produce an [error] line, not a raw
+    UnicodeDecodeError escaping out of lint()."""
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    (missions / "M-airspace-filter.md").write_bytes(
+        b"caf\xe9 - not valid utf-8"
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any("could not read mission file" in m for m in _errors(report))
+
+
+def test_us_id_absent_from_backlog_errors(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    (missions / "M-airspace-filter.md").write_text(
+        _mission_doc("M-airspace-filter", ["M-airspace-filter-US9"]),
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any("not in the backlog" in m for m in _errors(report))
+
+
+def test_malformed_parent_mission_id_errors(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: airspace-filter",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("M-<slug>" in m for m in _errors(report))
+
+
+def test_empty_parent_mission_value_errors(fed_hub: Path, golden_block: str):
+    """'> Parent mission:' with nothing after the colon does not match
+    PARENT_MISSION_RE at all (it requires >= 1 non-space char), so without
+    the line-presence check this reads as "no parent mission" and passes
+    clean — exactly the half-written back-link a BA must be warned about."""
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission:",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("has no mission id" in m for m in _errors(report))
+
+
+def test_whitespace_only_parent_mission_value_errors(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission:    ",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("has no mission id" in m for m in _errors(report))
+
+
+def test_not_in_backlog_message_names_the_mission_lint_escape_hatch(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """`check_backlog` returns an EMPTY id list (with its own error) when
+    the mission's backlog table lost its header row — so a ticket that
+    really is in the mission's backlog can still get "not in the backlog"
+    here, fail-closed but dead-ending the BA. The message must point at
+    `kb mission lint` as the other possible cause, without ticketlint
+    surfacing the mission's own issues directly."""
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    mission_path = missions / "M-airspace-filter.md"
+    mission_path.write_text(
+        "# Mission M-airspace-filter\n\n"
+        "> Mission: M-airspace-filter\n\n"
+        "## US backlog\n"
+        # header row missing — check_backlog errors and returns [] ids.
+        "| M-airspace-filter-US1 | Render polygons |\n",
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any(
+        "kb mission lint" in m and str(mission_path) in m
+        for m in _errors(report)
+    )
+
+
+def test_backlog_errors_elsewhere_warn_instead_of_silently_passing(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """The two DoR gates must not silently disagree about what counts as a
+    valid US id. `check_backlog` still finds a zero-padded id like
+    'M-airspace-filter-US01' verbatim in `backlog_ids` (membership only
+    checks the string is in the table), even though it also raises its own
+    error for that row failing `mission.us_id_re`'s pattern (mission lint
+    rejects it as malformed). Without this warning, a ticket named
+    'M-airspace-filter-US01.md' would pass check 10 clean while `kb mission
+    lint` fails the very row it points at — this pins that the ticket
+    report at least WARNS, and that it never leaks the mission's own error
+    text (that belongs to the mission's own PR, per
+    test_not_in_backlog_message_names_the_mission_lint_escape_hatch
+    above)."""
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    mission_path = missions / "M-airspace-filter.md"
+    mission_path.write_text(
+        _mission_doc("M-airspace-filter", ["M-airspace-filter-US01"]),
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US01.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is True  # membership was found; this is a warning
+    assert any(
+        "backlog has errors" in w and "kb mission lint" in w
+        for w in _warnings(report)
+    )
+    # The mission's own issue text ("does not match") must not leak through.
+    assert not any("does not match" in w for w in _warnings(report))
+    assert not any("does not match" in e for e in _errors(report))
+
+
+def test_parent_mission_without_paths_degrades_to_a_note(
+    fed_hub: Path, golden_block: str
+):
+    """This is the MCP path: no repo on disk, so existence and backlog
+    membership cannot be checked. It must say so, not imply a full PASS."""
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    assert any("parent-mission" in n for n in report.notes)

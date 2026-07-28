@@ -101,14 +101,14 @@ New module `src/center_kb/ticketlint.py` (engine, no CLI deps) returning `list[I
 | 1 | All required headings present (constant from `ticket.py`) | error |
 | 2 | User Story matches `As a … I want … so that …` (case-insensitive, multiline) | error |
 | 3 | ≥ 1 Acceptance Criterion checkbox item | error |
-| 4 | `## Sequence diagram` contains a ```` ```mermaid ```` fence with `sequenceDiagram`; `## Business flow` contains one with `flowchart` | error |
+| 4 | `## Sequence diagram` contains a ```` ```mermaid ```` fence with `sequenceDiagram` at the start of a line; `## Business flow` contains one with `flowchart` at the start of a line (tightened in Phase 4.1 so an init directive may precede the diagram type, while a keyword buried in a node label no longer counts) | error |
 | 5 | `kb-context` block parses (`kbcontext.parse`) | error |
 | 6 | Every ref resolves at the pinned version — delegate to `doctor.check_context` | error (broken) / warning (stale) |
 | 7 | Consistency: every inline citation `doc §sec` in the body appears in `kb-context.refs` | error |
 | 8 | Reverse consistency: every pinned ref is cited at least once in the body | warning |
 | 9 | An AC containing no citation | warning (lint cannot judge whether the AC touches a standard) |
 
-Exit code: 1 if any error, else 0 (warnings allowed, printed). `--json` emits `{"pass": bool, "errors": [...], "warnings": [...]}` for agent/CI consumption. Human output mirrors `kb doctor` style (`[error] …` / `[warn] …` + final `DoR: PASS|FAIL`). Body text is UTF-8 throughout (Vietnamese bodies + `§` on Windows consoles — `utf8io` applies; tests must cover a Vietnamese-body ticket).
+Exit code: 1 if any error, else 0 (warnings allowed, printed). `--json` emits `{"pass": bool, "errors": [...], "warnings": [...], "notes": [...]}` for agent/CI consumption (`notes` added in Phase 4.1 — records checks that could not run, e.g. no filesystem path supplied; never affects `pass`). Human output mirrors `kb doctor` style (`[error] …` / `[warn] …` + final `DoR: PASS|FAIL`). Body text is UTF-8 throughout (Vietnamese bodies + `§` on Windows consoles — `utf8io` applies; tests must cover a Vietnamese-body ticket).
 
 Inline-citation extraction (check 7) uses a conservative regex for `<doc-id> §<sec>` / `<repo:doc-id> §<sec>` matching `kbcontext._REF_RE` semantics; refs without repo qualifier match a pinned ref with any repo qualifier.
 
