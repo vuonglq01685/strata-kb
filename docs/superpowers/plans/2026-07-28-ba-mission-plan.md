@@ -1469,6 +1469,33 @@ def test_coverage_skipped_without_tickets_dir_emits_a_note(
     assert not any("/2" in msg for msg in _warnings(report))
 
 
+def test_coverage_skipped_when_the_backlog_has_errors(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """A broken backlog leaves invalid entries in us_ids, so running
+    coverage over it would demand a ticket file for garbage. Skipping is
+    visible; filtering to the valid subset would silently shrink what
+    coverage checked."""
+    tickets = tmp_path / "tickets"
+    tickets.mkdir()
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## US backlog": (
+                "| US ID | Title |\n"
+                "|---|---|\n"
+                "| M-other-mission-US1 | Wrong mission |"
+            )
+        },
+    )
+
+    report = missionlint.lint(text, _hub(fed_hub), tickets_dir=tickets)
+
+    assert report.passed is False
+    assert any("backlog has errors" in n for n in report.notes)
+    assert not any("US drafted" in msg for msg in _warnings(report))
+
+
 def test_missing_hub_errors(golden_block: str):
     report = missionlint.lint(_build_mission(golden_block), None)
     assert report.passed is False
@@ -1549,9 +1576,24 @@ def lint(
     ctx_issues, _ctx = lintcore.check_context_block(text, hub)
     issues += ctx_issues
 
+    # Coverage is skipped — visibly — when the backlog itself is broken.
+    # `check_backlog` returns its id list unfiltered, so a malformed row
+    # leaves entries like 'US ID' in `us_ids`; running coverage over that
+    # would demand a ticket file for garbage. Filtering to the valid
+    # entries instead would be worse: a story with a typo'd id would drop
+    # out of the coverage set silently, and coverage would report a clean
+    # pass over a subset without saying so. The report already fails on the
+    # backlog errors, so nothing is lost by deferring. Gate on the issue
+    # list rather than on `us_ids` contents, so the guard stays correct if
+    # the set of backlog checks grows later.
     if tickets_dir is None:
         notes.append(
             "coverage check skipped — no tickets directory supplied"
+        )
+    elif backlog_issues:
+        notes.append(
+            "coverage check skipped — the US backlog has errors; "
+            "fix those first"
         )
     elif us_ids:
         issues += check_coverage(us_ids, tickets_dir)
