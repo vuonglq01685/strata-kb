@@ -41,7 +41,9 @@
 
 ### Task 1: Extract `lintcore.py` and add the notes channel
 
-Behaviour-preserving refactor plus one additive field. The acceptance condition is that the **entire existing `tests/test_ticketlint.py` and `tests/test_cli_ticket.py` suites pass unchanged**.
+Behaviour-preserving refactor plus one additive field.
+
+**Acceptance condition:** the existing `tests/test_ticketlint.py` and `tests/test_cli_ticket.py` suites pass with **exactly one permitted edit** — `test_to_json_shape`, which asserts the JSON envelope's exact key set, gains `"notes"`. Spec §5.1 requires `--json` to emit `{"pass", "errors", "warnings", "notes"}`, so widening that one assertion records an intended contract change. Every other test in both files must pass untouched; editing any of them means the extraction diverged.
 
 **Files:**
 - Create: `src/center_kb/lintcore.py`
@@ -406,10 +408,14 @@ def lint(text: str, hub: "HubHandle | None") -> LintReport:
     return LintReport(issues=issues)
 ```
 
-- [ ] **Step 4: Run the existing suites — they must pass with zero edits**
+- [ ] **Step 4: Widen the one assertion the new JSON key breaks**
+
+`tests/test_ticketlint.py::test_to_json_shape` asserts the envelope's exact key set. Spec §5.1 requires `notes` in it, so add `"notes"` to that assertion — the envelope genuinely gained a key. Change nothing else in either file.
+
+- [ ] **Step 5: Run the existing suites**
 
 Run: `.venv/bin/pytest tests/test_ticketlint.py tests/test_cli_ticket.py -q`
-Expected: PASS, same count as Step 1. If any test needed editing, the extraction changed behaviour — revert and re-do it verbatim.
+Expected: PASS, same count as Step 1. If any test **other than `test_to_json_shape`** needed editing, the extraction changed behaviour — revert and re-do it verbatim.
 
 - [ ] **Step 5: Write the failing test for the notes channel**
 
