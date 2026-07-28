@@ -50,18 +50,38 @@ jobs:
           # NUL-separated data cannot survive a `$(...)` capture — bash has no
           # way to store a NUL byte in a variable, so `changed=$(git diff -z
           # ...)` silently concatenates every filename together with no
-          # separator left to split on. So the diff is streamed straight into
-          # the while loop via process substitution instead of being captured
-          # first; "were there any changed files at all" is tracked with a
-          # counter incremented per NUL-terminated read, checked after the
-          # loop exits.
+          # separator left to split on.
+          #
+          # Streaming straight into `done < <(git ...)` (process substitution)
+          # has its own failure mode: the substitution's exit status is not
+          # the loop's exit status, so if git fails outright (stale/empty
+          # BASE_REF, `origin/<base>` missing, any git error) it writes to
+          # stderr, produces zero records, the loop simply never runs, `count`
+          # stays 0, and the step falls into the "nothing changed" branch below
+          # and exits 0 — a required check going green on a diff that was
+          # never actually computed. So `git diff` runs as a plain foreground
+          # command, redirected into a temp file, so a failure trips this
+          # step's `-e` (GitHub Actions runs `run:` blocks as `bash -e {0}`)
+          # immediately, before `count`/`status` can be misread as "clean."
+          # The loop then reads from that file instead of a process
+          # substitution; it still runs in the current shell either way, so
+          # `status`/`count` aggregation is unaffected by this change.
           #
           # --diff-filter=ACMR (Added/Copied/Modified/Renamed, no Deleted)
           # keeps a ticket/mission deletion from being handed to `kb ... lint`
           # at all; `[ -f "$f" ]` below is a belt-and-braces guard for the
-          # rename-out-of-pathspec edge case.
+          # rename-out-of-pathspec edge case. The loud `*)` arm right above it
+          # is unreachable today only because the pathspec on the `git diff`
+          # below already confines every emitted path to tickets/ or
+          # missions/ — it earns its keep the day that pathspec is widened
+          # (e.g. to also cover docs/**.md) and some newly-included path needs
+          # to fail loudly instead of being silently mis-dispatched.
           status=0
           count=0
+          git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR \
+            "origin/${BASE_REF}..." \
+            -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md' \
+            > "$RUNNER_TEMP/changed.nul"
           while IFS= read -r -d '' f; do
             count=$((count + 1))
             case "$f" in
@@ -77,7 +97,7 @@ jobs:
             echo "::group::$cmd $f"
             $cmd "$f" --hub "$CENTER_KB_HUB" || status=1
             echo "::endgroup::"
-          done < <(git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR "origin/${BASE_REF}..." -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md')
+          done < "$RUNNER_TEMP/changed.nul"
           if [ "$count" -eq 0 ]; then
             echo "::notice::no ticket or mission files changed — DoR lint skipped"
             exit 0

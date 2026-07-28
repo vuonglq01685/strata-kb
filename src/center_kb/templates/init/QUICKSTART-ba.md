@@ -102,12 +102,16 @@ Re-run `kb init --kind ba` to pick up new templates. This only ever
 touches **scaffold files** — the CI workflow, the skill/command/prompt
 wrappers, and the ticket/mission templates under `docs/` — and only
 overwrites one when its content differs from the new template;
-`.kb/config.yaml` and `.kb/index.yaml` are never touched either way. Your
-own `tickets/` and `missions/` content is not scaffolding: `kb init`
-never reads, writes, or overwrites anything in those directories.
+`.kb/config.yaml` and `.kb/index.yaml` are never touched either way
+(the one exception being an explicit `--force`, which overwrites them
+too). Your own `tickets/` and `missions/` content is not scaffolding:
+`kb init` never touches any file you author there. (The one thing it
+does place in each directory is an empty `.gitkeep`, so git can track
+the directory before your first ticket or mission exists — it never
+reads, writes, or overwrites anything else there.)
 **If you hand-edited a wrapper, back it up first: your edits are lost.**
 
-This release also tightens `kb ticket lint`'s diagram check: the
+v0.13.0 also tightens `kb ticket lint`'s diagram check: the
 diagram-type keyword (e.g. `sequenceDiagram`, `flowchart`) must now sit at
 the **start of a line** inside the Mermaid fence, not merely appear
 somewhere in it. If lint now rejects a diagram that used to pass, move
