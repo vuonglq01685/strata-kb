@@ -1,12 +1,18 @@
-# CI Definition-of-Ready gate: every pull request that touches tickets/
-# must pass `kb ticket lint` before it can merge. The hub is a repo
+# CI Definition-of-Ready gate: every pull request that touches tickets/ or
+# missions/ must pass its DoR lint before it can merge. The hub is a repo
 # variable and any auth token a repo secret — never hardcoded here,
 # mirroring how kb-publish.yml keeps credentials out of the workflow file
 # (documents behind the hub are copyrighted).
+#
+# The workflow file name and the job name are deliberately FROZEN as
+# 'kb-ticket-lint' even though the gate now covers missions too: branch
+# protection on already-provisioned BA repos keys on the job name, and
+# renaming it would leave those repos waiting forever on a required check
+# that never runs again.
 name: kb-ticket-lint
 on:
   pull_request:
-    paths: ["tickets/**.md"]
+    paths: ["tickets/**.md", "missions/**.md"]
 permissions:
   contents: read
 env:
@@ -29,18 +35,23 @@ jobs:
         if: env.KB_HUB_TOKEN != ''
         run: |
           echo "CENTER_KB_HUB=https://x-access-token:${KB_HUB_TOKEN}@${CENTER_KB_HUB#https://}" >> "$GITHUB_ENV"
-      - name: Lint changed tickets (Definition of Ready)
+      - name: Lint changed tickets and missions (Definition of Ready)
         run: |
-          changed=$(git diff --name-only "origin/${BASE_REF}..." -- 'tickets/*.md' 'tickets/**/*.md')
+          changed=$(git diff --name-only "origin/${BASE_REF}..." -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md')
           if [ -z "$changed" ]; then
-            echo "::notice::no ticket files changed under tickets/ — DoR lint skipped"
+            echo "::notice::no ticket or mission files changed — DoR lint skipped"
             exit 0
           fi
           status=0
           while IFS= read -r f; do
             [ -z "$f" ] && continue
-            echo "::group::kb ticket lint $f"
-            kb ticket lint "$f" --hub "$CENTER_KB_HUB" || status=1
+            case "$f" in
+              missions/*) cmd="kb mission lint" ;;
+              tickets/*)  cmd="kb ticket lint" ;;
+              *) continue ;;
+            esac
+            echo "::group::$cmd $f"
+            $cmd "$f" --hub "$CENTER_KB_HUB" || status=1
             echo "::endgroup::"
           done <<< "$changed"
           exit "$status"

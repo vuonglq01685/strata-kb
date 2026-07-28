@@ -728,7 +728,7 @@ def test_kb_ticket_lint_workflow_content(tmp_path: Path):
         tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
     ).read_text(encoding="utf-8")
     assert "pull_request" in content
-    assert 'paths: ["tickets/**.md"]' in content
+    assert 'paths: ["tickets/**.md", "missions/**.md"]' in content
     assert "pip install center-kb" in content
     assert "kb ticket lint" in content
     assert "vars.CENTER_KB_HUB" in content
@@ -919,10 +919,15 @@ def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
 
 
 def test_ticket_wrappers_document_the_refs_inheritance_rule(tmp_path):
-    """Regression guard for the parent-mission refs-inheritance rule: a
-    ticket wrapper that inherits only half of the rule (e.g. the filename
-    but not 'starting candidates only') would draft with the mission's
-    full kb-context copied wholesale instead of pinning fresh refs."""
+    """Regression guard for the parent-mission refs-inheritance rule. Three
+    parts of the rule can each go missing independently from exactly one
+    wrapper and stay undetected unless all three are asserted here: the
+    'starting candidates only' phrase (dropping it would draft with the
+    mission's full kb-context copied wholesale instead of pinning fresh
+    refs), the `> Parent mission:` back-link line (dropping it breaks the
+    ticket-lint back-link check), and the `tickets/<mission-id>-US<n>.md`
+    filename convention (dropping it means the back-link check can't find
+    the ticket at all)."""
     from center_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
@@ -930,6 +935,8 @@ def test_ticket_wrappers_document_the_refs_inheritance_rule(tmp_path):
     for rel in _TICKET_WRAPPER_PATHS:
         text = (tmp_path / rel).read_text(encoding="utf-8")
         assert "starting candidates" in text.lower(), rel
+        assert "> Parent mission: <mission-id>" in text, rel
+        assert "tickets/<mission-id>-US<n>.md" in text, rel
 
 
 def test_mission_wrappers_carry_the_never_auto_rules(tmp_path):
@@ -945,3 +952,42 @@ def test_mission_wrappers_carry_the_never_auto_rules(tmp_path):
         text = (tmp_path / rel).read_text(encoding="utf-8").lower()
         assert "never auto-generate" in text, rel
         assert "never auto-pick" in text, rel
+
+
+def test_ci_gate_covers_both_tickets_and_missions(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    wf = (
+        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "tickets/**.md" in wf
+    assert "missions/**.md" in wf
+    assert "kb ticket lint" in wf
+    assert "kb mission lint" in wf
+
+
+def test_ci_gate_job_name_is_frozen(tmp_path):
+    """Branch protection on provisioned BA repos keys on the job name.
+    Renaming it leaves those repos waiting forever on a required check
+    that never runs again."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    wf_path = tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
+    assert wf_path.is_file()
+    wf = wf_path.read_text(encoding="utf-8")
+    assert "name: kb-ticket-lint" in wf
+    assert "\n  lint:\n" in wf
+
+
+def test_ci_gate_has_no_hardcoded_credentials(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    wf = (
+        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
+    ).read_text(encoding="utf-8")
+    assert "secrets.KB_HUB_TOKEN" in wf
+    assert "ghp_" not in wf
