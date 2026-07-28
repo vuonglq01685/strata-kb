@@ -54,7 +54,7 @@ Ngoài phạm vi:
 - `kb resolve` + citation + MCP nhận qualifier path lồng (`mid/repo-x:doc-id`); ambiguous → tool liệt kê ứng viên kèm path đầy đủ như hành vi hiện tại.
 - `kb doctor` thêm: (a) super-hub reachable (khi có `hub:`); (b) cảnh báo sớm cycle — thấy `repo_id` mình trong federation; (c) id lồng hợp lệ (segment không rỗng, không chứa ký tự cấm).
 - `kb reindex` dùng chung walk đệ quy.
-- Embeddings: giữ mô hình per-entry db trên hub cache (`.kb-work/embeddings-<entry-path-đã-làm-phẳng>.db`) — làm tươi tăng dần theo content-hash như cũ.
+- Embeddings/search index: giữ nguyên một `search.db` duy nhất trên hub cache (`.kb-work/search.db`), row keyed theo `repo_id` — id lồng chỉ là chuỗi dài hơn, sync fingerprint per-entry hoạt động nguyên trạng, không cần đổi schema.
 
 ## 6. Tương thích ngược
 
