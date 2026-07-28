@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,22 @@ from center_kb import initcmd
 from center_kb.cli import app
 from center_kb.initcmd import expected_files, init_repo
 from tests.cli_stub import write_cli_stub
+
+# The CI dispatch step under test is a bash script, and the workflow that
+# runs it is `runs-on: ubuntu-latest` — it never executes on Windows in
+# production, so skipping there is the contract, not a coverage gap.
+#
+# The platform check is NOT redundant with the `which` check. On a GitHub
+# Windows runner `shutil.which("bash")` resolves to
+# C:\Windows\System32\bash.exe — the WSL launcher stub — which exits 1
+# printing "Windows Subsystem for Linux has no installed distributions" in
+# UTF-16, rather than running the script. A bash that exists but is not a
+# shell defeats a presence-only guard, which is exactly how these four
+# tests reached CI red on Windows while passing everywhere else.
+_needs_bash = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="the dispatch step is a bash script; its workflow is ubuntu-only",
+)
 
 runner = CliRunner()
 
@@ -1084,9 +1101,7 @@ _KB_STUB_BODY = (
 )
 
 
-@pytest.mark.skipif(
-    shutil.which("bash") is None, reason="the dispatch step is a bash script"
-)
+@_needs_bash
 def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     """Run the CI workflow's real final step under `bash -e` (the same
     invocation GitHub Actions uses for a `run:` block), not a substring
@@ -1191,9 +1206,7 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     assert any("tickets/T-new.md" in line for line in log_lines)
 
 
-@pytest.mark.skipif(
-    shutil.which("bash") is None, reason="the dispatch step is a bash script"
-)
+@_needs_bash
 def test_ci_gate_step_aborts_on_failing_git_diff(tmp_path):
     """Important A regression test.
 
@@ -1265,9 +1278,7 @@ def test_ci_gate_step_aborts_on_failing_git_diff(tmp_path):
     assert not log_path.exists(), log_path.read_text(encoding="utf-8")
 
 
-@pytest.mark.skipif(
-    shutil.which("bash") is None, reason="the dispatch step is a bash script"
-)
+@_needs_bash
 def test_ci_gate_prints_notice_and_exits_zero_when_nothing_changed(tmp_path):
     """Minor 7 (first uncovered branch): the empty-diff path — a PR that
     touches no tickets/missions files at all — had no test. Assert it prints
@@ -1309,9 +1320,7 @@ def test_ci_gate_prints_notice_and_exits_zero_when_nothing_changed(tmp_path):
     )
 
 
-@pytest.mark.skipif(
-    shutil.which("bash") is None, reason="the dispatch step is a bash script"
-)
+@_needs_bash
 def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
     """Minor 6/7 (second uncovered branch): the `*) ... status=1 ;
     continue ;;` fallback arm can never be reached through a *real* `git
