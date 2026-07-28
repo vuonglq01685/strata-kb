@@ -356,7 +356,7 @@ def test_passed_false_iff_error_present(fed_hub: Path, golden_block: str):
 def test_to_json_shape(fed_hub: Path, golden_block: str):
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     data = report.to_json()
-    assert set(data.keys()) == {"pass", "errors", "warnings"}
+    assert set(data.keys()) == {"pass", "errors", "warnings", "notes"}
     assert data["pass"] is True
     assert data["errors"] == []
     assert isinstance(data["warnings"], list)
