@@ -430,3 +430,116 @@ def test_template_headings_match_contract():
     content = template_path.read_text(encoding="utf-8")
     for heading in ticket.REQUIRED_HEADINGS:
         assert content.count(heading) == 1, heading
+
+
+# --- check 10: parent mission back-link ---
+
+
+def _mission_doc(mission_id: str, us_ids: list[str]) -> str:
+    rows = "\n".join(f"| {u} | Story {u} |" for u in us_ids)
+    return (
+        f"# Mission {mission_id}\n\n"
+        f"> Mission: {mission_id}\n\n"
+        "## US backlog\n"
+        "| US ID | Title |\n"
+        "|---|---|\n"
+        f"{rows}\n"
+    )
+
+
+def test_ticket_without_parent_mission_line_is_unaffected(
+    fed_hub: Path, golden_block: str
+):
+    """REQUIRED_HEADINGS is untouched and the back-link is optional, so
+    every pre-existing ticket keeps passing with no edit."""
+    report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
+    assert report.passed is True
+    assert report.notes == []
+
+
+def test_valid_parent_mission_passes(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    (missions / "M-airspace-filter.md").write_text(
+        _mission_doc("M-airspace-filter", ["M-airspace-filter-US1"]),
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is True, _errors(report)
+
+
+def test_missing_mission_file_errors(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any("mission file not found" in m for m in _errors(report))
+
+
+def test_us_id_absent_from_backlog_errors(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    (missions / "M-airspace-filter.md").write_text(
+        _mission_doc("M-airspace-filter", ["M-airspace-filter-US9"]),
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any("not in the backlog" in m for m in _errors(report))
+
+
+def test_malformed_parent_mission_id_errors(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: airspace-filter",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("M-<slug>" in m for m in _errors(report))
+
+
+def test_parent_mission_without_paths_degrades_to_a_note(
+    fed_hub: Path, golden_block: str
+):
+    """This is the MCP path: no repo on disk, so existence and backlog
+    membership cannot be checked. It must say so, not imply a full PASS."""
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    assert any("parent-mission" in n for n in report.notes)

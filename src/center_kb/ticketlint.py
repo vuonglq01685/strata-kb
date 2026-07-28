@@ -9,9 +9,10 @@ the ticket contract.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from center_kb import lintcore, ticket
+from center_kb import lintcore, mission, missionlint, ticket
 from center_kb.doctor import Issue
 from center_kb.lintcore import LintReport
 
@@ -67,8 +68,70 @@ def _check_ac_citations(ac_items: list[str]) -> list[Issue]:
     ]
 
 
-def lint(text: str, hub: "HubHandle | None") -> LintReport:
+def check_parent_mission(
+    text: str, path: Path | None, missions_dir: Path | None
+) -> tuple[list[Issue], list[str]]:
+    """Check 10. Only fires when the OPTIONAL '> Parent mission:' line is
+    present — pre-existing tickets carry no such line and are unaffected.
+
+    Traceability is enforced here rather than at mission lint because this
+    is the point where both artifacts exist: a mission is authored before
+    its tickets, so a mission-side existence check would fail every
+    freshly written mission (spec §5.2).
+    """
+    m = ticket.PARENT_MISSION_RE.search(text)
+    if m is None:
+        return [], []
+
+    mission_id = m.group(1)
+    if not mission.MISSION_ID_RE.match(mission_id):
+        return [
+            Issue(
+                "error",
+                f"malformed parent mission id '{mission_id}' — expected "
+                "'M-<slug>' in lowercase kebab-case",
+            )
+        ], []
+
+    if path is None or missions_dir is None:
+        return [], [
+            "parent-mission existence and backlog checks skipped — no repo "
+            "paths supplied"
+        ]
+
+    mission_path = missions_dir / f"{mission_id}.md"
+    if not mission_path.is_file():
+        return [
+            Issue(
+                "error",
+                f"mission file not found: '{mission_path}' — the ticket "
+                f"declares parent mission '{mission_id}'",
+            )
+        ], []
+
+    us_id = path.stem
+    mission_text = mission_path.read_text(encoding="utf-8")
+    _issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
+    if us_id not in backlog_ids:
+        return [
+            Issue(
+                "error",
+                f"'{us_id}' is not in the backlog of mission "
+                f"'{mission_id}' — add the row or fix the ticket filename",
+            )
+        ], []
+    return [], []
+
+
+def lint(
+    text: str,
+    hub: "HubHandle | None",
+    *,
+    path: Path | None = None,
+    missions_dir: Path | None = None,
+) -> LintReport:
     issues: list[Issue] = []
+    notes: list[str] = []
     issues += lintcore.check_title(text)
     issues += lintcore.check_headings(text, ticket.REQUIRED_HEADINGS)
     issues += _check_story(text)
@@ -86,4 +149,8 @@ def lint(text: str, hub: "HubHandle | None") -> LintReport:
 
     issues += _check_ac_citations(ac_items)
 
-    return LintReport(issues=issues)
+    pm_issues, pm_notes = check_parent_mission(text, path, missions_dir)
+    issues += pm_issues
+    notes += pm_notes
+
+    return LintReport(issues=issues, notes=notes)

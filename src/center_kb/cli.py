@@ -961,6 +961,12 @@ def ticket_lint(
     hub: str = typer.Option(
         "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
+    missions_dir: Path | None = typer.Option(
+        None,
+        "--missions-dir",
+        help="Where mission files live (default: the ticket file's sibling "
+        "'missions/' directory)",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
@@ -968,11 +974,13 @@ def ticket_lint(
     """Definition-of-Ready gate: lint a ticket against the DoR checklist."""
     from center_kb.ticketlint import lint
 
+    path: Path | None = None
     if source == "-":
         text = sys.stdin.read()
     else:
+        path = Path(source)
         try:
-            text = Path(source).read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
@@ -981,8 +989,39 @@ def ticket_lint(
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
+
+    # An explicitly-passed --missions-dir is a deliberate BA choice, so a
+    # typo must be a hard error — otherwise check_parent_mission's
+    # .is_file() probing quietly reports "mission file not found" for a
+    # mission that actually exists, misdiagnosing a bad path as a missing
+    # mission. The sibling default below stays fail-soft: its absence
+    # degrades to the engine's note, it never becomes an error.
+    if missions_dir is not None and not missions_dir.is_dir():
+        typer.secho(
+            f"--missions-dir '{missions_dir}' does not exist or is not a "
+            "directory",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    # A ticket at tickets/<id>.md has missions/ as its sibling, so the
+    # back-link check works with no flag in the layout kb init scaffolds.
+    # Gate on the parent directory's name so the default only ever binds to
+    # the sibling of an actual tickets/ directory — not some unrelated
+    # missions/ that happens to sit next to wherever the ticket file was
+    # opened from (mirrors mission_lint's tickets-dir sibling guard).
+    resolved_missions = missions_dir
+    if (
+        resolved_missions is None
+        and path is not None
+        and path.parent.name == "tickets"
+    ):
+        sibling = path.parent.parent / "missions"
+        if sibling.is_dir():
+            resolved_missions = sibling
+
     handle = _hub_or_exit(hub, kb_dir)
-    report = lint(text, handle)
+    report = lint(text, handle, path=path, missions_dir=resolved_missions)
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:

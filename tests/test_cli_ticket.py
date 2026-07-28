@@ -121,3 +121,34 @@ def test_lint_missing_file_exits_1_with_clear_error(tmp_path):
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "could not read file" in result.output
     assert str(missing) in result.output
+
+
+def test_ticket_lint_resolves_sibling_missions_dir(fed_hub, tmp_path):
+    """A ticket at tickets/<id>.md finds missions/ next to it, so the
+    back-link check runs with no flag."""
+    block = _golden_block(fed_hub)
+    (tmp_path / "missions").mkdir()
+    (tmp_path / "tickets").mkdir()
+    (tmp_path / "missions" / "M-airspace-filter.md").write_text(
+        "# Mission\n\n"
+        "> Mission: M-airspace-filter\n\n"
+        "## US backlog\n"
+        "| US ID | Title |\n"
+        "|---|---|\n"
+        "| M-airspace-filter-US1 | Render polygons |\n",
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(block).replace(
+        "\n\n## Summary",
+        "\n\n> Parent mission: M-airspace-filter\n\n## Summary",
+        1,
+    )
+    ticket_path.write_text(text, encoding="utf-8")
+
+    result = runner.invoke(
+        app, ["ticket", "lint", str(ticket_path), "--hub", str(fed_hub)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "DoR: PASS" in result.output
