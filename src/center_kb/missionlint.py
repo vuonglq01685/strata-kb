@@ -272,6 +272,15 @@ def lint(
     # backlog errors, so nothing is lost by deferring. Gate on the issue
     # list rather than on `us_ids` contents, so the guard stays correct if
     # the set of backlog checks grows later.
+    #
+    # The final branch runs unconditionally: `check_backlog` only returns
+    # an empty `us_ids` alongside an error issue that the `elif
+    # backlog_issues` above already caught, and `check_coverage([], ...)`
+    # is a no-op, so there is nothing left for an `elif us_ids:` guard to
+    # protect against. That guard would only ever matter by masking a
+    # future bug — a backlog change that returns an empty `us_ids` with no
+    # issue would then skip coverage with no note at all, the one silent
+    # skip in an otherwise fully-noted pipeline.
     if tickets_dir is None:
         notes.append(
             "coverage check skipped — no tickets directory supplied"
@@ -281,7 +290,7 @@ def lint(
             "coverage check skipped — the US backlog has errors; "
             "fix those first"
         )
-    elif us_ids:
+    else:
         issues += check_coverage(us_ids, tickets_dir)
 
     issues += check_placeholders(text)

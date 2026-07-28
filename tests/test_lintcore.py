@@ -104,9 +104,61 @@ def test_inline_cite_re_drops_a_sentence_ending_period_from_the_section_id():
 
 def test_inline_cite_re_keeps_a_multi_level_section_id_intact():
     """A multi-level section id ('§5.3.2') has internal periods that are
-    NOT sentence punctuation — those must be kept."""
+    NOT sentence punctuation — those must be kept.
+
+    Note: this is NOT a regression test for the trailing-period bug — the
+    pre-fix pattern ('[^\\s,;)\\]]+') already passed this exact case, since
+    only a *trailing* period was ever the problem, not an internal one.
+    What this test does guard against is the naive over-correction of
+    simply dropping '.' from the excluded-character class altogether,
+    which would have broken this case instead of fixing the real one."""
     text = "arinc-424 §5.3.2"
 
     (match,) = list(INLINE_CITE_RE.finditer(text))
 
     assert match.groups() == (None, "arinc-424", "5.3.2")
+
+
+def test_inline_cite_re_drops_a_trailing_colon_from_the_section_id():
+    """A citation immediately followed by a colon ('§5.3:') must not
+    absorb the colon into the section id.
+
+    This does not by itself discriminate this fix from the over-anchored
+    '01e4ac2' pattern (both require an alnum on the trailing side after
+    backtracking, so both get this right) — it pins coverage the previous
+    suite lacked. See the non-alnum-initial test below for the case that
+    DOES discriminate the two."""
+    text = "arinc-424 §5.3: see the table"
+
+    (match,) = list(INLINE_CITE_RE.finditer(text))
+
+    assert match.groups() == (None, "arinc-424", "5.3")
+
+
+def test_inline_cite_re_drops_a_trailing_question_mark_from_the_section_id():
+    """A citation immediately followed by a question mark ('§5.3?') must
+    not absorb it into the section id — same rationale as the trailing-
+    colon case above."""
+    text = "Does arinc-424 §5.3? Check the table."
+
+    (match,) = list(INLINE_CITE_RE.finditer(text))
+
+    assert match.groups() == (None, "arinc-424", "5.3")
+
+
+def test_inline_cite_re_matches_a_non_alnum_initial_section_id():
+    """A section id that does NOT start on an alnum ('§(a)') must still
+    match — kbcontext._REF_RE's section-id half accepts any non-whitespace
+    token ('\\S+'), so ids like this are legal to pin.
+
+    This is the case that discriminates a tail-only anchor from the
+    over-anchored '01e4ac2' pattern (which additionally required
+    '[A-Za-z0-9]' as the FIRST character of the section id): anchoring the
+    leading character would make '§(a)' fail to match at all, which is
+    worse than the original bug — the citation silently disappears from
+    view instead of being mis-parsed."""
+    text = "arinc-424 §(a) applies here"
+
+    (match,) = list(INLINE_CITE_RE.finditer(text))
+
+    assert match.groups() == (None, "arinc-424", "(a")

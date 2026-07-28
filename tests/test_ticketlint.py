@@ -339,6 +339,34 @@ def test_ac_without_citation_warns(fed_hub: Path, golden_block: str):
     )
 
 
+def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
+    fed_hub: Path, golden_block: str
+):
+    """Ties the INLINE_CITE_RE trailing-period fix (lintcore.py, commit
+    01e4ac2) to the actual gates it feeds: `_check_ac_citations` and
+    `check_citation_consistency`. An AC whose citation ends the sentence
+    ('... arinc-kb:arinc-424 §5.3.') must be recognized as cited and as
+    resolving the pinned ref — not reported as an uncited AC, nor as an
+    unresolved citation."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Show airspace type per arinc-kb:arinc-424 §5.3.\n"
+                "- [ ] AC2: Show ICAO designation per icao-kb:icao-annex-2 "
+                "§1.1"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("has no citation" in msg for msg in _warnings(report))
+    assert not any(
+        "not in kb-context refs" in msg for msg in _errors(report)
+    )
+    assert report.passed is True
+    assert report.issues == []
+
+
 # --- passed / to_json ---
 
 
