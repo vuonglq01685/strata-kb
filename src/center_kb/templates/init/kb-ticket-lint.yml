@@ -9,10 +9,17 @@
 # protection on already-provisioned BA repos keys on the job name, and
 # renaming it would leave those repos waiting forever on a required check
 # that never runs again.
+#
+# Deliberately NOT `paths`-filtered to tickets/**.md, missions/**.md: GitHub
+# never synthesizes a passing status for a job that never started, so a
+# `paths:` filter on a trigger that backs a *required* check would leave any
+# PR touching neither directory waiting forever for a check that will never
+# run. The job below always starts; its one step inspects the PR's own diff
+# and exits 0 with a `::notice::` when nothing under either directory
+# changed, so a PR unrelated to tickets/missions still passes cleanly.
 name: kb-ticket-lint
 on:
   pull_request:
-    paths: ["tickets/**.md", "missions/**.md"]
 permissions:
   contents: read
 env:
@@ -93,7 +100,10 @@ jobs:
                 continue
                 ;;
             esac
-            [ -f "$f" ] || continue
+            if [ ! -f "$f" ]; then
+              echo "::warning::skipping '$f' — not present in the checkout"
+              continue
+            fi
             echo "::group::$cmd $f"
             $cmd "$f" --hub "$CENTER_KB_HUB" || status=1
             echo "::endgroup::"
