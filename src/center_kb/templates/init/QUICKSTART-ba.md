@@ -49,7 +49,8 @@ Per mission:
 
 1. `/ba-mission-plan` — the agent walks Intake → Ground → Draft → Split →
    Pin → Lint → Review and saves `missions/M-<slug>.md`.
-2. Review the C4 L1/L2 diagrams, the scope split, and the US backlog.
+2. Review the C4 L1/L2 diagrams (Level 1 = System Context, Level 2 =
+   Container), the scope split, and the US backlog.
 3. `kb mission lint missions/M-<slug>.md` must report `DoR: PASS`.
    A `0/N US drafted` coverage warning is normal — the tickets do not
    exist yet.
@@ -97,11 +98,20 @@ on.
 
 ## Upgrading an existing BA repo
 
-Re-run `kb init --kind ba` to pick up new templates. Any file that is not
-`.kb/config.yaml` or `.kb/index.yaml` is **overwritten** when its content
-differs — so the CI workflow and the skill wrappers are refreshed, which
-is the point. **If you hand-edited a wrapper, back it up first: your
-edits are lost.**
+Re-run `kb init --kind ba` to pick up new templates. This only ever
+touches **scaffold files** — the CI workflow, the skill/command/prompt
+wrappers, and the ticket/mission templates under `docs/` — and only
+overwrites one when its content differs from the new template;
+`.kb/config.yaml` and `.kb/index.yaml` are never touched either way. Your
+own `tickets/` and `missions/` content is not scaffolding: `kb init`
+never reads, writes, or overwrites anything in those directories.
+**If you hand-edited a wrapper, back it up first: your edits are lost.**
+
+This release also tightens `kb ticket lint`'s diagram check: the
+diagram-type keyword (e.g. `sequenceDiagram`, `flowchart`) must now sit at
+the **start of a line** inside the Mermaid fence, not merely appear
+somewhere in it. If lint now rejects a diagram that used to pass, move
+that keyword to the start of its own line inside the fence.
 
 ## CLI reference
 

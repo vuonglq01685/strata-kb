@@ -37,21 +37,49 @@ jobs:
           echo "CENTER_KB_HUB=https://x-access-token:${KB_HUB_TOKEN}@${CENTER_KB_HUB#https://}" >> "$GITHUB_ENV"
       - name: Lint changed tickets and missions (Definition of Ready)
         run: |
-          changed=$(git diff --name-only "origin/${BASE_REF}..." -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md')
-          if [ -z "$changed" ]; then
-            echo "::notice::no ticket or mission files changed — DoR lint skipped"
-            exit 0
-          fi
+          # core.quotePath defaults to true, which makes `git diff --name-only`
+          # emit any non-ASCII path (e.g. Vietnamese section ids/filenames —
+          # this project explicitly supports them) as a C-quoted, octal-escaped
+          # string like "missions/M-\304\220\304\203ng-nh\341\272\255p.md". The
+          # `case` dispatch below would then match neither missions/* nor
+          # tickets/*, silently skip the file, and still exit 0 — a required
+          # check going green on a mission that was never linted. Disabling
+          # quotePath and reading NUL-separated output (`-z`) fixes that at
+          # the source and also removes any newline-in-filename hazard.
+          #
+          # NUL-separated data cannot survive a `$(...)` capture — bash has no
+          # way to store a NUL byte in a variable, so `changed=$(git diff -z
+          # ...)` silently concatenates every filename together with no
+          # separator left to split on. So the diff is streamed straight into
+          # the while loop via process substitution instead of being captured
+          # first; "were there any changed files at all" is tracked with a
+          # counter incremented per NUL-terminated read, checked after the
+          # loop exits.
+          #
+          # --diff-filter=ACMR (Added/Copied/Modified/Renamed, no Deleted)
+          # keeps a ticket/mission deletion from being handed to `kb ... lint`
+          # at all; `[ -f "$f" ]` below is a belt-and-braces guard for the
+          # rename-out-of-pathspec edge case.
           status=0
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
+          count=0
+          while IFS= read -r -d '' f; do
+            count=$((count + 1))
             case "$f" in
               missions/*) cmd="kb mission lint" ;;
               tickets/*)  cmd="kb ticket lint" ;;
-              *) continue ;;
+              *)
+                echo "::error::unrecognised path '$f' — not under tickets/ or missions/"
+                status=1
+                continue
+                ;;
             esac
+            [ -f "$f" ] || continue
             echo "::group::$cmd $f"
             $cmd "$f" --hub "$CENTER_KB_HUB" || status=1
             echo "::endgroup::"
-          done <<< "$changed"
+          done < <(git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR "origin/${BASE_REF}..." -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md')
+          if [ "$count" -eq 0 ]; then
+            echo "::notice::no ticket or mission files changed — DoR lint skipped"
+            exit 0
+          fi
           exit "$status"

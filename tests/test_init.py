@@ -1,11 +1,16 @@
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from center_kb import initcmd
 from center_kb.cli import app
 from center_kb.initcmd import expected_files, init_repo
+from tests.cli_stub import write_cli_stub
 
 runner = CliRunner()
 
@@ -991,3 +996,149 @@ def test_ci_gate_has_no_hardcoded_credentials(tmp_path):
     ).read_text(encoding="utf-8")
     assert "secrets.KB_HUB_TOKEN" in wf
     assert "ghp_" not in wf
+
+
+# --- CI gate: execute the real dispatch loop, not a substring check --------
+#
+# The three tests above are pure substring checks against the rendered YAML
+# text. They pass unchanged if the `case` arms are swapped, if `status` never
+# aggregates a failure, or if a non-ASCII/deleted path is silently skipped —
+# exactly the two bugs that reached review. This section extracts the actual
+# final step's `run:` script from the rendered workflow and executes it with
+# bash against a hermetic git repo, so the dispatch logic itself is exercised.
+
+
+def _git(cwd: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8"
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout
+
+
+def _extract_lint_dispatch_script(tmp_path: Path) -> str:
+    """Scaffold a `ba` repo and pull the lint job's final step `run:` body
+    out of the *rendered* workflow YAML — the exact script CI executes."""
+    repo = tmp_path / "ba-scaffold"
+    init_repo(repo, "ba")
+    wf_text = (
+        repo / ".github" / "workflows" / "kb-ticket-lint.yml"
+    ).read_text(encoding="utf-8")
+    data = yaml.safe_load(wf_text)
+    steps = data["jobs"]["lint"]["steps"]
+    return steps[-1]["run"]
+
+
+_KB_STUB_BODY = (
+    "import os, sys\n"
+    "log = os.environ.get('KB_STUB_LOG')\n"
+    "if log:\n"
+    "    with open(log, 'a', encoding='utf-8') as fh:\n"
+    "        fh.write('\\t'.join(sys.argv[1:]) + '\\n')\n"
+    "fail_markers = [m for m in os.environ.get('KB_STUB_FAIL', '').split(os.pathsep) if m]\n"
+    "sys.exit(1 if any(a in fail_markers for a in sys.argv[1:]) else 0)\n"
+)
+
+
+@pytest.mark.skipif(
+    shutil.which("bash") is None, reason="the dispatch step is a bash script"
+)
+def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
+    """Run the CI workflow's real final step under bash, not a substring
+    match. Sets up a git repo that mimics a checked-out PR: a base commit,
+    then a PR commit that retires one ticket (deletes it), adds a new
+    ticket, and adds a mission whose filename is non-ASCII (Vietnamese).
+    A stub `kb` on PATH records every invocation's argv and can be told to
+    fail for a specific path via KB_STUB_FAIL.
+
+    Verifies:
+    - a `missions/*` path dispatches to `kb mission lint`, a `tickets/*`
+      path dispatches to `kb ticket lint` (the pairing, not just presence);
+    - the non-ASCII mission filename IS linted (Important 1 — it must not
+      be silently skipped by the `*) continue ;;` fallback);
+    - the deleted ticket is never invoked at all, and does not fail the
+      job (Important 2);
+    - configuring the surviving ticket to fail makes the whole step exit
+      non-zero (status aggregation actually works).
+    """
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+
+    (repo / "tickets").mkdir()
+    (repo / "tickets" / "keep.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "tickets/keep.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    # PR commit #1: add a ticket that will be retired in commit #2.
+    (repo / "tickets" / "T-old.md").write_text("to be retired\n", encoding="utf-8")
+    _git(repo, "add", "tickets/T-old.md")
+    _git(repo, "commit", "-q", "-m", "add ticket that gets retired next")
+
+    # PR commit #2: retire it (delete), add a new ticket, add a non-ASCII
+    # mission filename — the exact repro from Important 1's bug report.
+    _git(repo, "rm", "-q", "tickets/T-old.md")
+    (repo / "missions").mkdir(exist_ok=True)
+    (repo / "missions" / "M-Đăng-nhập.md").write_text("mission\n", encoding="utf-8")
+    (repo / "tickets").mkdir(exist_ok=True)
+    (repo / "tickets" / "T-new.md").write_text("new ticket\n", encoding="utf-8")
+    _git(repo, "add", "missions/M-Đăng-nhập.md", "tickets/T-new.md")
+    _git(repo, "commit", "-q", "-m", "pr: retire+add ticket, add mission")
+
+    bindir = tmp_path / "bin"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    log_path = tmp_path / "kb.log"
+
+    base_env = {
+        **os.environ,
+        "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "BASE_REF": "main",
+        "CENTER_KB_HUB": "https://example.invalid/hub",
+        "KB_STUB_LOG": str(log_path),
+    }
+
+    # --- Run 1: nothing configured to fail. ---
+    result = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=repo,
+        env={**base_env, "KB_STUB_FAIL": ""},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+
+    # Dispatch pairing: missions/ -> mission lint, tickets/ -> ticket lint.
+    assert (
+        "mission\tlint\tmissions/M-Đăng-nhập.md\t--hub\thttps://example.invalid/hub"
+        in log_lines
+    )
+    assert (
+        "ticket\tlint\ttickets/T-new.md\t--hub\thttps://example.invalid/hub"
+        in log_lines
+    )
+    # The deleted ticket was never handed to `kb` at all.
+    assert not any("T-old.md" in line for line in log_lines)
+
+    # --- Run 2: the surviving ticket is configured to fail lint. ---
+    log_path.unlink()
+    result = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=repo,
+        env={**base_env, "KB_STUB_FAIL": "tickets/T-new.md"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    # Both files were still attempted (one failure does not short-circuit
+    # the loop) even though the job as a whole must fail.
+    assert any("missions/M-Đăng-nhập.md" in line for line in log_lines)
+    assert any("tickets/T-new.md" in line for line in log_lines)
