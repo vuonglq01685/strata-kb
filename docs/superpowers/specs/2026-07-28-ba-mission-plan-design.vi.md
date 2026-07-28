@@ -156,7 +156,7 @@ Engine đặt ở module mới `missionlint.py`. Các check, theo thứ tự:
 | 4 | `## Containers (C4 L2)` chứa fence có `C4Container` **hoặc** `flowchart` ở đầu một dòng | error |
 | 5 | `## Components (C4 L3)` — chỉ khi section tồn tại: `C4Component` **hoặc** `flowchart` ở đầu một dòng | error |
 | 6 | `## US backlog` parse thành bảng pipe có đúng dòng header `\| US ID \| Title \|` và ≥ 1 dòng dữ liệu | error |
-| 7 | Mọi US id khớp `^<mission-id>-US\d+$`; không trùng | error |
+| 7 | Mọi US id khớp `^<mission-id>-US[1-9]\d*$` (id đệm số 0 như `US01` bị từ chối); không trùng | error |
 | 8 | Khối `kb-context` parse được (`kbcontext.parse`) | error |
 | 9 | Mọi ref resolve tại version đã pin (`doctor.check_context`) | error (hỏng) / warning (cũ) |
 | 10 | Mọi inline citation trong body có mặt trong `kb-context.refs` | error |
@@ -198,7 +198,7 @@ Cùng quy tắc suy giảm: không có đường dẫn repo thì check rút về
 
 | Module | Nội dung |
 |---|---|
-| `mission.py` (mới) | `REQUIRED_MISSION_HEADINGS`, `MISSION_ID_RE`, `US_ID_RE`, regex bảng backlog |
+| `mission.py` (mới) | `REQUIRED_MISSION_HEADINGS`, `MISSION_ID_RE`, `us_id_re(mission_id)` (factory, không phải regex tĩnh — check 7 phải xác nhận "US id này thuộc về *mission này*"), regex bảng backlog |
 | `lintcore.py` (mới, rút ra) | `LintReport`, `_section_body`, `_check_title`, `_check_headings(text, required)`, `_check_diagram(text, heading, keywords)`, `_strip_bare_kb_context`, `_citation_scan_text`, `_cite_matches_ref`, `_check_citation_consistency`, lớp bọc `doctor.check_context` |
 | `ticketlint.py` (mỏng đi) | `_check_story`, `_check_ac_present`, `_check_ac_citations`, check parent-mission mới, `lint()` |
 | `missionlint.py` (mới) | `_check_backlog`, `_check_coverage`, `_check_placeholders`, `lint()` |

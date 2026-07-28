@@ -155,7 +155,7 @@ Engine in the new `missionlint.py`. Checks, in order:
 | 4 | `## Containers (C4 L2)` contains a fence with `C4Container` **or** `flowchart` at the start of a line | error |
 | 5 | `## Components (C4 L3)` — only when the section exists: `C4Component` **or** `flowchart` at the start of a line | error |
 | 6 | `## US backlog` parses as a pipe table with the exact header row `\| US ID \| Title \|` and ≥ 1 data row | error |
-| 7 | Every US id matches `^<mission-id>-US\d+$`; no duplicates | error |
+| 7 | Every US id matches `^<mission-id>-US[1-9]\d*$` (zero-padded ids like `US01` are rejected); no duplicates | error |
 | 8 | `kb-context` block parses (`kbcontext.parse`) | error |
 | 9 | Every ref resolves at the pinned version (`doctor.check_context`) | error (broken) / warning (stale) |
 | 10 | Every inline citation in the body appears in `kb-context.refs` | error |
@@ -197,7 +197,7 @@ Same degradation rule: without a repo path the check reduces to the format test,
 
 | Module | Contents |
 |---|---|
-| `mission.py` (new) | `REQUIRED_MISSION_HEADINGS`, `MISSION_ID_RE`, `US_ID_RE`, backlog table regex |
+| `mission.py` (new) | `REQUIRED_MISSION_HEADINGS`, `MISSION_ID_RE`, `us_id_re(mission_id)` (factory, not a static regex — check 7 must enforce "this US id belongs to *this* mission"), backlog table regex |
 | `lintcore.py` (new, extracted) | `LintReport`, `_section_body`, `_check_title`, `_check_headings(text, required)`, `_check_diagram(text, heading, keywords)`, `_strip_bare_kb_context`, `_citation_scan_text`, `_cite_matches_ref`, `_check_citation_consistency`, the `doctor.check_context` wrapper |
 | `ticketlint.py` (thinner) | `_check_story`, `_check_ac_present`, `_check_ac_citations`, the new parent-mission check, `lint()` |
 | `missionlint.py` (new) | `_check_backlog`, `_check_coverage`, `_check_placeholders`, `lint()` |
