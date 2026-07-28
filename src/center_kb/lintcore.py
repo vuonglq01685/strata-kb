@@ -126,9 +126,15 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     document actually containing that section itself — this is the
     presence-only half of the gate, with no second check to catch it
     (unlike diagrams and citations, which are independently re-verified).
-    Mirrors the fence-stripping `citation_scan_text` already does; an
-    unterminated fence leaves `FENCE_RE` unmatched, so the text degrades to
-    the pre-fix, unstripped behaviour rather than erroring."""
+    Mirrors the fence-stripping `citation_scan_text` already does. A
+    *single* unpaired fence marker leaves `FENCE_RE` unmatched, so the text
+    degrades to the pre-fix, unstripped behaviour rather than erroring — but
+    an odd count of 3 or more markers re-pairs across the gap and swallows
+    the content between them, reporting headings that are genuinely present
+    as missing. That mispairing is not introduced here: `check_diagram` and
+    `citation_scan_text` have always shared `FENCE_RE`. The verdict is
+    unaffected in practice, because an unpaired fence also fails the diagram
+    check, whose error names the offending section."""
     present = {
         line.strip() for line in FENCE_RE.sub("", text).splitlines()
     }

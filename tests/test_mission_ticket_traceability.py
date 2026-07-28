@@ -191,3 +191,59 @@ def test_mission_ticket_loop_closes_end_to_end(
     )
     assert backlog_issues == []
     assert US_ID in backlog_ids
+
+
+def test_mission_ticket_loop_catches_a_break(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """The positive test above proves the loop PERMITS a correct pair; it
+    would also pass if both engines were no-ops. This one proves the loop
+    CATCHES a break, which is the property that actually protects the BA.
+
+    The break is the realistic one: the BA renames the ticket file (or
+    saves it under a name that does not derive from the mission id), so the
+    mission's backlog row no longer has a matching ticket and the ticket's
+    own filename stem is no longer in that backlog. Both gates must notice,
+    each in its own currency — mission lint as a coverage WARNING (a
+    mission is authored before its tickets, so an undrafted story is never
+    an error), ticket lint as an ERROR (the ticket is claiming a parent it
+    does not belong to).
+    """
+    missions_dir = tmp_path / "missions"
+    tickets_dir = tmp_path / "tickets"
+    missions_dir.mkdir()
+    tickets_dir.mkdir()
+
+    mission_path = missions_dir / f"{MISSION_ID}.md"
+    # The break: saved as -US9, which is NOT the -US1 the backlog lists.
+    ticket_path = tickets_dir / f"{MISSION_ID}-US9.md"
+
+    mission_text = _real_mission_text(golden_block)
+    ticket_text = _real_ticket_text(golden_block)
+    mission_path.write_text(mission_text, encoding="utf-8")
+    ticket_path.write_text(ticket_text, encoding="utf-8")
+
+    hub = _hub(fed_hub)
+
+    # Mission side: the backlog's US1 has no ticket file, so coverage fires
+    # — as a warning, never an error.
+    mission_report = missionlint.lint(
+        mission_text, hub, path=mission_path, tickets_dir=tickets_dir
+    )
+    assert mission_report.passed is True, mission_report.issues
+    coverage = [
+        i for i in mission_report.issues if "US drafted" in i.message
+    ]
+    assert len(coverage) == 1, mission_report.issues
+    assert coverage[0].level == "warning"
+    assert US_ID in coverage[0].message
+
+    # Ticket side: US9 is not in the mission's backlog — an error.
+    ticket_report = ticketlint.lint(
+        ticket_text, hub, path=ticket_path, missions_dir=missions_dir
+    )
+    assert ticket_report.passed is False
+    assert any(
+        "not in the backlog" in i.message and i.level == "error"
+        for i in ticket_report.issues
+    ), ticket_report.issues
