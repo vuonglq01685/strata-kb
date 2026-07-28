@@ -224,8 +224,9 @@ and starts the service (`docker compose up -d`); on a child it pulls the
 ingest image for one-shot Docker ingest — a `ba` repo needs neither Docker
 nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
 `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub Copilot, and
-Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` instead,
-see [7.10](#710-phase-4--ba-ticket-authoring)); MCP client wiring ships as
+Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` and
+`/ba-mission-plan` instead, see [7.10](#710-phase-4--ba-ticket-authoring));
+MCP client wiring ships as
 `.mcp.json` (Claude Code)
 and `.cursor/mcp.json` (Cursor) on every kind — stdio on the hub,
 HTTP-with-env-vars on child and `ba` repos. Re-running `kb init` refreshes
@@ -273,7 +274,7 @@ once: `git config --global core.longpaths true`, and set the registry key
 
 ## 7. `kb` command dictionary
 
-The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` (Phase 4 — BA ticket authoring, a `ba`-kind repo only) is in [7.10](#710-phase-4--ba-ticket-authoring).
+The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` and `kb mission lint` (Phase 4 — BA ticket/mission authoring, a `ba`-kind repo only) are in [7.10](#710-phase-4--ba-ticket-authoring).
 
 | # | Command | Purpose | Who runs it |
 |---|---|---|---|
