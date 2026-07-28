@@ -477,6 +477,7 @@ def test_valid_parent_mission_passes(
     )
 
     assert report.passed is True, _errors(report)
+    assert report.notes == []
 
 
 def test_missing_mission_file_errors(
@@ -496,6 +497,31 @@ def test_missing_mission_file_errors(
 
     assert report.passed is False
     assert any("mission file not found" in m for m in _errors(report))
+
+
+def test_unreadable_mission_file_errors_instead_of_crashing(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """A mission .md saved as non-UTF-8 (e.g. cp1252, plausible when a BA
+    pastes a smart quote) must produce an [error] line, not a raw
+    UnicodeDecodeError escaping out of lint()."""
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    (missions / "M-airspace-filter.md").write_bytes(
+        b"caf\xe9 - not valid utf-8"
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any("could not read mission file" in m for m in _errors(report))
 
 
 def test_us_id_absent_from_backlog_errors(
@@ -529,6 +555,69 @@ def test_malformed_parent_mission_id_errors(fed_hub: Path, golden_block: str):
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is False
     assert any("M-<slug>" in m for m in _errors(report))
+
+
+def test_empty_parent_mission_value_errors(fed_hub: Path, golden_block: str):
+    """'> Parent mission:' with nothing after the colon does not match
+    PARENT_MISSION_RE at all (it requires >= 1 non-space char), so without
+    the line-presence check this reads as "no parent mission" and passes
+    clean — exactly the half-written back-link a BA must be warned about."""
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission:",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("has no mission id" in m for m in _errors(report))
+
+
+def test_whitespace_only_parent_mission_value_errors(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission:    ",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("has no mission id" in m for m in _errors(report))
+
+
+def test_not_in_backlog_message_names_the_mission_lint_escape_hatch(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """`check_backlog` returns an EMPTY id list (with its own error) when
+    the mission's backlog table lost its header row — so a ticket that
+    really is in the mission's backlog can still get "not in the backlog"
+    here, fail-closed but dead-ending the BA. The message must point at
+    `kb mission lint` as the other possible cause, without ticketlint
+    surfacing the mission's own issues directly."""
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    mission_path = missions / "M-airspace-filter.md"
+    mission_path.write_text(
+        "# Mission M-airspace-filter\n\n"
+        "> Mission: M-airspace-filter\n\n"
+        "## US backlog\n"
+        # header row missing — check_backlog errors and returns [] ids.
+        "| M-airspace-filter-US1 | Render polygons |\n",
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is False
+    assert any(
+        "kb mission lint" in m and str(mission_path) in m
+        for m in _errors(report)
+    )
 
 
 def test_parent_mission_without_paths_degrades_to_a_note(

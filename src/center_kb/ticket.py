@@ -35,3 +35,12 @@ STORY_RE = re.compile(r"as an?\s+.+?i want\s+.+?so that\s+", re.I | re.S)
 # heading: REQUIRED_HEADINGS is a compatibility contract, so every
 # pre-existing ticket must keep passing without an edit (spec §4.4).
 PARENT_MISSION_RE = re.compile(r"^>\s*Parent mission:\s*(\S+)\s*$", re.M)
+
+# Detects the '> Parent mission:' line regardless of whether it has a
+# usable value after the colon. PARENT_MISSION_RE requires >= 1 non-space
+# character in the value, so a half-written line ('> Parent mission:' with
+# nothing, or only whitespace, after the colon) does not match it at all —
+# this regex is how `check_parent_mission` tells "line absent" apart from
+# "line present but blank" so the latter can be flagged instead of silently
+# read as "no parent mission".
+PARENT_MISSION_LINE_RE = re.compile(r"^>\s*Parent mission:\s*(.*)$", re.M)

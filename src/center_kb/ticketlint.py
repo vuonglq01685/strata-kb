@@ -81,6 +81,19 @@ def check_parent_mission(
     """
     m = ticket.PARENT_MISSION_RE.search(text)
     if m is None:
+        if ticket.PARENT_MISSION_LINE_RE.search(text) is not None:
+            # The line is present but the value after the colon is blank
+            # or whitespace-only — a BA started the back-link and never
+            # filled it in. Without this check the line simply fails to
+            # match PARENT_MISSION_RE and reads as "no parent mission at
+            # all", which is a silent PASS on a half-written back-link.
+            return [
+                Issue(
+                    "error",
+                    "'> Parent mission:' back-link is present but has no "
+                    "mission id — fill in 'M-<slug>' after the colon",
+                )
+            ], []
         return [], []
 
     mission_id = m.group(1)
@@ -110,14 +123,32 @@ def check_parent_mission(
         ], []
 
     us_id = path.stem
-    mission_text = mission_path.read_text(encoding="utf-8")
+    try:
+        mission_text = mission_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as exc:
+        # Unreachable from the MCP tool (kb_ticket_lint): it never passes
+        # `path`/`missions_dir`, so execution already returned at the "no
+        # repo paths supplied" branch above, well before this read. Keep
+        # the guard anyway — this is the first engine code to read a
+        # cross-referenced artifact (missionlint.check_coverage only ever
+        # probes with `.is_file()`), so a bad mission file (e.g. saved as
+        # cp1252 after a pasted smart quote, or a permission/race error)
+        # must produce an [error] line, not a raw traceback.
+        return [
+            Issue(
+                "error",
+                f"could not read mission file '{mission_path}': {exc}",
+            )
+        ], []
     _issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
     if us_id not in backlog_ids:
         return [
             Issue(
                 "error",
                 f"'{us_id}' is not in the backlog of mission "
-                f"'{mission_id}' — add the row or fix the ticket filename",
+                f"'{mission_id}' — add the row, fix the ticket filename, "
+                f"or run 'kb mission lint {mission_path}' if the mission's "
+                "backlog table is malformed",
             )
         ], []
     return [], []
