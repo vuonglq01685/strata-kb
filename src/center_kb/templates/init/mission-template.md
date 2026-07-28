@@ -18,17 +18,17 @@ claim cites `doc-id §section`>
 ## System context (C4 L1)
 ```mermaid
 C4Context
-  Person(user, "Role", "description")
-  System(sys, "System", "description")
-  Rel(user, sys, "uses")
+  Person(user, "Role — replace", "…")
+  System(sys, "System — replace", "…")
+  Rel(user, sys, "…")
 ```
 
 ## Containers (C4 L2)
 ```mermaid
 C4Container
-  Container(app, "Container", "technology", "responsibility")
-  ContainerDb(db, "Database", "technology", "what it stores")
-  Rel(app, db, "reads/writes", "protocol")
+  Container(app, "Container — replace", "…", "…")
+  ContainerDb(db, "Database — replace", "…", "…")
+  Rel(app, db, "…", "…")
 ```
 
 <!-- Optional: if you have real component detail, add a "## Components (C4 L3)" section with a C4Component mermaid fence. Never invent components. -->

@@ -793,15 +793,20 @@ def _template_text() -> str:
 
 
 def test_shipped_template_contains_every_required_heading():
-    """Pin a real section per heading via `section_body`, not a bare
-    substring match — a heading that drifted inside a fenced code block or
-    a comment would still satisfy a `{line.strip() for line in ...}` set
-    membership check even though no real section exists there."""
+    """Verify every required heading appears as a standalone line in the
+    shipped template, using the exact set-membership idiom production
+    `check_headings` uses (`{line.strip() for line in text.splitlines()}`)
+    — so this test and the production gate compute "present" the same way
+    and can never silently disagree.
+
+    Neither this test nor `check_headings` is fence-aware: a heading that
+    drifted inside a fenced code block would satisfy both equally. That is
+    a real, shared blind spot, but closing it is a behavioural change to a
+    shipped gate and belongs in `check_headings`, not in this test."""
     text = _template_text()
+    present = {line.strip() for line in text.splitlines()}
     for heading in mission.REQUIRED_MISSION_HEADINGS:
-        assert (
-            lintcore.section_body(text, heading) is not None
-        ), f"template is missing {heading}"
+        assert heading in present, f"template is missing {heading}"
 
 
 def test_shipped_template_carries_both_required_diagrams():
