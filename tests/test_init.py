@@ -733,7 +733,14 @@ def test_kb_ticket_lint_workflow_content(tmp_path: Path):
         tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
     ).read_text(encoding="utf-8")
     assert "pull_request" in content
-    assert 'paths: ["tickets/**.md", "missions/**.md"]' in content
+    # Deliberately NOT `paths`-filtered: GitHub never synthesizes a passing
+    # status for a job that never started, so filtering the trigger of a
+    # *required* check would leave a PR touching neither tickets/ nor
+    # missions/ waiting forever. The job must always start; the one lint
+    # step below decides for itself whether there was anything to check.
+    # (Checks the literal old trigger filter, not the substring 'paths:' —
+    # that substring also appears in this file's own explanatory comments.)
+    assert 'paths: ["tickets/**.md", "missions/**.md"]' not in content
     assert "pip install center-kb" in content
     assert "kb ticket lint" in content
     assert "vars.CENTER_KB_HUB" in content
@@ -875,16 +882,22 @@ def test_every_mission_wrapper_carries_the_no_silent_skip_rule(tmp_path):
 
 
 def test_mission_wrappers_reference_the_required_headings(tmp_path):
+    """Checked across all four wrappers, not just the Claude Code skill:
+    the Copilot and Cursor wrappers each carry a SECOND copy of the
+    required-heading list in their preamble, above '## Workflow' — outside
+    the byte-identity slice that `test_mission_wrapper_workflow_bodies_are
+    _byte_identical` enforces. Hard-coding the skill path here would leave
+    that second copy able to drift from `REQUIRED_MISSION_HEADINGS`
+    undetected."""
     from center_kb import mission
     from center_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
-    text = (
-        tmp_path / ".claude/skills/ba-mission-plan/SKILL.md"
-    ).read_text(encoding="utf-8")
-    for heading in mission.REQUIRED_MISSION_HEADINGS:
-        name = heading.removeprefix("## ")
-        assert name in text, name
+    for rel in _MISSION_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        for heading in mission.REQUIRED_MISSION_HEADINGS:
+            name = heading.removeprefix("## ")
+            assert name in text, f"{rel}: missing {name!r}"
 
 
 _MISSION_WRAPPER_PATHS = (
@@ -967,8 +980,11 @@ def test_ci_gate_covers_both_tickets_and_missions(tmp_path):
         tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
     ).read_text(encoding="utf-8")
 
-    assert "tickets/**.md" in wf
-    assert "missions/**.md" in wf
+    # The trigger itself is not paths-filtered (see
+    # test_kb_ticket_lint_workflow_content) — coverage of both directories
+    # lives in the dispatch step's own `git diff` pathspec instead.
+    assert "tickets/*.md" in wf
+    assert "missions/*.md" in wf
     assert "kb ticket lint" in wf
     assert "kb mission lint" in wf
 
@@ -1209,19 +1225,34 @@ def test_ci_gate_step_aborts_on_failing_git_diff(tmp_path):
     _git(repo, "commit", "-q", "-m", "base")
     # Deliberately no `refs/remotes/origin/<BASE_REF>` — the failure mode.
 
+    # A stub `kb` on PATH, logging every invocation. Any non-zero exit here
+    # is consistent with `kb` itself failing lint on a real file — asserting
+    # only `returncode != 0` (as this test used to) would pass just as
+    # happily on that unrelated failure mode, so the abort cause must be
+    # pinned to the `git diff` itself, and `kb` must be proven unreached.
+    bindir = tmp_path / "bin"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    log_path = tmp_path / "kb.log"
+
     result = subprocess.run(
         ["bash", "-e", str(script_path)],
         cwd=repo,
         env={
             **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
             "BASE_REF": "no-such-branch",
             "CENTER_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
             "RUNNER_TEMP": str(tmp_path),
         },
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0, (
+    # Pin the abort cause to the failing `git diff` itself (git's own exit
+    # code for a fatal error, e.g. an unresolvable revision, is 128) rather
+    # than accepting any non-zero exit — which would equally accept `kb`
+    # itself failing lint on some file, a completely different bug.
+    assert result.returncode != 0 and "fatal" in result.stderr, (
         "a failing `git diff` (bad BASE_REF) must abort the step instead of "
         f"falling through to the empty-diff notice and exiting 0: "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -1229,6 +1260,9 @@ def test_ci_gate_step_aborts_on_failing_git_diff(tmp_path):
     # It must NOT print the "nothing changed" notice — that would assert a
     # DoR lint pass/skip that never actually happened.
     assert "no ticket or mission files changed" not in result.stdout
+    # `kb` must never have been invoked: the abort happens before the
+    # dispatch loop, on the `git diff` populating the changed-files list.
+    assert not log_path.exists(), log_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(
