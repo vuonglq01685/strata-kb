@@ -11,9 +11,14 @@ specific to the mission contract.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from center_kb import lintcore, mission
 from center_kb.doctor import Issue
+from center_kb.lintcore import LintReport
+
+if TYPE_CHECKING:
+    from center_kb.hub import HubHandle
 
 
 def check_mission_id(
@@ -189,3 +194,96 @@ def check_placeholders(text: str) -> list[Issue]:
             "remain",
         )
     ]
+
+
+def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
+    """Check 12. Coverage is DERIVED from the filesystem, never recorded in
+    the backlog table — a hand-maintained status column rots the moment a
+    ticket is written and nobody edits the mission.
+
+    Always a warning: a mission is authored before its tickets exist, so
+    0/N at creation time is the normal case, not a failure.
+    """
+    missing = [
+        us_id
+        for us_id in us_ids
+        if not (tickets_dir / f"{us_id}.md").is_file()
+    ]
+    if not missing:
+        return []
+    drafted = len(us_ids) - len(missing)
+    return [
+        Issue(
+            "warning",
+            f"{drafted}/{len(us_ids)} US drafted — no ticket file yet for: "
+            + ", ".join(missing),
+        )
+    ]
+
+
+def lint(
+    text: str,
+    hub: "HubHandle | None",
+    *,
+    path: Path | None = None,
+    tickets_dir: Path | None = None,
+) -> LintReport:
+    """Run the mission DoR gate. Checks run in spec §5.1 order.
+
+    `path` enables the filename half of check 1; `tickets_dir` enables the
+    coverage check. Each omission is recorded as a note rather than
+    silently passing.
+    """
+    issues: list[Issue] = []
+    notes: list[str] = []
+
+    issues += lintcore.check_title(text)
+
+    id_issues, id_notes, mission_id = check_mission_id(text, path)
+    issues += id_issues
+    notes += id_notes
+
+    issues += lintcore.check_headings(text, mission.REQUIRED_MISSION_HEADINGS)
+
+    issues += lintcore.check_diagram(
+        text, "## System context (C4 L1)", mission.L1_KEYWORDS
+    )
+    issues += lintcore.check_diagram(
+        text, "## Containers (C4 L2)", mission.L2_KEYWORDS
+    )
+    if lintcore.section_body(text, mission.COMPONENT_HEADING) is not None:
+        issues += lintcore.check_diagram(
+            text, mission.COMPONENT_HEADING, mission.L3_KEYWORDS
+        )
+
+    backlog_issues, us_ids = check_backlog(text, mission_id)
+    issues += backlog_issues
+
+    ctx_issues, _ctx = lintcore.check_context_block(text, hub)
+    issues += ctx_issues
+
+    # Coverage is skipped — visibly — when the backlog itself is broken.
+    # `check_backlog` returns its id list unfiltered, so a malformed row
+    # leaves entries like 'US ID' in `us_ids`; running coverage over that
+    # would demand a ticket file for garbage. Filtering to the valid
+    # entries instead would be worse: a story with a typo'd id would drop
+    # out of the coverage set silently, and coverage would report a clean
+    # pass over a subset without saying so. The report already fails on the
+    # backlog errors, so nothing is lost by deferring. Gate on the issue
+    # list rather than on `us_ids` contents, so the guard stays correct if
+    # the set of backlog checks grows later.
+    if tickets_dir is None:
+        notes.append(
+            "coverage check skipped — no tickets directory supplied"
+        )
+    elif backlog_issues:
+        notes.append(
+            "coverage check skipped — the US backlog has errors; "
+            "fix those first"
+        )
+    elif us_ids:
+        issues += check_coverage(us_ids, tickets_dir)
+
+    issues += check_placeholders(text)
+
+    return LintReport(issues=issues, notes=notes)

@@ -492,3 +492,288 @@ def test_multiple_placeholders_aggregate_into_one_issue(golden_block: str):
     issues = missionlint.check_placeholders(text)
     assert len(issues) == 1
     assert "2" in issues[0].message
+
+
+# --- golden missions ---
+
+
+def test_golden_mission_passes(fed_hub: Path, golden_block: str, tmp_path: Path):
+    path = tmp_path / f"{MISSION_ID}.md"
+    tickets = tmp_path / "tickets"
+    tickets.mkdir()
+    (tickets / f"{MISSION_ID}-US1.md").write_text("x", encoding="utf-8")
+    (tickets / f"{MISSION_ID}-US2.md").write_text("x", encoding="utf-8")
+
+    report = missionlint.lint(
+        _build_mission(golden_block),
+        _hub(fed_hub),
+        path=path,
+        tickets_dir=tickets,
+    )
+
+    assert report.passed is True
+    assert report.issues == []
+    assert report.notes == []
+
+
+def test_vietnamese_golden_mission_passes(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        title="# Lọc và hiển thị vùng trời có kiểm soát",
+        overrides={
+            "## Summary": (
+                "Điều phối viên cần thấy vùng trời có kiểm soát trên bản đồ."
+            ),
+            "## Business goal": (
+                "Giảm thời gian briefing tuyến bay. Bản ghi vùng trời theo "
+                "arinc-kb:arinc-424 §5.3."
+            ),
+            "## Constraints & assumptions": (
+                "Quy tắc định danh ICAO theo icao-kb:icao-annex-2 §1.1."
+            ),
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    assert _errors(report) == []
+
+
+def test_flowchart_fallback_passes(fed_hub: Path, golden_block: str):
+    """Mermaid documents C4 as experimental; teams whose renderer lacks C4
+    support fall back to flowchart without failing DoR."""
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## System context (C4 L1)": (
+                "```mermaid\n"
+                "flowchart TD\n"
+                "  D[Dispatcher] --> P[Flight Planner]\n"
+                "```"
+            ),
+            "## Containers (C4 L2)": (
+                "```mermaid\n"
+                "flowchart LR\n"
+                "  UI[Map UI] --> API[Airspace API]\n"
+                "```"
+            ),
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+
+
+def test_mermaid_init_directive_before_the_type_passes(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## System context (C4 L1)": (
+                "```mermaid\n"
+                "%%{init: {'theme':'neutral'}}%%\n"
+                "C4Context\n"
+                "  Person(d, \"Dispatcher\")\n"
+                "```"
+            ),
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+
+
+# --- check 2: required headings ---
+
+
+@pytest.mark.parametrize("heading", mission.REQUIRED_MISSION_HEADINGS)
+def test_missing_heading_errors(fed_hub: Path, golden_block: str, heading: str):
+    text = _build_mission(golden_block, skip=heading)
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any(heading in msg for msg in _errors(report))
+
+
+def test_missing_title_errors(fed_hub: Path, golden_block: str):
+    text = _build_mission(golden_block, title="Not a title line")
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("title" in msg.lower() for msg in _errors(report))
+
+
+# --- checks 3/4/5: diagrams ---
+
+
+def test_missing_l1_diagram_errors(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        overrides={"## System context (C4 L1)": "No diagram here."},
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert any("C4 L1" in msg for msg in _errors(report))
+
+
+def test_missing_l2_diagram_errors(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        overrides={"## Containers (C4 L2)": "No diagram here."},
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert any("C4 L2" in msg for msg in _errors(report))
+
+
+def test_wrong_keyword_in_l1_errors(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## System context (C4 L1)": (
+                "```mermaid\nsequenceDiagram\n  A->>B: hi\n```"
+            )
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert any("C4 L1" in msg for msg in _errors(report))
+
+
+def test_absent_l3_section_is_silent(fed_hub: Path, golden_block: str):
+    report = missionlint.lint(_build_mission(golden_block), _hub(fed_hub))
+    assert not any("C4 L3" in msg for msg in _errors(report))
+
+
+def test_present_but_empty_l3_section_errors(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        extra={mission.COMPONENT_HEADING: "Components go here, eventually."},
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert any("C4 L3" in msg for msg in _errors(report))
+
+
+def test_valid_l3_section_passes(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        extra={
+            mission.COMPONENT_HEADING: (
+                "```mermaid\n"
+                "C4Component\n"
+                "  Component(h, \"Airspace handler\", \"Python\")\n"
+                "```"
+            )
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+
+
+# --- check 8: kb-context parses ---
+
+
+def test_malformed_kb_context_errors(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        overrides={"## KB context": "```yaml\nkb-context:\n  refs: [\n```"},
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+
+
+# --- check 10/11: citation consistency ---
+
+
+def test_uncited_pinned_ref_warns(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## Constraints & assumptions": "No citation in this section."
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert any("icao-annex-2" in msg for msg in _warnings(report))
+
+
+def test_inline_citation_not_pinned_errors(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## Scope": (
+                "**In scope:** map rendering per faa-kb:faa-7110 §2.2.\n"
+                "**Out of scope:** editing."
+            )
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("faa-7110" in msg for msg in _errors(report))
+
+
+# --- check 12: coverage ---
+
+
+def test_coverage_warns_for_undrafted_stories(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    tickets = tmp_path / "tickets"
+    tickets.mkdir()
+    (tickets / f"{MISSION_ID}-US1.md").write_text("x", encoding="utf-8")
+
+    report = missionlint.lint(
+        _build_mission(golden_block), _hub(fed_hub), tickets_dir=tickets
+    )
+
+    assert report.passed is True  # coverage is never an error
+    assert any("1/2" in msg for msg in _warnings(report))
+    assert any(f"{MISSION_ID}-US2" in msg for msg in _warnings(report))
+
+
+def test_zero_coverage_at_creation_time_still_passes(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """A mission is written BEFORE its tickets exist. 0/N must never fail."""
+    tickets = tmp_path / "tickets"
+    tickets.mkdir()
+
+    report = missionlint.lint(
+        _build_mission(golden_block), _hub(fed_hub), tickets_dir=tickets
+    )
+
+    assert report.passed is True
+    assert any("0/2" in msg for msg in _warnings(report))
+
+
+def test_coverage_skipped_without_tickets_dir_emits_a_note(
+    fed_hub: Path, golden_block: str
+):
+    report = missionlint.lint(_build_mission(golden_block), _hub(fed_hub))
+    assert any("coverage" in n for n in report.notes)
+    assert not any("/2" in msg for msg in _warnings(report))
+
+
+def test_coverage_skipped_when_the_backlog_has_errors(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """A broken backlog leaves invalid entries in us_ids, so running
+    coverage over it would demand a ticket file for garbage. Skipping is
+    visible; filtering to the valid subset would silently shrink what
+    coverage checked."""
+    tickets = tmp_path / "tickets"
+    tickets.mkdir()
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## US backlog": (
+                "| US ID | Title |\n"
+                "|---|---|\n"
+                "| M-other-mission-US1 | Wrong mission |"
+            )
+        },
+    )
+
+    report = missionlint.lint(text, _hub(fed_hub), tickets_dir=tickets)
+
+    assert report.passed is False
+    assert any("backlog has errors" in n for n in report.notes)
+    assert not any("US drafted" in msg for msg in _warnings(report))
+
+
+def test_missing_hub_errors(golden_block: str):
+    report = missionlint.lint(_build_mission(golden_block), None)
+    assert report.passed is False
+    assert any("hub" in msg for msg in _errors(report))
