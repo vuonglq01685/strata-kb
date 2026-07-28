@@ -26,8 +26,13 @@ FENCE_RE = re.compile(r"```[ \t]*(\S*)[ \t]*\r?\n(.*?)```", re.S)
 
 # Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>' — matches
 # kbcontext._REF_RE semantics (repo qualifier optional, '§' required).
+# The section-id group must both start AND end on an alnum: prose that
+# cites a section at the end of a sentence ('... per arinc-424 §5.3.')
+# would otherwise absorb the sentence-ending period into the section id,
+# making a correctly-pinned citation look unresolved.
 INLINE_CITE_RE = re.compile(
-    r"(?:([A-Za-z0-9][\w.-]*):)?([A-Za-z0-9][\w.-]*)\s+§([^\s,;)\]]+)"
+    r"(?:([A-Za-z0-9][\w.-]*):)?([A-Za-z0-9][\w.-]*)\s+"
+    r"§([A-Za-z0-9](?:[^\s,;)\]]*[A-Za-z0-9])?)"
 )
 
 # The bare 'kb-context:' key line, at any indent (mirrors kbcontext._KEY_RE)

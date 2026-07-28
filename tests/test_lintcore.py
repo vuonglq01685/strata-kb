@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from center_kb.doctor import Issue
-from center_kb.lintcore import LintReport, check_diagram
+from center_kb.lintcore import INLINE_CITE_RE, LintReport, check_diagram
 
 
 def test_notes_default_to_empty():
@@ -85,3 +85,28 @@ def test_diagram_raises_on_empty_keywords_tuple():
 
     with pytest.raises(ValueError):
         check_diagram(text, "## Business flow", ())
+
+
+# --- INLINE_CITE_RE: sentence-ending punctuation ---
+
+
+def test_inline_cite_re_drops_a_sentence_ending_period_from_the_section_id():
+    """A citation at the end of a sentence ('... per arinc-424 §5.3.') must
+    not absorb the period into the section id — otherwise an ordinary,
+    correctly-pinned citation is reported as unresolved just because it
+    happens to end the sentence."""
+    text = "Airspace records follow arinc-kb:arinc-424 §5.3."
+
+    (match,) = list(INLINE_CITE_RE.finditer(text))
+
+    assert match.groups() == ("arinc-kb", "arinc-424", "5.3")
+
+
+def test_inline_cite_re_keeps_a_multi_level_section_id_intact():
+    """A multi-level section id ('§5.3.2') has internal periods that are
+    NOT sentence punctuation — those must be kept."""
+    text = "arinc-424 §5.3.2"
+
+    (match,) = list(INLINE_CITE_RE.finditer(text))
+
+    assert match.groups() == (None, "arinc-424", "5.3.2")
