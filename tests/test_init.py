@@ -809,9 +809,14 @@ def test_ba_kind_scaffolds_the_mission_plan_set(tmp_path):
 
     init_repo(tmp_path, "ba")
 
-    assert (tmp_path / "docs" / "missions" / "TEMPLATE.md").is_file()
+    mission_template = tmp_path / "docs" / "missions" / "TEMPLATE.md"
+    assert mission_template.is_file()
     assert (tmp_path / "missions" / ".gitkeep").is_file()
     assert (tmp_path / "tickets" / ".gitkeep").is_file()
+    # the scaffolded file must be the mission template, not merely present —
+    # a mistyped BA_TEMPLATES source (e.g. pointing at ticket-template.md)
+    # would still satisfy an existence-only assertion.
+    assert "## US backlog" in mission_template.read_text(encoding="utf-8")
 
 
 def test_hub_and_child_do_not_gain_mission_artifacts(tmp_path):

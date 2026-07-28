@@ -793,10 +793,15 @@ def _template_text() -> str:
 
 
 def test_shipped_template_contains_every_required_heading():
+    """Pin a real section per heading via `section_body`, not a bare
+    substring match — a heading that drifted inside a fenced code block or
+    a comment would still satisfy a `{line.strip() for line in ...}` set
+    membership check even though no real section exists there."""
     text = _template_text()
-    present = {line.strip() for line in text.splitlines()}
     for heading in mission.REQUIRED_MISSION_HEADINGS:
-        assert heading in present, f"template is missing {heading}"
+        assert (
+            lintcore.section_body(text, heading) is not None
+        ), f"template is missing {heading}"
 
 
 def test_shipped_template_carries_both_required_diagrams():

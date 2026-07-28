@@ -1,5 +1,6 @@
 # <Mission title — one line, imperative>
 
+<!-- Mission id format: lowercase letters/digits, hyphen-separated, e.g. M-checkout-v2 -->
 > Mission: M-<slug>
 
 ## Summary
@@ -11,23 +12,26 @@ claim cites `doc-id §section`>
 
 ## Scope
 **In scope:** <what this mission covers>
+
 **Out of scope:** <what it deliberately does not>
 
 ## System context (C4 L1)
 ```mermaid
 C4Context
-  Person(user, "<Role>", "<description>")
-  System(sys, "<System>", "<description>")
-  Rel(user, sys, "<uses>")
+  Person(user, "Role", "description")
+  System(sys, "System", "description")
+  Rel(user, sys, "uses")
 ```
 
 ## Containers (C4 L2)
 ```mermaid
 C4Container
-  Container(app, "<Container>", "<technology>", "<responsibility>")
-  ContainerDb(db, "<Database>", "<technology>", "<what it stores>")
-  Rel(app, db, "<reads/writes>", "<protocol>")
+  Container(app, "Container", "technology", "responsibility")
+  ContainerDb(db, "Database", "technology", "what it stores")
+  Rel(app, db, "reads/writes", "protocol")
 ```
+
+<!-- Optional: if you have real component detail, add a "## Components (C4 L3)" section with a C4Component mermaid fence. Never invent components. -->
 
 ## Constraints & assumptions
 <constraints, open questions, and any detail that would need code
