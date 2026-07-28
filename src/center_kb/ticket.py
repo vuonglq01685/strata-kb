@@ -1,7 +1,7 @@
 """Standard ticket template contract (Phase 4 — BA agent).
 
-Single source of truth for the required-heading list and the User Story /
-title formats that `ticketlint.py` enforces. `REQUIRED_HEADINGS` is a
+Single source of truth for the required-heading list and the User Story
+format that `ticketlint.py` enforces. `REQUIRED_HEADINGS` is a
 compatibility contract between the BA's local install, the shared MCP
 server, and CI — changing it is a breaking change (minor/major release
 only, changelog entry mandatory; see spec §3.6).
@@ -29,7 +29,3 @@ REQUIRED_HEADINGS: tuple[str, ...] = (
 # "As a <role>, I want <capability>, so that <value>." — case-insensitive,
 # multiline (the story text may wrap).
 STORY_RE = re.compile(r"as an?\s+.+?i want\s+.+?so that\s+", re.I | re.S)
-
-# Level-1 title: the first non-empty line must start with a single '# '
-# (not '## ' — that would be a level-2 heading).
-TITLE_RE = re.compile(r"^#\s+\S")

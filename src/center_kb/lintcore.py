@@ -119,14 +119,20 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
 def check_diagram(
     text: str, heading: str, keywords: tuple[str, ...]
 ) -> list[Issue]:
-    """The section must carry a ```mermaid fence in which one of `keywords`
+    r"""The section must carry a ```mermaid fence in which one of `keywords`
     appears at the START OF A LINE.
 
     Anchoring at line start (rather than requiring the keyword to be the
     fence's very first token) lets a Mermaid init directive
     (`%%{init: ...}%%` on the line above) precede the diagram type, while
     still refusing to match the word 'flowchart' buried in a node label.
+
+    Raises `ValueError` if `keywords` is empty — an empty tuple collapses
+    the pattern to `^[ \t]*(?:)\b` (a bare, near-universal line-start
+    match), silently turning an error-level gate into a no-op.
     """
+    if not keywords:
+        raise ValueError("check_diagram: keywords must be non-empty")
     body = section_body(text, heading)
     if body is None:
         return []  # heading missing — already reported by check_headings
