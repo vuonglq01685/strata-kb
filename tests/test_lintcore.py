@@ -8,7 +8,12 @@ from __future__ import annotations
 import pytest
 
 from center_kb.doctor import Issue
-from center_kb.lintcore import INLINE_CITE_RE, LintReport, check_diagram
+from center_kb.lintcore import (
+    INLINE_CITE_RE,
+    LintReport,
+    check_diagram,
+    check_headings,
+)
 
 
 def test_notes_default_to_empty():
@@ -38,6 +43,49 @@ def test_notes_render_between_issues_and_verdict():
 def test_notes_appear_in_json():
     report = LintReport(issues=[], notes=["n1", "n2"])
     assert report.to_json()["notes"] == ["n1", "n2"]
+
+
+# --- check_headings: fenced headings do not count as present ---
+
+
+def test_check_headings_ignores_a_heading_inside_a_fence():
+    """BEFORE this fix, `check_headings` scanned every line of the raw
+    text, so a required heading pasted inside a fenced code block (e.g. a
+    reference document quoted as a worked example) satisfied the presence
+    check with no real section anywhere in the document. AFTER: fences are
+    stripped first (mirroring `citation_scan_text`'s idiom), so the same
+    document now reports the heading missing."""
+    text = (
+        "# Title\n\n"
+        "```markdown\n"
+        "## Business goal\n"
+        "```\n"
+    )
+
+    issues = check_headings(text, ("## Business goal",))
+
+    assert len(issues) == 1
+    assert issues[0].level == "error"
+    assert "## Business goal" in issues[0].message
+
+
+def test_check_headings_finds_a_real_heading_outside_a_fence():
+    """The normal case — an unfenced heading — must be unaffected by the
+    fence-stripping fix."""
+    text = "# Title\n\n## Business goal\n\nReal content here.\n"
+
+    issues = check_headings(text, ("## Business goal",))
+
+    assert issues == []
+
+
+def test_check_headings_still_reports_a_genuinely_missing_heading():
+    text = "# Title\n\nNo headings at all.\n"
+
+    issues = check_headings(text, ("## Business goal",))
+
+    assert len(issues) == 1
+    assert "## Business goal" in issues[0].message
 
 
 # --- check_diagram: line-start keyword anchoring ---

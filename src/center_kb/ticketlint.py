@@ -140,7 +140,9 @@ def check_parent_mission(
                 f"could not read mission file '{mission_path}': {exc}",
             )
         ], []
-    _issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
+    backlog_issues, backlog_ids = missionlint.check_backlog(
+        mission_text, mission_id
+    )
     if us_id not in backlog_ids:
         return [
             Issue(
@@ -149,6 +151,25 @@ def check_parent_mission(
                 f"'{mission_id}' — add the row, fix the ticket filename, "
                 f"or run 'kb mission lint {mission_path}' if the mission's "
                 "backlog table is malformed",
+            )
+        ], []
+    if backlog_issues:
+        # `check_backlog` found membership (the id string is in the table)
+        # but the backlog table itself has OTHER errors — e.g. a
+        # zero-padded id like 'M-demo-US01' fails mission lint's
+        # `us_id_re` pattern check yet still lands in `backlog_ids`
+        # verbatim, so a ticket named 'M-demo-US01.md' would otherwise
+        # pass here while `kb mission lint` rejects the same id as
+        # malformed. Surface a single warning rather than the mission's
+        # own issue list — this check only vouches for "the id string
+        # appears in the table", not for the table's own validity, which
+        # is mission lint's job.
+        return [
+            Issue(
+                "warning",
+                f"parent mission '{mission_id}' backlog has errors; "
+                "back-link membership may be unreliable — run "
+                f"'kb mission lint {mission_path}'",
             )
         ], []
     return [], []

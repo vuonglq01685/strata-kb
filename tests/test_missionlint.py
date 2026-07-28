@@ -592,6 +592,29 @@ def test_missing_heading_errors(fed_hub: Path, golden_block: str, heading: str):
     assert any(heading in msg for msg in _errors(report))
 
 
+def test_heading_inside_a_fence_is_reported_missing(
+    fed_hub: Path, golden_block: str
+):
+    """A required heading quoted inside a fenced code block — e.g. a BA
+    pasting a reference mission or `TEMPLATE.md` into their own document as
+    a worked example — must not satisfy the presence check. Regression
+    test for the fence-aware `lintcore.check_headings` fix (shared with
+    `kb ticket lint`)."""
+    text = _build_mission(golden_block)
+    fenced = text.replace(
+        "## Business goal\n", "```markdown\n## Business goal\n```\n", 1
+    )
+    assert fenced != text  # sanity: the replace actually matched
+
+    report = missionlint.lint(fenced, _hub(fed_hub))
+
+    assert report.passed is False
+    assert any(
+        "missing required heading: '## Business goal'" in m
+        for m in _errors(report)
+    )
+
+
 def test_missing_title_errors(fed_hub: Path, golden_block: str):
     text = _build_mission(golden_block, title="Not a title line")
     report = missionlint.lint(text, _hub(fed_hub))

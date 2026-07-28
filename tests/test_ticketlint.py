@@ -154,6 +154,28 @@ def test_missing_heading_errors(fed_hub: Path, golden_block: str, heading: str):
     assert any(heading in msg for msg in _errors(report))
 
 
+def test_heading_inside_a_fence_is_reported_missing(
+    fed_hub: Path, golden_block: str
+):
+    """A required heading quoted inside a fenced code block — e.g. a BA
+    pasting a reference ticket into their own document as a worked example
+    — must not satisfy the presence check. Regression test for the
+    fence-aware `lintcore.check_headings` fix (shared with `kb mission
+    lint`)."""
+    text = _build_ticket(golden_block)
+    fenced = text.replace(
+        "## Summary\n", "```markdown\n## Summary\n```\n", 1
+    )
+    assert fenced != text  # sanity: the replace actually matched
+
+    report = ticketlint.lint(fenced, _hub(fed_hub))
+
+    assert report.passed is False
+    assert any(
+        "missing required heading: '## Summary'" in m for m in _errors(report)
+    )
+
+
 def test_missing_title_errors(fed_hub: Path, golden_block: str):
     text = _build_ticket(golden_block, title="Not a title line")
     report = ticketlint.lint(text, _hub(fed_hub))
@@ -618,6 +640,48 @@ def test_not_in_backlog_message_names_the_mission_lint_escape_hatch(
         "kb mission lint" in m and str(mission_path) in m
         for m in _errors(report)
     )
+
+
+def test_backlog_errors_elsewhere_warn_instead_of_silently_passing(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    """The two DoR gates must not silently disagree about what counts as a
+    valid US id. `check_backlog` still finds a zero-padded id like
+    'M-airspace-filter-US01' verbatim in `backlog_ids` (membership only
+    checks the string is in the table), even though it also raises its own
+    error for that row failing `mission.us_id_re`'s pattern (mission lint
+    rejects it as malformed). Without this warning, a ticket named
+    'M-airspace-filter-US01.md' would pass check 10 clean while `kb mission
+    lint` fails the very row it points at — this pins that the ticket
+    report at least WARNS, and that it never leaks the mission's own error
+    text (that belongs to the mission's own PR, per
+    test_not_in_backlog_message_names_the_mission_lint_escape_hatch
+    above)."""
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    mission_path = missions / "M-airspace-filter.md"
+    mission_path.write_text(
+        _mission_doc("M-airspace-filter", ["M-airspace-filter-US01"]),
+        encoding="utf-8",
+    )
+    ticket_path = tmp_path / "tickets" / "M-airspace-filter-US01.md"
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+
+    report = ticketlint.lint(
+        text, _hub(fed_hub), path=ticket_path, missions_dir=missions
+    )
+
+    assert report.passed is True  # membership was found; this is a warning
+    assert any(
+        "backlog has errors" in w and "kb mission lint" in w
+        for w in _warnings(report)
+    )
+    # The mission's own issue text ("does not match") must not leak through.
+    assert not any("does not match" in w for w in _warnings(report))
+    assert not any("does not match" in e for e in _errors(report))
 
 
 def test_parent_mission_without_paths_degrades_to_a_note(

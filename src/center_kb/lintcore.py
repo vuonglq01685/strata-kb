@@ -119,7 +119,19 @@ def check_title(text: str) -> list[Issue]:
 
 
 def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
-    present = {line.strip() for line in text.splitlines()}
+    """A heading only counts as present outside a fenced code block.
+    Without stripping fences first, a BA pasting a reference document (a
+    sibling mission, `TEMPLATE.md`, ...) into a ```` ``` ```` block as a
+    worked example would satisfy every required heading without the
+    document actually containing that section itself — this is the
+    presence-only half of the gate, with no second check to catch it
+    (unlike diagrams and citations, which are independently re-verified).
+    Mirrors the fence-stripping `citation_scan_text` already does; an
+    unterminated fence leaves `FENCE_RE` unmatched, so the text degrades to
+    the pre-fix, unstripped behaviour rather than erroring."""
+    present = {
+        line.strip() for line in FENCE_RE.sub("", text).splitlines()
+    }
     return [
         Issue("error", f"missing required heading: '{heading}'")
         for heading in required
