@@ -74,7 +74,9 @@ BA_TEMPLATES: dict[str, str] = {
     ".github/prompts/ba-ticket-author.prompt.md": "copilot-ba-ticket-author.prompt.md",
     ".cursor/commands/ba-ticket-author.md": "cursor-ba-ticket-author.md",
     "docs/tickets/TEMPLATE.md": "ticket-template.md",
-    "tickets/.gitkeep": "tickets-gitkeep.txt",
+    "docs/missions/TEMPLATE.md": "mission-template.md",
+    "tickets/.gitkeep": "gitkeep.txt",
+    "missions/.gitkeep": "gitkeep.txt",
     ".github/workflows/kb-ticket-lint.yml": "kb-ticket-lint.yml",
     "QUICKSTART-BA.md": "QUICKSTART-ba.md",
 }

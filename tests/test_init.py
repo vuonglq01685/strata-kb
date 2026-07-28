@@ -802,3 +802,24 @@ def test_config_load_accepts_kind_ba(tmp_path: Path):
     (kb_dir / "config.yaml").write_text("kind: ba\nhub: ''\n", encoding="utf-8")
     cfg = load_config(kb_dir)
     assert cfg.kind == "ba"
+
+
+def test_ba_kind_scaffolds_the_mission_plan_set(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    assert (tmp_path / "docs" / "missions" / "TEMPLATE.md").is_file()
+    assert (tmp_path / "missions" / ".gitkeep").is_file()
+    assert (tmp_path / "tickets" / ".gitkeep").is_file()
+
+
+def test_hub_and_child_do_not_gain_mission_artifacts(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    for kind in ("hub", "child"):
+        target = tmp_path / kind
+        target.mkdir()
+        init_repo(target, kind)
+        assert not (target / "missions").exists()
+        assert not (target / "docs" / "missions").exists()

@@ -12,7 +12,7 @@ mission pinning/citing published docs — none of that exists yet.
 
 from __future__ import annotations
 
-from center_kb import mission, ticket
+from center_kb import lintcore, mission, ticket
 
 
 def test_required_headings_are_the_agreed_contract():
@@ -777,3 +777,53 @@ def test_missing_hub_errors(golden_block: str):
     report = missionlint.lint(_build_mission(golden_block), None)
     assert report.passed is False
     assert any("hub" in msg for msg in _errors(report))
+
+
+# --- template sync: the shipped template must satisfy its own contract ---
+
+
+def _template_text() -> str:
+    from importlib import resources
+
+    return (
+        resources.files("center_kb.templates.init")
+        .joinpath("mission-template.md")
+        .read_text(encoding="utf-8")
+    )
+
+
+def test_shipped_template_contains_every_required_heading():
+    text = _template_text()
+    present = {line.strip() for line in text.splitlines()}
+    for heading in mission.REQUIRED_MISSION_HEADINGS:
+        assert heading in present, f"template is missing {heading}"
+
+
+def test_shipped_template_carries_both_required_diagrams():
+    """The template ships C4-native fences. Assert the diagram checks
+    directly rather than running full lint: the template is a fill-in form
+    whose id and refs are angle-bracket placeholders, so the id and
+    kb-context checks are expected to fail on it."""
+    text = _template_text()
+    assert (
+        lintcore.check_diagram(
+            text, "## System context (C4 L1)", mission.L1_KEYWORDS
+        )
+        == []
+    ), "template L1 fence does not satisfy the L1 diagram check"
+    assert (
+        lintcore.check_diagram(
+            text, "## Containers (C4 L2)", mission.L2_KEYWORDS
+        )
+        == []
+    )
+
+
+def test_shipped_template_backlog_table_has_the_exact_header():
+    text = _template_text()
+    body = lintcore.section_body(text, "## US backlog")
+    assert body is not None
+    assert any(
+        mission.BACKLOG_HEADER_RE.match(line.strip())
+        for line in body.splitlines()
+    )
