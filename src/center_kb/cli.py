@@ -27,6 +27,11 @@ app.add_typer(assets_app, name="assets")
 ticket_app = typer.Typer(help="Ticket linting: Definition-of-Ready gate for BA tickets.")
 app.add_typer(ticket_app, name="ticket")
 
+mission_app = typer.Typer(
+    help="Mission linting: Definition-of-Ready gate for BA mission plans."
+)
+app.add_typer(mission_app, name="mission")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -973,6 +978,57 @@ def ticket_lint(
             raise typer.Exit(1)
     handle = _hub_or_exit(hub, kb_dir)
     report = lint(text, handle)
+    if json_output:
+        typer.echo(json.dumps(report.to_json()))
+    else:
+        typer.echo(report.render())
+    if not report.passed:
+        raise typer.Exit(1)
+
+
+@mission_app.command("lint")
+def mission_lint(
+    source: str = typer.Argument(
+        ..., help="Mission file (or '-' to read from stdin)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+    ),
+    tickets_dir: Path = typer.Option(
+        None,
+        "--tickets-dir",
+        help="Where ticket files live (default: the mission file's sibling "
+        "'tickets/' directory)",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON instead of text"
+    ),
+) -> None:
+    """Definition-of-Ready gate: lint a mission plan against the DoR checklist."""
+    from center_kb.missionlint import lint
+
+    path: Path | None = None
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        path = Path(source)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+    # A mission at missions/<id>.md has tickets/ as its sibling, so the
+    # coverage check works with no flag in the layout kb init scaffolds.
+    resolved_tickets = tickets_dir
+    if resolved_tickets is None and path is not None:
+        sibling = path.parent.parent / "tickets"
+        if sibling.is_dir():
+            resolved_tickets = sibling
+
+    handle = _hub_or_exit(hub, kb_dir)
+    report = lint(text, handle, path=path, tickets_dir=resolved_tickets)
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
