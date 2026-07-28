@@ -29,3 +29,9 @@ REQUIRED_HEADINGS: tuple[str, ...] = (
 # "As a <role>, I want <capability>, so that <value>." — case-insensitive,
 # multiline (the story text may wrap).
 STORY_RE = re.compile(r"as an?\s+.+?i want\s+.+?so that\s+", re.I | re.S)
+
+# '> Parent mission: M-<slug>' — an OPTIONAL back-link to a mission plan,
+# placed directly under the H1 title. Deliberately not a required
+# heading: REQUIRED_HEADINGS is a compatibility contract, so every
+# pre-existing ticket must keep passing without an edit (spec §4.4).
+PARENT_MISSION_RE = re.compile(r"^>\s*Parent mission:\s*(\S+)\s*$", re.M)
