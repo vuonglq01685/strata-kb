@@ -1878,8 +1878,6 @@ Append to `tests/test_ticketlint.py`:
 ```python
 # --- check 10: parent mission back-link ---
 
-from center_kb import mission as _mission  # noqa: E402
-
 
 def _mission_doc(mission_id: str, us_ids: list[str]) -> str:
     rows = "\n".join(f"| {u} | Story {u} |" for u in us_ids)
@@ -2237,6 +2235,8 @@ Append to `tests/test_missionlint.py`:
 ```python
 # --- template sync: the shipped template must satisfy its own contract ---
 
+# Add `lintcore` to this file's existing `from center_kb import ...` line.
+
 
 def _template_text() -> str:
     from importlib import resources
@@ -2255,18 +2255,34 @@ def test_shipped_template_contains_every_required_heading():
         assert heading in present, f"template is missing {heading}"
 
 
-def test_shipped_template_structure_lints_clean_except_kb_context():
-    """The shipped template has no pinned refs (the BA pins them), so the
-    kb-context checks are expected to fail. Everything structural must
-    already pass — headings, both diagrams, the backlog table, the id."""
+def test_shipped_template_carries_both_required_diagrams():
+    """The template ships C4-native fences. Assert the diagram checks
+    directly rather than running full lint: the template is a fill-in form
+    whose id and refs are angle-bracket placeholders, so the id and
+    kb-context checks are expected to fail on it."""
     text = _template_text()
-    report = missionlint.lint(text, None)
-    structural = [
-        m
-        for m in _errors(report)
-        if "kb-context" not in m and "hub" not in m
-    ]
-    assert structural == [], structural
+    assert (
+        lintcore.check_diagram(
+            text, "## System context (C4 L1)", mission.L1_KEYWORDS
+        )
+        == []
+    ), "template L1 fence does not satisfy the L1 diagram check"
+    assert (
+        lintcore.check_diagram(
+            text, "## Containers (C4 L2)", mission.L2_KEYWORDS
+        )
+        == []
+    )
+
+
+def test_shipped_template_backlog_table_has_the_exact_header():
+    text = _template_text()
+    body = lintcore.section_body(text, "## US backlog")
+    assert body is not None
+    assert any(
+        mission.BACKLOG_HEADER_RE.match(line.strip())
+        for line in body.splitlines()
+    )
 ```
 
 Append to `tests/test_init.py` (match the file's existing style for kind-`ba` assertions):
