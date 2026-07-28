@@ -22,7 +22,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "ruff>=0.15"
+      # Upper-bounded on purpose. `ruff>=0.15` unbounded meant a new ruff
+      # release could turn every open PR red without a single line of code
+      # changing — which is exactly what 0.16.0 did: it added default rules
+      # that flag 127 pre-existing findings on `main` itself. A lint gate
+      # that upgrades itself is not a gate.
+      #
+      # Adopting a new ruff minor is a deliberate, standalone change: bump
+      # this pin, run `ruff check .`, and fix the fallout in its own PR
+      # where the rule-by-rule diff is reviewable.
+      - run: pip install "ruff>=0.15,<0.16"
       - run: ruff check .
 
   t1-tests:
