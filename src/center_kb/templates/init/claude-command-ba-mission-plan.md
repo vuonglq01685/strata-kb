@@ -15,34 +15,43 @@ spans several User Stories — small work goes straight to
 
 1. **Intake** — collect the business need at epic level: what capability,
    for whom, why it matters, and how success is measured. Agree the
-   mission slug with the BA (`M-<slug>`, lowercase kebab-case). Ask for
-   target tags (e.g. `#arinc424 #airspace`) or an explicit doc-id. Ask,
-   don't guess.
-2. **Ground** — call the MCP tool `kb_search` within the token budget.
-   Present **ALL** returned candidates with their citations — never
-   silently drop one. When the ambiguity note fires (two close-scoring
-   hits), the BA MUST choose — never auto-pick.
-3. **Draft** — fill the mission template (Summary, Business goal, Scope,
-   System context (C4 L1), Containers (C4 L2), Constraints & assumptions,
-   US backlog, KB context, Definition of Ready). Draw L1 and L2 from KB
-   content plus what the BA states. Where a diagram needs code-level
-   detail (service names, DB tables, …) that neither the KB nor the BA can
-   supply, mark it `%%TODO: verify against codebase%%` — never invent it.
-   Add the optional `## Components (C4 L3)` section ONLY when the BA
-   supplies real component detail.
-4. **Split** — propose the US backlog: one row per story, ids numbered
+   mission id with the BA: `M-<slug>`, where `<slug>` is lowercase
+   kebab-case. The filename stem must equal the id. Ask for target tags
+   (e.g. `#arinc424 #airspace`) or an explicit doc-id. Ask, don't guess.
+2. **Ground** — use the MCP tool `kb_search`, within the token budget,
+   when it is available; otherwise fall back to `kb query "<text>"
+   --tags <tags>` (CLI). Present **ALL** returned candidates with their
+   citations — never silently drop one. When the ambiguity note fires
+   (two close-scoring hits), the BA MUST choose — never auto-pick.
+3. **Draft** — start from `docs/missions/TEMPLATE.md` in the repo (the
+   file `kb init --kind ba` scaffolds) and fill it in: Summary,
+   Business goal, Scope, System context (C4 L1), Containers (C4 L2),
+   Constraints & assumptions, US backlog, KB context, Definition of Ready.
+   Keep the template's `> Mission: M-<slug>` id line and mermaid fences —
+   do not recreate the document from scratch. Draw L1 and L2 from KB
+   content plus what the BA states. Where a diagram needs code-level detail
+   (service names, DB tables, …) that neither the KB nor the BA can supply,
+   mark it `%%TODO: verify against codebase%%` — never invent it. Add the
+   optional `## Components (C4 L3)` section ONLY when the BA supplies real
+   component detail.
+4. **Split** — propose the US backlog table with the header
+   `| US ID | Title |` exactly (the lint parser matches this string, not
+   a paraphrase) and one row per story below it, ids numbered
    `<mission-id>-US1`, `-US2`, … The BA edits and confirms the split.
    Numbering gaps are fine if a story is dropped — never renumber, as
    ticket filenames may already use those ids.
-5. **Pin** — once the BA confirms which sections actually apply, call
-   `kb_context_new` with exactly those confirmed refs (+ tags). Embed the
-   block it returns verbatim under `## KB context`.
-6. **Lint** — run `kb mission lint <file>`. Fix every error and re-run
-   until it reports `DoR: PASS`. A coverage warning of `0/N US drafted` is
-   EXPECTED at creation time — the tickets do not exist yet. Report
-   remaining warnings to the BA; they are the BA's judgment call.
+5. **Pin** — once the BA confirms which sections actually apply, call the
+   MCP tool `kb_context_new` when available; otherwise fall back to
+   `kb context new --refs "<refs>" --tags "<tags>"` (CLI), passing exactly
+   those confirmed refs (+ tags). Embed the block it returns verbatim
+   under `## KB context`.
+6. **Lint** — run `kb mission lint <file>` against the draft. Fix every
+   error and re-run until it reports `DoR: PASS`. A coverage warning of
+   `0/N US drafted` is EXPECTED at creation time — the tickets do not
+   exist yet. Report remaining warnings to the BA; they are the BA's
+   judgment call.
 7. **Review → save** — write the final Markdown to
-   `missions/M-<slug>.md`. Hand it to the BA to review and commit.
+   `missions/<mission-id>.md`. Hand it to the BA to review and commit.
 
 ## Hard rules
 

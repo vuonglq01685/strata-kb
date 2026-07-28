@@ -828,6 +828,13 @@ def test_hub_and_child_do_not_gain_mission_artifacts(tmp_path):
         init_repo(target, kind)
         assert not (target / "missions").exists()
         assert not (target / "docs" / "missions").exists()
+        for rel in (
+            ".claude/skills/ba-mission-plan/SKILL.md",
+            ".claude/commands/ba-mission-plan.md",
+            ".github/prompts/ba-mission-plan.prompt.md",
+            ".cursor/commands/ba-mission-plan.md",
+        ):
+            assert not (target / rel).exists(), rel
 
 
 def test_ba_kind_scaffolds_the_mission_plan_skill(tmp_path):
@@ -873,3 +880,68 @@ def test_mission_wrappers_reference_the_required_headings(tmp_path):
     for heading in mission.REQUIRED_MISSION_HEADINGS:
         name = heading.removeprefix("## ")
         assert name in text, name
+
+
+_MISSION_WRAPPER_PATHS = (
+    ".claude/skills/ba-mission-plan/SKILL.md",
+    ".claude/commands/ba-mission-plan.md",
+    ".github/prompts/ba-mission-plan.prompt.md",
+    ".cursor/commands/ba-mission-plan.md",
+)
+
+_TICKET_WRAPPER_PATHS = (
+    ".claude/skills/ba-ticket-author/SKILL.md",
+    ".claude/commands/ba-ticket-author.md",
+    ".github/prompts/ba-ticket-author.prompt.md",
+    ".cursor/commands/ba-ticket-author.md",
+)
+
+
+def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
+    """The four ba-mission-plan wrappers are supposed to be byte-identical
+    from '## Workflow' to end of file — that property is the whole point
+    of shipping four near-duplicate documents. A substring/heading check
+    can pass while the bodies silently fork per host; only an exact slice
+    comparison catches that drift."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    slices = []
+    for rel in _MISSION_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        idx = text.index("## Workflow")
+        slices.append(text[idx:])
+
+    first = slices[0]
+    for rel, body in zip(_MISSION_WRAPPER_PATHS, slices):
+        assert body == first, f"{rel} Workflow body drifted from the others"
+
+
+def test_ticket_wrappers_document_the_refs_inheritance_rule(tmp_path):
+    """Regression guard for the parent-mission refs-inheritance rule: a
+    ticket wrapper that inherits only half of the rule (e.g. the filename
+    but not 'starting candidates only') would draft with the mission's
+    full kb-context copied wholesale instead of pinning fresh refs."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in _TICKET_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "starting candidates" in text.lower(), rel
+
+
+def test_mission_wrappers_carry_the_never_auto_rules(tmp_path):
+    """Both 'never auto-generate' (ticket files from the backlog) and
+    'never auto-pick' (ambiguous kb_search candidates) are load-bearing
+    hard rules with no lint-time enforcement — a wrapper that drops either
+    one relies entirely on the agent's own restraint."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in _MISSION_WRAPPER_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8").lower()
+        assert "never auto-generate" in text, rel
+        assert "never auto-pick" in text, rel
