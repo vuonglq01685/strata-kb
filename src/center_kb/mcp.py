@@ -202,9 +202,14 @@ def create_server(config: ServerConfig) -> MCPServer:
     @_canonical_docstring
     def kb_ticket_lint(ticket_markdown: str) -> str:
         """Lint a draft ticket against the Definition of Ready: required
-        structure, story format, ACs, Mermaid diagrams, and kb-context refs
-        resolving at their pinned version. Run this before handing the
-        ticket to the BA; fix errors and re-run until PASS."""
+        structure, story format, ACs, Mermaid diagrams, kb-context refs
+        resolving at their pinned version, and the optional
+        '> Parent mission:' back-link's id format. Over MCP the back-link's
+        existence and backlog-membership checks are skipped (no repo
+        filesystem access to the sibling missions/ directory) and reported
+        as a note, not a failure — run the CLI (`kb ticket lint`) for the
+        full check. Run this before handing the ticket to the BA; fix
+        errors and re-run until PASS."""
         hub = _hub()
         if hub is None:
             return HUB_DOWN
