@@ -15,7 +15,9 @@ When the BA names a parent mission, read it for the story title, put
 ticket's H1 title, and inherit its pinned refs as STARTING CANDIDATES
 ONLY — never copy its `kb-context` wholesale; pin the ticket's own refs
 fresh. Hard rules the skill enforces: citations are mandatory
-for standard claims; pin only BA-confirmed refs via `kb_context_new`;
+for standard claims; present ALL `kb_search` candidates and let the BA
+choose — mandatory when the ambiguity note fires, never auto-pick; pin
+only BA-confirmed refs via `kb_context_new`;
 unverifiable code detail becomes `%%TODO: verify against codebase%%`,
 never invented; `kb ticket lint` must report `DoR: PASS` before handover;
 never push to Jira — the BA publishes; never tick a Definition of Ready

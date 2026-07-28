@@ -37,9 +37,14 @@ spans several User Stories — small work goes straight to
 4. **Split** — propose the US backlog table with the header
    `| US ID | Title |` exactly (the lint parser matches this string, not
    a paraphrase) and one row per story below it, ids numbered
-   `<mission-id>-US1`, `-US2`, … The BA edits and confirms the split.
-   Numbering gaps are fine if a story is dropped — never renumber, as
-   ticket filenames may already use those ids.
+   `<mission-id>-US1`, `-US2`, … — numbers start at 1 and are never
+   zero-padded (`-US01` fails lint's id pattern). The BA edits and
+   confirms the split. Numbering gaps are fine if a story is dropped —
+   never renumber, as ticket filenames may already use those ids. Each
+   story's eventual ticket is saved as `tickets/<us-id>.md` (e.g.
+   `tickets/<mission-id>-US1.md`) — that exact filename is what the
+   coverage check (and `kb ticket lint`'s back-link check) looks for; a
+   differently-named file will never show as drafted.
 5. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>" --tags "<tags>"` (CLI), passing exactly

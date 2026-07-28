@@ -28,11 +28,12 @@ for it during Intake.
    its `kb-context` into the ticket. A mission is broad and a ticket is
    narrow; a wholesale copy drags in refs the ticket never cites. Confirm
    and pin the ticket's own refs fresh in step 5.
-3. **Ground** — call the MCP tool `kb_search` within the token budget.
-   Present **ALL** returned candidates to the BA with their citations —
-   never silently drop one. When the ambiguity note fires (two
-   close-scoring hits), the BA MUST choose between them — never
-   auto-pick.
+3. **Ground** — call the MCP tool `kb_search` within the token budget
+   when it is available; otherwise fall back to `kb query "<text>"
+   --tags <tags>` (CLI). Present **ALL** returned candidates to the BA
+   with their citations — never silently drop one. When the ambiguity
+   note fires (two close-scoring hits), the BA MUST choose between
+   them — never auto-pick.
 4. **Draft** — fill the standard ticket template (Summary, User Story,
    Background / Business context, Acceptance Criteria, Use cases,
    Sequence diagram, Business flow, KB context, Definition of Ready).
@@ -43,8 +44,10 @@ for it during Intake.
    nor the BA can supply, mark it `%%TODO: verify against codebase%%` —
    never invent it.
 5. **Pin** — once the BA confirms which sections actually apply, call
-   `kb_context_new` with exactly those confirmed refs (+ tags). Embed
-   the block it returns verbatim under `## KB context`.
+   the MCP tool `kb_context_new` when available; otherwise fall back to
+   `kb context new --refs "<refs>" --tags "<tags>"` (CLI), passing
+   exactly those confirmed refs (+ tags). Embed the block it returns
+   verbatim under `## KB context`.
 6. **Lint** — run `kb ticket lint <file>` (CLI, primary) against the
    draft; fall back to the MCP tool `kb_ticket_lint` when the CLI is not
    available in this environment. Fix every error and re-run until it

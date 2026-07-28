@@ -205,6 +205,14 @@ Same degradation rule: without a repo path the check reduces to the format test,
 
 `_check_diagram` changes its `keyword: str` parameter to a tuple of accepted keywords. The extraction is behaviour-preserving; the existing `tests/test_ticketlint.py` suite passing unchanged is the acceptance condition (§10).
 
+**Amendment (final Phase 4.1 review).** The claim above is false: the extraction was NOT behaviour-preserving. Three shipped-behaviour changes to the already-shipped `kb ticket lint` rode along inside it, all correct and all documented downstream (README.md, `Release notes (v0.13.0)`), but not called out here where a `lintcore` refactor would look first:
+
+1. `_check_diagram` moved from a substring match to line-anchored matching — the diagram-type keyword must now sit at the start of a line inside the mermaid fence, not merely appear anywhere in it (release note 1).
+2. `INLINE_CITE_RE`'s tail character class changed, so a trailing sentence-ending period, colon, or question mark is no longer absorbed into the section id (release note 3).
+3. `check_headings` became fence-aware — a required heading that only appears inside a fenced code block no longer counts as present (release note 4, added in the same final-review pass that wrote this amendment).
+
+"The existing suite passes unchanged" is a **necessary, not sufficient**, acceptance condition for a primitive extraction: `tests/test_ticketlint.py`, as it stood before this extraction, exercised none of the three boundaries above (no test had a keyword inside a node label, a trailing-punctuation citation, or a heading inside a fence), so a green suite could not have caught any of the three changes — and would not catch a similar change to whatever primitive boundary the *next* refactor's existing tests happen not to stress either. Add boundary tests for the specific primitive being touched BEFORE treating "tests still pass" as proof of no behaviour change.
+
 ## 6. Component C — skill `ba-mission-plan` + wrappers
 
 Four thin wrappers, same file layout pattern as `ba-ticket-author`, registered in `BA_TEMPLATES` and scaffolded on kind `ba` only. The Claude skill is the orchestrator.

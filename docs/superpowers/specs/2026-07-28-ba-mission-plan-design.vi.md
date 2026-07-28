@@ -206,6 +206,14 @@ Cùng quy tắc suy giảm: không có đường dẫn repo thì check rút về
 
 `_check_diagram` đổi tham số `keyword: str` thành tuple các keyword được nhận. Việc rút module giữ nguyên hành vi; điều kiện nghiệm thu là bộ test `tests/test_ticketlint.py` hiện có pass nguyên vẹn (§10).
 
+**Tu chỉnh (từ vòng review cuối Phase 4.1).** Khẳng định trên là sai: việc rút module KHÔNG giữ nguyên hành vi. Ba thay đổi hành vi trên `kb ticket lint` vốn đã shipped đi kèm theo, tất cả đều đúng và đều đã được ghi lại ở nơi khác (README.md, `Release notes (v0.13.0)`), nhưng không được nêu ở đây — đúng chỗ người refactor `lintcore` tiếp theo sẽ tìm đến trước tiên:
+
+1. `_check_diagram` chuyển từ so khớp substring sang so khớp neo đầu dòng — từ khóa loại diagram giờ phải nằm ở đầu một dòng bên trong fence mermaid, không chỉ xuất hiện đâu đó trong đó (release note 1).
+2. Lớp ký tự đuôi của `INLINE_CITE_RE` đổi, nên dấu chấm câu kết thúc, dấu hai chấm, hoặc dấu hỏi ở cuối không còn bị gộp vào section id nữa (release note 3).
+3. `check_headings` trở nên "nhận biết fence" — một heading bắt buộc chỉ xuất hiện bên trong khối fence code không còn được tính là có mặt nữa (release note 4, thêm trong cùng vòng review cuối đã viết tu chỉnh này).
+
+"Bộ test hiện có pass nguyên vẹn" là điều kiện nghiệm thu **cần nhưng không đủ** cho một lần rút module nguyên thủy: `tests/test_ticketlint.py`, ở trạng thái trước khi rút module này, không kiểm thử bất kỳ ranh giới nào trong ba ranh giới trên (không có test nào có từ khóa nằm trong nhãn node, một citation có dấu câu ở cuối, hay một heading nằm trong fence), nên một bộ test xanh không thể bắt được cả ba thay đổi đó — và cũng sẽ không bắt được một thay đổi tương tự trên bất kỳ ranh giới nguyên thủy nào mà bộ test hiện có của lần refactor *tiếp theo* tình cờ không kiểm thử tới. Hãy thêm test ranh giới cho đúng nguyên thủy đang bị đụng tới TRƯỚC KHI coi "test vẫn pass" là bằng chứng không đổi hành vi.
+
 ## 6. Thành phần C — skill `ba-mission-plan` + wrapper
 
 Bốn wrapper mỏng, cùng khuôn bố cục file như `ba-ticket-author`, đăng ký trong `BA_TEMPLATES` và chỉ scaffold trên kind `ba`. Skill Claude là bộ điều phối.
