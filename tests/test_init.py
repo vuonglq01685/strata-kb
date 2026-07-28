@@ -828,3 +828,48 @@ def test_hub_and_child_do_not_gain_mission_artifacts(tmp_path):
         init_repo(target, kind)
         assert not (target / "missions").exists()
         assert not (target / "docs" / "missions").exists()
+
+
+def test_ba_kind_scaffolds_the_mission_plan_skill(tmp_path):
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in (
+        ".claude/skills/ba-mission-plan/SKILL.md",
+        ".claude/commands/ba-mission-plan.md",
+        ".github/prompts/ba-mission-plan.prompt.md",
+        ".cursor/commands/ba-mission-plan.md",
+    ):
+        assert (tmp_path / rel).is_file(), rel
+
+
+def test_every_mission_wrapper_carries_the_no_silent_skip_rule(tmp_path):
+    """kb mission lint has no MCP fallback, so 'kb unavailable is not a
+    PASS' must appear in all four wrappers — it is the only thing standing
+    between a missing binary and a silently unlinted mission."""
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in (
+        ".claude/skills/ba-mission-plan/SKILL.md",
+        ".claude/commands/ba-mission-plan.md",
+        ".github/prompts/ba-mission-plan.prompt.md",
+        ".cursor/commands/ba-mission-plan.md",
+    ):
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "is not a PASS" in text, rel
+
+
+def test_mission_wrappers_reference_the_required_headings(tmp_path):
+    from center_kb import mission
+    from center_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+    text = (
+        tmp_path / ".claude/skills/ba-mission-plan/SKILL.md"
+    ).read_text(encoding="utf-8")
+    for heading in mission.REQUIRED_MISSION_HEADINGS:
+        name = heading.removeprefix("## ")
+        assert name in text, name
