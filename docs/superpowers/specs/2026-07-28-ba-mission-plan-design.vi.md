@@ -152,9 +152,9 @@ Engine đặt ở module mới `missionlint.py`. Các check, theo thứ tự:
 |---|---|---|
 | 1 | Có H1 title; có `> Mission: <id>` đúng dạng; nếu là file thật thì thân tên file bằng id | error |
 | 2 | Đủ `REQUIRED_MISSION_HEADINGS` | error |
-| 3 | `## System context (C4 L1)` chứa fence ```` ```mermaid ```` có **token đầu tiên** là `C4Context` **hoặc** `flowchart` | error |
-| 4 | `## Containers (C4 L2)` chứa fence có token đầu là `C4Container` **hoặc** `flowchart` | error |
-| 5 | `## Components (C4 L3)` — chỉ khi section tồn tại: token đầu là `C4Component` **hoặc** `flowchart` | error |
+| 3 | `## System context (C4 L1)` chứa fence ```` ```mermaid ```` có `C4Context` **hoặc** `flowchart` **ở đầu một dòng** | error |
+| 4 | `## Containers (C4 L2)` chứa fence có `C4Container` **hoặc** `flowchart` ở đầu một dòng | error |
+| 5 | `## Components (C4 L3)` — chỉ khi section tồn tại: `C4Component` **hoặc** `flowchart` ở đầu một dòng | error |
 | 6 | `## US backlog` parse thành bảng pipe có đúng dòng header `\| US ID \| Title \|` và ≥ 1 dòng dữ liệu | error |
 | 7 | Mọi US id khớp `^<mission-id>-US\d+$`; không trùng | error |
 | 8 | Khối `kb-context` parse được (`kbcontext.parse`) | error |
@@ -168,13 +168,21 @@ Exit code 1 nếu có error, ngược lại 0. `--json` xuất `{"pass": bool, "
 
 Check 3–5 nhận cả cú pháp C4 gốc lẫn `flowchart`. Tài liệu chính thức của Mermaid ghi rõ C4 là diagram type thử nghiệm và "syntax and properties are subject to change in future releases". Buộc một hợp đồng lint hạng breaking-change vào cú pháp thử nghiệm của upstream nghĩa là một bản release Mermaid có thể làm gãy DoR gate của mọi team. Mục đích của check là *ở mức này có một diagram*, không phải *diagram này đúng cú pháp C4* — nên hợp đồng lỏng hơn cũng là hợp đồng trung thực hơn. Template ship dùng C4 gốc; team nào renderer không đỡ C4 thì lui về `flowchart` mà không FAIL DoR.
 
-Check 12 cần truy cập filesystem, thứ mà stdin và mọi caller không-phải-file đều không có. Chữ ký:
+Neo ở đầu dòng thay vì đòi keyword phải là token đầu tiên tuyệt đối giúp một directive init của Mermaid (`%%{init: …}%%` ở dòng trên) không làm hỏng một diagram hợp lệ, mà vẫn từ chối khớp chữ `flowchart` nằm lẫn trong nhãn node.
+
+Check 1 và 12 cần đường dẫn mà stdin và mọi caller không-phải-file đều không có. Chữ ký:
 
 ```python
-lint(text: str, hub: "HubHandle | None", *, tickets_dir: Path | None) -> LintReport
+lint(
+    text: str,
+    hub: "HubHandle | None",
+    *,
+    path: Path | None = None,
+    tickets_dir: Path | None = None,
+) -> LintReport
 ```
 
-Khi `tickets_dir is None`, check 12 bị bỏ **và phát ra một note nói rõ điều đó**. Một check bị bỏ không bao giờ được phép trông giống một check đã pass.
+Khi `path is None` thì bỏ nửa kiểm tên file của check 1; khi `tickets_dir is None` thì bỏ check 12. Mỗi lần bỏ đều phát **một note nói rõ**. Một check bị bỏ không bao giờ được phép trông giống một check đã pass.
 
 ### 5.2 Thêm đúng một check cho `kb ticket lint`
 

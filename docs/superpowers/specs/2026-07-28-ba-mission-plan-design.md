@@ -151,9 +151,9 @@ Engine in the new `missionlint.py`. Checks, in order:
 |---|---|---|
 | 1 | H1 title present; `> Mission: <id>` present and well-formed; when a real file, filename stem equals the id | error |
 | 2 | All `REQUIRED_MISSION_HEADINGS` present | error |
-| 3 | `## System context (C4 L1)` contains a ```` ```mermaid ```` fence whose **first token** is `C4Context` **or** `flowchart` | error |
-| 4 | `## Containers (C4 L2)` contains a fence whose first token is `C4Container` **or** `flowchart` | error |
-| 5 | `## Components (C4 L3)` — only when the section exists: first token `C4Component` **or** `flowchart` | error |
+| 3 | `## System context (C4 L1)` contains a ```` ```mermaid ```` fence with `C4Context` **or** `flowchart` **at the start of a line** | error |
+| 4 | `## Containers (C4 L2)` contains a fence with `C4Container` **or** `flowchart` at the start of a line | error |
+| 5 | `## Components (C4 L3)` — only when the section exists: `C4Component` **or** `flowchart` at the start of a line | error |
 | 6 | `## US backlog` parses as a pipe table with the exact header row `\| US ID \| Title \|` and ≥ 1 data row | error |
 | 7 | Every US id matches `^<mission-id>-US\d+$`; no duplicates | error |
 | 8 | `kb-context` block parses (`kbcontext.parse`) | error |
@@ -167,13 +167,21 @@ Exit code 1 if any error, else 0. `--json` emits `{"pass": bool, "errors": [...]
 
 Checks 3–5 accept either C4-native or `flowchart` syntax. Mermaid's own documentation states the C4 diagram type is experimental and its "syntax and properties are subject to change in future releases". Binding a breaking-change-class lint contract to upstream-experimental syntax would mean a Mermaid release could fail every team's DoR gate. The check's purpose is *a diagram exists at this level*, not *this diagram is syntactically C4* — so the looser contract is also the more honest one. The shipped template uses C4-native; teams whose renderer lacks C4 support fall back to `flowchart` without failing DoR.
 
-Check 12 needs filesystem access, which stdin and any non-file caller lack. Signature:
+Anchoring at line start rather than requiring the keyword to be the very first token keeps a Mermaid init directive (`%%{init: …}%%` on the line above) from failing an otherwise valid diagram, while still refusing to match the word `flowchart` buried in a node label.
+
+Checks 1 and 12 need paths that stdin and any non-file caller lack. Signature:
 
 ```python
-lint(text: str, hub: "HubHandle | None", *, tickets_dir: Path | None) -> LintReport
+lint(
+    text: str,
+    hub: "HubHandle | None",
+    *,
+    path: Path | None = None,
+    tickets_dir: Path | None = None,
+) -> LintReport
 ```
 
-When `tickets_dir is None`, check 12 is skipped **and a note is emitted saying so**. A skipped check must never be indistinguishable from a passed one.
+When `path is None` the filename half of check 1 is skipped; when `tickets_dir is None` check 12 is skipped. Each skip emits **a note saying so**. A skipped check must never be indistinguishable from a passed one.
 
 ### 5.2 One added check on `kb ticket lint`
 
