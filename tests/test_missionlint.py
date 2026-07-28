@@ -379,6 +379,66 @@ def test_backlog_duplicate_us_id_errors(golden_block: str):
     assert any("duplicate" in i.message.lower() for i in issues)
 
 
+def test_backlog_row_above_header_errors(golden_block: str):
+    """A BACKLOG_ROW_RE-matching row placed above the header must not be
+    silently discarded — it would vanish from `us_ids` with no error, no
+    warning, no note, which is the worst failure mode for a check whose
+    output feeds Task 4's coverage gate."""
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## US backlog": (
+                f"| {MISSION_ID}-US9 | Stray row above the header |\n"
+                "| US ID | Title |\n"
+                "|---|---|\n"
+                f"| {MISSION_ID}-US1 | Render restrictive airspace polygons |"
+            )
+        },
+    )
+    issues, us_ids = missionlint.check_backlog(text, MISSION_ID)
+    assert us_ids == [f"{MISSION_ID}-US1"]
+    assert any(
+        f"{MISSION_ID}-US9" in i.message and "above" in i.message
+        for i in issues
+    )
+
+
+def test_backlog_prose_above_header_is_legal(golden_block: str):
+    """Leading prose above the table (not a BACKLOG_ROW_RE match) must stay
+    legal — only rows shaped like table rows are flagged."""
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## US backlog": (
+                "Stories below are ordered by priority.\n"
+                "| US ID | Title |\n"
+                "|---|---|\n"
+                f"| {MISSION_ID}-US1 | Render restrictive airspace polygons |"
+            )
+        },
+    )
+    issues, us_ids = missionlint.check_backlog(text, MISSION_ID)
+    assert issues == []
+    assert us_ids == [f"{MISSION_ID}-US1"]
+
+
+def test_backlog_missing_separator_errors(golden_block: str):
+    """A header row with no separator row underneath does not render as a
+    markdown table for the human reviewing the DoR — this must be an
+    error, not silently accepted."""
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## US backlog": (
+                "| US ID | Title |\n"
+                f"| {MISSION_ID}-US1 | Render restrictive airspace polygons |"
+            )
+        },
+    )
+    issues, _us_ids = missionlint.check_backlog(text, MISSION_ID)
+    assert any("separator" in i.message.lower() for i in issues)
+
+
 def test_backlog_numbering_gaps_are_allowed(golden_block: str):
     text = _build_mission(
         golden_block,
@@ -415,3 +475,20 @@ def test_placeholder_warns(golden_block: str):
 
 def test_no_placeholder_is_silent(golden_block: str):
     assert missionlint.check_placeholders(_build_mission(golden_block)) == []
+
+
+def test_multiple_placeholders_aggregate_into_one_issue(golden_block: str):
+    """A single test with exactly one placeholder can't distinguish
+    aggregation from one-issue-per-occurrence. Pin the count with two."""
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## Constraints & assumptions": (
+                "Service name %%TODO: verify against codebase%% unknown, "
+                "and so is the %%TODO: verify against codebase%% owner team."
+            )
+        },
+    )
+    issues = missionlint.check_placeholders(text)
+    assert len(issues) == 1
+    assert "2" in issues[0].message

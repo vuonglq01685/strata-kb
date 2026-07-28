@@ -1,10 +1,8 @@
-"""`kb mission lint` engine — the Definition-of-Ready gate for BA mission
-plans.
+"""Structural checks for the BA mission-plan Definition-of-Ready gate.
 
-No CLI dependencies here: `cli.py`'s `kb mission lint` is a thin wrapper
-over `lint()`. There is deliberately NO MCP tool (spec §9) — the
-traceability checks need filesystem access the shared server does not
-have, so an MCP copy would be a strictly degraded gate.
+There is deliberately NO MCP tool (spec §9) — the traceability checks
+need filesystem access the shared server does not have, so an MCP copy
+would be a strictly degraded gate.
 
 Shared primitives live in `lintcore`; this module holds only what is
 specific to the mission contract.
@@ -13,14 +11,9 @@ specific to the mission contract.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from center_kb import lintcore, mission
 from center_kb.doctor import Issue
-from center_kb.lintcore import LintReport
-
-if TYPE_CHECKING:
-    from center_kb.hub import HubHandle
 
 
 def check_mission_id(
@@ -38,8 +31,9 @@ def check_mission_id(
             [
                 Issue(
                     "error",
-                    "missing mission id — add a '> Mission: M-<slug>' line "
-                    "directly under the title",
+                    "missing mission id — the document must contain a "
+                    "'> Mission: M-<slug>' line (conventionally placed "
+                    "directly under the title)",
                 )
             ],
             [],
@@ -110,18 +104,46 @@ def check_backlog(
             )
         ], []
 
+    issues: list[Issue] = []
+    for line in lines[:header_at]:
+        if mission.BACKLOG_ROW_RE.match(line):
+            issues.append(
+                Issue(
+                    "error",
+                    f"backlog row '{line}' appears above the "
+                    "'| US ID | Title |' header row — move it below the "
+                    "header and separator rows",
+                )
+            )
+
+    if header_at + 1 >= len(lines) or not mission.BACKLOG_SEP_RE.match(
+        lines[header_at + 1]
+    ):
+        issues.append(
+            Issue(
+                "error",
+                "'## US backlog' header row must be followed by a "
+                "separator row (e.g. '|---|---|'), or the table will not "
+                "render for the human reviewing the DoR",
+            )
+        )
+
     rows = [
         line
         for line in lines[header_at + 1 :]
         if not mission.BACKLOG_SEP_RE.match(line)
     ]
     us_ids: list[str] = []
-    issues: list[Issue] = []
     for line in rows:
         m = mission.BACKLOG_ROW_RE.match(line)
         if m is None:
             issues.append(
-                Issue("error", f"US backlog row is not a table row: '{line}'")
+                Issue(
+                    "error",
+                    f"US backlog row is not a table row: '{line}' — the "
+                    "'## US backlog' section must end with the table; put "
+                    "trailing notes in another section",
+                )
             )
             continue
         us_ids.append(m.group(1))
