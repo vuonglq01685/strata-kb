@@ -1,12 +1,25 @@
-# CI Definition-of-Ready gate: every pull request that touches tickets/
-# must pass `kb ticket lint` before it can merge. The hub is a repo
+# CI Definition-of-Ready gate: every pull request that touches tickets/ or
+# missions/ must pass its DoR lint before it can merge. The hub is a repo
 # variable and any auth token a repo secret — never hardcoded here,
 # mirroring how kb-publish.yml keeps credentials out of the workflow file
 # (documents behind the hub are copyrighted).
+#
+# The workflow file name and the job name are deliberately FROZEN as
+# 'kb-ticket-lint' even though the gate now covers missions too: branch
+# protection on already-provisioned BA repos keys on the job name, and
+# renaming it would leave those repos waiting forever on a required check
+# that never runs again.
+#
+# Deliberately NOT `paths`-filtered to tickets/**.md, missions/**.md: GitHub
+# never synthesizes a passing status for a job that never started, so a
+# `paths:` filter on a trigger that backs a *required* check would leave any
+# PR touching neither directory waiting forever for a check that will never
+# run. The job below always starts; its one step inspects the PR's own diff
+# and exits 0 with a `::notice::` when nothing under either directory
+# changed, so a PR unrelated to tickets/missions still passes cleanly.
 name: kb-ticket-lint
 on:
   pull_request:
-    paths: ["tickets/**.md"]
 permissions:
   contents: read
 env:
@@ -29,18 +42,74 @@ jobs:
         if: env.KB_HUB_TOKEN != ''
         run: |
           echo "CENTER_KB_HUB=https://x-access-token:${KB_HUB_TOKEN}@${CENTER_KB_HUB#https://}" >> "$GITHUB_ENV"
-      - name: Lint changed tickets (Definition of Ready)
+      - name: Lint changed tickets and missions (Definition of Ready)
         run: |
-          changed=$(git diff --name-only "origin/${BASE_REF}..." -- 'tickets/*.md' 'tickets/**/*.md')
-          if [ -z "$changed" ]; then
-            echo "::notice::no ticket files changed under tickets/ — DoR lint skipped"
+          # core.quotePath defaults to true, which makes `git diff --name-only`
+          # emit any non-ASCII path (e.g. Vietnamese section ids/filenames —
+          # this project explicitly supports them) as a C-quoted, octal-escaped
+          # string like "missions/M-\304\220\304\203ng-nh\341\272\255p.md". The
+          # `case` dispatch below would then match neither missions/* nor
+          # tickets/*, silently skip the file, and still exit 0 — a required
+          # check going green on a mission that was never linted. Disabling
+          # quotePath and reading NUL-separated output (`-z`) fixes that at
+          # the source and also removes any newline-in-filename hazard.
+          #
+          # NUL-separated data cannot survive a `$(...)` capture — bash has no
+          # way to store a NUL byte in a variable, so `changed=$(git diff -z
+          # ...)` silently concatenates every filename together with no
+          # separator left to split on.
+          #
+          # Streaming straight into `done < <(git ...)` (process substitution)
+          # has its own failure mode: the substitution's exit status is not
+          # the loop's exit status, so if git fails outright (stale/empty
+          # BASE_REF, `origin/<base>` missing, any git error) it writes to
+          # stderr, produces zero records, the loop simply never runs, `count`
+          # stays 0, and the step falls into the "nothing changed" branch below
+          # and exits 0 — a required check going green on a diff that was
+          # never actually computed. So `git diff` runs as a plain foreground
+          # command, redirected into a temp file, so a failure trips this
+          # step's `-e` (GitHub Actions runs `run:` blocks as `bash -e {0}`)
+          # immediately, before `count`/`status` can be misread as "clean."
+          # The loop then reads from that file instead of a process
+          # substitution; it still runs in the current shell either way, so
+          # `status`/`count` aggregation is unaffected by this change.
+          #
+          # --diff-filter=ACMR (Added/Copied/Modified/Renamed, no Deleted)
+          # keeps a ticket/mission deletion from being handed to `kb ... lint`
+          # at all; `[ -f "$f" ]` below is a belt-and-braces guard for the
+          # rename-out-of-pathspec edge case. The loud `*)` arm right above it
+          # is unreachable today only because the pathspec on the `git diff`
+          # below already confines every emitted path to tickets/ or
+          # missions/ — it earns its keep the day that pathspec is widened
+          # (e.g. to also cover docs/**.md) and some newly-included path needs
+          # to fail loudly instead of being silently mis-dispatched.
+          status=0
+          count=0
+          git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR \
+            "origin/${BASE_REF}..." \
+            -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md' \
+            > "$RUNNER_TEMP/changed.nul"
+          while IFS= read -r -d '' f; do
+            count=$((count + 1))
+            case "$f" in
+              missions/*) cmd="kb mission lint" ;;
+              tickets/*)  cmd="kb ticket lint" ;;
+              *)
+                echo "::error::unrecognised path '$f' — not under tickets/ or missions/"
+                status=1
+                continue
+                ;;
+            esac
+            if [ ! -f "$f" ]; then
+              echo "::warning::skipping '$f' — not present in the checkout"
+              continue
+            fi
+            echo "::group::$cmd $f"
+            $cmd "$f" --hub "$CENTER_KB_HUB" || status=1
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/changed.nul"
+          if [ "$count" -eq 0 ]; then
+            echo "::notice::no ticket or mission files changed — DoR lint skipped"
             exit 0
           fi
-          status=0
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            echo "::group::kb ticket lint $f"
-            kb ticket lint "$f" --hub "$CENTER_KB_HUB" || status=1
-            echo "::endgroup::"
-          done <<< "$changed"
           exit "$status"
