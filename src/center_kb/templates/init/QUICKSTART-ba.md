@@ -27,18 +27,27 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
 5. **Draft** — invoke `/ba-ticket-author` (or the `ba-ticket-author`
    skill) with the business need. It runs the pipeline for you:
    1. **Intake** — you describe the need: capability, role, value.
-   2. **Ground** — it calls `kb_search`; review ALL candidates it shows
+   2. **Parent mission (optional)** — if this ticket implements a story
+      from a mission plan, name the mission. It reads
+      `missions/<mission-id>.md`, takes the story title from the US
+      backlog row, and writes `> Parent mission: <mission-id>` on its own
+      line directly under the ticket's title — the input the back-link
+      check (see below) reads. The ticket is then saved as
+      `tickets/<mission-id>-US<n>.md` instead of `tickets/<ticket-id>.md`,
+      so that check can find it.
+   3. **Ground** — it calls `kb_search`; review ALL candidates it shows
       you and pick the ones that actually apply.
-   3. **Draft** — it fills the ticket template (story, ACs, use cases,
+   4. **Draft** — it fills the ticket template (story, ACs, use cases,
       sequence + business-flow diagrams), citing `doc-id §section` for
       every claim that touches a standard.
-   4. **Pin** — once you confirm which sections apply, it calls
+   5. **Pin** — once you confirm which sections apply, it calls
       `kb_context_new` and embeds the returned `## KB context` block.
-   5. **Lint** — it runs `kb ticket lint` and fixes errors until it
+   6. **Lint** — it runs `kb ticket lint` and fixes errors until it
       reports `DoR: PASS`.
-   6. **Review** — it writes the draft to `tickets/<ticket-id>.md`. You
-      review it, commit it, and paste it into Jira yourself — the
-      assistant never publishes for you.
+   7. **Review** — it writes the draft to `tickets/<ticket-id>.md` (or
+      `tickets/<mission-id>-US<n>.md` from step 2). You review it, commit
+      it, and paste it into Jira yourself — the assistant never publishes
+      for you.
 
 ## Mission plans — for large features
 
@@ -70,11 +79,14 @@ drafted.
 
 ## DoR rules (what CI enforces)
 
-Every pull request touching `tickets/**.md` or `missions/**.md` runs
-`.github/workflows/kb-ticket-lint.yml` — the name predates the mission
-gate and is kept for branch-protection compatibility, but it now
-dispatches by directory: `kb ticket lint` for a changed ticket, `kb
-mission lint` for a changed mission. For a ticket it checks:
+Every pull request runs `.github/workflows/kb-ticket-lint.yml` — the name
+predates the mission gate and is kept for branch-protection compatibility.
+The workflow itself is not filtered to `tickets/`/`missions/` paths (see
+"Branch protection" below for why); its one lint step inspects the PR's
+own diff and dispatches by directory: `kb ticket lint` for a changed
+ticket, `kb mission lint` for a changed mission. A PR touching neither
+directory exits cleanly with a notice — nothing to lint. For a ticket it
+checks:
 
 - Required sections present (Summary, User Story, Background,
   Acceptance Criteria, Use cases, both Mermaid diagrams, KB context,
@@ -94,7 +106,12 @@ What lint does **not** enforce — still the BA's judgment call:
 **Branch protection:** lint running in CI does not by itself block a
 merge. On the BA repo's GitHub settings, require the `kb-ticket-lint`
 check to pass before merging into the branch tickets and missions land
-on.
+on. The workflow's trigger is deliberately **not** `paths`-filtered:
+GitHub never synthesizes a passing status for a job that never started,
+so a `paths: ["tickets/**.md", "missions/**.md"]` filter on a *required*
+check would leave any PR touching neither directory waiting forever.
+Instead the job always starts, and its own lint step (above) is what
+decides there was nothing to check.
 
 ## Upgrading an existing BA repo
 
@@ -116,6 +133,13 @@ diagram-type keyword (e.g. `sequenceDiagram`, `flowchart`) must now sit at
 the **start of a line** inside the Mermaid fence, not merely appear
 somewhere in it. If lint now rejects a diagram that used to pass, move
 that keyword to the start of its own line inside the fence.
+
+v0.13.0 also stops counting a required heading (e.g. `## Business goal`)
+as present when it only appears inside a fenced code block — pasting a
+reference mission or `TEMPLATE.md` into your own document as a quoted
+example no longer satisfies the required-heading check. If lint now
+rejects a ticket or mission that used to pass, move the real heading out
+of the code fence.
 
 ## CLI reference
 
