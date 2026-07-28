@@ -86,6 +86,12 @@ def test_lint_passing_mission_exits_0(fed_hub: Path, mission_file: Path):
     )
     assert result.exit_code == 0, result.output
     assert "DoR: PASS" in result.output
+    # mission_file has no missions/tickets sibling layout, so coverage is
+    # skipped — assert the note actually appears rather than trusting a
+    # bare PASS, which a silently-skipped check would also produce.
+    assert "[note] coverage check skipped — no tickets directory supplied" in (
+        result.output
+    )
 
 
 def test_lint_failing_mission_exits_1(fed_hub: Path, tmp_path: Path):
@@ -122,7 +128,13 @@ def test_lint_json_output(fed_hub: Path, mission_file: Path):
     data = json.loads(result.output)
     assert data["pass"] is True
     assert data["errors"] == []
-    assert "notes" in data
+    # Pin the actual note content on the JSON surface too: `data["notes"]`
+    # being non-empty here is what proves this "pass" reflects a skipped
+    # coverage check, not a real one — an empty/omitted notes list would
+    # let a skip masquerade as a full pass through --json.
+    assert data["notes"] == [
+        "coverage check skipped — no tickets directory supplied"
+    ]
 
 
 def test_lint_uses_sibling_tickets_dir_by_default(
@@ -150,3 +162,78 @@ def test_lint_missing_file_exits_1_with_clear_error(fed_hub: Path, tmp_path: Pat
     )
     assert result.exit_code == 1
     assert "could not read file" in result.output
+
+
+def test_explicit_tickets_dir_overrides_the_sibling(fed_hub: Path, tmp_path: Path):
+    """--tickets-dir must override the sibling default, not merely
+    supplement it. Both directories exist and disagree on coverage: the
+    sibling has neither story drafted, the explicit dir has one of two.
+    (With a single-story backlog, full coverage prints nothing at all —
+    see test_missionlint.py — so two stories are needed for a visible,
+    discriminating fraction.) A refactor to `sibling or tickets_dir` would
+    report 0/2 here, since a Path is always truthy and `or` would pick the
+    sibling regardless of what --tickets-dir was passed."""
+    (tmp_path / "missions").mkdir()
+    (tmp_path / "tickets").mkdir()  # sibling: empty, both stories missing
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / f"{MISSION_ID}-US1.md").write_text("x", encoding="utf-8")
+
+    text = _mission_text(_golden_block(fed_hub)).replace(
+        f"| {MISSION_ID}-US1 | Render polygons |",
+        f"| {MISSION_ID}-US1 | Render polygons |\n"
+        f"| {MISSION_ID}-US2 | Filter by altitude |",
+    )
+    path = tmp_path / "missions" / f"{MISSION_ID}.md"
+    path.write_text(text, encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "mission", "lint", str(path), "--hub", str(fed_hub),
+            "--tickets-dir", str(elsewhere),
+        ],
+    )
+
+    # 1/2 from --tickets-dir (US1 drafted there), never 0/2 from the sibling.
+    assert "1/2 US drafted" in result.output, result.output
+    assert "0/2 US drafted" not in result.output
+
+
+def test_explicit_tickets_dir_missing_is_a_hard_error(fed_hub: Path, tmp_path: Path):
+    """An explicit --tickets-dir that doesn't exist is a BA typo, not
+    missing tickets — it must error out rather than silently reporting
+    '0/N US drafted' via check_coverage's per-file .is_file() probing."""
+    path = tmp_path / f"{MISSION_ID}.md"
+    path.write_text(_mission_text(_golden_block(fed_hub)), encoding="utf-8")
+    bad_dir = tmp_path / "tikcets"  # typo, does not exist
+
+    result = runner.invoke(
+        app,
+        [
+            "mission", "lint", str(path), "--hub", str(fed_hub),
+            "--tickets-dir", str(bad_dir),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert str(bad_dir) in result.output
+
+
+def test_lint_non_utf8_file_names_encoding_as_the_problem(
+    fed_hub: Path, tmp_path: Path
+):
+    """Mission/ticket bodies are explicitly UTF-8 with Vietnamese text and
+    '§' characters, so a latin-1/binary file is a realistic user error —
+    it must produce a red one-liner naming encoding, not a raw traceback
+    (UnicodeDecodeError is a ValueError, not an OSError)."""
+    path = tmp_path / f"{MISSION_ID}.md"
+    path.write_bytes(b"caf\xe9 - not valid utf-8")
+
+    result = runner.invoke(
+        app, ["mission", "lint", str(path), "--hub", str(fed_hub)]
+    )
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "utf-8" in result.output.lower()

@@ -973,6 +973,11 @@ def ticket_lint(
     else:
         try:
             text = Path(source).read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            typer.secho(
+                f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
@@ -995,7 +1000,7 @@ def mission_lint(
     hub: str = typer.Option(
         "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
-    tickets_dir: Path = typer.Option(
+    tickets_dir: Path | None = typer.Option(
         None,
         "--tickets-dir",
         help="Where ticket files live (default: the mission file's sibling "
@@ -1015,14 +1020,42 @@ def mission_lint(
         path = Path(source)
         try:
             text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            typer.secho(
+                f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
 
+    # An explicitly-passed --tickets-dir is a deliberate BA choice, so a
+    # typo must be a hard error — otherwise check_coverage's per-file
+    # .is_file() probing quietly reports "0/N US drafted", misdiagnosing a
+    # bad path as missing tickets. The sibling default below stays
+    # fail-soft: its absence degrades to the engine's note, it never
+    # becomes an error.
+    if tickets_dir is not None and not tickets_dir.is_dir():
+        typer.secho(
+            f"--tickets-dir '{tickets_dir}' does not exist or is not a directory",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
     # A mission at missions/<id>.md has tickets/ as its sibling, so the
     # coverage check works with no flag in the layout kb init scaffolds.
+    # Gate on the parent directory's name so the default only ever binds to
+    # the sibling of an actual missions/ directory — not some unrelated
+    # tickets/ that happens to sit next to wherever the mission file was
+    # opened from (e.g. a mission under specs/missions/2026/ looking in
+    # specs/missions/tickets, or one under ~/Downloads/ binding to
+    # ~/tickets if that happens to exist).
     resolved_tickets = tickets_dir
-    if resolved_tickets is None and path is not None:
+    if (
+        resolved_tickets is None
+        and path is not None
+        and path.parent.name == "missions"
+    ):
         sibling = path.parent.parent / "tickets"
         if sibling.is_dir():
             resolved_tickets = sibling
