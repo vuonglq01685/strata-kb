@@ -4,7 +4,8 @@ from center_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
 
 WEB_TEMPLATES = [
     "base.html", "login.html", "search.html",
-    "docs.html", "doc.html", "section.html", "style.css",
+    "docs.html", "doc.html", "section.html",
+    "static/style.css", "static/app.js",
 ]
 
 # Package resources only (Task 4) — not yet wired into a *_TEMPLATES map;

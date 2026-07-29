@@ -31,6 +31,7 @@ body { font-family: var(--sans); color: var(--ink); -webkit-font-smoothing: anti
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-deep); }
 ::selection { background: #d9e5f9; }
+mark { background: #d9e5f9; color: inherit; padding: 0 1px; border-radius: 2px; }
 
 /* labels & badges */
 .kicker { margin: 0; font: 600 10px/1.4 var(--mono); letter-spacing: .18em;

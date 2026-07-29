@@ -146,9 +146,15 @@ async def static_file(request: Request) -> Response:
     if media is None or ".." in name or name.startswith("/"):
         return Response("not found", status_code=404)
     target = resources.files("center_kb").joinpath("templates/web/static").joinpath(name)
-    if not target.is_file():
+    try:
+        if not target.is_file():
+            return Response("not found", status_code=404)
+        data = await run_in_threadpool(target.read_bytes)
+    except OSError as exc:
+        # e.g. ENAMETOOLONG for pathologically long segments — treat as a
+        # miss rather than surfacing a 500 to the (auth-exempt) caller.
+        logger.warning("static file lookup failed for %r: %s", name, exc)
         return Response("not found", status_code=404)
-    data = await run_in_threadpool(target.read_bytes)
     return Response(
         data, media_type=media,
         headers={"Cache-Control": "public, max-age=86400"},

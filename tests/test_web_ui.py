@@ -1,3 +1,5 @@
+from importlib import resources
+
 import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
@@ -513,3 +515,48 @@ def test_static_rejects_traversal_and_unknown_types(fed_hub):
     c = _client(fed_hub / ".kb", str(fed_hub))
     assert c.get("/ui/static/../ui.py").status_code == 404
     assert c.get("/ui/static/fonts/x.ttf").status_code == 404
+
+
+def test_static_rejects_percent_encoded_traversal(fed_hub):
+    # httpx normalizes literal "../" client-side before the request is ever
+    # sent, so the ".." guard in static_file is never actually exercised by
+    # test_static_rejects_traversal_and_unknown_types above. Percent-encoded
+    # dots survive client-side normalization and Starlette decodes them back
+    # to ".." in the path param, reaching the in-handler guard.
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    assert c.get("/ui/static/%2e%2e/ui.py").status_code == 404
+    # Mutation-sensitive variant: "../ui.py" resolves to a nonexistent path
+    # either way (is_file() is False with or without the ".." guard), so the
+    # assertion above alone would still pass if the guard were deleted. This
+    # one escapes back onto a *real* file (static/style.css) via
+    # fonts/../style.css, so removing the ".." guard flips this to a 200.
+    resp = c.get("/ui/static/fonts/%2e%2e/style.css")
+    assert resp.status_code == 404
+
+
+def test_static_rejects_absolute_path_param(fed_hub):
+    # A doubled leading slash makes the captured {path:path} param start
+    # with "/", turning the joinpath into an absolute-path escape attempt.
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    assert c.get("/ui/static//etc/hosts.css").status_code == 404
+    # Mutation-sensitive variant: "/etc/hosts.css" doesn't exist on disk, so
+    # the assertion above alone would still pass even with the leading-"/"
+    # guard deleted (is_file() is False either way). pathlib's joinpath()
+    # *discards* the base entirely when given an absolute second argument,
+    # so an unguarded absolute param is a real arbitrary-file-read primitive
+    # (restricted only by the STATIC_TYPES suffix allowlist). Point it at a
+    # real .css file that exists outside static/ to prove the escape.
+    real_css = str(
+        resources.files("center_kb").joinpath("templates/web/static/style.css")
+    )
+    resp = c.get("/ui/static/" + real_css)
+    assert resp.status_code == 404
+
+
+def test_static_handles_name_too_long_as_404(fed_hub):
+    # A pathologically long filename segment makes target.is_file() raise
+    # OSError (ENAMETOOLONG on most platforms) instead of returning False.
+    # The auth-exempt static route must not leak this as a 500.
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    resp = c.get(f"/ui/static/{'a' * 301}.css")
+    assert resp.status_code == 404
