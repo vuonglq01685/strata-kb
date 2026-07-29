@@ -41,6 +41,25 @@ def _add_section(fed_hub, repo_id: str, doc_id: str, section: models.SectionEntr
     models.save_yaml_model(manifest_path, manifest)
 
 
+def _append_section_body(
+    fed_hub, repo_id: str, doc_id: str, file: str, sec_id: str, title: str, body: str
+) -> None:
+    """Append a '## <id> <title>' unit to a section's L2 (.md) and L3
+    (.raw.md) files so get_section()/slice_section() can actually resolve
+    content for it.
+
+    _add_section() only appends manifest metadata; sibling sections used to
+    test prev/next pager binding must also exist as real content, otherwise
+    requesting that sibling directly 404s.
+    """
+    for suffix in (".md", ".raw.md"):
+        path = fed_hub / "federation" / repo_id / doc_id / f"{file}{suffix}"
+        path.write_text(
+            path.read_text(encoding="utf-8") + f"\n## {sec_id} {title}\n\n{body}\n",
+            encoding="utf-8",
+        )
+
+
 DEMO_TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |\n| R | Restricted |"
 
 DEMO_L2 = f"""## 1.1 Airspace Records
@@ -557,8 +576,12 @@ def test_section_page_renders_l2_with_table_and_citation(demo_doc_hub):
     assert resp.status_code == 200
     assert "demo-kb:demo-doc §1.1" in resp.text
     assert "<td>Prohibited</td>" in resp.text          # table rendered verbatim
-    assert "level=l3" in resp.text                     # toggle link to L3
-    assert "repo=demo-kb" in resp.text                 # toggle link keeps repo
+    main = _main(resp)
+    assert "level=l3" in main                          # toggle link to L3
+    # scoped to <main> (not resp.text): the left rail also renders repo
+    # metadata on every page, so an unscoped "repo=demo-kb" substring check
+    # would pass even if the level-toggle links themselves dropped ?repo=.
+    assert "level=l3&repo=demo-kb" in main             # toggle link keeps repo
 
 
 def test_section_page_l3(demo_doc_hub):
@@ -566,6 +589,39 @@ def test_section_page_l3(demo_doc_hub):
         "/ui/docs/demo-doc/1.1", params={"level": "l3", "repo": "demo-kb"}
     )
     assert "Full raw text" in resp.text
+
+
+def test_section_page_level_tabs_reflect_active_level(demo_doc_hub):
+    client = _client(demo_doc_hub / ".kb", str(demo_doc_hub))
+
+    main_l2 = _main(client.get("/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}))
+    assert re.search(r'class="on"[^>]*href="[^"]*level=l2', main_l2)
+    assert not re.search(r'class="on"[^>]*level=l3', main_l2)
+
+    main_l3 = _main(
+        client.get("/ui/docs/demo-doc/1.1", params={"level": "l3", "repo": "demo-kb"})
+    )
+    assert re.search(r'class="on"[^>]*href="[^"]*level=l3', main_l3)
+    assert not re.search(r'class="on"[^>]*level=l2', main_l3)
+
+
+def test_section_page_qualified_doc_id_resolves_manifest(demo_doc_hub):
+    # A qualified path doc-id (repo:doc, no ?repo= query) must resolve the
+    # SAME manifest as the plain form. get_section() strips the "repo:"
+    # prefix internally and returns the clean id via result.doc_id, but the
+    # handler used to pass the RAW (still-qualified) doc_id to
+    # api.load_manifest()/the template — manifest lookup silently missed (no
+    # pager, no per-level rail metadata) and the breadcrumb linked to a 404.
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-kb:demo-doc/1.1"
+    )
+    assert resp.status_code == 200
+    # manifest was found -> rail binds real per-level entry.tokens (the
+    # "Tokens L2"/"Tokens L3" rows), not the generic "Tokens (l2)" fallback
+    # used when load_manifest() comes back empty.
+    assert "Tokens L2" in resp.text
+    main = _main(resp)
+    assert '/ui/docs/demo-doc?repo=demo-kb"' in main
 
 
 def test_remote_repo_section_page_returns_200_with_l2_content(fed_hub):
@@ -638,6 +694,29 @@ def test_section_page_prev_next_pager_links_to_siblings(demo_doc_hub):
     assert '<span class="dir">← previous</span>' not in main
 
 
+def test_section_page_prev_link_binds_to_previous_sibling(demo_doc_hub):
+    # test_section_page_prev_next_pager_links_to_siblings only proves the
+    # *next*-link branch (querying the first of 2 sections, which has no
+    # previous sibling). Query the *second* section here so the ← previous
+    # branch actually renders and is bound to the right sibling.
+    _add_section(
+        demo_doc_hub, "demo-kb", "demo-doc",
+        models.SectionEntry(id="1.2", title="Weather Minima", status="pending", file="ch1"),
+    )
+    _append_section_body(
+        demo_doc_hub, "demo-kb", "demo-doc", "ch1", "1.2", "Weather Minima",
+        "Condensed weather minima content.",
+    )
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.2", params={"repo": "demo-kb"}
+    )
+    main = _main(resp)
+    assert '<div class="pager">' in main
+    assert '<span class="dir">← previous</span>' in main
+    assert "§1.1" in main
+    assert "?repo=demo-kb" in main
+
+
 def test_section_page_no_siblings_hides_pager(demo_doc_hub):
     # demo_doc_hub's demo-doc has exactly one section: no prev, no next.
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
@@ -648,6 +727,14 @@ def test_section_page_no_siblings_hides_pager(demo_doc_hub):
 
 
 def test_section_page_rail_shows_status_and_token_counts(demo_doc_hub):
+    # Give L2/L3 distinct, non-zero token counts (make_fed_entry defaults
+    # both to 0) so the assertions prove the rail is bound to the real
+    # per-level values, not just that the row labels are present.
+    manifest_path = demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.sections[0].tokens = models.SectionTokens(l2=42, l3=99)
+    models.save_yaml_model(manifest_path, manifest)
+
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
         "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
     )
@@ -655,6 +742,29 @@ def test_section_page_rail_shows_status_and_token_counts(demo_doc_hub):
     assert 'class="badge badge-summarized"' in text
     assert "Tokens L2" in text
     assert "Tokens L3" in text
+    assert 'Tokens L2</span><span class="v">42</span>' in text
+    assert 'Tokens L3</span><span class="v">99</span>' in text
+
+
+def test_section_page_rail_shows_revision_when_set(demo_doc_hub):
+    manifest_path = demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.revision = "Rev 7"
+    models.save_yaml_model(manifest_path, manifest)
+
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+    )
+    assert '<span>Revision</span><span class="v">Rev 7</span>' in resp.text
+
+
+def test_section_page_rail_hides_revision_when_absent(demo_doc_hub):
+    # demo_doc_hub's fixture manifest defaults to revision="" (make_fed_entry
+    # never sets it) -> the {% if revision %} row must not render at all.
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+    )
+    assert "<span>Revision</span>" not in resp.text
 
 
 def test_static_css(fed_hub):

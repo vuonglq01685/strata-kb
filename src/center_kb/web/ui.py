@@ -297,7 +297,7 @@ def build_routes(
         prev = nxt = entry = None
         revision = ""
         try:
-            found = api.load_manifest(config, doc_id, repo=result.source)
+            found = api.load_manifest(config, result.doc_id, repo=result.source)
         except AmbiguousDocError:
             found = None
         if found is not None:
@@ -310,7 +310,7 @@ def build_routes(
         return _render_page(
             "section.html", config, screen="section",
             title=f"{doc_id} §{section_id}",
-            doc_id=doc_id, section_id=result.section_id, repo=result.source,
+            doc_id=result.doc_id, section_id=result.section_id, repo=result.source,
             level=level, result=result, content_html=md_render(result.content),
             prev=prev, next=nxt, entry=entry, revision=revision,
         )
