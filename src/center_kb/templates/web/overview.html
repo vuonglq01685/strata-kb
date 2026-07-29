@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_partials/status.html" import status %}
+{% block main %}
+<div class="stack-lg">
+  <div class="page-head">
+    <p class="kicker accent">Hub federation</p>
+    <h1>Store overview</h1>
+    <p class="lede">Everything searchable lives in the hub's
+      <span class="mono">federation/</span> mirror. Local
+      <span class="mono">.kb/</span> drafts are never queried.</p>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card"><span class="kicker">Documents</span>
+      <span class="value">{{ stats.docs }}</span>
+      <span class="note">across {{ stats.repos }} repos</span></div>
+    <div class="stat-card"><span class="kicker">Sections</span>
+      <span class="value">{{ stats.sections }}</span>
+      <span class="note">L2 + L3 indexed</span></div>
+    <div class="stat-card"><span class="kicker">L0 catalog</span>
+      <span class="value">{{ stats.l0_tokens }} <span class="note">tk</span></span>
+      <span class="note">whole-store index</span></div>
+    <div class="stat-card accent"><span class="kicker">Saving / lookup</span>
+      <span class="value">≥ 99%</span>
+      <span class="note">vs. loading the full doc</span></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Review queue</h2>
+      <span class="note">{{ pending_total }} sections pending across the store</span>
+      <a class="link" href="/ui/docs">open catalog →</a>
+    </div>
+    {% for item in queue %}
+    <div class="queue-row">
+      <a class="cite" href="/ui/docs/{{ item.doc_id | urlencode }}/{{ item.section_id | urlencode }}?repo={{ item.repo | urlencode }}">{{ item.doc_id }} §{{ item.section_id }}</a>
+      <span class="file">{{ item.title }}</span>
+      {{ status(item.status) }}
+    </div>
+    {% else %}
+    <div class="empty-state"><p>Nothing awaiting review.</p></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+{% block rail %}
+<div class="rail-block">
+  <p class="kicker">Store health</p>
+  <div class="health-item"><span class="dot {{ 'dot-ok' if shell.hub_ok else 'dot-err' }}"></span>hub {{ 'reachable' if shell.hub_ok else 'unreachable' }}</div>
+  <div class="health-item"><span class="dot {{ 'dot-ok' if index_ok else 'dot-err' }}"></span>federation index {{ 'present' if index_ok else 'missing' }}</div>
+  <div class="health-item"><span class="dot {{ 'dot-warn' if pending_total else 'dot-ok' }}"></span>{{ pending_total }} sections pending</div>
+</div>
+<div class="rail-block">
+  <p class="kicker">Last publish</p>
+  {% if publish.commit %}<div class="rail-kv"><span>Commit</span><span class="v">{{ publish.commit }}</span></div>{% endif %}
+  {% if publish.published_at %}<div class="rail-kv"><span>Published</span><span class="v">{{ publish.published_at }}</span></div>{% endif %}
+  {% if publish.repos %}<div class="rail-kv"><span>Repos</span><span class="v">{{ publish.repos | join(', ') }}</span></div>{% endif %}
+  {% if not (publish.commit or publish.repos) %}<div class="rail-kv"><span>—</span><span class="v">no publish data</span></div>{% endif %}
+</div>
+<div class="rail-card accent">
+  <p class="kicker" style="color:#1349a5">Layers</p>
+  <span style="font-size:12px; color:#2c3744">L0 catalog · L1 manifest · L2 summary · L3 original</span>
+</div>
+{% endblock %}

@@ -68,6 +68,26 @@ def demo_doc_hub(fed_hub):
     return fed_hub
 
 
+def test_ui_root_without_query_renders_overview(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui")
+    assert resp.status_code == 200
+    assert "Store overview" in resp.text
+    assert "Review queue" in resp.text
+    assert "Documents" in resp.text  # stat card
+
+
+def test_overview_queue_lists_unreviewed_sections(fed_hub):
+    # fed_hub fixture ships at least one non-reviewed section
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui")
+    assert "badge-pending" in resp.text or "badge-summarized" in resp.text
+
+
+def test_ui_root_hub_down_shows_offline(tmp_path, monkeypatch):
+    resp = _client(tmp_path, str(tmp_path / "nope")).get("/ui")
+    assert resp.status_code == 200
+    assert "hub offline" in resp.text
+
+
 def test_login_page_renders(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/login")
     assert resp.status_code == 200
@@ -133,13 +153,23 @@ def test_home_with_query_renders_results(fed_hub):
 
 
 def test_home_scope_label_is_hub_federation(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui")
+    # Bare /ui now renders the Overview screen (Task 5), which spells this
+    # "Hub federation" (capitalized kicker) rather than the old search
+    # scope label. Route through the search screen (still lowercase) to
+    # preserve the original assertion's intent.
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui", params={"q": "airspace"})
     assert "hub federation" in resp.text
 
 
 def test_home_hub_unreachable_shows_message(tmp_path, monkeypatch):
+    # Bare /ui now renders the Overview screen (Task 5) when the hub is
+    # down, not the old search page's "Hub unreachable." results message.
+    # Route through the search screen to preserve the original intent;
+    # hub-down-on-overview is covered by test_ui_root_hub_down_shows_offline.
     monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
-    resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get("/ui")
+    resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get(
+        "/ui", params={"q": "airspace"}
+    )
     assert resp.status_code == 200
     assert "Hub unreachable" in resp.text
 

@@ -231,9 +231,7 @@ def build_routes(
             templating.render("login.html", error="Invalid token — check for trailing spaces.")
         )
 
-    async def home(request: Request) -> HTMLResponse:
-        q = request.query_params.get("q", "").strip()
-        raw_tags = request.query_params.get("tags", "").strip()
+    async def _search_screen(request: Request, q: str, raw_tags: str) -> HTMLResponse:
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         terms = set(tokenize(q)) if q else set()
         hub = api.hub_handle(config)
@@ -251,6 +249,30 @@ def build_routes(
             q=_e(q), tags=_e(raw_tags), scope=_e(scope), results=results_html
         )
         return _page("Search", body)
+
+    async def home(request: Request) -> HTMLResponse:
+        q = request.query_params.get("q", "").strip()
+        raw_tags = request.query_params.get("tags", "").strip()
+        if q or raw_tags:
+            return await _search_screen(request, q, raw_tags)  # Task 6
+        hub = api.hub_handle(config)
+        if hub is None:
+            return _render_page(
+                "overview.html", config, screen="overview", title="Overview",
+                stats=uidata.StoreStats(0, 0, 0, 0), queue=[], pending_total=0,
+                index_ok=False, publish=uidata.PublishInfo(),
+            )
+        stats = uidata.store_stats(hub)
+        queue = uidata.review_queue(hub)
+        pending_total = sum(
+            1 for v in uidata.status_map(hub).values() if v == "pending"
+        )
+        return _render_page(
+            "overview.html", config, screen="overview", title="Overview",
+            stats=stats, queue=queue, pending_total=pending_total,
+            index_ok=(hub.federation_dir / "index.yaml").exists(),
+            publish=uidata.last_publish(hub),
+        )
 
     async def docs_page(request: Request) -> HTMLResponse:
         cards = _doc_cards(api.list_docs(config) or [])
