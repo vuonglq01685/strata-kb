@@ -1,12 +1,52 @@
-<div class="detail">
-<p class="crumbs"><a href="/ui/docs">Documents</a> / <a href="/ui/docs/$doc_id">$doc_id</a> / §$section_id</p>
-<h1>$title</h1>
-<p class="meta">
-  <code id="citation">$citation</code>
-  <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('citation').textContent)">Copy citation</button>
-  · ~$tokens tokens · level <strong>$level</strong> · $toggle
-</p>
-<article class="content">
-$content
-</article>
+{% extends "base.html" %}
+{% from "_partials/status.html" import status %}
+{% block main %}
+<div class="reader">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/docs">Documents</a> <span class="sep">/</span>
+      <a href="/ui/docs/{{ doc_id | urlencode }}?repo={{ repo | urlencode }}">{{ doc_id }}</a>
+      <span class="sep">/</span> §{{ section_id }}</p>
+    <h1 style="font-size:26px">{{ result.title }}</h1>
+  </div>
+  <div class="level-tabs">
+    <a class="{{ 'on' if level == 'l2' else '' }}"
+       href="/ui/docs/{{ doc_id | urlencode }}/{{ section_id | urlencode }}?level=l2&repo={{ repo | urlencode }}">L2 · summary</a>
+    <a class="{{ 'on' if level == 'l3' else '' }}"
+       href="/ui/docs/{{ doc_id | urlencode }}/{{ section_id | urlencode }}?level=l3&repo={{ repo | urlencode }}">L3 · original</a>
+  </div>
+  <article class="reader-body">{{ content_html | safe }}</article>
+  {% if prev or next %}
+  <div class="pager">
+    {% if prev %}
+    <a href="/ui/docs/{{ doc_id | urlencode }}/{{ prev.id | urlencode }}?repo={{ repo | urlencode }}">
+      <span class="dir">← previous</span><span class="label">§{{ prev.id }} {{ prev.title }}</span></a>
+    {% else %}<span></span>{% endif %}
+    {% if next %}
+    <a class="next" href="/ui/docs/{{ doc_id | urlencode }}/{{ next.id | urlencode }}?repo={{ repo | urlencode }}">
+      <span class="dir">next →</span><span class="label">§{{ next.id }} {{ next.title }}</span></a>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
+{% endblock %}
+{% block rail %}
+<div class="rail-block">
+  <p class="kicker">Citation</p>
+  <div class="cite-box">
+    <code id="citation">{{ result.citation }}</code>
+    <button type="button" data-copy="#citation">Copy citation</button>
+  </div>
+</div>
+<div class="rail-block">
+  <p class="kicker">Metadata</p>
+  {% if entry %}
+  <div class="rail-kv"><span>Status</span><span>{{ status(entry.status) }}</span></div>
+  <div class="rail-kv"><span>Tokens L2</span><span class="v">{{ entry.tokens.l2 }}</span></div>
+  <div class="rail-kv"><span>Tokens L3</span><span class="v">{{ entry.tokens.l3 }}</span></div>
+  {% else %}
+  <div class="rail-kv"><span>Tokens ({{ level }})</span><span class="v">{{ result.tokens }}</span></div>
+  {% endif %}
+  {% if revision %}<div class="rail-kv"><span>Revision</span><span class="v">{{ revision }}</span></div>{% endif %}
+  <div class="rail-kv"><span>Repo</span><span class="v">{{ repo }}</span></div>
+</div>
+{% endblock %}

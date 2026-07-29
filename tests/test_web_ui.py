@@ -598,6 +598,65 @@ def test_section_page_hub_unreachable_returns_503(tmp_path, monkeypatch):
     assert resp.status_code == 503
 
 
+def test_section_page_new_reader_shell(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+    )
+    assert resp.status_code == 200
+    assert "level-tabs" in resp.text
+    assert 'id="citation"' in resp.text
+    assert "level=l3" in resp.text
+
+
+def test_section_page_title_xss_escaped(fed_hub):
+    make_fed_entry(
+        fed_hub / "federation", "demo-kb", "xss-doc",
+        title="<script>alert(1)</script>", tags=[],
+        summary="x", sec_id="1", sec_title="<script>alert(2)</script>",
+        sec_summary="s", l2="## 1 T\n\nbody", l3="## 1 T\n\nbody",
+    )
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/xss-doc/1", params={"repo": "demo-kb"}
+    )
+    assert "<script>alert(2)</script>" not in resp.text
+    assert "&lt;script&gt;" in resp.text
+
+
+def test_section_page_prev_next_pager_links_to_siblings(demo_doc_hub):
+    _add_section(
+        demo_doc_hub, "demo-kb", "demo-doc",
+        models.SectionEntry(id="1.2", title="Next Section", status="pending", file="ch1"),
+    )
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+    )
+    main = _main(resp)
+    assert '<div class="pager">' in main
+    assert 'class="next" href="/ui/docs/demo-doc/1.2?repo=demo-kb"' in main
+    assert "§1.2 Next Section" in main
+    # 1.1 is the first section: no previous sibling, so no previous-link href
+    assert '<span class="dir">← previous</span>' not in main
+
+
+def test_section_page_no_siblings_hides_pager(demo_doc_hub):
+    # demo_doc_hub's demo-doc has exactly one section: no prev, no next.
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+    )
+    main = _main(resp)
+    assert '<div class="pager">' not in main
+
+
+def test_section_page_rail_shows_status_and_token_counts(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+    )
+    text = resp.text
+    assert 'class="badge badge-summarized"' in text
+    assert "Tokens L2" in text
+    assert "Tokens L3" in text
+
+
 def test_static_css(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/static/style.css")
     assert resp.status_code == 200
@@ -708,11 +767,15 @@ def test_static_css_widens_main_and_defines_new_styles(fed_hub):
     assert ".match-semantic" in resp.text
 
 
-def test_section_page_wraps_content_in_detail_container(fed_hub):
+def test_section_page_wraps_content_in_reader_container(fed_hub):
+    # Task 8 (SDD web UI redesign) replaced the legacy string.Template
+    # `<div class="detail">` wrapper with the Jinja reader shell's
+    # `<div class="reader">` / `<article class="reader-body">` markup.
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui/docs/arinc-424/5.3", params={"repo": "arinc-kb"}
     )
-    assert 'class="detail"' in resp.text
+    assert 'class="reader"' in resp.text
+    assert 'class="reader-body"' in resp.text
 
 
 def test_asset_route_serves_png(fed_hub):

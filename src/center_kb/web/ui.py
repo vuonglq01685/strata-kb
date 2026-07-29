@@ -282,34 +282,38 @@ def build_routes(
         repo = request.query_params.get("repo") or None
         hub = api.hub_handle(config)
         if hub is None:
-            return _page("Hub unreachable", HUB_DOWN_PAGE, 503)
+            return _error_page(
+                config, 503, "Hub unreachable",
+                "The federation is the only read source.",
+            )
         try:
             result = get_section(hub, doc_id, section_id, level=level, repo=repo)
         except AmbiguousDocError as exc:
-            return _page("Ambiguous document", f"<h1>400</h1><p>{_e(str(exc))}</p>", 400)
+            return _error_page(config, 400, "Ambiguous document", str(exc))
         if result is None:
-            return _page(
-                "Not found",
-                f"<h1>404</h1><p>{_e(doc_id)} §{_e(section_id)} not found.</p>",
-                404,
+            return _error_page(
+                config, 404, "Not found", f"{doc_id} §{section_id} not found."
             )
-        other = "l3" if level == "l2" else "l2"
-        toggle_href = (
-            f"/ui/docs/{quote(doc_id)}/{quote(section_id)}"
-            f"?level={other}&repo={quote(result.source)}"
+        prev = nxt = entry = None
+        revision = ""
+        try:
+            found = api.load_manifest(config, doc_id, repo=result.source)
+        except AmbiguousDocError:
+            found = None
+        if found is not None:
+            manifest, _ = found
+            revision = manifest.revision
+            prev, nxt = uidata.prev_next(manifest, result.section_id)
+            entry = next(
+                (s for s in manifest.sections if s.id == result.section_id), None
+            )
+        return _render_page(
+            "section.html", config, screen="section",
+            title=f"{doc_id} §{section_id}",
+            doc_id=doc_id, section_id=result.section_id, repo=result.source,
+            level=level, result=result, content_html=md_render(result.content),
+            prev=prev, next=nxt, entry=entry, revision=revision,
         )
-        toggle = f'<a href="{toggle_href}">view {other.upper()}</a>'
-        body = _template("section.html").substitute(
-            doc_id=_e(doc_id),
-            section_id=_e(section_id),
-            title=_e(result.title),
-            citation=_e(result.citation),
-            tokens=str(result.tokens),
-            level=level,
-            toggle=toggle,
-            content=md_render(result.content),
-        )
-        return _page(f"{doc_id} §{section_id}", body)
 
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
     asset_cache: dict[str, Path] = {}
