@@ -193,14 +193,16 @@ def test_home_scope_label_is_hub_federation(fed_hub):
 def test_home_hub_unreachable_shows_message(tmp_path, monkeypatch):
     # Bare /ui now renders the Overview screen (Task 5) when the hub is
     # down, not the old search page's "Hub unreachable." results message.
-    # Route through the search screen to preserve the original intent;
+    # Route through the search screen to preserve the original intent.
+    # Task 6's search.html renders the shared shell (topbar "hub offline"
+    # chip) with an empty result set rather than a dedicated down-message —
     # hub-down-on-overview is covered by test_ui_root_hub_down_shows_offline.
     monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get(
         "/ui", params={"q": "airspace"}
     )
     assert resp.status_code == 200
-    assert "Hub unreachable" in resp.text
+    assert "hub offline" in resp.text
 
 
 def test_tag_only_search_lists_matching_docs(fed_hub):
@@ -224,6 +226,32 @@ def test_search_result_links_to_section_page_with_repo(fed_hub):
         "/ui", params={"q": "restrictive airspace"}
     )
     assert 'href="/ui/docs/arinc-424/5.3?repo=arinc-kb"' in resp.text
+
+
+def test_search_shows_result_card_with_status_and_score(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace"}
+    )
+    assert resp.status_code == 200
+    assert "result-card" in resp.text
+    assert "score-fill" in resp.text
+    assert "badge-" in resp.text          # per-result status badge
+    assert "hub federation" in resp.text  # scope note preserved
+
+
+def test_search_budget_clamped_and_echoed(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace", "budget": "999999"}
+    )
+    assert resp.status_code == 200
+    assert "8000" in resp.text  # clamped to the slider max
+
+
+def test_search_no_results_empty_state(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "zzzznotfound"}
+    )
+    assert "No matching section" in resp.text
 
 
 def test_docs_page_shows_repo_badge(fed_hub):
@@ -347,10 +375,13 @@ def test_tag_only_search_has_no_highlight(fed_hub):
 
 
 def test_home_query_shows_keyword_match_badge(fed_hub):
+    # Task 6 replaced the old .match-badge.match-{mode} pill with the
+    # shared status.html badge styling: class="badge badge-mode", text mode.
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui", params={"q": "airspace designation"}
     )
-    assert 'class="match-badge match-keyword"' in resp.text
+    assert 'class="badge badge-mode"' in resp.text
+    assert ">keyword<" in resp.text
 
 
 def test_result_head_hides_raw_rrf_score(fed_hub):
@@ -360,7 +391,8 @@ def test_result_head_hides_raw_rrf_score(fed_hub):
         "/ui", params={"q": "airspace designation"}
     )
     assert "score 0.0" not in resp.text
-    assert "tk</span>" in resp.text  # token count still shown
+    assert 'class="tk"' in resp.text  # token count still shown
+    assert "score-fill" in resp.text  # relative score still shown as a bar
 
 
 def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch):
@@ -377,10 +409,18 @@ def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch)
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui", params={"q": "airspace designation"}
     )
-    assert 'class="match-badge match-semantic"' in resp.text
+    assert 'class="badge badge-mode"' in resp.text
+    assert ">semantic<" in resp.text
 
 
-def test_home_query_shows_escaped_snippet_when_present(fed_hub, monkeypatch):
+def test_home_query_never_renders_raw_snippet_block(fed_hub, monkeypatch):
+    # Task 6's search.html dropped the separate raw-match "result-snippet"
+    # panel from the old string.Template result blocks — result cards now
+    # only show the rendered (already-escaped, keyword-highlighted) body via
+    # md_render. HTML-escaping of arbitrary content is covered independently
+    # by tests/test_web_mdrender.py; this test preserves the original
+    # intent — a raw <b>GRYPHON42</b> snippet must never leak into the page
+    # unescaped or otherwise — under the new markup.
     from center_kb.query import QueryResult
     from center_kb.web import ui as ui_module
 
@@ -395,10 +435,8 @@ def test_home_query_shows_escaped_snippet_when_present(fed_hub, monkeypatch):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui", params={"q": "airspace designation"}
     )
-    assert 'class="result-snippet"' in resp.text
-    assert "raw match:" in resp.text
-    assert "&lt;b&gt;GRYPHON42&lt;/b&gt;" in resp.text
-    assert "<b>GRYPHON42</b>" not in resp.text
+    assert "result-snippet" not in resp.text
+    assert "GRYPHON42" not in resp.text
 
 
 def test_home_query_hides_snippet_block_when_empty(fed_hub):

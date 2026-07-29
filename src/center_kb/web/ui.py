@@ -33,7 +33,6 @@ from center_kb.web.ratelimit import (
 
 logger = logging.getLogger("center_kb.web.ui")
 
-HUB_DOWN_HTML = '<div class="empty-state"><p>Hub unreachable.</p></div>'
 HUB_DOWN_PAGE = (
     "<h1>503</h1><p>Hub unreachable — the federation is the only read source.</p>"
 )
@@ -75,6 +74,7 @@ def _render_page(
     status: int = 200, q: str = "", **ctx,
 ) -> HTMLResponse:
     shell = _shell_ctx(config, screen, q=q)
+    ctx.setdefault("q", q)
     return HTMLResponse(
         templating.render(template, shell=shell, **ctx), status_code=status
     )
@@ -107,38 +107,6 @@ def _chips(tags: list[str]) -> str:
 
 def _source_badge(source: str) -> str:
     return f'<span class="source-badge source-remote">{_e(source)}</span>'
-
-
-def _match_badge(mode: str) -> str:
-    return f'<span class="match-badge match-{_e(mode)}">{_e(mode)}</span>'
-
-
-def _result_blocks(results, terms: set[str] | None = None) -> str:
-    if not results:
-        return (
-            '<div class="empty-state"><p>No matching section found.</p>'
-            "<p>Try dropping tags or changing keywords.</p></div>"
-        )
-    blocks = []
-    for r in results:
-        href = f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}?repo={quote(r.source)}"
-        blocks.append(
-            '<article class="result">'
-            '<header class="result-head">'
-            f'<a class="cite" href="{href}">{_e(r.citation)}</a>'
-            f"{_source_badge(r.source)}"
-            f"{_match_badge(r.match_mode)}"
-            f'<span class="score">~{r.tokens} tk</span>'
-            "</header>"
-            f'<div class="result-body">{md_render(r.content, terms=terms)}</div>'
-            + (
-                f'<div class="result-snippet">raw match: {_e(r.snippet)}</div>'
-                if r.snippet
-                else ""
-            )
-            + "</article>"
-        )
-    return "\n".join(blocks)
 
 
 def _doc_cards(docs: list[dict]) -> str:
@@ -231,24 +199,57 @@ def build_routes(
             templating.render("login.html", error="Invalid token — check for trailing spaces.")
         )
 
+    def _budget(request: Request) -> int:
+        try:
+            b = int(request.query_params.get("budget", "2000"))
+        except ValueError:
+            b = 2000
+        return max(200, min(b, 8000))
+
     async def _search_screen(request: Request, q: str, raw_tags: str) -> HTMLResponse:
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
-        terms = set(tokenize(q)) if q else set()
         hub = api.hub_handle(config)
-        results_html = ""
         if hub is None:
-            results_html = HUB_DOWN_HTML
-        elif q:
-            results = search(hub, q, tags=tags or None, budget=2000)
-            results_html = _result_blocks(results, terms)
-        elif tags:
+            return _render_page(
+                "search.html", config, screen="search", title="Search", q=q,
+                results=[], budget=_budget(request), active_tags=tags,
+                raw_tags=raw_tags,
+            )
+        if not q and tags:
+            # Task 7 rewrites docs.html as Jinja; until then this stays on
+            # the legacy string.Template render path so the tag-only browse
+            # tests keep passing against the old markup.
             docs = api.list_docs(config) or []
-            results_html = _doc_cards(_match_tags(docs, tags))
-        scope = "hub federation"
-        body = _template("search.html").substitute(
-            q=_e(q), tags=_e(raw_tags), scope=_e(scope), results=results_html
+            body = _template("docs.html").substitute(
+                cards=_doc_cards(_match_tags(docs, tags))
+            )
+            return _page("Documents", body)
+        budget = _budget(request)
+        terms = set(tokenize(q))
+        found = search(hub, q, tags=tags or None, budget=budget)
+        smap = uidata.status_map(hub)
+        top = max((r.score for r in found), default=1.0) or 1.0
+        results = [
+            {
+                "citation": r.citation,
+                "title": r.title,
+                "status": smap.get((r.source, r.doc_id, r.section_id), "pending"),
+                "match_mode": r.match_mode,
+                "tokens": r.tokens,
+                "score_pct": round(100 * r.score / top),
+                "body_html": md_render(r.content, terms=terms),
+                "file": f"{r.doc_id}/{r.section_id}",
+                "href": (
+                    f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
+                    f"?repo={quote(r.source)}"
+                ),
+            }
+            for r in found
+        ]
+        return _render_page(
+            "search.html", config, screen="search", title="Search", q=q,
+            results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
         )
-        return _page("Search", body)
 
     async def home(request: Request) -> HTMLResponse:
         q = request.query_params.get("q", "").strip()
