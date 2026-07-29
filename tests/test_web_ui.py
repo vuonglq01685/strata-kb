@@ -1117,3 +1117,30 @@ def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
     body = resp.body.decode()
     assert "hub offline" in body  # shell chip reflects hub_ok=False
     assert "Not found" in body
+
+
+def test_app_js_ships_interactivity_hooks(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/static/app.js")
+    assert resp.status_code == 200
+    for marker in ("global-search", "data-toggle-card", "data-filter", "data-copy"):
+        assert marker in resp.text
+    # density buttons must stay in sync with aria-pressed, not just the "on" class
+    assert 'setAttribute("aria-pressed"' in resp.text
+
+
+def test_search_page_hides_js_only_controls_without_js(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui", params={"q": "airspace"})
+    assert resp.status_code == 200
+    assert "<noscript>" in resp.text
+    assert "data-toggle-card" in resp.text
+    assert "data-copy-text" in resp.text
+    assert "data-density" in resp.text
+
+
+def test_section_page_hides_copy_button_without_js(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/icao-annex-2/1.1", params={"repo": "icao-kb"}
+    )
+    assert resp.status_code == 200
+    assert "<noscript>" in resp.text
+    assert "data-copy" in resp.text
