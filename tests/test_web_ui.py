@@ -235,8 +235,23 @@ def test_search_shows_result_card_with_status_and_score(demo_doc_hub):
     assert resp.status_code == 200
     assert "result-card" in resp.text
     assert "score-fill" in resp.text
-    assert "badge-" in resp.text          # per-result status badge
+    # fixtures' real manifest status ("summarized") -- pins the
+    # (r.source, r.doc_id, r.section_id) status_map keying, not just the
+    # always-present badge-mode span.
+    assert "badge-summarized" in resp.text
     assert "hub federation" in resp.text  # scope note preserved
+
+
+def test_search_score_normalization_top_card_is_full_width(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace"}
+    )
+    widths = re.findall(r'score-fill" style="width:(\d+)%"', resp.text)
+    assert widths, "expected at least one score-fill bar"
+    assert widths[0] == "100"  # top-scoring result normalizes to full width
+    # fixture yields 100/98/97 -- not every bar should be full width, or the
+    # normalization would be a no-op constant.
+    assert any(w != "100" for w in widths)
 
 
 def test_search_budget_clamped_and_echoed(demo_doc_hub):
@@ -244,7 +259,24 @@ def test_search_budget_clamped_and_echoed(demo_doc_hub):
         "/ui", params={"q": "airspace", "budget": "999999"}
     )
     assert resp.status_code == 200
-    assert "8000" in resp.text  # clamped to the slider max
+    assert re.search(r'name="budget"[^>]*value="8000"', resp.text)
+    assert "budget 8000 tk" in resp.text
+
+
+def test_search_budget_clamped_to_lower_bound(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace", "budget": "50"}
+    )
+    assert resp.status_code == 200
+    assert re.search(r'name="budget"[^>]*value="200"', resp.text)
+
+
+def test_search_budget_invalid_falls_back_to_default(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace", "budget": "abc"}
+    )
+    assert resp.status_code == 200
+    assert re.search(r'name="budget"[^>]*value="2000"', resp.text)
 
 
 def test_search_no_results_empty_state(fed_hub):
@@ -252,6 +284,47 @@ def test_search_no_results_empty_state(fed_hub):
         "/ui", params={"q": "zzzznotfound"}
     )
     assert "No matching section" in resp.text
+
+
+def test_search_budget_form_hidden_field_preserves_query(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace"}
+    )
+    assert 'name="q" value="airspace"' in resp.text
+    assert "Results for “airspace”" in resp.text
+
+
+def test_search_result_shows_token_count(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace"}
+    )
+    assert re.search(r'class="tk">\s*\d+ tk', resp.text)
+
+
+def test_search_hub_down_shows_hub_unreachable_message(tmp_path, monkeypatch):
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get(
+        "/ui", params={"q": "airspace"}
+    )
+    assert resp.status_code == 200
+    assert "Results for" in resp.text
+    assert "Hub unreachable" in resp.text
+    assert "hub offline" in resp.text
+    assert "No matching section" not in resp.text
+
+
+def test_search_density_and_budget_controls_have_a11y_labels(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace"}
+    )
+    assert 'aria-label="Token budget"' in resp.text
+    assert 'role="group" aria-label="Result density"' in resp.text
+    assert re.search(
+        r'data-density-btn="compact" aria-pressed="true"', resp.text
+    )
+    assert re.search(
+        r'data-density-btn="full" aria-pressed="false"', resp.text
+    )
 
 
 def test_docs_page_shows_repo_badge(fed_hub):

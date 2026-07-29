@@ -12,9 +12,9 @@
     {% for t in active_tags %}<span class="chip">{{ t }}</span>{% endfor %}
   </div>
   {% endif %}
-  <div class="seg-row" data-density>
-    <button type="button" class="seg on" data-density-btn="compact">Compact</button>
-    <button type="button" class="seg" data-density-btn="full">Full text</button>
+  <div class="seg-row" data-density role="group" aria-label="Result density">
+    <button type="button" class="seg on" data-density-btn="compact" aria-pressed="true">Compact</button>
+    <button type="button" class="seg" data-density-btn="full" aria-pressed="false">Full text</button>
   </div>
   <div class="stack-md" style="gap:10px">
     {% for r in results %}
@@ -39,8 +39,14 @@
       </footer>
     </article>
     {% else %}
-    <div class="empty-state"><p>No matching section found.</p>
-      <p>Try dropping tags or changing keywords.</p></div>
+    <div class="empty-state">
+      {% if not hub_ok %}
+      <p>Hub unreachable — the federation is the only read source.</p>
+      {% else %}
+      <p>No matching section found.</p>
+      <p>Try dropping tags or changing keywords.</p>
+      {% endif %}
+    </div>
     {% endfor %}
   </div>
 </div>
@@ -53,6 +59,7 @@
     {% if raw_tags %}<input type="hidden" name="tags" value="{{ raw_tags }}">{% endif %}
     <input type="range" name="budget" min="200" max="8000" step="100"
            value="{{ budget }}" style="width:100%; accent-color:#1349a5"
+           aria-label="Token budget"
            onchange="this.form.submit()">
     <div class="rail-kv"><span>200</span><span class="v" style="color:#1349a5">{{ budget }} tk</span><span>8000</span></div>
     <noscript><button type="submit" class="seg" style="margin-top:6px">Apply</button></noscript>

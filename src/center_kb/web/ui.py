@@ -74,7 +74,7 @@ def _render_page(
     status: int = 200, q: str = "", **ctx,
 ) -> HTMLResponse:
     shell = _shell_ctx(config, screen, q=q)
-    ctx.setdefault("q", q)
+    ctx["q"] = q
     return HTMLResponse(
         templating.render(template, shell=shell, **ctx), status_code=status
     )
@@ -213,7 +213,7 @@ def build_routes(
             return _render_page(
                 "search.html", config, screen="search", title="Search", q=q,
                 results=[], budget=_budget(request), active_tags=tags,
-                raw_tags=raw_tags,
+                raw_tags=raw_tags, hub_ok=False,
             )
         if not q and tags:
             # Task 7 rewrites docs.html as Jinja; until then this stays on
@@ -249,6 +249,7 @@ def build_routes(
         return _render_page(
             "search.html", config, screen="search", title="Search", q=q,
             results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
+            hub_ok=True,
         )
 
     async def home(request: Request) -> HTMLResponse:
