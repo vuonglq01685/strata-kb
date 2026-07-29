@@ -1,0 +1,32 @@
+<aside class="rail rail-left">
+  <nav class="nav">
+    <a href="/ui" class="{{ 'active' if shell.screen == 'overview' else '' }}">Overview</a>
+    <a href="/ui?q=" class="{{ 'active' if shell.screen == 'search' else '' }}">Search</a>
+    <a href="/ui/docs" class="{{ 'active' if shell.screen in ('docs', 'doc') else '' }}">Documents</a>
+    {% if shell.screen == 'section' %}<a href="#" class="active">Reader</a>{% endif %}
+  </nav>
+  <div class="rail-group">
+    <p class="kicker">Catalog</p>
+    {% for d in shell.catalog %}
+    <a class="catalog-card" href="/ui/docs/{{ d.id | urlencode }}?repo={{ d.repo | urlencode }}">
+      <span class="row"><span class="name">{{ d.title }}</span>
+        <span class="rev">{{ d.revision }}</span>
+        <span class="count">{{ d.total }}</span></span>
+      <span class="track"><span class="fill" style="width:{{ d.done_pct }}%"></span></span>
+      <span class="sub">{{ d.summarized + d.reviewed }} summarized · {{ d.pending }} pending</span>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="rail-group">
+    <p class="kicker">Tags</p>
+    <div class="tag-cloud">
+      {% for t in shell.tags %}<a class="chip" href="/ui?tags={{ t | urlencode }}">{{ t }}</a>{% endfor %}
+    </div>
+  </div>
+  <div class="legend">
+    <p class="kicker">Review status</p>
+    <span class="item"><span class="sw" style="background:#92600a"></span>pending — needs a summary</span>
+    <span class="item"><span class="sw" style="background:#1349a5"></span>summarized — awaiting SME</span>
+    <span class="item"><span class="sw" style="background:#1a6e3c"></span>reviewed — signed off</span>
+  </div>
+</aside>

@@ -22,7 +22,7 @@ from center_kb import assetstore
 from center_kb import hub as hub_mod
 from center_kb.mcp import ServerConfig
 from center_kb.query import AmbiguousDocError, get_section, search, tokenize
-from center_kb.web import api
+from center_kb.web import api, templating, uidata
 from center_kb.web.auth import COOKIE_NAME
 from center_kb.web.mdrender import render as md_render
 from center_kb.web.ratelimit import (
@@ -49,8 +49,44 @@ def _template(name: str) -> Template:
 
 
 def _page(title: str, body: str, status: int = 200) -> HTMLResponse:
-    doc = _template("base.html").substitute(title=html.escape(title), body=body)
+    # Screens not yet converted to the Jinja shell (search/docs/doc/section —
+    # see Tasks 5-8) render against this frozen copy of the pre-Task-4
+    # base.html, since the real base.html is now a Jinja template (`{{ }}` /
+    # `{% %}`) that string.Template's `$identifier` substitution can't fill.
+    doc = _template("_legacy_base.html").substitute(title=html.escape(title), body=body)
     return HTMLResponse(doc, status_code=status)
+
+
+def _shell_ctx(config: ServerConfig, screen: str, q: str = "") -> dict:
+    hub = api.hub_handle(config)
+    if hub is None:
+        return {"screen": screen, "hub_ok": False, "q": q,
+                "repo_count": 0, "catalog": [], "tags": []}
+    return {
+        "screen": screen, "hub_ok": True, "q": q,
+        "repo_count": uidata.store_stats(hub).repos,
+        "catalog": uidata.catalog(hub),
+        "tags": uidata.all_tags(hub),
+    }
+
+
+def _render_page(
+    template: str, config: ServerConfig, screen: str,
+    status: int = 200, q: str = "", **ctx,
+) -> HTMLResponse:
+    shell = _shell_ctx(config, screen, q=q)
+    return HTMLResponse(
+        templating.render(template, shell=shell, **ctx), status_code=status
+    )
+
+
+def _error_page(
+    config: ServerConfig, code: int, heading: str, message: str
+) -> HTMLResponse:
+    return _render_page(
+        "error.html", config, screen="", status=code,
+        title=heading, code=str(code), heading=heading, message=message,
+    )
 
 
 def _e(text: str) -> str:
@@ -169,8 +205,7 @@ def build_routes(
     )
 
     async def login_get(request: Request) -> HTMLResponse:
-        body = _template("login.html").substitute(error="")
-        return _page("Sign in", body)
+        return HTMLResponse(templating.render("login.html", error=""))
 
     async def login_post(request: Request) -> Response:
         client_ip = request.client.host if request.client else "unknown"
@@ -178,10 +213,12 @@ def build_routes(
         # a hit inside the lockout window.
         if not limiter.allow(client_ip):
             logger.warning("login rate-limited for %s", client_ip)
-            body = _template("login.html").substitute(
-                error='<p class="error">Too many attempts — try again later.</p>'
+            return HTMLResponse(
+                templating.render(
+                    "login.html", error="Too many attempts — try again later."
+                ),
+                status_code=429,
             )
-            return _page("Sign in", body, status=429)
         form = await request.form()
         submitted = str(form.get("token", ""))
         if hmac.compare_digest(submitted, token):
@@ -190,10 +227,9 @@ def build_routes(
             return resp
         # never log the submitted value — it may be a near-miss of the token
         logger.warning("failed login attempt from %s", client_ip)
-        body = _template("login.html").substitute(
-            error='<p class="error">Invalid token.</p>'
+        return HTMLResponse(
+            templating.render("login.html", error="Invalid token — check for trailing spaces.")
         )
-        return _page("Sign in", body)
 
     async def home(request: Request) -> HTMLResponse:
         q = request.query_params.get("q", "").strip()

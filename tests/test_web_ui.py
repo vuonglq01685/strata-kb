@@ -560,3 +560,19 @@ def test_static_handles_name_too_long_as_404(fed_hub):
     c = _client(fed_hub / ".kb", str(fed_hub))
     resp = c.get(f"/ui/static/{'a' * 301}.css")
     assert resp.status_code == 404
+
+
+def test_login_page_is_standalone_no_catalog_leak(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/login")
+    assert resp.status_code == 200
+    assert 'name="token"' in resp.text
+    assert "Demo Document" not in resp.text  # no rail on the login page
+
+
+@pytest.mark.xfail(reason="docs.html converts in Task 7", strict=True)
+def test_shell_header_and_left_rail_on_docs_page(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/docs")
+    assert resp.status_code == 200
+    assert "hub online" in resp.text
+    assert 'id="global-search"' in resp.text
+    assert "Demo Document" in resp.text  # catalog card in left rail

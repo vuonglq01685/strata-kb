@@ -3,20 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>$title — CENTER-KB</title>
+<title>{{ title }} — CENTER-KB</title>
 <link rel="stylesheet" href="/ui/static/style.css">
+<script src="/ui/static/app.js" defer></script>
 </head>
 <body>
+<div class="shell">
 <header class="topbar">
-  <a class="brand" href="/ui">CENTER<span class="brand-sep">·</span>KB</a>
-  <nav>
-    <a href="/ui">Search</a>
-    <a href="/ui/docs">Browse</a>
-  </nav>
+  <a class="brand" href="/ui"><span class="brand-mark">KB</span>CENTER<span class="brand-dot">·</span>KB</a>
+  <form class="topbar-search" method="get" action="/ui">
+    <input type="search" id="global-search" name="q" value="{{ shell.q }}"
+           placeholder="Search sections, fields, codes…  ⌘K">
+  </form>
+  <div class="topbar-status">
+    {% if shell.hub_ok %}
+    <span class="hub-chip hub-online"><span class="dot"></span>hub online</span>
+    {% else %}
+    <span class="hub-chip hub-offline"><span class="dot"></span>hub offline</span>
+    {% endif %}
+    <span class="topbar-fed">federation · {{ shell.repo_count }} repos</span>
+  </div>
 </header>
-<main>
-$body
-</main>
-<footer class="foot">Knowledge Base as Code — L0 → L3</footer>
+<div class="columns">
+  {% include "_partials/left_rail.html" %}
+  <main class="content">{% block main %}{% endblock %}</main>
+  <aside class="rail rail-right">{% block rail %}{% endblock %}</aside>
+</div>
+</div>
 </body>
 </html>
