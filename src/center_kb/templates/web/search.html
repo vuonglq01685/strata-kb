@@ -31,7 +31,7 @@
       <h2>{{ r.title }}</h2>
       <div class="body">{{ r.body_html | safe }}</div>
       <footer>
-        <button type="button" data-toggle-card>expand</button>
+        <button type="button" data-toggle-card aria-expanded="false">expand</button>
         <span class="sep">|</span>
         <button type="button" data-copy-text="{{ r.citation }}">copy citation</button>
         <span class="sep">|</span>

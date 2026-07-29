@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% from "_partials/status.html" import status %}
 {% block main %}
-<noscript><style>[data-copy] { display:none }</style></noscript>
 <div class="reader">
   <div class="page-head">
     <p class="crumbs"><a href="/ui/docs">Documents</a> <span class="sep">/</span>
@@ -35,6 +34,7 @@
   <p class="kicker">Citation</p>
   <div class="cite-box">
     <code id="citation">{{ result.citation }}</code>
+    <noscript><style>[data-copy] { display:none }</style></noscript>
     <button type="button" data-copy="#citation">Copy citation</button>
   </div>
 </div>

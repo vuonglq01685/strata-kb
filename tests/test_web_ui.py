@@ -377,6 +377,8 @@ def test_search_density_and_budget_controls_have_a11y_labels(demo_doc_hub):
     assert re.search(
         r'data-density-btn="full" aria-pressed="false"', resp.text
     )
+    # expand/collapse toggle buttons start collapsed -> aria-expanded="false"
+    assert re.search(r'data-toggle-card aria-expanded="false"', resp.text)
 
 
 def test_docs_page_shows_repo_badge(fed_hub):
@@ -526,6 +528,28 @@ def test_doc_page_row_data_text_is_lowercased(demo_doc_hub):
     assert match.group(1) == (
         "1.1 airspace records airspace record structure: designation, type, level."
     )
+
+
+def test_doc_page_shown_label_carries_true_total(demo_doc_hub):
+    # data-total must reflect the manifest's true section count (server-side),
+    # since the JS filter uses it as the "N of M shown" denominator and the
+    # visible <span data-row> count in the DOM can be a server-filtered
+    # subset that doesn't match the real total.
+    _add_section(
+        demo_doc_hub, "demo-kb", "demo-doc",
+        models.SectionEntry(
+            id="2.1", title="Weather Minima",
+            summary="Ceiling and visibility limits.",
+            status="reviewed", file="ch1",
+        ),
+    )
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb", "status": "summarized"}
+    )
+    assert resp.status_code == 200
+    main = _main(resp)
+    assert 'data-total="2"' in main
+    assert main.count("data-row") == 1  # server-side filter still narrows the rows
 
 
 def test_doc_page_filter_form_has_hidden_repo_field(demo_doc_hub):
@@ -1126,6 +1150,15 @@ def test_app_js_ships_interactivity_hooks(fed_hub):
         assert marker in resp.text
     # density buttons must stay in sync with aria-pressed, not just the "on" class
     assert 'setAttribute("aria-pressed"' in resp.text
+    # clipboard.writeText must be feature-detected before use (undefined on
+    # non-localhost http:// origins) and failures must surface visibly
+    # instead of dying silently
+    assert "navigator.clipboard?.writeText" in resp.text
+    assert "copy failed" in resp.text
+    # server-filtered doc pages (?status=/?filter=) must fall back to a real
+    # form submit instead of a client-side filter that can't see rows the
+    # server never sent
+    assert "URLSearchParams" in resp.text
 
 
 def test_search_page_hides_js_only_controls_without_js(fed_hub):

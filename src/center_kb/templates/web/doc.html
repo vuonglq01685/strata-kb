@@ -23,7 +23,7 @@
               data-status-btn="{{ s }}">{{ s | capitalize }}</button>
       {% endfor %}
     </div>
-    <span class="shown" data-shown>{{ rows | length }} of {{ manifest.sections | length }} shown</span>
+    <span class="shown" data-shown data-total="{{ manifest.sections | length }}">{{ rows | length }} of {{ manifest.sections | length }} shown</span>
   </form>
   <div class="panel sec-table">
     <div class="sec-grid head">
