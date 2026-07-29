@@ -124,3 +124,17 @@ def test_get_section_prefix_picks_longest_parent(fed_hub):
     hub = HubHandle(root=fed_hub)
     r = get_section(hub, "arinc-424", "5.3.1", level="l3")
     assert r is not None and "Torque 12 Nm" in r.content
+
+
+def test_get_section_nested_qualifier(tmp_path):
+    from center_kb.hub import HubHandle
+    from center_kb.query import get_section
+    from tests.conftest import make_fed_entry
+
+    hub_root = tmp_path / "hub"
+    make_fed_entry(hub_root / "federation" / "mid", "repo-x", "doc-x")
+    handle = HubHandle(root=hub_root)
+    r = get_section(handle, "mid/repo-x:doc-x", "1.1")
+    assert r is not None
+    assert r.source == "mid/repo-x"
+    assert r.citation.startswith("mid/repo-x:doc-x §1.1")
