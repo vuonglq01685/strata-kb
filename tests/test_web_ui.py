@@ -347,6 +347,16 @@ def test_home_query_hides_snippet_block_when_empty(fed_hub):
     assert "result-snippet" not in resp.text
 
 
+@pytest.mark.xfail(
+    reason=(
+        "style.css was rewritten to the design-token stylesheet in Task 3 "
+        "(SDD web UI redesign); the old selectors it asserted "
+        "(.detail, mark {}, .match-keyword, .match-semantic, 76rem max-width) "
+        "were removed. Task 4+ must update these assertions to match the new "
+        "markup/CSS or remove this test once the corresponding screens are rewritten."
+    ),
+    strict=True,
+)
 def test_static_css_widens_main_and_defines_new_styles(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/static/style.css")
     assert "max-width: 76rem" in resp.text
@@ -479,3 +489,27 @@ def test_asset_route_no_store_behaves_as_before(fed_hub):
     assert (
         client.get(f"/assets/{'7' * 64}.png", headers=AUTH_HEADERS).status_code == 404
     )
+
+
+def test_static_css_served_with_content_type(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/static/style.css")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/css")
+    assert "--accent" in resp.text
+
+
+def test_static_js_and_font_served(fed_hub):
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    js = c.get("/ui/static/app.js")
+    assert js.status_code == 200
+    assert js.headers["content-type"].startswith("text/javascript")
+    font = c.get("/ui/static/fonts/IBMPlexSans-Regular.woff2")
+    assert font.status_code == 200
+    assert font.headers["content-type"] == "font/woff2"
+    assert font.content[:4] == b"wOF2"
+
+
+def test_static_rejects_traversal_and_unknown_types(fed_hub):
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    assert c.get("/ui/static/../ui.py").status_code == 404
+    assert c.get("/ui/static/fonts/x.ttf").status_code == 404

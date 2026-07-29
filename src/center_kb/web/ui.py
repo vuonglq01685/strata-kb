@@ -136,6 +136,25 @@ def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
     ]
 
 
+STATIC_TYPES = {".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2"}
+
+
+async def static_file(request: Request) -> Response:
+    name = request.path_params["path"]
+    suffix = Path(name).suffix
+    media = STATIC_TYPES.get(suffix)
+    if media is None or ".." in name or name.startswith("/"):
+        return Response("not found", status_code=404)
+    target = resources.files("center_kb").joinpath("templates/web/static").joinpath(name)
+    if not target.is_file():
+        return Response("not found", status_code=404)
+    data = await run_in_threadpool(target.read_bytes)
+    return Response(
+        data, media_type=media,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 def build_routes(
     config: ServerConfig, token: str, store_factory=None, login_limiter=None
 ) -> list[Route]:
@@ -262,14 +281,6 @@ def build_routes(
         )
         return _page(f"{doc_id} §{section_id}", body)
 
-    async def static_css(request: Request) -> Response:
-        css = (
-            resources.files("center_kb")
-            .joinpath("templates/web/style.css")
-            .read_text(encoding="utf-8")
-        )
-        return Response(css, media_type="text/css")
-
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
     asset_cache: dict[str, Path] = {}
 
@@ -359,6 +370,6 @@ def build_routes(
         Route("/ui/docs", docs_page, methods=["GET"]),
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),
         Route("/ui/docs/{doc}/{section}", section_page, methods=["GET"]),
-        Route("/ui/static/style.css", static_css, methods=["GET"]),
+        Route("/ui/static/{path:path}", static_file, methods=["GET"]),
         Route("/assets/{name}", asset, methods=["GET"]),
     ]
