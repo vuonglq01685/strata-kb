@@ -252,7 +252,11 @@ def build_routes(
         if found is None:
             return _error_page(config, 404, "Not found", f"Unknown doc '{doc_id}'.")
         manifest, rid = found
-        filter_q = request.query_params.get("filter", "").strip().lower()
+        # filter_raw preserves the caller's original casing for echoing back
+        # into the filter input's value= attribute; filter_q is the lowered
+        # form used for the (case-insensitive) row match below.
+        filter_raw = request.query_params.get("filter", "").strip()
+        filter_q = filter_raw.lower()
         status_q = request.query_params.get("status", "all")
         if status_q not in ("all", "pending", "summarized", "reviewed"):
             status_q = "all"
@@ -266,7 +270,7 @@ def build_routes(
             "doc.html", config, screen="doc", title=manifest.title,
             doc_id=doc_id, manifest=manifest, rid=rid, rows=rows,
             coverage=uidata.doc_coverage(manifest),
-            filter_q=filter_q, status_q=status_q, files=files,
+            filter_q=filter_raw, status_q=status_q, files=files,
         )
 
     async def section_page(request: Request) -> HTMLResponse:

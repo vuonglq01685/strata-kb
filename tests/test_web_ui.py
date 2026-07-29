@@ -5,7 +5,7 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from center_kb import assetstore
+from center_kb import assetstore, models
 from center_kb.mcp import ServerConfig
 from center_kb.web import ui
 from center_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
@@ -13,6 +13,33 @@ from tests.conftest import make_fed_entry
 
 TOKEN = "secret-token"
 AUTH_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+
+
+def _main(resp) -> str:
+    """Slice the <main> content out of a shell page, excluding the rails.
+
+    The shell's left rail renders a catalog card per doc, tag chips, and a
+    status legend on every page (see base.html/_partials/left_rail.html),
+    which can shadow assertions meant to target the main content only.
+    """
+    text = resp.text
+    start = text.index('<main class="content">')
+    return text[start : text.index("</main>", start)]
+
+
+def _add_section(fed_hub, repo_id: str, doc_id: str, section: models.SectionEntry) -> None:
+    """Append a second section to an existing make_fed_entry manifest.
+
+    make_fed_entry always writes exactly one section; several doc-page tests
+    need a manifest with 2+ sections to prove server-side filtering actually
+    excludes non-matching rows (rather than trivially passing because the
+    manifest only ever had one row to begin with).
+    """
+    manifest_path = fed_hub / "federation" / repo_id / doc_id / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.sections.append(section)
+    models.save_yaml_model(manifest_path, manifest)
+
 
 DEMO_TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |\n| R | Restricted |"
 
@@ -339,15 +366,21 @@ def test_docs_page_shows_repo_badge(fed_hub):
 
 
 def test_docs_page_doc_links_carry_repo_param(fed_hub):
+    # The left rail's catalog cards also link to /ui/docs/{id}?repo=..., so
+    # scope the assertion to <main> to pin the doc-card links specifically.
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs")
-    assert 'href="/ui/docs/arinc-424?repo=arinc-kb"' in resp.text
-    assert 'href="/ui/docs/icao-annex-2?repo=icao-kb"' in resp.text
+    main = _main(resp)
+    assert 'href="/ui/docs/arinc-424?repo=arinc-kb"' in main
+    assert 'href="/ui/docs/icao-annex-2?repo=icao-kb"' in main
 
 
 def test_docs_page_renders_tag_chips(fed_hub):
+    # The left rail also renders a tag cloud of chips for every known tag;
+    # scope to <main> so this pins the doc-card chip rendering specifically.
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs")
-    assert 'class="chip' in resp.text
-    assert "airspace" in resp.text
+    main = _main(resp)
+    assert 'class="chip' in main
+    assert "airspace" in main
 
 
 def test_docs_page_lists_docs(demo_doc_hub):
@@ -357,11 +390,16 @@ def test_docs_page_lists_docs(demo_doc_hub):
 
 
 def test_doc_page_lists_sections_with_status(demo_doc_hub):
+    # The left rail's legend spells out "summarized — awaiting SME" on every
+    # page regardless of this doc's actual section statuses, so a bare
+    # "summarized" in resp.text substring check is trivially true. Scope to
+    # <main> and assert the actual status-badge class the section row emits.
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
         "/ui/docs/demo-doc", params={"repo": "demo-kb"}
     )
-    assert "Airspace Records" in resp.text
-    assert "summarized" in resp.text
+    main = _main(resp)
+    assert "Airspace Records" in main
+    assert "badge-summarized" in main
 
 
 def test_doc_page_section_links_carry_repo_param(fed_hub):
@@ -384,14 +422,107 @@ def test_doc_page_ambiguous_returns_400(fed_hub):
     assert "dup-kb:arinc-424" in resp.text
 
 
-def test_doc_page_rows_carry_data_attrs_and_tokens(demo_doc_hub):
+def test_doc_page_rows_carry_data_attrs_and_token_count(demo_doc_hub):
+    # Directly set a non-zero, distinctive L2 token count on the fixture
+    # section (make_fed_entry never sets `tokens`, so it defaults to 0 —
+    # asserting "0" alone wouldn't prove the tk cell is bound to real data).
+    manifest_path = demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.sections[0].tokens = models.SectionTokens(l2=137, l3=0)
+    models.save_yaml_model(manifest_path, manifest)
+
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
         "/ui/docs/demo-doc", params={"repo": "demo-kb"}
     )
     assert resp.status_code == 200
-    assert "data-row" in resp.text
-    assert "data-status=" in resp.text
-    assert "sec-grid" in resp.text
+    main = _main(resp)
+    assert "data-row" in main
+    assert "data-status=" in main
+    assert "sec-grid" in main
+    assert 'class="tk">137</span>' in main
+
+
+def test_doc_page_server_side_filter_matches_case_insensitively(demo_doc_hub):
+    _add_section(
+        demo_doc_hub, "demo-kb", "demo-doc",
+        models.SectionEntry(
+            id="2.1", title="Weather Minima",
+            summary="Ceiling and visibility limits.",
+            status="summarized", file="ch1",
+        ),
+    )
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb", "filter": "AIRSPACE"}
+    )
+    assert resp.status_code == 200
+    main = _main(resp)
+    assert main.count("data-row") == 1
+    assert "Airspace Records" in main
+    assert "Weather Minima" not in main
+
+
+def test_doc_page_bogus_status_falls_back_to_all(demo_doc_hub):
+    _add_section(
+        demo_doc_hub, "demo-kb", "demo-doc",
+        models.SectionEntry(
+            id="2.1", title="Weather Minima",
+            summary="Ceiling and visibility limits.",
+            status="reviewed", file="ch1",
+        ),
+    )
+    client = _client(demo_doc_hub / ".kb", str(demo_doc_hub))
+    resp_all = client.get("/ui/docs/demo-doc", params={"repo": "demo-kb"})
+    resp_bogus = client.get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb", "status": "bogus"}
+    )
+    assert resp_bogus.status_code == 200
+    all_rows = _main(resp_all).count("data-row")
+    assert all_rows == 2  # sanity: both fixture sections present with no filter
+    assert _main(resp_bogus).count("data-row") == all_rows
+
+
+def test_doc_page_rail_binds_coverage_and_files(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb"}
+    )
+    assert resp.status_code == 200
+    # demo_doc_hub's single fixture section defaults to status="summarized"
+    # (make_fed_entry's default) -> reviewed 0/1, summarized 1/1.
+    assert re.search(r'<span>reviewed</span><span class="v">0 / 1</span>', resp.text)
+    assert re.search(r'<span>summarized</span><span class="v">1 / 1</span>', resp.text)
+    assert "_manifest.yaml" in resp.text
+    assert "ch1" in resp.text  # section file name from the manifest
+
+
+def test_doc_page_row_data_text_is_lowercased(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb"}
+    )
+    assert resp.status_code == 200
+    match = re.search(r'data-text="([^"]*)"', resp.text)
+    assert match, "expected a data-text attribute on the section row"
+    assert match.group(1) == (
+        "1.1 airspace records airspace record structure: designation, type, level."
+    )
+
+
+def test_doc_page_filter_form_has_hidden_repo_field(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb"}
+    )
+    assert resp.status_code == 200
+    assert '<input type="hidden" name="repo" value="demo-kb">' in resp.text
+
+
+def test_doc_page_filter_input_echoes_raw_case(demo_doc_hub):
+    # Matching is case-insensitive, but the input's value= must echo back
+    # exactly what the user typed, not the lowercased form used to match.
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb", "filter": "AIRSPACE"}
+    )
+    assert resp.status_code == 200
+    assert 'value="AIRSPACE"' in resp.text
+    assert 'value="airspace"' not in resp.text
 
 
 def test_doc_page_server_side_status_filter(demo_doc_hub):
@@ -401,14 +532,19 @@ def test_doc_page_server_side_status_filter(demo_doc_hub):
     assert resp.status_code == 200
     # demo_doc_hub's fixture section defaults to status="summarized"
     # (make_fed_entry's default) -> filtered out server-side by "reviewed".
-    assert "No section matches" in resp.text or "data-row" not in resp.text
+    main = _main(resp)
+    assert "data-row" not in main
+    assert "No section matches that filter." in main
 
 
 def test_docs_page_cards_show_repo_and_tags(demo_doc_hub):
+    # The left rail's catalog-card href also embeds the repo id
+    # ("?repo=demo-kb"), so scope to <main> to pin the doc-card body text.
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/docs")
-    assert "doc-card" in resp.text
-    assert "demo-kb" in resp.text
-    assert "chip" in resp.text
+    main = _main(resp)
+    assert "doc-card" in main
+    assert "demo-kb" in main
+    assert "chip" in main
 
 
 def test_section_page_renders_l2_with_table_and_citation(demo_doc_hub):
