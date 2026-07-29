@@ -136,6 +136,43 @@ def _snapshot(
     return len(local_index.docs), True
 
 
+_FED_TOP_EXCLUDE = ("index.yaml", "registry.yaml", ".gitkeep")
+
+
+def _snapshot_federation(
+    fed_src: Path,
+    handle: hub_mod.HubHandle,
+    rid: str,
+    source_commit: str,
+    source_url: str | None = None,
+    store=None,
+) -> tuple[int, bool]:
+    """Sync federation/ (hub trung gian) → federation/<rid>/ trên hub cấp trên.
+
+    Khác _snapshot: nguồn là cả cây federation (leaf entries lồng nhau, mỗi leaf
+    tự mang _meta.yaml); index.yaml/registry.yaml tầng đỉnh là sản phẩm riêng
+    của hub nguồn — không đẩy; KHÔNG viết _meta.yaml ở gốc đích (gốc entry hub
+    là namespace, không phải leaf — walk đệ quy phải đi xuyên qua nó).
+    Assets (kể cả record S3-divert _assets.yaml) mirror verbatim.
+    """
+    from center_kb import hashsync
+
+    dest = handle.federation_dir / rid
+    fed_root = handle.federation_dir.resolve()
+    if not dest.resolve().is_relative_to(fed_root):
+        raise PublishError(
+            f"repo-id '{rid}' escapes the federation/ directory on the hub — refusing to publish"
+        )
+    n_docs = len(federation.build_federation_index(fed_src).docs)
+    src_man = hashsync.build_manifest(fed_src, exclude=_FED_TOP_EXCLUDE)
+    dest_man = hashsync.build_manifest(dest)
+    changed, deleted = hashsync.diff_manifests(src_man, dest_man)
+    if not changed and not deleted:
+        return n_docs, False
+    hashsync.apply_sync(fed_src, dest, changed, deleted)
+    return n_docs, True
+
+
 def warn_legacy_ids(kb_dir: Path) -> list[str]:
     """x{n} ids are the opaque fallback of the old CLI (< 2debcbc) or of headings
     that could not be slugged — warn so the repo re-ingests with the new CLI.
@@ -223,8 +260,9 @@ def _publish_direct(
     rid: str,
     source_commit: str,
     max_retries: int,
+    snapshot_fn=_snapshot,
 ) -> PublishReport:
-    n_docs, changed = _snapshot(kb_abs, handle, rid, source_commit)
+    n_docs, changed = snapshot_fn(kb_abs, handle, rid, source_commit)
     # Commit the <rid>/ mirror on its own path first — rebasing this against
     # a concurrent publisher's commit never conflicts (disjoint paths), even
     # when both are populating federation/ for the very first time.
@@ -254,7 +292,11 @@ def _publish_direct(
 
 
 def _publish_pr(
-    kb_abs: Path, handle: hub_mod.HubHandle, rid: str, source_commit: str
+    kb_abs: Path,
+    handle: hub_mod.HubHandle,
+    rid: str,
+    source_commit: str,
+    snapshot_fn=_snapshot,
 ) -> PublishReport:
     if not ghio.gh_available():
         raise PublishError(
@@ -265,7 +307,7 @@ def _publish_pr(
     original = gitio.current_branch(handle.root)
     try:
         gitio.checkout_branch(handle.root, branch, original)
-        n_docs, changed = _snapshot(kb_abs, handle, rid, source_commit)
+        n_docs, changed = snapshot_fn(kb_abs, handle, rid, source_commit)
         federation.write_federation_index(handle.federation_dir)
         committed = gitio.commit_paths(
             handle.root, f"publish: {rid} @ {source_commit}", ["federation"]
