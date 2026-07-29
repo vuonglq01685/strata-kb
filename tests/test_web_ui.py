@@ -227,6 +227,43 @@ def test_home_with_query_renders_results(fed_hub):
     assert "§1.1" in resp.text
 
 
+def test_home_bare_q_param_renders_search_screen(demo_doc_hub):
+    # The left rail's nav "Search" link points at "/ui?q=" (an empty but
+    # PRESENT q param) so it lands on the search screen rather than the
+    # overview -- and search() must not be asked to match on "".
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui", params={"q": ""})
+    assert resp.status_code == 200
+    assert "Results for" in resp.text
+    assert "Store overview" not in resp.text
+
+
+def test_home_no_params_renders_overview(demo_doc_hub):
+    # A bare /ui (q param entirely absent, not just empty) still renders the
+    # overview -- proves the dispatch checks for presence, not truthiness.
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui")
+    assert resp.status_code == 200
+    assert "Store overview" in resp.text
+
+
+def test_topbar_form_preserves_tags_and_budget_on_search(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui", params={"q": "airspace", "tags": "demo", "budget": "3000"}
+    )
+    assert resp.status_code == 200
+    assert '<input type="hidden" name="tags" value="demo">' in resp.text
+    assert '<input type="hidden" name="budget" value="3000">' in resp.text
+
+
+def test_topbar_form_has_no_hidden_tags_budget_on_overview(demo_doc_hub):
+    # Overview (and other non-search screens) pass no raw_tags/budget to
+    # _render_page, so the shell defaults stay falsy and the topbar form
+    # must not carry stale/empty hidden fields.
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui")
+    assert resp.status_code == 200
+    assert 'name="tags"' not in resp.text
+    assert 'name="budget"' not in resp.text
+
+
 def test_home_scope_label_is_hub_federation(fed_hub):
     # Bare /ui now renders the Overview screen (Task 5), which spells this
     # "Hub federation" (capitalized kicker) rather than the old search
@@ -571,6 +608,25 @@ def test_doc_page_filter_input_echoes_raw_case(demo_doc_hub):
     assert 'value="airspace"' not in resp.text
 
 
+def test_doc_page_status_hidden_field_precedes_buttons_and_marks_active(demo_doc_hub):
+    # The hidden #status field only helps the JS requestSubmit() path (see
+    # app.js): it must render BEFORE the status buttons in source order so
+    # duplicate-key GET params still resolve to the (later) button's own
+    # value on a real click / no-JS submit. Also pin that the server marks
+    # the active status button with aria-pressed="true", not just the "on"
+    # class.
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb", "status": "reviewed"}
+    )
+    assert resp.status_code == 200
+    text = resp.text
+    hidden_idx = text.index('<input type="hidden" name="status"')
+    first_btn_idx = text.index("data-status-btn")
+    assert hidden_idx < first_btn_idx
+    assert re.search(r'data-status-btn="reviewed"\s+aria-pressed="true"', text)
+    assert re.search(r'data-status-btn="all"\s+aria-pressed="false"', text)
+
+
 def test_doc_page_server_side_status_filter(demo_doc_hub):
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
         "/ui/docs/demo-doc", params={"repo": "demo-kb", "status": "reviewed"}
@@ -883,8 +939,10 @@ def test_static_css_widens_main_and_defines_new_styles(fed_hub):
     # the old single-column `.detail` wrapper is gone — the redesign widens
     # the reading area via the shell's 3-column grid instead of a max-width
     assert "grid-template-columns: 248px minmax(0,1fr) 292px" in resp.text
-    # keyword-highlight rule (previously asserted with no test protecting it)
-    assert "mark {" in resp.text
+    # keyword-highlight rule (previously asserted with no test protecting it).
+    # Anchored to line-start so a substring like ".brand-mark {" can't
+    # trivially satisfy this the way a bare "mark {" in resp.text would.
+    assert re.search(r"^mark\s*\{", resp.text, re.M)
     # design tokens from the approved redesign mock
     assert "--accent: #1349a5" in resp.text
     assert "--r-md: 8px" in resp.text
@@ -1130,6 +1188,7 @@ def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
     body = resp.body.decode()
     assert "hub offline" in body  # shell chip reflects hub_ok=False
     assert "<h1>Not found</h1>" in body
+    assert ">404<" in body  # binds error.html's {{ code }}, not just the heading
     assert "boom-42" in body  # binds error.html's {{ message }}, not just the heading
     assert 'aria-label="Main navigation"' in body
     assert "<title>Not found — CENTER-KB</title>" in body  # binds base.html's title block
@@ -1151,6 +1210,15 @@ def test_app_js_ships_interactivity_hooks(fed_hub):
     # form submit instead of a client-side filter that can't see rows the
     # server never sent
     assert "URLSearchParams" in resp.text
+    # Enter in the filter box must bypass native implicit submission (which
+    # always activates the form's first submit button, silently resetting
+    # the status filter to "all") and instead resubmit the form's current
+    # field values as-is via requestSubmit().
+    assert "requestSubmit" in resp.text
+    # hasServerFilter must NOT treat a missing/empty status or "status=all"
+    # as a real server-side narrowing -- only a non-empty ?filter= or a
+    # concrete non-"all" ?status= counts.
+    assert '["", "all"].includes' in resp.text
 
 
 def test_search_page_hides_js_only_controls_without_js(fed_hub):

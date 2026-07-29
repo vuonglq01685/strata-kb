@@ -32,13 +32,18 @@ from center_kb.web.ratelimit import (
 logger = logging.getLogger("center_kb.web.ui")
 
 
-def _shell_ctx(config: ServerConfig, screen: str, q: str = "") -> dict:
+def _shell_ctx(
+    config: ServerConfig, screen: str, q: str = "",
+    raw_tags: str = "", budget: int | None = None,
+) -> dict:
     hub = api.hub_handle(config)
     if hub is None:
         return {"screen": screen, "hub_ok": False, "q": q,
+                "raw_tags": raw_tags, "budget": budget,
                 "repo_count": 0, "catalog": [], "tags": []}
     return {
         "screen": screen, "hub_ok": True, "q": q,
+        "raw_tags": raw_tags, "budget": budget,
         "repo_count": uidata.store_stats(hub).repos,
         "catalog": uidata.catalog(hub),
         "tags": uidata.all_tags(hub),
@@ -47,10 +52,18 @@ def _shell_ctx(config: ServerConfig, screen: str, q: str = "") -> dict:
 
 def _render_page(
     template: str, config: ServerConfig, screen: str,
-    status: int = 200, q: str = "", **ctx,
+    status: int = 200, q: str = "", raw_tags: str = "",
+    budget: int | None = None, **ctx,
 ) -> HTMLResponse:
-    shell = _shell_ctx(config, screen, q=q)
+    # raw_tags/budget are only ever passed by _search_screen (every other
+    # caller keeps the falsy defaults, so their shell carries no topbar
+    # hidden fields); re-mirrored into ctx so search.html's own top-level
+    # {{ raw_tags }}/{{ budget }} references (meta-line, budget rail form)
+    # keep working exactly as before this shell plumbing was added.
+    shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget)
     ctx["q"] = q
+    ctx["raw_tags"] = raw_tags
+    ctx["budget"] = budget
     return HTMLResponse(
         templating.render(template, shell=shell, **ctx), status_code=status
     )
@@ -156,7 +169,10 @@ def build_routes(
             )
         budget = _budget(request)
         terms = set(tokenize(q))
-        found = search(hub, q, tags=tags or None, budget=budget)
+        # An empty query with no tags (e.g. the nav "Search" link, `/ui?q=`)
+        # has nothing to search for — skip the lookup and render the search
+        # screen's empty state rather than asking search() to match on "".
+        found = search(hub, q, tags=tags or None, budget=budget) if q else []
         smap = uidata.status_map(hub)
         top = max((r.score for r in found), default=1.0) or 1.0
         results = [
@@ -184,7 +200,10 @@ def build_routes(
     async def home(request: Request) -> HTMLResponse:
         q = request.query_params.get("q", "").strip()
         raw_tags = request.query_params.get("tags", "").strip()
-        if q or raw_tags:
+        # Presence of the `q` param (even empty, as in the nav "Search" link's
+        # `/ui?q=`) routes to the search screen; only a bare `/ui` with no
+        # query params at all renders the overview.
+        if "q" in request.query_params or raw_tags:
             return await _search_screen(request, q, raw_tags)  # Task 6
         hub = api.hub_handle(config)
         if hub is None:
@@ -224,8 +243,9 @@ def build_routes(
             return _error_page(config, 404, "Not found", f"Unknown doc '{doc_id}'.")
         manifest, rid = found
         # filter_raw preserves the caller's original casing for echoing back
-        # into the filter input's value= attribute; filter_q is the lowered
-        # form used for the (case-insensitive) row match below.
+        # into the filter input's value= attribute (passed to the template
+        # as filter_value); filter_q is the lowered form used for the
+        # (case-insensitive) row match below.
         filter_raw = request.query_params.get("filter", "").strip()
         filter_q = filter_raw.lower()
         status_q = request.query_params.get("status", "all")
@@ -241,7 +261,7 @@ def build_routes(
             "doc.html", config, screen="doc", title=manifest.title,
             doc_id=doc_id, manifest=manifest, rid=rid, rows=rows,
             coverage=uidata.doc_coverage(manifest),
-            filter_q=filter_raw, status_q=status_q, files=files,
+            filter_value=filter_raw, status_q=status_q, files=files,
         )
 
     async def section_page(request: Request) -> HTMLResponse:
