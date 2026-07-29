@@ -157,15 +157,25 @@ def _snapshot_federation(
     """
     from center_kb import hashsync
 
+    if not fed_src.is_dir():
+        raise PublishError(
+            f"federation source '{fed_src}' does not exist — refusing to publish"
+        )
     dest = handle.federation_dir / rid
     fed_root = handle.federation_dir.resolve()
     if not dest.resolve().is_relative_to(fed_root):
         raise PublishError(
             f"repo-id '{rid}' escapes the federation/ directory on the hub — refusing to publish"
         )
-    n_docs = len(federation.build_federation_index(fed_src).docs)
     src_man = hashsync.build_manifest(fed_src, exclude=_FED_TOP_EXCLUDE)
     dest_man = hashsync.build_manifest(dest)
+    if not src_man and dest_man:
+        raise PublishError(
+            "source federation/ is empty but the hub already holds entries under "
+            f"'{rid}' — refusing to wipe them; delete federation/{rid} on the hub "
+            "manually if that is really intended"
+        )
+    n_docs = len(federation.build_federation_index(fed_src).docs)
     changed, deleted = hashsync.diff_manifests(src_man, dest_man)
     if not changed and not deleted:
         return n_docs, False

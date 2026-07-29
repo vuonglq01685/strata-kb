@@ -66,3 +66,23 @@ def test_snapshot_federation_applies_deletions(mid_fed, upper):
 def test_snapshot_federation_rejects_escaping_rid(mid_fed, upper):
     with pytest.raises(publish.PublishError):
         publish._snapshot_federation(mid_fed, upper, "../evil", "abc1234")
+
+
+def test_snapshot_federation_missing_source_raises(tmp_path, upper):
+    with pytest.raises(publish.PublishError, match="does not exist"):
+        publish._snapshot_federation(
+            tmp_path / "does-not-exist", upper, "mid", "abc1234"
+        )
+
+
+def test_snapshot_federation_empty_source_refuses_wipe(tmp_path, mid_fed, upper):
+    publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
+
+    empty_fed = tmp_path / "empty" / "federation"
+    empty_fed.mkdir(parents=True)
+    (empty_fed / ".gitkeep").write_text("", encoding="utf-8")
+
+    with pytest.raises(publish.PublishError, match="empty"):
+        publish._snapshot_federation(empty_fed, upper, "mid", "abc1235")
+
+    assert (upper.federation_dir / "mid" / "repo-a").exists()
