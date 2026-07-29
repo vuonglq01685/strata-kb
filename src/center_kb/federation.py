@@ -43,38 +43,68 @@ class FederatedRepo:
     kb_dir: Path  # federation/<repo-id>/ — a full .kb mirror (L0→L3)
 
 
-def load_federation(federation_dir: Path) -> list[FederatedRepo]:
-    """Read every federation/<repo>/ entry in the new mirror layout.
+ENTRY_INDEX_NAME = "index.yaml"
+ENTRY_META_NAME = "_meta.yaml"
 
-    Entries in the old format (Phase 3, a 'manifests/' directory) and broken
-    entries are skipped with a warning — republish from the source repo to
-    upgrade them.
+
+def iter_entry_dirs(federation_dir: Path) -> list[tuple[str, Path]]:
+    """(path-id, dir) của mọi leaf entry, DFS theo tên tăng dần.
+
+    Leaf = thư mục có cả _meta.yaml lẫn index.yaml (một mirror .kb đầy đủ).
+    Thư mục phía trên leaf là namespace thuần (một tầng cho mỗi hub publish lên).
+    Entry slim cũ (Phase 3, thư mục 'manifests/') và entry thiếu một trong hai
+    file bị bỏ qua kèm cảnh báo — republish từ repo nguồn để nâng cấp.
     """
-    if not federation_dir.is_dir():
-        return []
+    out: list[tuple[str, Path]] = []
+
+    def _walk(cur: Path, rel: str) -> None:
+        for child in sorted(p for p in cur.iterdir() if p.is_dir()):
+            child_rel = f"{rel}/{child.name}" if rel else child.name
+            if (child / "manifests").is_dir():
+                logger.warning(
+                    "federation/%s uses the old slim layout — skipping; "
+                    "run `kb publish` from that repo to upgrade it",
+                    child_rel,
+                )
+                continue
+            has_meta = (child / ENTRY_META_NAME).exists()
+            has_index = (child / ENTRY_INDEX_NAME).exists()
+            if has_meta and has_index:
+                out.append((child_rel, child))
+            elif has_meta or has_index:
+                logger.warning(
+                    "federation/%s missing _meta.yaml or index.yaml — skipping",
+                    child_rel,
+                )
+            else:
+                _walk(child, child_rel)
+
+    if federation_dir.is_dir():
+        _walk(federation_dir, "")
+    return out
+
+
+def load_federation(federation_dir: Path) -> list[FederatedRepo]:
+    """Đọc mọi entry (phẳng lẫn lồng) trong layout mirror.
+
+    meta.repo_id được đè bằng path-id tương đối (vd 'mid/repo-x') — file
+    _meta.yaml mirror từ tầng dưới chỉ biết tên cụt của chính nó.
+    """
     repos: list[FederatedRepo] = []
-    for child in sorted(p for p in federation_dir.iterdir() if p.is_dir()):
-        if (child / "manifests").is_dir():
-            logger.warning(
-                "federation/%s uses the old slim layout — skipping; "
-                "run `kb publish` from that repo to upgrade it",
-                child.name,
-            )
-            continue
-        meta_path = child / "_meta.yaml"
-        index_path = child / "index.yaml"
-        if not meta_path.exists() or not index_path.exists():
-            logger.warning(
-                "federation/%s missing _meta.yaml or index.yaml — skipping", child.name
-            )
-            continue
+    for path_id, child in iter_entry_dirs(federation_dir):
         try:
-            meta = models.load_yaml_model(meta_path, FederationMeta)
-            index = models.load_yaml_model(index_path, models.KBIndex)
+            meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
+            index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
         except (yaml.YAMLError, ValidationError) as exc:
-            logger.warning("federation/%s is broken — skipping: %s", child.name, exc)
+            logger.warning("federation/%s is broken — skipping: %s", path_id, exc)
             continue
-        repos.append(FederatedRepo(meta=meta, index=index, kb_dir=child))
+        repos.append(
+            FederatedRepo(
+                meta=meta.model_copy(update={"repo_id": path_id}),
+                index=index,
+                kb_dir=child,
+            )
+        )
     return repos
 
 
