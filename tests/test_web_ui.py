@@ -576,3 +576,32 @@ def test_shell_header_and_left_rail_on_docs_page(demo_doc_hub):
     assert "hub online" in resp.text
     assert 'id="global-search"' in resp.text
     assert "Demo Document" in resp.text  # catalog card in left rail
+
+
+def test_shell_ctx_hub_down_returns_empty_catalog(tmp_path):
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing-hub"))
+    ctx = ui._shell_ctx(config, "overview")
+    assert ctx["hub_ok"] is False
+    assert ctx["repo_count"] == 0
+    assert ctx["catalog"] == []
+    assert ctx["tags"] == []
+
+
+def test_shell_ctx_hub_up_populates_catalog_and_tags(demo_doc_hub):
+    config = ServerConfig(kb_dir=demo_doc_hub / ".kb", hub=str(demo_doc_hub))
+    ctx = ui._shell_ctx(config, "overview", q="foo")
+    assert ctx["hub_ok"] is True
+    assert ctx["screen"] == "overview"
+    assert ctx["q"] == "foo"
+    assert ctx["repo_count"] >= 1
+    assert ctx["catalog"]  # non-empty: demo-kb:demo-doc is present
+    assert "demo" in ctx["tags"]
+
+
+def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing-hub"))
+    resp = ui._error_page(config, 404, "Not found", "x")
+    assert resp.status_code == 404
+    body = resp.body.decode()
+    assert "hub offline" in body  # shell chip reflects hub_ok=False
+    assert "Not found" in body

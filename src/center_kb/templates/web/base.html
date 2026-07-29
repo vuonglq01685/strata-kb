@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }} — CENTER-KB</title>
+<title>{{ title | default("CENTER-KB", true) }} — CENTER-KB</title>
 <link rel="stylesheet" href="/ui/static/style.css">
 <script src="/ui/static/app.js" defer></script>
 </head>
@@ -13,6 +13,7 @@
   <a class="brand" href="/ui"><span class="brand-mark">KB</span>CENTER<span class="brand-dot">·</span>KB</a>
   <form class="topbar-search" method="get" action="/ui">
     <input type="search" id="global-search" name="q" value="{{ shell.q }}"
+           aria-label="Search"
            placeholder="Search sections, fields, codes…  ⌘K">
   </form>
   <div class="topbar-status">
@@ -27,7 +28,7 @@
 <div class="columns">
   {% include "_partials/left_rail.html" %}
   <main class="content">{% block main %}{% endblock %}</main>
-  <aside class="rail rail-right">{% block rail %}{% endblock %}</aside>
+  <aside class="rail rail-right" aria-label="Page context">{% block rail %}{% endblock %}</aside>
 </div>
 </div>
 </body>
