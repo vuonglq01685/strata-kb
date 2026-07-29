@@ -86,3 +86,22 @@ def test_snapshot_federation_empty_source_refuses_wipe(tmp_path, mid_fed, upper)
         publish._snapshot_federation(empty_fed, upper, "mid", "abc1235")
 
     assert (upper.federation_dir / "mid" / "repo-a").exists()
+
+
+def test_find_cycle_segment_detects_own_id(tmp_path):
+    from center_kb import federation
+    from tests.conftest import make_fed_entry
+
+    fed = tmp_path / "federation"
+    make_fed_entry(fed / "root-hub" / "mid", "repo-a", "doc-a")  # nội dung đã quay vòng
+    assert federation.find_cycle_segment(fed, {"mid"}) == "root-hub/mid/repo-a"
+
+
+def test_find_cycle_segment_clean(tmp_path):
+    from center_kb import federation
+    from tests.conftest import make_fed_entry
+
+    fed = tmp_path / "federation"
+    make_fed_entry(fed, "repo-a", "doc-a")
+    make_fed_entry(fed / "leaf-hub", "repo-b", "doc-b")
+    assert federation.find_cycle_segment(fed, {"mid"}) is None

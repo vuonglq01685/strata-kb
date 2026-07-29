@@ -84,6 +84,15 @@ def iter_entry_dirs(federation_dir: Path) -> list[tuple[str, Path]]:
     return out
 
 
+def find_cycle_segment(federation_dir: Path, forbidden: set[str]) -> str | None:
+    """Path-id entry đầu tiên chứa một segment bị cấm — dấu hiệu nội dung đã
+    đi vòng qua hub đó quay lại; publish tiếp sẽ tạo vòng lặp phình vô hạn."""
+    for path_id, _ in iter_entry_dirs(federation_dir):
+        if any(seg in forbidden for seg in path_id.split("/")):
+            return path_id
+    return None
+
+
 def load_federation(federation_dir: Path) -> list[FederatedRepo]:
     """Đọc mọi entry (phẳng lẫn lồng) trong layout mirror.
 
