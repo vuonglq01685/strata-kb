@@ -94,7 +94,10 @@ async def static_file(request: Request) -> Response:
     name = request.path_params["path"]
     suffix = Path(name).suffix
     media = STATIC_TYPES.get(suffix)
-    if media is None or ".." in name or name.startswith("/"):
+    # ":" and "\" never appear in legit asset names; they cover Windows
+    # drive-absolute (C:\...) and backslash traversal, where a bare
+    # startswith("/") check does not.
+    if media is None or ".." in name or name.startswith("/") or ":" in name or "\\" in name:
         return Response("not found", status_code=404)
     target = resources.files("center_kb").joinpath("templates/web/static").joinpath(name)
     try:

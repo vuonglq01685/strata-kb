@@ -1168,6 +1168,10 @@ def test_static_rejects_absolute_path_param(fed_hub):
     )
     resp = c.get("/ui/static/" + real_css)
     assert resp.status_code == 404
+    # Windows-style escapes: drive-absolute and backslash traversal params
+    # don't start with "/", so they need their own guard (":" / "\\").
+    assert c.get("/ui/static/C:%5Cwin%5Cx.css").status_code == 404
+    assert c.get("/ui/static/..%5C..%5Cui.py").status_code == 404
 
 
 def test_static_handles_name_too_long_as_404(fed_hub):
