@@ -24,6 +24,7 @@ dependencies = [
     "mcp>=1.2,<2",  # 2.0 removed mcp.server.fastmcp (our MCPServer) — repin when migrating
     "starlette>=0.37",
     "uvicorn>=0.30",
+    "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -31,10 +32,10 @@ ingest = ["docling>=2.0", "imagehash>=4.3", "Pillow>=10.0"]
 dev = [
     "pytest>=8.0", "anyio>=4.0", "sqlite-vec>=0.1.6", "twine>=5.0", "build>=1.2",
     "PyJWT[crypto]>=2.8", "python-multipart>=0.0.9", "httpx>=0.27",
-    "imagehash>=4.3", "Pillow>=10.0", "ruff>=0.15", "jinja2>=3.1",
+    "imagehash>=4.3", "Pillow>=10.0", "ruff>=0.15",
 ]
 embed = ["sqlite-vec>=0.1.6", "fastembed>=0.3"]
-server = ["PyJWT[crypto]>=2.8", "python-multipart>=0.0.9", "jinja2>=3.1"]
+server = ["PyJWT[crypto]>=2.8", "python-multipart>=0.0.9"]
 s3 = ["boto3>=1.34"]
 
 [project.scripts]

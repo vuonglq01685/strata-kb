@@ -3,7 +3,7 @@ import pytest
 from center_kb.web import templating
 
 
-def test_render_escapes_by_default(tmp_path):
+def test_render_escapes_by_default():
     env = templating.make_env()
     tmpl = env.from_string("<p>{{ value }}</p>")
     assert tmpl.render(value="<script>x</script>") == (

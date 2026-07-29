@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Work happens in this worktree (`.claude/worktrees/ui-redesign`, branch `worktree-ui-redesign` off `main`).
-- Only new dependency: `jinja2>=3.1` (added to `server` AND `dev` extras). Nothing else.
+- Only new dependency: `jinja2>=3.1` in core `[project] dependencies` (decided after Task 1 review: CI gate t3/t4 and Docker install the bare wheel and boot the server, so the web stack must import with core deps only). Not in extras. Nothing else. `uv.lock` must stay in sync (`uv lock --check`).
 - Jinja2 autoescape always ON — never `| safe` except for `md_render()` output and pre-built rail/result HTML noted below.
 - Existing URLs unchanged. New behavior: `/ui` with no `q`/`tags` renders Overview.
 - Login/auth/rate-limit semantics unchanged (markup only). `/ui/static/` stays auth-exempt (already is).
