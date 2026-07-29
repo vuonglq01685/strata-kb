@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from center_kb import models
 from center_kb.hub import HubHandle
 from center_kb.models import Manifest, SectionEntry, SectionTokens
@@ -9,6 +11,48 @@ from tests.conftest import make_fed_entry
 
 def _hub(fed_hub) -> HubHandle:
     return HubHandle(root=fed_hub)
+
+
+@pytest.fixture
+def mixed_status_hub(tmp_path: Path, run_git) -> Path:
+    """Hub with a single federated doc whose 3 sections cover every status —
+    exercises review_queue ordering/exclusion, catalog mixed counts, and a
+    multi-valued status_map, none of which a uniformly-summarized fixture
+    can assert."""
+    from center_kb.federation import write_federation_index
+
+    hub = tmp_path / "kb-hub"
+    (hub / ".kb").mkdir(parents=True)
+    models.save_yaml_model(hub / ".kb" / "index.yaml", models.KBIndex())
+    fed = hub / "federation"
+    entry = make_fed_entry(
+        fed, "mix-kb", "mixed-doc", sec_id="1.1", sec_title="A", status="pending"
+    )
+    models.save_yaml_model(
+        entry / "mixed-doc" / "_manifest.yaml",
+        models.Manifest(
+            id="mixed-doc",
+            title="mixed-doc",
+            sections=[
+                models.SectionEntry(
+                    id="1.1", title="A", summary="s", status="pending", file="ch1"
+                ),
+                models.SectionEntry(
+                    id="1.2", title="B", summary="s", status="summarized", file="ch1"
+                ),
+                models.SectionEntry(
+                    id="1.3", title="C", summary="s", status="reviewed", file="ch1"
+                ),
+            ],
+        ),
+    )
+    write_federation_index(fed)
+    run_git(hub, "init")
+    run_git(hub, "config", "user.name", "test")
+    run_git(hub, "config", "user.email", "test@test.local")
+    run_git(hub, "add", "-A")
+    run_git(hub, "commit", "-m", "hub v1")
+    return hub
 
 
 def test_catalog_counts_statuses(fed_hub):
@@ -33,12 +77,47 @@ def test_review_queue_pending_first_and_excludes_reviewed(fed_hub):
         assert statuses.index("pending") < statuses.index("summarized")
 
 
+def test_mixed_status_queue_catalog_and_status_map(mixed_status_hub):
+    hub = _hub(mixed_status_hub)
+
+    queue = uidata.review_queue(hub, limit=50)
+    assert [item.status for item in queue] == ["pending", "summarized"]
+
+    docs = uidata.catalog(hub)
+    assert len(docs) == 1
+    d = docs[0]
+    assert (d.total, d.reviewed, d.summarized, d.pending) == (3, 1, 1, 1)
+    assert d.done_pct == round(100 * 2 / 3)
+
+    smap = uidata.status_map(hub)
+    assert smap == {
+        ("mix-kb", "mixed-doc", "1.1"): "pending",
+        ("mix-kb", "mixed-doc", "1.2"): "summarized",
+        ("mix-kb", "mixed-doc", "1.3"): "reviewed",
+    }
+
+
 def test_store_stats_shapes(fed_hub):
     stats = uidata.store_stats(_hub(fed_hub))
     assert stats.docs >= 1
     assert stats.sections >= 1
     assert stats.repos >= 1
     assert stats.l0_tokens >= 0
+
+
+def test_store_stats_docs_matches_catalog_when_manifest_broken(fed_hub):
+    # store_stats() used to count docs off the federation index (repo.index.docs),
+    # while catalog() counts manifest-backed docs via _iter_manifests. A broken
+    # manifest made them disagree — Overview would claim 3 docs while Documents
+    # lists 2. Both must now walk the same manifest source.
+    broken_manifest = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "_manifest.yaml"
+    broken_manifest.write_text("not: [valid, yaml: structure", encoding="utf-8")
+
+    hub = _hub(fed_hub)
+    stats = uidata.store_stats(hub)
+    docs = uidata.catalog(hub)
+
+    assert stats.docs == len(docs) == 1
 
 
 def test_last_publish_no_git_is_empty_not_error(tmp_path: Path):
@@ -57,6 +136,26 @@ def test_last_publish_with_git_returns_short_commit(fed_hub):
     info = uidata.last_publish(_hub(fed_hub))
     assert len(info.commit) == 7
     assert isinstance(info.repos, list)
+
+
+def test_last_publish_aggregates_repos_and_published_at(fed_hub):
+    # fed_hub publishes icao-kb/icao-annex-2 and arinc-kb/arinc-424, both via
+    # make_fed_entry's default published_at — pin the exact aggregation so a
+    # regression in the sort/max logic shows up here, not just "is a list".
+    info = uidata.last_publish(_hub(fed_hub))
+    assert info.repos == ["arinc-kb", "icao-kb"]
+    assert info.published_at == "2026-07-13T00:00:00+00:00"
+
+
+def test_last_publish_missing_hub_root_is_empty_not_error(tmp_path: Path):
+    # hub.root vanished (or was never created): gitio.head_commit's subprocess
+    # call raises FileNotFoundError/OSError, not gitio.GitError — this must
+    # degrade gracefully like every other git-metadata failure, never 500.
+    missing_root = tmp_path / "does-not-exist"
+    info = uidata.last_publish(HubHandle(root=missing_root))
+    assert info.commit == ""
+    assert info.repos == []
+    assert info.published_at == ""
 
 
 def test_doc_coverage_and_prev_next():

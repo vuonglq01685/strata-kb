@@ -7,8 +7,8 @@ non-essential data (git metadata) degrade to empty values, never to a 500.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterator
 
 from center_kb import gitio, models
 from center_kb.federation import load_federation
@@ -122,8 +122,11 @@ def review_queue(hub: HubHandle, limit: int = 8) -> list[QueueItem]:
 
 def store_stats(hub: HubHandle) -> StoreStats:
     repos = load_federation(hub.federation_dir)
-    docs = sum(len(r.index.docs) for r in repos)
-    sections = sum(len(m.sections) for _, m in _iter_manifests(hub))
+    docs = 0
+    sections = 0
+    for _, m in _iter_manifests(hub):
+        docs += 1
+        sections += len(m.sections)
     index_path = hub.federation_dir / "index.yaml"
     l0 = count_tokens(index_path.read_text(encoding="utf-8")) if index_path.exists() else 0
     return StoreStats(docs=docs, sections=sections, repos=len(repos), l0_tokens=l0)
@@ -132,7 +135,7 @@ def store_stats(hub: HubHandle) -> StoreStats:
 def last_publish(hub: HubHandle) -> PublishInfo:
     try:
         commit = gitio.head_commit(hub.root)[:7]
-    except gitio.GitError:
+    except (gitio.GitError, OSError):
         commit = ""
     index_path = hub.federation_dir / "index.yaml"
     repos: list[str] = []
