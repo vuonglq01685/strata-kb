@@ -487,6 +487,26 @@ Phase 2 lets one knowledge store talk to developers via MCP and pin citations. P
 
 **Want to see the full lifecycle for real (2 repos contributing to one hub, cross-repo search, stale citations after amendments)?** Run `bash scripts/demo-federation.sh` — it builds a hub and 2 sample repos in a temp directory, runs end-to-end, then cleans up without touching your real data.
 
+**Multi-tier federation (hub → hub):** a `kind: hub` repo may itself declare
+`hub:` + `repo_id:` in `.kb/config.yaml` — `kb publish` on such a repo mirrors
+its **`federation/`** (not its own `.kb/`) into `federation/<hub-id>/` on the
+upstream hub, keeping the nested layout (`federation/mid/repo-x/…`) (exception:
+a hub pointing `hub:` at itself takes the self-publish route — its own `.kb/`
+is mirrored into its own `federation/<repo-id>/` as an ordinary entry). Depth
+is unbounded; entry ids become paths (`mid/repo-x:doc-id` when qualifying
+refs). Publishing refuses with `federation cycle detected` when the chain
+would loop content back (upstream resolves to itself, or an entry path
+already contains a hub id from the chain). A hub without `hub:` is a root
+hub — `kb publish` there errors with guidance. Scope search by choosing which
+hub you query: a team hub returns the team's knowledge, the root hub returns
+everything. Hub-to-hub publish needs direct git access to the upstream (or
+`gh` for `--pr` mode) — the intake/OIDC route is child-repo-only and is not
+supported anywhere in the chain; a hub with both `hub:` and `intake:` set
+gets an explicit error instead of a silent wrong route. An emptied local
+`federation/` will **not** propagate deletions upstream — publish refuses
+rather than wipe the upstream hub's entries; delete `federation/<hub-id>/`
+on the upstream manually if that is really intended.
+
 ---
 
 ### 7.10 Phase 4 — BA ticket authoring

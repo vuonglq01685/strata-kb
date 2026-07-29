@@ -26,18 +26,29 @@ FENCE_RE = re.compile(r"```[ \t]*(\S*)[ \t]*\r?\n(.*?)```", re.S)
 
 # Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>' — the
 # repo/doc-id groups match kbcontext._REF_RE semantics (repo qualifier
-# optional, '§' required). The section-id group must END on a character
-# that is not sentence punctuation: prose that cites a section at the end
-# of a sentence ('... per arinc-424 §5.3.') would otherwise absorb the
-# sentence-ending period into the section id, making a correctly-pinned
-# citation look unresolved. Unlike the repo/doc-id groups, the section id
-# is NOT anchored on its leading character — kbcontext._REF_RE's
-# section-id half accepts any non-whitespace token ('\S+'), so ids such as
-# '(a' or '_intro' are legal to pin; requiring an alnum start here would
-# make this regex fail to match them at all, which is worse than the
-# original bug (a missed citation instead of a mis-parsed one).
+# optional, '§' required). The repo group additionally accepts nested,
+# '/'-joined path segments (e.g. 'mid/repo-x') to mirror kbcontext._REF_RE's
+# multi-tier federation support — a body citation qualified by a nested
+# repo-id must resolve against a kb-context ref pinned at that same nested
+# id, not silently drop everything before the last '/'. This mirrors the
+# '/'-segment STRUCTURE only, not the exact charset: each segment here is
+# `[\w.-]` (Python's `\w` is Unicode-aware by default, so this is wider
+# than kbcontext._REF_RE's explicit ASCII-only `[A-Za-z0-9._-]`) — kept as
+# it was before this note; not tightened, since narrowing it risks missing
+# citations against repo-ids that already validated fine elsewhere. The
+# section-id
+# group must END on a character that is not sentence punctuation: prose
+# that cites a section at the end of a sentence ('... per arinc-424 §5.3.')
+# would otherwise absorb the sentence-ending period into the section id,
+# making a correctly-pinned citation look unresolved. Unlike the repo/doc-id
+# groups, the section id is NOT anchored on its leading character —
+# kbcontext._REF_RE's section-id half accepts any non-whitespace token
+# ('\S+'), so ids such as '(a' or '_intro' are legal to pin; requiring an
+# alnum start here would make this regex fail to match them at all, which
+# is worse than the original bug (a missed citation instead of a
+# mis-parsed one).
 INLINE_CITE_RE = re.compile(
-    r"(?:([A-Za-z0-9][\w.-]*):)?([A-Za-z0-9][\w.-]*)\s+"
+    r"(?:([A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*):)?([A-Za-z0-9][\w.-]*)\s+"
     r"§([^\s,;)\]]*[^\s,;)\].:?!])"
 )
 

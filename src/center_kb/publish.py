@@ -136,6 +136,53 @@ def _snapshot(
     return len(local_index.docs), True
 
 
+_FED_TOP_EXCLUDE = ("index.yaml", "registry.yaml", ".gitkeep")
+
+
+def _snapshot_federation(
+    fed_src: Path,
+    handle: hub_mod.HubHandle,
+    rid: str,
+    source_commit: str,
+    source_url: str | None = None,
+    store=None,
+) -> tuple[int, bool]:
+    """Sync federation/ (hub trung gian) → federation/<rid>/ trên hub cấp trên.
+
+    Khác _snapshot: nguồn là cả cây federation (leaf entries lồng nhau, mỗi leaf
+    tự mang _meta.yaml); index.yaml/registry.yaml tầng đỉnh là sản phẩm riêng
+    của hub nguồn — không đẩy; KHÔNG viết _meta.yaml ở gốc đích (gốc entry hub
+    là namespace, không phải leaf — walk đệ quy phải đi xuyên qua nó).
+    Assets (kể cả record S3-divert _assets.yaml) mirror verbatim.
+    """
+    from center_kb import hashsync
+
+    if not fed_src.is_dir():
+        raise PublishError(
+            f"federation source '{fed_src}' does not exist — refusing to publish"
+        )
+    dest = handle.federation_dir / rid
+    fed_root = handle.federation_dir.resolve()
+    if not dest.resolve().is_relative_to(fed_root):
+        raise PublishError(
+            f"repo-id '{rid}' escapes the federation/ directory on the hub — refusing to publish"
+        )
+    src_man = hashsync.build_manifest(fed_src, exclude=_FED_TOP_EXCLUDE)
+    dest_man = hashsync.build_manifest(dest)
+    if not src_man and dest_man:
+        raise PublishError(
+            "source federation/ is empty but the hub already holds entries under "
+            f"'{rid}' — refusing to wipe them; delete federation/{rid} on the hub "
+            "manually if that is really intended"
+        )
+    n_docs = len(federation.build_federation_index(fed_src).docs)
+    changed, deleted = hashsync.diff_manifests(src_man, dest_man)
+    if not changed and not deleted:
+        return n_docs, False
+    hashsync.apply_sync(fed_src, dest, changed, deleted)
+    return n_docs, True
+
+
 def warn_legacy_ids(kb_dir: Path) -> list[str]:
     """x{n} ids are the opaque fallback of the old CLI (< 2debcbc) or of headings
     that could not be slugged — warn so the repo re-ingests with the new CLI.
@@ -190,6 +237,103 @@ def publish(
     return _publish_direct(kb_abs, handle, rid, source_commit, max_retries)
 
 
+def publish_federation(
+    kb_dir: Path,
+    hub_ref: str,
+    repo_id: str | None = None,
+    max_retries: int = 3,
+    mode: str = "auto",
+) -> PublishReport:
+    """Hub trung gian đẩy federation/ của nó lên hub cấp trên.
+
+    Chỉ federation/ được đẩy — .kb/ riêng của hub là bàn soạn thảo. Hub muốn
+    share tri thức riêng: trỏ hub về chính nó (`hub: .` hoặc `--hub
+    <đường-dẫn-chính-nó>`) — CLI sẽ mirror `.kb/` vào federation của chính nó
+    như một entry thường (self-publish); hàm này chỉ đẩy federation/ khi đích
+    là hub KHÁC. Cycle guard chạy trước khi ghi byte nào.
+
+    Cycle guard xét các leaf entry đọc được; entry hỏng/slim-layout bị walk bỏ
+    qua (kèm warning) nên không được guard nhìn thấy — kb doctor cảnh báo riêng.
+    Self-entry (`federation/<rid>/` do hub tự publish) được miễn — nó không
+    phải nội dung quay vòng.
+    """
+    from center_kb import config as config_mod
+
+    kb_abs = kb_dir.resolve()
+    source_root = gitio.git_root(kb_abs)
+    fed_src = source_root / "federation"
+    if not fed_src.is_dir():
+        raise PublishError(
+            "this hub has no federation/ directory — nothing to publish upstream"
+        )
+    source_commit = gitio.head_commit(source_root)
+    rid = repo_id or source_root.name
+    if not _REPO_ID_RE.fullmatch(rid) or rid in {".", ".."}:
+        raise PublishError(
+            f"repo-id '{rid}' is invalid — only letters/digits/._- allowed, no path separators"
+        )
+    handle = hub_mod.resolve_hub(hub_ref)
+    if handle is None:
+        raise PublishError(f"could not reach hub '{gitio.redact_url(hub_ref)}'")
+    try:
+        dest_rid = config_mod.load_config(handle.kb_dir).repo_id or None
+    except Exception as exc:  # noqa: BLE001 — fail closed: a corrupt upstream
+        # config must not silently blind the identity-based cycle guard below.
+        raise PublishError(
+            f"could not read the upstream hub's .kb/config.yaml: {exc}"
+        ) from exc
+    is_self = handle.root.resolve() == source_root.resolve()
+    if not is_self and dest_rid is not None and dest_rid == rid:
+        is_self = True
+    if not is_self:
+        # A hub whose upstream is itself reached by remote URL (e.g. the
+        # upstream ref resolves to a fresh cache clone of this very repo)
+        # resolves to a different path than source_root — path equality
+        # above misses it. Compare remote URLs instead; any failure here
+        # (no git binary, detached remote, etc.) is treated as not-self —
+        # the forbidden-segment guard below still catches real cycles.
+        try:
+            if gitio.has_remote(handle.root) and gitio.has_remote(source_root):
+                dest_url = gitio.remote_url(handle.root)
+                src_url = gitio.remote_url(source_root)
+                if dest_url and dest_url == src_url:
+                    is_self = True
+        except Exception:  # noqa: BLE001 — see comment above
+            pass
+    if is_self:
+        raise PublishError(
+            "federation cycle detected: the upstream hub resolves to this repo itself"
+        )
+    forbidden = {rid}
+    if dest_rid:
+        forbidden.add(dest_rid)
+    # dest_rid is never exempted — a self-entry at the DESTINATION's own id
+    # is a real loop-back, not this hub's own self-publish entry.
+    exempt_exact = {rid} if rid != dest_rid else set()
+    hit = federation.find_cycle_segment(fed_src, forbidden, exempt_exact=exempt_exact)
+    if hit is not None:
+        raise PublishError(
+            f"federation cycle detected: entry '{hit}' contains a hub id from this "
+            "publish chain — publishing would loop content back on itself"
+        )
+    _neutralize_excludes(handle.root)
+    if mode == "auto":
+        use_pr = (
+            gitio.has_remote(handle.root)
+            and "github" in gitio.remote_url(handle.root)
+            and ghio.gh_available()
+        )
+        mode = "pr" if use_pr else "direct"
+    if mode == "pr":
+        return _publish_pr(
+            fed_src, handle, rid, source_commit, snapshot_fn=_snapshot_federation
+        )
+    return _publish_direct(
+        fed_src, handle, rid, source_commit, max_retries,
+        snapshot_fn=_snapshot_federation,
+    )
+
+
 def _push_with_retry(handle: hub_mod.HubHandle, rid: str, max_retries: int) -> bool:
     """Push handle.root; on rejection (race), pull --rebase, regenerate the
     aggregate index against the now-current tree, commit that fix, and retry.
@@ -223,8 +367,9 @@ def _publish_direct(
     rid: str,
     source_commit: str,
     max_retries: int,
+    snapshot_fn=_snapshot,
 ) -> PublishReport:
-    n_docs, changed = _snapshot(kb_abs, handle, rid, source_commit)
+    n_docs, changed = snapshot_fn(kb_abs, handle, rid, source_commit)
     # Commit the <rid>/ mirror on its own path first — rebasing this against
     # a concurrent publisher's commit never conflicts (disjoint paths), even
     # when both are populating federation/ for the very first time.
@@ -254,7 +399,11 @@ def _publish_direct(
 
 
 def _publish_pr(
-    kb_abs: Path, handle: hub_mod.HubHandle, rid: str, source_commit: str
+    kb_abs: Path,
+    handle: hub_mod.HubHandle,
+    rid: str,
+    source_commit: str,
+    snapshot_fn=_snapshot,
 ) -> PublishReport:
     if not ghio.gh_available():
         raise PublishError(
@@ -265,7 +414,7 @@ def _publish_pr(
     original = gitio.current_branch(handle.root)
     try:
         gitio.checkout_branch(handle.root, branch, original)
-        n_docs, changed = _snapshot(kb_abs, handle, rid, source_commit)
+        n_docs, changed = snapshot_fn(kb_abs, handle, rid, source_commit)
         federation.write_federation_index(handle.federation_dir)
         committed = gitio.commit_paths(
             handle.root, f"publish: {rid} @ {source_commit}", ["federation"]
