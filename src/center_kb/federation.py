@@ -84,10 +84,21 @@ def iter_entry_dirs(federation_dir: Path) -> list[tuple[str, Path]]:
     return out
 
 
-def find_cycle_segment(federation_dir: Path, forbidden: set[str]) -> str | None:
+def find_cycle_segment(
+    federation_dir: Path,
+    forbidden: set[str],
+    exempt_exact: frozenset[str] | set[str] = frozenset(),
+) -> str | None:
     """Path-id entry đầu tiên chứa một segment bị cấm — dấu hiệu nội dung đã
-    đi vòng qua hub đó quay lại; publish tiếp sẽ tạo vòng lặp phình vô hạn."""
+    đi vòng qua hub đó quay lại; publish tiếp sẽ tạo vòng lặp phình vô hạn.
+
+    exempt_exact: các path-id được miễn khi trùng CHÍNH XÁC (một segment) —
+    dùng cho self-entry của hub (hub tự publish .kb/ của nó vào chính nó);
+    nội dung quay vòng thật luôn về dạng lồng >=2 segment.
+    """
     for path_id, _ in iter_entry_dirs(federation_dir):
+        if path_id in exempt_exact:
+            continue
         if any(seg in forbidden for seg in path_id.split("/")):
             return path_id
     return None

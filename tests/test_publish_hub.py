@@ -194,6 +194,30 @@ def test_publish_federation_rejects_dest_id_in_entries(mid_hub, root_hub):
         )
 
 
+def test_publish_federation_allows_own_self_entry(mid_hub, root_hub):
+    # hub tự publish .kb/ của nó → entry top-level trùng rid — không phải cycle
+    make_fed_entry(mid_hub / "federation", "mid", "own-doc")
+    report = publish.publish_federation(
+        mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct"
+    )
+    assert report.n_docs == 3
+    assert (
+        root_hub / "federation" / "mid" / "mid" / "own-doc" / "_manifest.yaml"
+    ).exists()
+
+
+def test_find_cycle_segment_exempt_exact_only_skips_exact_match(tmp_path):
+    from center_kb import federation
+
+    fed = tmp_path / "federation"
+    make_fed_entry(fed, "mid", "doc-a")  # exact self-entry — exempt
+    make_fed_entry(fed / "upper" / "mid", "repo-c", "doc-c")  # nested — still a cycle
+    assert (
+        federation.find_cycle_segment(fed, {"mid"}, exempt_exact={"mid"})
+        == "upper/mid/repo-c"
+    )
+
+
 def test_publish_federation_missing_federation_dir(tmp_path, run_git, root_hub):
     bare = tmp_path / "bare"
     (bare / ".kb").mkdir(parents=True)

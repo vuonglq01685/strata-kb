@@ -254,6 +254,8 @@ def publish_federation(
 
     Cycle guard xét các leaf entry đọc được; entry hỏng/slim-layout bị walk bỏ
     qua (kèm warning) nên không được guard nhìn thấy — kb doctor cảnh báo riêng.
+    Self-entry (`federation/<rid>/` do hub tự publish) được miễn — nó không
+    phải nội dung quay vòng.
     """
     from center_kb import config as config_mod
 
@@ -281,7 +283,7 @@ def publish_federation(
     dest_rid = config_mod.load_config(handle.kb_dir).repo_id
     if dest_rid:
         forbidden.add(dest_rid)
-    hit = federation.find_cycle_segment(fed_src, forbidden)
+    hit = federation.find_cycle_segment(fed_src, forbidden, exempt_exact={rid})
     if hit is not None:
         raise PublishError(
             f"federation cycle detected: entry '{hit}' contains a hub id from this "
