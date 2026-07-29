@@ -8,9 +8,11 @@ from __future__ import annotations
 import pytest
 
 from center_kb.doctor import Issue
+from center_kb.kbcontext import KBContext, KBRef
 from center_kb.lintcore import (
     INLINE_CITE_RE,
     LintReport,
+    check_citation_consistency,
     check_diagram,
     check_headings,
 )
@@ -210,3 +212,39 @@ def test_inline_cite_re_matches_a_non_alnum_initial_section_id():
     (match,) = list(INLINE_CITE_RE.finditer(text))
 
     assert match.groups() == (None, "arinc-424", "(a")
+
+
+# --- INLINE_CITE_RE / check_citation_consistency: nested repo qualifiers ---
+
+
+def test_citation_consistency_accepts_a_nested_repo_qualifier():
+    """`kbcontext._REF_RE` accepts nested path repo-ids ('mid/repo-x') for
+    multi-tier federation. `INLINE_CITE_RE`'s repo group must mirror that —
+    otherwise a body citation like 'mid/repo-x:doc-a §1.1' mis-parses (the
+    'mid/' segment is silently dropped, leaving repo='repo-x'), and a
+    correctly-pinned citation is wrongly reported as not in kb-context
+    refs."""
+    text = "See mid/repo-x:doc-a §1.1 for details."
+    ctx = KBContext(
+        version="1",
+        refs=[KBRef(doc_id="doc-a", section_id="1.1", repo_id="mid/repo-x")],
+    )
+
+    issues = check_citation_consistency(text, ctx)
+
+    assert issues == []
+
+
+def test_citation_consistency_still_matches_a_flat_repo_qualifier():
+    """Negative lock: a flat (non-nested) repo qualifier must keep working
+    exactly as before — the widened repo group must not change single-
+    segment behaviour."""
+    text = "See repo-x:doc-a §1.1 for details."
+    ctx = KBContext(
+        version="1",
+        refs=[KBRef(doc_id="doc-a", section_id="1.1", repo_id="repo-x")],
+    )
+
+    issues = check_citation_consistency(text, ctx)
+
+    assert issues == []

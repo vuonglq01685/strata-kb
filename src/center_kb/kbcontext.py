@@ -36,7 +36,7 @@ class KBContext(BaseModel):
 
 
 _REF_RE = re.compile(
-    r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*):)?"
+    r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
     r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s+§?(?P<sec>\S+)$"
 )
 _KEY_RE = re.compile(r"^(?P<indent>\s*)kb-context:\s*$")

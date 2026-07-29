@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -304,3 +305,81 @@ def check_hub(
                 )
             )
     return issues, hub_stale
+
+
+_ENTRY_SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
+
+
+def _fed_tree_digest(root: Path) -> str:
+    """Digest deterministic của một cây federation — bỏ file tầng đỉnh mà
+    publish không mirror (index/registry/.gitkeep). KHÔNG bỏ _meta.yaml ở
+    đây (khác _kb_tree_digest): _snapshot_federation mirror leaf _meta.yaml
+    verbatim từ nguồn sang đích — không có bước ghi lại meta như _snapshot
+    của .kb/ — nên cả hai phía đều mang cùng bytes khi thật sự đồng bộ;
+    bỏ _meta.yaml khỏi digest sẽ che mất drift thật (vd. child republish
+    chỉ đổi source_commit của một leaf mà không đổi nội dung nào khác)."""
+    import hashlib
+
+    h = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        if rel in _FED_TOP_SKIP:
+            continue
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(path.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def check_federation_publish(
+    source_root: Path, handle: "HubHandle | None", repo_id: str | None
+) -> list[Issue]:
+    """Health hub phân tầng: id entry hợp lệ, cảnh báo cycle, trạng thái đã
+    publish lên upstream. handle = hub CẤP TRÊN (None khi root hub / offline)."""
+    from center_kb.federation import find_cycle_segment, iter_entry_dirs
+
+    fed_src = source_root / "federation"
+    issues: list[Issue] = []
+    for path_id, _ in iter_entry_dirs(fed_src):
+        if not all(_ENTRY_SEGMENT_RE.fullmatch(s) for s in path_id.split("/")):
+            issues.append(
+                Issue(
+                    "error",
+                    f"federation entry '{path_id}' has an invalid path segment — "
+                    "only letters/digits/._- per segment",
+                )
+            )
+    if repo_id:
+        hit = find_cycle_segment(fed_src, {repo_id}, exempt_exact={repo_id})
+        if hit is not None:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"own repo id '{repo_id}' appears inside federation entry "
+                    f"'{hit}' — this is a cycle: content has looped back; "
+                    "`kb publish` will refuse",
+                )
+            )
+    if handle is not None and repo_id:
+        dest = handle.federation_dir / repo_id
+        if not dest.is_dir():
+            issues.append(
+                Issue(
+                    "warning",
+                    f"hub '{repo_id}' has not published to the upstream hub yet — "
+                    "run `kb publish`",
+                )
+            )
+        elif _fed_tree_digest(fed_src) != _fed_tree_digest(dest):
+            issues.append(
+                Issue(
+                    "warning",
+                    f"local federation/ differs from the published snapshot "
+                    f"federation/{repo_id} on the upstream hub — run `kb publish`",
+                )
+            )
+    return issues

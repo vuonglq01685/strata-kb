@@ -699,6 +699,24 @@ def stats(
         )
 
 
+def _echo_publish_report(report) -> None:
+    if report.mode == "pr":
+        if report.pr_url:
+            typer.echo(
+                f"kb publish: {report.repo_id} @ {report.source_commit} — "
+                f"{report.n_docs} doc, PR: {report.pr_url}"
+            )
+            typer.echo("Content goes live when the PR is merged on the hub.")
+        else:
+            typer.echo("kb publish: nothing changed — no PR needed.")
+        return
+    action = "push" if report.pushed else "commit only (hub has no remote)"
+    typer.echo(
+        f"kb publish: {report.repo_id} @ {report.source_commit} — "
+        f"{report.n_docs} doc, {action}."
+    )
+
+
 @app.command()
 def publish(
     hub: str = typer.Option(
@@ -727,6 +745,59 @@ def publish(
         raise typer.Exit(2)
 
     cfg = load_config(kb_dir)
+    mode = "pr" if pr else "direct" if direct else "auto"
+    is_self = False  # only ever True for cfg.kind == "hub" self-publish fall-through
+    if cfg.kind == "hub":
+        try:
+            hub_ref = require_hub(hub, kb_dir)
+        except HubConfigError:
+            typer.secho(
+                "this is a root hub (kind: hub, no `hub:` configured) — nothing "
+                "to publish upstream; add `hub: <url|path>` to .kb/config.yaml "
+                "to chain it to a higher hub",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        # A relative `hub:` (e.g. the `hub: .` that `kb init --kind hub`
+        # ships) must anchor to the repo root, not the process cwd — the
+        # same config would otherwise route differently depending on where
+        # `kb publish` happens to be invoked from, and could even mirror
+        # into an unrelated sibling repo that also has a `.kb/`.
+        source_root = None
+        try:
+            source_root = gitio.git_root(kb_dir.resolve())
+        except gitio.GitError:
+            pass
+        hub_path = Path(hub_ref)
+        if source_root is not None and not hub_path.is_absolute():
+            hub_path = source_root / hub_ref
+        is_self = False
+        if source_root is not None and hub_path.is_dir():
+            is_self = hub_path.resolve() == source_root
+        if is_self:
+            # fall-through below must not re-resolve hub_ref cwd-relatively
+            hub_ref = str(source_root)
+        if not is_self:
+            if cfg.intake and not pr and not direct:
+                typer.secho(
+                    "intake publish is not supported for hub-to-hub publish — "
+                    "remove `intake:` from .kb/config.yaml or pass --direct/--pr",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(2)
+            try:
+                report = publish_mod.publish_federation(
+                    kb_dir, hub_ref,
+                    repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
+                )
+            except (publish_mod.PublishError, gitio.GitError) as exc:
+                typer.secho(str(exc), fg=typer.colors.RED)
+                raise typer.Exit(1)
+            _echo_publish_report(report)
+            return
+        # is_self: fall through — a hub pointing at itself publishes its own
+        # .kb/ into its own federation/<repo-id>/ (self-publish, spec #7)
+
     if cfg.intake and not pr and not direct:
         try:
             pr_url = publish_mod.publish_via_intake(
@@ -742,9 +813,13 @@ def publish(
             typer.echo("kb publish: done (no PR URL reported).")
         return
 
-    mode = "pr" if pr else "direct" if direct else "auto"
     try:
-        hub_ref = require_hub(hub, kb_dir)
+        # A hub-kind self-publish already resolved+anchored hub_ref above
+        # (git-root-anchored, not cwd-relative) — re-deriving it here via
+        # require_hub() would re-resolve a relative `hub: .` against the
+        # process cwd and undo that anchoring.
+        if not is_self:
+            hub_ref = require_hub(hub, kb_dir)
         report = publish_mod.publish(
             kb_dir, hub_ref,
             repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
@@ -752,21 +827,7 @@ def publish(
     except (HubConfigError, publish_mod.PublishError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    if report.mode == "pr":
-        if report.pr_url:
-            typer.echo(
-                f"kb publish: {report.repo_id} @ {report.source_commit} — "
-                f"{report.n_docs} doc, PR: {report.pr_url}"
-            )
-            typer.echo("Content goes live when the PR is merged on the hub.")
-        else:
-            typer.echo("kb publish: nothing changed — no PR needed.")
-        return
-    action = "push" if report.pushed else "commit only (hub has no remote)"
-    typer.echo(
-        f"kb publish: {report.repo_id} @ {report.source_commit} — "
-        f"{report.n_docs} doc, {action}."
-    )
+    _echo_publish_report(report)
 
 
 @app.command(name="ci-publish")
@@ -1238,8 +1299,46 @@ def doctor(
             repo_id = _gitio.git_root(kb_dir.resolve()).name
         except Exception:
             repo_id = None
-    hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id)
-    issues += hub_issues
+
+    cfg_kind = ""
+    try:
+        from center_kb.config import load_config as _load_config
+
+        cfg_kind = _load_config(kb_dir).kind
+    except Exception:  # config hỏng đã được check_kind báo
+        pass
+    if cfg_kind == "hub":
+        from center_kb import gitio as _gitio2
+        from center_kb.config import load_config as _load_config2
+        from center_kb.doctor import Issue, check_federation_publish
+
+        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=None)
+        issues += hub_issues
+        try:
+            source_root = _gitio2.git_root(kb_dir.resolve())
+        except _gitio2.GitError as exc:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"multi-tier checks skipped — .kb is not inside a git repo: {exc}",
+                )
+            )
+        else:
+            upstream = None
+            if handle is not None and handle.root.resolve() != source_root.resolve():
+                # A URL-configured hub resolves to a cache clone — compare
+                # identities, not just paths: a cached clone of *this* repo
+                # (same repo_id in its config) is still "self".
+                try:
+                    dest_rid = _load_config2(handle.kb_dir).repo_id
+                except Exception:
+                    dest_rid = ""
+                if not (repo_id and dest_rid and dest_rid == repo_id):
+                    upstream = handle
+            issues += check_federation_publish(source_root, upstream, repo_id)
+    else:
+        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id)
+        issues += hub_issues
     has_stale = False
     if context is not None:
         text = sys.stdin.read() if context == "-" else Path(context).read_text(

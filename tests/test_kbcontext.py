@@ -211,3 +211,20 @@ def test_build_block_stale_hub_warns(fed_hub):
     handle = HubHandle(root=fed_hub, stale=True, age_seconds=120.0)
     _, warning = build_context_block(handle, ["arinc-kb:arinc-424 §5.3"])
     assert warning is not None and "stale" in warning
+
+
+def test_parse_ref_nested_repo_qualifier():
+    from center_kb.kbcontext import parse_ref
+
+    ref = parse_ref("mid/repo-x:doc-a §1.1")
+    assert ref.repo_id == "mid/repo-x"
+    assert ref.doc_id == "doc-a"
+    assert ref.section_id == "1.1"
+    assert str(ref) == "mid/repo-x:doc-a §1.1"
+
+
+def test_parse_ref_flat_qualifier_unchanged():
+    from center_kb.kbcontext import parse_ref
+
+    ref = parse_ref("repo-x:doc-a §1.1")
+    assert ref.repo_id == "repo-x"
