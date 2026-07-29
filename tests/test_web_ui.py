@@ -470,6 +470,19 @@ def test_docs_page_lists_docs(demo_doc_hub):
     assert "Demo Document" in main
 
 
+def test_docs_page_hub_down_shows_no_tags_empty_state(tmp_path, monkeypatch):
+    # Bare /ui/docs (no tags typed) with an empty/hub-down store must not
+    # show the "tag spelling" copy — that variant only makes sense when the
+    # visitor actually filtered by tags and got zero matches.
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get("/ui/docs")
+    assert resp.status_code == 200
+    main = _main(resp)
+    assert "No documents in the store yet." in main
+    assert "Ingest and publish a document to see it here." in main
+    assert "tag spelling" not in main
+
+
 def test_doc_page_lists_sections_with_status(demo_doc_hub):
     # The left rail's legend spells out "summarized — awaiting SME" on every
     # page regardless of this doc's actual section statuses, so a bare

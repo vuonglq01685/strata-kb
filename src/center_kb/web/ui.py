@@ -18,6 +18,7 @@ from starlette.routing import Route
 
 from center_kb import assetstore
 from center_kb import hub as hub_mod
+from center_kb.federation import load_federation
 from center_kb.mcp import ServerConfig
 from center_kb.query import AmbiguousDocError, get_section, search, tokenize
 from center_kb.web import api, templating, uidata
@@ -44,7 +45,7 @@ def _shell_ctx(
     return {
         "screen": screen, "hub_ok": True, "q": q,
         "raw_tags": raw_tags, "budget": budget,
-        "repo_count": uidata.store_stats(hub).repos,
+        "repo_count": len(load_federation(hub.federation_dir)),
         "catalog": uidata.catalog(hub),
         "tags": uidata.all_tags(hub),
     }

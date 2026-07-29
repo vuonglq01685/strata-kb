@@ -11,8 +11,15 @@
   <div class="stack-md" style="gap:10px">
     {% for d in docs %}{{ doc_card(d) }}
     {% else %}
-    <div class="empty-state"><p>No documents match those tags.</p>
-      <p>Check the tag spelling or browse all documents.</p></div>
+    <div class="empty-state">
+      {% if browse_tags %}
+      <p>No documents match those tags.</p>
+      <p>Check the tag spelling or browse all documents.</p>
+      {% else %}
+      <p>No documents in the store yet.</p>
+      <p>Ingest and publish a document to see it here.</p>
+      {% endif %}
+    </div>
     {% endfor %}
   </div>
 </div>
