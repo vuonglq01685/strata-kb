@@ -1284,13 +1284,33 @@ def doctor(
         pass
     if cfg_kind == "hub":
         from center_kb import gitio as _gitio2
-        from center_kb.doctor import check_federation_publish
+        from center_kb.config import load_config as _load_config2
+        from center_kb.doctor import Issue, check_federation_publish
 
-        source_root = _gitio2.git_root(kb_dir.resolve())
-        upstream = handle if (handle and handle.root.resolve() != source_root.resolve()) else None
         hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=None)
         issues += hub_issues
-        issues += check_federation_publish(source_root, upstream, repo_id)
+        try:
+            source_root = _gitio2.git_root(kb_dir.resolve())
+        except _gitio2.GitError as exc:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"multi-tier checks skipped — .kb is not inside a git repo: {exc}",
+                )
+            )
+        else:
+            upstream = None
+            if handle is not None and handle.root.resolve() != source_root.resolve():
+                # A URL-configured hub resolves to a cache clone — compare
+                # identities, not just paths: a cached clone of *this* repo
+                # (same repo_id in its config) is still "self".
+                try:
+                    dest_rid = _load_config2(handle.kb_dir).repo_id
+                except Exception:
+                    dest_rid = ""
+                if not (repo_id and dest_rid and dest_rid == repo_id):
+                    upstream = handle
+            issues += check_federation_publish(source_root, upstream, repo_id)
     else:
         hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id)
         issues += hub_issues
