@@ -166,6 +166,7 @@ def build_routes(
             return _render_page(
                 "docs.html", config, screen="docs", title="Documents",
                 docs=_match_tags(docs, tags), browse_tags=tags,
+                raw_tags=raw_tags,
             )
         budget = _budget(request)
         terms = set(tokenize(q))

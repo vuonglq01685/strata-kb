@@ -122,6 +122,11 @@ if (filterBox) {
   });
   filterBox.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
+    // Safari<16 has no HTMLFormElement.requestSubmit(). Bail before
+    // preventDefault() so Enter falls through to the browser's native
+    // implicit submission instead of being silently swallowed (calling
+    // the missing method would throw after default was already blocked).
+    if (!filterBox.form.requestSubmit) return;
     // The browser's native implicit-submission always activates the form's
     // *first* submit button ("All"), which would silently reset the status
     // filter to "all" on every Enter press regardless of what's selected.

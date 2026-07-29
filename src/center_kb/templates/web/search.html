@@ -4,7 +4,7 @@
 <noscript><style>[data-toggle-card],[data-copy-text],[data-density] { display:none }</style></noscript>
 <div class="stack-md">
   <div class="page-head">
-    <h1 style="font-size:22px">Results for “{{ q }}”</h1>
+    <h1 style="font-size:22px">{% if q %}Results for “{{ q }}”{% else %}Search{% endif %}</h1>
     <p class="meta-line">{{ results | length }} sections · budget {{ budget }} tk · scope hub federation</p>
   </div>
   {% if active_tags %}

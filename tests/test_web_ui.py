@@ -27,6 +27,19 @@ def _main(resp) -> str:
     return text[start : text.index("</main>", start)]
 
 
+def _topbar(resp) -> str:
+    """Slice the topbar search form out of a shell page.
+
+    The rail's own budget form (search.html) also emits a hidden `tags`
+    input, so a page-wide substring check can pass even when the topbar
+    form itself carries nothing — scope assertions about the topbar's
+    hidden fields to this region instead.
+    """
+    text = resp.text
+    start = text.index('<form class="topbar-search"')
+    return text[start : text.index("</form>", start)]
+
+
 def _add_section(fed_hub, repo_id: str, doc_id: str, section: models.SectionEntry) -> None:
     """Append a second section to an existing make_fed_entry manifest.
 
@@ -233,7 +246,9 @@ def test_home_bare_q_param_renders_search_screen(demo_doc_hub):
     # overview -- and search() must not be asked to match on "".
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui", params={"q": ""})
     assert resp.status_code == 200
-    assert "Results for" in resp.text
+    main = _main(resp)
+    assert '<h1 style="font-size:22px">Search</h1>' in main
+    assert "empty-state" in main
     assert "Store overview" not in resp.text
 
 
@@ -250,8 +265,9 @@ def test_topbar_form_preserves_tags_and_budget_on_search(demo_doc_hub):
         "/ui", params={"q": "airspace", "tags": "demo", "budget": "3000"}
     )
     assert resp.status_code == 200
-    assert '<input type="hidden" name="tags" value="demo">' in resp.text
-    assert '<input type="hidden" name="budget" value="3000">' in resp.text
+    topbar = _topbar(resp)
+    assert '<input type="hidden" name="tags" value="demo">' in topbar
+    assert '<input type="hidden" name="budget" value="3000">' in topbar
 
 
 def test_topbar_form_has_no_hidden_tags_budget_on_overview(demo_doc_hub):
@@ -295,6 +311,10 @@ def test_tag_only_search_lists_matching_docs(fed_hub):
     assert "icao-annex-2" in main
     assert 'class="chip' in main
     assert "filtered by" in main
+    # tag-browse (no q) is still a _search_screen dispatch, so the topbar
+    # form must carry the tags forward same as the q-driven search screen.
+    topbar = _topbar(resp)
+    assert '<input type="hidden" name="tags" value="airspace">' in topbar
 
 
 def test_tag_only_search_no_match_shows_message(fed_hub):
