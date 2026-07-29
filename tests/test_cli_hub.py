@@ -166,3 +166,41 @@ def test_cli_publish_root_hub_without_upstream_errors(tmp_path, run_git):
     result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root_hub / ".kb")])
     assert result.exit_code == 1
     assert "root hub" in result.output
+
+
+def test_cli_publish_hub_kind_self_hub_publishes_own_kb(tmp_path, run_git):
+    from typer.testing import CliRunner
+
+    from center_kb.cli import app
+    from tests.test_publish_hub import _git_repo
+
+    hub = tmp_path / "hub"
+    doc = hub / ".kb" / "own-doc"
+    doc.mkdir(parents=True)
+    (doc / "ch1.md").write_text("## 1.1 T\n\nBody.\n", encoding="utf-8")
+    (doc / "ch1.raw.md").write_text("## 1.1 T\n\nBody.\n", encoding="utf-8")
+    (doc / "_manifest.yaml").write_text(
+        "id: own-doc\ntitle: own-doc\nsections:\n"
+        "  - id: '1.1'\n    title: T\n    summary: s\n    status: summarized\n    file: ch1\n",
+        encoding="utf-8",
+    )
+    (hub / ".kb" / "index.yaml").write_text(
+        "docs:\n  - id: own-doc\n    title: own-doc\n    summary: d\n", encoding="utf-8"
+    )
+    (hub / "federation").mkdir()
+    (hub / "federation" / ".gitkeep").write_text("", encoding="utf-8")
+    (hub / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: hub-self\nhub: .\n", encoding="utf-8"
+    )
+    _git_repo(run_git, hub)
+
+    import os
+
+    cwd = os.getcwd()
+    os.chdir(hub)
+    try:
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(hub / ".kb")])
+    finally:
+        os.chdir(cwd)
+    assert result.exit_code == 0, result.output
+    assert (hub / "federation" / "hub-self" / "own-doc" / "_manifest.yaml").exists()

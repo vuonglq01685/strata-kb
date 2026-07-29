@@ -246,8 +246,11 @@ def publish_federation(
 ) -> PublishReport:
     """Hub trung gian đẩy federation/ của nó lên hub cấp trên.
 
-    Chỉ federation/ được đẩy — .kb/ riêng của hub là bàn soạn thảo, muốn share
-    thì self-publish vào chính nó trước. Cycle guard chạy trước khi ghi byte nào.
+    Chỉ federation/ được đẩy — .kb/ riêng của hub là bàn soạn thảo. Hub muốn
+    share tri thức riêng: trỏ hub về chính nó (`hub: .` hoặc `--hub
+    <đường-dẫn-chính-nó>`) — CLI sẽ mirror `.kb/` vào federation của chính nó
+    như một entry thường (self-publish); hàm này chỉ đẩy federation/ khi đích
+    là hub KHÁC. Cycle guard chạy trước khi ghi byte nào.
 
     Cycle guard xét các leaf entry đọc được; entry hỏng/slim-layout bị walk bỏ
     qua (kèm warning) nên không được guard nhìn thấy — kb doctor cảnh báo riêng.

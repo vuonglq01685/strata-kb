@@ -757,16 +757,26 @@ def publish(
                 fg=typer.colors.RED,
             )
             raise typer.Exit(1)
-        try:
-            report = publish_mod.publish_federation(
-                kb_dir, hub_ref,
-                repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
-            )
-        except (publish_mod.PublishError, gitio.GitError) as exc:
-            typer.secho(str(exc), fg=typer.colors.RED)
-            raise typer.Exit(1)
-        _echo_publish_report(report)
-        return
+        hub_path = Path(hub_ref)
+        is_self = False
+        if hub_path.is_dir():
+            try:
+                is_self = hub_path.resolve() == gitio.git_root(kb_dir.resolve())
+            except gitio.GitError:
+                is_self = False
+        if not is_self:
+            try:
+                report = publish_mod.publish_federation(
+                    kb_dir, hub_ref,
+                    repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
+                )
+            except (publish_mod.PublishError, gitio.GitError) as exc:
+                typer.secho(str(exc), fg=typer.colors.RED)
+                raise typer.Exit(1)
+            _echo_publish_report(report)
+            return
+        # is_self: fall through — a hub pointing at itself publishes its own
+        # .kb/ into its own federation/<repo-id>/ (self-publish, spec #7)
 
     if cfg.intake and not pr and not direct:
         try:
