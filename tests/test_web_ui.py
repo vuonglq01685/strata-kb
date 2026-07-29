@@ -217,7 +217,11 @@ def test_tag_only_search_no_match_shows_message(fed_hub):
         "/ui", params={"tags": "no-such-tag"}
     )
     assert resp.status_code == 200
-    assert "icao-annex-2" not in resp.text
+    # the shell's left-rail catalog always lists every doc (see
+    # test_shell_header_and_left_rail_on_docs_page), so "icao-annex-2" can
+    # legitimately appear there; what matters is that no *matching* doc
+    # card renders in the main content for this tag.
+    assert "doc-card" not in resp.text
     assert "No documents" in resp.text
 
 
@@ -329,7 +333,7 @@ def test_search_density_and_budget_controls_have_a11y_labels(demo_doc_hub):
 
 def test_docs_page_shows_repo_badge(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs")
-    assert 'class="source-badge source-remote"' in resp.text
+    assert 'class="badge badge-mode"' in resp.text
     assert "arinc-kb" in resp.text
     assert "icao-kb" in resp.text
 
@@ -365,7 +369,7 @@ def test_doc_page_section_links_carry_repo_param(fed_hub):
         "/ui/docs/arinc-424", params={"repo": "arinc-kb"}
     )
     assert 'href="/ui/docs/arinc-424/5.3?repo=arinc-kb"' in resp.text
-    assert "repo: arinc-kb" in resp.text
+    assert "repo arinc-kb" in resp.text
 
 
 def test_doc_page_404(fed_hub):
@@ -378,6 +382,33 @@ def test_doc_page_ambiguous_returns_400(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs/arinc-424")
     assert resp.status_code == 400
     assert "dup-kb:arinc-424" in resp.text
+
+
+def test_doc_page_rows_carry_data_attrs_and_tokens(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb"}
+    )
+    assert resp.status_code == 200
+    assert "data-row" in resp.text
+    assert "data-status=" in resp.text
+    assert "sec-grid" in resp.text
+
+
+def test_doc_page_server_side_status_filter(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc", params={"repo": "demo-kb", "status": "reviewed"}
+    )
+    assert resp.status_code == 200
+    # demo_doc_hub's fixture section defaults to status="summarized"
+    # (make_fed_entry's default) -> filtered out server-side by "reviewed".
+    assert "No section matches" in resp.text or "data-row" not in resp.text
+
+
+def test_docs_page_cards_show_repo_and_tags(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/docs")
+    assert "doc-card" in resp.text
+    assert "demo-kb" in resp.text
+    assert "chip" in resp.text
 
 
 def test_section_page_renders_l2_with_table_and_citation(demo_doc_hub):
@@ -739,7 +770,6 @@ def test_login_page_is_standalone_no_catalog_leak(demo_doc_hub):
     assert "Demo Document" not in resp.text  # no rail on the login page
 
 
-@pytest.mark.xfail(reason="docs.html converts in Task 7", strict=True)
 def test_shell_header_and_left_rail_on_docs_page(demo_doc_hub):
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/docs")
     assert resp.status_code == 200

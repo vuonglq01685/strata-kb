@@ -93,45 +93,6 @@ def _e(text: str) -> str:
     return html.escape(text, quote=True)
 
 
-def _status_span(status: str) -> str:
-    return f'<span class="status-badge status-{_e(status)}">{_e(status)}</span>'
-
-
-def _chips(tags: list[str]) -> str:
-    if not tags:
-        return '<span class="chip chip-empty">no tags</span>'
-    return "".join(
-        f'<a class="chip" href="/ui?tags={quote(t)}">{_e(t)}</a>' for t in tags
-    )
-
-
-def _source_badge(source: str) -> str:
-    return f'<span class="source-badge source-remote">{_e(source)}</span>'
-
-
-def _doc_cards(docs: list[dict]) -> str:
-    if not docs:
-        return (
-            '<div class="empty-state"><p>No documents match those tags.</p>'
-            "<p>Check the tag spelling or browse all documents.</p></div>"
-        )
-    cards = []
-    for d in docs:
-        title = _e(d["title"]) or _e(d["id"])
-        href = f"/ui/docs/{quote(d['id'])}?repo={quote(d['repo'])}"
-        name = f'<a href="{href}">{title}</a>'
-        rev = f'<span class="rev">{_e(d["revision"])}</span>' if d["revision"] else ""
-        cards.append(
-            '<article class="doc-card">'
-            f'<header class="result-head"><span class="doc-name">{name}</span> {rev}'
-            f"{_source_badge(d['repo'])}</header>"
-            f'<p class="doc-summary">{_e(d["summary"])}</p>'
-            f'<p class="chips">{_chips(d["tags"])}</p>'
-            "</article>"
-        )
-    return "\n".join(cards)
-
-
 def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
     tagset = {t.lower() for t in tags}
     return [
@@ -216,14 +177,11 @@ def build_routes(
                 raw_tags=raw_tags, hub_ok=False,
             )
         if not q and tags:
-            # Task 7 rewrites docs.html as Jinja; until then this stays on
-            # the legacy string.Template render path so the tag-only browse
-            # tests keep passing against the old markup.
             docs = api.list_docs(config) or []
-            body = _template("docs.html").substitute(
-                cards=_doc_cards(_match_tags(docs, tags))
+            return _render_page(
+                "docs.html", config, screen="docs", title="Documents",
+                docs=_match_tags(docs, tags), browse_tags=tags,
             )
-            return _page("Documents", body)
         budget = _budget(request)
         terms = set(tokenize(q))
         found = search(hub, q, tags=tags or None, budget=budget)
@@ -278,9 +236,11 @@ def build_routes(
         )
 
     async def docs_page(request: Request) -> HTMLResponse:
-        cards = _doc_cards(api.list_docs(config) or [])
-        body = _template("docs.html").substitute(cards=cards)
-        return _page("Documents", body)
+        docs = api.list_docs(config) or []
+        return _render_page(
+            "docs.html", config, screen="docs", title="Documents",
+            docs=docs, browse_tags=[],
+        )
 
     async def doc_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
@@ -288,27 +248,26 @@ def build_routes(
         try:
             found = api.load_manifest(config, doc_id, repo=repo)
         except AmbiguousDocError as exc:
-            return _page("Ambiguous document", f"<h1>400</h1><p>{_e(str(exc))}</p>", 400)
+            return _error_page(config, 400, "Ambiguous document", str(exc))
         if found is None:
-            return _page("Not found", f"<h1>404</h1><p>Unknown doc '{_e(doc_id)}'.</p>", 404)
+            return _error_page(config, 404, "Not found", f"Unknown doc '{doc_id}'.")
         manifest, rid = found
-        rows = []
-        for s in manifest.sections:
-            href = f"/ui/docs/{quote(doc_id)}/{quote(s.id)}?repo={quote(rid)}"
-            cell = f'<a href="{href}">§{_e(s.id)}</a>'
-            rows.append(
-                f"<tr><td>{cell}</td><td>{_e(s.title)}</td>"
-                f"<td>{_e(s.summary)}</td><td>{_status_span(s.status)}</td></tr>"
-            )
-        repo_note = f'<p class="meta">repo: {_e(rid)}</p>'
-        body = _template("doc.html").substitute(
-            doc_id=_e(doc_id),
-            title=_e(manifest.title),
-            revision=_e(manifest.revision),
-            repo_note=repo_note,
-            rows="\n".join(rows),
+        filter_q = request.query_params.get("filter", "").strip().lower()
+        status_q = request.query_params.get("status", "all")
+        if status_q not in ("all", "pending", "summarized", "reviewed"):
+            status_q = "all"
+        rows = [
+            s for s in manifest.sections
+            if (status_q == "all" or s.status == status_q)
+            and (not filter_q or filter_q in f"{s.id} {s.title} {s.summary}".lower())
+        ]
+        files = sorted({s.file for s in manifest.sections})
+        return _render_page(
+            "doc.html", config, screen="doc", title=manifest.title,
+            doc_id=doc_id, manifest=manifest, rid=rid, rows=rows,
+            coverage=uidata.doc_coverage(manifest),
+            filter_q=filter_q, status_q=status_q, files=files,
         )
-        return _page(manifest.title, body)
 
     async def section_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]

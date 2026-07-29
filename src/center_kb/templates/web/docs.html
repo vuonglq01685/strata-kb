@@ -1,7 +1,19 @@
-<section class="docs-head">
-  <p class="panel-label">Catalog</p>
-  <h1 class="panel-title">Documents</h1>
-</section>
-<section class="results">
-$cards
-</section>
+{% extends "base.html" %}
+{% from "_partials/cards.html" import doc_card %}
+{% block main %}
+<div class="stack-md">
+  <div class="page-head">
+    <p class="kicker accent">Catalog</p>
+    <h1>Documents</h1>
+    {% if browse_tags %}<p class="meta-line">filtered by
+      {% for t in browse_tags %}<span class="chip">{{ t }}</span>{% endfor %}</p>{% endif %}
+  </div>
+  <div class="stack-md" style="gap:10px">
+    {% for d in docs %}{{ doc_card(d) }}
+    {% else %}
+    <div class="empty-state"><p>No documents match those tags.</p>
+      <p>Check the tag spelling or browse all documents.</p></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
