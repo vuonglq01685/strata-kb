@@ -235,8 +235,10 @@ def test_home_hub_unreachable_shows_message(tmp_path, monkeypatch):
 def test_tag_only_search_lists_matching_docs(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui", params={"tags": "airspace"})
     assert resp.status_code == 200
-    assert "icao-annex-2" in resp.text
-    assert 'class="chip' in resp.text
+    main = _main(resp)
+    assert "icao-annex-2" in main
+    assert 'class="chip' in main
+    assert "filtered by" in main
 
 
 def test_tag_only_search_no_match_shows_message(fed_hub):
@@ -385,8 +387,9 @@ def test_docs_page_renders_tag_chips(fed_hub):
 
 def test_docs_page_lists_docs(demo_doc_hub):
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/docs")
-    assert "demo-doc" in resp.text
-    assert "Demo Document" in resp.text
+    main = _main(resp)
+    assert "demo-doc" in main
+    assert "Demo Document" in main
 
 
 def test_doc_page_lists_sections_with_status(demo_doc_hub):
