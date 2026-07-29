@@ -260,16 +260,17 @@ def build_routes(
             return _render_page(
                 "overview.html", config, screen="overview", title="Overview",
                 stats=uidata.StoreStats(0, 0, 0, 0), queue=[], pending_total=0,
-                index_ok=False, publish=uidata.PublishInfo(),
+                awaiting_total=0, index_ok=False, publish=uidata.PublishInfo(),
             )
         stats = uidata.store_stats(hub)
         queue = uidata.review_queue(hub)
-        pending_total = sum(
-            1 for v in uidata.status_map(hub).values() if v == "pending"
-        )
+        cat = uidata.catalog(hub)
+        pending_total = sum(d.pending for d in cat)
+        awaiting_total = sum(d.pending + d.summarized for d in cat)
         return _render_page(
             "overview.html", config, screen="overview", title="Overview",
             stats=stats, queue=queue, pending_total=pending_total,
+            awaiting_total=awaiting_total,
             index_ok=(hub.federation_dir / "index.yaml").exists(),
             publish=uidata.last_publish(hub),
         )

@@ -1,3 +1,4 @@
+import re
 from importlib import resources
 
 import pytest
@@ -82,7 +83,35 @@ def test_overview_queue_lists_unreviewed_sections(fed_hub):
     assert "badge-pending" in resp.text or "badge-summarized" in resp.text
 
 
+def test_overview_stat_grid_renders_fixture_derived_counts(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui")
+    assert resp.status_code == 200
+    assert "stat-card" in resp.text
+    # fed_hub ships 2 docs (1 section each) and demo_doc_hub adds a 3rd doc
+    # (1 section) -> 3 sections total, proving the stat grid is wired to
+    # real aggregation output rather than a static template value.
+    assert re.search(r'Sections</span>\s*<span class="value">3</span>', resp.text)
+
+
+def test_overview_queue_and_panel_labels_match_fixture(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui")
+    assert resp.status_code == 200
+    # both fed_hub sections default to status="summarized" (non-reviewed),
+    # so both surface in the queue with repo-scoped links and §-citations.
+    assert 'href="/ui/docs/arinc-424/5.3?repo=arinc-kb"' in resp.text
+    assert 'href="/ui/docs/icao-annex-2/1.1?repo=icao-kb"' in resp.text
+    assert "§5.3" in resp.text
+    assert "§1.1" in resp.text
+    # panel label counts pending+summarized (both visible queue rows are
+    # "summarized" -> 2 awaiting); rail health stays pending-only (0, since
+    # neither section is "pending") — the two labels must not collapse to
+    # the same number.
+    assert "2 sections awaiting review" in resp.text
+    assert "0 sections pending" in resp.text
+
+
 def test_ui_root_hub_down_shows_offline(tmp_path, monkeypatch):
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _client(tmp_path, str(tmp_path / "nope")).get("/ui")
     assert resp.status_code == 200
     assert "hub offline" in resp.text
