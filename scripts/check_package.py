@@ -37,6 +37,16 @@ from pathlib import Path
 WHEEL_PACKAGE_DIR = "center_kb"
 WHEEL_DIST_INFO_SUFFIX = ".dist-info"
 
+# ---- Wheel: web UI static assets the app requires at runtime (style.css,
+# app.js, the bundled webfonts) — the offender check above only catches EXTRA
+# top-level dirs, it says nothing if a packaging config change (e.g.
+# tightening `only-include`) silently drops files *inside* the package.
+WHEEL_REQUIRED_STATIC = [
+    f"{WHEEL_PACKAGE_DIR}/templates/web/static/style.css",
+    f"{WHEEL_PACKAGE_DIR}/templates/web/static/app.js",
+]
+WHEEL_REQUIRED_FONT_DIR = f"{WHEEL_PACKAGE_DIR}/templates/web/static/fonts/"
+
 # ---- sdist: src/ (the real source) + the metadata files hatchling ALWAYS adds
 # itself, unconditionally, to EVERY sdist target, no matter what only-include says.
 # pyproject.toml/README/LICENSE: per the comment at [tool.hatch.build.targets.sdist]
@@ -65,6 +75,19 @@ def wheel_offenders(wheel: Path) -> list[str]:
             tops.add(name.split("/", 1)[0])
     allowed = {WHEEL_PACKAGE_DIR} | {t for t in tops if t.endswith(WHEEL_DIST_INFO_SUFFIX)}
     return sorted(tops - allowed)
+
+
+def wheel_required_missing(wheel: Path) -> list[str]:
+    """Required web-UI static assets missing from the wheel (empty if all present)."""
+    with zipfile.ZipFile(wheel) as zf:
+        names = set(zf.namelist())
+    missing = [f for f in WHEEL_REQUIRED_STATIC if f not in names]
+    has_font = any(
+        n.startswith(WHEEL_REQUIRED_FONT_DIR) and n.endswith(".woff2") for n in names
+    )
+    if not has_font:
+        missing.append(f"{WHEEL_REQUIRED_FONT_DIR}*.woff2")
+    return missing
 
 
 def sdist_offenders(sdist: Path) -> list[str]:
@@ -108,6 +131,9 @@ def check(venv: Path, dist: Path, root: Path, tag: str | None) -> list[str]:
         offenders = wheel_offenders(wheel)
         if offenders:
             errors.append(f"{wheel.name} wrongly packages: {', '.join(offenders)}")
+        missing = wheel_required_missing(wheel)
+        if missing:
+            errors.append(f"{wheel.name} is missing required assets: {', '.join(missing)}")
 
     for sdist in sdists:
         offenders = sdist_offenders(sdist)

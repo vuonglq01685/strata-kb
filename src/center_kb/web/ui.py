@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import hmac
-import html
 import logging
 import os
 import re
 import tempfile
 from importlib import resources
-from string import Template
 from urllib.parse import quote
 
 from pathlib import Path
@@ -20,9 +18,10 @@ from starlette.routing import Route
 
 from center_kb import assetstore
 from center_kb import hub as hub_mod
+from center_kb.federation import load_federation
 from center_kb.mcp import ServerConfig
 from center_kb.query import AmbiguousDocError, get_section, search, tokenize
-from center_kb.web import api
+from center_kb.web import api, templating, uidata
 from center_kb.web.auth import COOKIE_NAME
 from center_kb.web.mdrender import render as md_render
 from center_kb.web.ratelimit import (
@@ -33,99 +32,51 @@ from center_kb.web.ratelimit import (
 
 logger = logging.getLogger("center_kb.web.ui")
 
-HUB_DOWN_HTML = '<div class="empty-state"><p>Hub unreachable.</p></div>'
-HUB_DOWN_PAGE = (
-    "<h1>503</h1><p>Hub unreachable — the federation is the only read source.</p>"
-)
+
+def _shell_ctx(
+    config: ServerConfig, screen: str, q: str = "",
+    raw_tags: str = "", budget: int | None = None,
+) -> dict:
+    hub = api.hub_handle(config)
+    if hub is None:
+        return {"screen": screen, "hub_ok": False, "q": q,
+                "raw_tags": raw_tags, "budget": budget,
+                "repo_count": 0, "catalog": [], "tags": []}
+    return {
+        "screen": screen, "hub_ok": True, "q": q,
+        "raw_tags": raw_tags, "budget": budget,
+        "repo_count": len(load_federation(hub.federation_dir)),
+        "catalog": uidata.catalog(hub),
+        "tags": uidata.all_tags(hub),
+    }
 
 
-def _template(name: str) -> Template:
-    text = (
-        resources.files("center_kb")
-        .joinpath(f"templates/web/{name}")
-        .read_text(encoding="utf-8")
+def _render_page(
+    template: str, config: ServerConfig, screen: str,
+    status: int = 200, q: str = "", raw_tags: str = "",
+    budget: int | None = None, **ctx,
+) -> HTMLResponse:
+    # raw_tags/budget are only ever passed by _search_screen (every other
+    # caller keeps the falsy defaults, so their shell carries no topbar
+    # hidden fields); re-mirrored into ctx so search.html's own top-level
+    # {{ raw_tags }}/{{ budget }} references (meta-line, budget rail form)
+    # keep working exactly as before this shell plumbing was added.
+    shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget)
+    ctx["q"] = q
+    ctx["raw_tags"] = raw_tags
+    ctx["budget"] = budget
+    return HTMLResponse(
+        templating.render(template, shell=shell, **ctx), status_code=status
     )
-    return Template(text)
 
 
-def _page(title: str, body: str, status: int = 200) -> HTMLResponse:
-    doc = _template("base.html").substitute(title=html.escape(title), body=body)
-    return HTMLResponse(doc, status_code=status)
-
-
-def _e(text: str) -> str:
-    return html.escape(text, quote=True)
-
-
-def _status_span(status: str) -> str:
-    return f'<span class="status-badge status-{_e(status)}">{_e(status)}</span>'
-
-
-def _chips(tags: list[str]) -> str:
-    if not tags:
-        return '<span class="chip chip-empty">no tags</span>'
-    return "".join(
-        f'<a class="chip" href="/ui?tags={quote(t)}">{_e(t)}</a>' for t in tags
+def _error_page(
+    config: ServerConfig, code: int, heading: str, message: str
+) -> HTMLResponse:
+    return _render_page(
+        "error.html", config, screen="", status=code,
+        title=heading, code=str(code), heading=heading, message=message,
     )
-
-
-def _source_badge(source: str) -> str:
-    return f'<span class="source-badge source-remote">{_e(source)}</span>'
-
-
-def _match_badge(mode: str) -> str:
-    return f'<span class="match-badge match-{_e(mode)}">{_e(mode)}</span>'
-
-
-def _result_blocks(results, terms: set[str] | None = None) -> str:
-    if not results:
-        return (
-            '<div class="empty-state"><p>No matching section found.</p>'
-            "<p>Try dropping tags or changing keywords.</p></div>"
-        )
-    blocks = []
-    for r in results:
-        href = f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}?repo={quote(r.source)}"
-        blocks.append(
-            '<article class="result">'
-            '<header class="result-head">'
-            f'<a class="cite" href="{href}">{_e(r.citation)}</a>'
-            f"{_source_badge(r.source)}"
-            f"{_match_badge(r.match_mode)}"
-            f'<span class="score">~{r.tokens} tk</span>'
-            "</header>"
-            f'<div class="result-body">{md_render(r.content, terms=terms)}</div>'
-            + (
-                f'<div class="result-snippet">raw match: {_e(r.snippet)}</div>'
-                if r.snippet
-                else ""
-            )
-            + "</article>"
-        )
-    return "\n".join(blocks)
-
-
-def _doc_cards(docs: list[dict]) -> str:
-    if not docs:
-        return (
-            '<div class="empty-state"><p>No documents match those tags.</p>'
-            "<p>Check the tag spelling or browse all documents.</p></div>"
-        )
-    cards = []
-    for d in docs:
-        title = _e(d["title"]) or _e(d["id"])
-        href = f"/ui/docs/{quote(d['id'])}?repo={quote(d['repo'])}"
-        name = f'<a href="{href}">{title}</a>'
-        rev = f'<span class="rev">{_e(d["revision"])}</span>' if d["revision"] else ""
-        cards.append(
-            '<article class="doc-card">'
-            f'<header class="result-head"><span class="doc-name">{name}</span> {rev}'
-            f"{_source_badge(d['repo'])}</header>"
-            f'<p class="doc-summary">{_e(d["summary"])}</p>'
-            f'<p class="chips">{_chips(d["tags"])}</p>'
-            "</article>"
-        )
-    return "\n".join(cards)
 
 
 def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
@@ -136,6 +87,34 @@ def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
     ]
 
 
+STATIC_TYPES = {".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2"}
+
+
+async def static_file(request: Request) -> Response:
+    name = request.path_params["path"]
+    suffix = Path(name).suffix
+    media = STATIC_TYPES.get(suffix)
+    # ":" and "\" never appear in legit asset names; they cover Windows
+    # drive-absolute (C:\...) and backslash traversal, where a bare
+    # startswith("/") check does not.
+    if media is None or ".." in name or name.startswith("/") or ":" in name or "\\" in name:
+        return Response("not found", status_code=404)
+    target = resources.files("center_kb").joinpath("templates/web/static").joinpath(name)
+    try:
+        if not target.is_file():
+            return Response("not found", status_code=404)
+        data = await run_in_threadpool(target.read_bytes)
+    except OSError as exc:
+        # e.g. ENAMETOOLONG for pathologically long segments — treat as a
+        # miss rather than surfacing a 500 to the (auth-exempt) caller.
+        logger.warning("static file lookup failed for %r: %s", name, exc)
+        return Response("not found", status_code=404)
+    return Response(
+        data, media_type=media,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 def build_routes(
     config: ServerConfig, token: str, store_factory=None, login_limiter=None
 ) -> list[Route]:
@@ -144,8 +123,7 @@ def build_routes(
     )
 
     async def login_get(request: Request) -> HTMLResponse:
-        body = _template("login.html").substitute(error="")
-        return _page("Sign in", body)
+        return HTMLResponse(templating.render("login.html", error=""))
 
     async def login_post(request: Request) -> Response:
         client_ip = request.client.host if request.client else "unknown"
@@ -153,10 +131,12 @@ def build_routes(
         # a hit inside the lockout window.
         if not limiter.allow(client_ip):
             logger.warning("login rate-limited for %s", client_ip)
-            body = _template("login.html").substitute(
-                error='<p class="error">Too many attempts — try again later.</p>'
+            return HTMLResponse(
+                templating.render(
+                    "login.html", error="Too many attempts — try again later."
+                ),
+                status_code=429,
             )
-            return _page("Sign in", body, status=429)
         form = await request.form()
         submitted = str(form.get("token", ""))
         if hmac.compare_digest(submitted, token):
@@ -165,36 +145,97 @@ def build_routes(
             return resp
         # never log the submitted value — it may be a near-miss of the token
         logger.warning("failed login attempt from %s", client_ip)
-        body = _template("login.html").substitute(
-            error='<p class="error">Invalid token.</p>'
+        return HTMLResponse(
+            templating.render("login.html", error="Invalid token — check for trailing spaces.")
         )
-        return _page("Sign in", body)
+
+    def _budget(request: Request) -> int:
+        try:
+            b = int(request.query_params.get("budget", "2000"))
+        except ValueError:
+            b = 2000
+        return max(200, min(b, 8000))
+
+    async def _search_screen(request: Request, q: str, raw_tags: str) -> HTMLResponse:
+        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+        hub = api.hub_handle(config)
+        if hub is None:
+            return _render_page(
+                "search.html", config, screen="search", title="Search", q=q,
+                results=[], budget=_budget(request), active_tags=tags,
+                raw_tags=raw_tags,
+            )
+        if not q and tags:
+            docs = api.list_docs(config) or []
+            return _render_page(
+                "docs.html", config, screen="docs", title="Documents",
+                docs=_match_tags(docs, tags), browse_tags=tags,
+                raw_tags=raw_tags,
+            )
+        budget = _budget(request)
+        terms = set(tokenize(q))
+        # An empty query with no tags (e.g. the nav "Search" link, `/ui?q=`)
+        # has nothing to search for — skip the lookup and render the search
+        # screen's empty state rather than asking search() to match on "".
+        found = search(hub, q, tags=tags or None, budget=budget) if q else []
+        smap = uidata.status_map(hub)
+        top = max((r.score for r in found), default=1.0) or 1.0
+        results = [
+            {
+                "citation": r.citation,
+                "title": r.title,
+                "status": smap.get((r.source, r.doc_id, r.section_id), "pending"),
+                "match_mode": r.match_mode,
+                "tokens": r.tokens,
+                "score_pct": round(100 * r.score / top),
+                "body_html": md_render(r.content, terms=terms),
+                "file": f"{r.doc_id}/{r.section_id}",
+                "href": (
+                    f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
+                    f"?repo={quote(r.source)}"
+                ),
+            }
+            for r in found
+        ]
+        return _render_page(
+            "search.html", config, screen="search", title="Search", q=q,
+            results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
+        )
 
     async def home(request: Request) -> HTMLResponse:
         q = request.query_params.get("q", "").strip()
         raw_tags = request.query_params.get("tags", "").strip()
-        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
-        terms = set(tokenize(q)) if q else set()
+        # Presence of the `q` param (even empty, as in the nav "Search" link's
+        # `/ui?q=`) routes to the search screen; only a bare `/ui` with no
+        # query params at all renders the overview.
+        if "q" in request.query_params or raw_tags:
+            return await _search_screen(request, q, raw_tags)  # Task 6
         hub = api.hub_handle(config)
-        results_html = ""
         if hub is None:
-            results_html = HUB_DOWN_HTML
-        elif q:
-            results = search(hub, q, tags=tags or None, budget=2000)
-            results_html = _result_blocks(results, terms)
-        elif tags:
-            docs = api.list_docs(config) or []
-            results_html = _doc_cards(_match_tags(docs, tags))
-        scope = "hub federation"
-        body = _template("search.html").substitute(
-            q=_e(q), tags=_e(raw_tags), scope=_e(scope), results=results_html
+            return _render_page(
+                "overview.html", config, screen="overview", title="Overview",
+                stats=uidata.StoreStats(0, 0, 0, 0), queue=[], pending_total=0,
+                awaiting_total=0, index_ok=False, publish=uidata.PublishInfo(),
+            )
+        stats = uidata.store_stats(hub)
+        queue = uidata.review_queue(hub)
+        cat = uidata.catalog(hub)
+        pending_total = sum(d.pending for d in cat)
+        awaiting_total = sum(d.pending + d.summarized for d in cat)
+        return _render_page(
+            "overview.html", config, screen="overview", title="Overview",
+            stats=stats, queue=queue, pending_total=pending_total,
+            awaiting_total=awaiting_total,
+            index_ok=(hub.federation_dir / "index.yaml").exists(),
+            publish=uidata.last_publish(hub),
         )
-        return _page("Search", body)
 
     async def docs_page(request: Request) -> HTMLResponse:
-        cards = _doc_cards(api.list_docs(config) or [])
-        body = _template("docs.html").substitute(cards=cards)
-        return _page("Documents", body)
+        docs = api.list_docs(config) or []
+        return _render_page(
+            "docs.html", config, screen="docs", title="Documents",
+            docs=docs, browse_tags=[],
+        )
 
     async def doc_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
@@ -202,27 +243,31 @@ def build_routes(
         try:
             found = api.load_manifest(config, doc_id, repo=repo)
         except AmbiguousDocError as exc:
-            return _page("Ambiguous document", f"<h1>400</h1><p>{_e(str(exc))}</p>", 400)
+            return _error_page(config, 400, "Ambiguous document", str(exc))
         if found is None:
-            return _page("Not found", f"<h1>404</h1><p>Unknown doc '{_e(doc_id)}'.</p>", 404)
+            return _error_page(config, 404, "Not found", f"Unknown doc '{doc_id}'.")
         manifest, rid = found
-        rows = []
-        for s in manifest.sections:
-            href = f"/ui/docs/{quote(doc_id)}/{quote(s.id)}?repo={quote(rid)}"
-            cell = f'<a href="{href}">§{_e(s.id)}</a>'
-            rows.append(
-                f"<tr><td>{cell}</td><td>{_e(s.title)}</td>"
-                f"<td>{_e(s.summary)}</td><td>{_status_span(s.status)}</td></tr>"
-            )
-        repo_note = f'<p class="meta">repo: {_e(rid)}</p>'
-        body = _template("doc.html").substitute(
-            doc_id=_e(doc_id),
-            title=_e(manifest.title),
-            revision=_e(manifest.revision),
-            repo_note=repo_note,
-            rows="\n".join(rows),
+        # filter_raw preserves the caller's original casing for echoing back
+        # into the filter input's value= attribute (passed to the template
+        # as filter_value); filter_q is the lowered form used for the
+        # (case-insensitive) row match below.
+        filter_raw = request.query_params.get("filter", "").strip()
+        filter_q = filter_raw.lower()
+        status_q = request.query_params.get("status", "all")
+        if status_q not in ("all", "pending", "summarized", "reviewed"):
+            status_q = "all"
+        rows = [
+            s for s in manifest.sections
+            if (status_q == "all" or s.status == status_q)
+            and (not filter_q or filter_q in f"{s.id} {s.title} {s.summary}".lower())
+        ]
+        files = sorted({s.file for s in manifest.sections})
+        return _render_page(
+            "doc.html", config, screen="doc", title=manifest.title,
+            doc_id=doc_id, manifest=manifest, rid=rid, rows=rows,
+            coverage=uidata.doc_coverage(manifest),
+            filter_value=filter_raw, status_q=status_q, files=files,
         )
-        return _page(manifest.title, body)
 
     async def section_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
@@ -233,42 +278,42 @@ def build_routes(
         repo = request.query_params.get("repo") or None
         hub = api.hub_handle(config)
         if hub is None:
-            return _page("Hub unreachable", HUB_DOWN_PAGE, 503)
+            return _error_page(
+                config, 503, "Hub unreachable",
+                "The federation is the only read source.",
+            )
         try:
             result = get_section(hub, doc_id, section_id, level=level, repo=repo)
         except AmbiguousDocError as exc:
-            return _page("Ambiguous document", f"<h1>400</h1><p>{_e(str(exc))}</p>", 400)
+            return _error_page(config, 400, "Ambiguous document", str(exc))
         if result is None:
-            return _page(
-                "Not found",
-                f"<h1>404</h1><p>{_e(doc_id)} §{_e(section_id)} not found.</p>",
-                404,
+            return _error_page(
+                config, 404, "Not found", f"{doc_id} §{section_id} not found."
             )
-        other = "l3" if level == "l2" else "l2"
-        toggle_href = (
-            f"/ui/docs/{quote(doc_id)}/{quote(section_id)}"
-            f"?level={other}&repo={quote(result.source)}"
+        prev = nxt = entry = None
+        revision = ""
+        # repo=result.source is always a concrete repo id here (get_section
+        # already resolved it), so this can't raise AmbiguousDocError — that
+        # only fires when repo is None and >1 repo holds the same doc_id.
+        # found is None only for the theoretical race of the doc vanishing
+        # between get_section's and this call's federation reads; the
+        # `entry`/`prev`/`next` = None fallback below (and section.html's
+        # rail `{% if entry %}` branch) keeps that degrade graceful.
+        found = api.load_manifest(config, result.doc_id, repo=result.source)
+        if found is not None:
+            manifest, _ = found
+            revision = manifest.revision
+            prev, nxt = uidata.prev_next(manifest, result.section_id)
+            entry = next(
+                (s for s in manifest.sections if s.id == result.section_id), None
+            )
+        return _render_page(
+            "section.html", config, screen="section",
+            title=f"{doc_id} §{section_id}",
+            doc_id=result.doc_id, section_id=result.section_id, repo=result.source,
+            level=level, result=result, content_html=md_render(result.content),
+            prev=prev, next=nxt, entry=entry, revision=revision,
         )
-        toggle = f'<a href="{toggle_href}">view {other.upper()}</a>'
-        body = _template("section.html").substitute(
-            doc_id=_e(doc_id),
-            section_id=_e(section_id),
-            title=_e(result.title),
-            citation=_e(result.citation),
-            tokens=str(result.tokens),
-            level=level,
-            toggle=toggle,
-            content=md_render(result.content),
-        )
-        return _page(f"{doc_id} §{section_id}", body)
-
-    async def static_css(request: Request) -> Response:
-        css = (
-            resources.files("center_kb")
-            .joinpath("templates/web/style.css")
-            .read_text(encoding="utf-8")
-        )
-        return Response(css, media_type="text/css")
 
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
     asset_cache: dict[str, Path] = {}
@@ -359,6 +404,6 @@ def build_routes(
         Route("/ui/docs", docs_page, methods=["GET"]),
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),
         Route("/ui/docs/{doc}/{section}", section_page, methods=["GET"]),
-        Route("/ui/static/style.css", static_css, methods=["GET"]),
+        Route("/ui/static/{path:path}", static_file, methods=["GET"]),
         Route("/assets/{name}", asset, methods=["GET"]),
     ]
