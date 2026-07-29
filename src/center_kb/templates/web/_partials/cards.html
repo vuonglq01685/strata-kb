@@ -1,0 +1,14 @@
+{% macro doc_card(d) %}
+<article class="doc-card">
+  <header>
+    <a class="name" href="/ui/docs/{{ d.id | urlencode }}?repo={{ d.repo | urlencode }}">{{ d.title or d.id }}</a>
+    {% if d.revision %}<span class="badge badge-summarized">{{ d.revision }}</span>{% endif %}
+    <span class="badge badge-mode">{{ d.repo }}</span>
+  </header>
+  {% if d.summary %}<p class="summary">{{ d.summary }}</p>{% endif %}
+  <p class="chips">
+    {% for t in d.tags %}<a class="chip" href="/ui?tags={{ t | urlencode }}">{{ t }}</a>
+    {% else %}<span class="chip" style="opacity:.6">no tags</span>{% endfor %}
+  </p>
+</article>
+{% endmacro %}

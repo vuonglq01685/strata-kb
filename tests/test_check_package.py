@@ -14,6 +14,7 @@ from check_package import (  # noqa: E402
     sdist_offenders,
     tag_matches,
     wheel_offenders,
+    wheel_required_missing,
 )
 
 
@@ -103,6 +104,54 @@ def test_wheel_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path)
         "AERO-KB_Architecture_v0.1.pdf",
         "scripts",
     ]
+
+
+def test_wheel_required_missing_is_empty_when_static_assets_present(tmp_path):
+    wheel = _make_wheel(
+        tmp_path / "clean-0.1-py3-none-any.whl",
+        [
+            "center_kb/__init__.py",
+            "center_kb/templates/web/static/style.css",
+            "center_kb/templates/web/static/app.js",
+            "center_kb/templates/web/static/fonts/IBMPlexSans-Regular.woff2",
+            "center_kb-0.1.dist-info/METADATA",
+        ],
+    )
+
+    assert wheel_required_missing(wheel) == []
+
+
+def test_wheel_required_missing_flags_absent_static_assets(tmp_path):
+    # A packaging config change (e.g. tightening `only-include`) could drop
+    # these files silently — wheel_offenders alone would stay green, since a
+    # missing file isn't an extra top-level entry.
+    wheel = _make_wheel(
+        tmp_path / "dirty-0.1-py3-none-any.whl",
+        ["center_kb/__init__.py", "center_kb-0.1.dist-info/METADATA"],
+    )
+
+    missing = wheel_required_missing(wheel)
+
+    assert "center_kb/templates/web/static/style.css" in missing
+    assert "center_kb/templates/web/static/app.js" in missing
+    assert any("fonts" in m and m.endswith(".woff2") for m in missing)
+
+
+def test_wheel_required_missing_accepts_any_woff2_font_name(tmp_path):
+    # Only the *presence* of a font is required, not a specific filename —
+    # the font set can grow/shrink without this check needing an update.
+    wheel = _make_wheel(
+        tmp_path / "clean2-0.1-py3-none-any.whl",
+        [
+            "center_kb/__init__.py",
+            "center_kb/templates/web/static/style.css",
+            "center_kb/templates/web/static/app.js",
+            "center_kb/templates/web/static/fonts/SomeOtherFont-Bold.woff2",
+            "center_kb-0.1.dist-info/METADATA",
+        ],
+    )
+
+    assert wheel_required_missing(wheel) == []
 
 
 def _make_sdist(path: Path, root: str, names: list[str]) -> Path:

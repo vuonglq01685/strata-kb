@@ -1,7 +1,85 @@
-<p class="crumbs"><a href="/ui/docs">Documents</a> / $doc_id</p>
-<h1>$title <span class="rev">$revision</span></h1>
-$repo_note
-<table class="sections">
-  <tr><th>Section</th><th>Title</th><th>Summary</th><th>Status</th></tr>
-$rows
-</table>
+{% extends "base.html" %}
+{% from "_partials/status.html" import status %}
+{% block main %}
+<div class="stack-md">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/docs">Documents</a> <span class="sep">/</span> {{ doc_id }}</p>
+    <h1 style="font-size:26px">{{ manifest.title }}</h1>
+    <p class="meta-line">
+      {% if manifest.revision %}<span class="badge badge-summarized">{{ manifest.revision }}</span>{% endif %}
+      <span>repo {{ rid }}</span><span class="sep">·</span>
+      {% if manifest.ingested %}<span>ingested {{ manifest.ingested }}</span><span class="sep">·</span>{% endif %}
+      <span>{{ manifest.sections | length }} sections</span>
+    </p>
+  </div>
+  <form class="filter-bar" method="get" action="">
+    <input type="hidden" name="repo" value="{{ rid }}">
+    {# Only matters for the JS requestSubmit() path (see app.js): that call
+       submits the form's current field values with no button contributing a
+       value of its own, so this hidden field is what carries the active
+       status through on Enter-key submits. With JS disabled, the browser's
+       native implicit submission still activates the form's *first* submit
+       button ("All") regardless of what's selected — duplicate-key GET
+       params resolve to the LAST occurrence, so that button's own
+       name="status" value (rendered later, in source order) wins over this
+       hidden field in the no-JS case. Must precede the buttons in source
+       order so an explicit button click always overrides this field. #}
+    <input type="hidden" name="status" value="{{ status_q }}" data-status-hidden>
+    <input type="search" name="filter" value="{{ filter_value }}" data-filter
+           placeholder="Filter sections by id, title or summary…">
+    <div class="seg-row">
+      {% for s in ("all", "pending", "summarized", "reviewed") %}
+      <button type="submit" name="status" value="{{ s }}"
+              class="seg {{ 'on' if status_q == s else '' }}"
+              data-status-btn="{{ s }}"
+              aria-pressed="{{ 'true' if status_q == s else 'false' }}">{{ s | capitalize }}</button>
+      {% endfor %}
+    </div>
+    <span class="shown" data-shown data-total="{{ manifest.sections | length }}">{{ rows | length }} of {{ manifest.sections | length }} shown</span>
+  </form>
+  <div class="panel sec-table">
+    <div class="sec-grid head">
+      <span>Section</span><span>Title</span><span>One-line summary</span>
+      <span>Status</span><span style="text-align:right">L2 tk</span>
+    </div>
+    {% for s in rows %}
+    <div class="sec-grid" data-row data-status="{{ s.status }}"
+         data-text="{{ (s.id ~ ' ' ~ s.title ~ ' ' ~ s.summary) | lower }}">
+      <a class="sid" href="/ui/docs/{{ doc_id | urlencode }}/{{ s.id | urlencode }}?repo={{ rid | urlencode }}">§{{ s.id }}</a>
+      <span class="title">{{ s.title }}</span>
+      <span class="sum">{{ s.summary }}</span>
+      <span>{{ status(s.status) }}</span>
+      <span class="tk">{{ s.tokens.l2 }}</span>
+    </div>
+    {% else %}
+    <div class="empty-state">No section matches that filter.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+{% block rail %}
+<div class="rail-block">
+  <p class="kicker">Coverage</p>
+  <div style="display:flex; height:8px; border-radius:4px; overflow:hidden; border:1px solid #e8e5df">
+    {% if coverage.reviewed %}<span style="flex:{{ coverage.reviewed }}; background:#1a6e3c"></span>{% endif %}
+    {% if coverage.summarized %}<span style="flex:{{ coverage.summarized }}; background:#1349a5"></span>{% endif %}
+    {% if coverage.pending %}<span style="flex:{{ coverage.pending }}; background:#92600a"></span>{% endif %}
+  </div>
+  <div class="rail-kv"><span>reviewed</span><span class="v">{{ coverage.reviewed }} / {{ coverage.total }}</span></div>
+  <div class="rail-kv"><span>summarized</span><span class="v">{{ coverage.summarized }} / {{ coverage.total }}</span></div>
+  <div class="rail-kv"><span>pending</span><span class="v">{{ coverage.pending }}</span></div>
+</div>
+<div class="rail-block">
+  <p class="kicker">Source</p>
+  {% if manifest.revision %}<div class="rail-kv"><span>Revision</span><span class="v">{{ manifest.revision }}</span></div>{% endif %}
+  {% if manifest.ingested %}<div class="rail-kv"><span>Ingested</span><span class="v">{{ manifest.ingested }}</span></div>{% endif %}
+  {% if manifest.source_sha256 %}
+  <div style="font-size:12px; color:#66707c">source_sha256
+    <code style="display:block; font:10.5px/1.5 var(--mono); color:#16202c; word-break:break-all">{{ manifest.source_sha256 }}</code></div>
+  {% endif %}
+</div>
+<div class="rail-block">
+  <p class="kicker">Files</p>
+  <span style="font: 11px/1.6 var(--mono); color:#66707c">_manifest.yaml<br>{% for f in files %}{{ f }}<br>{% endfor %}</span>
+</div>
+{% endblock %}
