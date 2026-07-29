@@ -490,13 +490,16 @@ Phase 2 lets one knowledge store talk to developers via MCP and pin citations. P
 **Multi-tier federation (hub → hub):** a `kind: hub` repo may itself declare
 `hub:` + `repo_id:` in `.kb/config.yaml` — `kb publish` on such a repo mirrors
 its **`federation/`** (not its own `.kb/`) into `federation/<hub-id>/` on the
-upstream hub, keeping the nested layout (`federation/mid/repo-x/…`). Depth is
-unbounded; entry ids become paths (`mid/repo-x:doc-id` when qualifying refs).
-Publishing refuses with `federation cycle detected` when the chain would loop
-content back (upstream resolves to itself, or an entry path already contains a
-hub id from the chain). A hub without `hub:` is a root hub — `kb publish` there
-errors with guidance. Scope search by choosing which hub you query: a team hub
-returns the team's knowledge, the root hub returns everything.
+upstream hub, keeping the nested layout (`federation/mid/repo-x/…`) (exception:
+a hub pointing `hub:` at itself takes the self-publish route — its own `.kb/`
+is mirrored into its own `federation/<repo-id>/` as an ordinary entry). Depth
+is unbounded; entry ids become paths (`mid/repo-x:doc-id` when qualifying
+refs). Publishing refuses with `federation cycle detected` when the chain
+would loop content back (upstream resolves to itself, or an entry path
+already contains a hub id from the chain). A hub without `hub:` is a root
+hub — `kb publish` there errors with guidance. Scope search by choosing which
+hub you query: a team hub returns the team's knowledge, the root hub returns
+everything.
 
 ---
 

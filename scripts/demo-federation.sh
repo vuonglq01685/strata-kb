@@ -87,17 +87,24 @@ echo "-- aggregate index on the ROOT hub (nested ids mid/...):"
 cat "$ROOT_HUB/federation/index.yaml"
 
 echo "== 11. Query at the root sees every tier =="
-kb query "beta gadget" --hub "$ROOT_HUB" --kb-dir "$DEMO_DIR/repo-alpha/.kb"
+ROOT_QUERY_OUT="$(kb query "beta gadget" --hub "$ROOT_HUB" --kb-dir "$DEMO_DIR/repo-alpha/.kb")"
+echo "$ROOT_QUERY_OUT"
+if ! echo "$ROOT_QUERY_OUT" | grep -q "mid/repo-beta"; then
+  echo "-- ERROR: root query did not show nested id" && exit 1
+fi
 
 echo "== 12. Cycle demo: root hub pointed back at mid → publish refuses =="
 printf 'kind: hub\nrepo_id: root-hub\nhub: %s\n' "$HUB" > "$ROOT_HUB/.kb/config.yaml"
 G "$ROOT_HUB" add -A; G "$ROOT_HUB" commit -qm "misconfigure: point back at mid"
-# kb publish exits 1 on a refused cycle (PublishError) — capture output first
+# kb publish exits 1 on a refused cycle (PublishError) — capture rc explicitly
 # instead of piping straight into `grep -q`: under `set -o pipefail` the
 # pipeline's exit status is kb publish's nonzero code regardless of grep's
 # own (successful) match, which would always trip the `else` branch below.
-CYCLE_OUT="$(kb publish --kb-dir "$ROOT_HUB/.kb" 2>&1)" || true
-if echo "$CYCLE_OUT" | grep -q "federation cycle detected"; then
+set +e
+CYCLE_OUT="$(kb publish --kb-dir "$ROOT_HUB/.kb" 2>&1)"
+CYCLE_RC=$?
+set -e
+if [ "$CYCLE_RC" -ne 0 ] && echo "$CYCLE_OUT" | grep -q "federation cycle detected"; then
   echo "-- cycle correctly refused"
 else
   echo "-- ERROR: cycle was NOT refused" && exit 1
