@@ -699,6 +699,24 @@ def stats(
         )
 
 
+def _echo_publish_report(report) -> None:
+    if report.mode == "pr":
+        if report.pr_url:
+            typer.echo(
+                f"kb publish: {report.repo_id} @ {report.source_commit} — "
+                f"{report.n_docs} doc, PR: {report.pr_url}"
+            )
+            typer.echo("Content goes live when the PR is merged on the hub.")
+        else:
+            typer.echo("kb publish: nothing changed — no PR needed.")
+        return
+    action = "push" if report.pushed else "commit only (hub has no remote)"
+    typer.echo(
+        f"kb publish: {report.repo_id} @ {report.source_commit} — "
+        f"{report.n_docs} doc, {action}."
+    )
+
+
 @app.command()
 def publish(
     hub: str = typer.Option(
@@ -727,6 +745,29 @@ def publish(
         raise typer.Exit(2)
 
     cfg = load_config(kb_dir)
+    mode = "pr" if pr else "direct" if direct else "auto"
+    if cfg.kind == "hub":
+        try:
+            hub_ref = require_hub(hub, kb_dir)
+        except HubConfigError:
+            typer.secho(
+                "this is a root hub (kind: hub, no `hub:` configured) — nothing "
+                "to publish upstream; add `hub: <url|path>` to .kb/config.yaml "
+                "to chain it to a higher hub",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        try:
+            report = publish_mod.publish_federation(
+                kb_dir, hub_ref,
+                repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
+            )
+        except (publish_mod.PublishError, gitio.GitError) as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1)
+        _echo_publish_report(report)
+        return
+
     if cfg.intake and not pr and not direct:
         try:
             pr_url = publish_mod.publish_via_intake(
@@ -742,7 +783,6 @@ def publish(
             typer.echo("kb publish: done (no PR URL reported).")
         return
 
-    mode = "pr" if pr else "direct" if direct else "auto"
     try:
         hub_ref = require_hub(hub, kb_dir)
         report = publish_mod.publish(
@@ -752,21 +792,7 @@ def publish(
     except (HubConfigError, publish_mod.PublishError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    if report.mode == "pr":
-        if report.pr_url:
-            typer.echo(
-                f"kb publish: {report.repo_id} @ {report.source_commit} — "
-                f"{report.n_docs} doc, PR: {report.pr_url}"
-            )
-            typer.echo("Content goes live when the PR is merged on the hub.")
-        else:
-            typer.echo("kb publish: nothing changed — no PR needed.")
-        return
-    action = "push" if report.pushed else "commit only (hub has no remote)"
-    typer.echo(
-        f"kb publish: {report.repo_id} @ {report.source_commit} — "
-        f"{report.n_docs} doc, {action}."
-    )
+    _echo_publish_report(report)
 
 
 @app.command(name="ci-publish")

@@ -2,10 +2,19 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from center_kb import publish
 from center_kb.hub import HubHandle
 from tests.conftest import make_fed_entry
+
+
+def _git_repo(run_git, root: Path) -> None:
+    run_git(root, "init")
+    run_git(root, "config", "user.name", "test")
+    run_git(root, "config", "user.email", "test@test.local")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "v1")
 
 
 @pytest.fixture
@@ -105,3 +114,90 @@ def test_find_cycle_segment_clean(tmp_path):
     make_fed_entry(fed, "repo-a", "doc-a")
     make_fed_entry(fed / "leaf-hub", "repo-b", "doc-b")
     assert federation.find_cycle_segment(fed, {"mid"}) is None
+
+
+@pytest.fixture
+def mid_hub(tmp_path: Path, run_git) -> Path:
+    """Hub trung gian (git repo): .kb/ + federation/ có 2 entry."""
+    root = tmp_path / "mid"
+    (root / ".kb").mkdir(parents=True)
+    fed = root / "federation"
+    make_fed_entry(fed, "repo-a", "doc-a")
+    make_fed_entry(fed / "leaf-hub", "repo-b", "doc-b")
+    (root / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: mid\n", encoding="utf-8"
+    )
+    (root / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    _git_repo(run_git, root)
+    return root
+
+
+@pytest.fixture
+def root_hub(tmp_path: Path, run_git) -> Path:
+    root = tmp_path / "root-hub"
+    (root / ".kb").mkdir(parents=True)
+    (root / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: root-hub\n", encoding="utf-8"
+    )
+    (root / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (root / "federation").mkdir()
+    (root / "federation" / ".gitkeep").write_text("", encoding="utf-8")
+    _git_repo(run_git, root)
+    return root
+
+
+def test_publish_federation_direct_end_to_end(mid_hub, root_hub):
+    report = publish.publish_federation(
+        mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct"
+    )
+    assert report.repo_id == "mid"
+    assert report.n_docs == 2
+    fed = root_hub / "federation"
+    assert (fed / "mid" / "repo-a" / "index.yaml").exists()
+    assert (fed / "mid" / "leaf-hub" / "repo-b" / "index.yaml").exists()
+    # aggregate index trên root chứa id lồng
+    idx = yaml.safe_load((fed / "index.yaml").read_text(encoding="utf-8"))
+    rids = {d["repo_id"] for d in idx["docs"]}
+    assert rids == {"mid/repo-a", "mid/leaf-hub/repo-b"}
+
+
+def test_publish_federation_second_run_noop(mid_hub, root_hub):
+    publish.publish_federation(mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct")
+    report = publish.publish_federation(
+        mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct"
+    )
+    assert report.n_docs == 2  # no-op, không lỗi
+
+
+def test_publish_federation_rejects_self_hub(mid_hub):
+    with pytest.raises(publish.PublishError, match="federation cycle detected"):
+        publish.publish_federation(
+            mid_hub / ".kb", str(mid_hub), repo_id="mid", mode="direct"
+        )
+
+
+def test_publish_federation_rejects_own_id_in_entries(mid_hub, root_hub):
+    # nội dung của 'mid' đã quay vòng về federation của chính nó
+    make_fed_entry(mid_hub / "federation" / "upper" / "mid", "repo-c", "doc-c")
+    with pytest.raises(publish.PublishError, match="federation cycle detected"):
+        publish.publish_federation(
+            mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct"
+        )
+
+
+def test_publish_federation_rejects_dest_id_in_entries(mid_hub, root_hub):
+    # federation của mid chứa entry đến từ root-hub → đẩy lên root-hub là trả ngược
+    make_fed_entry(mid_hub / "federation" / "root-hub", "repo-d", "doc-d")
+    with pytest.raises(publish.PublishError, match="federation cycle detected"):
+        publish.publish_federation(
+            mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct"
+        )
+
+
+def test_publish_federation_missing_federation_dir(tmp_path, run_git, root_hub):
+    bare = tmp_path / "bare"
+    (bare / ".kb").mkdir(parents=True)
+    (bare / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    _git_repo(run_git, bare)
+    with pytest.raises(publish.PublishError, match="no federation"):
+        publish.publish_federation(bare / ".kb", str(root_hub), repo_id="bare", mode="direct")

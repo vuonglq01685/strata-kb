@@ -237,6 +237,71 @@ def publish(
     return _publish_direct(kb_abs, handle, rid, source_commit, max_retries)
 
 
+def publish_federation(
+    kb_dir: Path,
+    hub_ref: str,
+    repo_id: str | None = None,
+    max_retries: int = 3,
+    mode: str = "auto",
+) -> PublishReport:
+    """Hub trung gian đẩy federation/ của nó lên hub cấp trên.
+
+    Chỉ federation/ được đẩy — .kb/ riêng của hub là bàn soạn thảo, muốn share
+    thì self-publish vào chính nó trước. Cycle guard chạy trước khi ghi byte nào.
+
+    Cycle guard xét các leaf entry đọc được; entry hỏng/slim-layout bị walk bỏ
+    qua (kèm warning) nên không được guard nhìn thấy — kb doctor cảnh báo riêng.
+    """
+    from center_kb import config as config_mod
+
+    kb_abs = kb_dir.resolve()
+    source_root = gitio.git_root(kb_abs)
+    fed_src = source_root / "federation"
+    if not fed_src.is_dir():
+        raise PublishError(
+            "this hub has no federation/ directory — nothing to publish upstream"
+        )
+    source_commit = gitio.head_commit(source_root)
+    rid = repo_id or source_root.name
+    if not _REPO_ID_RE.fullmatch(rid) or rid in {".", ".."}:
+        raise PublishError(
+            f"repo-id '{rid}' is invalid — only letters/digits/._- allowed, no path separators"
+        )
+    handle = hub_mod.resolve_hub(hub_ref)
+    if handle is None:
+        raise PublishError(f"could not reach hub '{gitio.redact_url(hub_ref)}'")
+    if handle.root.resolve() == source_root.resolve():
+        raise PublishError(
+            "federation cycle detected: the upstream hub resolves to this repo itself"
+        )
+    forbidden = {rid}
+    dest_rid = config_mod.load_config(handle.kb_dir).repo_id
+    if dest_rid:
+        forbidden.add(dest_rid)
+    hit = federation.find_cycle_segment(fed_src, forbidden)
+    if hit is not None:
+        raise PublishError(
+            f"federation cycle detected: entry '{hit}' contains a hub id from this "
+            "publish chain — publishing would loop content back on itself"
+        )
+    _neutralize_excludes(handle.root)
+    if mode == "auto":
+        use_pr = (
+            gitio.has_remote(handle.root)
+            and "github" in gitio.remote_url(handle.root)
+            and ghio.gh_available()
+        )
+        mode = "pr" if use_pr else "direct"
+    if mode == "pr":
+        return _publish_pr(
+            fed_src, handle, rid, source_commit, snapshot_fn=_snapshot_federation
+        )
+    return _publish_direct(
+        fed_src, handle, rid, source_commit, max_retries,
+        snapshot_fn=_snapshot_federation,
+    )
+
+
 def _push_with_retry(handle: hub_mod.HubHandle, rid: str, max_retries: int) -> bool:
     """Push handle.root; on rejection (race), pull --rebase, regenerate the
     aggregate index against the now-current tree, commit that fix, and retry.
