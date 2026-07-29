@@ -41,7 +41,7 @@
     </article>
     {% else %}
     <div class="empty-state">
-      {% if not hub_ok %}
+      {% if not shell.hub_ok %}
       <p>Hub unreachable — the federation is the only read source.</p>
       {% else %}
       <p>No matching section found.</p>

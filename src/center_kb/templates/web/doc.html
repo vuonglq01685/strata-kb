@@ -14,13 +14,23 @@
   </div>
   <form class="filter-bar" method="get" action="">
     <input type="hidden" name="repo" value="{{ rid }}">
+    {# Carries the active status through an implicit (Enter-key) submit from
+       the filter box below, which would otherwise re-submit whatever the
+       browser's default button is (always "All", regardless of what's
+       actually selected) and silently reset the status filter. Must precede
+       the buttons in source order — the status buttons keep their own
+       name="status" for real clicks / no-JS, and duplicate-key GET params
+       resolve to the LAST occurrence, so an explicit button click (later in
+       source order) still wins over this hidden field. #}
+    <input type="hidden" name="status" value="{{ status_q }}" data-status-hidden>
     <input type="search" name="filter" value="{{ filter_q }}" data-filter
            placeholder="Filter sections by id, title or summary…">
     <div class="seg-row">
       {% for s in ("all", "pending", "summarized", "reviewed") %}
       <button type="submit" name="status" value="{{ s }}"
               class="seg {{ 'on' if status_q == s else '' }}"
-              data-status-btn="{{ s }}">{{ s | capitalize }}</button>
+              data-status-btn="{{ s }}"
+              aria-pressed="{{ 'true' if status_q == s else 'false' }}">{{ s | capitalize }}</button>
       {% endfor %}
     </div>
     <span class="shown" data-shown data-total="{{ manifest.sections | length }}">{{ rows | length }} of {{ manifest.sections | length }} shown</span>

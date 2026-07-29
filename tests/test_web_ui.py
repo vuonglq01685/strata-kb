@@ -342,7 +342,7 @@ def test_search_budget_form_hidden_field_preserves_query(demo_doc_hub):
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
         "/ui", params={"q": "airspace"}
     )
-    assert 'name="q" value="airspace"' in resp.text
+    assert '<input type="hidden" name="q" value="airspace">' in resp.text
     assert "Results for “airspace”" in resp.text
 
 
@@ -737,8 +737,8 @@ def test_section_page_prev_link_binds_to_previous_sibling(demo_doc_hub):
     main = _main(resp)
     assert '<div class="pager">' in main
     assert '<span class="dir">← previous</span>' in main
+    assert 'href="/ui/docs/demo-doc/1.1?repo=demo-kb"' in main
     assert "§1.1" in main
-    assert "?repo=demo-kb" in main
 
 
 def test_section_page_no_siblings_hides_pager(demo_doc_hub):
@@ -873,32 +873,21 @@ def test_home_query_never_renders_raw_snippet_block(fed_hub, monkeypatch):
     )
     assert "result-snippet" not in resp.text
     assert "GRYPHON42" not in resp.text
+    # test_home_query_hides_snippet_block_when_empty folded in here: both
+    # covered the same "result-snippet" absence, just via a real (unmocked)
+    # search vs. this monkeypatched one — the monkeypatched case subsumes it.
 
 
-def test_home_query_hides_snippet_block_when_empty(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui", params={"q": "airspace designation"}
-    )
-    assert "result-snippet" not in resp.text
-
-
-@pytest.mark.xfail(
-    reason=(
-        "style.css was rewritten to the design-token stylesheet in Task 3 "
-        "(SDD web UI redesign); the old selectors it asserted "
-        "(.detail, mark {}, .match-keyword, .match-semantic, 76rem max-width) "
-        "were removed. Task 4+ must update these assertions to match the new "
-        "markup/CSS or remove this test once the corresponding screens are rewritten."
-    ),
-    strict=True,
-)
 def test_static_css_widens_main_and_defines_new_styles(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/static/style.css")
-    assert "max-width: 76rem" in resp.text
-    assert ".detail" in resp.text
+    # the old single-column `.detail` wrapper is gone — the redesign widens
+    # the reading area via the shell's 3-column grid instead of a max-width
+    assert "grid-template-columns: 248px minmax(0,1fr) 292px" in resp.text
+    # keyword-highlight rule (previously asserted with no test protecting it)
     assert "mark {" in resp.text
-    assert ".match-keyword" in resp.text
-    assert ".match-semantic" in resp.text
+    # design tokens from the approved redesign mock
+    assert "--accent: #1349a5" in resp.text
+    assert "--r-md: 8px" in resp.text
 
 
 def test_section_page_wraps_content_in_reader_container(fed_hub):
@@ -1136,11 +1125,14 @@ def test_shell_ctx_hub_up_populates_catalog_and_tags(demo_doc_hub):
 
 def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing-hub"))
-    resp = ui._error_page(config, 404, "Not found", "x")
+    resp = ui._error_page(config, 404, "Not found", "boom-42")
     assert resp.status_code == 404
     body = resp.body.decode()
     assert "hub offline" in body  # shell chip reflects hub_ok=False
-    assert "Not found" in body
+    assert "<h1>Not found</h1>" in body
+    assert "boom-42" in body  # binds error.html's {{ message }}, not just the heading
+    assert 'aria-label="Main navigation"' in body
+    assert "<title>Not found — CENTER-KB</title>" in body  # binds base.html's title block
 
 
 def test_app_js_ships_interactivity_hooks(fed_hub):

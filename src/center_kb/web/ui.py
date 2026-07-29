@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import hmac
-import html
 import logging
 import os
 import re
 import tempfile
 from importlib import resources
-from string import Template
 from urllib.parse import quote
 
 from pathlib import Path
@@ -32,28 +30,6 @@ from center_kb.web.ratelimit import (
 )
 
 logger = logging.getLogger("center_kb.web.ui")
-
-HUB_DOWN_PAGE = (
-    "<h1>503</h1><p>Hub unreachable — the federation is the only read source.</p>"
-)
-
-
-def _template(name: str) -> Template:
-    text = (
-        resources.files("center_kb")
-        .joinpath(f"templates/web/{name}")
-        .read_text(encoding="utf-8")
-    )
-    return Template(text)
-
-
-def _page(title: str, body: str, status: int = 200) -> HTMLResponse:
-    # Screens not yet converted to the Jinja shell (search/docs/doc/section —
-    # see Tasks 5-8) render against this frozen copy of the pre-Task-4
-    # base.html, since the real base.html is now a Jinja template (`{{ }}` /
-    # `{% %}`) that string.Template's `$identifier` substitution can't fill.
-    doc = _template("_legacy_base.html").substitute(title=html.escape(title), body=body)
-    return HTMLResponse(doc, status_code=status)
 
 
 def _shell_ctx(config: ServerConfig, screen: str, q: str = "") -> dict:
@@ -87,10 +63,6 @@ def _error_page(
         "error.html", config, screen="", status=code,
         title=heading, code=str(code), heading=heading, message=message,
     )
-
-
-def _e(text: str) -> str:
-    return html.escape(text, quote=True)
 
 
 def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
@@ -174,7 +146,7 @@ def build_routes(
             return _render_page(
                 "search.html", config, screen="search", title="Search", q=q,
                 results=[], budget=_budget(request), active_tags=tags,
-                raw_tags=raw_tags, hub_ok=False,
+                raw_tags=raw_tags,
             )
         if not q and tags:
             docs = api.list_docs(config) or []
@@ -207,7 +179,6 @@ def build_routes(
         return _render_page(
             "search.html", config, screen="search", title="Search", q=q,
             results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
-            hub_ok=True,
         )
 
     async def home(request: Request) -> HTMLResponse:
@@ -296,10 +267,14 @@ def build_routes(
             )
         prev = nxt = entry = None
         revision = ""
-        try:
-            found = api.load_manifest(config, result.doc_id, repo=result.source)
-        except AmbiguousDocError:
-            found = None
+        # repo=result.source is always a concrete repo id here (get_section
+        # already resolved it), so this can't raise AmbiguousDocError — that
+        # only fires when repo is None and >1 repo holds the same doc_id.
+        # found is None only for the theoretical race of the doc vanishing
+        # between get_section's and this call's federation reads; the
+        # `entry`/`prev`/`next` = None fallback below (and section.html's
+        # rail `{% if entry %}` branch) keeps that degrade graceful.
+        found = api.load_manifest(config, result.doc_id, repo=result.source)
         if found is not None:
             manifest, _ = found
             revision = manifest.revision

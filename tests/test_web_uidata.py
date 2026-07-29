@@ -25,9 +25,7 @@ def mixed_status_hub(tmp_path: Path, run_git) -> Path:
     (hub / ".kb").mkdir(parents=True)
     models.save_yaml_model(hub / ".kb" / "index.yaml", models.KBIndex())
     fed = hub / "federation"
-    entry = make_fed_entry(
-        fed, "mix-kb", "mixed-doc", sec_id="1.1", sec_title="A", status="pending"
-    )
+    entry = make_fed_entry(fed, "mix-kb", "mixed-doc", sec_id="1.1", sec_title="A")
     models.save_yaml_model(
         entry / "mixed-doc" / "_manifest.yaml",
         models.Manifest(
@@ -154,6 +152,32 @@ def test_last_publish_missing_hub_root_is_empty_not_error(tmp_path: Path):
     missing_root = tmp_path / "does-not-exist"
     info = uidata.last_publish(HubHandle(root=missing_root))
     assert info.commit == ""
+    assert info.repos == []
+    assert info.published_at == ""
+
+
+def test_last_publish_unreadable_federation_index_is_empty_not_error(
+    tmp_path: Path, run_git
+):
+    # federation/index.yaml exists but fails to parse (hand-edited, disk
+    # corruption, a bad merge...) — models.load_yaml_model raises, and the
+    # `except Exception` branch in last_publish must degrade to empty
+    # repos/published_at rather than propagate a 500 up through the overview
+    # screen.
+    hub_root = tmp_path / "bad-index-hub"
+    (hub_root / ".kb").mkdir(parents=True)
+    models.save_yaml_model(hub_root / ".kb" / "index.yaml", models.KBIndex())
+    fed = hub_root / "federation"
+    fed.mkdir()
+    (fed / "index.yaml").write_text("docs: [unterminated", encoding="utf-8")
+    run_git(hub_root, "init")
+    run_git(hub_root, "config", "user.name", "test")
+    run_git(hub_root, "config", "user.email", "test@test.local")
+    run_git(hub_root, "add", "-A")
+    run_git(hub_root, "commit", "-m", "hub v1")
+
+    info = uidata.last_publish(HubHandle(root=hub_root))
+
     assert info.repos == []
     assert info.published_at == ""
 

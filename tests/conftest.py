@@ -264,7 +264,6 @@ def make_fed_entry(
     l3: str | None = None,
     source_commit: str = "abc1234",
     published_at: str = "2026-07-13T00:00:00+00:00",
-    status: str = "summarized",
 ) -> Path:
     """Write one federation entry in the new format (full .kb mirror, L0→L3)."""
     from center_kb.federation import FederationMeta
@@ -288,7 +287,7 @@ def make_fed_entry(
             sections=[
                 models.SectionEntry(
                     id=sec_id, title=sec_title, summary=sec_summary,
-                    status=status, file="ch1",
+                    status="summarized", file="ch1",
                 )
             ],
         ),

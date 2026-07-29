@@ -81,14 +81,18 @@ if (filterBox) {
   const initialBtn = document.querySelector("[data-status-btn].on");
   const state = { status: initialBtn?.getAttribute("data-status-btn") || "all" };
 
-  // If the page was already server-filtered (?status= or ?filter= present),
-  // the DOM only contains the rows that survived that filter. Widening the
-  // filter client-side (e.g. switching from "reviewed" to "all") can't
-  // reveal rows the server never sent, so route status changes back through
-  // a real form submit for a fresh server render instead of faking it
-  // client-side.
+  // If the page was already server-filtered (a non-empty ?filter= or a
+  // ?status= other than "all"/absent), the DOM only contains the rows that
+  // survived that filter. Widening the filter client-side (e.g. switching
+  // from "reviewed" to "all", or clearing the filter text) can't reveal rows
+  // the server never sent, so route those changes back through a real form
+  // submit for a fresh server render instead of faking it client-side.
+  // ?status=all / ?status= (empty) aren't a real narrowing, so they don't count.
   const searchParams = new URLSearchParams(location.search);
-  const hasServerFilter = searchParams.has("status") || searchParams.has("filter");
+  const serverStatus = searchParams.get("status") || "";
+  const hasServerFilter =
+    Boolean(searchParams.get("filter")) || !["", "all"].includes(serverStatus);
+  const statusHidden = document.querySelector("[data-status-hidden]");
 
   const rows = () => document.querySelectorAll("[data-row]");
   const apply = () => {
@@ -107,14 +111,37 @@ if (filterBox) {
       label.textContent = `${shown} of ${total} shown`;
     }
   };
-  filterBox.addEventListener("input", apply);
+  filterBox.addEventListener("input", () => {
+    // Rows here are already a server-filtered subset — narrowing further on
+    // the client would report an honest-looking but misleading "N of M"
+    // count against a dataset that isn't the full one. Leave the DOM alone
+    // and let Enter (a real submit, see the keydown handler below) fetch a
+    // correctly-scoped page from the server instead.
+    if (hasServerFilter) return;
+    apply();
+  });
+  filterBox.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    // The browser's native implicit-submission always activates the form's
+    // *first* submit button ("All"), which would silently reset the status
+    // filter to "all" on every Enter press regardless of what's selected.
+    // requestSubmit() with no submitter bypasses that: it submits the
+    // form's current field values as-is (including the hidden `status`
+    // field kept in sync below), with no button contributing its own value.
+    e.preventDefault();
+    filterBox.form.requestSubmit();
+  });
   document.querySelectorAll("[data-status-btn]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       if (hasServerFilter) return; // let the form submit — need a fresh server render
       e.preventDefault(); // stop the form submit — filter client-side
       state.status = btn.getAttribute("data-status-btn");
-      document.querySelectorAll("[data-status-btn]").forEach((b) =>
-        b.classList.toggle("on", b === btn));
+      if (statusHidden) statusHidden.value = state.status;
+      document.querySelectorAll("[data-status-btn]").forEach((b) => {
+        const isActive = b === btn;
+        b.classList.toggle("on", isActive);
+        b.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
       apply();
     });
   });
