@@ -313,13 +313,17 @@ _FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
 
 def _fed_tree_digest(root: Path) -> str:
     """Digest deterministic của một cây federation — bỏ file tầng đỉnh mà
-    publish không mirror (index/registry/.gitkeep) và mọi _meta.yaml
-    (giống _kb_tree_digest: snapshot-only, hai phía đều bỏ nên so sánh vẫn đúng)."""
+    publish không mirror (index/registry/.gitkeep). KHÔNG bỏ _meta.yaml ở
+    đây (khác _kb_tree_digest): _snapshot_federation mirror leaf _meta.yaml
+    verbatim từ nguồn sang đích — không có bước ghi lại meta như _snapshot
+    của .kb/ — nên cả hai phía đều mang cùng bytes khi thật sự đồng bộ;
+    bỏ _meta.yaml khỏi digest sẽ che mất drift thật (vd. child republish
+    chỉ đổi source_commit của một leaf mà không đổi nội dung nào khác)."""
     import hashlib
 
     h = hashlib.sha256()
     for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.name == "_meta.yaml":
+        if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
         if rel in _FED_TOP_SKIP:

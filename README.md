@@ -499,7 +499,13 @@ would loop content back (upstream resolves to itself, or an entry path
 already contains a hub id from the chain). A hub without `hub:` is a root
 hub — `kb publish` there errors with guidance. Scope search by choosing which
 hub you query: a team hub returns the team's knowledge, the root hub returns
-everything.
+everything. Hub-to-hub publish needs direct git access to the upstream (or
+`gh` for `--pr` mode) — the intake/OIDC route is child-repo-only and is not
+supported anywhere in the chain; a hub with both `hub:` and `intake:` set
+gets an explicit error instead of a silent wrong route. An emptied local
+`federation/` will **not** propagate deletions upstream — publish refuses
+rather than wipe the upstream hub's entries; delete `federation/<hub-id>/`
+on the upstream manually if that is really intended.
 
 ---
 

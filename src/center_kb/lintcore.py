@@ -30,7 +30,13 @@ FENCE_RE = re.compile(r"```[ \t]*(\S*)[ \t]*\r?\n(.*?)```", re.S)
 # '/'-joined path segments (e.g. 'mid/repo-x') to mirror kbcontext._REF_RE's
 # multi-tier federation support — a body citation qualified by a nested
 # repo-id must resolve against a kb-context ref pinned at that same nested
-# id, not silently drop everything before the last '/'. The section-id
+# id, not silently drop everything before the last '/'. This mirrors the
+# '/'-segment STRUCTURE only, not the exact charset: each segment here is
+# `[\w.-]` (Python's `\w` is Unicode-aware by default, so this is wider
+# than kbcontext._REF_RE's explicit ASCII-only `[A-Za-z0-9._-]`) — kept as
+# it was before this note; not tightened, since narrowing it risks missing
+# citations against repo-ids that already validated fine elsewhere. The
+# section-id
 # group must END on a character that is not sentence punctuation: prose
 # that cites a section at the end of a sentence ('... per arinc-424 §5.3.')
 # would otherwise absorb the sentence-ending period into the section id,

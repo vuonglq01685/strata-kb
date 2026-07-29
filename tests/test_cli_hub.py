@@ -204,3 +204,65 @@ def test_cli_publish_hub_kind_self_hub_publishes_own_kb(tmp_path, run_git):
         os.chdir(cwd)
     assert result.exit_code == 0, result.output
     assert (hub / "federation" / "hub-self" / "own-doc" / "_manifest.yaml").exists()
+
+
+def test_cli_publish_hub_kind_self_hub_dot_from_other_cwd(tmp_path, run_git, monkeypatch):
+    from typer.testing import CliRunner
+
+    from center_kb.cli import app
+    from tests.test_publish_hub import _git_repo
+
+    hub = tmp_path / "hub2"
+    doc = hub / ".kb" / "own-doc"
+    doc.mkdir(parents=True)
+    (doc / "ch1.md").write_text("## 1.1 T\n\nBody.\n", encoding="utf-8")
+    (doc / "ch1.raw.md").write_text("## 1.1 T\n\nBody.\n", encoding="utf-8")
+    (doc / "_manifest.yaml").write_text(
+        "id: own-doc\ntitle: own-doc\nsections:\n"
+        "  - id: '1.1'\n    title: T\n    summary: s\n    status: summarized\n    file: ch1\n",
+        encoding="utf-8",
+    )
+    (hub / ".kb" / "index.yaml").write_text(
+        "docs:\n  - id: own-doc\n    title: own-doc\n    summary: d\n", encoding="utf-8"
+    )
+    (hub / "federation").mkdir()
+    (hub / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: hub2\nhub: .\n", encoding="utf-8"
+    )
+    _git_repo(run_git, hub)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    result = CliRunner().invoke(app, ["publish", "--kb-dir", str(hub / ".kb")])
+    assert result.exit_code == 0, result.output
+    assert (hub / "federation" / "hub2" / "own-doc" / "_manifest.yaml").exists()
+
+
+def test_cli_publish_hub_kind_intake_without_direct_or_pr_errors(tmp_path, run_git):
+    from typer.testing import CliRunner
+
+    from center_kb.cli import app
+    from tests.test_publish_hub import _git_repo
+
+    root_hub = tmp_path / "root-hub-intake"
+    (root_hub / ".kb").mkdir(parents=True)
+    (root_hub / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (root_hub / "federation").mkdir()
+    (root_hub / "federation" / ".gitkeep").write_text("", encoding="utf-8")
+    _git_repo(run_git, root_hub)
+
+    mid = tmp_path / "mid-intake"
+    (mid / ".kb").mkdir(parents=True)
+    (mid / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    from tests.conftest import make_fed_entry
+
+    make_fed_entry(mid / "federation", "repo-a", "doc-a")
+    (mid / ".kb" / "config.yaml").write_text(
+        f"kind: hub\nrepo_id: mid\nhub: {root_hub}\nintake: https://intake.example\n",
+        encoding="utf-8",
+    )
+    _git_repo(run_git, mid)
+
+    result = CliRunner().invoke(app, ["publish", "--kb-dir", str(mid / ".kb")])
+    assert result.exit_code == 2, result.output
+    assert "not supported" in result.output

@@ -746,6 +746,7 @@ def publish(
 
     cfg = load_config(kb_dir)
     mode = "pr" if pr else "direct" if direct else "auto"
+    is_self = False  # only ever True for cfg.kind == "hub" self-publish fall-through
     if cfg.kind == "hub":
         try:
             hub_ref = require_hub(hub, kb_dir)
@@ -757,14 +758,33 @@ def publish(
                 fg=typer.colors.RED,
             )
             raise typer.Exit(1)
+        # A relative `hub:` (e.g. the `hub: .` that `kb init --kind hub`
+        # ships) must anchor to the repo root, not the process cwd — the
+        # same config would otherwise route differently depending on where
+        # `kb publish` happens to be invoked from, and could even mirror
+        # into an unrelated sibling repo that also has a `.kb/`.
+        source_root = None
+        try:
+            source_root = gitio.git_root(kb_dir.resolve())
+        except gitio.GitError:
+            pass
         hub_path = Path(hub_ref)
+        if source_root is not None and not hub_path.is_absolute():
+            hub_path = source_root / hub_ref
         is_self = False
-        if hub_path.is_dir():
-            try:
-                is_self = hub_path.resolve() == gitio.git_root(kb_dir.resolve())
-            except gitio.GitError:
-                is_self = False
+        if source_root is not None and hub_path.is_dir():
+            is_self = hub_path.resolve() == source_root
+        if is_self:
+            # fall-through below must not re-resolve hub_ref cwd-relatively
+            hub_ref = str(source_root)
         if not is_self:
+            if cfg.intake and not pr and not direct:
+                typer.secho(
+                    "intake publish is not supported for hub-to-hub publish — "
+                    "remove `intake:` from .kb/config.yaml or pass --direct/--pr",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(2)
             try:
                 report = publish_mod.publish_federation(
                     kb_dir, hub_ref,
@@ -794,7 +814,12 @@ def publish(
         return
 
     try:
-        hub_ref = require_hub(hub, kb_dir)
+        # A hub-kind self-publish already resolved+anchored hub_ref above
+        # (git-root-anchored, not cwd-relative) — re-deriving it here via
+        # require_hub() would re-resolve a relative `hub: .` against the
+        # process cwd and undo that anchoring.
+        if not is_self:
+            hub_ref = require_hub(hub, kb_dir)
         report = publish_mod.publish(
             kb_dir, hub_ref,
             repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,

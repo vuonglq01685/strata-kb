@@ -59,6 +59,12 @@ def iter_entry_dirs(federation_dir: Path) -> list[tuple[str, Path]]:
 
     def _walk(cur: Path, rel: str) -> None:
         for child in sorted(p for p in cur.iterdir() if p.is_dir()):
+            if child.is_symlink():
+                # Regular files/dirs only (mirrors hashsync's invariant) —
+                # a symlinked dir could point back up the tree and loop
+                # _walk forever, or duplicate an entry that already has a
+                # real path-id elsewhere.
+                continue
             child_rel = f"{rel}/{child.name}" if rel else child.name
             if (child / "manifests").is_dir():
                 logger.warning(
@@ -93,8 +99,11 @@ def find_cycle_segment(
     đi vòng qua hub đó quay lại; publish tiếp sẽ tạo vòng lặp phình vô hạn.
 
     exempt_exact: các path-id được miễn khi trùng CHÍNH XÁC (một segment) —
-    dùng cho self-entry của hub (hub tự publish .kb/ của nó vào chính nó);
-    nội dung quay vòng thật luôn về dạng lồng >=2 segment.
+    dùng cho self-entry của hub (hub tự publish .kb/ của nó vào chính nó).
+    Lưu ý: loop-back DƯỚI ID CỦA CHÍNH REPO NGUỒN luôn lồng >=2 segment (vì
+    self-entry 1-segment của chính nó luôn nằm trong exempt_exact); nhưng
+    loop-back từ HUB ĐÍCH có thể chỉ là 1 segment — nó vẫn bị chặn vì
+    caller (publish_federation) không bao giờ đưa dest_rid vào exempt_exact.
     """
     for path_id, _ in iter_entry_dirs(federation_dir):
         if path_id in exempt_exact:
@@ -131,8 +140,9 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
 def build_federation_index(federation_dir: Path) -> models.FederationIndex:
     """The aggregate index — 100% deterministic from the sub-snapshots.
 
-    Order: repo_id ascending (load_federation already sorts), docs in the order
-    of each repo's own index.
+    Order: DFS theo tên tăng dần từng cấp (deterministic; KHÔNG phải sort
+    lexicographic toàn cục của path-id), docs in the order of each repo's
+    own index.
     """
     entries: list[models.FedIndexEntry] = []
     for repo in load_federation(federation_dir):

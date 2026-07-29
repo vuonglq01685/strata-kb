@@ -44,6 +44,20 @@ def test_check_federation_publish_digest_drift_warns(tmp_path):
     assert any("differs from the published snapshot" in i.message for i in issues)
 
 
+def test_check_federation_publish_meta_only_drift_warns(tmp_path):
+    from center_kb import publish
+
+    root = _mid(tmp_path)
+    upper = tmp_path / "root-hub"
+    (upper / "federation").mkdir(parents=True)
+    handle = HubHandle(root=upper)
+    publish._snapshot_federation(root / "federation", handle, "mid", "abc1234")
+    meta = root / "federation" / "repo-a" / "_meta.yaml"
+    meta.write_text(meta.read_text(encoding="utf-8").replace("abc1234", "def5678"), encoding="utf-8")
+    issues = doctor.check_federation_publish(root, handle, "mid")
+    assert any("differs from the published snapshot" in i.message for i in issues)
+
+
 def test_check_federation_publish_warns_on_cycle(tmp_path):
     root = _mid(tmp_path)
     make_fed_entry(root / "federation" / "upper" / "mid", "repo-c", "doc-c")

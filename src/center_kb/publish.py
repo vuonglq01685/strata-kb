@@ -275,15 +275,42 @@ def publish_federation(
     handle = hub_mod.resolve_hub(hub_ref)
     if handle is None:
         raise PublishError(f"could not reach hub '{gitio.redact_url(hub_ref)}'")
-    if handle.root.resolve() == source_root.resolve():
+    try:
+        dest_rid = config_mod.load_config(handle.kb_dir).repo_id or None
+    except Exception as exc:  # noqa: BLE001 — fail closed: a corrupt upstream
+        # config must not silently blind the identity-based cycle guard below.
+        raise PublishError(
+            f"could not read the upstream hub's .kb/config.yaml: {exc}"
+        ) from exc
+    is_self = handle.root.resolve() == source_root.resolve()
+    if not is_self and dest_rid is not None and dest_rid == rid:
+        is_self = True
+    if not is_self:
+        # A hub whose upstream is itself reached by remote URL (e.g. the
+        # upstream ref resolves to a fresh cache clone of this very repo)
+        # resolves to a different path than source_root — path equality
+        # above misses it. Compare remote URLs instead; any failure here
+        # (no git binary, detached remote, etc.) is treated as not-self —
+        # the forbidden-segment guard below still catches real cycles.
+        try:
+            if gitio.has_remote(handle.root) and gitio.has_remote(source_root):
+                dest_url = gitio.remote_url(handle.root)
+                src_url = gitio.remote_url(source_root)
+                if dest_url and dest_url == src_url:
+                    is_self = True
+        except Exception:  # noqa: BLE001 — see comment above
+            pass
+    if is_self:
         raise PublishError(
             "federation cycle detected: the upstream hub resolves to this repo itself"
         )
     forbidden = {rid}
-    dest_rid = config_mod.load_config(handle.kb_dir).repo_id
     if dest_rid:
         forbidden.add(dest_rid)
-    hit = federation.find_cycle_segment(fed_src, forbidden, exempt_exact={rid})
+    # dest_rid is never exempted — a self-entry at the DESTINATION's own id
+    # is a real loop-back, not this hub's own self-publish entry.
+    exempt_exact = {rid} if rid != dest_rid else set()
+    hit = federation.find_cycle_segment(fed_src, forbidden, exempt_exact=exempt_exact)
     if hit is not None:
         raise PublishError(
             f"federation cycle detected: entry '{hit}' contains a hub id from this "

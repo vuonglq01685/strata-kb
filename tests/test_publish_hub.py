@@ -225,3 +225,23 @@ def test_publish_federation_missing_federation_dir(tmp_path, run_git, root_hub):
     _git_repo(run_git, bare)
     with pytest.raises(publish.PublishError, match="no federation"):
         publish.publish_federation(bare / ".kb", str(root_hub), repo_id="bare", mode="direct")
+
+
+def test_publish_federation_rejects_dest_with_same_repo_id(mid_hub, tmp_path, run_git):
+    # upstream là cache clone của chính mình: cùng repo_id trong config
+    clone = tmp_path / "cache-clone"
+    (clone / ".kb").mkdir(parents=True)
+    (clone / ".kb" / "config.yaml").write_text("kind: hub\nrepo_id: mid\n", encoding="utf-8")
+    (clone / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (clone / "federation").mkdir()
+    _git_repo(run_git, clone)
+    with pytest.raises(publish.PublishError, match="federation cycle detected"):
+        publish.publish_federation(mid_hub / ".kb", str(clone), repo_id="mid", mode="direct")
+
+
+def test_find_cycle_segment_single_segment_dest_id(tmp_path):
+    from center_kb import federation
+
+    fed = tmp_path / "federation"
+    make_fed_entry(fed, "root-hub", "doc-d")  # entry 1 segment mang id hub đích
+    assert federation.find_cycle_segment(fed, {"root-hub"}, exempt_exact={"mid"}) == "root-hub"
