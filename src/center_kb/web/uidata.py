@@ -6,7 +6,9 @@ non-essential data (git metadata) degrade to empty values, never to a 500.
 """
 from __future__ import annotations
 
+import html
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
@@ -77,6 +79,17 @@ class TreeNode:
     label: str
     id: str = ""
     status: str = ""
+
+
+@dataclass(frozen=True)
+class TocEntry:
+    anchor: str
+    label: str
+
+
+_HEADING_TAG_RE = re.compile(r"<h([1-6])>(.*?)</h\1>", re.DOTALL)
+_TAG_STRIP_RE = re.compile(r"<[^>]+>")
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 def _iter_manifests(hub: HubHandle) -> Iterator[tuple[str, Manifest]]:
@@ -178,6 +191,30 @@ def section_tree(manifest: Manifest) -> list[TreeNode]:
             out.append(TreeNode(kind="chapter", label=stem.replace("-", " ")))
         out.append(TreeNode(kind="section", label=s.title, id=s.id, status=s.status))
     return out
+
+
+def inject_heading_anchors(content_html: str) -> tuple[str, list[TocEntry]]:
+    """Give every mdrender heading an id and return the matching TOC list.
+
+    mdrender emits attribute-less <hN>escaped text</hN>, so a regex pass is
+    safe here — this is not a general-purpose HTML rewriter.
+    """
+    toc: list[TocEntry] = []
+    used: set[str] = set()
+
+    def _sub(m: re.Match[str]) -> str:
+        level, inner = m.group(1), m.group(2)
+        label = html.unescape(_TAG_STRIP_RE.sub("", inner)).strip()
+        slug = _SLUG_RE.sub("-", label.lower()).strip("-") or "section"
+        anchor, n = slug, 2
+        while anchor in used:
+            anchor = f"{slug}-{n}"
+            n += 1
+        used.add(anchor)
+        toc.append(TocEntry(anchor=anchor, label=label))
+        return f'<h{level} id="{anchor}">{inner}</h{level}>'
+
+    return _HEADING_TAG_RE.sub(_sub, content_html), toc
 
 
 def prev_next(
