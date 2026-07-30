@@ -311,7 +311,9 @@ def test_tag_only_search_lists_matching_docs(fed_hub):
     main = _main(resp)
     assert "icao-annex-2" in main
     assert 'class="chip' in main
-    assert "filtered by" in main
+    # "filtered by" meta-line was replaced by an active-tag chip in the
+    # docs filter bar (Task 5); pin the chip itself instead.
+    assert '<a class="chip on" href="/ui?q=">airspace' in main
     # tag-browse (no q) is still a _search_screen dispatch, so the topbar
     # form must carry the tags forward same as the q-driven search screen.
     topbar = _topbar(resp)
@@ -325,8 +327,11 @@ def test_tag_only_search_no_match_shows_message(fed_hub):
     assert resp.status_code == 200
     # the shell's left rail no longer renders doc cards (tag panel only, see
     # test_docs_page_renders_tag_chips), so this is a plain page-wide check
-    # that no *matching* doc card renders anywhere for this tag.
-    assert "doc-card" not in resp.text
+    # that no *matching* doc card renders anywhere for this tag. Scoped to
+    # the real card element (not the bare substring), since the docs filter
+    # bar's `data-filter-list="[data-doc-card]"` CSS-selector attribute
+    # (Task 5) also contains "doc-card" without rendering an actual card.
+    assert 'class="doc-card"' not in resp.text
     assert "No documents" in resp.text
 
 
@@ -1341,3 +1346,26 @@ def test_rail_legend_is_compact(fed_hub):
     rail = _left_rail(_client(fed_hub / ".kb", str(fed_hub)).get("/ui"))
     assert ">pending<" in rail and ">summarized<" in rail and ">reviewed<" in rail
     assert "awaiting SME" not in rail
+
+
+def test_docs_filter_param_filters_server_side(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs?filter=arinc")
+    main = _main(resp)
+    assert "arinc-424" in main
+    assert "icao-annex-2" not in main
+    assert "1 of 2 documents" in main
+
+
+def test_docs_filter_matches_tags_too(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs?filter=airspace")
+    main = _main(resp)
+    assert "icao-annex-2" in main
+    assert "arinc-424" not in main
+
+
+def test_docs_cards_have_open_sections_link_and_filter_text(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs")
+    main = _main(resp)
+    assert "open sections →" in main
+    assert "data-doc-card" in main
+    assert "2 of 2 documents" in main

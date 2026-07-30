@@ -202,10 +202,11 @@ def build_routes(
             )
         if not q and tags:
             docs = api.list_docs(config) or []
+            matched = _match_tags(docs, tags)
             return _render_page(
                 "docs.html", config, screen="docs", title="Documents",
-                docs=_match_tags(docs, tags), browse_tags=tags,
-                raw_tags=raw_tags,
+                docs=matched, browse_tags=tags, raw_tags=raw_tags,
+                filter_value="", total_docs=len(docs),
             )
         budget = _budget(request)
         terms = set(tokenize(q))
@@ -266,10 +267,20 @@ def build_routes(
         )
 
     async def docs_page(request: Request) -> HTMLResponse:
-        docs = api.list_docs(config) or []
+        all_docs = api.list_docs(config) or []
+        filter_raw = request.query_params.get("filter", "").strip()
+        fq = filter_raw.lower()
+        docs = [
+            d for d in all_docs
+            if not fq
+            or fq in d["id"].lower()
+            or fq in (d.get("title") or "").lower()
+            or any(fq in t.lower() for t in d["tags"])
+        ]
         return _render_page(
             "docs.html", config, screen="docs", title="Documents",
-            docs=docs, browse_tags=[],
+            docs=docs, browse_tags=[], filter_value=filter_raw,
+            total_docs=len(all_docs),
         )
 
     async def doc_page(request: Request) -> HTMLResponse:

@@ -231,6 +231,8 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
 .doc-card .name { font-size: 15px; font-weight: 600; }
 .doc-card .summary { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.6; }
 .doc-card .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.doc-card .open-doc { margin-left: auto; font: 400 11px/1.7 var(--mono); letter-spacing: .04em; }
+.chip .x { color: rgba(255,255,255,.75); }
 
 /* reader */
 .reader { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
