@@ -18,9 +18,10 @@ AUTH_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 def _main(resp) -> str:
     """Slice the <main> content out of a shell page, excluding the rails.
 
-    The shell's left rail renders a catalog card per doc, tag chips, and a
-    status legend on every page (see base.html/_partials/left_rail.html),
-    which can shadow assertions meant to target the main content only.
+    The shell's left rail renders nav links, a tag panel (or a section tree
+    on doc/section screens), and a compact status legend on every page (see
+    base.html/_partials/left_rail.html), which can shadow assertions meant
+    to target the main content only.
     """
     text = resp.text
     start = text.index('<main class="content">')
@@ -322,10 +323,9 @@ def test_tag_only_search_no_match_shows_message(fed_hub):
         "/ui", params={"tags": "no-such-tag"}
     )
     assert resp.status_code == 200
-    # the shell's left-rail catalog always lists every doc (see
-    # test_shell_header_and_left_rail_on_docs_page), so "icao-annex-2" can
-    # legitimately appear there; what matters is that no *matching* doc
-    # card renders in the main content for this tag.
+    # the shell's left rail no longer renders doc cards (tag panel only, see
+    # test_docs_page_renders_tag_chips), so this is a plain page-wide check
+    # that no *matching* doc card renders anywhere for this tag.
     assert "doc-card" not in resp.text
     assert "No documents" in resp.text
 
@@ -446,8 +446,8 @@ def test_docs_page_shows_repo_badge(fed_hub):
 
 
 def test_docs_page_doc_links_carry_repo_param(fed_hub):
-    # The left rail's catalog cards also link to /ui/docs/{id}?repo=..., so
-    # scope the assertion to <main> to pin the doc-card links specifically.
+    # Scope the assertion to <main> to pin the doc-card links specifically
+    # (the left rail's tag panel carries no doc links to collide with).
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs")
     main = _main(resp)
     assert 'href="/ui/docs/arinc-424?repo=arinc-kb"' in main
@@ -484,8 +484,8 @@ def test_docs_page_hub_down_shows_no_tags_empty_state(tmp_path, monkeypatch):
 
 
 def test_doc_page_lists_sections_with_status(demo_doc_hub):
-    # The left rail's legend spells out "summarized — awaiting SME" on every
-    # page regardless of this doc's actual section statuses, so a bare
+    # The left rail's compact legend spells out "summarized" on every page
+    # regardless of this doc's actual section statuses, so a bare
     # "summarized" in resp.text substring check is trivially true. Scope to
     # <main> and assert the actual status-badge class the section row emits.
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
@@ -675,8 +675,8 @@ def test_doc_page_server_side_status_filter(demo_doc_hub):
 
 
 def test_docs_page_cards_show_repo_and_tags(demo_doc_hub):
-    # The left rail's catalog-card href also embeds the repo id
-    # ("?repo=demo-kb"), so scope to <main> to pin the doc-card body text.
+    # Scope to <main> to pin the doc-card body text specifically (the left
+    # rail's tag panel carries no repo id or doc-card markup to collide with).
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/docs")
     main = _main(resp)
     assert "doc-card" in main
@@ -1197,7 +1197,8 @@ def test_shell_header_and_left_rail_on_docs_page(demo_doc_hub):
     assert resp.status_code == 200
     assert "hub online" in resp.text
     assert 'id="global-search"' in resp.text
-    assert "Demo Document" in resp.text  # catalog card in left rail
+    main = _main(resp)
+    assert "Demo Document" in main  # doc-card in the main content
 
 
 def test_shell_ctx_hub_down_returns_empty_catalog(tmp_path):
@@ -1205,7 +1206,7 @@ def test_shell_ctx_hub_down_returns_empty_catalog(tmp_path):
     ctx = ui._shell_ctx(config, "overview")
     assert ctx["hub_ok"] is False
     assert ctx["repo_count"] == 0
-    assert ctx["catalog"] == []
+    assert "catalog" not in ctx
     assert ctx["tags"] == []
 
 
@@ -1216,7 +1217,7 @@ def test_shell_ctx_hub_up_populates_catalog_and_tags(demo_doc_hub):
     assert ctx["screen"] == "overview"
     assert ctx["q"] == "foo"
     assert ctx["repo_count"] >= 1
-    assert ctx["catalog"]  # non-empty: demo-kb:demo-doc is present
+    assert "catalog" not in ctx
     assert "demo" in [t["label"] for t in ctx["tags"]]
 
 
@@ -1308,3 +1309,35 @@ def test_rail_tag_panel_marks_selected_and_searchable(fed_hub):
     assert "Search tags…" in rail
     assert 'class="chip on"' in rail          # selected chip highlighted
     assert "tags=icao%2Cairspace" in rail     # unselected chip adds itself
+
+
+def test_doc_screen_rail_shows_section_tree_not_catalog(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424?repo=arinc-kb")
+    rail = _left_rail(resp)
+    assert "← all documents" in rail
+    assert "§5.3" in rail and "Restrictive Airspace" in rail
+    assert "Filter sections…" in rail
+    assert "catalog-card" not in rail
+
+
+def test_section_screen_tree_marks_active_row(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+    rail = _left_rail(resp)
+    assert "tree-row active" in rail
+
+
+def test_overview_rail_has_tags_not_tree_and_signin(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui")
+    rail = _left_rail(resp)
+    assert "Search tags…" in rail
+    assert "tree-row" not in rail
+    assert "/ui/login" in rail          # Sign in nav entry
+    assert "catalog-card" not in rail
+
+
+def test_rail_legend_is_compact(fed_hub):
+    rail = _left_rail(_client(fed_hub / ".kb", str(fed_hub)).get("/ui"))
+    assert ">pending<" in rail and ">summarized<" in rail and ">reviewed<" in rail
+    assert "awaiting SME" not in rail

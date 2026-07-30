@@ -62,13 +62,12 @@ def _shell_ctx(
     if hub is None:
         return {"screen": screen, "hub_ok": False, "q": q,
                 "raw_tags": raw_tags, "budget": budget,
-                "repo_count": 0, "catalog": [], "tags": [],
+                "repo_count": 0, "tags": [],
                 "selected_tags": selected}
     return {
         "screen": screen, "hub_ok": True, "q": q,
         "raw_tags": raw_tags, "budget": budget,
         "repo_count": len(load_federation(hub.federation_dir)),
-        "catalog": uidata.catalog(hub),
         "tags": _tag_links(uidata.all_tags(hub), selected, q),
         "selected_tags": selected,
     }
@@ -77,7 +76,7 @@ def _shell_ctx(
 def _render_page(
     template: str, config: ServerConfig, screen: str,
     status: int = 200, q: str = "", raw_tags: str = "",
-    budget: int | None = None, **ctx,
+    budget: int | None = None, shell_extra: dict | None = None, **ctx,
 ) -> HTMLResponse:
     # raw_tags/budget are only ever passed by _search_screen (every other
     # caller keeps the falsy defaults, so their shell carries no topbar
@@ -85,6 +84,8 @@ def _render_page(
     # {{ raw_tags }}/{{ budget }} references (meta-line, budget rail form)
     # keep working exactly as before this shell plumbing was added.
     shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget)
+    if shell_extra:
+        shell.update(shell_extra)
     ctx["q"] = q
     ctx["raw_tags"] = raw_tags
     ctx["budget"] = budget
@@ -136,6 +137,17 @@ async def static_file(request: Request) -> Response:
         data, media_type=media,
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+def _tree_extra(manifest, doc_id: str, rid: str, active: str = "") -> dict:
+    meta = f"{len(manifest.sections)} sections"
+    if manifest.revision:
+        meta = f"{manifest.revision} · {meta}"
+    return {
+        "tree": uidata.section_tree(manifest),
+        "tree_doc": {"id": doc_id, "repo": rid, "name": manifest.title,
+                     "meta": meta, "active": active},
+    }
 
 
 def build_routes(
@@ -290,6 +302,7 @@ def build_routes(
             doc_id=doc_id, manifest=manifest, rid=rid, rows=rows,
             coverage=uidata.doc_coverage(manifest),
             filter_value=filter_raw, status_q=status_q, files=files,
+            shell_extra=_tree_extra(manifest, doc_id, rid),
         )
 
     async def section_page(request: Request) -> HTMLResponse:
@@ -322,6 +335,7 @@ def build_routes(
         # between get_section's and this call's federation reads; the
         # `entry`/`prev`/`next` = None fallback below (and section.html's
         # rail `{% if entry %}` branch) keeps that degrade graceful.
+        shell_extra = None
         found = api.load_manifest(config, result.doc_id, repo=result.source)
         if found is not None:
             manifest, _ = found
@@ -330,12 +344,16 @@ def build_routes(
             entry = next(
                 (s for s in manifest.sections if s.id == result.section_id), None
             )
+            shell_extra = _tree_extra(
+                manifest, result.doc_id, result.source, active=result.section_id
+            )
         return _render_page(
             "section.html", config, screen="section",
             title=f"{doc_id} §{section_id}",
             doc_id=result.doc_id, section_id=result.section_id, repo=result.source,
             level=level, result=result, content_html=md_render(result.content),
             prev=prev, next=nxt, entry=entry, revision=revision,
+            shell_extra=shell_extra,
         )
 
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
