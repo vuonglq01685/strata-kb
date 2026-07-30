@@ -46,11 +46,13 @@ def _tag_links(
     it, clicking a chip on `/ui?q=...&budget=8000` would reset the next
     search to the 2000 default. Optional, defaulting to None, for backward
     compatibility with existing callers that don't carry a budget context.
+
+    Any `selected` tag absent from `all_tags` (unknown to the hub, or the
+    hub is down and `all_tags` is empty) still gets a chip so it stays
+    visible and removable instead of rendering as a blank row.
     """
-    out: list[dict] = []
-    for t in all_tags:
-        on = t in selected
-        new = [x for x in selected if x != t] if on else [*selected, t]
+
+    def href_for(new: list[str]) -> str:
         params: list[tuple[str, str]] = []
         if q:
             params.append(("q", q))
@@ -58,8 +60,18 @@ def _tag_links(
             params.append(("tags", ",".join(new)))
         if budget is not None:
             params.append(("budget", str(budget)))
-        href = f"/ui?{urlencode(params)}" if params else "/ui?q="
-        out.append({"label": t, "href": href, "on": on})
+        return f"/ui?{urlencode(params)}" if params else "/ui?q="
+
+    out: list[dict] = []
+    for t in all_tags:
+        on = t in selected
+        new = [x for x in selected if x != t] if on else [*selected, t]
+        out.append({"label": t, "href": href_for(new), "on": on})
+    known = set(all_tags)
+    for t in selected:
+        if t in known:
+            continue
+        out.append({"label": t, "href": href_for([x for x in selected if x != t]), "on": True})
     return out
 
 
@@ -72,7 +84,8 @@ def _shell_ctx(
     if hub is None:
         return {"screen": screen, "hub_ok": False, "q": q,
                 "raw_tags": raw_tags, "budget": budget,
-                "repo_count": 0, "tags": [],
+                "repo_count": 0,
+                "tags": _tag_links([], selected, q, budget=budget),
                 "selected_tags": selected}
     return {
         "screen": screen, "hub_ok": True, "q": q,

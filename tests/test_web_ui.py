@@ -1400,3 +1400,42 @@ def test_search_tag_chip_hrefs_preserve_budget(fed_hub):
     main = _main(resp)
     assert "budget=8000" in rail
     assert "budget=8000" in main
+
+
+def test_tag_links_render_unknown_selected_tag_removable():
+    from center_kb.web.ui import _tag_links
+
+    links = _tag_links(["icao"], ["bogus"], q="air")
+    bogus = [link for link in links if link["label"] == "bogus"]
+    assert bogus and bogus[0]["on"] is True
+    assert bogus[0]["href"] == "/ui?q=air"  # removing it drops the tag
+
+
+def test_search_unknown_tag_still_shows_removable_chip(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace&tags=bogus")
+    main = _main(resp)
+    assert "bogus" in main and "✕" in main
+
+
+def test_search_docs_count_dedupes_by_doc(fed_hub):
+    # arinc-424's only section (5.3) already matches "restrictive airspace"
+    # in every other fed_hub-based test; add a *second* section to the same
+    # doc that also matches, so "2 sections · 1 docs" actually pins the
+    # dedupe-by-doc_id behaviour instead of trivially passing because every
+    # fixture query happens to hit exactly one section per doc.
+    _add_section(
+        fed_hub, "arinc-kb", "arinc-424",
+        models.SectionEntry(
+            id="5.4", title="Restrictive Airspace Notes",
+            status="reviewed", file="ch1",
+        ),
+    )
+    _append_section_body(
+        fed_hub, "arinc-kb", "arinc-424", "ch1", "5.4", "Restrictive Airspace Notes",
+        "More restrictive airspace designation notes and codes.",
+    )
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "restrictive"}
+    )
+    main = _main(resp)
+    assert "2 sections · 1 docs" in main
