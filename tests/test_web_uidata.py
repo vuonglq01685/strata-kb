@@ -207,3 +207,32 @@ def test_status_map_keys(fed_hub):
     smap = uidata.status_map(_hub(fed_hub))
     assert all(len(k) == 3 for k in smap)
     assert all(v in ("pending", "summarized", "reviewed") for v in smap.values())
+
+
+def test_section_tree_single_file_has_no_chapter_rows():
+    m = models.Manifest(id="d", title="D", sections=[
+        models.SectionEntry(id="1", title="One", file="ch1-intro.md"),
+        models.SectionEntry(id="2", title="Two", file="ch1-intro.md"),
+    ])
+    tree = uidata.section_tree(m)
+    assert [n.kind for n in tree] == ["section", "section"]
+    assert [n.id for n in tree] == ["1", "2"]
+
+
+def test_section_tree_groups_by_file_with_chapter_headers():
+    m = models.Manifest(id="d", title="D", sections=[
+        models.SectionEntry(id="1", title="One", file="ch1-intro.md",
+                            status="reviewed"),
+        models.SectionEntry(id="1.2", title="One-two", file="ch1-intro.md"),
+        models.SectionEntry(id="2", title="Two", file="ch2-data.md"),
+    ])
+    tree = uidata.section_tree(m)
+    assert [(n.kind, n.label) for n in tree] == [
+        ("chapter", "ch1 intro"), ("section", "One"), ("section", "One-two"),
+        ("chapter", "ch2 data"), ("section", "Two"),
+    ]
+    assert tree[1].status == "reviewed"
+
+
+def test_section_tree_empty_manifest():
+    assert uidata.section_tree(models.Manifest(id="d", title="D")) == []

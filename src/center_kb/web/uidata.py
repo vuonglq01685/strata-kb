@@ -71,6 +71,14 @@ class Coverage:
     pending: int
 
 
+@dataclass(frozen=True)
+class TreeNode:
+    kind: str  # "chapter" | "section"
+    label: str
+    id: str = ""
+    status: str = ""
+
+
 def _iter_manifests(hub: HubHandle) -> Iterator[tuple[str, Manifest]]:
     for repo in load_federation(hub.federation_dir):
         for doc in repo.index.docs:
@@ -155,6 +163,21 @@ def doc_coverage(manifest: Manifest) -> Coverage:
     for s in manifest.sections:
         counts[s.status] += 1
     return Coverage(total=len(manifest.sections), **counts)
+
+
+def section_tree(manifest: Manifest) -> list[TreeNode]:
+    """Left-rail tree: section rows, with a chapter header row per source
+    file — but only when the doc spans more than one file."""
+    files = {s.file for s in manifest.sections}
+    out: list[TreeNode] = []
+    current: str | None = None
+    for s in manifest.sections:
+        if len(files) > 1 and s.file != current:
+            current = s.file
+            stem = s.file.rsplit(".", 1)[0]
+            out.append(TreeNode(kind="chapter", label=stem.replace("-", " ")))
+        out.append(TreeNode(kind="section", label=s.title, id=s.id, status=s.status))
+    return out
 
 
 def prev_next(
