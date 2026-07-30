@@ -151,3 +151,82 @@ if (filterBox) {
     });
   });
 }
+
+// Generic live filter: an input with data-filter-list="<selector>" hides
+// non-matching elements (matched against each element's data-text).
+const TAG_CAP = 8;
+
+function capTagChips() {
+  const hint = document.querySelector("[data-tag-hint]");
+  const visible = [...document.querySelectorAll("[data-tag-chip]")]
+    .filter((el) => el.style.display !== "none");
+  visible.forEach((el, i) => { if (i >= TAG_CAP) el.style.display = "none"; });
+  if (hint) {
+    hint.textContent = visible.length > TAG_CAP
+      ? `+${visible.length - TAG_CAP} more — keep typing to narrow`
+      : "click to add or remove a tag filter";
+  }
+}
+
+// The tree filter hides [data-tree-row] items but leaves the .tree-chapter
+// header spans in place — without this, a filter can leave a bare chapter
+// heading with none of its rows visible underneath it.
+function syncTreeChapters() {
+  document.querySelectorAll(".tree-chapter").forEach((chapter) => {
+    let sib = chapter.nextElementSibling;
+    let anyVisible = false;
+    while (sib && !sib.classList.contains("tree-chapter")) {
+      if (sib.matches("[data-tree-row]") && sib.style.display !== "none") {
+        anyVisible = true;
+        break;
+      }
+      sib = sib.nextElementSibling;
+    }
+    chapter.style.display = anyVisible ? "" : "none";
+  });
+}
+
+document.querySelectorAll("[data-filter-list]").forEach((box) => {
+  const sel = box.getAttribute("data-filter-list");
+  box.addEventListener("input", () => {
+    const q = box.value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll(sel).forEach((el) => {
+      const on = !q || (el.dataset.text || "").includes(q);
+      el.style.display = on ? "" : "none";
+      if (on) shown += 1;
+    });
+    const count = document.querySelector("[data-filter-count]");
+    if (count) {
+      const total = parseInt(count.dataset.total, 10) || shown;
+      count.textContent = `${shown} of ${total} ${count.dataset.noun || "shown"}`;
+    }
+    if (sel === "[data-tag-chip]") capTagChips();
+    if (sel === "[data-tree-row]") syncTreeChapters();
+  });
+});
+capTagChips();
+
+// J = focus next search result, C = copy the focused result's citation.
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  const key = typeof e.key === "string" ? e.key.toLowerCase() : "";
+  if (key === "j") {
+    const cards = [...document.querySelectorAll(".result-card")];
+    if (!cards.length) return;
+    const current = document.activeElement && document.activeElement.closest
+      ? document.activeElement.closest(".result-card") : null;
+    const next = cards[Math.min(cards.length - 1, cards.indexOf(current) + 1)];
+    next.setAttribute("tabindex", "-1");
+    next.focus();
+    e.preventDefault();
+  } else if (key === "c") {
+    const current = document.activeElement && document.activeElement.closest
+      ? document.activeElement.closest(".result-card") : null;
+    const card = current || document.querySelector(".result-card");
+    const btn = card && card.querySelector("[data-copy-text]");
+    if (btn) { btn.click(); e.preventDefault(); }
+  }
+});
