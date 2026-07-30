@@ -44,7 +44,7 @@ def _tag_links(
     `budget` is echoed back onto every href (after q/tags) so toggling a tag
     chip doesn't silently drop the caller's token-budget selection — without
     it, clicking a chip on `/ui?q=...&budget=8000` would reset the next
-    search to the 2000 default. Optional/keyword-only for backward
+    search to the 2000 default. Optional, defaulting to None, for backward
     compatibility with existing callers that don't carry a budget context.
     """
     out: list[dict] = []
