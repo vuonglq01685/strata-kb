@@ -389,11 +389,14 @@ def build_routes(
             shell_extra = _tree_extra(
                 manifest, result.doc_id, result.source, active=result.section_id
             )
+        content_html, toc = uidata.inject_heading_anchors(
+            md_render(result.content)
+        )
         return _render_page(
             "section.html", config, screen="section",
             title=f"{doc_id} §{section_id}",
             doc_id=result.doc_id, section_id=result.section_id, repo=result.source,
-            level=level, result=result, content_html=md_render(result.content),
+            level=level, result=result, content_html=content_html, toc=toc,
             prev=prev, next=nxt, entry=entry, revision=revision,
             shell_extra=shell_extra,
         )

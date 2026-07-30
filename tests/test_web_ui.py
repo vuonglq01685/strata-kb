@@ -1463,3 +1463,36 @@ def test_search_rail_renders_match_mode_form(fed_hub):
     assert "keyword (FTS5)" in resp.text
     assert "semantic (KNN)" in resp.text
     assert 'name="semantic" value="1"' in resp.text
+
+
+def test_section_rail_shows_on_this_page_toc(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+    assert "On this page" in resp.text
+    # fed_hub L2 body starts "## 5.3 Restrictive Airspace"
+    assert 'id="5-3-restrictive-airspace"' in resp.text
+    assert 'href="#5-3-restrictive-airspace"' in resp.text
+
+
+def test_section_toc_hidden_without_headings(fed_hub, monkeypatch):
+    # get_section()'s content always comes from mdutils.slice_section(), which
+    # keeps the sliced unit's own "## <id> <title>" line — so every real,
+    # manifest-registered section renders at least that one heading and the
+    # rail can never legitimately hit the "no headings" branch through
+    # fixture data alone (confirmed: appending a second, heading-only section
+    # via _append_section_body/_add_section still yields a 1-entry TOC, same
+    # as any normal section). Stub get_section() to return heading-free
+    # content instead, isolating the {% if toc %} branch in section.html.
+    from center_kb.query import QueryResult
+
+    def fake_get_section(hub, doc_id, section_id, level="l2", repo=None):
+        return QueryResult(
+            doc_id=doc_id, section_id=section_id, title="No Heading",
+            score=0.0, citation="arinc-kb:arinc-424 §5.3", content="Plain paragraph only.",
+            tokens=3, source="arinc-kb",
+        )
+
+    monkeypatch.setattr("center_kb.web.ui.get_section", fake_get_section)
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+    assert "On this page" not in resp.text

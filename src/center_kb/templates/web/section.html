@@ -30,6 +30,14 @@
 </div>
 {% endblock %}
 {% block rail %}
+{% if toc %}
+<div class="rail-block">
+  <p class="kicker">On this page</p>
+  {% for t in toc %}
+  <a class="toc-link" href="#{{ t.anchor }}">{{ t.label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
 <div class="rail-block">
   <p class="kicker">Citation</p>
   <div class="cite-box">
