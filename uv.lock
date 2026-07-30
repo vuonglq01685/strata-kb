@@ -183,6 +183,7 @@ ingest = [
     { name = "docling" },
     { name = "imagehash" },
     { name = "pillow" },
+    { name = "pypdfium2" },
 ]
 s3 = [
     { name = "boto3" },
@@ -210,6 +211,7 @@ requires-dist = [
     { name = "pyjwt", extras = ["crypto"], marker = "extra == 'dev'", specifier = ">=2.8" },
     { name = "pyjwt", extras = ["crypto"], marker = "extra == 'server'", specifier = ">=2.8" },
     { name = "pypdf", specifier = ">=4.0" },
+    { name = "pypdfium2", marker = "extra == 'ingest'", specifier = ">=4.30,<6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-multipart", marker = "extra == 'dev'", specifier = ">=0.0.9" },
     { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.9" },

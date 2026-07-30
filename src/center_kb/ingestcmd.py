@@ -30,6 +30,22 @@ class IngestOptions:
     no_bookmarks: bool = False
 
 
+_MAX_UNCOVERED_SHOWN = 10
+
+
+def _warn_uncovered(missing, warn: Callable[[str], None]) -> None:
+    """L3 is the complete-content layer: anything the section tree failed to
+    place is content the KB no longer has. Name it rather than lose it."""
+    for item in missing[:_MAX_UNCOVERED_SHOWN]:
+        where = f"page {item.page}" if item.page else "page unknown"
+        warn(f"content never reached L3 ({where}): {item.text[:100]}")
+    if len(missing) > _MAX_UNCOVERED_SHOWN:
+        warn(
+            f"content never reached L3: {len(missing) - _MAX_UNCOVERED_SHOWN} "
+            "more item(s) not shown"
+        )
+
+
 def run_ingest(
     opts: IngestOptions,
     echo: Callable[[str], None],
@@ -51,7 +67,7 @@ def run_ingest(
 
     doc = parser.load_or_parse(opts.pdf, opts.work_dir / opts.doc_id)
     items = parser.doc_to_items(
-        doc, assets_dir=opts.kb_dir / opts.doc_id / "assets"
+        doc, assets_dir=opts.kb_dir / opts.doc_id / "assets", pdf_path=opts.pdf
     )
     parts = (
         None if opts.no_bookmarks else parser.outline_parts(opts.pdf, heading_config)
@@ -61,6 +77,8 @@ def run_ingest(
     else:
         echo("sectioning: heading patterns")
     units = sectioner.build_units(items, config=heading_config, parts=parts)
+
+    _warn_uncovered(sectioner.uncovered(items, units), warn)
 
     bm_ids = parser.bookmark_ids(opts.pdf, heading_config)
     if bm_ids:
