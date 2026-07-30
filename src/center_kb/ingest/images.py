@@ -49,6 +49,21 @@ def save_asset(img, assets_dir: Path) -> str:
     return name
 
 
+INK_THRESHOLD = 200  # 8-bit grey level below which a pixel counts as ink
+MIN_INK_RATIO = 0.01  # under this, the crop is paper plus scanner speckle
+
+
+def is_blank(img) -> bool:
+    """True when a crop carries no drawing worth keeping.
+
+    Cell crops are taken from a page raster, so a genuinely empty cell still
+    yields an image; saving those would fill the KB with white squares.
+    """
+    grey = img.convert("L")
+    ink = sum(grey.histogram()[:INK_THRESHOLD])
+    return ink < MIN_INK_RATIO * (grey.width * grey.height)
+
+
 def _sanitize_alt(text: str) -> str:
     """Alt-text must not break markdown (]) or table cells (|)."""
     cleaned = text.replace("|", " ").replace("[", " ").replace("]", " ")

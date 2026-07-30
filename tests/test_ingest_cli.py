@@ -26,7 +26,7 @@ def _fake_parse(monkeypatch):
     from center_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None: FAKE_ITEMS)
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: FAKE_ITEMS)
     monkeypatch.setattr(
         parser, "bookmark_ids", lambda pdf, config=None: {"5", "5.3", "5.9"}
     )
@@ -36,7 +36,7 @@ def _fake_parse_with_bookmark_parts(monkeypatch):
     from center_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None: BOOKMARK_ITEMS)
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS)
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
     monkeypatch.setattr(
         parser,
@@ -49,7 +49,7 @@ def _fake_parse_outline_forbidden(monkeypatch):
     from center_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None: BOOKMARK_ITEMS)
+    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS)
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
 
     def _forbidden(pdf, config=None):
@@ -225,3 +225,43 @@ def test_ingest_no_bookmarks_flag_forces_regex_mode(tmp_path: Path, monkeypatch)
         tmp_path / ".kb" / "arinc-424" / "_manifest.yaml", models.Manifest
     )
     assert manifest.ingest.used_bookmarks is False
+
+
+def test_ingest_warns_when_content_never_reaches_l3(tmp_path: Path, monkeypatch):
+    from center_kb.ingest import parser
+
+    # Text with no heading anywhere above it lands on the tree root, which is
+    # never rendered into a section. L3 is the complete-content layer, so
+    # ingest must say so out loud instead of losing it silently.
+    orphan = "Stranded preamble sentence."
+    monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
+    monkeypatch.setattr(
+        parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: [DocItem("text", orphan)]
+    )
+    monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
+    monkeypatch.setattr(parser, "outline_parts", lambda pdf, config=None: None)
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+
+    result = runner.invoke(
+        app, ["ingest", str(pdf), "--id", "demo", "--kb-dir", str(tmp_path / ".kb")]
+    )
+
+    assert "Stranded preamble sentence." in result.output
+
+
+def test_ingest_is_quiet_when_every_item_reaches_l3(tmp_path: Path, monkeypatch):
+    _fake_parse(monkeypatch)
+    monkeypatch.setattr(
+        __import__("center_kb.ingest.parser", fromlist=["parser"]),
+        "bookmark_ids",
+        lambda pdf, config=None: set(),
+    )
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+
+    result = runner.invoke(
+        app, ["ingest", str(pdf), "--id", "demo", "--kb-dir", str(tmp_path / ".kb")]
+    )
+
+    assert "never reached" not in result.output

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from center_kb import models
 from center_kb.mdutils import count_tokens, extract_tables, slugify_id
@@ -71,8 +71,13 @@ def split_by_parts(
 
 
 DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
-DEFAULT_APPENDIX_PATTERN = r"^appendix\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$"
-DEFAULT_ATTACHMENT_PATTERN = r"^attachment\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$"
+# The identifier is optional: a document with exactly one appendix numbers
+# nothing ("APPENDIX. SEARCH AND RESCUE SIGNALS" — ICAO Annex 12). That form
+# is only accepted when a separator follows the word, so a heading that merely
+# starts with it still takes the identifier branch.
+_UNNUMBERED_PART = r"(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)"
+DEFAULT_APPENDIX_PATTERN = rf"^appendix{_UNNUMBERED_PART}(.*)$"
+DEFAULT_ATTACHMENT_PATTERN = rf"^attachment{_UNNUMBERED_PART}(.*)$"
 _NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)[.\s]+(.*\S)\s*$")
 
 
@@ -135,15 +140,24 @@ def parse_section_id(
     if m := cfg.chapter_re.match(text):
         return m.group(1), (m.group(2) or text).strip()
     if m := cfg.attachment_re.match(text):
-        return f"attachment-{m.group(1).lower()}", (m.group(2) or text).strip()
+        return _part_id("attachment", m.group(1)), (m.group(2) or text).strip()
     if m := cfg.appendix_re.match(text):
-        return f"appendix-{m.group(1).lower()}", (m.group(2) or text).strip()
+        return _part_id("appendix", m.group(1)), (m.group(2) or text).strip()
     if m := _NUMBERED_RE.match(text):
         sid = m.group(1)
         if sid.endswith(".0") and sid.count(".") == 1:
             sid = sid[:-2]
         return sid, m.group(2).strip()
     return None
+
+
+def _part_id(kind: str, identifier: str | None) -> str:
+    return f"{kind}-{identifier.lower()}" if identifier else kind
+
+
+def _is_part_root(sid: str) -> bool:
+    """True for 'appendix', 'attachment-4' and any id namespaced under them."""
+    return sid.split("-", 1)[0] in {"appendix", "attachment"}
 
 
 def _depth_of(sid: str) -> int:
@@ -267,7 +281,7 @@ class _TreeBuilder:
             sid[0].isdigit()
             and top is not None
             and (
-                top.id.startswith(("appendix-", "attachment-"))
+                _is_part_root(top.id)
                 or (
                     self.part is not None
                     and not self.part.id[:1].isdigit()
@@ -437,6 +451,34 @@ def build_units(
     return order_units(units)
 
 
+def _collapse(text: str) -> str:
+    return " ".join(text.split())
+
+
+def uncovered(items: list[DocItem], units: list[SectionUnit]) -> list[DocItem]:
+    """Content items no unit carries — L3 is the complete-content layer, so
+    this must come back empty. Headings are excluded: they become unit ids and
+    titles rather than body text, and missing structure is what crosscheck()
+    reports. Comparison is whitespace-insensitive because rendering re-joins
+    paragraphs."""
+    haystack = "\n\n".join(u.body_md for u in units)
+    blocks = {_collapse(b) for b in haystack.split("\n\n") if b.strip()}
+    blocks.discard("")
+    missing = []
+    for item in items:
+        if item.kind == "heading":
+            continue
+        needle = _collapse(item.text)
+        if not needle:
+            continue
+        if needle in blocks or f"**{needle}**" in blocks:
+            continue
+        if needle in _collapse(haystack):  # folded into a larger block
+            continue
+        missing.append(item)
+    return missing
+
+
 def _units_from_tree(
     root: _Node,
     max_depth: int,
@@ -499,4 +541,21 @@ def _units_from_tree(
         # A unit's chapter is the top-level node it lives under -- grouping
         # follows the tree structure, never re-parsed from the id string.
         walk(top, chapter_override if chapter_override is not None else top.id)
-    return units
+    return _with_root_body(root, units)
+
+
+def _with_root_body(root: _Node, units: list[SectionUnit]) -> list[SectionUnit]:
+    """Fold text that arrived before the first heading into the opening unit.
+
+    A numeric part seeds no node of its own (its subsections must keep flat
+    ids), so a caption or figure ahead of its first heading accumulates on the
+    root -- which nothing renders. Prepending keeps it in reading order without
+    inventing a section id. With no units at all there is nowhere to put it;
+    ingest's uncovered() check reports that case instead of hiding it.
+    """
+    lead = "\n\n".join(b for b in root.body if b.strip())
+    if not lead or not units:
+        return units
+    first = units[0]
+    body = f"{lead}\n\n{first.body_md}" if first.body_md.strip() else lead
+    return [replace(first, body_md=body, tables=extract_tables(body))] + units[1:]

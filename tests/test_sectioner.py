@@ -706,3 +706,101 @@ def test_symbol_only_heading_is_dropped():
     assert ids == ["8", "8.4"]
     assert all("x1" not in i for i in ids)
     assert "___" not in units[0].body_md
+
+
+def test_unnumbered_appendix_parses_as_a_part():
+    # ICAO Annex 12 has exactly one appendix, so it carries no number:
+    # "APPENDIX. SEARCH AND RESCUE SIGNALS". Requiring an identifier made it
+    # an unparsed fallback heading buried under the last chapter section.
+    assert parse_section_id("APPENDIX. SEARCH AND RESCUE SIGNALS") == (
+        "appendix",
+        "SEARCH AND RESCUE SIGNALS",
+    )
+
+
+def test_unnumbered_attachment_parses_as_a_part():
+    assert parse_section_id("ATTACHMENT — GUIDANCE MATERIAL") == (
+        "attachment",
+        "GUIDANCE MATERIAL",
+    )
+
+
+def test_unnumbered_appendix_sections_do_not_reopen_chapters():
+    # The appendix restarts numbering at "1.", which collides with CHAPTER 1.
+    # Without namespacing, the collision reopened chapter 1's node and poured
+    # the appendix's body into it (ICAO Annex 12: 51 items scattered).
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "CHAPTER 1. DEFINITIONS", 1),
+        DocItem("text", "Chapter one body. " + big),
+        DocItem("heading", "APPENDIX. SEARCH AND RESCUE SIGNALS", 1),
+        DocItem("heading", "1. Signals with surface craft", 2),
+        DocItem("text", "Appendix-only content. " + big),
+    ]
+
+    units = build_units(items)
+
+    ids = [u.id for u in units]
+    assert "appendix-1" in ids, ids
+    ch1 = next(u for u in units if u.id == "1")
+    assert "Appendix-only content." not in ch1.body_md
+    app = next(u for u in units if u.id == "appendix-1")
+    assert "Appendix-only content." in app.body_md
+    assert app.chapter == "appendix"
+
+
+def test_uncovered_reports_content_that_no_unit_carries():
+    from center_kb.ingest.sectioner import SectionUnit, uncovered
+
+    items = [
+        DocItem("text", "Kept paragraph."),
+        DocItem("text", "Dropped paragraph."),
+        DocItem("table", "| A |\n|---|\n| 1 |"),
+        DocItem("heading", "CHAPTER 1. X", 1),  # structure, not content
+    ]
+    units = [
+        SectionUnit(
+            id="1", title="X", chapter="1",
+            body_md="Kept paragraph.\n\n| A |\n|---|\n| 1 |", tables=[],
+        )
+    ]
+
+    assert [i.text for i in uncovered(items, units)] == ["Dropped paragraph."]
+
+
+def test_uncovered_is_empty_when_every_item_landed():
+    from center_kb.ingest.sectioner import SectionUnit, uncovered
+
+    items = [DocItem("text", "Only paragraph.")]
+    units = [SectionUnit(id="1", title="X", chapter="1", body_md="Only paragraph.", tables=[])]
+
+    assert uncovered(items, units) == []
+
+
+def test_uncovered_tolerates_whitespace_reflow():
+    from center_kb.ingest.sectioner import SectionUnit, uncovered
+
+    items = [DocItem("text", "Spaced   out\ntext.")]
+    units = [SectionUnit(id="1", title="X", chapter="1", body_md="Spaced out text.", tables=[])]
+
+    assert uncovered(items, units) == []
+
+
+def test_content_before_a_numeric_part_first_heading_is_kept():
+    from center_kb.ingest.sectioner import Part
+
+    # A numeric part seeds no node of its own (its subsections must keep flat
+    # ids), so anything ahead of its first heading landed on the tree root,
+    # which is never rendered. It belongs to the part's opening unit.
+    big = "Body text. " * 70
+    items = [
+        DocItem("text", "Lead-in caption before any heading.", page=1),
+        DocItem("heading", "26.1 GLS Reference", 2, page=1),
+        DocItem("text", big, page=1),
+    ]
+
+    units = build_units(items, parts=[Part("26", "GLS", 1)])
+
+    assert units, "the part produced no units at all"
+    assert "Lead-in caption before any heading." in units[0].body_md
+    assert [u.id for u in units] == ["26.1"]

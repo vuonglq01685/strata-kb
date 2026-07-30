@@ -14,8 +14,30 @@ class _StubLabel:
 
 
 @dataclass
+class _StubBBox:  # mirrors docling BoundingBox, which names the field `l`
+    l: float = 0.0  # noqa: E741
+    t: float = 0.0
+    r: float = 0.0
+    b: float = 0.0
+    coord_origin: str = "BOTTOMLEFT"
+
+
+@dataclass
 class _StubProv:
     page_no: int
+    bbox: object = None
+
+
+@dataclass
+class _StubCell:
+    start_row_offset_idx: int
+    start_col_offset_idx: int
+    bbox: object
+
+
+@dataclass
+class _StubTableData:
+    table_cells: list = field(default_factory=list)
 
 
 @dataclass
@@ -27,6 +49,8 @@ class _StubItem:
     prov: list = None
     image: object = None
     caption: str = ""
+    data: object = None
+    children: list = field(default_factory=list)
 
     def export_to_markdown(self, doc=None):
         return self.table_md
@@ -39,12 +63,26 @@ class _StubItem:
 
 
 @dataclass
+class _StubSize:
+    height: float = 792.0
+
+
+@dataclass
+class _StubPage:
+    size: _StubSize = field(default_factory=_StubSize)
+
+
+@dataclass
 class _StubDoc:
     items: list = field(default_factory=list)
+    pages: dict = field(default_factory=dict)
 
-    def iterate_items(self):
+    def iterate_items(self, traverse_pictures=False):
         for it in self.items:
             yield it, 0
+            if traverse_pictures:
+                for child in it.children:
+                    yield child, 1
 
 
 def test_doc_to_items_maps_labels():
@@ -306,6 +344,82 @@ def test_doc_to_items_clears_stale_assets(tmp_path):
     doc = _StubDoc(items=[])
     parser.doc_to_items(doc, assets_dir=tmp_path)
     assert not (tmp_path / "deadbeef.png").exists()
+
+
+def test_doc_to_items_extracts_text_drawn_inside_a_picture():
+    # Docling nests figure labels (axis titles, siting distances) under the
+    # picture node; its default walk skips them, silently dropping the text.
+    nested = _StubItem(_StubLabel("text"), text="10 m minimum distance from centre line.")
+    doc = _StubDoc(
+        items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=[nested])]
+    )
+
+    items = parser.doc_to_items(doc)
+
+    assert [i.text for i in items] == ["10 m minimum distance from centre line."]
+
+
+def test_doc_to_items_keeps_footnotes():
+    doc = _StubDoc(
+        items=[_StubItem(_StubLabel("footnote"), text="† Applicable until 25 November 2026.")]
+    )
+
+    items = parser.doc_to_items(doc)
+
+    assert [(i.kind, i.text) for i in items] == [
+        ("text", "† Applicable until 25 November 2026.")
+    ]
+
+
+def test_doc_to_items_keeps_text_under_an_unlisted_label():
+    # L3 is the complete-content layer: a label nobody enumerated yet (docling
+    # grows new ones) must still reach it. Only running headers/footers are
+    # dropped, and those are pinned by test_doc_to_items_maps_labels.
+    doc = _StubDoc(items=[_StubItem(_StubLabel("checkbox_unselected"), text="Aeroplane")])
+
+    assert [(i.kind, i.text) for i in parser.doc_to_items(doc)] == [("text", "Aeroplane")]
+
+
+def _signal_table_doc(img):
+    """A 1-row table whose second column holds a glyph image, not text."""
+    cells = [
+        _StubCell(0, 0, _StubBBox(l=323.8, t=487.9, r=336.2, b=495.5, coord_origin="TOPLEFT")),
+        _StubCell(0, 1, _StubBBox(l=521.4, t=484.0, r=546.8, b=499.6, coord_origin="TOPLEFT")),
+        _StubCell(1, 0, _StubBBox(l=327.7, t=517.9, r=332.1, b=525.6, coord_origin="TOPLEFT")),
+    ]
+    table = _StubItem(
+        _StubLabel("table"),
+        table_md="| No. | Code symbol |\n|-----|-------------|\n| 1   |             |",
+        prov=[_StubProv(page_no=24, bbox=_StubBBox(l=316.8, t=314.6, r=558.9, b=107.3))],
+        data=_StubTableData(table_cells=cells),
+    )
+    # BOTTOMLEFT t=278.4/b=259.8 on a 792pt page -> TOPLEFT 513.6..532.2 = row 1
+    glyph = _StubItem(
+        _StubLabel("picture"),
+        prov=[_StubProv(page_no=24, bbox=_StubBBox(l=523.3, t=278.4, r=545.2, b=259.8))],
+        image=img,
+    )
+    return _StubDoc(items=[glyph, table], pages={24: _StubPage()})
+
+
+def test_doc_to_items_moves_a_glyph_into_its_table_cell(tmp_path):
+    img = Image.new("RGB", (16, 16), (0, 0, 0))
+
+    items = parser.doc_to_items(_signal_table_doc(img), assets_dir=tmp_path)
+
+    assert [i.kind for i in items] == ["table"], "the glyph must not stay a loose image"
+    row = items[0].text.splitlines()[2]
+    assert "![](assets/" in row and row.startswith("| 1")
+
+
+def test_doc_to_items_keeps_a_glyph_outside_any_table_as_an_image(tmp_path):
+    img = Image.new("RGB", (16, 16), (0, 0, 0))
+    doc = _signal_table_doc(img)
+    doc.items[0].prov = [_StubProv(page_no=24, bbox=_StubBBox(l=60.0, t=278.4, r=80.0, b=259.8))]
+
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+
+    assert [i.kind for i in items] == ["image", "table"]
 
 
 def test_doc_to_items_empty_description_kept(tmp_path, monkeypatch):

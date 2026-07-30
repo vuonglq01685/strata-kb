@@ -1,7 +1,7 @@
 id: demo-doc
 title: Demo Document
 revision: Rev 1
-ingested: '2026-07-13'
+ingested: '2026-07-30'
 source_sha256: ''
 sections:
 - id: '1.1'
@@ -22,6 +22,6 @@ sections:
     l3: 18
 ingest:
   chapter_pattern: ^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$
-  appendix_pattern: ^appendix\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$
-  attachment_pattern: ^attachment\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*(.*)$
+  appendix_pattern: ^appendix(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)(.*)$
+  attachment_pattern: ^attachment(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)(.*)$
   used_bookmarks: false
