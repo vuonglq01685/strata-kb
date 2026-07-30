@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 
+from center_kb.ingest import tableimages
 from center_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
@@ -15,7 +16,11 @@ from center_kb.mdutils import slugify
 logger = logging.getLogger("center_kb.ingest.parser")
 
 _HEADING_LABELS = {"section_header", "title"}
-_TEXT_LABELS = {"text", "paragraph", "list_item", "formula", "code", "caption"}
+# L3 must hold the document's complete text, so text extraction is a deny-list,
+# not an allow-list: an allow-list silently drops whatever it forgot (footnotes
+# carrying normative applicability dates, checkbox captions) and every label
+# docling adds later. Only the running page furniture is genuinely not content.
+_SKIP_LABELS = {"page_header", "page_footer"}
 
 
 def _label_value(item) -> str:
@@ -28,6 +33,52 @@ def _page_of(item) -> int | None:
     if prov:
         return getattr(prov[0], "page_no", None)
     return None
+
+
+def _page_height(doc, page: int | None) -> float | None:
+    entry = (getattr(doc, "pages", None) or {}).get(page)
+    return getattr(getattr(entry, "size", None), "height", None)
+
+
+def _topleft_box(bbox, page: int | None, doc) -> tableimages.Box | None:
+    """Normalize a docling bbox to TOPLEFT so table provenance (BOTTOMLEFT)
+    and table cells (TOPLEFT) become comparable. None when the page height
+    needed to flip a BOTTOMLEFT box is unknown."""
+    if bbox is None:
+        return None
+    origin = getattr(bbox, "coord_origin", "")
+    origin = str(getattr(origin, "value", origin)).upper()
+    top, bottom = bbox.t, bbox.b
+    if "BOTTOM" in origin:
+        height = _page_height(doc, page)
+        if height is None:
+            return None
+        top, bottom = height - bbox.t, height - bbox.b
+    if top > bottom:
+        top, bottom = bottom, top
+    return tableimages.Box(left=bbox.l, top=top, right=bbox.r, bottom=bottom)
+
+
+def _prov_box(item, doc) -> tuple[int | None, tableimages.Box | None]:
+    prov = getattr(item, "prov", None)
+    if not prov:
+        return None, None
+    page = getattr(prov[0], "page_no", None)
+    return page, _topleft_box(getattr(prov[0], "bbox", None), page, doc)
+
+
+def _table_cells(item, doc) -> list[tableimages.Cell]:
+    cells: list[tableimages.Cell] = []
+    for cell in getattr(getattr(item, "data", None), "table_cells", None) or []:
+        box = _topleft_box(getattr(cell, "bbox", None), _page_of(item), doc)
+        if box is None:
+            continue
+        cells.append(
+            tableimages.Cell(
+                row=cell.start_row_offset_idx, col=cell.start_col_offset_idx, box=box
+            )
+        )
+    return cells
 
 
 def load_or_parse(pdf_path: Path, work_dir: Path):
@@ -76,31 +127,174 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
     return doc
 
 
-def doc_to_items(doc, assets_dir: Path | None = None) -> list[DocItem]:
-    items: list[DocItem] = []
+def doc_to_items(
+    doc, assets_dir: Path | None = None, pdf_path: Path | None = None
+) -> list[DocItem]:
     if assets_dir is not None and assets_dir.exists():
         for stale in assets_dir.iterdir():  # re-ingest: assets are re-derived
             stale.unlink()
-    for item, _level in doc.iterate_items():
-        label = _label_value(item)
+
+    # traverse_pictures: docling parents figure labels (axis titles, siting
+    # distances, legend text) under their picture node and its default walk
+    # skips those children entirely -- 649 text items in ICAO Doc 8896 alone.
+    entries = [
+        (item, _label_value(item))
+        # some docling versions omit the kwarg; fall back rather than lose the walk
+        for item, _level in _iterate(doc)
+    ]
+    tables = [(item, _table_cells(item, doc)) for item, label in entries if label == "table"]
+    placements, consumed, placed_boxes = _place_glyphs(entries, tables, doc, assets_dir)
+    _recover_missed_glyphs(
+        tables, placements, placed_boxes, doc, assets_dir, pdf_path
+    )
+
+    items: list[DocItem] = []
+    for item, label in entries:
         page = _page_of(item)
+        if label in _SKIP_LABELS:
+            continue
         if label in _HEADING_LABELS:
             heading_level = getattr(item, "level", 1) if label == "section_header" else 1
             items.append(DocItem("heading", item.text, heading_level, page=page))
         elif label == "table":
             md = item.export_to_markdown(doc=doc)
             if md and md.strip():
+                md = tableimages.inject(md, placements.get(id(item), {}))
                 items.append(DocItem("table", md, page=page))
         elif label == "picture":
-            if assets_dir is None:
+            if assets_dir is None or id(item) in consumed:
                 continue
             md = _picture_md(item, doc, assets_dir)
             if md:
                 items.append(DocItem("image", md, page=page))
-        elif label in _TEXT_LABELS:
-            if item.text and item.text.strip():
-                items.append(DocItem("text", item.text, page=page))
+        elif getattr(item, "text", "") and item.text.strip():
+            items.append(DocItem("text", item.text, page=page))
     return items
+
+
+def _iterate(doc):
+    try:
+        return list(doc.iterate_items(traverse_pictures=True))
+    except TypeError:
+        logger.warning("docling iterate_items has no traverse_pictures — "
+                       "text drawn inside figures will be missing")
+        return list(doc.iterate_items())
+
+
+_Placements = dict[int, dict[tuple[int, int], str]]
+
+
+def _place_glyphs(
+    entries, tables, doc, assets_dir: Path | None
+) -> tuple[_Placements, set[int], dict[int, dict[tuple[int, int], tableimages.Box]]]:
+    """Assign every picture drawn inside a table to that table's cell.
+
+    A glyph column ("Code symbol" in the ICAO SAR signal tables) holds no text
+    at all, so docling leaves the column blank and emits the icons as loose
+    pictures beside the table. Returns {id(table): {(row, col): markdown}}, the
+    ids of the pictures consumed (which must not be emitted again on their
+    own), and each placed glyph's box, which sizes the recovery crops.
+    """
+    placements: _Placements = {}
+    consumed: set[int] = set()
+    boxes: dict[int, dict[tuple[int, int], tableimages.Box]] = {}
+    if assets_dir is None or not tables:
+        return placements, consumed, boxes
+    for item, label in entries:
+        if label != "picture":
+            continue
+        page, box = _prov_box(item, doc)
+        if box is None:
+            continue
+        for table, cells in tables:
+            if not cells or _page_of(table) != page:
+                continue
+            at = tableimages.locate(box, cells)
+            if at is None:
+                continue
+            md = _picture_md(item, doc, assets_dir)
+            if not md:
+                break
+            slot = placements.setdefault(id(table), {})
+            slot[at] = f"{slot[at]} {md}" if at in slot else md
+            boxes.setdefault(id(table), {})[at] = box
+            consumed.add(id(item))
+            break
+    return placements, consumed, boxes
+
+
+def _recover_missed_glyphs(
+    tables,
+    placements: _Placements,
+    placed_boxes: dict[int, dict[tuple[int, int], tableimages.Box]],
+    doc,
+    assets_dir: Path | None,
+    pdf_path: Path | None,
+) -> None:
+    """Fill the cells of a glyph column the picture detector skipped.
+
+    Docling files hand-drawn strokes ("LLL", "NN", arrows in the ICAO Annex 12
+    signal tables) as neither picture nor text, so those cells come back empty
+    while their neighbours get an icon. Cropping them out of the page raster
+    is the only way L3 ends up with the whole table. Any failure leaves the
+    cell empty rather than aborting the ingest.
+    """
+    if assets_dir is None or pdf_path is None:
+        return
+    for table, cells in tables:
+        placed = placements.get(id(table))
+        if not placed or not cells:
+            continue
+        page, table_box = _prov_box(table, doc)
+        if page is None or table_box is None:
+            continue
+        missing = tableimages.empty_glyph_cells(cells, placed_boxes.get(id(table), {}), table_box)
+        if not missing:
+            continue
+        try:
+            raster = _render_page(pdf_path, page)
+        except Exception as exc:  # noqa: BLE001 — a lost crop must not stop ingest
+            logger.warning("page %s could not be rendered for cell crops: %s", page, exc)
+            continue
+        for row, col, box in missing:
+            md = _crop_md(raster, box, assets_dir, page)
+            if md:
+                placed[(row, col)] = md
+
+
+_RENDER_SCALE = 4  # ≈288 dpi: small glyphs stay legible after cropping
+
+
+def _render_page(pdf_path: Path, page: int):
+    import pypdfium2
+
+    pdf = pypdfium2.PdfDocument(str(pdf_path))
+    try:
+        return pdf[page - 1].render(scale=_RENDER_SCALE).to_pil()
+    finally:
+        pdf.close()
+
+
+def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str | None:
+    """Crop one cell out of the page raster; None when it holds no drawing."""
+    from center_kb.ingest import images
+
+    try:
+        crop = raster.crop(
+            (
+                int(box.left * _RENDER_SCALE),
+                int(box.top * _RENDER_SCALE),
+                int(box.right * _RENDER_SCALE),
+                int(box.bottom * _RENDER_SCALE),
+            )
+        )
+        if crop.width < 2 or crop.height < 2 or images.is_blank(crop):
+            return None
+        return images.image_ref(images.resolve_description("", images.ocr_image(crop)),
+                                images.save_asset(crop, assets_dir))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("cell crop on page %s skipped: %s", page, exc)
+        return None
 
 
 def _picture_md(item, doc, assets_dir: Path) -> str | None:
