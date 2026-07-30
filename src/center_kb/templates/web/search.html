@@ -5,14 +5,15 @@
 <div class="stack-md">
   <div class="page-head">
     <h1 style="font-size:22px">{% if q %}Results for “{{ q }}”{% else %}Search{% endif %}</h1>
-    <p class="meta-line">{{ results | length }} sections · budget {{ budget }} tk · scope hub federation</p>
+    <p class="meta-line">{{ results | length }} sections · {{ docs_count }} docs · budget {{ budget }} tk · scope hub federation</p>
   </div>
-  {% if active_tags %}
   <div class="meta-line">
-    <span class="kicker">Filter</span>
-    {% for t in active_tags %}<span class="chip">{{ t }}</span>{% endfor %}
+    <span class="kicker">Tag filter</span>
+    {% for t in shell.tags if t.on %}
+    <a class="chip on" href="{{ t.href }}">{{ t.label }} <span class="x">✕</span></a>
+    {% endfor %}
+    {% if not active_tags %}<span>none — searching the whole store</span>{% endif %}
   </div>
-  {% endif %}
   <div class="seg-row" data-density role="group" aria-label="Result density">
     <button type="button" class="seg on" data-density-btn="compact" aria-pressed="true">Compact</button>
     <button type="button" class="seg" data-density-btn="full" aria-pressed="false">Full text</button>

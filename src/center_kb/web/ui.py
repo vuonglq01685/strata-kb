@@ -33,11 +33,19 @@ from center_kb.web.ratelimit import (
 logger = logging.getLogger("center_kb.web.ui")
 
 
-def _tag_links(all_tags: list[str], selected: list[str], q: str) -> list[dict]:
+def _tag_links(
+    all_tags: list[str], selected: list[str], q: str, budget: int | None = None,
+) -> list[dict]:
     """One toggle link per known tag: clicking adds/removes it from `tags=`.
 
     Falls back to /ui?q= (the search screen) when toggling off the last tag
     with no query — a bare /ui would render the overview instead.
+
+    `budget` is echoed back onto every href (after q/tags) so toggling a tag
+    chip doesn't silently drop the caller's token-budget selection — without
+    it, clicking a chip on `/ui?q=...&budget=8000` would reset the next
+    search to the 2000 default. Optional/keyword-only for backward
+    compatibility with existing callers that don't carry a budget context.
     """
     out: list[dict] = []
     for t in all_tags:
@@ -48,6 +56,8 @@ def _tag_links(all_tags: list[str], selected: list[str], q: str) -> list[dict]:
             params.append(("q", q))
         if new:
             params.append(("tags", ",".join(new)))
+        if budget is not None:
+            params.append(("budget", str(budget)))
         href = f"/ui?{urlencode(params)}" if params else "/ui?q="
         out.append({"label": t, "href": href, "on": on})
     return out
@@ -68,7 +78,7 @@ def _shell_ctx(
         "screen": screen, "hub_ok": True, "q": q,
         "raw_tags": raw_tags, "budget": budget,
         "repo_count": len(load_federation(hub.federation_dir)),
-        "tags": _tag_links(uidata.all_tags(hub), selected, q),
+        "tags": _tag_links(uidata.all_tags(hub), selected, q, budget=budget),
         "selected_tags": selected,
     }
 
@@ -198,7 +208,7 @@ def build_routes(
             return _render_page(
                 "search.html", config, screen="search", title="Search", q=q,
                 results=[], budget=_budget(request), active_tags=tags,
-                raw_tags=raw_tags,
+                raw_tags=raw_tags, docs_count=0,
             )
         if not q and tags:
             docs = api.list_docs(config) or []
@@ -214,6 +224,7 @@ def build_routes(
         # has nothing to search for — skip the lookup and render the search
         # screen's empty state rather than asking search() to match on "".
         found = search(hub, q, tags=tags or None, budget=budget) if q else []
+        docs_count = len({r.doc_id for r in found})
         smap = uidata.status_map(hub)
         top = max((r.score for r in found), default=1.0) or 1.0
         results = [
@@ -236,6 +247,7 @@ def build_routes(
         return _render_page(
             "search.html", config, screen="search", title="Search", q=q,
             results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
+            docs_count=docs_count,
         )
 
     async def home(request: Request) -> HTMLResponse:

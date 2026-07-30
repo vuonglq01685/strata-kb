@@ -1369,3 +1369,34 @@ def test_docs_cards_have_open_sections_link_and_filter_text(fed_hub):
     assert "open sections →" in main
     assert "data-doc-card" in main
     assert "2 of 2 documents" in main
+
+
+def test_search_meta_line_counts_docs(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace")
+    main = _main(resp)
+    assert "docs · budget" in main   # "<N> sections · <M> docs · budget …"
+
+
+def test_search_tag_row_offers_removal_or_none_label(fed_hub):
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    with_tag = _main(c.get("/ui?q=airspace&tags=icao"))
+    assert "✕" in with_tag           # removable chip
+    without = _main(c.get("/ui?q=airspace"))
+    assert "none — searching the whole store" in without
+
+
+def test_tag_links_thread_budget_through_href():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], [], q="air", budget=8000)
+    by_label = {link["label"]: link for link in links}
+    assert "budget=8000" in by_label["icao"]["href"]
+
+
+def test_search_tag_chip_hrefs_preserve_budget(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui?q=air&tags=icao&budget=8000"
+    )
+    rail = _left_rail(resp)
+    main = _main(resp)
+    assert "budget=8000" in rail
+    assert "budget=8000" in main
