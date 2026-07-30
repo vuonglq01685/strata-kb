@@ -1439,3 +1439,27 @@ def test_search_docs_count_dedupes_by_doc(fed_hub):
     )
     main = _main(resp)
     assert "2 sections · 1 docs" in main
+
+
+def test_search_semantic_param_controls_flag(fed_hub, monkeypatch):
+    calls = {}
+
+    def fake_search(hub, text, tags=None, budget=2000, use_semantic=True, **kw):
+        calls["use_semantic"] = use_semantic
+        return []
+
+    monkeypatch.setattr("center_kb.web.ui.search", fake_search)
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    c.get("/ui?q=airspace&semantic=0")
+    assert calls["use_semantic"] is False
+    c.get("/ui?q=airspace")            # no param → default on
+    assert calls["use_semantic"] is True
+    c.get("/ui?q=airspace&semantic=0&semantic=1")  # hidden 0 + checked box
+    assert calls["use_semantic"] is True
+
+
+def test_search_rail_renders_match_mode_form(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace")
+    assert "keyword (FTS5)" in resp.text
+    assert "semantic (KNN)" in resp.text
+    assert 'name="semantic" value="1"' in resp.text

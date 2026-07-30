@@ -221,7 +221,7 @@ def build_routes(
             return _render_page(
                 "search.html", config, screen="search", title="Search", q=q,
                 results=[], budget=_budget(request), active_tags=tags,
-                raw_tags=raw_tags, docs_count=0,
+                raw_tags=raw_tags, docs_count=0, semantic_on=True,
             )
         if not q and tags:
             docs = api.list_docs(config) or []
@@ -236,7 +236,13 @@ def build_routes(
         # An empty query with no tags (e.g. the nav "Search" link, `/ui?q=`)
         # has nothing to search for — skip the lookup and render the search
         # screen's empty state rather than asking search() to match on "".
-        found = search(hub, q, tags=tags or None, budget=budget) if q else []
+        sem_vals = request.query_params.getlist("semantic")
+        use_semantic = ("1" in sem_vals) if sem_vals else True
+        found = (
+            search(hub, q, tags=tags or None, budget=budget,
+                   use_semantic=use_semantic)
+            if q else []
+        )
         docs_count = len({r.doc_id for r in found})
         smap = uidata.status_map(hub)
         top = max((r.score for r in found), default=1.0) or 1.0
@@ -260,7 +266,7 @@ def build_routes(
         return _render_page(
             "search.html", config, screen="search", title="Search", q=q,
             results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
-            docs_count=docs_count,
+            docs_count=docs_count, semantic_on=use_semantic,
         )
 
     async def home(request: Request) -> HTMLResponse:

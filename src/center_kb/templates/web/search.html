@@ -64,14 +64,25 @@
            aria-label="Token budget"
            onchange="this.form.submit()">
     <div class="rail-kv"><span>200</span><span class="v" style="color:#1349a5">{{ budget }} tk</span><span>8000</span></div>
+    <input type="hidden" name="semantic" value="{{ '1' if semantic_on else '0' }}">
     <noscript><button type="submit" class="seg" style="margin-top:6px">Apply</button></noscript>
   </form>
 </div>
 <div class="rail-block">
-  <p class="kicker">Match modes</p>
-  <p style="margin:0; font-size:11.5px; color:#98a0aa; line-height:1.5">
-    Keyword (FTS5) and semantic (KNN) legs are fused with RRF when the
-    embedder is installed. No model call happens at lookup time.</p>
+  <p class="kicker">Match mode</p>
+  <form method="get" action="/ui">
+    <input type="hidden" name="q" value="{{ q }}">
+    {% if raw_tags %}<input type="hidden" name="tags" value="{{ raw_tags }}">{% endif %}
+    <input type="hidden" name="budget" value="{{ budget }}">
+    <label class="check"><input type="checkbox" checked disabled>keyword (FTS5)</label>
+    <input type="hidden" name="semantic" value="0">
+    <label class="check"><input type="checkbox" name="semantic" value="1"
+           {{ 'checked' if semantic_on }} onchange="this.form.submit()">semantic (KNN)</label>
+    <noscript><button type="submit" class="seg" style="margin-top:6px">Apply</button></noscript>
+  </form>
+  <p style="margin:2px 0 0; font-size:11.5px; color:#98a0aa; line-height:1.5">
+    Both are fused with RRF when the embedder is installed. No model call
+    happens at lookup time.</p>
 </div>
 <div class="rail-card">
   <p class="kicker">Shortcuts</p>

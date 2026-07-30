@@ -299,3 +299,6 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
 .empty-state { padding: 34px 18px; text-align: center; color: var(--muted); font-size: 13px; }
 .crumbs { margin: 0; font: 400 11px/1.6 var(--mono); color: var(--muted); letter-spacing: .04em; }
 .crumbs .sep { color: var(--dash); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+  color: var(--body-c); }
+.check input { accent-color: var(--accent); }
