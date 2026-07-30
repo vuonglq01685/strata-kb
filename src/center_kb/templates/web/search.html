@@ -81,8 +81,13 @@
     <noscript><button type="submit" class="seg" style="margin-top:6px">Apply</button></noscript>
   </form>
   <p style="margin:2px 0 0; font-size:11.5px; color:#98a0aa; line-height:1.5">
+    {% if semantic_on %}
     Both are fused with RRF when the embedder is installed. No model call
-    happens at lookup time.</p>
+    happens at lookup time.
+    {% else %}
+    Keyword (FTS5) leg only — semantic re-ranking is off.
+    {% endif %}
+  </p>
 </div>
 <div class="rail-card">
   <p class="kicker">Shortcuts</p>

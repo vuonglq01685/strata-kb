@@ -1206,7 +1206,7 @@ def test_shell_header_and_left_rail_on_docs_page(demo_doc_hub):
     assert "Demo Document" in main  # doc-card in the main content
 
 
-def test_shell_ctx_hub_down_returns_empty_catalog(tmp_path):
+def test_shell_ctx_hub_down_omits_catalog(tmp_path):
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing-hub"))
     ctx = ui._shell_ctx(config, "overview")
     assert ctx["hub_ok"] is False
@@ -1215,7 +1215,7 @@ def test_shell_ctx_hub_down_returns_empty_catalog(tmp_path):
     assert ctx["tags"] == []
 
 
-def test_shell_ctx_hub_up_populates_catalog_and_tags(demo_doc_hub):
+def test_shell_ctx_hub_up_populates_tags_not_catalog(demo_doc_hub):
     config = ServerConfig(kb_dir=demo_doc_hub / ".kb", hub=str(demo_doc_hub))
     ctx = ui._shell_ctx(config, "overview", q="foo")
     assert ctx["hub_ok"] is True
@@ -1308,6 +1308,17 @@ def test_tag_links_no_query_no_tags_falls_back_to_search_screen():
     assert links[0]["href"] == "/ui?q="
 
 
+def test_tag_links_removal_with_budget_falls_back_to_search_screen():
+    # Regression: budget was appended unconditionally, so removing the
+    # last tag with no query used to yield /ui?budget=2000 — which the
+    # router sends to the Overview screen instead of Search. The fallback
+    # must be decided by intent (q and the new tag list both empty), not
+    # by whether the params list happens to be non-empty.
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], ["icao"], q="", budget=2000)
+    assert links[0]["href"] == "/ui?q="
+
+
 def test_rail_tag_panel_marks_selected_and_searchable(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=air&tags=icao")
     rail = _left_rail(resp)
@@ -1392,6 +1403,20 @@ def test_tag_links_thread_budget_through_href():
     assert "budget=8000" in by_label["icao"]["href"]
 
 
+def test_tag_links_thread_semantic_through_href():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], [], q="air", semantic_on=False)
+    by_label = {link["label"]: link for link in links}
+    assert "semantic=0" in by_label["icao"]["href"]
+
+
+def test_tag_links_semantic_default_none_omits_param():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], [], q="air")
+    by_label = {link["label"]: link for link in links}
+    assert "semantic=" not in by_label["icao"]["href"]
+
+
 def test_search_tag_chip_hrefs_preserve_budget(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui?q=air&tags=icao&budget=8000"
@@ -1452,10 +1477,32 @@ def test_search_semantic_param_controls_flag(fed_hub, monkeypatch):
     c = _client(fed_hub / ".kb", str(fed_hub))
     c.get("/ui?q=airspace&semantic=0")
     assert calls["use_semantic"] is False
+    calls.clear()
     c.get("/ui?q=airspace")            # no param → default on
     assert calls["use_semantic"] is True
+    calls.clear()
     c.get("/ui?q=airspace&semantic=0&semantic=1")  # hidden 0 + checked box
     assert calls["use_semantic"] is True
+
+
+def test_search_semantic_off_renders_unchecked_checkbox_and_off_copy(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace&semantic=0")
+    assert resp.status_code == 200
+    text = resp.text
+    # match-mode checkbox must render unchecked (no `checked` attribute)
+    # when semantic is off
+    checkbox = re.search(
+        r'<input type="checkbox" name="semantic" value="1"[^>]*>', text
+    )
+    assert checkbox is not None
+    assert "checked" not in checkbox.group(0)
+    # the token-budget form's own hidden semantic field mirrors the off
+    # state too — scope to that block so we don't match the match-mode
+    # form's always-"0" unchecked-checkbox trick field
+    budget_block = text[text.index("Token budget"):text.index("Match mode")]
+    assert '<input type="hidden" name="semantic" value="0">' in budget_block
+    # off-state copy replaces the RRF-fusion line
+    assert "semantic re-ranking is off" in text
 
 
 def test_search_rail_renders_match_mode_form(fed_hub):

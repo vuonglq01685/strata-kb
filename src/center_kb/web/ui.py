@@ -34,18 +34,26 @@ logger = logging.getLogger("center_kb.web.ui")
 
 
 def _tag_links(
-    all_tags: list[str], selected: list[str], q: str, budget: int | None = None,
+    all_tags: list[str], selected: list[str], q: str,
+    budget: int | None = None, semantic_on: bool | None = None,
 ) -> list[dict]:
     """One toggle link per known tag: clicking adds/removes it from `tags=`.
 
     Falls back to /ui?q= (the search screen) when toggling off the last tag
-    with no query — a bare /ui would render the overview instead.
+    with no query — a bare /ui would render the overview instead. The
+    fallback is decided by intent (q and the new tag list both empty), not
+    by whether the assembled params list happens to be empty: budget/
+    semantic are echoed onto every href and must not, by themselves, turn
+    an empty-intent removal into a non-empty param list that skips the
+    fallback (that bug used to route `/ui?budget=2000` to the Overview
+    screen instead of Search).
 
     `budget` is echoed back onto every href (after q/tags) so toggling a tag
     chip doesn't silently drop the caller's token-budget selection — without
     it, clicking a chip on `/ui?q=...&budget=8000` would reset the next
-    search to the 2000 default. Optional, defaulting to None, for backward
-    compatibility with existing callers that don't carry a budget context.
+    search to the 2000 default. `semantic_on` mirrors the same pattern for
+    the match-mode toggle. Both optional, defaulting to None, for backward
+    compatibility with existing callers that don't carry that context.
 
     Any `selected` tag absent from `all_tags` (unknown to the hub, or the
     hub is down and `all_tags` is empty) still gets a chip so it stays
@@ -53,6 +61,8 @@ def _tag_links(
     """
 
     def href_for(new: list[str]) -> str:
+        if not q and not new:
+            return "/ui?q="
         params: list[tuple[str, str]] = []
         if q:
             params.append(("q", q))
@@ -60,7 +70,9 @@ def _tag_links(
             params.append(("tags", ",".join(new)))
         if budget is not None:
             params.append(("budget", str(budget)))
-        return f"/ui?{urlencode(params)}" if params else "/ui?q="
+        if semantic_on is not None:
+            params.append(("semantic", "1" if semantic_on else "0"))
+        return f"/ui?{urlencode(params)}"
 
     out: list[dict] = []
     for t in all_tags:
@@ -78,6 +90,7 @@ def _tag_links(
 def _shell_ctx(
     config: ServerConfig, screen: str, q: str = "",
     raw_tags: str = "", budget: int | None = None,
+    semantic_on: bool | None = None,
 ) -> dict:
     selected = [t.strip() for t in raw_tags.split(",") if t.strip()]
     hub = api.hub_handle(config)
@@ -85,13 +98,15 @@ def _shell_ctx(
         return {"screen": screen, "hub_ok": False, "q": q,
                 "raw_tags": raw_tags, "budget": budget,
                 "repo_count": 0,
-                "tags": _tag_links([], selected, q, budget=budget),
+                "tags": _tag_links([], selected, q, budget=budget,
+                                    semantic_on=semantic_on),
                 "selected_tags": selected}
     return {
         "screen": screen, "hub_ok": True, "q": q,
         "raw_tags": raw_tags, "budget": budget,
         "repo_count": len(load_federation(hub.federation_dir)),
-        "tags": _tag_links(uidata.all_tags(hub), selected, q, budget=budget),
+        "tags": _tag_links(uidata.all_tags(hub), selected, q, budget=budget,
+                            semantic_on=semantic_on),
         "selected_tags": selected,
     }
 
@@ -99,19 +114,23 @@ def _shell_ctx(
 def _render_page(
     template: str, config: ServerConfig, screen: str,
     status: int = 200, q: str = "", raw_tags: str = "",
-    budget: int | None = None, shell_extra: dict | None = None, **ctx,
+    budget: int | None = None, semantic_on: bool | None = None,
+    shell_extra: dict | None = None, **ctx,
 ) -> HTMLResponse:
-    # raw_tags/budget are only ever passed by _search_screen (every other
-    # caller keeps the falsy defaults, so their shell carries no topbar
-    # hidden fields); re-mirrored into ctx so search.html's own top-level
-    # {{ raw_tags }}/{{ budget }} references (meta-line, budget rail form)
-    # keep working exactly as before this shell plumbing was added.
-    shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget)
+    # raw_tags/budget/semantic_on are only ever passed by _search_screen
+    # (every other caller keeps the falsy defaults, so their shell carries
+    # no topbar hidden fields); re-mirrored into ctx so search.html's own
+    # top-level {{ raw_tags }}/{{ budget }}/{{ semantic_on }} references
+    # (meta-line, budget rail form, match-mode rail form) keep working
+    # exactly as before this shell plumbing was added.
+    shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget,
+                        semantic_on=semantic_on)
     if shell_extra:
         shell.update(shell_extra)
     ctx["q"] = q
     ctx["raw_tags"] = raw_tags
     ctx["budget"] = budget
+    ctx["semantic_on"] = semantic_on
     return HTMLResponse(
         templating.render(template, shell=shell, **ctx), status_code=status
     )
