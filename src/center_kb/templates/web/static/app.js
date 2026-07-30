@@ -156,15 +156,20 @@ if (filterBox) {
 // non-matching elements (matched against each element's data-text).
 const TAG_CAP = 8;
 
+// Captured once at script init (before any input can touch it), so the
+// reset value always matches whatever copy the server actually rendered in
+// left_rail.html instead of a hardcoded string that can drift from it.
+const tagHintEl = document.querySelector("[data-tag-hint]");
+const tagHintDefault = tagHintEl ? tagHintEl.textContent : "";
+
 function capTagChips() {
-  const hint = document.querySelector("[data-tag-hint]");
   const visible = [...document.querySelectorAll("[data-tag-chip]")]
     .filter((el) => el.style.display !== "none");
   visible.forEach((el, i) => { if (i >= TAG_CAP) el.style.display = "none"; });
-  if (hint) {
-    hint.textContent = visible.length > TAG_CAP
+  if (tagHintEl) {
+    tagHintEl.textContent = visible.length > TAG_CAP
       ? `+${visible.length - TAG_CAP} more — keep typing to narrow`
-      : "click to add or remove a tag filter";
+      : tagHintDefault;
   }
 }
 
@@ -196,7 +201,13 @@ document.querySelectorAll("[data-filter-list]").forEach((box) => {
       el.style.display = on ? "" : "none";
       if (on) shown += 1;
     });
-    const count = document.querySelector("[data-filter-count]");
+    // Scope the counter to the firing input's own form — the left rail's
+    // "Search tags…" box (data-filter-list="[data-tag-chip]") has no form
+    // ancestor and shares the page with the docs counter, so a page-global
+    // querySelector would let typing in the tag box overwrite the docs
+    // page's "N of M documents" label with a chip count instead.
+    const form = box.closest("form");
+    const count = form ? form.querySelector("[data-filter-count]") : null;
     if (count) {
       const total = parseInt(count.dataset.total, 10) || shown;
       count.textContent = `${shown} of ${total} ${count.dataset.noun || "shown"}`;
@@ -211,7 +222,7 @@ capTagChips();
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const t = e.target;
-  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
   const key = typeof e.key === "string" ? e.key.toLowerCase() : "";
   if (key === "j") {
     const cards = [...document.querySelectorAll(".result-card")];
