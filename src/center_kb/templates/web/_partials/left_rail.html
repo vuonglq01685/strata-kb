@@ -1,4 +1,5 @@
 <aside class="rail rail-left" aria-label="Navigation and catalog">
+  <noscript><style>[data-filter-list] { display: none }</style></noscript>
   <nav class="nav" aria-label="Main navigation">
     <a href="/ui" class="{{ 'active' if shell.screen == 'overview' else '' }}">Overview</a>
     <a href="/ui?q=" class="{{ 'active' if shell.screen == 'search' else '' }}">Search</a>
@@ -18,10 +19,17 @@
     {% endfor %}
   </div>
   <div class="rail-group">
-    <p class="kicker">Tags</p>
-    <div class="tag-cloud">
-      {% for t in shell.tags %}<a class="chip" href="/ui?tags={{ t | urlencode }}">{{ t }}</a>{% endfor %}
+    <div class="tag-head">
+      <p class="kicker">Tags</p>
+      <span class="tag-count">{{ shell.tags | length }}</span>
     </div>
+    <input type="search" class="rail-input" placeholder="Search tags…"
+           aria-label="Search tags" data-filter-list="[data-tag-chip]">
+    <div class="tag-cloud">
+      {% for t in shell.tags %}<a class="chip {{ 'on' if t.on else '' }}"
+         data-tag-chip data-text="{{ t.label }}" href="{{ t.href }}">{{ t.label }}</a>{% endfor %}
+    </div>
+    <p class="tag-hint" data-tag-hint>click to add or remove a tag filter</p>
   </div>
   <div class="legend">
     <p class="kicker">Review status</p>

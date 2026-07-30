@@ -593,7 +593,9 @@ def test_doc_page_row_data_text_is_lowercased(demo_doc_hub):
         "/ui/docs/demo-doc", params={"repo": "demo-kb"}
     )
     assert resp.status_code == 200
-    match = re.search(r'data-text="([^"]*)"', resp.text)
+    # scoped to <main>: the rail's tag chips also carry a data-text attribute
+    # (search-panel filtering), which would otherwise shadow the row's own.
+    match = re.search(r'data-text="([^"]*)"', _main(resp))
     assert match, "expected a data-text attribute on the section row"
     assert match.group(1) == (
         "1.1 airspace records airspace record structure: designation, type, level."
@@ -1215,7 +1217,7 @@ def test_shell_ctx_hub_up_populates_catalog_and_tags(demo_doc_hub):
     assert ctx["q"] == "foo"
     assert ctx["repo_count"] >= 1
     assert ctx["catalog"]  # non-empty: demo-kb:demo-doc is present
-    assert "demo" in ctx["tags"]
+    assert "demo" in [t["label"] for t in ctx["tags"]]
 
 
 def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
@@ -1274,3 +1276,35 @@ def test_section_page_hides_copy_button_without_js(fed_hub):
     assert resp.status_code == 200
     assert "<noscript>" in resp.text
     assert "data-copy" in resp.text
+
+
+def _left_rail(resp) -> str:
+    text = resp.text
+    start = text.index('<aside class="rail rail-left"')
+    return text[start : text.index("</aside>", start)]
+
+
+def test_tag_links_toggle_on_and_off():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["airspace", "icao"], ["icao"], q="air")
+    by_label = {link["label"]: link for link in links}
+    assert by_label["icao"]["on"] is True
+    # removing the only selected tag keeps the query
+    assert by_label["icao"]["href"] == "/ui?q=air"
+    assert by_label["airspace"]["on"] is False
+    # adding appends to the current selection
+    assert by_label["airspace"]["href"] == "/ui?q=air&tags=icao%2Cairspace"
+
+
+def test_tag_links_no_query_no_tags_falls_back_to_search_screen():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], ["icao"], q="")
+    assert links[0]["href"] == "/ui?q="
+
+
+def test_rail_tag_panel_marks_selected_and_searchable(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=air&tags=icao")
+    rail = _left_rail(resp)
+    assert "Search tags…" in rail
+    assert 'class="chip on"' in rail          # selected chip highlighted
+    assert "tags=icao%2Cairspace" in rail     # unselected chip adds itself

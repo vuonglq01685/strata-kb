@@ -7,7 +7,7 @@ import os
 import re
 import tempfile
 from importlib import resources
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from pathlib import Path
 
@@ -33,21 +33,44 @@ from center_kb.web.ratelimit import (
 logger = logging.getLogger("center_kb.web.ui")
 
 
+def _tag_links(all_tags: list[str], selected: list[str], q: str) -> list[dict]:
+    """One toggle link per known tag: clicking adds/removes it from `tags=`.
+
+    Falls back to /ui?q= (the search screen) when toggling off the last tag
+    with no query — a bare /ui would render the overview instead.
+    """
+    out: list[dict] = []
+    for t in all_tags:
+        on = t in selected
+        new = [x for x in selected if x != t] if on else [*selected, t]
+        params: list[tuple[str, str]] = []
+        if q:
+            params.append(("q", q))
+        if new:
+            params.append(("tags", ",".join(new)))
+        href = f"/ui?{urlencode(params)}" if params else "/ui?q="
+        out.append({"label": t, "href": href, "on": on})
+    return out
+
+
 def _shell_ctx(
     config: ServerConfig, screen: str, q: str = "",
     raw_tags: str = "", budget: int | None = None,
 ) -> dict:
+    selected = [t.strip() for t in raw_tags.split(",") if t.strip()]
     hub = api.hub_handle(config)
     if hub is None:
         return {"screen": screen, "hub_ok": False, "q": q,
                 "raw_tags": raw_tags, "budget": budget,
-                "repo_count": 0, "catalog": [], "tags": []}
+                "repo_count": 0, "catalog": [], "tags": [],
+                "selected_tags": selected}
     return {
         "screen": screen, "hub_ok": True, "q": q,
         "raw_tags": raw_tags, "budget": budget,
         "repo_count": len(load_federation(hub.federation_dir)),
         "catalog": uidata.catalog(hub),
-        "tags": uidata.all_tags(hub),
+        "tags": _tag_links(uidata.all_tags(hub), selected, q),
+        "selected_tags": selected,
     }
 
 
