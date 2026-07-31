@@ -138,3 +138,33 @@ def test_get_section_nested_qualifier(tmp_path):
     assert r is not None
     assert r.source == "mid/repo-x"
     assert r.citation.startswith("mid/repo-x:doc-x §1.1")
+
+
+def test_search_use_semantic_false_skips_embedder(monkeypatch):
+    import center_kb.query as query_mod
+    seen = {}
+
+    def spy(hub, embedder, text, tags):
+        seen["embedder"] = embedder
+        return [], {}
+
+    monkeypatch.setattr(query_mod, "_search_index", spy)
+    sentinel = object()
+    assert query_mod.search(
+        object(), "airspace", use_semantic=False, embedder=sentinel
+    ) == []
+    assert seen["embedder"] is None
+
+
+def test_search_use_semantic_default_passes_embedder(monkeypatch):
+    import center_kb.query as query_mod
+    seen = {}
+
+    def spy(hub, embedder, text, tags):
+        seen["embedder"] = embedder
+        return [], {}
+
+    monkeypatch.setattr(query_mod, "_search_index", spy)
+    sentinel = object()
+    query_mod.search(object(), "airspace", embedder=sentinel)
+    assert seen["embedder"] is sentinel

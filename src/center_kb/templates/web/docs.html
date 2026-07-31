@@ -5,9 +5,18 @@
   <div class="page-head">
     <p class="kicker accent">Catalog</p>
     <h1>Documents</h1>
-    {% if browse_tags %}<p class="meta-line">filtered by
-      {% for t in browse_tags %}<span class="chip">{{ t }}</span>{% endfor %}</p>{% endif %}
   </div>
+  <form class="filter-bar" method="get" action="/ui/docs">
+    <input type="search" name="filter" value="{{ filter_value }}"
+           placeholder="Filter documents by name, id or tag…"
+           aria-label="Filter documents" data-filter-list="[data-doc-card]">
+    {% for t in shell.tags if t.on %}
+    <a class="chip on" href="{{ t.href }}">{{ t.label }} <span class="x">✕</span></a>
+    {% endfor %}
+    <span class="shown" data-filter-count data-total="{{ total_docs }}"
+          data-noun="documents">{{ docs | length }} of {{ total_docs }} documents</span>
+    <noscript><button type="submit" class="seg">Apply</button></noscript>
+  </form>
   <div class="stack-md" style="gap:10px">
     {% for d in docs %}{{ doc_card(d) }}
     {% else %}

@@ -7,7 +7,7 @@ import os
 import re
 import tempfile
 from importlib import resources
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from pathlib import Path
 
@@ -33,38 +33,104 @@ from center_kb.web.ratelimit import (
 logger = logging.getLogger("center_kb.web.ui")
 
 
+def _tag_links(
+    all_tags: list[str], selected: list[str], q: str,
+    budget: int | None = None, semantic_on: bool | None = None,
+) -> list[dict]:
+    """One toggle link per known tag: clicking adds/removes it from `tags=`.
+
+    Falls back to /ui?q= (the search screen) when toggling off the last tag
+    with no query — a bare /ui would render the overview instead. The
+    fallback is decided by intent (q and the new tag list both empty), not
+    by whether the assembled params list happens to be empty: budget/
+    semantic are echoed onto every href and must not, by themselves, turn
+    an empty-intent removal into a non-empty param list that skips the
+    fallback (that bug used to route `/ui?budget=2000` to the Overview
+    screen instead of Search).
+
+    `budget` is echoed back onto every href (after q/tags) so toggling a tag
+    chip doesn't silently drop the caller's token-budget selection — without
+    it, clicking a chip on `/ui?q=...&budget=8000` would reset the next
+    search to the 2000 default. `semantic_on` mirrors the same pattern for
+    the match-mode toggle. Both optional, defaulting to None, for backward
+    compatibility with existing callers that don't carry that context.
+
+    Any `selected` tag absent from `all_tags` (unknown to the hub, or the
+    hub is down and `all_tags` is empty) still gets a chip so it stays
+    visible and removable instead of rendering as a blank row.
+    """
+
+    def href_for(new: list[str]) -> str:
+        if not q and not new:
+            return "/ui?q="
+        params: list[tuple[str, str]] = []
+        if q:
+            params.append(("q", q))
+        if new:
+            params.append(("tags", ",".join(new)))
+        if budget is not None:
+            params.append(("budget", str(budget)))
+        if semantic_on is not None:
+            params.append(("semantic", "1" if semantic_on else "0"))
+        return f"/ui?{urlencode(params)}"
+
+    out: list[dict] = []
+    for t in all_tags:
+        on = t in selected
+        new = [x for x in selected if x != t] if on else [*selected, t]
+        out.append({"label": t, "href": href_for(new), "on": on})
+    known = set(all_tags)
+    for t in selected:
+        if t in known:
+            continue
+        out.append({"label": t, "href": href_for([x for x in selected if x != t]), "on": True})
+    return out
+
+
 def _shell_ctx(
     config: ServerConfig, screen: str, q: str = "",
     raw_tags: str = "", budget: int | None = None,
+    semantic_on: bool | None = None,
 ) -> dict:
+    selected = [t.strip() for t in raw_tags.split(",") if t.strip()]
     hub = api.hub_handle(config)
     if hub is None:
         return {"screen": screen, "hub_ok": False, "q": q,
                 "raw_tags": raw_tags, "budget": budget,
-                "repo_count": 0, "catalog": [], "tags": []}
+                "repo_count": 0,
+                "tags": _tag_links([], selected, q, budget=budget,
+                                    semantic_on=semantic_on),
+                "selected_tags": selected}
     return {
         "screen": screen, "hub_ok": True, "q": q,
         "raw_tags": raw_tags, "budget": budget,
         "repo_count": len(load_federation(hub.federation_dir)),
-        "catalog": uidata.catalog(hub),
-        "tags": uidata.all_tags(hub),
+        "tags": _tag_links(uidata.all_tags(hub), selected, q, budget=budget,
+                            semantic_on=semantic_on),
+        "selected_tags": selected,
     }
 
 
 def _render_page(
     template: str, config: ServerConfig, screen: str,
     status: int = 200, q: str = "", raw_tags: str = "",
-    budget: int | None = None, **ctx,
+    budget: int | None = None, semantic_on: bool | None = None,
+    shell_extra: dict | None = None, **ctx,
 ) -> HTMLResponse:
-    # raw_tags/budget are only ever passed by _search_screen (every other
-    # caller keeps the falsy defaults, so their shell carries no topbar
-    # hidden fields); re-mirrored into ctx so search.html's own top-level
-    # {{ raw_tags }}/{{ budget }} references (meta-line, budget rail form)
-    # keep working exactly as before this shell plumbing was added.
-    shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget)
+    # raw_tags/budget/semantic_on are only ever passed by _search_screen
+    # (every other caller keeps the falsy defaults, so their shell carries
+    # no topbar hidden fields); re-mirrored into ctx so search.html's own
+    # top-level {{ raw_tags }}/{{ budget }}/{{ semantic_on }} references
+    # (meta-line, budget rail form, match-mode rail form) keep working
+    # exactly as before this shell plumbing was added.
+    shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget,
+                        semantic_on=semantic_on)
+    if shell_extra:
+        shell.update(shell_extra)
     ctx["q"] = q
     ctx["raw_tags"] = raw_tags
     ctx["budget"] = budget
+    ctx["semantic_on"] = semantic_on
     return HTMLResponse(
         templating.render(template, shell=shell, **ctx), status_code=status
     )
@@ -115,6 +181,17 @@ async def static_file(request: Request) -> Response:
     )
 
 
+def _tree_extra(manifest, doc_id: str, rid: str, active: str = "") -> dict:
+    meta = f"{len(manifest.sections)} sections"
+    if manifest.revision:
+        meta = f"{manifest.revision} · {meta}"
+    return {
+        "tree": uidata.section_tree(manifest),
+        "tree_doc": {"id": doc_id, "repo": rid, "name": manifest.title,
+                     "meta": meta, "active": active},
+    }
+
+
 def build_routes(
     config: ServerConfig, token: str, store_factory=None, login_limiter=None
 ) -> list[Route]:
@@ -163,21 +240,29 @@ def build_routes(
             return _render_page(
                 "search.html", config, screen="search", title="Search", q=q,
                 results=[], budget=_budget(request), active_tags=tags,
-                raw_tags=raw_tags,
+                raw_tags=raw_tags, docs_count=0, semantic_on=True,
             )
         if not q and tags:
             docs = api.list_docs(config) or []
+            matched = _match_tags(docs, tags)
             return _render_page(
                 "docs.html", config, screen="docs", title="Documents",
-                docs=_match_tags(docs, tags), browse_tags=tags,
-                raw_tags=raw_tags,
+                docs=matched, browse_tags=tags, raw_tags=raw_tags,
+                filter_value="", total_docs=len(docs),
             )
         budget = _budget(request)
         terms = set(tokenize(q))
         # An empty query with no tags (e.g. the nav "Search" link, `/ui?q=`)
         # has nothing to search for — skip the lookup and render the search
         # screen's empty state rather than asking search() to match on "".
-        found = search(hub, q, tags=tags or None, budget=budget) if q else []
+        sem_vals = request.query_params.getlist("semantic")
+        use_semantic = ("1" in sem_vals) if sem_vals else True
+        found = (
+            search(hub, q, tags=tags or None, budget=budget,
+                   use_semantic=use_semantic)
+            if q else []
+        )
+        docs_count = len({r.doc_id for r in found})
         smap = uidata.status_map(hub)
         top = max((r.score for r in found), default=1.0) or 1.0
         results = [
@@ -200,6 +285,7 @@ def build_routes(
         return _render_page(
             "search.html", config, screen="search", title="Search", q=q,
             results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
+            docs_count=docs_count, semantic_on=use_semantic,
         )
 
     async def home(request: Request) -> HTMLResponse:
@@ -231,10 +317,20 @@ def build_routes(
         )
 
     async def docs_page(request: Request) -> HTMLResponse:
-        docs = api.list_docs(config) or []
+        all_docs = api.list_docs(config) or []
+        filter_raw = request.query_params.get("filter", "").strip()
+        fq = filter_raw.lower()
+        docs = [
+            d for d in all_docs
+            if not fq
+            or fq in d["id"].lower()
+            or fq in (d.get("title") or "").lower()
+            or any(fq in t.lower() for t in d["tags"])
+        ]
         return _render_page(
             "docs.html", config, screen="docs", title="Documents",
-            docs=docs, browse_tags=[],
+            docs=docs, browse_tags=[], filter_value=filter_raw,
+            total_docs=len(all_docs),
         )
 
     async def doc_page(request: Request) -> HTMLResponse:
@@ -267,6 +363,7 @@ def build_routes(
             doc_id=doc_id, manifest=manifest, rid=rid, rows=rows,
             coverage=uidata.doc_coverage(manifest),
             filter_value=filter_raw, status_q=status_q, files=files,
+            shell_extra=_tree_extra(manifest, doc_id, rid),
         )
 
     async def section_page(request: Request) -> HTMLResponse:
@@ -299,6 +396,7 @@ def build_routes(
         # between get_section's and this call's federation reads; the
         # `entry`/`prev`/`next` = None fallback below (and section.html's
         # rail `{% if entry %}` branch) keeps that degrade graceful.
+        shell_extra = None
         found = api.load_manifest(config, result.doc_id, repo=result.source)
         if found is not None:
             manifest, _ = found
@@ -307,12 +405,19 @@ def build_routes(
             entry = next(
                 (s for s in manifest.sections if s.id == result.section_id), None
             )
+            shell_extra = _tree_extra(
+                manifest, result.doc_id, result.source, active=result.section_id
+            )
+        content_html, toc = uidata.inject_heading_anchors(
+            md_render(result.content)
+        )
         return _render_page(
             "section.html", config, screen="section",
             title=f"{doc_id} §{section_id}",
             doc_id=result.doc_id, section_id=result.section_id, repo=result.source,
-            level=level, result=result, content_html=md_render(result.content),
+            level=level, result=result, content_html=content_html, toc=toc,
             prev=prev, next=nxt, entry=entry, revision=revision,
+            shell_extra=shell_extra,
         )
 
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")

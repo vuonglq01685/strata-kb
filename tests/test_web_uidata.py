@@ -207,3 +207,61 @@ def test_status_map_keys(fed_hub):
     smap = uidata.status_map(_hub(fed_hub))
     assert all(len(k) == 3 for k in smap)
     assert all(v in ("pending", "summarized", "reviewed") for v in smap.values())
+
+
+def test_section_tree_single_file_has_no_chapter_rows():
+    m = models.Manifest(id="d", title="D", sections=[
+        models.SectionEntry(id="1", title="One", file="ch1-intro.md"),
+        models.SectionEntry(id="2", title="Two", file="ch1-intro.md"),
+    ])
+    tree = uidata.section_tree(m)
+    assert [n.kind for n in tree] == ["section", "section"]
+    assert [n.id for n in tree] == ["1", "2"]
+
+
+def test_section_tree_groups_by_file_with_chapter_headers():
+    m = models.Manifest(id="d", title="D", sections=[
+        models.SectionEntry(id="1", title="One", file="ch1-intro.md",
+                            status="reviewed"),
+        models.SectionEntry(id="1.2", title="One-two", file="ch1-intro.md"),
+        models.SectionEntry(id="2", title="Two", file="ch2-data.md"),
+    ])
+    tree = uidata.section_tree(m)
+    assert [(n.kind, n.label) for n in tree] == [
+        ("chapter", "ch1 intro"), ("section", "One"), ("section", "One-two"),
+        ("chapter", "ch2 data"), ("section", "Two"),
+    ]
+    assert tree[1].status == "reviewed"
+
+
+def test_section_tree_empty_manifest():
+    assert uidata.section_tree(models.Manifest(id="d", title="D")) == []
+
+
+def test_inject_heading_anchors_adds_ids_and_toc():
+    html_in = "<h2>5.129 Restrictive Airspace</h2><p>x</p><h3>Field notes</h3>"
+    out, toc = uidata.inject_heading_anchors(html_in)
+    assert '<h2 id="5-129-restrictive-airspace">' in out
+    assert '<h3 id="field-notes">' in out
+    assert [(t.anchor, t.label) for t in toc] == [
+        ("5-129-restrictive-airspace", "5.129 Restrictive Airspace"),
+        ("field-notes", "Field notes"),
+    ]
+
+
+def test_inject_heading_anchors_dedupes_slugs():
+    out, toc = uidata.inject_heading_anchors("<h2>Same</h2><h2>Same</h2>")
+    assert [t.anchor for t in toc] == ["same", "same-2"]
+    assert 'id="same-2"' in out
+
+
+def test_inject_heading_anchors_no_headings():
+    out, toc = uidata.inject_heading_anchors("<p>plain</p>")
+    assert out == "<p>plain</p>"
+    assert toc == []
+
+
+def test_inject_heading_anchors_unescapes_label():
+    out, toc = uidata.inject_heading_anchors("<h2>A &amp; B</h2>")
+    assert toc[0].label == "A & B"
+    assert toc[0].anchor == "a-b"

@@ -142,6 +142,7 @@ def search(
     tags: list[str] | None = None,
     budget: int = 2000,
     semantic: bool = False,
+    use_semantic: bool = True,
     embedder=None,  # center_kb.embed.Embedder | None — injectable for tests
 ) -> list[QueryResult]:
     from center_kb import embed as embed_mod
@@ -153,7 +154,9 @@ def search(
             "semantic search requested but no embedder is available — "
             'keyword results only (enable with: pip install "center-kb[embed]")'
         )
-    fused, rows = _search_index(hub, embedder, text, tags)
+    fused, rows = _search_index(
+        hub, embedder if use_semantic else None, text, tags
+    )
     terms = tokenize(text)
 
     results: list[QueryResult] = []
