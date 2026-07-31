@@ -18,9 +18,10 @@ AUTH_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 def _main(resp) -> str:
     """Slice the <main> content out of a shell page, excluding the rails.
 
-    The shell's left rail renders a catalog card per doc, tag chips, and a
-    status legend on every page (see base.html/_partials/left_rail.html),
-    which can shadow assertions meant to target the main content only.
+    The shell's left rail renders nav links, a tag panel (or a section tree
+    on doc/section screens), and a compact status legend on every page (see
+    base.html/_partials/left_rail.html), which can shadow assertions meant
+    to target the main content only.
     """
     text = resp.text
     start = text.index('<main class="content">')
@@ -310,7 +311,9 @@ def test_tag_only_search_lists_matching_docs(fed_hub):
     main = _main(resp)
     assert "icao-annex-2" in main
     assert 'class="chip' in main
-    assert "filtered by" in main
+    # "filtered by" meta-line was replaced by an active-tag chip in the
+    # docs filter bar (Task 5); pin the chip itself instead.
+    assert '<a class="chip on" href="/ui?q=">airspace' in main
     # tag-browse (no q) is still a _search_screen dispatch, so the topbar
     # form must carry the tags forward same as the q-driven search screen.
     topbar = _topbar(resp)
@@ -322,11 +325,13 @@ def test_tag_only_search_no_match_shows_message(fed_hub):
         "/ui", params={"tags": "no-such-tag"}
     )
     assert resp.status_code == 200
-    # the shell's left-rail catalog always lists every doc (see
-    # test_shell_header_and_left_rail_on_docs_page), so "icao-annex-2" can
-    # legitimately appear there; what matters is that no *matching* doc
-    # card renders in the main content for this tag.
-    assert "doc-card" not in resp.text
+    # the shell's left rail no longer renders doc cards (tag panel only, see
+    # test_docs_page_renders_tag_chips), so this is a plain page-wide check
+    # that no *matching* doc card renders anywhere for this tag. Scoped to
+    # the real card element (not the bare substring), since the docs filter
+    # bar's `data-filter-list="[data-doc-card]"` CSS-selector attribute
+    # (Task 5) also contains "doc-card" without rendering an actual card.
+    assert 'class="doc-card"' not in resp.text
     assert "No documents" in resp.text
 
 
@@ -446,8 +451,8 @@ def test_docs_page_shows_repo_badge(fed_hub):
 
 
 def test_docs_page_doc_links_carry_repo_param(fed_hub):
-    # The left rail's catalog cards also link to /ui/docs/{id}?repo=..., so
-    # scope the assertion to <main> to pin the doc-card links specifically.
+    # Scope the assertion to <main> to pin the doc-card links specifically
+    # (the left rail's tag panel carries no doc links to collide with).
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs")
     main = _main(resp)
     assert 'href="/ui/docs/arinc-424?repo=arinc-kb"' in main
@@ -484,8 +489,8 @@ def test_docs_page_hub_down_shows_no_tags_empty_state(tmp_path, monkeypatch):
 
 
 def test_doc_page_lists_sections_with_status(demo_doc_hub):
-    # The left rail's legend spells out "summarized — awaiting SME" on every
-    # page regardless of this doc's actual section statuses, so a bare
+    # The left rail's compact legend spells out "summarized" on every page
+    # regardless of this doc's actual section statuses, so a bare
     # "summarized" in resp.text substring check is trivially true. Scope to
     # <main> and assert the actual status-badge class the section row emits.
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
@@ -593,7 +598,9 @@ def test_doc_page_row_data_text_is_lowercased(demo_doc_hub):
         "/ui/docs/demo-doc", params={"repo": "demo-kb"}
     )
     assert resp.status_code == 200
-    match = re.search(r'data-text="([^"]*)"', resp.text)
+    # scoped to <main>: the rail's tag chips also carry a data-text attribute
+    # (search-panel filtering), which would otherwise shadow the row's own.
+    match = re.search(r'data-text="([^"]*)"', _main(resp))
     assert match, "expected a data-text attribute on the section row"
     assert match.group(1) == (
         "1.1 airspace records airspace record structure: designation, type, level."
@@ -673,8 +680,8 @@ def test_doc_page_server_side_status_filter(demo_doc_hub):
 
 
 def test_docs_page_cards_show_repo_and_tags(demo_doc_hub):
-    # The left rail's catalog-card href also embeds the repo id
-    # ("?repo=demo-kb"), so scope to <main> to pin the doc-card body text.
+    # Scope to <main> to pin the doc-card body text specifically (the left
+    # rail's tag panel carries no repo id or doc-card markup to collide with).
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/docs")
     main = _main(resp)
     assert "doc-card" in main
@@ -1195,27 +1202,28 @@ def test_shell_header_and_left_rail_on_docs_page(demo_doc_hub):
     assert resp.status_code == 200
     assert "hub online" in resp.text
     assert 'id="global-search"' in resp.text
-    assert "Demo Document" in resp.text  # catalog card in left rail
+    main = _main(resp)
+    assert "Demo Document" in main  # doc-card in the main content
 
 
-def test_shell_ctx_hub_down_returns_empty_catalog(tmp_path):
+def test_shell_ctx_hub_down_omits_catalog(tmp_path):
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing-hub"))
     ctx = ui._shell_ctx(config, "overview")
     assert ctx["hub_ok"] is False
     assert ctx["repo_count"] == 0
-    assert ctx["catalog"] == []
+    assert "catalog" not in ctx
     assert ctx["tags"] == []
 
 
-def test_shell_ctx_hub_up_populates_catalog_and_tags(demo_doc_hub):
+def test_shell_ctx_hub_up_populates_tags_not_catalog(demo_doc_hub):
     config = ServerConfig(kb_dir=demo_doc_hub / ".kb", hub=str(demo_doc_hub))
     ctx = ui._shell_ctx(config, "overview", q="foo")
     assert ctx["hub_ok"] is True
     assert ctx["screen"] == "overview"
     assert ctx["q"] == "foo"
     assert ctx["repo_count"] >= 1
-    assert ctx["catalog"]  # non-empty: demo-kb:demo-doc is present
-    assert "demo" in ctx["tags"]
+    assert "catalog" not in ctx
+    assert "demo" in [t["label"] for t in ctx["tags"]]
 
 
 def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
@@ -1274,3 +1282,264 @@ def test_section_page_hides_copy_button_without_js(fed_hub):
     assert resp.status_code == 200
     assert "<noscript>" in resp.text
     assert "data-copy" in resp.text
+
+
+def _left_rail(resp) -> str:
+    text = resp.text
+    start = text.index('<aside class="rail rail-left"')
+    return text[start : text.index("</aside>", start)]
+
+
+def test_tag_links_toggle_on_and_off():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["airspace", "icao"], ["icao"], q="air")
+    by_label = {link["label"]: link for link in links}
+    assert by_label["icao"]["on"] is True
+    # removing the only selected tag keeps the query
+    assert by_label["icao"]["href"] == "/ui?q=air"
+    assert by_label["airspace"]["on"] is False
+    # adding appends to the current selection
+    assert by_label["airspace"]["href"] == "/ui?q=air&tags=icao%2Cairspace"
+
+
+def test_tag_links_no_query_no_tags_falls_back_to_search_screen():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], ["icao"], q="")
+    assert links[0]["href"] == "/ui?q="
+
+
+def test_tag_links_removal_with_budget_falls_back_to_search_screen():
+    # Regression: budget was appended unconditionally, so removing the
+    # last tag with no query used to yield /ui?budget=2000 — which the
+    # router sends to the Overview screen instead of Search. The fallback
+    # must be decided by intent (q and the new tag list both empty), not
+    # by whether the params list happens to be non-empty.
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], ["icao"], q="", budget=2000)
+    assert links[0]["href"] == "/ui?q="
+
+
+def test_rail_tag_panel_marks_selected_and_searchable(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=air&tags=icao")
+    rail = _left_rail(resp)
+    assert "Search tags…" in rail
+    assert 'class="chip on"' in rail          # selected chip highlighted
+    assert "tags=icao%2Cairspace" in rail     # unselected chip adds itself
+
+
+def test_doc_screen_rail_shows_section_tree_not_catalog(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424?repo=arinc-kb")
+    rail = _left_rail(resp)
+    assert "← all documents" in rail
+    assert "§5.3" in rail and "Restrictive Airspace" in rail
+    assert "Filter sections…" in rail
+    assert "catalog-card" not in rail
+
+
+def test_section_screen_tree_marks_active_row(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+    rail = _left_rail(resp)
+    assert "tree-row active" in rail
+
+
+def test_overview_rail_has_tags_not_tree_and_signin(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui")
+    rail = _left_rail(resp)
+    assert "Search tags…" in rail
+    assert "tree-row" not in rail
+    assert "/ui/login" in rail          # Sign in nav entry
+    assert "catalog-card" not in rail
+
+
+def test_rail_legend_is_compact(fed_hub):
+    rail = _left_rail(_client(fed_hub / ".kb", str(fed_hub)).get("/ui"))
+    assert ">pending<" in rail and ">summarized<" in rail and ">reviewed<" in rail
+    assert "awaiting SME" not in rail
+
+
+def test_docs_filter_param_filters_server_side(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs?filter=arinc")
+    main = _main(resp)
+    assert "arinc-424" in main
+    assert "icao-annex-2" not in main
+    assert "1 of 2 documents" in main
+
+
+def test_docs_filter_matches_tags_too(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs?filter=airspace")
+    main = _main(resp)
+    assert "icao-annex-2" in main
+    assert "arinc-424" not in main
+
+
+def test_docs_cards_have_open_sections_link_and_filter_text(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs")
+    main = _main(resp)
+    assert "open sections →" in main
+    assert "data-doc-card" in main
+    assert "2 of 2 documents" in main
+
+
+def test_search_meta_line_counts_docs(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace")
+    main = _main(resp)
+    assert "docs · budget" in main   # "<N> sections · <M> docs · budget …"
+
+
+def test_search_tag_row_offers_removal_or_none_label(fed_hub):
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    with_tag = _main(c.get("/ui?q=airspace&tags=icao"))
+    assert "✕" in with_tag           # removable chip
+    without = _main(c.get("/ui?q=airspace"))
+    assert "none — searching the whole store" in without
+
+
+def test_tag_links_thread_budget_through_href():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], [], q="air", budget=8000)
+    by_label = {link["label"]: link for link in links}
+    assert "budget=8000" in by_label["icao"]["href"]
+
+
+def test_tag_links_thread_semantic_through_href():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], [], q="air", semantic_on=False)
+    by_label = {link["label"]: link for link in links}
+    assert "semantic=0" in by_label["icao"]["href"]
+
+
+def test_tag_links_semantic_default_none_omits_param():
+    from center_kb.web.ui import _tag_links
+    links = _tag_links(["icao"], [], q="air")
+    by_label = {link["label"]: link for link in links}
+    assert "semantic=" not in by_label["icao"]["href"]
+
+
+def test_search_tag_chip_hrefs_preserve_budget(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui?q=air&tags=icao&budget=8000"
+    )
+    rail = _left_rail(resp)
+    main = _main(resp)
+    assert "budget=8000" in rail
+    assert "budget=8000" in main
+
+
+def test_tag_links_render_unknown_selected_tag_removable():
+    from center_kb.web.ui import _tag_links
+
+    links = _tag_links(["icao"], ["bogus"], q="air")
+    bogus = [link for link in links if link["label"] == "bogus"]
+    assert bogus and bogus[0]["on"] is True
+    assert bogus[0]["href"] == "/ui?q=air"  # removing it drops the tag
+
+
+def test_search_unknown_tag_still_shows_removable_chip(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace&tags=bogus")
+    main = _main(resp)
+    assert "bogus" in main and "✕" in main
+
+
+def test_search_docs_count_dedupes_by_doc(fed_hub):
+    # arinc-424's only section (5.3) already matches "restrictive airspace"
+    # in every other fed_hub-based test; add a *second* section to the same
+    # doc that also matches, so "2 sections · 1 docs" actually pins the
+    # dedupe-by-doc_id behaviour instead of trivially passing because every
+    # fixture query happens to hit exactly one section per doc.
+    _add_section(
+        fed_hub, "arinc-kb", "arinc-424",
+        models.SectionEntry(
+            id="5.4", title="Restrictive Airspace Notes",
+            status="reviewed", file="ch1",
+        ),
+    )
+    _append_section_body(
+        fed_hub, "arinc-kb", "arinc-424", "ch1", "5.4", "Restrictive Airspace Notes",
+        "More restrictive airspace designation notes and codes.",
+    )
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "restrictive"}
+    )
+    main = _main(resp)
+    assert "2 sections · 1 docs" in main
+
+
+def test_search_semantic_param_controls_flag(fed_hub, monkeypatch):
+    calls = {}
+
+    def fake_search(hub, text, tags=None, budget=2000, use_semantic=True, **kw):
+        calls["use_semantic"] = use_semantic
+        return []
+
+    monkeypatch.setattr("center_kb.web.ui.search", fake_search)
+    c = _client(fed_hub / ".kb", str(fed_hub))
+    c.get("/ui?q=airspace&semantic=0")
+    assert calls["use_semantic"] is False
+    calls.clear()
+    c.get("/ui?q=airspace")            # no param → default on
+    assert calls["use_semantic"] is True
+    calls.clear()
+    c.get("/ui?q=airspace&semantic=0&semantic=1")  # hidden 0 + checked box
+    assert calls["use_semantic"] is True
+
+
+def test_search_semantic_off_renders_unchecked_checkbox_and_off_copy(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace&semantic=0")
+    assert resp.status_code == 200
+    text = resp.text
+    # match-mode checkbox must render unchecked (no `checked` attribute)
+    # when semantic is off
+    checkbox = re.search(
+        r'<input type="checkbox" name="semantic" value="1"[^>]*>', text
+    )
+    assert checkbox is not None
+    assert "checked" not in checkbox.group(0)
+    # the token-budget form's own hidden semantic field mirrors the off
+    # state too — scope to that block so we don't match the match-mode
+    # form's always-"0" unchecked-checkbox trick field
+    budget_block = text[text.index("Token budget"):text.index("Match mode")]
+    assert '<input type="hidden" name="semantic" value="0">' in budget_block
+    # off-state copy replaces the RRF-fusion line
+    assert "semantic re-ranking is off" in text
+
+
+def test_search_rail_renders_match_mode_form(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace")
+    assert "keyword (FTS5)" in resp.text
+    assert "semantic (KNN)" in resp.text
+    assert 'name="semantic" value="1"' in resp.text
+
+
+def test_section_rail_shows_on_this_page_toc(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+    assert "On this page" in resp.text
+    # fed_hub L2 body starts "## 5.3 Restrictive Airspace"
+    assert 'id="5-3-restrictive-airspace"' in resp.text
+    assert 'href="#5-3-restrictive-airspace"' in resp.text
+
+
+def test_section_toc_hidden_without_headings(fed_hub, monkeypatch):
+    # get_section()'s content always comes from mdutils.slice_section(), which
+    # keeps the sliced unit's own "## <id> <title>" line — so every real,
+    # manifest-registered section renders at least that one heading and the
+    # rail can never legitimately hit the "no headings" branch through
+    # fixture data alone (confirmed: appending a second, heading-only section
+    # via _append_section_body/_add_section still yields a 1-entry TOC, same
+    # as any normal section). Stub get_section() to return heading-free
+    # content instead, isolating the {% if toc %} branch in section.html.
+    from center_kb.query import QueryResult
+
+    def fake_get_section(hub, doc_id, section_id, level="l2", repo=None):
+        return QueryResult(
+            doc_id=doc_id, section_id=section_id, title="No Heading",
+            score=0.0, citation="arinc-kb:arinc-424 §5.3", content="Plain paragraph only.",
+            tokens=3, source="arinc-kb",
+        )
+
+    monkeypatch.setattr("center_kb.web.ui.get_section", fake_get_section)
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+    assert "On this page" not in resp.text
