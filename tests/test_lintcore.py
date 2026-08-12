@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from center_kb import lintcore
 from center_kb.doctor import Issue
 from center_kb.kbcontext import KBContext, KBRef
 from center_kb.lintcore import (
@@ -326,3 +327,42 @@ def test_table_rows_parses_cells_and_drops_separators():
     assert rows[0][1] == "Decision"
     assert rows[1] == ["D1", "Storage engine", "OPEN", "tech-lead", "M-x-US1"]
     assert len(rows) == 2
+
+
+# --- Review record (maturity review) ---
+
+
+def test_check_review_record_warns_when_heading_missing():
+    issues = lintcore.check_review_record("# T\n\n## Summary\nx\n")
+    assert [i.level for i in issues] == ["warning"]
+    assert "'## Review record' missing" in issues[0].message
+
+
+def test_check_review_record_warns_on_untouched_placeholder():
+    text = (
+        "# T\n\n## Review record\n"
+        "<!-- guidance -->\n"
+        "Not yet reviewed.\n\n"
+        "| Date | Round | Business | Dev | Reviewer |\n"
+        "|---|---|---|---|---|\n"
+    )
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["warning"]
+    assert "placeholder" in issues[0].message
+
+
+def test_check_review_record_warns_on_empty_body():
+    text = "# T\n\n## Review record\n<!-- guidance only -->\n\n## Next\nx\n"
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["warning"]
+
+
+def test_check_review_record_accepts_a_filled_record():
+    text = (
+        "# T\n\n## Review record\n"
+        "| Date | Round | Business | Dev | Reviewer |\n"
+        "|---|---|---|---|---|\n"
+        "| 2026-08-12 | 1 | 4 | 4 | agent |\n\n"
+        "Open gaps: none\n"
+    )
+    assert lintcore.check_review_record(text) == []
