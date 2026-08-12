@@ -196,6 +196,70 @@ def check_placeholders(text: str) -> list[Issue]:
     ]
 
 
+def check_technology_decisions(text: str) -> list[Issue]:
+    """New-template check (warning). Every C4 '%%TODO%%' placeholder
+    needs an owned row in '## Technology decisions' — a placeholder
+    without an owner sits until a Dev trips over it (spec NT3). Exact
+    placeholder-to-row matching is not decidable, so the check is
+    count-based: at least as many data rows as C4 placeholders."""
+    todo_count = 0
+    for heading in (
+        "## System context (C4 L1)",
+        "## Containers (C4 L2)",
+        mission.COMPONENT_HEADING,
+    ):
+        body = lintcore.section_body(text, heading)
+        if body:
+            todo_count += body.count(mission.PLACEHOLDER)
+
+    body = lintcore.section_body(text, mission.TECH_DECISIONS_HEADING)
+    rows = lintcore.table_rows(body)[1:] if body is not None else []
+
+    issues: list[Issue] = []
+    if todo_count > len(rows):
+        issues.append(
+            Issue(
+                "warning",
+                f"{todo_count} C4 '{mission.PLACEHOLDER}' placeholder(s) "
+                f"but only {len(rows)} '{mission.TECH_DECISIONS_HEADING}' "
+                "row(s) — every placeholder needs an owned decision row",
+            )
+        )
+    for cells in rows:
+        owner = cells[3] if len(cells) > 3 else ""
+        if not owner or owner.startswith("<"):
+            label = cells[1] if len(cells) > 1 else cells[0]
+            issues.append(
+                Issue(
+                    "warning",
+                    f"Technology decision '{label}' has no owner",
+                )
+            )
+    return issues
+
+
+def check_sequencing(text: str, us_ids: list[str]) -> list[Issue]:
+    """New-template check (warning). '## Sequencing' must cover every
+    backlog US id — Devs never infer ordering. A missing section is
+    already reported by the recommended-sections check; this one only
+    fires on partial coverage."""
+    body = lintcore.section_body(text, mission.SEQUENCING_HEADING)
+    if body is None:
+        return []
+    covered = {
+        cells[0] for cells in lintcore.table_rows(body)[1:] if cells[0]
+    }
+    missing = [u for u in us_ids if u not in covered]
+    if not missing:
+        return []
+    return [
+        Issue(
+            "warning",
+            "'## Sequencing' does not cover: " + ", ".join(missing),
+        )
+    ]
+
+
 def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
     """Check 12. Coverage is DERIVED from the filesystem, never recorded in
     the backlog table — a hand-maintained status column rots the moment a
@@ -293,6 +357,15 @@ def lint(
     else:
         issues += check_coverage(us_ids, tickets_dir)
 
+    issues += lintcore.check_recommended_sections(
+        text, mission.RECOMMENDED_MISSION_HEADINGS
+    )
+    issues += check_technology_decisions(text)
+    if not backlog_issues:
+        issues += check_sequencing(text, us_ids)
+    issues += lintcore.check_open_question_owners(
+        lintcore.open_question_rows(text) or []
+    )
     issues += check_placeholders(text)
 
     return LintReport(issues=issues, notes=notes)

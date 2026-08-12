@@ -64,6 +64,18 @@ BACKLOG_ROW_RE = re.compile(r"^\|\s*([^|]+?)\s*\|\s*(.*?)\s*\|$")
 # agents find and resolve these.
 PLACEHOLDER = "%%TODO: verify against codebase%%"
 
+# New-template sections (BA upgrade v2). NOT merged into
+# REQUIRED_MISSION_HEADINGS — that tuple is a compatibility contract;
+# lint reports these as WARNINGS only.
+TECH_DECISIONS_HEADING = "## Technology decisions"
+SEQUENCING_HEADING = "## Sequencing"
+RECOMMENDED_MISSION_HEADINGS: tuple[str, ...] = (
+    TECH_DECISIONS_HEADING,
+    "## Non-functional requirements",
+    SEQUENCING_HEADING,
+    "## Open questions",
+)
+
 
 def us_id_re(mission_id: str) -> re.Pattern[str]:
     """US ids are derived from the mission id: '<mission-id>-US<n>', n >= 1.

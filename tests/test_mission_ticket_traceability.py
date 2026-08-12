@@ -87,11 +87,42 @@ def _real_mission_text(block: str) -> str:
             "|---|---|\n"
             f"| {US_ID} | Render restrictive airspace polygons |"
         ),
+        # Recommended sections (BA upgrade v2) — clean bodies so this real,
+        # fully-formed mission stays warning-free; missionlint now reports
+        # a missing/empty recommended section (and unowned decision rows /
+        # uncovered sequencing / unowned open questions) as warnings, and
+        # `test_mission_ticket_loop_closes_end_to_end` asserts
+        # `mission_report.issues == []`.
+        "## Technology decisions": (
+            "| # | Decision | Status | Owner | Blocks |\n"
+            "|---|---|---|---|---|\n"
+            f"| D1 | Map rendering library | DECIDED | tech-lead | {US_ID} |"
+        ),
+        "## Non-functional requirements": (
+            "| Concern | Target | How to measure | Source |\n"
+            "|---|---|---|---|\n"
+            "| Map load | First render under 3 s with 500 polygons | "
+            "Grafana p95 dashboard | team SLA |"
+        ),
+        "## Sequencing": (
+            "| US ID | Depends on | Size | Notes |\n"
+            "|---|---|---|---|\n"
+            f"| {US_ID} | None | M | Foundation |"
+        ),
+        "## Open questions": (
+            "- [ ] Q1 — Confirm map tile provider quota — "
+            f"owner: tech-lead — impact: cost — blocks: {US_ID}"
+        ),
         "## KB context": f"```yaml\n{block}\n```",
         "## Definition of Ready": "- [ ] Backlog reviewed with the team",
     }
+    # Required + recommended sections, recommended ones inserted before
+    # '## KB context' — same insertion strategy as `_real_ticket_text`.
+    order = list(mission.REQUIRED_MISSION_HEADINGS)
+    kb_index = order.index("## KB context")
+    order[kb_index:kb_index] = list(mission.RECOMMENDED_MISSION_HEADINGS)
     parts = [f"# {MISSION_ID}", "", f"> Mission: {MISSION_ID}", ""]
-    for heading in mission.REQUIRED_MISSION_HEADINGS:
+    for heading in order:
         parts += [heading, sections[heading], ""]
     return "\n".join(parts)
 
