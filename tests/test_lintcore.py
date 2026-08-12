@@ -248,3 +248,81 @@ def test_citation_consistency_still_matches_a_flat_repo_qualifier():
     issues = check_citation_consistency(text, ctx)
 
     assert issues == []
+
+
+# --- new-template shared helpers (BA upgrade v2) ---
+
+from center_kb.lintcore import (
+    check_open_question_owners,
+    check_recommended_sections,
+    open_question_rows,
+    table_rows,
+)
+
+
+def test_open_question_rows_none_when_heading_absent():
+    assert open_question_rows("# T\n\n## Summary\nx\n") is None
+
+
+def test_open_question_rows_extracts_checkbox_rows():
+    text = (
+        "# T\n\n## Open questions\n"
+        "- [ ] Q1 — color token — owner: design — blocks: AC3\n"
+        "- [x] Q2 — closed one — owner: ba\n"
+        "not a row\n"
+    )
+    rows = open_question_rows(text)
+    assert rows is not None and len(rows) == 2
+    assert rows[0].startswith("Q1")
+
+
+def test_check_open_question_owners_warns_per_ownerless_row():
+    issues = check_open_question_owners(
+        ["Q1 — who decides — owner: ba", "Q2 — nobody owns this"]
+    )
+    assert len(issues) == 1
+    assert issues[0].level == "warning"
+    assert "Q2" in issues[0].message
+
+
+def test_check_recommended_sections_missing_and_empty():
+    text = "# T\n\n## Dependencies\n\n## Out of scope\nEditing records.\n"
+    issues = check_recommended_sections(
+        text, ("## Dependencies", "## Out of scope", "## Open questions")
+    )
+    messages = [i.message for i in issues]
+    assert all(i.level == "warning" for i in issues)
+    assert any(
+        "'## Dependencies' is empty" in m for m in messages
+    )
+    assert any(
+        "recommended section missing: '## Open questions'" in m
+        for m in messages
+    )
+    assert not any("Out of scope" in m for m in messages)
+
+
+def test_check_recommended_sections_html_comment_only_body_is_empty():
+    text = "# T\n\n## Dependencies\n<!-- guidance left in place -->\n"
+    issues = check_recommended_sections(text, ("## Dependencies",))
+    assert len(issues) == 1
+    assert "empty" in issues[0].message
+
+
+def test_check_recommended_sections_ignores_heading_inside_fence():
+    text = "# T\n\n```\n## Dependencies\n```\n"
+    issues = check_recommended_sections(text, ("## Dependencies",))
+    assert len(issues) == 1
+    assert "missing" in issues[0].message
+
+
+def test_table_rows_parses_cells_and_drops_separators():
+    body = (
+        "| # | Decision | Status | Owner | Blocks |\n"
+        "|---|---|---|---|---|\n"
+        "| D1 | Storage engine | OPEN | tech-lead | M-x-US1 |\n"
+    )
+    rows = table_rows(body)
+    assert rows[0][1] == "Decision"
+    assert rows[1] == ["D1", "Storage engine", "OPEN", "tech-lead", "M-x-US1"]
+    assert len(rows) == 2
