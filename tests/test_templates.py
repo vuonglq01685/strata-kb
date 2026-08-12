@@ -218,6 +218,7 @@ def test_both_document_templates_carry_the_review_record_section():
         assert text.count("## Review record") == 1, name
         assert "Not yet reviewed." in text, name
         assert "docs/review-rubric.md" in text, name
+        assert "| Date | Round | Business | Dev | Reviewer |" in text, name
 
 
 BA_REVIEW_MARKERS = (
@@ -234,6 +235,20 @@ def test_ba_ticket_author_templates_carry_the_maturity_review_step():
         text = _read_init_template(name)
         for marker in BA_REVIEW_MARKERS:
             assert marker in text, f"{name}: missing {marker!r}"
+
+
+# The skill mirror runs its review subagents IN PARALLEL; the cursor and
+# copilot mirrors (no subagent support) fall back to sequential review
+# passes run by the BA themselves. Pin that split so the two styles don't
+# drift back into each other.
+def test_ba_ticket_author_templates_pin_the_parallel_vs_sequential_split():
+    skill_text = _read_init_template("claude-skill-ba-ticket-author.md")
+    assert "IN PARALLEL" in skill_text
+
+    for name in ("cursor-ba-ticket-author.md", "copilot-ba-ticket-author.prompt.md"):
+        text = _read_init_template(name)
+        assert "sequential review passes yourself" in text, name
+        assert "IN PARALLEL" not in text, name
 
 
 def test_ba_mission_plan_templates_carry_the_maturity_review_step():

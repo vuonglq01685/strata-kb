@@ -7,7 +7,7 @@ Invoke the `ba-ticket-author` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the business need when given;
 when empty, ask for it during Intake.
 
-Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Review,
+Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Maturity review → Review,
 saved to `tickets/<ticket-id>.md` — or `tickets/<mission-id>-US<n>.md`
 when the ticket has a parent mission, so the back-link check can find it.
 When the BA names a parent mission, read it for the story title, put
