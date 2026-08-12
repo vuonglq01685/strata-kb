@@ -218,3 +218,19 @@ def test_both_document_templates_carry_the_review_record_section():
         assert text.count("## Review record") == 1, name
         assert "Not yet reviewed." in text, name
         assert "docs/review-rubric.md" in text, name
+
+
+BA_REVIEW_MARKERS = (
+    "Maturity review",
+    "docs/review-rubric.md",
+    "## Review record",
+    "Business-coverage",
+    "Dev-implementability",
+)
+
+
+def test_ba_ticket_author_templates_carry_the_maturity_review_step():
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        text = _read_init_template(name)
+        for marker in BA_REVIEW_MARKERS:
+            assert marker in text, f"{name}: missing {marker!r}"
