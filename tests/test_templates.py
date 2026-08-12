@@ -130,3 +130,28 @@ def test_ba_ticket_author_templates_carry_the_v2_markers():
         text = _read_init_template(name)
         for marker in BA_TICKET_AUTHOR_V2_MARKERS:
             assert marker in text, f"{name}: missing v2 marker {marker!r}"
+
+
+BA_MISSION_PLAN_TEMPLATES = [
+    "claude-skill-ba-mission-plan.md",
+    "claude-command-ba-mission-plan.md",
+    "copilot-ba-mission-plan.prompt.md",
+    "cursor-ba-mission-plan.md",
+]
+
+BA_MISSION_PLAN_V2_MARKERS = (
+    "## Technology decisions",
+    "## Sequencing",
+    "## Open questions",
+    "## Non-functional requirements",
+    "split",
+    "8 coded-value variants",
+    "6 source entities",
+)
+
+
+def test_ba_mission_plan_templates_carry_the_v2_markers():
+    for name in BA_MISSION_PLAN_TEMPLATES:
+        text = _read_init_template(name)
+        for marker in BA_MISSION_PLAN_V2_MARKERS:
+            assert marker in text, f"{name}: missing v2 marker {marker!r}"

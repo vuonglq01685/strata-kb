@@ -32,7 +32,12 @@ for it during Intake.
 3. **Draft** — start from `docs/missions/TEMPLATE.md` in the repo (the
    file `kb init --kind ba` scaffolds) and fill it in: Summary,
    Business goal, Scope, System context (C4 L1), Containers (C4 L2),
-   Constraints & assumptions, US backlog, KB context, Definition of Ready.
+   Technology decisions, Non-functional requirements,
+   Constraints & assumptions, US backlog, Sequencing, Open questions,
+   KB context, Definition of Ready. Every
+   `%%TODO: verify against codebase%%` you place in a C4 diagram gets
+   one owned row in `## Technology decisions` at the same moment —
+   never leave a placeholder without an owner.
    Keep the template's `> Mission: M-<slug>` id line and mermaid fences —
    do not recreate the document from scratch. Draw L1 and L2 from KB
    content plus what the BA states. Where a diagram needs code-level detail
@@ -51,6 +56,20 @@ for it during Intake.
    `tickets/<mission-id>-US1.md`) — that exact filename is what the
    coverage check (and `kb ticket lint`'s back-link check) looks for; a
    differently-named file will never show as drafted.
+
+   **Story-size heuristic** — a story must be split further if it hits
+   ANY of these:
+   - more than 8 coded-value variants where each needs its own
+     algorithm or business rule
+   - touches more than 6 source entities (tables, APIs, documents)
+   - mixes data construction/transformation with presentation for a
+     complex domain
+   - contains both the happy path and multiple heavy exception branches
+
+   When a threshold is hit, present the BA the split alternative with
+   the reasoning — never just a single title row. After the BA confirms
+   the backlog, fill `## Sequencing` (US ID / Depends on / Size /
+   Notes) — Devs never infer ordering.
 5. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>" --tags "<tags>"` (CLI), passing exactly
@@ -87,3 +106,18 @@ for it during Intake.
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - English template headings are never localized; write the mission body in
   the BA's working language.
+- Every C4 `%%TODO: verify against codebase%%` generates one owned row
+  in `## Technology decisions`. A mission with an ownerless placeholder
+  is not ready, even when lint passes.
+- A mission touching large data volumes, concurrency, or timing
+  constraints carries at least one quantified row in
+  `## Non-functional requirements`.
+- Fill `## Sequencing` once the BA confirms the backlog — Devs never
+  infer execution order.
+- An open question that changes architecture (infrastructure,
+  deployment scope, data model) is flagged in `## Open questions` as a
+  prerequisite of the foundational stories and closed before they
+  start.
+- Never alter the `| US ID | Title |` backlog header in any way — lint
+  matches the string verbatim; extra columns FAIL. Dependency and size
+  live in `## Sequencing`.
