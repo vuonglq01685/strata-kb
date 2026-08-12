@@ -242,9 +242,17 @@ def check_sequencing(text: str, us_ids: list[str]) -> list[Issue]:
     """New-template check (warning). '## Sequencing' must cover every
     backlog US id — Devs never infer ordering. A missing section is
     already reported by the recommended-sections check; this one only
-    fires on partial coverage."""
+    fires on partial coverage. Per spec, any recommended section may be
+    satisfied with 'N/A — <reason>' instead — `check_recommended_sections`
+    advertises that escape hatch, so a body that opens with 'N/A' (after
+    stripping HTML comments) is honored here too rather than treated as a
+    table with zero covered ids. A header-only table with zero data rows
+    is NOT covered by the escape and still warns on full coverage gap."""
     body = lintcore.section_body(text, mission.SEQUENCING_HEADING)
     if body is None:
+        return []
+    stripped = lintcore.HTML_COMMENT_RE.sub("", body).strip()
+    if stripped[:3].upper() == "N/A":
         return []
     covered = {
         cells[0] for cells in lintcore.table_rows(body)[1:] if cells[0]

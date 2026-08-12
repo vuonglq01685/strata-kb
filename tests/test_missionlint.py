@@ -1013,6 +1013,41 @@ def test_sequencing_not_covering_backlog_warns(
     )
 
 
+def test_sequencing_na_body_is_clean(fed_hub: Path, golden_block: str):
+    """The recommended-sections check advertises 'N/A — <reason>' as a
+    legal way to satisfy any recommended section (see the warning text in
+    lintcore.check_recommended_sections). check_sequencing must honor that
+    same escape instead of reading the N/A prose as a table with zero
+    covered US ids and warning that every backlog id is uncovered."""
+    doc = _build_mission(
+        golden_block,
+        overrides={"## Sequencing": "N/A — single-story mission"},
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert not any(
+        "'## Sequencing' does not cover" in w for w in _warnings(report)
+    )
+
+
+def test_sequencing_skipped_when_backlog_broken(
+    fed_hub: Path, golden_block: str
+):
+    """When the US backlog itself has zero story rows (an error-level
+    backlog issue), check_sequencing must stay gated off by `if not
+    backlog_issues:` in `lint` — it should not pile a confusing coverage
+    warning on top of the backlog error."""
+    doc = _build_mission(
+        golden_block,
+        overrides={"## US backlog": "| US ID | Title |\n|---|---|"},
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert report.passed is False
+    assert not any(
+        "'## Sequencing' does not cover" in w for w in _warnings(report)
+    )
+
+
 def test_missing_recommended_mission_section_warns(
     fed_hub: Path, golden_block: str
 ):
