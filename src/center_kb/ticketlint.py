@@ -254,6 +254,7 @@ def lint(
         text, ticket.RECOMMENDED_HEADINGS
     )
     issues += _check_owned_unknowns(text)
+    issues += lintcore.check_review_record(text)
 
     pm_issues, pm_notes = check_parent_mission(text, path, missions_dir)
     issues += pm_issues

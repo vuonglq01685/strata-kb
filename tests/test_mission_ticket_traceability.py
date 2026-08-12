@@ -36,6 +36,16 @@ US_ID = f"{MISSION_ID}-US1"
 # differently, so this test exercises the same golden data those suites do.
 REFS = ["arinc-kb:arinc-424 §5.3", "icao-kb:icao-annex-2 §1.1"]
 
+# A filled '## Review record' body — keeps both real, fully-formed
+# documents below warning-free against `lintcore.check_review_record`
+# (wired into both `missionlint.lint` and `ticketlint.lint`).
+REVIEW_RECORD_BODY = (
+    "| Date | Round | Business | Dev | Reviewer |\n"
+    "|---|---|---|---|---|\n"
+    "| 2026-08-12 | 1 | 4 | 4 | agent |\n\n"
+    "Open gaps: none"
+)
+
 
 def _hub(fed_hub: Path) -> HubHandle:
     return HubHandle(root=fed_hub)
@@ -124,6 +134,7 @@ def _real_mission_text(block: str) -> str:
     parts = [f"# {MISSION_ID}", "", f"> Mission: {MISSION_ID}", ""]
     for heading in order:
         parts += [heading, sections[heading], ""]
+    parts += ["## Review record", REVIEW_RECORD_BODY, ""]
     return "\n".join(parts)
 
 
@@ -203,6 +214,7 @@ def _real_ticket_text(block: str) -> str:
     order[kb_index:kb_index] = list(ticket.RECOMMENDED_HEADINGS)
     for heading in order:
         parts += [heading, sections[heading], ""]
+    parts += ["## Review record", REVIEW_RECORD_BODY, ""]
     return "\n".join(parts)
 
 

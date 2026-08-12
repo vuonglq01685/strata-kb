@@ -261,6 +261,48 @@ def check_recommended_sections(
     return issues
 
 
+REVIEW_RECORD_HEADING = "## Review record"
+
+# The template ships this exact placeholder line; its survival means the
+# maturity review never ran.
+_REVIEW_PLACEHOLDER = "Not yet reviewed."
+
+
+def check_review_record(text: str) -> list[Issue]:
+    """Warning when the maturity review has not run — '## Review record'
+    is missing, still empty, or still holds the template placeholder.
+    Warning-level on purpose: the review is an authoring-time aid and the
+    BA judges; nothing here may flip a DoR verdict."""
+    body = section_body(text, REVIEW_RECORD_HEADING)
+    if body is None:
+        return [
+            Issue(
+                "warning",
+                f"'{REVIEW_RECORD_HEADING}' missing — the maturity review "
+                "has not run (rubric: docs/review-rubric.md)",
+            )
+        ]
+    stripped = HTML_COMMENT_RE.sub("", body)
+    if _REVIEW_PLACEHOLDER in stripped:
+        return [
+            Issue(
+                "warning",
+                f"'{REVIEW_RECORD_HEADING}' still holds the placeholder "
+                f"'{_REVIEW_PLACEHOLDER}' — run the maturity review "
+                "(rubric: docs/review-rubric.md)",
+            )
+        ]
+    if not stripped.strip():
+        return [
+            Issue(
+                "warning",
+                f"'{REVIEW_RECORD_HEADING}' is empty — run the maturity "
+                "review (rubric: docs/review-rubric.md)",
+            )
+        ]
+    return []
+
+
 def table_rows(body: str) -> list[list[str]]:
     """All '|'-delimited rows of `body` as stripped cell lists. Separator
     rows ('|---|---|') are dropped; the header row is INCLUDED as row 0 —

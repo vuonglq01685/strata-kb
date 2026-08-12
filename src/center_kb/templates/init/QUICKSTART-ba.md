@@ -44,10 +44,19 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       `kb_context_new` and embeds the returned `## KB context` block.
    6. **Lint** — it runs `kb ticket lint` and fixes errors until it
       reports `DoR: PASS`.
-   7. **Review** — it writes the draft to `tickets/<ticket-id>.md` (or
-      `tickets/<mission-id>-US<n>.md` from step 2). You review it, commit
-      it, and paste it into Jira yourself — the assistant never publishes
-      for you.
+   7. **Maturity review** — once lint reports `DoR: PASS`, it runs two
+      independent reviews — as two subagents in parallel where the
+      runtime supports it, otherwise two sequential passes, one role
+      per pass — one scoring "Business coverage", one scoring "Dev
+      implementability" — against `docs/review-rubric.md`. It applies
+      the fixes and reviews again, up to 3 rounds or until both axes
+      score ≥ 4; a gap it cannot close itself becomes an owned
+      `OPEN(<owner>)` open question instead of a guess. The result
+      lands in the ticket's `## Review record` section.
+   8. **Review → save** — it writes the draft to `tickets/<ticket-id>.md`
+      (or `tickets/<mission-id>-US<n>.md` from step 2). You review it,
+      commit it, and paste it into Jira yourself — the assistant never
+      publishes for you.
 
 ## Mission plans — for large features
 
@@ -56,8 +65,9 @@ small work goes straight to a ticket. A mission is never mandatory.
 
 Per mission:
 
-1. `/ba-mission-plan` — the agent walks Intake → Ground → Draft → Split →
-   Pin → Lint → Review and saves `missions/M-<slug>.md`.
+1. `/ba-mission-plan` — the agent walks Intake → Ground → Draft →
+   Split → Pin → Lint → Maturity review → Review and saves
+   `missions/M-<slug>.md`.
 2. Review the C4 L1/L2 diagrams (Level 1 = System Context, Level 2 =
    Container), the scope split, and the US backlog.
 3. `kb mission lint missions/M-<slug>.md` must report `DoR: PASS`.
@@ -102,6 +112,8 @@ What lint does **not** enforce — still the BA's judgment call:
 - Whether an Acceptance Criterion that touches a standard actually has
   a citation (warning, not error).
 - The business quality of the story itself.
+- Whether the maturity review actually happened: lint only warns when
+  `## Review record` is missing, empty, or still holds the placeholder.
 
 **Branch protection:** lint running in CI does not by itself block a
 merge. On the BA repo's GitHub settings, require the `kb-ticket-lint`

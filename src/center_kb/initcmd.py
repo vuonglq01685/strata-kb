@@ -80,6 +80,7 @@ BA_TEMPLATES: dict[str, str] = {
     "docs/tickets/TEMPLATE.md": "ticket-template.md",
     "docs/missions/TEMPLATE.md": "mission-template.md",
     "docs/ac-quality.md": "ac-quality.md",
+    "docs/review-rubric.md": "review-rubric.md",
     "tickets/.gitkeep": "gitkeep.txt",
     "missions/.gitkeep": "gitkeep.txt",
     ".github/workflows/kb-ticket-lint.yml": "kb-ticket-lint.yml",
