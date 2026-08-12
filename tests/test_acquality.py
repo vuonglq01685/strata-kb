@@ -58,3 +58,24 @@ def test_distinguished_by_type_is_detected():
     assert acquality.weasel_hits(
         "Types are distinguished by type on the map"
     ) == ["distinguished by type"]
+
+
+def test_distinguished_by_type_with_means_is_suppressed():
+    line = (
+        "Airspace areas are distinguished by type: color for restricted, "
+        "shape for danger"
+    )
+    assert acquality.weasel_hits(line) == []
+
+
+def test_phan_biet_theo_loai_with_means_is_suppressed():
+    assert (
+        acquality.weasel_hits("Phân biệt theo loại bằng màu và hình dạng")
+        == []
+    )
+
+
+def test_distinguished_by_type_without_means_still_fires():
+    assert acquality.weasel_hits("Areas are distinguished by type") == [
+        "distinguished by type"
+    ]

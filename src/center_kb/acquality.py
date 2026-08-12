@@ -55,10 +55,31 @@ _WEASEL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Row 8 of docs/ac-quality.md bans these two phrases only "without the
+# means" — when the line already names a distinguishing means, the AC is
+# the corrected form the doc prescribes, so the hit is suppressed.
+CONDITIONAL_PHRASES: frozenset[str] = frozenset(
+    {"distinguished by type", "phân biệt theo loại"}
+)
+
+_MEANS_RE = re.compile(
+    r"label|nhãn|colou?r|màu|shape|hình dạng|icon|badge|symbol|ký hiệu"
+    r"|group|nhóm",
+    re.IGNORECASE,
+)
+
 
 def weasel_hits(line: str) -> list[str]:
     """Banned phrases in ``line``; ``[]`` when an ``OPEN(...)`` suppressor
-    is present. Returns the matched text verbatim (original casing)."""
+    is present. Returns the matched text verbatim (original casing).
+
+    The two row-8 phrases in ``CONDITIONAL_PHRASES`` are only banned
+    "without the means" — a hit is dropped when the line already names a
+    distinguishing means (label, color, shape, icon, badge, symbol, group).
+    """
     if OPEN_RE.search(line):
         return []
-    return [m.group(0) for m in _WEASEL_RE.finditer(line)]
+    hits = [m.group(0) for m in _WEASEL_RE.finditer(line)]
+    if _MEANS_RE.search(line):
+        hits = [h for h in hits if h.lower() not in CONDITIONAL_PHRASES]
+    return hits

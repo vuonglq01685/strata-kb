@@ -163,3 +163,25 @@ def test_weasel_phrases_all_appear_in_the_shipped_ac_quality_doc():
     text = _read_init_template("ac-quality.md")
     for phrase in WEASEL_PHRASES:
         assert phrase in text, phrase
+
+
+def test_every_quoted_doc_phrase_is_in_the_detector():
+    import re as _re
+
+    from center_kb.acquality import WEASEL_PHRASES
+
+    text = _read_init_template("ac-quality.md")
+    banned_col = [
+        line.split("|")[1]
+        for line in text.splitlines()
+        if line.startswith("|") and '"' in line
+    ]
+    quoted = [
+        phrase
+        for cell in banned_col
+        for phrase in _re.findall(r'"([^"]+)"', cell)
+    ]
+    assert quoted, "no quoted phrases parsed from the doc table"
+    lowered = {p.lower() for p in WEASEL_PHRASES}
+    for phrase in quoted:
+        assert phrase.lower() in lowered, phrase
