@@ -40,6 +40,7 @@ WEASEL_PHRASES: tuple[str, ...] = (
     "full support for",
     "hỗ trợ đầy đủ",
     "phân biệt theo loại",
+    "distinguished by type",
 )
 
 # Longest-first so 'a subset' wins over the bare 'subset' fallback and the

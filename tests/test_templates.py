@@ -155,3 +155,11 @@ def test_ba_mission_plan_templates_carry_the_v2_markers():
         text = _read_init_template(name)
         for marker in BA_MISSION_PLAN_V2_MARKERS:
             assert marker in text, f"{name}: missing v2 marker {marker!r}"
+
+
+def test_weasel_phrases_all_appear_in_the_shipped_ac_quality_doc():
+    from center_kb.acquality import WEASEL_PHRASES
+
+    text = _read_init_template("ac-quality.md")
+    for phrase in WEASEL_PHRASES:
+        assert phrase in text, phrase

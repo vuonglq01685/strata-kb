@@ -52,3 +52,9 @@ def test_clean_line_has_no_hits():
 def test_word_boundaries_avoid_substring_false_positives():
     # 'configured' must not fire inside 'preconfigured-widget-name'.
     assert acquality.weasel_hits("uses preconfigured defaults") == []
+
+
+def test_distinguished_by_type_is_detected():
+    assert acquality.weasel_hits(
+        "Types are distinguished by type on the map"
+    ) == ["distinguished by type"]
