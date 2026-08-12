@@ -26,6 +26,20 @@ REQUIRED_HEADINGS: tuple[str, ...] = (
     "## Definition of Ready",
 )
 
+# New-template sections (BA upgrade v2). Deliberately NOT merged into
+# REQUIRED_HEADINGS: that tuple is a compatibility contract and every
+# pre-existing ticket must keep passing without an edit. Lint reports a
+# missing/empty recommended section as a WARNING only. Order matches the
+# template (all inserted before '## KB context').
+RECOMMENDED_HEADINGS: tuple[str, ...] = (
+    "## Dependencies",
+    "## Non-functional requirements",
+    "## UI / presentation spec",
+    "## Out of scope",
+    "## Test data & verification",
+    "## Open questions",
+)
+
 # "As a <role>, I want <capability>, so that <value>." — case-insensitive,
 # multiline (the story text may wrap).
 STORY_RE = re.compile(r"as an?\s+.+?i want\s+.+?so that\s+", re.I | re.S)

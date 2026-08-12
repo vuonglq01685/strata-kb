@@ -87,11 +87,42 @@ def _real_mission_text(block: str) -> str:
             "|---|---|\n"
             f"| {US_ID} | Render restrictive airspace polygons |"
         ),
+        # Recommended sections (BA upgrade v2) — clean bodies so this real,
+        # fully-formed mission stays warning-free; missionlint now reports
+        # a missing/empty recommended section (and unowned decision rows /
+        # uncovered sequencing / unowned open questions) as warnings, and
+        # `test_mission_ticket_loop_closes_end_to_end` asserts
+        # `mission_report.issues == []`.
+        "## Technology decisions": (
+            "| # | Decision | Status | Owner | Blocks |\n"
+            "|---|---|---|---|---|\n"
+            f"| D1 | Map rendering library | DECIDED | tech-lead | {US_ID} |"
+        ),
+        "## Non-functional requirements": (
+            "| Concern | Target | How to measure | Source |\n"
+            "|---|---|---|---|\n"
+            "| Map load | First render under 3 s with 500 polygons | "
+            "Grafana p95 dashboard | team SLA |"
+        ),
+        "## Sequencing": (
+            "| US ID | Depends on | Size | Notes |\n"
+            "|---|---|---|---|\n"
+            f"| {US_ID} | None | M | Foundation |"
+        ),
+        "## Open questions": (
+            "- [ ] Q1 — Confirm map tile provider quota — "
+            f"owner: tech-lead — impact: cost — blocks: {US_ID}"
+        ),
         "## KB context": f"```yaml\n{block}\n```",
         "## Definition of Ready": "- [ ] Backlog reviewed with the team",
     }
+    # Required + recommended sections, recommended ones inserted before
+    # '## KB context' — same insertion strategy as `_real_ticket_text`.
+    order = list(mission.REQUIRED_MISSION_HEADINGS)
+    kb_index = order.index("## KB context")
+    order[kb_index:kb_index] = list(mission.RECOMMENDED_MISSION_HEADINGS)
     parts = [f"# {MISSION_ID}", "", f"> Mission: {MISSION_ID}", ""]
-    for heading in mission.REQUIRED_MISSION_HEADINGS:
+    for heading in order:
         parts += [heading, sections[heading], ""]
     return "\n".join(parts)
 
@@ -132,6 +163,30 @@ def _real_ticket_text(block: str) -> str:
             "  A[Start] --> B[Fetch airspace data]\n"
             "```"
         ),
+        # Recommended sections (BA upgrade v2) — clean bodies so this real,
+        # fully-formed ticket stays warning-free; ticketlint now reports a
+        # missing/empty recommended section as a warning, and this test
+        # asserts `ticket_report.issues == []`.
+        "## Dependencies": "- Blocked by: None\n- Blocks: None",
+        "## Non-functional requirements": (
+            "| Concern | Target | How to measure | Source |\n"
+            "|---|---|---|---|\n"
+            "| Detail render | Details visible within 2 s of polygon "
+            "click | Stopwatch check on staging | team SLA |"
+        ),
+        "## UI / presentation spec": (
+            "Side panel lists designation, type, and level as labeled "
+            "rows; empty state shows 'No restrictive airspace nearby'."
+        ),
+        "## Out of scope": "Editing airspace records.",
+        "## Test data & verification": (
+            "Sample record with designation R-2905A: expect type 'R' and "
+            "level 'L1' shown in the panel."
+        ),
+        "## Open questions": (
+            "- [ ] Q1 — Confirm the polygon fill color token — "
+            "owner: design-team — blocks: UI spec"
+        ),
         "## KB context": f"```yaml\n{block}\n```",
         "## Definition of Ready": "- [ ] Every citation resolves",
     }
@@ -141,7 +196,12 @@ def _real_ticket_text(block: str) -> str:
         f"> Parent mission: {MISSION_ID}",
         "",
     ]
-    for heading in ticket.REQUIRED_HEADINGS:
+    # Required + recommended sections, recommended ones inserted before
+    # '## KB context' — same order as ticket-template.md.
+    order = list(ticket.REQUIRED_HEADINGS)
+    kb_index = order.index("## KB context")
+    order[kb_index:kb_index] = list(ticket.RECOMMENDED_HEADINGS)
+    for heading in order:
         parts += [heading, sections[heading], ""]
     return "\n".join(parts)
 

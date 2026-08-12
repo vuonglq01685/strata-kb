@@ -170,6 +170,25 @@ MISSION_LINE = f"> Mission: {MISSION_ID}"
 
 REFS = ["arinc-kb:arinc-424 §5.3", "icao-kb:icao-annex-2 §1.1"]
 
+# Template order: required + recommended sections as in mission-template.md
+# ('## Technology decisions' and NFR after C4 L2; Sequencing and Open
+# questions after the backlog).
+ALL_MISSION_HEADINGS = (
+    "## Summary",
+    "## Business goal",
+    "## Scope",
+    "## System context (C4 L1)",
+    "## Containers (C4 L2)",
+    "## Technology decisions",
+    "## Non-functional requirements",
+    "## Constraints & assumptions",
+    "## US backlog",
+    "## Sequencing",
+    "## Open questions",
+    "## KB context",
+    "## Definition of Ready",
+)
+
 
 def _hub(fed_hub: Path) -> HubHandle:
     return HubHandle(root=fed_hub)
@@ -222,6 +241,29 @@ def _default_sections(block: str) -> dict[str, str]:
             f"| {MISSION_ID}-US1 | Render restrictive airspace polygons |\n"
             f"| {MISSION_ID}-US2 | Filter airspace by class |"
         ),
+        "## Technology decisions": (
+            "| # | Decision | Status | Owner | Blocks |\n"
+            "|---|---|---|---|---|\n"
+            "| D1 | Map rendering library | DECIDED | tech-lead | "
+            f"{MISSION_ID}-US1 |"
+        ),
+        "## Non-functional requirements": (
+            "| Concern | Target | How to measure | Source |\n"
+            "|---|---|---|---|\n"
+            "| Map load | First render under 3 s with 500 polygons | "
+            "Grafana p95 dashboard | team SLA |"
+        ),
+        "## Sequencing": (
+            "| US ID | Depends on | Size | Notes |\n"
+            "|---|---|---|---|\n"
+            f"| {MISSION_ID}-US1 | None | M | Foundation |\n"
+            f"| {MISSION_ID}-US2 | {MISSION_ID}-US1 | S | |"
+        ),
+        "## Open questions": (
+            "- [ ] Q1 — Confirm map tile provider quota — "
+            "owner: tech-lead — impact: cost — blocks: "
+            f"{MISSION_ID}-US1"
+        ),
         "## KB context": f"```yaml\n{block}\n```",
         "## Definition of Ready": (
             "- [ ] Business goal, scope, L1 + L2 diagrams, backlog present\n"
@@ -244,7 +286,7 @@ def _build_mission(
     if overrides:
         sections.update(overrides)
     parts = [title, "", mission_line, ""]
-    for heading in mission.REQUIRED_MISSION_HEADINGS:
+    for heading in ALL_MISSION_HEADINGS:
         if heading == skip:
             continue
         parts.append(heading)
@@ -832,6 +874,13 @@ def test_shipped_template_contains_every_required_heading():
         assert heading in present, f"template is missing {heading}"
 
 
+def test_shipped_template_contains_every_recommended_heading():
+    text = _template_text()
+    present = {line.strip() for line in text.splitlines()}
+    for heading in mission.RECOMMENDED_MISSION_HEADINGS:
+        assert heading in present, heading
+
+
 def test_shipped_template_carries_both_required_diagrams():
     """The template ships C4-native fences. Assert the diagram checks
     directly rather than running full lint: the template is a fill-in form
@@ -860,3 +909,182 @@ def test_shipped_template_backlog_table_has_the_exact_header():
         mission.BACKLOG_HEADER_RE.match(line.strip())
         for line in body.splitlines()
     )
+
+
+# --- new-template warnings (BA upgrade v2) ---
+
+
+def test_golden_mission_emits_no_new_warnings(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    report = missionlint.lint(
+        _build_mission(golden_block), _hub(fed_hub)
+    )
+    assert report.passed is True
+    assert _warnings(report) == []
+
+
+def test_c4_todo_without_decision_row_warns(
+    fed_hub: Path, golden_block: str
+):
+    l2 = (
+        "```mermaid\n"
+        "C4Container\n"
+        "  Container(api, \"Airspace API — "
+        "%%TODO: verify against codebase%%\", \"Python\")\n"
+        "```"
+    )
+    doc = _build_mission(
+        golden_block,
+        overrides={
+            "## Containers (C4 L2)": l2,
+            "## Technology decisions": (
+                "| # | Decision | Status | Owner | Blocks |\n"
+                "|---|---|---|---|---|"
+            ),
+        },
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert any(
+        "every placeholder needs an owned decision row" in w
+        for w in _warnings(report)
+    )
+
+
+def test_c4_todo_with_owned_decision_row_is_clean(
+    fed_hub: Path, golden_block: str
+):
+    l2 = (
+        "```mermaid\n"
+        "C4Container\n"
+        "  Container(api, \"Airspace API — "
+        "%%TODO: verify against codebase%%\", \"Python\")\n"
+        "```"
+    )
+    doc = _build_mission(
+        golden_block,
+        overrides={
+            "## Containers (C4 L2)": l2,
+            "## Technology decisions": (
+                "| # | Decision | Status | Owner | Blocks |\n"
+                "|---|---|---|---|---|\n"
+                "| D1 | Airspace API stack | OPEN | tech-lead | "
+                f"{MISSION_ID}-US1 |"
+            ),
+        },
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert not any(
+        "decision row" in w for w in _warnings(report)
+    )
+    # The pre-existing placeholder-count warning still fires — additive.
+    assert any("unresolved" in w for w in _warnings(report))
+
+
+def test_ownerless_decision_row_warns(fed_hub: Path, golden_block: str):
+    doc = _build_mission(
+        golden_block,
+        overrides={
+            "## Technology decisions": (
+                "| # | Decision | Status | Owner | Blocks |\n"
+                "|---|---|---|---|---|\n"
+                f"| D1 | Storage engine | OPEN | <who> | {MISSION_ID}-US1 |"
+            ),
+        },
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert any(
+        "has no owner" in w for w in _warnings(report)
+    )
+
+
+def test_sequencing_not_covering_backlog_warns(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_mission(
+        golden_block,
+        overrides={
+            "## Sequencing": (
+                "| US ID | Depends on | Size | Notes |\n"
+                "|---|---|---|---|\n"
+                f"| {MISSION_ID}-US1 | None | M | |"
+            ),
+        },
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert any(
+        f"'## Sequencing' does not cover: {MISSION_ID}-US2" in w
+        for w in _warnings(report)
+    )
+
+
+def test_sequencing_na_body_is_clean(fed_hub: Path, golden_block: str):
+    """The recommended-sections check advertises 'N/A — <reason>' as a
+    legal way to satisfy any recommended section (see the warning text in
+    lintcore.check_recommended_sections). check_sequencing must honor that
+    same escape instead of reading the N/A prose as a table with zero
+    covered US ids and warning that every backlog id is uncovered."""
+    doc = _build_mission(
+        golden_block,
+        overrides={"## Sequencing": "N/A — single-story mission"},
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert not any(
+        "'## Sequencing' does not cover" in w for w in _warnings(report)
+    )
+
+
+def test_sequencing_skipped_when_backlog_broken(
+    fed_hub: Path, golden_block: str
+):
+    """When the US backlog itself has zero story rows (an error-level
+    backlog issue), check_sequencing must stay gated off by `if not
+    backlog_issues:` in `lint` — it should not pile a confusing coverage
+    warning on top of the backlog error."""
+    doc = _build_mission(
+        golden_block,
+        overrides={"## US backlog": "| US ID | Title |\n|---|---|"},
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert report.passed is False
+    assert not any(
+        "'## Sequencing' does not cover" in w for w in _warnings(report)
+    )
+
+
+def test_missing_recommended_mission_section_warns(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_mission(golden_block, skip="## Sequencing")
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert any(
+        "recommended section missing: '## Sequencing'" in w
+        for w in _warnings(report)
+    )
+
+
+def test_ownerless_mission_open_question_warns(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_mission(
+        golden_block,
+        overrides={"## Open questions": "- [ ] Q1 — unowned question"},
+    )
+    report = missionlint.lint(doc, _hub(fed_hub))
+    assert any("no 'owner:'" in w for w in _warnings(report))
+
+
+def test_legacy_mission_still_passes(fed_hub: Path, golden_block: str):
+    """A pre-upgrade mission (only required sections) keeps DoR: PASS."""
+    sections = _default_sections(golden_block)
+    parts = [DEFAULT_TITLE, "", MISSION_LINE, ""]
+    for heading in mission.REQUIRED_MISSION_HEADINGS:
+        parts.append(heading)
+        parts.append(sections[heading])
+        parts.append("")
+    report = missionlint.lint("\n".join(parts), _hub(fed_hub))
+    assert report.passed is True

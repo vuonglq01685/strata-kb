@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from center_kb import lintcore, mission, missionlint, ticket
+from center_kb import acquality, lintcore, mission, missionlint, ticket
 from center_kb.doctor import Issue
 from center_kb.lintcore import LintReport
 
@@ -66,6 +66,54 @@ def _check_ac_citations(ac_items: list[str]) -> list[Issue]:
         for item in ac_items
         if not lintcore.INLINE_CITE_RE.search(item)
     ]
+
+
+def _check_ac_weasel(ac_items: list[str]) -> list[Issue]:
+    """NT2 — an AC that cannot be acceptance-tested does not exist.
+    Warning per banned phrase (docs/ac-quality.md); an OPEN(<owner>)
+    marker on the same AC suppresses it (declared, owned vagueness)."""
+    return [
+        Issue(
+            "warning",
+            f"AC uses banned weasel phrase '{phrase}' without "
+            f"OPEN(<owner>): '{item.strip()}' — see docs/ac-quality.md",
+        )
+        for item in ac_items
+        for phrase in acquality.weasel_hits(item)
+    ]
+
+
+def _unknown_count(text: str) -> int:
+    """OPEN(...) + %%TODO%% markers, guidance comments stripped so the
+    templates' own '<!-- ... OPEN(<owner>) ... -->' examples never count."""
+    clean = lintcore.HTML_COMMENT_RE.sub("", text)
+    return len(acquality.OPEN_RE.findall(clean)) + clean.count(
+        mission.PLACEHOLDER
+    )
+
+
+def _check_owned_unknowns(text: str) -> list[Issue]:
+    """NT3 — 'unknown' is valid; 'unknown without an owner' is not. Every
+    OPEN(...)/%%TODO%% outside '## Open questions' needs an owned row
+    there. Count-based: exact marker-to-row matching is not decidable, so
+    the check demands at least as many rows as markers."""
+    rows = lintcore.open_question_rows(text) or []
+    oq_body = lintcore.section_body(
+        text, lintcore.OPEN_QUESTIONS_HEADING
+    )
+    outside = _unknown_count(text) - _unknown_count(oq_body or "")
+    issues: list[Issue] = []
+    if outside > len(rows):
+        issues.append(
+            Issue(
+                "warning",
+                f"{outside} OPEN(...)/'{mission.PLACEHOLDER}' marker(s) "
+                f"but only {len(rows)} row(s) in '## Open questions' — "
+                "every unknown needs an owned row",
+            )
+        )
+    issues += lintcore.check_open_question_owners(rows)
+    return issues
 
 
 def check_parent_mission(
@@ -200,6 +248,12 @@ def lint(
     issues += ctx_issues
 
     issues += _check_ac_citations(ac_items)
+
+    issues += _check_ac_weasel(ac_items)
+    issues += lintcore.check_recommended_sections(
+        text, ticket.RECOMMENDED_HEADINGS
+    )
+    issues += _check_owned_unknowns(text)
 
     pm_issues, pm_notes = check_parent_mission(text, path, missions_dir)
     issues += pm_issues
