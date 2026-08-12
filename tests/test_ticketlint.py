@@ -19,6 +19,26 @@ DEFAULT_TITLE = "# TAL-1580 — Show restrictive airspace details"
 
 REFS = ["arinc-kb:arinc-424 §5.3", "icao-kb:icao-annex-2 §1.1"]
 
+# Template order: required + recommended sections, recommended ones
+# inserted before '## KB context' exactly as in ticket-template.md.
+ALL_HEADINGS = (
+    "## Summary",
+    "## User Story",
+    "## Background / Business context",
+    "## Acceptance Criteria",
+    "## Use cases",
+    "## Sequence diagram",
+    "## Business flow",
+    "## Dependencies",
+    "## Non-functional requirements",
+    "## UI / presentation spec",
+    "## Out of scope",
+    "## Test data & verification",
+    "## Open questions",
+    "## KB context",
+    "## Definition of Ready",
+)
+
 
 def _hub(fed_hub: Path) -> HubHandle:
     return HubHandle(root=fed_hub)
@@ -72,6 +92,26 @@ def _default_sections(block: str) -> dict[str, str]:
             "  B --> C[Display to dispatcher]\n"
             "```"
         ),
+        "## Dependencies": "- Blocked by: None\n- Blocks: None",
+        "## Non-functional requirements": (
+            "| Concern | Target | How to measure | Source |\n"
+            "|---|---|---|---|\n"
+            "| Detail render | Details visible within 2 s of polygon "
+            "click | Stopwatch check on staging | team SLA |"
+        ),
+        "## UI / presentation spec": (
+            "Side panel lists designation, type, and level as labeled "
+            "rows; empty state shows 'No restrictive airspace nearby'."
+        ),
+        "## Out of scope": "Editing airspace records.",
+        "## Test data & verification": (
+            "Sample record with designation R-2905A: expect type 'R' and "
+            "level 'L1' shown in the panel."
+        ),
+        "## Open questions": (
+            "- [ ] Q1 — Confirm the polygon fill color token — "
+            "owner: design-team — blocks: UI spec"
+        ),
         "## KB context": f"```yaml\n{block}\n```",
         "## Definition of Ready": (
             "- [ ] Story, ACs, use cases, both diagrams present\n"
@@ -93,7 +133,7 @@ def _build_ticket(
     if overrides:
         sections.update(overrides)
     parts = [title, ""]
-    for heading in ticket.REQUIRED_HEADINGS:
+    for heading in ALL_HEADINGS:
         if heading == skip:
             continue
         parts.append(heading)
@@ -696,3 +736,134 @@ def test_parent_mission_without_paths_degrades_to_a_note(
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is True
     assert any("parent-mission" in n for n in report.notes)
+
+
+# --- new-template warnings (BA upgrade v2) ---
+
+
+def test_golden_ticket_still_passes_with_no_issues(
+    fed_hub: Path, golden_block: str
+):
+    report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
+    assert report.passed is True
+    assert report.issues == []
+
+
+def test_weasel_ac_without_open_marker_warns(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Retention is configured per "
+                "arinc-kb:arinc-424 §5.3\n"
+                "- [ ] AC2: Show ICAO designation per "
+                "icao-kb:icao-annex-2 §1.1"
+            )
+        },
+    )
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True  # warning, never an error
+    assert any(
+        "banned weasel phrase 'configured'" in w for w in _warnings(report)
+    )
+
+
+def test_weasel_ac_with_open_marker_is_suppressed(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Retention is configured OPEN(data-team) per "
+                "arinc-kb:arinc-424 §5.3\n"
+                "- [ ] AC2: Show ICAO designation per "
+                "icao-kb:icao-annex-2 §1.1"
+            )
+        },
+    )
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert not any("weasel" in w for w in _warnings(report))
+
+
+def test_orphan_open_marker_warns_when_open_questions_has_no_rows(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(
+        golden_block,
+        overrides={
+            "## UI / presentation spec": "OPEN(design-team)",
+            "## Open questions": "None yet.",
+        },
+    )
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert any(
+        "every unknown needs an owned row" in w for w in _warnings(report)
+    )
+
+
+def test_open_marker_with_matching_row_is_clean(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(
+        golden_block,
+        overrides={
+            "## UI / presentation spec": "OPEN(design-team)",
+            "## Open questions": (
+                "- [ ] Q1 — UI spec needs design input — "
+                "owner: design-team — blocks: UI / presentation spec"
+            ),
+        },
+    )
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert not any("owned row" in w for w in _warnings(report))
+
+
+def test_ownerless_open_question_row_warns(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(
+        golden_block,
+        overrides={
+            "## Open questions": "- [ ] Q1 — nobody owns this question"
+        },
+    )
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert any("no 'owner:'" in w for w in _warnings(report))
+
+
+def test_missing_recommended_section_warns_but_passes(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(golden_block, skip="## Dependencies")
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert any(
+        "recommended section missing: '## Dependencies'" in w
+        for w in _warnings(report)
+    )
+
+
+def test_legacy_nine_section_ticket_still_passes(
+    fed_hub: Path, golden_block: str
+):
+    """A pre-upgrade ticket (only the 9 required sections) keeps DoR: PASS
+    — the new checks are warnings, REQUIRED_HEADINGS is untouched."""
+    sections = _default_sections(golden_block)
+    parts = [DEFAULT_TITLE, ""]
+    for heading in ticket.REQUIRED_HEADINGS:
+        parts.append(heading)
+        parts.append(sections[heading])
+        parts.append("")
+    report = ticketlint.lint("\n".join(parts), _hub(fed_hub))
+    assert report.passed is True
+    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS)
+
+
+def test_recommended_headings_constant_is_not_in_required():
+    assert set(ticket.RECOMMENDED_HEADINGS).isdisjoint(
+        set(ticket.REQUIRED_HEADINGS)
+    )
