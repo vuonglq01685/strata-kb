@@ -31,7 +31,21 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    BA MUST choose — never auto-pick.
 4. **Draft** — fill the standard ticket template (Summary, User Story,
    Background / Business context, Acceptance Criteria, Use cases,
-   Sequence diagram, Business flow, KB context, Definition of Ready).
+   Sequence diagram, Business flow, Dependencies, Non-functional
+   requirements, UI / presentation spec, Out of scope, Test data &
+   verification, Open questions, KB context, Definition of Ready).
+
+   **AC quality bar** — every AC must be verifiable by someone who has
+   NOT read the KB. Banned weasel words per `docs/ac-quality.md`
+   ("appropriate", "configured", "a subset", "responsive", …). When a
+   value is not settled, write `OPEN(<owner>)` inside the AC AND add a
+   row to `## Open questions` — never write vague and move on.
+
+   **Fill every new section** — `## Dependencies`, `## Non-functional
+   requirements`, `## UI / presentation spec`, `## Out of scope`,
+   `## Test data & verification`, `## Open questions`. Not applicable →
+   write `N/A — <reason>`; a blank section reads as "not considered".
+
    Every claim that touches a standard cites `doc-id §section`, only from
    candidates the BA confirmed in step 3. Code-level detail the KB and
    the BA cannot supply (service names, DB tables, …) →
@@ -67,3 +81,18 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
   BA.
 - English template headings are never localized; write the ticket body
   in the BA's working language.
+- Report to the BA the count of ACs without citations, with reasons.
+  Purely technical ACs (idempotency, rerunnability, internal error
+  handling) need no citation — but say so explicitly.
+- When KB body text contradicts the document's own canonical index
+  table (ingest error, typo, identifier drift), use the index version,
+  keep the citation slug unchanged, and report the discrepancy to the
+  BA. Never silently propagate a source error.
+- A ticket that touches UI without design input carries
+  `OPEN(<owner>)` in `## UI / presentation spec` — it is not ready
+  otherwise.
+- Every `%%TODO: verify against codebase%%` and every `OPEN(...)` in
+  the ticket has a matching `## Open questions` row with an owner.
+- A ticket describing behavior under load, bulk processing, or timing
+  constraints carries at least one quantified row in
+  `## Non-functional requirements`.

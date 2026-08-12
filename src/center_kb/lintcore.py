@@ -193,6 +193,90 @@ def check_diagram(
     ]
 
 
+# An HTML comment — the templates carry guidance in '<!-- ... -->' blocks
+# and BAs sometimes leave them in place; scanners that would false-fire on
+# guidance text (which mentions 'OPEN(<owner>)' and the banned phrases as
+# examples) strip these first.
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+# A '- [ ]' / '- [x]' checkbox list item (open-question rows).
+CHECKBOX_ROW_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
+
+OPEN_QUESTIONS_HEADING = "## Open questions"
+
+
+def open_question_rows(text: str) -> list[str] | None:
+    """Checkbox rows of '## Open questions'; None when the heading is
+    absent (callers distinguish 'no section' from 'section with no rows')."""
+    body = section_body(text, OPEN_QUESTIONS_HEADING)
+    if body is None:
+        return None
+    return [
+        m.group(1)
+        for line in body.splitlines()
+        if (m := CHECKBOX_ROW_RE.match(line.strip()))
+    ]
+
+
+def check_open_question_owners(rows: list[str]) -> list[Issue]:
+    """Warning per open-question row without an 'owner:' tag — an unknown
+    without an owner sits until a Dev trips over it (spec NT3)."""
+    return [
+        Issue(
+            "warning",
+            f"open question has no 'owner:': '{row.strip()}'",
+        )
+        for row in rows
+        if "owner:" not in row
+    ]
+
+
+def check_recommended_sections(
+    text: str, headings: tuple[str, ...]
+) -> list[Issue]:
+    """Warning per recommended heading that is missing or has an empty
+    body. Warning-level on purpose: the required-heading sets are
+    compatibility contracts and legacy documents must keep passing."""
+    present = {line.strip() for line in FENCE_RE.sub("", text).splitlines()}
+    issues: list[Issue] = []
+    for heading in headings:
+        if heading not in present:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"recommended section missing: '{heading}' — add it, "
+                    "or write 'N/A — <reason>'",
+                )
+            )
+            continue
+        body = section_body(text, heading)
+        if body is not None and not HTML_COMMENT_RE.sub("", body).strip():
+            issues.append(
+                Issue(
+                    "warning",
+                    f"'{heading}' is empty — fill it or write "
+                    "'N/A — <reason>'",
+                )
+            )
+    return issues
+
+
+def table_rows(body: str) -> list[list[str]]:
+    """All '|'-delimited rows of `body` as stripped cell lists. Separator
+    rows ('|---|---|') are dropped; the header row is INCLUDED as row 0 —
+    callers slice `[1:]` for data rows."""
+    _SEP = re.compile(r"^\|[\s:|-]+\|$")
+    rows: list[list[str]] = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line.startswith("|") or not line.endswith("|"):
+            continue
+        if _SEP.match(line):
+            continue
+        rows.append([c.strip() for c in line[1:-1].split("|")])
+    return rows
+
+
 def strip_bare_kb_context(text: str) -> str:
     """Drop a 'kb-context:' block that isn't wrapped in a ``` fence."""
     lines = text.splitlines()
