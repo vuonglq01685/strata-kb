@@ -86,3 +86,16 @@ kb-context:
 - [ ] Every `%%TODO%%` has an owned row in Technology decisions
 - [ ] Sequencing covers the whole backlog
 - [ ] Architecture-impacting open questions closed
+
+## Review record
+<!-- Filled by the maturity-review step (rubric: docs/review-rubric.md).
+One row per review round; re-reviews append rows — keep the history.
+Score = lowest maturity level fully satisfied; threshold is 4 per axis.
+Gaps still open after the review are listed below the table and each
+must have an owned row under Open questions. -->
+Not yet reviewed.
+
+| Date | Round | Business | Dev | Reviewer |
+|---|---|---|---|---|
+
+Open gaps: <none, or Q-ids with owners>

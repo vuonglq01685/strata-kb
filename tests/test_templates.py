@@ -210,3 +210,11 @@ def test_review_rubric_doc_carries_both_axes_and_the_scale():
         "docs/ac-quality.md",
     ):
         assert marker in text, marker
+
+
+def test_both_document_templates_carry_the_review_record_section():
+    for name in ("ticket-template.md", "mission-template.md"):
+        text = _read_init_template(name)
+        assert text.count("## Review record") == 1, name
+        assert "Not yet reviewed." in text, name
+        assert "docs/review-rubric.md" in text, name
