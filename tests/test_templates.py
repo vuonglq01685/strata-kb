@@ -102,3 +102,31 @@ def test_ac_quality_doc_carries_the_banned_phrases():
         "## Open questions",
     ):
         assert marker in text, marker
+
+
+# The command variant is a thin pointer to the skill — v2 content markers
+# only apply to the three full-content mirrors.
+BA_TICKET_AUTHOR_FULL_TEMPLATES = [
+    "claude-skill-ba-ticket-author.md",
+    "copilot-ba-ticket-author.prompt.md",
+    "cursor-ba-ticket-author.md",
+]
+
+BA_TICKET_AUTHOR_V2_MARKERS = (
+    "docs/ac-quality.md",
+    "OPEN(<owner>)",
+    "## Dependencies",
+    "## Non-functional requirements",
+    "## UI / presentation spec",
+    "## Out of scope",
+    "## Test data & verification",
+    "## Open questions",
+    "canonical index",
+)
+
+
+def test_ba_ticket_author_templates_carry_the_v2_markers():
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        text = _read_init_template(name)
+        for marker in BA_TICKET_AUTHOR_V2_MARKERS:
+            assert marker in text, f"{name}: missing v2 marker {marker!r}"
