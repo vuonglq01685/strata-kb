@@ -187,6 +187,7 @@ ALL_MISSION_HEADINGS = (
     "## Open questions",
     "## KB context",
     "## Definition of Ready",
+    "## Review record",
 )
 
 
@@ -269,6 +270,12 @@ def _default_sections(block: str) -> dict[str, str]:
             "- [ ] Business goal, scope, L1 + L2 diagrams, backlog present\n"
             "- [ ] Every citation resolves at the pinned version\n"
             "- [ ] Backlog reviewed with the team"
+        ),
+        "## Review record": (
+            "| Date | Round | Business | Dev | Reviewer |\n"
+            "|---|---|---|---|---|\n"
+            "| 2026-08-12 | 1 | 4 | 4 | agent |\n\n"
+            "Open gaps: none"
         ),
     }
 
@@ -1088,3 +1095,30 @@ def test_legacy_mission_still_passes(fed_hub: Path, golden_block: str):
         parts.append("")
     report = missionlint.lint("\n".join(parts), _hub(fed_hub))
     assert report.passed is True
+
+
+def test_missing_review_record_warns_but_passes(
+    fed_hub: Path, golden_block: str
+):
+    report = missionlint.lint(
+        _build_mission(golden_block, skip="## Review record"),
+        _hub(fed_hub),
+    )
+    assert report.passed is True
+    assert any(
+        "'## Review record' missing" in w for w in _warnings(report)
+    )
+
+
+def test_placeholder_review_record_warns_but_passes(
+    fed_hub: Path, golden_block: str
+):
+    report = missionlint.lint(
+        _build_mission(
+            golden_block,
+            overrides={"## Review record": "Not yet reviewed."},
+        ),
+        _hub(fed_hub),
+    )
+    assert report.passed is True
+    assert any("placeholder" in w for w in _warnings(report))
