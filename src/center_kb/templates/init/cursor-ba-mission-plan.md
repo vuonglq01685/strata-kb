@@ -1,6 +1,6 @@
 ---
 name: ba-mission-plan
-description: Draft an epic-level Mission Plan grounded in the KB — Intake → Ground → Draft → Split → Pin → Lint → Review, saved to missions/M-<slug>.md
+description: Draft an epic-level Mission Plan grounded in the KB — Intake → Ground → Draft → Split → Pin → Lint → Maturity review → Review, saved to missions/M-<slug>.md
 ---
 
 # /ba-mission-plan — draft a grounded, epic-level mission plan
@@ -77,7 +77,31 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
    `0/N US drafted` is EXPECTED at creation time — the tickets do not
    exist yet. Report remaining warnings to the BA; they are the BA's
    judgment call.
-7. **Review → save** — write the final Markdown to
+7. **Maturity review** — once lint reports `DoR: PASS`, run TWO
+   sequential review passes yourself against `docs/review-rubric.md`,
+   one role per pass — never blend the perspectives:
+   - Pass 1, *Business-coverage reviewer* — act as PO/stakeholder;
+     score the "Business coverage" axis of the rubric.
+   - Pass 2, *Dev-implementability reviewer* — act as the tech lead who
+     will slice this mission into tickets; score the "Dev
+     implementability" axis.
+   Each pass produces: a 1–5 score (the LOWEST maturity level fully
+   satisfied — never averaged), the checklist with pass/fail per item,
+   and a gap list where every gap names the section it lives in and a
+   proposed fix.
+
+   Apply the fixes, re-run `kb mission lint`, and review again — at
+   most 3 rounds total; stop early when both axes score ≥ 4. A gap you
+   cannot close yourself (a missing business decision, missing input)
+   is NEVER invented: write `OPEN(<owner>)` at the spot and add an
+   `## Open questions` row.
+
+   Record the result in `## Review record`: on the first round replace
+   the `Not yet reviewed.` placeholder; append one table row per round
+   (`| Date | Round | Business | Dev | Reviewer |`) and list the
+   still-open gaps on the `Open gaps:` line. Report both scores and the
+   remaining owned gaps to the BA in the handover summary.
+8. **Review → save** — write the final Markdown to
    `missions/<mission-id>.md`. Hand it to the BA to review and commit.
 
 ## Hard rules
@@ -118,3 +142,7 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
 - Never alter the `| US ID | Title |` backlog header in any way — lint
   matches the string verbatim; extra columns FAIL. Dependency and size
   live in `## Sequencing`.
+- The maturity review never edits business intent on its own authority —
+  it closes gaps with facts already confirmed by the BA or the KB, and
+  everything else becomes an owned `OPEN(...)`. Scores below 4 after
+  3 rounds are reported, not hidden.

@@ -234,3 +234,10 @@ def test_ba_ticket_author_templates_carry_the_maturity_review_step():
         text = _read_init_template(name)
         for marker in BA_REVIEW_MARKERS:
             assert marker in text, f"{name}: missing {marker!r}"
+
+
+def test_ba_mission_plan_templates_carry_the_maturity_review_step():
+    for name in BA_MISSION_PLAN_TEMPLATES:
+        text = _read_init_template(name)
+        for marker in BA_REVIEW_MARKERS:
+            assert marker in text, f"{name}: missing {marker!r}"
