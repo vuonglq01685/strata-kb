@@ -81,3 +81,24 @@ def test_claude_skill_ba_ticket_author_has_expected_frontmatter():
 def test_copilot_ba_ticket_author_prompt_has_agent_mode():
     text = _read_init_template("copilot-ba-ticket-author.prompt.md")
     assert "mode: agent" in text
+
+
+def test_ac_quality_doc_exists_and_is_wired_into_ba_kind():
+    from center_kb.initcmd import BA_TEMPLATES
+
+    base = resources.files("center_kb").joinpath("templates/init")
+    assert base.joinpath("ac-quality.md").is_file()
+    assert BA_TEMPLATES["docs/ac-quality.md"] == "ac-quality.md"
+
+
+def test_ac_quality_doc_carries_the_banned_phrases():
+    text = _read_init_template("ac-quality.md")
+    for marker in (
+        "configured",
+        "đã cấu hình",
+        "a subset",
+        "responsive",
+        "OPEN(<owner>)",
+        "## Open questions",
+    ):
+        assert marker in text, marker

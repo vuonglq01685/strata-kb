@@ -867,3 +867,18 @@ def test_recommended_headings_constant_is_not_in_required():
     assert set(ticket.RECOMMENDED_HEADINGS).isdisjoint(
         set(ticket.REQUIRED_HEADINGS)
     )
+
+
+def test_template_carries_every_recommended_heading():
+    template_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "center_kb"
+        / "templates"
+        / "init"
+        / "ticket-template.md"
+    )
+    content = template_path.read_text(encoding="utf-8")
+    for heading in ticket.RECOMMENDED_HEADINGS:
+        assert content.count(heading) == 1, heading
+    assert "docs/ac-quality.md" in content

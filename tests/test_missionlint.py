@@ -874,6 +874,13 @@ def test_shipped_template_contains_every_required_heading():
         assert heading in present, f"template is missing {heading}"
 
 
+def test_shipped_template_contains_every_recommended_heading():
+    text = _template_text()
+    present = {line.strip() for line in text.splitlines()}
+    for heading in mission.RECOMMENDED_MISSION_HEADINGS:
+        assert heading in present, heading
+
+
 def test_shipped_template_carries_both_required_diagrams():
     """The template ships C4-native fences. Assert the diagram checks
     directly rather than running full lint: the template is a fill-in form

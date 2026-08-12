@@ -79,6 +79,7 @@ BA_TEMPLATES: dict[str, str] = {
     ".cursor/commands/ba-mission-plan.md": "cursor-ba-mission-plan.md",
     "docs/tickets/TEMPLATE.md": "ticket-template.md",
     "docs/missions/TEMPLATE.md": "mission-template.md",
+    "docs/ac-quality.md": "ac-quality.md",
     "tickets/.gitkeep": "gitkeep.txt",
     "missions/.gitkeep": "gitkeep.txt",
     ".github/workflows/kb-ticket-lint.yml": "kb-ticket-lint.yml",
