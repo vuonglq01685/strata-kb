@@ -84,3 +84,16 @@ kb-context:
 - [ ] Every AC is acceptance-testable; no weasel words remain (docs/ac-quality.md)
 - [ ] Dependencies, NFR, UI spec, Out of scope, Test data filled or "N/A — <reason>"
 - [ ] Every open question has an owner
+
+## Review record
+<!-- Filled by the maturity-review step (rubric: docs/review-rubric.md).
+One row per review round; re-reviews append rows — keep the history.
+Score = lowest maturity level fully satisfied; threshold is 4 per axis.
+Gaps still open after the review are listed below the table and each
+must have an owned row under Open questions. -->
+Not yet reviewed.
+
+| Date | Round | Business | Dev | Reviewer |
+|---|---|---|---|---|
+
+Open gaps: <none, or Q-ids with owners>

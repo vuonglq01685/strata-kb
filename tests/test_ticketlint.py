@@ -37,6 +37,7 @@ ALL_HEADINGS = (
     "## Open questions",
     "## KB context",
     "## Definition of Ready",
+    "## Review record",
 )
 
 
@@ -118,6 +119,12 @@ def _default_sections(block: str) -> dict[str, str]:
             "- [ ] Every citation resolves at the pinned version "
             "(kb ticket lint PASS)\n"
             "- [ ] No stale refs"
+        ),
+        "## Review record": (
+            "| Date | Round | Business | Dev | Reviewer |\n"
+            "|---|---|---|---|---|\n"
+            "| 2026-08-12 | 1 | 4 | 4 | agent |\n\n"
+            "Open gaps: none"
         ),
     }
 
@@ -860,7 +867,8 @@ def test_legacy_nine_section_ticket_still_passes(
         parts.append("")
     report = ticketlint.lint("\n".join(parts), _hub(fed_hub))
     assert report.passed is True
-    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS)
+    # RECOMMENDED_HEADINGS warnings + 1 missing-Review-record warning.
+    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS) + 1
 
 
 def test_recommended_headings_constant_is_not_in_required():
@@ -882,3 +890,33 @@ def test_template_carries_every_recommended_heading():
     for heading in ticket.RECOMMENDED_HEADINGS:
         assert content.count(heading) == 1, heading
     assert "docs/ac-quality.md" in content
+
+
+def test_missing_review_record_warns_but_passes(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(golden_block, skip="## Review record")
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert any(
+        "'## Review record' missing" in w for w in _warnings(report)
+    )
+
+
+def test_placeholder_review_record_warns_but_passes(
+    fed_hub: Path, golden_block: str
+):
+    doc = _build_ticket(
+        golden_block,
+        overrides={"## Review record": "Not yet reviewed."},
+    )
+    report = ticketlint.lint(doc, _hub(fed_hub))
+    assert report.passed is True
+    assert any("placeholder" in w for w in _warnings(report))
+
+
+def test_filled_review_record_emits_no_review_warning(
+    fed_hub: Path, golden_block: str
+):
+    report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
+    assert not any("Review record" in w for w in _warnings(report))

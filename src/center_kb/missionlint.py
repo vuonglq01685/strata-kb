@@ -375,5 +375,6 @@ def lint(
         lintcore.open_question_rows(text) or []
     )
     issues += check_placeholders(text)
+    issues += lintcore.check_review_record(text)
 
     return LintReport(issues=issues, notes=notes)

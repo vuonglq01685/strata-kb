@@ -185,3 +185,74 @@ def test_every_quoted_doc_phrase_is_in_the_detector():
     lowered = {p.lower() for p in WEASEL_PHRASES}
     for phrase in quoted:
         assert phrase.lower() in lowered, phrase
+
+
+# --- maturity review rubric (BA review agents) ---
+
+
+def test_review_rubric_doc_exists_and_is_wired_into_ba_kind():
+    from center_kb.initcmd import BA_TEMPLATES
+
+    base = resources.files("center_kb").joinpath("templates/init")
+    assert base.joinpath("review-rubric.md").is_file()
+    assert BA_TEMPLATES["docs/review-rubric.md"] == "review-rubric.md"
+
+
+def test_review_rubric_doc_carries_both_axes_and_the_scale():
+    text = _read_init_template("review-rubric.md")
+    for marker in (
+        "## Business coverage",
+        "## Dev implementability",
+        "## Maturity scale",
+        "## Scoring rule",
+        "OPEN(<owner>)",
+        "## Review record",
+        "docs/ac-quality.md",
+    ):
+        assert marker in text, marker
+
+
+def test_both_document_templates_carry_the_review_record_section():
+    for name in ("ticket-template.md", "mission-template.md"):
+        text = _read_init_template(name)
+        assert text.count("## Review record") == 1, name
+        assert "Not yet reviewed." in text, name
+        assert "docs/review-rubric.md" in text, name
+        assert "| Date | Round | Business | Dev | Reviewer |" in text, name
+
+
+BA_REVIEW_MARKERS = (
+    "Maturity review",
+    "docs/review-rubric.md",
+    "## Review record",
+    "Business-coverage",
+    "Dev-implementability",
+)
+
+
+def test_ba_ticket_author_templates_carry_the_maturity_review_step():
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        text = _read_init_template(name)
+        for marker in BA_REVIEW_MARKERS:
+            assert marker in text, f"{name}: missing {marker!r}"
+
+
+# The skill mirror runs its review subagents IN PARALLEL; the cursor and
+# copilot mirrors (no subagent support) fall back to sequential review
+# passes run by the BA themselves. Pin that split so the two styles don't
+# drift back into each other.
+def test_ba_ticket_author_templates_pin_the_parallel_vs_sequential_split():
+    skill_text = _read_init_template("claude-skill-ba-ticket-author.md")
+    assert "IN PARALLEL" in skill_text
+
+    for name in ("cursor-ba-ticket-author.md", "copilot-ba-ticket-author.prompt.md"):
+        text = _read_init_template(name)
+        assert "sequential review passes yourself" in text, name
+        assert "IN PARALLEL" not in text, name
+
+
+def test_ba_mission_plan_templates_carry_the_maturity_review_step():
+    for name in BA_MISSION_PLAN_TEMPLATES:
+        text = _read_init_template(name)
+        for marker in BA_REVIEW_MARKERS:
+            assert marker in text, f"{name}: missing {marker!r}"

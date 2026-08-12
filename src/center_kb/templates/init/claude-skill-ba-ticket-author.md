@@ -6,9 +6,9 @@ description: Draft a Dev-ready ticket (story, ACs, use cases, Mermaid diagrams) 
 # ba-ticket-author — draft a grounded, Dev-ready ticket
 
 You are the ORCHESTRATOR of the ticket-authoring pipeline: Intake →
-Parent mission → Ground → Draft → Pin → Lint → Review. The ticket you
-write is a **draft** — the BA reviews it, commits it, and pastes it into
-Jira; you never publish it yourself.
+Parent mission → Ground → Draft → Pin → Lint → Maturity review → Review.
+The ticket you write is a **draft** — the BA reviews it, commits it, and
+pastes it into Jira; you never publish it yourself.
 
 An optional argument gives the business need directly; no argument = ask
 for it during Intake.
@@ -67,7 +67,31 @@ for it during Intake.
    available in this environment. Fix every error and re-run until it
    reports `DoR: PASS`. Report any remaining warnings to the BA — they
    are not blockers, but they are the BA's judgment call.
-7. **Review → save** — write the final Markdown to
+7. **Maturity review** — once lint reports `DoR: PASS`, dispatch TWO
+   review subagents IN PARALLEL, each reading the draft and
+   `docs/review-rubric.md`:
+   - *Business-coverage reviewer* — acts as PO/stakeholder; scores the
+     "Business coverage" axis of the rubric.
+   - *Dev-implementability reviewer* — acts as the dev who picks the
+     ticket up next sprint; scores the "Dev implementability" axis.
+   Keep the two roles in separate subagents — never blend the
+   perspectives in one pass. Each reviewer returns: a 1–5 score (the
+   LOWEST maturity level fully satisfied — never averaged), the
+   checklist with pass/fail per item, and a gap list where every gap
+   names the section it lives in and a proposed fix.
+
+   Apply the fixes, re-run `kb ticket lint`, and review again — at most
+   3 rounds total; stop early when both axes score ≥ 4. A gap you
+   cannot close yourself (a missing business decision, missing input)
+   is NEVER invented: write `OPEN(<owner>)` at the spot and add an
+   `## Open questions` row.
+
+   Record the result in `## Review record`: on the first round replace
+   the `Not yet reviewed.` placeholder; append one table row per round
+   (`| Date | Round | Business | Dev | Reviewer |`) and list the
+   still-open gaps on the `Open gaps:` line. Report both scores and the
+   remaining owned gaps to the BA in the handover summary.
+8. **Review → save** — write the final Markdown to
    `tickets/<ticket-id>.md`. Hand it to the BA to review and commit;
    the BA — not you — pastes it into Jira.
 
@@ -105,3 +129,7 @@ for it during Intake.
 - A ticket describing behavior under load, bulk processing, or timing
   constraints carries at least one quantified row in
   `## Non-functional requirements`.
+- The maturity review never edits business intent on its own authority —
+  it closes gaps with facts already confirmed by the BA or the KB, and
+  everything else becomes an owned `OPEN(...)`. Scores below 4 after
+  3 rounds are reported, not hidden.
