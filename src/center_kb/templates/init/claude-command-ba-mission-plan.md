@@ -75,14 +75,16 @@ spans several User Stories — small work goes straight to
    exist yet. Report remaining warnings to the BA; they are the BA's
    judgment call.
 7. **Maturity review** — once lint reports `DoR: PASS`, run TWO
-   sequential review passes yourself against `docs/review-rubric.md`,
-   one role per pass — never blend the perspectives:
-   - Pass 1, *Business-coverage reviewer* — act as PO/stakeholder;
-     score the "Business coverage" axis of the rubric.
-   - Pass 2, *Dev-implementability reviewer* — act as the tech lead who
-     will slice this mission into tickets; score the "Dev
-     implementability" axis.
-   Each pass produces: a 1–5 score (the LOWEST maturity level fully
+   independent reviews of the draft against `docs/review-rubric.md` —
+   when your runtime can dispatch subagents, run them as TWO subagents
+   IN PARALLEL; otherwise run TWO sequential passes, one role per
+   pass. Never blend the two perspectives in one pass:
+   - *Business-coverage reviewer* — acts as PO/stakeholder; scores the
+     "Business coverage" axis of the rubric.
+   - *Dev-implementability reviewer* — acts as the tech lead who will
+     slice this mission into tickets; scores the "Dev implementability"
+     axis.
+   Each reviewer returns: a 1–5 score (the LOWEST maturity level fully
    satisfied — never averaged), the checklist with pass/fail per item,
    and a gap list where every gap names the section it lives in and a
    proposed fix.
