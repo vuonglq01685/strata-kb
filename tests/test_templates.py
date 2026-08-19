@@ -256,3 +256,78 @@ def test_ba_mission_plan_templates_carry_the_maturity_review_step():
         text = _read_init_template(name)
         for marker in BA_REVIEW_MARKERS:
             assert marker in text, f"{name}: missing {marker!r}"
+
+
+# --- Phase 5 Stage A: the dev workflow wrappers -----------------------------
+
+DEV_WORKFLOW_SKILLS = (
+    "dev-implement-ticket",
+    "dev-design",
+    "dev-plan",
+    "dev-execute",
+    "dev-handover",
+)
+
+
+def _dev_wrapper_names(skill: str) -> tuple[str, ...]:
+    return (
+        f"claude-skill-{skill}.md",
+        f"claude-command-{skill}.md",
+        f"copilot-{skill}.prompt.md",
+        f"cursor-{skill}.md",
+    )
+
+
+def test_dev_implement_ticket_templates_exist_as_package_resources():
+    base = resources.files("center_kb").joinpath("templates/init")
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        assert base.joinpath(name).is_file(), name
+
+
+def test_dev_implement_ticket_carries_the_five_orchestrator_steps():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        text = _read_init_template(name)
+        for step in ("Intake", "Resolve", "Ground", "Placeholders", "Run the phases"):
+            assert step in text, f"{name} missing step {step}"
+
+
+def test_dev_implement_ticket_uses_resolve_and_get_never_diff():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        text = _read_init_template(name)
+        assert "kb_resolve" in text, name          # MCP tool
+        assert "kb resolve" in text, name          # CLI fallback
+        assert "kb get " in text, name             # current hub version
+        assert "kb diff" not in text.replace("Do NOT use `kb diff`", ""), name
+
+
+def test_dev_implement_ticket_checks_ticket_dependencies():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        text = _read_init_template(name)
+        assert "## Dependencies" in text, name
+        assert "Sequencing" in text, name
+        assert "Blocked by" in text, name
+
+
+def test_dev_implement_ticket_carries_placeholder_and_ticket_ownership_rules():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        text = _read_init_template(name)
+        assert "%%TODO: verify against codebase%%" in text, name
+        assert "never edit the ticket" in text, name
+        assert "OPEN(BA)" in text, name
+
+
+def test_claude_skill_dev_implement_ticket_has_expected_frontmatter():
+    text = _read_init_template("claude-skill-dev-implement-ticket.md")
+    assert text.startswith("---\n")
+    assert "name: dev-implement-ticket\n" in text
+    assert "/dev-implement-ticket" in text
+
+
+def test_copilot_dev_implement_ticket_prompt_has_agent_mode():
+    text = _read_init_template("copilot-dev-implement-ticket.prompt.md")
+    assert "mode: agent" in text
+
+
+def test_claude_command_dev_implement_ticket_is_a_skill_invoker():
+    text = _read_init_template("claude-command-dev-implement-ticket.md")
+    assert "Invoke the `dev-implement-ticket` skill with the Skill tool" in text
