@@ -16,9 +16,6 @@ than redoing finished phases.
 center-kb specific; the phases it runs map to brainstorming, writing-plans,
 and subagent-driven-development.*
 
-The steps below are spelled out in full so this command file is
-independently greppable and stands alone without the skill file.
-
 ## Freshness re-check (run this FIRST, every time)
 
 Before anything else, re-resolve the ticket's `kb-context`: call the MCP tool
@@ -36,33 +33,20 @@ handover is too late, because the plan may already rest on changed content.
   the cited domain document.
 - **ok** → continue.
 
-## Steps
-
-- **Intake** — accept a pasted ticket body or a path; confirm ticket/US id
-  and branch; read the ticket's `## Dependencies` (`Blocked by:` /
-  `Blocks:`) and, when a `> Parent mission:` line is present, that
-  mission's `## Sequencing` row; if this story is blocked by something
-  unmerged, say so and let the Dev decide. No `kb-context` block → stop,
-  the ticket is not Ready.
-- **Resolve** — triage exactly as in the Freshness re-check above:
-  `broken` → stop and report to the BA; `stale` → show both versions and
-  let the Dev decide; `ok` → continue.
-- **Ground** — read resolved L2; escalate to L3 via `kb_get_section … l3`
-  (or `kb get <doc> <section> --level l3`) for any value that will be
-  encoded in code or tests; then `kb_search` both own-repo documents —
-  `<repo_id>-code` for structure and `<repo_id>-svc` for responsibility —
-  and then read the actual code. State the rule: *knowledge orients, code
-  decides.*
-- **Placeholders** — for each `%%TODO: verify against codebase%%`, verify
-  the real name against the codebase and record `placeholder → verified
-  value (file:line or code-knowledge ref)`; report the list to the BA;
-  **never edit the ticket**; unverifiable here → `OPEN(BA)`.
-- **Run the phases** — invoke the `dev-design` skill, then — after the Dev
-  approves it — the `dev-plan` skill, then the `dev-execute` skill, then
-  the `dev-handover` skill. On re-entry, detect state from
-  `docs/impl/<ticket-id>-design.md`, `docs/impl/<ticket-id>-plan.md`, the
-  ticked-checkbox ratio in the plan, the current branch, and whether a PR
-  exists — then skip finished phases and offer the next one.
+Steps the skill enforces: **Intake** reads the ticket's `## Dependencies`
+(`Blocked by:` / `Blocks:`) and, when a `> Parent mission:` line is
+present, that mission's `## Sequencing` row, and stops if there is no
+`kb-context` block to resolve; **Resolve** triages exactly as in the
+Freshness re-check above; **Ground** reads resolved L2, escalating to L3
+for any value that will be encoded in code or tests, then reads the actual
+code before trusting anything; **Placeholders** verifies every
+`%%TODO: verify against codebase%%` against the codebase, reports the list
+to the BA, **never edit the ticket**, and anything unverifiable becomes
+`OPEN(BA)`; **Run the phases** invokes the `dev-design`, `dev-plan`,
+`dev-execute`, then `dev-handover` skills in order, detecting re-entry
+state from `docs/impl/<ticket-id>-{design,plan}.md`, the plan's
+ticked-checkbox ratio, the current branch, and whether a PR exists, so
+finished phases are skipped.
 
 ## Hard rules
 
