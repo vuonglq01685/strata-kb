@@ -413,3 +413,52 @@ def test_claude_skill_dev_plan_has_expected_frontmatter():
 
 def test_copilot_dev_plan_prompt_has_agent_mode():
     assert "mode: agent" in _read_init_template("copilot-dev-plan.prompt.md")
+
+
+def test_dev_execute_templates_exist_as_package_resources():
+    base = resources.files("center_kb").joinpath("templates/init")
+    for name in _dev_wrapper_names("dev-execute"):
+        assert base.joinpath(name).is_file(), name
+
+
+def test_dev_execute_isolates_the_workspace_before_touching_code():
+    for name in _dev_wrapper_names("dev-execute"):
+        text = _read_init_template(name)
+        assert "worktree" in text, name
+        assert "Never work directly on the default branch" in text, name
+
+
+def test_dev_execute_demands_an_observed_failing_test():
+    for name in _dev_wrapper_names("dev-execute"):
+        text = _read_init_template(name)
+        assert "observe it fail" in text, name
+        assert "never seen red proves nothing" in text, name
+
+
+def test_dev_execute_has_a_review_checkpoint_and_shown_verification():
+    for name in _dev_wrapper_names("dev-execute"):
+        text = _read_init_template(name)
+        assert "review checkpoint" in text, name
+        assert "cmd.test" in text and "cmd.lint" in text, name
+        assert "show the output" in text, name
+
+
+def test_dev_execute_forbids_editing_tests_and_deciding_ambiguous_acs():
+    for name in _dev_wrapper_names("dev-execute"):
+        text = _read_init_template(name)
+        assert "Never edit a test to make it green" in text, name
+        assert "return to `dev-design`" in text, name
+
+
+def test_dev_execute_is_resumable():
+    for name in _dev_wrapper_names("dev-execute"):
+        text = _read_init_template(name)
+        assert "first unticked task" in text, name
+
+
+def test_claude_skill_dev_execute_has_expected_frontmatter():
+    assert "name: dev-execute\n" in _read_init_template("claude-skill-dev-execute.md")
+
+
+def test_copilot_dev_execute_prompt_has_agent_mode():
+    assert "mode: agent" in _read_init_template("copilot-dev-execute.prompt.md")
