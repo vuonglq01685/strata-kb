@@ -268,6 +268,41 @@ DEV_WORKFLOW_SKILLS = (
     "dev-handover",
 )
 
+# The skills whose four wrappers have actually landed. Task A5 adds
+# "dev-handover" here when its wrappers ship; DEV_WORKFLOW_SKILLS above stays
+# the full five-skill list that Task A5's own tests iterate. Anything that
+# READS a wrapper file must iterate this tuple, not that one.
+LANDED_DEV_WORKFLOW_SKILLS = (
+    "dev-implement-ticket",
+    "dev-design",
+    "dev-plan",
+    "dev-execute",
+)
+
+# The three blocks reproduced verbatim in every dev wrapper — canon in
+# docs/superpowers/plans/2026-08-19-dev-agent-stage-a.md (SHARED-FRESHNESS,
+# SHARED-HARD-RULES, SHARED-NEXT-STEP). Each is keyed by its first and last
+# line rather than sliced "heading → next heading": the command wrappers put
+# their compressed procedure paragraph between the freshness block and the next
+# heading, and the dev-design wrappers close with a sentence after the hard
+# rules, so a heading-to-heading slice would swallow skill-specific prose and
+# make the body assertions below vacuous all over again.
+SHARED_BLOCKS = {
+    "SHARED-FRESHNESS": (
+        "## Freshness re-check (run this FIRST, every time)\n",
+        "- **ok** → continue.\n",
+    ),
+    "SHARED-HARD-RULES": (
+        "## Hard rules\n",
+        "- KB feedback items found during implementation go in the PR"
+        " description — dropping them silently violates DoD.\n",
+    ),
+    "SHARED-NEXT-STEP": (
+        "## Next step — ALWAYS end your response with this block\n",
+        "  Flow order never hides a blocker.\n",
+    ),
+}
+
 
 def _dev_wrapper_names(skill: str) -> tuple[str, ...]:
     return (
@@ -278,6 +313,69 @@ def _dev_wrapper_names(skill: str) -> tuple[str, ...]:
     )
 
 
+def _landed_dev_wrapper_names() -> tuple[str, ...]:
+    return tuple(
+        name
+        for skill in LANDED_DEV_WORKFLOW_SKILLS
+        for name in _dev_wrapper_names(skill)
+    )
+
+
+def _normalised(text: str) -> str:
+    """Collapse every whitespace run to a single space.
+
+    The wrappers are hard-wrapped prose. Matching a needle against the raw text
+    makes that phrase untouchable by the wrap — a line break in the middle of it
+    fails the test — which is how 161-character lines ended up in files that
+    wrap at ~72. Dev needles are matched against normalised text instead, so the
+    prose can be re-wrapped freely.
+    """
+    return " ".join(text.split())
+
+
+def _dev_shared_block(name: str, block: str) -> str:
+    """One wrapper's copy of a SHARED-* block, verbatim."""
+    first, last = SHARED_BLOCKS[block]
+    text = _read_init_template(name)
+    assert text.count(first) == 1, f"{name}: {block} opening line not found once"
+    assert text.count(last) == 1, f"{name}: {block} closing line not found once"
+    start = text.index(first)
+    return text[start : text.index(last, start) + len(last)]
+
+
+def _dev_wrapper_text(name: str) -> str:
+    """The whole wrapper, whitespace-normalised."""
+    return _normalised(_read_init_template(name))
+
+
+def _dev_wrapper_body(name: str) -> str:
+    """The wrapper's OWN prose: everything outside the three SHARED-* blocks.
+
+    Every wrapper carries the shared blocks by construction, so a needle those
+    blocks already satisfy asserts nothing about the skill it is named for
+    unless it is matched against this body.
+    """
+    text = _read_init_template(name)
+    for block in SHARED_BLOCKS:
+        text = text.replace(_dev_shared_block(name, block), "\n\n", 1)
+    for block, (first, _last) in SHARED_BLOCKS.items():
+        assert first not in text, f"{name}: {block} survived the strip"
+    return _normalised(text)
+
+
+def test_dev_wrappers_carry_byte_identical_shared_blocks():
+    """3 blocks x 16 files: the 4-copies-per-skill architecture rests on this."""
+    names = _landed_dev_wrapper_names()
+    assert len(names) == 16, names
+    for block in SHARED_BLOCKS:
+        reference = _dev_shared_block(names[0], block)
+        assert reference.strip(), f"{block}: empty in {names[0]}"
+        for name in names[1:]:
+            assert _dev_shared_block(name, block) == reference, (
+                f"{name}: {block} is not byte-identical to {names[0]}"
+            )
+
+
 def test_dev_implement_ticket_templates_exist_as_package_resources():
     base = resources.files("center_kb").joinpath("templates/init")
     for name in _dev_wrapper_names("dev-implement-ticket"):
@@ -286,23 +384,42 @@ def test_dev_implement_ticket_templates_exist_as_package_resources():
 
 def test_dev_implement_ticket_carries_the_five_orchestrator_steps():
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         for step in ("Intake", "Resolve", "Ground", "Placeholders", "Run the phases"):
             assert step in text, f"{name} missing step {step}"
 
 
 def test_dev_implement_ticket_uses_resolve_and_get_never_diff():
+    # Whole-text needles on purpose: `kb_resolve` / `kb resolve` / `kb get` live
+    # in SHARED-FRESHNESS, which the wrappers point at instead of restating
+    # ("**Resolve** triages exactly as in the Freshness re-check above"). What
+    # keeps them honest is test_dev_wrappers_carry_byte_identical_shared_blocks;
+    # the skill-specific half is asserted against the body in the test below.
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "kb_resolve" in text, name          # MCP tool
         assert "kb resolve" in text, name          # CLI fallback
         assert "kb get " in text, name             # current hub version
         assert "kb diff" not in text.replace("Do NOT use `kb diff`", ""), name
 
 
+def test_dev_implement_ticket_ground_step_escalates_to_l3_in_its_own_words():
+    # The Ground step's L3 escalation IS skill-specific, so it is asserted
+    # against the body. The claude-command wrapper is a thin Skill invoker and
+    # deliberately does not restate it, so it is not in this list.
+    for name in (
+        "claude-skill-dev-implement-ticket.md",
+        "copilot-dev-implement-ticket.prompt.md",
+        "cursor-dev-implement-ticket.md",
+    ):
+        body = _dev_wrapper_body(name)
+        assert "kb get " in body, name
+        assert "--level l3" in body, name
+
+
 def test_dev_implement_ticket_checks_ticket_dependencies():
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "## Dependencies" in text, name
         assert "Sequencing" in text, name
         assert "Blocked by" in text, name
@@ -310,10 +427,19 @@ def test_dev_implement_ticket_checks_ticket_dependencies():
 
 def test_dev_implement_ticket_carries_placeholder_and_ticket_ownership_rules():
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
+        body = _dev_wrapper_body(name)
         assert "%%TODO: verify against codebase%%" in text, name
-        assert "never edit the ticket" in text, name
-        assert "OPEN(BA)" in text, name
+        # Both needles below are satisfied by SHARED-HARD-RULES in every file,
+        # so they are asserted against the body: the Placeholders step must
+        # state the ownership rule and the OPEN(BA) escape hatch itself.
+        # Imperative in the full-content mirrors, declarative in the command
+        # wrapper's list of declaratives — either wording counts, neither may
+        # go missing.
+        assert (
+            "never edit the ticket" in body or "never edits the ticket" in body
+        ), name
+        assert "OPEN(BA)" in body, name
 
 
 def test_claude_skill_dev_implement_ticket_has_expected_frontmatter():
@@ -333,6 +459,15 @@ def test_claude_command_dev_implement_ticket_is_a_skill_invoker():
     assert "Invoke the `dev-implement-ticket` skill with the Skill tool" in text
 
 
+def test_every_landed_claude_command_is_a_skill_invoker():
+    # A command wrapper is a pointer to the skill, never a second
+    # implementation of it — guard that for all four, not just one.
+    for skill in LANDED_DEV_WORKFLOW_SKILLS:
+        name = f"claude-command-{skill}.md"
+        text = _dev_wrapper_text(name)
+        assert f"Invoke the `{skill}` skill with the Skill tool" in text, name
+
+
 def test_dev_design_templates_exist_as_package_resources():
     base = resources.files("center_kb").joinpath("templates/init")
     for name in _dev_wrapper_names("dev-design"):
@@ -341,7 +476,7 @@ def test_dev_design_templates_exist_as_package_resources():
 
 def test_dev_design_carries_the_three_paths_and_the_ratchet():
     for name in _dev_wrapper_names("dev-design"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         for path in ("spike", "bounded", "architectural"):
             assert path in text, f"{name} missing path {path}"
         assert "one-way" in text, name
@@ -350,16 +485,18 @@ def test_dev_design_carries_the_three_paths_and_the_ratchet():
 
 def test_dev_design_writes_the_design_file_only_on_the_architectural_path():
     for name in _dev_wrapper_names("dev-design"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "docs/impl/<ticket-id>-design.md" in text, name
         assert "architectural path only" in text, name
 
 
 def test_dev_design_carries_gate_one_and_the_ac_rule():
     for name in _dev_wrapper_names("dev-design"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "GATE 1" in text, name
-        assert "OPEN(BA)" in text, name
+        # SHARED-HARD-RULES carries OPEN(BA) in every file, so the design
+        # wrapper's own AC escape hatch is asserted against the body.
+        assert "OPEN(BA)" in _dev_wrapper_body(name), name
         assert "reinterpreting an ac is forbidden" in text.lower(), name
 
 
@@ -380,14 +517,14 @@ def test_dev_plan_templates_exist_as_package_resources():
 
 def test_dev_plan_requires_one_task_per_ac_with_a_test():
     for name in _dev_wrapper_names("dev-plan"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "one task per AC" in text, name
         assert "names the test that proves it" in text, name
 
 
 def test_dev_plan_pins_the_plan_file_and_checkbox_shape():
     for name in _dev_wrapper_names("dev-plan"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "docs/impl/<ticket-id>-plan.md" in text, name
         assert "- [ ]" in text, name
         for heading in ("Files", "Interfaces", "Steps"):
@@ -396,13 +533,13 @@ def test_dev_plan_pins_the_plan_file_and_checkbox_shape():
 
 def test_dev_plan_first_step_is_always_the_failing_test():
     for name in _dev_wrapper_names("dev-plan"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "step 1 always being the failing test" in text, name
 
 
 def test_dev_plan_closes_with_cross_cutting_verification_from_cmd_sections():
     for name in _dev_wrapper_names("dev-plan"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "cmd." in text, name
         assert "GATE 2" in text, name
 
@@ -423,21 +560,25 @@ def test_dev_execute_templates_exist_as_package_resources():
 
 def test_dev_execute_isolates_the_workspace_before_touching_code():
     for name in _dev_wrapper_names("dev-execute"):
-        text = _read_init_template(name)
-        assert "worktree" in text, name
+        # "worktree" alone is satisfied twice over by text every wrapper has:
+        # SHARED-FRESHNESS ("`.kb/` worktree") and the `using-git-worktrees`
+        # counterpart line. The Isolate step is the only place that says
+        # "git worktree", so that is the needle, matched against the body.
+        assert "git worktree" in _dev_wrapper_body(name), name
+        text = _dev_wrapper_text(name)
         assert "Never work directly on the default branch" in text, name
 
 
 def test_dev_execute_demands_an_observed_failing_test():
     for name in _dev_wrapper_names("dev-execute"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "observe it fail" in text, name
         assert "never seen red proves nothing" in text, name
 
 
 def test_dev_execute_has_a_review_checkpoint_and_shown_verification():
     for name in _dev_wrapper_names("dev-execute"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "review checkpoint" in text, name
         assert "cmd.test" in text and "cmd.lint" in text, name
         assert "show the output" in text, name
@@ -445,14 +586,14 @@ def test_dev_execute_has_a_review_checkpoint_and_shown_verification():
 
 def test_dev_execute_forbids_editing_tests_and_deciding_ambiguous_acs():
     for name in _dev_wrapper_names("dev-execute"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "Never edit a test to make it green" in text, name
         assert "return to `dev-design`" in text, name
 
 
 def test_dev_execute_is_resumable():
     for name in _dev_wrapper_names("dev-execute"):
-        text = _read_init_template(name)
+        text = _dev_wrapper_text(name)
         assert "first unticked task" in text, name
 
 
