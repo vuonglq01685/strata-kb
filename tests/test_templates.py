@@ -370,3 +370,46 @@ def test_claude_skill_dev_design_has_expected_frontmatter():
 
 def test_copilot_dev_design_prompt_has_agent_mode():
     assert "mode: agent" in _read_init_template("copilot-dev-design.prompt.md")
+
+
+def test_dev_plan_templates_exist_as_package_resources():
+    base = resources.files("center_kb").joinpath("templates/init")
+    for name in _dev_wrapper_names("dev-plan"):
+        assert base.joinpath(name).is_file(), name
+
+
+def test_dev_plan_requires_one_task_per_ac_with_a_test():
+    for name in _dev_wrapper_names("dev-plan"):
+        text = _read_init_template(name)
+        assert "one task per AC" in text, name
+        assert "names the test that proves it" in text, name
+
+
+def test_dev_plan_pins_the_plan_file_and_checkbox_shape():
+    for name in _dev_wrapper_names("dev-plan"):
+        text = _read_init_template(name)
+        assert "docs/impl/<ticket-id>-plan.md" in text, name
+        assert "- [ ]" in text, name
+        for heading in ("Files", "Interfaces", "Steps"):
+            assert f"**{heading}**" in text, f"{name} missing {heading}"
+
+
+def test_dev_plan_first_step_is_always_the_failing_test():
+    for name in _dev_wrapper_names("dev-plan"):
+        text = _read_init_template(name)
+        assert "step 1 always being the failing test" in text, name
+
+
+def test_dev_plan_closes_with_cross_cutting_verification_from_cmd_sections():
+    for name in _dev_wrapper_names("dev-plan"):
+        text = _read_init_template(name)
+        assert "cmd." in text, name
+        assert "GATE 2" in text, name
+
+
+def test_claude_skill_dev_plan_has_expected_frontmatter():
+    assert "name: dev-plan\n" in _read_init_template("claude-skill-dev-plan.md")
+
+
+def test_copilot_dev_plan_prompt_has_agent_mode():
+    assert "mode: agent" in _read_init_template("copilot-dev-plan.prompt.md")
