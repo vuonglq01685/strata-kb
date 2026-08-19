@@ -331,3 +331,42 @@ def test_copilot_dev_implement_ticket_prompt_has_agent_mode():
 def test_claude_command_dev_implement_ticket_is_a_skill_invoker():
     text = _read_init_template("claude-command-dev-implement-ticket.md")
     assert "Invoke the `dev-implement-ticket` skill with the Skill tool" in text
+
+
+def test_dev_design_templates_exist_as_package_resources():
+    base = resources.files("center_kb").joinpath("templates/init")
+    for name in _dev_wrapper_names("dev-design"):
+        assert base.joinpath(name).is_file(), name
+
+
+def test_dev_design_carries_the_three_paths_and_the_ratchet():
+    for name in _dev_wrapper_names("dev-design"):
+        text = _read_init_template(name)
+        for path in ("spike", "bounded", "architectural"):
+            assert path in text, f"{name} missing path {path}"
+        assert "one-way" in text, name
+        assert "take the heavier one" in text, name
+
+
+def test_dev_design_writes_the_design_file_only_on_the_architectural_path():
+    for name in _dev_wrapper_names("dev-design"):
+        text = _read_init_template(name)
+        assert "docs/impl/<ticket-id>-design.md" in text, name
+        assert "architectural path only" in text, name
+
+
+def test_dev_design_carries_gate_one_and_the_ac_rule():
+    for name in _dev_wrapper_names("dev-design"):
+        text = _read_init_template(name)
+        assert "GATE 1" in text, name
+        assert "OPEN(BA)" in text, name
+        assert "reinterpreting an ac is forbidden" in text.lower(), name
+
+
+def test_claude_skill_dev_design_has_expected_frontmatter():
+    text = _read_init_template("claude-skill-dev-design.md")
+    assert "name: dev-design\n" in text
+
+
+def test_copilot_dev_design_prompt_has_agent_mode():
+    assert "mode: agent" in _read_init_template("copilot-dev-design.prompt.md")
