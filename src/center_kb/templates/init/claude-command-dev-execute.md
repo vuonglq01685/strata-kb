@@ -35,30 +35,27 @@ handover is too late, because the plan may already rest on changed content.
 
 Steps the skill enforces: **Isolate** the work onto a dedicated branch
 and, where the environment supports it, a git worktree named from the
-ticket id.
-Never work directly on the default branch.
-Then, per unticked task, in its own subagent where the runtime
-supports it (sequential passes otherwise): write the test, run it, and
-observe it fail — a test that was never seen red proves nothing; write
-the minimum code and get it passing; hold a **review checkpoint**
-(pass/fail, not a score) confirming the test actually exercises that
-AC, every standard-derived value is verbatim with a citation comment,
-the change follows the repo's existing conventions, and nothing else
-broke; then **verify** by running `cmd.test` and `cmd.lint` (from
-`-code §cmd.*`, or the commands recorded at the top of the plan file)
-and show the output; then tick the checkboxes and commit the task.
-When a test fails unexpectedly, reproduce it, find the actual cause,
-and fix the cause.
-Never edit a test to make it green, never widen a tolerance to pass,
-and never mark a task done with a failing test.
-When an AC turns out not to be implementable as written, stop that
-task, return to `dev-design`, and record `OPEN(BA)` — never decide the
-ambiguity yourself, and never push past it because the code is half
-written.
-The skill is resumable: a later run re-checks freshness, re-reads the
-plan, and continues at the first unticked task. Once every task is
-ticked, option 1 in the Next-step block below is `/dev-handover
-<ticket-id>`; otherwise it is `/dev-execute <ticket-id>` to continue.
+ticket id. Never work directly on the default branch. Then, per unticked
+task, in its own subagent where the runtime supports it (sequential
+passes otherwise): write the test, run it, and observe it fail — a test
+that was never seen red proves nothing; write the minimum code and get
+it passing; hold a **review checkpoint** (pass/fail, not a score)
+confirming the test actually exercises that AC, every standard-derived
+value is verbatim with a citation comment, the change follows the repo's
+existing conventions, and nothing else broke; then **verify** by running
+`cmd.test` and `cmd.lint` (from `-code §cmd.*`, or the commands recorded
+at the top of the plan file) and show the output; then tick the
+checkboxes and commit the task. When a test fails unexpectedly,
+reproduce it, find the actual cause, and fix the cause. Never edit a
+test to make it green, never widen a tolerance to pass, and never mark a
+task done with a failing test. When an AC turns out not to be
+implementable as written, stop that task, return to `dev-design`, and
+record `OPEN(BA)` — never decide the ambiguity yourself, and never push
+past it because the code is half written. The skill is resumable: a
+later run re-checks freshness, re-reads the plan, and continues at the
+first unticked task. Once every task is ticked, option 1 in the
+Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
+`/dev-execute <ticket-id>` to continue.
 
 ## Hard rules
 

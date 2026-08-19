@@ -34,12 +34,14 @@ handover is too late, because the plan may already rest on changed content.
 - **Read the design** — on the architectural path, read
   `docs/impl/<ticket-id>-design.md`; on the spike or bounded path there is
   no design file, so work from the design as the Dev approved it in chat.
-- **Write the plan** — write `docs/impl/<ticket-id>-plan.md` with one task per AC, or several tasks for a large AC, and every task names the test that proves it.
-  Per task, give exactly three headings: **Files** (create / modify /
-  test, by path); **Interfaces** (what this task consumes from earlier
-  tasks and what it produces for later ones — exact names and types,
-  because a task's implementer sees only their own task); and **Steps**
-  as `- [ ]` checkboxes, step 1 always being the failing test.
+- **Write the plan** — write `docs/impl/<ticket-id>-plan.md` with one
+  task per AC, or several tasks for a large AC, and every task names the
+  test that proves it. Per task, give exactly three headings: **Files**
+  (create / modify / test, by path); **Interfaces** (what this task
+  consumes from earlier tasks and what it produces for later ones —
+  exact names and types, because a task's implementer sees only their
+  own task); and **Steps** as `- [ ]` checkboxes, step 1 always being
+  the failing test.
 - **Order and close** — order tasks so each one leaves the repo green, and
   end the plan with one closing task for cross-cutting verification (full
   suite + lint) using the commands from `-code §cmd.*`.

@@ -43,14 +43,14 @@ interface, or a change to how components fit, written to
 `docs/impl/<ticket-id>-design.md` (**architectural path only**).
 Classification measures the repo, not your familiarity with it, so no
 existing flow to change means it is not bounded; between two paths,
-take the heavier one; the ratchet is **one-way** — hidden complexity
-found later upgrades the path and you say so, nothing downgrades
-mid-ticket. The design content covers modules touched, interfaces added
-or changed, data changes, and the placeholder resolutions from the
-orchestrator's Placeholders step, with every standard-derived value
-quoted verbatim with its `doc-id §section`; any AC that cannot be
-implemented as written becomes
-`OPEN(BA)` — reinterpreting an AC is forbidden.
+take the heavier one. The ratchet turns **one-way**: complexity that
+surfaces mid-ticket promotes the path — say so when it does — and
+nothing ever demotes it. The design content covers modules touched,
+interfaces added or changed, data changes, and the placeholder
+resolutions from the orchestrator's Placeholders step, with every
+standard-derived value quoted verbatim with its `doc-id §section`; any
+AC that cannot be implemented as written becomes `OPEN(BA)` —
+reinterpreting an AC is forbidden.
 
 ## Hard rules
 

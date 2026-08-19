@@ -41,7 +41,7 @@ Freshness re-check above; **Ground** reads resolved L2, escalating to L3
 for any value that will be encoded in code or tests, then reads the actual
 code before trusting anything; **Placeholders** verifies every
 `%%TODO: verify against codebase%%` against the codebase, reports the list
-to the BA, **never edit the ticket**, and anything unverifiable becomes
+to the BA, **never edits the ticket**, and anything unverifiable becomes
 `OPEN(BA)`; **Run the phases** invokes the `dev-design`, `dev-plan`,
 `dev-execute`, then `dev-handover` skills in order, detecting re-entry
 state from `docs/impl/<ticket-id>-{design,plan}.md`, the plan's

@@ -29,7 +29,25 @@ handover is too late, because the plan may already rest on changed content.
   the cited domain document.
 - **ok** → continue.
 
-Steps the skill enforces: read the design — `docs/impl/<ticket-id>-design.md` on the architectural path, the approved in-chat design otherwise — then write `docs/impl/<ticket-id>-plan.md` with one task per AC, or several tasks for a large AC; every task names the test that proves it and carries three headings — **Files** (create/modify/test), **Interfaces** (what it consumes from earlier tasks and produces for later ones, exact names and types, since a task's implementer sees only their own task), and **Steps** as `- [ ]` checkboxes, step 1 always being the failing test; tasks are ordered so each one leaves the repo green, and the plan closes with one cross-cutting verification task (full suite + lint) using the commands from `-code §cmd.*` — until Stage B ships that section, the skill asks the Dev once for the build/test/lint commands and records them at the top of the plan file so this closing task, `dev-execute`, and `dev-handover` all have something to run. Ends at **GATE 2**: the Dev approves the plan, and because the checkbox file is also the resume point it must be complete enough for a different session to pick up cold.
+Steps the skill enforces: read the design —
+`docs/impl/<ticket-id>-design.md` on the architectural path, the
+approved in-chat design otherwise — then write
+`docs/impl/<ticket-id>-plan.md` with one task per AC, or several tasks
+for a large AC; every task names the test that proves it and carries
+three headings — **Files** (create/modify/test), **Interfaces** (what it
+consumes from earlier tasks and produces for later ones, exact names and
+types, since a task's implementer sees only their own task), and
+**Steps** as `- [ ]` checkboxes, step 1 always being the failing test;
+tasks are ordered so each one leaves the repo green, and the plan closes
+with one cross-cutting verification task (full suite + lint) using the
+commands from `-code §cmd.*` — until Stage B ships that section, the
+skill asks the Dev once for the build/test/lint commands and records
+them at the top of the plan file so this closing task, `dev-execute`,
+and `dev-handover` all have something to run. Ends at **GATE 2**: the
+Dev approves the plan before any code is written, and once approved,
+option 1 in the Next-step block below is `/dev-execute <ticket-id>`;
+because the checkbox file is also the resume point, it must be complete
+enough for a different session to pick up cold.
 
 ## Hard rules
 
