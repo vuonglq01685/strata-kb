@@ -63,7 +63,9 @@ handover is too late, because the plan may already rest on changed content.
   decide the ambiguity yourself, and do not push past it because the
   code is half written.
 - **Resumable** — a later run re-checks freshness, re-reads the plan,
-  and continues at the first unticked task.
+  and continues at the first unticked task. Once every task is ticked,
+  option 1 in the Next-step block below is `/dev-handover <ticket-id>`;
+  otherwise it is `/dev-execute <ticket-id>` to continue.
 
 ## Hard rules
 
@@ -102,7 +104,3 @@ Rules:
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.
-
-For `dev-execute`, option 1 is `/dev-handover <ticket-id>` once every
-task in the plan is ticked, and `/dev-execute <ticket-id>` to continue
-otherwise.
