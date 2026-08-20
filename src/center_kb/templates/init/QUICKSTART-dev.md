@@ -1,10 +1,12 @@
 # CENTER-KB Quickstart (dev repo)
 
 This repo is a **product code** repo: it consumes the shared knowledge base
-while implementing BA tickets, and it publishes generated knowledge about
-its OWN source code (`<repo_id>-code`) plus curated service knowledge
-(`<repo_id>-svc`) back to the hub. It never ingests documents from outside
-this repo — that happens in `child` repos, reviewed on the `hub`.
+while implementing BA tickets. Once Stages B and C ship the publish path, it
+will also publish generated knowledge about its OWN source code
+(`<repo_id>-code`) plus curated service knowledge (`<repo_id>-svc`) back to
+the hub — **this repo cannot publish yet**. It never ingests documents
+from outside this repo — that happens in `child` repos, reviewed on the
+`hub`.
 
 ## Setup once
 
@@ -14,11 +16,13 @@ this repo — that happens in `child` repos, reviewed on the `hub`.
 2. **Point at the hub** — fill `hub:` in `.kb/config.yaml` with the main
    hub's git URL or path. This is the only read source for `kb query` /
    `kb resolve` / `kb get` / MCP.
-3. **Register for publishing** — fill `intake:` in `.kb/config.yaml` with
-   the hub's intake service URL, then ask the hub maintainer to add this
-   repo under `repos:` in the hub's `federation/registry.yaml`. Without
-   that allowlist entry, publishing your generated `-code`/`-svc`
-   knowledge fails even with `intake:` filled in correctly.
+3. **Prepare for publishing (not available yet)** — fill `intake:` in
+   `.kb/config.yaml` with the hub's intake service URL, then ask the hub
+   maintainer to add this repo under `repos:` in the hub's
+   `federation/registry.yaml`. Do this now so it's ready, but **this repo
+   cannot publish yet**: Stages B and C ship the `-code`/`-svc` knowledge
+   generation and the publish workflow that would actually use `intake:`
+   and that registry entry.
 4. **Connect the shared MCP server** — set two environment variables so
    your AI assistant can reach the hub's search/citation tools:
    - `CENTER_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
@@ -89,13 +93,15 @@ Nothing in this pipeline merges or ships without a human:
 ## Upgrading
 
 Re-run `kb init --kind dev` to pick up new templates. This only ever
-touches **scaffold files** — the skill/command/prompt wrappers — and only
+touches **scaffold files** — the skill/command/prompt wrappers,
+`QUICKSTART-DEV.md`, and the `docs/impl/.gitkeep` marker — and only
 overwrites one when its content differs from the new template;
 `.kb/config.yaml` and `.kb/index.yaml` are never touched either way (the
 one exception being an explicit `--force`, which overwrites them too).
 Anything you authored under `docs/impl/` is not scaffolding: `kb init`
 never reads, writes, or overwrites it.
-**If you hand-edited a wrapper, back it up first: your edits are lost.**
+**If you hand-edited a wrapper or QUICKSTART-DEV.md, back it up first:
+your edits are lost.**
 
 ## CLI reference
 

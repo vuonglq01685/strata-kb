@@ -1436,6 +1436,7 @@ def test_init_dev_config_has_kind_repo_id_and_intake(tmp_path: Path):
     assert 'repo_id: "my-dev-repo"' in text
     assert "intake:" in text
     assert "hub:" in text
+    assert text.count("kind: dev") == 1
 
 
 def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
@@ -1473,6 +1474,17 @@ def test_init_cli_accepts_kind_dev(tmp_path: Path):
     assert (tmp_path / ".claude" / "skills" / "dev-design" / "SKILL.md").is_file()
 
 
+def test_cli_init_dev_next_steps(tmp_path: Path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "dev"])
+    assert result.exit_code == 0
+    assert "created" in result.output
+    assert "dev-implement-ticket" in result.output
+    assert "QUICKSTART-DEV.md" in result.output
+    assert "federation/registry.yaml" in result.output
+    assert "ba-ticket-author" not in result.output
+    assert "kb ingest" not in result.output
+
+
 def test_kind_descriptions_lists_four_kinds():
     from center_kb.cli import KIND_DESCRIPTIONS
 
@@ -1495,3 +1507,4 @@ def test_quickstart_dev_content(tmp_path: Path):
     assert "CENTER_KB_HTTP_TOKEN" in text
     assert "federation/registry.yaml" in text
     assert "docs/impl/" in text
+    assert "cannot publish yet" in text
