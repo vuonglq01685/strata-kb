@@ -823,6 +823,34 @@ def test_resolve_kind_interactive_rejects_invalid_then_accepts_ba(
     ) == 1
 
 
+def test_resolve_kind_interactive_accepts_dev(tmp_path: Path, monkeypatch):
+    from center_kb import cli
+
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+    result = runner.invoke(app, ["init", str(tmp_path)], input="dev\n")
+    assert result.exit_code == 0
+    text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert text.count("kind: dev") == 1
+    assert (tmp_path / "QUICKSTART-DEV.md").exists()
+
+
+def test_resolve_kind_interactive_rejects_invalid_then_accepts_dev(
+    tmp_path: Path, monkeypatch
+):
+    from center_kb import cli
+
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+    result = runner.invoke(app, ["init", str(tmp_path)], input="server\ndev\n")
+    assert result.exit_code == 0
+    # Pins the new error string: dropping "dev" from the accepted tuple
+    # would reject it interactively forever while every other assertion in
+    # this file stays green, so the four-kind list itself is the needle.
+    assert "'hub', 'child', 'ba', 'dev'" in result.output
+    assert (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8").count(
+        "kind: dev"
+    ) == 1
+
+
 def test_config_load_accepts_kind_ba(tmp_path: Path):
     from center_kb.config import load_config
 
@@ -1396,6 +1424,9 @@ _DEV_STAGE_A_PATHS = (
 
 def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     report = init_repo(tmp_path, "dev")
+    # Pin the count too: comparing expected_files("dev") to itself lets a
+    # premature extra row slip in unnoticed on both sides of the equality.
+    assert len(expected_files("dev")) == 26
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
@@ -1455,8 +1486,8 @@ def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
 
 
 def test_phase5_adds_nothing_to_hub_child_or_ba(tmp_path: Path):
-    assert sorted(expected_files("hub")) == _PRE_PHASE4_HUB_FILES
-    assert sorted(expected_files("child")) == _PRE_PHASE4_CHILD_FILES
+    assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
+    assert sorted(expected_files("child")) == sorted(_PRE_PHASE4_CHILD_FILES)
     for rel in expected_files("ba"):
         assert "dev-" not in rel, rel
 

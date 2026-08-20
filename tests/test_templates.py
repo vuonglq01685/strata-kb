@@ -299,6 +299,17 @@ SHARED_BLOCKS = {
     ),
 }
 
+# Canon text for each SHARED-* block, extracted verbatim (via repr()) from a
+# landed wrapper — never hand-retyped. Comparing every copy against this
+# canon, rather than only against each other, means a fleet-wide edit that
+# deletes or rewords a hard rule now fails here, where the pairwise-only
+# version did not.
+SHARED_BLOCK_TEXT = {
+    'SHARED-FRESHNESS': "## Freshness re-check (run this FIRST, every time)\n\nBefore anything else, re-resolve the ticket's `kb-context`: call the MCP tool\n`kb_resolve` when available, otherwise `kb resolve <ticket-file>` (or\n`kb resolve - < ticket.md`). The hub may have published since the last session,\nso a ref that was `ok` yesterday can be `stale` today — checking only at\nhandover is too late, because the plan may already rest on changed content.\n\n- **broken** → STOP. This is a blocker: report to the BA that the ticket needs\n  re-pinning. Never implement around a citation that no longer resolves.\n- **stale** → show BOTH versions and let the humans decide: `kb resolve` returns\n  the pinned content plus the reason; `kb get <doc-id> <section> [--level l3]`\n  returns the CURRENT hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree against a local git rev, and this repo holds no local copy of\n  the cited domain document.\n- **ok** → continue.\n",
+    'SHARED-HARD-RULES': '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
+    'SHARED-NEXT-STEP': '## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n',
+}
+
 
 def _dev_wrapper_names(skill: str) -> tuple[str, ...]:
     return (
@@ -360,21 +371,26 @@ def _dev_wrapper_body(name: str) -> str:
 
 
 def test_dev_wrappers_carry_byte_identical_shared_blocks():
-    """3 blocks x 20 files, every copy byte-identical to the first.
+    """3 blocks x 20 files, every copy byte-identical to canon.
 
     The 20 is spelled out rather than derived so that adding a skill to
     DEV_WORKFLOW_SKILLS trips here and forces a conscious update. It does not
     detect a missing wrapper FILE — the per-skill existence tests and the
     FileNotFoundError out of _read_init_template do that.
+
+    Comparing every copy to SHARED_BLOCK_TEXT (canon) rather than only to
+    names[0] (pairwise) is the point: a fleet-wide edit that mutates every
+    copy identically — e.g. deleting the same line from all 20 files —
+    stays pairwise-equal and used to pass here. It cannot stay equal to a
+    canon it never touches.
     """
     names = _landed_dev_wrapper_names()
     assert len(names) == 20, names
-    for block in SHARED_BLOCKS:
-        reference = _dev_shared_block(names[0], block)
-        assert reference.strip(), f"{block}: empty in {names[0]}"
-        for name in names[1:]:
+    for block, reference in SHARED_BLOCK_TEXT.items():
+        assert reference.strip(), f"{block}: empty canon"
+        for name in names:
             assert _dev_shared_block(name, block) == reference, (
-                f"{name}: {block} is not byte-identical to {names[0]}"
+                f"{name}: {block} is not byte-identical to canon"
             )
 
 
@@ -703,3 +719,15 @@ def test_dev_wrappers_carry_the_freshness_triage_rules():
             text = _dev_wrapper_text(name)
             assert "**broken** → STOP" in text, name
             assert "show BOTH versions" in text, name
+
+
+def test_copilot_and_cursor_wrappers_differ_only_in_their_frontmatter_name():
+    # Each skill has three independently-authored prose variants (skill,
+    # copilot, cursor) and only ~6 needles as the cross-form contract — this
+    # is the cheapest drift guard available: copilot and cursor are supposed
+    # to carry identical bodies, differing only on line 2 of the frontmatter
+    # (`mode: agent` vs `name: <skill>`).
+    for skill in DEV_WORKFLOW_SKILLS:
+        copilot = _read_init_template(f"copilot-{skill}.prompt.md").splitlines()
+        cursor = _read_init_template(f"cursor-{skill}.md").splitlines()
+        assert copilot[:1] + copilot[2:] == cursor[:1] + cursor[2:], skill
