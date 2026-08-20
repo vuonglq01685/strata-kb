@@ -8,7 +8,8 @@ from pathlib import Path
 KIND_HUB = "hub"
 KIND_CHILD = "child"
 KIND_BA = "ba"
-KINDS = (KIND_HUB, KIND_CHILD, KIND_BA)
+KIND_DEV = "dev"
+KINDS = (KIND_HUB, KIND_CHILD, KIND_BA, KIND_DEV)
 
 # target relative path -> template resource name under templates/init/
 COMMON_TEMPLATES: dict[str, str] = {
@@ -87,6 +88,35 @@ BA_TEMPLATES: dict[str, str] = {
     "QUICKSTART-BA.md": "QUICKSTART-ba.md",
 }
 
+# Kind `dev` — product code repo. It consumes the shared KB while implementing
+# BA tickets and publishes knowledge about its OWN source code. Like BA_TEMPLATES
+# this is deliberately NOT merged with COMMON_TEMPLATES (spec §4): a dev repo
+# never ingests outside documents, so it carries none of the ingest/docker stack.
+DEV_TEMPLATES: dict[str, str] = {
+    ".kb/config.yaml": "config-dev.yaml",
+    ".kb/index.yaml": "index.yaml",
+    ".mcp.json": "mcp-child.json",
+    ".cursor/mcp.json": "cursor-mcp-child.json",
+    "docs/impl/.gitkeep": "gitkeep.txt",
+    "QUICKSTART-DEV.md": "QUICKSTART-dev.md",
+    **{
+        path: resource
+        for skill in (
+            "dev-implement-ticket",
+            "dev-design",
+            "dev-plan",
+            "dev-execute",
+            "dev-handover",
+        )
+        for path, resource in (
+            (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
+            (f".claude/commands/{skill}.md", f"claude-command-{skill}.md"),
+            (f".github/prompts/{skill}.prompt.md", f"copilot-{skill}.prompt.md"),
+            (f".cursor/commands/{skill}.md", f"cursor-{skill}.md"),
+        )
+    },
+}
+
 # User data — never refreshed by default; only overwritten with --force.
 PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml", ".kb/config.yaml"})
 
@@ -115,6 +145,8 @@ def template_map(kind: str) -> dict[str, str]:
         raise ValueError(f"kind must be one of {KINDS}, got '{kind}'")
     if kind == KIND_BA:
         return dict(BA_TEMPLATES)
+    if kind == KIND_DEV:
+        return dict(DEV_TEMPLATES)
     extra = HUB_TEMPLATES if kind == KIND_HUB else CHILD_TEMPLATES
     return {**COMMON_TEMPLATES, **extra}
 
