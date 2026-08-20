@@ -665,3 +665,12 @@ def test_all_dev_workflow_wrappers_carry_the_tdd_and_evidence_rules():
             text = _dev_wrapper_text(name)
             assert "No production code without a failing test observed first" in text, name
             assert "Never claim done without showing the verification output" in text, name
+
+
+def test_dev_implement_ticket_caveats_the_documents_that_do_not_exist_yet():
+    # The Ground step sends the agent at `<repo_id>-code` and `-svc`, which
+    # Stages B and C ship. `dev-plan` caveats its analogous `-code §cmd.*`
+    # gap in all four of its wrappers; the orchestrator must too, or a Dev
+    # reports a missing document as a KB gap.
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        assert "until Stages B and C ship" in _dev_wrapper_body(name), name
