@@ -1372,3 +1372,126 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
     # the unrecognised one were still dispatched.
     assert any("tickets/T-new.md" in line for line in log_lines)
     assert any("missions/M-new.md" in line for line in log_lines)
+
+
+# --- Phase 5 Stage A: kind `dev` (product code repo) ------------------------
+
+_DEV_STAGE_A_PATHS = (
+    ".kb/config.yaml",
+    ".kb/index.yaml",
+    ".mcp.json",
+    ".cursor/mcp.json",
+    "docs/impl/.gitkeep",
+    "QUICKSTART-DEV.md",
+    ".claude/skills/dev-implement-ticket/SKILL.md",
+    ".claude/commands/dev-implement-ticket.md",
+    ".github/prompts/dev-implement-ticket.prompt.md",
+    ".cursor/commands/dev-implement-ticket.md",
+    ".claude/skills/dev-design/SKILL.md",
+    ".claude/skills/dev-plan/SKILL.md",
+    ".claude/skills/dev-execute/SKILL.md",
+    ".claude/skills/dev-handover/SKILL.md",
+)
+
+
+def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
+    report = init_repo(tmp_path, "dev")
+    assert sorted(report.created) == sorted(expected_files("dev"))
+    assert report.skipped == []
+    for rel in _DEV_STAGE_A_PATHS:
+        assert (tmp_path / rel).is_file(), rel
+
+
+def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    for skill in ("dev-implement-ticket", "dev-design", "dev-plan",
+                  "dev-execute", "dev-handover"):
+        assert (tmp_path / ".claude" / "skills" / skill / "SKILL.md").is_file(), skill
+        assert (tmp_path / ".claude" / "commands" / f"{skill}.md").is_file(), skill
+        assert (tmp_path / ".github" / "prompts" / f"{skill}.prompt.md").is_file(), skill
+        assert (tmp_path / ".cursor" / "commands" / f"{skill}.md").is_file(), skill
+
+
+def test_init_kind_dev_excludes_authoring_and_ba_artifacts(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    for name in ("kb-ingest", "kb-docker-setup", "kb-init"):
+        assert not (tmp_path / ".claude" / "skills" / name).exists(), name
+        assert not (tmp_path / ".cursor" / "commands" / f"{name}.md").exists(), name
+    for name in ("ba-ticket-author", "ba-mission-plan"):
+        assert not (tmp_path / ".claude" / "skills" / name).exists(), name
+    assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
+    assert not (tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
+    assert not (tmp_path / "source").exists()
+    assert not (tmp_path / "federation").exists()
+    assert not (tmp_path / "tickets").exists()
+    assert not (tmp_path / "docs" / "tickets").exists()
+
+
+def test_init_dev_config_has_kind_repo_id_and_intake(tmp_path: Path):
+    repo = tmp_path / "my-dev-repo"
+    repo.mkdir()
+    init_repo(repo, "dev")
+    text = (repo / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "kind: dev" in text
+    assert 'repo_id: "my-dev-repo"' in text
+    assert "intake:" in text
+    assert "hub:" in text
+
+
+def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
+    dev_repo = tmp_path / "d"
+    child_repo = tmp_path / "c"
+    dev_repo.mkdir()
+    child_repo.mkdir()
+    init_repo(dev_repo, "dev")
+    init_repo(child_repo, "child")
+    assert (dev_repo / ".mcp.json").read_text(encoding="utf-8") == (
+        child_repo / ".mcp.json"
+    ).read_text(encoding="utf-8")
+    assert (dev_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8") == (
+        child_repo / ".cursor" / "mcp.json"
+    ).read_text(encoding="utf-8")
+
+
+def test_phase5_adds_nothing_to_hub_child_or_ba(tmp_path: Path):
+    assert sorted(expected_files("hub")) == _PRE_PHASE4_HUB_FILES
+    assert sorted(expected_files("child")) == _PRE_PHASE4_CHILD_FILES
+    for rel in expected_files("ba"):
+        assert "dev-" not in rel, rel
+
+
+def test_config_accepts_kind_dev(tmp_path: Path):
+    from center_kb.config import load_config
+
+    init_repo(tmp_path, "dev")
+    assert load_config(tmp_path / ".kb").kind == "dev"
+
+
+def test_init_cli_accepts_kind_dev(tmp_path: Path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "dev"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".claude" / "skills" / "dev-design" / "SKILL.md").is_file()
+
+
+def test_kind_descriptions_lists_four_kinds():
+    from center_kb.cli import KIND_DESCRIPTIONS
+
+    assert "one of four kinds" in KIND_DESCRIPTIONS
+    assert "dev" in KIND_DESCRIPTIONS
+
+
+def test_noninteractive_init_error_string_is_unchanged(tmp_path: Path):
+    # Frozen by contract (cli.py comment): the message still reads hub|child.
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 2
+    assert "kb init requires --kind hub|child when not running interactively." in result.output
+
+
+def test_quickstart_dev_content(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    assert "/dev-implement-ticket" in text
+    assert "CENTER_KB_HUB_URL" in text
+    assert "CENTER_KB_HTTP_TOKEN" in text
+    assert "federation/registry.yaml" in text
+    assert "docs/impl/" in text
