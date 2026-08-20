@@ -56,7 +56,8 @@ handover is too late, because the plan may already rest on changed content.
 - **Amend findings** — if the ticket changed what a service is
   responsible for, report `amend needed: <repo_id>-svc
   §svc.<name>` as a PR finding. **Never edit a `reviewed`
-  section.**
+  section.** Until Stage C ships `-svc`, there is no document to
+  amend yet: record it as a plain PR note instead.
 - **GATE 3** the Dev opens the PR; **GATE 4** the Dev merges.
   **The agent does neither.** Option 1 in the Next-step block
   below is always "Open the PR yourself" with the branch name

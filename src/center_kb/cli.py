@@ -83,10 +83,10 @@ This repo can be one of four kinds:
           and gates them with a CI Definition-of-Ready check. Never
           ingests, summarizes, or publishes KB content.
 
-  dev   — Product code repo. Implements BA tickets grounded in the KB via
-          the dev-implement-ticket workflow (design → plan → execute →
-          handover, TDD enforced), and publishes generated knowledge about
-          its own source code back to the hub. Never ingests outside
+  dev   — Product code repo. Implements BA tickets grounded in the KB via the
+          dev-implement-ticket workflow (design → plan → execute → handover,
+          TDD enforced), and, from Stage B on, publishes generated knowledge
+          about its own source code back to the hub. Never ingests outside
           documents.
 """
 
@@ -221,8 +221,11 @@ def init(
         )
     else:  # dev
         typer.echo(
-            "  1. Fill hub: and intake: in .kb/config.yaml, then ask the hub "
-            "maintainer to add this repo to federation/registry.yaml"
+            "  1. Fill hub: in .kb/config.yaml with the main hub URL/path — "
+            "this is the only read source for kb query / kb resolve / MCP. "
+            "Also fill intake: and ask the hub maintainer to add this repo "
+            "to federation/registry.yaml — prep for Stage B; neither is "
+            "usable yet"
         )
         typer.echo(
             "  2. Set CENTER_KB_HUB_URL / CENTER_KB_HTTP_TOKEN so your AI "

@@ -47,7 +47,9 @@ verification output, and every KB gap, ambiguity, or contradiction
 found as a concrete feedback item (issue or PR on the owning child
 repo / hub); if the ticket changed what a service is responsible
 for, report `amend needed: <repo_id>-svc §svc.<name>` as a PR
-finding. Never edit a `reviewed` section. **GATE 3** the Dev opens
+finding (until Stage C ships `-svc`, there is no document yet, so
+record it as a plain PR note instead). Never edit a `reviewed`
+section. **GATE 3** the Dev opens
 the PR; **GATE 4** the Dev merges. **The agent does neither.**
 Option 1 in the Next-step block below is always "Open the PR
 yourself" with the branch name already filled in — this is the

@@ -1483,6 +1483,7 @@ def test_cli_init_dev_next_steps(tmp_path: Path):
     assert "federation/registry.yaml" in result.output
     assert "ba-ticket-author" not in result.output
     assert "kb ingest" not in result.output
+    assert "(details: QUICKSTART-DEV.md)" in result.output
 
 
 def test_kind_descriptions_lists_four_kinds():
