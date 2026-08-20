@@ -207,29 +207,32 @@ If step 5 prints the command list (`init`, `docker-setup`, `ingest`, `summarize`
 ### 6.1. Install from PyPI, web UI, and Docker
 
 **Install the package** (once published): `pip install center-kb` — gives you the `kb` CLI and MCP server.
-Create a new KB repo: `kb init` — it asks which of three kinds the repo is,
+Create a new KB repo: `kb init` — it asks which of four kinds the repo is,
 scaffolds accordingly, and records the choice as `kind:` in
 `.kb/config.yaml` (re-runs reuse it); non-interactive runs pass
-`--kind hub|child|ba`.
+`--kind hub|child|ba|dev`.
 
 | Kind | Purpose |
 |---|---|
 | `hub` | Central knowledge hub. Hosts `federation/` — the single source of truth for search — and runs the shared HTTP MCP server + Web UI. Receives publishes from child repos; merging hub PRs is the review gate that makes content searchable. |
 | `child` | Authoring repo. Ingest PDFs → summarize → `kb build` → `kb publish` to the hub. Must point `hub:` in `.kb/config.yaml` at the main hub; does not host the company-wide MCP/Web service. |
 | `ba` | Requirements repo (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)). Drafts Dev-ready tickets — and, upstream of them for large features, epic-level mission plans (Phase 4.1) — grounded in the KB via the `ba-ticket-author` and `ba-mission-plan` skills, versions them under `tickets/` and `missions/`, and gates both with CI Definition-of-Ready checks (`kb ticket lint`, `kb mission lint`). Never ingests, summarizes, or publishes KB content. |
+| `dev` | Product code repo (Phase 5 Stage A, see [7.11](#711-phase-5--dev-agent-workflow)). Implements BA tickets grounded in the KB via the `dev-implement-ticket` orchestrator and its four phase skills — design → plan → execute → handover, TDD enforced. Never ingests documents from outside the repo; from Stage B on it also publishes generated (`-code`) and curated (`-svc`) knowledge about its own source code — not yet shipped in Stage A. |
 
 Then run `kb docker-setup` (or the `/kb-docker-setup` slash command) on a
 hub or child repo: on the hub it creates `.env`, generates the HTTP token,
 and starts the service (`docker compose up -d`); on a child it pulls the
-ingest image for one-shot Docker ingest — a `ba` repo needs neither Docker
-nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
+ingest image for one-shot Docker ingest — a `ba` or `dev` repo needs
+neither Docker nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
 `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub Copilot, and
 Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` and
-`/ba-mission-plan` instead, see [7.10](#710-phase-4--ba-ticket-authoring));
+`/ba-mission-plan` instead, see [7.10](#710-phase-4--ba-ticket-authoring); a
+`dev` repo gets the five dev-workflow commands instead, see
+[7.11](#711-phase-5--dev-agent-workflow));
 MCP client wiring ships as
 `.mcp.json` (Claude Code)
 and `.cursor/mcp.json` (Cursor) on every kind — stdio on the hub,
-HTTP-with-env-vars on child and `ba` repos. Re-running `kb init` refreshes
+HTTP-with-env-vars on child, `ba`, and `dev` repos. Re-running `kb init` refreshes
 scaffold files (skills, templates) and preserves `.kb/index.yaml` /
 `.kb/config.yaml` unless `--force`.
 
@@ -511,7 +514,7 @@ on the upstream manually if that is really intended.
 
 ### 7.10 Phase 4 — BA ticket authoring
 
-Phase 4 adds a third `kind`, `ba` — a requirements repo that never ingests, summarizes, or publishes KB content, but drafts Dev-ready tickets grounded in it. The `ba-ticket-author` skill/command/prompt (Claude Code, GitHub Copilot, Cursor) runs an eight-step pipeline: **Intake** (the BA describes the business need — capability, role, value) → **Parent mission** (optional — if the BA names a parent mission, the agent reads its `missions/<mission-id>.md`, takes the story title from the US backlog row, and writes a `> Parent mission: <mission-id>` line directly under the ticket's title, saving the ticket as `tickets/<mission-id>-US<n>.md` so the back-link check below can find it) → **Ground** (`kb_search` surfaces candidate sections; the BA reviews and picks which apply) → **Draft** (fills the ticket template — story, ACs, use cases, sequence + business-flow Mermaid diagrams — citing `doc-id §section` for every claim that touches a standard) → **Pin** (`kb_context_new` embeds the returned `## KB context` block, pinned at the hub's current commit) → **Lint** (`kb ticket lint` — the Definition-of-Ready gate — runs and re-runs until it reports `DoR: PASS`) → **Maturity review** (once lint reports `DoR: PASS`, two independent reviews (parallel subagents where the runtime supports it, otherwise two sequential passes) score the draft against `docs/review-rubric.md` — Business coverage and Dev implementability — for up to 3 rounds or until both axes reach ≥ 4; a gap the agent cannot close itself becomes an owned `OPEN(<owner>)` open question; the result is recorded in `## Review record`) → **BA review** (the draft lands in `tickets/<ticket-id>.md`; the BA reads it, commits it, and pastes it into Jira themselves). The agent never pushes to Jira or opens tickets on its own — Markdown out, human-in-the-loop by design. `kb_ticket_lint` is the fifth MCP tool (see [7.8](#78-phase-2--workflow-integration) above), so an agent can run the same gate over MCP instead of a terminal.
+Phase 4 adds a third `kind`, `ba` (a fourth, `dev`, follows in [7.11](#711-phase-5--dev-agent-workflow)) — a requirements repo that never ingests, summarizes, or publishes KB content, but drafts Dev-ready tickets grounded in it. The `ba-ticket-author` skill/command/prompt (Claude Code, GitHub Copilot, Cursor) runs an eight-step pipeline: **Intake** (the BA describes the business need — capability, role, value) → **Parent mission** (optional — if the BA names a parent mission, the agent reads its `missions/<mission-id>.md`, takes the story title from the US backlog row, and writes a `> Parent mission: <mission-id>` line directly under the ticket's title, saving the ticket as `tickets/<mission-id>-US<n>.md` so the back-link check below can find it) → **Ground** (`kb_search` surfaces candidate sections; the BA reviews and picks which apply) → **Draft** (fills the ticket template — story, ACs, use cases, sequence + business-flow Mermaid diagrams — citing `doc-id §section` for every claim that touches a standard) → **Pin** (`kb_context_new` embeds the returned `## KB context` block, pinned at the hub's current commit) → **Lint** (`kb ticket lint` — the Definition-of-Ready gate — runs and re-runs until it reports `DoR: PASS`) → **Maturity review** (once lint reports `DoR: PASS`, two independent reviews (parallel subagents where the runtime supports it, otherwise two sequential passes) score the draft against `docs/review-rubric.md` — Business coverage and Dev implementability — for up to 3 rounds or until both axes reach ≥ 4; a gap the agent cannot close itself becomes an owned `OPEN(<owner>)` open question; the result is recorded in `## Review record`) → **BA review** (the draft lands in `tickets/<ticket-id>.md`; the BA reads it, commits it, and pastes it into Jira themselves). The agent never pushes to Jira or opens tickets on its own — Markdown out, human-in-the-loop by design. `kb_ticket_lint` is the fifth MCP tool (see [7.8](#78-phase-2--workflow-integration) above), so an agent can run the same gate over MCP instead of a terminal.
 
 **Mission plans (Phase 4.1)** sit *upstream* of that ticket flow, for a feature that spans several User Stories (small work still goes straight to a ticket — a mission is never mandatory). The `ba-mission-plan` skill/command/prompt runs **Intake → Ground → Draft → Split → Pin → Lint → Maturity review → Review**, saving `missions/M-<slug>.md`: a required-structure document carrying a C4 **Level 1** (System Context) *and* **Level 2** (Container) Mermaid diagram, plus a US backlog whose ids derive from the mission id. `kb mission lint` is the second Definition-of-Ready gate — required structure, both diagrams present, a well-formed backlog, and every citation resolving at the pinned hub version; a `0/N US drafted` coverage warning is expected and normal before any ticket exists. The mission↔ticket relationship is deliberately loose: the mission holds the authoritative US backlog, and a ticket that implements one row may *optionally* name its parent with a `> Parent mission: <mission-id>` line directly under its title, saved as `tickets/<mission-id>-US<n>.md` so `kb ticket lint`'s back-link check can find it — dropping the line is valid, just untraceable. Mission lint is deliberately **CLI-only, no MCP tool** (its distinguishing checks need filesystem access to the sibling `tickets/` directory that the shared MCP server does not have), so the MCP tool count is unchanged at **5** — `kb_ticket_lint` is still the only lint-related tool.
 
@@ -523,6 +526,79 @@ Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml` in
 | `kb mission lint <file\|-> [--hub <url>] [--json]` | Mission Definition-of-Ready gate: required structure, C4 L1 + L2 diagrams present, a well-formed backlog whose ids derive from the mission id, every citation resolving at its pinned hub commit | `0` PASS, `1` FAIL |
 
 Scaffold a `ba` repo with `kb init --kind ba`; see `QUICKSTART-BA.md` (generated into the repo) for the full setup, including the two environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that wire the assistant to the hub's MCP server, and the CI variable/secret (`CENTER_KB_HUB`, `KB_HUB_TOKEN`) the lint workflow needs.
+
+---
+
+### 7.11 Phase 5 — Dev agent workflow
+
+Phase 5 Stage A adds a fourth `kind`, `dev` — a **product code repo**: it
+consumes the shared KB while implementing BA tickets, and (from Stage B
+on) publishes knowledge about its own source code back to the hub. The
+boundary against `child`: a `child` repo ingests documents from
+**outside** the repo and publishes them as domain knowledge; a `dev` repo
+ingests **nothing**, and authors only knowledge **about its own code**.
+Stage A ships the workflow that grounds that work in the KB; the
+code-knowledge tooling itself (`kb code-ingest`, `kb svc note`) arrives in
+Stages B and C.
+
+One orchestrator plus four phase skills implement a ticket, each
+separately invocable and resumable across sessions — state is derived
+from which artifacts exist, never stored in a sidecar file:
+
+```
+/dev-implement-ticket <ticket>            → intake · resolve · ground · placeholders
+                                          → dev-design    ── GATE 1: Dev approves design
+                                          → dev-plan      ── GATE 2: Dev approves plan
+                                          → dev-execute      (repeatable, resumable)
+                                          → dev-handover  ── GATE 3: Dev opens PR
+                                                             GATE 4: Dev merges
+```
+
+All five phases are scaffolded as slash commands for **Claude Code,
+GitHub Copilot, and Cursor**: `/dev-implement-ticket`, `/dev-design`,
+`/dev-plan`, `/dev-execute`, `/dev-handover`. A Dev normally reaches
+`dev-design` through the orchestrator's own Run-the-phases step; the
+table below covers the other four as direct entry points, plus the
+CLI-only citation check:
+
+| Situation | Command |
+|---|---|
+| New ticket, nothing started | `/dev-implement-ticket <ticket>` |
+| Design approved, no plan yet | `/dev-plan <id>` |
+| Plan approved, or execution already in progress | `/dev-execute <id>` |
+| Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
+| Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
+| Just want to check a citation, no implementation | `kb resolve <file>` |
+
+Every entry point re-checks freshness first — the hub may have published
+since the last session, so a ref that was `ok` yesterday can be `stale`
+today; checking only at handover would be too late.
+
+**Where work lives:** `docs/impl/<ticket-id>-design.md` (architectural-path
+tickets only — a bounded ticket's design stays in chat, no file) and
+`docs/impl/<ticket-id>-plan.md` (one task per AC, `- [ ]` checkboxes,
+ticked one commit at a time). Those two files' existence, the
+ticked-checkbox ratio, the branch, and whether a PR exists are the
+complete state — any phase resumes cold in a new session.
+
+**The four gates — all human, the agent does none of them:** GATE 1 the
+Dev approves the design; GATE 2 the Dev approves the plan; GATE 3 the Dev
+opens the PR; GATE 4 the Dev merges it. Enforced throughout: no production
+code without a failing test observed first, and no completion claim
+without shown verification output.
+
+**Reserved doc-id suffixes.** `<repo_id>-code` (generated) and
+`<repo_id>-svc` (curated) are reserved for a `dev` repo's own
+code-knowledge documents — a domain document must not take either suffix.
+Stage A ships only the `dev` kind and the five-skill workflow above; the
+two documents themselves arrive in Stages B and C.
+
+Scaffold a `dev` repo with `kb init --kind dev`; see `QUICKSTART-DEV.md`
+(generated into the repo) for the full setup, including the two
+environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that
+wire the assistant to the hub's MCP server, and allowlisting this repo in
+the hub's `federation/registry.yaml` before publishing works (from Stage
+B on).
 
 ---
 
@@ -591,7 +667,7 @@ As of the latest trial run (see `docs/superpowers/specs/2026-07-10-aero-kb-phase
 
 ## 11. Current limits & unfinished work
 
-This is **Phase 1 + Phase 2 + Phase 3 + Phase 4**, not a finished product. Still missing:
+This is **Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 Stage A**, not a finished product. Still missing:
 
 - **No auto-generated "source-code understanding"** (e.g. reading OpenAPI, DB schemas, module lists into the KB) — different scope from today's PDF-based reference-document ingestion; reserved for later work.
 - **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
@@ -720,4 +796,4 @@ git tag -d vX.Y.Z
 
 ---
 
-*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) + Phase 4 (BA ticket authoring) — updated 2026-07-17. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`, and `docs/superpowers/specs/2026-07-17-ba-agent-design.md`.*
+*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) + Phase 4 (BA ticket authoring) + Phase 5 Stage A (kind `dev`, the 5-skill dev workflow) — updated 2026-08-20. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`, `docs/superpowers/specs/2026-07-17-ba-agent-design.md`, and `docs/superpowers/specs/2026-08-19-dev-agent-design.md`.*
