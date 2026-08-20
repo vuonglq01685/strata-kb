@@ -268,9 +268,11 @@ DEV_WORKFLOW_SKILLS = (
     "dev-handover",
 )
 
-# Every dev workflow skill has landed as of Task A5, so this is now the same
-# five-skill list. Kept as a distinct name because a later stage may add a
-# skill whose four wrappers land after the constant that names it.
+# Every dev workflow skill has landed as of Task A5, so this is the same
+# five-skill list. It stays a distinct name because it is what the
+# byte-identity test enumerates. Note the cross-wrapper tests below read
+# wrapper files while iterating DEV_WORKFLOW_SKILLS, so a stage that adds a
+# sixth skill must land its four wrappers in the same task that names it.
 LANDED_DEV_WORKFLOW_SKILLS = DEV_WORKFLOW_SKILLS
 
 # The three blocks reproduced verbatim in every dev wrapper — canon in
@@ -358,7 +360,13 @@ def _dev_wrapper_body(name: str) -> str:
 
 
 def test_dev_wrappers_carry_byte_identical_shared_blocks():
-    """3 blocks x 20 files: the 4-copies-per-skill architecture rests on this."""
+    """3 blocks x 20 files, every copy byte-identical to the first.
+
+    The 20 is spelled out rather than derived so that adding a skill to
+    DEV_WORKFLOW_SKILLS trips here and forces a conscious update. It does not
+    detect a missing wrapper FILE — the per-skill existence tests and the
+    FileNotFoundError out of _read_init_template do that.
+    """
     names = _landed_dev_wrapper_names()
     assert len(names) == 20, names
     for block in SHARED_BLOCKS:
@@ -450,7 +458,7 @@ def test_copilot_dev_implement_ticket_prompt_has_agent_mode():
 
 def test_every_landed_claude_command_is_a_skill_invoker():
     # A command wrapper is a pointer to the skill, never a second
-    # implementation of it — guard that for all four, not just one.
+    # implementation of it — guard that for all five, not just one.
     for skill in LANDED_DEV_WORKFLOW_SKILLS:
         name = f"claude-command-{skill}.md"
         text = _dev_wrapper_text(name)
@@ -605,6 +613,7 @@ def test_dev_handover_rechecks_freshness_and_pastes_real_output():
         text = _dev_wrapper_body(name)
         assert "one final time" in text, name
         assert "paste the real output" in text, name
+        assert "completion claim without it is not accepted" in text, name
 
 
 def test_dev_handover_lists_the_pr_contents():
@@ -674,3 +683,23 @@ def test_dev_implement_ticket_caveats_the_documents_that_do_not_exist_yet():
     # reports a missing document as a KB gap.
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert "until Stages B and C ship" in _dev_wrapper_body(name), name
+
+
+def test_every_dev_workflow_wrapper_ends_on_the_next_step_block():
+    # §5.3 requires the block to be the LAST thing in the file, not merely
+    # present. A4 shipped four wrappers with a sentence after it and the
+    # containment test above stayed green, so containment is not the contract.
+    for skill in DEV_WORKFLOW_SKILLS:
+        for name in _dev_wrapper_names(skill):
+            text = _read_init_template(name)
+            assert text.endswith("  Flow order never hides a blocker.\n"), name
+
+
+def test_dev_wrappers_carry_the_freshness_triage_rules():
+    # The block's commands are pinned by the orchestrator test; its triage is
+    # not, and a fleet-wide reword of these two bullets passed everything.
+    for skill in DEV_WORKFLOW_SKILLS:
+        for name in _dev_wrapper_names(skill):
+            text = _dev_wrapper_text(name)
+            assert "**broken** → STOP" in text, name
+            assert "show BOTH versions" in text, name
