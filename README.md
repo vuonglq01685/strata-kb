@@ -152,7 +152,7 @@ CENTER-KB/
 │
 ├── .mcp.json                 ← MCP server config for Claude Code (Phase 2, see §7.8)
 ├── src/center_kb/              ← Tool source (devs only)
-│   ├── cli.py                       `kb` CLI (19 commands, see §7)
+│   ├── cli.py                       `kb` CLI (20 commands, see §7)
 │   ├── ingest/                      "split PDF into sections"
 │   ├── build.py                     integrity checks
 │   ├── query.py                     search & answer
@@ -200,7 +200,7 @@ pip install -e ".[ingest,dev]"
 kb --help
 ```
 
-If step 5 prints the command list (`init`, `docker-setup`, `ingest`, `summarize`, `status`, `build`, `query`, `get`, `stats`, `publish`, `ci-publish`, `reindex`, `resolve`, `diff`, `approve`, `doctor`, `context`, `assets`, `ticket`) — install succeeded.
+If step 5 prints the command list (`init`, `docker-setup`, `ingest`, `summarize`, `status`, `build`, `query`, `get`, `stats`, `publish`, `ci-publish`, `reindex`, `resolve`, `diff`, `approve`, `doctor`, `context`, `assets`, `ticket`, `mission`) — install succeeded.
 
 > **Note:** every new terminal session, run `source .venv/bin/activate` again first (you'll see `(.venv)` in the prompt).
 
@@ -219,22 +219,20 @@ scaffolds accordingly, and records the choice as `kind:` in
 | `ba` | Requirements repo (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)). Drafts Dev-ready tickets — and, upstream of them for large features, epic-level mission plans (Phase 4.1) — grounded in the KB via the `ba-ticket-author` and `ba-mission-plan` skills, versions them under `tickets/` and `missions/`, and gates both with CI Definition-of-Ready checks (`kb ticket lint`, `kb mission lint`). Never ingests, summarizes, or publishes KB content. |
 | `dev` | Product code repo (Phase 5 Stage A, see [7.11](#711-phase-5--dev-agent-workflow)). Implements BA tickets grounded in the KB via the `dev-implement-ticket` orchestrator and its four phase skills — design → plan → execute → handover, TDD enforced. Never ingests documents from outside the repo; it will publish generated (`-code`, Stage B) and curated (`-svc`, Stage C) knowledge about its own source code — neither shipped in Stage A. |
 
-Then run `kb docker-setup` (or the `/kb-docker-setup` slash command) on a
-hub or child repo: on the hub it creates `.env`, generates the HTTP token,
-and starts the service (`docker compose up -d`); on a child it pulls the
-ingest image for one-shot Docker ingest — a `ba` or `dev` repo needs
-neither Docker nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
+Then run `kb docker-setup` (or the `/kb-docker-setup` slash command) on a hub
+or child repo: on the hub it creates `.env`, generates the HTTP token, and
+starts the service (`docker compose up -d`); on a child it pulls the ingest
+image for one-shot Docker ingest — a `ba` or `dev` repo needs neither Docker
+nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
 `/kb-docker-setup`) are scaffolded for **Claude Code, GitHub Copilot, and
 Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` and
 `/ba-mission-plan` instead, see [7.10](#710-phase-4--ba-ticket-authoring); a
 `dev` repo gets the five dev-workflow commands instead, see
-[7.11](#711-phase-5--dev-agent-workflow));
-MCP client wiring ships as
-`.mcp.json` (Claude Code)
-and `.cursor/mcp.json` (Cursor) on every kind — stdio on the hub,
-HTTP-with-env-vars on child, `ba`, and `dev` repos. Re-running `kb init` refreshes
-scaffold files (skills, templates) and preserves `.kb/index.yaml` /
-`.kb/config.yaml` unless `--force`.
+[7.11](#711-phase-5--dev-agent-workflow)); MCP client wiring ships as
+`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind —
+stdio on the hub, HTTP-with-env-vars on child, `ba`, and `dev` repos.
+Re-running `kb init` refreshes scaffold files (skills, templates) and
+preserves `.kb/index.yaml` / `.kb/config.yaml` unless `--force`.
 
 **Web UI for humans:** the same HTTP process serves agents and people:
 
@@ -554,16 +552,17 @@ from which artifacts exist, never stored in a sidecar file:
                                                              GATE 4: Dev merges
 ```
 
-All five phases are scaffolded as slash commands for **Claude Code,
-GitHub Copilot, and Cursor**: `/dev-implement-ticket`, `/dev-design`,
-`/dev-plan`, `/dev-execute`, `/dev-handover`. A Dev normally reaches
-`dev-design` through the orchestrator's own Run-the-phases step; the
-table below covers the other four as direct entry points, plus the
-CLI-only citation check:
+All five — the orchestrator and the four phases — are scaffolded as slash
+commands for **Claude Code, GitHub Copilot, and Cursor**:
+`/dev-implement-ticket`, `/dev-design`, `/dev-plan`, `/dev-execute`,
+`/dev-handover`. A Dev normally reaches `dev-design` through the
+orchestrator's own Run-the-phases step; the table below covers the other four
+as direct entry points, plus the CLI-only citation check:
 
 | Situation | Command |
 |---|---|
 | New ticket, nothing started | `/dev-implement-ticket <ticket>` |
+| Small ticket, the whole change is obvious | `/dev-implement-ticket <ticket>` — the flow collapses itself; the design stays in chat |
 | Design approved, no plan yet | `/dev-plan <id>` |
 | Plan approved, or execution already in progress | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |

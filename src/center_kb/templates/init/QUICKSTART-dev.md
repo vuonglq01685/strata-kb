@@ -42,6 +42,7 @@ the PR, not in the assistant's memory:
 | Situation | Run |
 | --- | --- |
 | New ticket, nothing started | `/dev-implement-ticket <ticket>` |
+| Small ticket, the whole change is obvious | `/dev-implement-ticket <ticket>` — the flow collapses itself; the design stays in chat |
 | Design approved, no plan yet | `/dev-plan <id>` |
 | Plan approved, or execution already in progress | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
