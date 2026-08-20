@@ -56,6 +56,7 @@ class RepoKind(str, Enum):
     hub = "hub"
     child = "child"
     ba = "ba"
+    dev = "dev"
 
 
 class AssetsMode(str, Enum):
@@ -64,7 +65,7 @@ class AssetsMode(str, Enum):
 
 
 KIND_DESCRIPTIONS = """\
-This repo can be one of three kinds:
+This repo can be one of four kinds:
 
   hub   — Central knowledge hub. Hosts federation/, the single source of
           truth for search. Runs the shared HTTP MCP server + Web UI
@@ -81,6 +82,12 @@ This repo can be one of three kinds:
           via the ba-ticket-author skill, versions them under tickets/,
           and gates them with a CI Definition-of-Ready check. Never
           ingests, summarizes, or publishes KB content.
+
+  dev   — Product code repo. Implements BA tickets grounded in the KB via the
+          dev-implement-ticket workflow (design → plan → execute → handover,
+          TDD enforced), and, from Stage B on, publishes generated knowledge
+          about its own source code back to the hub. Never ingests outside
+          documents.
 """
 
 
@@ -111,12 +118,12 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         # click.Choice makes BadParameter escape typer.prompt instead of
         # re-prompting.
         while True:
-            answer = typer.prompt("Initialize this repo as (hub, child, ba)")
+            answer = typer.prompt("Initialize this repo as (hub, child, ba, dev)")
             answer = answer.strip().lower()
-            if answer in ("hub", "child", "ba"):
+            if answer in ("hub", "child", "ba", "dev"):
                 return answer
             typer.secho(
-                f"Error: {answer!r} is not one of 'hub', 'child', 'ba'.",
+                f"Error: {answer!r} is not one of 'hub', 'child', 'ba', 'dev'.",
                 fg=typer.colors.RED,
             )
     # NOTE: this message intentionally still reads "hub|child" (not
@@ -202,7 +209,7 @@ def init(
         )
         typer.echo("  3. kb ingest source/<file>.pdf --id <doc-id>    (or /kb-ingest)")
         typer.echo("  4. kb publish    (or /kb-publish)")
-    else:  # ba
+    elif resolved == "ba":
         typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
         typer.echo(
             "  2. Set CENTER_KB_HUB_URL / CENTER_KB_HTTP_TOKEN so your AI "
@@ -212,7 +219,26 @@ def init(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
             "run /ba-ticket-author"
         )
-    quickstart_name = "QUICKSTART-BA.md" if resolved == "ba" else "QUICKSTART.md"
+    else:  # dev
+        typer.echo(
+            "  1. Fill hub: in .kb/config.yaml with the main hub URL/path — "
+            "this is the only read source for kb query / kb resolve / MCP. "
+            "Also fill intake: and ask the hub maintainer to add this repo "
+            "to federation/registry.yaml — prep for Stage B; neither is "
+            "usable yet"
+        )
+        typer.echo(
+            "  2. Set CENTER_KB_HUB_URL / CENTER_KB_HTTP_TOKEN so your AI "
+            "assistant can reach the shared MCP server"
+        )
+        typer.echo(
+            "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
+            "run /dev-implement-ticket <ticket>"
+        )
+    quickstart_name = {
+        "ba": "QUICKSTART-BA.md",
+        "dev": "QUICKSTART-DEV.md",
+    }.get(resolved, "QUICKSTART.md")
     typer.echo(f"  (details: {quickstart_name})")
 
 
