@@ -268,16 +268,10 @@ DEV_WORKFLOW_SKILLS = (
     "dev-handover",
 )
 
-# The skills whose four wrappers have actually landed. Task A5 adds
-# "dev-handover" here when its wrappers ship; DEV_WORKFLOW_SKILLS above stays
-# the full five-skill list that Task A5's own tests iterate. Anything that
-# READS a wrapper file must iterate this tuple, not that one.
-LANDED_DEV_WORKFLOW_SKILLS = (
-    "dev-implement-ticket",
-    "dev-design",
-    "dev-plan",
-    "dev-execute",
-)
+# Every dev workflow skill has landed as of Task A5, so this is now the same
+# five-skill list. Kept as a distinct name because a later stage may add a
+# skill whose four wrappers land after the constant that names it.
+LANDED_DEV_WORKFLOW_SKILLS = DEV_WORKFLOW_SKILLS
 
 # The three blocks reproduced verbatim in every dev wrapper — canon in
 # docs/superpowers/plans/2026-08-19-dev-agent-stage-a.md (SHARED-FRESHNESS,
@@ -364,9 +358,9 @@ def _dev_wrapper_body(name: str) -> str:
 
 
 def test_dev_wrappers_carry_byte_identical_shared_blocks():
-    """3 blocks x 16 files: the 4-copies-per-skill architecture rests on this."""
+    """3 blocks x 20 files: the 4-copies-per-skill architecture rests on this."""
     names = _landed_dev_wrapper_names()
-    assert len(names) == 16, names
+    assert len(names) == 20, names
     for block in SHARED_BLOCKS:
         reference = _dev_shared_block(names[0], block)
         assert reference.strip(), f"{block}: empty in {names[0]}"
@@ -452,11 +446,6 @@ def test_claude_skill_dev_implement_ticket_has_expected_frontmatter():
 def test_copilot_dev_implement_ticket_prompt_has_agent_mode():
     text = _read_init_template("copilot-dev-implement-ticket.prompt.md")
     assert "mode: agent" in text
-
-
-def test_claude_command_dev_implement_ticket_is_a_skill_invoker():
-    text = _read_init_template("claude-command-dev-implement-ticket.md")
-    assert "Invoke the `dev-implement-ticket` skill with the Skill tool" in text
 
 
 def test_every_landed_claude_command_is_a_skill_invoker():
@@ -603,3 +592,76 @@ def test_claude_skill_dev_execute_has_expected_frontmatter():
 
 def test_copilot_dev_execute_prompt_has_agent_mode():
     assert "mode: agent" in _read_init_template("copilot-dev-execute.prompt.md")
+
+
+def test_dev_handover_templates_exist_as_package_resources():
+    base = resources.files("center_kb").joinpath("templates/init")
+    for name in _dev_wrapper_names("dev-handover"):
+        assert base.joinpath(name).is_file(), name
+
+
+def test_dev_handover_rechecks_freshness_and_pastes_real_output():
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        assert "one final time" in text, name
+        assert "paste the real output" in text, name
+
+
+def test_dev_handover_lists_the_pr_contents():
+    # Body, not whole text: SHARED-HARD-RULES carries `kb-context` and
+    # OPEN(BA) in all 20 wrappers, so whole-text needles for those two would
+    # pass even with no PR-contents list in the file at all.
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        for item in ("ticket id", "kb-context", "AC→test map",
+                     "placeholder-resolution", "OPEN(", "KB gap"):
+            assert item in text, f"{name} missing PR item {item}"
+
+
+def test_dev_handover_records_service_history_and_amend_findings():
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        assert "kb svc note" in text, name
+        assert "amend needed:" in text, name
+        # SHARED-HARD-RULES says "Never modify a `reviewed` section of `-svc`"
+        # — a different verb, so this needle is the handover wrapper's own
+        # sentence and belongs in the body.
+        assert "Never edit a `reviewed` section" in text, name
+
+
+def test_dev_handover_leaves_pr_and_merge_to_the_human():
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        assert "GATE 3" in text and "GATE 4" in text, name
+        assert "The agent does neither" in text, name
+
+
+def test_claude_skill_dev_handover_has_expected_frontmatter():
+    assert "name: dev-handover\n" in _read_init_template("claude-skill-dev-handover.md")
+
+
+def test_copilot_dev_handover_prompt_has_agent_mode():
+    assert "mode: agent" in _read_init_template("copilot-dev-handover.prompt.md")
+
+
+def test_all_dev_workflow_wrappers_carry_the_next_step_block():
+    for skill in DEV_WORKFLOW_SKILLS:
+        for name in _dev_wrapper_names(skill):
+            text = _dev_wrapper_text(name)
+            assert "## Next step" in text, name
+            assert "(next in flow)" in text, name
+            assert "State:" in text, name
+
+
+def test_all_dev_workflow_wrappers_name_their_superpowers_counterpart():
+    for skill in DEV_WORKFLOW_SKILLS:
+        for name in _dev_wrapper_names(skill):
+            assert "superpowers" in _dev_wrapper_body(name), name
+
+
+def test_all_dev_workflow_wrappers_carry_the_tdd_and_evidence_rules():
+    for skill in DEV_WORKFLOW_SKILLS:
+        for name in _dev_wrapper_names(skill):
+            text = _dev_wrapper_text(name)
+            assert "No production code without a failing test observed first" in text, name
+            assert "Never claim done without showing the verification output" in text, name
