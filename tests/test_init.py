@@ -1426,7 +1426,10 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     report = init_repo(tmp_path, "dev")
     # Pin the count too: comparing expected_files("dev") to itself lets a
     # premature extra row slip in unnoticed on both sides of the equality.
-    assert len(expected_files("dev")) == 27
+    # 27 (Stage A) + 4 (dev-code-seed's own four-way wrappers) + 12 (the
+    # reused kb-summarize/kb-approve/kb-publish rows the seed flow needs,
+    # Stage C) = 43.
+    assert len(expected_files("dev")) == 43
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
@@ -1539,7 +1542,15 @@ def test_quickstart_dev_content(tmp_path: Path):
     assert "CENTER_KB_HTTP_TOKEN" in text
     assert "federation/registry.yaml" in text
     assert "docs/impl/" in text
-    assert "`<repo_id>-svc`) is not available yet" in text
+    # Task D2: Stage C shipped `dev-code-seed` + `kb svc note` on this
+    # branch, so `<repo_id>-svc` is no longer "not available yet" — that
+    # interim claim is now false and was cleared (README R2 sibling fix).
+    # Assert the corrected, present-tense framing instead.
+    assert "`<repo_id>-svc`) is not available yet" not in text
+    # Fix round 1, Minor 4: `"curated" in text.lower()` pins nothing —
+    # any document containing that one word passes. Pin the actual
+    # corrected sentence instead.
+    assert "Curated responsibility knowledge" in text
 
 
 def test_quickstart_dev_documents_the_auto_merge_policy(tmp_path: Path):
@@ -1563,3 +1574,120 @@ def test_init_kind_dev_scaffolds_the_code_workflow(tmp_path: Path):
 def test_kb_code_workflow_is_not_on_hub_child_or_ba(tmp_path: Path):
     for kind in ("hub", "child", "ba"):
         assert ".github/workflows/kb-code.yml" not in expected_files(kind), kind
+
+
+# --- Phase 5 Stage C: dev-code-seed + the reused authoring wrappers --------
+
+
+def test_init_kind_dev_scaffolds_dev_code_seed_and_the_reused_wrappers(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    assert (tmp_path / ".claude" / "skills" / "dev-code-seed" / "SKILL.md").is_file()
+    assert (tmp_path / ".claude" / "commands" / "dev-code-seed.md").is_file()
+    assert (tmp_path / ".github" / "prompts" / "dev-code-seed.prompt.md").is_file()
+    assert (tmp_path / ".cursor" / "commands" / "dev-code-seed.md").is_file()
+    # reused authoring wrappers the seed flow needs
+    for name in ("kb-summarize", "kb-approve"):
+        assert (tmp_path / ".claude" / "skills" / name / "SKILL.md").is_file(), name
+        assert (tmp_path / ".claude" / "commands" / f"{name}.md").is_file(), name
+        assert (tmp_path / ".cursor" / "commands" / f"{name}.md").is_file(), name
+    assert (tmp_path / ".claude" / "skills" / "kb-publish" / "SKILL.md").is_file()
+    assert (tmp_path / ".cursor" / "commands" / "kb-publish.md").is_file()
+    assert (tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md").is_file()
+    assert (tmp_path / ".cursor" / "rules" / "kb-summarize.mdc").is_file()
+
+
+def test_init_kind_dev_still_excludes_ingest_and_the_child_publish_workflow(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    assert not (tmp_path / ".claude" / "skills" / "kb-ingest").exists()
+    assert not (tmp_path / ".claude" / "skills" / "kb-docker-setup").exists()
+    assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
+    assert not (tmp_path / "source").exists()
+    # kb-publish has no Claude command file anywhere in the package
+    assert not (tmp_path / ".claude" / "commands" / "kb-publish.md").exists()
+
+
+# --- Task D2: docs, QUICKSTART updates, release ----------------------------
+
+
+def test_quickstart_dev_documents_the_seed_and_service_history(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    assert "/dev-code-seed" in text
+    assert "kb svc note" in text
+    assert "-code" in text and "-svc" in text
+    assert "auto-merge" in text
+    assert "10-15 min" in text or "10–15 min" in text
+
+
+def test_quickstart_ba_points_at_code_knowledge(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    text = (tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8")
+    assert "-code" in text
+    assert "-svc" in text
+    # Fix round 1, Minor 5 (plan-mandated): `"-code" in text` is satisfied
+    # by any mention of `kb-code.yml`, and neither original assertion
+    # touched the new section's own load-bearing strings. Pin those.
+    assert "Code knowledge on the hub" in text
+    assert "%%TODO: verify against codebase%%" in text
+
+
+def test_quickstart_dev_documents_the_redo_consequence(tmp_path: Path):
+    # Fix round 1, Minor 6 (pins R3 — the `kb summarize --redo` truth this
+    # branch fought over across four review passes). `--redo` is not a
+    # blanket data-loss event (the accrued `hist.*` history survives) but
+    # it genuinely is one for a service's human-corrected responsibility
+    # prose, which is gone from L2/the manifest summary and recoverable
+    # only from git, not from `kb summarize` itself.
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    assert "for the accrued ticket history" in text
+    assert "come back only from git" in text
+    # Fix round 1 follow-up (same false-claim class, caught by a sibling
+    # task's reviewer while verifying its own fix to the dev-code-seed
+    # wrappers): `cli.py:570-586` shows `kb summarize --redo` does not
+    # stop at the reset — it re-summarizes in the same invocation.
+    assert "re-summarizes in the same command" in text
+    assert "goes back to `pending`" not in text
+    # Fix round 2, Minor 2: "never stuck at `pending`" (this test's own
+    # prior pin) was itself a false absolute — summarize.py:230-236
+    # leaves a section whose LLM call fails at `pending`
+    # (cli.py:591-596: "Some sections stay pending"). The verified
+    # claude-skill-dev-code-seed.md:77 model makes no end-status promise
+    # at all; matched that here too. Ban the disproven absolute instead
+    # of re-pinning a replacement one.
+    assert "never stuck at `pending`" not in text
+
+
+def test_quickstart_dev_documents_the_first_run_stale_risk_warning(tmp_path: Path):
+    # Fix round 1, Minor 6 (pins R4 — the first `--scaffold-svc` run after
+    # this release will flag every already-`reviewed` svc.* section as
+    # stale-risk purely from the tables:/files: L3 relabel, not from any
+    # real code change).
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    assert "even though nothing in your code changed" in text
+
+
+def test_quickstart_dev_states_the_stale_risk_comparison_precisely(tmp_path: Path):
+    # Final review, Minor 6: `core.py:1130` compares `.strip()`-ed L3
+    # bodies, not literal bytes, and not "any" change either -- a change
+    # of nothing but leading/trailing whitespace does not flag. "byte-
+    # for-byte" and the bare "**Any** change" overstate that by exactly
+    # the whitespace-trim case; state the comparison precisely instead.
+    # Whitespace-normalised (`" ".join(text.split())`) the same way
+    # test_templates.py's `_normalised` matches hand-wrapped prose --
+    # this two-word needle spans a line break in the actual file.
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    normalised = " ".join(text.split())
+    assert "byte-for-byte" not in normalised
+    assert "whole-body, whitespace-trimmed" in normalised
+
+
+def test_quickstart_dev_orients_the_reused_kb_summarize_wrapper(tmp_path: Path):
+    # Fix round 1, Minor 6 (pins R5 — the reused `kb-summarize` wrapper's
+    # own "after `kb ingest`" wording is false on a `dev` repo; readers
+    # must be told to read it as `kb code-ingest --scaffold-svc` instead).
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    assert "read every `kb ingest` mention in that wrapper as" in text

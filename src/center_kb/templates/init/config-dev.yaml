@@ -3,8 +3,9 @@
 #       shared KB while implementing BA tickets, and publishes generated
 #       knowledge about its OWN source code (<repo_id>-code, live via
 #       kb-code.yml) plus curated service knowledge (<repo_id>-svc,
-#       Stage C) — <repo_id>-svc is not available yet. It never ingests
-#       documents from outside the repo (that's what `child` repos do).
+#       seeded once via `dev-code-seed` and accrued per ticket via
+#       `kb svc note`). It never ingests documents from outside the repo
+#       (that's what `child` repos do).
 kind: dev
 # hub: git URL or kb-hub path of the MAIN HUB — the ONLY read source for
 #      kb query / kb resolve / MCP. FILL THIS IN before implementing tickets.

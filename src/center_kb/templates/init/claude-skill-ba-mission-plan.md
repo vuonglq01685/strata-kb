@@ -29,6 +29,17 @@ for it during Intake.
    --tags <tags>` (CLI). Present **ALL** returned candidates with their
    citations — never silently drop one. When the ambiguity note fires
    (two close-scoring hits), the BA MUST choose — never auto-pick.
+   Search results tagged `code` come from `<repo>-code` and `<repo>-svc`
+   — present them alongside domain candidates: a `-code` section is
+   machine-extracted (trust it for names) while a `-svc` section is
+   human-reviewed (trust it for responsibility). A known extractor
+   limit: a service built from source often renders `Technology | none`
+   in `-code` — the extractor looks for a dependency manifest in a
+   directory named after the compose service, and otherwise falls back
+   to the image name — so a `-code` hit for a service's name does not
+   guarantee it also answers for `technology`; when it reads `none`,
+   the existing `%%TODO: verify against codebase%%` rule applies to
+   that one argument, not the whole container.
 3. **Draft** — start from `docs/missions/TEMPLATE.md` in the repo (the
    file `kb init --kind ba` scaffolds) and fill it in: Summary,
    Business goal, Scope, System context (C4 L1), Containers (C4 L2),
@@ -118,6 +129,28 @@ for it during Intake.
 - Never fabricate codes, record/field names, numeric values, service
   names, or table names — the same verbatim-preservation rules as
   `kb-summarize` apply. Unsure → `%%TODO: verify against codebase%%`.
+- **Ground code detail in the hub's code knowledge before reaching for
+  a placeholder.** Two documents per product repo answer different
+  questions:
+  - `<repo>-code` **for names** — service/container names (`svc.*`),
+    table names (`db.*`), endpoints (`api.*`), and detected
+    technology.
+  - `<repo>-svc` **for meaning** — what a container is responsible for
+    (`svc.*`), and which services a business flow crosses (`flow.*`).
+
+  Together they fill all four arguments of
+  `Container(alias, label, technology, description)`: alias, label
+  and technology from `-code`, description from `-svc`. Use `-svc`
+  the same way for `Rel(...)` labels instead of leaving them empty.
+
+  Write `%%TODO: verify against codebase%%` only when
+  **neither document answers** — and then the existing rule stands:
+  one owned row in `## Technology decisions`.
+
+  `-svc` responsibility text grounds a diagram — but it
+  **never substitutes for a domain citation** in an Acceptance
+  Criterion: standard values still come verbatim from a pinned
+  domain section.
 - **`kb mission lint` failing to RUN is not a PASS.** There is no MCP
   fallback for this gate. If the `kb` command is unavailable, tell the BA
   to install `center-kb` — never skip the lint step, and never hand over a

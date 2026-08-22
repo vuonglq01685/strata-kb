@@ -43,7 +43,8 @@ for any value that will be encoded in code or tests, then searches
 before reading the actual code, skipping whichever document is missing
 and reading the code directly for that half instead — `<repo_id>-code`
 is missing whenever `kb code-ingest` has not run yet in this repo,
-`<repo_id>-svc` is missing until Stage C ships it;
+`<repo_id>-svc` is missing whenever this repo has not run
+`dev-code-seed` (or the seed is not yet published);
 **Placeholders** verifies every
 `%%TODO: verify against codebase%%` against the codebase, reports the list
 to the BA, **never edits the ticket**, and anything unverifiable becomes

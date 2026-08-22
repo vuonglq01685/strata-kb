@@ -39,8 +39,9 @@ consumes from earlier tasks and produces for later ones, exact names and
 types, since a task's implementer sees only their own task), and
 **Steps** as `- [ ]` checkboxes, step 1 always being the failing test;
 tasks are ordered so each one leaves the repo green, and the plan closes
-with one cross-cutting verification task (full suite + lint) using the
-commands from `-code §cmd.*`; when that document has not been
+with one cross-cutting verification task (full suite + lint) that names
+the commands it will run — `cmd.test` and `cmd.lint` from
+`-code §cmd.*`; when that document has not been
 generated yet in this repo (`kb code-ingest` not yet run), the skill
 asks the Dev once for the build/test/lint commands and records them at
 the top of the plan file so this closing task, `dev-execute`, and

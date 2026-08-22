@@ -87,6 +87,27 @@ Backlog numbering gaps are fine. If you drop a story, leave its number
 retired — renumbering would break the filenames of tickets already
 drafted.
 
+## Code knowledge on the hub
+
+Alongside domain documents, the hub also holds two documents per product
+repo, published by that repo's `dev`-kind workflow: `<repo>-code`
+(generated structure — names) and `<repo>-svc` (curated responsibility —
+meaning). Both show up in `kb_search` results tagged `code`, same as any
+other hub content, so `ba-ticket-author` and `ba-mission-plan` can ground
+diagrams in them without you naming the repo specially.
+
+Use them to fill a C4 `Container(alias, label, technology, description)`:
+`<repo>-code §svc.<name>` gives the alias, label, and technology (detected
+framework); `<repo>-svc §svc.<name>` gives the description — what that
+service is actually responsible for — and labels `Rel(...)` arrows between
+containers. Only write `%%TODO: verify against codebase%%` when **neither**
+document answers.
+
+**One caution:** `<repo>-svc` grounds a diagram — it is never a substitute
+for a domain citation in an Acceptance Criterion. A code/format/enum/
+threshold that encodes a standard still has to come from a pinned domain
+section, not from a service's responsibility text.
+
 ## DoR rules (what CI enforces)
 
 Every pull request runs `.github/workflows/kb-ticket-lint.yml` — the name

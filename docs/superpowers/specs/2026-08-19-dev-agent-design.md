@@ -407,10 +407,12 @@ A `svc.<name>` in `-svc` with no counterpart in `-code` (service deleted or rena
 
 ```
 kb svc note <service> --ticket <id> --title "<title>" --refs "doc §s, doc §s"
-             [--kb-dir .kb] [--doc-id <repo_id>-svc] [--json]
+             [--kb-dir .kb] [--repo-id <cfg>] [--json]
 ```
 
-A new `svc` sub-app, following the `kb context new` / `kb ticket lint` / `kb mission lint` precedent. Appends one row to `-svc §hist.<service>`: L2 is a `| Ticket | Title | Domain refs |` pipe table sorted by ticket id; L3 is a fenced block with the fuller record (ticket path, AC ids). L3 carries **no** pipe table, satisfying §3.7 by construction.
+A new `svc` sub-app, following the `kb context new` / `kb ticket lint` / `kb mission lint` precedent. Appends one row to `-svc §hist.<service>`: L2 is a `| Ticket | Title | Domain refs |` pipe table sorted by ticket id; L3 is a fenced record with the same three fields (ticket, title, refs) laid out one per line. L3 carries **no** pipe table, satisfying §3.7 by construction.
+
+**Deviation from this spec, recorded rather than left to re-seed a future plan (both task review and the final whole-branch review independently flagged this).** This section originally sketched L3 as holding "the fuller record (ticket path, AC ids)" and a `--doc-id <repo_id>-svc` flag. The shipped implementation (`svcnote.py`, `cli.py`) does neither: the CLI's actual synopsis — carried through unchanged from §5.8's `dev-handover` call, which passes exactly `--ticket`/`--title`/`--refs` — has no flag capable of carrying a ticket path or AC ids, and repo identity is resolved the same way `kb code-ingest` resolves it, via `--repo-id` (falling back to `.kb/config.yaml`), never `--doc-id` (the `-svc` doc id is always derived as `<repo_id>-svc`, never accepted directly). Both reviewers agreed the implementation is right and this section's original prose was the thing describing a phantom requirement — amended here to describe what the interface can actually produce.
 
 Deterministic and **idempotent**: re-running for the same ticket + service updates that row rather than duplicating it. `hist.*` sections are written with `status: summarized` and a fixed extractor-authored `summary` — they are facts ("this ticket touched this service"), not claims, so they need no review and cannot block `kb build`.
 

@@ -108,6 +108,11 @@ DEV_TEMPLATES: dict[str, str] = {
             "dev-plan",
             "dev-execute",
             "dev-handover",
+            # Stage C: the one-time bootstrap skill. Added to this tuple
+            # (not to the tests' DEV_WORKFLOW_SKILLS lists — it implements
+            # no ticket, so the ticket-shaped SHARED-* canon doesn't apply
+            # to it) so it gets the same four-way wrapper layout for free.
+            "dev-code-seed",
         )
         for path, resource in (
             (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
@@ -116,6 +121,24 @@ DEV_TEMPLATES: dict[str, str] = {
             (f".cursor/commands/{skill}.md", f"cursor-{skill}.md"),
         )
     },
+    # Stage C: the twelve wrapper rows the seed flow (and later, ongoing
+    # amends) needs from the existing authoring skills — paths copied
+    # verbatim from COMMON_TEMPLATES so both maps resolve to the exact same
+    # package resources. `kb-publish` genuinely has NO `.claude/commands/`
+    # resource in the package (see COMMON_TEMPLATES above) — this map must
+    # not invent one.
+    ".claude/skills/kb-summarize/SKILL.md": "claude-skill-kb-summarize.md",
+    ".claude/commands/kb-summarize.md": "claude-command-kb-summarize.md",
+    ".github/instructions/kb-summarize.instructions.md": "copilot-kb-summarize.instructions.md",
+    ".cursor/commands/kb-summarize.md": "cursor-kb-summarize.md",
+    ".cursor/rules/kb-summarize.mdc": "cursor-kb-summarize.mdc",
+    ".claude/skills/kb-approve/SKILL.md": "claude-skill-kb-approve.md",
+    ".claude/commands/kb-approve.md": "claude-command-kb-approve.md",
+    ".github/prompts/kb-approve.prompt.md": "copilot-kb-approve.prompt.md",
+    ".cursor/commands/kb-approve.md": "cursor-kb-approve.md",
+    ".claude/skills/kb-publish/SKILL.md": "claude-skill-kb-publish.md",
+    ".github/prompts/kb-publish.prompt.md": "copilot-kb-publish.prompt.md",
+    ".cursor/commands/kb-publish.md": "cursor-kb-publish.md",
 }
 
 # User data — never refreshed by default; only overwritten with --force.

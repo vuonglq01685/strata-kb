@@ -37,20 +37,23 @@ run the full suite and linters (`cmd.test` and `cmd.lint` from
 file) and paste the real output, since a completion claim without
 it is not accepted; record service history by running `kb svc
 note <service> --ticket <id> --title "<title>" --refs "<refs>"`
-for each service touched so the entries land in this same PR
-(until Stage C ships this command it does not exist yet, so skip
-the step and say so in one line in the PR); then assemble the PR
-description, containing the ticket id, the kb-context refs so the
-reviewer can `kb resolve` them, the AC→test map, the
-placeholder-resolution list, every `OPEN(...)` finding, the
-verification output, and every KB gap, ambiguity, or contradiction
-found as a concrete feedback item (issue or PR on the owning child
-repo / hub); if the ticket changed what a service is responsible
-for, report `amend needed: <repo_id>-svc §svc.<name>` as a PR
-finding (until Stage C ships `-svc`, there is no document yet, so
-record it as a plain PR note instead). Never edit a `reviewed`
-section. **GATE 3** the Dev opens
-the PR; **GATE 4** the Dev merges. **The agent does neither.**
+for each service touched so the entries land in this same PR (if
+the ticket added or renamed a service, run `kb code-ingest` first
+— `kb svc note` validates against this repo's own committed
+`<repo_id>-code`, which CI regenerates on the hub but never writes
+back here; if this repo has no `<repo_id>-svc` yet — `dev-code-seed`
+never run — say so in one line in the PR and record the history
+there instead);
+then assemble the PR description, containing the ticket id, the
+kb-context refs so the reviewer can `kb resolve` them, the
+AC→test map, the placeholder-resolution list, every `OPEN(...)`
+finding, the verification output, and every KB gap, ambiguity, or
+contradiction found as a concrete feedback item (issue or PR on
+the owning child repo / hub); if the ticket changed what a service
+is responsible for, report `amend needed: <repo_id>-svc
+§svc.<name>` as a PR finding. Never edit a `reviewed` section.
+**GATE 3** the Dev opens the PR; **GATE 4** the Dev merges. **The
+agent does neither.**
 Option 1 in the Next-step block below is always "Open the PR
 yourself" with the branch name already filled in — this is the
 terminal phase of the flow, so there is no next automated command;
