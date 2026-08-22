@@ -52,7 +52,8 @@ handover is too late, because the plan may already rest on changed content.
   *knowledge orients, code decides* — skip whichever document is missing
   and read the code directly for that half instead: `<repo_id>-code` is
   missing whenever `kb code-ingest` has not run yet in this repo;
-  `<repo_id>-svc` is missing until Stage C ships it. Say so in one line
+  `<repo_id>-svc` is missing whenever this repo has not run
+  `dev-code-seed` (or the seed is not yet published). Say so in one line
   rather than reporting it as a KB gap.
 - **Placeholders** — for each `%%TODO: verify against codebase%%`, verify
   the real name against the codebase and record `placeholder → verified

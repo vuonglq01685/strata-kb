@@ -32,6 +32,9 @@ mission_app = typer.Typer(
 )
 app.add_typer(mission_app, name="mission")
 
+svc_app = typer.Typer(help="Service knowledge: record which tickets touched which service.")
+app.add_typer(svc_app, name="svc")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -753,6 +756,54 @@ def code_ingest(
             typer.echo(f"  stale-risk: {sid}")
         for sid in report.orphans:
             typer.echo(f"  orphan: {sid}")
+
+
+@svc_app.command("note")
+def svc_note(
+    service: str = typer.Argument(
+        ..., help="Service name, as in svc.<name> of <repo_id>-code"
+    ),
+    ticket: str = typer.Option(..., "--ticket", help="Ticket / US id"),
+    title: str = typer.Option(..., "--title", help="Ticket title"),
+    refs: str = typer.Option("", "--refs", help="Domain refs, comma-separated"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config)"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Append a ticket to <repo_id>-svc §hist.<service>. Idempotent per ticket."""
+    import dataclasses
+
+    from center_kb import config, svcnote
+
+    # Ruling: effective_repo_id() returns None when neither --repo-id nor
+    # .kb/config.yaml supplies one; surfaced the same way every other
+    # SvcNoteError-shaped failure is (red message naming the fix, exit 1),
+    # since add_note() itself takes a plain (non-optional) repo_id str.
+    rid = config.effective_repo_id(repo_id, kb_dir)
+    if rid is None:
+        typer.secho(
+            "no repo-id available — pass --repo-id or set repo_id in "
+            f"{kb_dir}/config.yaml",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    ref_list = tuple(r.strip() for r in refs.split(",") if r.strip())
+    note = svcnote.Note(ticket=ticket, title=title, refs=ref_list)
+
+    try:
+        report = svcnote.add_note(kb_dir, rid, service, note)
+    except svcnote.SvcNoteError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    if json_out:
+        typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
+        return
+
+    typer.echo(f"doc: {report.doc_id}")
+    typer.echo(f"section: {report.section_id} ({report.action})")
+    typer.echo(f"notes: {report.notes}")
 
 
 @app.command()

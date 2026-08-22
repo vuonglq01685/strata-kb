@@ -743,7 +743,9 @@ Insert this block next to the existing "never fabricate … service names" hard 
 - **Ground code detail in the hub's code knowledge before reaching for a
   placeholder.** Two documents per product repo answer different questions:
   - `<repo>-code` **for names** — service/container names (`svc.*`), table
-    names (`db.*`), endpoints (`api.*`), detected technology (`dep.*`).
+    names (`db.*`), endpoints (`api.*`), and detected technology
+    (a `svc.<name>` table row, not `dep.*` — `dep.*` is repo-wide
+    ecosystem detection, unrelated to any one container's technology).
   - `<repo>-svc` **for meaning** — what a container is responsible for
     (`svc.*`), and which services a business flow crosses (`flow.*`).
 

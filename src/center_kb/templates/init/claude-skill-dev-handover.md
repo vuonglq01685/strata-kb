@@ -43,9 +43,13 @@ handover is too late, because the plan may already rest on changed content.
   completion claim without it is not accepted.
 - **Record service history** — for each service touched, run
   `kb svc note <service> --ticket <id> --title "<title>" --refs
-  "<refs>"` so the entries land in this same PR. Until Stage C
-  ships this command it does not exist yet: skip the step and
-  say so in one line in the PR.
+  "<refs>"` so the entries land in this same PR. If the ticket
+  added or renamed a service, run `kb code-ingest` first — `kb svc
+  note` validates the service against this repo's own committed
+  `<repo_id>-code`, which CI regenerates on the hub but never
+  writes back here. If this repo has no `<repo_id>-svc` yet
+  (`dev-code-seed` never run), say so in one line in the PR and
+  record the history there instead.
 - **Assemble the PR description**, containing: the **ticket
   id**; the **kb-context** refs so the reviewer can `kb resolve`
   them; the **AC→test map**; the **placeholder-resolution**
@@ -56,8 +60,7 @@ handover is too late, because the plan may already rest on changed content.
 - **Amend findings** — if the ticket changed what a service is
   responsible for, report `amend needed: <repo_id>-svc
   §svc.<name>` as a PR finding. **Never edit a `reviewed`
-  section.** Until Stage C ships `-svc`, there is no document to
-  amend yet: record it as a plain PR note instead.
+  section.**
 - **GATE 3** the Dev opens the PR; **GATE 4** the Dev merges.
   **The agent does neither.** Option 1 in the Next-step block
   below is always "Open the PR yourself" with the branch name

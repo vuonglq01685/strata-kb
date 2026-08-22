@@ -687,7 +687,26 @@ def _upsert_index_entry(
         preserved = [t for t in entry.tags if t not in wanted]
         entry.title = title
         entry.revision = revision
-        entry.summary = summary
+        # Final review, Important 2: `entry.summary` may already hold a
+        # real, LLM-drafted L0 doc summary written by `summarize.
+        # _fill_doc_summaries()` — and once written, no `kb summarize` run
+        # can ever produce it again (that function skips any doc with no
+        # pending sections, and every section here is non-pending after
+        # the seed completes). `scaffold_svc()` calls this on EVERY
+        # `--scaffold-svc` run, including the routine re-run `dev-code-
+        # seed` step 2 and the documented amend loop both make forever
+        # after — always passing the same static placeholder. Overwriting
+        # unconditionally therefore reverts the drafted summary back to
+        # the placeholder the very first time either of those ordinary,
+        # documented re-runs happens, with no way back through the
+        # documented toolset. Only replace it when there is nothing
+        # drafted yet (empty) or it already IS this call's own
+        # placeholder (an ordinary re-run before drafting has ever
+        # happened) — never when it holds something else. A genuinely new
+        # document (the `entry is None` branch above) is unaffected and
+        # still always gets the placeholder.
+        if not entry.summary or entry.summary == summary:
+            entry.summary = summary
         entry.tags = wanted + preserved
 
     models.save_yaml_model(index_path, index)
@@ -773,12 +792,23 @@ def _service_evidence(
         if wanted and wanted <= _name_tokens(s.id.split(".", 1)[1])
     )
 
-    lines = ["```text", "files:"]
+    # Stage C task review (R6, following the Stage B handover's item 2, and
+    # Minor 7 extending it to "files:"): a bare "files:"/"tables:" label
+    # reads as the factual claim "this service touches no files/tables"
+    # when it renders "- none" -- but both matches are the identical
+    # same-name-token-superset heuristic (see the docstring above) that
+    # essentially never fires on a realistically-named repo. Label both
+    # honestly as what they are, so "- none" reads as "no name match
+    # found", not "no files/tables found" -- leaving one bare and the
+    # other relabelled would make two lines in the same fenced block claim
+    # different epistemic strength from the same rule. The rendered list
+    # shape below is otherwise unchanged.
+    lines = ["```text", "files (name-match heuristic; absence proves nothing):"]
     if files:
         lines.extend(f"  - {f}" for f in files)
     else:
         lines.append("  - none")
-    lines.append("tables:")
+    lines.append("tables (name-match heuristic; absence proves nothing):")
     if tables:
         lines.extend(f"  - {t}" for t in tables)
     else:
