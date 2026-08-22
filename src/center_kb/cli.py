@@ -639,6 +639,122 @@ def build(
     typer.echo("kb build: OK")
 
 
+@app.command(name="code-ingest")
+def code_ingest(
+    repo_root: Path = typer.Option(Path("."), "--repo-root", help="Repository root to scan"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config, then folder name)"),
+    doc_id: str = typer.Option("", "--doc-id", help="Document ID (default: <repo_id>-code)"),
+    db: list[Path] = typer.Option([], "--db", help="SQLite file to read (repeatable, explicit only)"),
+    tags: str = typer.Option("", "--tags", help="Extra index tags, comma-separated"),
+    scaffold_svc: bool = typer.Option(
+        False, "--scaffold-svc",
+        help="Also upsert the curated <repo_id>-svc scaffold (pending sections)",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Extract code structure into .kb/<repo_id>-code/ — deterministic, no LLM."""
+    import dataclasses
+
+    from center_kb import config
+    from center_kb.codeingest import core
+
+    # Ruling R23: resolve both paths here, once, before CodeIngestOptions is
+    # built — `core.run()`'s writer treats a relative `kb_dir` as relative to
+    # the process CWD while `tree.walk_tree()` (used by every extractor's
+    # walk) resolves it against `repo_root`; with a relative --kb-dir and a
+    # --repo-root different from the CWD those two disagree. The CLI is the
+    # only place `CodeIngestOptions` is built from user input, so it's the
+    # single point this gets resolved once, consistently.
+    resolved_root = repo_root.resolve()
+    resolved_kb_dir = (
+        kb_dir.resolve() if kb_dir.is_absolute() else (resolved_root / kb_dir).resolve()
+    )
+
+    # Ruling R4: effective_repo_id() returns None when neither --repo-id nor
+    # .kb/config.yaml supplies one; the help text above promises a folder-
+    # name fallback, so supply it here rather than writing a "None-code" doc.
+    rid = config.effective_repo_id(repo_id, resolved_kb_dir) or resolved_root.name
+    did = doc_id or f"{rid}-code"
+    tag_list = tuple(t.strip() for t in tags.split(",") if t.strip())
+
+    opts = core.CodeIngestOptions(
+        repo_root=resolved_root,
+        kb_dir=resolved_kb_dir,
+        doc_id=did,
+        repo_id=rid,
+        db_paths=tuple(db),
+        tags=tag_list,
+        scaffold_svc=scaffold_svc,
+    )
+
+    try:
+        report = core.run(opts)
+    except core.CodeIngestError as exc:
+        # Review round 3 (Important 5 follow-up): CodeIngestError now
+        # carries whatever partial CodeIngestReport existed at the point
+        # of failure, so a warning already collected before the refusal
+        # (e.g. "could not read _manifest.yaml") is shown too, instead of
+        # only this exception's own message — which, for a corrupt -svc
+        # manifest, otherwise reads as "no matching entry in
+        # _manifest.yaml — restore the manifest entries" with no hint
+        # that the manifest is simply malformed. A non-empty
+        # `files_written` also means the -code document was already
+        # written and indexed before a later --scaffold-svc refusal — a
+        # partial success, not a full failure — so that's called out too.
+        # Review round 4: all three lines below now pass err=True (the
+        # codebase's existing convention for diagnostics that must never
+        # land on stdout — see e.g. the RED-secho'd errors elsewhere in
+        # this file) so a --json invocation's stdout stays empty, never
+        # polluted, on this path — matching the purity --json already
+        # guarantees on the success path.
+        if exc.report is not None:
+            for warning in exc.report.warnings:
+                typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
+            if exc.report.files_written:
+                typer.secho(
+                    f"[note] {exc.report.doc_id}: {len(exc.report.files_written)} "
+                    "file(s) were already written before this error — a "
+                    "partial success, not a full failure",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    if json_out:
+        typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
+        return
+
+    typer.echo(f"doc: {report.doc_id}")
+    typer.echo(f"detected: {', '.join(report.detected)}")
+    for name in sorted(report.sections_by_extractor):
+        typer.echo(f"  {name}: {report.sections_by_extractor[name]} section(s)")
+    typer.echo(f"files written: {len(report.files_written)}")
+    if report.dirty_tree:
+        typer.secho(
+            "[warn] working tree has uncommitted changes — output reflects them",
+            fg=typer.colors.YELLOW,
+        )
+    for warning in report.warnings:
+        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW)
+    if scaffold_svc:
+        typer.echo(
+            f"scaffolded: {len(report.scaffolded)} new, "
+            f"{len(report.stale_risk)} stale-risk, {len(report.orphans)} orphan(s)"
+        )
+        # Spec Sec8.3 asks for "stale-risk: svc.<name>" / "orphan: svc.<name>"
+        # "in the report and in --json" -- --json already carries the ids
+        # via report.stale_risk/report.orphans, but the terminal used to
+        # print only counts. Stage C's machine consumer of --json does not
+        # exist yet, so the terminal is the only surface a Dev has today
+        # (task review, Important 5).
+        for sid in report.stale_risk:
+            typer.echo(f"  stale-risk: {sid}")
+        for sid in report.orphans:
+            typer.echo(f"  orphan: {sid}")
+
+
 @app.command()
 def query(
     text: str = typer.Argument(..., help="Query text"),

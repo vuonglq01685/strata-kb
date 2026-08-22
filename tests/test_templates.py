@@ -692,13 +692,36 @@ def test_all_dev_workflow_wrappers_carry_the_tdd_and_evidence_rules():
             assert "Never claim done without showing the verification output" in text, name
 
 
-def test_dev_implement_ticket_caveats_the_documents_that_do_not_exist_yet():
-    # The Ground step sends the agent at `<repo_id>-code` and `-svc`, which
-    # Stages B and C ship. `dev-plan` caveats its analogous `-code §cmd.*`
-    # gap in all four of its wrappers; the orchestrator must too, or a Dev
+def test_dev_implement_ticket_caveats_the_document_that_does_not_exist_yet():
+    # The Ground step sends the agent at `<repo_id>-code` and `-svc`.
+    # `<repo_id>-svc` is still not available in any repo until Stage C
+    # ships it — that half of the caveat is pinned here. (The `-code`
+    # half is reframed by repo state, not retired, and is pinned
+    # separately by the test below.) `dev-plan` caveats its analogous
+    # `-code §cmd.*` gap the same way, in all four of its wrappers; the
+    # orchestrator must caveat its own remaining `-svc` gap too, or a Dev
     # reports a missing document as a KB gap.
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        assert "until Stages B and C ship" in _dev_wrapper_body(name), name
+        assert "until Stage C ships" in _dev_wrapper_body(name), name
+
+
+def test_dev_plan_and_dev_implement_ticket_caveat_the_code_document_by_repo_state():
+    # Task B10 fix (c): `-code` is missing on any repo that has not run
+    # `kb code-ingest` yet — a per-repo-state fact, not a plugin-version
+    # gap — and both skills that read `-code` must say so, or a Dev on a
+    # freshly-scaffolded repo gets no guidance and reports it as a KB gap
+    # (the exact regression fix (c) closed). Neither half was pinned by
+    # any assertion before this test. Each needle is the substring
+    # actually shared, verbatim, by that skill's own four wrapper forms —
+    # the two skills phrase it differently from each other, so one
+    # needle does not cover both.
+    for name in _dev_wrapper_names("dev-plan"):
+        assert "`kb code-ingest` not yet run" in _dev_wrapper_body(name), name
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        assert (
+            "`kb code-ingest` has not run yet in this repo"
+            in _dev_wrapper_body(name)
+        ), name
 
 
 def test_every_dev_workflow_wrapper_ends_on_the_next_step_block():
@@ -731,3 +754,106 @@ def test_copilot_and_cursor_wrappers_differ_only_in_their_frontmatter_name():
         copilot = _read_init_template(f"copilot-{skill}.prompt.md").splitlines()
         cursor = _read_init_template(f"cursor-{skill}.md").splitlines()
         assert copilot[:1] + copilot[2:] == cursor[:1] + cursor[2:], skill
+
+
+def test_kb_code_workflow_has_both_triggers():
+    text = _read_init_template("kb-code.yml")
+    assert "push:" in text
+    assert "workflow_dispatch:" in text
+    assert "pull_request:" in text
+
+
+def test_kb_code_trigger_list_is_pinned():
+    # Task review, Important 7: nothing bounds the `on:` block today --
+    # adding `pull_request_target` later would make the publish job's
+    # `if: github.event_name != 'pull_request'` true for a PR-controlled
+    # ref, running `kb ci-publish` with `id-token: write` against
+    # attacker-influenced content. Pinning the exact trigger set (not
+    # just "push/pull_request/workflow_dispatch are present", which a
+    # fourth trigger would still satisfy) means a new trigger fails this
+    # test until it is deliberately reviewed here too.
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-code.yml"))
+    # PyYAML's default (YAML 1.1) resolver reads a bare `on:` key as the
+    # boolean `True`, not the string "on" -- this is the actual parsed
+    # key, not a typo.
+    triggers = wf[True]
+    assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
+    assert triggers["push"] == {"branches": ["main", "master"]}
+
+
+def test_kb_code_publish_job_runs_the_full_chain():
+    text = _read_init_template("kb-code.yml")
+    assert "kb code-ingest" in text
+    assert "kb build" in text
+    assert "kb ci-publish" in text
+
+
+def test_kb_code_pull_request_job_validates_but_never_publishes():
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-code.yml"))
+    jobs = wf["jobs"]
+    pr_job = next(j for name, j in jobs.items() if "validate" in name)
+    steps = " ".join(str(s.get("run", "")) for s in pr_job["steps"])
+    assert "kb build" in steps
+    assert "ci-publish" not in steps
+    assert "code-ingest" not in steps
+
+
+def test_kb_code_never_scaffolds_svc_in_ci():
+    assert "--scaffold-svc" not in _read_init_template("kb-code.yml")
+
+
+def test_kb_code_has_no_hardcoded_url_or_token():
+    text = _read_init_template("kb-code.yml")
+    assert "https://" not in text
+    assert "secrets." not in text
+    assert "id-token: write" in text
+
+
+def test_kb_code_publish_job_if_is_pinned_to_negated_pull_request():
+    # Regression guard: `if: github.event_name != 'pull_request'` on the
+    # publish job is the ONLY thing stopping a same-repo branch PR from
+    # running `kb ci-publish` with `id-token: write` and publishing
+    # unreviewed content to the hub (fork PRs are separately protected by
+    # GitHub withholding a write-scoped GITHUB_TOKEN, but that protection
+    # does not cover same-repo PRs). A substring check like
+    # `"pull_request" in condition` would still pass if this were inverted
+    # to `==` -- pin the exact expression so both deleting the `if:` and
+    # flipping the operator fail this test.
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-code.yml"))
+    assert wf["jobs"]["publish"]["if"] == "github.event_name != 'pull_request'"
+
+
+def test_kb_code_validate_job_has_read_only_permissions():
+    # Task review, Important 7: the validate job had no `permissions:`
+    # block at all, inheriting the repository's default token scope,
+    # while kb-publish.yml already scopes its own job explicitly.
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-code.yml"))
+    assert wf["jobs"]["validate"]["permissions"] == {"contents": "read"}
+
+
+def test_kb_code_workflow_has_a_concurrency_group():
+    # Task review, Important 7: without this, two quick merges race two
+    # `kb ci-publish` runs, each opening its own hub PR against the same
+    # -code document.
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-code.yml"))
+    concurrency = wf["concurrency"]
+    assert concurrency["group"] == "kb-code-${{ github.ref }}"
+    assert concurrency["cancel-in-progress"] is False
+
+
+def test_kb_code_publish_checkout_does_not_fetch_full_history():
+    # Task review, Important 7: `fetch-depth: 0` was unnecessary --
+    # code-ingest only ever runs `rev-parse HEAD` and
+    # `show -s --format=%cs HEAD`, both satisfied by the default shallow
+    # checkout -- and its own comment stated a false reason for it.
+    assert "fetch-depth" not in _read_init_template("kb-code.yml")

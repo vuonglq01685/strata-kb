@@ -45,10 +45,11 @@ handover is too late, because the plan may already rest on changed content.
 - **Order and close** — order tasks so each one leaves the repo green, and
   end the plan with one closing task for cross-cutting verification (full
   suite + lint) using the commands from `-code §cmd.*`.
-- **No `cmd.*` section yet** — until Stage B ships, `-code §cmd.*` does not
-  exist. Ask the Dev once for the build/test/lint commands and record them
-  at the top of the plan file, so this closing task, `dev-execute`, and
-  `dev-handover` all have something to run.
+- **No `-code` document yet** — when `-code §cmd.*` has not been generated
+  in this repo (`kb code-ingest` not yet run), ask the Dev once for the
+  build/test/lint commands and record them at the top of the plan file, so
+  this closing task, `dev-execute`, and `dev-handover` all have something
+  to run.
 - **GATE 2** — the Dev approves the plan before any code is written; once
   approved, option 1 in the Next-step block below is
   `/dev-execute <ticket-id>`. The checkbox file is also the resume point,

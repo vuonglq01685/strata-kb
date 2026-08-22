@@ -1,10 +1,10 @@
 # CENTER-KB — repo config (commit to git).
 # kind: this repo's role. "dev" is a product code repo — it consumes the
-#       shared KB while implementing BA tickets, and will publish generated
-#       knowledge about its OWN source code (<repo_id>-code, Stage B) plus
-#       curated service knowledge (<repo_id>-svc, Stage C) — neither is
-#       available yet. It never ingests documents from outside the repo
-#       (that's what `child` repos do).
+#       shared KB while implementing BA tickets, and publishes generated
+#       knowledge about its OWN source code (<repo_id>-code, live via
+#       kb-code.yml) plus curated service knowledge (<repo_id>-svc,
+#       Stage C) — <repo_id>-svc is not available yet. It never ingests
+#       documents from outside the repo (that's what `child` repos do).
 kind: dev
 # hub: git URL or kb-hub path of the MAIN HUB — the ONLY read source for
 #      kb query / kb resolve / MCP. FILL THIS IN before implementing tickets.

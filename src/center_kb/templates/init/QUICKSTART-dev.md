@@ -1,12 +1,13 @@
 # CENTER-KB Quickstart (dev repo)
 
 This repo is a **product code** repo: it consumes the shared knowledge base
-while implementing BA tickets. Once Stages B and C ship the publish path, it
-will also publish generated knowledge about its OWN source code
-(`<repo_id>-code`) plus curated service knowledge (`<repo_id>-svc`) back to
-the hub — **this repo cannot publish yet**. It never ingests documents
-from outside this repo — that happens in `child` repos, reviewed on the
-`hub`.
+while implementing BA tickets, and it publishes generated knowledge about
+its OWN source code (`<repo_id>-code`) back to the hub automatically —
+`.github/workflows/kb-code.yml` runs `kb code-ingest` → `kb build` →
+`kb ci-publish` on every push to `main` or `master`. Curated service
+knowledge (`<repo_id>-svc`) is not available yet: that needs Stage C
+(`dev-code-seed`, `kb svc note`). This repo never ingests documents from
+outside itself — that happens in `child` repos, reviewed on the `hub`.
 
 ## Setup once
 
@@ -16,13 +17,21 @@ from outside this repo — that happens in `child` repos, reviewed on the
 2. **Point at the hub** — fill `hub:` in `.kb/config.yaml` with the main
    hub's git URL or path. This is the only read source for `kb query` /
    `kb resolve` / `kb get` / MCP.
-3. **Prepare for publishing (not available yet)** — fill `intake:` in
+3. **Point at the intake for publishing** — fill `intake:` in
    `.kb/config.yaml` with the hub's intake service URL, then ask the hub
    maintainer to add this repo under `repos:` in the hub's
-   `federation/registry.yaml`. Do this now so it's ready, but **this repo
-   cannot publish yet**: Stages B and C ship the `-code`/`-svc` knowledge
-   generation and the publish workflow that would actually use `intake:`
-   and that registry entry.
+   `federation/registry.yaml`. `kb-code.yml` uses both to publish
+   `<repo_id>-code` on every push to `main` or `master`; curated
+   `<repo_id>-svc` knowledge still needs Stage C (`dev-code-seed`,
+   `kb svc note`).
+   Whether the hub PR `kb ci-publish` opens for `<repo_id>-code` then
+   auto-merges is a **hub-side branch-protection/labeling policy** — not
+   `kb-code.yml`'s own behavior — so ask the hub maintainer whether (and
+   how) auto-merge is configured for this repo's PRs. It is safe to
+   automate because `-code` is deterministic and LLM-free by
+   construction. `<repo_id>-svc` PRs are never auto-merged: that
+   document is LLM-drafted and always needs a human review before it can
+   publish.
 4. **Connect the shared MCP server** — set two environment variables so
    your AI assistant can reach the hub's search/citation tools:
    - `CENTER_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
@@ -95,14 +104,14 @@ Nothing in this pipeline merges or ships without a human:
 
 Re-run `kb init --kind dev` to pick up new templates. This only ever
 touches **scaffold files** — the skill/command/prompt wrappers,
-`QUICKSTART-DEV.md`, and the `docs/impl/.gitkeep` marker — and only
-overwrites one when its content differs from the new template;
-`.kb/config.yaml` and `.kb/index.yaml` are never touched either way (the
-one exception being an explicit `--force`, which overwrites them too).
-Anything you authored under `docs/impl/` is not scaffolding: `kb init`
-never reads, writes, or overwrites it.
-**If you hand-edited a wrapper or QUICKSTART-DEV.md, back it up first:
-your edits are lost.**
+`QUICKSTART-DEV.md`, `.github/workflows/kb-code.yml`, and the
+`docs/impl/.gitkeep` marker — and only overwrites one when its content
+differs from the new template; `.kb/config.yaml` and `.kb/index.yaml` are
+never touched either way (the one exception being an explicit `--force`,
+which overwrites them too). Anything you authored under `docs/impl/` is not
+scaffolding: `kb init` never reads, writes, or overwrites it.
+**If you hand-edited a wrapper, `kb-code.yml` (including any `--db` flags
+you added), or QUICKSTART-DEV.md, back it up first: your edits are lost.**
 
 ## CLI reference
 
