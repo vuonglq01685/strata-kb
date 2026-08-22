@@ -217,7 +217,7 @@ scaffolds accordingly, and records the choice as `kind:` in
 | `hub` | Central knowledge hub. Hosts `federation/` — the single source of truth for search — and runs the shared HTTP MCP server + Web UI. Receives publishes from child repos; merging hub PRs is the review gate that makes content searchable. |
 | `child` | Authoring repo. Ingest PDFs → summarize → `kb build` → `kb publish` to the hub. Must point `hub:` in `.kb/config.yaml` at the main hub; does not host the company-wide MCP/Web service. |
 | `ba` | Requirements repo (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)). Drafts Dev-ready tickets — and, upstream of them for large features, epic-level mission plans (Phase 4.1) — grounded in the KB via the `ba-ticket-author` and `ba-mission-plan` skills, versions them under `tickets/` and `missions/`, and gates both with CI Definition-of-Ready checks (`kb ticket lint`, `kb mission lint`). Never ingests, summarizes, or publishes KB content. |
-| `dev` | Product code repo (Phase 5, see [7.11](#711-phase-5--dev-agent-workflow) and [7.12](#712-phase-5-stage-b--kb-code-ingest)). Implements BA tickets grounded in the KB via the `dev-implement-ticket` orchestrator and its four phase skills — design → plan → execute → handover, TDD enforced. Never ingests documents from outside the repo; it publishes generated (`-code`) knowledge about its own source code automatically via `kb-code.yml`, and will publish curated (`-svc`) knowledge once Stage C ships `kb svc note`. |
+| `dev` | Product code repo (Phase 5, see [7.11](#711-phase-5--dev-agent-workflow), [7.12](#712-phase-5-stage-b--kb-code-ingest), and [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)). Implements BA tickets grounded in the KB via the `dev-implement-ticket` orchestrator and its four phase skills — design → plan → execute → handover, TDD enforced. Never ingests documents from outside the repo; it publishes generated (`-code`) knowledge about its own source code automatically via `kb-code.yml`, and curated (`-svc`) knowledge via a one-time `/dev-code-seed` bootstrap plus per-ticket `kb svc note` accrual. |
 
 Then run `kb docker-setup` (or the `/kb-docker-setup` slash command) on a hub
 or child repo: on the hub it creates `.env`, generates the HTTP token, and
@@ -275,7 +275,7 @@ once: `git config --global core.longpaths true`, and set the registry key
 
 ## 7. `kb` command dictionary
 
-The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` and `kb mission lint` (Phase 4 — BA ticket/mission authoring, a `ba`-kind repo only) are in [7.10](#710-phase-4--ba-ticket-authoring).
+The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` and `kb mission lint` (Phase 4 — BA ticket/mission authoring, a `ba`-kind repo only) are in [7.10](#710-phase-4--ba-ticket-authoring). `kb code-ingest` (Phase 5 Stage B, a `dev`-kind repo only) is in [7.12](#712-phase-5-stage-b--kb-code-ingest); `kb svc note` (Phase 5 Stage C, a `dev`-kind repo only) is in [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed).
 
 | # | Command | Purpose | Who runs it |
 |---|---|---|---|
@@ -530,15 +530,19 @@ Scaffold a `ba` repo with `kb init --kind ba`; see `QUICKSTART-BA.md` (generated
 ### 7.11 Phase 5 — Dev agent workflow
 
 Phase 5 Stage A adds a fourth `kind`, `dev` — a **product code repo**: it
-consumes the shared KB while implementing BA tickets, and (from Stage B
-on) publishes knowledge about its own source code back to the hub. The
-boundary against `child`: a `child` repo ingests documents from
-**outside** the repo and publishes them as domain knowledge; a `dev` repo
-ingests **nothing**, and authors only knowledge **about its own code**.
-Stage A ships the workflow that grounds that work in the KB; Stage B
-ships the generated half of that code knowledge, `kb code-ingest` (see
-[7.12](#712-phase-5-stage-b--kb-code-ingest)
-below); the curated half (`kb svc note`) arrives in Stage C.
+consumes the shared KB while implementing BA tickets, and publishes
+knowledge about its own source code back to the hub. The boundary against
+`child`: a `child` repo ingests documents from **outside** the repo and
+publishes them as domain knowledge; a `dev` repo ingests **nothing**, and
+authors only knowledge **about its own code**. Stage A ships the workflow
+that grounds that work in the KB; Stage B ships the generated half of
+that code knowledge, `kb code-ingest` (see
+[7.12](#712-phase-5-stage-b--kb-code-ingest)); Stage C ships the curated
+half, bootstrapped by `/dev-code-seed` and accrued by `kb svc note` (see
+[7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)); Stage D
+teaches the BA wrappers to read both (see
+[7.10](#710-phase-4--ba-ticket-authoring) and `QUICKSTART-BA.md`'s "Code
+knowledge on the hub" section).
 
 One orchestrator plus four phase skills implement a ticket, each
 separately invocable and resumable across sessions — state is derived
@@ -592,14 +596,15 @@ without shown verification output.
 code-knowledge documents — a domain document must not take either suffix.
 `<repo_id>-code` ships in Stage B (see
 [7.12](#712-phase-5-stage-b--kb-code-ingest));
-`<repo_id>-svc` still arrives in Stage C.
+`<repo_id>-svc` ships in Stage C (see
+[7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)).
 
 Scaffold a `dev` repo with `kb init --kind dev`; see `QUICKSTART-DEV.md`
 (generated into the repo) for the full setup, including the two
 environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that
 wire the assistant to the hub's MCP server, and allowlisting this repo in
-the hub's `federation/registry.yaml` before publishing works (from Stage
-B on).
+the hub's `federation/registry.yaml` before publishing either document
+works.
 
 ---
 
@@ -627,7 +632,7 @@ kb code-ingest [--repo-root .] [--kb-dir .kb] [--repo-id <cfg>]
 | `--doc-id` | Document id (default: `<repo_id>-code`) |
 | `--db` | An explicit SQLite file to read for schema — repeatable; never inferred (§3.11 below) |
 | `--tags` | Extra `index.yaml` tags, comma-separated — added on top of `[code, generated]`, existing/user-added tags are preserved across reruns |
-| `--scaffold-svc` | Also upsert the curated `<repo_id>-svc` scaffold (Stage C's document — see [7.11](#711-phase-5--dev-agent-workflow)) |
+| `--scaffold-svc` | Also upsert the curated `<repo_id>-svc` scaffold (Stage C's document — see [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)) |
 | `--json` | Machine-readable report instead of the human-readable summary |
 
 **The seven extractors.** Cross-stack by *artifact kind*, not by
@@ -672,7 +677,8 @@ spec says the code, not the generated document, is always the final word.
 
 **Reserved doc-id suffixes.** `<repo_id>-code` (this document, generated,
 tagged `[code, generated]`) and `<repo_id>-svc` (curated by a human,
-tagged `[code, curated]`, see [7.11](#711-phase-5--dev-agent-workflow))
+tagged `[code, curated]`, see
+[7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed))
 are reserved — a domain document must never take either suffix.
 
 **Section-id prefix contract (spec §6.2).** Each prefix has exactly one
@@ -741,7 +747,7 @@ accident.
 
 | Trigger | Steps | Purpose |
 |---|---|---|
-| `push` to `main` or `master`, `workflow_dispatch` | checkout → setup-python → `pip install center-kb` → `kb code-ingest` → `kb build` → `kb ci-publish` | Regenerate `-code` and publish it to the hub |
+| `push` to `main` or `master`, `workflow_dispatch` | checkout → setup-python → `pip install center-kb` → `kb code-ingest` → `kb build` → `kb ci-publish` | Regenerate `-code`, then publish the whole `.kb/` diff to the hub in one PR — `-code` always, plus any already-merged `-svc` amend riding the same push (see [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)) |
 | `pull_request` | checkout → setup-python → `pip install center-kb` → `kb build` | **Validate only — never publishes.** Catches a malformed `-svc` edit or a `pending` section committed before review |
 
 `--scaffold-svc` is deliberately never passed in CI — CI must never
@@ -754,6 +760,105 @@ here — it is safe to automate because `-code` is deterministic and
 LLM-free by construction. **`-svc` PRs are never auto-merged** — that
 document is LLM-drafted and always needs a human review before it can
 publish.
+
+---
+
+### 7.13 Phase 5 Stage C — `kb svc note` and `dev-code-seed`
+
+Stage B's `kb code-ingest` produces `<repo_id>-code` — names and
+structure, deterministic, no human review needed. Stage C produces
+`<repo_id>-svc` — the curated companion holding what each service is
+**responsible for**, LLM-drafted from Stage B's code evidence and gated
+by a human before it can publish.
+
+**Why two documents, never one (spec §3.8).** `-code` and `-svc` cannot
+share a document, for three independent reasons:
+
+1. **Overwrite vs. accumulate** — `-code` is fully regenerated and
+   overwritten on every merge; sharing a document would silently delete
+   any human-authored content sitting next to it.
+2. **`pending` vs. clean build** — `-svc` carries `pending` sections
+   during a seed or an amend; folding that into `-code` would fail
+   `kb build` for the whole document, including the parts CI regenerates
+   automatically on every push.
+3. **Auto-merge vs. review** — `-code` is machine fact and may be
+   auto-merged by hub policy; `-svc` is a human claim and always needs
+   review. One document can't carry both publish policies at once.
+
+The two documents are joined by **section id, not by file**:
+`svc.<name>` deliberately exists in both (see the prefix table in
+[7.12](#712-phase-5-stage-b--kb-code-ingest)) — `-code §svc.<name>` gives
+`alias`/`label`/`technology`, `-svc §svc.<name>` gives `description`,
+together filling all four arguments of `Container(alias, label,
+technology, description)`.
+
+**Bootstrapping `-svc` — `/dev-code-seed`, once per repo.** A project
+adopting center-kb already has services doing real work, so Stage C
+ships a one-time seed rather than requiring per-ticket documentation
+discipline from day one (which would yield nothing for everything that
+already exists). The `dev-code-seed` skill/command/prompt (kind `dev`
+only) walks seven steps: **Preflight** (hub/repo-id/intake configured,
+repo allowlisted; warns — doesn't block — if the tree is dirty) →
+**Extract** (`kb code-ingest
+--scaffold-svc` creates a `pending` `svc.<name>` scaffold per detected
+service, backed by deterministic L3 code evidence) → **Draft** (`kb
+summarize <repo_id>-svc` asks an LLM to write each L2 responsibility
+paragraph from that evidence) → **Review** (a human walks every draft
+against its evidence and corrects it — the LLM output is a draft, never
+a fact, and approving one unread defeats the gate) → **Approve** (`kb
+approve <repo_id>-svc` flips corrected sections `summarized` →
+`reviewed`) → **Flows** (optional `flow.<name>` sections for
+multi-service business flows) → **Validate and publish** (`kb build`
+**without** `--allow-pending` must pass; then `kb publish --pr` opens a
+PR a BA or architect reviews — plain `kb publish` would instead tag the
+commit and poll the intake for a tag-triggered CI run this repo's
+`kb-code.yml` never has, then time out after ten minutes). Budget
+**~10–15 min per service** for the
+Review step — a one-time cost, not a recurring one.
+
+**Accruing `-svc` after the seed — `kb svc note`.**
+
+| Command | Purpose | Exit code |
+|---|---|---|
+| `kb svc note <service> --ticket <id> --title "<title>" [--refs "doc §s, doc §s"] [--kb-dir .kb] [--repo-id <cfg>] [--json]` | Append one row to `<repo_id>-svc §hist.<service>` — L2 is a `\| Ticket \| Title \| Domain refs \|` table sorted by ticket id, L3 is a fenced record with no pipe table (satisfies the table-integrity invariant, §3.7, by construction) | `0` OK, `1` on any of: no resolvable repo-id; the `-svc` or the paired `-code` document doesn't exist; unknown service (no matching `svc.<name>` in `-code` — a typo must not invent a service); an unreadable `-svc`/`-code` manifest; or a `hist.*` manifest/file desync |
+
+Deterministic and **idempotent**: re-running for the same ticket + service
+updates that row instead of duplicating it. `hist.*` sections are written
+with `status: summarized` and a summary `kb svc note` itself renders
+fresh on every call (e.g. `"Tickets that touched <service>: N
+recorded."`) — they are facts ("this ticket touched this service"), not
+claims, so they need no review and never block `kb build`. `dev-handover`
+(see [7.11](#711-phase-5--dev-agent-workflow)) runs this command for
+every service a ticket touched, so a repo that has completed the seed
+above needs no further per-ticket documentation discipline.
+
+**Stage D — the BA Agent reads both documents.** `ba-ticket-author` and
+`ba-mission-plan` (eight wrapper files) prefer `<repo>-code` for names
+and `<repo>-svc` for meaning, fill all four `Container(...)` arguments
+and label `Rel(...)` when both documents answer, and write
+`%%TODO: verify against codebase%%` only when neither does — see
+`QUICKSTART-BA.md`'s "Code knowledge on the hub" section for the BA-side
+walkthrough.
+
+**Operational prerequisites (spec §14, not code — set these up once per
+`dev` repo):**
+
+- Allowlist the repo in the hub's `federation/registry.yaml` (both
+  `-code` and `-svc` publish through this).
+- Decide the hub's auto-merge policy for `-code` PRs, and confirm `-svc`
+  PRs are excluded from it — see the auto-merge note in
+  [7.12](#712-phase-5-stage-b--kb-code-ingest) above. **This is a
+  constraint on how that policy is implemented, not just a fact about
+  it:** `kb ci-publish` opens one hub PR per push, not per document — the
+  intake keys the publish branch by repo id and reuses it while a PR is
+  pending (`intake.py:302-330`) — so a push carrying both a regenerated
+  `-code` and an already-merged `-svc` amend lands both in that one PR.
+  The auto-merge rule must therefore be **path-scoped to
+  `.kb/<repo_id>-code/**`**, never a whole-PR or whole-repo rule, or it
+  will auto-merge `-svc` content riding along with `-code`.
+- Set `CENTER_KB_HUB_URL` and `CENTER_KB_HTTP_TOKEN` for each Dev, so
+  their assistant reaches the hub's MCP server.
+- Budget the one-time seed pass: **~10–15 min per service**.
 
 ---
 
@@ -822,9 +927,8 @@ As of the latest trial run (see `docs/superpowers/specs/2026-07-10-aero-kb-phase
 
 ## 11. Current limits & unfinished work
 
-This is **Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 Stage A + Stage B**, not a finished product. Still missing:
+This is **Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 (Stages A–D)**, not a finished product. Still missing:
 
-- **The curated, human-authored half of code knowledge (`<repo_id>-svc`, `kb svc note`) is not built yet** — Stage B ships only the generated half, `kb code-ingest` (see [7.12](#712-phase-5-stage-b--kb-code-ingest)); `--scaffold-svc` writes the pending scaffold for it, but the note-appending command and the seed workflow around it are Stage C.
 - **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
 - Summarization still needs a human to open Claude Code and trigger it — not fully background-automated.
 - A small share of sections (~2.4% of ARINC chapter 5, 6/~250 items) failed PDF extraction — need manual SME cross-check when hit.
@@ -951,4 +1055,4 @@ git tag -d vX.Y.Z
 
 ---
 
-*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) + Phase 4 (BA ticket authoring) + Phase 5 Stage A (kind `dev`, the 5-skill dev workflow) + Phase 5 Stage B (`kb code-ingest`, the seven extractors, `kb-code.yml`) — updated 2026-08-21. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`, `docs/superpowers/specs/2026-07-17-ba-agent-design.md`, and `docs/superpowers/specs/2026-08-19-dev-agent-design.md`.*
+*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) + Phase 4 (BA ticket authoring) + Phase 5 Stage A (kind `dev`, the 5-skill dev workflow) + Phase 5 Stage B (`kb code-ingest`, the seven extractors, `kb-code.yml`) + Phase 5 Stage C (`kb svc note`, `dev-code-seed`) + Phase 5 Stage D (BA wrappers read code knowledge) — updated 2026-08-22. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`, `docs/superpowers/specs/2026-07-17-ba-agent-design.md`, and `docs/superpowers/specs/2026-08-19-dev-agent-design.md`.*

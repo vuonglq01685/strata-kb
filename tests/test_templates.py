@@ -654,6 +654,19 @@ def test_dev_handover_records_service_history_and_amend_findings():
         assert "Never edit a `reviewed` section" in text, name
 
 
+# Final review, Important 1(a): `kb svc note` validates the service
+# against THIS repo's own committed `-code`, which `kb-code.yml`
+# regenerates and publishes on the hub but never writes back here — so a
+# ticket that added or renamed a service must run `kb code-ingest` first,
+# or the terminal step of the flow hard-fails on a service that is real,
+# just not locally known yet.
+def test_dev_handover_tells_the_dev_to_refresh_code_for_a_new_service():
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        assert "run `kb code-ingest` first" in text, name
+        assert "never writes back here" in text, name
+
+
 def test_dev_handover_leaves_pr_and_merge_to_the_human():
     for name in _dev_wrapper_names("dev-handover"):
         text = _dev_wrapper_body(name)
@@ -692,17 +705,24 @@ def test_all_dev_workflow_wrappers_carry_the_tdd_and_evidence_rules():
             assert "Never claim done without showing the verification output" in text, name
 
 
-def test_dev_implement_ticket_caveats_the_document_that_does_not_exist_yet():
-    # The Ground step sends the agent at `<repo_id>-code` and `-svc`.
-    # `<repo_id>-svc` is still not available in any repo until Stage C
-    # ships it — that half of the caveat is pinned here. (The `-code`
-    # half is reframed by repo state, not retired, and is pinned
-    # separately by the test below.) `dev-plan` caveats its analogous
-    # `-code §cmd.*` gap the same way, in all four of its wrappers; the
-    # orchestrator must caveat its own remaining `-svc` gap too, or a Dev
-    # reports a missing document as a KB gap.
+def test_dev_implement_ticket_caveats_the_svc_document_by_repo_state():
+    # Phase 5 Stage C shipped `dev-code-seed` (7b6500b) and `kb svc note`
+    # (e3703b5) on this branch, so C3 retired the "until Stage C ships it"
+    # wording this test used to pin (task-C3-brief.md, R1 ruling): the
+    # Ground step sends the agent at `<repo_id>-code` and `-svc`, and
+    # `<repo_id>-svc` can still be absent on any GIVEN repo — not because
+    # the plugin lacks the feature, but because that repo has not run its
+    # one-time `dev-code-seed` bootstrap yet. That is a per-repo-state
+    # fact, exactly like the `-code` half below, and is pinned the same
+    # way. `dev-plan` caveats its analogous `-code §cmd.*` gap the same
+    # way, in all four of its wrappers; the orchestrator must caveat its
+    # own remaining `-svc` gap too, or a Dev reports a missing document as
+    # a KB gap.
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        assert "until Stage C ships" in _dev_wrapper_body(name), name
+        assert (
+            "is missing whenever this repo has not run `dev-code-seed`"
+            in _dev_wrapper_body(name)
+        ), name
 
 
 def test_dev_plan_and_dev_implement_ticket_caveat_the_code_document_by_repo_state():
@@ -857,3 +877,284 @@ def test_kb_code_publish_checkout_does_not_fetch_full_history():
     # `show -s --format=%cs HEAD`, both satisfied by the default shallow
     # checkout -- and its own comment stated a false reason for it.
     assert "fetch-depth" not in _read_init_template("kb-code.yml")
+
+
+# --- Phase 5 Stage C: dev-code-seed --------------------------------------
+#
+# Deliberately NOT added to DEV_WORKFLOW_SKILLS / LANDED_DEV_WORKFLOW_SKILLS
+# above: dev-code-seed implements no ticket, so two of the three SHARED-*
+# blocks (SHARED-FRESHNESS re-resolves a ticket's kb-context;
+# SHARED-HARD-RULES is ticket/AC/TDD wording) do not apply, and
+# SHARED-NEXT-STEP's canon text hardcodes the design/plan/execute/handover
+# flow order, which this one-time bootstrap does not follow. Spec Sec13
+# scopes the "all six" obligation to exactly two things: the next-step
+# block and the one-line superpowers-counterpart reference — both are
+# asserted below, in dev-code-seed's own words.
+
+
+def _dev_code_seed_names() -> tuple[str, ...]:
+    return (
+        "claude-skill-dev-code-seed.md",
+        "claude-command-dev-code-seed.md",
+        "copilot-dev-code-seed.prompt.md",
+        "cursor-dev-code-seed.md",
+    )
+
+
+def test_dev_code_seed_templates_exist_as_package_resources():
+    base = resources.files("center_kb").joinpath("templates/init")
+    for name in _dev_code_seed_names():
+        assert base.joinpath(name).is_file(), name
+
+
+def test_dev_code_seed_carries_the_seven_steps():
+    for name in _dev_code_seed_names():
+        text = _read_init_template(name)
+        for step in ("Preflight", "Extract", "Draft", "Review", "Approve",
+                     "Flows", "Validate and publish"):
+            assert step in text, f"{name} missing step {step}"
+
+
+def test_dev_code_seed_uses_the_existing_commands_unchanged():
+    for name in _dev_code_seed_names():
+        text = _read_init_template(name)
+        assert "kb code-ingest --scaffold-svc" in text, name
+        assert "kb summarize" in text, name
+        assert "kb approve" in text, name
+        assert "kb publish" in text, name
+
+
+def test_dev_code_seed_carries_the_draft_is_a_draft_rule():
+    for name in _dev_code_seed_names():
+        text = _read_init_template(name)
+        assert "The LLM draft is a **draft**" in text, name
+        assert "approving it unread defeats the gate" in text, name
+
+
+def test_dev_code_seed_forbids_publishing_pending_and_warns_about_redo():
+    for name in _dev_code_seed_names():
+        text = _read_init_template(name)
+        assert "never publish `pending` knowledge" in text, name
+        assert "--redo" in text, name
+        assert "resets the **whole** document" in text, name
+
+
+def test_dev_code_seed_never_edits_the_generated_document():
+    for name in _dev_code_seed_names():
+        text = _read_init_template(name)
+        assert "Never edit `-code`" in text, name
+
+
+# Final review, Minor 7: step 6's hand-added `flow.*` manifest entry names
+# `summary` and the TODO marker but not `file`, which `models.
+# SectionEntry.file` requires (no default) -- an agent that omits or
+# guesses it produces exactly the confusing `kb build` error this step
+# exists to prevent.
+def test_dev_code_seed_step_6_names_the_required_file_field():
+    for name in _dev_code_seed_names():
+        text = _dev_wrapper_text(name)
+        assert "file: flows" in text, name
+
+
+def test_dev_code_seed_ends_with_the_next_step_block():
+    for name in _dev_code_seed_names():
+        text = _read_init_template(name)
+        assert "## Next step" in text, name
+        assert "State:" in text, name
+        # Task review, Important 1: spec Sec13:484 names the "(next in
+        # flow)" marker as one of three required elements of the next-step
+        # block for ALL six skills, and every one of the 20 Stage A
+        # wrappers carries it (pinned at :677 above for those five). R2
+        # licensed rewriting the canon TEXT for the one-time seed flow, not
+        # dropping this flow-agnostic marker, which applies verbatim here.
+        assert "(next in flow)" in text, name
+
+
+# Final review, Minor 8: the deferred four-way byte-identity guard for
+# dev-code-seed. Deferral reasoning ("the four forms are unlikely to
+# drift") was disproved by events on this very branch: the BA mission
+# wrappers drifted silently across forms and were caught only by
+# test_init.py:963's analogous guard. `## Steps` onward covers this
+# skill's own Steps + Hard rules + Next-step text in one slice (unlike
+# the dev-workflow SHARED-* blocks, dev-code-seed has no canon dict of
+# its own to compare against, so the first wrapper form stands in as
+# canon here — a fleet-wide edit that mutates all four identically would
+# still slip past this the same way review round 3's own note about
+# SHARED_BLOCK_TEXT describes, but it still catches the class of drift
+# that actually happened on this branch: one form silently diverging
+# from its siblings).
+def test_dev_code_seed_wrappers_are_byte_identical_from_steps_onward():
+    names = _dev_code_seed_names()
+    canon_text = _read_init_template(names[0])
+    canon = canon_text[canon_text.index("## Steps"):]
+    assert canon.strip(), "empty canon"
+    for name in names[1:]:
+        text = _read_init_template(name)
+        assert text[text.index("## Steps"):] == canon, name
+
+
+def test_claude_skill_dev_code_seed_has_expected_frontmatter():
+    text = _read_init_template("claude-skill-dev-code-seed.md")
+    assert "name: dev-code-seed\n" in text
+
+
+def test_copilot_dev_code_seed_prompt_has_agent_mode():
+    assert "mode: agent" in _read_init_template("copilot-dev-code-seed.prompt.md")
+
+
+# R2 ruling: dev-code-seed still owes spec Sec13's "all six" obligation for
+# the superpowers-counterpart line, even though it is excluded from the
+# SHARED-* canon comparison above (it has no superpowers counterpart at
+# all, so its own line names that explicitly rather than pointing at one).
+def test_dev_code_seed_wrappers_name_their_superpowers_counterpart():
+    for name in _dev_code_seed_names():
+        text = _read_init_template(name)
+        assert "Counterpart in the superpowers plugin" in text, name
+
+
+# --- Phase 5 Stage C Task C3: retire the Stage-A interim fallbacks -------
+#
+# R1 ruling (task-C3-D1-report.md): the brief's file list was wrong in both
+# directions. dev-plan/dev-execute's `-code §cmd.*` fallback paragraphs were
+# already worded non-temporally (Stage A shipped them that way), so they are
+# asserted here but not edited. dev-implement-ticket's Ground step DID carry
+# an "until Stage C ships it" sentence the brief missed, so it is added to
+# this test's skill list alongside dev-plan/dev-execute/dev-handover.
+
+
+def test_dev_wrappers_no_longer_carry_the_stage_a_interim_fallbacks():
+    for skill in ("dev-plan", "dev-execute", "dev-handover", "dev-implement-ticket"):
+        for name in _dev_wrapper_names(skill):
+            text = _read_init_template(name)
+            assert "until Stage B" not in text, name
+            assert "until Stage C" not in text, name
+            assert "this command does not exist yet" not in text, name
+
+
+def test_dev_plan_and_execute_read_cmd_sections_as_the_primary_source():
+    for skill in ("dev-plan", "dev-execute"):
+        for name in _dev_wrapper_names(skill):
+            text = _read_init_template(name)
+            assert "cmd.test" in text, name
+            assert "cmd.lint" in text, name
+
+
+def test_dev_handover_runs_svc_note_unconditionally():
+    # Task review fix: the raw-text needle used to pass in
+    # claude-command-dev-handover.md via the SHARED-HARD-RULES bullet
+    # ("`hist.*` entries are appended only by `kb svc note`") rather than
+    # via the handover step's own text (which wraps as "kb svc" / "note
+    # <service>" in that file). `_dev_wrapper_body` strips the shared
+    # blocks and normalises whitespace, so this now tests the step
+    # itself. The negative needle is pinned to the exact retired
+    # sentence, not the generic phrase "skip the step" — a legitimate
+    # repo-state fallback (added by the same fix round) is allowed to use
+    # "skip"/"step" wording of its own without tripping this assertion.
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        assert "kb svc note" in text, name
+        assert "skip the step and say so in one line in the PR" not in text, name
+
+
+def test_config_dev_yaml_no_longer_carries_the_stage_a_interim_fallback():
+    # Task review Important 4: `config-dev.yaml` ships to every adopting
+    # `dev` repo and carried its own "-svc is not available yet" claim.
+    # It sits outside `_dev_wrapper_names`'s reach (that helper only
+    # names the four wrapper forms per skill), so the fleet-wide guard
+    # above could not see it. `QUICKSTART-dev.md` carries the same
+    # retired claim twice but is out of scope here — owned by another
+    # agent in this same fix round.
+    text = _read_init_template("config-dev.yaml")
+    assert "not available yet" not in text
+    assert "until Stage C" not in text
+
+
+# --- Phase 5 Stage D Task D1: the eight BA wrappers read code knowledge --
+
+BA_WRAPPERS = (
+    "claude-skill-ba-ticket-author.md",
+    "claude-command-ba-ticket-author.md",
+    "copilot-ba-ticket-author.prompt.md",
+    "cursor-ba-ticket-author.md",
+    "claude-skill-ba-mission-plan.md",
+    "claude-command-ba-mission-plan.md",
+    "copilot-ba-mission-plan.prompt.md",
+    "cursor-ba-mission-plan.md",
+)
+
+
+def _ba_wrapper_text(name: str) -> str:
+    """A BA wrapper's whole text, whitespace-normalised.
+
+    BA wrappers carry none of the three dev-workflow SHARED-* blocks, so
+    `_dev_wrapper_body`'s block-stripping does not apply here — this is
+    the BA-side equivalent of `_dev_wrapper_text`. Several D1 needles are
+    multi-word phrases hand-wrapped across lines in eight files; matching
+    them against raw text makes the phrase untouchable by a future
+    reflow (see `_normalised`'s docstring above). Matching against
+    normalised text instead lets the prose wrap freely.
+    """
+    return _normalised(_read_init_template(name))
+
+
+def test_ba_wrappers_prefer_code_knowledge_for_names_and_meaning():
+    for name in BA_WRAPPERS:
+        text = _read_init_template(name)
+        assert "-code" in text, name
+        assert "-svc" in text, name
+
+
+def test_ba_wrappers_explain_the_division_of_the_two_documents():
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "for names" in text, name
+        assert "for meaning" in text, name
+
+
+def test_ba_wrappers_only_fall_back_to_the_placeholder_when_neither_answers():
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "%%TODO: verify against codebase%%" in text, name
+        assert "neither document answers" in text, name
+
+
+def test_ba_wrappers_fill_all_four_container_arguments():
+    # Task review Important 1: the spec (§13, §12) requires the
+    # Container(...)/Rel(...) instruction in all EIGHT wrappers, not only
+    # the four mission-plan forms the brief's own test covered — a gap
+    # that let claude-command-ba-ticket-author.md ship without it.
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Container(alias, label, technology, description)" in text, name
+        assert "Rel(" in text, name
+
+
+def test_ba_wrappers_keep_svc_out_of_acceptance_criteria():
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "never substitutes for a domain citation" in text, name
+
+
+# Final review, Minor 3: "detected technology (`dep.*`)" mis-points --
+# the per-container `Technology` value is a row inside `-code §svc.<name>`
+# (services.py's `_technology_for()`), not `dep.<ecosystem>`, which holds
+# repo-wide framework detection instead. Seven of the eight wrappers carry
+# the literal parenthetical (the eighth, claude-command-ba-ticket-author.md,
+# compresses this whole bullet to bare prose with no per-item citations at
+# all, so it never had the mis-citation to begin with). Dropped, not
+# corrected to `(svc.*)`, since that citation already appears earlier in
+# the very same sentence for the container/service name.
+def test_ba_wrappers_do_not_mis_cite_technology_to_dep_star():
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "detected technology (`dep.*`)" not in text, name
+        assert "detected technology" in text, name  # still there, just uncited
+
+
+def test_ba_wrappers_still_carry_their_pre_phase5_rules():
+    """Stage D adds; it must not remove anything Phase 4/4.1 established."""
+    for name in ("claude-skill-ba-ticket-author.md", "claude-skill-ba-mission-plan.md"):
+        text = _read_init_template(name)
+        assert "kb_context_new" in text, name
+        assert "Maturity review" in text, name
+        assert "Never fabricate" in text or "never invent" in text.lower(), name

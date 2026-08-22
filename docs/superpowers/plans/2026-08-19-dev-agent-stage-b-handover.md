@@ -90,11 +90,12 @@ both `svc.airspace-service` and `svc.postgres` render `Technology | none`
 in `services.md` — verified directly against a fresh ingest of the fixture
 in this fix pass. The `build:`-context enhancement (reading a compose
 service's `build:` block to find its own Dockerfile/source directory and
-detect frameworks from *that*, rather than only from an already-matched
-name-token file list) was deferred, per the stage's own plan. Stage C/D
-should not assume `Technology` is populated for services built from
-source; a curator amending `-svc` by hand may need to fill this in
-manually until that enhancement lands.
+detect frameworks from *that*, rather than only from a directory guessed
+from the service's own name — falling back to the image's base name when
+that guess misses, per `_technology_for` in `services.py`) was deferred,
+per the stage's own plan. Stage C/D should not assume `Technology` is
+populated for services built from source; a curator amending `-svc` by
+hand may need to fill this in manually until that enhancement lands.
 
 ## 4. The `-svc` L3 evidence is a file list only — no file contents, by deliberate security ruling
 

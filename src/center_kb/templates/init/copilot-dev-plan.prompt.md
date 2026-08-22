@@ -44,7 +44,8 @@ handover is too late, because the plan may already rest on changed content.
   the failing test.
 - **Order and close** — order tasks so each one leaves the repo green, and
   end the plan with one closing task for cross-cutting verification (full
-  suite + lint) using the commands from `-code §cmd.*`.
+  suite + lint) that names the commands it will run — `cmd.test` and
+  `cmd.lint` from `-code §cmd.*`.
 - **No `-code` document yet** — when `-code §cmd.*` has not been generated
   in this repo (`kb code-ingest` not yet run), ask the Dev once for the
   build/test/lint commands and record them at the top of the plan file, so

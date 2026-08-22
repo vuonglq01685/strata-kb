@@ -40,8 +40,10 @@ def test_scaffold_l3_holds_deterministic_code_evidence(tmp_path):
     # satisfied by document *structure*, not content -- "airspace-service"
     # appears in the `## svc.airspace-service airspace-service` heading
     # `_render_group` emits regardless of what follows it, and "```" is
-    # emitted unconditionally even when both the "files:" and "tables:"
-    # evidence lists are "none". This test would still pass with the
+    # emitted unconditionally even when both the "files (name-match
+    # heuristic; absence proves nothing):" and "tables (name-match
+    # heuristic; absence proves nothing):" evidence lists are "none".
+    # This test would still pass with the
     # entire evidence *body* empty. Assert on real evidence instead: the
     # extractor-rendered image tag, and a real file path the L3
     # name-token match rule actually found for this service
@@ -53,6 +55,48 @@ def test_scaffold_l3_holds_deterministic_code_evidence(tmp_path):
     assert "image: airspace:1.0" in l3
     assert "src/airspace/service.py" in l3
     assert "|" not in l3
+
+
+def test_scaffold_l3_tables_label_is_relabelled_as_a_name_match_heuristic(tmp_path):
+    # R6 (Stage C task review, following Stage B handover item 2): a bare
+    # "tables:" label followed by "- none" reads as the factual claim
+    # "this service touches no tables" -- but _service_evidence()'s table
+    # line is a same-name-token-superset match, which on a realistic repo
+    # (a service named for what it does, a table for what it stores)
+    # essentially never fires. On this fixture "airspace-service" (tokens
+    # {airspace, service}) doesn't match "restrictive_airspace" (tokens
+    # {restrictive, airspace}), so it renders "none" here too -- exactly
+    # the case the old label misrepresented. Relabelled to say plainly
+    # that the line is a heuristic and that absence proves nothing; the
+    # rendered list shape ("  - <id>" / "  - none" inside the fenced
+    # block) is otherwise unchanged.
+    root = build_code_repo(tmp_path)
+    _run(root, scaffold_svc=True)
+    l3 = (root / ".kb" / "demo-svc" / "services.raw.md").read_text(encoding="utf-8")
+    assert "tables (name-match heuristic; absence proves nothing):" in l3
+    assert "\ntables:\n" not in l3
+    assert "  - none" in l3
+
+
+def test_scaffold_l3_files_label_is_relabelled_as_a_name_match_heuristic(tmp_path):
+    # Minor 7 (task review, extending R6): "files:" is backed by the exact
+    # same same-name-token-superset heuristic as "tables:" (both call
+    # _name_tokens() and compare via `wanted <= ...`), so leaving "files:"
+    # bare while relabelling "tables:" alone made two lines in the same
+    # fenced block claim different epistemic strength from the identical
+    # rule -- a service whose files don't happen to follow the directory
+    # naming convention would render "files:" / "- none", reading as "this
+    # service has no files" just as wrongly as the old "tables:" did.
+    # Relabelled the same way; rendered list shape unchanged.
+    root = build_code_repo(tmp_path)
+    _run(root, scaffold_svc=True)
+    l3 = (root / ".kb" / "demo-svc" / "services.raw.md").read_text(encoding="utf-8")
+    assert "files (name-match heuristic; absence proves nothing):" in l3
+    assert "\nfiles:\n" not in l3
+    # airspace-service's own evidence has a real, non-"none" files match
+    # (src/airspace/service.py) -- prove the relabelled line still lists
+    # real matches, not just the "- none" case the tables test covers.
+    assert "src/airspace/service.py" in l3
 
 
 def test_scaffolded_sections_are_visible_to_collect_pending(tmp_path):
@@ -68,6 +112,35 @@ def test_svc_index_entry_is_tagged_code_curated(tmp_path):
     index = models.load_yaml_model(root / ".kb" / "index.yaml", models.KBIndex)
     entry = next(d for d in index.docs if d.id == "demo-svc")
     assert entry.tags == ["code", "curated"]
+
+
+# Final review, Important 2's other half: `_upsert_index_entry`'s preserve
+# logic must not stop a genuinely NEW `-svc` document's index entry from
+# getting its placeholder summary on first scaffold -- the guard added
+# there only ever protects a PRE-EXISTING entry's already-drafted summary
+# (`entry is None` skips the guard entirely and always writes the
+# placeholder passed in). Same check for the `-code` document's own entry
+# on a second, ordinary run, since both documents share `_upsert_index_
+# entry` and `-code`'s placeholder is passed fresh on every run too.
+def test_new_svc_and_code_index_entries_get_their_placeholder_summary(tmp_path):
+    root = build_code_repo(tmp_path)
+    _run(root, scaffold_svc=True)
+    index = models.load_yaml_model(root / ".kb" / "index.yaml", models.KBIndex)
+    svc_entry = next(d for d in index.docs if d.id == "demo-svc")
+    code_entry = next(d for d in index.docs if d.id == "demo-code")
+    assert svc_entry.summary == "Curated service knowledge for the demo repository."
+    assert code_entry.summary == "Generated code knowledge for the demo repository."
+
+    # A second, ordinary run (nothing drafted yet) must still show the
+    # same placeholder for both documents -- proving the guard's "equal to
+    # the caller's own placeholder" branch is exercised, not just its
+    # "empty" branch.
+    _run(root, scaffold_svc=True)
+    index_again = models.load_yaml_model(root / ".kb" / "index.yaml", models.KBIndex)
+    svc_entry_again = next(d for d in index_again.docs if d.id == "demo-svc")
+    code_entry_again = next(d for d in index_again.docs if d.id == "demo-code")
+    assert svc_entry_again.summary == svc_entry.summary
+    assert code_entry_again.summary == code_entry.summary
 
 
 def test_second_run_refreshes_l3_only_and_never_touches_reviewed_l2(tmp_path):
@@ -152,8 +225,9 @@ def test_code_document_still_builds_clean_when_scaffold_is_not_requested(tmp_pat
 # Review round 2 — Controller Ruling R42 (Critical 1): the evidence builder
 # must never read file *content*, only paths. A test that only greps for one
 # known secret string would pass against a rewritten leak, so this also
-# pins the evidence block's grammar structurally: every "files:" line is
-# exactly "  - <path>", nothing appended after the path.
+# pins the evidence block's grammar structurally: every
+# "files (name-match heuristic; absence proves nothing):" line is exactly
+# "  - <path>", nothing appended after the path.
 # ---------------------------------------------------------------------------
 
 
@@ -195,8 +269,9 @@ def test_scaffold_never_reads_file_content_into_l3_evidence(tmp_path):
     # Stronger than a secret-string grep (a test that only checks for
     # "hunter2" would pass against a rewritten leak): no planted file's
     # content ever appears in the document at all, and the evidence
-    # block's "files:" lines are structurally closed to a bare path —
-    # nothing could be appended after it even by accident.
+    # block's "files (name-match heuristic; absence proves nothing):" lines
+    # are structurally closed to a bare path — nothing could be appended
+    # after it even by accident.
     assert "connects with postgres" not in l3
     assert "service account password" not in l3
     for line in l3.splitlines():

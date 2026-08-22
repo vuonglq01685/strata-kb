@@ -1,12 +1,14 @@
 # CENTER-KB Quickstart (dev repo)
 
 This repo is a **product code** repo: it consumes the shared knowledge base
-while implementing BA tickets, and it publishes generated knowledge about
-its OWN source code (`<repo_id>-code`) back to the hub automatically —
-`.github/workflows/kb-code.yml` runs `kb code-ingest` → `kb build` →
-`kb ci-publish` on every push to `main` or `master`. Curated service
-knowledge (`<repo_id>-svc`) is not available yet: that needs Stage C
-(`dev-code-seed`, `kb svc note`). This repo never ingests documents from
+while implementing BA tickets, and it publishes two knowledge documents
+about its OWN source code back to the hub. Generated structure
+(`<repo_id>-code`) is automatic — `.github/workflows/kb-code.yml` runs
+`kb code-ingest` → `kb build` → `kb ci-publish` on every push to `main` or
+`master`. Curated responsibility knowledge (`<repo_id>-svc`) is bootstrapped
+once via `/dev-code-seed` (see "Onboarding an existing project (once)"
+below) and then accrues automatically per ticket via `kb svc note` (see
+"Keeping it current" below). This repo never ingests documents from
 outside itself — that happens in `child` repos, reviewed on the `hub`.
 
 ## Setup once
@@ -21,9 +23,16 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
    `.kb/config.yaml` with the hub's intake service URL, then ask the hub
    maintainer to add this repo under `repos:` in the hub's
    `federation/registry.yaml`. `kb-code.yml` uses both to publish
-   `<repo_id>-code` on every push to `main` or `master`; curated
-   `<repo_id>-svc` knowledge still needs Stage C (`dev-code-seed`,
-   `kb svc note`).
+   `<repo_id>-code` automatically on every push to `main` or `master` —
+   and, once `<repo_id>-svc` content is committed to that branch, the
+   very same `kb ci-publish` step republishes it too: it diffs the whole
+   `.kb/` tree, not `-code` alone, so a merged `-svc` amend rides the
+   next push out to the hub with no separate command. What CI never
+   does is *create* `-svc` content — `--scaffold-svc` is never passed
+   there. The one-time seed below still runs `kb publish --pr` by hand
+   for its first-ever publish, simply because that happens *before*
+   anything has merged to the default branch yet, so there is no push
+   for `kb-code.yml` to react to.
    Whether the hub PR `kb ci-publish` opens for `<repo_id>-code` then
    auto-merges is a **hub-side branch-protection/labeling policy** — not
    `kb-code.yml`'s own behavior — so ask the hub maintainer whether (and
@@ -32,6 +41,17 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
    construction. `<repo_id>-svc` PRs are never auto-merged: that
    document is LLM-drafted and always needs a human review before it can
    publish.
+   **One consequence that matters more than it sounds:** `kb ci-publish`
+   opens **one** hub PR per push, not one per document — the intake
+   keys the publish branch by repo id and reuses it while a PR is
+   pending, so a push carrying a regenerated `-code` alongside an
+   already-merged `-svc` amend lands both in that **same** PR. A hub
+   auto-merge rule that fires on "this is a `dev` repo's `-code` publish"
+   would therefore also auto-merge whatever `-svc` content rode along
+   with it. **The auto-merge rule must be path-scoped** — matching only
+   changed paths under `.kb/<repo_id>-code/**` — never a whole-PR or
+   whole-repo rule, or it silently defeats the `-svc` review gate this
+   two-document split exists to protect.
 4. **Connect the shared MCP server** — set two environment variables so
    your AI assistant can reach the hub's search/citation tools:
    - `CENTER_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
@@ -41,6 +61,57 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
 5. **Open this repo** in Claude Code, GitHub Copilot Chat, or Cursor — the
    `dev-implement-ticket`, `dev-design`, `dev-plan`, `dev-execute`, and
    `dev-handover` skills/commands/prompts are scaffolded for all three.
+
+## Onboarding an existing project (once)
+
+An existing product repo already has services doing real work — adopting
+center-kb should not mean documenting the system from a blank page. Run
+`/dev-code-seed` (the `dev-code-seed` skill/command/prompt) once per repo,
+and it walks seven steps:
+
+1. **Preflight** — confirms `.kb/config.yaml` has `hub:`, `repo_id:`, and
+   `intake:`; confirms this repo is allowlisted in the hub's
+   `federation/registry.yaml` (ask the hub maintainer if it isn't yet);
+   warns if the working tree is dirty.
+2. **Extract** — runs `kb code-ingest --scaffold-svc`, which regenerates
+   `<repo_id>-code` and creates a `pending` `svc.<name>` scaffold in
+   `<repo_id>-svc` for every service the extractors found, backed by
+   deterministic code evidence in each section's L3.
+3. **Draft** — runs `kb summarize <repo_id>-svc`, asking an LLM to write
+   an L2 responsibility paragraph for every scaffolded section from that
+   L3 evidence.
+4. **Review — the actual work, and it is yours.** Walk every drafted
+   `svc.*` section, L2 next to its L3 evidence, and correct it.
+   **The LLM draft is a draft, not a fact.** It can name the wrong flow,
+   miss a responsibility, or over-claim one — approving a section you
+   have not read defeats the entire point of the gate. Where a
+   responsibility touches a domain standard, cite `doc-id §section` from
+   the hub instead of restating the rule in your own words.
+5. **Approve** — `kb approve <repo_id>-svc` (or `--section <id>` for a
+   subset) flips the sections you just corrected from `summarized` to
+   `reviewed`.
+6. **Flows (optional)** — add `flow.<name>` sections for business flows
+   that cross several services, if you can describe them. Skip freely —
+   a missing flow beats a guessed one.
+7. **Validate and publish** — `kb build` **without** `--allow-pending`
+   must pass before you publish; resolve or remove anything still
+   `pending` (`--allow-pending` is only for the middle of a seed, never
+   for what you publish). Then commit and run `kb publish --pr` to open
+   a PR on the hub — plain `kb publish` would instead tag the commit and
+   poll the intake service for up to ten minutes, waiting on a
+   tag-triggered CI run this repo never has (`kb-code.yml` has no tag
+   trigger), then fail with a misleading "check the Actions run" error.
+   **That hub PR is reviewed by a BA or architect**, the same
+   as any other hub content — this is curated knowledge, not generated
+   knowledge, so it publishes through review, not auto-merge (see the
+   auto-merge policy note in step 3 of "Setup once" above — it is not
+   repeated here).
+
+Budget **10–15 min per service** for step 4 — that is the honest cost of
+a seed, and it is a one-time cost. Everything after the seed publishes is
+either regenerated automatically (`<repo_id>-code`) or accrued a few
+lines at a time (`<repo_id>-svc §hist.*`, see "Keeping it current" below)
+— no per-ticket documentation discipline required.
 
 ## Implement a ticket
 
@@ -100,6 +171,80 @@ Nothing in this pipeline merges or ships without a human:
 - **The ticket is read-only** — the agent reports placeholder resolutions
   and findings back to the BA; it never edits the ticket itself.
 
+## Keeping it current
+
+The two code-knowledge documents stay current in two different ways —
+neither needs new per-ticket discipline from you:
+
+- **`<repo_id>-code`** needs nothing from you. `kb-code.yml` re-runs
+  `kb code-ingest` → `kb build` → `kb ci-publish` on every push to the
+  default branch, so it always reflects the current commit's structure.
+- **`<repo_id>-svc`** accrues automatically at handover: `dev-handover`
+  runs `kb svc note <service> --ticket <id> --title "<title>" --refs
+  "<refs>"` for every service a ticket touched, appending one row to
+  that service's `hist.<service>` section. You never hand-edit `hist.*`
+  — it is an append-only log written only by `kb svc note`.
+
+**Responsibility text can still drift, and it self-reports rather than
+self-heals.** When `kb code-ingest --scaffold-svc` refreshes a service's
+L3 code evidence, and that section's L2 is already `reviewed`, it
+compares the old and new rendered evidence as a **whole-body,
+whitespace-trimmed** string — not a semantic diff over specific fields.
+**Any** change other than to leading/trailing whitespace flags
+`stale-risk: svc.<name>` in the ingest report: a real change (a file
+or table added or removed) will trip it, but so will a change in
+nothing but *how* the evidence is rendered, with zero code changed
+underneath (see the upgrade note just below for exactly that case).
+That is not an error and it never touches L2 — it is a flag that a
+human-reviewed sentence may no longer match the code, for a human to
+resolve. **Amend that section's L2 prose by hand and
+leave it `reviewed`** — the person correcting it is the reviewer; no
+further approval step is needed.
+
+**Do not reach for `kb summarize --redo` to fix one service.**
+`redo_reset` has no per-section scope: it resets **every** section of the
+document to `pending` and blanks every `summary`, including sections
+that were already `reviewed`, and rebuilds every L2 file from its
+scaffold — `services.md` included, not just `history.md`. It is not the
+data-loss event it sounds like **for the accrued ticket history**: the
+scaffold rebuild keeps every `|`-prefixed line, so the `hist.*` ticket
+rows in L2 survive, and `redo_reset` never rewrites `history.raw.md` at
+all, so the L3 record survives too. **It genuinely is a data-loss event
+for a service's responsibility prose, though**: a human's corrected
+`svc.*` text is wiped from both `services.md` (L2) and the manifest's
+`summary` field. `services.raw.md`'s code evidence survives, so the
+section can always be re-drafted from scratch — but the human's
+corrections themselves come back only from git, not from
+`kb summarize`. `kb summarize --redo` does not stop at the reset,
+either: it re-summarizes in the same command right away. That includes
+`hist.*` — its ticket rows survive as described above, but the
+machine-authored summary `kb svc note` wrote for that section is
+replaced by LLM prose — and every section that was `reviewed` before the
+redo loses that status and is re-summarized from scratch along with
+everything else. Use the hand-amend path above instead — `--redo` is for
+re-seeding a whole document from scratch, never for correcting one
+entry.
+
+**The first `kb code-ingest --scaffold-svc` run after upgrading past this
+release will likely report `stale-risk` for every already-`reviewed`
+`svc.*` section, even though nothing in your code changed.** This release
+relabels two L3 evidence lines in the `services` extractor — `tables:`
+and `files:` become explicit name-match heuristics, stated as such
+because their absence proves nothing — which changes the rendered L3
+bytes those sections compare against, not the code they describe. Expect
+the one-time `stale-risk` batch, open each flagged section, confirm the
+responsibility prose still holds, and amend by hand only where it does
+not; there is nothing to fix in the code itself.
+
+**A note on the `kb-summarize` wrapper's wording.** The `kb-summarize`
+skill/command/prompt scaffolded on this repo is the identical resource a
+`child` repo gets, and its own text says "after `kb ingest`" and
+"`kb ingest` generated the scaffold." Both are literally true on a
+`child` repo and **false here** — a `dev` repo never runs `kb ingest`
+at all. On this repo, read every `kb ingest` mention in that wrapper as
+`kb code-ingest --scaffold-svc`: that is the command that actually
+created the scaffold `kb-summarize` fills, in the Onboarding step above.
+
 ## Upgrading
 
 Re-run `kb init --kind dev` to pick up new templates. This only ever
@@ -121,5 +266,10 @@ you added), or QUICKSTART-DEV.md, back it up first: your edits are lost.**
 - `kb get <doc-id> <section> [--level l3]` — fetch one section at a given
   level, escalating past the summary when a value must be encoded exactly
 - `kb query "<text>"` — hybrid search over the hub's summaries
+- `kb code-ingest [--scaffold-svc]` — (re)generate `<repo_id>-code`; add
+  `--scaffold-svc` to also upsert the `<repo_id>-svc` scaffold (seed/amend)
+- `kb svc note <service> --ticket <id> --title "<title>" [--refs "..."]`
+  — append this ticket to `<repo_id>-svc §hist.<service>` (run by
+  `dev-handover`; idempotent per ticket)
 - `kb doctor --hub <url>` — check the hub is reachable and
   `.kb/config.yaml` is valid
