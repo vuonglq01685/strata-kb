@@ -28,3 +28,6 @@ build/
 
 # Git worktrees (SDD isolation)
 .worktrees/
+
+# Harness-managed agent worktrees (parallel SDD tasks)
+.claude/worktrees/

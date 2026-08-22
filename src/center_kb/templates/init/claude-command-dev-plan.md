@@ -40,10 +40,11 @@ types, since a task's implementer sees only their own task), and
 **Steps** as `- [ ]` checkboxes, step 1 always being the failing test;
 tasks are ordered so each one leaves the repo green, and the plan closes
 with one cross-cutting verification task (full suite + lint) using the
-commands from `-code §cmd.*` — until Stage B ships that section, the
-skill asks the Dev once for the build/test/lint commands and records
-them at the top of the plan file so this closing task, `dev-execute`,
-and `dev-handover` all have something to run. Ends at **GATE 2**: the
+commands from `-code §cmd.*`; when that document has not been
+generated yet in this repo (`kb code-ingest` not yet run), the skill
+asks the Dev once for the build/test/lint commands and records them at
+the top of the plan file so this closing task, `dev-execute`, and
+`dev-handover` all have something to run. Ends at **GATE 2**: the
 Dev approves the plan before any code is written, and once approved,
 option 1 in the Next-step block below is `/dev-execute <ticket-id>`;
 because the checkbox file is also the resume point, it must be complete
