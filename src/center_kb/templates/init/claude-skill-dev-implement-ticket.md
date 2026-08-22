@@ -48,9 +48,11 @@ handover is too late, because the plan may already rest on changed content.
   encoded in code or tests; then `kb_search` both own-repo documents —
   `<repo_id>-code` for structure and `<repo_id>-svc` for responsibility —
   and then read the actual code. State the rule: *knowledge orients, code
-  decides* — until Stages B and C ship, `<repo_id>-code` and
-  `<repo_id>-svc` do not exist, so skip that search and read the code
-  directly; say so in one line rather than reporting it as a KB gap.
+  decides* — skip whichever document is missing and read the code
+  directly for that half instead: `<repo_id>-code` is missing whenever
+  `kb code-ingest` has not run yet in this repo; `<repo_id>-svc` is
+  missing until Stage C ships it. Say so in one line rather than
+  reporting it as a KB gap.
 - **Placeholders** — for each `%%TODO: verify against codebase%%`, verify
   the real name against the codebase and record `placeholder → verified
   value (file:line or code-knowledge ref)`; report the list to the BA;

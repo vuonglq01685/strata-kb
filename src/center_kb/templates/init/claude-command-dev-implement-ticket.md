@@ -40,8 +40,10 @@ present, that mission's `## Sequencing` row, and stops if there is no
 Freshness re-check above; **Ground** reads resolved L2, escalating to L3
 for any value that will be encoded in code or tests, then searches
 `<repo_id>-code` and `<repo_id>-svc` for structure and responsibility
-before reading the actual code — until Stages B and C ship those
-documents, it skips that search and reads the code directly;
+before reading the actual code, skipping whichever document is missing
+and reading the code directly for that half instead — `<repo_id>-code`
+is missing whenever `kb code-ingest` has not run yet in this repo,
+`<repo_id>-svc` is missing until Stage C ships it;
 **Placeholders** verifies every
 `%%TODO: verify against codebase%%` against the codebase, reports the list
 to the BA, **never edits the ticket**, and anything unverifiable becomes

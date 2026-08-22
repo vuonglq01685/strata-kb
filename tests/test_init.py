@@ -1426,7 +1426,7 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     report = init_repo(tmp_path, "dev")
     # Pin the count too: comparing expected_files("dev") to itself lets a
     # premature extra row slip in unnoticed on both sides of the equality.
-    assert len(expected_files("dev")) == 26
+    assert len(expected_files("dev")) == 27
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
@@ -1539,4 +1539,27 @@ def test_quickstart_dev_content(tmp_path: Path):
     assert "CENTER_KB_HTTP_TOKEN" in text
     assert "federation/registry.yaml" in text
     assert "docs/impl/" in text
-    assert "cannot publish yet" in text
+    assert "`<repo_id>-svc`) is not available yet" in text
+
+
+def test_quickstart_dev_documents_the_auto_merge_policy(tmp_path: Path):
+    # Task review, Important 8: the plan never said where the auto-merge
+    # policy is documented; the shipped README pointed at "that hub's own
+    # setup", which doesn't exist anywhere. Spec Sec11 says it belongs in
+    # QUICKSTART-DEV -- this asserts it is actually there, not just
+    # claimed to be.
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    assert "auto-merg" in text.lower()
+    assert "hub-side branch-protection" in text
+
+
+def test_init_kind_dev_scaffolds_the_code_workflow(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    assert (tmp_path / ".github" / "workflows" / "kb-code.yml").is_file()
+    assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
+
+
+def test_kb_code_workflow_is_not_on_hub_child_or_ba(tmp_path: Path):
+    for kind in ("hub", "child", "ba"):
+        assert ".github/workflows/kb-code.yml" not in expected_files(kind), kind

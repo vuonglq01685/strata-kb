@@ -99,6 +99,7 @@ DEV_TEMPLATES: dict[str, str] = {
     ".cursor/mcp.json": "cursor-mcp-child.json",
     "docs/impl/.gitkeep": "gitkeep.txt",
     "QUICKSTART-DEV.md": "QUICKSTART-dev.md",
+    ".github/workflows/kb-code.yml": "kb-code.yml",
     **{
         path: resource
         for skill in (
