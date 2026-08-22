@@ -366,3 +366,172 @@ def test_check_review_record_accepts_a_filled_record():
         "Open gaps: none\n"
     )
     assert lintcore.check_review_record(text) == []
+
+
+# --- Task 3: kb-context tags must exist on the federation ---
+
+
+def test_check_context_tags_rejects_a_tag_no_document_publishes(fed_hub):
+    from center_kb.hub import HubHandle
+
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["ghost-tag"],
+    )
+
+    issues = lintcore.check_context_tags(ctx, HubHandle(root=fed_hub))
+
+    assert [i.level for i in issues] == ["error"]
+    assert "ghost-tag" in issues[0].message
+    assert "kb tags" in issues[0].message
+    # Pin the two strongest wording constraints: without these, a reword
+    # could silently drop the instruction that stops a BA from falsifying
+    # the pinned `version:` by re-running `kb context new`.
+    assert "kb context new" in issues[0].message
+    assert "deleting the tag" in issues[0].message
+
+
+def test_check_context_tags_accepts_a_published_tag(fed_hub):
+    from center_kb.hub import HubHandle
+
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["airspace", "arinc424"],
+    )
+
+    assert lintcore.check_context_tags(ctx, HubHandle(root=fed_hub)) == []
+
+
+def test_check_context_tags_ignores_casing(fed_hub):
+    from center_kb.hub import HubHandle
+
+    # searchdb lowercases tags when indexing, so a casing difference has no
+    # downstream effect and must not cost a BA an edit.
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["AirSpace"],
+    )
+
+    assert lintcore.check_context_tags(ctx, HubHandle(root=fed_hub)) == []
+
+
+def test_check_context_tags_suggests_the_nearest_real_tag(fed_hub):
+    from center_kb.hub import HubHandle
+
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["airspce"],
+    )
+
+    issues = lintcore.check_context_tags(ctx, HubHandle(root=fed_hub))
+
+    assert "airspace" in issues[0].message
+
+
+def test_check_context_tags_reports_every_unknown_tag(fed_hub):
+    from center_kb.hub import HubHandle
+
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["ghost-one", "airspace", "ghost-two"],
+    )
+
+    issues = lintcore.check_context_tags(ctx, HubHandle(root=fed_hub))
+
+    assert len(issues) == 2
+    assert "ghost-one" in issues[0].message
+    assert "ghost-two" in issues[1].message
+
+
+def test_check_context_tags_is_silent_when_the_vocabulary_is_empty(fed_hub):
+    """An empty vocabulary means the hub mirror is absent or unreadable —
+    `federation.load_federation` returns no repos when `federation/` is
+    missing, and silently skips any repo whose `index.yaml` fails to parse.
+    That is not evidence every tag in the block was invented, so this must
+    stay silent (the same epistemic position `check_context_block` already
+    takes for `hub is None`), even at the cost of letting a genuinely
+    fabricated tag through when the whole federation carries no tags.
+    Built the way `test_cli.py::test_tags_on_a_kb_with_no_tags_exits_zero...`
+    does: overwrite both fed_hub repos' index.yaml with an empty KBIndex."""
+    from center_kb import models
+    from center_kb.hub import HubHandle
+
+    for rid in ("arinc-kb", "icao-kb"):
+        models.save_yaml_model(
+            fed_hub / "federation" / rid / "index.yaml", models.KBIndex()
+        )
+
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["ghost-tag"],
+    )
+
+    assert lintcore.check_context_tags(ctx, HubHandle(root=fed_hub)) == []
+
+
+def test_check_context_tags_message_names_the_incomplete_mirror_possibility(
+    fed_hub,
+):
+    """A *partially* broken mirror (one corrupt repo among healthy ones)
+    cannot be told apart from a real typo — the vocabulary is simply
+    missing that repo's tags, with no signal left behind. The message must
+    therefore name that possibility rather than assert the tag was
+    fabricated."""
+    from center_kb.hub import HubHandle
+
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["ghost-tag"],
+    )
+
+    issues = lintcore.check_context_tags(ctx, HubHandle(root=fed_hub))
+
+    assert "index.yaml" in issues[0].message
+    assert "incomplete" in issues[0].message
+
+
+def test_check_context_tags_incomplete_mirror_caveat_appears_once(fed_hub):
+    """`Report.render` emits one line per issue, so the ~300-character
+    incomplete-mirror caveat must not repeat per bad tag — it belongs on
+    the first issue only; later issues keep the short form (tag, hint,
+    `kb tags`, fix instruction)."""
+    from center_kb.hub import HubHandle
+
+    ctx = KBContext(
+        version="abc1234",
+        refs=[KBRef(doc_id="arinc-424", section_id="5.3", repo_id="arinc-kb")],
+        tags=["ghost-one", "ghost-two"],
+    )
+
+    issues = lintcore.check_context_tags(ctx, HubHandle(root=fed_hub))
+
+    assert len(issues) == 2
+    assert "index.yaml" in issues[0].message
+    assert "incomplete" in issues[0].message
+    assert "index.yaml" not in issues[1].message
+    assert "incomplete" not in issues[1].message
+    # The short form is still complete on the second issue.
+    assert "ghost-two" in issues[1].message
+    assert "kb tags" in issues[1].message
+    assert "kb context new" in issues[1].message
+
+
+def test_check_context_block_skips_the_tag_check_without_a_hub():
+    # No hub means no vocabulary, so no conclusion about a tag is possible.
+    # The unreachable hub is already its own error; do not pile on.
+    text = (
+        'kb-context:\n  version: "abc1234"\n  refs:\n'
+        "    - arinc-kb:arinc-424 §5.3\n  tags: [ghost-tag]\n"
+    )
+
+    issues, ctx = lintcore.check_context_block(text, None)
+
+    assert ctx is not None and ctx.tags == ["ghost-tag"]
+    assert all("ghost-tag" not in i.message for i in issues)

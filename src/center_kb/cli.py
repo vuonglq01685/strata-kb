@@ -1171,6 +1171,32 @@ def context_new(
 
 
 @app.command()
+def tags(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+    ),
+) -> None:
+    """List every tag published on the hub federation — the vocabulary a
+    kb-context block may use."""
+    from center_kb import kbcontext
+    from center_kb.federation import load_federation
+
+    handle = _hub_or_exit(hub, kb_dir)
+    vocab = kbcontext.tag_vocabulary(load_federation(handle.federation_dir))
+    if not vocab:
+        # An empty vocabulary is a valid state, not a failure: a KB whose
+        # documents were ingested without --tags simply has none yet.
+        typer.echo(
+            "no tags published on the hub yet — ingest with `kb ingest --tags` "
+            "to create some"
+        )
+        return
+    for key in sorted(vocab):
+        typer.echo(vocab[key])
+
+
+@app.command()
 def resolve(
     source: str = typer.Argument(
         ..., help="File containing the kb-context block (or '-' to read from stdin)"

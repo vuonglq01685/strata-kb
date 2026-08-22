@@ -87,6 +87,7 @@ configures asset storage of its own.
 - `kb status` — list docs and their pending sections
 - `kb build` — validate the KB (manifests, tables, tokens)
 - `kb query "<question>"` — hybrid search (keyword + semantic) over the summaries
+- `kb tags` — list every tag published on the hub federation
 - `kb get <doc> <section> [--level l2|l3]` — read one section
 - `kb stats` — token counts per level
 - `kb diff <doc> --against <rev>` — changed sections vs a git rev

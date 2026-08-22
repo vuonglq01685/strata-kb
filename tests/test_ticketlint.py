@@ -920,3 +920,13 @@ def test_filled_review_record_emits_no_review_warning(
 ):
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     assert not any("Review record" in w for w in _warnings(report))
+
+
+def test_fabricated_kb_context_tag_errors(fed_hub: Path, golden_block: str):
+    """`ticketlint` and `missionlint` share one `check_context_block`, so this
+    proves the tag check reaches the ticket entry point specifically."""
+    text = _build_ticket(golden_block.replace("tags: [airspace]", "tags: [ghost-tag]"))
+
+    report = ticketlint.lint(text, _hub(fed_hub))
+
+    assert any("ghost-tag" in e for e in _errors(report)), _errors(report)

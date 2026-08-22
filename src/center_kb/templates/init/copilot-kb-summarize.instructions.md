@@ -60,4 +60,5 @@ integrity error, restore the table verbatim from the `.raw.md` file.
 - `kb publish` — mirror .kb/ (L0→L3) to the federation hub and open a PR
   (prefer the `/kb-publish` prompt in Copilot Chat) — the PR is the review gate
 - `kb resolve <file>` — resolve a kb-context block and check freshness
+- `kb tags` — list every tag published on the hub federation
 - `kb doctor` — sanity-check the setup
