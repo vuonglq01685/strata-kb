@@ -10,13 +10,13 @@ def test_context_new_prints_block_with_head_hash(fed_hub, fixture_kb, run_git):
     result = runner.invoke(
         app,
         ["context", "new", "--refs", "arinc-kb:arinc-424 §5.3",
-         "--tags", "demo,airspace", "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+         "--tags", "icao,airspace", "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
     )
     assert result.exit_code == 0, result.output
     assert "kb-context:" in result.output
     assert f'version: "{hub_head}"' in result.output
     assert "- arinc-kb:arinc-424 §5.3" in result.output
-    assert "tags: [demo, airspace]" in result.output
+    assert "tags: [icao, airspace]" in result.output
 
 
 def test_context_new_rejects_unresolvable_ref(fed_hub, fixture_kb):

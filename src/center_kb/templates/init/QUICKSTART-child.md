@@ -82,3 +82,4 @@ the hub's `federation/`.
 - `kb doctor` — sanity-check the setup
 - `kb ticket lint <file|->` — Definition-of-Ready gate for BA tickets (in
   your assistant: part of /ba-ticket-author)
+- `kb tags` — list every tag published on the hub federation

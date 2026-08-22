@@ -1122,3 +1122,13 @@ def test_placeholder_review_record_warns_but_passes(
     )
     assert report.passed is True
     assert any("placeholder" in w for w in _warnings(report))
+
+
+def test_fabricated_kb_context_tag_errors(fed_hub: Path, golden_block: str):
+    """Same check as the ticket suite's, through the mission entry point —
+    one shared implementation, two call paths, both proved."""
+    text = _build_mission(golden_block.replace("tags: [airspace]", "tags: [ghost-tag]"))
+
+    report = missionlint.lint(text, _hub(fed_hub))
+
+    assert any("ghost-tag" in e for e in _errors(report)), _errors(report)

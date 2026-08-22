@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import re
 from typing import TYPE_CHECKING
 
@@ -7,6 +8,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from center_kb.federation import FederatedRepo
     from center_kb.hub import HubHandle
 
 
@@ -16,6 +18,11 @@ class KBContextError(ValueError):
 
 class KBRefNotFoundError(KBContextError):
     """A ref does not resolve to any known section in the local KB or hub."""
+
+
+class UnknownTagError(KBContextError):
+    """A tag passed explicitly to `kb context new` is not published by any
+    document on the hub federation."""
 
 
 class KBRef(BaseModel):
@@ -51,6 +58,100 @@ def parse_ref(text: str) -> KBRef:
     return KBRef(
         doc_id=m.group("doc"), section_id=m.group("sec"), repo_id=m.group("repo")
     )
+
+
+def _collect_tags(bucket: dict[str, str], tags: list[str]) -> None:
+    """Fold `tags` into a lowercase-keyed `bucket`, first spelling winning.
+
+    The one place the tag-normalisation rule is written: `.strip()` only,
+    lowercase key, canonical (as-published) value, blanks dropped. Both
+    `tag_vocabulary` and `derive_tags` build the same kind of bucket over
+    different inputs, so they call this instead of each writing the rule —
+    the same reason `suggest_tags` is the only caller of `difflib` (see its
+    docstring for the R5 duplicated-rule note this avoids repeating).
+    """
+    for tag in tags:
+        cleaned = tag.strip()
+        if cleaned:
+            bucket.setdefault(cleaned.lower(), cleaned)
+
+
+def tag_vocabulary(repos: list["FederatedRepo"]) -> dict[str, str]:
+    """Every tag published anywhere on the federation: lowercase key ->
+    canonical spelling as recorded in that repo's `index.yaml`.
+
+    This IS the vocabulary a kb-context block may draw on. Tags live only at
+    document level (`models.IndexEntry.tags`) — `SectionEntry` and `Manifest`
+    have no tags field — so there is nothing finer to consult.
+
+    Keyed lowercase because `searchdb.py:350` indexes tags as
+    `{t.strip().lower() for t in doc.tags}`: casing has no downstream effect,
+    so validation must not care about it either. How a tag is cleaned and
+    which spelling wins on a clash is `_collect_tags`'s rule; for this
+    function the clash order is `federation.iter_entry_dirs()`'s
+    deterministic name-ascending DFS, so two repos spelling one tag
+    differently resolve the same way on every run.
+    """
+    vocab: dict[str, str] = {}
+    for repo in repos:
+        for doc in repo.index.docs:
+            _collect_tags(vocab, doc.tags)
+    return vocab
+
+
+def derive_tags(repos: list["FederatedRepo"], refs: list[KBRef]) -> list[str]:
+    """The tags of the documents these refs pin — the default content of a
+    block's `tags:` line, so no agent ever chooses one.
+
+    Granularity is the DOCUMENT, not the section, because that is the only
+    level at which tags exist. A ref whose document publishes no tags, whose
+    document is absent from its repo's `index.yaml`, or which has not been
+    repo-qualified yet contributes nothing, and none of those is an error:
+    `build_context_block` has already proved every ref resolves before
+    calling this.
+
+    Sorted by lowercase key so the rendered block is byte-stable regardless
+    of the order the caller listed `--refs`. A derived block must not change
+    because someone reordered their refs — but the spelling must also match
+    `kb tags` and `tag_vocabulary`, which resolve a clash by
+    `federation.iter_entry_dirs()`'s DFS order, not by which ref a caller
+    happened to list first. So this collects only the lowercase KEYS from
+    the refs' documents, then resolves every spelling through
+    `tag_vocabulary(repos)` — the one authority for which spelling wins.
+    Folding each ref's tags into the result as they are encountered instead
+    (the previous implementation) would let whichever ref comes first pick
+    the spelling, which can disagree with `tag_vocabulary` whenever two
+    repos spell one tag differently. Tag cleaning is `_collect_tags`'s rule
+    and is not restated here.
+    """
+    vocab = tag_vocabulary(repos)
+    by_rid = {repo.meta.repo_id: repo for repo in repos}
+    keys: set[str] = set()
+    for ref in refs:
+        repo = by_rid.get(ref.repo_id) if ref.repo_id else None
+        if repo is None:
+            continue
+        for doc in repo.index.docs:
+            if doc.id == ref.doc_id:
+                keys.update(t.strip().lower() for t in doc.tags if t.strip())
+    return [vocab[key] for key in sorted(keys)]
+
+
+def suggest_tags(tag: str, vocab: dict[str, str]) -> list[str]:
+    """Canonical spellings of the vocabulary entries nearest to `tag` — the
+    "did you mean" list behind BOTH `kb context new`'s rejection message and
+    `kb ticket lint`'s.
+
+    One home, deliberately. Writing the same `difflib` call in `kbcontext`
+    and again in `lintcore` would reintroduce the duplicated-rule defect
+    this codebase has already shipped three times (see the R5 note in
+    `svcnote.py:190-196`) — the same reason the tag rule itself lives in
+    exactly one module.
+    """
+    return [
+        vocab[key]
+        for key in difflib.get_close_matches(tag.strip().lower(), list(vocab), n=3)
+    ]
 
 
 def _extract_block(text: str) -> str:
@@ -116,6 +217,55 @@ def render(ctx: KBContext) -> str:
     return "\n".join(lines)
 
 
+def _age_label(hub: "HubHandle") -> str:
+    """The one place a hub's cache age is rendered as text, so the stale-hub
+    wording in a warning and in `_unknown_tag_message` cannot drift apart.
+
+    `age_seconds == 0.0` falls through to "unknown age" — a pre-existing
+    quirk of the truthiness check this helper simply preserves rather than
+    fixes. It is safe in practice, not because 0.0 never occurs (`hub.py:90`
+    returns exactly that on a successful pull), but because both call sites
+    here are inside `if hub.stale:`, and the only constructor that sets
+    `stale=True` (`hub.py:97`) passes either `None` or a value already
+    proven greater than `_ttl()` — never 0.0. Correcting the truthiness
+    check anyway is out of this task's scope.
+    """
+    return f"~{hub.age_seconds:.0f}s" if hub.age_seconds else "unknown age"
+
+
+def _unknown_tag_message(
+    unknown: list[str], vocab: dict[str, str], hub: "HubHandle"
+) -> str:
+    """One message naming every unknown tag with its nearest real neighbours,
+    plus — stated separately, never implied — the two situations that are not
+    a typo at all: a KB that publishes no tags yet, and a hub cache lagging
+    behind a tag that really was published."""
+    parts: list[str] = []
+    for tag in unknown:
+        cleaned = " ".join(tag.split())
+        close = suggest_tags(tag, vocab)
+        hint = f" (did you mean {', '.join(close)}?)" if close else ""
+        parts.append(f"'{cleaned}'{hint}")
+    msg = "tag not published by any document on the hub federation: " + "; ".join(parts)
+    if not vocab:
+        msg += (
+            " — the KB has no tags at all yet, or the hub mirror is empty or "
+            "unreadable: drop --tags to have them derived from the pinned "
+            "refs' documents, or ingest with `kb ingest --tags` first"
+        )
+    else:
+        msg += (
+            " — list the real ones with `kb tags`, or omit `--tags` to have "
+            "them derived from the pinned refs' documents"
+        )
+    if hub.stale:
+        msg += (
+            f" [the hub cache is stale ({_age_label(hub)}), so a tag published "
+            "very recently may be missing from it — this may not be a typo]"
+        )
+    return msg
+
+
 def build_context_block(
     hub: "HubHandle",
     refs: list[str],
@@ -169,13 +319,21 @@ def build_context_block(
     version = gitio.head_commit(gitio.git_root(hub.root))
     warning = None
     if hub.stale:
-        age = f"~{hub.age_seconds:.0f}s" if hub.age_seconds else "unknown age"
-        warning = (
-            f"[warn] hub cache is stale ({age}) — the pinned hash may lag the hub"
-        )
-    ctx = KBContext(
-        version=version,
-        refs=ref_list,
-        tags=[t.strip() for t in (tags or []) if t.strip()],
-    )
+        warning = f"[warn] hub cache is stale ({_age_label(hub)}) — the pinned hash may lag the hub"
+    requested: dict[str, str] = {}
+    _collect_tags(requested, tags or [])
+    if requested:
+        # Caller override: validated, never trusted. Canonical spelling from
+        # the index; cleaning and case-dedupe are _collect_tags' rule, not
+        # restated here. dict insertion order preserves the caller's order.
+        vocab = tag_vocabulary(repos)
+        unknown = [spelling for key, spelling in requested.items() if key not in vocab]
+        if unknown:
+            raise UnknownTagError(_unknown_tag_message(unknown, vocab, hub))
+        block_tags = [vocab[key] for key in requested]
+    else:
+        # The default: derived from what the refs actually pin, so no agent
+        # ever picks a tag.
+        block_tags = derive_tags(repos, ref_list)
+    ctx = KBContext(version=version, refs=ref_list, tags=block_tags)
     return render(ctx), warning

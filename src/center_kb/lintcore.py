@@ -390,11 +390,87 @@ def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
     return issues
 
 
+def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
+    """Every tag in the block must be one some document on the federation
+    actually publishes. An invented tag makes a ticket look grounded in a
+    vocabulary it is not grounded in, and drifts the words used to describe
+    KB content away from the words the KB indexes.
+
+    Compared by lowercase key only: `searchdb.py:350` indexes tags as
+    `{t.strip().lower() for t in doc.tags}`, so a casing difference has no
+    downstream effect and is not worth an edit.
+
+    Not called when the hub is unreachable — without a vocabulary there is
+    nothing to conclude, and `check_context_block` already reports the
+    unreachable hub as its own error.
+
+    An EMPTY vocabulary gets the same treatment: `federation.iter_entry_dirs`
+    yields nothing when `federation/` is missing, and `load_federation`
+    silently skips (logging only a warning) any repo whose `index.yaml`
+    fails to parse — so an empty vocabulary means the hub mirror is absent
+    or unreadable, not that every tag in the block was invented. This
+    accepts the same trade-off the `hub is None` branch already accepts: a
+    genuinely tagless federation lets a fabricated tag through uncaught.
+
+    A *partially* broken mirror (one corrupt repo among otherwise-healthy
+    ones) cannot be distinguished from a real typo at all — the vocabulary
+    is simply missing that repo's tags, with no signal left behind to tell
+    the two cases apart — so the per-tag error message below names that
+    possibility rather than asserting the tag was fabricated.
+    """
+    from center_kb.federation import load_federation
+
+    vocab = kbcontext.tag_vocabulary(load_federation(hub.federation_dir))
+    if not vocab:
+        return []
+    issues: list[Issue] = []
+    for tag in ctx.tags:
+        key = tag.strip().lower()
+        if key in vocab:
+            continue
+        cleaned = " ".join(tag.split())
+        close = kbcontext.suggest_tags(tag, vocab)
+        hint = f" (did you mean {', '.join(close)}?)" if close else ""
+        # A near match means this is almost certainly a typo, and correcting
+        # the spelling is strictly safer than deleting: it preserves the
+        # tag's provenance without touching `refs:` or `version:`. Without a
+        # near match there is nothing to correct TO, so deletion is the only
+        # remaining option.
+        fix = (
+            f"correcting the spelling to '{close[0]}' — this looks like a "
+            "typo, not a missing tag"
+            if close
+            else "deleting the tag from the block"
+        )
+        message = (
+            f"kb-context tag '{cleaned}' is not published by any document on "
+            f"the hub federation{hint} — list the real ones with `kb tags`."
+        )
+        if not issues:
+            # This caveat is ~300 characters of near-identical prose that
+            # would otherwise repeat once per bad tag (Report.render emits
+            # one line per issue) — state it once, on the first issue.
+            message += (
+                " A tag can also be missing because the hub mirror is "
+                "incomplete: a repo whose `index.yaml` is unreadable is "
+                "silently skipped when the federation is loaded, which "
+                "removes that repo's tags from this list."
+            )
+        message += (
+            f" Fix by {fix}; never by re-running `kb context new`, which "
+            "would rewrite the pinned version and falsify when the ticket "
+            "was grounded"
+        )
+        issues.append(Issue("error", message))
+    return issues
+
+
 def check_context_block(
     text: str, hub: "HubHandle | None"
 ) -> tuple[list[Issue], KBContext | None]:
     """Parse the kb-context block, resolve its refs at the pinned version,
-    and cross-check inline citations against it. Returns the issues and the
+    validate its tags against the federation's tag vocabulary, and
+    cross-check inline citations against it. Returns the issues and the
     parsed context (None when the block did not parse, in which case the
     ref/citation checks are meaningless and are skipped)."""
     try:
@@ -414,5 +490,6 @@ def check_context_block(
     else:
         ctx_issues, _results = check_context(text, hub)
         issues += ctx_issues
+        issues += check_context_tags(ctx, hub)
     issues += check_citation_consistency(text, ctx)
     return issues, ctx
