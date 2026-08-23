@@ -174,6 +174,31 @@ example no longer satisfies the required-heading check. If lint now
 rejects a ticket or mission that used to pass, move the real heading out
 of the code fence.
 
+v0.19.0 makes an unknown `kb-context` tag a lint error. A block's tags are
+derived from the documents your refs pin — `kb context new` fills them in
+itself, so you never choose one. Passing `--tags` still works, but every tag
+must already be published by some document on the hub; run `kb tags` to see
+the real list. This check only fires once the hub federation actually
+resolves, so it can be green on a machine where the hub mirror is empty or
+unreachable and then turn red in CI, where the real hub resolves and the
+same tag turns out unknown — a clean local lint is not a guarantee.
+
+The `ba-ticket-author` skill still asks you for tags when it calls
+`kb context new`. Anything you give it is validated against the hub and
+**replaces** the derived set outright, so answering "none" and letting the
+tags be derived instead is safe — and is the recommended answer.
+
+If lint now rejects a ticket or mission that used to pass, check the error
+message first: when it suggests a close match, that is almost always a
+typo — correct the tag's spelling in the block's `tags:` line to match it,
+which is just as safe for provenance since it touches neither `refs:` nor
+`version:`. Otherwise, delete the tag from the block's `tags:` line —
+nothing but this lint check reads them, so removing one is safe, and
+removing the last one drops the line entirely, which parses fine. Either
+way, **never re-run `kb context new`** to clear the error, since doing so
+rewrites `version:` to today's HEAD and falsifies when the ticket was
+grounded. Leave `refs:` and `version:` exactly as they are.
+
 ## CLI reference
 
 - `kb init --kind ba` — scaffold or refresh this repo
@@ -181,6 +206,8 @@ of the code fence.
   before opening a PR
 - `kb mission lint <file> [--hub <url>]` — run the mission DoR gate
   locally before opening a PR
+- `kb tags [--hub <url>]` — list every tag published on the hub, i.e. the
+  tags a `kb-context` block may carry
 - `kb doctor --hub <url>` — check the hub is reachable and
   `.kb/config.yaml` is valid (some diagnostics assume a `child`-style
   local KB and don't apply here — safe to ignore for a `ba` repo)

@@ -73,3 +73,26 @@ def test_query_omits_raw_match_line_when_snippet_empty(fed_hub, fixture_kb, monk
     )
     assert result.exit_code == 0
     assert "raw match:" not in result.output
+
+
+def test_tags_lists_the_federation_vocabulary(fed_hub, fixture_kb):
+    result = runner.invoke(
+        app, ["tags", "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.split() == ["airspace", "arinc424", "icao"]
+
+
+def test_tags_on_a_kb_with_no_tags_exits_zero_with_guidance(fed_hub, fixture_kb):
+    from center_kb import models
+
+    for rid in ("arinc-kb", "icao-kb"):
+        models.save_yaml_model(
+            fed_hub / "federation" / rid / "index.yaml", models.KBIndex()
+        )
+    result = runner.invoke(
+        app, ["tags", "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "no tags" in result.output
+    assert "kb ingest --tags" in result.output
