@@ -45,6 +45,7 @@ def test_version_and_help(kb_run, tmp_path):
     expected = [
         "init", "ingest", "summarize", "status", "build", "query", "get",
         "stats", "publish", "reindex", "resolve", "diff", "doctor", "context",
+        "tags",
     ]
     for name in expected:
         assert name in help_out, f"command '{name}' vanished from the wheel"

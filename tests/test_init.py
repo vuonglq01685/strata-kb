@@ -1691,3 +1691,20 @@ def test_quickstart_dev_orients_the_reused_kb_summarize_wrapper(tmp_path: Path):
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
     assert "read every `kb ingest` mention in that wrapper as" in text
+
+
+def test_quickstart_ba_documents_the_tag_lint_break(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    text = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
+    # The break itself, the fix, and the lookup — all three, or a BA hits a
+    # red lint with no way out.
+    assert "v0.19.0 makes an unknown `kb-context` tag a lint error" in text
+    assert "delete the tag from the block" in text
+    assert "never re-run `kb context new`" in text
+    assert "kb tags" in text
+
+
+def test_quickstart_ba_documents_that_tags_are_derived(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    text = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
+    assert "tags are derived from the documents your refs pin" in text
