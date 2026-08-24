@@ -15,49 +15,49 @@ pipeline, invoked once every task in the plan is ticked.
 
 ## Freshness re-check (run this FIRST, every time)
 
-Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
-`kb resolve <ticket-file>`. The hub may have published since last session.
+Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
+`version:` matches the ticket's block, run `kb resolve --status-only
+<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
+cache; do NOT re-pull pinned content. No cache, version mismatch, or a
+non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
+rewrite the cache, keeping its `## Placeholder map`.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
-- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned
-  content and the reason, `kb get <doc-id> <section> [--level l3]` the current
-  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to
-  a local git rev, not this repo to the hub.
+- **stale** → show BOTH versions, humans decide: the resolve gives the
+  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`
+  the current hub version. Do NOT use `kb diff` — it compares the local
+  `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
-Steps the skill enforces: re-check freshness one final time — a
-hub publish mid-implementation must surface here, not in review;
-run the full suite and linters (`cmd.test` and `cmd.lint` from
-`-code §cmd.*`, or the commands recorded at the top of the plan
-file) and paste the real output, since a completion claim without
-it is not accepted; record service history by running `kb svc
-note <service> --ticket <id> --title "<title>" --refs "<refs>"`
-for each service touched so the entries land in this same PR (if
-the ticket added or renamed a service, run `kb code-ingest` first
-— `kb svc note` validates against this repo's own committed
-`<repo_id>-code`, which CI regenerates on the hub but never writes
-back here; if this repo has no `<repo_id>-svc` yet — `dev-code-seed`
-never run — say so in one line in the PR and record the history
-there instead);
-then assemble the PR description, containing the ticket id, the
-kb-context refs so the reviewer can `kb resolve` them, the
-AC→test map, the placeholder-resolution list, every `OPEN(...)`
-finding, the verification output, and every KB gap, ambiguity, or
-contradiction found as a concrete feedback item (issue or PR on
-the owning child repo / hub); run `kb usage report --ticket <id>
---md` and paste the table into the PR under a `## Usage` heading,
-keeping the heading with a one-line reason when the command
-answers `no usage recorded yet` instead of a table; if the ticket
-changed what a service
-is responsible for, report `amend needed: <repo_id>-svc
-§svc.<name>` as a PR finding. Never edit a `reviewed` section.
-**GATE 3** the Dev opens the PR; **GATE 4** the Dev merges. **The
-agent does neither.**
-Option 1 in the Next-step block below is always "Open the PR
-yourself" with the branch name already filled in — this is the
-terminal phase of the flow, so there is no next automated command;
-a blocker takes its place instead.
+Steps the skill enforces: re-check freshness one final time — a hub
+publish mid-implementation must surface here, not in review; paste the
+freshness output (the `--status-only` output when the cache path was
+taken) into the PR; run the full suite and linters (`cmd.test` and
+`cmd.lint` from `-code §cmd.*`, or the commands recorded at the top of the
+plan file) and paste the real output, since a completion claim without it
+is not accepted; record service history by running `kb svc note <service>
+--ticket <id> --title "<title>" --refs "<refs>"` for each service touched
+so the entries land in this same PR (if the ticket added or renamed a
+service, run `kb code-ingest` first — `kb svc note` validates against this
+repo's own committed `<repo_id>-code`, which CI regenerates on the hub but
+never writes back here; if this repo has no `<repo_id>-svc` yet —
+`dev-code-seed` never run — say so in one line in the PR and record the
+history there instead); then assemble the PR description, containing the
+ticket id, the kb-context refs so the reviewer can `kb resolve` them, the
+AC→test map, the placeholder-resolution list, every `OPEN(...)` finding,
+the verification output, and every KB gap, ambiguity, or contradiction
+found as a concrete feedback item (issue or PR on the owning child repo /
+hub); run `kb usage report --ticket <id> --md` and paste the table into
+the PR under a `## Usage` heading, keeping the heading with a one-line
+reason when the command answers `no usage recorded yet` instead of a
+table; if the ticket changed what a service is responsible for, report
+`amend needed: <repo_id>-svc §svc.<name>` as a PR finding. Never edit a
+`reviewed` section. **GATE 3** the Dev opens the PR; **GATE 4** the Dev
+merges. **The agent does neither.** Option 1 in the Next-step block below
+is always "Open the PR yourself" with the branch name already filled in —
+this is the terminal phase of the flow, so there is no next automated
+command; a blocker takes its place instead.
 
 ## Hard rules
 
