@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -1428,8 +1429,8 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # premature extra row slip in unnoticed on both sides of the equality.
     # 27 (Stage A) + 4 (dev-code-seed's own four-way wrappers) + 12 (the
     # reused kb-summarize/kb-approve/kb-publish rows the seed flow needs,
-    # Stage C) = 43.
-    assert len(expected_files("dev")) == 43
+    # Stage C) + 1 (.claude/settings.json, the usage Stop hook) = 44.
+    assert len(expected_files("dev")) == 44
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
@@ -1708,3 +1709,80 @@ def test_quickstart_ba_documents_that_tags_are_derived(tmp_path: Path):
     init_repo(tmp_path, "ba")
     text = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
     assert "tags are derived from the documents your refs pin" in text
+
+
+# --- Phase 5 (kb usage measurement): the Stop hook scaffold ------------------
+
+
+def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
+    for kind in ("ba", "dev"):
+        target = tmp_path / kind
+        init_repo(target, kind)
+        settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        commands = [
+            hook["command"]
+            for group in settings["hooks"]["Stop"]
+            for hook in group["hooks"]
+        ]
+        assert commands == ["kb usage ingest-transcript --hook-stdin"], kind
+
+
+def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):
+    # A hub or child repo authors no tickets, so every row would be
+    # unattributed — 0.6s per turn for noise.
+    for kind in ("hub", "child"):
+        assert ".claude/settings.json" not in expected_files(kind), kind
+
+
+def test_settings_json_is_protected_from_a_second_init(tmp_path: Path):
+    # initcmd overwrites any file outside PROTECTED_FILES, and a dev's own
+    # hooks live in this file.
+    init_repo(tmp_path, "dev")
+    path = tmp_path / ".claude" / "settings.json"
+    path.write_text('{"hooks": {}, "mine": true}', encoding="utf-8")
+
+    report = init_repo(tmp_path, "dev")
+
+    assert ".claude/settings.json" in report.skipped
+    assert json.loads(path.read_text(encoding="utf-8"))["mine"] is True
+
+
+def test_quickstart_ba_documents_the_usage_hook(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    text = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
+    assert "kb usage report" in text
+    assert "adds about 0.6s per turn" in text
+    assert "kb usage ingest-transcript" in text
+    # The ledger is the record; the HTML is derived. Someone who commits the
+    # HTML and edits it has edited nothing that survives the next report run.
+    assert "generated, not a record" in text
+
+
+def test_quickstart_dev_documents_the_usage_hook(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    text = " ".join((tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8").split())
+    assert "kb usage report" in text
+    assert "adds about 0.6s per turn" in text
+
+
+def test_quickstarts_document_the_ingest_errors_log(tmp_path: Path):
+    # _usage_log_error's own docstring calls this file the ONLY diagnostic
+    # channel a silent Stop hook has; a QUICKSTART that never names it leaves
+    # a dev with no way to discover why the ledger isn't growing.
+    for kind, fname in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
+        target = tmp_path / kind
+        init_repo(target, kind)
+        text = (target / fname).read_text(encoding="utf-8")
+        assert ".kb/usage/ingest-errors.log" in text, kind
+
+
+def test_quickstarts_force_clause_names_all_three_protected_files(tmp_path: Path):
+    # The pre-branch text said '--force overwrites them too' (all protected
+    # files); the rewrite named only settings.json after '--force', losing
+    # "too"'s antecedent — and --force really does replace .kb/config.yaml
+    # (kind, repo_id, asset_store) too, so the warning undersold the risk.
+    for kind, fname in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
+        target = tmp_path / kind
+        init_repo(target, kind)
+        text = " ".join((target / fname).read_text(encoding="utf-8").split())
+        assert "--force` replaces all three outright" in text, kind
