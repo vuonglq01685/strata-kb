@@ -305,7 +305,7 @@ SHARED_BLOCKS = {
 # deletes or rewords a hard rule now fails here, where the pairwise-only
 # version did not.
 SHARED_BLOCK_TEXT = {
-    'SHARED-FRESHNESS': "## Freshness re-check (run this FIRST, every time)\n\nRe-resolve the ticket's `kb-context` first: `kb_resolve`, else\n`kb resolve <ticket-file>`. The hub may have published since last session.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned\n  content and the reason, `kb get <doc-id> <section> [--level l3]` the current\n  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to\n  a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
+    'SHARED-FRESHNESS': "## Freshness re-check (run this FIRST, every time)\n\nCheap check first: when `docs/impl/<ticket-id>-context.md` exists and its\n`version:` matches the ticket's block, run `kb resolve --status-only\n<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the\ncache; do NOT re-pull pinned content. No cache, version mismatch, or a\nnon-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then\nrewrite the cache, keeping its `## Placeholder map`.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
     'SHARED-HARD-RULES': '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
     'SHARED-NEXT-STEP': '## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n',
 }
@@ -1069,6 +1069,12 @@ def test_config_dev_yaml_no_longer_carries_the_stage_a_interim_fallback():
     assert "until Stage C" not in text
 
 
+def test_quickstart_dev_documents_the_context_cache():
+    text = _read_init_template("QUICKSTART-dev.md")
+    assert "<ticket-id>-context.md" in text
+    assert "docs/impl/.gitignore" in text
+
+
 # --- Phase 5 Stage D Task D1: the eight BA wrappers read code knowledge --
 
 BA_WRAPPERS = (
@@ -1176,12 +1182,36 @@ def test_shared_freshness_keeps_the_kb_diff_trap_and_the_three_verdicts():
     assert "Do NOT use `kb diff`" in block
 
 
-def test_shared_freshness_shed_a_third_of_its_length():
-    # 952 characters before the round; 598 after the C5 rewrite, then 605
-    # once the final review restored the "Do NOT use" imperative. The ceiling
-    # leaves room for a later clarifying sentence and still fails on a
-    # silent re-expansion back to the old explanatory paragraph.
-    assert len(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"]) <= 660
+# --- C1: the freshness re-check reuses the context cache --------------------
+
+
+def test_shared_freshness_prefers_the_cache_and_status_only():
+    block = _normalised(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"])
+    for needle in ("--status-only", "-context.md", "`version:`",
+                   "rewrite the cache"):
+        assert needle in block, needle
+
+
+def test_dev_implement_ticket_writes_the_context_cache():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        text = _dev_wrapper_body(name)
+        assert "docs/impl/<ticket-id>-context.md" in text, name
+        assert "Placeholder map" in text, name
+
+
+def test_dev_handover_pastes_the_status_only_output():
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        assert "--status-only" in text, name
+
+
+def test_shared_freshness_stays_within_the_c1_ceiling():
+    # C5 shrank the block to 605 characters; C1 (context cache) grew it
+    # back to 882 because the *algorithm* changed — cache + --status-only
+    # first, full resolve only on miss — not because the wording got loose.
+    # The ceiling still fails on a silent re-expansion into explanatory
+    # paragraphs.
+    assert len(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"]) <= 900
 
 
 def test_shared_hard_rules_were_not_touched_by_the_c5_round():

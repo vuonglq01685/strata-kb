@@ -100,6 +100,7 @@ DEV_TEMPLATES: dict[str, str] = {
     ".claude/settings.json": "claude-settings-usage.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
     "docs/impl/.gitkeep": "gitkeep.txt",
+    "docs/impl/.gitignore": "impl-gitignore.txt",
     "QUICKSTART-DEV.md": "QUICKSTART-dev.md",
     ".github/workflows/kb-code.yml": "kb-code.yml",
     **{

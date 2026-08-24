@@ -151,7 +151,9 @@ def resolve_refs(hub: "HubHandle", ctx: KBContext) -> list[ResolvedRef]:
     return out
 
 
-def render_resolved(results: list[ResolvedRef]) -> str:
+def render_resolved(
+    results: list[ResolvedRef], include_content: bool = True
+) -> str:
     parts: list[str] = []
     for r in results:
         rev = r.pinned_rev or "?"
@@ -163,7 +165,7 @@ def render_resolved(results: list[ResolvedRef]) -> str:
                 f"!! {r.reason} — run `kb diff {r.ref.doc_id} --against {rev}` "
                 "to see the changes"
             )
-        if r.content:
+        if include_content and r.content:
             parts.append(r.content)
         parts.append("")
     return "\n".join(parts).strip()

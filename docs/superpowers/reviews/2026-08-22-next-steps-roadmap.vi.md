@@ -19,7 +19,8 @@ Ký hiệu ưu tiên: A (vá lỗi dữ liệu) → B (đo lường) → C (tố
   *Kết quả 2026-08-23 — repo `KS-BA` (hub `KS-Center-KB`): 2 ticket, 0 mission, cả hai `DoR: PASS`, không tag nào ngoài vocabulary; hai block đều không có dòng `tags:` nên không phải sửa file nào. Canary (bản copy có `tags: [ghost-tag]`) bị lint chặn, xác nhận check thật sự chạy. A2 do đó ship luôn ở mức `error`, không cần bước nâng cấp.*
 - [x] **A4 — Sửa skill text `ba-ticket-author` + `ba-mission-plan`** (~0.5 ngày — gom vào ĐỢT TEMPLATE CHUNG, xem cuối file)
   Intake: tags từ BA chỉ là từ khoá tìm kiếm. Pin: bỏ "(+ tags)" tự do — "tags do `kb context new` tự suy từ section đã pin; không bao giờ tự đặt".
-- [ ] **A5 — (tuỳ chọn, rẻ) CLI `kb tags`** liệt kê vocabulary từ hub. CLI mới thì được; tuyệt đối không thêm MCP tool thứ 6.
+- [x] **A5 — (tuỳ chọn, rẻ) CLI `kb tags`** liệt kê vocabulary từ hub. CLI mới thì được; tuyệt đối không thêm MCP tool thứ 6.
+  *`kb tags` đã tồn tại từ trước tại `cli.py` (phát hiện 2026-08-24 khi khảo sát C1) — không tốn effort mới.*
 
 ## B — Đo token + model cho vòng đời ticket, xem được ngay trong repo (hạng mục mới)
 
@@ -46,8 +47,9 @@ Mục tiêu: với mỗi ticket, trả lời được "viết nó tốn bao nhi�
 
 B quyết định thứ tự trong C — cắt chỗ số liệu chỉ ra là đau nhất. Theo phân tích tĩnh, dự đoán xếp hạng như sau:
 
-- [ ] **C1 — Context cache file cho pipeline Dev** (~1 ngày; dự đoán giá trị lớn nhất)
+- [x] **C1 — Context cache file cho pipeline Dev** (~1 ngày; dự đoán giá trị lớn nhất)
   Freshness re-check chạy ở đầu cả 5 skill và `kb resolve` trả **toàn văn** nội dung pinned mỗi lần → một ticket kéo cùng nội dung ~4–5 lần. Fix: orchestrator ghi `docs/impl/<ticket-id>-context.md` (nội dung resolved + placeholder map) một lần; các phase sau chỉ cần verdict qua flag CLI mới `kb resolve --status-only`; chỉ resolve đầy đủ lại khi verdict ≠ ok hoặc version đổi. **Không** thêm param vào MCP tool `kb_resolve` — schema đổi là vỡ golden; CLI flag thì an toàn.
+  *Batch 4 xong 2026-08-24, spec `2026-08-24-c1-context-cache-design.md`. Lệch so với spec: cache file format ship là tập con của spec §2 — wrapper chỉ dặn ghi `version:` + resolve output + `## Placeholder map`; banner "do not hand-edit" và dòng `resolved:` không đưa vào skill text để tiết kiệm token; `version:` là trường duy nhất load-bearing. Ngoài điểm đó implementation khớp spec; full suite (1828 passed, 5 skipped) và `git diff main...HEAD -- tests-gate/golden src/center_kb/mcp.py` (rỗng) xác nhận golden/MCP không đổi.*
 - [x] **C2 — Maturity review: round 2–3 chỉ verify gap** (skill text — ĐỢT TEMPLATE CHUNG)
   Hiện tối đa 2 reviewer × 3 round = 6 lần đọc toàn văn. Sửa: round 1 giữ 2 reviewer đầy đủ; round 2–3 một reviewer, nhận đúng gap list + đoạn đã sửa, chấm pass/fail từng gap. Tiết kiệm ~40–60% chi phí review, vẫn giữ two-perspective ở round 1.
 - [x] **C3 — dev-execute: subagent mỗi task chỉ nhận task block của nó** (skill text — ĐỢT TEMPLATE CHUNG)
