@@ -18,41 +18,45 @@ and `requesting-code-review` folded in.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Before anything else, re-resolve the ticket's `kb-context`: call the MCP tool
-`kb_resolve` when available, otherwise `kb resolve <ticket-file>` (or
-`kb resolve - < ticket.md`). The hub may have published since the last session,
-so a ref that was `ok` yesterday can be `stale` today — checking only at
-handover is too late, because the plan may already rest on changed content.
+Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
+`kb resolve <ticket-file>`. The hub may have published since last session.
 
-- **broken** → STOP. This is a blocker: report to the BA that the ticket needs
-  re-pinning. Never implement around a citation that no longer resolves.
-- **stale** → show BOTH versions and let the humans decide: `kb resolve` returns
-  the pinned content plus the reason; `kb get <doc-id> <section> [--level l3]`
-  returns the CURRENT hub version. Do NOT use `kb diff` — it compares the local
-  `.kb/` worktree against a local git rev, and this repo holds no local copy of
-  the cited domain document.
+- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
+  citation that no longer resolves.
+- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned
+  content and the reason, `kb get <doc-id> <section> [--level l3]` the current
+  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to
+  a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 Steps the skill enforces: **Isolate** the work onto a dedicated branch
 and, where the environment supports it, a git worktree named from the
-ticket id. Never work directly on the default branch. Then, per unticked
-task, in its own subagent where the runtime supports it (sequential
-passes otherwise): write the test, run it, and observe it fail — a test
-that was never seen red proves nothing; write the minimum code and get
-it passing; hold a **review checkpoint** (pass/fail, not a score)
-confirming the test actually exercises that AC, every standard-derived
-value is verbatim with a citation comment, the change follows the repo's
-existing conventions, and nothing else broke; then **verify** by running
-`cmd.test` and `cmd.lint` (from `-code §cmd.*`, or the commands recorded
-at the top of the plan file) and show the output; then tick the
-checkboxes and commit the task. When a test fails unexpectedly,
-reproduce it, find the actual cause, and fix the cause. Never edit a
-test to make it green, never widen a tolerance to pass, and never mark a
-task done with a failing test. When an AC turns out not to be
-implementable as written, stop that task, return to `dev-design`, and
-record `OPEN(BA)` — never decide the ambiguity yourself, and never push
-past it because the code is half written. The skill is resumable: a
-later run re-checks freshness, re-reads the plan, and continues at the
+ticket id. Never work directly on the default branch. Then, per
+unticked task, in its own subagent where the runtime supports it
+(sequential passes otherwise), handed exactly its own task block from
+the plan, that task's **Interfaces** entry, and the `cmd.test` /
+`cmd.lint` commands (from `-code §cmd.*`, or the commands recorded at
+the top of the plan file) — not the rest of the plan and not the
+ticket; when the task block does not carry something the implementer
+needs, the plan is incomplete, so stop and send it back to `dev-plan`
+rather than reading wider: write the test, run it, and observe it
+fail — a test that was never seen red proves nothing; write the
+minimum code and get it passing; hold a **review checkpoint**
+(pass/fail, not a score) confirming the test actually exercises that
+AC, every standard-derived value is verbatim with a citation comment,
+the change follows the repo's existing conventions, and nothing else
+broke; then **verify** by running `cmd.test` and `cmd.lint` (the
+commands it was handed) and show the output; then commit the task's
+changes — ticking its checkboxes in the plan file happens next, back
+in the orchestrator, since the plan file itself is never handed to
+the subagent. When a test fails unexpectedly, reproduce it, find the
+actual cause, and fix the cause. Never edit a test to make it green,
+never widen a tolerance to pass, and never mark a task done with a
+failing test. When an AC turns out not to be implementable as
+written, stop that task, return to `dev-design`, and record
+`OPEN(BA)` — never decide the ambiguity yourself, and never push past
+it because the code is half written. The skill is resumable: a later
+run re-checks freshness, re-reads the plan, and continues at the
 first unticked task. Once every task is ticked, option 1 in the
 Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
 `/dev-execute <ticket-id>` to continue.

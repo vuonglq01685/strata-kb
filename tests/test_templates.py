@@ -305,7 +305,7 @@ SHARED_BLOCKS = {
 # deletes or rewords a hard rule now fails here, where the pairwise-only
 # version did not.
 SHARED_BLOCK_TEXT = {
-    'SHARED-FRESHNESS': "## Freshness re-check (run this FIRST, every time)\n\nBefore anything else, re-resolve the ticket's `kb-context`: call the MCP tool\n`kb_resolve` when available, otherwise `kb resolve <ticket-file>` (or\n`kb resolve - < ticket.md`). The hub may have published since the last session,\nso a ref that was `ok` yesterday can be `stale` today — checking only at\nhandover is too late, because the plan may already rest on changed content.\n\n- **broken** → STOP. This is a blocker: report to the BA that the ticket needs\n  re-pinning. Never implement around a citation that no longer resolves.\n- **stale** → show BOTH versions and let the humans decide: `kb resolve` returns\n  the pinned content plus the reason; `kb get <doc-id> <section> [--level l3]`\n  returns the CURRENT hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree against a local git rev, and this repo holds no local copy of\n  the cited domain document.\n- **ok** → continue.\n",
+    'SHARED-FRESHNESS': "## Freshness re-check (run this FIRST, every time)\n\nRe-resolve the ticket's `kb-context` first: `kb_resolve`, else\n`kb resolve <ticket-file>`. The hub may have published since last session.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned\n  content and the reason, `kb get <doc-id> <section> [--level l3]` the current\n  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to\n  a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
     'SHARED-HARD-RULES': '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
     'SHARED-NEXT-STEP': '## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n',
 }
@@ -1158,3 +1158,185 @@ def test_ba_wrappers_still_carry_their_pre_phase5_rules():
         assert "kb_context_new" in text, name
         assert "Maturity review" in text, name
         assert "Never fabricate" in text or "never invent" in text.lower(), name
+
+
+# --- C5: a shorter freshness block, the hard rules left alone ---------------
+
+
+def test_shared_freshness_keeps_the_kb_diff_trap_and_the_three_verdicts():
+    block = _normalised(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"])
+    for needle in ("**broken**", "**stale**", "**ok**", "kb diff", "kb_resolve",
+                   "re-pin", "--level l3"):
+        assert needle in block, needle
+    # Final review F4: "Do NOT use `kb diff`" was trimmed to the bare
+    # fragment "NOT `kb diff`", losing the imperative. Guard the full
+    # restored phrase here, at this test's own site, rather than only
+    # via test_dev_implement_ticket_uses_resolve_and_get_never_diff's
+    # replace() call.
+    assert "Do NOT use `kb diff`" in block
+
+
+def test_shared_freshness_shed_a_third_of_its_length():
+    # 952 characters before the round; 598 after the C5 rewrite, then 605
+    # once the final review restored the "Do NOT use" imperative. The ceiling
+    # leaves room for a later clarifying sentence and still fails on a
+    # silent re-expansion back to the old explanatory paragraph.
+    assert len(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"]) <= 660
+
+
+def test_shared_hard_rules_were_not_touched_by_the_c5_round():
+    """C5 shrinks the freshness block only.
+
+    Measured 2026-08-24: regrouping the 14 hard rules into 8 saves 5% of
+    the block, 16% under the most aggressive rewording that still carries
+    all 14 constraints. Both are too little to justify a diff in which a
+    rewritten rule and a deleted rule look identical. This test pins the
+    decision: the block's length and bullet count stay where they are, so
+    a later "tidy-up" has to argue with the numbers first.
+    """
+    block = SHARED_BLOCK_TEXT["SHARED-HARD-RULES"]
+    bullets = [line for line in block.splitlines() if line.startswith("- ")]
+    assert len(bullets) == 14, len(bullets)
+    assert len(block) == 1531, len(block)
+
+
+# --- C3: the per-task subagent gets its task, not the whole plan ------------
+
+
+def test_dev_execute_hands_the_subagent_only_its_own_task():
+    for name in _dev_wrapper_names("dev-execute"):
+        text = _dev_wrapper_body(name)
+        assert "task block" in text, name
+        assert "Interfaces" in text, name
+        assert "the plan is incomplete" in text, name
+        assert "dev-plan" in text, name
+
+
+# --- C4: search budget discipline ------------------------------------------
+
+SEARCH_BUDGET_WRAPPERS = BA_WRAPPERS + _dev_wrapper_names("dev-implement-ticket")
+
+
+def test_search_budget_is_a_number_not_a_gesture():
+    # Final review F10: "500" and "800" checked separately are each
+    # satisfiable on their own (a version number, a line count) without
+    # the budget literal actually surviving. The literal is the en dash
+    # range "500–800", confirmed present as one token in all 12
+    # wrappers; assert on that instead of the two halves.
+    for name in SEARCH_BUDGET_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert "500–800" in text, name
+        assert "within the token budget" not in text, name
+
+
+def test_search_budget_names_what_the_budget_buys():
+    for name in SEARCH_BUDGET_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert "kb_get_section" in text, name
+        assert "encoded in code" in text, name
+
+
+# --- B4: the handover carries the ticket's measured cost --------------------
+#
+# The four ba-ticket-author wrappers are already enumerated at the top of
+# this file as BA_TICKET_AUTHOR_TEMPLATES (line 14) — reuse it rather than
+# spelling the names a second time.
+
+
+def test_dev_handover_reports_usage_in_the_pr():
+    for name in _dev_wrapper_names("dev-handover"):
+        text = _dev_wrapper_body(name)
+        assert "kb usage report" in text, name
+        assert "## Usage" in text, name
+        # An empty ledger is a finding, not a reason to drop the section.
+        assert "no usage recorded yet" in text, name
+
+
+def test_ba_ticket_author_reports_usage_at_handover():
+    for name in BA_TICKET_AUTHOR_TEMPLATES:
+        text = _ba_wrapper_text(name)
+        assert "kb usage report" in text, name
+        # The BA repo's ledger is only half the ticket's lifetime cost.
+        assert "authoring cost" in text, name
+
+
+# --- A4: kb-context tags are derived by the engine, never authored ----------
+
+
+def test_ba_wrappers_never_pass_tags_to_kb_context_new():
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert 'kb context new --refs "<refs>" --tags' not in text, name
+        assert "(+ tags)" not in text, name
+
+
+def test_ba_wrappers_say_who_owns_the_tags():
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Tags are NOT yours to set" in text, name
+        assert "hub vocabulary" in text, name
+
+
+def test_ba_wrappers_keep_tags_as_a_search_filter():
+    """The Search step's `kb query --tags` line survives; only the pin
+    path lost tags.
+
+    Scoped to the 7 wrappers that actually carry a Search step —
+    `BA_TICKET_AUTHOR_FULL_TEMPLATES` union `BA_MISSION_PLAN_TEMPLATES`.
+    `claude-command-ba-ticket-author.md` never had a `kb query` line at
+    all, so it is excluded rather than guarded by nothing. Asserting
+    the full literal (not just "kb query" and "--tags" separately)
+    matters: Task 5's own added sentence ends "...are search keywords
+    for `kb query --tags`, nothing more.", which would otherwise
+    satisfy the weaker two-piece assertion by itself.
+    """
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES + BA_MISSION_PLAN_TEMPLATES:
+        text = _ba_wrapper_text(name)
+        assert 'kb query "<text>" --tags <tags>' in text, name
+
+
+# --- C2: review rounds 2-3 verify gaps, they do not re-read the draft -------
+
+
+def test_ba_wrappers_use_a_single_gap_verifier_for_rounds_two_and_three():
+    for name in BA_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "gap-verifier" in text, name
+
+
+def test_ba_wrappers_keep_round_one_two_perspective():
+    """C2 shrinks rounds 2-3 only; round 1 keeps both reviewers.
+
+    Scoped to the 7 full-shaped wrappers, not all of BA_WRAPPERS:
+    `claude-command-ba-ticket-author.md` never named either reviewer
+    role by this exact phrase (it is the short wrapper with "no
+    maturity detail"), and C2's Step 6 edit for that file adds only
+    the `gap-verifier` clause, not these two phrases. Same asymmetry
+    as `test_ba_wrappers_do_not_let_the_gap_verifier_invent_a_score`.
+    """
+    for name in ("claude-skill-ba-ticket-author.md", "claude-skill-ba-mission-plan.md",
+                 "copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md",
+                 "copilot-ba-mission-plan.prompt.md", "cursor-ba-mission-plan.md",
+                 "claude-command-ba-mission-plan.md"):
+        text = _ba_wrapper_text(name)
+        assert "Business-coverage reviewer" in text, name
+        assert "Dev-implementability reviewer" in text, name
+
+
+def test_ba_wrappers_do_not_let_the_gap_verifier_invent_a_score():
+    """Final-review F2: the old justification ("it does not score an
+    axis, having not read enough of the draft to score one") was true
+    only for a genuinely dispatched subagent, and false for the two
+    dialects that run the gap-verifier pass themselves — a
+    self-passing agent HAS read the whole draft. All 7 wrappers now
+    carry an instruction instead of that description, so the rule
+    holds regardless of which branch a given runtime takes.
+    """
+    for name in ("claude-skill-ba-ticket-author.md", "claude-skill-ba-mission-plan.md",
+                 "copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md",
+                 "copilot-ba-mission-plan.prompt.md", "cursor-ba-mission-plan.md",
+                 "claude-command-ba-mission-plan.md"):
+        text = _ba_wrapper_text(name)
+        assert "does not score an axis" not in text, name
+        assert "do **not** re-score an axis in this pass" in text, name
+        assert "carry the previous round's score forward" in text, name

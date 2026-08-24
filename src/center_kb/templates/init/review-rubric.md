@@ -1,9 +1,11 @@
 # Maturity review rubric — missions & tickets
 
 Used by the maturity-review step of `ba-mission-plan` and
-`ba-ticket-author`. Two reviewers score the document independently —
-one axis each. Edit this file to tune the criteria for your domain;
-the skills read it at review time.
+`ba-ticket-author`. Round 1 is the two-reviewer scoring pass: two
+reviewers score the document independently, one axis each. Rounds 2
+and 3 are a single `gap-verifier` pass instead — it returns pass/fail
+per gap and does not score. Edit this file to tune the criteria for
+your domain; the skills read it at review time.
 
 ## Business coverage
 
@@ -62,3 +64,7 @@ The score is the LOWEST level whose criteria are ALL satisfied.
 Never average across checklist items. Threshold to stop the review
 loop: both axes ≥ 4. Results are appended to the document's
 `## Review record` section, one row per round.
+
+An axis's score rises only when every gap of that axis passes the
+round 2/3 `gap-verifier` pass; otherwise it carries forward unchanged
+from the previous round.
