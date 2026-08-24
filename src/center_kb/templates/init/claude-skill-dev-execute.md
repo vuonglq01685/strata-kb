@@ -55,8 +55,11 @@ rewrite the cache, keeping its `## Placeholder map`.
   2. write the minimum code → run → pass.
   3. **review checkpoint** — pass/fail, not a score: does the test
      actually exercise that AC; is every standard-derived value
-     verbatim with a citation comment; does the change follow the
-     repo's existing conventions; did anything else break.
+     verbatim with a citation comment; does the change follow
+     `docs/conventions/<lang>.md` plus `docs/conventions/<lang>.local.md`
+     overrides (local wins; where either conflicts with the repo's
+     existing dominant style, the repo wins locally — record the
+     conflict as a finding for the PR body); did anything else break.
   4. **verify** — run `cmd.test` and `cmd.lint` (the commands you were
      handed) and **show the output**.
   5. **commit the task's changes.** Ticking its checkboxes in the plan

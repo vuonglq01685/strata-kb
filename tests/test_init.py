@@ -1816,3 +1816,68 @@ def test_quickstarts_document_the_reingest_repair(tmp_path: Path):
         text = " ".join((target / name).read_text(encoding="utf-8").split())
         assert "Re-ingesting is always safe" in text, kind
         assert "kb usage ingest-transcript" in text, kind
+
+
+# --- Batch 5 (D conventions pack): dev-kind post-step -----------------------
+
+
+def test_init_dev_scaffolds_conventions_for_detected_language(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    report = init_repo(tmp_path, "dev")
+    assert (tmp_path / "docs" / "conventions" / "python.md").is_file()
+    assert (tmp_path / "docs" / "conventions" / "python.local.md").is_file()
+    assert (tmp_path / ".cursor" / "rules" / "coding-python.mdc").is_file()
+    assert (
+        tmp_path / ".github" / "instructions" / "coding-python.instructions.md"
+    ).is_file()
+    claude = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+    assert claude.startswith("<!-- kb:conventions -->")
+    assert "docs/conventions/python.md" in report.created
+    assert "CLAUDE.md" in report.created
+    # only the detected language
+    assert not (tmp_path / "docs" / "conventions" / "ts.md").exists()
+
+
+def test_init_dev_reinit_preserves_local_conventions_and_user_claude_md(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    init_repo(tmp_path, "dev")
+    local = tmp_path / "docs" / "conventions" / "python.local.md"
+    local.write_text("my overrides\n", encoding="utf-8")
+    claude = tmp_path / "CLAUDE.md"
+    user_text = "# My notes\n" + claude.read_text(encoding="utf-8")
+    claude.write_text(user_text, encoding="utf-8")
+    base = tmp_path / "docs" / "conventions" / "python.md"
+    base.write_text("stale\n", encoding="utf-8")
+    # --force must refresh the base but STILL not touch local or CLAUDE.md
+    report = init_repo(tmp_path, "dev", force=True)
+    assert local.read_text(encoding="utf-8") == "my overrides\n"
+    assert claude.read_text(encoding="utf-8") == user_text  # marker present
+    assert "stale" not in base.read_text(encoding="utf-8")
+    assert (
+        "docs/conventions/python.local.md (local overrides — never refreshed)"
+        in report.skipped
+    )
+
+
+def test_init_dev_without_manifests_notes_and_skips_conventions(tmp_path: Path):
+    report = init_repo(tmp_path, "dev")
+    assert not (tmp_path / "docs" / "conventions").exists()
+    assert not (tmp_path / "CLAUDE.md").exists()
+    assert any("no language manifests detected" in n for n in report.notes)
+
+
+def test_expected_files_unchanged_by_conventions_pack():
+    # conventions are a post-step, never template-map rows (spec: Scope/Out)
+    for kind in ("hub", "child", "ba", "dev"):
+        assert not any("conventions" in rel for rel in expected_files(kind))
+        assert "CLAUDE.md" not in expected_files(kind)
+
+
+def test_init_non_dev_kinds_gain_no_conventions(tmp_path: Path):
+    for kind in ("hub", "child", "ba"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        (repo / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        init_repo(repo, kind)
+        assert not (repo / "docs" / "conventions").exists(), kind
+        assert not (repo / "CLAUDE.md").exists(), kind

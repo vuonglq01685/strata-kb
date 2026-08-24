@@ -45,11 +45,19 @@ the commands it will run — `cmd.test` and `cmd.lint` from
 generated yet in this repo (`kb code-ingest` not yet run), the skill
 asks the Dev once for the build/test/lint commands and records them at
 the top of the plan file so this closing task, `dev-execute`, and
-`dev-handover` all have something to run. Ends at **GATE 2**: the
-Dev approves the plan before any code is written, and once approved,
-option 1 in the Next-step block below is `/dev-execute <ticket-id>`;
-because the checkbox file is also the resume point, it must be complete
-enough for a different session to pick up cold.
+`dev-handover` all have something to run; and when the repo has no
+linter at all to record as `cmd.lint`, the plan's first task sets one
+up from the *Linting* section of `docs/conventions/<lang>.md` (plus
+`docs/conventions/<lang>.local.md` overrides) and records the command
+it establishes as `cmd.lint` — its red step is running that command
+and watching it fail because no linter is configured, and the initial
+config is scoped so `cmd.lint` passes on the untouched tree, with
+tightening it to full strength recorded as a finding for the PR body.
+Ends at **GATE 2**: the Dev approves the plan before any code is
+written, and once approved, option 1 in the Next-step block below is
+`/dev-execute <ticket-id>`; because the checkbox file is also the
+resume point, it must be complete enough for a different session to
+pick up cold.
 
 ## Hard rules
 
