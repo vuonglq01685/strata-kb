@@ -15,11 +15,24 @@ When the BA names a parent mission, read it for the story title, put
 ticket's H1 title, and inherit its pinned refs as STARTING CANDIDATES
 ONLY — never copy its `kb-context` wholesale; pin the ticket's own refs
 fresh. Hard rules the skill enforces: citations are mandatory
-for standard claims; present ALL `kb_search` candidates and let the BA
+for standard claims; budget `kb_search` at 500–800 tokens for broad
+discovery, call `kb_get_section` only for a section already chosen, and
+escalate to L3 only for a value that will be encoded in code or a test;
+present ALL `kb_search` candidates and let the BA
 choose — mandatory when the ambiguity note fires, never auto-pick; pin
-only BA-confirmed refs via `kb_context_new`;
+only BA-confirmed refs via `kb_context_new`, leaving its `tags`
+argument unset — **Tags are NOT yours to set**: the engine derives
+them from the pinned sections' own tags, a tag passed by hand is
+validated against the hub vocabulary and an unknown one is an error,
+and the BA's intake tags are search keywords for `kb query --tags`,
+nothing more;
 unverifiable code detail becomes `%%TODO: verify against codebase%%`,
 never invented; `kb ticket lint` must report `DoR: PASS` before handover;
+report the authoring cost at handover with `kb usage report --ticket
+<ticket-id> --md`, reporting `no usage recorded yet` as-is rather than
+guessing a number;
+review rounds 2 and 3 are a single `gap-verifier` pass over the still-open
+gaps and the sections that changed, never a re-read of the whole draft;
 never push to Jira — the BA publishes; never tick a Definition of Ready
 checkbox yourself — only the BA confirms DoR items.
 

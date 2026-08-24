@@ -15,19 +15,15 @@ pipeline, invoked once every task in the plan is ticked.
 
 ## Freshness re-check (run this FIRST, every time)
 
-Before anything else, re-resolve the ticket's `kb-context`: call the MCP tool
-`kb_resolve` when available, otherwise `kb resolve <ticket-file>` (or
-`kb resolve - < ticket.md`). The hub may have published since the last session,
-so a ref that was `ok` yesterday can be `stale` today — checking only at
-handover is too late, because the plan may already rest on changed content.
+Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
+`kb resolve <ticket-file>`. The hub may have published since last session.
 
-- **broken** → STOP. This is a blocker: report to the BA that the ticket needs
-  re-pinning. Never implement around a citation that no longer resolves.
-- **stale** → show BOTH versions and let the humans decide: `kb resolve` returns
-  the pinned content plus the reason; `kb get <doc-id> <section> [--level l3]`
-  returns the CURRENT hub version. Do NOT use `kb diff` — it compares the local
-  `.kb/` worktree against a local git rev, and this repo holds no local copy of
-  the cited domain document.
+- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
+  citation that no longer resolves.
+- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned
+  content and the reason, `kb get <doc-id> <section> [--level l3]` the current
+  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to
+  a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 Steps the skill enforces: re-check freshness one final time — a
@@ -49,7 +45,11 @@ kb-context refs so the reviewer can `kb resolve` them, the
 AC→test map, the placeholder-resolution list, every `OPEN(...)`
 finding, the verification output, and every KB gap, ambiguity, or
 contradiction found as a concrete feedback item (issue or PR on
-the owning child repo / hub); if the ticket changed what a service
+the owning child repo / hub); run `kb usage report --ticket <id>
+--md` and paste the table into the PR under a `## Usage` heading,
+keeping the heading with a one-line reason when the command
+answers `no usage recorded yet` instead of a table; if the ticket
+changed what a service
 is responsible for, report `amend needed: <repo_id>-svc
 §svc.<name>` as a PR finding. Never edit a `reviewed` section.
 **GATE 3** the Dev opens the PR; **GATE 4** the Dev merges. **The

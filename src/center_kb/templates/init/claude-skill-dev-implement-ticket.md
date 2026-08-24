@@ -17,19 +17,15 @@ and subagent-driven-development.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Before anything else, re-resolve the ticket's `kb-context`: call the MCP tool
-`kb_resolve` when available, otherwise `kb resolve <ticket-file>` (or
-`kb resolve - < ticket.md`). The hub may have published since the last session,
-so a ref that was `ok` yesterday can be `stale` today — checking only at
-handover is too late, because the plan may already rest on changed content.
+Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
+`kb resolve <ticket-file>`. The hub may have published since last session.
 
-- **broken** → STOP. This is a blocker: report to the BA that the ticket needs
-  re-pinning. Never implement around a citation that no longer resolves.
-- **stale** → show BOTH versions and let the humans decide: `kb resolve` returns
-  the pinned content plus the reason; `kb get <doc-id> <section> [--level l3]`
-  returns the CURRENT hub version. Do NOT use `kb diff` — it compares the local
-  `.kb/` worktree against a local git rev, and this repo holds no local copy of
-  the cited domain document.
+- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
+  citation that no longer resolves.
+- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned
+  content and the reason, `kb get <doc-id> <section> [--level l3]` the current
+  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to
+  a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 ## Steps
@@ -44,8 +40,10 @@ handover is too late, because the plan may already rest on changed content.
   `broken` → stop and report to the BA; `stale` → show both versions and
   let the Dev decide; `ok` → continue.
 - **Ground** — read resolved L2; escalate to L3 via `kb_get_section … l3`
-  (or `kb get <doc> <section> --level l3`) for any value that will be
-  encoded in code or tests; then `kb_search` both own-repo documents —
+  (or `kb get <doc> <section> --level l3`) only for a value that will be
+  encoded in code or tests, and call `kb_get_section` only for a section
+  already chosen; then `kb_search` both own-repo documents, budgeted at
+  500–800 tokens for broad discovery —
   `<repo_id>-code` for structure and `<repo_id>-svc` for responsibility —
   and then read the actual code. State the rule: *knowledge orients, code
   decides* — skip whichever document is missing and read the code

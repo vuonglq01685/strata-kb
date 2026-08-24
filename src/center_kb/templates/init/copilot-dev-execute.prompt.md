@@ -20,19 +20,15 @@ and `requesting-code-review` folded in.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Before anything else, re-resolve the ticket's `kb-context`: call the MCP tool
-`kb_resolve` when available, otherwise `kb resolve <ticket-file>` (or
-`kb resolve - < ticket.md`). The hub may have published since the last session,
-so a ref that was `ok` yesterday can be `stale` today — checking only at
-handover is too late, because the plan may already rest on changed content.
+Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
+`kb resolve <ticket-file>`. The hub may have published since last session.
 
-- **broken** → STOP. This is a blocker: report to the BA that the ticket needs
-  re-pinning. Never implement around a citation that no longer resolves.
-- **stale** → show BOTH versions and let the humans decide: `kb resolve` returns
-  the pinned content plus the reason; `kb get <doc-id> <section> [--level l3]`
-  returns the CURRENT hub version. Do NOT use `kb diff` — it compares the local
-  `.kb/` worktree against a local git rev, and this repo holds no local copy of
-  the cited domain document.
+- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
+  citation that no longer resolves.
+- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned
+  content and the reason, `kb get <doc-id> <section> [--level l3]` the current
+  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to
+  a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 ## Steps
@@ -42,7 +38,14 @@ handover is too late, because the plan may already rest on changed content.
   it, named from the ticket id.
   **Never work directly on the default branch.**
 - **Per unticked task**, in its own subagent where the runtime supports
-  it (sequential passes otherwise):
+  it (sequential passes otherwise). Hand that subagent exactly three
+  things: its own task block from the plan, the **Interfaces** entry of
+  that task, and the `cmd.test` / `cmd.lint` commands (from
+  `-code §cmd.*`, or the commands recorded at the top of the plan
+  file) — not the rest of the plan, and not the ticket. If the task
+  block does not carry something the implementer needs, the plan is
+  incomplete: stop and send it back to `dev-plan`. Never read wider to
+  paper over a gap in the plan.
   1. write the test → run it → **observe it fail**. State the reason: a
      test that was **never seen red proves nothing**.
   2. write the minimum code → run → pass.
@@ -50,10 +53,11 @@ handover is too late, because the plan may already rest on changed content.
      actually exercise that AC; is every standard-derived value
      verbatim with a citation comment; does the change follow the
      repo's existing conventions; did anything else break.
-  4. **verify** — run `cmd.test` and `cmd.lint` (from `-code §cmd.*`,
-     or the commands recorded at the top of the plan file) and
-     **show the output**.
-  5. tick the checkboxes, commit the task.
+  4. **verify** — run `cmd.test` and `cmd.lint` (the commands you were
+     handed) and **show the output**.
+  5. **commit the task's changes.** Ticking its checkboxes in the plan
+     file is the orchestrator's job, done after the subagent reports
+     back — the plan file is the one thing the subagent never opens.
 - **When a test fails unexpectedly** — reproduce, find the actual
   cause, fix the cause. **Never edit a test to make it green**, never
   widen a tolerance to pass, never mark a task done with a failing
