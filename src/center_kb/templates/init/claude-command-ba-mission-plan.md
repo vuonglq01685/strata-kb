@@ -18,9 +18,12 @@ spans several User Stories — small work goes straight to
    mission id with the BA: `M-<slug>`, where `<slug>` is lowercase
    kebab-case. The filename stem must equal the id. Ask for target tags
    (e.g. `#arinc424 #airspace`) or an explicit doc-id. Ask, don't guess.
-2. **Ground** — use the MCP tool `kb_search`, within the token budget,
-   when it is available; otherwise fall back to `kb query "<text>"
-   --tags <tags>` (CLI). Present **ALL** returned candidates with their
+2. **Ground** — use the MCP tool `kb_search` when it is available;
+   otherwise fall back to `kb query "<text>" --tags <tags>` (CLI).
+   **Budget the search:** 500–800 tokens for broad discovery — enough
+   for the citation plus a summary to choose from; `kb_get_section`
+   only for a section already chosen; L3 only for a value that will be
+   encoded in code or a test. Present **ALL** returned candidates with their
    citations — never silently drop one. When the ambiguity note fires
    (two close-scoring hits), the BA MUST choose — never auto-pick.
    Search results tagged `code` come from `<repo>-code` and `<repo>-svc`
@@ -77,9 +80,14 @@ spans several User Stories — small work goes straight to
    Notes) — Devs never infer ordering.
 5. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
-   `kb context new --refs "<refs>" --tags "<tags>"` (CLI), passing exactly
-   those confirmed refs (+ tags). Embed the block it returns verbatim
-   under `## KB context`.
+   `kb context new --refs "<refs>"` (CLI), passing exactly those
+   confirmed refs. Embed the block it returns verbatim under
+   `## KB context`. **Tags are NOT yours to set:** the engine derives
+   them from the pinned sections' own tags. Leave the tool's `tags`
+   argument unset and the CLI's `--tags` off — a tag passed by hand is
+   validated against the hub vocabulary and an unknown one is an error.
+   The tags the BA gave at intake are search keywords for
+   `kb query --tags`, nothing more.
 6. **Lint** — run `kb mission lint <file>` against the draft. Fix every
    error and re-run until it reports `DoR: PASS`. A coverage warning of
    `0/N US drafted` is EXPECTED at creation time — the tickets do not
@@ -100,15 +108,30 @@ spans several User Stories — small work goes straight to
    and a gap list where every gap names the section it lives in and a
    proposed fix.
 
-   Apply the fixes, re-run `kb mission lint`, and review again — at
-   most 3 rounds total; stop early when both axes score ≥ 4. A gap you
-   cannot close yourself (a missing business decision, missing input)
-   is NEVER invented: write `OPEN(<owner>)` at the spot and add an
-   `## Open questions` row.
+   Apply the fixes, re-run `kb mission lint`, then review again — at
+   most 3 rounds total; stop early when both axes score ≥ 4.
+
+   **Rounds 2 and 3 are not a re-read.** When your runtime can
+   dispatch subagents, dispatch ONE `gap-verifier` subagent; otherwise
+   run this pass yourself, acting as `gap-verifier`. Either way, it
+   reads only three things: the gaps still open, the current text of
+   the sections that changed in response, and the rubric items those
+   gaps map to — never the whole draft. It returns pass/fail per gap
+   with a one-line reason. Do **not** re-read the rest of the draft
+   and do **not** re-score an axis in this pass: an axis's score
+   rises only when every gap of that axis passes — re-derive it as
+   the LOWEST maturity level fully satisfied, using round 1's
+   checklist updated with the verifier's pass/fail; otherwise carry
+   the previous round's score forward unchanged.
+
+   A gap you cannot close yourself (a missing business decision,
+   missing input) is NEVER invented: write `OPEN(<owner>)` at the spot
+   and add an `## Open questions` row.
 
    Record the result in `## Review record`: on the first round replace
    the `Not yet reviewed.` placeholder; append one table row per round
-   (`| Date | Round | Business | Dev | Reviewer |`) and list the
+   (`| Date | Round | Business | Dev | Reviewer |`) — the `Reviewer`
+   cell reads `gap-verifier` for rounds 2 and 3 — and list the
    still-open gaps on the `Open gaps:` line. Report both scores and the
    remaining owned gaps to the BA in the handover summary.
 8. **Review → save** — write the final Markdown to
