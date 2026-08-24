@@ -536,3 +536,134 @@ def test_assistant_text_mentioning_a_ticket_sets_the_ticket_cursor(tmp_path: Pat
     (row,) = transcript.rows_from_transcript(path, actor="ba")
 
     assert row.ticket == "open-new-flight"
+
+
+# --- one API call is one row, however many transcript rows carry it ---
+
+
+def tool_use_row(uuid: str, name: str, tool_input: dict, **kw):
+    """An assistant row whose content is a single tool_use block."""
+    row = {
+        "type": "assistant",
+        "uuid": uuid,
+        "sessionId": "sess-1",
+        "timestamp": "2026-08-23T09:59:30.000Z",
+        "message": {"content": [{"type": "tool_use", "name": name, "input": tool_input}]},
+    }
+    row.update(kw)
+    return row
+
+
+def with_message_id(row: dict, message_id: str) -> dict:
+    row["message"]["id"] = message_id
+    return row
+
+
+def test_two_rows_of_one_api_call_become_one_row(tmp_path: Path):
+    # Claude Code splits one assistant message across several transcript rows
+    # (text, then tool_use) and repeats the SAME usage block on each. Keying on
+    # the row uuid counted that call once per row: measured 516 rows for 239
+    # real calls on six live transcripts, inflating cost by 55.8%.
+    path = write_transcript(
+        tmp_path,
+        [usage_row("a1", requestId="req_1"), usage_row("a2", requestId="req_1")],
+    )
+
+    rows = transcript.rows_from_transcript(path, actor="ba")
+
+    assert [r.uuid for r in rows] == ["a1"]
+    assert rows[0].tokens_out == 100
+
+
+def test_a_seven_row_call_becomes_one_row(tmp_path: Path):
+    # The real distribution was 1->60, 2->107, 3->55, 4->12, 5->3, 7->2 calls.
+    path = write_transcript(
+        tmp_path, [usage_row(f"a{i}", requestId="req_1") for i in range(7)]
+    )
+
+    assert len(transcript.rows_from_transcript(path, actor="ba")) == 1
+
+
+def test_distinct_request_ids_stay_distinct(tmp_path: Path):
+    path = write_transcript(
+        tmp_path,
+        [usage_row("a1", requestId="req_1"), usage_row("a2", requestId="req_2")],
+    )
+
+    assert [r.uuid for r in transcript.rows_from_transcript(path, actor="ba")] == [
+        "a1",
+        "a2",
+    ]
+
+
+def test_message_id_identifies_the_call_when_request_id_is_missing(tmp_path: Path):
+    path = write_transcript(
+        tmp_path,
+        [
+            with_message_id(usage_row("a1"), "msg_1"),
+            with_message_id(usage_row("a2"), "msg_1"),
+        ],
+    )
+
+    assert [r.uuid for r in transcript.rows_from_transcript(path, actor="ba")] == ["a1"]
+
+
+def test_uuid_identifies_the_call_when_neither_id_is_present(tmp_path: Path):
+    # Without either id there is nothing finer than the row itself, so two rows
+    # are two calls — the pre-fix behaviour, kept as the last fallback.
+    path = write_transcript(tmp_path, [usage_row("a1"), usage_row("a2")])
+
+    assert [r.uuid for r in transcript.rows_from_transcript(path, actor="ba")] == [
+        "a1",
+        "a2",
+    ]
+
+
+def test_the_request_field_records_the_call_identity(tmp_path: Path):
+    path = write_transcript(tmp_path, [usage_row("a1", requestId="req_1")])
+
+    (row,) = transcript.rows_from_transcript(path, actor="ba")
+
+    assert row.request == "req_1"
+
+
+def test_the_collapsed_row_keeps_the_first_rows_attribution(tmp_path: Path):
+    # Measured on real data: attributing a collapsed call by its first row's
+    # cursor leaves 60/239 unattributed against 57/239 for the group's end
+    # state — three calls apart, so the simpler rule wins and this pins it.
+    path = write_transcript(
+        tmp_path,
+        [
+            usage_row("a1", requestId="req_1"),
+            tool_use_row(
+                "a2", "Read", {"file_path": "tickets/open-new-flight.md"},
+                requestId="req_1",
+                message={"model": "claude-sonnet-5", "usage": {"output_tokens": 100}},
+            ),
+        ],
+    )
+
+    (row,) = transcript.rows_from_transcript(path, actor="ba")
+
+    assert row.ticket is None
+
+
+def test_a_dropped_duplicate_still_advances_the_cursor(tmp_path: Path):
+    # The duplicate is dropped from the OUTPUT, not from the scan: a ticket
+    # named inside it must still attribute every later call.
+    dup = usage_row("a2", requestId="req_1")
+    dup["message"]["content"] = [
+        {"type": "tool_use", "name": "Read",
+         "input": {"file_path": "tickets/open-new-flight.md"}}
+    ]
+    path = write_transcript(
+        tmp_path,
+        [usage_row("a1", requestId="req_1"), dup, usage_row("a3", requestId="req_2")],
+    )
+
+    rows = transcript.rows_from_transcript(path, actor="ba")
+
+    assert [(r.uuid, r.ticket) for r in rows] == [
+        ("a1", None),
+        ("a3", "open-new-flight"),
+    ]

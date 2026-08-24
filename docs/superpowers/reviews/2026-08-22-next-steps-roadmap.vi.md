@@ -25,13 +25,19 @@ Ký hiệu ưu tiên: A (vá lỗi dữ liệu) → B (đo lường) → C (tố
 
 Mục tiêu: với mỗi ticket, trả lời được "viết nó tốn bao nhiêu token, model gì, ở phase nào, phía BA hay phía Dev" — và Dev/BA mở xem được ngay trong repo của mình, không cần hỏi ai.
 
-- [ ] **B1 — Usage ledger trong repo** (~0.5 ngày)
+> **Batch 2 xong 2026-08-24** (PR #39 + PR fix dedup). Lệch so với mô tả dưới đây, đều do đo được chứ không do đổi ý:
+> `cache_write` **tách 5m/1h** (giá 1.25× vs 2× input; mọi write đo được đều là 1h); row thêm `uuid`, `request`, `sidechain`, `branch`; **attribute không dùng branch name** — repo BA không phải git repo nên mọi row báo `gitBranch: "HEAD"`; ticket id là **file stem**, không validate theo `M-<slug>-US<n>` vì ticket thật tên `open-new-flight.md`; phase **chỉ** lấy từ marker `<command-name>` và tool call `Skill` (đếm tên skill trong nội dung cho kết quả sai hoàn toàn: một session sửa dev skill nhắc `dev-handover` 339 lần); hook chỉ `Stop`, không `SubagentStop`, và scaffold chỉ cho kind `ba`/`dev`; `report.html` **không commit** mặc định vì suy ra được từ ledger.
+>
+> **Số baseline thật (KS-BA, 6 transcript):** 239 API call · **$28.88** · `_unattributed` 25.1% · phase `ba-ticket-author` chiếm đa số.
+> Cảnh báo cho nhóm C: bản đầu báo 516 row / $65.39 vì đếm một API call nhiều lần (Claude Code tách một assistant message thành 2-7 transcript row, mỗi row mang **cùng** khối `usage`). Mọi ưu tiên trong C nếu dựa vào số trước fix là dựa vào số cao gấp hơn hai lần.
+
+- [x] **B1 — Usage ledger trong repo** (~0.5 ngày)
   File `.kb/usage/<ticket-id>.jsonl` (mission-level → `<mission-id>.jsonl`), **commit vào git** — nhờ đó chi phí đi theo lịch sử ticket và PR mang luôn con số. Mỗi row: `{ts, actor: ba|dev, phase (ba-ticket-author / dev-design / dev-execute…), ticket, model, tokens_in, tokens_out, cache_read, cache_write, est: true|false, assistant: claude-code|copilot|cursor, session}`. Viết qua CLI mới `kb usage note` (append-only, như pattern `kb svc note`).
-- [ ] **B2 — Capture tự động** (~1 ngày)
+- [x] **B2 — Capture tự động** (~1 ngày)
   - **Claude Code (nguồn chính xác):** scaffold hook `Stop`/`SubagentStop` trong `.claude/settings.json` gọi script → `kb usage ingest-transcript <path>`: parse transcript JSONL (mỗi message có usage + model thật), attribute vào ticket theo branch name / đường dẫn `docs/impl/<id>-*` xuất hiện trong session, append vào ledger. Không cần agent tự khai — số liệu là số thật của assistant.
   - **Copilot / Cursor (không có hook):** fallback tự khai — closing block của skill gọi `kb usage note --est` với ước lượng của agent, đánh dấu `est: true` để dashboard phân biệt số đo và số ước. Nói thẳng giới hạn này trong QUICKSTART thay vì giả vờ chính xác.
   - **Lưu ý thiết kế:** `.claude/settings.json` là file dev có thể đã tự cấu hình — scaffold chỉ ghi khi chưa tồn tại, hoặc tách script ra `.claude/hooks/` và hướng dẫn merge tay; quyết định trước khi code. Thêm file scaffold = bump `tests/test_init.py` pinned count có chủ đích.
-- [ ] **B3 — Website trong repo: `kb usage report`** (~1–1.5 ngày)
+- [x] **B3 — Website trong repo: `kb usage report`** (~1–1.5 ngày)
   Sinh **`.kb/usage/report.html` tĩnh, self-contained** (không server, mở thẳng bằng browser, commit được): tổng theo ticket, breakdown theo phase, theo model, theo actor BA/Dev, ước chi phí qua bảng giá `usage-prices.yaml` (default trong package, repo override được vì giá model thay đổi). Tuỳ chọn thêm sau: `kb usage serve` tái dùng stack FastAPI/templating sẵn có trong `center_kb.web` cho live view, và một job CI regenerate report.html mỗi push. Khuyến nghị: **static-first** — đủ cho nhu cầu "mở ra là thấy", zero vận hành.
 - [ ] **B4 — Nối vào handover** (gom vào ĐỢT TEMPLATE CHUNG)
   `dev-handover` thêm mục "Usage" trong PR body (`kb usage report --ticket <id> --md`) — PR nào cũng mang chi phí của chính nó; `ba-ticket-author` báo usage trong handover summary. Chi phí ticket **xuyên hai repo** (BA viết + Dev implement) ghép bằng ticket id chung: MVP mỗi repo xem phần của mình, bước sau thêm `kb usage merge` gộp hai ledger khi cần bức tranh đầy đủ.
