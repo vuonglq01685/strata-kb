@@ -43,6 +43,13 @@ def is_safe_stem(stem: str) -> bool:
 class UsageRow(BaseModel):
     """One API call's usage, as recorded by the assistant that made it.
 
+    ONE API CALL, not one transcript row. Claude Code splits a single assistant
+    message across several transcript rows and repeats the same `usage` block on
+    each, so `uuid` (the row's id) is finer than a call: keying on it counted one
+    call once per row, measured as 516 rows for 239 real calls across six live
+    transcripts — 55.8% too much money. `request` carries the call's own identity
+    and `transcript.py` collapses on it.
+
     `assistant` and `est` exist for the deferred Copilot/Cursor path: those
     assistants have no hook, so their only option is a self-reported estimate,
     and a dashboard must be able to tell a measured row from an estimated one.
@@ -65,6 +72,11 @@ class UsageRow(BaseModel):
     branch: str | None
     assistant: str
     est: bool
+    # Defaulted, not required: ledgers written before this field existed are
+    # committed to git and must keep loading. An empty value means "written by a
+    # build that could not tell one call from one row" — those files were
+    # inflated and need re-ingesting, which `kb usage report` cannot infer.
+    request: str = ""
 
 
 @dataclass

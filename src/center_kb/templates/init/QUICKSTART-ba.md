@@ -241,6 +241,24 @@ the hook fails silently by design (a `Stop` hook cannot block a turn from
 ending), so this file is the only place a failure — a mistyped `kind:`, a
 missing transcript, a corrupt ledger line — is ever visible.
 
+**The `kb` on your `PATH` must be 0.19.0 or newer.** An older `kb` has no
+`usage` command, so the hook exits 2 — and a `Stop` hook exiting 2 blocks the
+turn from ending instead of failing quietly. Nothing reaches
+`ingest-errors.log` either, because the failure happens before `kb usage` runs
+at all. Run `kb --version` if a session starts refusing to finish, and upgrade
+rather than deleting the hook.
+
+**Re-ingesting is always safe**, because a call already in the ledger is
+recognised and skipped. So if you ever have reason to distrust a ledger file,
+the repair is to delete it and re-ingest the transcripts:
+
+```bash
+rm .kb/usage/<ticket>.jsonl
+for f in ~/.claude/projects/<this-repo-slug>/*.jsonl; do
+  kb usage ingest-transcript "$f"
+done
+```
+
 If this repo already had a `.claude/settings.json`, `kb init` left it alone.
 Merge the hook in by hand:
 
