@@ -1429,12 +1429,19 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # premature extra row slip in unnoticed on both sides of the equality.
     # 27 (Stage A) + 4 (dev-code-seed's own four-way wrappers) + 12 (the
     # reused kb-summarize/kb-approve/kb-publish rows the seed flow needs,
-    # Stage C) + 1 (.claude/settings.json, the usage Stop hook) = 44.
-    assert len(expected_files("dev")) == 44
+    # Stage C) + 1 (.claude/settings.json, the usage Stop hook) + 1
+    # (docs/impl/.gitignore — C1 keeps the context cache out of git) = 45.
+    assert len(expected_files("dev")) == 45
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
         assert (tmp_path / rel).is_file(), rel
+
+
+def test_init_kind_dev_gitignores_the_context_cache(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    gi = (tmp_path / "docs" / "impl" / ".gitignore").read_text(encoding="utf-8")
+    assert "*-context.md" in gi
 
 
 def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):

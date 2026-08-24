@@ -17,15 +17,19 @@ and subagent-driven-development.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
-`kb resolve <ticket-file>`. The hub may have published since last session.
+Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
+`version:` matches the ticket's block, run `kb resolve --status-only
+<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
+cache; do NOT re-pull pinned content. No cache, version mismatch, or a
+non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
+rewrite the cache, keeping its `## Placeholder map`.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
-- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned
-  content and the reason, `kb get <doc-id> <section> [--level l3]` the current
-  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to
-  a local git rev, not this repo to the hub.
+- **stale** → show BOTH versions, humans decide: the resolve gives the
+  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`
+  the current hub version. Do NOT use `kb diff` — it compares the local
+  `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 ## Steps
@@ -38,7 +42,9 @@ Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
   the ticket is not Ready.
 - **Resolve** — triage exactly as in the Freshness re-check above:
   `broken` → stop and report to the BA; `stale` → show both versions and
-  let the Dev decide; `ok` → continue.
+  let the Dev decide; `ok` → continue. After a full resolve, write the
+  cache file `docs/impl/<ticket-id>-context.md`: the block's `version:`,
+  the resolve output verbatim, and a `## Placeholder map` section.
 - **Ground** — read resolved L2; escalate to L3 via
   `kb get <doc> <section> --level l3` (or the `kb_get_section` MCP tool
   when your client exposes it) only for a value that will be encoded in
@@ -56,7 +62,9 @@ Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
 - **Placeholders** — for each `%%TODO: verify against codebase%%`, verify
   the real name against the codebase and record `placeholder → verified
   value (file:line or code-knowledge ref)`; report the list to the BA;
-  **never edit the ticket**; unverifiable here → `OPEN(BA)`.
+  **never edit the ticket**; unverifiable here → `OPEN(BA)`. Record the
+  map in the cache file's `## Placeholder map` table (`| placeholder |
+  verified value | evidence (file:line or ref) |`).
 - **Run the phases** — run the `/dev-design` prompt (or follow
   `docs/impl/` conventions inline if prompts are unavailable), then —
   after the Dev approves it — the `/dev-plan` prompt, then the

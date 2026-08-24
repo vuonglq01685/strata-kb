@@ -75,3 +75,29 @@ def test_render_resolved_shows_status(fed_hub):
     ctx = _ctx_for(fed_hub, ["arinc-kb:arinc-424 §5.3"])
     text = render_resolved(resolve_refs(handle, ctx))
     assert "status=ok" in text
+    assert "Condensed: restrictive airspace" in text  # the True default renders content — symmetric with the False tests below
+
+
+def test_render_resolved_status_only_omits_content(fed_hub):
+    handle = HubHandle(root=fed_hub)
+    ctx = _ctx_for(fed_hub, ["arinc-kb:arinc-424 §5.3"])
+    text = render_resolved(resolve_refs(handle, ctx), include_content=False)
+    assert "status=ok" in text
+    # the pinned section body must NOT be rendered
+    assert "Condensed: restrictive airspace" not in text
+
+
+def test_render_resolved_status_only_keeps_the_stale_reason(fed_hub, run_git):
+    handle = HubHandle(root=fed_hub)
+    ctx = _ctx_for(fed_hub, ["arinc-kb:arinc-424 §5.3"])
+    l2 = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "ch1.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace("designation codes", "NEW codes"),
+        encoding="utf-8",
+    )
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "republish")
+    text = render_resolved(resolve_refs(handle, ctx), include_content=False)
+    assert "status=stale" in text
+    assert "!!" in text  # the reason line survives — triage needs it
+    assert "NEW codes" not in text and "designation codes" not in text

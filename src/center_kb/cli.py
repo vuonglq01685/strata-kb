@@ -1493,6 +1493,12 @@ def resolve(
     hub: str = typer.Option(
         "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
     ),
+    status_only: bool = typer.Option(
+        False,
+        "--status-only",
+        help="Print only the citation + freshness verdict per ref, no "
+        "section content — for cheap re-checks against a context cache.",
+    ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
     from center_kb import gitio, kbcontext
@@ -1513,7 +1519,7 @@ def resolve(
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    typer.echo(render_resolved(results))
+    typer.echo(render_resolved(results, include_content=not status_only))
     if any(r.status == "broken" for r in results):
         raise typer.Exit(1)
     if any(r.status == "stale" for r in results):

@@ -14,15 +14,19 @@ Dev has approved the design at GATE 1. Your job: turn that design into
 
 ## Freshness re-check (run this FIRST, every time)
 
-Re-resolve the ticket's `kb-context` first: `kb_resolve`, else
-`kb resolve <ticket-file>`. The hub may have published since last session.
+Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
+`version:` matches the ticket's block, run `kb resolve --status-only
+<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
+cache; do NOT re-pull pinned content. No cache, version mismatch, or a
+non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
+rewrite the cache, keeping its `## Placeholder map`.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
-- **stale** → show BOTH versions, humans decide: `kb resolve` gives the pinned
-  content and the reason, `kb get <doc-id> <section> [--level l3]` the current
-  hub version. Do NOT use `kb diff` — it compares the local `.kb/` worktree to
-  a local git rev, not this repo to the hub.
+- **stale** → show BOTH versions, humans decide: the resolve gives the
+  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`
+  the current hub version. Do NOT use `kb diff` — it compares the local
+  `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 ## Steps

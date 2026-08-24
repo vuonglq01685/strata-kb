@@ -103,3 +103,68 @@ def test_resolve_stdin(fed_hub, fixture_kb, run_git):
     )
     assert result.exit_code == 0
     assert "status=ok" in result.output
+
+
+def test_resolve_status_only_ok_prints_no_content(fed_hub, fixture_kb, run_git):
+    hub_head = run_git(fed_hub, "rev-parse", "--short", "HEAD")
+    block = (
+        f'kb-context:\n  version: "{hub_head}"\n  refs:\n'
+        "    - arinc-kb:arinc-424 §5.3\n"
+    )
+    result = runner.invoke(
+        app,
+        ["resolve", "-", "--status-only",
+         "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+        input=block,
+    )
+    assert result.exit_code == 0
+    assert "status=ok" in result.output
+    assert "Condensed: restrictive airspace" not in result.output
+
+
+def test_resolve_status_only_stale_exits_2_with_reason(
+    fed_hub, fixture_kb, run_git, tmp_path_factory
+):
+    rev1 = run_git(fed_hub, "rev-parse", "--short", "HEAD")
+    l2 = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "ch1.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace("designation codes", "NEW codes"),
+        encoding="utf-8",
+    )
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "amend arinc-424 5.3")
+    ticket = tmp_path_factory.mktemp("ticket") / "tal-3.md"
+    ticket.write_text(
+        f'kb-context:\n  version: "{rev1}"\n  refs:\n'
+        "    - arinc-kb:arinc-424 §5.3\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(
+        app,
+        ["resolve", str(ticket), "--status-only",
+         "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+    )
+    assert result.exit_code == 2
+    assert "status=stale" in result.output
+    assert "!!" in result.output
+    assert "NEW codes" not in result.output
+    assert "designation codes" not in result.output
+
+
+def test_resolve_status_only_broken_exits_1(
+    fed_hub, fixture_kb, run_git, tmp_path_factory
+):
+    hub_head = run_git(fed_hub, "rev-parse", "--short", "HEAD")
+    ticket = tmp_path_factory.mktemp("ticket") / "tal-4.md"
+    ticket.write_text(
+        f'kb-context:\n  version: "{hub_head}"\n  refs:\n'
+        "    - arinc-kb:arinc-424 §9.9\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(
+        app,
+        ["resolve", str(ticket), "--status-only",
+         "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+    )
+    assert result.exit_code == 1
+    assert "status=broken" in result.output
