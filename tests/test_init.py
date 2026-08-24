@@ -1786,3 +1786,26 @@ def test_quickstarts_force_clause_names_all_three_protected_files(tmp_path: Path
         init_repo(target, kind)
         text = " ".join((target / fname).read_text(encoding="utf-8").split())
         assert "--force` replaces all three outright" in text, kind
+
+
+def test_quickstarts_state_the_hooks_version_floor(tmp_path: Path):
+    # An older kb has no `usage` command, so the hook exits 2 -- and a Stop hook
+    # exiting 2 blocks the turn instead of failing quietly, with nothing in
+    # ingest-errors.log because the failure precedes `kb usage` entirely.
+    for kind, name in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
+        target = tmp_path / kind
+        init_repo(target, kind)
+        text = " ".join((target / name).read_text(encoding="utf-8").split())
+        assert "must be 0.19.0 or newer" in text, kind
+        assert "blocks the turn from ending" in text, kind
+
+
+def test_quickstarts_document_the_reingest_repair(tmp_path: Path):
+    # The repair path that actually works: delete the file and re-ingest, which
+    # is safe because a call already in the ledger is skipped.
+    for kind, name in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
+        target = tmp_path / kind
+        init_repo(target, kind)
+        text = " ".join((target / name).read_text(encoding="utf-8").split())
+        assert "Re-ingesting is always safe" in text, kind
+        assert "kb usage ingest-transcript" in text, kind

@@ -199,10 +199,21 @@ def rows_from_transcript(
 ) -> list[UsageRow]:
     """Every API call in this transcript, attributed.
 
+    One API CALL yields one row, not one transcript row: Claude Code splits an
+    assistant message across several rows (text, then each tool_use) and repeats
+    the identical `usage` block on every one of them, so a row is finer than a
+    call. Measured across six live transcripts: 516 usage rows for 239 real
+    calls, every multi-row group carrying byte-identical usage (179 of 179), so
+    keying on the row would overstate cost by 55.8%.
+
+    The later copies are dropped from the OUTPUT, never from the scan — a ticket
+    path named inside a dropped row still has to attribute every later call.
+
     `forced_ticket` overrides the cursor entirely — the escape hatch for a
     session the cursor read wrongly.
     """
     rows: list[UsageRow] = []
+    seen_calls: set[str] = set()
     ticket: str | None = None
     phase = UNKNOWN_PHASE
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -231,11 +242,22 @@ def rows_from_transcript(
         uuid = row.get("uuid")
         if model == SYNTHETIC_MODEL or not isinstance(uuid, str) or not uuid:
             continue
+        # The call's own identity, coarsest first: `requestId` is the API
+        # request, `message.id` the assistant message it produced, and the row
+        # uuid only as a last resort — without either id there is nothing finer
+        # than the row, so two rows are two calls, as before this fix.
+        request = str(row.get("requestId") or message.get("id") or uuid)
+        if request in seen_calls:
+            # A later copy of a call already recorded. The cursors above have
+            # already consumed this row, which is the point.
+            continue
+        seen_calls.add(request)
         creation = usage.get("cache_creation") or {}
         branch = row.get("gitBranch")
         rows.append(
             UsageRow(
                 uuid=uuid,
+                request=request,
                 ts=str(row.get("timestamp") or ""),
                 session=str(row.get("sessionId") or session_fallback),
                 actor=actor,
