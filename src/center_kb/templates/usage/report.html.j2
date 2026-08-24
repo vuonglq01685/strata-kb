@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KB usage report</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         margin: 2rem auto; max-width: 60rem; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 2rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1.5rem; }
+  th, td { border-bottom: 1px solid #8883; padding: 0.35rem 0.6rem;
+           text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { border-bottom: 2px solid #8886; }
+  .meta { color: #8889; font-size: 0.85rem; }
+  .warn { border-left: 3px solid #c60; padding: 0.5rem 0.8rem; margin: 1rem 0;
+          background: #c6601a1a; }
+</style>
+</head>
+<body>
+<h1>KB usage report</h1>
+<p class="meta">
+  Generated {{ agg.generated }} · prices effective {{ agg.effective_date }}
+  ({{ agg.stale_days }} days old) · amounts in {{ agg.currency }}
+</p>
+
+{% if agg.stale %}
+<p class="warn">The price table is out of date ({{ agg.stale_days }} days).
+Override it in <code>.kb/usage-prices.yaml</code>.</p>
+{% endif %}
+
+{% if agg.unpriced_models %}
+<p class="warn">Some rows are <strong>unpriced</strong> — no rates for
+{{ agg.unpriced_models | join(', ') }}. Their tokens are counted below; their
+cost is not, and is not treated as zero.</p>
+{% endif %}
+
+{% macro rows(buckets, label, currency) %}
+<table>
+  <thead><tr><th>{{ label }}</th><th>calls</th><th>in</th><th>out</th>
+    <th>cache read</th><th>cache write</th><th>cost</th></tr></thead>
+  <tbody>
+  {% for b in buckets %}
+    <tr><td>{{ b.key }}</td><td>{{ b.rows }}</td><td>{{ "{:,}".format(b.tokens_in) }}</td>
+      <td>{{ "{:,}".format(b.tokens_out) }}</td>
+      <td>{{ "{:,}".format(b.cache_read) }}</td>
+      <td>{{ "{:,}".format(b.cache_write) }}</td>
+      <td>{{ money(b, currency) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+<h2>Total</h2>
+{{ rows([agg.total], "scope", agg.currency) }}
+
+<h2>By ticket</h2>
+{{ rows(agg.by_ticket, "ticket", agg.currency) }}
+
+<h2>By phase</h2>
+{{ rows(agg.by_phase, "phase", agg.currency) }}
+
+<h2>By model</h2>
+{{ rows(agg.by_model, "model", agg.currency) }}
+
+<h2>By actor</h2>
+{{ rows(agg.by_actor, "actor", agg.currency) }}
+
+<h2>Main thread vs subagents</h2>
+{{ rows([agg.main, agg.sidechain], "thread", agg.currency) }}
+
+<h2>Unattributed</h2>
+<p class="meta">Calls made before any ticket file was mentioned in the session.
+A large number here means the attribution cursor is missing work, not that the
+work was free.</p>
+{{ rows([agg.unattributed], "scope", agg.currency) }}
+</body>
+</html>

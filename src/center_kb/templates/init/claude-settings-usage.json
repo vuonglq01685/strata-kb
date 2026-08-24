@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "kb usage ingest-transcript --hook-stdin",
+            "timeout": 30,
+            "statusMessage": "Recording token usage..."
+          }
+        ]
+      }
+    ]
+  }
+}
