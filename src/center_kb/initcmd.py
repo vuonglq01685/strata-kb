@@ -69,6 +69,7 @@ CHILD_TEMPLATES: dict[str, str] = {
 BA_TEMPLATES: dict[str, str] = {
     ".kb/config.yaml": "config-ba.yaml",
     ".mcp.json": "mcp-child.json",
+    ".claude/settings.json": "claude-settings-usage.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
     ".claude/skills/ba-ticket-author/SKILL.md": "claude-skill-ba-ticket-author.md",
     ".claude/commands/ba-ticket-author.md": "claude-command-ba-ticket-author.md",
@@ -96,6 +97,7 @@ DEV_TEMPLATES: dict[str, str] = {
     ".kb/config.yaml": "config-dev.yaml",
     ".kb/index.yaml": "index.yaml",
     ".mcp.json": "mcp-child.json",
+    ".claude/settings.json": "claude-settings-usage.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
     "docs/impl/.gitkeep": "gitkeep.txt",
     "QUICKSTART-DEV.md": "QUICKSTART-dev.md",
@@ -142,7 +144,15 @@ DEV_TEMPLATES: dict[str, str] = {
 }
 
 # User data — never refreshed by default; only overwritten with --force.
-PROTECTED_FILES: frozenset[str] = frozenset({".kb/index.yaml", ".kb/config.yaml"})
+# `.claude/settings.json` joins the set because a dev's own hooks, permissions
+# and model settings live there: initcmd overwrites anything outside this set
+# (see the write branch below), which would silently delete their config on the
+# next `kb init`. The cost of protecting it is that a repo scaffolded before
+# the usage hook existed never gains it automatically — QUICKSTART carries the
+# snippet to paste, which is the cheaper failure.
+PROTECTED_FILES: frozenset[str] = frozenset(
+    {".kb/index.yaml", ".kb/config.yaml", ".claude/settings.json"}
+)
 
 _KIND_LINE = re.compile(r"^kind:", re.MULTILINE)
 
@@ -240,8 +250,8 @@ def init_repo(
     """Scaffold a KB repo as the given kind (hub | child).
 
     Default: create missing files and refresh scaffold templates whose content
-    changed. Protected data (``.kb/index.yaml``, ``.kb/config.yaml``) is left
-    alone unless ``force=True``.
+    changed. Protected data (``.kb/index.yaml``, ``.kb/config.yaml``,
+    ``.claude/settings.json``) is left alone unless ``force=True``.
     """
     templates = template_map(kind)
     base = resources.files("center_kb").joinpath("templates/init")

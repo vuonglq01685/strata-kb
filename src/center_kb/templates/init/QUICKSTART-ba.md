@@ -152,9 +152,12 @@ Re-run `kb init --kind ba` to pick up new templates. This only ever
 touches **scaffold files** — the CI workflow, the skill/command/prompt
 wrappers, and the ticket/mission templates under `docs/` — and only
 overwrites one when its content differs from the new template;
-`.kb/config.yaml` and `.kb/index.yaml` are never touched either way
-(the one exception being an explicit `--force`, which overwrites them
-too). Your own `tickets/` and `missions/` content is not scaffolding:
+`.kb/config.yaml`, `.kb/index.yaml`, and `.claude/settings.json` are never
+touched by a plain `kb init` — but `--force` replaces all three outright:
+your hand-edited `.kb/config.yaml` (`kind`, `repo_id`, `asset_store`
+included), `.kb/index.yaml`, and your whole `.claude/settings.json` (hooks,
+permissions and model included), none of it merged.
+Your own `tickets/` and `missions/` content is not scaffolding:
 `kb init` never touches any file you author there. (The one thing it
 does place in each directory is an empty `.gitkeep`, so git can track
 the directory before your first ticket or mission exists — it never
@@ -199,6 +202,72 @@ way, **never re-run `kb context new`** to clear the error, since doing so
 rewrites `version:` to today's HEAD and falsifies when the ticket was
 grounded. Leave `refs:` and `version:` exactly as they are.
 
+## Token and cost measurement
+
+`kb init` wrote `.claude/settings.json` with one `Stop` hook that calls
+`kb usage ingest-transcript --hook-stdin` after each turn. It reads Claude
+Code's own transcript — the numbers are the assistant's real usage, not an
+estimate — and appends them to `.kb/usage/<ticket>.jsonl`, which is committed,
+so a ticket's cost travels with the ticket. `.claude/settings.json` itself is
+committed too — a teammate who pulls the repo without `kb` on their `PATH`
+otherwise sees this hook fail on every turn.
+
+It **adds about 0.6s per turn** (the cost of starting the `kb` CLI; parsing the
+transcript itself is ~60ms). That is the price of the data.
+
+- `kb usage report` — writes `.kb/usage/report.html`; open it in a browser. Per
+  ticket, per phase, per model, plus a `_unattributed` bucket.
+- `kb usage report --ticket <id> --md` — a Markdown table for a PR body.
+- `kb usage ingest-transcript <path>` — backfill. Every transcript under
+  `~/.claude/projects/<this-repo>/` can be ingested now; re-ingesting is safe,
+  rows are de-duplicated by the transcript's own row ids.
+- `kb usage note --ticket <id> --phase <p> --model <m> --tokens-in N --tokens-out N`
+  — record a row by hand. It always **appends** a new row, so it is never
+  the way to fix one the automatic attribution got wrong — using it that way
+  double-counts the tokens. The real repair is editing the stored row
+  directly in `.kb/usage/<ticket>.jsonl`, then re-running `kb usage report`.
+  If you already re-ingested the transcript, `--ticket` on
+  `kb usage ingest-transcript` cannot help either: every row's uuid is
+  already recorded, so there is nothing left for it to move.
+
+A row is attributed to whichever ticket file the session mentioned most
+recently (`tickets/<id>.md`, `missions/<id>.md`,
+`docs/impl/<id>-{design,plan}.md`). Work done before any ticket file is
+mentioned lands in `_unattributed.jsonl` — a large bucket there means
+attribution is missing work, not that the work was free.
+
+If `.kb/usage/*.jsonl` isn't growing, check `.kb/usage/ingest-errors.log` —
+the hook fails silently by design (a `Stop` hook cannot block a turn from
+ending), so this file is the only place a failure — a mistyped `kind:`, a
+missing transcript, a corrupt ledger line — is ever visible.
+
+If this repo already had a `.claude/settings.json`, `kb init` left it alone.
+Merge the hook in by hand:
+
+```json
+{"hooks": {"Stop": [{"hooks": [
+  {
+    "type": "command",
+    "command": "kb usage ingest-transcript --hook-stdin",
+    "timeout": 30,
+    "statusMessage": "Recording token usage..."
+  }
+]}]}}
+```
+
+`--force` does not merge this hook in for you: it replaces the whole file
+with the scaffolded one, so a repo with its own `.claude/settings.json`
+still needs the hand-merge above.
+
+`.kb/usage/report.html` is generated, not a record — the committed `.jsonl`
+ledgers are. Regenerate it whenever you want with `kb usage report`; commit it
+only if you want it browsable on GitHub.
+
+Prices come from a table shipped with the package; override it per model in
+`.kb/usage-prices.yaml`. The report prints the table's `effective_date` and
+warns when it is over 90 days old. A model with no rates is reported as
+`unpriced` with its token counts — never as free.
+
 ## CLI reference
 
 - `kb init --kind ba` — scaffold or refresh this repo
@@ -211,3 +280,7 @@ grounded. Leave `refs:` and `version:` exactly as they are.
 - `kb doctor --hub <url>` — check the hub is reachable and
   `.kb/config.yaml` is valid (some diagnostics assume a `child`-style
   local KB and don't apply here — safe to ignore for a `ba` repo)
+- `kb usage report [--ticket <id>] [--md]` — token and cost totals for this
+  repo's tickets
+- `kb usage ingest-transcript <path>` — backfill usage from a Claude Code
+  transcript

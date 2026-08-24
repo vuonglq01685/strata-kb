@@ -35,6 +35,11 @@ app.add_typer(mission_app, name="mission")
 svc_app = typer.Typer(help="Service knowledge: record which tickets touched which service.")
 app.add_typer(svc_app, name="svc")
 
+usage_app = typer.Typer(
+    help="Token/cost measurement: ingest transcripts, record rows, render a report."
+)
+app.add_typer(usage_app, name="usage")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -152,7 +157,8 @@ def init(
     force: bool = typer.Option(
         False,
         "--force",
-        help="Also overwrite protected data (.kb/index.yaml)",
+        help="Also overwrite protected data "
+        "(.kb/config.yaml, .kb/index.yaml, .claude/settings.json)",
     ),
     assets: AssetsMode | None = typer.Option(
         None,
@@ -804,6 +810,288 @@ def svc_note(
     typer.echo(f"doc: {report.doc_id}")
     typer.echo(f"section: {report.section_id} ({report.action})")
     typer.echo(f"notes: {report.notes}")
+
+
+def _usage_actor(kb_dir: Path) -> str:
+    """The row's actor is the repo's declared kind, never an agent's claim.
+
+    An unset `kind:` reads as "unknown" rather than being guessed from the
+    directory layout: a wrong actor silently mis-attributes a whole repo's
+    cost to the other side of the workflow.
+    """
+    from center_kb import config
+
+    return config.load_config(kb_dir).kind or "unknown"
+
+
+def _usage_log_error(kb_dir: Path, message: str) -> None:
+    """Append one timestamped line to `.kb/usage/ingest-errors.log`.
+
+    This is the ONLY diagnostic channel a silent `--hook-stdin` failure has:
+    every error there is swallowed so a bad transcript, a mistyped `kind:`, or
+    a corrupt ledger can never block a turn from ending. The write itself must
+    never raise either — a broken log is not license to turn "log and move
+    on" back into "crash the hook", so any failure here is swallowed too.
+    """
+    from datetime import datetime, timezone
+
+    from center_kb.usage import ledger as _ledger
+
+    try:
+        path = _ledger.usage_dir(kb_dir) / "ingest-errors.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with path.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write(f"{stamp} {message.rstrip()}\n")
+    except Exception:
+        pass
+
+
+def _usage_ingest(kb_dir: Path, source: Path, *, session: str, ticket: str):
+    """Turn one transcript into ledger rows and append them.
+
+    Shared by both `ingest-transcript` branches so hook and non-hook mode
+    agree on exactly what "ingest" means; only how a failure is reported
+    differs between them.
+    """
+    from center_kb.usage import ledger, transcript
+
+    rows = transcript.rows_from_transcript(
+        source,
+        actor=_usage_actor(kb_dir),
+        session_fallback=session,
+        forced_ticket=ticket or None,
+    )
+    return ledger.append_rows(kb_dir, rows)
+
+
+@usage_app.command("ingest-transcript")
+def usage_ingest_transcript(
+    path: Path | None = typer.Argument(
+        None, help="Claude Code transcript JSONL (omit with --hook-stdin)"
+    ),
+    hook_stdin: bool = typer.Option(
+        False, "--hook-stdin", help="Read the hook payload (JSON) from stdin"
+    ),
+    ticket: str = typer.Option(
+        "", "--ticket", help="Force this ticket id for every row in the file"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Append this transcript's API calls to the usage ledger.
+
+    Safe to repeat: rows are de-duplicated by the transcript row's uuid, which
+    is what lets the `Stop` hook re-ingest the same growing file every turn.
+    """
+    from center_kb.usage import ledger
+
+    if hook_stdin:
+        if not (kb_dir / "config.yaml").exists():
+            # A `.kb` with no config.yaml is strong evidence this is the
+            # wrong directory: `kb init` always creates one, so no
+            # legitimate case is lost. Without this, a session started in a
+            # subdirectory that never got its own `.kb` silently creates a
+            # ghost ledger there, while `kb usage report` at the real repo
+            # root says "no usage recorded yet" — ONLY hook mode is guarded
+            # this way; an explicit --kb-dir from a human is a deliberate
+            # choice and is left alone.
+            _usage_log_error(
+                kb_dir,
+                f"hook mode skipped — no {kb_dir / 'config.yaml'} (wrong "
+                "working directory for this session?)",
+            )
+            return
+        # ALWAYS exit 0 here, unconditionally: a Stop hook exiting non-zero
+        # blocks Claude from ending its turn, so NOTHING in this branch may
+        # propagate — a malformed payload, an invalid `kind:`, a corrupt
+        # ledger, a missing transcript, anything. `except Exception`, not a
+        # narrow tuple, is deliberate: the failure modes this must absorb
+        # come from several modules this command does not own, and a list of
+        # "the exceptions we thought of" is exactly the list a new one falls
+        # through.
+        raw = sys.stdin.read()
+        try:
+            payload = json.loads(raw)
+            source = Path(payload["transcript_path"])
+            session = str(payload.get("session_id") or "")
+            if path is not None:
+                _usage_log_error(
+                    kb_dir, "both a path and --hook-stdin were given; used the payload"
+                )
+            _usage_ingest(kb_dir, source, session=session, ticket=ticket)
+        except Exception as exc:
+            # The exception's class name is part of the message, not just
+            # str(exc): "Expecting value: line 1 column 1" alone does not say
+            # this was a JSON parse failure, and this log is the only place a
+            # human ever sees the difference between a bad payload, an
+            # invalid `.kb/config.yaml`, and a corrupt ledger. The raw
+            # payload snippet (bounded to 200 chars) is what tells apart a
+            # genuinely empty stdin, garbage stdin, and stdin clobbered by
+            # something upstream — all three raise the identical
+            # JSONDecodeError and would otherwise log identically apart from
+            # the timestamp.
+            _usage_log_error(
+                kb_dir,
+                f"ingest-transcript (hook) failed: {type(exc).__name__}: {exc}: "
+                f"{raw[:200]}",
+            )
+        return  # silent either way: the hook's stdout would land in the session
+
+    if path is None:
+        # Written to stdout, not stderr, matching svc_note's failure style.
+        # The suite's CliRunner reads `result.output`, and whether that
+        # includes stderr varies with the Click version — a message the test
+        # cannot see is a message that stops being checked.
+        typer.secho(
+            "pass exactly one of a transcript path or --hook-stdin",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(2)
+
+    try:
+        report = _usage_ingest(kb_dir, path, session="", ticket=ticket)
+    except (OSError, ledger.LedgerError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "written": report.written,
+                    "duplicates": report.duplicates,
+                    "files": report.files,
+                }
+            )
+        )
+    else:
+        typer.echo(
+            f"{report.written} new row(s), {report.duplicates} already recorded"
+            + (f" -> {', '.join(report.files)}" if report.files else "")
+        )
+        if ticket and report.written == 0 and report.duplicates > 0:
+            # Global uuid dedup (invariant I2) + forced_ticket compose into a
+            # dead escape hatch: once a transcript has already been ingested
+            # (e.g. by the Stop hook), every row's uuid is already stored, so
+            # --ticket can never move one — "0 new row(s), N already
+            # recorded" plus exit 0 reads as success otherwise. `kb usage
+            # note` is NOT the fix: it appends a new row, so using it to
+            # "correct" an existing one double-counts the tokens. The only
+            # real repair is hand-editing the stored row.
+            typer.secho(
+                f"--ticket was given, but all {report.duplicates} row(s) here "
+                "are already recorded — --ticket cannot move a row that is "
+                "already in the ledger. To move one, edit its "
+                ".kb/usage/*.jsonl file by hand, then re-run `kb usage report`.",
+                fg=typer.colors.YELLOW,
+            )
+
+
+@usage_app.command("note")
+def usage_note(
+    ticket: str = typer.Option(..., "--ticket", help="Ticket / mission id"),
+    phase: str = typer.Option(..., "--phase", help="Workflow phase, e.g. dev-plan"),
+    model: str = typer.Option(..., "--model", help="Model id"),
+    tokens_in: int = typer.Option(..., "--tokens-in", min=0),
+    tokens_out: int = typer.Option(..., "--tokens-out", min=0),
+    cache_read: int = typer.Option(0, "--cache-read", min=0),
+    cache_write_1h: int = typer.Option(0, "--cache-write-1h", min=0),
+    cache_write_5m: int = typer.Option(0, "--cache-write-5m", min=0),
+    est: bool = typer.Option(
+        False, "--est", help="Mark the numbers as an estimate, not a measurement"
+    ),
+    assistant: str = typer.Option("claude-code", "--assistant"),
+    session: str = typer.Option("", "--session"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Append one usage row by hand — for an assistant with no hook, or to
+    repair an attribution the cursor got wrong."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    from center_kb.usage import ledger
+
+    row = ledger.UsageRow(
+        uuid=str(_uuid.uuid4()),
+        ts=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        session=session,
+        actor=_usage_actor(kb_dir),
+        phase=phase,
+        ticket=ticket,
+        model=model,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cache_read=cache_read,
+        cache_write_5m=cache_write_5m,
+        cache_write_1h=cache_write_1h,
+        sidechain=False,
+        branch=None,
+        assistant=assistant,
+        est=est,
+    )
+    try:
+        report = ledger.append_rows(kb_dir, [row])
+    except ledger.LedgerError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"recorded -> {', '.join(report.files)}")
+
+
+@usage_app.command("report")
+def usage_report(
+    ticket: str = typer.Option("", "--ticket", help="Only this ticket"),
+    md: bool = typer.Option(False, "--md", help="Print Markdown to stdout"),
+    json_out: bool = typer.Option(False, "--json", help="Print JSON to stdout"),
+    out: Path | None = typer.Option(
+        None, "--out", help="HTML output path (default: <kb-dir>/usage/report.html)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Aggregate the usage ledger: per ticket, phase, model, actor."""
+    from datetime import date, datetime, timezone
+
+    from pydantic import ValidationError
+
+    from center_kb.usage import ledger, prices, report as report_mod
+
+    try:
+        rows = ledger.read_rows(kb_dir)
+    except (ledger.LedgerError, ValidationError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if ticket:
+        rows = [r for r in rows if r.ticket == ticket]
+    generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if not rows:
+        if json_out:
+            # --json is the machine surface a PR/CI step consumes, and it
+            # must stay parseable even in the state every repo starts in —
+            # before its first ingest. The human-facing guidance below is
+            # prose on purpose and is not a substitute here.
+            typer.echo(report_mod.Aggregate(generated=generated).model_dump_json(indent=2))
+            return
+        typer.echo(
+            "no usage recorded yet — run `kb usage ingest-transcript <path>` on a "
+            "Claude Code transcript, or check that the Stop hook is wired"
+        )
+        return
+    agg = report_mod.aggregate(
+        rows,
+        prices.load_prices(kb_dir),
+        today=date.today(),
+        generated=generated,
+    )
+    if md:
+        typer.echo(report_mod.render_markdown(agg))
+        return
+    if json_out:
+        typer.echo(agg.model_dump_json(indent=2))
+        return
+    target = out or (ledger.usage_dir(kb_dir) / "report.html")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(report_mod.render_html(agg), encoding="utf-8", newline="\n")
+    typer.echo(f"wrote {target}")
 
 
 @app.command()
