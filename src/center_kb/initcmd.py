@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
+from center_kb import conventions
+
 KIND_HUB = "hub"
 KIND_CHILD = "child"
 KIND_BA = "ba"
@@ -281,6 +283,10 @@ def init_repo(
         if ".kb/config.yaml" in report.skipped:
             report.skipped.remove(".kb/config.yaml")
         report.updated.append(".kb/config.yaml (kind recorded)")
+    if kind == KIND_DEV:
+        langs = conventions.scaffold_conventions(target, report)
+        if langs:
+            conventions.ensure_claude_block(target, report)
     if assets is not None:
         outcome = record_asset_store(target / ".kb" / "config.yaml", assets)
         if outcome == "recorded":

@@ -51,6 +51,15 @@ rewrite the cache, keeping its `## Placeholder map`.
   build/test/lint commands and record them at the top of the plan file, so
   this closing task, `dev-execute`, and `dev-handover` all have something
   to run.
+- **No linter in the repo** — when there is no linter at all to record as
+  `cmd.lint`, make setting one up the plan's first task, from the
+  *Linting* section of `docs/conventions/<lang>.md` (plus
+  `docs/conventions/<lang>.local.md` overrides), and record the command
+  it establishes as `cmd.lint`. Its red step is running that command and
+  watching it fail because no linter is configured. Scope the initial
+  config so `cmd.lint` passes on the untouched tree — every later task's
+  verify step runs it — and record tightening it to full strength as a
+  finding for the PR body.
 - **GATE 2** — the Dev approves the plan before any code is written; once
   approved, option 1 in the Next-step block below is
   `/dev-execute <ticket-id>`. The checkbox file is also the resume point,
