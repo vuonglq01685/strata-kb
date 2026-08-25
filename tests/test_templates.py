@@ -1370,3 +1370,130 @@ def test_ba_wrappers_do_not_let_the_gap_verifier_invent_a_score():
         assert "does not score an axis" not in text, name
         assert "do **not** re-score an axis in this pass" in text, name
         assert "carry the previous round's score forward" in text, name
+
+
+# --- Batch 5 (D conventions pack): base conventions templates ---------------
+
+CONVENTIONS_SECTION_HEADINGS = (
+    "## Naming",
+    "## Module structure",
+    "## Error handling",
+    "## Logging",
+    "## Citation comments",
+    "## Testing",
+    "## Linting (preset)",
+)
+
+
+def test_conventions_python_and_ts_templates_carry_the_full_skeleton():
+    for name, needles in (
+        (
+            "conventions-python.md",
+            ("ruff.toml", "ruff check . && ruff format --check .", "logging.getLogger"),
+        ),
+        (
+            "conventions-ts.md",
+            ("eslint.config.mjs", "npx eslint . && npx prettier --check .", ".prettierrc.json"),
+        ),
+    ):
+        text = _read_init_template(name)
+        for heading in CONVENTIONS_SECTION_HEADINGS:
+            assert heading in text, f"{name}: missing {heading!r}"
+        for needle in needles:
+            assert needle in text, f"{name}: missing {needle!r}"
+        assert ".local.md" in text, name          # override pointer in the header
+        assert ".editorconfig" in text, name      # editorconfig block present
+        assert "per ATM-STD §5.3" in text, name   # citation-comment example
+        assert "cmd.lint" in text, name           # preset names the recorded command
+
+
+def test_conventions_java_and_go_templates_carry_the_full_skeleton():
+    for name, needles in (
+        (
+            "conventions-java.md",
+            ("spotless", "checkstyle", "googleJavaFormat", "spotlessCheck", "resources.text.fromArchiveEntry", "checkstyleConfig"),
+        ),
+        (
+            "conventions-go.md",
+            (".golangci.yml", "golangci-lint run", "gofmt"),
+        ),
+    ):
+        text = _read_init_template(name)
+        for heading in CONVENTIONS_SECTION_HEADINGS:
+            assert heading in text, f"{name}: missing {heading!r}"
+        for needle in needles:
+            assert needle in text, f"{name}: missing {needle!r}"
+        assert ".local.md" in text, name
+        assert ".editorconfig" in text, name
+        assert "per ATM-STD §5.3" in text, name
+        assert "cmd.lint" in text, name
+
+
+def test_conventions_php_and_dotnet_templates_carry_the_full_skeleton():
+    for name, needles in (
+        (
+            "conventions-php.md",
+            (".php-cs-fixer.dist.php", "@PSR12", "php-cs-fixer check"),
+        ),
+        (
+            "conventions-dotnet.md",
+            ("dotnet format --verify-no-changes", "dotnet_diagnostic", "EnforceCodeStyleInBuild"),
+        ),
+    ):
+        text = _read_init_template(name)
+        for heading in CONVENTIONS_SECTION_HEADINGS:
+            assert heading in text, f"{name}: missing {heading!r}"
+        for needle in needles:
+            assert needle in text, f"{name}: missing {needle!r}"
+        assert ".local.md" in text, name
+        assert ".editorconfig" in text, name
+        assert "per ATM-STD §5.3" in text, name
+        assert "cmd.lint" in text, name
+
+
+def test_conventions_local_stub_and_pointer_templates():
+    stub = _read_init_template("conventions-local-stub.md")
+    assert "never rewrites it" in stub
+    assert "OVERRIDE" in stub
+
+    mdc = _read_init_template("conventions-pointer.mdc")
+    assert "globs: {globs}" in mdc
+    assert "alwaysApply: false" in mdc
+
+    instr = _read_init_template("conventions-pointer.instructions.md")
+    assert 'applyTo: "{globs}"' in instr
+
+    for text in (mdc, instr):
+        assert "docs/conventions/{lang}.md" in text
+        assert "docs/conventions/{lang}.local.md" in text
+        # raw-text needle kept to one source line — the phrase wraps
+        assert "wins locally" in text
+
+
+# --- Batch 5 (D conventions pack): skill-text round -------------------------
+
+
+def test_dev_plan_first_task_sets_up_the_linter_when_the_repo_has_none():
+    # D1: the existing bullet only handles "no -code document" by asking for
+    # commands; a repo with NO linter at all had nothing to record and no
+    # guidance. The preset lives in the Linting section of the scaffolded
+    # conventions base file.
+    for name in _dev_wrapper_names("dev-plan"):
+        text = _dev_wrapper_text(name)
+        assert "no linter at all" in text, name
+        assert "docs/conventions/<lang>.md" in text, name
+        assert "*Linting* section" in text, name
+        assert "first task" in text, name
+        assert "docs/conventions/<lang>.local.md" in text, name
+
+
+def test_dev_execute_review_checkpoint_points_at_the_conventions_files():
+    # D4: "the repo's existing conventions" was unactionable — the checkpoint
+    # now names the scaffolded files, the local-wins order, and the
+    # conflict-becomes-a-finding rule.
+    for name in _dev_wrapper_names("dev-execute"):
+        text = _dev_wrapper_text(name)
+        assert "docs/conventions/<lang>.md" in text, name
+        assert "docs/conventions/<lang>.local.md" in text, name
+        assert "the repo wins locally" in text, name
+        assert "the repo's existing conventions" not in _dev_wrapper_body(name), name

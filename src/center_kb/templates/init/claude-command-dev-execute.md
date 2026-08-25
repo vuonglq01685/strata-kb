@@ -48,8 +48,11 @@ fail — a test that was never seen red proves nothing; write the
 minimum code and get it passing; hold a **review checkpoint**
 (pass/fail, not a score) confirming the test actually exercises that
 AC, every standard-derived value is verbatim with a citation comment,
-the change follows the repo's existing conventions, and nothing else
-broke; then **verify** by running `cmd.test` and `cmd.lint` (the
+the change follows `docs/conventions/<lang>.md` plus
+`docs/conventions/<lang>.local.md` overrides (local wins; where either
+conflicts with the repo's existing dominant style, the repo wins
+locally — the conflict is recorded as a finding for the PR body), and
+nothing else broke; then **verify** by running `cmd.test` and `cmd.lint` (the
 commands it was handed) and show the output; then commit the task's
 changes — ticking its checkboxes in the plan file happens next, back
 in the orchestrator, since the plan file itself is never handed to
