@@ -58,22 +58,48 @@ B quyết định thứ tự trong C — cắt chỗ số liệu chỉ ra là đ
   Khám phá rộng: budget 500–800 (đủ citation + summary để chọn); `kb_get_section` chỉ với section đã chọn; L3 chỉ cho giá trị sẽ encode vào code/test.
 - [x] **C5 — Rút gọn shared block trong 5 skill dev** (~0.5 ngày, đụng canon) (một phần — xem ghi chú ĐỢT TEMPLATE CHUNG)
   Freshness block + 14 hard rules + Next-step block lặp nguyên văn trong cả 5 skill, nạp ~5 lần/phiên orchestrator. Viết gọn một lần: hard rules gom còn ~8 dòng, freshness block còn nửa. Sửa canon = sửa hai chỗ (SHARED_BLOCK_TEXT + wrappers), không regenerate canon từ wrapper.
-- [ ] **C6 — Model tiering (assistant-level, không đụng center-kb)**
+- [x] **C6 — Model tiering (assistant-level, không đụng center-kb)**
   Bước cơ khí (lint-fix loop, tick checkbox, format PR body) chạy model rẻ; design/review chạy model mạnh. Ghi vào QUICKSTART như khuyến nghị vận hành. **B1 ghi lại model per row nên hiệu quả tiering đo được ngay trên dashboard B3.**
+  *Xong 2026-08-25 — mục `## Model tiering` trong cả `QUICKSTART-dev.md` lẫn `QUICKSTART-ba.md`. Lệch so với mô tả, do đo được chứ không do đổi ý: câu load-bearing của mục không phải bảng tier mà là **cảnh báo prompt cache** — đổi model giữa phiên vứt cache và trả một `cache_write` mới ở model mới (1.25× input ở 5m, 2× ở 1h; mọi write đo được tới nay đều là 1h), nên vài lượt model rẻ chen giữa phiên model mạnh **đắt hơn** không tiering. Quy tắc ship ra là "chỉ đổi model ở ranh giới phase". Prose **không chứa tên model nào** (test chốt): danh sách model chỉ tồn tại ở `usage-prices.yaml` — nơi duy nhất có `effective_date` và cảnh báo quá 90 ngày; bản sao thứ hai trong văn xuôi chắc chắn mục nát. C6 tách khỏi batch 4 khi plan C1 rút còn 6 task, nên đi cùng bookkeeping D thay vì đi cùng C1.*
 
 ## D — Conventions pack đi theo package center-kb
 
 Theo quyết định đã chốt: không có tầng conventions trên hub — tất cả ship trong package, scaffold khi `kb init`.
 
-- [ ] **D1 — Preset linter/formatter theo ngôn ngữ** (~0.5 ngày)
+> **Đợt 5 xong 2026-08-25** (PR #43). Lệch so với mô tả dưới đây, đều do đo được
+> chứ không do đổi ý:
+>
+> - **Module riêng `conventions.py`, không tái dùng `codeingest`**: detect chỉ cần
+>   *sự hiện diện* của manifest, `codeingest` parse *nội dung* manifest — kéo
+>   codeingest vào init path là chi phí thừa. Roadmap D2 nói dùng
+>   `detect_frameworks()` sẵn có; thực tế ship `detect_langs()` mới. Quét root +
+>   2 tầng con, bỏ qua `.git/.kb/docs/node_modules/vendor`, mọi lời gọi filesystem
+>   đều guard nên một subtree không đọc được không bao giờ làm hỏng `kb init`.
+> - **Sáu ngôn ngữ base** (python, ts, java, go, php, dotnet) — D1 chỉ nêu bốn.
+> - **`.local.md` không bao giờ bị ghi đè, kể cả `--force`**: đường dẫn động nên
+>   không nằm được trong `PROTECTED_FILES`, post-step tự enforce việc skip.
+> - `ensure_claude_block()` giữ nguyên byte của `CLAUDE.md` sẵn có, kể cả CRLF.
+> - **D5 ship ngược dấu**: conventions là post-step chứ không phải row của
+>   `template_map()`, nên không có `expected_files()` count nào để bump. Hai
+>   trip-wire mới pin `template_map()` / `expected_files()` / các tuple
+>   `*_TEMPLATES` + `PROTECTED_FILES` **không đổi**, thay cho việc bump count như
+>   roadmap viết. `tests/test_templates.py` vẫn bump như thường (D1 + D4 đụng
+>   wrapper `dev-plan` và `dev-execute`).
+> - Precedence viết y nguyên ở cả bốn nơi nó xuất hiện (header file base, hai
+>   pointer template, block `CLAUDE.md`, wrapper `dev-execute`): local thắng base;
+>   nơi nào xung đột với style hiện hữu của repo thì repo thắng cục bộ, ghi
+>   finding vào PR.
+> - Test: 1873 passed, 5 skipped (trước batch: 1828 / 5). Golden + MCP không đổi.
+
+- [x] **D1 — Preset linter/formatter theo ngôn ngữ** (~0.5 ngày)
   Python = ruff (+format), TS/JS = eslint + prettier, Java = checkstyle/spotless, cộng `.editorconfig`. `dev-plan` sửa một câu: repo chưa có linter → task đầu tiên của plan là setup lint theo preset (hiện skill chỉ hỏi lệnh, chưa xử lý "không có gì để chạy").
-- [ ] **D2 — Template `conventions-<lang>.md` trong `templates/init/`, scaffold theo stack** (~1–1.5 ngày)
+- [x] **D2 — Template `conventions-<lang>.md` trong `templates/init/`, scaffold theo stack** (~1–1.5 ngày)
   Detect stack bằng `detect_frameworks()` sẵn có; deploy ra đúng chỗ mỗi assistant tự đọc mọi phiên: `CLAUDE.md`, `.cursor/rules/coding-<lang>.mdc`, `.github/instructions/coding-<lang>.instructions.md`. Nội dung: naming, cấu trúc module, error handling, logging, quy cách comment citation (`# per ATM-STD §5.3 @ rev`), quy tắc viết test — phần linter không bắt được.
-- [ ] **D3 — Cơ chế base + local override** (thiết kế cùng D2 — điểm quan trọng nhất của D)
+- [x] **D3 — Cơ chế base + local override** (thiết kế cùng D2 — điểm quan trọng nhất của D)
   Mâu thuẫn phải giải: file theo package thì upgrade phải ghi đè được, nhưng conventions chắc chắn bị repo tuỳ biến — mà `kb init` re-run ghi đè scaffold hand-edited. Giải bằng hai file: `docs/conventions/<lang>.md` (base, package-owned, ghi đè khi re-init — nhận cập nhật chuẩn qua upgrade package) + `docs/conventions/<lang>.local.md` (never-touch như `.kb/config.yaml`; **local thắng base khi xung đột**). Wrapper rules trỏ cả hai.
-- [ ] **D4 — Nối vào workflow Dev** (skill text — ĐỢT TEMPLATE CHUNG nếu kịp, không thì đợt riêng của D)
+- [x] **D4 — Nối vào workflow Dev** (skill text — ĐỢT TEMPLATE CHUNG nếu kịp, không thì đợt riêng của D)
   Review checkpoint của `dev-execute` đổi "follow the repo's existing conventions" thành trỏ tường minh conventions file (base + local); xung đột với style hiện hữu của repo → repo thắng cục bộ, ghi finding vào PR.
-- [ ] **D5 — Bump trip-wires có chủ đích**
+- [x] **D5 — Bump trip-wires có chủ đích**
   `tests/test_init.py` pin số file scaffold chính xác; `tests/test_templates.py` pin canon. Thêm template = bump hai test này có chủ đích.
 
 ## E — Củng cố kỷ luật bằng máy + pilot
@@ -109,11 +135,12 @@ Mọi lần sửa template trả cùng chi phí: 4 wrapper/skill (claude-skill, 
 
 Bắt đầu bằng A1–A3 (engine tag-fix + quét backlog) vì đây là bug đang chủ động làm bẩn KB theo từng ticket mới — nhỏ, độc lập, ~1.5 ngày. Song song hoặc ngay sau đó làm B1–B3 (ledger + capture + report.html): đo lường phải có **trước** khi tối ưu, và website trong repo là thứ tạo cảm nhận giá trị ngay cho cả BA lẫn Dev — mở `.kb/usage/report.html` là thấy ticket này tốn bao nhiêu, model gì, phase nào ngốn nhất. Khi engine A + B xong, chạy **một đợt template chung** (A4 + B4 + C2 + C3 + C4) — trả chi phí 4-wrapper + canon đúng một lần. Sau 1–2 tuần số liệu từ B, làm C1 (context cache + `kb resolve --status-only`, item tiết kiệm dự đoán lớn nhất) và C5 nếu số liệu xác nhận. Rồi D conventions pack theo đúng quyết định đi-theo-package — với D3 (base + local override) là điểm phải thiết kế cẩn thận nhất. E chạy cùng pilot, và pilot lúc này đã có sẵn dashboard token để báo cáo. Xuyên suốt: không thêm MCP tool, không đổi schema/docstring 5 tool hiện có (golden byte-identical), mọi capability mới là CLI command, mọi lần đụng template/scaffold là một lần bump trip-wire có chủ đích.
 
-| Đợt | Gồm | Effort ước | Ghi chú |
-|---|---|---|---|
-| 1 | A1, A2, A3 (engine tag-fix) | ~1.5 ngày | Branch riêng, độc lập |
-| 2 | B1, B2, B3 (ledger + capture + report.html) | ~2.5–3 ngày | CLI `kb usage`, hook Claude Code, fallback est cho Copilot/Cursor |
-| 3 | Đợt template chung: A4 + B4 + C2 + C3 + C4 + C5 (một phần) | ~1 ngày | Một PR, một lần bump canon |
-| 4 | C1 | ~1.5 ngày | Sau 1–2 tuần dữ liệu từ B |
-| 5 | D1→D5 conventions pack | ~2.5–3 ngày | D3 base+local là điểm thiết kế then chốt |
-| Cùng pilot | C6, E1–E3 | vận hành | Dashboard B3 nuôi báo cáo pilot |
+| Đợt | Gồm | Effort ước | Ghi chú | Trạng thái |
+|---|---|---|---|---|
+| 1 | A1, A2, A3 (engine tag-fix) | ~1.5 ngày | Branch riêng, độc lập | ✅ 2026-08-23 (PR #37) |
+| 2 | B1, B2, B3 (ledger + capture + report.html) | ~2.5–3 ngày | CLI `kb usage`, hook Claude Code, fallback est cho Copilot/Cursor | ✅ 2026-08-24 (PR #39 + #40) |
+| 3 | Đợt template chung: A4 + B4 + C2 + C3 + C4 + C5 (một phần) | ~1 ngày | Một PR, một lần bump canon | ✅ 2026-08-24 (PR #41) |
+| 4 | C1 | ~1.5 ngày | Sau 1–2 tuần dữ liệu từ B | ✅ 2026-08-24 (PR #42) |
+| 5 | D1→D5 conventions pack | ~2.5–3 ngày | D3 base+local là điểm thiết kế then chốt | ✅ 2026-08-25 (PR #43) |
+| 6 | C6 + bookkeeping D | ~0.5 ngày | Chỉ template doc + 2 test; không đụng engine | ✅ 2026-08-25 |
+| Cùng pilot | E1–E3 | vận hành | Dashboard B3 nuôi báo cáo pilot | còn lại |
