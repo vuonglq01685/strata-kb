@@ -286,6 +286,33 @@ Prices come from a table shipped with the package; override it per model in
 warns when it is over 90 days old. A model with no rates is reported as
 `unpriced` with its token counts — never as free.
 
+## Model tiering
+
+A recommendation, not a rule — nothing in `kb` enforces or measures compliance
+with it. Some steps in writing a ticket are judgment and some are mechanical;
+running both on the same model pays the judgment price for the mechanical half.
+
+| Tier | Steps |
+| --- | --- |
+| Strong | intake, pinning refs with `kb context new`, writing the acceptance criteria, and the maturity review |
+| Cheap | the `kb ticket lint` fix loop up to `DoR: PASS` |
+
+Which model belongs to which tier follows the price table in force —
+`usage-prices.yaml` shipped with the package, overridable per model at
+`.kb/usage-prices.yaml`. That table carries an `effective_date` and is the only
+list of models in this project; this page deliberately keeps no second copy to
+rot.
+
+**Switch at phase boundaries, never inside a phase.** Changing model mid-session
+discards the prompt cache and pays a fresh cache write at the new model:
+`cache_write` costs 1.25x input at 5m and 2x at 1h, and every write measured
+here so far has been 1h. Three cheap-model turns in the middle of a
+strong-model session can cost **more** than not tiering at all.
+
+Check the result instead of trusting it: `kb usage report` already breaks
+spending down by model, and subagent cost is separated as `sidechain`, so a
+tiering change shows up in the report the next ticket generates.
+
 ## CLI reference
 
 - `kb init --kind ba` — scaffold or refresh this repo

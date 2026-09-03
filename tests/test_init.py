@@ -1881,3 +1881,39 @@ def test_init_non_dev_kinds_gain_no_conventions(tmp_path: Path):
         init_repo(repo, kind)
         assert not (repo / "docs" / "conventions").exists(), kind
         assert not (repo / "CLAUDE.md").exists(), kind
+
+
+def _tiering_section(text: str) -> str:
+    start = text.index("## Model tiering")
+    rest = text.index("\n## ", start + 1)
+    return text[start:rest]
+
+
+def test_quickstarts_document_model_tiering(tmp_path: Path):
+    for kind, quickstart in (("dev", "QUICKSTART-DEV.md"), ("ba", "QUICKSTART-BA.md")):
+        target = tmp_path / kind
+        target.mkdir()
+        init_repo(target, kind)
+        section = _tiering_section((target / quickstart).read_text(encoding="utf-8"))
+        assert "usage-prices.yaml" in section, kind
+        assert "effective_date" in section, kind
+        # The caveat is the load-bearing sentence: without it the advice
+        # raises the bill while everyone believes it lowers it.
+        assert "discards the prompt cache" in section, kind
+        assert "2x at 1h" in section, kind
+        assert "can cost **more** than not tiering" in section, kind
+        # And it must say how to check rather than asking for trust.
+        assert "kb usage report" in section, kind
+
+
+def test_model_tiering_names_no_model_ids(tmp_path: Path):
+    # The decision this pins: tiers are abstract here, and the model names
+    # live only in the price table, which carries an effective_date and warns
+    # when it is stale. A name copied into prose has no such guard.
+    for kind, quickstart in (("dev", "QUICKSTART-DEV.md"), ("ba", "QUICKSTART-BA.md")):
+        target = tmp_path / kind
+        target.mkdir()
+        init_repo(target, kind)
+        section = _tiering_section((target / quickstart).read_text(encoding="utf-8"))
+        for banned in ("claude-opus-", "claude-sonnet-", "claude-haiku-"):
+            assert banned not in section, f"{kind}: {banned}"
