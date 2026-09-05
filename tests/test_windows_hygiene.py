@@ -38,6 +38,7 @@ COMMITTED_WRITERS = [
     "dockersetup.py",
     "summarize.py",
     "ingest/scaffold.py",
+    "conventions.py",
 ]
 
 
