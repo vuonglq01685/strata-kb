@@ -51,13 +51,17 @@ rewrite the cache, keeping its `## Placeholder map`.
   writes back here. If this repo has no `<repo_id>-svc` yet
   (`dev-code-seed` never run), say so in one line in the PR and
   record the history there instead.
-- **Assemble the PR description**, containing: the **ticket
-  id**; the **kb-context** refs so the reviewer can `kb resolve`
-  them; the **AC→test map**; the **placeholder-resolution**
-  list; every `OPEN(...)` finding; the verification output; and
-  every **KB gap**, ambiguity, or contradiction found, as a
-  concrete feedback item (issue or PR on the owning child repo /
-  hub).
+- **Assemble the PR description** using the repo's
+  `.github/pull_request_template.md`, whose eight sections CI
+  checks with `kb pr lint`: **Ticket**; **kb-context** refs so
+  the reviewer can `kb resolve` them; the **AC→test map**; the
+  **Placeholder resolutions** list; the **Verification** output,
+  pasted inside a fenced block, not claimed; the `## TDD
+  exemptions` section — every `Exempt:` line from the plan, or
+  `none`; the **Findings**, every `OPEN(...)`, KB gap, ambiguity
+  or contradiction as a concrete feedback item on the owning
+  repo, or `none`; and the **Usage** table. A section left as
+  the template's comment counts as empty and fails the check.
 - **Report the cost** — run `kb usage report --ticket <id> --md`
   and paste the table into the PR under a `## Usage` heading, so
   the PR carries the ticket's own token cost. When the command

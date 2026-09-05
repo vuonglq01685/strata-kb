@@ -40,6 +40,11 @@ usage_app = typer.Typer(
 )
 app.add_typer(usage_app, name="usage")
 
+pr_app = typer.Typer(
+    help="Pull-request gate: check a PR description carries its evidence."
+)
+app.add_typer(pr_app, name="pr")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -1596,6 +1601,47 @@ def ticket_lint(
 
     handle = _hub_or_exit(hub, kb_dir)
     report = lint(text, handle, path=path, missions_dir=resolved_missions)
+    if json_output:
+        typer.echo(json.dumps(report.to_json()))
+    else:
+        typer.echo(report.render())
+    if not report.passed:
+        raise typer.Exit(1)
+
+
+@pr_app.command("lint")
+def pr_lint(
+    source: str = typer.Argument(
+        ..., help="File holding the PR description (or '-' to read from stdin)"
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON instead of text"
+    ),
+) -> None:
+    """Gate: every required PR section is present and actually filled in.
+
+    Takes a file or stdin and never a string option: a PR description is
+    attacker-controlled text, and keeping it out of argv is what stops a
+    caller from interpolating it into a shell command.
+    """
+    from center_kb.prlint import lint_body
+
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        path = Path(source)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            typer.secho(
+                f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        except OSError as exc:
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+    report = lint_body(text)
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:

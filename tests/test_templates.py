@@ -636,10 +636,17 @@ def test_dev_handover_lists_the_pr_contents():
     # Body, not whole text: SHARED-HARD-RULES carries `kb-context` and
     # OPEN(BA) in all 20 wrappers, so whole-text needles for those two would
     # pass even with no PR-contents list in the file at all.
+    #
+    # Batch 7 (E2) note: "ticket id" and "placeholder-resolution" were the
+    # pre-canon wording of the "Assemble the PR description" bullet. That
+    # bullet now names the eight `REQUIRED_SECTIONS` in canon spelling
+    # ("Ticket", "Placeholder resolutions") to match `pull-request-template.md`
+    # and `test_every_required_section_is_named_in_the_dev_handover_wrappers`
+    # below — updated here rather than left pinning retired wording.
     for name in _dev_wrapper_names("dev-handover"):
         text = _dev_wrapper_body(name)
-        for item in ("ticket id", "kb-context", "AC→test map",
-                     "placeholder-resolution", "OPEN(", "KB gap"):
+        for item in ("Ticket", "kb-context", "AC→test map",
+                     "Placeholder resolutions", "OPEN(", "KB gap"):
             assert item in text, f"{name} missing PR item {item}"
 
 
@@ -1497,3 +1504,120 @@ def test_dev_execute_review_checkpoint_points_at_the_conventions_files():
         assert "docs/conventions/<lang>.local.md" in text, name
         assert "the repo wins locally" in text, name
         assert "the repo's existing conventions" not in _dev_wrapper_body(name), name
+
+
+# --- Batch 7 (E1 + E2): the PR evidence gate --------------------------------
+
+import re as _re
+
+from center_kb.prlint import REQUIRED_SECTIONS
+
+DEV_HANDOVER_TEMPLATES = _dev_wrapper_names("dev-handover")
+EXEMPTION_SLUGS = ("config", "ci", "docs", "style")
+
+
+def _pr_template_headings() -> list[str]:
+    text = _read_init_template("pull-request-template.md")
+    return [
+        m.group(1).strip()
+        for m in _re.finditer(r"^##[ \t]+(.+?)[ \t]*$", text, _re.MULTILINE)
+    ]
+
+
+def test_pr_template_headings_are_the_canon_in_order():
+    # Canon pin, place 1 of 3: the shipped template against the module.
+    assert tuple(_pr_template_headings()) == REQUIRED_SECTIONS
+
+
+def test_every_required_section_is_named_in_the_dev_handover_wrappers():
+    # Canon pin, place 2 of 3: the skill that assembles the body must name
+    # every section the gate demands, or the gate fails PRs the skill wrote.
+    for name in DEV_HANDOVER_TEMPLATES:
+        body = _dev_wrapper_body(name)
+        for section in REQUIRED_SECTIONS:
+            assert _normalised(section) in body, f"{name}: {section}"
+
+
+def test_pr_workflow_triggers_include_edited_and_have_no_paths_filter():
+    text = _read_init_template("kb-pr-lint.yml")
+    assert "types: [opened, edited, synchronize, reopened]" in text
+    # Catches `paths:` and `paths-ignore:` at any indent (e.g. a 2-space
+    # nested key), not just the two exact spellings checked before.
+    assert not _re.search(r"^\s*paths(-ignore)?:", text, _re.MULTILINE)
+    assert "\n  pr-lint:" in text, "the job name is frozen for branch protection"
+
+
+def test_pr_workflow_has_a_concurrency_group():
+    # `edited` fires on every description edit, so an author iterating on a
+    # PR body would otherwise queue one run per keystroke-batch.
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-pr-lint.yml"))
+    concurrency = wf["concurrency"]
+    assert concurrency["group"] == "pr-lint-${{ github.event.pull_request.number }}"
+    assert concurrency["cancel-in-progress"] is True
+
+
+def test_pr_workflow_never_interpolates_the_body_into_the_script():
+    # The injection mitigation pinned as a test rather than left as an
+    # intention: the body may reach the script only through `env:`.
+    text = _read_init_template("kb-pr-lint.yml")
+    assert "PR_BODY: ${{ github.event.pull_request.body }}" in text
+    run_blocks = text.split("run: |")[1:]
+    for block in run_blocks:
+        assert "github.event.pull_request.body" not in block
+    assert 'kb pr lint "$RUNNER_TEMP/body.md"' in text
+    # Total pin, not just multi-line `run: |` blocks: a single-line
+    # `- run: echo ${{ github.event.pull_request.body }}` would sail past
+    # the run_blocks check above without this.
+    assert text.count("github.event.pull_request.body") == 1
+
+
+def test_tdd_exemptions_doc_carries_the_four_slugs_and_the_boundary():
+    text = _read_init_template("tdd-exemptions.md")
+    for slug in EXEMPTION_SLUGS:
+        assert f"`{slug}`" in text, slug
+    # Normalised, not raw: the shipped doc hard-wraps this exact phrase as
+    # "...with no\nobservable behaviour..." — a real newline, not a space —
+    # so the raw-text needle can never match without reflowing Task 3's
+    # shipped prose, which is out of scope for this task. `_normalised`
+    # is the file's own documented tool for matching a phrase a hard-wrap
+    # is free to break across lines.
+    assert "no observable behaviour" in _normalised(text)
+    assert "when the plan is written" in text
+    assert "Exempt: <config|ci|docs|style> — verified by <what>" in text
+
+
+DEV_PLAN_TEMPLATES = _dev_wrapper_names("dev-plan")
+DEV_EXECUTE_TEMPLATES = _dev_wrapper_names("dev-execute")
+
+
+def test_dev_plan_requires_an_exemption_line_for_a_task_with_no_test():
+    for name in DEV_PLAN_TEMPLATES:
+        body = _dev_wrapper_body(name)
+        assert "docs/tdd-exemptions.md" in body, name
+        assert _normalised("Exempt: <config|ci|docs|style>") in body, name
+
+
+def test_dev_execute_honours_a_declared_exemption_and_refuses_an_undeclared_one():
+    for name in DEV_EXECUTE_TEMPLATES:
+        body = _dev_wrapper_body(name)
+        assert "docs/tdd-exemptions.md" in body, name
+        assert "Exempt:" in body, name
+        # The undeclared case returns to dev-plan; it is never the
+        # implementer's call.
+        assert _normalised("return the task to `dev-plan`") in body, name
+
+
+def test_dev_handover_reports_the_exemptions_or_none():
+    for name in DEV_HANDOVER_TEMPLATES:
+        body = _dev_wrapper_body(name)
+        assert _normalised("## TDD exemptions") in body, name
+        assert _normalised("`none`") in body, name
+
+
+def test_quickstart_dev_names_the_pr_gate_and_the_required_check():
+    text = _read_init_template("QUICKSTART-dev.md")
+    assert "kb pr lint" in text
+    assert "docs/tdd-exemptions.md" in text
+    assert "required check" in text
