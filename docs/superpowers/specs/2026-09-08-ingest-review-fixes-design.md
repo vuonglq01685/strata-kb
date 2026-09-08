@@ -92,7 +92,7 @@ After this batch, `kb ingest`:
    stray or a Part-restarted numbering becomes `<id>-2`, `-3`, … with a
    warning. Ugly but reachable by `kb get`, and a document like ICAO Annex 8
    still ingests. Proper per-Part namespacing is a separate feature.
-7. **F9: only the two zero-risk items.** Declare `rapidocr-onnxruntime` in
+7. **F9: only the two zero-risk items.** Declare `rapidocr` (the package `images.py` imports) in
    the `ingest` extra; clean `assets/` with `shutil.rmtree`. The one-row
    table gap in `extract_tables` belongs to the build batch (B-7), heading
    text is not preserved verbatim in L3 by design (ids need the normalised
@@ -115,7 +115,7 @@ After this batch, `kb ingest`:
   `ScaffoldReport`.
 - `src/center_kb/mdutils.py` — `_HEADING_RE` / `_SUBHEADING_RE` accept an
   empty title.
-- `pyproject.toml` + `uv.lock` — `rapidocr-onnxruntime` in the `ingest`
+- `pyproject.toml` + `uv.lock` — `rapidocr` in the `ingest`
   extra (the lock must be regenerated in the same PR; only CI checks it).
 - Specs and README: phase-1 §4.2 / §4.3 / §4.4 / §4.7 rewritten to match;
   README §7.1 re-ingest paragraph and report description.
@@ -398,7 +398,7 @@ read `group("title")` treat `None` as `""`.
 
 ### §6 Packaging
 
-`pyproject.toml` `ingest` extra gains `rapidocr-onnxruntime>=1.3`; `uv.lock`
+`pyproject.toml` `ingest` extra gains `rapidocr>=3.0` (already in `uv.lock` as a transitive dependency of docling, so the resolver adds no new wheel); `uv.lock`
 regenerated in the same commit (`uv lock`), verified by `uv lock --check`.
 
 ### §7 Specs and README
