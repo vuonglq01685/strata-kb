@@ -430,10 +430,14 @@ regenerated in the same commit (`uv lock`), verified by `uv lock --check`.
   (tests run many CLI invocations in one interpreter).
 - `bookmark_ids is None` is the only new tri-state; `run_ingest` treats
   `None` as "warn and skip", `set()` as "no bookmarks, skip silently".
-- Merge with a previous manifest whose `file` stems do not match the
-  current `chapter_stem` convention (a doc ingested by an older CLI) still
-  works: unmatched entries are simply kept, and the new chapter's files are
-  written alongside — nothing is deleted that the prefix rule cannot claim.
+- Merge with a previous manifest whose `file` stems predate the current
+  `chapter_stem` convention (a doc ingested by an older CLI) **refuses**,
+  not "still works": the prefix rule finds zero candidate stems for the
+  chapter, so `_resolve_stems` treats it as a brand-new chapter, and
+  `_check_no_id_clash` then sees the old, unmatched entries' ids collide
+  with the new units it is about to write and raises — before anything is
+  deleted or written. The message tells the user to re-ingest the whole
+  document (no `--sections`), which picks up the new convention.
 
 ## Tests and trip-wires
 

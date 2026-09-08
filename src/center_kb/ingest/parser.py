@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import shutil
 from pathlib import Path
 
 from center_kb.ingest import tableimages
@@ -9,6 +11,7 @@ from center_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
     Part,
+    _is_part_root,
     parse_section_id,
 )
 from center_kb.mdutils import slugify
@@ -131,8 +134,8 @@ def doc_to_items(
     doc, assets_dir: Path | None = None, pdf_path: Path | None = None
 ) -> list[DocItem]:
     if assets_dir is not None and assets_dir.exists():
-        for stale in assets_dir.iterdir():  # re-ingest: assets are re-derived
-            stale.unlink()
+        shutil.rmtree(assets_dir)  # re-ingest: assets are re-derived
+        assets_dir.mkdir(parents=True)
 
     # traverse_pictures: docling parents figure labels (axis titles, siting
     # distances, legend text) under their picture node and its default walk
@@ -150,25 +153,28 @@ def doc_to_items(
 
     items: list[DocItem] = []
     for item, label in entries:
-        page = _page_of(item)
+        page, box = _prov_box(item, doc)
+        bbox = (box.left, box.top, box.right, box.bottom) if box else None
         if label in _SKIP_LABELS:
             continue
         if label in _HEADING_LABELS:
             heading_level = getattr(item, "level", 1) if label == "section_header" else 1
-            items.append(DocItem("heading", item.text, heading_level, page=page))
+            items.append(
+                DocItem("heading", item.text, heading_level, page=page, bbox=bbox)
+            )
         elif label == "table":
             md = item.export_to_markdown(doc=doc)
             if md and md.strip():
                 md = tableimages.inject(md, placements.get(id(item), {}))
-                items.append(DocItem("table", md, page=page))
+                items.append(DocItem("table", md, page=page, bbox=bbox))
         elif label == "picture":
             if assets_dir is None or id(item) in consumed:
                 continue
             md = _picture_md(item, doc, assets_dir)
             if md:
-                items.append(DocItem("image", md, page=page))
+                items.append(DocItem("image", md, page=page, bbox=bbox))
         elif getattr(item, "text", "") and item.text.strip():
-            items.append(DocItem("text", item.text, page=page))
+            items.append(DocItem("text", item.text, page=page, bbox=bbox))
     return items
 
 
@@ -319,7 +325,10 @@ def _picture_md(item, doc, assets_dir: Path) -> str | None:
         return None
 
 
-def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str]:
+def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str] | None:
+    """Section ids named by the PDF outline. None when the outline cannot be
+    read at all (missing/corrupt file) — the caller must say the cross-check
+    was skipped; an empty set means a readable PDF with no usable outline."""
     from pypdf import PdfReader
 
     ids: set[str] = set()
@@ -337,8 +346,9 @@ def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str
     try:
         reader = PdfReader(str(pdf_path))
         walk(reader.outline)
-    except Exception:
-        return set()
+    except Exception as exc:
+        logger.debug("outline unreadable for %s: %s", pdf_path, exc)
+        return None
     return ids
 
 
@@ -425,9 +435,16 @@ def _is_leaf_unit(uid: str, unit_ids: set[str]) -> bool:
     )
 
 
-def crosscheck(
-    unit_ids: set[str], bm_ids: set[str], max_depth: int = 3
-) -> list[str]:
+# A numeric unit id, optionally carrying a duplicate-rename suffix ("5.3-2").
+# Fallback slugs ("5.6-commentary") never match: they have their own warning.
+_NUMERIC_UNIT_RE = re.compile(r"^\d+(?:\.\d+)+(?:-\d+)?$")
+
+
+def _parent_id(sid: str) -> str:
+    return sid.rsplit(".", 1)[0]
+
+
+def _missing_bookmarks(unit_ids: set[str], bm_ids: set[str], max_depth: int) -> list[str]:
     warnings: list[str] = []
     for bm in sorted(bm_ids):
         if bm[0].isdigit() and bm.count(".") + 1 > max_depth:
@@ -440,10 +457,41 @@ def crosscheck(
                 covered = True
             elif uid.startswith(bm + "."):
                 covered = True
-            elif uid.startswith(bm + "-"):
+            elif uid.startswith(bm + "-") and _is_part_root(bm):
+                # appendix-3 is covered by appendix-3-2.1; a numeric bookmark
+                # is NOT covered by a fallback child like 5.6-commentary
                 covered = True
             if covered:
                 break
         if not covered:
             warnings.append(f"bookmark section '{bm}' not found in the extracted tree")
     return warnings
+
+
+def _units_outside_outline(unit_ids: set[str], bm_ids: set[str]) -> list[str]:
+    """Numeric units the outline does not name, judged only at levels the
+    outline enumerates: a unit is extra when some bookmark shares its
+    parent. An outline that stops at chapters says nothing about 5.x.
+    A unit that is itself a strict ancestor of some bookmark is also
+    exempt: bookmarks {5.1, 5.3.2} prove unit 5.3 exists even though no
+    bookmark equals it — the outline just skipped a level on that branch."""
+    bm_parents = {_parent_id(bm) for bm in bm_ids if _NUMERIC_UNIT_RE.match(bm)}
+    return [
+        f"section '{uid}' not in the PDF outline"
+        for uid in sorted(unit_ids)
+        if _NUMERIC_UNIT_RE.match(uid)
+        and uid not in bm_ids
+        and _parent_id(uid) in bm_parents
+        and not any(bm.startswith(uid + ".") for bm in bm_ids)
+    ]
+
+
+def crosscheck(
+    unit_ids: set[str], bm_ids: set[str], max_depth: int = 3
+) -> list[str]:
+    """Both directions of the outline cross-check (phase-1 spec §4.3:
+    'section thiếu/thừa'): bookmarks no unit covers, then units the
+    outline does not name."""
+    return _missing_bookmarks(unit_ids, bm_ids, max_depth) + _units_outside_outline(
+        unit_ids, bm_ids
+    )
