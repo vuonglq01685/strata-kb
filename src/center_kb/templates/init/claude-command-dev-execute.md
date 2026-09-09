@@ -56,8 +56,14 @@ nothing else broke; then **verify** by running `cmd.test` and `cmd.lint` (the
 commands it was handed) and show the output; then commit the task's
 changes — ticking its checkboxes in the plan file happens next, back
 in the orchestrator, since the plan file itself is never handed to
-the subagent. When a test fails unexpectedly, reproduce it, find the
-actual cause, and fix the cause. Never edit a test to make it green,
+the subagent. A task block carrying an `Exempt:` line skips step 1
+and runs the verification that line names instead, showing its
+output like any other; a task block with no `Exempt:` line whose
+implementer believes no test is possible does not decide that alone
+— stop and return the task to `dev-plan`, the same route an
+unimplementable AC takes (see `docs/tdd-exemptions.md`). When a test
+fails unexpectedly, reproduce it, find the actual cause, and fix the
+cause. Never edit a test to make it green,
 never widen a tolerance to pass, and never mark a task done with a
 failing test. When an AC turns out not to be implementable as
 written, stop that task, return to `dev-design`, and record

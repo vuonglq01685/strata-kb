@@ -1430,8 +1430,9 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # 27 (Stage A) + 4 (dev-code-seed's own four-way wrappers) + 12 (the
     # reused kb-summarize/kb-approve/kb-publish rows the seed flow needs,
     # Stage C) + 1 (.claude/settings.json, the usage Stop hook) + 1
-    # (docs/impl/.gitignore — C1 keeps the context cache out of git) = 45.
-    assert len(expected_files("dev")) == 45
+    # (docs/impl/.gitignore — C1 keeps the context cache out of git) + 3
+    # (batch 7: the PR template, its workflow, and the TDD exemption doc) = 48.
+    assert len(expected_files("dev")) == 48
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
@@ -1917,3 +1918,39 @@ def test_model_tiering_names_no_model_ids(tmp_path: Path):
         section = _tiering_section((target / quickstart).read_text(encoding="utf-8"))
         for banned in ("claude-opus-", "claude-sonnet-", "claude-haiku-"):
             assert banned not in section, f"{kind}: {banned}"
+
+
+# --- Batch 7 (E1 + E2): the PR gate is scaffolded for kind dev only --------
+
+_BATCH7_DEV_PATHS = (
+    ".github/pull_request_template.md",
+    ".github/workflows/kb-pr-lint.yml",
+    "docs/tdd-exemptions.md",
+)
+
+
+def test_init_kind_dev_scaffolds_the_pr_gate(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    for rel in _BATCH7_DEV_PATHS:
+        assert (tmp_path / rel).is_file(), rel
+
+
+def test_the_pr_gate_is_not_scaffolded_for_other_kinds():
+    for kind in ("hub", "child", "ba"):
+        for rel in _BATCH7_DEV_PATHS:
+            assert rel not in expected_files(kind), f"{kind}: {rel}"
+
+
+def test_the_shipped_pr_template_fails_the_linter(tmp_path: Path):
+    # The proof that the comment-stripping rule is real. An author who
+    # deletes nothing and writes nothing must get a red check, not a green
+    # one — if this ever passes, the gate has become decoration.
+    from center_kb.prlint import lint_body
+
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / ".github" / "pull_request_template.md").read_text(
+        encoding="utf-8"
+    )
+    report = lint_body(text)
+    assert not report.passed
+    assert {f.code for f in report.findings} == {"empty-section"}

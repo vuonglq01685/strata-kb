@@ -104,8 +104,48 @@ Theo quyết định đã chốt: không có tầng conventions trên hub — t�
 
 ## E — Củng cố kỷ luật bằng máy + pilot
 
-- [ ] **E1** PR template bắt buộc AC→test map + verification output (dev-handover đã assemble sẵn — quy ước reviewer từ chối PR thiếu mục).
-- [ ] **E2** Định nghĩa TDD exemption categories (config/CI/docs/style → verify bằng gì thay test-đỏ-trước) — vá rủi ro lớn nhất của workflow trước pilot.
+> **Đợt 7 xong 2026-09-05** (PR #45). Lệch so với mô tả dưới đây, đều do đo được
+> chứ không do đổi ý:
+>
+> - **E1 ship thành gate máy, không phải quy ước reviewer.** Roadmap viết "quy ước
+>   reviewer từ chối PR thiếu mục"; thực tế ship `kb pr lint` + workflow
+>   `kb-pr-lint.yml`, nên PR thiếu mục **đỏ check** chứ không phụ thuộc reviewer
+>   có nhớ hay không. Quy ước nào phải người nhớ mới hiệu lực thì trước pilot là
+>   thứ chắc chắn trượt.
+> - **Tám mục canon** (`Ticket`, `kb-context`, `AC→test map`,
+>   `Placeholder resolutions`, `Verification`, `TDD exemptions`, `Findings`,
+>   `Usage`) pin đồng thời ở **ba nơi**: hằng `REQUIRED_SECTIONS`, heading của
+>   template, và text `dev-handover` của cả bốn wrapper. Sửa canon là sửa ba chỗ
+>   hoặc đỏ test — cùng dấu với D5.
+> - **Không thêm dependency, không đụng MCP**: engine chỉ `re` + một lệnh CLI;
+>   `uv.lock`, `mcp.py`, `tests-gate/golden` byte-identical với main.
+> - **Quy tắc HTML comment fail-closed** — điểm load-bearing thật của E1, và là
+>   chỗ review bắt lỗi hai lần. Heading hay fence nằm trong `<!-- -->` thì
+>   **không** tính là biên section (reviewer trên GitHub không thấy nó); `<!--`
+>   không đóng thì nuốt phần còn lại của body, mọi mục sau báo missing. Sai
+>   hướng an toàn: check đỏ, tác giả sửa comment. Không đường nào biến một
+>   description bỏ trống thành pass.
+> - **Body chỉ tới workflow qua `env:`**, không bao giờ `${{ … }}` trong `run:`;
+>   không checkout, không token, nên PR từ fork chạy sạch. Chốt bằng test chứ
+>   không bằng ý định.
+> - **Gate không tự skip** như `kb-ticket-lint`: bật required là chặn cả PR bot,
+>   revert, sửa README. QUICKSTART-dev cảnh báo tường minh thay vì cài sẵn `if:`
+>   guard — guard là quyết định của repo nhận gate, và E3 pilot mới đủ dữ kiện
+>   nặn hình nó.
+> - **E2 ship thành doc + hình thức khai báo**, không phải danh sách rời:
+>   `docs/tdd-exemptions.md` định ranh giới ("lớp thay đổi không có hành vi quan
+>   sát được", khai lúc viết plan), khai theo mẫu
+>   `Exempt: <config|ci|docs|style> — verified by <what>`; `dev-plan` khai,
+>   `dev-execute` trả task về nếu thiếu, `dev-handover` báo cáo hoặc `none`.
+>   Cảnh báo `docs` không phải whitelist theo đuôi file viết thẳng trong doc.
+> - **`none` hợp lệ ở mọi mục**, không riêng hai mục sentinel — engine không có
+>   matcher riêng cho nó, template chỉ *gợi ý* nó ở `TDD exemptions` và
+>   `Findings`.
+> - Chỉ scaffold cho `--kind dev` (3 file mới, `expected_files` 45 → 48).
+> - Test: 1922 passed, 5 skipped (trước batch: 1875 / 5). Golden + MCP không đổi.
+
+- [x] **E1** PR template bắt buộc AC→test map + verification output (dev-handover đã assemble sẵn — quy ước reviewer từ chối PR thiếu mục).
+- [x] **E2** Định nghĩa TDD exemption categories (config/CI/docs/style → verify bằng gì thay test-đỏ-trước) — vá rủi ro lớn nhất của workflow trước pilot.
 - [ ] **E3** Pilot 2–3 sprint trên một project line, đo: % ticket bị trả vì không Ready, % AC ra OPEN(BA), lead time theo cỡ ticket, số finding tại PR review — **cộng token/cost per ticket từ dashboard B3** (giờ là số đo, không phải ước).
 
 ---
