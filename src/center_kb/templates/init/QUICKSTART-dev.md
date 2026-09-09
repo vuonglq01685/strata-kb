@@ -166,7 +166,21 @@ Nothing in this pipeline merges or ships without a human:
 
 - **TDD** — no production code without a failing test observed first, at
   every step of `dev-execute`. No exception for a small ticket, a
-  deadline, or an "obvious" change.
+  deadline, or an "obvious" change. The only exempt change classes —
+  config, CI, docs, style — are named in `docs/tdd-exemptions.md`, are
+  declared in the plan, and each owes a substitute verification.
+- **The PR carries its evidence** — `.github/workflows/kb-pr-lint.yml`
+  runs `kb pr lint` on every pull request and fails it when a required
+  section of the description is missing, still holds the template's
+  comment, or claims verification with no pasted output. Add **`pr-lint`
+  to the branch's required checks** once: `kb init` writes the workflow
+  but cannot turn on branch protection for you. Unlike `kb-ticket-lint`,
+  this gate never self-skips — once required, it blocks **every** PR
+  without the eight sections, bot PRs (a Dependabot bump, a revert)
+  included, so make that required-check decision knowingly. The workflow
+  runs `pip install center-kb` unpinned, so it only works once a released
+  `center-kb` carries `kb pr lint`; a repo that scaffolds ahead of that
+  release gets `No such command 'pr'` on every PR.
 - **Shown verification** — no completion claim without pasting the real
   command output; a claim without it is never accepted.
 - **Pinned values, verbatim** — every code/format/enum/threshold that

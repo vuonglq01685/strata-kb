@@ -1,0 +1,52 @@
+# CI evidence gate: every pull request must carry a description with the
+# sections `dev-handover` assembles — ticket, refs, AC→test map, placeholder
+# resolutions, pasted verification output, TDD exemptions, findings, usage.
+#
+# The workflow file name and the job name are deliberately FROZEN as
+# 'kb-pr-lint' / 'pr-lint': branch protection on already-provisioned dev
+# repos keys on the job name, and renaming it would leave those repos waiting
+# forever on a required check that never runs again.
+#
+# `types:` is spelled out because the default set for `pull_request` is
+# opened/synchronize/reopened and does NOT include `edited` — and editing the
+# description is exactly the event this check exists to re-run.
+#
+# Deliberately NOT `paths`-filtered, for the reason frozen into
+# kb-ticket-lint.yml: GitHub never synthesizes a passing status for a job that
+# never started, so a `paths:` filter on a trigger backing a *required* check
+# leaves any PR outside the filter waiting forever.
+#
+# No checkout, no hub URL, no token: `kb pr lint` is pure text, so this job
+# also runs green on pull requests from forks, where a hub credential would
+# not be available.
+name: kb-pr-lint
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+# `edited` fires on every description edit, so an author iterating on a PR
+# body would otherwise queue one run per keystroke-batch.
+concurrency:
+  group: pr-lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+jobs:
+  pr-lint:
+    runs-on: ubuntu-latest
+    env:
+      # The description reaches the script through the environment and NEVER
+      # through `${{ ... }}` inside `run:`. A PR body is attacker-controlled
+      # text; interpolating it into a shell script is script injection with a
+      # payload the attacker chooses. tests/test_templates.py pins this.
+      PR_BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install center-kb
+      - name: Check the PR description
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+          kb pr lint "$RUNNER_TEMP/body.md"

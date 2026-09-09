@@ -42,6 +42,14 @@ rewrite the cache, keeping its `## Placeholder map`.
   exact names and types, because a task's implementer sees only their
   own task); and **Steps** as `- [ ]` checkboxes, step 1 always being
   the failing test.
+- **A task with no test declares its exemption.** Every task's first
+  step is a failing test, with exactly four exceptions — config, CI,
+  docs and style changes, defined in `docs/tdd-exemptions.md`. A task
+  in one of those classes carries one line instead, and no other shape
+  is accepted: `Exempt: <config|ci|docs|style> — verified by <what>`.
+  The slug comes from that document; a change that fits none of the
+  four is not exempt, and a change that alters behaviour an AC can see
+  is never exempt whatever its file extension.
 - **Order and close** — order tasks so each one leaves the repo green, and
   end the plan with one closing task for cross-cutting verification (full
   suite + lint) that names the commands it will run — `cmd.test` and

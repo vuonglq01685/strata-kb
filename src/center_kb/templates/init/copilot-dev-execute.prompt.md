@@ -65,6 +65,12 @@ rewrite the cache, keeping its `## Placeholder map`.
   5. **commit the task's changes.** Ticking its checkboxes in the plan
      file is the orchestrator's job, done after the subagent reports
      back — the plan file is the one thing the subagent never opens.
+
+  A task block carrying an `Exempt:` line skips step 1 and runs the
+  verification that line names instead, showing its output like any other.
+  A task block with **no** `Exempt:` line whose implementer believes no test
+  is possible does not decide that: stop and return the task to `dev-plan`,
+  the same route an unimplementable AC takes. See `docs/tdd-exemptions.md`.
 - **When a test fails unexpectedly** — reproduce, find the actual
   cause, fix the cause. **Never edit a test to make it green**, never
   widen a tolerance to pass, never mark a task done with a failing
