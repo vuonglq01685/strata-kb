@@ -37,8 +37,15 @@ for a large AC; every task names the test that proves it and carries
 three headings — **Files** (create/modify/test), **Interfaces** (what it
 consumes from earlier tasks and produces for later ones, exact names and
 types, since a task's implementer sees only their own task), and
-**Steps** as `- [ ]` checkboxes, step 1 always being the failing test;
-tasks are ordered so each one leaves the repo green, and the plan closes
+**Steps** as `- [ ]` checkboxes, step 1 always being the failing test.
+A task with no test declares its exemption instead, with exactly four
+exception classes — config, CI, docs and style changes, defined in
+`docs/tdd-exemptions.md` — carrying one line, and no other shape
+accepted: `Exempt: <config|ci|docs|style> — verified by <what>`; the
+slug comes from that document, a change fitting none of the four is
+not exempt, and a change that alters behaviour an AC can see is never
+exempt whatever its file extension. Tasks are ordered so each one
+leaves the repo green, and the plan closes
 with one cross-cutting verification task (full suite + lint) that names
 the commands it will run — `cmd.test` and `cmd.lint` from
 `-code §cmd.*`; when that document has not been

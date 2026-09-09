@@ -43,13 +43,18 @@ service, run `kb code-ingest` first — `kb svc note` validates against this
 repo's own committed `<repo_id>-code`, which CI regenerates on the hub but
 never writes back here; if this repo has no `<repo_id>-svc` yet —
 `dev-code-seed` never run — say so in one line in the PR and record the
-history there instead); then assemble the PR description, containing the
-ticket id, the kb-context refs so the reviewer can `kb resolve` them, the
-AC→test map, the placeholder-resolution list, every `OPEN(...)` finding,
-the verification output, and every KB gap, ambiguity, or contradiction
-found as a concrete feedback item (issue or PR on the owning child repo /
-hub); run `kb usage report --ticket <id> --md` and paste the table into
-the PR under a `## Usage` heading, keeping the heading with a one-line
+history there instead); then assemble the PR description using the
+repo's `.github/pull_request_template.md`, whose eight sections CI
+checks with `kb pr lint`: Ticket; kb-context refs so the reviewer can
+`kb resolve` them; the AC→test map; the Placeholder resolutions list;
+the Verification output, pasted inside a fenced block, not claimed;
+the `## TDD exemptions` section, every `Exempt:` line from the plan,
+or `none`; the Findings, every `OPEN(...)`, KB gap, ambiguity or
+contradiction as a concrete feedback item on the owning repo, or
+`none`; and the Usage table — a section left as the template's
+comment counts as empty and fails the check; run `kb usage report
+--ticket <id> --md` and paste the table into the PR under a `## Usage`
+heading, keeping the heading with a one-line
 reason when the command answers `no usage recorded yet` instead of a
 table; if the ticket changed what a service is responsible for, report
 `amend needed: <repo_id>-svc §svc.<name>` as a PR finding. Never edit a
