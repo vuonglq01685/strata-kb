@@ -17,6 +17,10 @@ Hard rules:
   (doc/sections) on your own.
 - Non-zero exit → show the error verbatim and stop. Do not retry with
   guessed fixes.
+- `kb approve` refuses a dirty `.kb/<doc>` tree and any doc with
+  strict-build errors other than pending sections (pending sections
+  are skipped, not blocked); it records `reviewed: {by, at,
+  l2_sha256}` — pass `--by 'name <email>'` when git has no identity.
 
 ## Workflow
 

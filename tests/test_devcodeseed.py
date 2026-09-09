@@ -143,7 +143,7 @@ def test_summarize_then_approve_reaches_reviewed_and_builds_clean(tmp_path):
     svc_entry = next(e for e in index.docs if e.id == "demo-svc")
     assert svc_entry.summary == "Drafted responsibility summary for this document."
 
-    review.approve_sections(kb, "demo-svc")
+    review.approve_sections(kb, "demo-svc", by="sme <sme@x>")
     sections = models.load_yaml_model(manifest_path, models.Manifest).sections
     assert len(sections) >= 2
     assert all(s.status == "reviewed" for s in sections)
@@ -222,7 +222,7 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
     assert drafted_doc_summary == "Drafted responsibility summary for this document."
 
     # 3. approve: every svc.* section flips summarized -> reviewed.
-    approve_report = review.approve_sections(kb, "demo-svc")
+    approve_report = review.approve_sections(kb, "demo-svc", by="sme <sme@x>")
     assert set(approve_report.flipped) == {"svc.airspace-service", "svc.postgres"}
     sections = models.load_yaml_model(manifest_path, models.Manifest).sections
     svc_sections = [s for s in sections if s.id.startswith("svc.")]

@@ -96,3 +96,47 @@ def test_tags_on_a_kb_with_no_tags_exits_zero_with_guidance(fed_hub, fixture_kb)
     assert result.exit_code == 0, result.output
     assert "no tags" in result.output
     assert "kb ingest --tags" in result.output
+
+
+def test_build_strict_flag_and_quality_warn_rendering(fixture_kb):
+    long = " ".join(f"Sentence number {i} explains the record layout in detail." for i in range(10))
+    l3 = fixture_kb / "demo-doc" / "ch1-records.raw.md"
+    l3.write_text(l3.read_text(encoding="utf-8").replace(
+        "Full raw text about airway records and route identifiers.", long), encoding="utf-8")
+    l2 = fixture_kb / "demo-doc" / "ch1-records.md"
+    l2.write_text(l2.read_text(encoding="utf-8").replace(
+        "Condensed: airway record structure, route identifiers.", long), encoding="utf-8")
+    soft = runner.invoke(app, ["build", "--kb-dir", str(fixture_kb)])
+    assert soft.exit_code == 0 and "[warn]" in soft.output and "(quality)" in soft.output
+    hard = runner.invoke(app, ["build", "--strict", "--kb-dir", str(fixture_kb)])
+    assert hard.exit_code == 1 and "[error]" in hard.output and "(quality)" in hard.output
+
+
+def test_stats_hints_when_tokens_never_built(fixture_kb):
+    result = runner.invoke(app, ["stats", "--kb-dir", str(fixture_kb)])
+    assert result.exit_code == 0
+    assert "run kb build to refresh token counts" in result.output
+
+
+def test_stats_omits_hint_once_tokens_are_built(fixture_kb):
+    from center_kb.build import build_kb
+
+    assert build_kb(fixture_kb).ok
+    result = runner.invoke(app, ["stats", "--kb-dir", str(fixture_kb)])
+    assert result.exit_code == 0
+    assert "run kb build to refresh token counts" not in result.output
+
+
+def test_build_bad_effort_literal_is_a_clean_error_not_a_traceback(fixture_kb):
+    """B4: a pydantic.ValidationError (subclass of ValueError) from a typo'd
+    `llm.effort` in index.yaml must surface as `[error] <msg>` + exit 1, not
+    an unhandled traceback."""
+    index_path = fixture_kb / "index.yaml"
+    index_path.write_text(
+        index_path.read_text(encoding="utf-8").replace("effort: high", "effort: hgih"),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["build", "--kb-dir", str(fixture_kb)])
+    assert result.exit_code == 1
+    assert not isinstance(result.exception, ValueError), result.exception
+    assert "[error]" in result.output

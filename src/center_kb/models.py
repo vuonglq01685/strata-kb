@@ -15,6 +15,25 @@ class SectionTokens(BaseModel):
     l3: int = 0
 
 
+class Provenance(BaseModel):
+    """Which runner/model/prompt wrote a section's summaries, and when.
+    runner "none" = no LLM call (table-only / brief sections)."""
+
+    runner: str
+    model: str = ""
+    effort: str = ""
+    prompt_sha: str = ""
+    at: str = ""
+
+
+class ReviewRecord(BaseModel):
+    """SME sign-off: who, when, and the sha256 of the L2 slice they approved."""
+
+    by: str
+    at: str
+    l2_sha256: str
+
+
 class SectionEntry(BaseModel):
     id: str
     title: str
@@ -22,6 +41,9 @@ class SectionEntry(BaseModel):
     status: Literal["pending", "summarized", "reviewed"] = "pending"
     file: str
     tokens: SectionTokens = Field(default_factory=SectionTokens)
+    l3_sha256: str | None = None
+    provenance: Provenance | None = None
+    reviewed: ReviewRecord | None = None
 
 
 class IngestConfig(BaseModel):
@@ -52,7 +74,7 @@ class IndexEntry(BaseModel):
 class LLMConfig(BaseModel):
     runner: Literal["auto", "claude", "copilot", "none"] = "auto"
     model: str = "sonnet-5"
-    effort: str = "high"
+    effort: Literal["low", "medium", "high"] = "high"
     max_workers: int = 5
     timeout: int = 300
 
@@ -99,6 +121,6 @@ def load_yaml_model(path: Path, model: type[T]) -> T:
 def save_yaml_model(path: Path, obj: BaseModel) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(
-        obj.model_dump(mode="json"), allow_unicode=True, sort_keys=False
+        obj.model_dump(mode="json", exclude_none=True), allow_unicode=True, sort_keys=False
     )
     path.write_text(text, encoding="utf-8", newline="\n")

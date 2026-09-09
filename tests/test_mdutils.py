@@ -1,4 +1,4 @@
-from center_kb import mdutils
+from center_kb import mdutils, models
 
 CHAPTER_MD = """## 5.1 Airport Records
 
@@ -148,3 +148,92 @@ def test_slice_section_finds_heading_with_empty_title():
 def test_slice_subsection_finds_heading_with_empty_title():
     md = "## 5 NAV\n\nIntro.\n\n### 5.15\n\nFolded body.\n\n### 5.16 Next\n\nNext body.\n"
     assert mdutils.slice_subsection(md, "5.15") == "### 5.15\n\nFolded body."
+
+
+from center_kb.mdutils import extract_tables, heading_ids
+
+
+def test_extract_tables_keeps_one_line_block():
+    md = "## 1 T\n\n| only header |\n\ntext\n"
+    assert extract_tables(md) == ["| only header |"]
+
+
+def test_heading_ids_in_order_ignores_subheadings():
+    md = "## 1.1 A\n\n### 1.1.1 child\n\n## 1.2 B\n\n## 1.3\n"
+    assert heading_ids(md) == ["1.1", "1.2", "1.3"]
+
+
+DUPLICATE_ID_MD = "## 1.1 Part A\n\nBody A.\n\n## 1.1 Part B\n\nBody B.\n"
+
+
+def test_slice_section_occurrence_default_matches_first():
+    assert mdutils.slice_section(DUPLICATE_ID_MD, "1.1") == mdutils.slice_section(
+        DUPLICATE_ID_MD, "1.1", occurrence=0
+    )
+    assert mdutils.slice_section(DUPLICATE_ID_MD, "1.1", occurrence=0).startswith(
+        "## 1.1 Part A"
+    )
+
+
+def test_slice_section_occurrence_returns_nth_match():
+    block = mdutils.slice_section(DUPLICATE_ID_MD, "1.1", occurrence=1)
+    assert block is not None
+    assert block.startswith("## 1.1 Part B")
+    assert "Body A." not in block
+
+
+def test_slice_section_occurrence_out_of_range_returns_none():
+    assert mdutils.slice_section(DUPLICATE_ID_MD, "1.1", occurrence=2) is None
+
+
+FENCED_MD = (
+    "## 1.1 Real\n\nBody.\n\n"
+    "```text\n## not a heading\n```\n\n"
+    "## 1.2 Another\n\nMore.\n"
+)
+
+
+def test_heading_ids_fence_aware_skips_headings_inside_backtick_fence():
+    assert heading_ids(FENCED_MD, fence_aware=True) == ["1.1", "1.2"]
+
+
+def test_heading_ids_default_is_fence_naive_back_compat():
+    assert heading_ids(FENCED_MD) == ["1.1", "not", "1.2"]
+
+
+def test_heading_ids_fence_aware_skips_headings_inside_tilde_fence():
+    md = "## 1.1 Real\n\n~~~\n## not\n~~~\n\n## 1.2 B\n"
+    assert heading_ids(md, fence_aware=True) == ["1.1", "1.2"]
+
+
+from center_kb.mdutils import heading_id_titles
+
+
+def test_heading_id_titles_reports_title_presence():
+    md = "## 1.1 Real Title\n\nBody.\n\n## Ownership\n\nHuman note.\n"
+    assert heading_id_titles(md) == [("1.1", True), ("Ownership", False)]
+
+
+def test_heading_id_titles_fence_aware_skips_headings_inside_fence():
+    md = "## 1.1 Real\n\n```\n## Ownership\n```\n\n## 1.2 B\n"
+    assert heading_id_titles(md, fence_aware=True) == [("1.1", True), ("1.2", True)]
+
+
+from center_kb.mdutils import heading_occurrences
+
+
+def test_heading_occurrences_counts_duplicate_ids_across_all_rows():
+    sections = [
+        models.SectionEntry(id="1.1", title="Part A", file="f", status="summarized"),
+        models.SectionEntry(id="1.1", title="Part B", file="f", status="pending"),
+        models.SectionEntry(id="2.1", title="Other", file="f", status="pending"),
+    ]
+    assert heading_occurrences(sections) == [0, 1, 0]
+
+
+def test_heading_occurrences_distinguishes_by_file():
+    sections = [
+        models.SectionEntry(id="1.1", title="A", file="f1", status="pending"),
+        models.SectionEntry(id="1.1", title="A", file="f2", status="pending"),
+    ]
+    assert heading_occurrences(sections) == [0, 0]

@@ -26,31 +26,41 @@ class Runner:
     timeout: int
 
     def run(self, prompt: str) -> str:
-        """One headless call; returns the model's reply text."""
+        """One headless call; returns the model's reply text.
+
+        The prompt ALWAYS travels on stdin: an argv prompt is cut at the
+        first newline and %VAR%-expanded by cmd.exe when the executable is
+        an npm `.cmd` shim on Windows (review B-1), and hits ARG_MAX on
+        every platform for long sections.
+
+        copilot: no `-p`/`--prompt` flag is passed — GitHub's docs say to
+        pipe the prompt (`echo "..." | copilot`) and that "Piped input is
+        ignored if you also provide a prompt with the -p or --prompt
+        option" (docs.github.com/en/copilot/how-tos/copilot-cli/
+        automate-copilot-cli/run-cli-programmatically). `-p` takes a value
+        (docs.github.com/en/copilot/reference/copilot-cli-reference/
+        cli-programmatic-reference), so a bare `-p` would consume
+        `--model` as the prompt and ignore stdin entirely (controller
+        ruling R7)."""
         if self.name == "claude":
-            # prompt via stdin: avoids ARG_MAX limits on long L3 bodies
-            cmd = [self.executable, "-p", "--model", self.model,
-                   "--output-format", "json"]
-            stdin: str | None = prompt
+            cmd = [self.executable, "-p", "--model", self.model, "--output-format", "json"]
         else:
-            # copilot CLI takes the prompt as an argument, not stdin
-            cmd = [self.executable, "-p", prompt, "--model", self.model]
-            stdin = None
+            # copilot: prompt arrives on stdin only; -s drops metadata
+            cmd = [self.executable, "--model", self.model, "-s"]
+        if prompt in cmd:
+            raise RunnerError("prompt must travel on stdin, not argv")
         env = None
         if self.name == "claude" and self.effort == "high":
             env = os.environ | {"MAX_THINKING_TOKENS": HIGH_EFFORT_THINKING_TOKENS}
         try:
             proc = subprocess.run(
-                cmd, input=stdin, capture_output=True, text=True,
-                encoding="utf-8", errors="replace",
-                timeout=self.timeout, env=env,
+                cmd, input=prompt, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=self.timeout, env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise RunnerError(f"{self.name}: timed out after {self.timeout}s") from exc
         if proc.returncode != 0:
-            raise RunnerError(
-                f"{self.name}: exit {proc.returncode}: {proc.stderr.strip()[:500]}"
-            )
+            raise RunnerError(f"{self.name}: exit {proc.returncode}: {proc.stderr.strip()[:500]}")
         return _extract_reply(self.name, proc.stdout)
 
 
@@ -61,10 +71,17 @@ def _extract_reply(name: str, stdout: str) -> str:
     try:
         envelope = json.loads(stdout)
     except json.JSONDecodeError:
+        return stdout.strip()  # older CLI: plain text
+    if not isinstance(envelope, dict):
         return stdout.strip()
-    if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
-        return envelope["result"].strip()
-    return stdout.strip()
+    subtype = str(envelope.get("subtype", ""))
+    if envelope.get("is_error") or subtype.startswith("error"):
+        detail = str(envelope.get("result") or subtype or "error")[:500]
+        raise RunnerError(f"claude: {detail}")
+    result = envelope.get("result")
+    if not isinstance(result, str):
+        raise RunnerError("claude: no result in envelope")
+    return result.strip()
 
 
 def detect_runner(cli_choice: str | None, config: LLMConfig) -> Runner | None:

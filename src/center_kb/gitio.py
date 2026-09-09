@@ -80,6 +80,12 @@ def is_dirty(root: Path, subpath: Path) -> bool:
     return bool(proc.stdout.strip())
 
 
+def config_value(root: Path, key: str) -> str:
+    """`git config --get <key>` or "" when unset."""
+    proc = _run(root, "config", "--get", key)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
 def clone(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(

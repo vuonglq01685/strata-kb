@@ -14,6 +14,10 @@ Hard rules:
 - Approving is an SME judgment call. Do not run `kb approve` unless the
   user explicitly asked to approve, and never enlarge the scope they gave.
 - Non-zero exit → show the error verbatim and stop.
+- `kb approve` refuses a dirty `.kb/<doc>` tree and any doc with
+  strict-build errors other than pending sections (pending sections
+  are skipped, not blocked); it records `reviewed: {by, at,
+  l2_sha256}` — pass `--by 'name <email>'` when git has no identity.
 
 ## Workflow
 
