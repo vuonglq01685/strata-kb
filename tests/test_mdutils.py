@@ -137,3 +137,14 @@ def test_extract_image_descs_standalone_only_ordered_deduped():
         "![not an asset](http://x/y.png)",                 # non-asset ref: excluded
     ])
     assert extract_image_descs(md) == ["Holding pattern"]
+
+
+def test_slice_section_finds_heading_with_empty_title():
+    md = "## 5.14 Fix Type\n\nFix body.\n\n## 5.15\n\nOrphan body.\n\n## 5.16 Real Field\n\nReal body.\n"
+    assert mdutils.slice_section(md, "5.15") == "## 5.15\n\nOrphan body."
+    assert mdutils.slice_section(md, "5.16") == "## 5.16 Real Field\n\nReal body."
+
+
+def test_slice_subsection_finds_heading_with_empty_title():
+    md = "## 5 NAV\n\nIntro.\n\n### 5.15\n\nFolded body.\n\n### 5.16 Next\n\nNext body.\n"
+    assert mdutils.slice_subsection(md, "5.15") == "### 5.15\n\nFolded body."

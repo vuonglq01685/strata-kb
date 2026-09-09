@@ -941,14 +941,18 @@ class TestServicesExtractor:
         # test_unicode_service_name_yields_a_nonempty_parseable_heading
         # used for precisely this property. That let a section ship whose
         # id LOOKED fine (id="svc.unnamed-<hash>") but whose title was
-        # still "" (name.strip() == ""), rendering the unparseable
-        # heading "## svc.unnamed-<hash> " (trailing space, no title
-        # token) -- which `mdutils._HEADING_RE` rejects and `kb build`
-        # then fails on ("section not found in the L2/L3 file"). Restored
-        # here, plus an actual round-trip through the real L2/L3
-        # rendering `core.run()` uses (`core._render_group` +
-        # `mdutils.slice_section`), not just a regex match on a
-        # hand-assembled heading string.
+        # still "" (name.strip() == ""), rendering a title-less heading
+        # "## svc.unnamed-<hash> " (trailing space, no title token).
+        # After the F3 title-optional widening, `mdutils._HEADING_RE`
+        # itself now matches that heading fine (its title capture group
+        # is optional), so a regex match alone no longer catches a
+        # regression here -- the invariant this test actually pins is
+        # `CodeSection` requiring a non-empty title and `slice_section`
+        # finding the real rendered content by id, not a syntactic
+        # heading-format check. Restored here, plus an actual round-trip
+        # through the real L2/L3 rendering `core.run()` uses
+        # (`core._render_group` + `mdutils.slice_section`), not just a
+        # regex match on a hand-assembled heading string.
         from center_kb import mdutils
 
         root = tmp_path / "emptykey"

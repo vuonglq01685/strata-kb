@@ -16,6 +16,10 @@ class DocItem:
     text: str
     level: int = 0
     page: int | None = None
+    # (left, top, right, bottom), TOPLEFT origin, page units — None when
+    # docling has no provenance. Only consulted on a page whose numbered
+    # headings arrive out of id order (see _reorder_inverted_pages).
+    bbox: tuple[float, float, float, float] | None = None
 
 
 @dataclass
@@ -48,6 +52,53 @@ class Part:
     page: int  # 1-based page where the part starts
 
 
+@dataclass(frozen=True)
+class Demotion:
+    """A heading turned into body text instead of opening a section."""
+
+    heading: str
+    reason: str  # "caption" | "label line" | "repeated"
+    pages: tuple[int | None, ...]
+
+
+@dataclass(frozen=True)
+class Fallback:
+    """A heading that parsed to nothing and opened a slug-id section."""
+
+    id: str
+    heading: str
+    page: int | None
+
+
+@dataclass(frozen=True)
+class Inversion:
+    """Numbered sibling headings emitted out of id order on one page."""
+
+    page: int | None
+    first_id: str
+    second_id: str
+    reordered: bool  # True when the page had bboxes and was re-ordered
+
+
+@dataclass(frozen=True)
+class Duplicate:
+    """A unit whose id repeated an earlier unit and was renamed."""
+
+    original: str
+    renamed: str
+    chapter: str
+
+
+@dataclass
+class SectioningNotes:
+    """Everything the sectioner decided that the ingest report must show."""
+
+    demoted: list[Demotion] = field(default_factory=list)
+    fallbacks: list[Fallback] = field(default_factory=list)
+    inversions: list[Inversion] = field(default_factory=list)
+    duplicates: list[Duplicate] = field(default_factory=list)
+
+
 def split_by_parts(
     items: list[DocItem], parts: list[Part]
 ) -> list[tuple[Part, list[DocItem]]]:
@@ -78,7 +129,10 @@ DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
 _UNNUMBERED_PART = r"(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)"
 DEFAULT_APPENDIX_PATTERN = rf"^appendix{_UNNUMBERED_PART}(.*)$"
 DEFAULT_ATTACHMENT_PATTERN = rf"^attachment{_UNNUMBERED_PART}(.*)$"
-_NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)[.\s]+(.*\S)\s*$")
+# The title is optional so a bare "5.15" keeps its id instead of backtracking
+# to ("5", "15") and collapsing onto the chapter. A bare undotted number
+# ("123") is a page number, never a section — handled below.
+_NUMBERED_RE = re.compile(r"^(\d+(?:\.\d+)*)(?:[.\s]+(.*?))?\s*$")
 
 
 def _compile_heading(name: str, pattern: str) -> re.Pattern[str]:
@@ -138,21 +192,36 @@ def parse_section_id(
     cfg = config or _DEFAULT_CONFIG
     text = " ".join(text.split())
     if m := cfg.chapter_re.match(text):
-        return m.group(1), (m.group(2) or text).strip()
+        if m.group(1) is None:
+            raise ValueError(
+                f"chapter_pattern {cfg.chapter_pattern} matched {text!r} but its "
+                "identifier group captured nothing (an optional group with no "
+                "fallback) -- make the group required or give it a fallback id"
+            )
+        return _clean_id(m.group(1)), (m.group(2) or text).strip()
     if m := cfg.attachment_re.match(text):
         return _part_id("attachment", m.group(1)), (m.group(2) or text).strip()
     if m := cfg.appendix_re.match(text):
         return _part_id("appendix", m.group(1)), (m.group(2) or text).strip()
     if m := _NUMBERED_RE.match(text):
-        sid = m.group(1)
+        sid, title = m.group(1), (m.group(2) or "").strip()
+        if not title and "." not in sid:
+            return None
         if sid.endswith(".0") and sid.count(".") == 1:
             sid = sid[:-2]
-        return sid, m.group(2).strip()
+        return sid, title
     return None
 
 
+def _clean_id(identifier: str) -> str:
+    """An id is one `\\S+` token in the `## <id> <title>` line; a custom
+    pattern whose identifier group captured a space would otherwise emit a
+    section nothing can slice."""
+    return re.sub(r"\s+", "-", identifier.strip())
+
+
 def _part_id(kind: str, identifier: str | None) -> str:
-    return f"{kind}-{identifier.lower()}" if identifier else kind
+    return f"{kind}-{_clean_id(identifier).lower()}" if identifier else kind
 
 
 def _is_part_root(sid: str) -> bool:
@@ -174,6 +243,53 @@ def _fallback_slug(title: str) -> str:
     if not slug or slug.replace("-", "").isdigit():
         return ""
     return slug
+
+
+# Noise that docling labels as a heading but which is never document
+# structure. Checked only after parse_section_id() failed, so a numbered
+# "5.149 Figure of Merit" is unaffected. The caption form requires a
+# number after the word ("Table 5-6", "Fig. A1") so "Table of Contents"
+# and "Figure of Merit" pass through.
+_CAPTION_RE = re.compile(
+    r"^(table|figure|fig\.?|diagram|chart|exhibit)\s+[a-z]?\d", re.IGNORECASE
+)
+_LABEL_RE = re.compile(r"\b[\w/]+:\s")  # "Used On: ", "Length: ", "Source/Content: "
+_MIN_LABELS_FOR_NOISE = 2
+_MIN_REPEAT_PAGES = 3
+
+
+def _noise_reason(normalized: str, repeated_pages: int) -> str | None:
+    """Why an unparsed heading is body text, not a section — or None."""
+    if _CAPTION_RE.match(normalized):
+        return "caption"
+    if len(_LABEL_RE.findall(normalized)) >= _MIN_LABELS_FOR_NOISE:
+        return "label line"
+    if repeated_pages >= _MIN_REPEAT_PAGES:
+        return "repeated"
+    return None
+
+
+def _repeated_unparsed_headings(
+    items: list[DocItem], cfg: HeadingConfig
+) -> dict[str, tuple[int | None, ...]]:
+    """Normalised heading text -> distinct pages it appears on, for headings
+    that parse to nothing. Counted over the whole document, before any
+    part split, so a running header is seen across parts."""
+    pages: dict[str, set[int | None]] = {}
+    last_page: int | None = None
+    for item in items:
+        if item.page is not None:
+            last_page = item.page
+        if item.kind != "heading":
+            continue
+        normalized = " ".join(item.text.split())
+        if normalized.endswith(":") or parse_section_id(normalized, cfg):
+            continue
+        pages.setdefault(normalized, set()).add(last_page)
+    return {
+        text: tuple(sorted(p, key=lambda x: (x is None, x or 0)))
+        for text, p in pages.items()
+    }
 
 
 def _split_front_matter(
@@ -214,9 +330,17 @@ class _TreeBuilder:
     shared across branches (open-node stack, seen paths, buffered orphans)
     lives on the instance so each heading kind gets its own focused method."""
 
-    def __init__(self, cfg: HeadingConfig, part: Part | None) -> None:
+    def __init__(
+        self,
+        cfg: HeadingConfig,
+        part: Part | None,
+        notes: SectioningNotes | None = None,
+        repeated: dict[str, tuple[int | None, ...]] | None = None,
+    ) -> None:
         self.cfg = cfg
         self.part = part
+        self.notes = notes if notes is not None else SectioningNotes()
+        self.repeated = repeated or {}
         self.root = _Node(id="", title="", depth=0)
         self.stack: list[_Node] = [self.root]
         if part is not None and not part.id[:1].isdigit():
@@ -265,8 +389,23 @@ class _TreeBuilder:
         parsed = parse_section_id(normalized, self.cfg)
         if parsed:
             self._attach_parsed(normalized, *parsed)
-        else:
-            self._attach_fallback(normalized)
+            return
+        pages = self.repeated.get(normalized, ())
+        reason = _noise_reason(normalized, len(pages))
+        if reason:
+            self._demote(normalized, reason, pages or (self.last_page,))
+            return
+        self._attach_fallback(normalized)
+
+    def _demote(
+        self, normalized: str, reason: str, pages: tuple[int | None, ...]
+    ) -> None:
+        # Same treatment as a "Label:" heading: bold body text in the open
+        # node, so the words survive even though no section opens. One note
+        # per distinct heading, however many times it recurs.
+        self.stack[-1].body.append(f"**{normalized}**")
+        if not any(d.heading == normalized for d in self.notes.demoted):
+            self.notes.demoted.append(Demotion(normalized, reason, pages))
 
     def _namespace(self, sid: str, depth: int, normalized: str) -> tuple[str, int]:
         """ICAO appendices and attachments restart numeric numbering ("1.",
@@ -369,6 +508,7 @@ class _TreeBuilder:
         parent.children.append(node)
         self.stack.append(node)
         self.seen[sid] = list(self.stack)
+        self.notes.fallbacks.append(Fallback(sid, normalized, self.last_page))
 
     def finish(self) -> _Node:
         # Any buffered orphan whose implied parent never showed up in this
@@ -384,8 +524,10 @@ def _build_tree(
     items: list[DocItem],
     config: HeadingConfig | None = None,
     part: Part | None = None,
+    notes: SectioningNotes | None = None,
+    repeated: dict[str, tuple[int | None, ...]] | None = None,
 ) -> _Node:
-    builder = _TreeBuilder(config or _DEFAULT_CONFIG, part)
+    builder = _TreeBuilder(config or _DEFAULT_CONFIG, part, notes, repeated)
     for item in items:
         builder.feed(item)
     return builder.finish()
@@ -394,7 +536,7 @@ def _build_tree(
 def _subtree_md(node: _Node) -> str:
     parts = ["\n\n".join(node.body)]
     for child in node.children:
-        parts.append(f"### {child.id} {child.title}")
+        parts.append(f"### {child.id} {child.title}".rstrip())
         parts.append(_subtree_md(child))
     return "\n\n".join(p for p in parts if p.strip())
 
@@ -417,6 +559,178 @@ def order_units(units: list[SectionUnit]) -> list[SectionUnit]:
     return [u for _, u in sorted(zip(keyed, units), key=lambda t: t[0])]
 
 
+def _dedupe_ids(units: list[SectionUnit], notes: SectioningNotes) -> list[SectionUnit]:
+    """Ingest never emits two units with one id: `kb get` and the citation
+    format address a section by id alone. A repeat (a page-range stray in
+    parts mode, a Part that restarts numbering) is renamed `<id>-2`, `-3`…
+    — fallback slugs are never digit-only, so the suffix cannot collide.
+
+    `taken` is seeded with every id already present in `units`, so the
+    suffix search also skips an id a later (real, not-yet-renamed) unit
+    still owns — otherwise a stray duplicate walked early can steal the id
+    a genuine unit needs, bumping that genuine unit into an unnecessary
+    rename of its own once the walk reaches it."""
+    taken = {u.id for u in units}
+    seen: set[str] = set()
+    out: list[SectionUnit] = []
+    for unit in units:
+        sid = unit.id
+        if sid in seen:
+            n = 2
+            while f"{unit.id}-{n}" in seen or f"{unit.id}-{n}" in taken:
+                n += 1
+            sid = f"{unit.id}-{n}"
+            notes.duplicates.append(Duplicate(unit.id, sid, unit.chapter))
+            unit = replace(unit, id=sid)
+        seen.add(sid)
+        out.append(unit)
+    return out
+
+
+_SPANNING_FRACTION = 0.6  # of the page's item span: a full-width title/table
+
+
+def _group_by_page(items: list[DocItem]) -> list[tuple[int | None, list[DocItem]]]:
+    """Consecutive runs of items on one (forward-filled) page."""
+    groups: list[tuple[int | None, list[DocItem]]] = []
+    last: int | None = None
+    for item in items:
+        page = item.page if item.page is not None else last
+        if item.page is not None:
+            last = item.page
+        if groups and groups[-1][0] == page:
+            groups[-1][1].append(item)
+        else:
+            groups.append((page, [item]))
+    return groups
+
+
+def _numeric_heading_id(item: DocItem, cfg: HeadingConfig) -> str | None:
+    """The item's id when it is a *purely* numeric dotted id ("5.83"), else
+    None. The dot requirement is what excludes bare chapter/appendix/
+    attachment/fallback ids ("5", "appendix-b-2") from sibling comparison;
+    the all-digits requirement additionally excludes a custom
+    --chapter-pattern id like "5.2b" whose later segment isn't a number —
+    _id_tuple's int() has no fallback for that, so it must never see one."""
+    if item.kind != "heading":
+        return None
+    parsed = parse_section_id(" ".join(item.text.split()), cfg)
+    if not parsed or "." not in parsed[0] or not all(
+        p.isdecimal() for p in parsed[0].split(".")
+    ):
+        return None
+    return parsed[0]
+
+
+def _id_tuple(sid: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in sid.split("."))
+
+
+def _find_inversion(page_items: list[DocItem], cfg: HeadingConfig) -> tuple[str, str] | None:
+    """First pair of numbered *sibling* headings on this page whose ids
+    descend (5.84 then 5.83) — docling read the columns out of order."""
+    last_by_parent: dict[str, str] = {}
+    for item in page_items:
+        sid = _numeric_heading_id(item, cfg)
+        if sid is None:
+            continue
+        parent = sid.rsplit(".", 1)[0]
+        prev = last_by_parent.get(parent)
+        if prev is not None and _id_tuple(sid) < _id_tuple(prev):
+            return prev, sid
+        last_by_parent[parent] = sid
+    return None
+
+
+def _layout_order(page_items: list[DocItem]) -> list[DocItem]:
+    """Column-aware reading order from bboxes: a spanning item (>= 60 % of
+    the page's item span) cuts the page into bands and leads its band;
+    inside a band, left column before right, top to bottom. Stable, so
+    docling's order breaks ties."""
+    boxes = [i.bbox for i in page_items]
+    assert all(b is not None for b in boxes)
+    left = min(b[0] for b in boxes)
+    right = max(b[2] for b in boxes)
+    span = right - left
+    mid = (left + right) / 2
+
+    def spanning(box) -> bool:
+        return span > 0 and (box[2] - box[0]) >= _SPANNING_FRACTION * span
+
+    tops = sorted(b[1] for b in boxes if spanning(b))
+
+    def key(idx: int):
+        l, t, r, _b = boxes[idx]  # noqa: E741 — l/r mirror docling's own bbox field names
+        band = sum(1 for st in tops if st <= t)
+        column = -1 if spanning(boxes[idx]) else (0 if (l + r) / 2 < mid else 1)
+        return (band, column, t, idx)
+
+    return [page_items[i] for i in sorted(range(len(page_items)), key=key)]
+
+
+def _reorder_inverted_pages(
+    items: list[DocItem], cfg: HeadingConfig, notes: SectioningNotes
+) -> list[DocItem]:
+    """Docling's in-page reading order is trusted everywhere except on a
+    page whose numbered headings arrive out of id order. That page is
+    re-ordered by layout when every item has a bbox, and named in the
+    notes either way."""
+    out: list[DocItem] = []
+    for page, page_items in _group_by_page(items):
+        pair = _find_inversion(page_items, cfg)
+        if pair is None:
+            out += page_items
+            continue
+        can_fix = all(i.bbox is not None for i in page_items)
+        notes.inversions.append(Inversion(page, pair[0], pair[1], can_fix))
+        out += _layout_order(page_items) if can_fix else page_items
+    return out
+
+
+def build_units_with_notes(
+    items: list[DocItem],
+    max_depth: int = 3,
+    min_tokens: int = 200,
+    max_unit_tokens: int = 5000,
+    config: HeadingConfig | None = None,
+    parts: list[Part] | None = None,
+) -> tuple[list[SectionUnit], SectioningNotes]:
+    """Section the item stream and return what the sectioner decided along
+    the way — the ingest report prints the notes; build_units() drops them."""
+    notes = SectioningNotes()
+    cfg = config or _DEFAULT_CONFIG
+    repeated = _repeated_unparsed_headings(items, cfg)
+    items = _reorder_inverted_pages(items, cfg, notes)
+    if not parts:
+        front, rest = _split_front_matter(items, cfg)
+        front_units: list[SectionUnit] = []
+        if front:
+            froot = _build_tree(
+                front,
+                cfg,
+                part=Part("front-matter", "Front Matter", 1),
+                notes=notes,
+                repeated=repeated,
+            )
+            front_units = _units_from_tree(
+                froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
+            )
+        root = _build_tree(rest, cfg, notes=notes, repeated=repeated)
+        units = order_units(front_units + _units_from_tree(
+            root, max_depth, min_tokens, max_unit_tokens, None
+        ))
+        return _dedupe_ids(units, notes), notes
+    units: list[SectionUnit] = []
+    for part, part_items in split_by_parts(items, parts):
+        if not part_items:
+            continue
+        root = _build_tree(part_items, cfg, part=part, notes=notes, repeated=repeated)
+        units += _units_from_tree(
+            root, max_depth, min_tokens, max_unit_tokens, part.id
+        )
+    return _dedupe_ids(order_units(units), notes), notes
+
+
 def build_units(
     items: list[DocItem],
     max_depth: int = 3,
@@ -425,30 +739,9 @@ def build_units(
     config: HeadingConfig | None = None,
     parts: list[Part] | None = None,
 ) -> list[SectionUnit]:
-    if not parts:
-        cfg = config or _DEFAULT_CONFIG
-        front, rest = _split_front_matter(items, cfg)
-        front_units: list[SectionUnit] = []
-        if front:
-            froot = _build_tree(
-                front, config, part=Part("front-matter", "Front Matter", 1)
-            )
-            front_units = _units_from_tree(
-                froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
-            )
-        root = _build_tree(rest, config)
-        return order_units(front_units + _units_from_tree(
-            root, max_depth, min_tokens, max_unit_tokens, None
-        ))
-    units: list[SectionUnit] = []
-    for part, part_items in split_by_parts(items, parts):
-        if not part_items:
-            continue
-        root = _build_tree(part_items, config, part=part)
-        units += _units_from_tree(
-            root, max_depth, min_tokens, max_unit_tokens, part.id
-        )
-    return order_units(units)
+    return build_units_with_notes(
+        items, max_depth, min_tokens, max_unit_tokens, config, parts
+    )[0]
 
 
 def _collapse(text: str) -> str:
@@ -502,7 +795,7 @@ def _units_from_tree(
         def render(fold_predicate) -> str:
             parts = ["\n\n".join(node.body)]
             parts += [
-                f"### {c.id} {c.title}\n\n{_subtree_md(c)}"
+                f"### {c.id} {c.title}".rstrip() + f"\n\n{_subtree_md(c)}"
                 for c in node.children
                 if fold_predicate(c)
             ]

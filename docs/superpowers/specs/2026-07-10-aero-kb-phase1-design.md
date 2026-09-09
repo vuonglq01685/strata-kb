@@ -85,17 +85,29 @@ Duyệt item theo thứ tự đọc; mỗi `SectionHeaderItem` mở một node t
 không khớp mẫu nào                → <id-cha>-a, -b… + cảnh báo trong báo cáo ingest
 ```
 
+Heading không khớp mẫu nào nhưng là nhiễu Docling gán nhầm — **không** thành section, hạ thành text in đậm trong section đang mở (nội dung không mất), và báo cáo ingest ghi một dòng `[warn] heading demoted to text (<lý do>, page N): '<heading>'`:
+
+- caption: `^(Table|Figure|Fig\.?|Diagram|Chart|Exhibit)\s+[A-Z]?\d` (không phân biệt hoa thường) — `Table 5-6 …`, `Fig. A1 …`; `Table of Contents` và `5.149 Figure of Merit` không bị ảnh hưởng;
+- dòng nhãn: có ≥ 2 nhóm `Nhãn:` (`Used On: … Length: … Character Type: Alpha`);
+- lặp: cùng một heading không parse được xuất hiện trên ≥ 3 trang khác nhau (running header, khối `COMMENTARY`).
+
+Heading số **không có tiêu đề** (`5.15`) giữ nguyên id với `title: ""`; L2/L3 ghi `## 5.15`. Không bao giờ gộp về id chương.
+
+Mọi fallback id còn lại được liệt kê: `[warn] fallback id '<id>' for unparsed heading '<heading>' (page N)`. Id trùng (part lặp số) đổi thành `<id>-2`, `-3`… kèm `[warn] duplicate section id …`. Id từ pattern tuỳ chỉnh không bao giờ chứa khoảng trắng (`Part A` → `Part-A`); scaffold từ chối id rỗng hoặc có khoảng trắng.
+
+Trang có heading số cùng cha đảo thứ tự (`5.84` rồi `5.83`) được sắp lại theo bố cục (cột trái trước phải, trên xuống dưới, tiêu đề trải ngang dẫn đầu) khi mọi item có bbox; luôn có `[warn] heading order inverted on page N: …`. Trang không đảo giữ nguyên thứ tự đọc của Docling.
+
 ### 4.3 Đối chiếu bookmark (validation, không chặn)
 
-Với tài liệu có bookmark chuẩn: so cây section Docling với outline PDF (pypdf). Section thiếu/thừa → in cảnh báo cho người ingest. Annex 4 bỏ qua bước này.
+Với tài liệu có bookmark chuẩn: so cây section Docling với outline PDF (pypdf), **hai chiều**. Bookmark không unit nào phủ → `[warn] bookmark section 'X' not found in the extracted tree`. Unit số không có trong outline, tại cấp mà outline có liệt kê anh em cùng cha → `[warn] section 'X' not in the PDF outline` (outline chỉ tới chương thì không phán xét `5.x`). Một fallback con (`5.6-commentary`) **không** phủ bookmark `5.6`; chỉ appendix/attachment mới được phủ bởi con namespaced. Outline không đọc được → `[warn] PDF outline unreadable — bookmark cross-check skipped`. Annex 4 bỏ qua bước này.
 
 ### 4.4 Chuẩn hóa đơn vị section (gộp/tách)
 
 Áp theo thứ tự:
 
 1. **Độ sâu tối đa 3 cấp** (`x.y.z`) — heading sâu hơn nhập vào section cha.
-2. **Gộp section nhỏ**: section lá có L3 < 200 token → nhập vào cha.
-3. Kỳ vọng: mỗi đơn vị có L3 khoảng 300–5.000 token (ARINC: 639 bookmark → ~100–150 đơn vị).
+2. **Gộp section nhỏ, all-or-nothing theo cha**: section lá có L3 < 200 token nhập vào cha **chỉ khi** cha sau khi gộp mọi lá nhỏ vẫn ≤ 5.000 token; ngược lại không gộp lá nào của cha đó. Chương định nghĩa field (ARINC ch5: 324 field) vì thế giữ **mỗi field một section** — đó là chủ ý, để cite được `§5.83` (quyết định 2026-09-08).
+3. **Mục tiêu đo được, không phải luật**: mỗi đơn vị L3 khoảng 300–5.000 token. `kb ingest` in phân bố cuối báo cáo (`sections: N · L3 tokens min/median/max … · K below 300, M above 5000 · F fallback ids`); tài liệu field-definition được phép nằm ngoài band.
 
 ### 4.5 Quy tắc bảng — bất khả xâm phạm
 
@@ -107,7 +119,7 @@ Một file L2 + một file L3 mỗi chương cấp 1 (`ch5-nav-data.md` / `.raw.
 
 ### 4.7 Phạm vi ingest
 
-`kb ingest <pdf> --id <id> --tags <tags> [--sections 5,6]` — Docling parse cả PDF (cache), nhưng chỉ scaffold + summarize các chương được chọn.
+`kb ingest <pdf> --id <id> --tags <tags> [--sections 5,6]` — Docling parse cả PDF (cache), nhưng chỉ scaffold + summarize các chương được chọn. Trên doc đã có manifest, `--sections` là **merge**: chỉ file và entry manifest của chương được nêu bị ghi lại; chương khác giữ nguyên byte-for-byte (kể cả `status`/`summary` đã duyệt). Không có `--sections` là full replace.
 
 ## 5. Điền summary bằng Claude Code
 

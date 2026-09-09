@@ -833,12 +833,17 @@ def _body_only(heading_and_body: str) -> str:
 
 
 def _heading_id_counts(text: str) -> dict[str, int]:
-    """How many times each real `## <id> <title>` heading id occurs in
-    `text`, using mdutils' own heading grammar (`_HEADING_RE`) — never a
-    bare `line.startswith("## ")` check. A human's free-form single-word
-    subheading (`## Ownership`, with no second, whitespace-separated
-    title token) does not match `_HEADING_RE` at all, so it is correctly
-    never counted as a real section boundary here.
+    """How many times each `## <id> <title>` heading id occurs in `text`,
+    using mdutils' own heading grammar (`_HEADING_RE`) — never a bare
+    `line.startswith("## ")` check. After the F3 title-optional widening,
+    a human's free-form single-word subheading (`## Ownership`, with no
+    second, whitespace-separated title token) *does* match `_HEADING_RE`
+    and is counted here like any other heading — matching the regex is
+    not what keeps it out. The real guard lives in the caller: only an id
+    that starts with `svc.` is even considered (`svc_heading_ids` at
+    `core.py:1026`), and that set is then checked against the known ids
+    from `_manifest.yaml` (`sid in known_ids`) — a human subheading has
+    neither, so it never affects `_slice_known_section()`'s boundary.
 
     The *count* (not just membership) matters (review round 3, Important
     1): `_slice_known_section()`'s boundary check treats the *first*
