@@ -432,3 +432,93 @@ def test_doc_to_items_empty_description_kept(tmp_path, monkeypatch):
     )
     items = parser.doc_to_items(doc, assets_dir=tmp_path)
     assert items[0].text.startswith("![](assets/")
+
+
+def test_crosscheck_fallback_child_does_not_cover_missing_numeric_bookmark():
+    warnings = parser.crosscheck(unit_ids={"5.6-commentary"}, bm_ids={"5.6"})
+    assert warnings == ["bookmark section '5.6' not found in the extracted tree"]
+
+
+def test_crosscheck_reports_units_absent_from_a_sibling_level_outline():
+    warnings = parser.crosscheck(unit_ids={"5", "5.6", "5.6.1"}, bm_ids={"5", "5.7"})
+    assert warnings == [
+        "bookmark section '5.7' not found in the extracted tree",
+        "section '5.6' not in the PDF outline",
+    ]
+
+
+def test_crosscheck_is_silent_about_extras_when_outline_stops_at_chapters():
+    assert parser.crosscheck(unit_ids={"5", "5.6"}, bm_ids={"5"}) == []
+
+
+def test_crosscheck_flags_renamed_duplicates_but_not_fallback_slugs():
+    warnings = parser.crosscheck(
+        unit_ids={"5", "5.3", "5.3-2", "5.6", "5.6-commentary"},
+        bm_ids={"5", "5.3", "5.6"},
+    )
+    assert "section '5.3-2' not in the PDF outline" in warnings
+    assert not any("5.6-commentary" in w for w in warnings)
+
+
+def test_crosscheck_unit_that_is_an_ancestor_of_a_bookmark_is_not_extra():
+    # The outline skips 5.3 itself but has 5.3.2 under it — 5.3.2 proves
+    # unit 5.3 exists, so 5.3 must not be reported as extra.
+    warnings = parser.crosscheck(unit_ids={"5", "5.1", "5.3"}, bm_ids={"5.1", "5.3.2"})
+    assert not any("'5.3'" in w for w in warnings)
+
+
+def test_bookmark_ids_returns_none_when_outline_unreadable(tmp_path):
+    assert parser.bookmark_ids(tmp_path / "nope.pdf") is None
+
+
+def test_bookmark_ids_returns_ids_from_a_real_outline(tmp_path):
+    ids = parser.bookmark_ids(_pdf_with_outline(tmp_path))
+    assert ids == {"1", "1.1", "2", "attachment-1"}
+
+
+def test_bookmark_ids_returns_empty_set_without_outline(tmp_path):
+    from pypdf import PdfWriter
+
+    w = PdfWriter()
+    w.add_blank_page(width=200, height=200)
+    path = tmp_path / "plain.pdf"
+    with path.open("wb") as f:
+        w.write(f)
+    assert parser.bookmark_ids(path) == set()
+
+
+def test_doc_to_items_clears_stale_assets_including_subdirectories(tmp_path):
+    (tmp_path / "deadbeef.png").write_bytes(b"old")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "x.png").write_bytes(b"old")
+    parser.doc_to_items(_StubDoc(items=[]), assets_dir=tmp_path)
+    assert tmp_path.is_dir() and list(tmp_path.iterdir()) == []
+
+
+def test_doc_to_items_carries_topleft_bbox():
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("section_header"),
+                text="5.84 RUNWAY TRANS",
+                prov=[_StubProv(page_no=1, bbox=_StubBBox(l=300, t=700, r=550, b=680))],
+            ),
+            _StubItem(
+                _StubLabel("text"),
+                text="Body.",
+                prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=100, r=200, b=120, coord_origin="TOPLEFT"))],
+            ),
+            _StubItem(
+                _StubLabel("table"),
+                table_md="| A | B |\n|---|---|\n| 1 | 2 |",
+                prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=300, r=500, b=200))],
+            ),
+            _StubItem(_StubLabel("text"), text="No prov."),
+        ],
+        pages={1: _StubPage()},  # height 792
+    )
+    items = parser.doc_to_items(doc)
+    assert items[0].bbox == (300, 92, 550, 112)  # BOTTOMLEFT flipped: 792-700, 792-680
+    assert items[1].bbox == (10, 100, 200, 120)
+    assert items[2].bbox == (10, 492, 500, 592)
+    assert items[3].bbox is None

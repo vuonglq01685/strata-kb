@@ -7,7 +7,7 @@ import tiktoken
 
 _ENCODER = None
 
-_HEADING_RE = re.compile(r"^## (?P<sid>\S+)[ \t]+(?P<title>.+?)\s*$")
+_HEADING_RE = re.compile(r"^## (?P<sid>\S+)(?:[ \t]+(?P<title>.*?))?\s*$")
 _SEP_ROW_RE = re.compile(r"^\|[\s:|-]+\|$")
 
 
@@ -49,7 +49,7 @@ def slice_section(md: str, section_id: str) -> str | None:
     return "\n".join(lines[start:]).strip()
 
 
-_SUBHEADING_RE = re.compile(r"^### (?P<sid>\S+)[ \t]+(?P<title>.+?)\s*$")
+_SUBHEADING_RE = re.compile(r"^### (?P<sid>\S+)(?:[ \t]+(?P<title>.*?))?\s*$")
 
 
 def slice_subsection(md: str, section_id: str) -> str | None:

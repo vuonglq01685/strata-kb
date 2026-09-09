@@ -1,4 +1,13 @@
-from center_kb.ingest.sectioner import DocItem, build_units, parse_section_id
+import re
+
+import pytest
+
+from center_kb.ingest.sectioner import (
+    DocItem,
+    HeadingConfig,
+    build_units,
+    parse_section_id,
+)
 
 
 class TestParseSectionId:
@@ -41,6 +50,63 @@ class TestParseSectionId:
         sid, title = parse_section_id("Attachment 2.A — Carriage and Use of Oxygen")
         assert sid == "attachment-2.a"
         assert title == "Carriage and Use of Oxygen"
+
+    def test_title_less_dotted_heading_keeps_its_id(self):
+        assert parse_section_id("5.15") == ("5.15", "")
+
+    def test_title_less_dotted_heading_with_trailing_dot(self):
+        assert parse_section_id("5.15.") == ("5.15", "")
+
+    def test_bare_number_is_still_not_a_section(self):
+        assert parse_section_id("123") is None
+
+    def test_custom_pattern_optional_id_group_matched_none_raises_value_error(self):
+        """M-3: a custom chapter_pattern whose identifier group is optional
+        and captures nothing must raise ValueError naming the pattern, not
+        crash inside _clean_id with an AttributeError on None.strip()."""
+        pattern = r"^chuong(?:\s+(\d+))?\s*[-.:]\s*(.*)$"
+        cfg = HeadingConfig(chapter_pattern=pattern)
+        with pytest.raises(ValueError, match=re.escape(pattern)):
+            parse_section_id("Chuong - Mo dau", cfg)
+
+
+def test_title_less_numbered_heading_opens_its_own_section():
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "5.0 NAV", 1),
+        DocItem("text", "chapter body. " + big),
+        DocItem("heading", "5.15", 2),
+        DocItem("text", "Orphan body for 5.15. " + big),
+        DocItem("heading", "5.16 Real Field", 2),
+        DocItem("text", "real body. " + big),
+    ]
+    units = build_units(items)
+    by_id = {u.id: u for u in units}
+    assert list(by_id) == ["5", "5.15", "5.16"]
+    assert by_id["5.15"].title == ""
+    assert "Orphan body for 5.15." in by_id["5.15"].body_md
+    assert "Orphan body for 5.15." not in by_id["5"].body_md
+
+
+def test_folded_title_less_heading_renders_without_trailing_space():
+    """M-1: a title-less dotted heading small enough to fold into its parent
+    (the common fate of one -- that is why F3 exists) must render as
+    '### 5.15' with no trailing space. The plan's Global Constraint says an
+    empty title is written with no trailing space; scaffold.py's '##' writer
+    already honours it for the top-level heading, but _subtree_md/render did
+    not for a folded '###' child."""
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "5.0 NAV", 1),
+        DocItem("text", "chapter body. " + big),
+        DocItem("heading", "5.15", 2),
+        DocItem("text", "Tiny orphan body."),  # well under min_tokens -> folds
+    ]
+    units = build_units(items)
+    by_id = {u.id: u for u in units}
+    assert "5.15" not in by_id  # folded into "5", not its own unit
+    assert "### 5.15\n" in by_id["5"].body_md
+    assert "### 5.15 " not in by_id["5"].body_md
 
 
 def _items_basic() -> list[DocItem]:
@@ -191,21 +257,34 @@ def test_digit_only_heading_demoted_to_body():
     assert "Stray page content." in units[0].body_md
 
 
-def test_last_resort_xn_id_logs_warning(caplog):
-    # the any(ch.isalnum()) gate blocks symbol-only headings — an alnum char that
-    # \w drops (to force an empty slug) does not exist, so simulate via a text
-    # heading + an artificially empty slug: no monkeypatch needed — a "_"-only
-    # title is gate-blocked; this test locks the CONTRACT: if x{n} is generated, warn.
-    import logging
+def test_fallback_heading_is_recorded_in_notes():
+    from center_kb.ingest.sectioner import Fallback, build_units_with_notes
 
-    with caplog.at_level(logging.WARNING, logger="center_kb.ingest.sectioner"):
-        items = [
-            DocItem(kind="heading", text="5.6 Identifier Field", level=1),
-            DocItem(kind="text", text="Parent body."),
-        ]
-        build_units(items, min_tokens=1)
-    # no heading falls to the last resort → no warning is emitted
-    assert not [r for r in caplog.records if "fallback id" in r.message]
+    items = [
+        DocItem("heading", "5.6 Identifier Field", 1, page=3),
+        DocItem("text", "Parent body."),
+        DocItem("heading", "NDB Navaid Record", 2, page=4),
+        DocItem("text", "Value body."),
+    ]
+    units, notes = build_units_with_notes(items, min_tokens=1)
+    assert [u.id for u in units] == ["5.6", "5.6-ndb-navaid-record"]
+    assert notes.fallbacks == [
+        Fallback("5.6-ndb-navaid-record", "NDB Navaid Record", 4)
+    ]
+    assert notes.demoted == [] and notes.inversions == [] and notes.duplicates == []
+    # the plain entry point is the same pass without the notes
+    assert build_units(items, min_tokens=1) == units
+
+
+def test_no_fallback_note_when_every_heading_parses():
+    from center_kb.ingest.sectioner import build_units_with_notes
+
+    items = [
+        DocItem("heading", "5.6 Identifier Field", 1),
+        DocItem("text", "Parent body."),
+    ]
+    _, notes = build_units_with_notes(items, min_tokens=1)
+    assert notes.fallbacks == []
 
 
 def test_repeated_chapter_heading_reopens_node():
@@ -804,3 +883,336 @@ def test_content_before_a_numeric_part_first_heading_is_kept():
     assert units, "the part produced no units at all"
     assert "Lead-in caption before any heading." in units[0].body_md
     assert [u.id for u in units] == ["26.1"]
+
+
+def test_table_caption_heading_is_demoted_to_text():
+    from center_kb.ingest.sectioner import Demotion, build_units_with_notes
+
+    items = [
+        DocItem("heading", "5.7 SID Records", 1, page=129),
+        DocItem("text", "Field body."),
+        DocItem("heading", "Table 5-6 Airport and Heliport SID Record", 2, page=129),
+        DocItem("table", "| a | b |\n|---|---|\n| 1 | 2 |"),
+    ]
+    units, notes = build_units_with_notes(items, min_tokens=1)
+    assert [u.id for u in units] == ["5.7"]
+    assert "**Table 5-6 Airport and Heliport SID Record**" in units[0].body_md
+    assert "| a | b |" in units[0].body_md
+    assert notes.demoted == [
+        Demotion("Table 5-6 Airport and Heliport SID Record", "caption", (129,))
+    ]
+    assert notes.fallbacks == []
+
+
+def test_label_line_heading_is_demoted_to_text():
+    from center_kb.ingest.sectioner import Demotion, build_units_with_notes
+
+    label = "Used On: Runway Record Length: 1 Character Character Type: Alpha"
+    items = [
+        DocItem("heading", "5.319 Runway Transition", 1, page=300),
+        DocItem("text", "Field body."),
+        DocItem("heading", label, 2, page=300),
+        DocItem("text", "Value body."),
+    ]
+    units, notes = build_units_with_notes(items, min_tokens=1)
+    assert [u.id for u in units] == ["5.319"]
+    assert f"**{label}**" in units[0].body_md
+    assert notes.demoted == [Demotion(label, "label line", (300,))]
+
+
+def test_heading_repeated_on_three_pages_is_demoted():
+    from center_kb.ingest.sectioner import Demotion, build_units_with_notes
+
+    items = []
+    for n, page in enumerate((61, 88, 104), start=1):
+        items += [
+            DocItem("heading", f"5.{n} Field {n}", 1, page=page),
+            DocItem("text", f"Field {n} body."),
+            DocItem("heading", "COMMENTARY", 2, page=page),
+            DocItem("text", f"Commentary {n}."),
+        ]
+    units, notes = build_units_with_notes(items, min_tokens=1)
+    assert [u.id for u in units] == ["5.1", "5.2", "5.3"]
+    assert all("**COMMENTARY**" in u.body_md for u in units)
+    assert "Commentary 2." in units[1].body_md
+    assert notes.demoted == [Demotion("COMMENTARY", "repeated", (61, 88, 104))]
+
+
+def test_heading_repeated_on_two_pages_is_still_a_fallback():
+    from center_kb.ingest.sectioner import build_units_with_notes
+
+    items = []
+    for n, page in enumerate((61, 88), start=1):
+        items += [
+            DocItem("heading", f"5.{n} Field {n}", 1, page=page),
+            DocItem("text", f"Field {n} body."),
+            DocItem("heading", "COMMENTARY", 2, page=page),
+            DocItem("text", f"Commentary {n}."),
+        ]
+    units, notes = build_units_with_notes(items, min_tokens=1)
+    assert [u.id for u in units] == ["5.1", "5.1-commentary", "5.2", "5.2-commentary"]
+    assert notes.demoted == []
+
+
+def test_repeated_heading_counted_across_parts():
+    from center_kb.ingest.sectioner import Part, build_units_with_notes
+
+    parts = [Part("5", "NAV", 1), Part("6", "PROC", 50)]
+    items = [
+        DocItem("heading", "5.0 NAV", 1, page=1),
+        DocItem("text", "nav body.", page=1),
+        DocItem("heading", "COMMENTARY", 2, page=2),
+        DocItem("text", "c1.", page=2),
+        DocItem("heading", "6.0 PROC", 1, page=50),
+        DocItem("text", "proc body.", page=50),
+        DocItem("heading", "COMMENTARY", 2, page=51),
+        DocItem("text", "c2.", page=51),
+        DocItem("heading", "COMMENTARY", 2, page=52),
+        DocItem("text", "c3.", page=52),
+    ]
+    units, notes = build_units_with_notes(items, min_tokens=1, parts=parts)
+    assert [u.id for u in units] == ["5", "6"]
+    assert len(notes.demoted) == 1 and notes.demoted[0].pages == (2, 51, 52)
+
+
+def test_numbered_figure_title_is_not_a_caption():
+    items = [
+        DocItem("heading", "5.0 NAV", 1),
+        DocItem("text", "nav body."),
+        DocItem("heading", "5.149 Figure of Merit", 2),
+        DocItem("text", "fom body."),
+    ]
+    assert [u.id for u in build_units(items, min_tokens=1)] == ["5", "5.149"]
+
+
+def test_noise_reason_does_not_match_table_of_contents():
+    from center_kb.ingest.sectioner import _noise_reason
+
+    assert _noise_reason("Table of Contents", 1) is None
+    assert _noise_reason("Figure of Merit", 1) is None
+    assert _noise_reason("Table 5-6 SID Record", 1) == "caption"
+    assert _noise_reason("Fig. A1 Layout", 1) == "caption"
+    assert _noise_reason("Note: see below", 1) is None  # one label only
+    assert _noise_reason("Used On: X Length: 5", 1) == "label line"
+    assert _noise_reason("FOREWORD", 2) is None
+    assert _noise_reason("FOREWORD", 3) == "repeated"
+
+
+def test_duplicate_id_across_parts_is_renamed_and_noted():
+    from center_kb.ingest.sectioner import Duplicate, Part, build_units_with_notes
+
+    big = "Body text. " * 70
+    parts = [Part("5", "NAV", 1), Part("6", "PROC", 10)]
+    items = [
+        DocItem("heading", "5.0 NAV", 1, page=1),
+        DocItem("text", "nav body. " + big, page=1),
+        DocItem("heading", "5.3 Airways", 2, page=2),
+        DocItem("text", "airways body. " + big, page=2),
+        DocItem("heading", "6.0 PROC", 1, page=10),
+        DocItem("text", "proc body. " + big, page=10),
+        # stray: physically inside chapter 6's page range
+        DocItem("heading", "5.3 Airways", 2, page=11),
+        DocItem("text", "airways tail. " + big, page=11),
+    ]
+    units, notes = build_units_with_notes(items, parts=parts)
+    assert [(u.id, u.chapter) for u in units] == [
+        ("5", "5"), ("5.3", "5"), ("6", "6"), ("5.3-2", "6"),
+    ]
+    assert units[3].title == "Airways"
+    assert "airways tail." in units[3].body_md
+    assert notes.duplicates == [Duplicate("5.3", "5.3-2", "6")]
+
+
+def test_duplicate_suffix_never_steals_an_id_a_later_unit_owns():
+    """A-F7 follow-up: the '-n' suffix must skip ids ANY unit in the whole
+    list owns, not just ids assigned so far in the walk. Reproduced with an
+    unnumbered APPENDIX heading repeated across two bookmark parts plus a
+    real numbered "APPENDIX 2" heading later: naively renaming the stray to
+    "appendix-2" (the next free suffix at that point in the walk) collides
+    with the id the real Appendix 2 unit needs when it is reached, and that
+    real unit gets bumped to "appendix-2-2" even though nothing but the
+    stray actually duplicated "appendix"."""
+    from center_kb.ingest.sectioner import Duplicate, Part, build_units_with_notes
+
+    big = "Body text. " * 70
+    parts = [Part("5", "NAV", 1), Part("6", "PROC", 10), Part("7", "XYZ", 20)]
+    items = [
+        DocItem("heading", "5.0 NAV", 1, page=1),
+        DocItem("text", "nav body. " + big, page=1),
+        # first (real, unnumbered) Appendix
+        DocItem("heading", "APPENDIX. FIRST", 1, page=2),
+        DocItem("text", "first appendix body. " + big, page=2),
+        DocItem("heading", "6.0 PROC", 1, page=10),
+        DocItem("text", "proc body. " + big, page=10),
+        # stray: same unnumbered APPENDIX heading repeated in a later part
+        DocItem("heading", "APPENDIX. STRAY", 1, page=11),
+        DocItem("text", "stray appendix body. " + big, page=11),
+        DocItem("heading", "7.0 XYZ", 1, page=20),
+        DocItem("text", "xyz body. " + big, page=20),
+        # real, numbered Appendix 2 — arrives after the stray in unit order
+        DocItem("heading", "APPENDIX 2", 1, page=21),
+        DocItem("text", "appendix two body. " + big, page=21),
+    ]
+    units, notes = build_units_with_notes(items, parts=parts)
+    assert [u.id for u in units] == ["5", "appendix", "6", "appendix-3", "7", "appendix-2"]
+    assert notes.duplicates == [Duplicate("appendix", "appendix-3", "6")]
+
+
+def test_custom_chapter_pattern_id_never_contains_whitespace():
+    from center_kb.ingest.sectioner import HeadingConfig
+
+    cfg = HeadingConfig(chapter_pattern=r"^(part\s+[A-Z])\s*[-–—.:]\s*(.*)$")
+    assert parse_section_id("Part A - Definitions", cfg) == ("Part-A", "Definitions")
+    cfg2 = HeadingConfig(appendix_pattern=r"^annex\s+([A-Z] [0-9])\s*[-–—.:]?\s*(.*)$")
+    assert parse_section_id("Annex B 2 - Tables", cfg2) == ("appendix-b-2", "Tables")
+
+
+def _two_column_page(page: int = 212) -> list[DocItem]:
+    """Reviewer case 9 with layout: 5.83 in the left column, 5.84 in the
+    right; docling emitted 5.84 first and interleaved 5.83 between 5.84's
+    two paragraphs."""
+    big = "Body text. " * 70
+    return [
+        DocItem("heading", "5.84 RUNWAY TRANS", 2, page=page, bbox=(310, 80, 550, 95)),
+        DocItem("text", "para-a of 5.84. " + big, page=page, bbox=(310, 100, 550, 300)),
+        DocItem("heading", "5.83 To FIX", 2, page=page, bbox=(50, 80, 290, 95)),
+        DocItem("text", "para-b of 5.84. " + big, page=page, bbox=(310, 310, 550, 500)),
+        DocItem("text", "body of 5.83. " + big, page=page, bbox=(50, 100, 290, 400)),
+    ]
+
+
+def _chapter_head(page: int = 200) -> list[DocItem]:
+    big = "Body text. " * 70
+    return [
+        DocItem("heading", "5.0 NAV", 1, page=page, bbox=(50, 40, 550, 60)),
+        DocItem("text", "chapter body. " + big, page=page, bbox=(50, 70, 550, 300)),
+    ]
+
+
+def test_inverted_headings_on_one_page_are_reordered_by_layout():
+    from center_kb.ingest.sectioner import Inversion, build_units_with_notes
+
+    units, notes = build_units_with_notes(_chapter_head() + _two_column_page())
+    by_id = {u.id: u for u in units}
+    assert [u.id for u in units] == ["5", "5.83", "5.84"]
+    assert "para-a of 5.84." in by_id["5.84"].body_md
+    assert "para-b of 5.84." in by_id["5.84"].body_md
+    assert "body of 5.83." in by_id["5.83"].body_md
+    assert "para-b of 5.84." not in by_id["5.83"].body_md
+    assert notes.inversions == [Inversion(212, "5.84", "5.83", True)]
+
+
+def test_inverted_headings_without_bboxes_are_only_reported():
+    from dataclasses import replace
+
+    from center_kb.ingest.sectioner import Inversion, build_units_with_notes
+
+    items = [replace(i, bbox=None) for i in _chapter_head() + _two_column_page()]
+    units, notes = build_units_with_notes(items)
+    by_id = {u.id: u for u in units}
+    assert [u.id for u in units] == ["5", "5.84", "5.83"]
+    assert "para-b of 5.84." in by_id["5.83"].body_md  # today's misattribution, now visible
+    assert notes.inversions == [Inversion(212, "5.84", "5.83", False)]
+
+
+def test_spanning_heading_stays_first_when_a_page_is_reordered():
+    from center_kb.ingest.sectioner import build_units_with_notes
+
+    big = "Body text. " * 70
+    title = DocItem("heading", "5.0 NAV", 1, page=212, bbox=(50, 20, 550, 40))
+    intro = DocItem("text", "chapter body. " + big, page=212, bbox=(50, 45, 550, 70))
+    units, notes = build_units_with_notes([title, intro] + _two_column_page())
+    assert [u.id for u in units] == ["5", "5.83", "5.84"]
+    assert "chapter body." in units[0].body_md
+    assert len(notes.inversions) == 1 and notes.inversions[0].reordered
+
+
+def test_page_without_inversion_keeps_docling_order_even_with_bboxes():
+    from center_kb.ingest.sectioner import build_units_with_notes
+
+    big = "Body text. " * 70
+    # bboxes deliberately contradict docling order: docling is trusted here
+    items = _chapter_head() + [
+        DocItem("heading", "5.83 To FIX", 2, page=212, bbox=(310, 80, 550, 95)),
+        DocItem("text", "body of 5.83. " + big, page=212, bbox=(310, 100, 550, 300)),
+        DocItem("heading", "5.84 RUNWAY TRANS", 2, page=212, bbox=(50, 80, 290, 95)),
+        DocItem("text", "body of 5.84. " + big, page=212, bbox=(50, 100, 290, 300)),
+    ]
+    units, notes = build_units_with_notes(items)
+    by_id = {u.id: u for u in units}
+    assert [u.id for u in units] == ["5", "5.83", "5.84"]
+    assert "body of 5.84." in by_id["5.84"].body_md
+    assert notes.inversions == []
+
+
+def test_inversion_across_pages_is_not_reported():
+    from center_kb.ingest.sectioner import build_units_with_notes
+
+    big = "Body text. " * 70
+    items = _chapter_head() + [
+        DocItem("heading", "5.84 RUNWAY TRANS", 2, page=212),
+        DocItem("text", "body of 5.84. " + big, page=212),
+        DocItem("heading", "5.83 To FIX", 2, page=213),
+        DocItem("text", "body of 5.83. " + big, page=213),
+    ]
+    _, notes = build_units_with_notes(items)
+    assert notes.inversions == []
+
+
+def test_inversion_only_compares_siblings():
+    from center_kb.ingest.sectioner import build_units_with_notes
+
+    big = "Body text. " * 70
+    # 5.3.9 then 5.4 on one page is normal nesting, not an inversion
+    items = _chapter_head() + [
+        DocItem("heading", "5.3 Airspace", 2, page=212),
+        DocItem("text", "a. " + big, page=212),
+        DocItem("heading", "5.3.9 Sub", 3, page=212),
+        DocItem("text", "b. " + big, page=212),
+        DocItem("heading", "5.4 Airways", 2, page=212),
+        DocItem("text", "c. " + big, page=212),
+    ]
+    _, notes = build_units_with_notes(items)
+    assert notes.inversions == []
+
+
+def test_inversion_ignores_custom_pattern_ids_that_are_not_purely_numeric():
+    """A-F2 fix round 1: a custom --chapter-pattern can emit a dotted id
+    whose segments are not purely digits (e.g. "5.2b"). _numeric_heading_id
+    must reject it (spec §1.3: only numeric ids participate) instead of
+    letting it reach _id_tuple, whose bare int() would raise when a second
+    such heading shares the page and parent."""
+    from center_kb.ingest.sectioner import HeadingConfig, build_units_with_notes
+
+    cfg = HeadingConfig(chapter_pattern=r"^muc\s+([0-9]+\.[0-9]+[a-z])\s*[-.:]\s*(.*)$")
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "Muc 5.2b - Title", 1, page=1),
+        DocItem("text", "title body. " + big, page=1),
+        DocItem("heading", "Muc 5.3c - Two", 1, page=1),
+        DocItem("text", "two body. " + big, page=1),
+    ]
+    units, notes = build_units_with_notes(items, config=cfg)
+    assert notes.inversions == []
+
+
+def test_numeric_heading_id_rejects_non_decimal_digit_classes():
+    """M-2: str.isdigit() admits Unicode digit classes (e.g. superscript
+    U+00B2/U+00B3) that int() rejects. A permissive custom chapter_pattern
+    can capture such a character into the id; _numeric_heading_id must
+    return None for it instead of letting it reach _id_tuple's bare int()
+    and raise ValueError. Fixture shape from the T6 fix-round re-review
+    (isdigit() -> isdecimal())."""
+    from center_kb.ingest.sectioner import HeadingConfig, build_units_with_notes
+
+    cfg = HeadingConfig(chapter_pattern=r"^muc\s+(\S+)\s*[-.:]\s*(.*)$")
+    big = "Body text. " * 70
+    items = [
+        DocItem("heading", "Muc 5.³ - A", 1, page=1),
+        DocItem("text", "a body. " + big, page=1),
+        DocItem("heading", "Muc 5.² - B", 1, page=1),
+        DocItem("text", "b body. " + big, page=1),
+    ]
+    units, notes = build_units_with_notes(items, config=cfg)  # must not raise
+    assert [u.id for u in units] == ["5.³", "5.²"]
+    assert notes.inversions == []
