@@ -4,7 +4,8 @@ import pytest
 
 from center_kb import llm
 from center_kb.models import LLMConfig
-from tests.cli_stub import echo, echo_after_stdin, write_cli_stub
+from center_kb.summarize import PendingSection, build_section_prompt
+from tests.cli_stub import echo_after_stdin, echo_stdin_length, write_cli_stub
 
 
 # --- detect_runner -----------------------------------------------------------
@@ -58,12 +59,85 @@ def test_claude_run_unwraps_json_envelope(tmp_path):
     assert json.loads(runner.run("prompt")) == {"l2_summary": "x", "l1_summary": "y"}
 
 
-def test_copilot_run_returns_plain_stdout(tmp_path):
-    exe = write_cli_stub(
-        tmp_path, "copilot", echo('{"l2_summary": "a", "l1_summary": "b"}')
-    )
+def test_copilot_run_pipes_prompt_on_stdin(tmp_path):
+    exe = write_cli_stub(tmp_path, "copilot", echo_stdin_length())
     runner = llm.Runner("copilot", str(exe), "gpt-5", "high", 30)
-    assert '"l2_summary"' in runner.run("prompt")
+    prompt = "line one\nline two %PATH% & | > ^ !x!"
+    n, tail = runner.run(prompt).split("|", 1)
+    assert int(n) == len(prompt) and tail == prompt[-30:]
+
+
+@pytest.mark.parametrize("name", ["claude", "copilot"])
+def test_full_section_prompt_arrives_intact(tmp_path, name):
+    """B-1: a real multi-line ~3.5 kB prompt with shell metacharacters must
+    reach the CLI byte for byte — through the .cmd shim on Windows."""
+    body = ("## 5.7 Route Type\n\n" + "Route type codes & their meaning | see %PATH% ^ !x! > 0.\n" * 60)
+    prompt = build_section_prompt(PendingSection("d", "5.7", "Route Type", "f", body))
+    assert "\n" in prompt and len(prompt) > 3000
+    if name == "claude":
+        stub = (
+            "import sys, json\n"
+            "data = sys.stdin.read()\n"
+            "print(json.dumps({'type': 'result', 'result': str(len(data)) + '|' + data[-30:]}))\n"
+        )
+    else:
+        stub = echo_stdin_length()
+    exe = write_cli_stub(tmp_path, name, stub)
+    runner = llm.Runner(name, str(exe), "m", "high", 30)
+    n, tail = runner.run(prompt).split("|", 1)
+    assert int(n) == len(prompt) and tail == prompt[-30:]
+
+
+def test_run_never_puts_the_prompt_in_argv(tmp_path, monkeypatch):
+    seen = {}
+    def fake_run(cmd, **kw):
+        seen["cmd"], seen["input"] = cmd, kw.get("input")
+
+        class P:
+            returncode, stdout, stderr = 0, '{"type": "result", "result": "ok"}', ""
+
+        return P()
+    monkeypatch.setattr(llm.subprocess, "run", fake_run)
+    for name in ("claude", "copilot"):
+        llm.Runner(name, "x", "m", "high", 1).run("the prompt")
+        assert "the prompt" not in seen["cmd"] and seen["input"] == "the prompt"
+
+
+@pytest.mark.parametrize(("name", "expected_cmd"), [
+    ("claude", ["x", "-p", "--model", "m", "--output-format", "json"]),
+    # copilot: no -p/--prompt — a bare -p would swallow --model as the
+    # prompt value and ignore stdin (controller ruling R7; see Evidence).
+    ("copilot", ["x", "--model", "m", "-s"]),
+])
+def test_run_argv_shape_per_runner(monkeypatch, name, expected_cmd):
+    seen = {}
+    def fake_run(cmd, **kw):
+        seen["cmd"], seen["kw"] = cmd, kw
+
+        class P:
+            returncode, stdout, stderr = 0, '{"type": "result", "result": "ok"}', ""
+
+        return P()
+    monkeypatch.setattr(llm.subprocess, "run", fake_run)
+    llm.Runner(name, "x", "m", "high", 1).run("the prompt")
+    assert seen["cmd"] == expected_cmd
+    assert seen["kw"]["encoding"] == "utf-8"
+    assert seen["kw"]["text"] is True
+    assert seen["kw"]["input"] == "the prompt"
+
+
+@pytest.mark.parametrize("envelope", [
+    {"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "API Error: 500"},
+    {"type": "result", "subtype": "error_max_turns", "is_error": True, "result": ""},
+    {"type": "result", "subtype": "success"},           # no result key at all
+])
+def test_claude_envelope_errors_raise(tmp_path, envelope):
+    exe = write_cli_stub(tmp_path, "claude", echo_after_stdin(json.dumps(envelope)))
+    runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 30)
+    with pytest.raises(llm.RunnerError) as ei:
+        runner.run("prompt")
+    if envelope.get("result"):
+        assert "API Error: 500" in str(ei.value)
 
 
 def test_run_raises_on_nonzero_exit(tmp_path):
@@ -73,6 +147,16 @@ def test_run_raises_on_nonzero_exit(tmp_path):
     runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 30)
     with pytest.raises(llm.RunnerError):
         runner.run("prompt")
+
+
+def test_run_raises_runner_error_when_prompt_lands_in_argv():
+    """A5: forcing config.model to equal the prompt reproduces the
+    argv-injection shape without needing a real CLI stub -- the guard
+    must raise RunnerError (not AssertionError, which -O strips) before
+    any subprocess is spawned."""
+    runner = llm.Runner("claude", "x", "the prompt", "high", 1)
+    with pytest.raises(llm.RunnerError, match="stdin"):
+        runner.run("the prompt")
 
 
 def test_run_raises_on_timeout(tmp_path):

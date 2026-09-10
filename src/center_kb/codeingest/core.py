@@ -561,8 +561,8 @@ def _is_curated_destination(
       been promoted to `"reviewed"` by a human). The `manifest.id !=
       doc_id` half closes a regression verified at Task B10: two
       ordinary sibling commands write exactly those statuses onto a
-      `-code` document's *own* manifest — `kb summarize --redo` with no
-      DOC_ID (`summarize.redo_reset()`, iterating every doc in
+      `-code` document's *own* manifest — `kb summarize --redo --all`
+      (`summarize.redo_reset()`, iterating every doc in
       `index.yaml`) and `kb approve --all-changed` with no DOC_ID
       (`review.approve_all_changed()` / `approve_sections()`, same
       iteration). Without the identity gate, either command left its own

@@ -10,40 +10,35 @@ to fill in summaries (after `kb ingest`), follow these rules exactly.
 ## What to edit
 
 - In `.kb/<doc-id>/<file>.md` (L2): replace each
-  `<!-- TODO:summarize <section-id> -->` marker with a condensed paragraph.
-  Never touch the markdown tables — they are verbatim copies.
+  `<!-- TODO:summarize <section-id> -->` marker with a condensed paragraph,
+  except sections the engine fills (`[no LLM needed: …]`) — leave those
+  markers alone. Never touch the markdown tables — they are verbatim copies.
 - In `.kb/<doc-id>/_manifest.yaml` (L1): set `summary` (one sentence,
   ≤ 25 words) per section and flip `status: pending` → `status: summarized`.
 - In `.kb/index.yaml`: when every section of a doc is summarized, fill the
   doc's one-sentence `summary`.
 - Nothing else. `.raw.md` files (L3) are read-only source text.
 
-## Writing rules (mandatory)
+## How to write a summary
 
-- Write every summary in the **same language as the source text** in the
-  matching `.raw.md` (L3) file — never translate. English source → English
-  summary; Vietnamese source → Vietnamese summary. The only exception is the
-  fixed `Table-only section: <title>.` label below, which stays in English so
-  that it matches what `kb summarize` writes for the same case.
-- Summarize the prose ONLY. Never describe, list, or reconstruct table
-  contents — the tables are already copied verbatim into the section.
-- If a section has no prose (heading + tables only): delete the marker
-  line (leave nothing) and set the manifest `summary` to
-  `Table-only section: <title>.` — do NOT invent prose about the tables.
-- Keep the L2 paragraph under ~35% of the original prose length. If your
-  draft is longer, compress harder.
-- L2 paragraph: ~20–30% of the original length, keep the logical structure.
-- Preserve VERBATIM: codes (P, R, D...), record/field names (UR, PA...),
-  numeric values, units, cross-references (§x.y). Never paraphrase
-  technical terms.
-- Do NOT infer beyond the source text. When unsure, keep the original
-  sentence.
-- Do NOT summarize, create, or delete tables.
+Never read the `.raw.md` file to write a summary. Run
+`kb summarize <doc-id> --print-prompt` (add `--section <id>` to narrow):
+it prints, per pending section, the exact prompt the `kb summarize`
+engine sends — tables already removed, a `HARD LIMIT: l2_summary must be
+at most N characters` line and the JSON contract. Answer that prompt and
+nothing else; keep `l2_summary` at or under that `HARD LIMIT` and
+`l1_summary` at or under 25 words. Sections marked `[no LLM needed: …]`
+are filled by `kb summarize <doc-id>` deterministically — leave their
+markers alone and run that command.
 
 ## Validate
 
-After editing, run `kb build` — it must pass. If it reports a table
-integrity error, restore the table verbatim from the `.raw.md` file.
+After editing, run `kb build --strict` — it must pass (use
+`kb build --allow-pending --strict` for a partial run, while sections
+are still pending). A table integrity error means a table was modified:
+restore it verbatim from the `.raw.md` file. A `(quality)` error names
+the rule the summary broke — rewrite that section from its printed
+prompt.
 
 ## CLI reference
 
@@ -51,8 +46,10 @@ integrity error, restore the table verbatim from the `.raw.md` file.
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (prefer the `/kb-ingest` prompt in Copilot Chat)
 - `kb summarize` — fill pending summaries via a headless LLM CLI
+- `kb summarize <doc> --print-prompt` — print the engine's exact prompt for each pending section
 - `kb status` — list docs and their pending sections
 - `kb build` — validate the KB (manifests, tables, tokens)
+- `kb build --strict` — validate the KB and treat quality findings as errors
 - `kb query "<question>"` — hybrid search (keyword + semantic) over the summaries
 - `kb get <doc> <section> [--level l2|l3]` — read one section
 - `kb stats` — token counts per level

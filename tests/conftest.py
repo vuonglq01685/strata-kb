@@ -71,13 +71,13 @@ Condensed: airway record structure, route identifiers.
 
 L3_CONTENT = f"""## 1.1 Airspace Records
 
-Full raw text about airspace records. Designation, type, multiple code, level.
+Full raw text about airspace records. Designation, type, multiple code, level. Each airspace record carries the designation of the airspace, its type code from the table below, a multiple code that separates overlapping volumes, and the lower and upper level fields that bound it vertically. The structure is fixed-width and every field is mandatory unless noted.
 
 {TABLE}
 
 ## 1.2 Airway Records
 
-Full raw text about airway records and route identifiers.
+Full raw text about airway records and route identifiers. An airway record names the route identifier, the sequence number of each fix along the route, the level and direction restrictions that apply between consecutive fixes, and the cruising table used along the segment. Records are ordered by route identifier then sequence number.
 """
 
 
@@ -173,7 +173,7 @@ def git_kb(fixture_kb: Path, run_git) -> dict:
     l2.write_text(
         l2.read_text(encoding="utf-8").replace(
             "airspace record structure with designation and type fields.",
-            "airspace record structure with NEW multiple code field.",
+            "airspace record structure with an amended multiple code field.",
         ),
         encoding="utf-8",
     )

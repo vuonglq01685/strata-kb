@@ -8,7 +8,7 @@ import pytest
 from center_kb import assetstore, ghio, gitio, models
 from center_kb.federation import FederationMeta, write_federation_index
 from center_kb.hub import HubHandle
-from center_kb.publish import PublishError, publish
+from center_kb.publish import PublishError, publish, unreviewed_sections
 from tests.conftest import make_fed_entry
 
 
@@ -19,6 +19,20 @@ def hub_with_origin(hub_worktree, run_git, tmp_path):
     run_git(hub_worktree, "remote", "add", "origin", str(origin))
     run_git(hub_worktree, "push", "-u", "origin", "HEAD")
     return hub_worktree
+
+
+def test_unreviewed_sections_counts_non_reviewed_rows(git_kb):
+    assert unreviewed_sections(git_kb["kb"]) == (2, 1)
+    mpath = git_kb["kb"] / "demo-doc" / "_manifest.yaml"
+    m = models.load_yaml_model(mpath, models.Manifest)
+    m.sections[0].status = "reviewed"
+    models.save_yaml_model(mpath, m)
+    assert unreviewed_sections(git_kb["kb"]) == (1, 1)
+    # "pending" (not just "summarized") counts as unreviewed too
+    m = models.load_yaml_model(mpath, models.Manifest)
+    m.sections[1].status = "pending"
+    models.save_yaml_model(mpath, m)
+    assert unreviewed_sections(git_kb["kb"]) == (1, 1)
 
 
 def test_publish_direct_refreshes_search_db(git_kb, hub_worktree):

@@ -485,7 +485,7 @@ def ingest(
     build_report = build_kb(kb_dir, allow_pending=bool(report_s.failed))
     for err in build_report.errors:
         typer.secho(f"  [build] {err}", fg=typer.colors.RED)
-    for warn in build_report.warnings:
+    for warn in build_report.warnings + build_report.quality:
         typer.secho(f"  [build] {warn}", fg=typer.colors.YELLOW)
     if build_report.ok:
         typer.echo("kb build: OK")
@@ -507,7 +507,14 @@ def _resolve_runner(kb_dir: Path, llm_choice: str, max_workers: int):
     """Returns (runner | None, reason, workers): reason is "disabled" | "missing" | ""."""
     import center_kb.llm as llm_mod
 
-    index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
+    try:
+        index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
+    except ValueError as exc:
+        # pydantic.ValidationError is a ValueError subclass — a bad literal
+        # (e.g. a typo'd llm.effort) must read as a clean CLI error, not a
+        # traceback (B4).
+        typer.secho(f"[error] {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
     effective = llm_choice or index.llm.runner
     # Looks redundant with detect_runner's own "none" handling, but it is
     # load-bearing: it's what distinguishes the "disabled" reason returned
@@ -569,31 +576,97 @@ def summarize(
     redo: bool = typer.Option(
         False,
         "--redo",
-        help="Reset summarized/reviewed sections to pending (restoring L2 "
-        "markers) and re-summarize from scratch",
+        help="Reset summaries of DOC_ID (or --all) to pending and re-summarize",
+    ),
+    all_docs: bool = typer.Option(
+        False, "--all", help="With --redo: reset every document in the KB"
+    ),
+    include_reviewed: bool = typer.Option(
+        False,
+        "--include-reviewed",
+        help="With --redo: also reset reviewed sections (asks for confirmation)",
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", help="With --redo: skip the confirmation prompt"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="With --redo: print what would be reset and stop"
+    ),
+    section: list[str] = typer.Option(
+        [], "--section", help="With --redo/--print-prompt: only these section ids (repeatable)"
+    ),
+    print_prompt: bool = typer.Option(
+        False,
+        "--print-prompt",
+        help="Print the engine's prompt for each pending section of DOC_ID and exit",
     ),
 ) -> None:
     """Fill pending L1/L2 summaries by calling a headless LLM CLI (claude/copilot)."""
+    _validate_summarize_args(
+        kb_dir, llm, redo, print_prompt, all_docs, include_reviewed, yes, dry_run, section
+    )
+    _dispatch_summarize(
+        kb_dir, llm, max_workers, doc_id, redo, print_prompt,
+        all_docs, include_reviewed, yes, dry_run, section,
+    )
+
+
+def _dispatch_summarize(
+    kb_dir: Path,
+    llm: str,
+    max_workers: int,
+    doc_id: str,
+    redo: bool,
+    print_prompt: bool,
+    all_docs: bool,
+    include_reviewed: bool,
+    yes: bool,
+    dry_run: bool,
+    section: list[str],
+) -> None:
+    """Route to --print-prompt / --redo / the plain summarize run, in that
+    precedence order — flags were already validated by `_validate_summarize_args`."""
+    if print_prompt:
+        _print_prompts(kb_dir, doc_id, list(section))
+        return
+    if redo:
+        _redo_or_exit(
+            kb_dir, llm, max_workers, doc_id, all_docs, include_reviewed, yes,
+            dry_run, list(section),
+        )
+        if dry_run:
+            return
+    _run_summarize_and_report(kb_dir, llm, doc_id, max_workers)
+
+
+def _validate_summarize_args(
+    kb_dir: Path,
+    llm: str,
+    redo: bool,
+    print_prompt: bool,
+    all_docs: bool,
+    include_reviewed: bool,
+    yes: bool,
+    dry_run: bool,
+    section: list[str],
+) -> None:
+    """Flag-combination + KB-presence checks shared by every `summarize` path."""
     _validate_llm_choice(llm)
+    if redo and print_prompt:
+        typer.secho("--print-prompt cannot be combined with --redo", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not redo:
+        _require_redo_for_redo_only_flags(
+            all_docs, include_reviewed, yes, dry_run, [] if print_prompt else section
+        )
     if not (kb_dir / "index.yaml").exists():
         typer.secho(f"not found: {kb_dir / 'index.yaml'}", fg=typer.colors.RED)
         raise typer.Exit(1)
-    if redo:
-        from center_kb.summarize import redo_reset
 
-        # Resolve the runner BEFORE resetting: a redo must never wipe
-        # summaries when the subsequent run can't happen anyway.
-        runner_probe, reason, _ = _resolve_runner(kb_dir, llm, max_workers)
-        if runner_probe is None:
-            _echo_no_runner(reason)
-            raise typer.Exit(1)
-        rr = redo_reset(kb_dir, doc_id or None)
-        typer.echo(f"redo: {len(rr.reset)} section(s) reset to pending")
-        if rr.reviewed_reset:
-            typer.secho(
-                f"[warn] {rr.reviewed_reset} reviewed section(s) were reset",
-                fg=typer.colors.YELLOW,
-            )
+
+def _run_summarize_and_report(
+    kb_dir: Path, llm: str, doc_id: str, max_workers: int
+) -> None:
     report, reason = _run_summarize(kb_dir, llm, doc_id or None, max_workers)
     if report is None:
         _echo_no_runner(reason)
@@ -605,6 +678,146 @@ def summarize(
             fg=typer.colors.YELLOW,
         )
         raise typer.Exit(1)
+
+
+def _require_redo_for_redo_only_flags(
+    all_docs: bool, include_reviewed: bool, yes: bool, dry_run: bool, sections: list[str]
+) -> None:
+    """`--all`/`--include-reviewed`/`--yes`/`--dry-run`/`--section` only mean
+    anything alongside `--redo` — refuse them outright otherwise instead of
+    silently ignoring a flag the caller thought was doing something."""
+    for flag_name, flag_set in (
+        ("--all", all_docs),
+        ("--include-reviewed", include_reviewed),
+        ("--yes", yes),
+        ("--dry-run", dry_run),
+        ("--section", bool(sections)),
+    ):
+        if flag_set:
+            typer.secho(f"{flag_name} requires --redo", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+
+def _validate_redo_flags(doc_id: str, all_docs: bool, sections: list[str]) -> None:
+    """`--redo` needs exactly one target and rejects contradictory combinations."""
+    if sections and not doc_id:
+        typer.secho("--section requires a DOC_ID", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not doc_id and not all_docs:
+        typer.secho(
+            "--redo resets every summary; name a document, or pass --all to "
+            "reset the whole KB.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    if doc_id and all_docs:
+        typer.secho("--all cannot be combined with a DOC_ID", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+def _echo_redo_plan(doc_id: str, plan) -> None:
+    scope = doc_id or "the whole KB"
+    typer.echo(
+        f"redo: {len(plan.items)} section(s) in {scope} will be reset "
+        f"({len(plan.skipped_reviewed)} reviewed skipped)"
+    )
+    for item in plan.reviewed_items:
+        rec = item.reviewed
+        who = f"{rec.by} at {rec.at}" if rec else "(no record)"
+        typer.echo(f"  {item.doc_id}/{item.section_id} reviewed by {who}")
+
+
+def _confirm_and_apply_redo(kb_dir: Path, plan, yes: bool) -> None:
+    from center_kb.summarize import redo_reset
+
+    if plan.reviewed_items and not yes:
+        try:
+            ok = typer.confirm(
+                "Reset these reviewed sections? Their L2 text and sign-off "
+                "will be removed (recoverable with git checkout).",
+                default=False,
+            )
+        except typer.Abort:
+            ok = False
+        if not ok:
+            typer.secho("redo aborted — nothing written", fg=typer.colors.YELLOW)
+            raise typer.Exit(1)
+    rr = redo_reset(kb_dir, plan)
+    typer.echo(f"redo: {len(rr.reset)} section(s) reset to pending")
+    if rr.failed:
+        for msg in rr.failed:
+            typer.secho(f"[fail] {msg}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+def _redo_or_exit(
+    kb_dir: Path,
+    llm: str,
+    max_workers: int,
+    doc_id: str,
+    all_docs: bool,
+    include_reviewed: bool,
+    yes: bool,
+    dry_run: bool,
+    sections: list[str],
+) -> None:
+    """Preview and (unless --dry-run) apply a `--redo` plan before the
+    real summarize run. Resolves the runner FIRST: a redo must never wipe
+    summaries when the subsequent run can't happen anyway."""
+    from center_kb.summarize import plan_redo
+
+    _validate_redo_flags(doc_id, all_docs, sections)
+    runner_probe, reason, _ = _resolve_runner(kb_dir, llm, max_workers)
+    if runner_probe is None:
+        _echo_no_runner(reason)
+        raise typer.Exit(1)
+    try:
+        plan = plan_redo(kb_dir, doc_id or None, sections or None, include_reviewed)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    _echo_redo_plan(doc_id, plan)
+    if dry_run:
+        return
+    _confirm_and_apply_redo(kb_dir, plan, yes)
+
+
+def _print_prompts(kb_dir: Path, doc_id: str, sections: list[str]) -> None:
+    """Print the engine's exact per-section prompt for every pending section
+    of `doc_id`, so the manual (skill-driven) path can build it without
+    reading L3 directly. Table-only/brief sections need no LLM call — say
+    so instead of a prompt."""
+    from center_kb.summarize import build_section_prompt, collect_pending
+
+    if not doc_id:
+        typer.secho("--print-prompt requires a DOC_ID", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    pending = collect_pending(
+        kb_dir, doc_id,
+        on_missing=lambda msg: typer.secho(f"[skip] {msg}", fg=typer.colors.YELLOW),
+    )
+    if sections:
+        known = {s.section_id for s in pending}
+        missing = [s for s in sections if s not in known]
+        if missing:
+            typer.secho(
+                f"not pending or not found in {doc_id}: {', '.join(missing)}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        pending = [s for s in pending if s.section_id in sections]
+    if not pending:
+        typer.echo("nothing pending")
+        return
+    for s in pending:
+        head = f"=== {s.doc_id}/{s.section_id} ==="
+        if s.kind == "llm":
+            typer.echo(head)
+            typer.echo(build_section_prompt(s))
+        else:
+            label = "brief" if s.kind == "brief" else "table-only"
+            typer.echo(f"{head} [no LLM needed: {label} — run kb summarize to fill it]")
+        typer.echo()
 
 
 @app.command()
@@ -639,12 +852,22 @@ def build(
     allow_pending: bool = typer.Option(
         False, "--allow-pending", help="Don't fail while sections are still pending"
     ),
+    strict: bool = typer.Option(
+        False, "--strict", help="Treat quality findings (C2 rules) as errors"
+    ),
 ) -> None:
-    """Validate KB: no TODOs left, table integrity, updated token counts."""
+    """Validate KB: no TODOs left, table integrity, C2 quality rules, updated token counts."""
     from center_kb.build import build_kb
 
-    report = build_kb(kb_dir, allow_pending=allow_pending)
-    for warning in report.warnings:
+    try:
+        report = build_kb(kb_dir, allow_pending=allow_pending, strict=strict)
+    except ValueError as exc:
+        # pydantic.ValidationError is a ValueError subclass — a bad literal
+        # (e.g. a typo'd llm.effort) must read as a clean CLI error, not a
+        # traceback (B4).
+        typer.secho(f"[error] {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    for warning in report.warnings + report.quality:
         typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW)
     for error in report.errors:
         typer.secho(f"[error] {error}", fg=typer.colors.RED)
@@ -1183,6 +1406,18 @@ def stats(
             f"{d.doc_id:<20} {d.n_sections:>8} {d.l1_tokens:>8} "
             f"{d.l2_tokens:>10} {d.l3_tokens:>10} {d.saving_pct:>7.1f}%"
         )
+    if all(d.l2_tokens == 0 and d.l3_tokens == 0 for d in docs):
+        typer.echo("run kb build to refresh token counts")
+
+
+def _apply_unreviewed_gate(gate) -> None:
+    """Echo `publish_mod.unreviewed_gate`'s line (if any) and exit(1) when
+    it blocks — shared by `publish` and `ci_publish` (R18)."""
+    if gate.line is None:
+        return
+    typer.secho(gate.line, fg=typer.colors.RED if gate.blocked else typer.colors.YELLOW)
+    if gate.blocked:
+        raise typer.Exit(1)
 
 
 def _echo_publish_report(report) -> None:
@@ -1219,6 +1454,9 @@ def publish(
     ),
     direct: bool = typer.Option(
         False, "--direct", help="Force direct mode (push straight to the hub's main)"
+    ),
+    require_reviewed: bool = typer.Option(
+        False, "--require-reviewed", help="Fail when any section is not reviewed"
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
@@ -1284,6 +1522,14 @@ def publish(
         # is_self: fall through — a hub pointing at itself publishes its own
         # .kb/ into its own federation/<repo-id>/ (self-publish, spec #7)
 
+    # Gate applies only to paths that actually publish .kb/ (self-publish
+    # fall-through, intake, plain publish) — the hub-to-hub `not is_self`
+    # federation branch above already returned without reaching here, since
+    # publish_federation() pushes federation/ only; the hub's own .kb/ there
+    # is a drafting desk, not what gets published. Still strictly above
+    # require_hub()/resolve_hub()/any write below.
+    _apply_unreviewed_gate(publish_mod.unreviewed_gate(kb_dir, require_reviewed))
+
     if cfg.intake and not pr and not direct:
         try:
             pr_url = publish_mod.publish_via_intake(
@@ -1324,6 +1570,9 @@ def ci_publish(
         "", "--intake", envvar="CENTER_KB_INTAKE",
         help="Intake base URL (default: .kb/config.yaml `intake:`)",
     ),
+    require_reviewed: bool = typer.Option(
+        False, "--require-reviewed", help="Fail when any section is not reviewed"
+    ),
 ) -> None:
     """Publish from the child's CI via OIDC — no secrets. Run by kb-publish.yml."""
     from center_kb import cipublish, gitio
@@ -1337,7 +1586,9 @@ def ci_publish(
         )
         raise typer.Exit(2)
     try:
-        cipublish.run(kb_dir, url, effective_repo_id(repo_id, kb_dir))
+        cipublish.run(
+            kb_dir, url, effective_repo_id(repo_id, kb_dir), require_reviewed=require_reviewed
+        )
     except (cipublish.CIPublishError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -1747,6 +1998,31 @@ def diff(
     typer.echo(render_diff(report))
 
 
+def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -> str:
+    """Resolve the `--by` reviewer identity and run the strict-build gate
+    (`kb build --strict` across the whole KB) that `kb approve` requires
+    before flipping anything to reviewed."""
+    from center_kb import gitio
+    from center_kb.review import check_approvable, doc_ids_with_manifest, resolve_reviewer
+
+    try:
+        targets = [doc_id] if doc_id else doc_ids_with_manifest(kb_dir)
+        root = gitio.git_root(kb_dir.resolve())
+        reviewer = resolve_reviewer(root, by or None)
+        problems = check_approvable(kb_dir, targets)
+        for p in problems:
+            typer.secho(f"[error] {p}", fg=typer.colors.RED)
+        if problems:
+            typer.secho(
+                "kb approve: not approvable — fix the errors above", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+    except (ValueError, gitio.GitError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    return reviewer
+
+
 @app.command()
 def approve(
     doc_id: str = typer.Argument(
@@ -1762,6 +2038,9 @@ def approve(
     ),
     against: str = typer.Option(
         "", "--against", help="Git rev to compare with (required with --all-changed)"
+    ),
+    by: str = typer.Option(
+        "", "--by", help="Reviewer identity 'name <email>' (default: git user.name/email)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
@@ -1787,11 +2066,15 @@ def approve(
         )
         raise typer.Exit(1)
 
+    reviewer = _resolve_reviewer_and_check_approvable(kb_dir, doc_id, by)
+
     try:
         if all_changed:
-            reports = approve_all_changed(kb_dir, against, doc_id=doc_id or None)
+            reports = approve_all_changed(kb_dir, against, doc_id=doc_id or None, by=reviewer)
         else:
-            reports = [approve_sections(kb_dir, doc_id, list(section) or None)]
+            reports = [
+                approve_sections(kb_dir, doc_id, list(section) or None, by=reviewer)
+            ]
     except (ValueError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -1815,6 +2098,7 @@ def approve(
             flipped_total += len(rep.flipped)
             ids = ", ".join(f"§{sid}" for sid in rep.flipped)
             typer.echo(f"{rep.doc_id}: {len(rep.flipped)} section(s) → reviewed: {ids}")
+            typer.echo(f"commit .kb/{rep.doc_id} to record the approval")
 
     if has_missing:
         raise typer.Exit(1)

@@ -16,6 +16,8 @@ class SectionChange:
     summary_changed: bool = False
     prose_changed: bool = False
     content_changed: bool = False
+    reviewed_by: str = ""
+    reviewed_at: str = ""
 
 
 @dataclass
@@ -35,6 +37,13 @@ def _raw_section(text: str | None, section_id: str) -> str | None:
     if text is None:
         return None
     return slice_section(text, section_id)
+
+
+def _reviewed_fields(sec: models.SectionEntry) -> dict[str, str]:
+    """Reviewer sign-off of the worktree's version of `sec`, for display."""
+    if sec.reviewed is None:
+        return {}
+    return {"reviewed_by": sec.reviewed.by, "reviewed_at": sec.reviewed.at}
 
 
 def _level_changed(
@@ -83,7 +92,9 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
     report = DiffReport(doc_id=doc_id, against=against)
 
     report.added = [
-        SectionChange(s.id, s.title) for s in new.sections if s.id not in old_by_id
+        SectionChange(s.id, s.title, **_reviewed_fields(s))
+        for s in new.sections
+        if s.id not in old_by_id
     ]
     report.removed = [
         SectionChange(s.id, s.title) for s in old.sections if s.id not in new_by_id
@@ -114,6 +125,7 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
                     summary_changed=summary_changed,
                     prose_changed=prose_changed,
                     content_changed=content_changed,
+                    **_reviewed_fields(sec),
                 )
             )
     return report
@@ -124,7 +136,10 @@ def render_diff(report: DiffReport) -> str:
         return f"{report.doc_id}: no changes since {report.against}"
     lines = [f"{report.doc_id} — changes since {report.against}:"]
     for c in report.added:
-        lines.append(f"+ §{c.section_id} {c.title}")
+        line = f"+ §{c.section_id} {c.title}"
+        if c.reviewed_by:
+            line += f" — reviewed by {c.reviewed_by} at {c.reviewed_at}"
+        lines.append(line)
     for c in report.removed:
         lines.append(f"- §{c.section_id} {c.title}")
     for c in report.changed:
@@ -137,5 +152,8 @@ def render_diff(report: DiffReport) -> str:
             )
             if on
         ]
-        lines.append(f"~ §{c.section_id} {c.title} ({', '.join(kinds)})")
+        line = f"~ §{c.section_id} {c.title} ({', '.join(kinds)})"
+        if c.reviewed_by:
+            line += f" — reviewed by {c.reviewed_by} at {c.reviewed_at}"
+        lines.append(line)
     return "\n".join(lines)

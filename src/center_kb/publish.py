@@ -204,6 +204,43 @@ def warn_legacy_ids(kb_dir: Path) -> list[str]:
     return hits
 
 
+def unreviewed_sections(kb_dir: Path) -> tuple[int, int]:
+    """(sections whose status is not `reviewed`, docs that contain one)."""
+    n_sections = n_docs = 0
+    for man_path in sorted(kb_dir.glob("*/_manifest.yaml")):
+        manifest = models.load_yaml_model(man_path, models.Manifest)
+        n = sum(1 for s in manifest.sections if s.status != "reviewed")
+        if n:
+            n_sections += n
+            n_docs += 1
+    return n_sections, n_docs
+
+
+@dataclass
+class UnreviewedGate:
+    """Result of `unreviewed_gate`: `line` is a ready-to-print `[warn]`/`[error]`
+    message, or None when every section is reviewed; `blocked` means the
+    caller must refuse (exit 1) before writing anything."""
+
+    line: str | None
+    blocked: bool = False
+
+
+def unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> UnreviewedGate:
+    """Shared warn/refuse check for `kb publish` and `kb ci-publish` (R18):
+    both call this — same message, same threshold — before any write/upload."""
+    n_sec, n_docs = unreviewed_sections(kb_dir)
+    if not n_sec:
+        return UnreviewedGate(line=None)
+    msg = f"{n_sec} section(s) in {n_docs} doc(s) are published without SME review"
+    if require_reviewed:
+        return UnreviewedGate(
+            line=f"[error] {msg} — approve them or drop --require-reviewed",
+            blocked=True,
+        )
+    return UnreviewedGate(line=f"[warn] {msg}", blocked=False)
+
+
 def publish(
     kb_dir: Path,
     hub_ref: str,

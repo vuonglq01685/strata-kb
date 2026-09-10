@@ -38,6 +38,14 @@ Ghi chú kiến trúc: bảng chiếm ~80% tài liệu đặc bảng như ARINC 
 - `cli.py`: flag `--redo` cho `kb summarize`.
 - Templates + dogfood copy như quyết định #5.
 
+> **2026-09-09 amendment** (spec `2026-09-09-summarize-build-review-fixes-design.md`):
+> the budget is `max(120, 0.35 × prose)` measured on `quality.prose_only()`
+> (headings, `[table omitted]`, `Figure:` lines excluded) — the 300-char floor
+> made it a 0.45× guard in aggregate; sections with ≤ 200 chars of prose are
+> copied verbatim into L2 with the label `Brief section: <title>.` and no LLM
+> call; the same rules are enforced by `kb build` (warn / `--strict`).
+> Decision #6 (re-run the shipped KB) is still outstanding.
+
 ## 4. Testing
 
 - Unit: `strip_tables` (bảng đầu/cuối/nhiều khối/không bảng); table-only detection; length guard (pass/violate/retry-then-fail — stub runner); prompt chứa budget; redo rebuild (L2 có summary + bảng → marker + bảng, idempotent, manifest reset, reviewed reset có warning).
