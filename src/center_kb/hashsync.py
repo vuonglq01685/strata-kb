@@ -50,7 +50,7 @@ def _guard(dest_root: Path, rel: str) -> Path:
     return target
 
 
-def _unlink_force(path: Path) -> None:
+def unlink_force(path: Path) -> None:
     try:
         path.unlink()
     except PermissionError:
@@ -66,12 +66,12 @@ def apply_sync(
         target = _guard(dest_root, rel)
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
-            _unlink_force(target)  # Windows: copy2 onto read-only fails
+            unlink_force(target)  # Windows: copy2 onto read-only fails
         shutil.copy2(src_root / rel, target)
     for rel in deleted:
         target = _guard(dest_root, rel)
         if target.exists():
-            _unlink_force(target)
+            unlink_force(target)
     for d in sorted((p for p in dest_root.rglob("*") if p.is_dir()), reverse=True):
         try:
             d.rmdir()  # only succeeds when empty

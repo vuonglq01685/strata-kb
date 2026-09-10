@@ -19,6 +19,11 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     mcp_server=None (unit tests): no /mcp branch, no lifespan requirement.
     intake_cfg=None (default): no /intake/* routes — publish intake disabled.
     """
+    from center_kb import searchdb
+
+    # F-C1, same reason as mcp.create_server. NOT in `lifespan`: line 36 leaves
+    # lifespan None when mcp_server is None, so the API-only app would skip it.
+    searchdb.warm_vec()
 
     async def root(request: Request) -> RedirectResponse:
         return RedirectResponse("/ui", status_code=302)

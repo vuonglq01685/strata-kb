@@ -1,3 +1,5 @@
+import builtins
+import logging
 import sqlite3
 
 import pytest
@@ -144,6 +146,42 @@ def test_delete_db_removes_wal_shm(tmp_path):
     assert not path.exists()
     assert not (path.parent / (path.name + "-wal")).exists()
     assert not (path.parent / (path.name + "-shm")).exists()
+
+
+def test_delete_db_held_file_raises_index_busy_error(tmp_path, monkeypatch):
+    # F-C2 review fix: exercise the raise site itself, not just the CLI
+    # handler — a still-held file must become a clean IndexBusyError naming
+    # the file, never the raw PermissionError from hashsync.unlink_force.
+    from center_kb import hashsync
+
+    hub = _handle(tmp_path)
+    conn = searchdb.open_db(hub)
+    conn.close()
+
+    def raise_busy(path):
+        raise PermissionError(f"[WinError 32] held: {path}")
+
+    monkeypatch.setattr(hashsync, "unlink_force", raise_busy)
+    with pytest.raises(searchdb.IndexBusyError, match="search.db"):
+        searchdb.delete_db(hub)
+
+
+def test_delete_db_survives_file_vanishing_between_exists_and_unlink(tmp_path, monkeypatch):
+    # F-C2 review fix: exists() is not a lock — another process's own
+    # delete_db (or SQLite's own -wal/-shm cleanup) can remove the file
+    # between the exists() check and unlink_force's unlink(); that must be
+    # treated as "already gone", not surfaced as a raw FileNotFoundError.
+    from center_kb import hashsync
+
+    hub = _handle(tmp_path)
+    conn = searchdb.open_db(hub)
+    conn.close()
+
+    def raise_vanished(path):
+        raise FileNotFoundError(f"gone: {path}")
+
+    monkeypatch.setattr(hashsync, "unlink_force", raise_vanished)
+    searchdb.delete_db(hub)  # must not raise
 
 
 def _bump_meta(entry, stamp="2026-07-14T09:00:00+00:00"):
@@ -552,9 +590,19 @@ def test_interrupted_model_change_backfill_resumes(fed_hub, monkeypatch):
 
 
 def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
-    # spec §5: losing the race only wastes work — must not break UNIQUE (and then
-    # have the query path treat it as corruption and delete the index the winning
-    # process is writing)
+    # F-C2 (Task 4): _sync_conn now takes BEGIN IMMEDIATE BEFORE _sync_repo
+    # runs, so a hook on _section_parts (which runs INSIDE that lock) can no
+    # longer simulate "process B wins mid-sync" — B's own BEGIN IMMEDIATE for
+    # the same repo would have to wait for A's, and A can't release it while
+    # paused waiting for the hook to return (a same-thread reentrant "B
+    # commits while A holds the write lock" is not a real interleaving under
+    # any correct locking scheme). So the race is simulated one step
+    # earlier, on _repo_fingerprint — the read _sync_conn does BEFORE
+    # acquiring the lock — matching how two real cold processes actually
+    # interleave: both read a stale fingerprint, then race for the write
+    # lock. This proves the new code path: the loser re-reads the
+    # fingerprint under the write lock and skips instead of inserting (spec
+    # §5 — losing the race only wastes work, never corrupts data).
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
     entry = fed_hub / "federation" / "arinc-kb"
@@ -564,21 +612,49 @@ def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
         encoding="utf-8",
     )
     _bump_meta(entry)
-    real_parts = searchdb._section_parts
+    real_fingerprint = searchdb._repo_fingerprint
+    real_sync_repo = searchdb._sync_repo
     fired = {"done": False}
+    sync_repo_calls = {"n": 0}
 
-    def hook(kb_dir, doc_id, sec):
+    def fingerprint_hook(repo_dir):
         if not fired["done"]:
+            # set BEFORE the nested sync: B's own _repo_fingerprint calls
+            # must hit real_fingerprint, not recurse back into this hook
             fired["done"] = True
-            searchdb.sync(hub, None)  # process B wins the race on its own connection
-        return real_parts(kb_dir, doc_id, sec)
+            searchdb.sync(hub, None)  # process B wins the race, own connection, own commit
+        return real_fingerprint(repo_dir)
 
-    monkeypatch.setattr(searchdb, "_section_parts", hook)
+    def sync_repo_spy(conn, repo, report):
+        # arinc-kb has 1 doc/1 section unchanged content-wise once B has
+        # written it — _sync_repo's OWN content-hash-equality fast path
+        # would also produce a silent no-op (same row counts) if A reached
+        # it, which would hide a broken lock-and-recheck. Counting calls
+        # distinguishes "A's lock-and-recheck skipped before calling
+        # _sync_repo at all" (the thing this test proves) from "A called
+        # _sync_repo and it happened to no-op".
+        sync_repo_calls["n"] += 1
+        return real_sync_repo(conn, repo, report)
+
+    monkeypatch.setattr(searchdb, "_repo_fingerprint", fingerprint_hook)
+    monkeypatch.setattr(searchdb, "_sync_repo", sync_repo_spy)
     searchdb.sync(hub, None)  # A loses the race — must be idempotent, no blow-up
+
+    # icao-kb is unchanged (skipped by both A and B before ever reaching
+    # _sync_repo) — arinc-kb's single call is B's; A's own run must skip via
+    # the lock-and-recheck in _sync_conn, never re-entering _sync_repo.
+    assert sync_repo_calls["n"] == 1
+
     conn = searchdb.open_db(hub)
     try:
         assert conn.execute("SELECT COUNT(*) FROM sections").fetchone() == (2,)
         assert conn.execute("SELECT COUNT(*) FROM fts").fetchone() == (2,)
+        (body_l2,) = conn.execute(
+            "SELECT body_l2 FROM fts WHERE rowid = ("
+            "SELECT id FROM sections WHERE repo_id = 'arinc-kb' "
+            "AND doc_id = 'arinc-424' AND section_id = '5.3')"
+        ).fetchone()
+        assert "RACE codes" in body_l2  # B's write survived, untouched by A
     finally:
         conn.close()
 
@@ -832,3 +908,102 @@ def test_rrf_merge_single_leg_and_tie_determinism():
     # tie score → sort by ascending rowid, deterministic
     tie = searchdb.rrf_merge([(5, 1.0)], [(4, 1.0)])
     assert [t[0] for t in tie] == [4, 5]
+
+
+def test_warm_vec_swallows_unexpected_import_error(monkeypatch, caplog):
+    """F-C1 review: warm_vec()'s docstring promises "Never raises" — that must
+    hold for more than plain ImportError (module not installed). A
+    partially-initialized numpy, a DLL/version mismatch, or anything else the
+    import machinery doesn't wrap as ImportError must degrade the same way,
+    but is unexpected enough to log once."""
+    monkeypatch.setattr(searchdb, "_VEC_MODULE", None)
+    monkeypatch.setattr(searchdb, "_VEC_WARMED", False)
+
+    real_import = builtins.__import__
+
+    def _boom(name, *args, **kwargs):
+        if name == "sqlite_vec":
+            raise RuntimeError("native init boom")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="center_kb.searchdb"):
+        assert searchdb.warm_vec() is False  # did not raise
+    assert "native init boom" in caplog.text
+
+    # memoized: a second call does not re-attempt the import or re-log
+    caplog.clear()
+    assert searchdb.warm_vec() is False
+    assert caplog.text == ""
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (
+            sqlite3.IntegrityError(
+                "UNIQUE constraint failed: sections.repo_id, sections.doc_id, "
+                "sections.section_id"
+            ),
+            "client",
+        ),
+        (sqlite3.OperationalError("too many SQL variables"), "client"),
+        (sqlite3.OperationalError("database is locked"), "lock"),
+        (sqlite3.DatabaseError("database disk image is malformed"), "corrupt"),
+    ],
+)
+def test_classify_db_error(exc, expected):
+    """F-C2/F-C10: a lost UNIQUE race and an over-long bind list are the
+    CALLER's problem. Treating them as corruption deleted the index every user
+    of that hub shares."""
+    assert searchdb.classify_db_error(exc) == expected
+
+
+def test_client_error_never_deletes_the_index(fed_hub, monkeypatch):
+    from center_kb import query as query_mod
+    from center_kb.hub import HubHandle
+
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    db = searchdb.db_path(hub)
+    assert db.exists()
+
+    def boom(*args, **kwargs):
+        raise sqlite3.IntegrityError(
+            "UNIQUE constraint failed: sections.repo_id, sections.doc_id, "
+            "sections.section_id"
+        )
+
+    monkeypatch.setattr(searchdb, "open_fresh", boom)
+    with pytest.raises(sqlite3.IntegrityError):
+        query_mod.search(hub, "airspace")
+    assert db.exists(), "a caller's IntegrityError deleted the shared index"
+
+
+def test_oversized_tag_list_is_refused_and_the_index_survives(fed_hub):
+    """F-C10: `tags` reached `IN (?,?,…)` with no cap, so 40 000 entries gave
+    `too many SQL variables` — an OperationalError that was read as corruption,
+    and `delete_db()` destroyed the index shared by every user of that hub.
+    `tags` is agent-supplied on the MCP tool, so a malformed call reached it."""
+    from center_kb import query as query_mod
+    from center_kb.hub import HubHandle
+
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+    db = searchdb.db_path(hub)
+    assert db.exists()
+
+    with pytest.raises(ValueError) as excinfo:
+        query_mod.search(hub, "airspace", tags=[f"t{i}" for i in range(40_000)])
+    assert "too many tags" in str(excinfo.value)
+    assert db.exists(), "a caller's oversized tag list deleted the shared index"
+
+
+def test_tag_list_at_the_cap_is_accepted(fed_hub):
+    from center_kb import query as query_mod
+    from center_kb.hub import HubHandle
+
+    hub = HubHandle(root=fed_hub)
+    tags = [f"t{i}" for i in range(searchdb.MAX_TAGS - 1)] + ["arinc424"]
+    assert query_mod.search(hub, "airspace", tags=tags)

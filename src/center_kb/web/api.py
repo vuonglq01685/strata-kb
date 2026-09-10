@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from center_kb import models
+from center_kb import models, searchdb
 from center_kb.mcp import ServerConfig
-from center_kb.query import AmbiguousDocError, get_section, search
+from center_kb.query import (
+    AmbiguousDocError,
+    InvalidLevelError,
+    get_section,
+    normalize_level,
+    search,
+)
 
 MAX_BUDGET = 20000
 
@@ -116,8 +123,10 @@ def build_routes(config: ServerConfig) -> list[Route]:
         section_id = request.path_params["section"]
         repo = request.query_params.get("repo") or None
         level = request.query_params.get("level", "l2")
-        if level not in ("l2", "l3"):
-            return _error(400, "bad_level", f"level '{level}' is invalid — use 'l2' or 'l3'")
+        try:
+            level = normalize_level(level)
+        except InvalidLevelError as exc:
+            return _error(400, "bad_level", str(exc))
         hub = hub_handle(config)
         if hub is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
@@ -158,7 +167,14 @@ def build_routes(config: ServerConfig) -> list[Route]:
         hub = hub_handle(config)
         if hub is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
-        results = search(hub, q, tags=tags, budget=budget)
+        try:
+            results = await run_in_threadpool(
+                search, hub, q, tags=tags, budget=budget
+            )
+        except searchdb.TooManyTagsError as exc:
+            return _error(400, "too_many_tags", str(exc))
+        except searchdb.IndexBusyError as exc:
+            return _error(503, "index_busy", str(exc))
         return JSONResponse(
             {
                 "query": q,

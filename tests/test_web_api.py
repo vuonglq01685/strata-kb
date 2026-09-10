@@ -2,6 +2,7 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
+from center_kb import searchdb
 from center_kb.mcp import ServerConfig
 from center_kb.web import api
 
@@ -116,6 +117,29 @@ def test_section_bad_level_400(client_factory, fed_hub):
     assert resp.json()["error"] == "bad_level"
 
 
+def test_section_level_is_case_insensitive(client_factory, fed_hub):
+    """R17 (final-branch review, Important): query.normalize_level made the
+    CLI and MCP tool case-insensitive on `level`, but this route still had
+    its own hand-rolled `level not in ("l2", "l3")` guard — `?level=L3`
+    hit 400 here while `kb get --level L3` worked. Both surfaces must agree."""
+    resp = client_factory(hub=str(fed_hub)).get(
+        "/api/docs/arinc-424/sections/5.3", params={"repo": "arinc-kb", "level": "L3"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["level"] == "l3"
+    assert "Full raw" in body["content"]
+
+
+def test_section_level_verbatim_is_still_rejected(client_factory, fed_hub):
+    resp = client_factory(hub=str(fed_hub)).get(
+        "/api/docs/arinc-424/sections/5.3",
+        params={"repo": "arinc-kb", "level": "verbatim"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "bad_level"
+
+
 def test_section_404(client_factory, fed_hub):
     resp = client_factory(hub=str(fed_hub)).get(
         "/api/docs/arinc-424/sections/9.9", params={"repo": "arinc-kb"}
@@ -136,3 +160,27 @@ def test_search_bad_budget_400(client_factory, fed_hub):
     )
     assert resp.status_code == 400
     assert resp.json()["error"] == "bad_budget"
+
+
+def test_search_too_many_tags_400(client_factory, fed_hub):
+    """F-C3 addition: an oversized client-supplied `tags` list is a caller
+    error (400), not the 500 it was before searchdb.TooManyTagsError was
+    handled here."""
+    resp = client_factory(hub=str(fed_hub)).get(
+        "/api/search",
+        params={"q": "x", "tags": ",".join(f"t{i}" for i in range(101))},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "too_many_tags"
+
+
+def test_search_index_busy_503(client_factory, fed_hub, monkeypatch):
+    """F-C3 addition: a held index file is a 503 (retry later), not a 500."""
+
+    def fake_search(*a, **k):
+        raise searchdb.IndexBusyError("search index is in use by another process")
+
+    monkeypatch.setattr("center_kb.web.api.search", fake_search)
+    resp = client_factory(hub=str(fed_hub)).get("/api/search", params={"q": "x"})
+    assert resp.status_code == 503
+    assert resp.json()["error"] == "index_busy"

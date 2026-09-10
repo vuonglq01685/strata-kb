@@ -92,6 +92,22 @@ async def test_kb_search_returns_federation_citation(fed_hub):
 
 
 @pytest.mark.anyio
+async def test_kb_search_no_usable_terms_renders_note_in_band(fed_hub):
+    """F-C9 review round 2: neither rendering surface had a test proving a
+    note actually arrives. Real (unmocked) search_detailed() call — an MCP
+    agent never sees stderr, so the note must travel in the tool text itself,
+    ahead of the 'No matching section found' message."""
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_search", {"query": "§§§ ---"})
+        text = _text(result)
+        assert "no searchable terms" in text
+        assert text.index("no searchable terms") < text.index(
+            "No matching section found"
+        )
+
+
+@pytest.mark.anyio
 async def test_kb_get_section_l3_and_repo_param(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
@@ -267,3 +283,216 @@ async def test_kb_search_shows_match_mode_not_raw_score(fed_hub):
         )
         assert "match=keyword" in _text(result)
         assert "score=" not in _text(result)
+
+
+def test_create_server_warms_the_native_import(fed_hub, monkeypatch):
+    """F-C1: the warm-up must happen while create_server runs (no loop yet),
+    not on the first tool call (on the loop)."""
+    from center_kb import mcp as mcp_mod
+    from center_kb import searchdb
+
+    calls = []
+    monkeypatch.setattr(searchdb, "warm_vec", lambda: (calls.append(1), True)[1])
+    mcp_mod.create_server(_config(fed_hub))
+    assert calls == [1]
+
+
+@pytest.mark.anyio
+async def test_tool_body_does_not_block_the_event_loop(fed_hub, monkeypatch):
+    """F-C1, second layer: a sync tool body run inline on the loop starves
+    every other task. With the body on a worker thread the loop keeps ticking."""
+    import asyncio
+    import time as _time
+
+    from center_kb import mcp as mcp_mod
+
+    def slow_search(*args, **kwargs):
+        _time.sleep(0.5)
+        from center_kb.query import SearchOutcome
+
+        return SearchOutcome(results=[])
+
+    monkeypatch.setattr(mcp_mod, "search_detailed", slow_search)
+    server = create_server(_config(fed_hub))
+    ticks = 0
+
+    async def heartbeat():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    async with connect_client(server, raise_exceptions=True) as client:
+        hb = asyncio.create_task(heartbeat())
+        await client.call_tool("kb_search", {"query": "airspace"})
+        hb.cancel()
+    assert ticks >= 5, f"event loop was starved during the tool call (ticks={ticks})"
+
+
+@pytest.mark.anyio
+async def test_hub_resolution_is_serialized_under_concurrent_calls(fed_hub, monkeypatch):
+    """R20 (final-branch review, Important): tool bodies now run on their own
+    worker threads concurrently (F-C1's fix, above) — two `kb_search` calls
+    in flight at once used to be impossible (everything ran inline on the
+    single event-loop thread) and now genuinely race. `hub.resolve_hub`
+    clones/pulls into a cache shared by every call, so without a lock around
+    it in `_hub()`, two concurrent URL-hub resolutions could run
+    `git clone`/`git pull` against the same directory at the same time.
+    `_hub()` does `from center_kb.hub import resolve_hub` fresh on every
+    call, so the fake must replace `center_kb.hub.resolve_hub` itself (the
+    name `_hub()` actually resolves), not some module-level alias in
+    `center_kb.mcp`."""
+    import asyncio
+    import threading as _threading
+    import time as _time
+
+    from center_kb import hub as hub_mod
+    from center_kb.hub import HubHandle
+
+    lock = _threading.Lock()
+    active = 0
+    overlap_seen = False
+
+    def fake_resolve_hub(hub_str):
+        nonlocal active, overlap_seen
+        with lock:
+            active += 1
+            if active > 1:
+                overlap_seen = True
+        _time.sleep(0.2)
+        with lock:
+            active -= 1
+        return HubHandle(root=fed_hub)
+
+    monkeypatch.setattr(hub_mod, "resolve_hub", fake_resolve_hub)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        results = await asyncio.gather(
+            client.call_tool("kb_search", {"query": "airspace"}),
+            client.call_tool("kb_search", {"query": "runway"}),
+        )
+    assert overlap_seen is False, "resolve_hub ran concurrently — _hub()'s lock is missing"
+    for result in results:
+        assert result.isError is False
+
+
+@pytest.mark.anyio
+async def test_kb_search_too_many_tags_returns_message_not_error(fed_hub):
+    """F-C10 addition 1 (MCP half): `tags` is agent-supplied on this tool —
+    an oversized list must come back as in-band tool text, not a raised
+    ValueError the agent sees as a tool error."""
+    from center_kb.searchdb import MAX_TAGS
+
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search",
+            {"query": "airspace", "tags": [f"t{i}" for i in range(MAX_TAGS + 1)]},
+        )
+        assert result.isError is False, "should be a normal tool result, not an error"
+        assert "too many tags" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_search_index_busy_returns_message_not_error(fed_hub, monkeypatch):
+    """F-C10 addition 2: the CLI already turns IndexBusyError into a clean
+    message (Task 4) — kb_search must do the same in-band, not raise."""
+    from center_kb import mcp as mcp_mod
+    from center_kb.searchdb import IndexBusyError
+
+    def raise_busy(*a, **k):
+        raise IndexBusyError("search index search.db is in use by another process")
+
+    monkeypatch.setattr(mcp_mod, "search_detailed", raise_busy)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_search", {"query": "airspace"})
+        assert result.isError is False, "should be a normal tool result, not an error"
+        assert _text(result) == "search index search.db is in use by another process"
+
+
+@pytest.mark.anyio
+async def test_kb_search_client_db_error_returns_message_not_error(
+    fed_hub, monkeypatch
+):
+    """F-C10 addition 2: a client-classified DatabaseError (e.g. a lost
+    UNIQUE race) must come back as clean in-band text, mirroring the CLI's
+    wording, not a raised exception."""
+    import sqlite3
+
+    from center_kb import mcp as mcp_mod
+
+    def raise_integrity(*a, **k):
+        raise sqlite3.IntegrityError("UNIQUE constraint failed: sections.repo_id")
+
+    monkeypatch.setattr(mcp_mod, "search_detailed", raise_integrity)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_search", {"query": "airspace"})
+        assert result.isError is False, "should be a normal tool result, not an error"
+        assert "Error executing tool" not in _text(result)
+        assert "search index rejected the query" in _text(result)
+        assert "UNIQUE constraint failed" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_search_unrelated_value_error_is_not_swallowed(fed_hub, monkeypatch):
+    """F-C10 review finding 1: `except ValueError` was too coarse —
+    `pydantic.ValidationError` (raised deep in the search path when a
+    federation `_manifest.yaml` is malformed) is also a `ValueError`
+    subclass but is NOT the tag-cap refusal. Dressing it up as clean
+    `isError=False` tool text would be indistinguishable from a real search
+    answer — the worst place for this to happen. Only
+    `searchdb.TooManyTagsError` gets the clean in-band message; any other
+    ValueError must keep propagating as a tool error."""
+    from center_kb import mcp as mcp_mod
+
+    def raise_unrelated(*a, **k):
+        raise ValueError("3 validation errors for Manifest")
+
+    monkeypatch.setattr(mcp_mod, "search_detailed", raise_unrelated)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_search", {"query": "airspace"})
+        assert result.isError is True, "must surface as a tool error, not a normal result"
+        assert "validation errors" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_search_corrupt_db_error_still_propagates(fed_hub, monkeypatch):
+    """F-C10 review finding 2: addition 2's re-raise branch
+    (`if classify_db_error(exc) != "client": raise`) was untested — a
+    genuinely corrupt index (after `_search_index`'s rebuild-once already
+    failed) must NOT be returned as a clean `isError=False`
+    'search index rejected the query' message; it must keep propagating.
+    Mirrors the CLI's `test_query_lock_db_error_still_propagates`."""
+    import sqlite3
+
+    from center_kb import mcp as mcp_mod
+
+    def raise_corrupt(*a, **k):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(mcp_mod, "search_detailed", raise_corrupt)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_search", {"query": "airspace"})
+        assert result.isError is True, "must surface as a tool error, not a normal result"
+        assert "search index rejected the query" not in _text(result)
+        assert "database disk image is malformed" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_get_section_level_validation(fed_hub):
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        bad = await client.call_tool(
+            "kb_get_section",
+            {"doc": "arinc-kb:arinc-424", "section": "5.3", "level": "verbatim"},
+        )
+        assert "level 'verbatim' is invalid — use 'l2' or 'l3'." in _text(bad)
+        good = await client.call_tool(
+            "kb_get_section",
+            {"doc": "arinc-kb:arinc-424", "section": "5.3", "level": "L3"},
+        )
+        assert "Verbatim" in _text(good)

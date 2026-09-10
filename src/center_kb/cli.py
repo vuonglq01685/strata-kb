@@ -1338,13 +1338,31 @@ def query(
     ),
 ) -> None:
     """Hybrid search (FTS5 keyword + semantic KNN, RRF-fused) → L2 sections within budget, with citations."""
-    from center_kb.query import search
+    import sqlite3
+
+    from center_kb import searchdb
+    from center_kb.query import search_detailed
 
     handle = _hub_or_exit(hub, kb_dir)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
-    results = search(
-        handle, text, tags=tag_list, budget=budget, semantic=semantic
-    )
+    try:
+        outcome = search_detailed(
+            handle, text, tags=tag_list, budget=budget, semantic=semantic
+        )
+    except searchdb.IndexBusyError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except sqlite3.DatabaseError as exc:
+        if searchdb.classify_db_error(exc) != "client":
+            raise
+        typer.secho(f"search index rejected the query: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except searchdb.TooManyTagsError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    for note in outcome.notes:
+        typer.secho(note.strip(), fg=typer.colors.YELLOW, err=True)
+    results = outcome.results
     if not results:
         typer.echo("No matching section found.")
         raise typer.Exit(0)
@@ -1372,11 +1390,14 @@ def get(
     ),
 ) -> None:
     """Fetch exactly one section at the given level."""
-    from center_kb.query import AmbiguousDocError, get_section
+    from center_kb.query import AmbiguousDocError, InvalidLevelError, get_section
 
     handle = _hub_or_exit(hub, kb_dir)
     try:
         result = get_section(handle, doc_id, section, level=level, repo=repo or None)
+    except InvalidLevelError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
     except AmbiguousDocError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -1601,8 +1622,14 @@ def reindex(
         help="kb-hub URL/path (default: .kb/config.yaml)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (to find the config)"),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Drop the search index and rebuild it from scratch",
+    ),
 ) -> None:
     """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
+    import sqlite3
+
     from center_kb import gitio, searchdb
     from center_kb.embed import default_embedder
     from center_kb.federation import write_federation_index
@@ -1614,7 +1641,19 @@ def reindex(
     committed = gitio.commit_paths(
         handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
     )
-    sreport = searchdb.sync(handle, default_embedder())
+    try:
+        if force:
+            searchdb.delete_db(handle)
+            typer.echo("kb reindex: search index dropped — rebuilding from scratch")
+        sreport = searchdb.sync(handle, default_embedder())
+    except searchdb.IndexBusyError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except sqlite3.DatabaseError as exc:
+        if searchdb.classify_db_error(exc) != "client":
+            raise
+        typer.secho(f"search index rejected the reindex: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1)
     typer.echo(
         f"kb reindex: search index — {sreport.sections_updated} updated, "
         f"{sreport.sections_deleted} removed, {sreport.embedded} embedded"
@@ -2155,7 +2194,9 @@ def doctor(
         from center_kb.config import load_config as _load_config2
         from center_kb.doctor import Issue, check_federation_publish
 
-        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=None)
+        hub_issues, hub_stale = check_hub(
+            kb_dir, handle, repo_id=None, warn_untracked_index=True
+        )
         issues += hub_issues
         try:
             source_root = _gitio2.git_root(kb_dir.resolve())
