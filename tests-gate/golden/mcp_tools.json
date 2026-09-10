@@ -120,7 +120,7 @@
     }
   },
   "kb_search": {
-    "description": "Find sections by hybrid search (FTS5 keyword + semantic KNN, RRF-fused);\nreturn L2 content within the token budget, with citations. Returns\nevery relevant section found, not just the best match \u2014 when using\nthis to draft a User Story, show ALL returned sections (with their\ncitations) to the user and confirm which ones actually apply before\nwriting story content from them. Citing more than one section for a\nsingle story is normal. Once confirmed, call kb_context_new with the\nconfirmed refs to pin them for the ticket. Results come from the hub\nfederation \u2014 unpublished local content never appears.",
+    "description": "Find sections by hybrid search (FTS5 keyword + semantic KNN, RRF-fused);\nreturn L2 content within the token budget, with citations. Returns the\ntop-ranked sections, not just the best match \u2014 each leg is capped at 50\nresults before fusion, and a note says so when matches were dropped.\nWhen using this to draft a User Story, show ALL returned sections (with\ntheir citations) to the user and confirm which ones actually apply\nbefore writing story content from them. Citing more than one section\nfor a single story is normal. Once confirmed, call kb_context_new with\nthe confirmed refs to pin them for the ticket. Results come from the\nhub federation \u2014 unpublished local content never appears.",
     "inputSchema": {
       "properties": {
         "budget": {

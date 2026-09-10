@@ -211,9 +211,19 @@ def _kb_tree_digest(root: Path) -> str:
 
 
 def check_hub(
-    kb_dir: Path, handle: "HubHandle | None", repo_id: str | None = None
+    kb_dir: Path,
+    handle: "HubHandle | None",
+    repo_id: str | None = None,
+    *,
+    warn_untracked_index: bool = False,
 ) -> tuple[list[Issue], bool]:
-    """Hub-first health. Returns (issues, hub_stale)."""
+    """Hub-first health. Returns (issues, hub_stale).
+
+    ``warn_untracked_index`` gates the F-C17 ``.kb-work/`` warning: only the
+    hub maintainer's own checkout can act on "add it to the hub's
+    .gitignore", so child/dev/ba callers (who reach a hub or its cache clone
+    read-only) must leave it off.
+    """
     from center_kb.federation import build_federation_index, load_federation
 
     if handle is None:
@@ -235,6 +245,30 @@ def check_hub(
             Issue("warning", f"hub cache is stale (pull failed, age {age})")
         )
         hub_stale = True
+
+    if warn_untracked_index:
+        work = handle.root / ".kb-work"
+        if work.is_dir():
+            ignore = handle.root / ".gitignore"
+            try:
+                ignored = ".kb-work" in ignore.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # A `.gitignore` this tool doesn't own — missing, unreadable,
+                # or written by something that isn't UTF-8 (e.g. PowerShell
+                # 5.1's `echo x > .gitignore`, which is UTF-16LE) — counts as
+                # not-ignored so the warning fires instead of `kb doctor`
+                # crashing.
+                ignored = False
+            if not ignored:
+                issues.append(
+                    Issue(
+                        "warning",
+                        "the search index at .kb-work/ is neither ignored "
+                        "nor meant to be committed — add '.kb-work/' to the "
+                        "hub's .gitignore before someone runs `git add -A` "
+                        "(F-C17)",
+                    )
+                )
 
     fed = handle.federation_dir
     if fed.is_dir():

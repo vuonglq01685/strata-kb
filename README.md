@@ -377,7 +377,7 @@ $ kb build
 
 ```bash
 $ kb query "restrictive airspace" --tags arinc424 --budget 400
---- [arinc-424 §5.129 (Supplement 22)] score=17.19 ~246tk
+--- [aero:arinc-424 §5.129 (Supplement 22)] match=keyword ~246tk
 ## 5.129 Restrictive Airspace Designation
 
 The Restrictive Airspace Designation field contains the number or name
@@ -390,7 +390,7 @@ government sources. ...
 | RJ(R)-116           | RJ              | R               | 116             |
 ...
 
---- [arinc-424 §5.126 (Supplement 22)] score=16.96 ~103tk
+--- [aero:arinc-424 §5.126 (Supplement 22)] match=keyword ~103tk
 ## 5.126 Restrictive Airspace Name
 ...
 ```
@@ -398,10 +398,10 @@ government sources. ...
 | Parameter | Meaning |
 |---|---|
 | `TEXT` (first arg) | Question / search keywords |
-| `--tags` | Only search documents with these tags (pre-filter at doc level, not section) |
-| `--budget` | Max tokens returned — smaller = cheaper, larger = more context |
+| `--tags` | Only search documents with these tags (pre-filter at doc level, not section) — a document id is also accepted as a tag (`--tags arinc-424`), alongside the content tags a document publishes. |
+| `--budget` | Max tokens returned — smaller = cheaper, larger = more context. Advisory: the first result is always returned whatever its size, so a very large section can exceed a small budget. Sections are never cut in the middle, which is what keeps tables verbatim. |
 
-Results always include a **clear citation** of the form `<doc-id> §<section> (<revision>)` — e.g. `arinc-424 §5.129 (Supplement 22)` — so you know exactly where the info came from and can cross-check the source.
+Results always include a **clear** citation of the form `<repo-id>:<doc-id> §<section> (<revision>)` — e.g. `aero:arinc-424 §5.129 (Supplement 22)` — so you know exactly which federation repo, document and revision the info came from. The repo id is always present, not only when a document id is ambiguous.
 
 How it works under the hood (optional to know, useful for why it's cheap): first filter by `tags` at L0 (nearly free), then rank related sections with a persistent hybrid index (SQLite FTS5 keyword search + optional semantic KNN, fused with RRF), then load L2 content of the top hits until `--budget` is hit. No AI call during lookup — pure code, fast, no model cost.
 
@@ -442,7 +442,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 
 | Tool | Purpose | Main params |
 |---|---|---|
-| `kb_search` | Find sections by natural language (tag match + hybrid FTS5/semantic search), return L2 within a token budget — returns every relevant section found, not just the best match, and flags when the top two are close in score | `query`, `tags`, `budget` |
+| `kb_search` | Find sections by natural language (tag match + hybrid FTS5/semantic search), return L2 within a token budget. Ranking is capped: each leg is capped at 50 results before fusion, and the tool says so when matches were dropped. It also flags when the top two results are the same section published by two federation repos, when their keyword scores tie exactly, or when both are hybrid-confirmed and score within the ambiguity ratio | `query`, `tags`, `budget` |
 | `kb_get_section` | Fetch exactly one section by id | `doc`, `section`, `level` (`l2`/`l3`) |
 | `kb_context_new` | Pin a `kb-context` citation block at the current KB commit, from 1+ confirmed refs — lets an agent do this from chat, without the BA opening a terminal | `refs`, `tags` |
 | `kb_resolve` | Accept a `kb-context` block (or a ticket containing one) — return the section at the **pinned version**, plus freshness `ok`/`stale`/`broken` | `kb_context` |
@@ -467,7 +467,7 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 4. If the result is `status=stale` (amendment after the ticket was written), Dev runs `kb diff <doc-id> --against <pinned-rev>` to see which sections changed, then checks with the BA whether the AC needs updating.
 5. `kb doctor --context <ticket>` in CI can automatically block/flag tickets with `stale` citations before merge, without humans scanning every ticket.
 
-> **Note:** `.mcp.json` already configures the MCP server in-repo — no extra setup for Claude Code to see the four tools. The `--hub` flag on `python -m center_kb.mcp` is now **active** — see [7.9](#79-phase-3--federation--remote-mcp) below.
+> **Note:** `.mcp.json` already configures the MCP server in-repo — no extra setup for Claude Code to see the five tools. The `--hub` flag on `python -m center_kb.mcp` is now **active** — see [7.9](#79-phase-3--federation--remote-mcp) below.
 
 ---
 

@@ -1,0 +1,3 @@
+# The hybrid search index — rebuilt on demand from federation/, never reviewed.
+# Without this line `git add -A` on the hub commits a multi-MB binary.
+.kb-work/

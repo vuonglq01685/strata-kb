@@ -48,6 +48,10 @@ GOLDEN = Path(__file__).parent.parent / "golden"
 # `match=<mode>` label instead of a raw score.)
 NOISE = [
     (re.compile(r"/tmp/[^\s\"']+"), "<TMP>"),
+    # Windows temp: C:\Users\...\AppData\Local\Temp\... — without this the
+    # goldens can only ever be generated on POSIX (F-C17).
+    (re.compile(r"[A-Za-z]:\\\\[^\s\"']*?\\\\Temp\\\\[^\s\"']+"), "<TMP>"),
+    (re.compile(r"[A-Za-z]:\\[^\s\"']*?\\Temp\\[^\s\"']+"), "<TMP>"),
     (re.compile(r"\b[0-9a-f]{7,40}\b"), "<SHA>"),
     (re.compile(r"\d{4}-\d{2}-\d{2}T[\d:.+]+"), "<TS>"),
 ]
@@ -83,18 +87,27 @@ def assert_golden_exact(name: str, actual: str) -> None:
     assert actual == path.read_text(encoding="utf-8"), f"{name} changed"
 
 
+GOLDEN_TIMEOUT_S = 60
+
+
 async def _call_mcp(params, tool: str, args: dict) -> str:
     """params: StdioServerParameters — prebuilt by the published_kb_mcp_params
     fixture (tests-gate/conftest.py, Task 9) via the shared _mcp_stdio_params
-    helper. Do not rebuild StdioServerParameters here."""
+    helper. Do not rebuild StdioServerParameters here.
+
+    The hard timeout is not decoration: reviewer C's F-C1 made kb_search hang
+    forever over stdio, and this file hung with it — a gate that hangs is worse
+    than a gate that fails, because nobody sees red."""
+    import anyio
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
 
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool, args)
-            return "".join(c.text for c in result.content if c.type == "text")
+    with anyio.fail_after(GOLDEN_TIMEOUT_S):
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool, args)
+                return "".join(c.text for c in result.content if c.type == "text")
 
 
 def test_golden_kb_search(published_kb_mcp_params):

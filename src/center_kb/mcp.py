@@ -4,8 +4,11 @@ import argparse
 import inspect
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
+
+import anyio.to_thread
 
 # Contingency (see task-9-brief.md Step 1): mcp>=2.0 has no released build on
 # PyPI for this environment (only 2.0.0a1..2.0.0b1) — pin mcp>=1.2 and use
@@ -13,7 +16,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP as MCPServer
 
 from center_kb import gitio, kbcontext
-from center_kb.query import get_section, search
+from center_kb.query import get_section, search_detailed
 from center_kb.resolve import render_resolved, resolve_refs
 from center_kb.ticketlint import lint as lint_ticket
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
@@ -87,12 +90,30 @@ def _canonical_docstring(fn):
 
 
 def create_server(config: ServerConfig) -> MCPServer:
+    import sqlite3
+
+    from center_kb import searchdb
+
+    # F-C1: never import sqlite_vec/numpy from inside a tool call — FastMCP runs
+    # sync tools on the event-loop thread and the native import deadlocks there.
+    searchdb.warm_vec()
     mcp = MCPServer("center-kb")
+    # R20 (final-branch review, Important): each tool body runs on its own
+    # worker thread (anyio.to_thread.run_sync) now that F-C1 moved them off
+    # the loop thread — concurrent calls used to be serialized by the single
+    # event loop and now genuinely race. resolve_hub() clones/pulls into a
+    # cache shared by every call; without a lock, two concurrent URL-hub
+    # resolutions can run `git clone`/`git pull` against the same directory
+    # at once. One lock, held only around resolve_hub() itself, keeps hub
+    # resolution serialized while leaving the actual tool work (search, etc.)
+    # to run concurrently on its own thread.
+    _hub_lock = threading.Lock()
 
     def _hub():
         from center_kb.hub import resolve_hub
 
-        return resolve_hub(config.hub)
+        with _hub_lock:
+            return resolve_hub(config.hub)
 
     def _stale_note(hub) -> str:
         if hub is not None and hub.stale:
@@ -102,105 +123,134 @@ def create_server(config: ServerConfig) -> MCPServer:
 
     @mcp.tool()
     @_canonical_docstring
-    def kb_search(
+    async def kb_search(
         query: str, tags: list[str] | None = None, budget: int = 2000
     ) -> str:
         """Find sections by hybrid search (FTS5 keyword + semantic KNN, RRF-fused);
-        return L2 content within the token budget, with citations. Returns
-        every relevant section found, not just the best match — when using
-        this to draft a User Story, show ALL returned sections (with their
-        citations) to the user and confirm which ones actually apply before
-        writing story content from them. Citing more than one section for a
-        single story is normal. Once confirmed, call kb_context_new with the
-        confirmed refs to pin them for the ticket. Results come from the hub
-        federation — unpublished local content never appears."""
-        hub = _hub()
-        if hub is None:
-            return HUB_DOWN
-        results = search(hub, query, tags=tags, budget=budget)
-        if not results:
-            return "No matching section found — try dropping tags or changing keywords."
-        note = _stale_note(hub) + _ambiguity_note(results)
-        return note + "\n\n".join(
-            f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk\n{r.content}"
-            + (f"\nraw match: {r.snippet}" if r.snippet else "")
-            for r in results
-        )
+        return L2 content within the token budget, with citations. Returns the
+        top-ranked sections, not just the best match — each leg is capped at 50
+        results before fusion, and a note says so when matches were dropped.
+        When using this to draft a User Story, show ALL returned sections (with
+        their citations) to the user and confirm which ones actually apply
+        before writing story content from them. Citing more than one section
+        for a single story is normal. Once confirmed, call kb_context_new with
+        the confirmed refs to pin them for the ticket. Results come from the
+        hub federation — unpublished local content never appears."""
+
+        def _run() -> str:
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            try:
+                outcome = search_detailed(hub, query, tags=tags, budget=budget)
+            except searchdb.IndexBusyError as exc:
+                return str(exc)
+            except sqlite3.DatabaseError as exc:
+                if searchdb.classify_db_error(exc) != "client":
+                    raise
+                return f"search index rejected the query: {exc}"
+            except searchdb.TooManyTagsError as exc:
+                return str(exc)
+            notes = "".join(outcome.notes)
+            if not outcome.results:
+                return notes + (
+                    "No matching section found — try dropping tags or changing keywords."
+                )
+            note = _stale_note(hub) + notes + _ambiguity_note(outcome.results)
+            return note + "\n\n".join(
+                f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk\n{r.content}"
+                + (f"\nraw match: {r.snippet}" if r.snippet else "")
+                for r in outcome.results
+            )
+
+        return await anyio.to_thread.run_sync(_run)
 
     @mcp.tool()
     @_canonical_docstring
-    def kb_get_section(
+    async def kb_get_section(
         doc: str, section: str, level: str = "l2", repo: str = ""
     ) -> str:
         """Fetch exactly one section: level 'l2' (condensed) or 'l3' (verbatim).
         `doc` accepts 'repo:doc' form; pass `repo` when the doc id alone is
         ambiguous across federation repos."""
-        if level not in ("l2", "l3"):
-            return f"level '{level}' is invalid — use 'l2' or 'l3'."
-        hub = _hub()
-        if hub is None:
-            return HUB_DOWN
-        from center_kb.query import AmbiguousDocError
 
-        try:
-            result = get_section(hub, doc, section, level=level, repo=repo or None)
-        except AmbiguousDocError as exc:
-            return str(exc)
-        if result is None:
-            known = _known_docs(hub)
-            hint = f" Available docs: {known}." if known else ""
-            return f"Not found: {doc} §{section}.{hint}"
-        return (
-            _stale_note(hub)
-            + f"--- [{result.citation}] ~{result.tokens}tk\n{result.content}"
-        )
+        def _run() -> str:
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            from center_kb.query import AmbiguousDocError, InvalidLevelError
+
+            try:
+                result = get_section(hub, doc, section, level=level, repo=repo or None)
+            except InvalidLevelError as exc:
+                return str(exc)
+            except AmbiguousDocError as exc:
+                return str(exc)
+            if result is None:
+                known = _known_docs(hub)
+                hint = f" Available docs: {known}." if known else ""
+                return f"Not found: {doc} §{section}.{hint}"
+            return (
+                _stale_note(hub)
+                + f"--- [{result.citation}] ~{result.tokens}tk\n{result.content}"
+            )
+
+        return await anyio.to_thread.run_sync(_run)
 
     @mcp.tool()
     @_canonical_docstring
-    def kb_context_new(refs: list[str], tags: list[str] | None = None) -> str:
+    async def kb_context_new(refs: list[str], tags: list[str] | None = None) -> str:
         """Pin a kb-context citation block at the current KB commit, from 1+
         refs like 'arinc-424 §5.129'. Call this only after the user has
         confirmed which section(s) — out of everything kb_search returned —
         actually belong in the story; paste the returned block into the
         ticket. Citing 2-3 sections for one story is normal — pass every
         confirmed ref in one call."""
-        hub = _hub()
-        if hub is None:
-            return HUB_DOWN
-        try:
-            block, warning = kbcontext.build_context_block(hub, refs, tags=tags)
-        except kbcontext.KBRefNotFoundError as exc:
-            known = _known_docs(hub)
-            hint = f" Available docs: {known}." if known else ""
-            return f"{exc}{hint}"
-        except kbcontext.KBContextError as exc:
-            return str(exc)
-        except gitio.GitError as exc:
-            return str(exc)
-        if warning:
-            return f"{warning}\n\n{block}"
-        return block
+
+        def _run() -> str:
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            try:
+                block, warning = kbcontext.build_context_block(hub, refs, tags=tags)
+            except kbcontext.KBRefNotFoundError as exc:
+                known = _known_docs(hub)
+                hint = f" Available docs: {known}." if known else ""
+                return f"{exc}{hint}"
+            except kbcontext.KBContextError as exc:
+                return str(exc)
+            except gitio.GitError as exc:
+                return str(exc)
+            if warning:
+                return f"{warning}\n\n{block}"
+            return block
+
+        return await anyio.to_thread.run_sync(_run)
 
     @mcp.tool()
     @_canonical_docstring
-    def kb_resolve(kb_context: str) -> str:
+    async def kb_resolve(kb_context: str) -> str:
         """Accept a kb-context block (or the raw ticket text containing one); return the cited sections at their pinned version + freshness ok/stale/broken."""
-        hub = _hub()
-        if hub is None:
-            return HUB_DOWN
-        try:
-            ctx = kbcontext.parse(kb_context)
-        except kbcontext.KBContextError as exc:
-            return f"kb-context error: {exc}"
-        try:
-            results = resolve_refs(hub, ctx)
-        except gitio.GitError as exc:
-            return f"git error: {exc}"
-        return _stale_note(hub) + render_resolved(results)
+
+        def _run() -> str:
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            try:
+                ctx = kbcontext.parse(kb_context)
+            except kbcontext.KBContextError as exc:
+                return f"kb-context error: {exc}"
+            try:
+                results = resolve_refs(hub, ctx)
+            except gitio.GitError as exc:
+                return f"git error: {exc}"
+            return _stale_note(hub) + render_resolved(results)
+
+        return await anyio.to_thread.run_sync(_run)
 
     @mcp.tool()
     @_canonical_docstring
-    def kb_ticket_lint(ticket_markdown: str) -> str:
+    async def kb_ticket_lint(ticket_markdown: str) -> str:
         """Lint a draft ticket against the Definition of Ready: required
         structure, story format, ACs, Mermaid diagrams, kb-context refs
         resolving at their pinned version, and the optional
@@ -210,11 +260,15 @@ def create_server(config: ServerConfig) -> MCPServer:
         as a note, not a failure — run the CLI (`kb ticket lint`) for the
         full check. Run this before handing the ticket to the BA; fix
         errors and re-run until PASS."""
-        hub = _hub()
-        if hub is None:
-            return HUB_DOWN
-        report = lint_ticket(ticket_markdown, hub)
-        return _stale_note(hub) + report.render()
+
+        def _run() -> str:
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            report = lint_ticket(ticket_markdown, hub)
+            return _stale_note(hub) + report.render()
+
+        return await anyio.to_thread.run_sync(_run)
 
     return mcp
 

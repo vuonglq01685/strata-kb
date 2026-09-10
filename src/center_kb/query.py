@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +30,23 @@ class AmbiguousDocError(LookupError):
         )
 
 
+class InvalidLevelError(ValueError):
+    """`level` was neither 'l2' nor 'l3'."""
+
+
+def normalize_level(value: str) -> str:
+    """'l2' | 'l3', case-insensitive; anything else raises.
+
+    Reviewer C F-C4: two surfaces disagreeing about what a level means is the
+    bug — the MCP tool validated, the CLI did not, and a caller asking for the
+    untouched original silently received the AI-condensed text. One function
+    both call is the fix."""
+    norm = (value or "").strip().lower()
+    if norm not in ("l2", "l3"):
+        raise InvalidLevelError(f"level '{value}' is invalid — use 'l2' or 'l3'.")
+    return norm
+
+
 @dataclass
 class QueryResult:
     doc_id: str
@@ -42,6 +59,18 @@ class QueryResult:
     source: str = ""  # repo-id within the federation
     match_mode: str = "keyword"  # "keyword" | "semantic" | "hybrid"
     snippet: str = ""  # L3 excerpt around the match when no term appears in L2
+
+
+@dataclass
+class SearchOutcome:
+    """Results plus the out-of-band things the caller must be told.
+
+    `notes` exists because an MCP agent never sees stderr: the truncation,
+    ambiguity, unknown-tag and no-usable-terms signals have to travel with the
+    payload (F-C5, F-C7, F-C9, F-C14)."""
+
+    results: list["QueryResult"]
+    notes: list[str] = field(default_factory=list)
 
 
 def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
@@ -90,13 +119,28 @@ def _l3_snippet(
 
 def _search_index(
     hub: "HubHandle", embedder, text: str, tags: list[str] | None
-) -> tuple[list[tuple[int, float, str]], dict[int, "SectionRow"]]:
+) -> tuple[
+    list[tuple[int, float, str]],
+    dict[int, "SectionRow"],
+    bool,
+    dict[int, float],
+    bool,
+]:
     """Run both legs + RRF on the index. DB corrupt mid-way → delete, rebuild
-    exactly once; still failing → raise (spec §5)."""
+    exactly once; still failing → raise (spec §5). The third element is True
+    when a leg filled K_LEG, i.e. matches were dropped before fusion (F-C7).
+    The fourth element is the keyword leg's raw BM25 scores (rowid → positive
+    score, higher is better) — RRF only carries rank, so the ambiguity note's
+    score check needs the real magnitude (F-C5). The fifth element (`busy`)
+    is True when the writer lock forced us onto the existing (possibly stale
+    or cold-empty) index instead of the freshly-synced one — the caller must
+    tell the user, not just log a warning nobody sees (R19, final-branch
+    review)."""
     from center_kb import searchdb
 
     for attempt in (1, 2):
         conn: sqlite3.Connection | None = None
+        busy = False
         try:
             # open_fresh sits INSIDE the try — corruption surfacing during the
             # freshness sync must get the same rebuild-once handling as
@@ -111,6 +155,7 @@ def _search_index(
                 # (spec §3.2)
                 logger.warning("search.db busy — serving existing index: %s", exc)
                 conn = searchdb.open_db(hub)
+                busy = True
             fts_hits = searchdb.fts_search(conn, text, tags)
             knn_hits: list[tuple[int, float]] = []
             if embedder is not None:
@@ -121,13 +166,25 @@ def _search_index(
                 except Exception as exc:  # embedding best-effort, must not break the query
                     logger.warning("semantic leg failed — keyword only: %s", exc)
             fused = searchdb.rrf_merge(fts_hits, knn_hits)
-            return fused, searchdb.load_sections(conn, [r for r, _, _ in fused])
+            truncated = (
+                len(fts_hits) >= searchdb.K_LEG or len(knn_hits) >= searchdb.K_LEG
+            )
+            return (
+                fused,
+                searchdb.load_sections(conn, [r for r, _, _ in fused]),
+                truncated,
+                dict(fts_hits),
+                busy,
+            )
         except sqlite3.DatabaseError as exc:
             if conn is not None:
                 conn.close()  # Windows: close before unlink
                 conn = None
-            if attempt == 2 or searchdb.is_lock_error(exc):
-                raise  # lock = another process is writing — not corruption
+            kind = searchdb.classify_db_error(exc)
+            if kind != "corrupt" or attempt == 2:
+                # lock = another process is writing; client = the caller's own
+                # input. Neither is a reason to delete the shared index (F-C2).
+                raise
             logger.warning("search.db corrupt — rebuilding once: %s", exc)
             searchdb.delete_db(hub)
         finally:
@@ -136,7 +193,125 @@ def _search_index(
     raise AssertionError("unreachable")
 
 
-def search(
+# Measured in Task 10, Step 6 — this repo's own .kb/ published to a scratch
+# federation entry, top-2 BM25 ratio (2nd-hit / 1st-hit) for reviewer C's
+# rank-1-correct query battery:
+#
+#   0.642  Restrictive Airspace Designation
+#   0.991  Runway Identifier
+#   0.956  Magnetic Variation
+#   0.277  CUST/AREA
+#   0.916  S/T
+#   0.564  ARPT/HELI IDENT
+#   0.000  RT TYPE
+#   0.877  IFR CAP
+#   0.000  5.129
+#   0.920  section 5.4
+#   0.942  Continuation Record Number
+#   0.960  Section Code
+#   0.754  which field says whether a record is standard or tailored
+#   0.825  how do I know if an airport supports IFR
+#
+# Highest: 0.991 ("Runway Identifier"). No value below 0.99 separates the
+# unambiguous battery from a close pair on this corpus, so only an exact tie
+# counts; re-measure before lowering. The structural (same-section) rule
+# carries the documented ambiguous case on its own.
+AMBIG_BM25_RATIO = 1.00
+
+
+def _ambiguity_notes(
+    results: list["QueryResult"],
+    result_rowids: list[int],
+    fts_scores: dict[int, float],
+) -> list[str]:
+    """Two reasons the caller should look at #2 as well as #1 (F-C5).
+
+    1. STRUCTURAL — the top two are the SAME section published by two
+       federation repos. No threshold, no calibration, and it is the case a BA
+       must never miss.
+    2. SCORE — both come from the keyword leg and their raw BM25 scores are
+       within AMBIG_BM25_RATIO. RRF cannot answer this: adjacent ranks within a
+       leg are always ~1.6% apart, so a ratio test on RRF fires on everything
+       or nothing. BM25 carries real magnitude.
+
+    `result_rowids[i]` must be the rowid that produced `results[i]` — NOT
+    `fused[:2]`. `search_detailed`'s loop skips fused entries whose row or L2
+    content is missing (stale/partial hub cache), so `fused[:2]` and
+    `results[:2]` can name different rows; scoring the wrong pair could name
+    two sections whose scores were never actually compared, and — with an
+    unlucky skip — invert `lo`/`hi` so a mismatched pair satisfies
+    `>= AMBIG_BM25_RATIO` when the cited pair never would (review round 2)."""
+    if len(results) < 2:
+        return []
+    top, second = results[0], results[1]
+    if top.doc_id == second.doc_id and top.section_id == second.section_id:
+        return [
+            f"Note: [{top.citation}] and [{second.citation}] are the same section "
+            "published by two federation repos — confirm which repo the story "
+            "should cite before pinning.\n\n"
+        ]
+    ranked = result_rowids[:2]
+    if len(ranked) == 2 and all(r in fts_scores for r in ranked):
+        if top.match_mode == "keyword" and second.match_mode == "keyword":
+            hi, lo = fts_scores[ranked[0]], fts_scores[ranked[1]]
+            if hi > 0 and lo <= hi and lo / hi >= AMBIG_BM25_RATIO:
+                return [
+                    f"Note: [{top.citation}] and [{second.citation}] score closely "
+                    "— both may be relevant to your question; review each before "
+                    "citing.\n\n"
+                ]
+    return []
+
+
+def _unknown_tag_notes(hub: "HubHandle", tags: list[str]) -> list[str]:
+    """A tag filter that matched nothing is usually a tag that does not exist
+    (reviewer C battery #32). Only runs on the empty-result path.
+
+    Document ids count as valid: `searchdb.py:350` indexes `doc.id.lower()` as
+    a synthetic tag, so `--tags arinc-424` is a supported filter (F-C14). It is
+    deliberately NOT part of `kbcontext.tag_vocabulary`, which governs what a
+    kb-context block may carry."""
+    from center_kb import kbcontext
+    from center_kb.federation import load_federation
+
+    repos = load_federation(hub.federation_dir)
+    vocab = kbcontext.tag_vocabulary(repos)
+    doc_ids = {doc.id.lower() for repo in repos for doc in repo.index.docs}
+    known = set(vocab) | doc_ids
+    unknown = sorted({t.strip().lower() for t in tags if t.strip()} - known)
+    if not unknown:
+        return []
+    published = ", ".join(sorted(vocab.values())) or "(none published)"
+    return [
+        f"Note: no document is tagged {', '.join(repr(t) for t in unknown)}. "
+        f"Published tags: {published}. Document ids are also accepted as tags."
+        "\n\n"
+    ]
+
+
+_ECHO_MAX_CHARS = 120
+
+
+def _truncate_echo(text: str) -> str:
+    """Bound a raw caller-supplied query before it's echoed into a note.
+
+    The no-usable-terms note quotes the query verbatim; an MCP agent can
+    hand back an arbitrarily long punctuation-only string, and that was
+    landing in the payload unbounded (minor finding, promoted on final-branch
+    review)."""
+    if len(text) <= _ECHO_MAX_CHARS:
+        return text
+    return text[:_ECHO_MAX_CHARS] + "…"
+
+
+BUSY_INDEX_NOTE = (
+    "Note: another process is rebuilding the search index — these results "
+    "were served from the previous index and may be incomplete; retry in a "
+    "moment.\n\n"
+)
+
+
+def search_detailed(
     hub: "HubHandle",
     text: str,
     tags: list[str] | None = None,
@@ -144,8 +319,9 @@ def search(
     semantic: bool = False,
     use_semantic: bool = True,
     embedder=None,  # center_kb.embed.Embedder | None — injectable for tests
-) -> list[QueryResult]:
+) -> SearchOutcome:
     from center_kb import embed as embed_mod
+    from center_kb import searchdb
 
     if embedder is None:
         embedder = embed_mod.default_embedder()
@@ -154,12 +330,21 @@ def search(
             "semantic search requested but no embedder is available — "
             'keyword results only (enable with: pip install "center-kb[embed]")'
         )
-    fused, rows = _search_index(
+    notes: list[str] = []
+    terms = tokenize(text)
+    if text.strip() and not terms:
+        notes.append(
+            f"Note: '{_truncate_echo(text)}' contains no searchable terms "
+            "after tokenising — the index stores alphanumeric words, so "
+            "punctuation-only queries match nothing.\n\n"
+        )
+        return SearchOutcome(results=[], notes=notes)
+    fused, rows, truncated, fts_scores, busy = _search_index(
         hub, embedder if use_semantic else None, text, tags
     )
-    terms = tokenize(text)
 
     results: list[QueryResult] = []
+    result_rowids: list[int] = []
     used = 0
     for rowid, score, mode in fused:
         row = rows.get(rowid)
@@ -188,10 +373,46 @@ def search(
                 snippet=snippet,
             )
         )
+        result_rowids.append(rowid)
         used += n_tokens
         if used >= budget:
             break
-    return results
+    if busy:
+        # R19 (final-branch review, Important): a lock error from open_fresh
+        # used to fall back to the existing index silently (log.warning only
+        # — an MCP agent never sees stderr). On a cold hub that existing
+        # index is empty, so the caller got a confident "No matching section
+        # found" with no hint the index simply hadn't synced yet.
+        notes.append(BUSY_INDEX_NOTE)
+    if truncated:
+        # Deliberately conservative: a query with exactly K_LEG matches reports a
+        # cut it did not suffer. That costs the caller one sentence and never
+        # hides a real one (F-C7).
+        notes.append(
+            f"Note: more sections matched than were ranked — each leg is capped "
+            f"at {searchdb.K_LEG} before fusion, so this is not the complete set. "
+            "Narrow the query or add --tags to see the rest.\n\n"
+        )
+    notes.extend(_ambiguity_notes(results, result_rowids, fts_scores))
+    if not results and tags:
+        notes.extend(_unknown_tag_notes(hub, tags))
+    return SearchOutcome(results=results, notes=notes)
+
+
+def search(
+    hub: "HubHandle",
+    text: str,
+    tags: list[str] | None = None,
+    budget: int = 2000,
+    semantic: bool = False,
+    use_semantic: bool = True,
+    embedder=None,
+) -> list[QueryResult]:
+    """Backwards-compatible view of `search_detailed` — results only."""
+    return search_detailed(
+        hub, text, tags=tags, budget=budget, semantic=semantic,
+        use_semantic=use_semantic, embedder=embedder,
+    ).results
 
 
 def _parent_entry(
@@ -286,6 +507,7 @@ def get_section(
 ) -> QueryResult | None:
     from center_kb.federation import load_federation
 
+    level = normalize_level(level)
     section_id = section_id.lstrip("§")
     if ":" in doc_id and repo is None:
         repo, doc_id = doc_id.split(":", 1)
