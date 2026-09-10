@@ -45,6 +45,7 @@ COMMON_TEMPLATES: dict[str, str] = {
 
 HUB_TEMPLATES: dict[str, str] = {
     ".kb/config.yaml": "config-hub.yaml",
+    ".gitignore": "hub-gitignore.txt",
     "docker-compose.yml": "docker-compose-hub.yml",
     ".env.example": "env.example",
     "federation/README.md": "federation-README.md",
@@ -160,9 +161,56 @@ DEV_TEMPLATES: dict[str, str] = {
 # next `kb init`. The cost of protecting it is that a repo scaffolded before
 # the usage hook existed never gains it automatically — QUICKSTART carries the
 # snippet to paste, which is the cheaper failure.
+#
+# `.gitignore` is NOT in this set — it gets its own merge-only handling
+# (`_apply_gitignore`, below) instead of the generic skip-unless-force rule.
+# R18 (final-branch review, Critical): a hub's own ignore rules (`.env`,
+# credentials, editor cruft) must survive `kb init --force` too, not just a
+# routine re-init — `--force` exists to refresh protected *scaffold* data
+# (index.yaml, config.yaml), never to un-ignore a bearer token that
+# `kb docker setup` already wrote to `.env`.
 PROTECTED_FILES: frozenset[str] = frozenset(
     {".kb/index.yaml", ".kb/config.yaml", ".claude/settings.json"}
 )
+
+_KB_WORK_LINE = ".kb-work/"
+
+
+def _apply_gitignore(dest: Path, template_text: str, report: InitReport) -> None:
+    """Merge-only, under EVERY mode — including `--force` (R18).
+
+    A hub's `.gitignore` may carry secret-exclusion rules (`.env`,
+    credentials) a maintainer added after scaffolding; `kb docker setup`
+    itself appends `.env` there. `kb init --force` must never overwrite the
+    whole file (that would silently un-ignore a bearer token). Mirrors
+    `dockersetup._ensure_gitignored`'s append pattern: read lines, only
+    append the missing entry, never rewrite existing content.
+    """
+    if not dest.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(template_text, encoding="utf-8", newline="\n")
+        report.created.append(".gitignore")
+        return
+    try:
+        lines = dest.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        # A `.gitignore` this tool can't read — e.g. PowerShell 5.1's
+        # `echo x > .gitignore` (UTF-16LE), mirroring doctor.check_hub —
+        # is left untouched: an append would transcode content we could not
+        # read, and an overwrite is exactly what R18 forbids. Report it and
+        # let `kb doctor` surface the missing `.kb-work/` rule.
+        report.skipped.append(".gitignore")
+        report.notes.append(
+            ".gitignore is not readable as UTF-8; left untouched. "
+            f"Add `{_KB_WORK_LINE}` to it by hand."
+        )
+        return
+    if any(line.strip() == _KB_WORK_LINE for line in lines):
+        report.skipped.append(".gitignore")
+        return
+    lines.append(_KB_WORK_LINE)
+    dest.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    report.updated.append(".gitignore")
 
 _KIND_LINE = re.compile(r"^kind:", re.MULTILINE)
 
@@ -261,7 +309,9 @@ def init_repo(
 
     Default: create missing files and refresh scaffold templates whose content
     changed. Protected data (``.kb/index.yaml``, ``.kb/config.yaml``,
-    ``.claude/settings.json``) is left alone unless ``force=True``.
+    ``.claude/settings.json``) is left alone unless ``force=True``. The root
+    ``.gitignore`` is handled separately and is always merge-only — it is
+    never wholesale-overwritten, even with ``force=True`` (R18).
     """
     templates = template_map(kind)
     base = resources.files("center_kb").joinpath("templates/init")
@@ -274,6 +324,9 @@ def init_repo(
             base.joinpath(resource_name).read_text(encoding="utf-8"),
             repo_id,
         )
+        if rel == ".gitignore":
+            _apply_gitignore(dest, text, report)
+            continue
         if dest.exists():
             if rel in PROTECTED_FILES and not force:
                 report.skipped.append(rel)

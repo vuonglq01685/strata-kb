@@ -335,7 +335,7 @@ def fed_hub(tmp_path: Path, run_git) -> Path:
         sec_id="5.3", sec_title="Restrictive Airspace",
         sec_summary="Restrictive airspace: designation, type, multiple code.",
         l2="## 5.3 Restrictive Airspace\n\nCondensed: restrictive airspace designation codes.\n",
-        l3="## 5.3 Restrictive Airspace\n\nFull raw restrictive airspace text.\n",
+        l3="## 5.3 Restrictive Airspace\n\nVerbatim: Full raw restrictive airspace text.\n",
     )
     write_federation_index(fed)
     run_git(hub, "init")

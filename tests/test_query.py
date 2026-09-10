@@ -146,7 +146,7 @@ def test_search_use_semantic_false_skips_embedder(monkeypatch):
 
     def spy(hub, embedder, text, tags):
         seen["embedder"] = embedder
-        return [], {}
+        return [], {}, False, {}, False
 
     monkeypatch.setattr(query_mod, "_search_index", spy)
     sentinel = object()
@@ -162,9 +162,87 @@ def test_search_use_semantic_default_passes_embedder(monkeypatch):
 
     def spy(hub, embedder, text, tags):
         seen["embedder"] = embedder
-        return [], {}
+        return [], {}, False, {}, False
 
     monkeypatch.setattr(query_mod, "_search_index", spy)
     sentinel = object()
     query_mod.search(object(), "airspace", embedder=sentinel)
     assert seen["embedder"] is sentinel
+
+
+def test_busy_index_surfaces_a_note_instead_of_silent_stale_results(
+    fed_hub, monkeypatch
+):
+    """R19 (final-branch review, Important): a lock error from `open_fresh`
+    used to be handled with `logger.warning` only and a silent fall-back to
+    the existing index — on a cold hub (never synced) that existing index is
+    empty, so the caller got a confident 'No matching section found' with no
+    hint a rebuild was in progress elsewhere. It must be a note the MCP/CLI/
+    web caller actually sees, not something that only reaches stderr.
+
+    `fed_hub` is a fresh tmp_path per test and nothing has synced its index
+    yet, so the real (unmocked) `searchdb.open_db` already returns a
+    freshly-created, empty-schema connection here — exactly the "fresh empty
+    schema" the fallback branch is meant to serve."""
+    import sqlite3
+
+    from center_kb import searchdb
+    from center_kb.query import BUSY_INDEX_NOTE, search_detailed
+
+    lock_exc = sqlite3.OperationalError("database is locked")
+    assert searchdb.is_lock_error(lock_exc)
+
+    def raise_locked(hub, embedder):
+        raise lock_exc
+
+    monkeypatch.setattr(searchdb, "open_fresh", raise_locked)
+    outcome = search_detailed(
+        _handle(fed_hub), "restrictive airspace", use_semantic=False
+    )
+    assert outcome.results == []
+    assert BUSY_INDEX_NOTE in outcome.notes
+
+
+def test_unknown_tag_lists_the_published_vocabulary(fed_hub):
+    """Reviewer C battery #32: `--tags nonexistent-tag` returned 0 results with
+    no hint that the tag itself was the problem."""
+    from center_kb.query import search_detailed
+
+    outcome = search_detailed(_handle(fed_hub), "runway", tags=["nonexistent-tag"])
+    assert outcome.results == []
+    note = "".join(outcome.notes)
+    assert "nonexistent-tag" in note
+    assert "arinc424" in note  # a real published tag
+
+
+def test_doc_id_is_an_accepted_tag(fed_hub):
+    """F-C14: searchdb.py:350 indexes doc.id.lower() as a synthetic tag, so
+    `--tags arinc-424` works. It stays supported and must not be reported as
+    unknown; it deliberately does NOT join the kb-context tag vocabulary."""
+    from center_kb.query import search_detailed
+
+    outcome = search_detailed(_handle(fed_hub), "restrictive", tags=["arinc-424"])
+    assert outcome.results
+    assert outcome.notes == []
+
+
+def test_doc_id_tag_is_not_reported_unknown_on_the_empty_path(fed_hub):
+    """F-C14 review fix: `test_doc_id_is_an_accepted_tag` never reaches the
+    `not results and tags` branch (it has results), so it cannot tell the
+    doc-id guard in `_unknown_tag_notes` apart from a no-op. A query that
+    legitimately returns zero results with a doc-id tag must not falsely
+    claim the doc id itself is unknown."""
+    from center_kb.query import search_detailed
+
+    outcome = search_detailed(_handle(fed_hub), "zzqx", tags=["arinc-424"])
+    assert outcome.results == []
+    note = "".join(outcome.notes)
+    assert "no document is tagged" not in note
+
+    outcome2 = search_detailed(
+        _handle(fed_hub), "zzqx", tags=["arinc-424", "nonexistent-tag"]
+    )
+    assert outcome2.results == []
+    note2 = "".join(outcome2.notes)
+    assert "'nonexistent-tag'" in note2
+    assert "'arinc-424'" not in note2

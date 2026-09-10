@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import sqlite3
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,9 +27,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("center_kb.searchdb")
 
+
+class IndexBusyError(RuntimeError):
+    """The index file is held by another process and could not be replaced."""
+
+
+class TooManyTagsError(ValueError):
+    """`tags` exceeded MAX_TAGS — refused rather than silently truncated."""
+
+
 SCHEMA_VERSION = "2"
 K_LEG = 50  # top-k per leg fed into RRF
 RRF_K = 60  # standard RRF constant
+MAX_TAGS = 100  # F-C10: `tags` is agent-supplied and expands to one SQL bind each
 DB_NAME = "search.db"
 _KNN_OVERFETCH = 4  # vec0 cannot pre-filter by tag — over-fetch, then filter after
 _EMBED_BATCH = 256  # sections per embedder.embed() call
@@ -71,15 +83,46 @@ def _conn_vec_loaded(conn: sqlite3.Connection) -> bool:
     return True
 
 
-def _load_vec(conn: sqlite3.Connection) -> bool:
+_VEC_MODULE = None
+_VEC_WARMED = False
+
+
+def warm_vec() -> bool:
+    """Import sqlite_vec exactly once, off any event loop. Never raises.
+
+    Reviewer C F-C1: this import pulls numpy's native `_multiarray_umath`, and
+    doing it inside a tool call that FastMCP runs inline on the asyncio
+    event-loop thread deadlocks on Windows — the server stays alive and never
+    answers. Every entry point that owns an event loop calls this before the
+    loop starts; the CLI does not, so `kb` keeps its startup time."""
+    global _VEC_MODULE, _VEC_WARMED
+    if _VEC_WARMED:
+        return _VEC_MODULE is not None
     try:
         import sqlite_vec
     except ImportError:
+        _VEC_MODULE = None
+    except Exception as exc:
+        # Not a plain "not installed" — a partially-initialized numpy, a
+        # DLL/version mismatch, or some other failure the import machinery
+        # doesn't wrap as ImportError. Degrade to FTS-only same as above, but
+        # this case is unexpected enough to be worth a log line (fires once,
+        # thanks to _VEC_WARMED).
+        logger.warning("sqlite_vec import failed unexpectedly — semantic leg disabled: %s", exc)
+        _VEC_MODULE = None
+    else:
+        _VEC_MODULE = sqlite_vec
+    _VEC_WARMED = True
+    return _VEC_MODULE is not None
+
+
+def _load_vec(conn: sqlite3.Connection) -> bool:
+    if not warm_vec():
         return False
     try:
         conn.enable_load_extension(True)
         try:
-            sqlite_vec.load(conn)
+            _VEC_MODULE.load(conn)
         finally:
             conn.enable_load_extension(False)
     except (AttributeError, sqlite3.OperationalError) as exc:
@@ -101,6 +144,25 @@ def is_lock_error(exc: sqlite3.Error) -> bool:
         # SQLITE_PROTOCOL ("locking protocol" — the substring match misses it)
         return name.startswith(("SQLITE_BUSY", "SQLITE_LOCKED", "SQLITE_PROTOCOL"))
     return "locked" in str(exc) or "busy" in str(exc)
+
+
+def classify_db_error(exc: sqlite3.Error) -> str:
+    """'lock' | 'client' | 'corrupt' — what to do about a sqlite error.
+
+    Reviewer C F-C2/F-C10: `IntegrityError` (a lost UNIQUE race between two
+    cold builds) and `OperationalError: too many SQL variables` (an oversized
+    client-supplied `tags` list) are both CALLER problems. They were diagnosed
+    as corruption, so the index every user of the hub shares was deleted — and
+    on Windows the unlink then raised PermissionError in the user's face."""
+    if is_lock_error(exc):
+        return "lock"
+    if isinstance(exc, sqlite3.IntegrityError):
+        return "client"
+    if isinstance(exc, sqlite3.OperationalError) and (
+        "too many sql variables" in str(exc).lower()
+    ):
+        return "client"
+    return "corrupt"
 
 
 def _raw_connect(path: Path) -> tuple[sqlite3.Connection, bool]:
@@ -166,10 +228,33 @@ def _has_vec_table(conn: sqlite3.Connection) -> bool:
 def delete_db(hub: "HubHandle") -> None:
     """Delete the index file (plus -wal/-shm). The caller must close every
     connection first (Windows cannot unlink an open file — spec windows-support
-    §R5). PermissionError → propagate, no retry."""
+    §R5).
+
+    Reviewer C F-C2: a bare `unlink()` raised `PermissionError [WinError 32]`
+    straight at the user when another process still held the file. hashsync's
+    force-unlink (chmod +w, retry) exists for exactly this case; a file still
+    held after it becomes a clean IndexBusyError, never a traceback.
+
+    The `exists()` check above is not a lock — the file can vanish between it
+    and `unlink_force` (another process's own `delete_db`, or SQLite's own
+    -wal/-shm cleanup on a concurrent close), so a plain `unlink()` inside
+    `unlink_force` can still raise `FileNotFoundError`. That's not busy, it's
+    already gone — treat it the same as `not p.exists()` and move on."""
+    from center_kb import hashsync
+
     path = db_path(hub)
     for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
-        p.unlink(missing_ok=True)
+        if not p.exists():
+            continue
+        try:
+            hashsync.unlink_force(p)
+        except FileNotFoundError:
+            continue
+        except PermissionError as exc:
+            raise IndexBusyError(
+                f"search index {p.name} is in use by another process — "
+                "close other kb commands and retry"
+            ) from exc
 
 
 def _has_schema(conn: sqlite3.Connection) -> bool:
@@ -206,7 +291,11 @@ def open_db(hub: "HubHandle") -> sqlite3.Connection:
                 else "vec_sections exists but sqlite-vec is not installed"
             )
         except sqlite3.DatabaseError as exc:
-            if is_lock_error(exc):
+            # F-C2: route through the same classifier query._search_index uses —
+            # lock = contention, client = caller input. Neither is corruption,
+            # so neither may reach delete_db() (spec §2 — "no client input
+            # reaches delete_db()").
+            if classify_db_error(exc) in ("lock", "client"):
                 if conn is not None:
                     conn.close()
                 raise
@@ -224,9 +313,79 @@ def open_db(hub: "HubHandle") -> sqlite3.Connection:
 
 
 def _repo_fingerprint(repo_dir: Path) -> str:
+    """Stat manifest of the whole federation entry directory.
+
+    Reviewer C F-C3: hashing only `_meta.yaml` and `index.yaml` made an edit
+    committed directly in `federation/` on the hub invisible to search forever,
+    while `kb get` returned it.
+
+    Stat, don't read: this runs on EVERY query, so its cost must not scale with
+    corpus bytes. (relpath, size, mtime_ns) catches both committed and
+    uncommitted hub-side edits; `kb reindex --force` is the escape hatch for
+    the theoretical edit that preserves all three.
+
+    Review round 2 (F-C3 findings 1+2): walks with `os.scandir` +
+    `DirEntry.is_dir(follow_symlinks=False)` / `.is_file(follow_symlinks=False)`
+    / `.stat(follow_symlinks=False)` — the standard fast-walk recipe — instead
+    of `Path.rglob` + `Path.stat`. `DirEntry.stat()` reuses the stat data the
+    directory enumeration already returned (no extra syscall per file on
+    Windows); `is_dir(follow_symlinks=False)` / `is_file(follow_symlinks=False)`
+    both report False for a symlink entry (of either a file or a directory)
+    without following it — that's how a symlinked directory is skipped
+    without ever being descended into.
+
+    The relpath is built by plain string slicing (`entry.path` is always
+    `<repo_dir><sep><...>` because the walk only ever scans paths it built
+    from `repo_dir` itself), not `Path(entry.path).relative_to(repo_dir)`:
+    profiling this rewrite showed `Path.relative_to` — not `DirEntry.stat` —
+    was the dominant remaining cost, roughly doubling the walk on its own
+    (measured on a 1202-file synthetic tree: 24.84ms stat-only vs 43.66ms
+    with `Path.relative_to` added, vs 23.30ms with string slicing). Skipping
+    it is what actually delivers the scandir speedup end to end; see the
+    commit message for the full before/after curve.
+
+    A per-entry OSError (a file vanishing between being listed and being
+    stat'd — a concurrent `git pull`/publish on the hub, which is also the
+    query source, is a real race) is swallowed and that entry skipped: a
+    per-query freshness check must never raise a traceback at the caller.
+
+    Cost scales with directory count as much as file count (`os.scandir()`
+    is one syscall per directory), not corpus bytes: measured, the 20ms
+    gate is crossed around 2,900-3,700 files for a few chapter-heavy doc
+    dirs, and around 700-900 files for many single-chapter doc dirs (this
+    repo's own `.kb/` shape, scaled up) — both a couple of orders past the
+    pre-rewrite `Path.rglob` walk's ~465-file crossing point. `kb reindex
+    --force` is the fallback for a corpus that outgrows this per-query check."""
     h = hashlib.sha256()
-    for name in ("_meta.yaml", "index.yaml"):
-        h.update((repo_dir / name).read_bytes())
+    if not repo_dir.is_dir():
+        return h.hexdigest()
+    records: list[tuple[str, int, int]] = []
+    base = str(repo_dir)
+    if not base.endswith(os.sep):
+        base += os.sep
+    stack: list[str] = [str(repo_dir)]
+    while stack:
+        current = stack.pop()
+        try:
+            it = os.scandir(current)
+        except OSError:
+            continue  # dir vanished/unreadable between being queued and scanned
+        try:
+            for entry in it:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        st = entry.stat(follow_symlinks=False)
+                        rel = entry.path[len(base):].replace(os.sep, "/")
+                        records.append((rel, st.st_size, st.st_mtime_ns))
+                    # else: a symlink (to a file or a directory) — skip, don't descend
+                except OSError:
+                    continue  # vanished/unreadable between scandir() and is_dir/stat
+        finally:
+            it.close()  # release the directory handle promptly (not just on GC)
+    for rel, size, mtime_ns in sorted(records):
+        h.update(f"{rel}\0{size}\0{mtime_ns}\0".encode("utf-8"))
     return h.hexdigest()
 
 
@@ -470,6 +629,21 @@ def _sync_conn(
         fp = _repo_fingerprint(repo.kb_dir)
         if stored_fp.get(repo.meta.repo_id) == fp:
             continue  # repo unchanged — 0 manifest parses
+        # F-C2: `stored_fp` was read outside any lock, so two cold processes
+        # both got here and the loser broke UNIQUE. Take the write lock FIRST,
+        # then re-read this repo's fingerprint inside it: the loser now sees
+        # the winner's row and skips instead of inserting (spec §5 — losing the
+        # race only wastes work, never corrupts data).
+        if conn.in_transaction:
+            conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT fingerprint FROM repos WHERE repo_id = ?",
+            (repo.meta.repo_id,),
+        ).fetchone()
+        if row is not None and row[0] == fp:
+            conn.commit()
+            continue
         before_updated = report.sections_updated
         _sync_repo(conn, repo, report)
         conn.execute(
@@ -531,15 +705,31 @@ def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connectio
 
 
 def tokenize(text: str) -> list[str]:
-    # ASCII-only while the corpus is FTS-indexed with unicode61 — non-ASCII
-    # terms (e.g. Vietnamese) exist in the index but queries never reach them.
-    # Accepted: the corpus is English-language aviation specs; extend when a
-    # real need arises.
-    return re.findall(r"[a-z0-9]+", text.lower())
+    """Query-side tokens, symmetric with the index's `unicode61` tokenizer.
+
+    Reviewer C F-C9: `[a-z0-9]+` dropped every non-ASCII letter while the FTS
+    index holds them, so a Vietnamese query was shredded into 1-2 character
+    fragments and answered confidently with junk. `[^\\W_]+` is unicode61's own
+    rule: alphanumerics are token characters, and underscore is a separator.
+    NFC-normalise first: an NFD query (macOS, some IMEs) spells each accented
+    letter as base + combining mark, and a combining mark is category Mn —
+    not `\\w` — so `[^\\W_]+` would split right through it; unicode61 folds
+    combining marks on both sides, so the query side must match."""
+    return re.findall(
+        r"[^\W_]+", unicodedata.normalize("NFC", text).lower(), re.UNICODE
+    )
 
 
 def _norm_tags(tags: list[str] | None) -> list[str]:
-    return sorted({t.strip().lower() for t in tags or [] if t.strip()})
+    out = sorted({t.strip().lower() for t in tags or [] if t.strip()})
+    if len(out) > MAX_TAGS:
+        # Refuse, do not truncate: a silently shortened filter returns results
+        # the caller did not ask for. The published federation vocabulary is a
+        # handful of tags, so no real caller meets this cap (F-C10).
+        raise TooManyTagsError(
+            f"too many tags ({len(out)}) — at most {MAX_TAGS} are accepted"
+        )
+    return out
 
 
 def _fts_match(text: str) -> str:

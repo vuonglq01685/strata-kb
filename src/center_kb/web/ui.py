@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from center_kb import assetstore
+from center_kb import assetstore, searchdb
 from center_kb import hub as hub_mod
 from center_kb.federation import load_federation
 from center_kb.mcp import ServerConfig
@@ -257,11 +257,20 @@ def build_routes(
         # screen's empty state rather than asking search() to match on "".
         sem_vals = request.query_params.getlist("semantic")
         use_semantic = ("1" in sem_vals) if sem_vals else True
-        found = (
-            search(hub, q, tags=tags or None, budget=budget,
-                   use_semantic=use_semantic)
-            if q else []
-        )
+        try:
+            found = (
+                await run_in_threadpool(
+                    search, hub, q, tags=tags or None, budget=budget,
+                    use_semantic=use_semantic,
+                )
+                if q else []
+            )
+        except (searchdb.TooManyTagsError, searchdb.IndexBusyError) as exc:
+            # search.html has no slot for a caller-error message (only the
+            # hub_ok / empty-results branches) — degrade to the normal empty
+            # state rather than a 500; the reason is still logged server-side.
+            logger.warning("search screen: %s", exc)
+            found = []
         docs_count = len({r.doc_id for r in found})
         smap = uidata.status_map(hub)
         top = max((r.score for r in found), default=1.0) or 1.0

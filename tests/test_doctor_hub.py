@@ -19,6 +19,10 @@ def test_stale_cache_warns_and_flags(git_kb, hub_worktree):
 
 
 def test_clean_state_after_publish_is_ok(git_kb, hub_worktree):
+    # A real hub scaffolded via `kb init --kind hub` ships a `.gitignore`
+    # covering `.kb-work/` (F-C17); publish() builds the search index there,
+    # so without this the new F-C17 doctor check would (correctly) flag it.
+    (hub_worktree / ".gitignore").write_text(".kb-work/\n", encoding="utf-8")
     publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
     issues, stale = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb")
     assert issues == [] and stale is False
@@ -86,3 +90,61 @@ def test_duplicate_doc_id_across_repos_warns(git_kb, hub_worktree):
     write_federation_index(hub_worktree / "federation")
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     assert any("appears in 2 federation repos" in i.message for i in issues)
+
+
+def test_doctor_warns_when_the_index_is_untracked_and_unignored(fed_hub):
+    # warn_untracked_index=True models the hub maintainer's own checkout —
+    # the only caller who can act on "add it to the hub's .gitignore"
+    # (F-C17 review round 2, gate backcompat).
+    from center_kb import doctor
+    from center_kb.hub import HubHandle
+
+    work = fed_hub / ".kb-work"
+    work.mkdir(exist_ok=True)
+    (work / "search.db").write_bytes(b"\x00")
+
+    issues, _ = doctor.check_hub(
+        fed_hub / ".kb", HubHandle(root=fed_hub), warn_untracked_index=True
+    )
+    assert any(".kb-work/" in i.message for i in issues)
+
+    (fed_hub / ".gitignore").write_text(".kb-work/\n", encoding="utf-8")
+    issues, _ = doctor.check_hub(
+        fed_hub / ".kb", HubHandle(root=fed_hub), warn_untracked_index=True
+    )
+    assert not any(".kb-work/" in i.message for i in issues)
+
+
+def test_doctor_does_not_warn_about_kb_work_on_the_child_path(fed_hub):
+    # F-C17 review round 2, gate backcompat: child/dev/ba callers reach a hub
+    # (or its cache clone) read-only via the `else` branch in cli.py, which
+    # never passes warn_untracked_index — "add it to the hub's .gitignore"
+    # is un-actionable there. Default (no flag) must stay silent even with
+    # an untracked, unignored index present.
+    from center_kb import doctor
+    from center_kb.hub import HubHandle
+
+    work = fed_hub / ".kb-work"
+    work.mkdir(exist_ok=True)
+    (work / "search.db").write_bytes(b"\x00")
+
+    issues, _ = doctor.check_hub(fed_hub / ".kb", HubHandle(root=fed_hub))
+    assert not any(".kb-work/" in i.message for i in issues)
+
+
+def test_doctor_does_not_crash_on_a_non_utf8_gitignore(fed_hub):
+    # F-C17 review round 2, Important: PowerShell 5.1's `echo x > .gitignore`
+    # writes UTF-16LE. `check_hub` must not traceback reading a .gitignore it
+    # doesn't own — an unreadable file counts as not-ignored.
+    from center_kb import doctor
+    from center_kb.hub import HubHandle
+
+    work = fed_hub / ".kb-work"
+    work.mkdir(exist_ok=True)
+    (work / "search.db").write_bytes(b"\x00")
+    (fed_hub / ".gitignore").write_bytes(".kb-work/\n".encode("utf-16"))
+
+    issues, _ = doctor.check_hub(
+        fed_hub / ".kb", HubHandle(root=fed_hub), warn_untracked_index=True
+    )
+    assert any(".kb-work/" in i.message for i in issues)

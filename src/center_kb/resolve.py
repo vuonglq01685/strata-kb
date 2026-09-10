@@ -35,22 +35,34 @@ def _broken(ref: KBRef, reason: str, pinned_rev: str = "") -> ResolvedRef:
     )
 
 
-def _worktree_section(kb_dir: Path, ref: KBRef) -> str | None:
+MISSING_DOC = "missing-doc"
+MISSING_SECTION = "missing-section"
+BAD_MANIFEST = "bad-manifest"
+
+
+def _worktree_section(kb_dir: Path, ref: KBRef) -> tuple[str | None, str]:
+    """(content, problem). `problem` is '' when the content was read.
+
+    Reviewer C F-C6: this used to return None for all three failures, so
+    `_resolve_one` collapsed "the cited standard section no longer exists" into
+    the same `stale` bucket as "someone reworded a sentence"."""
     manifest_path = kb_dir / ref.doc_id / "_manifest.yaml"
     if not manifest_path.exists():
-        return None
+        return None, MISSING_DOC
     try:
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
     except (yaml.YAMLError, ValidationError):
-        # Worktree manifest is broken → treat the section as unreadable in the worktree
-        return None
+        return None, BAD_MANIFEST
     sec = next((s for s in manifest.sections if s.id == ref.section_id), None)
     if sec is None:
-        return None
+        return None, MISSING_SECTION
     l2 = kb_dir / ref.doc_id / f"{sec.file}.md"
     if not l2.exists():
-        return None
-    return slice_section(l2.read_text(encoding="utf-8"), ref.section_id)
+        return None, MISSING_SECTION
+    body = slice_section(l2.read_text(encoding="utf-8"), ref.section_id)
+    if body is None:
+        return None, MISSING_SECTION
+    return body, ""
 
 
 def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
@@ -93,12 +105,32 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
         )
 
     citation = f"{ref} ({manifest.revision})" if manifest.revision else str(ref)
-    now = _worktree_section(kb_dir, ref)
-    if now is None:
+    now, problem = _worktree_section(kb_dir, ref)
+    reasons = {
+        MISSING_DOC: (
+            f"the cited document '{ref.doc_id}' no longer exists in the "
+            "federation — confirm the replacement with the BA, then re-pin "
+            "with kb_context_new"
+        ),
+        MISSING_SECTION: (
+            f"the cited section §{ref.section_id} no longer exists in "
+            f"'{ref.doc_id}' at the current revision (deleted or renumbered) — "
+            "confirm the replacement with the BA, then re-pin with kb_context_new"
+        ),
+        BAD_MANIFEST: (
+            f"manifest for '{ref.doc_id}' is unreadable in the worktree"
+        ),
+    }
+    if problem:
+        # broken, not stale: CI must be able to BLOCK on a citation whose target
+        # is gone, and must not treat it like an amendment (F-C6). The pinned
+        # bytes still resolve, so they travel with the failure.
+        return ResolvedRef(
+            ref=ref, status="broken", citation=citation, content=pinned,
+            tokens=count_tokens(pinned), reason=reasons[problem], pinned_rev=rev,
+        )
+    if now.strip() != pinned.strip():
         status: Status = "stale"
-        reason = "section unreadable in worktree (deleted, id changed, or manifest broken)"
-    elif now.strip() != pinned.strip():
-        status = "stale"
         reason = "L2 content has changed since the pinned version (amendment after the BA wrote it)"
     else:
         status = "ok"
@@ -123,6 +155,17 @@ def resolve_refs(hub: "HubHandle", ctx: KBContext) -> list[ResolvedRef]:
             f"pinned commit {ctx.version} does not exist on the hub — the block "
             "was pinned under the old local-first architecture (or hub history "
             "was rewritten); re-pin with kb_context_new"
+        )
+        return [_broken(ref, reason, pinned_rev=ctx.version) for ref in ctx.refs]
+
+    if ctx.hub_version and ctx.hub_version != ctx.version:
+        # F-C6 nit: `hub_version` was parsed and never read, so a legacy
+        # two-version block whose `version` happened to be a real hub commit
+        # resolved silently as ok — pinning something nobody chose.
+        reason = (
+            f"kb-context carries both version {ctx.version} and hub_version "
+            f"{ctx.hub_version} — a legacy two-version block; re-pin with "
+            "kb_context_new"
         )
         return [_broken(ref, reason, pinned_rev=ctx.version) for ref in ctx.refs]
 

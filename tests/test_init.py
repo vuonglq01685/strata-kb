@@ -68,7 +68,9 @@ def test_init_refreshes_scaffold_but_protects_index(tmp_path: Path):
     skill.write_text("stale skill content\n", encoding="utf-8")
     report = init_repo(tmp_path, "hub")
     assert report.created == []
-    assert sorted(report.skipped) == sorted([".kb/index.yaml", ".kb/config.yaml"])
+    assert sorted(report.skipped) == sorted(
+        [".kb/index.yaml", ".kb/config.yaml", ".gitignore"]
+    )
     assert ".claude/skills/kb-summarize/SKILL.md" in report.updated
     assert "keep-me" in index.read_text(encoding="utf-8")
     assert "stale skill content" not in skill.read_text(encoding="utf-8")
@@ -79,7 +81,9 @@ def test_init_is_idempotent_when_already_current(tmp_path: Path):
     report = init_repo(tmp_path, "hub")
     assert report.created == []
     assert report.updated == []
-    assert sorted(report.skipped) == sorted([".kb/index.yaml", ".kb/config.yaml"])
+    assert sorted(report.skipped) == sorted(
+        [".kb/index.yaml", ".kb/config.yaml", ".gitignore"]
+    )
 
 
 def test_init_force_overwrites_protected_data(tmp_path: Path):
@@ -89,7 +93,10 @@ def test_init_force_overwrites_protected_data(tmp_path: Path):
     report = init_repo(tmp_path, "hub", force=True)
     assert report.created == []
     assert ".kb/index.yaml" in report.updated
-    assert report.skipped == []
+    # .gitignore is merge-only under every mode (R18) — already carries the
+    # `.kb-work/` line from the first init, so force leaves it alone and
+    # reports it as skipped rather than silently ignoring it.
+    assert report.skipped == [".gitignore"]
     assert "gone" not in marker.read_text(encoding="utf-8")
 
 
@@ -137,7 +144,7 @@ def test_cli_init_hub_reports_and_next_steps(tmp_path: Path):
     assert result2.exit_code == 0
     assert "0 created" in result2.output
     assert "0 updated" in result2.output
-    assert "2 skipped" in result2.output
+    assert "3 skipped" in result2.output
 
 
 def test_cli_init_child_next_steps(tmp_path: Path):
@@ -633,6 +640,7 @@ _PRE_PHASE4_HUB_FILES = [
     ".github/prompts/kb-init.prompt.md",
     ".github/prompts/kb-publish.prompt.md",
     ".github/workflows/kb-publish.yml",
+    ".gitignore",
     ".kb/config.yaml",
     ".kb/index.yaml",
     ".mcp.json",
@@ -1954,3 +1962,86 @@ def test_the_shipped_pr_template_fails_the_linter(tmp_path: Path):
     report = lint_body(text)
     assert not report.passed
     assert {f.code for f in report.findings} == {"empty-section"}
+
+
+def test_hub_scaffold_ignores_the_search_index(tmp_path):
+    """Reviewer C F-C17: the index lives at <hub>/.kb-work/search.db and shows
+    up as untracked `?? .kb-work/`. No init scaffold covered it, so a hub
+    maintainer running `git add -A` commits a multi-MB binary."""
+    from center_kb import initcmd
+
+    initcmd.init_repo(tmp_path, "hub")
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".kb-work/" in text
+
+
+def test_hub_gitignore_is_protected_from_a_second_init(tmp_path: Path):
+    # A hub's own .gitignore may carry secret-exclusion rules (.env,
+    # credentials) a maintainer added — a routine re-init must not silently
+    # destroy them (F-C17 review round 2, Critical). R18 (final-branch
+    # review, Critical): the same must hold under --force too — `kb init
+    # --kind hub --force` must never wholesale-overwrite the file (that
+    # would un-ignore a bearer token `kb docker setup` already wrote to
+    # .env), so .gitignore is merge-only regardless of force.
+    init_repo(tmp_path, "hub")
+    path = tmp_path / ".gitignore"
+    path.write_text(".kb-work/\n.env\n", encoding="utf-8")
+
+    report = init_repo(tmp_path, "hub")
+
+    assert ".gitignore" in report.skipped
+    assert ".env" in path.read_text(encoding="utf-8")
+    assert ".kb-work/" in path.read_text(encoding="utf-8")
+
+    report = init_repo(tmp_path, "hub", force=True)
+    assert ".gitignore" in report.skipped
+    assert ".env" in path.read_text(encoding="utf-8")
+    assert ".kb-work/" in path.read_text(encoding="utf-8")
+
+
+def test_hub_gitignore_missing_kb_work_line_gets_it_appended(tmp_path: Path):
+    # A hub .gitignore predating F-C17 (or hand-edited without the line) must
+    # gain `.kb-work/` on re-init without losing the maintainer's own rules —
+    # under both default and --force (R18).
+    init_repo(tmp_path, "hub")
+    path = tmp_path / ".gitignore"
+    path.write_text(".env\ncredentials.json\n", encoding="utf-8")
+
+    report = init_repo(tmp_path, "hub")
+
+    assert ".gitignore" in report.updated
+    text = path.read_text(encoding="utf-8")
+    assert ".env" in text
+    assert "credentials.json" in text
+    assert ".kb-work/" in text.splitlines()
+
+    # Idempotent: a second run (even with force) finds the line and skips.
+    report2 = init_repo(tmp_path, "hub", force=True)
+    assert ".gitignore" in report2.skipped
+    text2 = path.read_text(encoding="utf-8")
+    assert ".env" in text2
+    assert "credentials.json" in text2
+
+
+def test_hub_non_utf8_gitignore_is_left_untouched_not_crashed(tmp_path: Path):
+    # Final-review fix #1 follow-up: PowerShell 5.1's `echo x > .gitignore`
+    # writes UTF-16LE. Plain `kb init --kind hub` (no --force) must not
+    # traceback on it and must not rewrite/transcode a file it could not
+    # read — mirrors doctor.check_hub's guard.
+    init_repo(tmp_path, "hub")
+    path = tmp_path / ".gitignore"
+    raw = ".env\n".encode("utf-16")
+    path.write_bytes(raw)
+
+    report = init_repo(tmp_path, "hub")
+
+    assert ".gitignore" in report.skipped
+    assert ".gitignore" not in report.updated
+    assert path.read_bytes() == raw
+    assert any(".gitignore" in n for n in report.notes)
+    # The rest of the scaffold still completes after the guarded file.
+    assert (tmp_path / "QUICKSTART.md").exists()
+
+    report2 = init_repo(tmp_path, "hub", force=True)
+    assert ".gitignore" in report2.skipped
+    assert path.read_bytes() == raw

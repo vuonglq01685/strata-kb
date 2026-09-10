@@ -5,7 +5,7 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from center_kb import assetstore, models
+from center_kb import assetstore, models, searchdb
 from center_kb.mcp import ServerConfig
 from center_kb.web import ui
 from center_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
@@ -397,6 +397,32 @@ def test_search_no_results_empty_state(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui", params={"q": "zzzznotfound"}
     )
+    assert "No matching section" in resp.text
+
+
+def test_search_too_many_tags_falls_back_to_empty_state(fed_hub):
+    """F-C3 addition: an oversized `tags` list must not 500 the search
+    screen. search.html has no slot for a caller-error message, so it
+    degrades to the screen's normal empty state."""
+    tags_param = ",".join(f"t{i}" for i in range(101))
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "airspace", "tags": tags_param}
+    )
+    assert resp.status_code == 200
+    assert "No matching section" in resp.text
+
+
+def test_search_index_busy_falls_back_to_empty_state(fed_hub, monkeypatch):
+    """F-C3 addition: a held index file must not 500 the search screen."""
+
+    def fake_search(*a, **k):
+        raise searchdb.IndexBusyError("search index is in use by another process")
+
+    monkeypatch.setattr("center_kb.web.ui.search", fake_search)
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "airspace"}
+    )
+    assert resp.status_code == 200
     assert "No matching section" in resp.text
 
 
