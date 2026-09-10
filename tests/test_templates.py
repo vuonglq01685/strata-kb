@@ -1,4 +1,7 @@
 from importlib import resources
+from pathlib import Path
+
+import pytest
 
 from center_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
 
@@ -1621,3 +1624,41 @@ def test_quickstart_dev_names_the_pr_gate_and_the_required_check():
     assert "kb pr lint" in text
     assert "docs/tdd-exemptions.md" in text
     assert "required check" in text
+
+
+SUMMARIZE_WRAPPERS = [
+    "claude-skill-kb-summarize.md",
+    "copilot-kb-summarize.instructions.md",
+    "cursor-kb-summarize.md",
+    "cursor-kb-summarize.mdc",
+]
+
+
+def _tpl(name: str) -> str:
+    return resources.files("center_kb.templates.init").joinpath(name).read_text(encoding="utf-8")
+
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_repo_kb_summarize_skill_is_the_shipped_template():
+    repo = (_REPO_ROOT / ".claude/skills/kb-summarize/SKILL.md").read_text(encoding="utf-8")
+    assert repo == _tpl("claude-skill-kb-summarize.md")
+
+
+@pytest.mark.parametrize("name", SUMMARIZE_WRAPPERS)
+def test_summarize_wrappers_use_print_prompt_not_l3(name):
+    text = _tpl(name)
+    assert "kb summarize <doc-id> --print-prompt" in text
+    assert "--level l3" not in text
+    assert "kb build --strict" in text
+    assert "Table-only section:" not in text   # engine alone decides table-only
+
+
+def test_claude_skill_summarize_contract_and_validation():
+    text = _tpl("claude-skill-kb-summarize.md")
+    assert '[{"section_id": "...", "l2_summary": "...", "l1_summary": "..."}, ...]' in text
+    assert '"table_only"' not in text
+    assert "HARD LIMIT" in text and "≤ 25 words" in text
+    assert "kb build --allow-pending --strict" in text
+    assert "max 30 words" in text

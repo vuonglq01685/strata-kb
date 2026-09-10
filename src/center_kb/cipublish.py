@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 from center_kb import gitio, hashsync
+from center_kb import publish as publish_mod
 
 
 class CIPublishError(RuntimeError):
@@ -103,14 +104,26 @@ def _multipart(meta: dict, archive: bytes) -> tuple[bytes, str]:
     return body, f"multipart/form-data; boundary={boundary}"
 
 
+def _check_unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> None:
+    """Warn/refuse on sections published without SME review (R18) — the
+    same helper `kb publish` calls, run here before any upload."""
+    gate = publish_mod.unreviewed_gate(kb_dir, require_reviewed)
+    if gate.line is not None:
+        print(gate.line)
+        if gate.blocked:
+            raise CIPublishError(gate.line)
+
+
 def run(
     kb_dir: Path,
     intake_url: str,
     repo_id: str | None,
+    require_reviewed: bool = False,
     http=None,
     token_requester=None,
 ) -> str:
     """Diff -> upload -> return PR URL; "" when there is nothing to publish."""
+    _check_unreviewed_gate(kb_dir, require_reviewed)
     http = http or _default_http
     kb_abs = kb_dir.resolve()
     root = gitio.git_root(kb_abs)

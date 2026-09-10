@@ -75,7 +75,7 @@ A typical lookup only needs L0 (which docs matter) → L1 (which sections matter
 
 And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI, because code extracts it straight from the PDF.
 
-**Non-negotiable rule:** tables are **never** rewritten by AI. AI may only write the prose summary around tables; the tables themselves are always machine-copied from the source PDF at both L2 and L3. Before a change is accepted into the store (`kb build`), the system **automatically diffs every L2 table against L3** — if even one character differs, `kb build` fails and blocks the change.
+**Non-negotiable rule:** tables are **never** rewritten by AI. AI may only write the prose summary around tables; the tables themselves are always machine-copied from the source PDF at both L2 and L3. Before a change is accepted into the store (`kb build`), the system **automatically diffs every L2 table against L3** — if anything differs after whitespace/alignment normalization (NBSP, tabs, trailing spaces, `:--` alignment and extra separator rows are folded; everything else is byte-compared), `kb build` fails and blocks the change — in both directions: a table missing from L2, altered, duplicated, reordered, or invented is rejected (a section whose L3 slice has no tables is not checked).
 
 ---
 
@@ -282,7 +282,7 @@ The table below lists core commands (from Phase 1) in typical workflow order. Fo
 | 1 | `kb ingest` | Bring one PDF in: split into sections, scaffold L1/L2/L3 | Person loading a new document |
 | 2 | `kb status` | How many sections are still **unsummarized** (`pending`) | Anyone — to see remaining work |
 | 3 | `kb summarize` | AI fills in the summary blanks via a headless LLM CLI (claude → copilot auto-detect); `kb ingest` runs this automatically unless `--no-summarize` | Automatic inside `kb ingest`; run directly to re-run/retry, or run `/kb-summarize` in Claude Code as manual fallback when no LLM CLI is installed (parallel sub-agents draft, the orchestrator writes) |
-| 4 | `kb build` | Validate the whole store: no blanks left, tables match | Required before opening a Pull Request |
+| 4 | `kb build` | Validate the whole store: no blanks left, tables match both ways, C2 quality rules (warn; `--strict` = error) | Required before opening a Pull Request |
 | 5 | `kb query` | Natural-language question → relevant passages **from the hub federation** (a hub is mandatory — set it in `.kb/config.yaml`); add `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
 | 6 | `kb get` | Fetch exactly one section by id (when you already know it) | When you know the section id |
 | 7 | `kb stats` | Token counts per layer — cost-savings evidence | Tracking / reporting |
@@ -343,6 +343,8 @@ Hard rules baked into the recipe:
 - **Do not touch existing tables**.
 - If unsure → keep the original wording; do not invent.
 
+> `kb summarize <doc> --redo [--section <id>] [--include-reviewed --yes] [--dry-run]` re-runs the LLM over sections that already have a summary; `--redo --all` does it for the whole KB. Reviewed sections are skipped unless `--include-reviewed`. Sections with ≤ 200 chars of prose are copied verbatim (`Brief section: <title>.`) without an LLM call. `kb summarize <doc> --print-prompt` prints the prompt a section would get, for the manual (`/kb-summarize`) path.
+
 ### 7.4 `kb build` — automated gate
 
 ```bash
@@ -357,14 +359,19 @@ $ kb build
 [error] arinc-424 §5.129: L2 table does not match L3 table
 ```
 
-Two conditions for `kb build` to PASS:
+`kb build` checks three things (the third is warn-only unless `--strict`):
 1. **No remaining `TODO` markers or empty summaries** — every section has a summary (AI or human).
 2. **Every table in the summary (L2) must match the original (L3) exactly** — the main safety latch against technical drift during summarization.
+3. **C2 quality rules** — L2 prose ≤ 35 % of L3 prose (floor 120 chars), no L2 sentence quoting ≥ 4 cells of its own table, no uppercase code in L2 that is absent from L3, ≥ 45 % of L2 words present in L3 (only measured when L2 prose is ≥ 20 words), L1 ≤ 25 words, L0 (`index.yaml`) summary ≤ 30 words, table-only / brief sections carry their fixed labels, every `index.yaml` summary filled (missing `index.yaml` summaries are always errors, even without `--strict`). Reported as `[warn] … (quality)` by default; `kb build --strict` turns them into errors and is what `kb approve` runs.
+
+`kb build` also fails when a section's L3 changed after it was summarized (`l3_sha256`) or its L2 changed after it was approved (`reviewed.l2_sha256`), and it never writes `_manifest.yaml` while reporting an error.
 
 > Tip: while summarization is in progress (many `pending` sections), use `kb build --allow-pending` to validate finished parts without failing on unfinished ones.
 
-`kb approve` marks summarized sections as `reviewed` after an SME check
+`kb approve` requires a clean `.kb/<doc>` tree and a passing `kb build --strict`, records `reviewed: {by, at, l2_sha256}` per section (`--by 'name <email>'` overrides the git identity), and `kb publish`/`kb ci-publish` warn how many sections ship unreviewed (`--require-reviewed` makes that fatal).
 (slash command: `/kb-approve`).
+
+> Tip: the bundled KB's 415 `(quality)` warnings and the `kb publish` unreviewed-section warning both clear once the planned re-summarize batch re-runs summarization under the 2026-09 quality gate.
 
 ### 7.5 `kb query` — natural-language lookup
 
@@ -418,6 +425,8 @@ icao-annex-3                4      420       1778       2722    34.7%
 ```
 
 The `saving` column is the L2-vs-L3 saving **for that document alone** — not the real per-query saving (which is much higher; see section 10), because each query loads only 1–4 sections, not the whole L2.
+
+The 11.1 % above was measured before the 2026-09 quality gate (`kb build` now reports it as 310/325 sections over budget); the re-summarize batch replaces this number.
 
 > A "token" is the unit of text an AI model must "read" — roughly like a word. Fewer tokens → cheaper and faster each AI call.
 
@@ -934,7 +943,7 @@ This is **Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 (Stages A–D)**, not 
 - **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
 - Summarization still needs a human to open Claude Code and trigger it — not fully background-automated.
 - A small share of sections (~2.4% of ARINC chapter 5, 6/~250 items) failed PDF extraction — need manual SME cross-check when hit.
-- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically; `kb approve` (`/kb-approve`) is a manual, SME-triggered flip, not an automated one, and the `kb-review` auto-commit CI workflow stays gone. The operative review gate is still the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo wants a per-section "SME re-checked" marker, run `kb approve` (or set `status: reviewed` by hand) before merging the source PR — CENTER-KB does not enforce it.
+- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically; `kb approve` (`/kb-approve`) is a manual, SME-triggered flip, not an automated one, and the `kb-review` auto-commit CI workflow stays gone. The operative review gate is still the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo wants a per-section "SME re-checked" marker, run `kb approve` (or set `status: reviewed` by hand) before merging the source PR — `kb approve` now gates on a strict build and records who approved what; `kb publish --require-reviewed` enforces it per repo.
 
 ---
 
@@ -961,7 +970,7 @@ No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, sa
 
 | Situation | Likely cause | Fix |
 |---|---|---|
-| `kb build` errors "table mismatch" | Someone (usually AI) edited table content while summarizing | Open that section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
+| `kb build` errors "table mismatch" | Someone (usually AI) edited table content while summarizing — or a table was added/duplicated/reordered in L2; `kb build` reports the kind of mismatch (and the count where it applies) | Open that section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
 | `kb build` reports remaining `pending`/`TODO` | Summarization step (step 2 in §8) not finished, failed, or skipped (`--no-summarize`) | Run `kb status` to see what's left, then `kb summarize` to retry — or, with no LLM CLI installed, back to Claude Code with `/kb-summarize` |
 | `kb ingest` is very slow (10–30 min) first time | Normal — Docling downloads a layout model (~500MB) on first use | Wait, or check network if stuck. Later runs on the same PDF use cache and are much faster |
 | `kb` says "command not found" | Virtualenv not activated | Run `source .venv/bin/activate` in the project directory first |

@@ -66,6 +66,45 @@ def test_render_diff_groups(git_kb):
     assert "summary" in text
 
 
+def test_render_diff_shows_review_record(git_kb):
+    from center_kb.review import approve_sections
+
+    approve_sections(git_kb["kb"], "demo-doc", ["1.1"], by="sme <sme@x>")
+    out = render_diff(diff_doc(git_kb["kb"], "demo-doc", against=git_kb["rev1"]))
+    assert "~ §1.1 Airspace Records" in out and "reviewed by sme <sme@x> at " in out
+
+
+def test_render_diff_shows_review_record_on_added_section():
+    """Important #3: an added ('+ §…') section that already carries a
+    review record must show the sign-off, same as a changed ('~ §…')
+    section does."""
+    from center_kb.diff import DiffReport, SectionChange
+
+    report = DiffReport(
+        doc_id="demo-doc",
+        against="HEAD",
+        added=[
+            SectionChange(
+                "1.3", "Waypoint Records",
+                reviewed_by="sme <sme@x>", reviewed_at="2026-01-01T00:00:00+00:00",
+            )
+        ],
+    )
+    text = render_diff(report)
+    assert "+ §1.3 Waypoint Records — reviewed by sme <sme@x> at 2026-01-01T00:00:00+00:00" in text
+
+
+def test_render_diff_added_without_review_record_unchanged():
+    from center_kb.diff import DiffReport, SectionChange
+
+    report = DiffReport(
+        doc_id="demo-doc", against="HEAD",
+        added=[SectionChange("1.3", "Waypoint Records")],
+    )
+    text = render_diff(report)
+    assert text.splitlines()[1] == "+ §1.3 Waypoint Records"
+
+
 def test_prose_changed_when_l2_edited(git_kb):
     # edit ONLY the L2 prose of §1.2 — summary (L1) and raw (L3) untouched
     l2 = git_kb["kb"] / "demo-doc" / "ch1-records.md"

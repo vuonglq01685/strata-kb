@@ -212,7 +212,7 @@ def test_init_scaffolds_ai_integration_files(tmp_path: Path):
     assert skill.is_file() and copilot.is_file()
     skill_text = skill.read_text(encoding="utf-8")
     assert "name: kb-summarize" in skill_text
-    assert "VERBATIM" in skill_text            # writing rules present
+    assert "--print-prompt" in skill_text      # never restates writing rules
     assert "kb build" in skill_text
     copilot_text = copilot.read_text(encoding="utf-8")
     assert 'applyTo: ".kb/**"' in copilot_text
@@ -357,7 +357,7 @@ def test_quickstarts_match_kind(tmp_path: Path):
         assert "/kb-ingest" in text and "/kb-publish" in text
 
 
-def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
+def test_kb_summarize_templates_use_print_prompt_workflow(tmp_path: Path):
     init_repo(tmp_path, "hub")
     skill = (
         tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
@@ -366,8 +366,8 @@ def test_kb_summarize_templates_have_prose_only_rules(tmp_path: Path):
         tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
     ).read_text(encoding="utf-8")
     for text in (skill, instr):
-        assert "Summarize the prose ONLY" in text
-        assert "Table-only section:" in text
+        assert "kb summarize <doc-id> --print-prompt" in text
+        assert "no LLM needed" in text
 
 
 def test_init_scaffolds_kb_summarize_slash_command(tmp_path: Path):
@@ -442,8 +442,8 @@ def test_init_scaffolds_cursor_commands_and_rule(tmp_path: Path):
     assert rule.is_file()
     rule_text = rule.read_text(encoding="utf-8")
     assert "globs: .kb/**" in rule_text
-    assert "Summarize the prose ONLY" in rule_text
-    assert "Table-only section:" in rule_text
+    assert "kb summarize <doc-id> --print-prompt" in rule_text
+    assert "no LLM needed" in rule_text
 
 
 def test_init_scaffolds_cursor_mcp_per_kind(tmp_path: Path):
@@ -507,12 +507,12 @@ def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
         tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
     ).read_text(encoding="utf-8")
     assert "READ-ONLY" in skill                      # sub-agents never write
-    assert '"table_only"' in skill                   # JSON output contract
+    assert "--print-prompt" in skill                 # never restates writing rules
     assert '"l2_summary"' in skill
     assert '"l1_summary"' in skill
     assert "batches of ~5" in skill                  # granularity
     assert "at most 10" in skill                     # concurrency cap
-    assert "kb build --allow-pending" in skill       # per-wave verify
+    assert "kb build --allow-pending --strict" in skill  # per-wave verify
     assert "single message" in skill                 # concurrent dispatch
     assert "one retry only" in skill                 # error handling
     assert "Do not edit many files in parallel" not in skill  # old rule gone

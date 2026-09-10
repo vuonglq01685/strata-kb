@@ -1264,7 +1264,7 @@ def test_manifest_status_signal_alone_protects_a_non_svc_named_curated_dir(tmp_p
 def test_summarize_redo_with_no_doc_id_does_not_lock_code_ingest_out_of_itself(
     tmp_path,
 ):
-    from center_kb.summarize import redo_reset
+    from center_kb.summarize import plan_redo, redo_reset
 
     root = build_code_repo(tmp_path)
     _run(root)
@@ -1272,7 +1272,7 @@ def test_summarize_redo_with_no_doc_id_does_not_lock_code_ingest_out_of_itself(
     before = models.load_yaml_model(manifest_path, models.Manifest)
     assert all(s.status == "summarized" for s in before.sections)
 
-    redo_reset(root / ".kb")  # no doc_id -> every doc, including demo-code
+    redo_reset(root / ".kb", plan_redo(root / ".kb", None))  # --all: every doc, including demo-code
     after_redo = models.load_yaml_model(manifest_path, models.Manifest)
     assert all(s.status == "pending" for s in after_redo.sections)
 
@@ -1298,7 +1298,7 @@ def test_approve_all_changed_with_no_doc_id_does_not_lock_code_ingest_out_of_its
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "c1 - code-ingest")
 
-    reports = approve_all_changed(root / ".kb", rev0)  # no doc_id -> every doc
+    reports = approve_all_changed(root / ".kb", rev0, by="sme <sme@x>")  # no doc_id -> every doc
     assert any(r.doc_id == "demo-code" and r.flipped for r in reports)
     manifest_path = root / ".kb" / "demo-code" / "_manifest.yaml"
     after_approve = models.load_yaml_model(manifest_path, models.Manifest)

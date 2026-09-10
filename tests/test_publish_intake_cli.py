@@ -242,3 +242,50 @@ class TestCIPublish:
             cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
         assert "unreachable" in str(exc.value)
         assert "connection refused" in str(exc.value)
+
+    def _add_unreviewed_doc(self, kb_dir: Path) -> None:
+        """One doc with one `summarized` (not `reviewed`) section — the
+        unreviewed gate (R18) must see it via publish_mod.unreviewed_gate."""
+        doc = kb_dir / "doc-a"
+        doc.mkdir(parents=True, exist_ok=True)
+        (doc / "ch1.md").write_text("## 1.1 T\n\nBody.\n", encoding="utf-8")
+        (doc / "_manifest.yaml").write_text(
+            "id: doc-a\ntitle: doc-a\nsections:\n"
+            "  - id: '1.1'\n    title: T\n    summary: s\n    status: summarized\n"
+            "    file: ch1\n",
+            encoding="utf-8",
+        )
+
+    def test_run_warns_about_unreviewed_sections_but_still_publishes(
+        self, child, monkeypatch, capsys
+    ):
+        root, _ = child
+        self._env(monkeypatch)
+        self._add_unreviewed_doc(root / ".kb")
+        http = FakeHTTP(
+            {
+                "https://kb.test/intake/manifest": (200, {"files": {}}),
+                "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+                "https://kb.test/intake/publish": (
+                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
+                ),
+            }
+        )
+        out = cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+        assert out == "https://gh/pull/8"
+        assert http.posted  # the warn does not block the upload
+        printed = capsys.readouterr().out
+        assert "[warn] 1 section(s) in 1 doc(s) are published without SME review" in printed
+
+    def test_run_require_reviewed_refuses_before_any_upload(self, child, monkeypatch):
+        root, _ = child
+        self._env(monkeypatch)
+        self._add_unreviewed_doc(root / ".kb")
+        http = FakeHTTP({})  # any HTTP call at all is a bug for this path
+        with pytest.raises(cipublish.CIPublishError) as exc:
+            cipublish.run(
+                root / ".kb", "https://kb.test", "child-a",
+                require_reviewed=True, http=http,
+            )
+        assert "without SME review" in str(exc.value)
+        assert http.calls == []

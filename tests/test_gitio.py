@@ -28,7 +28,7 @@ def test_read_at_returns_old_content(git_kb):
     old = gitio.read_at(git_kb["root"], git_kb["rev1"], path)
     assert "designation and type fields" in old
     new = gitio.read_at(git_kb["root"], git_kb["rev2"], path)
-    assert "NEW multiple code field" in new
+    assert "amended multiple code field" in new
 
 
 def test_read_at_missing_file_returns_none(git_kb):

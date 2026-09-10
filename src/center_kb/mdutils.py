@@ -5,10 +5,14 @@ import unicodedata
 
 import tiktoken
 
+from center_kb import models
+
 _ENCODER = None
 
-_HEADING_RE = re.compile(r"^## (?P<sid>\S+)(?:[ \t]+(?P<title>.*?))?\s*$")
+HEADING_RE = re.compile(r"^## (?P<sid>\S+)(?:[ \t]+(?P<title>.*?))?\s*$")
+_HEADING_RE = HEADING_RE  # back-compat alias — callers import this private name directly
 _SEP_ROW_RE = re.compile(r"^\|[\s:|-]+\|$")
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 
 
 def slugify(text: str) -> str:
@@ -33,20 +37,44 @@ def count_tokens(text: str) -> int:
     return len(_ENCODER.encode(text))
 
 
-def slice_section(md: str, section_id: str) -> str | None:
+def slice_section(md: str, section_id: str, occurrence: int = 0) -> str | None:
+    """Slice the `occurrence`-th (0-based) '## <section_id> ...' heading's
+    body. Manifest section ids are not required to be unique within a file
+    (spec allows repeated numbering); `occurrence=0` (default) keeps the
+    original first-match behavior byte-for-byte."""
     lines = md.splitlines()
+    seen = -1
     start = None
     for i, line in enumerate(lines):
-        m = _HEADING_RE.match(line)
+        m = HEADING_RE.match(line)
         if m and m.group("sid") == section_id:
-            start = i
-            break
+            seen += 1
+            if seen == occurrence:
+                start = i
+                break
     if start is None:
         return None
     for j in range(start + 1, len(lines)):
         if lines[j].startswith("## "):
             return "\n".join(lines[start:j]).strip()
     return "\n".join(lines[start:]).strip()
+
+
+def heading_occurrences(sections: list[models.SectionEntry]) -> list[int]:
+    """0-based occurrence index of each section's (file, id) pair, counted
+    over ALL rows in manifest order — result[i] lines up with sections[i].
+    Ids are not unique within a file, so a caller resolving a manifest row
+    to its heading (via `slice_section(..., occurrence=n)`) or its L2
+    marker (via a marker-occurrence-aware writer) needs this to know which
+    occurrence a given row is, independent of section status."""
+    seen: dict[tuple[str, str], int] = {}
+    out: list[int] = []
+    for sec in sections:
+        key = (sec.file, sec.id)
+        occurrence = seen.get(key, 0)
+        seen[key] = occurrence + 1
+        out.append(occurrence)
+    return out
 
 
 _SUBHEADING_RE = re.compile(r"^### (?P<sid>\S+)(?:[ \t]+(?P<title>.*?))?\s*$")
@@ -78,10 +106,61 @@ def extract_tables(md: str) -> list[str]:
         if line.lstrip().startswith("|"):
             current.append(line.strip())
         else:
-            if len(current) >= 2:
+            if len(current) >= 1:
                 tables.append("\n".join(current))
             current = []
     return tables
+
+
+def _iter_headings(md: str, *, fence_aware: bool):
+    """Yield each real `## <id> …` heading match, in file order.
+
+    fence_aware=True tracks ``` / ~~~ fences (opened and closed by a run of
+    3+ of the same fence char) and never yields a match for a '## ' line
+    that falls inside one -- a `.raw.md` embedding a source file whose own
+    text happens to contain a Markdown heading line is not a document
+    heading (Ruling R16)."""
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in md.splitlines():
+        if fence_aware:
+            stripped = line.strip()
+            m = _FENCE_RE.match(stripped)
+            if m:
+                marker = m.group(1)
+                if not in_fence:
+                    in_fence, fence_char, fence_len = True, marker[0], len(marker)
+                elif marker[0] == fence_char and len(marker) >= fence_len:
+                    in_fence = False
+                continue
+            if in_fence:
+                continue
+        m = HEADING_RE.match(line)
+        if m:
+            yield m
+
+
+def heading_ids(md: str, *, fence_aware: bool = False) -> list[str]:
+    """Section ids of every `## <id> …` heading, in file order.
+
+    fence_aware=True (default False, back-compat) skips headings inside a
+    fenced code block -- see `_iter_headings()`."""
+    return [m.group("sid") for m in _iter_headings(md, fence_aware=fence_aware)]
+
+
+def heading_id_titles(md: str, *, fence_aware: bool = False) -> list[tuple[str, bool]]:
+    """Like `heading_ids()`, but pairs each id with whether the heading
+    carries a title (a second, whitespace-separated token after
+    '## <id>'). A title-less heading ('## Ownership') is the same shape as
+    codeingest's human 'free-form single-word subheading'
+    (codeingest/core.py:839, `_slice_known_section`) -- callers use this to
+    tell that apart from a real, titled scaffold heading (Ruling R16)."""
+    out: list[tuple[str, bool]] = []
+    for m in _iter_headings(md, fence_aware=fence_aware):
+        title = m.group("title")
+        out.append((m.group("sid"), bool(title and title.strip())))
+    return out
 
 
 _IMAGE_MD_RE = re.compile(r"!\[([^\]]*)\]\(assets/[0-9a-f]{64}\.(?:png|webp)\)")
