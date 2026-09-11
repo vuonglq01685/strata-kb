@@ -10,6 +10,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,8 +19,9 @@ jobs:
           python-version: "3.12"
       - run: pip install center-kb  # or pip install -e . if the repo holds the source
       - name: Publish snapshot → PR on the hub
-        run: kb publish --hub "${{ secrets.KB_HUB_URL }}" --repo-id "${{ github.event.repository.name }}"
+        run: kb publish --repo-id "${{ github.event.repository.name }}"
         env:
+          CENTER_KB_HUB: ${{ secrets.KB_HUB_URL }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIT_AUTHOR_NAME: kb-publish-ci
           GIT_AUTHOR_EMAIL: ci@local

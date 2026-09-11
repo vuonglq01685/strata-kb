@@ -22,7 +22,7 @@ __all__ = [
     "validate_unit_ids",
 ]
 
-# Same shape as publish._REPO_ID_RE: doc_id is a directory name under .kb/,
+# Same shape as pubgate.REPO_ID_RE: doc_id is a directory name under .kb/,
 # never a path — no separators, no leading dot.
 _DOC_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 

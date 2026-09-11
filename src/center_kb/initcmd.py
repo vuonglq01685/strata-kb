@@ -46,6 +46,7 @@ COMMON_TEMPLATES: dict[str, str] = {
 HUB_TEMPLATES: dict[str, str] = {
     ".kb/config.yaml": "config-hub.yaml",
     ".gitignore": "hub-gitignore.txt",
+    ".gitattributes": "gitattributes.txt",
     "docker-compose.yml": "docker-compose-hub.yml",
     ".env.example": "env.example",
     "federation/README.md": "federation-README.md",
@@ -58,6 +59,7 @@ HUB_TEMPLATES: dict[str, str] = {
 # diverge artifact-by-artifact.
 CHILD_TEMPLATES: dict[str, str] = {
     ".kb/config.yaml": "config-child.yaml",
+    ".gitattributes": "gitattributes-child.txt",
     "docker-compose.yml": "docker-compose-child.yml",
     ".mcp.json": "mcp-child.json",
     "QUICKSTART.md": "QUICKSTART-child.md",
@@ -99,6 +101,11 @@ BA_TEMPLATES: dict[str, str] = {
 DEV_TEMPLATES: dict[str, str] = {
     ".kb/config.yaml": "config-dev.yaml",
     ".kb/index.yaml": "index.yaml",
+    # Minor 1 (Wave G fix round 2): a dev repo publishes .kb/ (its own source
+    # knowledge) exactly like a child does, so it needs the same hashed-tree-
+    # vs-CRLF-normalisation exemption (F-D10) -- it had neither this nor any
+    # exemption of its own before.
+    ".gitattributes": "gitattributes-child.txt",
     ".mcp.json": "mcp-child.json",
     ".claude/settings.json": "claude-settings-usage.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
@@ -256,14 +263,29 @@ class InitReport:
 
 
 def _render(resource_name: str, text: str, repo_id: str) -> str:
-    """Config templates carry a {repo_id} placeholder; everything else is static.
+    """Config templates carry {repo_id}; workflow and compose templates carry
+    {version}, filled with the version of the CLI doing the scaffolding —
+    read from the installed distribution's own metadata (the same value
+    `kb --version` prints and the T2 release gate checks against
+    pyproject.toml), not a hand-maintained constant that can drift from it.
 
-    Uses a plain substring replace (not str.format) so a future config
-    template containing literal `{`/`}` can't raise.
+    An unpinned `pip install center-kb` inside a job that holds
+    `id-token: write` means every child picks up whatever PyPI serves at run
+    time, in a job able to write to the hub.
+
+    Uses a plain substring replace (not str.format) so a future template
+    containing literal `{`/`}` can't raise.
     """
+    from importlib.metadata import version as _dist_version
+
     if resource_name.startswith("config-"):
         return text.replace("{repo_id}", repo_id)
-    return text
+    # Deliberately unguarded — unlike __init__.py's __version__, which falls
+    # back to "0+unknown" for a source tree with no install. A scaffold must
+    # never pin a placeholder version into a child's CI, so a missing
+    # distribution here has to raise and fail `kb init` loudly, not render
+    # `center-kb==0+unknown` into a job that writes to the hub.
+    return text.replace("{version}", _dist_version("center-kb"))
 
 
 def _record_kind(config_path: Path, kind: str) -> bool:

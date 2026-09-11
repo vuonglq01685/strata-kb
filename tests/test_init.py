@@ -44,6 +44,36 @@ def test_init_hub_creates_all_hub_files(tmp_path: Path):
     assert (tmp_path / ".env.example").is_file()
 
 
+def test_scaffolded_federation_readme_describes_the_full_mirror(tmp_path: Path):
+    # Fix round 1, Minor 5: the three assertions this test used to run were
+    # a weak trip-wire — reviewer-measured, one of the three
+    # ("Content (L2/L3) stays in the child repo") could never fail because
+    # the old template wrapped that phrase mid-line and the raw substring
+    # never existed either way. Normalize whitespace first so a reflow
+    # can't itself false-fail, then pin the claims that actually carry the
+    # governance behaviour, plus a real trip-wire that matches the old
+    # (pre-full-mirror) template text as it actually wrapped.
+    dest = tmp_path / "hub"
+    dest.mkdir()
+    initcmd.init_repo(dest, "hub")
+    text = (dest / "federation" / "README.md").read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
+    assert "L0" in text and "L3" in text
+    assert "only holds the child's catalog and summaries" not in normalized
+    assert "Content (L2/L3) stays in the child repo" not in normalized
+    assert "federation/registry.yaml" in normalized
+    assert "governed" in normalized
+    assert "refuses direct pushes" in normalized
+    assert "branch protection" in normalized
+    assert "_meta.yaml" in normalized
+    # Note on braces (informational): initcmd._render uses a plain
+    # str.replace, not str.format, so a literal `{`/`}` in a template is
+    # safe and does not need escaping. This assertion is cheap insurance
+    # against an accidental stray placeholder, not a correctness
+    # requirement of the renderer.
+    assert "{" not in text and "}" not in text
+
+
 def test_init_rejects_unknown_kind(tmp_path: Path):
     with pytest.raises(ValueError):
         init_repo(tmp_path, "server")
@@ -633,6 +663,7 @@ _PRE_PHASE4_HUB_FILES = [
     ".cursor/mcp.json",
     ".cursor/rules/kb-summarize.mdc",
     ".env.example",
+    ".gitattributes",
     ".github/instructions/kb-summarize.instructions.md",
     ".github/prompts/kb-approve.prompt.md",
     ".github/prompts/kb-docker-setup.prompt.md",
@@ -669,6 +700,7 @@ _PRE_PHASE4_CHILD_FILES = [
     ".cursor/commands/kb-summarize.md",
     ".cursor/mcp.json",
     ".cursor/rules/kb-summarize.mdc",
+    ".gitattributes",
     ".github/instructions/kb-summarize.instructions.md",
     ".github/prompts/kb-approve.prompt.md",
     ".github/prompts/kb-docker-setup.prompt.md",
@@ -1439,12 +1471,36 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # reused kb-summarize/kb-approve/kb-publish rows the seed flow needs,
     # Stage C) + 1 (.claude/settings.json, the usage Stop hook) + 1
     # (docs/impl/.gitignore — C1 keeps the context cache out of git) + 3
-    # (batch 7: the PR template, its workflow, and the TDD exemption doc) = 48.
-    assert len(expected_files("dev")) == 48
+    # (batch 7: the PR template, its workflow, and the TDD exemption doc) + 1
+    # (Wave G fix round 2 Minor 1: .gitattributes, the same F-D10 exemption
+    # a child repo gets) = 49.
+    assert len(expected_files("dev")) == 49
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
         assert (tmp_path / rel).is_file(), rel
+
+
+def test_init_kind_dev_scaffolds_the_child_gitattributes_exemption(tmp_path: Path):
+    """Minor 1 (Wave G fix round 2): a dev repo publishes .kb/ (its own
+    source knowledge) exactly like a child does, but DEV_TEMPLATES carried
+    no .gitattributes entry at all -- neither the CRLF-normalisation
+    exemption a child gets, nor any exemption of its own -- reopening F-D10
+    on a Windows dev machine."""
+    init_repo(tmp_path, "dev")
+    text = (tmp_path / ".gitattributes").read_text(encoding="utf-8")
+    assert text.rstrip().splitlines()[-1] == ".kb/** -text"
+
+
+def test_init_child_gitattributes_ends_with_the_kb_exemption(tmp_path: Path):
+    """Important 1 (mutants MU10/MU10b): the child scaffold's own
+    .gitattributes carrying `.kb/** -text` last, and CHILD_TEMPLATES
+    pointing at the CHILD resource rather than the hub's own (which ends
+    `federation/** -text` instead), both survived the full suite with no
+    test pinning the child scaffold's actual content."""
+    init_repo(tmp_path, "child")
+    text = (tmp_path / ".gitattributes").read_text(encoding="utf-8")
+    assert text.rstrip().splitlines()[-1] == ".kb/** -text"
 
 
 def test_init_kind_dev_gitignores_the_context_cache(tmp_path: Path):
@@ -2045,3 +2101,148 @@ def test_hub_non_utf8_gitignore_is_left_untouched_not_crashed(tmp_path: Path):
     report2 = init_repo(tmp_path, "hub", force=True)
     assert ".gitignore" in report2.skipped
     assert path.read_bytes() == raw
+
+
+def _pyproject_version() -> str:
+    # Deliberately independent of `center_kb.__version__`/importlib.metadata —
+    # this must be a source _render's implementation cannot also be reading,
+    # or a regression there would go undetected (mirrors
+    # scripts/check_package.py's pyproject_version()).
+    root = Path(__file__).resolve().parent.parent
+    for line in (root / "pyproject.toml").read_text(encoding="utf-8").splitlines():
+        if line.startswith("version ="):
+            return line.split("=", 1)[1].strip().strip('"')
+    raise RuntimeError("`version =` not found in pyproject.toml")
+
+
+def test_scaffolded_workflows_pin_the_scaffolding_version(tmp_path):
+    from center_kb import initcmd
+
+    expected_version = _pyproject_version()
+    # Regression guard: `__init__.py` once hand-maintained a stale
+    # `__version__ = "0.1.0"` that never matched pyproject.toml — a scaffold
+    # pinned to that would fail at `pip install` for every child. This must
+    # never come back silently.
+    assert expected_version != "0.1.0"
+
+    dest = tmp_path / "child"
+    dest.mkdir()
+    initcmd.init_repo(dest, "child")
+    wf = (dest / ".github" / "workflows" / "kb-publish.yml").read_text(encoding="utf-8")
+    assert f"pip install center-kb=={expected_version}" in wf
+    assert "pip install center-kb\n" not in wf
+    compose = (dest / "docker-compose.yml").read_text(encoding="utf-8")
+    assert ":latest" not in compose
+    # release.yml only ever pushes vX.Y.Z tags (docker-release retags the
+    # verified sha- build to ${GITHUB_REF_NAME}, the v* tag that triggered
+    # the release) plus `latest` and `sha-<commit>` — a bare
+    # `center-kb:<version>` tag has never existed on GHCR. Assert the shape
+    # that is actually published, and that the unpublished bare form isn't
+    # what got rendered instead.
+    assert f"center-kb:v{expected_version}" in compose
+    assert f"center-kb:{expected_version}" not in compose
+
+
+# H2 (Wave H round 5): the version test above is a *string* check, so an edit
+# that leaves the image tag alone but deletes something else the file has to
+# carry passes it untouched -- which is exactly what happened: round 4's
+# mem_limit edit removed the `volumes:` block from the hub template and from
+# the repo-root docker-compose.yml (the child template kept its), both files
+# still rendered, and nothing failed. The two tests below extend the pinning
+# shape from "the template pins a version" to "the template still declares
+# what it has to mount", parsed as YAML rather than grepped, so a future edit
+# cannot silently drop a mount either.
+
+_HUB_MOUNTS = ["./:/data", "kb-model-cache:/home/app/.cache"]
+
+
+def _compose_services(text: str) -> dict:
+    doc = yaml.safe_load(text)
+    assert isinstance(doc, dict) and doc.get("services"), text
+    return doc
+
+
+def _assert_no_dangling_volumes(doc: dict, label: str) -> None:
+    """Every named volume a service mounts is declared top-level, and every
+    top-level declaration is actually mounted by some service. `docker
+    compose config` accepts a file that fails both halves -- an orphan
+    declaration renders fine and does nothing, which is how `kb-model-cache`
+    survived the deletion of the mount that referenced it."""
+    declared = set(doc.get("volumes") or {})
+    mounted = set()
+    for svc in doc["services"].values():
+        for mount in svc.get("volumes") or []:
+            source = mount.split(":", 1)[0]
+            # a bind mount's source is a path, not a named volume
+            if not source.startswith((".", "/", "~")):
+                mounted.add(source)
+    assert mounted <= declared, f"{label}: mounts an undeclared volume {mounted - declared}"
+    assert declared <= mounted, f"{label}: declares an unmounted volume {declared - mounted}"
+
+
+def test_scaffolded_compose_pins_the_hub_data_and_model_volumes(tmp_path):
+    """A hub that renders is not a hub that works: Dockerfile runs
+    `WORKDIR /data` and serves `--kb /data/.kb --hub /data`, so a hub
+    compose without `./:/data` boots against an EMPTY knowledge base in
+    container-local scratch, and one without the model cache re-downloads
+    the embedding model on every restart."""
+    from center_kb import initcmd
+
+    dest = tmp_path / "hub"
+    dest.mkdir()
+    initcmd.init_repo(dest, "hub")
+    doc = _compose_services((dest / "docker-compose.yml").read_text(encoding="utf-8"))
+    mounts = doc["services"]["hub"].get("volumes")
+    assert mounts is not None, "scaffolded hub compose declares no volumes at all"
+    for want in _HUB_MOUNTS:
+        assert want in mounts, f"scaffolded hub compose lost {want!r}"
+    _assert_no_dangling_volumes(doc, "scaffolded hub")
+
+
+def test_child_compose_keeps_its_volumes_and_the_root_compose_matches_the_hub_template(
+    tmp_path,
+):
+    """The child template kept its mounts through round 4 -- pin that too, so
+    the asymmetry cannot invert. The repo's own docker-compose.yml is the
+    same deployment shape as the hub template and lost the same two mounts in
+    the same edit, so the two are asserted together: this is the only test
+    that reads a compose file as YAML, and keeping them apart is how they
+    drifted."""
+    from center_kb import initcmd
+
+    dest = tmp_path / "child"
+    dest.mkdir()
+    initcmd.init_repo(dest, "child")
+    child = _compose_services((dest / "docker-compose.yml").read_text(encoding="utf-8"))
+    for want in _HUB_MOUNTS:
+        assert want in child["services"]["hub"]["volumes"], f"child compose lost {want!r}"
+    _assert_no_dangling_volumes(child, "scaffolded child")
+
+    root = Path(__file__).resolve().parent.parent / "docker-compose.yml"
+    doc = _compose_services(root.read_text(encoding="utf-8"))
+    for want in _HUB_MOUNTS:
+        assert want in doc["services"]["hub"]["volumes"], f"root compose lost {want!r}"
+    _assert_no_dangling_volumes(doc, "repo-root")
+
+
+def test_no_template_leaves_an_unfilled_version_placeholder(tmp_path):
+    from center_kb import initcmd
+
+    for kind in ("hub", "child", "ba", "dev"):
+        dest = tmp_path / kind
+        dest.mkdir()
+        initcmd.init_repo(dest, kind)
+        for path in dest.rglob("*"):
+            if path.is_file() and path.suffix in {".yml", ".yaml"}:
+                assert "{version}" not in path.read_text(encoding="utf-8")
+
+
+def test_hub_and_child_scaffolds_pin_lf_line_endings(tmp_path):
+    from center_kb import initcmd
+
+    for kind in ("hub", "child"):
+        dest = tmp_path / kind
+        dest.mkdir()
+        initcmd.init_repo(dest, kind)
+        text = (dest / ".gitattributes").read_text(encoding="utf-8")
+        assert "* text=auto eol=lf" in text

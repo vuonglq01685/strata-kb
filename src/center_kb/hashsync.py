@@ -7,9 +7,13 @@ import shutil
 import stat
 from pathlib import Path
 
+from center_kb.errors import KbError
 
-class HashSyncError(RuntimeError):
-    """A sync path escapes the destination root."""
+
+class HashSyncError(KbError):
+    """A sync path escapes the destination root. Every call site (publish,
+    intake) already converts it to a one-line CLI/HTTP message -- joins the
+    KbError family (Wave G fix round 2, item 7)."""
 
 
 def build_manifest(root: Path, exclude: tuple[str, ...] = ()) -> dict[str, str]:

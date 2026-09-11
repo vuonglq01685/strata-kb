@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -67,3 +68,45 @@ def test_middleware_does_not_log_browser_redirect(caplog):
         resp = c.get("/ui", follow_redirects=False)
     assert resp.status_code == 302
     assert caplog.text == ""
+
+
+# ---- F-D12 item 4: trusted_proxies_from_env is the single parser shared by
+# the intake route (intake.intake_config_from_env) and the web UI login
+# limiter (web.ui.login_post) -- see intake.py's test_trusted_proxies_env_*
+# for the original per-caller coverage this now backs.
+
+
+def test_trusted_proxies_from_env_defaults_to_zero(monkeypatch):
+    from center_kb.web import ratelimit
+
+    monkeypatch.delenv("CENTER_KB_TRUSTED_PROXIES", raising=False)
+    assert ratelimit.trusted_proxies_from_env() == 0
+
+
+def test_trusted_proxies_from_env_parses_a_valid_value(monkeypatch):
+    from center_kb.web import ratelimit
+
+    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "2")
+    assert ratelimit.trusted_proxies_from_env() == 2
+
+
+def test_trusted_proxies_from_env_non_numeric_exits_loudly(monkeypatch):
+    from center_kb.web import ratelimit
+
+    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "not-a-number")
+    with pytest.raises(SystemExit) as exc:
+        ratelimit.trusted_proxies_from_env()
+    assert "CENTER_KB_TRUSTED_PROXIES" in str(exc.value)
+    assert "not-a-number" in str(exc.value)
+
+
+def test_trusted_proxies_from_env_negative_exits_loudly(monkeypatch):
+    """Parses fine under plain int() but client_key treats it the same as
+    0 (header ignored) -- the same silent defeat the loud failure exists to
+    prevent, so it must be rejected too, not just non-numeric garbage."""
+    from center_kb.web import ratelimit
+
+    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "-1")
+    with pytest.raises(SystemExit) as exc:
+        ratelimit.trusted_proxies_from_env()
+    assert "CENTER_KB_TRUSTED_PROXIES" in str(exc.value)

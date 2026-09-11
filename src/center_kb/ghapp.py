@@ -13,7 +13,13 @@ _GH_URL_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$")
 
 
 class GHAppError(RuntimeError):
-    """GitHub App call failed (token is never included in the message)."""
+    """GitHub App call failed (token is never included in the message).
+
+    Deliberately stays out of the KbError family (Wave G fix round 2, item
+    7; comment added round 3, Minor 2): server-side only (GitHub App auth)
+    -- never raised on a CLI-terminal path, so there is no `except KbError`
+    guard for it to hide from.
+    """
 
 
 @dataclass

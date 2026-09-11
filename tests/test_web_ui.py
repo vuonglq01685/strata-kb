@@ -1,3 +1,4 @@
+import hashlib
 import re
 from importlib import resources
 
@@ -225,6 +226,72 @@ def test_login_rate_limited_after_repeated_failures(fed_hub):
     # a brute-forcer must not confirm a hit inside the lockout window
     still = c.post("/ui/login", data={"token": TOKEN}, follow_redirects=False)
     assert still.status_code == 429
+
+
+def test_login_limiter_honours_trusted_proxies_for_the_rate_limit_key(
+    fed_hub, monkeypatch
+):
+    """F-D12 item 4: before this fix, login_post keyed on
+    request.client.host directly, ungoverned by CENTER_KB_TRUSTED_PROXIES --
+    with uvicorn's own X-Forwarded-For handling disabled (proxy_headers=
+    False, round 1 item 2), every login attempt behind a real reverse proxy
+    collapsed onto the proxy's own address, sharing ONE bucket across every
+    user. A revert to request.client.host would still pass a test that only
+    checks "the second identical request is 429" -- both requests reuse the
+    same TestClient, so either implementation keys them alike. What only
+    correct wiring passes: two requests differing ONLY in the
+    X-Forwarded-For real-client tail land in the SAME bucket (429 on
+    repeat) at trusted_proxies=1, and a request with a DIFFERENT real tail
+    gets its own bucket instead of also being blocked."""
+    from center_kb.web.ratelimit import SlidingWindowLimiter
+
+    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "1")
+    config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
+    routes = ui.build_routes(
+        config, TOKEN,
+        login_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60),
+    )
+    c = TestClient(Starlette(routes=routes))
+
+    def post(xff):
+        return c.post("/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff})
+
+    first = post("9.9.9.9, 1.1.1.1")
+    assert first.status_code == 200, first.text  # wrong token, not yet limited
+
+    same_real_tail = post("8.8.8.8, 1.1.1.1")
+    assert same_real_tail.status_code == 429
+
+    different_real_tail = post("7.7.7.7, 2.2.2.2")
+    assert different_real_tail.status_code == 200, different_real_tail.text
+
+
+def test_login_limiter_ignores_forged_xff_when_trusted_proxies_is_zero(
+    fed_hub, monkeypatch
+):
+    """Mirrors the intake route's own trusted_proxies=0 guarantee for the
+    login limiter: with no trusted proxy declared, a forged X-Forwarded-For
+    cannot pick its own bucket -- every request still keys on the same
+    TestClient peer, so a second request with a DIFFERENT forged tail is
+    still rate-limited alongside the first."""
+    from center_kb.web.ratelimit import SlidingWindowLimiter
+
+    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "0")
+    config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
+    routes = ui.build_routes(
+        config, TOKEN,
+        login_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60),
+    )
+    c = TestClient(Starlette(routes=routes))
+
+    def post(xff):
+        return c.post("/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff})
+
+    first = post("9.9.9.9, 1.1.1.1")
+    assert first.status_code == 200, first.text
+
+    different_forged_tail = post("8.8.8.8, 2.2.2.2")
+    assert different_forged_tail.status_code == 429
 
 
 def test_home_shows_search_form(fed_hub):
@@ -1026,7 +1093,7 @@ def test_section_page_wraps_content_in_reader_container(fed_hub):
 
 
 def test_asset_route_serves_png(fed_hub):
-    sha = "a" * 64
+    sha = hashlib.sha256(b"PNGDATA").hexdigest()
     assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
     assets_dir.mkdir(parents=True)
     (assets_dir / f"{sha}.png").write_bytes(b"PNGDATA")
@@ -1069,7 +1136,7 @@ def test_asset_route_hub_unreachable_503(tmp_path, monkeypatch):
 
 
 def test_asset_route_second_request_hits_cache(fed_hub):
-    sha = "b" * 64
+    sha = hashlib.sha256(b"PNGDATA2").hexdigest()
     assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
     assets_dir.mkdir(parents=True)
     (assets_dir / f"{sha}.png").write_bytes(b"PNGDATA2")
@@ -1083,7 +1150,7 @@ def test_asset_route_second_request_hits_cache(fed_hub):
 
 
 def test_asset_route_does_not_cache_misses(fed_hub):
-    sha = "c" * 64
+    sha = hashlib.sha256(b"PNGDATA3").hexdigest()
     client = _authed_client(fed_hub / ".kb", str(fed_hub))
     miss = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
     assert miss.status_code == 404
@@ -1095,9 +1162,67 @@ def test_asset_route_does_not_cache_misses(fed_hub):
     assert hit.content == b"PNGDATA3"
 
 
+def test_a_tampered_store_object_is_not_cached_or_served(fed_hub, tmp_path, monkeypatch):
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    name = "e" * 64 + ".png"
+    store = assetstore.MemoryStore()
+    store.data[name] = b"tampered"
+    client = _authed_client(
+        fed_hub / ".kb", str(fed_hub), store_factory=lambda handle: store
+    )
+    resp = client.get(f"/assets/{name}", headers=AUTH_HEADERS)
+    assert resp.status_code == 503
+    assert not (tmp_path / "hubcache" / "asset-cache" / name).exists()
+
+
+def test_a_poisoned_disk_cache_entry_heals_on_next_request(
+    fed_hub, tmp_path, monkeypatch
+):
+    """Bytes written to the disk cache by pre-fix code (or any other means)
+    must not be served forever just because they are already on disk: a
+    mismatch is evicted and the request falls through to the store, which
+    re-populates the cache with the correct bytes."""
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    data = b"good bytes from the store"
+    name = hashlib.sha256(data).hexdigest() + ".png"
+    cache_file = tmp_path / "hubcache" / "asset-cache" / name
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_bytes(b"poisoned")
+    store = assetstore.MemoryStore()
+    store.put(name, data)
+    client = _authed_client(
+        fed_hub / ".kb", str(fed_hub), store_factory=lambda handle: store
+    )
+    resp = client.get(f"/assets/{name}", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.content == data
+    assert cache_file.read_bytes() == data  # healed, not left poisoned
+
+
+def test_a_corrupt_local_asset_falls_through_to_the_store(
+    fed_hub, tmp_path, monkeypatch
+):
+    """`kb assets verify` hash-checks a local file (assetcmd._entry_resolves);
+    the web UI must agree instead of happily serving the same bad bytes."""
+    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    data = b"good bytes from the store"
+    name = hashlib.sha256(data).hexdigest() + ".png"
+    assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / name).write_bytes(b"tampered on disk")
+    store = assetstore.MemoryStore()
+    store.put(name, data)
+    client = _authed_client(
+        fed_hub / ".kb", str(fed_hub), store_factory=lambda handle: store
+    )
+    resp = client.get(f"/assets/{name}", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.content == data
+
+
 def test_asset_route_falls_through_to_store(fed_hub, tmp_path, monkeypatch):
     monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
-    sha = "9" * 64
+    sha = hashlib.sha256(b"WEBPBYTES").hexdigest()
     store = assetstore.MemoryStore()
     store.put(f"{sha}.webp", b"WEBPBYTES")
     client = _authed_client(

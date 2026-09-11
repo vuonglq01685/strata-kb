@@ -29,7 +29,14 @@ logger = logging.getLogger("center_kb.searchdb")
 
 
 class IndexBusyError(RuntimeError):
-    """The index file is held by another process and could not be replaced."""
+    """The index file is held by another process and could not be replaced.
+
+    Deliberately stays out of the KbError family (Wave G fix round 2, item
+    7; comment added round 3, Minor 2): transient and deliberately
+    swallowed in publish._publish_direct -- joining would invite a future
+    `except KbError` guard to turn a retryable condition into a terminal
+    refusal.
+    """
 
 
 class TooManyTagsError(ValueError):

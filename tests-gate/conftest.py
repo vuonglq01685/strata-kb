@@ -61,6 +61,61 @@ def strip_kind_warning():
     return _strip
 
 
+# Doctor deliberately warns when a hub entry holds a file `kb publish` would
+# never write (F-D6, 5bb6ea8: publish stopped mirroring .kb/config.yaml to
+# federation/, a file that carries the hub URL and, on real deployments,
+# credentials). A hub PUBLISHED BY AN OLDER center-kb still has that mirrored
+# config.yaml sitting on it, and the new binary is supposed to say so -- this
+# is a security nudge, not a defect, so unlike KIND_WARNING its ABSENCE must
+# also fail the gate: a test that merely tolerated it would stay green even
+# if the sweep silently stopped firing. The warning fires on a hub an OLD
+# version wrote (exactly what tests-gate/golden/federation-v0.9.0 is); it does
+# not fire on an old .kb a NEW version publishes, since publish itself no
+# longer mirrors the file -- test_kb_backcompat's bare_hub is built fresh by
+# the new binary and must never see this warning, so it must not use this
+# fixture. Pinned on "config.yaml" AND the sentence together (round 2, review-
+# waveK-verdict.md MEDIUM-1): the sentence tail alone ("an older version
+# mirrored them; ...") does not name which stray triggered it, so a doctor
+# that stopped calling out config.yaml specifically -- e.g. a broadened
+# is_kb_artifact() that also swallows config.yaml as a legitimate stray, or
+# config.yaml quietly re-admitted to publish's own allowlist, undoing F-D6 at
+# the source -- could still satisfy a tail-only match while the real
+# credential nudge is gone. Not the substring "config.yaml" alone either
+# (KIND_WARNING's own message contains that substring too). The gate
+# tolerates this one warning, on this one fixture, and no other.
+LEGACY_CONFIG_MIRROR_WARNING = (
+    "holds file(s) a publish would never write: config.yaml -- an older "
+    "version mirrored them; delete them on the hub, and rotate any "
+    "credential they contain"
+)
+
+
+@pytest.fixture
+def strip_legacy_config_mirror_warning():
+    """Assert the legacy config.yaml mirror warning fired, then remove it so
+    the strict 'not a single [warning]' assertions keep guarding everything
+    else. Only for fixtures whose hub was genuinely published by an older
+    center-kb that still mirrored config.yaml -- its presence is asserted,
+    not merely tolerated."""
+
+    def _strip(stdout: str) -> str:
+        assert LEGACY_CONFIG_MIRROR_WARNING in stdout, (
+            "expected doctor to warn that this hub holds a config.yaml an "
+            "older version mirrored, but it did not -- either the sweep in "
+            "doctor.py stopped firing, the fixture no longer holds a "
+            "legacy-mirrored config.yaml, or the sweep now names files "
+            "beyond config.yaml without naming config.yaml itself\n"
+            f"--- stdout ---\n{stdout}"
+        )
+        return "\n".join(
+            line
+            for line in stdout.splitlines()
+            if LEGACY_CONFIG_MIRROR_WARNING not in line
+        )
+
+    return _strip
+
+
 def venv_bin(venv: Path, name: str) -> Path:
     """Path of an installed executable inside a venv, on any OS."""
     if os.name == "nt":

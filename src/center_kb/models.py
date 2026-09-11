@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal, TypeVar
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -99,10 +99,75 @@ class FederationIndex(BaseModel):
     docs: list[FedIndexEntry] = Field(default_factory=list)
 
 
-class Registry(BaseModel):
-    """federation/registry.yaml — allowlist: GitHub 'owner/repo' → repo_id on the hub."""
+class RegistryEntry(BaseModel):
+    """One allowlisted publisher: the repo-id it owns on the hub, and
+    optionally the single workflow allowed to publish as it (matched
+    against the OIDC `job_workflow_ref` claim).
 
-    repos: dict[str, str] = Field(default_factory=dict)
+    extra="forbid": this is the actual authentication boundary (see
+    Registry's docstring below) -- without it, a typo'd key inside an
+    entry (e.g. `workflw:` for `workflow:`) validates cleanly, silently
+    drops the pin the hub owner thought they set, and `authorize` accepts
+    any workflow for that repo. I-3: a security control must fail closed
+    on a plausible operator typo, not just on a malicious payload.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo_id: str
+    workflow: str = ""
+
+
+class Registry(BaseModel):
+    """federation/registry.yaml — allowlist: 'owner/repo' (or 'group/subgroup/repo')
+    -> repo_id on the hub.
+
+    The key is a host-independent git path, not a GitHub-specific 'owner/repo':
+    pubgate.owner_repo_from_remote drops the host on purpose (GitLab subgroups
+    can nest arbitrarily deep) and pubgate.resolve_identity matches it against
+    this registry case-insensitively. That is the more permissive of this
+    project's two matchers by design — it is a mistake guard against
+    publishing under the wrong repo-id, not an authentication boundary, since
+    the remote URL it reads is self-asserted by the publisher. The actual
+    authentication boundary is intake.authorize, which matches the OIDC
+    `repository` claim against this same registry exactly and
+    case-sensitively.
+
+    A value may be the plain repo-id string (the documented default) or a
+    {repo_id, workflow} mapping that additionally pins the one workflow
+    allowed to publish as that repo-id — read either shape through
+    `resolve`, never `repos` directly."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repos: dict[str, str | RegistryEntry] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _reject_case_colliding_keys(self) -> "Registry":
+        """Two keys differing only in case both load as distinct dict
+        entries -- whichever iterates last would silently win wherever a
+        caller builds a case-insensitive lookup (pubgate.resolve_identity),
+        changing which repo-id a near-duplicate key resolves to with no
+        warning. On a governed hub that decides what a publisher may claim,
+        so refuse the ambiguity here, at load time, naming both keys."""
+        seen: dict[str, str] = {}
+        for key in self.repos:
+            folded = key.casefold()
+            if folded in seen:
+                raise ValueError(
+                    f"registry keys '{seen[folded]}' and '{key}' collide "
+                    "case-insensitively -- keep only one"
+                )
+            seen[folded] = key
+        return self
+
+    def resolve(self, repo: str) -> RegistryEntry | None:
+        value = self.repos.get(repo)
+        if value is None:
+            return None
+        if isinstance(value, RegistryEntry):
+            return value
+        return RegistryEntry(repo_id=value)
 
 
 class AssetsRecord(BaseModel):

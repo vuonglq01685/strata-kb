@@ -22,7 +22,7 @@ seeing the diff, that the current .kb/ state should be published.
    the user names one) and present the added/changed sections.
 3. **Confirm — the gate.** State the hub (from `.kb/config.yaml`, or
    `CENTER_KB_HUB` if set) and that a publish PR will be opened on it
-   (local-path hub → direct push). Ask for one explicit go/no-go and wait.
+   (direct is picked for a hub with no git remote). Ask for one explicit go/no-go and wait.
 4. **Execute** (only after confirmation): `kb publish`. Relay the result:
    repo-id, source commit, doc count, and the **PR URL** — remind the user
    the content goes live when that PR is merged on the hub.

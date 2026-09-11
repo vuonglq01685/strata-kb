@@ -1,0 +1,11 @@
+# Ordinary repo files get git's normal LF normalisation on commit/checkout.
+# federation/ is a byte-for-byte mirror hashed as raw bytes on both sides of
+# every publish diff (hashsync) -- git must never convert those bytes on
+# checkout or commit, or a fresh clone's checkout makes every mirrored file
+# look changed: a spurious whole-tree commit on every publish (F-D10). The
+# federation/** line must stay last -- git uses the last matching pattern in
+# .gitattributes.
+* text=auto eol=lf
+*.png binary
+*.webp binary
+federation/** -text

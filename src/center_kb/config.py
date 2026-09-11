@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from center_kb import models
+from center_kb.errors import KbError
 
 CONFIG_NAME = "config.yaml"
 
@@ -15,8 +16,10 @@ HUB_GUIDE = (
 )
 
 
-class HubConfigError(RuntimeError):
-    """The hub is mandatory (federation is the only read source) but not configured."""
+class HubConfigError(KbError):
+    """The hub is mandatory (federation is the only read source) but not
+    configured. Every raise site's caller already converts it to a one-line
+    CLI message -- joins the KbError family (Wave G fix round 2, item 7)."""
 
 
 class AssetStoreConfig(BaseModel):
