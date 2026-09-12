@@ -5,6 +5,7 @@ import pytest
 from center_kb import models
 from center_kb.build import build_kb
 from center_kb.codeingest import core
+from tests.test_gitio import _stdin_offenders_in_module
 
 
 class _StubExtractor:
@@ -431,3 +432,21 @@ def test_generated_document_is_searchable_through_the_hub(
     section = get_section(handle, "demo-code", "db.roster", level="l3")
     assert section is not None
     assert "CREATE TABLE" in section.content
+
+
+# --- P57 item 3 (wave-j-round-2-brief.md): codeingest.core._git() was a ---
+# --- byte-for-byte twin of gitio._run before the Wave J Critical fix --  ---
+# --- same omission, same hazard shape, one module over. Not reachable ---
+# --- from the MCP stdio server today (only cli.py calls it, off that ---
+# --- surface), but the ruling is about the call shape, not about who ---
+# --- currently imports the module -- a structural check scoped to ---
+# --- gitio alone is how a second instance of the same bug survives. ---
+# --- Reuses gitio's checker verbatim (see tests/test_gitio.py for its ---
+# --- evasion coverage) rather than a second, drifting implementation.
+
+
+def test_every_subprocess_run_call_in_codeingest_core_has_a_verifiably_safe_stdin():
+    offenders = _stdin_offenders_in_module(core)
+    assert offenders == [], (
+        f"subprocess.run() in codeingest/core.py has an unsafe or unverifiable stdin= at: {offenders}"
+    )

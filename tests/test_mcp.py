@@ -209,6 +209,43 @@ async def test_kb_ticket_lint_hub_unreachable_returns_guidance(tmp_path, monkeyp
 
 
 @pytest.mark.anyio
+async def test_hub_locked_cache_returns_guidance_not_a_crash(
+    fed_hub, monkeypatch, caplog
+):
+    """Important 1 (Wave G fix round 2 re-review): resolve_hub can now raise
+    gitio.GitError (hub.py's _discard_cache, when a stale cache's removal is
+    blocked -- e.g. a locked .kb-work/search.sqlite3, and a serving MCP
+    process is exactly the kind of process that would be holding it open).
+    Before the round-3 fix, `_hub()` let that GitError propagate out of the
+    tool call as an unhandled crash instead of the same "hub unreachable"
+    guidance every other unreachable-hub path already returns. Fakes
+    center_kb.hub.resolve_hub itself, not some mcp-module alias -- `_hub()`
+    re-imports the name fresh on every call (see the concurrency test
+    below).
+
+    N-6 (Wave G fix round 4 re-review): the round-3 guard swallowed the
+    GitError with no log record -- pin that the caught exception now
+    reaches the log at warning, the same way resolve_hub's own clone/pull
+    failures already do (hub.py)."""
+    from center_kb import hub as hub_mod
+
+    detail = "could not remove the stale hub cache at '...'"
+
+    def fake_resolve_hub(hub_str):
+        raise gitio.GitError(detail)
+
+    monkeypatch.setattr(hub_mod, "resolve_hub", fake_resolve_hub)
+    server = create_server(_config(fed_hub))
+    with caplog.at_level("WARNING", logger="center_kb.mcp"):
+        async with connect_client(server, raise_exceptions=True) as client:
+            result = await client.call_tool("kb_search", {"query": "anything"})
+            assert "hub unreachable" in _text(result)
+    assert any(
+        r.name == "center_kb.mcp" and detail in r.message for r in caplog.records
+    ), caplog.records
+
+
+@pytest.mark.anyio
 async def test_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
     monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))

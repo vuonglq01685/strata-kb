@@ -1641,9 +1641,23 @@ def _tpl(name: str) -> str:
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_repo_kb_summarize_skill_is_the_shipped_template():
-    repo = (_REPO_ROOT / ".claude/skills/kb-summarize/SKILL.md").read_text(encoding="utf-8")
-    assert repo == _tpl("claude-skill-kb-summarize.md")
+# Every one of these is a hand-maintained copy, inside this repo, of a file
+# that ships to every scaffolded repo. Only the first pair used to be pinned,
+# and the other five drifted exactly the way you would expect: a batch that
+# corrected one sentence had to correct five hand-kept copies of it, by hand.
+_REPO_MIRRORS = [
+    (".claude/skills/kb-summarize/SKILL.md", "claude-skill-kb-summarize.md"),
+    (".claude/commands/kb-summarize.md", "claude-command-kb-summarize.md"),
+    (".claude/skills/kb-ingest/SKILL.md", "claude-skill-kb-ingest.md"),
+    (".claude/skills/kb-publish/SKILL.md", "claude-skill-kb-publish.md"),
+    (".github/prompts/kb-ingest.prompt.md", "copilot-kb-ingest.prompt.md"),
+    (".github/prompts/kb-publish.prompt.md", "copilot-kb-publish.prompt.md"),
+]
+
+
+@pytest.mark.parametrize("mirror,template", _REPO_MIRRORS)
+def test_repo_mirror_is_the_shipped_template(mirror, template):
+    assert (_REPO_ROOT / mirror).read_text(encoding="utf-8") == _tpl(template)
 
 
 @pytest.mark.parametrize("name", SUMMARIZE_WRAPPERS)

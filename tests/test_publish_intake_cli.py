@@ -144,6 +144,36 @@ class TestCIPublish:
         assert out == ""
         assert http.posted == []
 
+    def test_a_child_with_config_yaml_short_circuits_when_hub_snapshot_matches(
+        self, child, monkeypatch
+    ):
+        """Finding 4: `kb init` always writes .kb/config.yaml, but the hub is
+        allowlist-filtered on every path that writes federation/<rid>/ (F-D6)
+        so it can never hold a copy of it -- before the fix, local_man was
+        built raw (unfiltered) so config.yaml always showed up as "changed"
+        against remote_man, the "nothing to publish" fast path below was
+        unreachable for every child, and config.yaml (which can hold a hub
+        token) was archived and POSTed to the intake server on every run."""
+        root, _ = child
+        self._env(monkeypatch)
+        from center_kb import hashsync
+
+        (root / ".kb" / "config.yaml").write_text(
+            'hub: "https://x-access-token:ghs_SECRET@github.com/org/kb-hub.git"\n',
+            encoding="utf-8",
+        )
+        local = hashsync.build_manifest(root / ".kb")
+        local.pop("config.yaml", None)  # the hub can never hold this file
+        http = FakeHTTP(
+            {
+                "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+                "https://kb.test/intake/manifest": (200, {"files": local}),
+            }
+        )
+        out = cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+        assert out == ""
+        assert http.posted == []
+
     def test_manifest_request_carries_oidc_token(self, child, monkeypatch):
         """/intake/manifest is OIDC-gated on the hub — the diff GET must authenticate."""
         root, _ = child

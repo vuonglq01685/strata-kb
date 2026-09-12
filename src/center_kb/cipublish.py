@@ -17,11 +17,12 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from center_kb import gitio, hashsync
+from center_kb import gitio, hashsync, pubgate
 from center_kb import publish as publish_mod
+from center_kb.errors import KbError
 
 
-class CIPublishError(RuntimeError):
+class CIPublishError(KbError):
     """ci-publish failed — the Actions job should go red."""
 
 
@@ -137,6 +138,21 @@ def run(
 
     remote_man = _fetch_remote_manifest(intake_url, rid, token, http)
     local_man = hashsync.build_manifest(kb_abs)
+    # F-D6/finding 4: remote_man reflects the hub's already-allowlist-filtered
+    # federation/<rid>/ (nothing else was ever committed there), but local_man
+    # was built raw -- every child has a .kb/config.yaml (kb init always
+    # writes one) that can never appear on the remote side, so the diff was
+    # permanently non-empty: the "nothing to publish" fast path below never
+    # fired, every CI run uploaded + churned a branch, and config.yaml (which
+    # may hold a hub token/URL) was archived and sent to the intake server on
+    # every single run. Filter local_man through the same predicate the
+    # remote side is implicitly already held to.
+    local_man, skipped = pubgate.split_allowlist(local_man)
+    if skipped:
+        print(
+            f"[warn] {len(skipped)} file(s) under .kb/ are not KB artefacts and "
+            f"were not published (allowlist): {', '.join(skipped)}"
+        )
     changed, deleted = hashsync.diff_manifests(local_man, remote_man)
     if not changed and not deleted:
         print("nothing to publish — hub snapshot already matches .kb/")

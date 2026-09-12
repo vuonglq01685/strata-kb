@@ -37,7 +37,7 @@ def upper(tmp_path: Path) -> HubHandle:
 
 
 def test_snapshot_federation_mirrors_entries(mid_fed, upper):
-    n_docs, changed = publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
+    n_docs, changed, _skipped = publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
     assert changed is True
     assert n_docs == 2
     dest = upper.federation_dir / "mid"
@@ -57,7 +57,7 @@ def test_snapshot_federation_excludes_top_level_files(mid_fed, upper):
 
 def test_snapshot_federation_noop_when_unchanged(mid_fed, upper):
     publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
-    n_docs, changed = publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
+    n_docs, changed, _skipped = publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
     assert changed is False
     assert n_docs == 2
 
@@ -67,9 +67,55 @@ def test_snapshot_federation_applies_deletions(mid_fed, upper):
     import shutil
 
     shutil.rmtree(mid_fed / "repo-a")
-    _, changed = publish._snapshot_federation(mid_fed, upper, "mid", "abc1235")
+    _, changed, _skipped = publish._snapshot_federation(mid_fed, upper, "mid", "abc1235")
     assert changed is True
     assert not (upper.federation_dir / "mid" / "repo-a").exists()
+
+
+def test_snapshot_federation_mirrors_the_hub_owned_asset_record(mid_fed, upper):
+    """F-D6 overrule (finding 1): _assets.yaml is hub-written bookkeeping
+    being mirrored upward on the fed->fed path, not a source artefact being
+    smuggled in the way a child's config.yaml would be -- it must reach the
+    upper hub like any other file under the entry."""
+    from center_kb import assetstore, models
+
+    record_path = mid_fed / "repo-a" / assetstore.RECORD_NAME
+    models.save_yaml_model(
+        record_path, models.AssetsRecord(assets=[f"doc-a/assets/{'a' * 64}.png"])
+    )
+    publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
+    dest_record = upper.federation_dir / "mid" / "repo-a" / assetstore.RECORD_NAME
+    assert dest_record.exists()
+    assert dest_record.read_text(encoding="utf-8") == record_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_snapshot_federation_does_not_delete_the_asset_record_on_republish(
+    mid_fed, upper
+):
+    """Finding 1: dest_man is built with no exclude list, so an
+    _assets.yaml already mirrored to the upper hub must survive a later
+    republish that touches unrelated entries -- before the fix, it was
+    absent from every src_man (filtered every call) but present in dest_man,
+    so diff_manifests classified it as deleted and the republish committed
+    that deletion."""
+    from center_kb import assetstore, models
+
+    models.save_yaml_model(
+        mid_fed / "repo-a" / assetstore.RECORD_NAME,
+        models.AssetsRecord(assets=[f"doc-a/assets/{'b' * 64}.png"]),
+    )
+    publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
+    dest_record = upper.federation_dir / "mid" / "repo-a" / assetstore.RECORD_NAME
+    assert dest_record.exists()
+
+    make_fed_entry(mid_fed, "repo-c", "doc-c")  # unrelated change, non-empty diff
+    _n_docs, changed, _skipped = publish._snapshot_federation(
+        mid_fed, upper, "mid", "abc1235"
+    )
+    assert changed is True
+    assert dest_record.exists()  # not wiped by the republish
 
 
 def test_snapshot_federation_rejects_escaping_rid(mid_fed, upper):
@@ -245,3 +291,26 @@ def test_find_cycle_segment_single_segment_dest_id(tmp_path):
     fed = tmp_path / "federation"
     make_fed_entry(fed, "root-hub", "doc-d")  # entry 1 segment mang id hub đích
     assert federation.find_cycle_segment(fed, {"root-hub"}, exempt_exact={"mid"}) == "root-hub"
+
+
+def test_cli_hub_to_hub_publish_error_is_one_line_not_a_traceback(mid_hub, root_hub):
+    """F-D9 finding 6: the hub-to-hub `except` tuple in cli.publish() (the
+    `not is_self` branch that calls publish_mod.publish_federation) had no
+    CLI-level coverage -- reverting the whole except clause still passed the
+    48-test wave set. Same cycle setup as
+    test_publish_federation_rejects_dest_id_in_entries, driven through the
+    CLI instead of calling publish_federation directly."""
+    from typer.testing import CliRunner
+
+    from center_kb.cli import app
+
+    runner = CliRunner()
+    make_fed_entry(mid_hub / "federation" / "root-hub", "repo-d", "doc-d")
+    result = runner.invoke(
+        app,
+        ["publish", "--direct", "--hub", str(root_hub), "--repo-id", "mid",
+         "--kb-dir", str(mid_hub / ".kb")],
+    )
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "federation cycle detected" in result.output

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from center_kb import models, searchdb
+from center_kb import gitio, models, searchdb
 from center_kb.mcp import ServerConfig
 from center_kb.query import (
     AmbiguousDocError,
@@ -15,17 +17,44 @@ from center_kb.query import (
     search,
 )
 
+logger = logging.getLogger("center_kb.web.api")
+
 MAX_BUDGET = 20000
 
-HUB_DOWN_DETAIL = (
-    "hub unreachable and no local cache — the federation is the only read source"
-)
+HUB_DOWN_DETAIL = "hub unreachable — the federation is the only read source"
 
 
 def hub_handle(config: ServerConfig):
     from center_kb.hub import resolve_hub
 
-    return resolve_hub(config.hub)
+    # resolve_hub can raise gitio.GitError (hub.py's _discard_cache) when a
+    # stale cache cannot be removed -- e.g. Windows holding a lock on
+    # <cache>/.kb-work/search.sqlite3, and a serving web process is exactly
+    # the kind of process that would be holding it open. Every call site
+    # below already treats None as "hub unreachable" (HUB_DOWN); folding the
+    # exception into that same None reuses the guard every route already
+    # has, instead of letting it crash the request as an unhandled 500.
+    # Same shape as mcp._hub (Wave G fix round 3).
+    #
+    # N-6 (Wave G fix round 4 re-review, review-waveG-fix3-verdict.md and
+    # review-webapi-guard-verdict.md Important 1): a bare
+    # `except ... return None` here discarded the ONLY diagnostic -- a full
+    # locked-cache request sweep at DEBUG across all loggers produced zero
+    # center_kb.* records. Worse, in that exact condition HUB_DOWN_DETAIL's
+    # "and no local cache" is false on both halves (the hub can be
+    # perfectly reachable, and the whole reason this raised is that a
+    # cache DOES exist -- it is merely locked); the detail text above was
+    # softened to stop asserting that. resolve_hub's own clone/pull
+    # failures already log at warning (see hub.py) -- match that shape
+    # instead of being one of the two silent guards (mcp._hub is the
+    # other, fixed identically).
+    try:
+        return resolve_hub(config.hub)
+    except gitio.GitError as exc:
+        logger.warning(
+            "hub cache unusable — serving as hub-unreachable: %s", exc
+        )
+        return None
 
 
 def _error(status: int, error: str, detail: str = "") -> JSONResponse:

@@ -381,7 +381,23 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     except HubConfigError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
-    handle = resolve_hub(hub_ref)
+    # cli.py's own last unguarded resolve_hub call site (release review,
+    # 2026-09-11): resolve_hub can raise gitio.GitError (hub.py's
+    # _discard_cache) when a stale cache's removal is blocked -- e.g. a
+    # locked .kb-work/search.sqlite3, and every command that reaches here
+    # (`doctor` included, the CHANGELOG's 0.21.0 no-traceback claim for it)
+    # is exactly the kind of process that would be holding it open. Same
+    # shape as mcp._hub (Wave G fix round 3) and web/api.hub_handle
+    # (e869320) -- but this is a CLI path, not one that degrades to a
+    # cache-less handle: it must exit 1 naming the way forward, not return
+    # None. _discard_cache's own GitError message already names the cache,
+    # says it is disposable, and tells the operator to delete it -- let
+    # that through unwrapped rather than replacing it.
+    try:
+        handle = resolve_hub(hub_ref)
+    except gitio.GitError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
     if handle is None:
         typer.secho(
             f"could not reach hub '{gitio.redact_url(hub_ref)}' and no cache exists — "
@@ -1442,6 +1458,12 @@ def _apply_unreviewed_gate(gate) -> None:
 
 
 def _echo_publish_report(report) -> None:
+    if getattr(report, "skipped", None):
+        typer.secho(
+            f"[warn] {len(report.skipped)} file(s) under .kb/ were not published "
+            f"(allowlist): {', '.join(report.skipped)}",
+            fg=typer.colors.YELLOW,
+        )
     if report.mode == "pr":
         if report.pr_url:
             typer.echo(
@@ -1452,7 +1474,12 @@ def _echo_publish_report(report) -> None:
         else:
             typer.echo("kb publish: nothing changed — no PR needed.")
         return
-    action = "push" if report.pushed else "commit only (hub has no remote)"
+    if report.pushed:
+        action = "push"
+    elif getattr(report, "remote", False):
+        action = "commit only (nothing to push)"
+    else:
+        action = "commit only (hub has no remote)"
     typer.echo(
         f"kb publish: {report.repo_id} @ {report.source_commit} — "
         f"{report.n_docs} doc, {action}."
@@ -1481,15 +1508,37 @@ def publish(
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
-    from center_kb import gitio
+    import yaml
+    from pydantic import ValidationError
+
+    from center_kb import ghio, gitio, hashsync
     from center_kb import publish as publish_mod
     from center_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
+    from center_kb.errors import KbError
+
+    # yaml.YAMLError / ValidationError / ValueError (UnicodeDecodeError and
+    # pydantic.ValidationError are both ValueError subclasses, but yaml.YAMLError
+    # is not -- keeping all three explicit, like models.load_yaml_model's other
+    # callers, so a non-UTF-8 file is not left to an OSError arm) cover every
+    # corrupt-YAML/schema-invalid/non-UTF-8 .kb file this command can meet
+    # (F-D9 finding 2): _CONFIG_READ_ERRORS below is reused at every point this
+    # function reads a .kb/*.yaml or federation/*.yaml file outside a call that
+    # already wraps its own read.
+    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
 
     if pr and direct:
         typer.secho("--pr and --direct are mutually exclusive", fg=typer.colors.RED)
         raise typer.Exit(2)
 
-    cfg = load_config(kb_dir)
+    try:
+        cfg = load_config(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(
+            f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
+            "or remove it to fall back to defaults",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
     mode = "pr" if pr else "direct" if direct else "auto"
     is_self = False  # only ever True for cfg.kind == "hub" self-publish fall-through
     if cfg.kind == "hub":
@@ -1535,7 +1584,25 @@ def publish(
                     kb_dir, hub_ref,
                     repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
                 )
-            except (publish_mod.PublishError, gitio.GitError) as exc:
+            except (
+                # KbError: PublishError (publish_federation's own YAML reads --
+                # registry.yaml, the upstream hub's config.yaml for the cycle
+                # guard -- are already caught internally and re-raised as
+                # PublishError) and GateError, plus assetstore.AssetStoreError --
+                # _snapshot_federation (this call's snapshot_fn) resolves this
+                # hub's own store and diverts still-raw bytes into it
+                # (_reconcile_asset_records, F-D11/Task 21), so a store outage
+                # is reachable on this branch too, not only on plain-publish's.
+                # Catching the base once means a future KbError sibling, or a
+                # new call site for an existing one, is covered without a
+                # fourth name added here.
+                KbError,
+                gitio.GitError, ghio.GHError, OSError,
+                # hashsync.HashSyncError: _snapshot_federation's apply_sync
+                # guards every write against escaping federation/<rid> on the
+                # upper hub -- reachable here (fed->fed).
+                hashsync.HashSyncError,
+            ) as exc:
                 typer.secho(str(exc), fg=typer.colors.RED)
                 raise typer.Exit(1)
             _echo_publish_report(report)
@@ -1549,14 +1616,39 @@ def publish(
     # publish_federation() pushes federation/ only; the hub's own .kb/ there
     # is a drafting desk, not what gets published. Still strictly above
     # require_hub()/resolve_hub()/any write below.
-    _apply_unreviewed_gate(publish_mod.unreviewed_gate(kb_dir, require_reviewed))
+    try:
+        _apply_unreviewed_gate(publish_mod.unreviewed_gate(kb_dir, require_reviewed))
+    except (*_CONFIG_READ_ERRORS, OSError, KbError) as exc:
+        # KbError: unreviewed_gate -> unreviewed_sections reads every doc's
+        # _manifest.yaml via publish._load_manifest_or_raise, which converts
+        # a corrupt/schema-invalid/non-UTF-8 file into PublishError (a
+        # KbError) rather than letting the raw yaml/pydantic exception
+        # through -- so this guard must catch the wrapper, not just the
+        # classes _load_manifest_or_raise wraps (this was the round-1
+        # regression: the wrap shipped, this arm did not follow it, and the
+        # message right below stopped being reachable).
+        typer.secho(
+            f"a _manifest.yaml under {kb_dir} is unreadable ({exc}) -- fix or "
+            "re-ingest that document",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
 
     if cfg.intake and not pr and not direct:
         try:
             pr_url = publish_mod.publish_via_intake(
                 kb_dir, cfg.intake, effective_repo_id(repo_id, kb_dir)
             )
-        except (publish_mod.PublishError, gitio.GitError) as exc:
+        except (
+            # KbError: PublishError, GateError.
+            KbError,
+            gitio.GitError, OSError,
+            # ValueError: publish_via_intake polls the intake server's /intake/
+            # status endpoint and parses its JSON body unwrapped
+            # (publish.py's _default_get_json) -- a malformed 200 response
+            # raises json.JSONDecodeError, a ValueError subclass.
+            ValueError,
+        ) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(1)
         if pr_url:
@@ -1576,8 +1668,24 @@ def publish(
         report = publish_mod.publish(
             kb_dir, hub_ref,
             repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
+            self_publish=is_self,
         )
-    except (HubConfigError, publish_mod.PublishError, gitio.GitError) as exc:
+    except (
+        # KbError: PublishError, GateError, and assetstore.AssetStoreError --
+        # _snapshot (the .kb/ -> federation/<rid> path this call takes) can
+        # raise all three: PublishError from its own index.yaml/hub-config
+        # reads (wrapped, same shape as finding 2's measured repro),
+        # AssetStoreError from divert_and_record on a store outage. Catching
+        # the base once, instead of naming each class, means this tuple
+        # cannot go stale the way it did before: AssetStoreError used to be
+        # listed explicitly here and the hub-to-hub tuple above did not list
+        # it at all, even after _snapshot_federation (that branch's own
+        # snapshot_fn) started touching the asset store too (3845ee5/
+        # 01cbd0a) -- both branches now catch the same base.
+        HubConfigError, KbError, gitio.GitError, ghio.GHError, OSError,
+        *_CONFIG_READ_ERRORS,
+        hashsync.HashSyncError,
+    ) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
     _echo_publish_report(report)
@@ -1596,10 +1704,27 @@ def ci_publish(
     ),
 ) -> None:
     """Publish from the child's CI via OIDC — no secrets. Run by kb-publish.yml."""
+    import yaml
+    from pydantic import ValidationError
+
     from center_kb import cipublish, gitio
     from center_kb.config import effective_repo_id, load_config
+    from center_kb.errors import KbError
 
-    url = intake or load_config(kb_dir).intake
+    # See publish()'s _CONFIG_READ_ERRORS: same three classes, same reason
+    # (yaml.YAMLError is not a ValueError; UnicodeDecodeError/ValidationError
+    # both are, but stay explicit).
+    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+
+    try:
+        url = intake or load_config(kb_dir).intake
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(
+            f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
+            "or pass --intake to skip reading it",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
     if not url:
         typer.secho(
             "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake",
@@ -1610,7 +1735,25 @@ def ci_publish(
         cipublish.run(
             kb_dir, url, effective_repo_id(repo_id, kb_dir), require_reviewed=require_reviewed
         )
-    except (cipublish.CIPublishError, gitio.GitError) as exc:
+    except (
+        # KbError: CIPublishError (this command's own token/upload failures)
+        # and PublishError -- cipublish.run's own unreviewed-gate check
+        # (_check_unreviewed_gate -> publish.unreviewed_gate ->
+        # unreviewed_sections) reads every doc's _manifest.yaml through
+        # publish._load_manifest_or_raise, which converts a corrupt/
+        # schema-invalid/non-UTF-8 file into PublishError, NOT a raw
+        # yaml/pydantic exception -- it does not land in the ValueError-
+        # family classes below (that claim was true before this round
+        # wrapped the read, and stale once it did: PublishError is a
+        # RuntimeError, not a ValueError, so it escaped uncaught until this
+        # arm named the base it belongs to). The OIDC token/publish-response
+        # JSON parsing (json.loads, in _request_oidc_token/run) IS still
+        # unwrapped and does land in _CONFIG_READ_ERRORS below
+        # (json.JSONDecodeError is a ValueError subclass).
+        KbError,
+        gitio.GitError, OSError,
+        *_CONFIG_READ_ERRORS,
+    ) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
 
@@ -1630,17 +1773,76 @@ def reindex(
     """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
     import sqlite3
 
+    import yaml
+    from pydantic import ValidationError
+
     from center_kb import gitio, searchdb
     from center_kb.embed import default_embedder
     from center_kb.federation import write_federation_index
 
-    handle = _hub_or_exit(hub, kb_dir)
-    write_federation_index(handle.federation_dir)
-    # commit index.yaml BEFORE syncing the search index: the strict sync can blow
-    # up (embed failure) — the rebuilt index must not be left uncommitted
-    committed = gitio.commit_paths(
-        handle.root, "reindex: rebuild federation/index.yaml", ["federation"]
+    # See publish()'s _CONFIG_READ_ERRORS.
+    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+
+    try:
+        handle = _hub_or_exit(hub, kb_dir)
+        write_federation_index(handle.federation_dir)
+        # commit index.yaml BEFORE syncing the search index: the strict sync can
+        # blow up (embed failure) — the rebuilt index must not be left uncommitted
+        #
+        # Scope the commit the way _publish_direct already does. Committing all of
+        # federation/ under a message that says "rebuild index" swept in
+        # hand-edited content and untracked directories -- and publish's own
+        # error paths leave exactly that behind.
+        #
+        # -c core.quotePath=false (finding 7): without it, porcelain C-quotes
+        # any non-ASCII path (e.g. "federation/ghi-ch\303\272.md") instead of
+        # printing it as UTF-8.
+        # --untracked-files=all (finding 7): without it, an entirely-untracked
+        # federation/ (first-ever reindex, nothing under it committed yet)
+        # collapses to one "?? federation/" line -- the strays check below
+        # then flags the whole directory even though committing
+        # federation/index.yaml right after this was exactly correct.
+        dirty_before = gitio._run(
+            handle.root, "-c", "core.quotePath=false",
+            "status", "--porcelain", "--untracked-files=all", "--", "federation"
+        ).stdout.splitlines()
+        committed = gitio.commit_paths(
+            handle.root, "reindex: rebuild federation/index.yaml", ["federation/index.yaml"]
+        )
+    except gitio.GitError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except _CONFIG_READ_ERRORS as exc:
+        # write_federation_index -> build_federation_index -> load_federation
+        # already skips (warns, does not raise) any entry whose _meta.yaml/
+        # index.yaml is corrupt YAML or schema-invalid -- this is belt and
+        # suspenders for that aggregation path, not a currently-open hole.
+        typer.secho(
+            f"a federation/ entry is unreadable while rebuilding the index "
+            f"({exc}) -- fix or re-publish that entry",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    except OSError as exc:
+        # I5: str(OSError) alone ("[Errno 13] Permission denied: '...'") names
+        # no way forward -- add one.
+        typer.secho(
+            f"reindex failed ({exc}) -- check file permissions under the hub "
+            "and retry",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    strays = sorted(
+        line[3:].strip()
+        for line in dirty_before
+        if line[3:].strip() not in ("federation/index.yaml",)
     )
+    if strays:
+        typer.secho(
+            "[warn] uncommitted content under federation/ was NOT committed by "
+            f"reindex: {', '.join(strays)}",
+            fg=typer.colors.YELLOW,
+        )
     try:
         if force:
             searchdb.delete_db(handle)
@@ -1654,6 +1856,30 @@ def reindex(
             raise
         typer.secho(f"search index rejected the reindex: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1)
+    except _CONFIG_READ_ERRORS as exc:
+        # searchdb._sync_repo reads every referenced doc's _manifest.yaml
+        # unwrapped (unlike load_federation, it does not skip a broken one --
+        # it is building content for the index, not enumerating entries).
+        typer.secho(
+            f"a _manifest.yaml is unreadable while syncing the search index "
+            f"({exc}) -- fix or re-ingest that document",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    except OSError as exc:
+        # F-D9 CRITICAL, routed: this try's sibling arm above (the
+        # write_federation_index/commit_paths block) already has an OSError
+        # arm -- this one, guarding searchdb.sync, was added later and
+        # missed it. A locked file under the hub (e.g. .kb-work/search.sqlite3
+        # held open by another kb process) raised PermissionError with no
+        # arm to catch it here -- reindex is one of the three commands the
+        # spec names by name for "no traceback reaches a user".
+        typer.secho(
+            f"reindex failed while syncing the search index ({exc}) -- check "
+            "file permissions under the hub and retry",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
     typer.echo(
         f"kb reindex: search index — {sreport.sections_updated} updated, "
         f"{sreport.sections_deleted} removed, {sreport.embedded} embedded"
@@ -1663,7 +1889,7 @@ def reindex(
         return
     if gitio.has_remote(handle.root):
         try:
-            gitio.push(handle.root)
+            gitio.push(handle.root, handle.token)
         except gitio.GitError as exc:
             typer.secho(
                 f"reindex committed but push failed: {exc}", fg=typer.colors.RED
@@ -1690,7 +1916,25 @@ def migrate(
         raise typer.Exit(1)
     for rid, n in sorted(report.per_rid.items()):
         typer.echo(f"  {rid}: {n} asset(s) migrated")
+    if report.skipped:
+        names = ", ".join(report.skipped)
+        typer.secho(
+            f"skipped (missing _meta.yaml or index.yaml), not migrated: {names} -- "
+            "run `kb doctor` for details, then republish from the source repo to "
+            "restore the missing marker",
+            fg=typer.colors.YELLOW,
+        )
     if not report.per_rid:
+        if report.skipped:
+            # P53 (item 3, wave L1 brief): "nothing to migrate" is an
+            # all-clear a script may read at exit 0 -- printing it here
+            # would be false, since the entries above were found and
+            # skipped, not swept. A skip is not itself a migrate failure
+            # (the entry's markers are broken upstream, not this run), but
+            # the run could not confirm federation/ is clean, so it must
+            # not report clean: exit non-zero with the skip named above.
+            typer.echo("nothing migrated -- entries were skipped (see above)")
+            raise typer.Exit(1)
         typer.echo("nothing to migrate — no in-git assets under federation/")
     elif report.committed:
         typer.echo("committed: assets: migrate to object store")
@@ -1715,8 +1959,16 @@ def verify(
         raise typer.Exit(1)
     for label in report.missing_records:
         typer.secho(f"[missing] recorded but not in store: {label}", fg=typer.colors.RED)
+    for label in report.corrupt:
+        typer.secho(
+            f"[corrupt] bytes on disk/in the store do not hash to their own "
+            f"content-addressed name: {label}",
+            fg=typer.colors.RED,
+        )
     for label in report.dangling_refs:
         typer.secho(f"[dangling] referenced but unresolvable: {label}", fg=typer.colors.RED)
+    for label in report.broken_links:
+        typer.secho(f"[broken] {label}", fg=typer.colors.RED)
     for label in report.orphans:
         typer.echo(f"[orphan] recorded but never referenced: {label}")
     if not report.ok:

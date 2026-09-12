@@ -7,14 +7,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from center_kb.config import load_config
+from center_kb.errors import KbError
 
 TOKEN_VAR = "CENTER_KB_HTTP_TOKEN"
 _TOKEN_LINE = re.compile(rf"^{TOKEN_VAR}=.*$", re.MULTILINE)
 _DEFAULT_ENV = f"{TOKEN_VAR}=change-me\n"
 
 
-class DockerSetupError(RuntimeError):
-    """Setup cannot proceed (wrong repo kind, missing prerequisites)."""
+class DockerSetupError(KbError):
+    """Setup cannot proceed (wrong repo kind, missing prerequisites). Every
+    CLI call site already converts it to a one-line message -- joins the
+    KbError family (Wave G fix round 2, item 7); EnvExistsError below
+    inherits the membership."""
 
 
 class EnvExistsError(DockerSetupError):

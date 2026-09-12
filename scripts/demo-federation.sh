@@ -4,7 +4,23 @@
 # cross-repo search, citation pin, stale after amendment. Cleans up after itself.
 set -euo pipefail
 
-DEMO_DIR="$(mktemp -d)"
+# mktemp -d under Git Bash on Windows returns an MSYS path (/tmp/tmp.XXXX)
+# that native Python resolves to C:\tmp\tmp.XXXX -- a directory the tool then
+# cannot find. Default to a path both see the same way; override with DEMO_DIR.
+# Whichever path is used, DEMO_DIR is rm -rf'd on exit -- it must be a
+# throwaway path, never an existing directory you care about.
+if [ -z "${DEMO_DIR:-}" ]; then
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) DEMO_DIR="$(mktemp -d "${LOCALAPPDATA:-$HOME}/kb-demo-XXXXXX")" ;;
+        *) DEMO_DIR="$(mktemp -d)" ;;
+    esac
+fi
+
+if [ -d "$DEMO_DIR" ] && [ -n "$(ls -A "$DEMO_DIR" 2>/dev/null)" ]; then
+    echo "DEMO_DIR '$DEMO_DIR' already exists and is not empty -- refusing to use it: this script removes it entirely (rm -rf) on exit, so it must be a throwaway path." >&2
+    exit 1
+fi
+
 trap 'rm -rf "$DEMO_DIR"' EXIT
 export CENTER_KB_HUB_CACHE="$DEMO_DIR/.hub-cache"
 G() { git -C "$1" -c user.name=demo -c user.email=demo@local -c core.excludesFile= "${@:2}"; }

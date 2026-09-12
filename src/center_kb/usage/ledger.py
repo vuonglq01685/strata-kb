@@ -19,6 +19,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
+from center_kb.errors import KbError
+
 UNATTRIBUTED = "_unattributed"
 
 # A stem is read out of transcript CONTENT and then used as a filename, so it
@@ -27,8 +29,10 @@ UNATTRIBUTED = "_unattributed"
 STEM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 
 
-class LedgerError(RuntimeError):
-    """A ticket id cannot be turned into a ledger file name."""
+class LedgerError(KbError):
+    """A ticket id cannot be turned into a ledger file name. Its CLI call
+    site already converts it to a one-line message -- joins the KbError
+    family (Wave G fix round 2, item 7)."""
 
 
 def is_safe_stem(stem: str) -> bool:
