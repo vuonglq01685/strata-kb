@@ -185,13 +185,16 @@ def _raw_connect(path: Path) -> tuple[sqlite3.Connection, bool]:
     return conn, vec_loaded
 
 
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS repos(
+# Individual statements, not executescript: sqlite3.Connection.executescript
+# issues COMMIT first and then auto-commits each statement, so a concurrent
+# opener can see tables without schema_version and treat that as mismatch.
+_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    """CREATE TABLE IF NOT EXISTS repos(
     repo_id TEXT PRIMARY KEY,
     fingerprint TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sections(
+)""",
+    """CREATE TABLE IF NOT EXISTS sections(
     id INTEGER PRIMARY KEY,
     repo_id TEXT NOT NULL,
     doc_id TEXT NOT NULL,
@@ -201,28 +204,41 @@ CREATE TABLE IF NOT EXISTS sections(
     doc_revision TEXT NOT NULL DEFAULT '',
     content_hash TEXT NOT NULL,
     UNIQUE(repo_id, doc_id, section_id)
-);
-CREATE TABLE IF NOT EXISTS doc_tags(
+)""",
+    """CREATE TABLE IF NOT EXISTS doc_tags(
     repo_id TEXT NOT NULL,
     doc_id TEXT NOT NULL,
     tag TEXT NOT NULL,
     PRIMARY KEY(repo_id, doc_id, tag)
-);
-"""
+)""",
+    # regular FTS5 (stores text) — contentless ruled out: no DELETE/UPDATE support
+    "CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5("
+    "title, summary, body_l2, body_l3, tokenize='unicode61')",
+)
 
 
 def _create_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(_SCHEMA_SQL)
-    # regular FTS5 (stores text) — contentless ruled out: no DELETE/UPDATE support
-    conn.execute(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5("
-        "title, summary, body_l2, body_l3, tokenize='unicode61')"
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
-        (SCHEMA_VERSION,),
-    )
-    conn.commit()
+    """Create (or complete) the schema in one IMMEDIATE transaction.
+
+    A peer that lost the race blocks on busy_timeout, then sees
+    schema_version already written — it must not delete a file the winner
+    still holds (Windows cannot unlink an open handle).
+    """
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for stmt in _SCHEMA_STATEMENTS:
+            conn.execute(stmt)
+        conn.execute(
+            "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
+            (SCHEMA_VERSION,),
+        )
+        conn.commit()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
 
 
 def _has_vec_table(conn: sqlite3.Connection) -> bool:
@@ -289,7 +305,16 @@ def open_db(hub: "HubHandle") -> sqlite3.Connection:
             row = conn.execute(
                 "SELECT value FROM meta WHERE key='schema_version'"
             ).fetchone()
-            ver = row[0] if row else None  # half-built schema → rebuild branch below
+            ver = row[0] if row else None
+            if ver is None:
+                # In-progress or leftover cold build (tables visible, version
+                # not yet inserted). Complete it under BEGIN IMMEDIATE — never
+                # delete a file another process still holds.
+                _create_schema(conn)
+                row = conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'"
+                ).fetchone()
+                ver = row[0] if row else None
             if ver == SCHEMA_VERSION and (vec_loaded or not _has_vec_table(conn)):
                 return conn
             reason = (
