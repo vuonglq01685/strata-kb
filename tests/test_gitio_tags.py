@@ -48,19 +48,3 @@ def test_tag_duplicate_raises(repo):
     gitio.tag(repo, "dup")
     with pytest.raises(gitio.GitError):
         gitio.tag(repo, "dup")
-
-
-def test_push_branch_url_force_pushes(repo, remote):
-    _git(repo, "checkout", "-b", "publish/x")
-    (repo / "f.txt").write_text("y", encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-m", "c2")
-    gitio.push_branch_url(repo, str(remote), "publish/x")
-    assert "publish/x" in _git(remote, "branch", "--list", "--all")
-
-
-def test_push_branch_url_scrubs_url_from_error(repo, tmp_path):
-    secret_url = f"{tmp_path / 'missing.git'}"
-    with pytest.raises(gitio.GitError) as exc:
-        gitio.push_branch_url(repo, secret_url, "main")
-    assert secret_url not in str(exc.value)

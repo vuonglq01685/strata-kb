@@ -79,3 +79,25 @@ def test_readme_documents_doc_ids_as_tags():
     """F-C14: searchdb.py:350 indexes doc.id.lower() as a synthetic tag."""
     text = _normalised(_readme_text())
     assert "a document id is also accepted as a tag" in text
+
+
+def test_readme_pins_the_publish_mode_rule():
+    """Fix round 1, Minor 5: this batch replaced the "local-path hub" /
+    "GitHub hub" heuristic with pubgate.decide_mode -- mode is chosen by
+    whether the hub has a git remote, not by the hub's URL shape. Four
+    README sites describe this; pin the new phrase, and pin the absence of
+    the old one so reintroducing it at ANY of the four sites fails -- the
+    positive assertion alone only covers the site that carries it."""
+    text = _normalised(_readme_text())
+    assert "picks direct only for a hub with no git remote" in text
+    assert "local-path hub" not in text
+
+
+def test_readme_pins_the_registry_mistake_guard_framing():
+    """Fix round 1, Minor 5: the registry check cannot authenticate a
+    publisher (the remote URL is self-asserted) -- it is a mistake guard,
+    not a security boundary. Branch protection on the hub is the actual
+    boundary. Pin this framing so it isn't quietly reworded back into an
+    authentication claim."""
+    text = _normalised(_readme_text())
+    assert "mistake guard" in text

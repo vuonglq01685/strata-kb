@@ -13,6 +13,7 @@ from check_package import (  # noqa: E402
     pyproject_version,
     sdist_offenders,
     tag_matches,
+    venv_bin,
     wheel_offenders,
     wheel_required_missing,
 )
@@ -229,3 +230,17 @@ def test_sdist_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path)
         "AERO-KB_Architecture_v0.1.pdf",
         "scripts",
     ]
+
+
+def test_venv_bin_picks_scripts_on_windows_layout(tmp_path):
+    venv = tmp_path / "v"
+    (venv / "Scripts").mkdir(parents=True)
+
+    assert venv_bin(venv).name == "Scripts"
+
+
+def test_venv_bin_picks_bin_on_posix_layout(tmp_path):
+    venv = tmp_path / "v"
+    (venv / "bin").mkdir(parents=True)
+
+    assert venv_bin(venv).name == "bin"

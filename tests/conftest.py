@@ -249,6 +249,84 @@ def hub_worktree(tmp_path: Path, run_git) -> Path:
     return hub
 
 
+@pytest.fixture
+def hub_with_origin(hub_worktree: Path, run_git, tmp_path: Path) -> Path:
+    """hub_worktree, plus a bare 'origin' remote it has already pushed to —
+    for tests that need to tell "no remote" apart from "nothing to push"."""
+    origin = tmp_path / "hub-origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(hub_worktree, "remote", "add", "origin", str(origin))
+    run_git(hub_worktree, "push", "-u", "origin", "HEAD")
+    return hub_worktree
+
+
+@pytest.fixture
+def make_upload():
+    """A .tar.gz holding a minimal one-doc KB for a given repo-id -- for tests
+    that call intake.intake_publish directly with a synthetic upload."""
+    import io
+    import tarfile
+
+    def _make(rid: str) -> bytes:
+        buf = io.BytesIO()
+        files = {
+            "index.yaml": f"docs:\n  - id: {rid}-doc\n    title: {rid}\n    tags: []\n",
+            f"{rid}-doc/_manifest.yaml": (
+                f"id: {rid}-doc\ntitle: {rid}\nrevision: r1\nsections:\n"
+                "  - id: '1.1'\n    title: One\n    summary: s\n"
+                "    status: reviewed\n    file: ch1\n"
+            ),
+            f"{rid}-doc/ch1.md": f"## 1.1 One\n\n{rid} condensed.\n",
+            f"{rid}-doc/ch1.raw.md": f"## 1.1 One\n\n{rid} verbatim.\n",
+        }
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            for name, text in files.items():
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+        return buf.getvalue()
+
+    return _make
+
+
+@pytest.fixture
+def intake_cfg(hub_with_origin, tmp_path, monkeypatch):
+    """IntakeConfig wired to hub_with_origin (hub_worktree + a real bare
+    'origin' remote already pushed to), with the GitHub App calls faked out.
+
+    For tests that call intake.intake_publish directly, bypassing the OIDC
+    HTTP route -- test_intake_http.py has its own `intake_cfg` (a different
+    fixture, local to that module, built on its own hub_with_registry +
+    keypair fixtures for exercising the authenticated /intake/publish route)
+    which this one does not replace.
+    """
+    from center_kb import ghapp, intake
+
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+
+    def fake_http(req):
+        import json
+
+        url = req.full_url
+        if req.get_method() == "GET" and url.endswith("/installation"):
+            return 200, json.dumps({"id": 9}).encode()
+        if req.get_method() == "POST" and url.endswith("/access_tokens"):
+            return 201, json.dumps({"token": "fake-installation-token"}).encode()
+        if req.get_method() == "POST" and url.endswith("/pulls"):
+            return 201, json.dumps({"html_url": "https://github.com/acme/hub/pull/1"}).encode()
+        raise AssertionError(f"unexpected http call in intake_cfg fixture: {req.get_method()} {url}")
+
+    return intake.IntakeConfig(
+        hub_ref=str(hub_with_origin),
+        audience="https://kb.test",
+        creds=ghapp.AppCreds(app_id="1", private_key_pem="unused-fake-http"),
+        http=fake_http,
+        push_via_token_url=False,
+    )
+
+
 def make_fed_entry(
     federation_dir: Path,
     repo_id: str,
@@ -344,3 +422,111 @@ def fed_hub(tmp_path: Path, run_git) -> Path:
     run_git(hub, "add", "-A")
     run_git(hub, "commit", "-m", "hub v1")
     return hub
+
+
+# ==========================================================================
+# The undiscardable hub cache (Ruling P49, Wave G fix round 5)
+# ==========================================================================
+#
+# `hub._discard_cache` is `shutil.rmtree` and nothing else, so "a hub cache
+# that cannot be discarded" has to be produced by making rmtree lose. Six
+# tests across five files need exactly that, and every one of them used to
+# hand-roll the SAME Windows-only recipe -- open a file handle inside the
+# clone -- and then hand-roll a `skipif(sys.platform != "win32")` beside it
+# (or, in two cases, forget to).
+#
+# That was the wrong shape twice over. Ruling P49: *the behaviour under test
+# is platform-independent; only the mechanism for making the cache
+# undiscardable is platform-specific.* "A hub cache that cannot be discarded
+# produces one clean message and a non-zero exit, not a traceback" is true
+# on every platform this ships to, and `_gate.yml` T1 runs three of its five
+# legs on ubuntu-latest while the Dockerfile targets Linux -- so skipping
+# there left the platform the product actually runs on uncovered, and the
+# round-4 re-review measured the unguarded ones as a hard CI red rather than
+# a vacuous pass.
+#
+# Measured on real Linux (python:3.11-slim, uid 1000, Wave G fix round 5 --
+# `hub.resolve_hub` driven end to end against a real git legacy cache):
+#
+#   open file handle held inside the cache  -> rmtree SUCCEEDS  (no GitError)
+#   read-only parent directory              -> GitError, cache named
+#   neither (control)                       -> rmtree SUCCEEDS
+#
+# POSIX does have a mechanism; it is just not the Windows one. Unlinking a
+# directory ENTRY needs write permission on the DIRECTORY, not on the file,
+# and `_clear_readonly_and_retry` chmods the file, so its retry cannot help
+# -- exactly the shape the Windows handle produces. So the tests are now
+# platform-neutral and the mechanism is chosen per platform, which is what
+# P49 asks for.
+#
+# The one case with no mechanism at all is POSIX as root: root bypasses
+# discretionary access control, so the read-only directory is not read-only
+# for it (measured in the same container as uid 0: rmtree SUCCEEDS). That,
+# and only that, skips -- once, here, for every caller. GitHub Actions'
+# ubuntu-latest runs as a non-root user, so all three Linux legs really run.
+_NO_POSIX_MECHANISM_AS_ROOT = (
+    "a hub cache that cannot be discarded has no mechanism on POSIX when "
+    "running as root: rmtree fails on POSIX because the entry's PARENT "
+    "directory is not writable, and root bypasses that check (measured, "
+    "python:3.11-slim as uid 0: rmtree succeeds where it fails as uid "
+    "1000). Windows uses an open file handle instead and is unaffected. "
+    "CI's ubuntu-latest legs run as a non-root user, so they DO run this "
+    "-- only a root shell (a bare container) skips it."
+)
+
+
+@pytest.fixture
+def undiscardable_hub_cache():
+    """Context manager: make `shutil.rmtree(cache)` -- and so
+    `hub._discard_cache(cache)` -- fail, by whichever mechanism this OS has.
+
+    Used by every test that needs `resolve_hub` to raise `gitio.GitError`
+    from a legacy cache it cannot remove:
+
+      * tests/test_hub.py::test_discard_cache_failure_names_the_cache_and_the_fix
+      * tests/test_cli_errors.py::test_locked_hub_cache_discard_is_one_line_not_a_traceback
+      * tests/test_cli_errors.py::test_doctor_locked_hub_cache_discard_is_one_line_not_a_traceback
+      * tests/test_intake_core.py::test_resolve_hub_or_503_converts_a_locked_cache_into_a_503_not_a_500
+      * tests/test_web_app.py::test_hub_locked_cache_returns_503_not_a_crash
+
+    (`tests/test_mcp.py::test_hub_locked_cache_returns_guidance_not_a_crash`
+    is NOT one of them, whatever earlier skip reasons in this tree claimed:
+    it fakes `resolve_hub` outright and is platform-independent already.
+    `tests/test_intake_http.py` and `tests/test_intake_startup.py` each hold
+    one more instance of the hand-rolled recipe; they belong to another
+    task's file scope and are untouched -- they should adopt this fixture.)
+
+    The probe it plants is the real-world cause the error message names:
+    `<cache>/.kb-work/search.sqlite3`, the file a `kb query`/MCP/web process
+    holds open.
+    """
+    import contextlib
+    import os
+    import sys
+
+    if sys.platform != "win32" and getattr(os, "geteuid", lambda: 1)() == 0:
+        pytest.skip(_NO_POSIX_MECHANISM_AS_ROOT)
+
+    @contextlib.contextmanager
+    def _undiscardable(cache: Path):
+        probe_dir = cache / ".kb-work"
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        probe = probe_dir / "search.sqlite3"
+        probe.write_text("x", encoding="utf-8")
+        if sys.platform == "win32":
+            handle = probe.open("r", encoding="utf-8")
+            try:
+                yield cache
+            finally:
+                handle.close()
+        else:
+            os.chmod(probe_dir, 0o500)
+            try:
+                yield cache
+            finally:
+                # rmtree got partway: restore write permission either way,
+                # or tmp_path teardown inherits the failure.
+                if probe_dir.is_dir():
+                    os.chmod(probe_dir, 0o700)
+
+    return _undiscardable

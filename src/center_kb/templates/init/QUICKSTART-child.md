@@ -12,10 +12,11 @@ the hub's `federation/`.
    Optionally also fill `intake:` (the hub's intake service URL) to publish
    from CI via OIDC instead — zero secrets on this repo (see step 5).
    **Warning:** `repo_id:` in this file must exactly match the id this repo
-   is registered under in the hub's `federation/registry.yaml`. On mismatch,
-   publish still succeeds and the PR opens, but the dev CLI will time out
-   waiting for a PR that actually opened, and uploads lose incrementality
-   (every publish becomes a full upload).
+   is registered under in the hub's `federation/registry.yaml`. `kb publish`
+   refuses a mismatch before anything is written, naming both ids. Over the
+   `intake:` path it still succeeds and the PR opens, but the dev CLI will
+   time out waiting for a PR that actually opened, and uploads lose
+   incrementality (every publish becomes a full upload).
 
 ## Author and publish
 

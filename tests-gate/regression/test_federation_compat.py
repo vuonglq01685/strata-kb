@@ -78,7 +78,7 @@ def test_new_binary_queries_a_v090_federation(tmp_path, run_git, kb_run):
 
 
 def test_new_binary_doctors_a_v090_federation(
-    tmp_path, run_git, kb_run, strip_kind_warning
+    tmp_path, run_git, kb_run, strip_kind_warning, strip_legacy_config_mirror_warning
 ):
     """Not just "no Traceback" — that bar is far too low (see the reasoning in
     test_kb_backcompat.py::test_new_binary_runs_doctor_on_a_legacy_kb). We must
@@ -88,6 +88,12 @@ def test_new_binary_doctors_a_v090_federation(
 
     The bare reader .kb below has no `kind:` recorded, so the designed
     "repo kind is not recorded" nudge is expected — see KIND_WARNING in
+    tests-gate/conftest.py.
+
+    This fixture's golden/config.yaml is also a genuinely older, real
+    v0.9.1-published file (see the module docstring above) that `kb publish`
+    itself would never write anymore — so the legacy-mirror nudge is
+    expected too, and must actually fire: see LEGACY_CONFIG_MIRROR_WARNING in
     tests-gate/conftest.py. Every other warning still fails the gate."""
     hub = _hub_from_fixture(tmp_path, run_git)
     repo = tmp_path / "reader"
@@ -106,9 +112,12 @@ def test_new_binary_doctors_a_v090_federation(
         "v0.9.0 — unclear whether it read it correctly or merely did not crash\n"
         f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     )
-    assert "[warning]" not in strip_kind_warning(proc.stdout), (
-        "doctor printed 'kb doctor: OK' yet still emitted a [warning] on a "
-        f"federation published by v0.9.0\n--- stdout ---\n{proc.stdout}"
+    stdout = strip_kind_warning(proc.stdout)
+    stdout = strip_legacy_config_mirror_warning(stdout)
+    assert "[warning]" not in stdout, (
+        "doctor printed 'kb doctor: OK' yet still emitted an unexpected "
+        f"[warning] on a federation published by v0.9.0\n"
+        f"--- stdout ---\n{proc.stdout}"
     )
     assert "[error]" not in proc.stdout, (
         "doctor printed 'kb doctor: OK' yet still emitted an [error] on a "

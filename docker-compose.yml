@@ -3,6 +3,29 @@ services:
     build: .
     ports: ["8321:8321"]
     env_file: .env
+    # Round-4 blast-radius containment for the intake HTTP service's HIGH-1
+    # fix (a bounded-but-still-real per-publish memory cost): measured on
+    # this repo's own harness (see .superpowers/sdd/2026-09-11-federation-
+    # publish-ci-review-fixes/wave-h-fix-round-4-report.md) -- an at-rest
+    # create_app (api+ui, warmed search index, no MCP mount) peaks at
+    # ~74 MiB RSS, and one worst-shape-but-legitimate publish at
+    # DEFAULT_MAX_TAR (a single ~49 MiB member) adds ~56 MiB on top of a
+    # bare process. intake_publish's own CapacityLimiter (intake.py) caps
+    # concurrent publishes at 2, so 74 + 2*56 = ~186 MiB is the measured
+    # floor; this leaves generous headroom (not measured here) for the
+    # /mcp mount, uvicorn, and general Python/OS overhead a real deployment
+    # adds on top. Not a hard science -- retune from real `docker stats`
+    # if this proves too tight or too loose.
+    mem_limit: 512m
+    # H2 (round 5): the round-4 mem_limit edit silently DELETED this block.
+    # The file still rendered (`docker compose config` is happy with a
+    # service that mounts nothing), which is exactly why nothing caught it --
+    # but Dockerfile's `WORKDIR /data` + `--kb /data/.kb --hub /data` means a
+    # hub without `./:/data` serves an EMPTY knowledge base from a container
+    # -local scratch directory, and without the cache mount it re-downloads
+    # the embedding model on every restart (defeating the 60s start_period
+    # warmup) while leaving `kb-model-cache` below declared-but-unreferenced.
+    # Pinned by test_scaffolded_compose_pins_the_hub_data_and_model_volumes.
     volumes:
       - ./:/data
       - kb-model-cache:/home/app/.cache

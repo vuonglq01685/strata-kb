@@ -121,8 +121,9 @@ And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI
           │
           │  kb publish   ← step 5: mirror to the hub + open a PR there
           ▼
-   Hub PR merges (or direct-push on a local-path hub) → federation/ updated —
-   this is the single review gate that makes content live.
+   Hub PR merges (direct push instead, only for a hub with no git remote) →
+   federation/ updated — this is the single review gate that makes content
+   live.
           │
           │  kb query "your question..."   ← step 6: day-to-day use (reads the hub only)
           ▼
@@ -178,7 +179,21 @@ Do this only if you want to **run `kb` on your machine** (e.g. try `kb query`, o
 
 ### Requirements
 - **Python 3.11+** (this project uses Python 3.13).
-- **Git** installed, with access to the repo.
+- **Git** installed, with access to the repo. **Git 2.31 or newer** if your
+  `.kb/config.yaml` `hub:` URL carries a credential (the
+  `https://x-access-token:<token>@github.com/org/repo.git` shape the CI
+  templates use): from 0.21.0 the token is kept out of the clone's git
+  config and handed to git through `GIT_CONFIG_COUNT`, which git added in
+  2.31 and older versions ignore silently — below that floor no
+  `Authorization` header is sent at all and every hub command fails, the
+  first clone included, with git's own authentication error. This applies on
+  every machine that clones the hub — your workstation, any runner running
+  `kb publish`/`kb reindex`/`kb doctor`/`kb query`, and the intake server (a
+  `kb ci-publish` runner does not clone the hub itself; its intake server
+  does, and answers `503` if it cannot). Debian 11 (git 2.30.2) and Ubuntu
+  20.04 LTS (2.25.1) are both under the floor. An ssh `hub:` (`git@…`),
+  a public `https://` hub, and a `hub:` that is a directory on this machine
+  carry no credential and need no particular git version.
 
 ### Steps
 
@@ -286,7 +301,7 @@ The table below lists core commands (from Phase 1) in typical workflow order. Fo
 | 5 | `kb query` | Natural-language question → relevant passages **from the hub federation** (a hub is mandatory — set it in `.kb/config.yaml`); add `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
 | 6 | `kb get` | Fetch exactly one section by id (when you already know it) | When you know the section id |
 | 7 | `kb stats` | Token counts per layer — cost-savings evidence | Tracking / reporting |
-| 8 | `kb publish` | Mirror .kb/ (L0→L3) → a PR on the hub (commits directly on a local-path hub) | CI on every `.kb/` change (Phase 3) |
+| 8 | `kb publish` | Mirror .kb/ (L0→L3) → a PR on the hub (direct commit instead when the hub has no git remote) | CI on every `.kb/` change (Phase 3) |
 | 9 | `kb reindex` | Rebuild federation/index.yaml when it has drifted out of sync | Repair |
 
 ### 7.1 `kb ingest` — load a PDF into the system
@@ -476,9 +491,13 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 > **Hub-first architecture (2026-07-13):** `kb query`, MCP and the Web UI **read
 > only the hub's `federation/`** — the local `.kb/` is a drafting desk, nobody
 > queries it. `kb publish` mirrors the full L0→L3 into `federation/<repo-id>/`,
-> rebuilds the aggregate `federation/index.yaml`, and (on a GitHub hub) opens a
-> PR — merging that PR is the single review gate, and content only becomes
-> searchable once it is merged. Details:
+> rebuilds the aggregate `federation/index.yaml`, and opens a PR on a hub with
+> a git remote (direct-commits instead only when the hub has none; a remote
+> hub that can't take a PR gets a refusal, not a silent push — and on a
+> *governed* hub that refusal is final, see "Known limitations" in
+> `CHANGELOG.md`) — merging that PR (or the direct commit, on a remote-less hub)
+> is the single review gate, and content only becomes searchable once it
+> lands on the hub. Details:
 > `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`.
 
 Phase 2 lets one knowledge store talk to developers via MCP and pin citations. Phase 3 solves the next problem: **one reference document often matters to many repos** (e.g. a shared technical standard used by a nav-data repo and a crew-ops repo alike) — you shouldn't ingest and summarize the same document in every repo. Phase 3 lets shared documents live as **a single copy** in a central store called **kb-hub**, while other repos only "reference" it.
@@ -487,15 +506,15 @@ Phase 2 lets one knowledge store talk to developers via MCP and pin citations. P
 
 **Three new things to know:**
 
-1. **`kb publish`** — mirrors this store's full `.kb/` (L0→L3) into `federation/<repo-id>/` on the hub and rebuilds `federation/index.yaml`. The hub is read from `.kb/config.yaml` (`hub:` + `repo_id:`), not a CLI flag — `--hub`/`--repo-id` only override it. On a GitHub hub it opens/updates a Pull Request there (`--pr`); on a local-path hub it commits directly (`--direct`); with neither flag it auto-picks direct for local-path hubs. Run manually, or via CI (see `.github/workflows/kb-publish.yml`) on every `.kb/` change.
+1. **`kb publish`** — mirrors this store's full `.kb/` (L0→L3) into `federation/<repo-id>/` on the hub and rebuilds `federation/index.yaml`. The hub is read from `.kb/config.yaml` (`hub:` + `repo_id:`), not a CLI flag — `--hub`/`--repo-id` only override it. `--pr` opens/updates a Pull Request there (needs a git remote; refuses if `gh` can't open one on it); `--direct` commits directly (refused on a *governed* hub — one carrying a non-empty `federation/registry.yaml` — that has a git remote); with neither flag it picks direct only for a hub with no git remote, and for a remote hub it opens a PR — or refuses when `gh` cannot open one. Run manually, or via CI (see `.github/workflows/kb-publish.yml`) on every `.kb/` change. **Upgrading to 0.21.0:** on a *governed* hub that `gh` cannot open a PR on — a GitLab/Gitea/self-hosted hub, or a GitHub hub on a machine where `gh` is not installed — all three modes now refuse where the previous release direct-pushed; see "Known limitations" in `CHANGELOG.md` for what is still available. (A GitHub hub where `gh` is installed but not authenticated is not a new refusal of a working publish: the previous release already chose PR mode there and then failed at `gh pr create`.) Check the git version too — a `hub:` URL carrying a credential now needs git ≥ 2.31 on every machine and runner, see [Requirements](#requirements). **What gets mirrored changed too:** before 0.21.0, publish copied *every* file under `.kb/` onto the hub — `.kb/config.yaml`, dotfiles and all; it now copies `.kb/` artefacts only (documents, indexes, manifests, `assets/`) and prints a `[warn] ... (allowlist)` line naming what it withheld. That is worth acting on because `.kb/config.yaml`'s `hub:` field routinely carries a `https://x-access-token:<token>@github.com/org/repo.git` URL, and it was mirrored on every publish: **run `kb doctor` against the hub before your first publish after upgrading** — it names file by file whatever an older publish left inside each `federation/<repo-id>/` entry, but that first publish strips those files out of the entry, after which `kb doctor` reports `kb doctor: OK` and names nothing. That window closes at the next publish, whoever or whatever triggers it — the scaffolded CI workflow fires on a `kb-publish/*` tag, and `kb publish` itself creates and pushes that tag; once it has happened the only record left is the hub's own history (`git log --all -- 'federation/*/config.yaml'`, run inside the hub repo). **If a token or secret was ever published into a hub entry this way, rotate it now** — removing the file from the working tree does not remove it from git history, and the warning disappearing does not mean the credential is gone.
 2. **`kb query`, `kb context new`, `kb resolve`, `kb doctor`** — all read **only** `federation/` on the hub (never the local `.kb/`). The hub is mandatory, resolved from `.kb/config.yaml` (or `--hub`/`CENTER_KB_HUB` to override). Example: `kb query "..."` returns every matching section across every published repo, full L2 content — no `[remote]`-truncated entries, because federation already holds the full mirror. Doc ids that collide across repos need qualifying as `repo-id:doc-id` (the tool tells you when it's ambiguous). The tool keeps a local hub clone fresh — no manual `git clone`.
 3. **`--semantic`** on `kb query` — hybrid search already combines keyword and meaning when the embed extra is installed; `--semantic` now only warns clearly when embeddings are unavailable. Optional extra (`pip install -e ".[embed]"`) — without it, `kb query` still works with keyword match, no error.
 
-**Offloading image assets to S3 (optional):** a hub can declare `asset_store: {mode: s3, bucket: ...}` in its `.kb/config.yaml`; from then on, publishes upload image assets (`<sha256>.png`/`.webp`) to that bucket instead of committing them into `federation/`, recording what was diverted in `_assets.yaml` alongside each doc. `/assets/<name>` on the hub server then serves diverted images straight from the bucket, with a local disk cache so repeat requests skip the round-trip. This needs `pip install "center-kb[s3]"` plus standard AWS credentials (env vars, shared config, or instance role) on any machine that publishes or serves — the intake server, CI, and the MCP/Web host. The default, `mode: none`, is unchanged: assets stay committed in git like every other `.kb/` file.
+**Offloading image assets to S3 (optional):** a hub can declare `asset_store: {mode: s3, bucket: ...}` in its `.kb/config.yaml`; from then on, publishes upload image assets (`<sha256>.png`/`.webp`) to that bucket instead of committing them into `federation/`, recording what was diverted in `_assets.yaml` alongside each doc. `/assets/<name>` on the hub server then serves diverted images straight from the bucket, with a local disk cache so repeat requests skip the round-trip. This needs `pip install "center-kb[s3]"` plus standard AWS credentials (env vars, shared config, or instance role) on any machine that publishes or serves — the intake server, CI, and the MCP/Web host. The default, `mode: none`, is unchanged: assets stay committed in git like every other `.kb/` file. **One 0.21.0 note if you publish through `kb ci-publish`:** the intake now caps every uploaded path at 110 UTF-16 code units, so that `federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH` without `git -c core.longpaths=true`; the previous release had no length check at all. Ordinary image assets fit — `kb ingest` writes them under `<doc-id>/assets/` with a content-addressed basename (`<sha256>.png`/`.webp`, 68–69 characters), so a realistic `arinc-424/assets/<sha256>.png` is 85 and publishes normally. A path that does cross 110 is refused with `400` and the whole upload fails, not just that file, so a deeply nested doc-id plus a long filename can stop a publish. A hub declaring `mode: s3` is exempt for its assets (those files never reach the published tree); `kb publish --pr`/`--direct` are not bound by the cap at all. See "Breaking changes" in `CHANGELOG.md`.
 
 **`kb-context` blocks pin one hub commit.** The generated block records the hub's `version` (HEAD at write time) and repo-qualified refs (`repo-id:doc-id §section`). `kb resolve` walks the hub's git history at that pinned commit to answer `ok`/`stale`/`broken`. Older two-version blocks (`version` + `hub_version`, from the pre-2026-07-13 design) resolve as `broken` with a hint to re-pin via `kb context new` — see the [Migration](#migration-to-the-hub-first-architecture-v090) section below.
 
-**Remote MCP lookup without cloning the repo:** previously an agent had to clone the repo first to use MCP. Phase 3 lets you run the MCP server as a shared HTTP service (not only local stdio), authenticated with a token — full deploy guide in [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
+**Remote MCP lookup without cloning the repo:** previously an agent had to clone the repo first to use MCP. Phase 3 lets you run the MCP server as a shared HTTP service (not only local stdio), authenticated with a token — full deploy guide in [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md). Behind a reverse proxy, set `CENTER_KB_TRUSTED_PROXIES` (default `0` — X-Forwarded-For ignored, keyed on the socket peer) to the number of trusted proxies in front of the server, or **both** per-caller rate limiters — `/intake/publish` (30/minute) and `/ui/login` (5/minute) — key every caller on the proxy's address instead of its own, so one caller can exhaust either for everyone; see that guide's "Rate-limit key behind a reverse proxy" section for the deployment warning that comes with it.
 
 **Want to see the full lifecycle for real (2 repos contributing to one hub, cross-repo search, stale citations after amendments)?** Run `bash scripts/demo-federation.sh` — it builds a hub and 2 sample repos in a temp directory, runs end-to-end, then cleans up without touching your real data.
 
@@ -613,9 +632,11 @@ code-knowledge documents — a domain document must not take either suffix.
 Scaffold a `dev` repo with `kb init --kind dev`; see `QUICKSTART-DEV.md`
 (generated into the repo) for the full setup, including the two
 environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that
-wire the assistant to the hub's MCP server, and allowlisting this repo in
+wire the assistant to the hub's MCP server, and registering this repo in
 the hub's `federation/registry.yaml` before publishing either document
-works.
+works. A hub with a non-empty registry is *governed*: `kb publish` refuses
+a repo-id the publisher's own remote is not registered for, and refuses
+direct pushes.
 
 ---
 
@@ -854,8 +875,17 @@ walkthrough.
 **Operational prerequisites (spec §14, not code — set these up once per
 `dev` repo):**
 
-- Allowlist the repo in the hub's `federation/registry.yaml` (both
-  `-code` and `-svc` publish through this).
+- Register the repo in the hub's `federation/registry.yaml` (both `-code`
+  and `-svc` publish through this). Note what the registry does and does
+  not do: on the git path it is a *mistake guard* — a child's remote URL
+  is self-asserted, so the check cannot authenticate anyone. What it
+  enforces is the route: a governed hub takes PRs or `kb ci-publish`, and
+  branch protection on the hub plus the OIDC intake are the actual
+  security boundary. Both of those routes need GitHub — `--pr` needs a
+  host `gh` can open a pull request on, and `kb ci-publish` runs only in
+  the child's GitHub Actions job against a github.com hub — so a governed
+  hub that is not on GitHub leaves a `dev` repo with no publish route at
+  all; see "Known limitations" in `CHANGELOG.md`.
 - Decide the hub's auto-merge policy for `-code` PRs, and confirm `-svc`
   PRs are excluded from it — see the auto-merge note in
   [7.12](#712-phase-5-stage-b--kb-code-ingest) above. **This is a
@@ -1015,14 +1045,23 @@ Before tagging, run the whole verification gate on your machine:
 ./scripts/gate.sh
 ```
 
-It runs exactly what CI runs, in four tiers:
+It runs the same tiers CI runs, on **one** interpreter and **one** OS — T0
+lint, T1 tests, T2 packaging plus an sdist install smoke, T3 e2e and T4
+regression against the built wheel. Green here is what catches a red PR
+before you push; it is not the matrix. CI additionally runs ubuntu ×
+3.11/3.12/3.13 plus windows-latest.
 
-1. **T1 (unit/integration)** — `pytest` against the source tree.
-2. **T2 (packaging)** — build the wheel + sdist, `uv lock --check`, `twine check`,
+1. **T0 (lint)** — `ruff check .`.
+2. **T1 (unit/integration)** — `pytest` against the source tree.
+3. **T2 (packaging)** — build the wheel + sdist, `uv lock --check`, `twine check`,
    install the wheel into a clean venv, check the version (`kb --version` matches
    `pyproject.toml`, and matches the tag when releasing), and make sure `tests/`,
    `.kb/` and `sources/` never sneak into the package.
-3. **T3 (e2e against the installed artifact)** — runs the real user journey from
+4. **T2b (sdist install smoke)** — install the built `.tar.gz` into a separate
+   clean venv, run `kb --version`, and load a packaged template through
+   `importlib.resources` to confirm the sdist installs and its package data is
+   reachable, not just the wheel.
+5. **T3 (e2e against the installed artifact)** — runs the real user journey from
    the **installed wheel**, not the source tree, in a separate venv that has no
    `center-kb`: `kb init` → load an already-"ingested" fixture
    (`tests-gate/fixtures/pending-kb/`, standing in for the output of `ingest`) →
@@ -1034,9 +1073,13 @@ It runs exactly what CI runs, in four tiers:
    gate** — it needs the `[ingest]` extra (docling + torch, ~2GB) *and* a
    copyrighted PDF that must never be committed to the repo (see `sources/` in
    section 5), so it cannot run on a CI runner.
-4. **T4 (regression)** — backward compatibility with older `.kb/` stores
+6. **T4 (regression)** — backward compatibility with older `.kb/` stores
    (v0.7.0/v0.8.0/v0.9.0), the MCP contract, golden output, and federation
-   compatibility.
+   compatibility. T4's federation fixture is a flat v0.9.0 hub. A pre-0.9
+   federation in the `manifests/` slim layout is skipped by
+   `federation.iter_entry_dirs` with a warning, so an un-republished
+   pre-0.9 entry disappears from search once the CLI reading the hub is
+   upgraded — republish from the source repo to bring it back.
 
 Once the gate is green on your machine:
 

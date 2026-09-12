@@ -28,6 +28,8 @@ from center_kb.web.ratelimit import (
     LOGIN_MAX_ATTEMPTS,
     LOGIN_WINDOW_SECONDS,
     SlidingWindowLimiter,
+    client_key,
+    trusted_proxies_from_env,
 )
 
 logger = logging.getLogger("center_kb.web.ui")
@@ -198,12 +200,17 @@ def build_routes(
     limiter = login_limiter or SlidingWindowLimiter(
         LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS
     )
+    # F-D12 item 4: this route has no IntakeConfig to read (build_routes only
+    # gets ServerConfig), so it reads the same env var through ratelimit.py's
+    # shared parser rather than duplicating intake.py's parsing -- one
+    # authority for CENTER_KB_TRUSTED_PROXIES, covering both limiters.
+    trusted_proxies = trusted_proxies_from_env()
 
     async def login_get(request: Request) -> HTMLResponse:
         return HTMLResponse(templating.render("login.html", error=""))
 
     async def login_post(request: Request) -> Response:
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = client_key(request, trusted_proxies)
         # Checked before the token compare: a brute-forcer must not learn of
         # a hit inside the lockout window.
         if not limiter.allow(client_ip):
@@ -456,24 +463,49 @@ def build_routes(
         a store hit is written to the on-disk cache and served from there on
         subsequent requests. A store lookup failure raises AssetStoreError,
         which propagates to the handler for a 503 response.
+
+        A local-tree or disk-cache hit is hash-verified before being served
+        or cached; a mismatch is treated as a miss (disk-cache is evicted)
+        so a bad object heals on the next request instead of being served
+        forever.
         """
         cached = asset_cache.get(name)
         if cached is not None and cached.is_file():
             return cached
+        local_hit = None
         for base in (hub.kb_dir, hub.federation_dir):
             if not base.is_dir():
                 continue
             # content-addressed name → any hit is THE asset (natural dedupe)
             for path in base.glob(f"**/assets/{name}"):
-                asset_cache[name] = path
-                return path
+                local_hit = path
+                break
+            if local_hit is not None:
+                break
+        if local_hit is not None:
+            if assetstore.verify_bytes(name, local_hit.read_bytes()):
+                asset_cache[name] = local_hit
+                return local_hit
+            logger.warning(
+                "local asset %s does not match its name -- ignoring, "
+                "falling through to the store", local_hit,
+            )
         cache_file = _disk_cache_dir() / name
         if cache_file.is_file():
-            asset_cache[name] = cache_file
-            return cache_file
+            if assetstore.verify_bytes(name, cache_file.read_bytes()):
+                asset_cache[name] = cache_file
+                return cache_file
+            logger.warning(
+                "disk-cached asset %s does not match its name -- evicting, "
+                "falling through to the store", cache_file,
+            )
+            try:
+                cache_file.unlink()
+            except OSError as exc:
+                logger.warning("asset disk cache evict failed: %s", exc)
         store = _store_for(hub)
         if store is not None:
-            data = store.get(name)  # AssetStoreError propagates to the handler
+            data = assetstore.get_verified(store, name)  # errors propagate to handler
             if data is not None:
                 target = cache_file
                 try:

@@ -3,7 +3,15 @@
 # The company-wide MCP HTTP server + Web UI run on the MAIN hub repo, not here.
 services:
   hub:
-    image: ghcr.io/vuonglq01685/center-kb:latest
+    image: ghcr.io/vuonglq01685/center-kb:v{version}
+    # A child repo never runs the intake HTTP service (see the file header
+    # above) -- this is NOT sized against round-4's HIGH-1 measurements the
+    # way docker-compose-hub.yml's mem_limit is. It exists as a generic
+    # guard against a one-shot `kb ingest` run (PDF rasterisation via
+    # docling/pypdfium2, unmeasured in this round) consuming unbounded host
+    # memory. Deliberately generous since it is unmeasured; tighten it once
+    # a real ingest run's memory profile is known.
+    mem_limit: 1g
     volumes:
       - ./:/data
       - kb-model-cache:/home/app/.cache

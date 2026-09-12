@@ -1,0 +1,10 @@
+# Ordinary repo files get git's normal LF normalisation on commit/checkout.
+# .kb/ is hashed as raw bytes on both sides of every publish diff (hashsync,
+# publish._snapshot) -- git must never convert those bytes on checkout or
+# commit, or a fresh checkout of this repo makes every publish look like a
+# whole-tree change (F-D10). The .kb/** line must stay last -- git uses the
+# last matching pattern in .gitattributes.
+* text=auto eol=lf
+*.png binary
+*.webp binary
+.kb/** -text

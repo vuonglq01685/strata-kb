@@ -21,6 +21,7 @@ from center_kb.resolve import render_resolved, resolve_refs
 from center_kb.ticketlint import lint as lint_ticket
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
+logger = logging.getLogger("center_kb.mcp")
 
 _AMBIGUOUS_MIN_RATIO = 0.8  # top-2 are "close" when the 2nd score >= 80% of the 1st
 
@@ -67,8 +68,8 @@ def _known_docs(hub) -> str:
 
 
 HUB_DOWN = (
-    "hub unreachable and no local cache — queries need the hub federation; "
-    "check the network or the hub path, then try again"
+    "hub unreachable — queries need the hub federation; check the network "
+    "or the hub path, then try again"
 )
 
 
@@ -113,7 +114,36 @@ def create_server(config: ServerConfig) -> MCPServer:
         from center_kb.hub import resolve_hub
 
         with _hub_lock:
-            return resolve_hub(config.hub)
+            # Important 1 (Wave G fix round 2 re-review): resolve_hub can
+            # now raise gitio.GitError (hub.py's _discard_cache) when a
+            # stale cache cannot be removed -- e.g. Windows holding a lock
+            # on <cache>/.kb-work/search.sqlite3, and a serving MCP process
+            # is exactly the kind of process that would be holding it open.
+            # Every call site below already treats None as "hub
+            # unreachable" (HUB_DOWN); folding the exception into that same
+            # None reuses the guard every tool call already has, instead of
+            # letting it crash the tool call as an unhandled exception. Same
+            # shape as intake._resolve_hub_or_503 (item 3, round 2) minus
+            # the 503 wrapping -- there is no HTTP status here to carry it.
+            #
+            # N-6 (Wave G fix round 4 re-review, review-waveG-fix3-verdict.md
+            # and review-webapi-guard-verdict.md Important 1): a bare
+            # `except ... return None` here discarded the ONLY diagnostic --
+            # a full locked-cache sweep at DEBUG produced zero center_kb.*
+            # log records. Worse, in that exact condition HUB_DOWN's "and no
+            # local cache" is false on both halves (the hub can be perfectly
+            # reachable, and the whole reason this raised is that a cache
+            # DOES exist -- it is merely locked); the message above was
+            # softened to stop asserting that. resolve_hub's own clone/pull
+            # failures already log at warning (see hub.py) -- match that
+            # shape instead of being the one silent guard.
+            try:
+                return resolve_hub(config.hub)
+            except gitio.GitError as exc:
+                logger.warning(
+                    "hub cache unusable — serving as hub-unreachable: %s", exc
+                )
+                return None
 
     def _stale_note(hub) -> str:
         if hub is not None and hub.stale:
@@ -327,7 +357,19 @@ def main(argv: list[str] | None = None) -> None:
             )
         import uvicorn
 
-        uvicorn.run(create_http_app(config, token), host=config.host, port=config.port)
+        uvicorn.run(
+            create_http_app(config, token),
+            host=config.host,
+            port=config.port,
+            # proxy_headers=False: uvicorn's own ProxyHeadersMiddleware sits
+            # BELOW Starlette and would rewrite scope["client"] from
+            # X-Forwarded-For using its own trust model (forwarded_allow_ips),
+            # independent of CENTER_KB_TRUSTED_PROXIES and
+            # web.ratelimit.client_key. Two independent, differently-trusted
+            # XFF implementations is the hazard -- client_key must stay the
+            # single authority on X-Forwarded-For. Do not re-enable this.
+            proxy_headers=False,
+        )
         return
     create_server(config).run()
 

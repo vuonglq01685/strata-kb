@@ -58,6 +58,70 @@ def test_open_db_rebuilds_on_schema_version_mismatch(tmp_path):
         conn.close()
 
 
+def test_open_db_completes_half_built_schema_instead_of_deleting(tmp_path, monkeypatch):
+    """Tables without schema_version are an in-progress cold build, not mismatch.
+
+    Windows T1 (F-C2): a peer's `executescript` committed CREATE TABLE before
+    INSERT schema_version. `open_db` treated `None != '2'` as corruption,
+    called `delete_db()` while the peer still held the file, and raised
+    IndexBusyError — five concurrent `kb query` processes then exited 1.
+    Completing the schema must not unlink.
+    """
+    hub = _handle(tmp_path)
+    path = searchdb.db_path(hub)
+    path.parent.mkdir(parents=True)
+    holder = sqlite3.connect(path)
+    holder.execute("PRAGMA journal_mode=WAL")
+    for stmt in searchdb._SCHEMA_STATEMENTS:
+        holder.execute(stmt)
+    holder.commit()
+    deleted: list[object] = []
+
+    def spy_delete(h):
+        deleted.append(h)
+        raise searchdb.IndexBusyError(
+            "search index search.db is in use by another process — "
+            "close other kb commands and retry"
+        )
+
+    monkeypatch.setattr(searchdb, "delete_db", spy_delete)
+    try:
+        conn = searchdb.open_db(hub)
+        try:
+            ver = conn.execute(
+                "SELECT value FROM meta WHERE key='schema_version'"
+            ).fetchone()
+            assert ver == (searchdb.SCHEMA_VERSION,)
+            assert deleted == []
+        finally:
+            conn.close()
+    finally:
+        holder.close()
+
+
+def test_open_db_half_built_locked_raises_instead_of_rebuild(tmp_path, monkeypatch):
+    # tables visible, no schema_version, peer holds BEGIN IMMEDIATE — lock, never delete
+    hub = _handle(tmp_path)
+    path = searchdb.db_path(hub)
+    path.parent.mkdir(parents=True)
+    monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
+    holder = sqlite3.connect(path)
+    holder.execute("PRAGMA journal_mode=WAL")
+    for stmt in searchdb._SCHEMA_STATEMENTS:
+        holder.execute(stmt)
+    holder.commit()
+    holder.execute("BEGIN IMMEDIATE")
+    deleted: list[object] = []
+    monkeypatch.setattr(searchdb, "delete_db", lambda h: deleted.append(h))
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            searchdb.open_db(hub)
+        assert deleted == []
+    finally:
+        holder.rollback()
+        holder.close()
+
+
 def test_open_db_rebuilds_on_corrupt_file(tmp_path):
     hub = _handle(tmp_path)
     path = searchdb.db_path(hub)
