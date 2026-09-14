@@ -175,7 +175,21 @@ def _extract_block(text: str) -> str:
     raise KBContextError("no 'kb-context:' block found in the text")
 
 
+def _count_blocks(text: str) -> int:
+    """How many bare 'kb-context:' key lines the text carries, at any
+    indent — the same line `_extract_block` anchors on."""
+    return sum(1 for line in text.splitlines() if _KEY_RE.match(line))
+
+
 def parse(text: str) -> KBContext:
+    count = _count_blocks(text)
+    if count > 1:
+        raise KBContextError(
+            f"{count} 'kb-context:' blocks found — a document pins exactly "
+            "one. Delete the extra block by hand; never re-run "
+            "`kb context new`, which would rewrite the pinned version and "
+            "falsify when the document was grounded"
+        )
     block = _extract_block(text)
     try:
         data = yaml.safe_load(block)

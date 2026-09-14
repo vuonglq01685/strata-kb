@@ -65,6 +65,48 @@ def test_parse_missing_block_raises():
         kbcontext.parse("a ticket with no block at all")
 
 
+def test_two_kb_context_blocks_are_an_error_in_either_order():
+    """BEFORE: `_extract_block` returned the first block, so a valid pin
+    followed by a bogus one passed (T14) while the reverse order failed
+    (T20) — the verdict depended on block order. AFTER: two blocks is
+    itself the error."""
+    good = (
+        "## KB context\n"
+        "```yaml\n"
+        "kb-context:\n"
+        '  version: "272953a"\n'
+        "  refs:\n"
+        "    - aero:arinc-424 §5.129\n"
+        "  tags: [arinc424]\n"
+        "```\n"
+    )
+    bad = (
+        "## KB context\n"
+        "```yaml\n"
+        "kb-context:\n"
+        '  version: "0000000"\n'
+        "  refs:\n"
+        "    - aero:arinc-424 §9.999\n"
+        "  tags: [ghost-tag]\n"
+        "```\n"
+    )
+    for text in (good + bad, bad + good):
+        with pytest.raises(kbcontext.KBContextError) as excinfo:
+            kbcontext.parse(text)
+        assert "2 'kb-context:' blocks" in str(excinfo.value)
+
+
+def test_one_kb_context_block_still_parses():
+    ctx = kbcontext.parse(
+        "kb-context:\n"
+        '  version: "272953a"\n'
+        "  refs:\n"
+        "    - aero:arinc-424 §5.129\n"
+        "  tags: [arinc424]\n"
+    )
+    assert ctx.version == "272953a"
+
+
 def test_parse_missing_version_raises():
     with pytest.raises(kbcontext.KBContextError, match="version"):
         kbcontext.parse("kb-context:\n  refs:\n    - a §1\n")
