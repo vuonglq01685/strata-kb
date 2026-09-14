@@ -30,6 +30,14 @@ FENCE_RE = re.compile(r"```[ \t]*(\S*)[ \t]*\r?\n(.*?)```", re.S)
 # examples) strip these first.
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 
+
+def visible_body(body: str) -> str:
+    """`body` with HTML comments removed, outer whitespace stripped — what
+    a reader actually sees. The templates ship guidance in comments, so
+    every emptiness judgement runs on this view."""
+    return HTML_COMMENT_RE.sub("", body).strip()
+
+
 # Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>' — the
 # repo/doc-id groups match kbcontext._REF_RE semantics (repo qualifier
 # optional, '§' required). The repo group additionally accepts nested,
@@ -186,11 +194,11 @@ def check_title(text: str) -> list[Issue]:
 
 
 def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
-    """A heading only counts as present outside a fenced code block.
-    Without stripping fences first, a BA pasting a reference document (a
-    sibling mission, `TEMPLATE.md`, ...) into a ```` ``` ```` block as a
-    worked example would satisfy every required heading without the
-    document actually containing that section itself — this is the
+    """A heading only counts as present outside a fenced code block or an
+    HTML comment. Without stripping fences first, a BA pasting a reference
+    document (a sibling mission, `TEMPLATE.md`, ...) into a ```` ``` ````
+    block as a worked example would satisfy every required heading without
+    the document actually containing that section itself — this is the
     presence-only half of the gate, with no second check to catch it
     (unlike diagrams and citations, which are independently re-verified).
     Mirrors the fence-stripping `citation_scan_text` already does. A
@@ -201,9 +209,14 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     as missing. That mispairing is not introduced here: `check_diagram` and
     `citation_scan_text` have always shared `FENCE_RE`. The verdict is
     unaffected in practice, because an unpaired fence also fails the diagram
-    check, whose error names the offending section."""
+    check, whose error names the offending section. Comments are stripped
+    BEFORE fences: a required section wrapped in '<!-- ... -->' (reviewer
+    E's G5) is invisible in the rendered document, so it must not count as
+    present either — templates ship guidance comments that BAs sometimes
+    leave in place instead of replacing with real content."""
     present = {
-        line.strip() for line in FENCE_RE.sub("", text).splitlines()
+        line.strip()
+        for line in FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text)).splitlines()
     }
     return [
         Issue("error", f"missing required heading: '{heading}'")
@@ -287,7 +300,10 @@ def check_recommended_sections(
     """Warning per recommended heading that is missing or has an empty
     body. Warning-level on purpose: the required-heading sets are
     compatibility contracts and legacy documents must keep passing."""
-    present = {line.strip() for line in FENCE_RE.sub("", text).splitlines()}
+    present = {
+        line.strip()
+        for line in FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text)).splitlines()
+    }
     issues: list[Issue] = []
     for heading in headings:
         if heading not in present:
@@ -394,10 +410,13 @@ def strip_bare_kb_context(text: str) -> str:
 
 
 def citation_scan_text(text: str) -> str:
-    """Body text with all fenced code blocks (mermaid + a fenced kb-context
-    block) and any unfenced kb-context block stripped, for inline-citation
-    scanning — refs pinned in kb-context are not themselves "citations"."""
-    return strip_bare_kb_context(FENCE_RE.sub("", text))
+    """Body text with HTML comments, all fenced code blocks (mermaid + a
+    fenced kb-context block) and any unfenced kb-context block stripped,
+    for inline-citation scanning — refs pinned in kb-context are not
+    themselves "citations", and text nobody can see is not a claim."""
+    return strip_bare_kb_context(
+        FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text))
+    )
 
 
 def cite_matches_ref(ref: KBRef, repo: str | None, doc: str, sec: str) -> bool:

@@ -91,6 +91,44 @@ def test_check_headings_still_reports_a_genuinely_missing_heading():
     assert "## Business goal" in issues[0].message
 
 
+# --- check_headings / citations: HTML comments are not content ---
+
+
+def test_check_headings_ignores_a_heading_inside_a_comment():
+    """BEFORE: only fences were stripped, so four required sections could
+    be commented out and the gate still passed (reviewer E's G5). AFTER:
+    comments are stripped first — they are invisible in the rendered
+    document, so a heading inside one is not present."""
+    text = (
+        "# Ticket\n"
+        "<!--\n"
+        "## Summary\n"
+        "hidden\n"
+        "-->\n"
+        "## User Story\n"
+    )
+    issues = check_headings(text, ("## Summary", "## User Story"))
+    assert [i.message for i in issues] == [
+        "missing required heading: '## Summary'"
+    ]
+
+
+def test_visible_body_strips_comments():
+    assert lintcore.visible_body("<!-- guidance -->\n\nreal text\n") == (
+        "real text"
+    )
+    assert lintcore.visible_body("<!-- only guidance -->\n") == ""
+
+
+def test_citation_scan_text_drops_comments():
+    """G6/G7: a citation that only exists inside a comment is neither a
+    citation nor an error."""
+    scanned = lintcore.citation_scan_text(
+        "body text\n<!-- TODO check arinc-424 §9.999 later -->\n"
+    )
+    assert "9.999" not in scanned
+
+
 # --- section_body: fences do not terminate a section ---
 
 
