@@ -91,6 +91,87 @@ def test_check_headings_still_reports_a_genuinely_missing_heading():
     assert "## Business goal" in issues[0].message
 
 
+# --- section_body: fences do not terminate a section ---
+
+
+def test_section_body_ignores_a_hash_line_inside_a_fence():
+    """BEFORE: `section_body` scanned raw lines for the next '# '/'## '
+    line, so a bash comment inside a fenced example truncated the section
+    and the AC check reported 'must have at least 1 - [ ] item' on a
+    ticket that has two. AFTER: fence contents are blanked before the
+    terminator scan, so the whole section comes back."""
+    text = (
+        "## Acceptance Criteria\n"
+        "```bash\n"
+        "# example invocation\n"
+        "importer --file feed.dat\n"
+        "```\n"
+        "- [ ] AC1 — first\n"
+        "- [ ] AC2 — second\n"
+        "\n"
+        "## Use cases\n"
+        "content\n"
+    )
+    body = lintcore.section_body(text, "## Acceptance Criteria")
+    assert "- [ ] AC1 — first" in body
+    assert "- [ ] AC2 — second" in body
+    assert "## Use cases" not in body
+
+
+def test_section_body_returns_the_original_fence_text():
+    """The blanking is a scanning view only — callers still receive the
+    real text, or `check_diagram` would never find its mermaid fence."""
+    text = (
+        "## Sequence diagram\n"
+        "```text\n"
+        "# not a diagram\n"
+        "```\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  A->>B: go\n"
+        "```\n"
+    )
+    body = lintcore.section_body(text, "## Sequence diagram")
+    assert "sequenceDiagram" in body
+    assert "# not a diagram" in body
+
+
+def test_section_body_does_not_start_at_a_heading_inside_a_fence():
+    """A heading pasted into a fenced example is not a section start —
+    the same rule `check_headings` already applies to presence."""
+    text = (
+        "# Ticket\n"
+        "```markdown\n"
+        "## Summary\n"
+        "pasted example body\n"
+        "```\n"
+        "## Summary\n"
+        "the real summary\n"
+    )
+    assert lintcore.section_body(text, "## Summary").strip() == (
+        "the real summary"
+    )
+
+
+def test_section_body_does_not_start_at_a_heading_inside_a_comment():
+    text = (
+        "# Ticket\n"
+        "<!--\n"
+        "## Summary\n"
+        "commented-out guidance\n"
+        "-->\n"
+        "## Summary\n"
+        "the real summary\n"
+    )
+    assert lintcore.section_body(text, "## Summary").strip() == (
+        "the real summary"
+    )
+
+
+def test_section_body_still_returns_none_for_a_missing_heading():
+    assert lintcore.section_body("# Ticket\n\nbody\n", "## Summary") is None
+
+
 # --- check_diagram: line-start keyword anchoring ---
 
 

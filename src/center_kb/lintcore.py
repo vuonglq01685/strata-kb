@@ -24,6 +24,12 @@ if TYPE_CHECKING:
 # kb-context block) before scanning prose for inline citations.
 FENCE_RE = re.compile(r"```[ \t]*(\S*)[ \t]*\r?\n(.*?)```", re.S)
 
+# An HTML comment — the templates carry guidance in '<!-- ... -->' blocks
+# and BAs sometimes leave them in place; scanners that would false-fire on
+# guidance text (which mentions 'OPEN(<owner>)' and the banned phrases as
+# examples) strip these first.
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
 # Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>' — the
 # repo/doc-id groups match kbcontext._REF_RE semantics (repo qualifier
 # optional, '§' required). The repo group additionally accepts nested,
@@ -95,11 +101,43 @@ class LintReport:
         return "\n".join(lines)
 
 
+def _blank_invisible(text: str) -> str:
+    """`text` with the CONTENT of every fenced block and every HTML
+    comment replaced by blank lines, LINE COUNT PRESERVED.
+
+    This is a scanning view, never a value handed to a caller: line
+    numbers in the blanked copy index the same lines as the original, so
+    a scan can decide "does a section end here" while the slice is taken
+    from the real text.
+
+    Both layers are blanked for the same reason: neither is visible in
+    the rendered document. A '# ' line inside a bash example and a '## '
+    heading inside a guidance comment are equally not section
+    boundaries. An unpaired fence leaves `FENCE_RE` unmatched and the
+    text degrades to its raw form — the same documented limitation
+    `check_headings` carries.
+    """
+
+    def _blank(m: re.Match[str]) -> str:
+        return "\n" * m.group(0).count("\n")
+
+    return HTML_COMMENT_RE.sub(_blank, FENCE_RE.sub(_blank, text))
+
+
 def section_body(text: str, heading: str) -> str | None:
-    """Lines after an exact `heading` line, up to the next '# '/'## ' line."""
+    """Lines after an exact `heading` line, up to the next '# '/'## ' line.
+
+    Both the heading search and the terminator search run on
+    `_blank_invisible(text)`, so a fenced or commented-out heading never
+    opens or closes a section; the returned slice is cut from the
+    original lines.
+    """
     lines = text.splitlines()
+    scan = _blank_invisible(text).splitlines()
+    if len(scan) != len(lines):  # defensive: never mis-slice
+        scan = lines
     start = None
-    for i, line in enumerate(lines):
+    for i, line in enumerate(scan):
         if line.strip() == heading:
             start = i + 1
             break
@@ -107,7 +145,7 @@ def section_body(text: str, heading: str) -> str | None:
         return None
     end = len(lines)
     for j in range(start, len(lines)):
-        if lines[j].startswith("## ") or lines[j].startswith("# "):
+        if scan[j].startswith("## ") or scan[j].startswith("# "):
             end = j
             break
     return "\n".join(lines[start:end])
@@ -192,12 +230,6 @@ def check_diagram(
         )
     ]
 
-
-# An HTML comment — the templates carry guidance in '<!-- ... -->' blocks
-# and BAs sometimes leave them in place; scanners that would false-fire on
-# guidance text (which mentions 'OPEN(<owner>)' and the banned phrases as
-# examples) strip these first.
-HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 
 # A '- [ ]' / '- [x]' checkbox list item (open-question rows).
 CHECKBOX_ROW_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
