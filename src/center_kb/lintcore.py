@@ -72,9 +72,27 @@ def _visible_text(text: str) -> str:
 # alnum start here would make this regex fail to match them at all, which
 # is worse than the original bug (a missed citation instead of a
 # mis-parsed one).
+#
+# Since 0.22.0 this pattern is a MIGRATION DETECTOR only — it can never
+# produce an error. The gate parses `BRACKET_CITE_RE`; a bare match is
+# reported as a warning, and only when it names a ref the ticket already
+# pins.
 INLINE_CITE_RE = re.compile(
     r"(?:([A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*):)?([A-Za-z0-9][\w.-]*)\s+"
     r"§([^\s,;)\]]*[^\s,;)\].:?!])"
+)
+
+# The citation form the gate parses: '[<doc-id> §<sec>]', optionally
+# repo-qualified. The character classes are INLINE_CITE_RE's, so a
+# bracketed citation accepts exactly the ids kbcontext accepts —
+# including nested, '/'-joined repo segments for multi-tier federation.
+# Two things the brackets make safe and the bare form could not: '§' may
+# be surrounded by spaces, and the section id needs no
+# "must not end on punctuation" rule, because ']' terminates it.
+_CITE_REPO = r"[A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*"
+_CITE_DOC = r"[A-Za-z0-9][\w.-]*"
+BRACKET_CITE_RE = re.compile(
+    rf"\[(?:({_CITE_REPO}):)?({_CITE_DOC})\s*§\s*([^\s\]]+)\]"
 )
 
 # The bare 'kb-context:' key line, at any indent (mirrors kbcontext._KEY_RE)
@@ -439,27 +457,75 @@ def cite_matches_ref(ref: KBRef, repo: str | None, doc: str, sec: str) -> bool:
     return repo == ref.repo_id
 
 
+def _cite_label(repo: str | None, doc: str, sec: str) -> str:
+    return f"{repo}:{doc} §{sec}" if repo else f"{doc} §{sec}"
+
+
+def _same_doc(ref: KBRef, repo: str | None, doc: str) -> bool:
+    """`repo`/`doc` name the same document `ref` pins, section aside —
+    `cite_matches_ref`'s repo rule (None matches any repo), doc-only."""
+    if doc != ref.doc_id:
+        return False
+    return repo is None or repo == ref.repo_id
+
+
 def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
+    """Cross-check body citations against the pinned refs, both ways.
+
+    Three passes. Bracketed citations are the contract: one that no
+    pinned ref satisfies is an error. A BARE citation is never an error —
+    the pattern cannot tell a doc-id from an ordinary word, which used to
+    reject 'per ARINC 424 §5.129' outright — but when it does name a
+    pinned ref it earns a migration warning and counts as citing that
+    ref, so a pre-0.22.0 ticket reports one issue per citation, not two.
+    """
     scan_text = citation_scan_text(text)
-    citations = list(
+    bracketed = list(
         dict.fromkeys(
             (m.group(1), m.group(2), m.group(3))
-            for m in INLINE_CITE_RE.finditer(scan_text)
+            for m in BRACKET_CITE_RE.finditer(scan_text)
         )
     )
+    bare = list(
+        dict.fromkeys(
+            (m.group(1), m.group(2), m.group(3))
+            for m in INLINE_CITE_RE.finditer(BRACKET_CITE_RE.sub("", scan_text))
+        )
+    )
+
     issues: list[Issue] = []
-    for repo, doc, sec in citations:
-        label = f"{repo}:{doc} §{sec}" if repo else f"{doc} §{sec}"
+    for repo, doc, sec in bracketed:
         if not any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
+            label = _cite_label(repo, doc, sec)
             issues.append(
                 Issue(
                     "error",
                     f"citation '{label}' in the body is not in kb-context refs",
                 )
             )
+    for repo, doc, sec in bare:
+        if any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
+            label = _cite_label(repo, doc, sec)
+            issues.append(
+                Issue(
+                    "warning",
+                    f"citation '{label}' is not bracketed — write "
+                    f"'[{label}]' so the gate reads it as a citation",
+                )
+            )
     for ref in ctx.refs:
         cited = any(
-            cite_matches_ref(ref, repo, doc, sec) for repo, doc, sec in citations
+            cite_matches_ref(ref, repo, doc, sec)
+            for repo, doc, sec in bracketed + bare
+        ) or any(
+            # A bracketed citation to the WRONG section of this ref's
+            # document already earned its own "not in kb-context refs"
+            # error above — do not also claim the ref "is never cited",
+            # which is a second message about the same root cause (a
+            # section number typo'd or drifted from the pin) rather than
+            # a genuinely uncited ref.
+            _same_doc(ref, repo, doc)
+            for repo, doc, _sec in bracketed
         )
         if not cited:
             issues.append(

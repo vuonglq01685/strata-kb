@@ -61,10 +61,11 @@ def _check_ac_citations(ac_items: list[str]) -> list[Issue]:
     return [
         Issue(
             "warning",
-            f"Acceptance Criterion has no citation: '{item.strip()}'",
+            "Acceptance Criterion has no '[doc-id §section]' citation: "
+            f"'{item.strip()}'",
         )
         for item in ac_items
-        if not lintcore.INLINE_CITE_RE.search(item)
+        if not lintcore.BRACKET_CITE_RE.search(item)
     ]
 
 

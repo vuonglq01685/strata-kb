@@ -70,8 +70,8 @@ def _default_sections(block: str) -> dict[str, str]:
         ),
         "## Acceptance Criteria": (
             "- [ ] AC1: Show airspace type and level per "
-            "arinc-kb:arinc-424 §5.3\n"
-            "- [ ] AC2: Show ICAO designation per icao-kb:icao-annex-2 §1.1"
+            "[arinc-kb:arinc-424 §5.3]\n"
+            "- [ ] AC2: Show ICAO designation per [icao-kb:icao-annex-2 §1.1]"
         ),
         "## Use cases": (
             "### Main flow\n"
@@ -358,10 +358,10 @@ def test_inline_citation_not_pinned_errors(fed_hub: Path, golden_block: str):
         overrides={
             "## Acceptance Criteria": (
                 "- [ ] AC1: Show airspace type and level per "
-                "arinc-kb:arinc-424 §5.3\n"
-                "- [ ] AC2: Show ICAO designation per icao-kb:icao-annex-2 "
-                "§1.1\n"
-                "- [ ] AC3: Also cross-check crew-ops:roster-sop §3.2"
+                "[arinc-kb:arinc-424 §5.3]\n"
+                "- [ ] AC2: Show ICAO designation per "
+                "[icao-kb:icao-annex-2 §1.1]\n"
+                "- [ ] AC3: Also cross-check [crew-ops:roster-sop §3.2]"
             )
         },
     )
@@ -376,7 +376,7 @@ def test_pinned_ref_never_cited_warns(fed_hub: Path, golden_block: str):
         overrides={
             "## Acceptance Criteria": (
                 "- [ ] AC1: Show airspace type and level per "
-                "arinc-kb:arinc-424 §5.3\n"
+                "[arinc-kb:arinc-424 §5.3]\n"
                 "- [ ] AC2: Show ICAO designation (no citation needed here)"
             )
         },
@@ -394,9 +394,9 @@ def test_ac_without_citation_warns(fed_hub: Path, golden_block: str):
         overrides={
             "## Acceptance Criteria": (
                 "- [ ] AC1: Show airspace type and level per "
-                "arinc-kb:arinc-424 §5.3\n"
-                "- [ ] AC2: Show ICAO designation per icao-kb:icao-annex-2 "
-                "§1.1\n"
+                "[arinc-kb:arinc-424 §5.3]\n"
+                "- [ ] AC2: Show ICAO designation per "
+                "[icao-kb:icao-annex-2 §1.1]\n"
                 "- [ ] AC3: Also show altitude range in the tooltip"
             )
         },
@@ -411,19 +411,22 @@ def test_ac_without_citation_warns(fed_hub: Path, golden_block: str):
 def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
     fed_hub: Path, golden_block: str
 ):
-    """Ties the INLINE_CITE_RE trailing-period fix (lintcore.py, commit
-    01e4ac2) to the actual gates it feeds: `_check_ac_citations` and
-    `check_citation_consistency`. An AC whose citation ends the sentence
-    ('... arinc-kb:arinc-424 §5.3.') must be recognized as cited and as
-    resolving the pinned ref — not reported as an uncited AC, nor as an
-    unresolved citation."""
+    """A bracketed citation immediately followed by a sentence-ending
+    period ('...[arinc-kb:arinc-424 §5.3].') must be recognized as cited
+    and as resolving the pinned ref — not reported as an uncited AC, nor
+    as an unresolved citation. (Historically this pinned INLINE_CITE_RE's
+    trailing-period fix, commit 01e4ac2; `BRACKET_CITE_RE` sidesteps that
+    whole class of bug since ']' terminates the section id, but the
+    end-to-end wiring through `_check_ac_citations` and
+    `check_citation_consistency` still deserves the coverage.)"""
     text = _build_ticket(
         golden_block,
         overrides={
             "## Acceptance Criteria": (
-                "- [ ] AC1: Show airspace type per arinc-kb:arinc-424 §5.3.\n"
-                "- [ ] AC2: Show ICAO designation per icao-kb:icao-annex-2 "
-                "§1.1"
+                "- [ ] AC1: Show airspace type per "
+                "[arinc-kb:arinc-424 §5.3].\n"
+                "- [ ] AC2: Show ICAO designation per "
+                "[icao-kb:icao-annex-2 §1.1]"
             )
         },
     )
@@ -434,6 +437,13 @@ def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
     )
     assert report.passed is True
     assert report.issues == []
+
+
+def test_ac_citation_warning_counts_bracketed_citations_only():
+    from center_kb.ticketlint import _check_ac_citations
+
+    assert _check_ac_citations(["AC1 — stored [arinc-424 §5.129]"]) == []
+    assert len(_check_ac_citations(["AC1 — stored per arinc-424 §5.129"])) == 1
 
 
 # --- passed / to_json ---
@@ -764,9 +774,9 @@ def test_weasel_ac_without_open_marker_warns(
         overrides={
             "## Acceptance Criteria": (
                 "- [ ] AC1: Retention is configured per "
-                "arinc-kb:arinc-424 §5.3\n"
+                "[arinc-kb:arinc-424 §5.3]\n"
                 "- [ ] AC2: Show ICAO designation per "
-                "icao-kb:icao-annex-2 §1.1"
+                "[icao-kb:icao-annex-2 §1.1]"
             )
         },
     )
@@ -785,9 +795,9 @@ def test_weasel_ac_with_open_marker_is_suppressed(
         overrides={
             "## Acceptance Criteria": (
                 "- [ ] AC1: Retention is configured OPEN(data-team) per "
-                "arinc-kb:arinc-424 §5.3\n"
+                "[arinc-kb:arinc-424 §5.3]\n"
                 "- [ ] AC2: Show ICAO designation per "
-                "icao-kb:icao-annex-2 §1.1"
+                "[icao-kb:icao-annex-2 §1.1]"
             )
         },
     )

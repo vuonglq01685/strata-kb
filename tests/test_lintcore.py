@@ -373,17 +373,18 @@ def test_inline_cite_re_matches_a_non_alnum_initial_section_id():
     assert match.groups() == (None, "arinc-424", "(a")
 
 
-# --- INLINE_CITE_RE / check_citation_consistency: nested repo qualifiers ---
+# --- BRACKET_CITE_RE / check_citation_consistency: nested repo qualifiers ---
 
 
 def test_citation_consistency_accepts_a_nested_repo_qualifier():
     """`kbcontext._REF_RE` accepts nested path repo-ids ('mid/repo-x') for
-    multi-tier federation. `INLINE_CITE_RE`'s repo group must mirror that —
-    otherwise a body citation like 'mid/repo-x:doc-a §1.1' mis-parses (the
-    'mid/' segment is silently dropped, leaving repo='repo-x'), and a
-    correctly-pinned citation is wrongly reported as not in kb-context
-    refs."""
-    text = "See mid/repo-x:doc-a §1.1 for details."
+    multi-tier federation. `BRACKET_CITE_RE`'s repo group mirrors
+    `INLINE_CITE_RE`'s (same character classes, per its own comment) and
+    must mirror this too — otherwise a body citation like
+    '[mid/repo-x:doc-a §1.1]' mis-parses (the 'mid/' segment is silently
+    dropped, leaving repo='repo-x'), and a correctly-pinned citation is
+    wrongly reported as not in kb-context refs."""
+    text = "See [mid/repo-x:doc-a §1.1] for details."
     ctx = KBContext(
         version="1",
         refs=[KBRef(doc_id="doc-a", section_id="1.1", repo_id="mid/repo-x")],
@@ -398,7 +399,7 @@ def test_citation_consistency_still_matches_a_flat_repo_qualifier():
     """Negative lock: a flat (non-nested) repo qualifier must keep working
     exactly as before — the widened repo group must not change single-
     segment behaviour."""
-    text = "See repo-x:doc-a §1.1 for details."
+    text = "See [repo-x:doc-a §1.1] for details."
     ctx = KBContext(
         version="1",
         refs=[KBRef(doc_id="doc-a", section_id="1.1", repo_id="repo-x")],
@@ -406,6 +407,82 @@ def test_citation_consistency_still_matches_a_flat_repo_qualifier():
 
     issues = check_citation_consistency(text, ctx)
 
+    assert issues == []
+
+
+# --- BRACKET_CITE_RE: the citation form the gate parses ---
+
+_CTX = KBContext(
+    version="272953a",
+    refs=[KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.129")],
+    tags=["arinc424"],
+)
+
+
+def test_bracket_citation_matches_a_pinned_ref():
+    issues = check_citation_consistency(
+        "The designator is stored [arinc-424 §5.129].", _CTX
+    )
+    assert issues == []
+
+
+def test_bracket_citation_tolerates_a_space_after_the_section_mark():
+    assert check_citation_consistency("see [arinc-424 § 5.129]", _CTX) == []
+
+
+def test_bracket_citation_with_a_repo_qualifier():
+    assert check_citation_consistency("see [aero:arinc-424 §5.129]", _CTX) == []
+
+
+def test_bracket_citation_to_an_unpinned_section_is_an_error():
+    issues = check_citation_consistency("see [arinc-424 §5.126]", _CTX)
+    assert [i.level for i in issues] == ["error"]
+    assert "not in kb-context refs" in issues[0].message
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "per ARINC 424 §5.129 the designator is stored",
+        "see (ARINC-424 §5.129)",
+        "ICAO Annex 3 §4.2.1 says so",
+        "Refer to section §5.129 of arinc-424.",
+    ],
+)
+def test_natural_prose_never_produces_an_error(prose):
+    """BEFORE: the doc-id was the last token before '§', so every one of
+    these failed the gate at error level (reviewer E's HIGH-4 table).
+    AFTER: only bracketed citations are parsed, so prose is prose."""
+    assert [
+        i for i in check_citation_consistency(prose + " [arinc-424 §5.129]", _CTX)
+        if i.level == "error"
+    ] == []
+
+
+def test_bare_citation_matching_a_ref_gets_a_migration_warning():
+    issues = check_citation_consistency(
+        "The designator is stored per arinc-424 §5.129.", _CTX
+    )
+    assert [i.level for i in issues] == ["warning"]
+    assert "[arinc-424 §5.129]" in issues[0].message
+
+
+def test_bare_citation_satisfies_the_reverse_check():
+    """A pre-bracket ticket collects the migration warning and nothing
+    else — never a second 'ref is never cited' warning for the same
+    place."""
+    issues = check_citation_consistency("stored per arinc-424 §5.129.", _CTX)
+    assert len(issues) == 1
+
+
+def test_a_pinned_ref_nobody_cites_is_still_a_warning():
+    issues = check_citation_consistency("no citations here", _CTX)
+    assert [i.level for i in issues] == ["warning"]
+    assert "is never cited" in issues[0].message
+
+
+def test_a_bracketed_citation_is_not_also_reported_as_bare():
+    issues = check_citation_consistency("[arinc-424 §5.129]", _CTX)
     assert issues == []
 
 

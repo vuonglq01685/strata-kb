@@ -211,7 +211,7 @@ def _default_sections(block: str) -> dict[str, str]:
         ),
         "## Business goal": (
             "Cut route-briefing time by showing restrictive airspace inline. "
-            "Airspace records follow arinc-kb:arinc-424 §5.3."
+            "Airspace records follow [arinc-kb:arinc-424 §5.3]."
         ),
         "## Scope": (
             "**In scope:** map rendering, filtering by airspace class.\n"
@@ -234,7 +234,7 @@ def _default_sections(block: str) -> dict[str, str]:
             "```"
         ),
         "## Constraints & assumptions": (
-            "ICAO designation rules per icao-kb:icao-annex-2 §1.1 apply."
+            "ICAO designation rules per [icao-kb:icao-annex-2 §1.1] apply."
         ),
         "## US backlog": (
             "| US ID | Title |\n"
@@ -575,10 +575,10 @@ def test_vietnamese_golden_mission_passes(fed_hub: Path, golden_block: str):
             ),
             "## Business goal": (
                 "Giảm thời gian briefing tuyến bay. Bản ghi vùng trời theo "
-                "arinc-kb:arinc-424 §5.3."
+                "[arinc-kb:arinc-424 §5.3]."
             ),
             "## Constraints & assumptions": (
-                "Quy tắc định danh ICAO theo icao-kb:icao-annex-2 §1.1."
+                "Quy tắc định danh ICAO theo [icao-kb:icao-annex-2 §1.1]."
             ),
         },
     )
@@ -766,7 +766,7 @@ def test_inline_citation_not_pinned_errors(fed_hub: Path, golden_block: str):
         golden_block,
         overrides={
             "## Scope": (
-                "**In scope:** map rendering per faa-kb:faa-7110 §2.2.\n"
+                "**In scope:** map rendering per [faa-kb:faa-7110 §2.2].\n"
                 "**Out of scope:** editing."
             )
         },
