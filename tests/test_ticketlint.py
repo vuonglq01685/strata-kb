@@ -790,14 +790,22 @@ def test_weasel_ac_without_open_marker_warns(
     )
 
 
-def test_weasel_ac_with_open_marker_is_suppressed(
+def test_weasel_ac_open_marker_suppresses_only_its_own_parentheses(
     fed_hub: Path, golden_block: str
 ):
+    """BEFORE 0.22.0: an OPEN(...) marker anywhere on the AC line
+    suppressed every weasel phrase on that line, so 'Retention is
+    configured OPEN(data-team) per ...' reported nothing even though
+    'configured' sat outside the marker's own parentheses. AFTER: only
+    the phrase INSIDE an OPEN(...)'s own parentheses is suppressed — a
+    phrase outside it still warns.
+    """
     doc = _build_ticket(
         golden_block,
         overrides={
             "## Acceptance Criteria": (
-                "- [ ] AC1: Retention is configured OPEN(data-team) per "
+                "- [ ] AC1: Retention is configured and the threshold "
+                "is OPEN(data-team: appropriate) per "
                 "[arinc-kb:arinc-424 §5.3]\n"
                 "- [ ] AC2: Show ICAO designation per "
                 "[icao-kb:icao-annex-2 §1.1]"
@@ -805,7 +813,16 @@ def test_weasel_ac_with_open_marker_is_suppressed(
         },
     )
     report = ticketlint.lint(doc, _hub(fed_hub))
-    assert not any("weasel" in w for w in _warnings(report))
+    assert report.passed is True  # warning, never an error
+    # 'configured' sits outside OPEN(...)'s own parentheses — still warns.
+    assert any(
+        "banned weasel phrase 'configured'" in w for w in _warnings(report)
+    )
+    # 'appropriate' sits inside OPEN(data-team: ...)'s own parentheses —
+    # suppressed, the documented owned-vagueness exception.
+    assert not any(
+        "banned weasel phrase 'appropriate'" in w for w in _warnings(report)
+    )
 
 
 def test_orphan_open_marker_warns_when_open_questions_has_no_rows(
