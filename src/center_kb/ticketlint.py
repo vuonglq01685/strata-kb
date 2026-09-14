@@ -22,6 +22,39 @@ if TYPE_CHECKING:
 # A '- [ ]' / '- [x]' checkbox list item.
 _AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 
+# Required sections whose body is checked by a stronger, section-specific
+# check — a second "is it filled" error would only duplicate it.
+_FILL_EXEMPT: frozenset[str] = frozenset(
+    {
+        "## KB context",          # parsed by check_context_block
+        "## Sequence diagram",    # check_diagram
+        "## Business flow",       # check_diagram
+        "## Definition of Ready", # _check_dor_checklist, below
+    }
+)
+
+
+def _check_required_filled(text: str) -> list[Issue]:
+    """NT1 — a required section that says nothing is not a section.
+    Presence was the whole contract before 0.22.0, so a ticket of nine
+    headings over nine 'TBD's passed the gate (reviewer E's T1)."""
+    issues: list[Issue] = []
+    for heading in ticket.REQUIRED_HEADINGS:
+        if heading in _FILL_EXEMPT:
+            continue
+        body = lintcore.section_body(text, heading)
+        if body is None:
+            continue  # missing heading — already reported by check_headings
+        if acquality.is_unfilled(lintcore.visible_body(body)):
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{heading}' is empty or only placeholder text — "
+                    "fill it in",
+                )
+            )
+    return issues
+
 
 def _check_story(text: str) -> list[Issue]:
     body = lintcore.section_body(text, "## User Story")
@@ -35,7 +68,22 @@ def _check_story(text: str) -> list[Issue]:
                 "<capability>, so that <value>.'",
             )
         ]
-    return []
+    match = ticket.STORY_PARTS_RE.search(body)
+    if match is None:  # shape matched but parts did not — treat as unfilled
+        return []
+    issues: list[Issue] = []
+    for name in ("role", "capability", "value"):
+        part = match.group(name).strip().rstrip(".")
+        letters = re.sub(r"[\W_]+", "", part, flags=re.UNICODE)
+        if len(letters) < 2 or acquality.is_unfilled(part):
+            issues.append(
+                Issue(
+                    "error",
+                    f"User Story part <{name}> says nothing: '{part}' — "
+                    "name the actual role, capability and value",
+                )
+            )
+    return issues
 
 
 def _check_ac_present(text: str) -> tuple[list[Issue], list[str]]:
@@ -47,14 +95,51 @@ def _check_ac_present(text: str) -> tuple[list[Issue], list[str]]:
         for line in body.splitlines()
         if (m := _AC_ITEM_RE.match(line.strip()))
     ]
-    if not items:
+    if len(items) < 2:
         return [
             Issue(
                 "error",
-                "Acceptance Criteria must have at least 1 '- [ ]' item",
+                "Acceptance Criteria must have at least 2 '- [ ]' items — "
+                f"found {len(items)}",
             )
-        ], []
+        ], items
     return [], items
+
+
+_AC_ID_RE = re.compile(r"^(AC\d+)\b", re.I)
+
+
+def _check_ac_ids(ac_items: list[str]) -> list[Issue]:
+    """Two ACs sharing an id make every downstream reference ambiguous —
+    the AC→test map in the PR template names ids."""
+    seen: set[str] = set()
+    issues: list[Issue] = []
+    for item in ac_items:
+        m = _AC_ID_RE.match(item.strip())
+        if m is None:
+            continue
+        key = m.group(1).upper()
+        if key in seen:
+            issues.append(
+                Issue(
+                    "error",
+                    f"duplicate Acceptance Criterion id '{m.group(1)}' — "
+                    "give every AC its own id",
+                )
+            )
+        seen.add(key)
+    return issues
+
+
+def _check_ac_substance(ac_items: list[str]) -> list[Issue]:
+    issues: list[Issue] = []
+    for item in ac_items:
+        reason = acquality.ac_substance(item)
+        if reason is not None:
+            issues.append(
+                Issue("error", f"AC {reason}: '{item.strip()}'")
+            )
+    return issues
 
 
 def _check_ac_citations(ac_items: list[str]) -> list[Issue]:
@@ -71,12 +156,15 @@ def _check_ac_citations(ac_items: list[str]) -> list[Issue]:
 
 def _check_ac_weasel(ac_items: list[str]) -> list[Issue]:
     """NT2 — an AC that cannot be acceptance-tested does not exist.
-    Warning per banned phrase (docs/ac-quality.md); an OPEN(<owner>)
-    marker on the same AC suppresses it (declared, owned vagueness)."""
+    Warning per banned phrase (docs/ac-quality.md). Since 0.22.0 an
+    OPEN(<owner>) marker suppresses only the phrase(s) sitting INSIDE its
+    own parentheses, and only when the owner is real — a marker whose
+    owner is TBD/?/empty (declared but unowned vagueness) suppresses
+    nothing at all (see acquality.weasel_hits)."""
     return [
         Issue(
             "warning",
-            f"AC uses banned weasel phrase '{phrase}' without "
+            f"AC uses banned weasel phrase '{phrase}' outside any owned "
             f"OPEN(<owner>): '{item.strip()}' — see docs/ac-quality.md",
         )
         for item in ac_items
@@ -115,6 +203,71 @@ def _check_owned_unknowns(text: str) -> list[Issue]:
         )
     issues += lintcore.check_open_question_owners(rows)
     return issues
+
+
+_NFR_HEADING = "## Non-functional requirements"
+
+
+def _check_nfr_targets(text: str) -> list[Issue]:
+    """Every NFR row needs a number or an owned unknown in Target. The
+    section itself is RECOMMENDED — its absence stays a warning from
+    check_recommended_sections; a table of moods is an error."""
+    body = lintcore.section_body(text, _NFR_HEADING)
+    if body is None:
+        return []
+    rows = lintcore.table_rows(lintcore.visible_body(body))
+    if len(rows) < 2:
+        return []  # header only, or no table — emptiness is warned elsewhere
+    header = [c.strip().lower() for c in rows[0]]
+    target = header.index("target") if "target" in header else 1
+    issues: list[Issue] = []
+    for cells in rows[1:]:
+        if len(cells) <= target:
+            continue
+        if not acquality.nfr_target_ok(cells[target]):
+            concern = cells[0] if cells else "?"
+            issues.append(
+                Issue(
+                    "error",
+                    f"NFR row '{concern}' has no measurable Target "
+                    f"('{cells[target]}') — give a number or OPEN(<owner>)",
+                )
+            )
+    return issues
+
+
+_DOR_HEADING = "## Definition of Ready"
+
+
+def _check_dor_checklist(text: str) -> list[Issue]:
+    """The checklist must exist; ticking it is the BA's job at review
+    time, so an unticked box is a warning — the wrappers forbid the agent
+    from ticking one itself."""
+    body = lintcore.section_body(text, _DOR_HEADING)
+    if body is None:
+        return []
+    rows = [
+        m
+        for line in body.splitlines()
+        if (m := lintcore.CHECKBOX_STATE_RE.match(line.strip()))
+    ]
+    if not rows:
+        return [
+            Issue(
+                "error",
+                f"'{_DOR_HEADING}' has no '- [ ]' checklist rows — keep the "
+                "template's checklist",
+            )
+        ]
+    return [
+        Issue(
+            "warning",
+            f"Definition of Ready item is not ticked: "
+            f"'{m.group('text').strip()}'",
+        )
+        for m in rows
+        if m.group("mark") == " "
+    ]
 
 
 def check_parent_mission(
@@ -235,10 +388,13 @@ def lint(
     notes: list[str] = []
     issues += lintcore.check_title(text)
     issues += lintcore.check_headings(text, ticket.REQUIRED_HEADINGS)
+    issues += _check_required_filled(text)
     issues += _check_story(text)
 
     ac_issues, ac_items = _check_ac_present(text)
     issues += ac_issues
+    issues += _check_ac_ids(ac_items)
+    issues += _check_ac_substance(ac_items)
 
     issues += lintcore.check_diagram(
         text, "## Sequence diagram", ("sequenceDiagram",)
@@ -255,6 +411,8 @@ def lint(
         text, ticket.RECOMMENDED_HEADINGS
     )
     issues += _check_owned_unknowns(text)
+    issues += _check_nfr_targets(text)
+    issues += _check_dor_checklist(text)
     issues += lintcore.check_review_record(text)
 
     pm_issues, pm_notes = check_parent_mission(text, path, missions_dir)

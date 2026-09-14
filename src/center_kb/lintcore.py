@@ -305,6 +305,10 @@ def check_diagram(
 # A '- [ ]' / '- [x]' checkbox list item (open-question rows).
 CHECKBOX_ROW_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 
+# The same row, with its tick state. CHECKBOX_ROW_RE stays as it is — its
+# callers only want the text.
+CHECKBOX_STATE_RE = re.compile(r"^-\s*\[(?P<mark>[ xX])\]\s*(?P<text>.+)$")
+
 OPEN_QUESTIONS_HEADING = "## Open questions"
 
 

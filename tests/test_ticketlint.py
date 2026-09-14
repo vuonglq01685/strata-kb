@@ -163,7 +163,14 @@ def _warnings(report: ticketlint.LintReport) -> list[str]:
 def test_golden_ticket_passes(fed_hub: Path, golden_block: str):
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     assert report.passed is True
-    assert report.issues == []
+    # No errors; the only warnings are the golden ticket's 3 unticked DoR
+    # boxes (see test_unticked_definition_of_ready_boxes_are_a_warning_only
+    # — the wrappers forbid the agent from ticking one itself).
+    assert _errors(report) == []
+    assert all(
+        "Definition of Ready item is not ticked" in w
+        for w in _warnings(report)
+    )
 
 
 def test_vietnamese_golden_ticket_passes(fed_hub: Path, golden_block: str):
@@ -187,7 +194,13 @@ def test_vietnamese_golden_ticket_passes(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is True
-    assert report.issues == []
+    # Same "no errors, only the 3 unticked-DoR warnings" shape as
+    # test_golden_ticket_passes above.
+    assert _errors(report) == []
+    assert all(
+        "Definition of Ready item is not ticked" in w
+        for w in _warnings(report)
+    )
 
 
 # --- check 1: required headings + title ---
@@ -377,7 +390,8 @@ def test_pinned_ref_never_cited_warns(fed_hub: Path, golden_block: str):
             "## Acceptance Criteria": (
                 "- [ ] AC1: Show airspace type and level per "
                 "[arinc-kb:arinc-424 §5.3]\n"
-                "- [ ] AC2: Show ICAO designation (no citation needed here)"
+                "- [ ] AC2: Show ICAO designation using a 2-letter code "
+                "(no citation needed here)"
             )
         },
     )
@@ -397,7 +411,8 @@ def test_ac_without_citation_warns(fed_hub: Path, golden_block: str):
                 "[arinc-kb:arinc-424 §5.3]\n"
                 "- [ ] AC2: Show ICAO designation per "
                 "[icao-kb:icao-annex-2 §1.1]\n"
-                "- [ ] AC3: Also show altitude range in the tooltip"
+                "- [ ] AC3: Also show altitude range between FL180 and "
+                "FL220 in the tooltip"
             )
         },
     )
@@ -439,7 +454,13 @@ def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
         "not in kb-context refs" in msg for msg in _errors(report)
     )
     assert report.passed is True
-    assert report.issues == []
+    # Same "no errors, only the 3 unticked-DoR warnings" shape as
+    # test_golden_ticket_passes above.
+    assert _errors(report) == []
+    assert all(
+        "Definition of Ready item is not ticked" in w
+        for w in _warnings(report)
+    )
 
 
 def test_ac_citation_warning_counts_bracketed_citations_only():
@@ -761,12 +782,20 @@ def test_parent_mission_without_paths_degrades_to_a_note(
 # --- new-template warnings (BA upgrade v2) ---
 
 
-def test_golden_ticket_still_passes_with_no_issues(
+def test_golden_ticket_still_passes_with_no_new_errors(
     fed_hub: Path, golden_block: str
 ):
+    """Regression guard: the RECOMMENDED-heading and substance checks
+    (BA upgrade v2, then HIGH-1) must not introduce spurious errors on
+    the golden ticket. Warnings are expected — the 3 unticked DoR boxes,
+    see test_unticked_definition_of_ready_boxes_are_a_warning_only."""
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     assert report.passed is True
-    assert report.issues == []
+    assert _errors(report) == []
+    assert all(
+        "Definition of Ready item is not ticked" in w
+        for w in _warnings(report)
+    )
 
 
 def test_weasel_ac_without_open_marker_warns(
@@ -897,8 +926,11 @@ def test_legacy_nine_section_ticket_still_passes(
         parts.append("")
     report = ticketlint.lint("\n".join(parts), _hub(fed_hub))
     assert report.passed is True
-    # RECOMMENDED_HEADINGS warnings + 1 missing-Review-record warning.
-    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS) + 1
+    # RECOMMENDED_HEADINGS warnings + 1 missing-Review-record warning + 3
+    # unticked-DoR-box warnings (the default '## Definition of Ready' body
+    # from _default_sections ships 3 unticked rows, same as the golden
+    # ticket — see test_unticked_definition_of_ready_boxes_are_a_warning_only).
+    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS) + 1 + 3
 
 
 def test_recommended_headings_constant_is_not_in_required():
@@ -960,3 +992,140 @@ def test_fabricated_kb_context_tag_errors(fed_hub: Path, golden_block: str):
     report = ticketlint.lint(text, _hub(fed_hub))
 
     assert any("ghost-tag" in e for e in _errors(report)), _errors(report)
+
+
+# --- substance checks at error level (HIGH-1) ---
+
+
+def test_a_ticket_of_placeholders_fails(fed_hub: Path, golden_block: str):
+    """Reviewer E's T1: every required heading present, every body 'TBD'
+    — DoR: PASS with warnings only, before 0.22.0."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Summary": "TBD",
+            "## Background / Business context": "",
+            "## Use cases": "…",
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert (
+        "'## Summary' is empty or only placeholder text — fill it in"
+        in _errors(report)
+    )
+    assert (
+        "'## Use cases' is empty or only placeholder text — fill it in"
+        in _errors(report)
+    )
+
+
+def test_a_single_acceptance_criterion_fails(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Show airspace type per "
+                "[arinc-kb:arinc-424 §5.3]"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any("at least 2 '- [ ]' items" in m for m in _errors(report))
+
+
+def test_vague_acceptance_criteria_fail(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: The system shall behave correctly\n"
+                "- [ ] AC2: Performance is acceptable"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert sum("no Given/When/Then" in m for m in _errors(report)) == 2
+
+
+def test_duplicate_ac_ids_fail(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Show type per [arinc-kb:arinc-424 §5.3]\n"
+                "- [ ] AC1: Show level per [arinc-kb:arinc-424 §5.3]"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any(
+        "duplicate Acceptance Criterion id 'AC1'" in m for m in _errors(report)
+    )
+
+
+def test_a_one_letter_user_story_fails(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={"## User Story": "As a x, I want y, so that z."},
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert sum("User Story part" in m for m in _errors(report)) == 3
+
+
+def test_a_short_but_real_user_story_passes(fed_hub: Path, golden_block: str):
+    """Guard against over-reach: 'BA' is a two-character role and must
+    keep passing — the rule rejects a part with fewer than 2 word
+    characters, not a short word."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## User Story": (
+                "As a BA, I want the designator stored, so that the feed "
+                "is auditable."
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("User Story part" in m for m in _errors(report))
+
+
+def test_an_unquantified_nfr_row_fails(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Non-functional requirements": (
+                "| Concern | Target | How to measure | Source |\n"
+                "|---|---|---|---|\n"
+                "| Speed | fast | eyeball | n/a |"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any("no measurable Target" in m for m in _errors(report))
+
+
+def test_a_definition_of_ready_with_no_rows_fails(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block, overrides={"## Definition of Ready": "All good."}
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any("no '- [ ]' checklist rows" in m for m in _errors(report))
+
+
+def test_unticked_definition_of_ready_boxes_are_a_warning_only(
+    fed_hub: Path, golden_block: str
+):
+    """The wrappers forbid the agent from ticking a box itself
+    (claude-skill-ba-ticket-author.md:171-174), so an unticked checklist
+    can never be an error — the golden ticket ships three unticked rows
+    and still passes."""
+    report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
+    unticked = [
+        m for m in _warnings(report)
+        if "Definition of Ready item is not ticked" in m
+    ]
+    assert len(unticked) == 3
+    assert report.passed is True

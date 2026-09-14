@@ -44,6 +44,14 @@ RECOMMENDED_HEADINGS: tuple[str, ...] = (
 # multiline (the story text may wrap).
 STORY_RE = re.compile(r"as an?\s+.+?i want\s+.+?so that\s+", re.I | re.S)
 
+# The same story shape, with each part captured, so the gate can ask
+# whether the parts say anything. STORY_RE stays the shape check.
+STORY_PARTS_RE = re.compile(
+    r"as an?\s+(?P<role>.+?)\s*,?\s*i want\s+(?P<capability>.+?)"
+    r"\s*,?\s*so that\s+(?P<value>.+)",
+    re.I | re.S,
+)
+
 # '> Parent mission: M-<slug>' — an OPTIONAL back-link to a mission plan,
 # placed directly under the H1 title. Deliberately not a required
 # heading: REQUIRED_HEADINGS is a compatibility contract, so every
