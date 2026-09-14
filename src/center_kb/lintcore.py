@@ -49,48 +49,53 @@ def _visible_text(text: str) -> str:
     return FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text))
 
 
-# Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>' — the
-# repo/doc-id groups match kbcontext._REF_RE semantics (repo qualifier
-# optional, '§' required). The repo group additionally accepts nested,
-# '/'-joined path segments (e.g. 'mid/repo-x') to mirror kbcontext._REF_RE's
-# multi-tier federation support — a body citation qualified by a nested
-# repo-id must resolve against a kb-context ref pinned at that same nested
-# id, not silently drop everything before the last '/'. This mirrors the
-# '/'-segment STRUCTURE only, not the exact charset: each segment here is
-# `[\w.-]` (Python's `\w` is Unicode-aware by default, so this is wider
-# than kbcontext._REF_RE's explicit ASCII-only `[A-Za-z0-9._-]`) — kept as
-# it was before this note; not tightened, since narrowing it risks missing
-# citations against repo-ids that already validated fine elsewhere. The
-# section-id
-# group must END on a character that is not sentence punctuation: prose
-# that cites a section at the end of a sentence ('... per arinc-424 §5.3.')
-# would otherwise absorb the sentence-ending period into the section id,
-# making a correctly-pinned citation look unresolved. Unlike the repo/doc-id
-# groups, the section id is NOT anchored on its leading character —
-# kbcontext._REF_RE's section-id half accepts any non-whitespace token
-# ('\S+'), so ids such as '(a' or '_intro' are legal to pin; requiring an
-# alnum start here would make this regex fail to match them at all, which
-# is worse than the original bug (a missed citation instead of a
-# mis-parsed one).
+# The repo/doc-id character classes shared by INLINE_CITE_RE and
+# BRACKET_CITE_RE below — kept as named constants (not just prose
+# claiming the two agree) so the "same classes" invariant is true by
+# construction, not by eyeball. Both match kbcontext._REF_RE semantics
+# (repo qualifier optional, doc-id required). The repo group additionally
+# accepts nested, '/'-joined path segments (e.g. 'mid/repo-x') to mirror
+# kbcontext._REF_RE's multi-tier federation support — a body citation
+# qualified by a nested repo-id must resolve against a kb-context ref
+# pinned at that same nested id, not silently drop everything before the
+# last '/'. This mirrors the '/'-segment STRUCTURE only, not the exact
+# charset: each segment here is `[\w.-]` (Python's `\w` is Unicode-aware
+# by default, so this is WIDER than kbcontext._REF_RE's explicit
+# ASCII-only `[A-Za-z0-9._-]`) — kept as it was before this note; not
+# tightened, since narrowing it risks missing citations against repo-ids
+# that already validated fine elsewhere.
+_CITE_REPO = r"[A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*"
+_CITE_DOC = r"[A-Za-z0-9][\w.-]*"
+
+# Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>'. The
+# section-id group must END on a character that is not sentence
+# punctuation: prose that cites a section at the end of a sentence
+# ('... per arinc-424 §5.3.') would otherwise absorb the sentence-ending
+# period into the section id, making a correctly-pinned citation look
+# unresolved. Unlike the repo/doc-id groups, the section id is NOT
+# anchored on its leading character — kbcontext._REF_RE's section-id half
+# accepts any non-whitespace token ('\S+'), so ids such as '(a' or
+# '_intro' are legal to pin; requiring an alnum start here would make
+# this regex fail to match them at all, which is worse than the original
+# bug (a missed citation instead of a mis-parsed one).
 #
 # Since 0.22.0 this pattern is a MIGRATION DETECTOR only — it can never
 # produce an error. The gate parses `BRACKET_CITE_RE`; a bare match is
 # reported as a warning, and only when it names a ref the ticket already
 # pins.
 INLINE_CITE_RE = re.compile(
-    r"(?:([A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*):)?([A-Za-z0-9][\w.-]*)\s+"
+    rf"(?:({_CITE_REPO}):)?({_CITE_DOC})\s+"
     r"§([^\s,;)\]]*[^\s,;)\].:?!])"
 )
 
 # The citation form the gate parses: '[<doc-id> §<sec>]', optionally
-# repo-qualified. The character classes are INLINE_CITE_RE's, so a
-# bracketed citation accepts exactly the ids kbcontext accepts —
-# including nested, '/'-joined repo segments for multi-tier federation.
-# Two things the brackets make safe and the bare form could not: '§' may
-# be surrounded by spaces, and the section id needs no
+# repo-qualified. Built from the same `_CITE_REPO`/`_CITE_DOC` constants
+# as INLINE_CITE_RE, so a bracketed citation accepts AT LEAST the ids
+# kbcontext accepts (the Unicode-wide `\w` above means "at least", not
+# "exactly") — including nested, '/'-joined repo segments for multi-tier
+# federation. Two things the brackets make safe and the bare form could
+# not: '§' may be surrounded by spaces, and the section id needs no
 # "must not end on punctuation" rule, because ']' terminates it.
-_CITE_REPO = r"[A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*"
-_CITE_DOC = r"[A-Za-z0-9][\w.-]*"
 BRACKET_CITE_RE = re.compile(
     rf"\[(?:({_CITE_REPO}):)?({_CITE_DOC})\s*§\s*([^\s\]]+)\]"
 )
@@ -461,12 +466,13 @@ def _cite_label(repo: str | None, doc: str, sec: str) -> str:
     return f"{repo}:{doc} §{sec}" if repo else f"{doc} §{sec}"
 
 
-def _same_doc(ref: KBRef, repo: str | None, doc: str) -> bool:
-    """`repo`/`doc` name the same document `ref` pins, section aside —
-    `cite_matches_ref`'s repo rule (None matches any repo), doc-only."""
-    if doc != ref.doc_id:
-        return False
-    return repo is None or repo == ref.repo_id
+def _same_doc(ref: KBRef, doc: str) -> bool:
+    """`doc` names the same document `ref` pins — the REPO qualifier is
+    deliberately ignored (unlike `cite_matches_ref`'s exact match): this
+    predicate feeds only the reverse-check suppression below, whose whole
+    point is to also swallow a repo-qualifier typo on an otherwise-correct
+    citation, not just a wrong section."""
+    return doc == ref.doc_id
 
 
 def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
@@ -494,15 +500,26 @@ def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
     )
 
     issues: list[Issue] = []
+    unresolved: list[tuple[str | None, str, str]] = []
     for repo, doc, sec in bracketed:
-        if not any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
-            label = _cite_label(repo, doc, sec)
-            issues.append(
-                Issue(
-                    "error",
-                    f"citation '{label}' in the body is not in kb-context refs",
-                )
+        if any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
+            continue
+        unresolved.append((repo, doc, sec))
+        label = _cite_label(repo, doc, sec)
+        pinned = sorted({r.section_id for r in ctx.refs if r.doc_id == doc})
+        fix = (
+            f"pin '{doc} §{sec}' in kb-context refs, or correct the "
+            f"section to one already pinned ({', '.join(pinned)})"
+            if pinned
+            else f"pin '{doc} §{sec}' in kb-context refs"
+        )
+        issues.append(
+            Issue(
+                "error",
+                f"citation '{label}' in the body is not in kb-context "
+                f"refs — {fix}",
             )
+        )
     for repo, doc, sec in bare:
         if any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
             label = _cite_label(repo, doc, sec)
@@ -517,15 +534,18 @@ def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
         cited = any(
             cite_matches_ref(ref, repo, doc, sec)
             for repo, doc, sec in bracketed + bare
-        ) or any(
-            # A bracketed citation to the WRONG section of this ref's
-            # document already earned its own "not in kb-context refs"
-            # error above — do not also claim the ref "is never cited",
-            # which is a second message about the same root cause (a
-            # section number typo'd or drifted from the pin) rather than
-            # a genuinely uncited ref.
-            _same_doc(ref, repo, doc)
-            for repo, doc, _sec in bracketed
+        ) or (
+            # An UNRESOLVED bracketed citation to this ref's document
+            # already earned its own "not in kb-context refs" error
+            # above — do not also claim the ref "is never cited", a
+            # second message about the same root cause (a wrong section
+            # or a typo'd repo qualifier). Only safe when the document
+            # has exactly ONE pinned ref: with two pins of one document,
+            # an unresolved citation could be "about" either one, so we
+            # cannot credit either — both genuinely-uncited refs must
+            # still warn (two true warnings beat one silent hole).
+            sum(1 for r in ctx.refs if r.doc_id == ref.doc_id) == 1
+            and any(_same_doc(ref, doc) for _repo, doc, _sec in unresolved)
         )
         if not cited:
             issues.append(

@@ -431,7 +431,10 @@ def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
         },
     )
     report = ticketlint.lint(text, _hub(fed_hub))
-    assert not any("has no citation" in msg for msg in _warnings(report))
+    assert not any(
+        "has no '[doc-id §section]' citation" in msg
+        for msg in _warnings(report)
+    )
     assert not any(
         "not in kb-context refs" in msg for msg in _errors(report)
     )

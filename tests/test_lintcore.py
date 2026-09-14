@@ -395,6 +395,17 @@ def test_citation_consistency_accepts_a_nested_repo_qualifier():
     assert issues == []
 
 
+def test_inline_cite_re_still_matches_a_nested_repo_qualifier():
+    """Direct coverage for INLINE_CITE_RE's own nested-repo group: the two
+    tests above moved onto BRACKET_CITE_RE (correctly — it's what the gate
+    parses), which left this group with no coverage of its own. It still
+    matters: it is what produces the correct migration warning for a bare
+    nested-repo citation ('mid/repo-x:doc-a §1.1' with no brackets)."""
+    (match,) = list(INLINE_CITE_RE.finditer("mid/repo-x:doc-a §1.1"))
+
+    assert match.groups() == ("mid/repo-x", "doc-a", "1.1")
+
+
 def test_citation_consistency_still_matches_a_flat_repo_qualifier():
     """Negative lock: a flat (non-nested) repo qualifier must keep working
     exactly as before — the widened repo group must not change single-
@@ -436,6 +447,48 @@ def test_bracket_citation_with_a_repo_qualifier():
 
 def test_bracket_citation_to_an_unpinned_section_is_an_error():
     issues = check_citation_consistency("see [arinc-424 §5.126]", _CTX)
+    assert [i.level for i in issues] == ["error"]
+    assert "not in kb-context refs" in issues[0].message
+
+
+def test_two_pinned_sections_of_one_doc_uncited_one_still_warns():
+    """Case A (controller ruling on Finding 1's review): a document
+    pinned at TWO sections, only one of which is cited, must still warn
+    about the uncited one. A reverse-check suppression that keys on
+    "this document was mentioned somewhere" rather than "this exact
+    ref's own error already reported it" would wrongly swallow the
+    second, genuinely-uncited ref's warning too — this is the regression
+    the 195-green run missed because no fixture pinned two sections of
+    one document."""
+    ctx = KBContext(
+        version="1",
+        refs=[
+            KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.129"),
+            KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.200"),
+        ],
+    )
+
+    issues = check_citation_consistency("stored [arinc-424 §5.129]", ctx)
+
+    assert [i.level for i in issues] == ["warning"]
+    assert "5.200" in issues[0].message
+
+
+def test_repo_qualifier_mismatch_is_one_error_no_reverse_warning():
+    """Case C (controller ruling on Finding 1's review): a citation to
+    the right doc+section but the WRONG repo qualifier is an unresolved
+    bracketed citation (repo must match exactly, unlike a bare citation's
+    'None matches any repo' rule) — and because the document has exactly
+    ONE pinned ref, the reverse 'never cited' check is suppressed: this is
+    one typo, not two separate problems, so exactly one issue is
+    reported."""
+    ctx = KBContext(
+        version="1",
+        refs=[KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.129")],
+    )
+
+    issues = check_citation_consistency("stored [space:arinc-424 §5.129]", ctx)
+
     assert [i.level for i in issues] == ["error"]
     assert "not in kb-context refs" in issues[0].message
 
