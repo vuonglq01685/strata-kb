@@ -38,6 +38,17 @@ def visible_body(body: str) -> str:
     return HTML_COMMENT_RE.sub("", body).strip()
 
 
+def _visible_text(text: str) -> str:
+    """`text` with HTML comments and fenced code blocks removed — comments
+    FIRST, then fences, because a commented-out region contributes no
+    fence, heading, or citation of its own (it isn't rendered, so nothing
+    inside it is either). This is the one home for that ordering:
+    `check_headings`'s and `check_recommended_sections`'s presence checks
+    and `citation_scan_text` all scan this same view rather than each
+    re-typing the two `.sub()` calls in the same order."""
+    return FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text))
+
+
 # Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>' — the
 # repo/doc-id groups match kbcontext._REF_RE semantics (repo qualifier
 # optional, '§' required). The repo group additionally accepts nested,
@@ -134,6 +145,15 @@ def _blank_invisible(text: str) -> str:
     count a final, unterminated line the same way once that trailing
     newline appears, so this one case needs the caller to pad rather than
     trust a 1:1 line correspondence — see `section_body`.
+
+    Deliberately NOT the same view as `visible_body`/`_visible_text`: this
+    function blanks FENCES then comments and keeps every line index
+    aligned with `text`, for `section_body`'s slicing. `visible_body` and
+    `_visible_text` strip COMMENTS then fences and return plain,
+    non-index-aligned text, for presence/emptiness/citation scans. Two
+    different contracts for two different jobs — see `section_body` for
+    why this one must stay index-aligned, and do not merge one into the
+    other.
     """
 
     def _blank(m: re.Match[str]) -> str:
@@ -214,10 +234,7 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     E's G5) is invisible in the rendered document, so it must not count as
     present either — templates ship guidance comments that BAs sometimes
     leave in place instead of replacing with real content."""
-    present = {
-        line.strip()
-        for line in FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text)).splitlines()
-    }
+    present = {line.strip() for line in _visible_text(text).splitlines()}
     return [
         Issue("error", f"missing required heading: '{heading}'")
         for heading in required
@@ -300,10 +317,7 @@ def check_recommended_sections(
     """Warning per recommended heading that is missing or has an empty
     body. Warning-level on purpose: the required-heading sets are
     compatibility contracts and legacy documents must keep passing."""
-    present = {
-        line.strip()
-        for line in FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text)).splitlines()
-    }
+    present = {line.strip() for line in _visible_text(text).splitlines()}
     issues: list[Issue] = []
     for heading in headings:
         if heading not in present:
@@ -316,7 +330,7 @@ def check_recommended_sections(
             )
             continue
         body = section_body(text, heading)
-        if body is not None and not HTML_COMMENT_RE.sub("", body).strip():
+        if body is not None and not visible_body(body):
             issues.append(
                 Issue(
                     "warning",
@@ -414,9 +428,7 @@ def citation_scan_text(text: str) -> str:
     fenced kb-context block) and any unfenced kb-context block stripped,
     for inline-citation scanning — refs pinned in kb-context are not
     themselves "citations", and text nobody can see is not a claim."""
-    return strip_bare_kb_context(
-        FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text))
-    )
+    return strip_bare_kb_context(_visible_text(text))
 
 
 def cite_matches_ref(ref: KBRef, repo: str | None, doc: str, sec: str) -> bool:

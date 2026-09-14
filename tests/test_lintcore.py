@@ -127,6 +127,7 @@ def test_citation_scan_text_drops_comments():
         "body text\n<!-- TODO check arinc-424 §9.999 later -->\n"
     )
     assert "9.999" not in scanned
+    assert "body text" in scanned
 
 
 # --- section_body: fences do not terminate a section ---
@@ -469,6 +470,18 @@ def test_check_recommended_sections_html_comment_only_body_is_empty():
 
 def test_check_recommended_sections_ignores_heading_inside_fence():
     text = "# T\n\n```\n## Dependencies\n```\n"
+    issues = check_recommended_sections(text, ("## Dependencies",))
+    assert len(issues) == 1
+    assert "missing" in issues[0].message
+
+
+def test_check_recommended_sections_ignores_heading_inside_comment():
+    """The presence half's `present` set must agree with the emptiness
+    half (already comment-blind, covered by
+    `test_check_recommended_sections_html_comment_only_body_is_empty`) —
+    a heading that exists only inside a comment is reported missing, not
+    silently treated as present."""
+    text = "# T\n\n<!--\n## Dependencies\n-->\n"
     issues = check_recommended_sections(text, ("## Dependencies",))
     assert len(issues) == 1
     assert "missing" in issues[0].message
