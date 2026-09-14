@@ -103,7 +103,7 @@ class LintReport:
 
 def _blank_invisible(text: str) -> str:
     """`text` with the CONTENT of every fenced block and every HTML
-    comment replaced by blank lines, LINE COUNT PRESERVED.
+    comment replaced by blank lines.
 
     This is a scanning view, never a value handed to a caller: line
     numbers in the blanked copy index the same lines as the original, so
@@ -116,6 +116,16 @@ def _blank_invisible(text: str) -> str:
     boundaries. An unpaired fence leaves `FENCE_RE` unmatched and the
     text degrades to its raw form — the same documented limitation
     `check_headings` carries.
+
+    TOTAL NEWLINE COUNT is preserved exactly (each match is replaced by
+    the same number of '\\n' characters it contained), but `splitlines()`
+    COUNT on the result can be one SHORTER than on `text`: the
+    replacement is pure '\\n' characters, so it always ENDS in a newline,
+    while the matched span itself may not have (a fence or comment that
+    touches EOF with no trailing newline). `str.splitlines()` does not
+    count a final, unterminated line the same way once that trailing
+    newline appears, so this one case needs the caller to pad rather than
+    trust a 1:1 line correspondence — see `section_body`.
     """
 
     def _blank(m: re.Match[str]) -> str:
@@ -134,7 +144,15 @@ def section_body(text: str, heading: str) -> str | None:
     """
     lines = text.splitlines()
     scan = _blank_invisible(text).splitlines()
-    if len(scan) != len(lines):  # defensive: never mis-slice
+    if len(scan) < len(lines):
+        # A fence or HTML comment that touches EOF with no trailing
+        # newline makes `_blank_invisible`'s pure-'\n' replacement gain a
+        # newline the original never had — see its docstring. The
+        # shortfall is always exactly one line and always at the end, so
+        # padding (not discarding) keeps every earlier index aligned and
+        # keeps this document's fence-aware scan intact.
+        scan += [""] * (len(lines) - len(scan))
+    elif len(scan) > len(lines):  # unreachable; keep the guard
         scan = lines
     start = None
     for i, line in enumerate(scan):

@@ -172,6 +172,44 @@ def test_section_body_still_returns_none_for_a_missing_heading():
     assert lintcore.section_body("# Ticket\n\nbody\n", "## Summary") is None
 
 
+def test_section_body_survives_a_trailing_fence_with_no_final_newline():
+    """BEFORE this fix: `_blank`'s replacement is always pure '\\n'
+    characters, so it always ends in a newline. When the document's LAST
+    fence touches EOF with no trailing newline (a file saved without one,
+    or simply the last section in the ticket — e.g. `## Sequence
+    diagram`'s mermaid fence), the blanked copy gains a newline the
+    original never had and ends up one `splitlines()` entry SHORTER than
+    the original. `len(scan) != len(lines)` then fired and `scan = lines`
+    discarded the fence-aware scan for the WHOLE document, silently
+    reproducing HIGH-3: the '# example invocation' comment inside the
+    unrelated '## Acceptance Criteria' fence truncates that section again,
+    even though neither the AC section nor its fence is the one missing a
+    trailing newline. AFTER: a length SHORTFALL is padded with blank
+    lines (proven to always be exactly one, always at the end) instead of
+    discarding the scan."""
+    text = (
+        "## Acceptance Criteria\n"
+        "```bash\n"
+        "# example invocation\n"
+        "importer --file feed.dat\n"
+        "```\n"
+        "- [ ] AC1 — first\n"
+        "- [ ] AC2 — second\n"
+        "\n"
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  A->>B: go\n"
+        "```"
+    )
+    assert not text.endswith("\n")  # sanity: no trailing newline at EOF
+
+    body = lintcore.section_body(text, "## Acceptance Criteria")
+
+    assert "- [ ] AC1 — first" in body
+    assert "- [ ] AC2 — second" in body
+
+
 # --- check_diagram: line-start keyword anchoring ---
 
 
