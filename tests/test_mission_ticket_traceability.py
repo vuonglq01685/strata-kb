@@ -69,7 +69,7 @@ def _real_mission_text(block: str) -> str:
         ),
         "## Business goal": (
             "Cut route-briefing time by showing restrictive airspace "
-            "inline. Airspace records follow arinc-kb:arinc-424 §5.3."
+            "inline. Airspace records follow [arinc-kb:arinc-424 §5.3]."
         ),
         "## Scope": (
             "**In scope:** map rendering.\n"
@@ -90,7 +90,7 @@ def _real_mission_text(block: str) -> str:
             "```"
         ),
         "## Constraints & assumptions": (
-            "ICAO designation rules per icao-kb:icao-annex-2 §1.1 apply."
+            "ICAO designation rules per [icao-kb:icao-annex-2 §1.1] apply."
         ),
         "## US backlog": (
             "| US ID | Title |\n"
@@ -153,8 +153,9 @@ def _real_ticket_text(block: str) -> str:
         ),
         "## Acceptance Criteria": (
             "- [ ] AC1: Show airspace type and level per "
-            "arinc-kb:arinc-424 §5.3\n"
-            "- [ ] AC2: Show ICAO designation per icao-kb:icao-annex-2 §1.1"
+            "[arinc-kb:arinc-424 §5.3]\n"
+            "- [ ] AC2: Show ICAO designation per "
+            "[icao-kb:icao-annex-2 §1.1]"
         ),
         "## Use cases": (
             "### Main flow\n"
@@ -199,7 +200,13 @@ def _real_ticket_text(block: str) -> str:
             "owner: design-team — blocks: UI spec"
         ),
         "## KB context": f"```yaml\n{block}\n```",
-        "## Definition of Ready": "- [ ] Every citation resolves",
+        # Ticked, not '- [ ]': this fixture is a real, fully-formed
+        # ticket that is meant to lint completely clean end-to-end
+        # (`ticket_report.issues == []` below) — an unticked DoR box is
+        # only a warning (ticketlint._check_dor_checklist, HIGH-1), but
+        # a warning is still an issue, and ticking it is a real, BA-made
+        # decision this fixture can legitimately make for itself.
+        "## Definition of Ready": "- [x] Every citation resolves",
     }
     parts = [
         f"# {US_ID} — Show restrictive airspace details",
