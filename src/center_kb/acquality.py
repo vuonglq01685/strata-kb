@@ -7,8 +7,12 @@ owned unknowns, NFR targets, and review-log rows.
 The phrase list mirrors ``docs/ac-quality.md`` scaffolded into BA repos
 (source: ``templates/init/ac-quality.md``). Detection is bilingual
 (EN + VI) because ticket bodies follow the BA's working language.
-Callers report hits as WARNINGS only — the BA judges; nothing here may
-flip a DoR verdict.
+Weasel-phrase hits (``weasel_hits``) are reported as WARNINGS only — the
+BA judges; a banned phrase alone never flips a DoR verdict. That is a
+fact about the weasel list specifically, not a ceiling on this module:
+nothing here emits an ``Issue`` or a level itself, so every OTHER rule
+(``ac_substance`` included) is free for a caller to wire at whatever
+level it chooses, error included.
 """
 
 from __future__ import annotations
@@ -16,9 +20,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# 'OPEN(<owner>)' — an explicitly owned unknown. Its presence anywhere on
-# a line suppresses the weasel warning for that line: the vagueness is
-# declared and owned, which is the documented exception.
+# 'OPEN(<owner>)' marker syntax — requires a non-space first character
+# inside the parentheses, so it does not match the empty 'OPEN()'. Kept
+# as the marker COUNTER only (ticketlint._unknown_count pairs every
+# marker — owned or not — with an Open-questions row: an unowned marker
+# is still an unknown that needs a row). Matching this regex says
+# nothing about whether the marker's owner is real; OPEN_OWNER_RE /
+# owned_open_markers below answer that, and weasel_hits checks ownership
+# before muting anything inside a marker's own parentheses.
 OPEN_RE = re.compile(r"OPEN\([^)\s][^)]*\)")
 
 # Bilingual banned phrases (kept in sync with templates/init/ac-quality.md).
@@ -124,14 +133,17 @@ GWT_RE = re.compile(
 # Something a tester can check: a number, a comparison, or an identifier
 # naming a real thing (backticked code, snake_case, CamelCase, a dotted
 # path). Deliberately generous — this separates "an outcome" from "a
-# feeling", it does not grade the outcome.
+# feeling", it does not grade the outcome. The dotted-path segments
+# require 2+ characters each (`[A-Za-z0-9]+`, not `*`) so an abbreviation
+# like 'e.g.' — one letter, a dot, one letter — is not mistaken for a
+# dotted identifier such as 'user.email'.
 MEASURABLE_RE = re.compile(
     r"\d"
     r"|<=|>=|==|[<>]"
     r"|`[^`]+`"
     r"|\b[a-z0-9]+(?:_[a-z0-9]+)+\b"
     r"|\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b"
-    r"|\b[a-z][A-Za-z0-9]*(?:\.[a-z][A-Za-z0-9]*)+\b"
+    r"|\b[a-z][A-Za-z0-9]+(?:\.[a-z][A-Za-z0-9]+)+\b"
 )
 
 # 'OPEN(<owner>)' with the owner captured. OPEN_RE above stays the marker
@@ -156,12 +168,27 @@ def owned_open_markers(text: str) -> list[str]:
     ]
 
 
-# A leading 'AC<n>' id — 'AC1:', 'AC1 —', 'AC1 -', 'AC1.', or a bare
-# 'AC1'. ac_substance strips it before judging: MEASURABLE_RE's first
-# alternative is a bare \d, so the id's own digit would otherwise count
-# as "measurable" and wave through every AC that says nothing else
-# testable. A digit inside the AC's own label is not a testable value.
-_AC_ID_RE = re.compile(r"^\s*AC\d+\s*[:.—\-]*\s*")
+# A leading AC id, however the BA actually typed it: 'AC1:', 'AC1 —',
+# 'AC1 -', 'AC1.', 'AC1)', a bare 'AC1', case-insensitive ('Ac1'/'ac1'),
+# with or without a space before the digits ('AC 1'), with a dotted
+# sub-id ('AC1.1'), and wrapped in markdown emphasis or brackets
+# ('**AC1**', '[AC1]'). ac_substance strips it before judging:
+# MEASURABLE_RE's first alternative is a bare \d, so the id's own digit
+# would otherwise count as "measurable" and wave through every AC that
+# says nothing else testable — a false negative in a gate, which is the
+# failure mode that matters. A gate false positive would be missing a
+# form the BA never actually types; a caught reviewer example
+# ('**AC1**:') is worth more here than typographic minimalism.
+#
+# Deliberately does NOT strip a bare numeric list marker ('1. '): unlike
+# 'AC<n>', a leading bare number is ambiguous with real content (e.g. a
+# measured value opening the sentence), and this repo's templates
+# establish the 'AC<n>' convention, not bare numbering — the mandatory
+# 'AC' letters keep this regex from ever matching one.
+_AC_ID_RE = re.compile(
+    r"^\s*[*_\[\s]*AC\s*\d+(?:\.\d+)*[*_\]\s]*[:.)—\-]*\s*",
+    re.IGNORECASE,
+)
 
 
 def ac_substance(item: str) -> str | None:
@@ -229,19 +256,45 @@ def parse_review_row(cells: list[str]) -> "ReviewRow | str":
     return ReviewRow(date, round_i, scores[0], scores[1], reviewer)
 
 
+def _marker_is_owned(group1: str) -> bool:
+    """Whether an ``OPEN(...)``'s captured content names a real owner,
+    for ``weasel_hits``'s muting decision specifically.
+
+    A marker may carry a free-text note after the owner —
+    ``OPEN(<owner>: <note>)`` — and the note does not change who owns
+    the unknown, so only the part before the first ``:`` is checked
+    against ``_UNOWNED``: ``OPEN(TBD: alice will decide)`` is still
+    unowned. This differs from ``owned_open_markers``, which checks the
+    WHOLE captured string and is exercised only against bare markers
+    (``OPEN(alice)``, ``OPEN(TBD)``) in its own tests; ``weasel_hits`` is
+    the one place a marker routinely carries a note explaining the
+    vagueness, so its ownership check needs the split.
+    """
+    owner = group1.split(":", 1)[0].strip().lower()
+    return owner not in _UNOWNED
+
+
 def weasel_hits(line: str) -> list[str]:
     """Banned phrases in ``line``, matched text verbatim.
 
-    An ``OPEN(...)`` marker suppresses only what sits INSIDE its own
-    parentheses: declared, owned vagueness is the documented exception,
-    and one marker never licenses the rest of the sentence. (Before
-    0.22.0 a single marker muted the whole line — 'Values are configured
-    OPEN(x) and appropriate and a subset and responsive.' reported
-    nothing at all.) The AC-level escape hatch lives at error level in
-    ``ac_substance``; these stay warnings.
+    An ``OPEN(<owner>)`` marker suppresses only what sits INSIDE its own
+    parentheses, and only when the owner is real: an unowned marker
+    (``OPEN(TBD)``, ``OPEN(?)`` — see ``_UNOWNED``) is a placeholder
+    wearing the costume of an owner, so it licenses nothing and the text
+    inside it stays visible to the weasel check. A marker — owned or
+    not — never licenses the rest of the sentence either way. (Before
+    0.22.0 a single marker, regardless of ownership, muted the whole
+    line — 'Values are configured OPEN(x) and appropriate and a subset
+    and responsive.' reported nothing at all.) Weasel-phrase hits are
+    reported as WARNINGS only; the AC-level escape hatch in
+    ``ac_substance`` is a caller's choice to wire at whatever level it
+    wants, error included.
     """
-    outside = OPEN_OWNER_RE.sub(" ", line)
+    outside = OPEN_OWNER_RE.sub(
+        lambda m: " " if _marker_is_owned(m.group(1)) else m.group(0),
+        line,
+    )
     hits = [m.group(0) for m in _WEASEL_RE.finditer(outside)]
-    if _MEANS_RE.search(line):
+    if _MEANS_RE.search(outside):
         hits = [h for h in hits if h.lower() not in CONDITIONAL_PHRASES]
     return hits

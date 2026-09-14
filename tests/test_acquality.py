@@ -89,6 +89,16 @@ def test_distinguished_by_type_without_means_still_fires():
     ]
 
 
+def test_means_word_inside_owned_marker_does_not_suppress_outside_phrase():
+    """A means word (colour, label, ...) sitting INSIDE an OPEN(...)'s
+    own parentheses must not suppress a CONDITIONAL_PHRASES hit that
+    sits OUTSIDE it — only a means word visible outside the marker earns
+    row 8's exception."""
+    assert acquality.weasel_hits(
+        "Areas are distinguished by type OPEN(alice: by colour)"
+    ) == ["distinguished by type"]
+
+
 @pytest.mark.parametrize(
     "body",
     ["", "TBD", "  tbd  ", "TODO", "N/A", "...", "…", "<...>", "-", "xxx",
@@ -101,7 +111,7 @@ def test_is_unfilled_true_for_placeholders(body):
 @pytest.mark.parametrize(
     "body",
     ["The importer stores the designator.", "Bộ nhập lưu mã định danh.",
-     "5 seconds", "None"],
+     "5 seconds", "None", "N/A - no retention policy applies"],
 )
 def test_is_unfilled_false_for_real_content(body):
     assert acquality.is_unfilled(body) is False
@@ -144,6 +154,58 @@ def test_ac_substance_rejects(item):
     assert acquality.ac_substance(item) is not None
 
 
+def test_ac_substance_reason_text():
+    """Pins the exact reason string ticketlint/missionlint (Tasks 6/8)
+    embed verbatim into their own error/warning message."""
+    assert acquality.ac_substance(
+        "AC1 — The system shall behave correctly and handle all edge cases"
+    ) == (
+        "has no Given/When/Then, no measurable value (a number, a "
+        "comparison, or a named identifier) and no owned OPEN(<owner>)"
+    )
+
+
+def test_measurable_re_does_not_mistake_e_g_for_a_dotted_identifier():
+    # 'e.g.' is one letter, a dot, one letter — not a dotted identifier
+    # like 'user.email' (2+ characters per segment).
+    assert not acquality.MEASURABLE_RE.search("e.g. responsive")
+    assert acquality.MEASURABLE_RE.search("writes to user.email")
+
+
+def test_ac_substance_rejects_despite_e_g_dotted_look_alike():
+    assert (
+        acquality.ac_substance("AC1 — The system is fast, e.g. responsive")
+        is not None
+    )
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        # The real caller's form: tests/test_ticketlint.py:800 hands
+        # ac_substance exactly '- [ ] AC1: <text>' with the checkbox
+        # stripped, i.e. 'AC1: <text>'.
+        "AC1: The system shall behave correctly and handle all edge cases",
+        # Case-insensitive, with or without a space before the digit.
+        "Ac1: The system shall behave correctly and handle all edge cases",
+        "ac1: The system shall behave correctly and handle all edge cases",
+        "AC 1: The system shall behave correctly and handle all edge cases",
+        # Markdown emphasis and brackets around the id.
+        "**AC1**: The system shall behave correctly and handle all edge cases",
+        "[AC1] The system shall behave correctly and handle all edge cases",
+        # A dotted sub-id.
+        "AC1.1: The system shall behave correctly and handle all edge cases",
+    ],
+)
+def test_ac_substance_rejects_across_real_world_id_forms(item):
+    """A digit inside the AC id — in whatever spelling the BA actually
+    typed — must never itself satisfy MEASURABLE_RE; only the body after
+    the id counts. Every one of these carries a vague body with no
+    Given/When/Then, no owned unknown, and no measurable value, so every
+    form must still be rejected."""
+    assert acquality.ac_substance(item) is not None
+
+
 def test_owned_open_markers_ignores_placeholder_owners():
     assert acquality.owned_open_markers("value OPEN(alice)") == ["OPEN(alice)"]
     assert acquality.owned_open_markers("value OPEN(TBD)") == []
@@ -155,10 +217,25 @@ def test_nfr_target_ok():
     assert acquality.nfr_target_ok("OPEN(alice)") is True
     assert acquality.nfr_target_ok("fast") is False
     assert acquality.nfr_target_ok("") is False
+    # An unowned marker is the same placeholder-in-owner's-clothing as
+    # everywhere else in this module — not a target.
+    assert acquality.nfr_target_ok("OPEN(TBD)") is False
 
 
 def test_open_marker_still_mutes_a_phrase_inside_it():
     assert acquality.weasel_hits("threshold OPEN(alice: appropriate?)") == []
+
+
+def test_open_marker_with_unowned_owner_does_not_mute():
+    """An unowned OPEN(...) (TBD, ?, ...) is a placeholder wearing the
+    costume of an owner: it must not license anything inside its own
+    parentheses either, so a weasel phrase there still reports."""
+    assert acquality.weasel_hits(
+        "threshold OPEN(TBD: appropriate)"
+    ) == ["appropriate"]
+    assert acquality.weasel_hits(
+        "threshold OPEN(?: appropriate)"
+    ) == ["appropriate"]
 
 
 def test_parse_review_row_accepts_a_well_formed_row():
@@ -174,9 +251,48 @@ def test_parse_review_row_accepts_a_well_formed_row():
     [
         ["2026-09-08", "1", "5", "5", ""],          # empty reviewer
         ["2026-09-08", "one", "5", "5", "me"],      # round not an int
+        ["2026-09-08", "0", "5", "5", "me"],        # round < 1
+        ["2026-09-08", "1", "nine", "5", "me"],     # score not an int
         ["2026-09-08", "1", "9", "5", "me"],        # score out of range
         ["2026-09-08", "1", "5", "5"],              # four cells
     ],
 )
 def test_parse_review_row_rejects(cells):
     assert isinstance(acquality.parse_review_row(cells), str)
+
+
+@pytest.mark.parametrize(
+    ("cells", "reason"),
+    [
+        (
+            ["2026-09-08", "1", "5", "5"],
+            "has 4 cells; the table has 5 columns",
+        ),
+        (
+            ["2026-09-08", "1", "5", "5", ""],
+            "has an empty cell; every column must be filled",
+        ),
+        (
+            ["2026-09-08", "one", "5", "5", "me"],
+            "Round 'one' is not a whole number",
+        ),
+        (
+            ["2026-09-08", "0", "5", "5", "me"],
+            "Round '0' must be 1 or more",
+        ),
+        (
+            ["2026-09-08", "1", "nine", "5", "me"],
+            "Business score 'nine' is not a whole number",
+        ),
+        (
+            ["2026-09-08", "1", "9", "5", "me"],
+            "Business score '9' is outside the 1–5 maturity scale",
+        ),
+    ],
+)
+def test_parse_review_row_reason_text(cells, reason):
+    """Pins the exact reason string ticketlint/missionlint (Tasks 6/8)
+    embed verbatim into their own error/warning message, one case per
+    malformed-row branch (cell count, empty cell, round not an int,
+    round < 1, score not an int, score out of range)."""
+    assert acquality.parse_review_row(cells) == reason
