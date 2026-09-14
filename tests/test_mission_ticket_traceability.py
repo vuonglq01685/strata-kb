@@ -86,7 +86,9 @@ def _real_mission_text(block: str) -> str:
         "## Containers (C4 L2)": (
             "```mermaid\n"
             "C4Container\n"
+            '  Container(spa, "Map UI", "TypeScript")\n'
             '  Container(api, "Airspace API", "Python")\n'
+            '  Rel(spa, api, "Reads airspace from")\n'
             "```"
         ),
         "## Constraints & assumptions": (

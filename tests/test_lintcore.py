@@ -296,6 +296,49 @@ def test_diagram_raises_on_empty_keywords_tuple():
         check_diagram(text, "## Business flow", ())
 
 
+# --- check_diagram: an empty diagram is not a diagram ---
+
+
+def test_check_diagram_rejects_a_fence_with_no_edge():
+    """Reviewer E's T4: the type keyword was the whole contract, so a
+    fence of garbage — or an empty one — passed."""
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "zzzz !!! not a diagram at all\n"
+        "```\n"
+    )
+    issues = check_diagram(text, "## Sequence diagram", ("sequenceDiagram",))
+    assert [i.level for i in issues] == ["error"]
+    assert "no relationship" in issues[0].message
+
+
+def test_check_diagram_accepts_a_sequence_arrow():
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  Importer->>Store: write designator\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []
+
+
+def test_check_diagram_accepts_a_c4_rel_call():
+    """C4 diagrams draw relationships with Rel(...), not arrows — the
+    mission gate would break on every valid C4 diagram otherwise."""
+    text = (
+        "## System context (C4 L1)\n"
+        "```mermaid\n"
+        "C4Context\n"
+        '  Person(ba, "BA")\n'
+        '  Rel(ba, kb, "queries")\n'
+        "```\n"
+    )
+    assert check_diagram(text, "## System context (C4 L1)", ("C4Context", "flowchart")) == []
+
+
 # --- INLINE_CITE_RE: sentence-ending punctuation ---
 
 

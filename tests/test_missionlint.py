@@ -622,6 +622,8 @@ def test_mermaid_init_directive_before_the_type_passes(
                 "%%{init: {'theme':'neutral'}}%%\n"
                 "C4Context\n"
                 "  Person(d, \"Dispatcher\")\n"
+                "  System(kb, \"Knowledge Base\")\n"
+                "  Rel(d, kb, \"queries\")\n"
                 "```"
             ),
         },
@@ -727,6 +729,8 @@ def test_valid_l3_section_passes(fed_hub: Path, golden_block: str):
                 "```mermaid\n"
                 "C4Component\n"
                 "  Component(h, \"Airspace handler\", \"Python\")\n"
+                "  Component(v, \"Validator\", \"Python\")\n"
+                "  Rel(h, v, \"delegates to\")\n"
                 "```"
             )
         },
@@ -939,6 +943,8 @@ def test_c4_todo_without_decision_row_warns(
         "C4Container\n"
         "  Container(api, \"Airspace API — "
         "%%TODO: verify against codebase%%\", \"Python\")\n"
+        "  Container(db, \"Airspace DB\", \"Postgres\")\n"
+        "  Rel(api, db, \"reads from\")\n"
         "```"
     )
     doc = _build_mission(
@@ -967,6 +973,8 @@ def test_c4_todo_with_owned_decision_row_is_clean(
         "C4Container\n"
         "  Container(api, \"Airspace API — "
         "%%TODO: verify against codebase%%\", \"Python\")\n"
+        "  Container(db, \"Airspace DB\", \"Postgres\")\n"
+        "  Rel(api, db, \"reads from\")\n"
         "```"
     )
     doc = _build_mission(

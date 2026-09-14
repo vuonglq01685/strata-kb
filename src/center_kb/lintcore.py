@@ -265,16 +265,35 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     ]
 
 
+# A relationship in any diagram dialect the two gates accept: mermaid
+# arrows (flowchart, sequence) and C4's Rel()/BiRel() calls. A diagram
+# with nodes and no relationships is a list drawn in a box.
+_EDGE_RE = re.compile(
+    r"-->|->>|-\.->|\.\.>|->|--|\bRel\w*\(|\bBiRel\w*\("
+)
+
+
 def check_diagram(
     text: str, heading: str, keywords: tuple[str, ...]
 ) -> list[Issue]:
     r"""The section must carry a ```mermaid fence in which one of `keywords`
-    appears at the START OF A LINE.
+    appears at the START OF A LINE, AND the fence contains at least one
+    relationship (`_EDGE_RE`) — an arrow or a C4 `Rel(...)`/`BiRel(...)`
+    call.
 
     Anchoring at line start (rather than requiring the keyword to be the
     fence's very first token) lets a Mermaid init directive
     (`%%{init: ...}%%` on the line above) precede the diagram type, while
     still refusing to match the word 'flowchart' buried in a node label.
+
+    The keyword was previously the whole contract, so a fence holding the
+    right keyword followed by garbage — or nothing at all — passed. A
+    diagram with nodes and no relationships is a list drawn in a box, so
+    both conditions are now required. When the keyword is present but no
+    edge is, the error names that specifically ("no relationship in it")
+    rather than repeating the "must contain a fence" message, so a BA who
+    already wrote a mermaid block is not told to add one that is already
+    there.
 
     Raises `ValueError` if `keywords` is empty — an empty tuple collapses
     the pattern to `^[ \t]*(?:)\b` (a bare, near-universal line-start
@@ -289,10 +308,23 @@ def check_diagram(
         r"^[ \t]*(?:" + "|".join(re.escape(k) for k in keywords) + r")\b",
         re.M,
     )
+    keyword_seen = False
     for lang, content in FENCE_RE.findall(body):
-        if lang.strip().lower() == "mermaid" and pattern.search(content):
+        if lang.strip().lower() != "mermaid" or not pattern.search(content):
+            continue
+        keyword_seen = True
+        if _EDGE_RE.search(content):
             return []
     joined = " or ".join(f"'{k}'" for k in keywords)
+    if keyword_seen:
+        return [
+            Issue(
+                "error",
+                f"'{heading}' has a ```mermaid fence with {joined} but no "
+                "relationship in it (an arrow, or a C4 Rel(...)) — an empty "
+                "diagram is not a diagram",
+            )
+        ]
     return [
         Issue(
             "error",
