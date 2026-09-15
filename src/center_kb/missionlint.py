@@ -13,12 +13,43 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from center_kb import lintcore, mission
+from center_kb import acquality, lintcore, mission
 from center_kb.doctor import Issue
 from center_kb.lintcore import LintReport
 
 if TYPE_CHECKING:
     from center_kb.hub import HubHandle
+
+
+# Required sections with a stronger, section-specific check of their own.
+_FILL_EXEMPT: frozenset[str] = frozenset(
+    {
+        "## KB context",                # check_context_block
+        "## System context (C4 L1)",    # check_diagram
+        "## Containers (C4 L2)",        # check_diagram
+        "## US backlog",                # check_backlog
+    }
+)
+
+
+def _check_required_filled(text: str) -> list[Issue]:
+    """A required section that says nothing is not a section (M8)."""
+    issues: list[Issue] = []
+    for heading in mission.REQUIRED_MISSION_HEADINGS:
+        if heading in _FILL_EXEMPT:
+            continue
+        body = lintcore.section_body(text, heading)
+        if body is None:
+            continue  # missing heading — already reported by check_headings
+        if acquality.is_unfilled(lintcore.visible_body(body)):
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{heading}' is empty or only placeholder text — "
+                    "fill it in",
+                )
+            )
+    return issues
 
 
 def check_mission_id(
@@ -316,6 +347,7 @@ def lint(
     notes += id_notes
 
     issues += lintcore.check_headings(text, mission.REQUIRED_MISSION_HEADINGS)
+    issues += _check_required_filled(text)
 
     issues += lintcore.check_diagram(
         text, "## System context (C4 L1)", mission.L1_KEYWORDS

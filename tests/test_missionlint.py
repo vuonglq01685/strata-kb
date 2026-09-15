@@ -1140,3 +1140,36 @@ def test_fabricated_kb_context_tag_errors(fed_hub: Path, golden_block: str):
     report = missionlint.lint(text, _hub(fed_hub))
 
     assert any("ghost-tag" in e for e in _errors(report)), _errors(report)
+
+
+# --- substance checks at error level (M8) ---
+
+
+def test_a_mission_of_placeholders_fails(fed_hub: Path, golden_block: str):
+    """M8: structure intact, every body 'TBD' — PASS before 0.22.0."""
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## Business goal": "TBD",
+            "## Scope": "",
+            "## Constraints & assumptions": "chưa rõ",
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    for heading in (
+        "## Business goal",
+        "## Scope",
+        "## Constraints & assumptions",
+    ):
+        assert (
+            f"'{heading}' is empty or only placeholder text — fill it in"
+            in _errors(report)
+        )
+
+
+def test_a_filled_mission_reports_no_placeholder_errors(
+    fed_hub: Path, golden_block: str
+):
+    report = missionlint.lint(_build_mission(golden_block), _hub(fed_hub))
+    assert not [m for m in _errors(report) if "only placeholder" in m]
