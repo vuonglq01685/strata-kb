@@ -2545,3 +2545,27 @@ def test_init_cli_rejects_an_unknown_lang(tmp_path: Path):
     assert result.exit_code == 1
     assert "cobol" in result.output and "python" in result.output
     assert not (tmp_path / ".kb").exists()
+
+
+# --- Task 12 fix round 1: validate recorded langs; note an already-recorded
+# `langs:` when --lang can't change it (append-only) -------------------------
+
+
+def test_init_dev_drops_unknown_recorded_langs_and_notes_them(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    cfg = tmp_path / ".kb" / "config.yaml"
+    cfg.write_text(
+        cfg.read_text(encoding="utf-8") + "langs: [nodejs, python]\n", encoding="utf-8"
+    )
+    report = init_repo(tmp_path, "dev")
+    assert (tmp_path / "docs" / "conventions" / "python.md").is_file()
+    assert not (tmp_path / "docs" / "conventions" / "nodejs.md").exists()
+    assert any("nodejs" in n for n in report.notes)
+
+
+def test_init_dev_lang_notes_when_langs_already_recorded(tmp_path: Path):
+    init_repo(tmp_path, "dev", langs=["python"])
+    report = init_repo(tmp_path, "dev", langs=["java"])
+    assert (tmp_path / "docs" / "conventions" / "java.md").is_file()
+    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert any("hand-edit" in n and "python" in n for n in report.notes)

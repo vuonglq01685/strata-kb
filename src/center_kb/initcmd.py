@@ -361,13 +361,28 @@ def record_langs(config_path: Path, langs: Sequence[str]) -> bool:
     return True
 
 
-def _recorded_langs(config_path: Path) -> list[str]:
+def _recorded_langs(config_path: Path, report: InitReport) -> list[str]:
+    """Langs already on record in config.yaml, filtered to known ids.
+
+    An operator can hand-edit `langs:` to a typo'd or since-renamed id
+    (`langs: [Python]`, `langs: [nodejs]`); passing that straight into
+    `forced` would 404 in `_template_text` or KeyError in `LANG_GLOBS`
+    after the sorted loop has already half-written earlier packs. Drop
+    unknown ids here instead and say so.
+    """
     from center_kb.config import load_config
 
     try:
-        return list(load_config(config_path.parent).langs)
+        recorded = list(load_config(config_path.parent).langs)
     except Exception:  # a broken config is doctor's job, not init's
         return []
+    unknown = [lang for lang in recorded if lang not in conventions.LANG_IDS]
+    if unknown:
+        report.notes.append(
+            f"unknown lang(s) {', '.join(unknown)} in .kb/config.yaml `langs:` "
+            f"— ignored; valid ids: {', '.join(conventions.LANG_IDS)}"
+        )
+    return [lang for lang in recorded if lang in conventions.LANG_IDS]
 
 
 def record_asset_store(config_path: Path, mode: str) -> str:
@@ -438,12 +453,22 @@ def init_repo(
         scaffold_ba_local_overrides(target, report)
     if kind == KIND_DEV:
         cfg_path = target / ".kb" / "config.yaml"
-        forced = sorted(set(langs) | set(_recorded_langs(cfg_path)))
+        recorded = _recorded_langs(cfg_path, report)
+        forced = sorted(set(langs) | set(recorded))
         scaffolded = conventions.scaffold_conventions(target, report, forced=forced)
         if scaffolded:
             conventions.ensure_claude_block(target, report)
-        if langs and record_langs(cfg_path, forced):
-            report.updated.append(".kb/config.yaml (langs recorded)")
+        if langs:
+            if record_langs(cfg_path, forced):
+                report.updated.append(".kb/config.yaml (langs recorded)")
+            elif recorded:
+                # Mirrors record_asset_store's "exists" branch below: append-
+                # only means --lang cannot change an already-recorded value.
+                report.notes.append(
+                    f"--lang ignored — .kb/config.yaml already has "
+                    f"langs: [{', '.join(recorded)}]; hand-edit langs: there "
+                    "to change it"
+                )
     if assets is not None:
         outcome = record_asset_store(target / ".kb" / "config.yaml", assets)
         if outcome == "recorded":
