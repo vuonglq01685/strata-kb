@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -205,10 +207,107 @@ def render_resolved(
             parts.append(f"!! {r.reason}")
         elif r.status == "stale":
             parts.append(
-                f"!! {r.reason} — run `kb diff {r.ref.doc_id} --against {rev}` "
-                "to see the changes"
+                f"!! {r.reason} — run `kb get {r.ref.doc_id} {r.ref.section_id} "
+                "--level l3` for the current hub version"
             )
         if include_content and r.content:
             parts.append(r.content)
         parts.append("")
     return "\n".join(parts).strip()
+
+
+# --- Context cache (docs/impl/<ticket-id>-context.md), reviewer F H3 --------
+# The CLI owns everything above CACHE_MARKER (header + resolved sections);
+# the agent owns the `## Placeholder map` below it. The sha256 covers the
+# bytes between the "## Resolved sections" heading line and the marker line,
+# so a hand-edit of pinned content is detected and an edit of the map is not.
+
+CACHE_MARKER = "<!-- kb:placeholder-map -->"
+_RESOLVED_HEADING = "## Resolved sections\n"
+_PLACEHOLDER_STUB = (
+    "## Placeholder map\n"
+    "| placeholder | verified value | evidence (file:line or ref) |\n"
+    "|---|---|---|\n"
+)
+_HEADER_FIELDS = {
+    key: re.compile(rf"^{key}:[ \t]*(?P<v>.*?)[ \t]*$", re.MULTILINE)
+    for key in ("version", "refs", "sha256")
+}
+
+
+@dataclass(frozen=True)
+class CacheHeader:
+    version: str
+    refs: frozenset[str]
+    sha256: str
+
+
+def refs_of(results: list[ResolvedRef]) -> frozenset[str]:
+    """The resolved ref set in citation form (`repo:doc §sec`), post-
+    disambiguation, so writer and checker compare the same strings."""
+    return frozenset(str(r.ref) for r in results)
+
+
+def cache_digest(segment: str) -> str:
+    return hashlib.sha256(segment.encode("utf-8")).hexdigest()
+
+
+def render_cache(
+    ctx_version: str,
+    results: list[ResolvedRef],
+    *,
+    today: str,
+    stem: str,
+    previous: str | None,
+) -> str:
+    """The whole cache file. `previous` (the current file text, if any)
+    contributes everything from CACHE_MARKER down, byte for byte."""
+    segment = render_resolved(results) + "\n\n"
+    if previous is not None and CACHE_MARKER in previous:
+        tail = previous[previous.index(CACHE_MARKER):]
+    else:
+        tail = CACHE_MARKER + "\n" + _PLACEHOLDER_STUB
+    header = (
+        f"# Context cache — {stem}\n"
+        "> Written by `kb resolve --write-cache`. Do not hand-edit above the\n"
+        "> marker; regenerated on every full resolve. Gitignored.\n\n"
+        f"version: {ctx_version}\n"
+        f"refs: {', '.join(sorted(refs_of(results)))}\n"
+        f"sha256: {cache_digest(segment)}\n"
+        f"resolved: {today}\n\n"
+    )
+    return header + _RESOLVED_HEADING + segment + tail
+
+
+def read_cache_header(text: str) -> CacheHeader | None:
+    if _RESOLVED_HEADING not in text or CACHE_MARKER not in text:
+        return None
+    head = text[: text.index(_RESOLVED_HEADING)]
+    values: dict[str, str] = {}
+    for key, rx in _HEADER_FIELDS.items():
+        m = rx.search(head)
+        if m is None:
+            return None
+        values[key] = m["v"]
+    refs = frozenset(s.strip() for s in values["refs"].split(",") if s.strip())
+    return CacheHeader(values["version"], refs, values["sha256"])
+
+
+def cache_problem(text: str, ctx_version: str, results: list[ResolvedRef]) -> str:
+    """'' when the cache belongs to this ticket and is untouched above the
+    marker; otherwise the one-line reason for `!! cache-invalid:`."""
+    hdr = read_cache_header(text)
+    if hdr is None:
+        return "header"
+    if hdr.version != ctx_version:
+        return f"version {hdr.version} != ticket {ctx_version}"
+    want = refs_of(results)
+    if hdr.refs != want:
+        missing = ", ".join(sorted(want - hdr.refs)) or "-"
+        extra = ", ".join(sorted(hdr.refs - want)) or "-"
+        return f"refs differ — missing {missing}; extra {extra}"
+    start = text.index(_RESOLVED_HEADING) + len(_RESOLVED_HEADING)
+    segment = text[start : text.index(CACHE_MARKER)]
+    if cache_digest(segment) != hdr.sha256:
+        return "resolved block edited since written"
+    return ""
