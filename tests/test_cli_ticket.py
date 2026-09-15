@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from center_kb import gitio, kbcontext
 from center_kb.cli import app
+from tests.conftest import make_stale
 from tests.test_ticketlint import REFS, _build_ticket, _hub
 
 runner = CliRunner()
@@ -249,3 +250,72 @@ def test_ticket_lint_resolves_sibling_missions_dir(fed_hub, tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "DoR: PASS" in result.output
+
+
+def test_lint_exits_2_when_only_the_ref_is_stale(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    path = tmp_path / "M-airspace-US1.md"
+    path.write_text(_build_ticket(block), encoding="utf-8")
+    make_stale(fed_hub)
+
+    result = runner.invoke(
+        app,
+        ["ticket", "lint", str(path), "--hub", str(fed_hub),
+         "--fail-on-stale"],
+    )
+    assert result.exit_code == 2, result.output
+    # Click also exits 2 for a usage error (e.g. an unrecognised option) —
+    # pin that this 2 came from the lint report, not from `--fail-on-stale`
+    # failing to parse.
+    assert "DoR: FAIL" in result.output
+
+
+def test_lint_exits_1_when_something_else_also_fails(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    path = tmp_path / "M-airspace-US1.md"
+    path.write_text(
+        _build_ticket(block).replace("## Use cases", "## Use case"),
+        encoding="utf-8",
+    )
+    make_stale(fed_hub)
+
+    result = runner.invoke(
+        app,
+        ["ticket", "lint", str(path), "--hub", str(fed_hub),
+         "--fail-on-stale"],
+    )
+    assert result.exit_code == 1
+
+
+def test_lint_exits_0_on_a_stale_ref_without_the_flag(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    path = tmp_path / "M-airspace-US1.md"
+    path.write_text(_build_ticket(block), encoding="utf-8")
+    make_stale(fed_hub)
+
+    result = runner.invoke(
+        app, ["ticket", "lint", str(path), "--hub", str(fed_hub)]
+    )
+    assert result.exit_code == 0
+
+
+def test_lint_exits_1_when_the_only_failure_is_a_broken_ref_not_stale(
+    fed_hub, tmp_path
+):
+    """The `code` tag on a broken-ref `Issue` is `""`, not `"stale-ref"`
+    (`doctor.py`) — so `--fail-on-stale` must not accidentally promote a
+    broken ref to exit 2. This is the discrimination `stale_errors` exists
+    to make (see `tests/test_lintcore.py`'s unit test), pinned here at the
+    CLI so a regression that conflated the two codes would be caught."""
+    block = _golden_block(fed_hub)
+    text = _broken_ref_ticket(fed_hub, block)
+    path = tmp_path / "tal.md"
+    path.write_text(text, encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["ticket", "lint", str(path), "--hub", str(fed_hub),
+         "--fail-on-stale"],
+    )
+    assert result.exit_code == 1, result.output
+    assert "DoR: FAIL" in result.output

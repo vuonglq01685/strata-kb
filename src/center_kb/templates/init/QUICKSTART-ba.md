@@ -38,7 +38,7 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
    3. **Ground** — it calls `kb_search`; review ALL candidates it shows
       you and pick the ones that actually apply.
    4. **Draft** — it fills the ticket template (story, ACs, use cases,
-      sequence + business-flow diagrams), citing `doc-id §section` for
+      sequence + business-flow diagrams), citing `[doc-id §section]` for
       every claim that touches a standard.
    5. **Pin** — once you confirm which sections apply, it calls
       `kb_context_new` and embeds the returned `## KB context` block.
@@ -97,11 +97,18 @@ other hub content, so `ba-ticket-author` and `ba-mission-plan` can ground
 diagrams in them without you naming the repo specially.
 
 Use them to fill a C4 `Container(alias, label, technology, description)`:
-`<repo>-code §svc.<name>` gives the alias, label, and technology (detected
-framework); `<repo>-svc §svc.<name>` gives the description — what that
-service is actually responsible for — and labels `Rel(...)` arrows between
-containers. Only write `%%TODO: verify against codebase%%` when **neither**
-document answers.
+`<repo>-code` section `svc.<name>` gives the alias, label, and technology
+(detected framework); `<repo>-svc` section `svc.<name>` gives the
+description — what that service is actually responsible for — and labels
+`Rel(...)` arrows between containers. Only write
+`%%TODO: verify against codebase%%` when **neither** document answers.
+
+The section reference itself, spelled the way a real citation is:
+
+```text
+<repo>-code §svc.<name>
+<repo>-svc §svc.<name>
+```
 
 **One caution:** `<repo>-svc` grounds a diagram — it is never a substitute
 for a domain citation in an Acceptance Criterion. A code/format/enum/
@@ -123,9 +130,10 @@ checks:
   Acceptance Criteria, Use cases, both Mermaid diagrams, KB context,
   Definition of Ready).
 - Every `## KB context` ref resolves at its pinned hub commit — no
-  broken, malformed, or stale refs.
-- Every inline `doc-id §section` citation is backed by a pinned ref
-  (and vice versa) — citations and pins must agree.
+  broken or malformed refs.
+- Every inline `[doc-id §section]` citation is backed by a pinned ref.
+- Citations are written `[doc-id §section]`. A citation in the old bare
+  form still counts, with a warning telling you to bracket it.
 
 (See "Mission plans" above for what the mission gate checks.)
 
@@ -135,6 +143,16 @@ What lint does **not** enforce — still the BA's judgment call:
 - The business quality of the story itself.
 - Whether the maturity review actually happened: lint only warns when
   `## Review record` is missing, empty, or still holds the placeholder.
+- **Stale refs.** A ref still resolves after the cited section is amended
+  upstream; lint reports it as a warning and exits 0. Run
+  `kb ticket lint <file> --fail-on-stale` (`kb mission lint <file>
+  --fail-on-stale` for a mission plan; exit 2 when staleness is the only
+  failure) or set the repo variable `KB_FAIL_ON_STALE` to make the CI gate
+  do it for you. `kb resolve <file> --status-only` reports the same thing on
+  its own.
+- **The reverse citation direction.** A pinned ref that the body never cites
+  is a warning, not an error — the pin may be background the ticket did not
+  need to quote.
 
 **Branch protection:** lint running in CI does not by itself block a
 merge. On the BA repo's GitHub settings, require the `kb-ticket-lint`
@@ -145,6 +163,24 @@ so a `paths: ["tickets/**.md", "missions/**.md"]` filter on a *required*
 check would leave any PR touching neither directory waiting forever.
 Instead the job always starts, and its own lint step (above) is what
 decides there was nothing to check.
+
+### Configuring the CI gate
+
+The scaffolded `kb-ticket-lint` workflow reads these repository settings:
+
+| Setting | Where | What it is |
+|---|---|---|
+| `CENTER_KB_HUB` | Settings → Secrets and variables → Actions → **Variables** | The hub URL or path the gate resolves refs against |
+| `KB_HUB_TOKEN` | same page → **Secrets** | A token with read access, for a private hub only |
+| `KB_FAIL_ON_STALE` | **Variables**, optional | Set to any value to make an upstream amendment fail the gate |
+
+The workflow reads them as `vars.CENTER_KB_HUB`, `secrets.KB_HUB_TOKEN` and `vars.KB_FAIL_ON_STALE`.
+
+A pull request opened **from a fork** cannot read repository secrets, so on
+a private hub the gate fails there with a hub-unreachable message. That is
+the gate refusing to go green without checking, not a network fault — merge
+fork contributions through a branch in this repository, or make the hub
+readable without a token.
 
 ## Upgrading an existing BA repo
 

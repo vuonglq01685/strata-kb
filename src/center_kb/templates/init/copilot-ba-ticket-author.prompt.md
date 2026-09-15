@@ -61,7 +61,7 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    `## Test data & verification`, `## Open questions`. Not applicable →
    write `N/A — <reason>`; a blank section reads as "not considered".
 
-   Every claim that touches a standard cites `doc-id §section`, only from
+   Every claim that touches a standard cites `[doc-id §section]`, only from
    candidates the BA confirmed in step 3. Code-level detail the KB and
    the BA cannot supply (service names, DB tables, …) →
    `%%TODO: verify against codebase%%` — never invented.
@@ -77,9 +77,12 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
 6. **Lint** — run `kb ticket lint <file>` (CLI, primary), or the MCP tool
    `kb_ticket_lint` as a fallback. Fix every error and re-run until it
    reports `DoR: PASS`. Report any remaining warnings to the BA.
-7. **Maturity review** — once lint reports `DoR: PASS`, run TWO
-   sequential review passes yourself against `docs/review-rubric.md`,
-   one role per pass — never blend the perspectives:
+7. **Maturity review** — once lint reports `DoR: PASS`, read
+   `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
+   exists — the local file overrides the base one (same for
+   `docs/ac-quality.md` and `docs/ac-quality.local.md`). Run TWO
+   sequential review passes yourself, one role per pass — never blend
+   the perspectives:
    - Pass 1, *Business-coverage reviewer* — act as PO/stakeholder;
      score the "Business coverage" axis of the rubric.
    - Pass 2, *Dev-implementability reviewer* — act as the dev who picks

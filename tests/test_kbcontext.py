@@ -65,6 +65,99 @@ def test_parse_missing_block_raises():
         kbcontext.parse("a ticket with no block at all")
 
 
+def test_two_kb_context_blocks_are_an_error_in_either_order():
+    """BEFORE: `_extract_block` returned the first block, so a valid pin
+    followed by a bogus one passed (T14) while the reverse order failed
+    (T20) — the verdict depended on block order. AFTER: two blocks is
+    itself the error."""
+    good = (
+        "## KB context\n"
+        "```yaml\n"
+        "kb-context:\n"
+        '  version: "272953a"\n'
+        "  refs:\n"
+        "    - aero:arinc-424 §5.129\n"
+        "  tags: [arinc424]\n"
+        "```\n"
+    )
+    bad = (
+        "## KB context\n"
+        "```yaml\n"
+        "kb-context:\n"
+        '  version: "0000000"\n'
+        "  refs:\n"
+        "    - aero:arinc-424 §9.999\n"
+        "  tags: [ghost-tag]\n"
+        "```\n"
+    )
+    for text in (good + bad, bad + good):
+        with pytest.raises(kbcontext.KBContextError) as excinfo:
+            kbcontext.parse(text)
+        assert "2 'kb-context:' blocks" in str(excinfo.value)
+
+
+def test_one_kb_context_block_still_parses():
+    ctx = kbcontext.parse(
+        "kb-context:\n"
+        '  version: "272953a"\n'
+        "  refs:\n"
+        "    - aero:arinc-424 §5.129\n"
+        "  tags: [arinc424]\n"
+    )
+    assert ctx.version == "272953a"
+
+
+def test_a_commented_out_block_plus_one_real_block_still_parses():
+    """I2: `_count_blocks` counted every bare 'kb-context:' key line
+    regardless of an enclosing HTML comment, so a commented-out old pin
+    left in place plus the current real block raised the new "2
+    'kb-context:' blocks found" error. Only the REAL block should count."""
+    text = (
+        "kb-context:\n"
+        '  version: "abc1234"\n'
+        "  refs:\n"
+        "    - a §1\n"
+        "\n"
+        "<!--\n"
+        "kb-context:\n"
+        '  version: "0000000"\n'
+        "  refs:\n"
+        "    - old §1\n"
+        "-->\n"
+    )
+
+    ctx = kbcontext.parse(text)
+
+    assert ctx.version == "abc1234"
+
+
+def test_a_commented_out_block_before_the_real_block_is_ignored():
+    """I2 follow-up: `_extract_block` scanned raw text for the FIRST
+    'kb-context:' line regardless of an enclosing HTML comment, so a
+    commented-out old pin placed BEFORE the real block was the one
+    actually parsed — agreeing with `_count_blocks` on the COUNT (1) is
+    not enough if the wrong block is the one extracted. `_extract_block`
+    must share `_count_blocks`'s comment-stripped view."""
+    text = (
+        "<!--\n"
+        "kb-context:\n"
+        '  version: "0000000"\n'
+        "  refs:\n"
+        "    - old §1\n"
+        "-->\n"
+        "\n"
+        "kb-context:\n"
+        '  version: "abc1234"\n'
+        "  refs:\n"
+        "    - a §1\n"
+    )
+
+    ctx = kbcontext.parse(text)
+
+    assert ctx.version == "abc1234"
+    assert [str(r) for r in ctx.refs] == ["a §1"]
+
+
 def test_parse_missing_version_raises():
     with pytest.raises(kbcontext.KBContextError, match="version"):
         kbcontext.parse("kb-context:\n  refs:\n    - a §1\n")

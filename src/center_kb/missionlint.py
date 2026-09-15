@@ -10,15 +10,47 @@ specific to the mission contract.
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from center_kb import lintcore, mission
+from center_kb import acquality, lintcore, mission
 from center_kb.doctor import Issue
 from center_kb.lintcore import LintReport
 
 if TYPE_CHECKING:
     from center_kb.hub import HubHandle
+
+
+# Required sections with a stronger, section-specific check of their own.
+_FILL_EXEMPT: frozenset[str] = frozenset(
+    {
+        "## KB context",                # check_context_block
+        "## System context (C4 L1)",    # check_diagram
+        "## Containers (C4 L2)",        # check_diagram
+        "## US backlog",                # check_backlog
+    }
+)
+
+
+def _check_required_filled(text: str) -> list[Issue]:
+    """A required section that says nothing is not a section (M8)."""
+    issues: list[Issue] = []
+    for heading in mission.REQUIRED_MISSION_HEADINGS:
+        if heading in _FILL_EXEMPT:
+            continue
+        body = lintcore.section_body(text, heading)
+        if body is None:
+            continue  # missing heading — already reported by check_headings
+        if acquality.is_unfilled(lintcore.visible_body(body)):
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{heading}' is empty or only placeholder text — "
+                    "fill it in",
+                )
+            )
+    return issues
 
 
 def check_mission_id(
@@ -299,6 +331,7 @@ def lint(
     *,
     path: Path | None = None,
     tickets_dir: Path | None = None,
+    fail_on_stale: bool = False,
 ) -> LintReport:
     """Run the mission DoR gate. Checks run in spec §5.1 order.
 
@@ -306,6 +339,10 @@ def lint(
     coverage check. Each omission is recorded as a note rather than
     silently passing.
     """
+    # NFC-normalize once, at the one entry point every check reads from —
+    # see ticketlint.lint's identical note (acquality's bilingual regexes
+    # match NFC only).
+    text = unicodedata.normalize("NFC", text)
     issues: list[Issue] = []
     notes: list[str] = []
 
@@ -316,6 +353,7 @@ def lint(
     notes += id_notes
 
     issues += lintcore.check_headings(text, mission.REQUIRED_MISSION_HEADINGS)
+    issues += _check_required_filled(text)
 
     issues += lintcore.check_diagram(
         text, "## System context (C4 L1)", mission.L1_KEYWORDS
@@ -331,7 +369,9 @@ def lint(
     backlog_issues, us_ids = check_backlog(text, mission_id)
     issues += backlog_issues
 
-    ctx_issues, _ctx = lintcore.check_context_block(text, hub)
+    ctx_issues, _ctx = lintcore.check_context_block(
+        text, hub, fail_on_stale=fail_on_stale
+    )
     issues += ctx_issues
 
     # Coverage is skipped — visibly — when the backlog itself is broken.

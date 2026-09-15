@@ -42,6 +42,11 @@ class KBContext(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+# An HTML comment. `kbcontext` cannot import `lintcore.HTML_COMMENT_RE`
+# (lintcore imports kbcontext, so the reverse import would cycle) — kept
+# local rather than moved to a new shared module for one constant.
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
 _REF_RE = re.compile(
     r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
     r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s+§?(?P<sec>\S+)$"
@@ -154,9 +159,33 @@ def suggest_tags(tag: str, vocab: dict[str, str]) -> list[str]:
     ]
 
 
+def _without_comments(text: str) -> str:
+    """`text` with HTML comment content blanked to blank lines.
+
+    Line COUNT is preserved (each match is replaced by the same number of
+    '\\n' characters it contained) rather than deleted outright, so
+    `_extract_block`'s indent-based line slicing stays correct even when
+    a comment sits right next to the real block — deleting could merge
+    two unrelated lines into one. This is the ONE home for "is this line
+    inside a comment": both `_extract_block` (which line starts the
+    block) and `_count_blocks` (how many blocks exist) scan this same
+    view, so they cannot disagree about it — an old bug here otherwise
+    lets the two agree on the COUNT while `_extract_block` still returns
+    the WRONG (commented-out) block's content."""
+
+    def _blank(m: re.Match[str]) -> str:
+        return "\n" * m.group(0).count("\n")
+
+    return _HTML_COMMENT_RE.sub(_blank, text)
+
+
 def _extract_block(text: str) -> str:
-    """Extract the first kb-context block by indent — tolerates a block embedded in a ticket."""
-    lines = text.splitlines()
+    """Extract the first kb-context block by indent — tolerates a block
+    embedded in a ticket. Scans `_without_comments(text)` so a
+    commented-out old pin (anywhere in the document, including BEFORE the
+    real block) is never the one found; the returned content is unaffected
+    for a real block, since blanking only touches comment spans."""
+    lines = _without_comments(text).splitlines()
     for i, line in enumerate(lines):
         m = _KEY_RE.match(line)
         if not m:
@@ -175,7 +204,27 @@ def _extract_block(text: str) -> str:
     raise KBContextError("no 'kb-context:' block found in the text")
 
 
+def _count_blocks(text: str) -> int:
+    """How many bare 'kb-context:' key lines the text carries, at any
+    indent — the same line `_extract_block` anchors on, and the same
+    `_without_comments` view: a commented-out old pin left in place (a BA
+    re-running `kb context new` and leaving the previous block commented
+    out instead of deleting it) is not rendered, so it is not a second
+    block either — only a REAL, visible block counts."""
+    return sum(
+        1 for line in _without_comments(text).splitlines() if _KEY_RE.match(line)
+    )
+
+
 def parse(text: str) -> KBContext:
+    count = _count_blocks(text)
+    if count > 1:
+        raise KBContextError(
+            f"{count} 'kb-context:' blocks found — a document pins exactly "
+            "one. Delete the extra block by hand; never re-run "
+            "`kb context new`, which would rewrite the pinned version and "
+            "falsify when the document was grounded"
+        )
     block = _extract_block(text)
     try:
         data = yaml.safe_load(block)

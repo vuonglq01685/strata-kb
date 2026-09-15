@@ -211,7 +211,7 @@ def _default_sections(block: str) -> dict[str, str]:
         ),
         "## Business goal": (
             "Cut route-briefing time by showing restrictive airspace inline. "
-            "Airspace records follow arinc-kb:arinc-424 §5.3."
+            "Airspace records follow [arinc-kb:arinc-424 §5.3]."
         ),
         "## Scope": (
             "**In scope:** map rendering, filtering by airspace class.\n"
@@ -234,7 +234,7 @@ def _default_sections(block: str) -> dict[str, str]:
             "```"
         ),
         "## Constraints & assumptions": (
-            "ICAO designation rules per icao-kb:icao-annex-2 §1.1 apply."
+            "ICAO designation rules per [icao-kb:icao-annex-2 §1.1] apply."
         ),
         "## US backlog": (
             "| US ID | Title |\n"
@@ -575,10 +575,10 @@ def test_vietnamese_golden_mission_passes(fed_hub: Path, golden_block: str):
             ),
             "## Business goal": (
                 "Giảm thời gian briefing tuyến bay. Bản ghi vùng trời theo "
-                "arinc-kb:arinc-424 §5.3."
+                "[arinc-kb:arinc-424 §5.3]."
             ),
             "## Constraints & assumptions": (
-                "Quy tắc định danh ICAO theo icao-kb:icao-annex-2 §1.1."
+                "Quy tắc định danh ICAO theo [icao-kb:icao-annex-2 §1.1]."
             ),
         },
     )
@@ -622,6 +622,8 @@ def test_mermaid_init_directive_before_the_type_passes(
                 "%%{init: {'theme':'neutral'}}%%\n"
                 "C4Context\n"
                 "  Person(d, \"Dispatcher\")\n"
+                "  System(kb, \"Knowledge Base\")\n"
+                "  Rel(d, kb, \"queries\")\n"
                 "```"
             ),
         },
@@ -727,6 +729,8 @@ def test_valid_l3_section_passes(fed_hub: Path, golden_block: str):
                 "```mermaid\n"
                 "C4Component\n"
                 "  Component(h, \"Airspace handler\", \"Python\")\n"
+                "  Component(v, \"Validator\", \"Python\")\n"
+                "  Rel(h, v, \"delegates to\")\n"
                 "```"
             )
         },
@@ -766,7 +770,7 @@ def test_inline_citation_not_pinned_errors(fed_hub: Path, golden_block: str):
         golden_block,
         overrides={
             "## Scope": (
-                "**In scope:** map rendering per faa-kb:faa-7110 §2.2.\n"
+                "**In scope:** map rendering per [faa-kb:faa-7110 §2.2].\n"
                 "**Out of scope:** editing."
             )
         },
@@ -939,6 +943,8 @@ def test_c4_todo_without_decision_row_warns(
         "C4Container\n"
         "  Container(api, \"Airspace API — "
         "%%TODO: verify against codebase%%\", \"Python\")\n"
+        "  Container(db, \"Airspace DB\", \"Postgres\")\n"
+        "  Rel(api, db, \"reads from\")\n"
         "```"
     )
     doc = _build_mission(
@@ -967,6 +973,8 @@ def test_c4_todo_with_owned_decision_row_is_clean(
         "C4Container\n"
         "  Container(api, \"Airspace API — "
         "%%TODO: verify against codebase%%\", \"Python\")\n"
+        "  Container(db, \"Airspace DB\", \"Postgres\")\n"
+        "  Rel(api, db, \"reads from\")\n"
         "```"
     )
     doc = _build_mission(
@@ -1132,3 +1140,36 @@ def test_fabricated_kb_context_tag_errors(fed_hub: Path, golden_block: str):
     report = missionlint.lint(text, _hub(fed_hub))
 
     assert any("ghost-tag" in e for e in _errors(report)), _errors(report)
+
+
+# --- substance checks at error level (M8) ---
+
+
+def test_a_mission_of_placeholders_fails(fed_hub: Path, golden_block: str):
+    """M8: structure intact, every body 'TBD' — PASS before 0.22.0."""
+    text = _build_mission(
+        golden_block,
+        overrides={
+            "## Business goal": "TBD",
+            "## Scope": "",
+            "## Constraints & assumptions": "chưa rõ",
+        },
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    for heading in (
+        "## Business goal",
+        "## Scope",
+        "## Constraints & assumptions",
+    ):
+        assert (
+            f"'{heading}' is empty or only placeholder text — fill it in"
+            in _errors(report)
+        )
+
+
+def test_a_filled_mission_reports_no_placeholder_errors(
+    fed_hub: Path, golden_block: str
+):
+    report = missionlint.lint(_build_mission(golden_block), _hub(fed_hub))
+    assert not [m for m in _errors(report) if "only placeholder" in m]

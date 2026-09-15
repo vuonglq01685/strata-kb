@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from center_kb import kbcontext
 from center_kb.cli import app
 from center_kb.hub import HubHandle
+from tests.conftest import make_stale
 
 runner = CliRunner()
 
@@ -22,6 +23,21 @@ def _golden_block(fed_hub: Path) -> str:
     block, _warning = kbcontext.build_context_block(
         HubHandle(root=fed_hub),
         ["arinc-kb:arinc-424 §5.3"],
+        tags=["airspace"],
+    )
+    return block
+
+
+def _golden_block_with_icao(fed_hub: Path) -> str:
+    """Pins icao-kb:icao-annex-2 §1.1 alongside the usual arinc-kb ref, so
+    `make_stale` (which edits the icao-kb entry) has a pinned ref of this
+    mission's own context to act on. The body still only inline-cites the
+    arinc-kb ref, same as `_golden_block` — the extra pin is uncited, which
+    is only ever a warning (never a failure), so it cannot affect any of
+    the exit-code assertions below."""
+    block, _warning = kbcontext.build_context_block(
+        HubHandle(root=fed_hub),
+        ["arinc-kb:arinc-424 §5.3", "icao-kb:icao-annex-2 §1.1"],
         tags=["airspace"],
     )
     return block
@@ -47,12 +63,16 @@ def _mission_text(block: str) -> str:
             "```mermaid",
             "C4Context",
             '  Person(d, "Dispatcher")',
+            '  System(kb, "Knowledge Base")',
+            '  Rel(d, kb, "queries")',
             "```",
             "",
             "## Containers (C4 L2)",
             "```mermaid",
             "C4Container",
             '  Container(api, "Airspace API", "Python")',
+            '  Container(db, "Airspace DB", "Postgres")',
+            '  Rel(api, db, "reads from")',
             "```",
             "",
             "## Constraints & assumptions",
@@ -237,3 +257,48 @@ def test_lint_non_utf8_file_names_encoding_as_the_problem(
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "utf-8" in result.output.lower()
+
+
+def test_mission_lint_exits_2_when_only_the_ref_is_stale(fed_hub, tmp_path):
+    block = _golden_block_with_icao(fed_hub)
+    path = tmp_path / f"{MISSION_ID}.md"
+    path.write_text(_mission_text(block), encoding="utf-8")
+    make_stale(fed_hub)
+
+    result = runner.invoke(
+        app,
+        ["mission", "lint", str(path), "--hub", str(fed_hub),
+         "--fail-on-stale"],
+    )
+    assert result.exit_code == 2, result.output
+    # Click also exits 2 for a usage error (e.g. an unrecognised option) —
+    # pin that this 2 came from the lint report, not from `--fail-on-stale`
+    # failing to parse.
+    assert "DoR: FAIL" in result.output
+
+
+def test_mission_lint_exits_1_when_something_else_also_fails(fed_hub, tmp_path):
+    block = _golden_block_with_icao(fed_hub)
+    path = tmp_path / f"{MISSION_ID}.md"
+    text = _mission_text(block).replace("## US backlog", "")
+    path.write_text(text, encoding="utf-8")
+    make_stale(fed_hub)
+
+    result = runner.invoke(
+        app,
+        ["mission", "lint", str(path), "--hub", str(fed_hub),
+         "--fail-on-stale"],
+    )
+    assert result.exit_code == 1
+
+
+def test_mission_lint_exits_0_on_a_stale_ref_without_the_flag(fed_hub, tmp_path):
+    block = _golden_block_with_icao(fed_hub)
+    path = tmp_path / f"{MISSION_ID}.md"
+    path.write_text(_mission_text(block), encoding="utf-8")
+    make_stale(fed_hub)
+
+    result = runner.invoke(
+        app, ["mission", "lint", str(path), "--hub", str(fed_hub)]
+    )
+    assert result.exit_code == 0
