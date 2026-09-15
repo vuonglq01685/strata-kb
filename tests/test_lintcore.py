@@ -769,6 +769,82 @@ def test_check_review_record_accepts_a_filled_record():
     assert lintcore.check_review_record(text) == []
 
 
+# --- Task 8: '## Review record' table shape is an error; scores stay warnings ---
+
+_RECORD = (
+    "## Review record\n"
+    "| Date | Round | Business | Dev | Reviewer |\n"
+    "|---|---|---|---|---|\n"
+    "{rows}"
+)
+
+
+def test_review_record_with_an_empty_reviewer_cell_is_an_error():
+    """Reviewer E's T18: a self-declared 5/5 with an empty reviewer cell
+    passed with no warning at all."""
+    text = _RECORD.format(rows="| 2026-09-08 | 1 | 5 | 5 |  |\n")
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["error"]
+    assert "empty cell" in issues[0].message
+
+
+def test_review_record_with_no_data_rows_is_an_error():
+    text = _RECORD.format(rows="")
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["error"]
+    assert "no review rows" in issues[0].message
+
+
+def test_review_record_requires_the_gap_verifier_from_round_two():
+    text = _RECORD.format(
+        rows="| 2026-09-08 | 1 | 4 | 4 | business-reviewer |\n"
+        "| 2026-09-09 | 2 | 5 | 5 | someone-else |\n"
+    )
+    issues = lintcore.check_review_record(text)
+    assert any(
+        "round 2 must be reviewed by 'gap-verifier'" in i.message
+        and i.level == "error"
+        for i in issues
+    )
+
+
+def test_review_record_rounds_must_increase():
+    text = _RECORD.format(
+        rows="| 2026-09-08 | 2 | 4 | 4 | gap-verifier |\n"
+        "| 2026-09-09 | 1 | 5 | 5 | gap-verifier |\n"
+    )
+    assert any(
+        "Round 1 does not follow round 2" in i.message and i.level == "error"
+        for i in lintcore.check_review_record(text)
+    )
+
+
+def test_a_score_below_four_is_a_warning_not_an_error():
+    text = _RECORD.format(rows="| 2026-09-08 | 1 | 3 | 4 | business-reviewer |\n")
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["warning"]
+    assert "below the threshold of 4" in issues[0].message
+
+
+def test_a_fourth_round_is_a_warning_not_an_error():
+    rows = "".join(
+        f"| 2026-09-0{n} | {n} | 5 | 5 | "
+        f"{'business-reviewer' if n == 1 else 'gap-verifier'} |\n"
+        for n in (1, 2, 3, 4)
+    )
+    issues = lintcore.check_review_record(_RECORD.format(rows=rows))
+    assert [i.level for i in issues] == ["warning"]
+    assert "more than 3 review rounds" in issues[0].message
+
+
+def test_a_well_formed_record_is_clean():
+    text = _RECORD.format(
+        rows="| 2026-09-08 | 1 | 4 | 5 | business-reviewer |\n"
+        "| 2026-09-09 | 2 | 5 | 5 | gap-verifier |\n"
+    )
+    assert lintcore.check_review_record(text) == []
+
+
 # --- Task 3: kb-context tags must exist on the federation ---
 
 

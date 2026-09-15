@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from center_kb import kbcontext
+from center_kb import acquality, kbcontext
 from center_kb.doctor import Issue, check_context
 from center_kb.kbcontext import KBContext, KBRef
 
@@ -425,12 +425,40 @@ REVIEW_RECORD_HEADING = "## Review record"
 # maturity review never ran.
 _REVIEW_PLACEHOLDER = "Not yet reviewed."
 
+# '| Date | Round | Business | Dev | Reviewer |' (ticket-template.md), header
+# cells lowercased for a case-insensitive comparison against `rows[0]`.
+REVIEW_RECORD_COLUMNS: tuple[str, ...] = (
+    "date",
+    "round",
+    "business",
+    "dev",
+    "reviewer",
+)
+
+# docs/review-rubric.md: rounds 2 and 3 are a single gap-verifier pass.
+GAP_VERIFIER = "gap-verifier"
+REVIEW_SCORE_THRESHOLD = 4
+REVIEW_ROUND_CAP = 3
+
 
 def check_review_record(text: str) -> list[Issue]:
-    """Warning when the maturity review has not run — '## Review record'
-    is missing, still empty, or still holds the template placeholder.
-    Warning-level on purpose: the review is an authoring-time aid and the
-    BA judges; nothing here may flip a DoR verdict."""
+    """'## Review record' missing, still empty, or still holding the
+    template placeholder is a warning — unchanged from before this task.
+
+    Once there is a real table, its SHAPE is checked at ERROR level: a
+    malformed row, a wrong or missing header, no data rows at all, a
+    non-'gap-verifier' reviewer from round 2 on, or rounds that do not
+    increase. A fabricated or hand-edited row should be visible as a hard
+    failure, not a silent pass — that is what let reviewer E's T18
+    (`| 2026-09-08 | 1 | 5 | 5 |  |`, an empty reviewer cell with a
+    self-declared 5/5) through with no warning at all.
+
+    Once the shape is sound, its JUDGMENT stays at WARNING level: a score
+    below the maturity threshold, or more than the rubric's 3-round cap.
+    Whether a 4 is really a 4 is not machine-checkable — that is the BA's
+    call, not a DoR gate's — so scores never flip the verdict, only the
+    shape does. Shape errors are returned before any score is evaluated:
+    a malformed table cannot be meaningfully scored."""
     body = section_body(text, REVIEW_RECORD_HEADING)
     if body is None:
         return [
@@ -458,7 +486,91 @@ def check_review_record(text: str) -> list[Issue]:
                 "review (rubric: docs/review-rubric.md)",
             )
         ]
-    return []
+
+    # --- schema (errors) -------------------------------------------------
+    rows = table_rows(visible_body(stripped))
+    if not rows:
+        return [
+            Issue(
+                "error",
+                f"'{REVIEW_RECORD_HEADING}' has no review table — keep the "
+                "template's '| Date | Round | Business | Dev | Reviewer |' "
+                "table and append one row per round",
+            )
+        ]
+    header = [c.strip().lower() for c in rows[0]]
+    if tuple(header) != REVIEW_RECORD_COLUMNS:
+        return [
+            Issue(
+                "error",
+                f"'{REVIEW_RECORD_HEADING}' table header is "
+                f"{rows[0]} — expected "
+                "'| Date | Round | Business | Dev | Reviewer |'",
+            )
+        ]
+    if len(rows) == 1:
+        return [
+            Issue(
+                "error",
+                f"'{REVIEW_RECORD_HEADING}' has no review rows — the "
+                "maturity review appends one row per round "
+                "(rubric: docs/review-rubric.md)",
+            )
+        ]
+
+    issues: list[Issue] = []
+    parsed: list[acquality.ReviewRow] = []
+    previous: int | None = None
+    for cells in rows[1:]:
+        row = acquality.parse_review_row(cells)
+        if isinstance(row, str):
+            issues.append(
+                Issue("error", f"'{REVIEW_RECORD_HEADING}' row {row}")
+            )
+            continue
+        if previous is not None and row.round <= previous:
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{REVIEW_RECORD_HEADING}': Round {row.round} does not "
+                    f"follow round {previous} — rounds are appended, never "
+                    "renumbered",
+                )
+            )
+        previous = row.round
+        if row.round >= 2 and row.reviewer.strip().lower() != GAP_VERIFIER:
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{REVIEW_RECORD_HEADING}': round {row.round} must be "
+                    f"reviewed by '{GAP_VERIFIER}' (rounds 2-3 are the "
+                    f"gap-verifier pass), not '{row.reviewer}'",
+                )
+            )
+        parsed.append(row)
+    if issues:
+        return issues
+
+    # --- judgment (warnings) --------------------------------------------
+    last = parsed[-1]
+    for axis, score in (("Business", last.business), ("Dev", last.dev)):
+        if score < REVIEW_SCORE_THRESHOLD:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"{axis} maturity is {score}, below the threshold of "
+                    f"{REVIEW_SCORE_THRESHOLD} — run another review round",
+                )
+            )
+    if len(parsed) > REVIEW_ROUND_CAP:
+        issues.append(
+            Issue(
+                "warning",
+                f"{len(parsed)} rows: more than {REVIEW_ROUND_CAP} review "
+                "rounds — the rubric caps the loop at 3; escalate instead",
+            )
+        )
+    return issues
 
 
 def table_rows(body: str) -> list[list[str]]:
