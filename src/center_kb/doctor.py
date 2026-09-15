@@ -135,6 +135,23 @@ def check_kind(kb_dir: Path) -> list[Issue]:
     return []
 
 
+def check_usage_log(kb_dir: Path) -> list[Issue]:
+    """The Stop hook swallows every failure into ingest-errors.log; this is
+    the one place a human hears about it (reviewer F L3)."""
+    from center_kb.usage.ledger import hook_errors
+
+    count, last = hook_errors(kb_dir)
+    if not count:
+        return []
+    return [
+        Issue(
+            "warning",
+            f"{count} hook ingest error(s) logged in {kb_dir / 'usage' / 'ingest-errors.log'} "
+            f"— last: {last}; truncate the file once handled",
+        )
+    ]
+
+
 ASSET_SIZE_WARN_BYTES = 100 * 1024 * 1024
 
 

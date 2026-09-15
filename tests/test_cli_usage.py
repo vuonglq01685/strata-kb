@@ -134,8 +134,7 @@ def test_hook_mode_skips_a_kb_dir_with_no_config_and_writes_no_ledger(tmp_path: 
 
     assert result.exit_code == 0, result.output
     assert result.output == ""
-    assert not list((d / "usage").glob("*.jsonl"))
-    assert (d / "usage" / "ingest-errors.log").exists()
+    assert not (d / "usage").exists()
 
 
 def test_report_over_a_corrupt_ledger_exits_one_with_a_message_not_a_traceback(
@@ -412,3 +411,16 @@ def test_report_json_on_an_empty_ledger_is_still_valid_json(tmp_path: Path):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["total"]["rows"] == 0
+
+
+def test_report_footer_counts_hook_errors(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    t = write_transcript(tmp_path, [user_row("tickets/open-new-flight.md"), usage_row("a1")])
+    runner.invoke(app, ["usage", "ingest-transcript", str(t), "--kb-dir", str(d)])
+    (d / "usage" / "ingest-errors.log").write_text("t1 boom\nt2 bang\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["usage", "report", "--md", "--kb-dir", str(d)])
+
+    assert "2 hook ingest error(s) logged" in result.output
+    as_json = json.loads(runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output)
+    assert as_json["hook_errors"] == 2

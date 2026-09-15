@@ -1086,6 +1086,8 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
 
     try:
         path = _ledger.usage_dir(kb_dir) / "ingest-errors.log"
+        if not (kb_dir / "config.yaml").is_file():
+            return  # wrong directory: nowhere correct to write (reviewer F L2)
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with path.open("a", encoding="utf-8", newline="\n") as fh:
@@ -1333,6 +1335,7 @@ def usage_report(
         today=date.today(),
         generated=generated,
     )
+    agg.hook_errors, _ = ledger.hook_errors(kb_dir)
     if md:
         typer.echo(report_mod.render_markdown(agg))
         return
@@ -2521,6 +2524,7 @@ def doctor(
         check_hub,
         check_kb,
         check_kind,
+        check_usage_log,
     )
 
     handle = _hub_or_exit(hub, kb_dir)
@@ -2541,6 +2545,8 @@ def doctor(
         cfg_kind = _load_config(kb_dir).kind
     except Exception:  # config hỏng đã được check_kind báo
         pass
+    if cfg_kind in ("ba", "dev"):
+        issues += check_usage_log(kb_dir)
     if cfg_kind == "hub":
         from center_kb import gitio as _gitio2
         from center_kb.config import load_config as _load_config2
