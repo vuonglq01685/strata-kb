@@ -2276,7 +2276,7 @@ def test_the_shipped_pr_template_fails_the_linter(tmp_path: Path):
     )
     report = lint_body(text)
     assert not report.passed
-    assert {f.code for f in report.findings} == {"empty-section"}
+    assert {f.code for f in report.errors} == {"empty-section"}
 
 
 def test_hub_scaffold_ignores_the_search_index(tmp_path):
