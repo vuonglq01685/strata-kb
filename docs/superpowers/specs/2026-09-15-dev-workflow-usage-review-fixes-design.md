@@ -160,8 +160,10 @@ prints warnings under a `warnings:` heading after errors; `--json` carries
 
 **CLI.** `kb pr lint` gains `--plan-dir PATH` (default `docs/impl`; `--no-plan`
 is not needed — an absent directory is the `plan-missing` warning). The
-scaffolded `kb-pr-lint.yml` already checks out the branch, so the default
-finds the plan without a workflow change.
+scaffolded `kb-pr-lint.yml` gains a read-only `actions/checkout@v4` step
+(`persist-credentials: false`) so the plan file is present; the job stays
+green on fork PRs. (Corrected 2026-09-15 while planning: the workflow
+deliberately had no checkout step.)
 
 **Plan header.** `dev-plan` (4 hosts) writes two literal lines directly
 under the plan's title, and the skill text says so instead of "names the
