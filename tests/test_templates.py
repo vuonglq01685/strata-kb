@@ -1099,6 +1099,15 @@ BA_WRAPPERS = (
 )
 
 
+# Task 11 (MEDIUM-5): every BA wrapper's maturity-review step must point at
+# both the base rubric and its create-once `.local.md` override (mirrors
+# `docs/conventions/<lang>.local.md`'s pointer convention on the dev side).
+@pytest.mark.parametrize("name", BA_WRAPPERS)
+def test_every_ba_wrapper_names_the_local_override(name):
+    text = _read_init_template(name)
+    assert "docs/review-rubric.local.md" in text
+
+
 def _ba_wrapper_text(name: str) -> str:
     """A BA wrapper's whole text, whitespace-normalised.
 

@@ -31,6 +31,10 @@ never invented; `kb ticket lint` must report `DoR: PASS` before handover;
 report the authoring cost at handover with `kb usage report --ticket
 <ticket-id> --md`, reporting `no usage recorded yet` as-is rather than
 guessing a number;
+maturity review reads `docs/review-rubric.md`, then
+`docs/review-rubric.local.md` if it exists — the local file overrides
+the base one, same for `docs/ac-quality.md` and
+`docs/ac-quality.local.md`;
 review rounds 2 and 3 are a single `gap-verifier` pass over the still-open
 gaps and the sections that changed, never a re-read of the whole draft;
 never push to Jira — the BA publishes; never tick a Definition of Ready

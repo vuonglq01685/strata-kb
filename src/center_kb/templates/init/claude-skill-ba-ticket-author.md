@@ -87,8 +87,10 @@ for it during Intake.
    reports `DoR: PASS`. Report any remaining warnings to the BA — they
    are not blockers, but they are the BA's judgment call.
 7. **Maturity review** — once lint reports `DoR: PASS`, dispatch TWO
-   review subagents IN PARALLEL, each reading the draft and
-   `docs/review-rubric.md`:
+   review subagents IN PARALLEL, each reading the draft. Read
+   `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
+   exists — the local file overrides the base one. Same for
+   `docs/ac-quality.md` and `docs/ac-quality.local.md`:
    - *Business-coverage reviewer* — acts as PO/stakeholder; scores the
      "Business coverage" axis of the rubric.
    - *Dev-implementability reviewer* — acts as the dev who picks the

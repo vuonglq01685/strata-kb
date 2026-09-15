@@ -97,10 +97,13 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
    exist yet. Report remaining warnings to the BA; they are the BA's
    judgment call.
 7. **Maturity review** — once lint reports `DoR: PASS`, run TWO
-   independent reviews of the draft against `docs/review-rubric.md` —
-   when your runtime can dispatch subagents, run them as TWO subagents
-   IN PARALLEL; otherwise run TWO sequential passes, one role per
-   pass. Never blend the two perspectives in one pass:
+   independent reviews of the draft — when your runtime can dispatch
+   subagents, run them as TWO subagents IN PARALLEL; otherwise run TWO
+   sequential passes, one role per pass. Never blend the two
+   perspectives in one pass. Read `docs/review-rubric.md`, then
+   `docs/review-rubric.local.md` if it exists — the local file
+   overrides the base one. Same for `docs/ac-quality.md` and
+   `docs/ac-quality.local.md`:
    - *Business-coverage reviewer* — acts as PO/stakeholder; scores the
      "Business coverage" axis of the rubric.
    - *Dev-implementability reviewer* — acts as the tech lead who will

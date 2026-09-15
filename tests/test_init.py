@@ -719,7 +719,18 @@ _PRE_PHASE4_CHILD_FILES = [
 
 def test_init_kind_ba_scaffolds_minimal_set(tmp_path: Path):
     report = init_repo(tmp_path, "ba")
-    assert sorted(report.created) == sorted(expected_files("ba"))
+    # Two more entries than expected_files("ba") on purpose: the
+    # review-rubric/ac-quality `.local.md` stubs are create-once BA repo
+    # data (Task 11, MEDIUM-5) and deliberately NOT in the template map
+    # `expected_files` reads from — see initcmd.BA_LOCAL_OVERRIDES. Sorted
+    # as ONE combined list (not two sorted lists concatenated): the
+    # `.local.md` paths interleave alphabetically with the base `docs/`
+    # entries (e.g. "docs/ac-quality.local.md" < "docs/ac-quality.md"),
+    # so concatenating two separately-sorted lists would not equal the
+    # single globally-sorted `report.created`.
+    assert sorted(report.created) == sorted(
+        expected_files("ba") + list(initcmd.BA_LOCAL_OVERRIDES)
+    )
     for rel in _BA_SPEC_8_PATHS:
         assert (tmp_path / rel).is_file(), rel
     # authoring wrappers are explicitly NOT on kind `ba`
@@ -734,6 +745,47 @@ def test_init_kind_ba_scaffolds_minimal_set(tmp_path: Path):
     assert not (tmp_path / ".env.example").exists()
     text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
     assert "kind: ba" in text
+
+
+# --- Task 11 (MEDIUM-5): `.local.md` overrides for the BA rubric -----------
+# Same create-once contract as `conventions.scaffold_conventions`'s
+# `docs/conventions/<lang>.local.md` (C11): the BASE files
+# (docs/review-rubric.md, docs/ac-quality.md) stay package-owned and keep
+# being refreshed by `kb init`; only the `.local.md` overrides are written
+# once and never touched again.
+
+
+def test_ba_init_creates_the_local_override_stubs(tmp_path):
+    initcmd.init_repo(tmp_path, "ba")
+    assert (tmp_path / "docs" / "review-rubric.local.md").is_file()
+    assert (tmp_path / "docs" / "ac-quality.local.md").is_file()
+
+
+def test_ba_reinit_never_touches_a_local_override(tmp_path):
+    initcmd.init_repo(tmp_path, "ba")
+    local = tmp_path / "docs" / "review-rubric.local.md"
+    local.write_text(
+        "# our own criteria\n- [ ] cites an AIP\n", encoding="utf-8"
+    )
+    before = local.read_bytes()
+
+    report = initcmd.init_repo(tmp_path, "ba")
+
+    assert local.read_bytes() == before
+    assert any(
+        "local overrides — never refreshed" in entry
+        for entry in report.skipped
+    )
+
+
+def test_ba_reinit_still_refreshes_the_base_rubric(tmp_path):
+    initcmd.init_repo(tmp_path, "ba")
+    base = tmp_path / "docs" / "review-rubric.md"
+    base.write_text("clobbered\n", encoding="utf-8")
+
+    initcmd.init_repo(tmp_path, "ba")
+
+    assert "Maturity review rubric" in base.read_text(encoding="utf-8")
 
 
 def test_init_rejects_unknown_kind_still_excludes_ba_typos(tmp_path: Path):
