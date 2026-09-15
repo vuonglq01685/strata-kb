@@ -99,6 +99,8 @@ checkstyle {
 
 Set `maxWarnings = 0` once the tree is clean — with `google_checks.xml`
 at severity `warning`, a pre-existing repo fails on day one otherwise.
+Until then checkstyle reports but cannot fail — list it under
+`## Findings` as a tightening still owed.
 
 `build.gradle.kts` is also a detected manifest, but the block above is
 Groovy DSL. The Kotlin DSL needs different syntax for `configurations
