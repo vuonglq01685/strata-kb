@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from center_kb import federation, ghio, gitio, models, pubgate
 from center_kb import hub as hub_mod
 from center_kb.errors import KbError
+from center_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("center_kb.publish")
 
@@ -1113,11 +1114,22 @@ def warn_legacy_ids(kb_dir: Path) -> list[str]:
 
 
 def unreviewed_sections(kb_dir: Path) -> tuple[int, int]:
-    """(sections whose status is not `reviewed`, docs that contain one)."""
+    """(sections whose status is not `reviewed`, docs that contain one).
+
+    `hist.*` rows are excluded: they are machine-authored by `kb svc note`,
+    which always leaves a fresh row `summarized`, and a whole-doc `kb
+    approve` deliberately never flips them (F-L7) -- counting them here
+    would re-trip `--require-reviewed` after every `kb svc note` with no
+    way to clear it short of naming the section explicitly.
+    """
     n_sections = n_docs = 0
     for man_path in sorted(kb_dir.glob("*/_manifest.yaml")):
         manifest = _load_manifest_or_raise(man_path)
-        n = sum(1 for s in manifest.sections if s.status != "reviewed")
+        n = sum(
+            1
+            for s in manifest.sections
+            if s.status != "reviewed" and not s.id.startswith(MACHINE_SECTION_PREFIX)
+        )
         if n:
             n_sections += n
             n_docs += 1

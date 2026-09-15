@@ -94,3 +94,44 @@ def test_publish_require_reviewed_passes_when_all_reviewed(git_kb, hub_worktree,
     result = runner.invoke(app, _args(git_kb, hub_worktree, "--require-reviewed"))
     assert result.exit_code == 0, result.output
     assert "without SME review" not in result.output
+
+
+def test_publish_require_reviewed_ignores_hist_but_not_other_summarized(
+    git_kb, hub_worktree, run_git
+):
+    """F-L7 fix round 1: `kb svc note` always leaves its `hist.*` row
+    `summarized`, and a whole-doc `kb approve` never flips it -- so
+    --require-reviewed must not count it, or the gate would re-trip after
+    every note with no way to clear it short of naming the section. A real
+    (non-hist) summarized section must still block."""
+    mpath = git_kb["kb"] / "demo-doc" / "_manifest.yaml"
+    m = models.load_yaml_model(mpath, models.Manifest)
+    src_file = m.sections[0].file
+    for s in m.sections:
+        s.status = "reviewed"
+    m.sections.append(models.SectionEntry(
+        id="hist.api", title="api — ticket history", summary="Tickets: 1.",
+        status="summarized", file=src_file,
+    ))
+    models.save_yaml_model(mpath, m)
+    l2 = git_kb["kb"] / "demo-doc" / f"{src_file}.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8")
+        + "\n## hist.api api — ticket history\n\n```text\nT-1 | x\n```\n",
+        encoding="utf-8",
+    )
+    run_git(git_kb["root"], "add", "-A")
+    run_git(git_kb["root"], "commit", "-m", "reviewed + hist.api")
+
+    result = runner.invoke(app, _args(git_kb, hub_worktree, "--require-reviewed"))
+    assert result.exit_code == 0, result.output
+    assert "without SME review" not in result.output
+
+    m.sections[0].status = "summarized"
+    models.save_yaml_model(mpath, m)
+    run_git(git_kb["root"], "add", "-A")
+    run_git(git_kb["root"], "commit", "-m", "regress 1.1")
+
+    result = runner.invoke(app, _args(git_kb, hub_worktree, "--require-reviewed"))
+    assert result.exit_code == 1
+    assert "without SME review" in result.output

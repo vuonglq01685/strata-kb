@@ -2507,6 +2507,7 @@ def approve(
 
     flipped_total = 0
     has_missing = False
+    has_skipped_machine = False
     for rep in reports:
         for sid in rep.skipped_pending:
             typer.secho(
@@ -2515,6 +2516,7 @@ def approve(
                 err=True,
             )
         for sid in rep.skipped_machine:
+            has_skipped_machine = True
             typer.secho(
                 f"[note] {rep.doc_id} §{sid} is machine-authored — skipped "
                 "(pass --section to force)",
@@ -2537,6 +2539,13 @@ def approve(
     if flipped_total == 0:
         if all_changed:
             typer.echo("kb approve: nothing to approve")
+        elif has_skipped_machine:
+            typer.secho(
+                "kb approve: only machine-authored sections remain summarized — "
+                "pass --section <id> to force",
+                fg=typer.colors.YELLOW,
+            )
+            raise typer.Exit(1)
         else:
             typer.secho(
                 "kb approve: no summarized section to approve", fg=typer.colors.RED
