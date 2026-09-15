@@ -37,16 +37,25 @@ edit above it.
 Classify the ticket out loud before designing, so the Dev can override
 it: **spike** — a feasibility question the ticket itself raises, answered
 with a recommendation and any throwaway build labelled as such;
-**bounded** — a change to a flow that already exists in this repo,
-written as a few sentences to a few short paragraphs **in chat** with no
-design file; **architectural** — a new service, new table, new
-interface, or a change to how components fit, written to
-`docs/impl/<ticket-id>-design.md` (**architectural path only**).
+**bounded** — a change to a flow that already exists in this repo, with
+a design a few sentences to a few short paragraphs long; **architectural**
+— a new service, new table, new interface, or a change to how components
+fit, with a design covering every item under *Design content* below.
 Classification measures the repo, not your familiarity with it, so no
 existing flow to change means it is not bounded; between two paths,
 take the heavier one. The ratchet turns **one-way**: complexity that
 surfaces mid-ticket promotes the path — say so when it does — and
-nothing ever demotes it. The design content covers modules touched,
+nothing ever demotes it. Every path writes
+`docs/impl/<ticket-id>-design.md` — one paragraph on the bounded path is
+the resume point the orchestrator reads, not ceremony — opening with two
+header lines under its title: `path: <spike|bounded|architectural>` and
+`status: draft`. A spike's body is the question, what was tried, the
+recommendation, and the sentence "anything built for this is throwaway";
+it ends there — no plan, no execute — with `dev-handover` as its next
+step, putting the recommendation under `## Findings`. When the Dev
+approves, flip the header to `status: approved` before anything else —
+`dev-plan` refuses a `draft` design; a file's existence is not approval,
+its `status:` line is. The design content covers modules touched,
 interfaces added or changed, data changes, and the placeholder
 resolutions from the orchestrator's Placeholders step, with every
 standard-derived value quoted verbatim with its `doc-id §section`; any

@@ -32,9 +32,10 @@ edit above it.
 
 ## Steps
 
-- **Read the design** — on the architectural path, read
-  `docs/impl/<ticket-id>-design.md`; on the spike or bounded path there is
-  no design file, so work from the design as the Dev approved it in chat.
+- **Read the design** — read `docs/impl/<ticket-id>-design.md`. Its
+  header must say `status: approved`; a `draft` design means GATE 1 has
+  not passed — say so in one line and stop. A `path: spike` design has
+  no plan: say so and point at `dev-handover`.
 - **Write the plan** — write `docs/impl/<ticket-id>-plan.md` with one
   task per AC, or several tasks for a large AC, and every task names the
   test that proves it. Per task, give exactly three headings: **Files**
@@ -42,7 +43,11 @@ edit above it.
   consumes from earlier tasks and what it produces for later ones —
   exact names and types, because a task's implementer sees only their
   own task); and **Steps** as `- [ ]` checkboxes, step 1 always being
-  the failing test.
+  the failing test. The file opens with three header lines under its
+  title: `cmd.test: <command>`, `cmd.lint: <command>` (from `-code
+  §cmd.*`, or the Dev's answer) and `status: draft` — `kb pr lint` reads
+  `cmd.test:` from this file and requires it inside the PR's
+  Verification fence.
 - **A task with no test declares its exemption.** Every task's first
   step is a failing test, with exactly four exceptions — config, CI,
   docs and style changes, defined in `docs/tdd-exemptions.md`. A task
@@ -57,22 +62,24 @@ edit above it.
   `cmd.lint` from `-code §cmd.*`.
 - **No `-code` document yet** — when `-code §cmd.*` has not been generated
   in this repo (`kb code-ingest` not yet run), ask the Dev once for the
-  build/test/lint commands and record them at the top of the plan file, so
-  this closing task, `dev-execute`, and `dev-handover` all have something
-  to run.
+  build/test/lint commands and record them in the `cmd.test:` /
+  `cmd.lint:` header lines, so this closing task, `dev-execute`, and
+  `dev-handover` all have something to run.
 - **No linter in the repo** — when there is no linter at all to record as
   `cmd.lint`, make setting one up the plan's first task, from the
   *Linting* section of `docs/conventions/<lang>.md` (plus
   `docs/conventions/<lang>.local.md` overrides), and record the command
   it establishes as `cmd.lint`. Its red step is running that command and
-  watching it fail because no linter is configured. Scope the initial
-  config so `cmd.lint` passes on the untouched tree — every later task's
-  verify step runs it — and record tightening it to full strength as a
-  finding for the PR body.
+  watching it fail because no linter is configured. Whether the preset
+  applies at full strength or is narrowed so it passes on the current
+  tree is decided by the *Linting* section of
+  `docs/conventions/<lang>.md` — follow it, and carry every narrowed
+  rule into the PR's `## Findings`.
 - **GATE 2** — the Dev approves the plan before any code is written; once
-  approved, option 1 in the Next-step block below is
-  `/dev-execute <ticket-id>`. The checkbox file is also the resume point,
-  so it must be complete enough for a different session to pick up cold.
+  approved, flip the plan header to `status: approved` and option 1 in
+  the Next-step block below is `/dev-execute <ticket-id>`. The checkbox
+  file is also the resume point, so it must be complete enough for a
+  different session to pick up cold.
 
 ## Hard rules
 

@@ -501,11 +501,15 @@ def test_dev_design_carries_the_three_paths_and_the_ratchet():
         assert "take the heavier one" in text, name
 
 
-def test_dev_design_writes_the_design_file_only_on_the_architectural_path():
+def test_dev_design_writes_the_design_file_on_every_path():
+    # Task F-H2/F-M8 supersedes the old architectural-only contract this
+    # test used to pin (Phase 5 Stage A): every path now writes the design
+    # file, so "architectural path only" is gone from the wrapper's own
+    # prose — see test_dev_design_writes_a_file_on_every_path_with_a_status_header
+    # for the full new contract, asserted against the body.
     for name in _dev_wrapper_names("dev-design"):
         text = _dev_wrapper_text(name)
         assert "docs/impl/<ticket-id>-design.md" in text, name
-        assert "architectural path only" in text, name
 
 
 def test_dev_design_carries_gate_one_and_the_ac_rule():
@@ -1822,3 +1826,27 @@ def test_presets_lint_the_rules_their_prose_states():
     java = _read_init_template("conventions-java.md")
     assert "[*.java]\nindent_size = 2" in java
     assert "maxWarnings = 0" not in java.split("```groovy")[1].split("```")[0]
+
+
+def test_dev_design_writes_a_file_on_every_path_with_a_status_header():
+    for name in _dev_wrapper_names("dev-design"):
+        body = _dev_wrapper_body(name)
+        assert "Every path writes `docs/impl/<ticket-id>-design.md`" in body, name
+        assert "`path: <spike|bounded|architectural>`" in body, name
+        assert "`status: draft`" in body, name
+        assert "`status: approved`" in body, name
+        assert "in chat" not in body, name
+        assert "architectural path only" not in body, name
+
+
+def test_dev_plan_refuses_a_draft_design_and_writes_the_cmd_headers():
+    for name in _dev_wrapper_names("dev-plan"):
+        body = _dev_wrapper_body(name)
+        assert "`status: approved`" in body, name
+        assert "`cmd.test: <command>`" in body, name
+        assert "`cmd.lint: <command>`" in body, name
+        assert "`status: draft`" in body, name
+        assert "path: spike" in body, name
+        assert "in chat" not in body, name
+        assert "untouched tree" not in body, name
+        assert "Linting* section of `docs/conventions/<lang>.md`" in body, name
