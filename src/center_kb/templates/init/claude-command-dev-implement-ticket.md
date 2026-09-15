@@ -57,10 +57,18 @@ file's `## Placeholder map` table below the marker
 (`| placeholder | verified value | evidence (file:line or ref) |`); and
 anything unverifiable becomes `OPEN(BA)`; **Run the phases** invokes the
 `dev-design`, `dev-plan`, `dev-execute`, then `dev-handover` skills in
-order, detecting re-entry state from
-`docs/impl/<ticket-id>-{design,plan}.md`, the plan's ticked-checkbox
-ratio, the current branch, and whether a PR exists, so finished phases are
-skipped.
+order, deriving re-entry state — never stored — from
+`docs/impl/<ticket-id>-design.md` and `-plan.md` by their own `status:`
+header: `status: draft` offers the matching gate, `status: approved` moves
+on; design approved with no plan file but `git log --oneline
+<default>..HEAD` non-empty is `plan ⚠ missing, N commits on branch` — ask
+before running `dev-plan`, work may already be committed; an approved plan
+turns tasks into ticked/total checkboxes; `gh pr list --head <branch>
+--state merged` non-empty ends the flow, `--state closed` non-empty offers
+re-handover or reopen, and `gh` absent leaves the PR state unknown (gh not
+installed); no branch matching the ticket id while on the default branch
+offers `git switch -c <ticket-id>`; a current branch naming a different
+ticket STOPs — two tickets in flight, switch branches first.
 
 ## Hard rules
 
@@ -90,7 +98,7 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.

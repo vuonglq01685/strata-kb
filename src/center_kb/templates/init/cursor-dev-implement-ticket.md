@@ -70,11 +70,24 @@ edit above it.
 - **Run the phases** — run the `/dev-design` prompt (or follow
   `docs/impl/` conventions inline if prompts are unavailable), then —
   after the Dev approves it — the `/dev-plan` prompt, then the
-  `/dev-execute` prompt, then the `/dev-handover` prompt. On re-entry,
-  detect state from `docs/impl/<ticket-id>-design.md`,
-  `docs/impl/<ticket-id>-plan.md`, the ticked-checkbox ratio in the plan,
-  the current branch, and whether a PR exists — then skip finished phases
-  and offer the next one.
+  `/dev-execute` prompt, then the `/dev-handover` prompt.
+  On re-entry, derive the state — never store it — and name the case:
+  - `docs/impl/<ticket-id>-design.md` with `status: draft` →
+    `design 📝 draft`, offer GATE 1; `status: approved` → `design ✅`.
+  - design approved, plan absent, and `git log --oneline <default>..HEAD`
+    non-empty → `plan ⚠ missing, N commits on branch`: ask before running
+    `dev-plan` — work may already be committed.
+  - plan with `status: draft` → `plan 📝 draft`, offer GATE 2; approved →
+    tasks = ticked/total checkboxes.
+  - `gh pr list --head <branch> --state merged` non-empty → `PR ✅ merged`,
+    flow done; `--state closed` non-empty → `PR ❌ closed`, next step is
+    re-handover or reopen — never end the flow silently; `gh` absent →
+    `PR ? unknown (gh not installed)`.
+  - no branch matches `git branch --list "*<ticket-id>*"` and HEAD is the
+    default branch → offer `git switch -c <ticket-id>`.
+  - the current branch names a *different* `ABC-12` ticket id → STOP:
+    "two tickets in flight; switch branches first".
+  Then skip finished phases and offer the next one.
 
 ## Hard rules
 
@@ -104,7 +117,7 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
