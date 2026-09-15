@@ -424,7 +424,7 @@ def fed_hub(tmp_path: Path, run_git) -> Path:
     return hub
 
 
-def _make_stale(fed_hub: Path) -> None:
+def make_stale(fed_hub: Path) -> None:
     """Edit a published L2 file in-place, after the block that pins it was
     built — the recipe every stale-ref test needs to make a still-resolving
     ref report as stale. Shared here (rather than copied into every test

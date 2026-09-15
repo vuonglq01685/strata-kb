@@ -199,7 +199,20 @@ def check_context(
         if r.status == "broken":
             issues.append(Issue("error", f"{r.ref}: {r.reason}"))
         elif r.status == "stale":
-            issues.append(Issue(stale_level, f"{r.ref}: {r.reason}", "stale-ref"))
+            # Unconditional — applies whether `stale_level` promoted this to
+            # an error or left it a warning, so both phrasings name the same
+            # fix. Mirrors `render_resolved`'s own remedy (resolve.py), which
+            # names the same `kb diff` command; re-pinning is offered first
+            # since it is the fix the BA usually wants once amendment is
+            # confirmed, not just a way to inspect it.
+            remedy = (
+                "re-pin with the current hub commit, or run `kb diff "
+                f"{r.ref.doc_id} --against {r.pinned_rev}` to review the "
+                "amendment first"
+            )
+            issues.append(
+                Issue(stale_level, f"{r.ref}: {r.reason} — {remedy}", "stale-ref")
+            )
     return issues, results
 
 

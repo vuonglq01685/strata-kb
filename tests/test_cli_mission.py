@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from center_kb import kbcontext
 from center_kb.cli import app
 from center_kb.hub import HubHandle
-from tests.conftest import _make_stale
+from tests.conftest import make_stale
 
 runner = CliRunner()
 
@@ -30,7 +30,7 @@ def _golden_block(fed_hub: Path) -> str:
 
 def _golden_block_with_icao(fed_hub: Path) -> str:
     """Pins icao-kb:icao-annex-2 §1.1 alongside the usual arinc-kb ref, so
-    `_make_stale` (which edits the icao-kb entry) has a pinned ref of this
+    `make_stale` (which edits the icao-kb entry) has a pinned ref of this
     mission's own context to act on. The body still only inline-cites the
     arinc-kb ref, same as `_golden_block` — the extra pin is uncited, which
     is only ever a warning (never a failure), so it cannot affect any of
@@ -263,14 +263,18 @@ def test_mission_lint_exits_2_when_only_the_ref_is_stale(fed_hub, tmp_path):
     block = _golden_block_with_icao(fed_hub)
     path = tmp_path / f"{MISSION_ID}.md"
     path.write_text(_mission_text(block), encoding="utf-8")
-    _make_stale(fed_hub)
+    make_stale(fed_hub)
 
     result = runner.invoke(
         app,
         ["mission", "lint", str(path), "--hub", str(fed_hub),
          "--fail-on-stale"],
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 2, result.output
+    # Click also exits 2 for a usage error (e.g. an unrecognised option) —
+    # pin that this 2 came from the lint report, not from `--fail-on-stale`
+    # failing to parse.
+    assert "DoR: FAIL" in result.output
 
 
 def test_mission_lint_exits_1_when_something_else_also_fails(fed_hub, tmp_path):
@@ -278,7 +282,7 @@ def test_mission_lint_exits_1_when_something_else_also_fails(fed_hub, tmp_path):
     path = tmp_path / f"{MISSION_ID}.md"
     text = _mission_text(block).replace("## US backlog", "")
     path.write_text(text, encoding="utf-8")
-    _make_stale(fed_hub)
+    make_stale(fed_hub)
 
     result = runner.invoke(
         app,
@@ -292,7 +296,7 @@ def test_mission_lint_exits_0_on_a_stale_ref_without_the_flag(fed_hub, tmp_path)
     block = _golden_block_with_icao(fed_hub)
     path = tmp_path / f"{MISSION_ID}.md"
     path.write_text(_mission_text(block), encoding="utf-8")
-    _make_stale(fed_hub)
+    make_stale(fed_hub)
 
     result = runner.invoke(
         app, ["mission", "lint", str(path), "--hub", str(fed_hub)]

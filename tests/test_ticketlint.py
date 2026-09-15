@@ -14,7 +14,7 @@ import pytest
 
 from center_kb import gitio, kbcontext, ticket, ticketlint
 from center_kb.hub import HubHandle
-from tests.conftest import _make_stale
+from tests.conftest import make_stale
 
 DEFAULT_TITLE = "# TAL-1580 — Show restrictive airspace details"
 
@@ -350,7 +350,7 @@ def test_broken_ref_errors(fed_hub: Path, golden_block: str):
 
 def test_stale_ref_warns(fed_hub: Path, golden_block: str):
     text = _build_ticket(golden_block)
-    _make_stale(fed_hub)
+    make_stale(fed_hub)
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is True  # stale is a warning, not an error
     assert any(
@@ -363,7 +363,7 @@ def test_fail_on_stale_promotes_the_warning_to_an_error(
     fed_hub: Path, golden_block: str
 ):
     text = _build_ticket(golden_block)
-    _make_stale(fed_hub)
+    make_stale(fed_hub)
     report = ticketlint.lint(text, _hub(fed_hub), fail_on_stale=True)
     assert report.passed is False
     assert report.stale_errors == 1
@@ -375,7 +375,7 @@ def test_stale_errors_counts_only_stale_refs(
     """Exit code 2 means 'nothing wrong but the upstream moved', so the
     count must exclude every other error."""
     text = _build_ticket(golden_block, skip="## Use cases")
-    _make_stale(fed_hub)
+    make_stale(fed_hub)
     report = ticketlint.lint(text, _hub(fed_hub), fail_on_stale=True)
     errors = len(_errors(report))
     assert report.stale_errors == 1

@@ -136,7 +136,8 @@ What lint does **not** enforce — still the BA's judgment call:
   `## Review record` is missing, empty, or still holds the placeholder.
 - **Stale refs.** A ref still resolves after the cited section is amended
   upstream; lint reports it as a warning and exits 0. Run
-  `kb ticket lint <file> --fail-on-stale` (exit 2 when staleness is the only
+  `kb ticket lint <file> --fail-on-stale` (`kb mission lint <file>
+  --fail-on-stale` for a mission plan; exit 2 when staleness is the only
   failure) or set the repo variable `KB_FAIL_ON_STALE` to make the CI gate
   do it for you. `kb resolve <file> --status-only` reports the same thing on
   its own.
