@@ -45,7 +45,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install center-kb
+      - run: pip install center-kb=={version}
       - name: Check the PR description
         run: |
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"

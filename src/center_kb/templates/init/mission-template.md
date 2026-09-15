@@ -8,7 +8,7 @@
 
 ## Business goal
 <why this exists and how success is measured; every industry-standard
-claim cites `doc-id §section`>
+claim cites `[doc-id §section]`>
 
 ## Scope
 **In scope:** <what this mission covers>
@@ -75,7 +75,7 @@ closed BEFORE foundational stories start. -->
 kb-context:
   version: "<hub commit>"
   refs:
-    - <repo:doc-id §section>
+    - <repo:doc-id> §<section>
   tags: [ … ]
 ```
 

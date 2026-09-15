@@ -2,7 +2,9 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
+import yaml
 
+from center_kb import lintcore
 from center_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
 
 WEB_TEMPLATES = [
@@ -1099,6 +1101,19 @@ BA_WRAPPERS = (
 )
 
 
+# Task 11 (MEDIUM-5): every BA wrapper's maturity-review step must point at
+# both the base rubric and its create-once `.local.md` override (mirrors
+# `docs/conventions/<lang>.local.md`'s pointer convention on the dev side).
+@pytest.mark.parametrize("name", BA_WRAPPERS)
+def test_every_ba_wrapper_names_the_local_override(name):
+    text = _read_init_template(name)
+    assert "docs/review-rubric.local.md" in text
+    # Task 11 review Minor 2: pin the ac-quality half too, so a future
+    # reflow can't silently drop it from any wrapper while this test
+    # keeps passing on the rubric half alone.
+    assert "docs/ac-quality.local.md" in text
+
+
 def _ba_wrapper_text(name: str) -> str:
     """A BA wrapper's whole text, whitespace-normalised.
 
@@ -1676,3 +1691,101 @@ def test_claude_skill_summarize_contract_and_validation():
     assert "HARD LIMIT" in text and "≤ 25 words" in text
     assert "kb build --allow-pending --strict" in text
     assert "max 30 words" in text
+
+
+def test_quickstart_ba_does_not_claim_ci_enforces_stale_refs():
+    text = _read_init_template("QUICKSTART-ba.md")
+    enforced, _, not_enforced = text.partition("What lint does **not** enforce")
+    assert "stale" not in enforced.lower()
+    assert "stale" in not_enforced.lower()
+    assert "--fail-on-stale" in text
+
+
+# Task 12: Task 3 made `[doc-id §section]` (BRACKET_CITE_RE) the only
+# citation form the gate parses; the bare `doc-id §section` form
+# (INLINE_CITE_RE) is now a migration warning. Every scaffolded template
+# and BA wrapper must teach the bracketed form so a freshly authored
+# ticket does not collect a migration warning from its first line.
+_CITATION_TEMPLATES = (
+    "ticket-template.md",
+    "mission-template.md",
+    "review-rubric.md",
+    "ac-quality.md",
+    "QUICKSTART-ba.md",
+    *BA_WRAPPERS,
+)
+
+
+@pytest.mark.parametrize("name", _CITATION_TEMPLATES)
+def test_every_citation_example_is_bracketed(name):
+    """A template that teaches the bare form, in the text a BA might
+    actually copy into ticket prose, teaches a migration warning.
+
+    Scans `lintcore.citation_scan_text` — the same view the gate itself
+    scans (comments, fences, and kb-context blocks stripped) — rather
+    than the raw file: a template may show the real, un-bracketed
+    citation SYNTAX once inside a fenced block as reference material
+    (e.g. QUICKSTART-ba.md's '<repo>-code §svc.<name>'), which is never
+    prose a BA would paste verbatim and never reaches the gate's own
+    scan of a real ticket either."""
+    text = _read_init_template(name)
+    scanned = lintcore.citation_scan_text(text)
+    bare = [
+        m.group(0)
+        for m in lintcore.INLINE_CITE_RE.finditer(
+            lintcore.BRACKET_CITE_RE.sub("", scanned)
+        )
+    ]
+    assert bare == []
+
+
+def test_the_ticket_template_shows_the_bracketed_form():
+    assert "[doc-id §section]" in _read_init_template("ticket-template.md")
+
+
+# --- Task 13 (MEDIUM-6): pinned CLI, concurrency, annotated failures --------
+
+
+def test_ticket_lint_workflow_has_a_concurrency_block():
+    assert "concurrency:" in _read_init_template("kb-ticket-lint.yml")
+
+
+def _lint_dispatch_run_script(text: str) -> str:
+    """The `run:` body of the 'Lint changed ...' step, parsed out of the raw
+    workflow YAML (mirrors tests/test_init.py's `_extract_lint_dispatch_script`,
+    which needs a rendered `init_repo()` checkout this module doesn't have)."""
+    data = yaml.safe_load(text)
+    for step in data["jobs"]["lint"]["steps"]:
+        if "Lint changed" in step.get("name", ""):
+            return step["run"]
+    raise AssertionError("no step with 'Lint changed' in its name in kb-ticket-lint.yml")
+
+
+def test_ticket_lint_workflow_annotates_and_summarises():
+    # Task 13 review (Important 2): a raw substring check on the whole file
+    # would pass even if these strings only ever appeared in a comment. Pin
+    # them to actual (non-comment) lines of the executed dispatch script.
+    text = _read_init_template("kb-ticket-lint.yml")
+    run_script = _lint_dispatch_run_script(text)
+    code_lines = [
+        line
+        for line in run_script.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    code = "\n".join(code_lines)
+    assert "--json" in code
+    assert "GITHUB_STEP_SUMMARY" in code
+    assert "::error file=" in code
+
+
+def test_ticket_lint_workflow_keeps_a_non_https_hub_scheme():
+    assert "${CENTER_KB_HUB#https://}" not in _read_init_template(
+        "kb-ticket-lint.yml"
+    )
+
+
+def test_quickstart_ba_documents_the_ci_variables():
+    text = _read_init_template("QUICKSTART-ba.md")
+    assert "vars.CENTER_KB_HUB" in text
+    assert "secrets.KB_HUB_TOKEN" in text
+    assert "fork" in text.lower()

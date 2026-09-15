@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from center_kb import kbcontext
+from center_kb import acquality, kbcontext
 from center_kb.doctor import Issue, check_context
 from center_kb.kbcontext import KBContext, KBRef
 
@@ -24,32 +24,83 @@ if TYPE_CHECKING:
 # kb-context block) before scanning prose for inline citations.
 FENCE_RE = re.compile(r"```[ \t]*(\S*)[ \t]*\r?\n(.*?)```", re.S)
 
-# Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>' — the
-# repo/doc-id groups match kbcontext._REF_RE semantics (repo qualifier
-# optional, '§' required). The repo group additionally accepts nested,
-# '/'-joined path segments (e.g. 'mid/repo-x') to mirror kbcontext._REF_RE's
-# multi-tier federation support — a body citation qualified by a nested
-# repo-id must resolve against a kb-context ref pinned at that same nested
-# id, not silently drop everything before the last '/'. This mirrors the
-# '/'-segment STRUCTURE only, not the exact charset: each segment here is
-# `[\w.-]` (Python's `\w` is Unicode-aware by default, so this is wider
-# than kbcontext._REF_RE's explicit ASCII-only `[A-Za-z0-9._-]`) — kept as
-# it was before this note; not tightened, since narrowing it risks missing
-# citations against repo-ids that already validated fine elsewhere. The
-# section-id
-# group must END on a character that is not sentence punctuation: prose
-# that cites a section at the end of a sentence ('... per arinc-424 §5.3.')
-# would otherwise absorb the sentence-ending period into the section id,
-# making a correctly-pinned citation look unresolved. Unlike the repo/doc-id
-# groups, the section id is NOT anchored on its leading character —
-# kbcontext._REF_RE's section-id half accepts any non-whitespace token
-# ('\S+'), so ids such as '(a' or '_intro' are legal to pin; requiring an
-# alnum start here would make this regex fail to match them at all, which
-# is worse than the original bug (a missed citation instead of a
-# mis-parsed one).
+# An HTML comment — the templates carry guidance in '<!-- ... -->' blocks
+# and BAs sometimes leave them in place; scanners that would false-fire on
+# guidance text (which mentions 'OPEN(<owner>)' and the banned phrases as
+# examples) strip these first.
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+
+def visible_body(body: str) -> str:
+    """`body` with HTML comments removed, outer whitespace stripped — what
+    a reader actually sees. The templates ship guidance in comments, so
+    every emptiness judgement runs on this view."""
+    return HTML_COMMENT_RE.sub("", body).strip()
+
+
+def _visible_text(text: str) -> str:
+    """`text` with HTML comments and fenced code blocks removed — comments
+    FIRST, then fences, because a commented-out region contributes no
+    fence, heading, or citation of its own (it isn't rendered, so nothing
+    inside it is either). This is the one home for that ordering:
+    `check_headings`'s and `check_recommended_sections`'s presence checks
+    and `citation_scan_text` all scan this same view rather than each
+    re-typing the two `.sub()` calls in the same order. `_blank_invisible`
+    below is a different view (it blanks rather than strips, for index
+    alignment) but MUST keep the same comments-before-fences order — see
+    its own docstring."""
+    return FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text))
+
+
+# The repo/doc-id character classes shared by INLINE_CITE_RE and
+# BRACKET_CITE_RE below — kept as named constants (not just prose
+# claiming the two agree) so the "same classes" invariant is true by
+# construction, not by eyeball. Both match kbcontext._REF_RE semantics
+# (repo qualifier optional, doc-id required). The repo group additionally
+# accepts nested, '/'-joined path segments (e.g. 'mid/repo-x') to mirror
+# kbcontext._REF_RE's multi-tier federation support — a body citation
+# qualified by a nested repo-id must resolve against a kb-context ref
+# pinned at that same nested id, not silently drop everything before the
+# last '/'. This mirrors the '/'-segment STRUCTURE only, not the exact
+# charset: each segment here is `[\w.-]` (Python's `\w` is Unicode-aware
+# by default, so this is WIDER than kbcontext._REF_RE's explicit
+# ASCII-only `[A-Za-z0-9._-]`) — kept as it was before this note; not
+# tightened, since narrowing it risks missing citations against repo-ids
+# that already validated fine elsewhere.
+_CITE_REPO = r"[A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*"
+_CITE_DOC = r"[A-Za-z0-9][\w.-]*"
+
+# Inline citation '<doc-id> §<sec>' / '<repo:doc-id> §<sec>'. The
+# section-id group must END on a character that is not sentence
+# punctuation: prose that cites a section at the end of a sentence
+# ('... per arinc-424 §5.3.') would otherwise absorb the sentence-ending
+# period into the section id, making a correctly-pinned citation look
+# unresolved. Unlike the repo/doc-id groups, the section id is NOT
+# anchored on its leading character — kbcontext._REF_RE's section-id half
+# accepts any non-whitespace token ('\S+'), so ids such as '(a' or
+# '_intro' are legal to pin; requiring an alnum start here would make
+# this regex fail to match them at all, which is worse than the original
+# bug (a missed citation instead of a mis-parsed one).
+#
+# Since 0.22.0 this pattern is a MIGRATION DETECTOR only — it can never
+# produce an error. The gate parses `BRACKET_CITE_RE`; a bare match is
+# reported as a warning, and only when it names a ref the ticket already
+# pins.
 INLINE_CITE_RE = re.compile(
-    r"(?:([A-Za-z0-9][\w.-]*(?:/[A-Za-z0-9][\w.-]*)*):)?([A-Za-z0-9][\w.-]*)\s+"
+    rf"(?:({_CITE_REPO}):)?({_CITE_DOC})\s+"
     r"§([^\s,;)\]]*[^\s,;)\].:?!])"
+)
+
+# The citation form the gate parses: '[<doc-id> §<sec>]', optionally
+# repo-qualified. Built from the same `_CITE_REPO`/`_CITE_DOC` constants
+# as INLINE_CITE_RE, so a bracketed citation accepts AT LEAST the ids
+# kbcontext accepts (the Unicode-wide `\w` above means "at least", not
+# "exactly") — including nested, '/'-joined repo segments for multi-tier
+# federation. Two things the brackets make safe and the bare form could
+# not: '§' may be surrounded by spaces, and the section id needs no
+# "must not end on punctuation" rule, because ']' terminates it.
+BRACKET_CITE_RE = re.compile(
+    rf"\[(?:({_CITE_REPO}):)?({_CITE_DOC})\s*§\s*([^\s\]]+)\]"
 )
 
 # The bare 'kb-context:' key line, at any indent (mirrors kbcontext._KEY_RE)
@@ -75,6 +126,13 @@ class LintReport:
     def passed(self) -> bool:
         return not any(i.level == "error" for i in self.issues)
 
+    @property
+    def stale_errors(self) -> int:
+        """Errors that exist only because `--fail-on-stale` promoted them."""
+        return sum(
+            1 for i in self.issues if i.level == "error" and i.code == "stale-ref"
+        )
+
     def to_json(self) -> dict:
         return {
             "pass": self.passed,
@@ -95,11 +153,79 @@ class LintReport:
         return "\n".join(lines)
 
 
+def _blank_invisible(text: str) -> str:
+    """`text` with the CONTENT of every fenced block and every HTML
+    comment replaced by blank lines.
+
+    This is a scanning view, never a value handed to a caller: line
+    numbers in the blanked copy index the same lines as the original, so
+    a scan can decide "does a section end here" while the slice is taken
+    from the real text.
+
+    Both layers are blanked for the same reason: neither is visible in
+    the rendered document. A '# ' line inside a bash example and a '## '
+    heading inside a guidance comment are equally not section
+    boundaries. An unpaired fence leaves `FENCE_RE` unmatched and the
+    text degrades to its raw form — the same documented limitation
+    `check_headings` carries.
+
+    TOTAL NEWLINE COUNT is preserved exactly (each match is replaced by
+    the same number of '\\n' characters it contained), but `splitlines()`
+    COUNT on the result can be one SHORTER than on `text`: the
+    replacement is pure '\\n' characters, so it always ENDS in a newline,
+    while the matched span itself may not have (a fence or comment that
+    touches EOF with no trailing newline). `str.splitlines()` does not
+    count a final, unterminated line the same way once that trailing
+    newline appears, so this one case needs the caller to pad rather than
+    trust a 1:1 line correspondence — see `section_body`.
+
+    Comments are blanked BEFORE fences — same order, same reason as
+    `_visible_text`: a commented-out region contributes no fence of its
+    own (it isn't rendered, so a bare ``` a BA left over from the
+    template's own '<!-- paste an example like: ``` -->' guidance is not
+    one either). Blanking fences FIRST (the pre-fix order) let that
+    embedded backtick re-pair with the next REAL fence opener later in
+    the document and swallow every heading in between — including the
+    section's own — so `section_body` returned None for a heading
+    `check_headings` correctly reports as present. This is the one
+    respect this function differs from `visible_body`/`_visible_text`:
+    this one BLANKS (replaces content with blank lines, keeping every
+    line index aligned with `text`, for `section_body`'s slicing) where
+    they STRIP (remove the matched span outright, returning plain,
+    non-index-aligned text, for presence/emptiness/citation scans) — two
+    different contracts for two different jobs, so do not merge one into
+    the other, but the comments-before-fences ORDER must stay the same
+    invariant in both.
+    """
+
+    def _blank(m: re.Match[str]) -> str:
+        return "\n" * m.group(0).count("\n")
+
+    return FENCE_RE.sub(_blank, HTML_COMMENT_RE.sub(_blank, text))
+
+
 def section_body(text: str, heading: str) -> str | None:
-    """Lines after an exact `heading` line, up to the next '# '/'## ' line."""
+    """Lines after an exact `heading` line, up to the next '# '/'## ' line.
+
+    Both the heading search and the terminator search run on
+    `_blank_invisible(text)`, so a fenced or commented-out heading never
+    opens or closes a section; the returned slice is cut from the
+    original lines.
+    """
     lines = text.splitlines()
+    scan = _blank_invisible(text).splitlines()
+    if len(scan) < len(lines):
+        # A fence or HTML comment that touches EOF with no trailing
+        # newline makes `_blank_invisible`'s pure-'\n' replacement gain a
+        # newline the original never had — see its docstring. The
+        # shortfall is always exactly one line and always at the end, so
+        # padding (not discarding) keeps every earlier index aligned and
+        # keeps this document's fence-aware scan intact.
+        scan += [""] * (len(lines) - len(scan))
+    elif len(scan) > len(lines):  # unreachable; keep the guard
+        scan = lines
     start = None
-    for i, line in enumerate(lines):
+    for i, line in enumerate(scan):
         if line.strip() == heading:
             start = i + 1
             break
@@ -107,7 +233,7 @@ def section_body(text: str, heading: str) -> str | None:
         return None
     end = len(lines)
     for j in range(start, len(lines)):
-        if lines[j].startswith("## ") or lines[j].startswith("# "):
+        if scan[j].startswith("## ") or scan[j].startswith("# "):
             end = j
             break
     return "\n".join(lines[start:end])
@@ -130,11 +256,11 @@ def check_title(text: str) -> list[Issue]:
 
 
 def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
-    """A heading only counts as present outside a fenced code block.
-    Without stripping fences first, a BA pasting a reference document (a
-    sibling mission, `TEMPLATE.md`, ...) into a ```` ``` ```` block as a
-    worked example would satisfy every required heading without the
-    document actually containing that section itself — this is the
+    """A heading only counts as present outside a fenced code block or an
+    HTML comment. Without stripping fences first, a BA pasting a reference
+    document (a sibling mission, `TEMPLATE.md`, ...) into a ```` ``` ````
+    block as a worked example would satisfy every required heading without
+    the document actually containing that section itself — this is the
     presence-only half of the gate, with no second check to catch it
     (unlike diagrams and citations, which are independently re-verified).
     Mirrors the fence-stripping `citation_scan_text` already does. A
@@ -145,10 +271,12 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     as missing. That mispairing is not introduced here: `check_diagram` and
     `citation_scan_text` have always shared `FENCE_RE`. The verdict is
     unaffected in practice, because an unpaired fence also fails the diagram
-    check, whose error names the offending section."""
-    present = {
-        line.strip() for line in FENCE_RE.sub("", text).splitlines()
-    }
+    check, whose error names the offending section. Comments are stripped
+    BEFORE fences: a required section wrapped in '<!-- ... -->' (reviewer
+    E's G5) is invisible in the rendered document, so it must not count as
+    present either — templates ship guidance comments that BAs sometimes
+    leave in place instead of replacing with real content."""
+    present = {line.strip() for line in _visible_text(text).splitlines()}
     return [
         Issue("error", f"missing required heading: '{heading}'")
         for heading in required
@@ -156,16 +284,54 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     ]
 
 
+# A relationship in any diagram dialect the two gates accept: mermaid
+# arrows/links (flowchart, sequence) and C4's Rel()/BiRel() calls. A
+# diagram with nodes and no relationships is a list drawn in a box.
+#
+# Deliberately over-inclusive rather than a minimal non-overlapping set:
+# '->' alone already matches '-->', '->>' and '-.->' (each contains '->'
+# as a substring), '--' alone already matches '-->' too, and '-\.-'
+# (dotted open link) already matches '-.->' as well. The effective,
+# non-redundant matchers are '->', '--', '\.\.>' ('..>' — no arrowhead),
+# '=+>'/'==' (thick flowchart links: '==>' arrow, '===' open link),
+# '~~~' (invisible link), '-x'/'-\)' (async sequence messages), and
+# 'Rel\w*\('/'BiRel\w*\(' for C4. Each spelling stays anyway: it names
+# one real, documented mermaid/C4 link type, and a `.search()` boolean
+# check pays no runtime cost for the overlap — collapsing them would
+# shorten the pattern but make it harder to map back to "which mermaid
+# syntax does this cover" for the next editor.
+#
+# Missing one of these link spellings means a false ERROR on an
+# error-level gate for a BA who drew a perfectly real diagram — the
+# failure mode that matters most here — so this list stays wide rather
+# than tight.
+_EDGE_RE = re.compile(
+    r"-->|->>|-\.->|\.\.>|->|--|\bRel\w*\(|\bBiRel\w*\("
+    r"|=+>|==|~~~|-\.-|-x|-\)"
+)
+
+
 def check_diagram(
     text: str, heading: str, keywords: tuple[str, ...]
 ) -> list[Issue]:
     r"""The section must carry a ```mermaid fence in which one of `keywords`
-    appears at the START OF A LINE.
+    appears at the START OF A LINE, AND the fence contains at least one
+    relationship (`_EDGE_RE`) — an arrow or a C4 `Rel(...)`/`BiRel(...)`
+    call.
 
     Anchoring at line start (rather than requiring the keyword to be the
     fence's very first token) lets a Mermaid init directive
     (`%%{init: ...}%%` on the line above) precede the diagram type, while
     still refusing to match the word 'flowchart' buried in a node label.
+
+    The keyword was previously the whole contract, so a fence holding the
+    right keyword followed by garbage — or nothing at all — passed. A
+    diagram with nodes and no relationships is a list drawn in a box, so
+    both conditions are now required. When the keyword is present but no
+    edge is, the error names that specifically ("no relationship in it")
+    rather than repeating the "must contain a fence" message, so a BA who
+    already wrote a mermaid block is not told to add one that is already
+    there.
 
     Raises `ValueError` if `keywords` is empty — an empty tuple collapses
     the pattern to `^[ \t]*(?:)\b` (a bare, near-universal line-start
@@ -180,10 +346,23 @@ def check_diagram(
         r"^[ \t]*(?:" + "|".join(re.escape(k) for k in keywords) + r")\b",
         re.M,
     )
+    keyword_seen = False
     for lang, content in FENCE_RE.findall(body):
-        if lang.strip().lower() == "mermaid" and pattern.search(content):
+        if lang.strip().lower() != "mermaid" or not pattern.search(content):
+            continue
+        keyword_seen = True
+        if _EDGE_RE.search(content):
             return []
     joined = " or ".join(f"'{k}'" for k in keywords)
+    if keyword_seen:
+        return [
+            Issue(
+                "error",
+                f"'{heading}' has a ```mermaid fence with {joined} but no "
+                "relationship in it (an arrow, or a C4 Rel(...)) — an empty "
+                "diagram is not a diagram",
+            )
+        ]
     return [
         Issue(
             "error",
@@ -193,14 +372,12 @@ def check_diagram(
     ]
 
 
-# An HTML comment — the templates carry guidance in '<!-- ... -->' blocks
-# and BAs sometimes leave them in place; scanners that would false-fire on
-# guidance text (which mentions 'OPEN(<owner>)' and the banned phrases as
-# examples) strip these first.
-HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
-
 # A '- [ ]' / '- [x]' checkbox list item (open-question rows).
 CHECKBOX_ROW_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
+
+# The same row, with its tick state. CHECKBOX_ROW_RE stays as it is — its
+# callers only want the text.
+CHECKBOX_STATE_RE = re.compile(r"^-\s*\[(?P<mark>[ xX])\]\s*(?P<text>.+)$")
 
 OPEN_QUESTIONS_HEADING = "## Open questions"
 
@@ -237,7 +414,7 @@ def check_recommended_sections(
     """Warning per recommended heading that is missing or has an empty
     body. Warning-level on purpose: the required-heading sets are
     compatibility contracts and legacy documents must keep passing."""
-    present = {line.strip() for line in FENCE_RE.sub("", text).splitlines()}
+    present = {line.strip() for line in _visible_text(text).splitlines()}
     issues: list[Issue] = []
     for heading in headings:
         if heading not in present:
@@ -250,7 +427,7 @@ def check_recommended_sections(
             )
             continue
         body = section_body(text, heading)
-        if body is not None and not HTML_COMMENT_RE.sub("", body).strip():
+        if body is not None and not visible_body(body):
             issues.append(
                 Issue(
                     "warning",
@@ -267,12 +444,42 @@ REVIEW_RECORD_HEADING = "## Review record"
 # maturity review never ran.
 _REVIEW_PLACEHOLDER = "Not yet reviewed."
 
+# '| Date | Round | Business | Dev | Reviewer |' (ticket-template.md), header
+# cells lowercased for a case-insensitive comparison against `rows[0]`.
+REVIEW_RECORD_COLUMNS: tuple[str, ...] = (
+    "date",
+    "round",
+    "business",
+    "dev",
+    "reviewer",
+)
+
+# docs/review-rubric.md: rounds 2 and 3 are a single gap-verifier pass.
+GAP_VERIFIER = "gap-verifier"
+REVIEW_SCORE_THRESHOLD = 4
+REVIEW_ROUND_CAP = 3
+
 
 def check_review_record(text: str) -> list[Issue]:
-    """Warning when the maturity review has not run — '## Review record'
-    is missing, still empty, or still holds the template placeholder.
-    Warning-level on purpose: the review is an authoring-time aid and the
-    BA judges; nothing here may flip a DoR verdict."""
+    """'## Review record' missing, still empty, or still holding the
+    template placeholder is a warning — unchanged from before this task.
+
+    Once there is a real table, its SHAPE is checked at ERROR level: a
+    malformed row, a wrong or missing header, no data rows at all, a
+    non-'gap-verifier' reviewer in rounds 2-3 (the gap-verifier pass,
+    docs/review-rubric.md — round 4 and beyond are outside that pass and
+    are not held to it, since a 4th round is itself only a warning), or
+    rounds that do not increase. A fabricated or hand-edited row should be
+    visible as a hard failure, not a silent pass — that is what let
+    reviewer E's T18 (`| 2026-09-08 | 1 | 5 | 5 |  |`, an empty reviewer
+    cell with a self-declared 5/5) through with no warning at all.
+
+    Once the shape is sound, its JUDGMENT stays at WARNING level: a score
+    below the maturity threshold, or more than the rubric's 3-round cap.
+    Whether a 4 is really a 4 is not machine-checkable — that is the BA's
+    call, not a DoR gate's — so scores never flip the verdict, only the
+    shape does. Shape errors are returned before any score is evaluated:
+    a malformed table cannot be meaningfully scored."""
     body = section_body(text, REVIEW_RECORD_HEADING)
     if body is None:
         return [
@@ -300,7 +507,100 @@ def check_review_record(text: str) -> list[Issue]:
                 "review (rubric: docs/review-rubric.md)",
             )
         ]
-    return []
+
+    # --- schema (errors) -------------------------------------------------
+    rows = table_rows(visible_body(stripped))
+    if not rows:
+        return [
+            Issue(
+                "error",
+                f"'{REVIEW_RECORD_HEADING}' has no review table — keep the "
+                "template's '| Date | Round | Business | Dev | Reviewer |' "
+                "table and append one row per round",
+            )
+        ]
+    header = [c.strip().lower() for c in rows[0]]
+    if tuple(header) != REVIEW_RECORD_COLUMNS:
+        return [
+            Issue(
+                "error",
+                f"'{REVIEW_RECORD_HEADING}' table header is "
+                f"\"| {' | '.join(rows[0])} |\" — expected "
+                "'| Date | Round | Business | Dev | Reviewer |' "
+                "(rubric: docs/review-rubric.md)",
+            )
+        ]
+    if len(rows) == 1:
+        return [
+            Issue(
+                "error",
+                f"'{REVIEW_RECORD_HEADING}' has no review rows — the "
+                "maturity review appends one row per round "
+                "(rubric: docs/review-rubric.md)",
+            )
+        ]
+
+    issues: list[Issue] = []
+    parsed: list[acquality.ReviewRow] = []
+    previous: int | None = None
+    for position, cells in enumerate(rows[1:], start=1):
+        parsed_or_reason = acquality.parse_review_row(cells)
+        if isinstance(parsed_or_reason, str):
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{REVIEW_RECORD_HEADING}' row {position} "
+                    f"{parsed_or_reason}",
+                )
+            )
+            continue
+        row = parsed_or_reason
+        if previous is not None and row.round <= previous:
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{REVIEW_RECORD_HEADING}': Round {row.round} does not "
+                    f"follow round {previous} — rounds are appended, never "
+                    "renumbered",
+                )
+            )
+        previous = row.round
+        if (
+            2 <= row.round <= REVIEW_ROUND_CAP
+            and row.reviewer.strip().lower() != GAP_VERIFIER
+        ):
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{REVIEW_RECORD_HEADING}': round {row.round} must be "
+                    f"reviewed by '{GAP_VERIFIER}' (rounds 2-3 are the "
+                    f"gap-verifier pass), not '{row.reviewer}'",
+                )
+            )
+        parsed.append(row)
+    if issues:
+        return issues
+
+    # --- judgment (warnings) --------------------------------------------
+    last = parsed[-1]
+    for axis, score in (("Business", last.business), ("Dev", last.dev)):
+        if score < REVIEW_SCORE_THRESHOLD:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"{axis} maturity is {score}, below the threshold of "
+                    f"{REVIEW_SCORE_THRESHOLD} — run another review round",
+                )
+            )
+    if len(parsed) > REVIEW_ROUND_CAP:
+        issues.append(
+            Issue(
+                "warning",
+                f"{len(parsed)} rows: more than {REVIEW_ROUND_CAP} review "
+                "rounds — the rubric caps the loop at 3; escalate instead",
+            )
+        )
+    return issues
 
 
 def table_rows(body: str) -> list[list[str]]:
@@ -344,10 +644,11 @@ def strip_bare_kb_context(text: str) -> str:
 
 
 def citation_scan_text(text: str) -> str:
-    """Body text with all fenced code blocks (mermaid + a fenced kb-context
-    block) and any unfenced kb-context block stripped, for inline-citation
-    scanning — refs pinned in kb-context are not themselves "citations"."""
-    return strip_bare_kb_context(FENCE_RE.sub("", text))
+    """Body text with HTML comments, all fenced code blocks (mermaid + a
+    fenced kb-context block) and any unfenced kb-context block stripped,
+    for inline-citation scanning — refs pinned in kb-context are not
+    themselves "citations", and text nobody can see is not a claim."""
+    return strip_bare_kb_context(_visible_text(text))
 
 
 def cite_matches_ref(ref: KBRef, repo: str | None, doc: str, sec: str) -> bool:
@@ -358,27 +659,90 @@ def cite_matches_ref(ref: KBRef, repo: str | None, doc: str, sec: str) -> bool:
     return repo == ref.repo_id
 
 
+def _cite_label(repo: str | None, doc: str, sec: str) -> str:
+    return f"{repo}:{doc} §{sec}" if repo else f"{doc} §{sec}"
+
+
+def _same_doc(ref: KBRef, doc: str) -> bool:
+    """`doc` names the same document `ref` pins — the REPO qualifier is
+    deliberately ignored (unlike `cite_matches_ref`'s exact match): this
+    predicate feeds only the reverse-check suppression below, whose whole
+    point is to also swallow a repo-qualifier typo on an otherwise-correct
+    citation, not just a wrong section."""
+    return doc == ref.doc_id
+
+
 def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
+    """Cross-check body citations against the pinned refs, both ways.
+
+    Three passes. Bracketed citations are the contract: one that no
+    pinned ref satisfies is an error. A BARE citation is never an error —
+    the pattern cannot tell a doc-id from an ordinary word, which used to
+    reject 'per ARINC 424 §5.129' outright — but when it does name a
+    pinned ref it earns a migration warning and counts as citing that
+    ref, so a pre-0.22.0 ticket reports one issue per citation, not two.
+    """
     scan_text = citation_scan_text(text)
-    citations = list(
+    bracketed = list(
         dict.fromkeys(
             (m.group(1), m.group(2), m.group(3))
-            for m in INLINE_CITE_RE.finditer(scan_text)
+            for m in BRACKET_CITE_RE.finditer(scan_text)
         )
     )
+    bare = list(
+        dict.fromkeys(
+            (m.group(1), m.group(2), m.group(3))
+            for m in INLINE_CITE_RE.finditer(BRACKET_CITE_RE.sub("", scan_text))
+        )
+    )
+
     issues: list[Issue] = []
-    for repo, doc, sec in citations:
-        label = f"{repo}:{doc} §{sec}" if repo else f"{doc} §{sec}"
-        if not any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
+    unresolved: list[tuple[str | None, str, str]] = []
+    for repo, doc, sec in bracketed:
+        if any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
+            continue
+        unresolved.append((repo, doc, sec))
+        label = _cite_label(repo, doc, sec)
+        pinned = sorted({r.section_id for r in ctx.refs if r.doc_id == doc})
+        fix = (
+            f"pin '{doc} §{sec}' in kb-context refs, or correct the "
+            f"section to one already pinned ({', '.join(pinned)})"
+            if pinned
+            else f"pin '{doc} §{sec}' in kb-context refs"
+        )
+        issues.append(
+            Issue(
+                "error",
+                f"citation '{label}' in the body is not in kb-context "
+                f"refs — {fix}",
+            )
+        )
+    for repo, doc, sec in bare:
+        if any(cite_matches_ref(ref, repo, doc, sec) for ref in ctx.refs):
+            label = _cite_label(repo, doc, sec)
             issues.append(
                 Issue(
-                    "error",
-                    f"citation '{label}' in the body is not in kb-context refs",
+                    "warning",
+                    f"citation '{label}' is not bracketed — write "
+                    f"'[{label}]' so the gate reads it as a citation",
                 )
             )
     for ref in ctx.refs:
         cited = any(
-            cite_matches_ref(ref, repo, doc, sec) for repo, doc, sec in citations
+            cite_matches_ref(ref, repo, doc, sec)
+            for repo, doc, sec in bracketed + bare
+        ) or (
+            # An UNRESOLVED bracketed citation to this ref's document
+            # already earned its own "not in kb-context refs" error
+            # above — do not also claim the ref "is never cited", a
+            # second message about the same root cause (a wrong section
+            # or a typo'd repo qualifier). Only safe when the document
+            # has exactly ONE pinned ref: with two pins of one document,
+            # an unresolved citation could be "about" either one, so we
+            # cannot credit either — both genuinely-uncited refs must
+            # still warn (two true warnings beat one silent hole).
+            sum(1 for r in ctx.refs if r.doc_id == ref.doc_id) == 1
+            and any(_same_doc(ref, doc) for _repo, doc, _sec in unresolved)
         )
         if not cited:
             issues.append(
@@ -466,13 +830,17 @@ def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
 
 
 def check_context_block(
-    text: str, hub: "HubHandle | None"
+    text: str, hub: "HubHandle | None", *, fail_on_stale: bool = False
 ) -> tuple[list[Issue], KBContext | None]:
     """Parse the kb-context block, resolve its refs at the pinned version,
     validate its tags against the federation's tag vocabulary, and
     cross-check inline citations against it. Returns the issues and the
     parsed context (None when the block did not parse, in which case the
-    ref/citation checks are meaningless and are skipped)."""
+    ref/citation checks are meaningless and are skipped).
+
+    `fail_on_stale` promotes a stale ref from a warning to an error — the
+    default stays a warning (the 2026-07-17 spec's deliberate choice); the
+    flag exists so a caller (`kb ticket lint --fail-on-stale`) can opt in."""
     try:
         ctx = kbcontext.parse(text)
     except kbcontext.KBContextError as exc:
@@ -488,7 +856,9 @@ def check_context_block(
             )
         )
     else:
-        ctx_issues, _results = check_context(text, hub)
+        ctx_issues, _results = check_context(
+            text, hub, stale_level="error" if fail_on_stale else "warning"
+        )
         issues += ctx_issues
         issues += check_context_tags(ctx, hub)
     issues += check_citation_consistency(text, ctx)

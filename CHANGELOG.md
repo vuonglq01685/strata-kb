@@ -3,6 +3,56 @@
 Releases before 0.21.0 are not recorded here -- they are tracked only through
 git tags and pull-request history.
 
+## 0.22.0
+
+### Breaking — the BA Definition-of-Ready gate now reads section bodies
+
+A ticket or mission that passed 0.21.0 on structure alone can fail here.
+Run `kb ticket lint` over your open tickets before upgrading CI.
+
+- Required sections that are empty or hold only placeholder text
+  (`TBD`, `TODO`, `N/A`, `chưa rõ`, …) are errors.
+- `## User Story` must have its role, capability, and value parts all
+  filled in — a part that says nothing (e.g. a leftover `<role>`
+  placeholder) is an error.
+- `## Acceptance Criteria` needs at least 2 items, unique ids, and each AC
+  must carry a Given/When/Then triple, a measurable value, or an owned
+  `OPEN(<owner>)`. `OPEN(TBD)` and `OPEN(?)` no longer count as owned.
+- `## Non-functional requirements` rows need a number or an owned
+  `OPEN(...)` in Target; `## Definition of Ready` needs its checklist rows
+  (unticked boxes stay a warning).
+- A `mermaid` fence must contain a relationship — an arrow or a C4
+  `Rel(...)`.
+- `## Review record` rows must match the shipped table: five filled cells,
+  scores 1–5, increasing round numbers, `gap-verifier` in rounds 2–3. Scores
+  below 4 and a fourth round remain warnings.
+- **Citations are `[doc-id §section]`.** The bare `doc-id §section` form is
+  no longer parsed as a citation; when it names a pinned ref it gets a
+  warning telling you to bracket it. Natural prose such as
+  `per ARINC 424 §5.129` no longer fails the gate.
+- Two `kb-context:` blocks in one document is an error.
+
+### Added
+
+- `kb ticket lint --fail-on-stale` / `kb mission lint --fail-on-stale`:
+  a stale ref becomes an error and the command exits 2 when that is the only
+  failure, mirroring `kb resolve`. The scaffolded CI gate passes the flag
+  when the repository variable `KB_FAIL_ON_STALE` is set.
+- `kb init --kind ba` scaffolds `docs/review-rubric.local.md` and
+  `docs/ac-quality.local.md` once and never refreshes them.
+
+### Fixed
+
+- `section_body` no longer ends a section at a `#` line inside a fenced
+  block, so valid tickets stopped being rejected.
+- Heading and citation scanning ignore HTML comments: commented-out
+  sections read as missing, and a citation inside a comment is neither a
+  citation nor an error.
+- The scaffolded `kb-ticket-lint` and `kb-pr-lint` workflows pin
+  `center-kb==<version>`, carry a `concurrency:` block, surface failures as
+  annotations and a step summary, and keep a non-`https://` hub scheme
+  intact.
+
 ## 0.21.0
 
 ### Breaking changes

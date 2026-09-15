@@ -7,15 +7,17 @@
 As a <role>, I want <capability>, so that <value>.
 
 ## Background / Business context
-<context; every industry-standard claim cites `doc-id §section`>
+<context; every industry-standard claim cites `[doc-id §section]`>
 
 ## Acceptance Criteria
 <!-- One observable outcome per AC, with concrete values. No weasel
 words ("appropriate", "configured", "a subset", "responsive", … — the
 full banned list is docs/ac-quality.md). An unsettled value is written
 `OPEN(<owner>)` inside the AC AND gets a row in the Open questions
-section below — never left vague. -->
-- [ ] AC1 … (cite `doc-id §section` when it touches a standard)
+section below — never left vague. Citations are bracketed:
+`[arinc-424 §5.129]`. Prose that merely names a standard ("per ARINC
+424") is not a citation and the gate ignores it. -->
+- [ ] AC1 … (cite `[doc-id §section]` when it touches a standard)
 - [ ] AC2 …
 
 ## Use cases
@@ -73,7 +75,7 @@ row here, with an owner. -->
 kb-context:
   version: "<hub commit>"
   refs:
-    - <repo:doc-id §section>
+    - <repo:doc-id> §<section>
   tags: [ … ]
 ```
 

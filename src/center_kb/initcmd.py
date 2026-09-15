@@ -94,6 +94,44 @@ BA_TEMPLATES: dict[str, str] = {
     "QUICKSTART-BA.md": "QUICKSTART-ba.md",
 }
 
+# Created once, never refreshed: the BA's own review criteria. Deliberately
+# NOT in BA_TEMPLATES (that map is create-or-refresh) and NOT in
+# PROTECTED_FILES (that set means "never written", which would freeze the
+# BASE rubric at whatever version first scaffolded a repo). Same contract
+# `conventions.scaffold_conventions` gives the dev side's
+# `docs/conventions/<lang>.local.md` (C11).
+BA_LOCAL_OVERRIDES: dict[str, str] = {
+    "docs/review-rubric.local.md": "review-rubric-local-stub.md",
+    "docs/ac-quality.local.md": "ac-quality-local-stub.md",
+}
+
+
+def _init_template_text(name: str) -> str:
+    return (
+        resources.files("center_kb")
+        .joinpath("templates/init")
+        .joinpath(name)
+        .read_text(encoding="utf-8")
+    )
+
+
+def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
+    """Create the BA repo's `.local.md` override files once, then never
+    touch them again. The base files stay package-owned and keep being
+    refreshed, so a BA repo receives improved criteria on upgrade without
+    losing its own."""
+    for rel, resource_name in BA_LOCAL_OVERRIDES.items():
+        dest = target / rel
+        if dest.exists():
+            report.skipped.append(f"{rel} (local overrides — never refreshed)")
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(
+            _init_template_text(resource_name), encoding="utf-8", newline="\n"
+        )
+        report.created.append(rel)
+
+
 # Kind `dev` — product code repo. It consumes the shared KB while implementing
 # BA tickets and publishes knowledge about its OWN source code. Like BA_TEMPLATES
 # this is deliberately NOT merged with COMMON_TEMPLATES (spec §4): a dev repo
@@ -365,6 +403,8 @@ def init_repo(
         if ".kb/config.yaml" in report.skipped:
             report.skipped.remove(".kb/config.yaml")
         report.updated.append(".kb/config.yaml (kind recorded)")
+    if kind == KIND_BA:
+        scaffold_ba_local_overrides(target, report)
     if kind == KIND_DEV:
         langs = conventions.scaffold_conventions(target, report)
         if langs:

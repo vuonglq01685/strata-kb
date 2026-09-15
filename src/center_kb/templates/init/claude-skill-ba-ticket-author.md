@@ -65,8 +65,8 @@ for it during Intake.
    `## Test data & verification`, `## Open questions`. Not applicable →
    write `N/A — <reason>`; a blank section reads as "not considered".
 
-   Every claim that touches an industry standard cites `doc-id
-   §section` — and only from the candidates the BA confirmed in step 3,
+   Every claim that touches an industry standard cites `[doc-id
+   §section]` — and only from the candidates the BA confirmed in step 3,
    never a fresh, unconfirmed search hit. Where a diagram needs
    code-level detail (service names, DB tables, …) that neither the KB
    nor the BA can supply, mark it `%%TODO: verify against codebase%%` —
@@ -86,9 +86,11 @@ for it during Intake.
    available in this environment. Fix every error and re-run until it
    reports `DoR: PASS`. Report any remaining warnings to the BA — they
    are not blockers, but they are the BA's judgment call.
-7. **Maturity review** — once lint reports `DoR: PASS`, dispatch TWO
-   review subagents IN PARALLEL, each reading the draft and
-   `docs/review-rubric.md`:
+7. **Maturity review** — once lint reports `DoR: PASS`, read
+   `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
+   exists — the local file overrides the base one (same for
+   `docs/ac-quality.md` and `docs/ac-quality.local.md`). Dispatch TWO
+   review subagents IN PARALLEL, each reading the draft:
    - *Business-coverage reviewer* — acts as PO/stakeholder; scores the
      "Business coverage" axis of the rubric.
    - *Dev-implementability reviewer* — acts as the dev who picks the

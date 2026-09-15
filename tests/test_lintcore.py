@@ -48,6 +48,20 @@ def test_notes_appear_in_json():
     assert report.to_json()["notes"] == ["n1", "n2"]
 
 
+def test_stale_errors_counts_only_error_level_stale_ref_issues():
+    """`stale_errors` exists so a caller can tell 'only staleness failed'
+    (exit 2, mirroring `kb resolve`) apart from any other failure — a
+    still-a-warning stale ref and an unrelated error must not count."""
+    report = LintReport(
+        issues=[
+            Issue("error", "old ref", "stale-ref"),
+            Issue("error", "unrelated failure"),
+            Issue("warning", "still just a warning", "stale-ref"),
+        ]
+    )
+    assert report.stale_errors == 1
+
+
 # --- check_headings: fenced headings do not count as present ---
 
 
@@ -91,6 +105,213 @@ def test_check_headings_still_reports_a_genuinely_missing_heading():
     assert "## Business goal" in issues[0].message
 
 
+# --- check_headings / citations: HTML comments are not content ---
+
+
+def test_check_headings_ignores_a_heading_inside_a_comment():
+    """BEFORE: only fences were stripped, so four required sections could
+    be commented out and the gate still passed (reviewer E's G5). AFTER:
+    comments are stripped first — they are invisible in the rendered
+    document, so a heading inside one is not present."""
+    text = (
+        "# Ticket\n"
+        "<!--\n"
+        "## Summary\n"
+        "hidden\n"
+        "-->\n"
+        "## User Story\n"
+    )
+    issues = check_headings(text, ("## Summary", "## User Story"))
+    assert [i.message for i in issues] == [
+        "missing required heading: '## Summary'"
+    ]
+
+
+def test_visible_body_strips_comments():
+    assert lintcore.visible_body("<!-- guidance -->\n\nreal text\n") == (
+        "real text"
+    )
+    assert lintcore.visible_body("<!-- only guidance -->\n") == ""
+
+
+def test_citation_scan_text_drops_comments():
+    """G6/G7: a citation that only exists inside a comment is neither a
+    citation nor an error."""
+    scanned = lintcore.citation_scan_text(
+        "body text\n<!-- TODO check arinc-424 §9.999 later -->\n"
+    )
+    assert "9.999" not in scanned
+    assert "body text" in scanned
+
+
+# --- section_body: fences do not terminate a section ---
+
+
+def test_section_body_ignores_a_hash_line_inside_a_fence():
+    """BEFORE: `section_body` scanned raw lines for the next '# '/'## '
+    line, so a bash comment inside a fenced example truncated the section
+    and the AC check reported 'must have at least 1 - [ ] item' on a
+    ticket that has two. AFTER: fence contents are blanked before the
+    terminator scan, so the whole section comes back."""
+    text = (
+        "## Acceptance Criteria\n"
+        "```bash\n"
+        "# example invocation\n"
+        "importer --file feed.dat\n"
+        "```\n"
+        "- [ ] AC1 — first\n"
+        "- [ ] AC2 — second\n"
+        "\n"
+        "## Use cases\n"
+        "content\n"
+    )
+    body = lintcore.section_body(text, "## Acceptance Criteria")
+    assert "- [ ] AC1 — first" in body
+    assert "- [ ] AC2 — second" in body
+    assert "## Use cases" not in body
+
+
+def test_section_body_returns_the_original_fence_text():
+    """The blanking is a scanning view only — callers still receive the
+    real text, or `check_diagram` would never find its mermaid fence."""
+    text = (
+        "## Sequence diagram\n"
+        "```text\n"
+        "# not a diagram\n"
+        "```\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  A->>B: go\n"
+        "```\n"
+    )
+    body = lintcore.section_body(text, "## Sequence diagram")
+    assert "sequenceDiagram" in body
+    assert "# not a diagram" in body
+
+
+def test_section_body_does_not_start_at_a_heading_inside_a_fence():
+    """A heading pasted into a fenced example is not a section start —
+    the same rule `check_headings` already applies to presence."""
+    text = (
+        "# Ticket\n"
+        "```markdown\n"
+        "## Summary\n"
+        "pasted example body\n"
+        "```\n"
+        "## Summary\n"
+        "the real summary\n"
+    )
+    assert lintcore.section_body(text, "## Summary").strip() == (
+        "the real summary"
+    )
+
+
+def test_section_body_does_not_start_at_a_heading_inside_a_comment():
+    text = (
+        "# Ticket\n"
+        "<!--\n"
+        "## Summary\n"
+        "commented-out guidance\n"
+        "-->\n"
+        "## Summary\n"
+        "the real summary\n"
+    )
+    assert lintcore.section_body(text, "## Summary").strip() == (
+        "the real summary"
+    )
+
+
+def test_section_body_still_returns_none_for_a_missing_heading():
+    assert lintcore.section_body("# Ticket\n\nbody\n", "## Summary") is None
+
+
+def test_section_body_survives_a_trailing_fence_with_no_final_newline():
+    """BEFORE this fix: `_blank`'s replacement is always pure '\\n'
+    characters, so it always ends in a newline. When the document's LAST
+    fence touches EOF with no trailing newline (a file saved without one,
+    or simply the last section in the ticket — e.g. `## Sequence
+    diagram`'s mermaid fence), the blanked copy gains a newline the
+    original never had and ends up one `splitlines()` entry SHORTER than
+    the original. `len(scan) != len(lines)` then fired and `scan = lines`
+    discarded the fence-aware scan for the WHOLE document, silently
+    reproducing HIGH-3: the '# example invocation' comment inside the
+    unrelated '## Acceptance Criteria' fence truncates that section again,
+    even though neither the AC section nor its fence is the one missing a
+    trailing newline. AFTER: a length SHORTFALL is padded with blank
+    lines (proven to always be exactly one, always at the end) instead of
+    discarding the scan."""
+    text = (
+        "## Acceptance Criteria\n"
+        "```bash\n"
+        "# example invocation\n"
+        "importer --file feed.dat\n"
+        "```\n"
+        "- [ ] AC1 — first\n"
+        "- [ ] AC2 — second\n"
+        "\n"
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  A->>B: go\n"
+        "```"
+    )
+    assert not text.endswith("\n")  # sanity: no trailing newline at EOF
+
+    body = lintcore.section_body(text, "## Acceptance Criteria")
+
+    assert "- [ ] AC1 — first" in body
+    assert "- [ ] AC2 — second" in body
+
+
+# --- _blank_invisible: comments must blank BEFORE fences (C1) ---
+
+
+def test_a_bare_fence_marker_inside_a_comment_does_not_swallow_later_headings():
+    """BEFORE: `_blank_invisible` blanked fences THEN comments, so a bare
+    ``` a BA left over from the template's own '<!-- paste an example
+    like: ``` -->' guidance re-paired with the NEXT real fence opener
+    later in the document (here, the '## KB context' yaml fence) and
+    blanked every heading in between — including '## Sequence diagram'
+    and '## Use cases' themselves. `section_body` then returned None for
+    a heading `check_headings` correctly says is present, so
+    `check_diagram`/`_check_required_filled` silently skip the section
+    instead of judging it. AFTER: comments are blanked first (mirroring
+    `_visible_text`), so the embedded backtick never reaches `FENCE_RE`."""
+    text = (
+        "## Acceptance Criteria\n"
+        "<!-- paste an example like:\n"
+        "```\n"
+        "-->\n"
+        "- [ ] AC1 — value 5\n"
+        "- [ ] AC2 — value 6\n"
+        "\n"
+        "## Sequence diagram\n"
+        "there is no diagram here at all\n"
+        "\n"
+        "## Use cases\n"
+        "TBD\n"
+        "\n"
+        "## KB context\n"
+        "```yaml\n"
+        "kb-context:\n"
+        '  version: "abc1234"\n'
+        "  refs:\n"
+        "    - a §1\n"
+        "```\n"
+    )
+
+    body = lintcore.section_body(text, "## Sequence diagram")
+
+    assert body is not None
+    assert "there is no diagram here at all" in body
+
+    issues = lintcore.check_diagram(
+        text, "## Sequence diagram", ("sequenceDiagram",)
+    )
+    assert [i.level for i in issues] == ["error"]
+    assert "must contain" in issues[0].message
+
+
 # --- check_diagram: line-start keyword anchoring ---
 
 
@@ -126,6 +347,11 @@ def test_diagram_fails_when_keyword_only_appears_inside_a_node_label():
 
     assert len(issues) == 1
     assert issues[0].level == "error"
+    # The keyword itself never matched (it's buried in a node label), so
+    # this must be the keyword-missing message, never the keyword-seen
+    # "no relationship" message — a regression could satisfy the two
+    # asserts above by emitting the wrong text for the wrong reason.
+    assert "must contain" in issues[0].message
 
 
 def test_diagram_raises_on_empty_keywords_tuple():
@@ -136,6 +362,102 @@ def test_diagram_raises_on_empty_keywords_tuple():
 
     with pytest.raises(ValueError):
         check_diagram(text, "## Business flow", ())
+
+
+# --- check_diagram: an empty diagram is not a diagram ---
+
+
+def test_check_diagram_rejects_a_fence_with_no_edge():
+    """Reviewer E's T4: the type keyword was the whole contract, so a
+    fence of garbage — or an empty one — passed."""
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "zzzz !!! not a diagram at all\n"
+        "```\n"
+    )
+    issues = check_diagram(text, "## Sequence diagram", ("sequenceDiagram",))
+    assert [i.level for i in issues] == ["error"]
+    assert "no relationship" in issues[0].message
+
+
+def test_check_diagram_rejects_a_completely_empty_fence():
+    """The docstring above promises an empty fence is rejected, not just
+    a keyword-plus-garbage one — this pins that half of the claim."""
+    text = "## Sequence diagram\n```mermaid\nsequenceDiagram\n```\n"
+    issues = check_diagram(text, "## Sequence diagram", ("sequenceDiagram",))
+    assert [i.level for i in issues] == ["error"]
+    assert "no relationship" in issues[0].message
+
+
+def test_check_diagram_passes_when_a_later_fence_has_the_edge():
+    """Two mermaid fences under one heading: the first has the keyword
+    but no edge, the second has both. The loop must keep scanning past
+    the first fence's failure instead of stopping there."""
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "zzzz !!! not a diagram at all\n"
+        "```\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  Importer->>Store: write designator\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []
+
+
+def test_check_diagram_accepts_a_sequence_arrow():
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  Importer->>Store: write designator\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []
+
+
+def test_check_diagram_accepts_a_thick_flowchart_arrow():
+    """Fix-loop finding: '==>' (thick arrow) is standard, documented
+    flowchart syntax and was false-ERRORing before `_EDGE_RE` widened."""
+    text = (
+        "## Business flow\n"
+        "```mermaid\n"
+        "flowchart TD\n"
+        "  A ==> B\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Business flow", ("flowchart",)) == []
+
+
+def test_check_diagram_accepts_an_async_sequence_message():
+    """Fix-loop finding: '-x' (async cross, sequence) was false-ERRORing
+    before `_EDGE_RE` widened."""
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  A-xB: fire\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []
+
+
+def test_check_diagram_accepts_a_c4_rel_call():
+    """C4 diagrams draw relationships with Rel(...), not arrows — the
+    mission gate would break on every valid C4 diagram otherwise."""
+    text = (
+        "## System context (C4 L1)\n"
+        "```mermaid\n"
+        "C4Context\n"
+        '  Person(ba, "BA")\n'
+        '  Rel(ba, kb, "queries")\n'
+        "```\n"
+    )
+    assert check_diagram(text, "## System context (C4 L1)", ("C4Context", "flowchart")) == []
 
 
 # --- INLINE_CITE_RE: sentence-ending punctuation ---
@@ -215,17 +537,18 @@ def test_inline_cite_re_matches_a_non_alnum_initial_section_id():
     assert match.groups() == (None, "arinc-424", "(a")
 
 
-# --- INLINE_CITE_RE / check_citation_consistency: nested repo qualifiers ---
+# --- BRACKET_CITE_RE / check_citation_consistency: nested repo qualifiers ---
 
 
 def test_citation_consistency_accepts_a_nested_repo_qualifier():
     """`kbcontext._REF_RE` accepts nested path repo-ids ('mid/repo-x') for
-    multi-tier federation. `INLINE_CITE_RE`'s repo group must mirror that —
-    otherwise a body citation like 'mid/repo-x:doc-a §1.1' mis-parses (the
-    'mid/' segment is silently dropped, leaving repo='repo-x'), and a
-    correctly-pinned citation is wrongly reported as not in kb-context
-    refs."""
-    text = "See mid/repo-x:doc-a §1.1 for details."
+    multi-tier federation. `BRACKET_CITE_RE`'s repo group mirrors
+    `INLINE_CITE_RE`'s (same character classes, per its own comment) and
+    must mirror this too — otherwise a body citation like
+    '[mid/repo-x:doc-a §1.1]' mis-parses (the 'mid/' segment is silently
+    dropped, leaving repo='repo-x'), and a correctly-pinned citation is
+    wrongly reported as not in kb-context refs."""
+    text = "See [mid/repo-x:doc-a §1.1] for details."
     ctx = KBContext(
         version="1",
         refs=[KBRef(doc_id="doc-a", section_id="1.1", repo_id="mid/repo-x")],
@@ -236,11 +559,22 @@ def test_citation_consistency_accepts_a_nested_repo_qualifier():
     assert issues == []
 
 
+def test_inline_cite_re_still_matches_a_nested_repo_qualifier():
+    """Direct coverage for INLINE_CITE_RE's own nested-repo group: the two
+    tests above moved onto BRACKET_CITE_RE (correctly — it's what the gate
+    parses), which left this group with no coverage of its own. It still
+    matters: it is what produces the correct migration warning for a bare
+    nested-repo citation ('mid/repo-x:doc-a §1.1' with no brackets)."""
+    (match,) = list(INLINE_CITE_RE.finditer("mid/repo-x:doc-a §1.1"))
+
+    assert match.groups() == ("mid/repo-x", "doc-a", "1.1")
+
+
 def test_citation_consistency_still_matches_a_flat_repo_qualifier():
     """Negative lock: a flat (non-nested) repo qualifier must keep working
     exactly as before — the widened repo group must not change single-
     segment behaviour."""
-    text = "See repo-x:doc-a §1.1 for details."
+    text = "See [repo-x:doc-a §1.1] for details."
     ctx = KBContext(
         version="1",
         refs=[KBRef(doc_id="doc-a", section_id="1.1", repo_id="repo-x")],
@@ -248,6 +582,124 @@ def test_citation_consistency_still_matches_a_flat_repo_qualifier():
 
     issues = check_citation_consistency(text, ctx)
 
+    assert issues == []
+
+
+# --- BRACKET_CITE_RE: the citation form the gate parses ---
+
+_CTX = KBContext(
+    version="272953a",
+    refs=[KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.129")],
+    tags=["arinc424"],
+)
+
+
+def test_bracket_citation_matches_a_pinned_ref():
+    issues = check_citation_consistency(
+        "The designator is stored [arinc-424 §5.129].", _CTX
+    )
+    assert issues == []
+
+
+def test_bracket_citation_tolerates_a_space_after_the_section_mark():
+    assert check_citation_consistency("see [arinc-424 § 5.129]", _CTX) == []
+
+
+def test_bracket_citation_with_a_repo_qualifier():
+    assert check_citation_consistency("see [aero:arinc-424 §5.129]", _CTX) == []
+
+
+def test_bracket_citation_to_an_unpinned_section_is_an_error():
+    issues = check_citation_consistency("see [arinc-424 §5.126]", _CTX)
+    assert [i.level for i in issues] == ["error"]
+    assert "not in kb-context refs" in issues[0].message
+
+
+def test_two_pinned_sections_of_one_doc_uncited_one_still_warns():
+    """Case A (controller ruling on Finding 1's review): a document
+    pinned at TWO sections, only one of which is cited, must still warn
+    about the uncited one. A reverse-check suppression that keys on
+    "this document was mentioned somewhere" rather than "this exact
+    ref's own error already reported it" would wrongly swallow the
+    second, genuinely-uncited ref's warning too — this is the regression
+    the 195-green run missed because no fixture pinned two sections of
+    one document."""
+    ctx = KBContext(
+        version="1",
+        refs=[
+            KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.129"),
+            KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.200"),
+        ],
+    )
+
+    issues = check_citation_consistency("stored [arinc-424 §5.129]", ctx)
+
+    assert [i.level for i in issues] == ["warning"]
+    assert "5.200" in issues[0].message
+
+
+def test_repo_qualifier_mismatch_is_one_error_no_reverse_warning():
+    """Case C (controller ruling on Finding 1's review): a citation to
+    the right doc+section but the WRONG repo qualifier is an unresolved
+    bracketed citation (repo must match exactly, unlike a bare citation's
+    'None matches any repo' rule) — and because the document has exactly
+    ONE pinned ref, the reverse 'never cited' check is suppressed: this is
+    one typo, not two separate problems, so exactly one issue is
+    reported."""
+    ctx = KBContext(
+        version="1",
+        refs=[KBRef(repo_id="aero", doc_id="arinc-424", section_id="5.129")],
+    )
+
+    issues = check_citation_consistency("stored [space:arinc-424 §5.129]", ctx)
+
+    assert [i.level for i in issues] == ["error"]
+    assert "not in kb-context refs" in issues[0].message
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "per ARINC 424 §5.129 the designator is stored",
+        "see (ARINC-424 §5.129)",
+        "ICAO Annex 3 §4.2.1 says so",
+        "Refer to section §5.129 of arinc-424.",
+    ],
+)
+def test_natural_prose_never_produces_an_error(prose):
+    """BEFORE: the doc-id was the last token before '§', so every one of
+    these failed the gate at error level (reviewer E's HIGH-4 table).
+    AFTER: only bracketed citations are parsed, so prose is prose."""
+    assert [
+        i for i in check_citation_consistency(prose + " [arinc-424 §5.129]", _CTX)
+        if i.level == "error"
+    ] == []
+
+
+def test_bare_citation_matching_a_ref_gets_a_migration_warning():
+    issues = check_citation_consistency(
+        "The designator is stored per arinc-424 §5.129.", _CTX
+    )
+    assert [i.level for i in issues] == ["warning"]
+    assert "[arinc-424 §5.129]" in issues[0].message
+
+
+def test_bare_citation_satisfies_the_reverse_check():
+    """A pre-bracket ticket collects the migration warning and nothing
+    else — never a second 'ref is never cited' warning for the same
+    place."""
+    issues = check_citation_consistency("stored per arinc-424 §5.129.", _CTX)
+    assert len(issues) == 1
+
+
+def test_a_pinned_ref_nobody_cites_is_still_a_warning():
+    issues = check_citation_consistency("no citations here", _CTX)
+    assert [i.level for i in issues] == ["warning"]
+    assert "is never cited" in issues[0].message
+
+
+def test_a_bracketed_citation_is_not_also_reported_as_bare():
+    issues = check_citation_consistency("[arinc-424 §5.129]", _CTX)
     assert issues == []
 
 
@@ -317,6 +769,18 @@ def test_check_recommended_sections_ignores_heading_inside_fence():
     assert "missing" in issues[0].message
 
 
+def test_check_recommended_sections_ignores_heading_inside_comment():
+    """The presence half's `present` set must agree with the emptiness
+    half (already comment-blind, covered by
+    `test_check_recommended_sections_html_comment_only_body_is_empty`) —
+    a heading that exists only inside a comment is reported missing, not
+    silently treated as present."""
+    text = "# T\n\n<!--\n## Dependencies\n-->\n"
+    issues = check_recommended_sections(text, ("## Dependencies",))
+    assert len(issues) == 1
+    assert "missing" in issues[0].message
+
+
 def test_table_rows_parses_cells_and_drops_separators():
     body = (
         "| # | Decision | Status | Owner | Blocks |\n"
@@ -366,6 +830,99 @@ def test_check_review_record_accepts_a_filled_record():
         "Open gaps: none\n"
     )
     assert lintcore.check_review_record(text) == []
+
+
+# --- Task 8: '## Review record' table shape is an error; scores stay warnings ---
+
+_RECORD = (
+    "## Review record\n"
+    "| Date | Round | Business | Dev | Reviewer |\n"
+    "|---|---|---|---|---|\n"
+    "{rows}"
+)
+
+
+def test_review_record_with_an_empty_reviewer_cell_is_an_error():
+    """Reviewer E's T18: a self-declared 5/5 with an empty reviewer cell
+    passed with no warning at all."""
+    text = _RECORD.format(rows="| 2026-09-08 | 1 | 5 | 5 |  |\n")
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["error"]
+    assert "empty cell" in issues[0].message
+
+
+def test_review_record_with_no_data_rows_is_an_error():
+    text = _RECORD.format(rows="")
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["error"]
+    assert "no review rows" in issues[0].message
+
+
+def test_review_record_requires_the_gap_verifier_from_round_two():
+    text = _RECORD.format(
+        rows="| 2026-09-08 | 1 | 4 | 4 | business-reviewer |\n"
+        "| 2026-09-09 | 2 | 5 | 5 | someone-else |\n"
+    )
+    issues = lintcore.check_review_record(text)
+    assert any(
+        "round 2 must be reviewed by 'gap-verifier'" in i.message
+        and i.level == "error"
+        for i in issues
+    )
+
+
+def test_review_record_rounds_must_increase():
+    text = _RECORD.format(
+        rows="| 2026-09-08 | 2 | 4 | 4 | gap-verifier |\n"
+        "| 2026-09-09 | 1 | 5 | 5 | gap-verifier |\n"
+    )
+    assert any(
+        "Round 1 does not follow round 2" in i.message and i.level == "error"
+        for i in lintcore.check_review_record(text)
+    )
+
+
+def test_a_score_below_four_is_a_warning_not_an_error():
+    text = _RECORD.format(rows="| 2026-09-08 | 1 | 3 | 4 | business-reviewer |\n")
+    issues = lintcore.check_review_record(text)
+    assert [i.level for i in issues] == ["warning"]
+    assert "below the threshold of 4" in issues[0].message
+
+
+def test_a_fourth_round_is_a_warning_not_an_error():
+    rows = "".join(
+        f"| 2026-09-0{n} | {n} | 5 | 5 | "
+        f"{'business-reviewer' if n == 1 else 'gap-verifier'} |\n"
+        for n in (1, 2, 3, 4)
+    )
+    issues = lintcore.check_review_record(_RECORD.format(rows=rows))
+    assert [i.level for i in issues] == ["warning"]
+    assert "more than 3 review rounds" in issues[0].message
+
+
+def test_a_well_formed_record_is_clean():
+    text = _RECORD.format(
+        rows="| 2026-09-08 | 1 | 4 | 5 | business-reviewer |\n"
+        "| 2026-09-09 | 2 | 5 | 5 | gap-verifier |\n"
+    )
+    assert lintcore.check_review_record(text) == []
+
+
+def test_gap_verifier_rule_does_not_reach_round_four():
+    """Rounds 2-3 are the gap-verifier pass (docs/review-rubric.md); round
+    4 is outside it and is itself only a warning ('more than 3 review
+    rounds'). A human reviewer signing round 4 must not also draw the
+    gap-verifier error — that would hard-fail a record for doing MORE
+    review than required, and the early return would hide the warning
+    that actually applies."""
+    rows = "".join(
+        f"| 2026-09-0{n} | {n} | 5 | 5 | "
+        f"{'gap-verifier' if n in (2, 3) else 'human-reviewer'} |\n"
+        for n in (1, 2, 3, 4)
+    )
+    issues = lintcore.check_review_record(_RECORD.format(rows=rows))
+    assert [i.level for i in issues] == ["warning"]
+    assert "more than 3 review rounds" in issues[0].message
 
 
 # --- Task 3: kb-context tags must exist on the federation ---

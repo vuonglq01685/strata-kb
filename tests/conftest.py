@@ -424,6 +424,19 @@ def fed_hub(tmp_path: Path, run_git) -> Path:
     return hub
 
 
+def make_stale(fed_hub: Path) -> None:
+    """Edit a published L2 file in-place, after the block that pins it was
+    built — the recipe every stale-ref test needs to make a still-resolving
+    ref report as stale. Shared here (rather than copied into every test
+    module that needs it) because `test_ticketlint.py`, `test_cli_ticket.py`
+    and `test_cli_mission.py` all need the identical mutation."""
+    l2 = fed_hub / "federation" / "icao-kb" / "icao-annex-2" / "ch1.md"
+    l2.write_text(
+        l2.read_text(encoding="utf-8") + "\nEdited after publish.\n",
+        encoding="utf-8",
+    )
+
+
 # ==========================================================================
 # The undiscardable hub cache (Ruling P49, Wave G fix round 5)
 # ==========================================================================

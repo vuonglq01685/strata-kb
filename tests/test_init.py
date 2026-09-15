@@ -719,7 +719,18 @@ _PRE_PHASE4_CHILD_FILES = [
 
 def test_init_kind_ba_scaffolds_minimal_set(tmp_path: Path):
     report = init_repo(tmp_path, "ba")
-    assert sorted(report.created) == sorted(expected_files("ba"))
+    # Two more entries than expected_files("ba") on purpose: the
+    # review-rubric/ac-quality `.local.md` stubs are create-once BA repo
+    # data (Task 11, MEDIUM-5) and deliberately NOT in the template map
+    # `expected_files` reads from — see initcmd.BA_LOCAL_OVERRIDES. Sorted
+    # as ONE combined list (not two sorted lists concatenated): the
+    # `.local.md` paths interleave alphabetically with the base `docs/`
+    # entries (e.g. "docs/ac-quality.local.md" < "docs/ac-quality.md"),
+    # so concatenating two separately-sorted lists would not equal the
+    # single globally-sorted `report.created`.
+    assert sorted(report.created) == sorted(
+        expected_files("ba") + list(initcmd.BA_LOCAL_OVERRIDES)
+    )
     for rel in _BA_SPEC_8_PATHS:
         assert (tmp_path / rel).is_file(), rel
     # authoring wrappers are explicitly NOT on kind `ba`
@@ -734,6 +745,47 @@ def test_init_kind_ba_scaffolds_minimal_set(tmp_path: Path):
     assert not (tmp_path / ".env.example").exists()
     text = (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
     assert "kind: ba" in text
+
+
+# --- Task 11 (MEDIUM-5): `.local.md` overrides for the BA rubric -----------
+# Same create-once contract as `conventions.scaffold_conventions`'s
+# `docs/conventions/<lang>.local.md` (C11): the BASE files
+# (docs/review-rubric.md, docs/ac-quality.md) stay package-owned and keep
+# being refreshed by `kb init`; only the `.local.md` overrides are written
+# once and never touched again.
+
+
+def test_ba_init_creates_the_local_override_stubs(tmp_path):
+    initcmd.init_repo(tmp_path, "ba")
+    assert (tmp_path / "docs" / "review-rubric.local.md").is_file()
+    assert (tmp_path / "docs" / "ac-quality.local.md").is_file()
+
+
+def test_ba_reinit_never_touches_a_local_override(tmp_path):
+    initcmd.init_repo(tmp_path, "ba")
+    local = tmp_path / "docs" / "review-rubric.local.md"
+    local.write_text(
+        "# our own criteria\n- [ ] cites an AIP\n", encoding="utf-8"
+    )
+    before = local.read_bytes()
+
+    report = initcmd.init_repo(tmp_path, "ba")
+
+    assert local.read_bytes() == before
+    assert any(
+        "local overrides — never refreshed" in entry
+        for entry in report.skipped
+    )
+
+
+def test_ba_reinit_still_refreshes_the_base_rubric(tmp_path):
+    initcmd.init_repo(tmp_path, "ba")
+    base = tmp_path / "docs" / "review-rubric.md"
+    base.write_text("clobbered\n", encoding="utf-8")
+
+    initcmd.init_repo(tmp_path, "ba")
+
+    assert "Maturity review rubric" in base.read_text(encoding="utf-8")
 
 
 def test_init_rejects_unknown_kind_still_excludes_ba_typos(tmp_path: Path):
@@ -830,6 +882,24 @@ def test_cli_init_ba_next_steps(tmp_path: Path):
     assert "QUICKSTART-BA.md" in result.output
     assert "kb docker-setup" not in result.output
     assert "kb ingest" not in result.output
+
+
+def test_cli_init_local_override_skip_has_no_force_hint(tmp_path: Path):
+    """Task 11 review Important 1: `--force` cannot touch a `.local.md`
+    override (scaffold_ba_local_overrides takes no `force` parameter and
+    the call site passes none), so the CLI must not tell a BA it can.
+    A genuinely protected file's skip line still carries the hint.
+    """
+    runner.invoke(app, ["init", str(tmp_path), "--kind", "ba"])
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "ba"])
+    assert result.exit_code == 0
+    lines = result.output.splitlines()
+    local_lines = [ln for ln in lines if "review-rubric.local.md" in ln]
+    assert local_lines, result.output
+    assert "--force" not in local_lines[0], local_lines[0]
+    protected_lines = [ln for ln in lines if ln.strip().startswith("skipped") and ".kb/config.yaml" in ln]
+    assert protected_lines, result.output
+    assert "--force" in protected_lines[0], protected_lines[0]
 
 
 def test_cli_init_assets_rejected_for_ba(tmp_path: Path):
@@ -1160,14 +1230,55 @@ def _replace_git_diff_with_synthetic_paths(run_script: str, paths: list[str]) ->
 
 
 _KB_STUB_BODY = (
-    "import os, sys\n"
+    "import json, os, sys\n"
+    "argv = sys.argv[1:]\n"
     "log = os.environ.get('KB_STUB_LOG')\n"
     "if log:\n"
     "    with open(log, 'a', encoding='utf-8') as fh:\n"
-    "        fh.write('\\t'.join(sys.argv[1:]) + '\\n')\n"
+    "        fh.write('\\t'.join(argv) + '\\n')\n"
     "fail_markers = [m for m in os.environ.get('KB_STUB_FAIL', '').split(os.pathsep) if m]\n"
-    "sys.exit(1 if any(a in fail_markers for a in sys.argv[1:]) else 0)\n"
+    "failed = any(a in fail_markers for a in argv)\n"
+    # Task 13 review (Important 1): _hub_or_exit can exit before --json ever
+    # writes a report at all (unreachable hub) -- it prints a plain-text
+    # message to stdout instead. KB_STUB_NONJSON reproduces that exit shape
+    # for a given path so the dispatch step's non-JSON-tolerant parsing can
+    # be exercised without a real hub.
+    "nonjson_markers = [m for m in os.environ.get('KB_STUB_NONJSON', '').split(os.pathsep) if m]\n"
+    "if any(a in nonjson_markers for a in argv):\n"
+    "    print('hub unreachable: could not resolve center-kb-hub.example')\n"
+    "    sys.exit(1)\n"
+    # Task 13 review (Important 2): the stub used to only ever exit 0/1, so
+    # the dispatch step's rc==2 -> STALE branch never actually ran under
+    # test. KB_STUB_RC lets a failing run pin a specific exit code.
+    "rc = int(os.environ.get('KB_STUB_RC', '1'))\n"
+    # Task 13 (MEDIUM-6): the real dispatch step always passes --json and
+    # parses the report for its step-summary table, so the stub must emit
+    # the same {pass, errors, warnings, notes} shape kb ticket/mission lint
+    # --json actually produces (lintcore.LintReport.to_json), or the
+    # dispatch step's own `json.load` blows up on empty/missing output.
+    "if '--json' in argv:\n"
+    "    print(json.dumps({\n"
+    "        'pass': not failed,\n"
+    "        'errors': ['stub configured to fail'] if failed else [],\n"
+    "        'warnings': [],\n"
+    "        'notes': [],\n"
+    "    }))\n"
+    "sys.exit(rc if failed else 0)\n"
 )
+
+
+def _write_python_shim(bindir: Path) -> None:
+    """The dispatch step's `python -` heredoc (Task 13, MEDIUM-6) relies on
+    a bare `python` on PATH — guaranteed on a real GitHub Actions runner by
+    `actions/setup-python`, but not on every dev box (macOS ships only
+    `python3`). Shim it in the same bindir the `kb` stub already lives in,
+    so these hermetic subprocess tests don't depend on the host's PATH."""
+    bindir.mkdir(parents=True, exist_ok=True)
+    shim = bindir / "python"
+    shim.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8", newline="\n"
+    )
+    shim.chmod(shim.stat().st_mode | 0o111)
 
 
 @_needs_bash
@@ -1224,6 +1335,7 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
 
     bindir = tmp_path / "bin"
     write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
     log_path = tmp_path / "kb.log"
 
     base_env = {
@@ -1233,6 +1345,9 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
         "CENTER_KB_HUB": "https://example.invalid/hub",
         "KB_STUB_LOG": str(log_path),
         "RUNNER_TEMP": str(tmp_path),
+        # Real GitHub Actions always provides this; the dispatch step now
+        # writes its per-file summary table there (Task 13, MEDIUM-6).
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
     }
 
     # --- Run 1: nothing configured to fail. ---
@@ -1247,12 +1362,14 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     log_lines = log_path.read_text(encoding="utf-8").splitlines()
 
     # Dispatch pairing: missions/ -> mission lint, tickets/ -> ticket lint.
+    # Trailing `--json` (Task 13, MEDIUM-6): the dispatch step now always
+    # requests a machine-readable report for its step-summary table.
     assert (
-        "mission\tlint\tmissions/M-Đăng-nhập.md\t--hub\thttps://example.invalid/hub"
+        "mission\tlint\tmissions/M-Đăng-nhập.md\t--hub\thttps://example.invalid/hub\t--json"
         in log_lines
     )
     assert (
-        "ticket\tlint\ttickets/T-new.md\t--hub\thttps://example.invalid/hub"
+        "ticket\tlint\ttickets/T-new.md\t--hub\thttps://example.invalid/hub\t--json"
         in log_lines
     )
     # The deleted ticket was never handed to `kb` at all.
@@ -1273,6 +1390,13 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     # the loop) even though the job as a whole must fail.
     assert any("missions/M-Đăng-nhập.md" in line for line in log_lines)
     assert any("tickets/T-new.md" in line for line in log_lines)
+    # Task 13 review (Important 2): the failure must be annotated on the
+    # failing file and pinned in the step-summary table with an error count.
+    assert (
+        "::error file=tickets/T-new.md::stub configured to fail" in result.stderr
+    )
+    summary = (tmp_path / "step-summary.md").read_text(encoding="utf-8")
+    assert "| `tickets/T-new.md` | FAIL | 1 | 0 |" in summary
 
 
 @_needs_bash
@@ -1378,6 +1502,7 @@ def test_ci_gate_prints_notice_and_exits_zero_when_nothing_changed(tmp_path):
             "BASE_REF": "main",
             "CENTER_KB_HUB": "https://example.invalid/hub",
             "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
         },
         capture_output=True,
         text=True,
@@ -1416,6 +1541,7 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
 
     bindir = tmp_path / "bin-synthetic"
     write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
     log_path = tmp_path / "kb-synthetic.log"
 
     result = subprocess.run(
@@ -1429,6 +1555,7 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
             "KB_STUB_LOG": str(log_path),
             "KB_STUB_FAIL": "",
             "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
         },
         capture_output=True,
         text=True,
@@ -1441,6 +1568,138 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
     # the unrecognised one were still dispatched.
     assert any("tickets/T-new.md" in line for line in log_lines)
     assert any("missions/M-new.md" in line for line in log_lines)
+
+
+@_needs_bash
+def test_ci_gate_dispatch_loop_pins_stale_verdict(tmp_path):
+    """Task 13 review (Important 2): the `kb` stub used to only ever exit
+    0/1, so the dispatch step's `rc == 2 -> STALE` branch never actually ran
+    under test. KB_STUB_RC lets the stub exit 2 to exercise it end to end."""
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step-stale.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo-stale"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+    (repo / "tickets").mkdir()
+    (repo / "tickets" / "base.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "tickets/base.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    (repo / "tickets" / "T-stale.md").write_text("stale\n", encoding="utf-8")
+    _git(repo, "add", "tickets/T-stale.md")
+    _git(repo, "commit", "-q", "-m", "pr: add ticket")
+
+    bindir = tmp_path / "bin-stale"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
+    log_path = tmp_path / "kb-stale.log"
+    summary_path = tmp_path / "step-summary-stale.md"
+
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BASE_REF": "main",
+            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
+            "KB_STUB_FAIL": "tickets/T-stale.md",
+            "KB_STUB_RC": "2",
+            "KB_FAIL_ON_STALE": "1",
+            "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(summary_path),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "| `tickets/T-stale.md` | STALE | 1 | 0 |" in summary
+    # The dispatch script forwards KB_FAIL_ON_STALE as --fail-on-stale
+    # (kb-ticket-lint.yml ~127-128) — pin that it actually reaches the CLI.
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    stale_line = next(
+        line for line in log_lines if "tickets/T-stale.md" in line
+    )
+    assert "--fail-on-stale" in stale_line
+
+
+@_needs_bash
+def test_ci_gate_dispatch_loop_survives_a_non_json_lint_exit(tmp_path):
+    """Important 1 (task-13 review): `_hub_or_exit` (cli.py) can exit before
+    `kb ticket lint --json` ever writes a JSON report -- e.g. an unreachable
+    private hub prints a plain-text message to stdout and exits 1. The
+    dispatch step's `python - ... <<PY` heredoc used to `json.load` that
+    non-JSON output unguarded: the traceback made the heredoc itself exit
+    non-zero, which (under `bash -e`) aborted the whole step mid-loop --
+    `cat`/`::endgroup::` never ran and every later file was silently never
+    linted. KB_STUB_NONJSON reproduces the exit shape without a real hub.
+    """
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step-nonjson.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo-nonjson"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+    (repo / "tickets").mkdir()
+    (repo / "tickets" / "base.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "tickets/base.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    # 'A-broken' sorts before 'Z-after' so `git diff --name-only` (tree
+    # order) hands the broken file to the loop first -- proving the second
+    # file is reached only if the loop survives the first one's crash.
+    (repo / "tickets" / "A-broken.md").write_text("a\n", encoding="utf-8")
+    (repo / "tickets" / "Z-after.md").write_text("z\n", encoding="utf-8")
+    _git(repo, "add", "tickets/A-broken.md", "tickets/Z-after.md")
+    _git(repo, "commit", "-q", "-m", "pr: add two tickets")
+
+    bindir = tmp_path / "bin-nonjson"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
+    log_path = tmp_path / "kb-nonjson.log"
+    summary_path = tmp_path / "step-summary-nonjson.md"
+
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BASE_REF": "main",
+            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
+            "KB_STUB_NONJSON": "tickets/A-broken.md",
+            "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(summary_path),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    # The raw non-JSON message still reaches the log.
+    assert "hub unreachable" in result.stdout
+    assert "::endgroup::" in result.stdout
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "| `tickets/A-broken.md` | FAIL | 1 | 0 |" in summary
+    assert (
+        "::error file=tickets/A-broken.md::lint exited without a JSON report"
+        in result.stderr
+    )
+    # The loop did not short-circuit: the file after the broken one was
+    # still linted.
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert any("tickets/Z-after.md" in line for line in log_lines)
 
 
 # --- Phase 5 Stage A: kind `dev` (product code repo) ------------------------
@@ -2235,6 +2494,22 @@ def test_no_template_leaves_an_unfilled_version_placeholder(tmp_path):
         for path in dest.rglob("*"):
             if path.is_file() and path.suffix in {".yml", ".yaml"}:
                 assert "{version}" not in path.read_text(encoding="utf-8")
+
+
+from importlib.metadata import version as _dist_version
+
+
+@pytest.mark.parametrize(
+    ("kind", "workflow"),
+    [("ba", "kb-ticket-lint.yml"), ("dev", "kb-pr-lint.yml")],
+)
+def test_scaffolded_workflows_pin_the_cli(tmp_path, kind, workflow):
+    initcmd.init_repo(tmp_path, kind)
+    text = (tmp_path / ".github" / "workflows" / workflow).read_text(
+        encoding="utf-8"
+    )
+    assert f"pip install center-kb=={_dist_version('center-kb')}" in text
+    assert "{version}" not in text
 
 
 def test_hub_and_child_scaffolds_pin_lf_line_endings(tmp_path):
