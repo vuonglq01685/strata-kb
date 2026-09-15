@@ -31,7 +31,10 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
-Steps the skill enforces: re-check freshness one final time — a hub
+Steps the skill enforces: for a `path: spike` design there is no plan and
+usually no code — put the recommendation under `## Findings` in the PR
+body, or as a ticket comment when there is no PR, and mark the ticket's
+plan state `n/a (spike)`; otherwise, re-check freshness one final time — a hub
 publish mid-implementation must surface here, not in review; paste the
 freshness output (the `--status-only` output when the cache path was
 taken) into the PR; run the full suite and linters (`cmd.test` and
@@ -48,7 +51,8 @@ history there instead); then assemble the PR description using the
 repo's `.github/pull_request_template.md`, whose eight sections CI
 checks with `kb pr lint`: Ticket; kb-context refs so the reviewer can
 `kb resolve` them; the AC→test map; the Placeholder resolutions list;
-the Verification output, pasted inside a fenced block, not claimed;
+the Verification output, pasted inside a fenced block together with
+the `cmd.test` command line itself (e.g. `$ pytest -q`), not claimed;
 the `## TDD exemptions` section, every `Exempt:` line from the plan,
 or `none`; the Findings, every `OPEN(...)`, KB gap, ambiguity or
 contradiction as a concrete feedback item on the owning repo, or

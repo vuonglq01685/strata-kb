@@ -34,6 +34,10 @@ edit above it.
 
 ## Steps
 
+- **A `path: spike` design has no plan and usually no code** — skip the
+  plan/execute-specific steps below; put the recommendation from the
+  design under `## Findings` in the PR body, or as a ticket comment when
+  there is no PR, and mark the ticket's plan state `n/a (spike)`.
 - **Re-check freshness one final time** — a hub publish mid-implementation
   must surface here, not in review: the Freshness re-check above runs
   again right here, not only at the start of the session. Paste the
@@ -57,7 +61,8 @@ edit above it.
   checks with `kb pr lint`: **Ticket**; **kb-context** refs so
   the reviewer can `kb resolve` them; the **AC→test map**; the
   **Placeholder resolutions** list; the **Verification** output,
-  pasted inside a fenced block, not claimed; the `## TDD
+  pasted inside a fenced block together with the `cmd.test` command
+  line itself (e.g. `$ pytest -q`), not claimed; the `## TDD
   exemptions` section — every `Exempt:` line from the plan, or
   `none`; the **Findings**, every `OPEN(...)`, KB gap, ambiguity
   or contradiction as a concrete feedback item on the owning

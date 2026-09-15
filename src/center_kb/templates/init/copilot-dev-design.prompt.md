@@ -73,7 +73,9 @@ The Dev approves the design before the plan is started. Presenting the
 design and starting the plan in the same turn is skipping the gate.
 When the Dev approves, flip the header to `status: approved` before
 anything else — `dev-plan` refuses a `draft` design. A file's existence
-is not approval; its `status:` line is.
+is not approval; its `status:` line is. A spike's design is flipped to
+`status: approved` here too — approving the recommendation, not a plan —
+so `design ✅` reads correctly if the ticket is re-opened.
 
 ## Hard rules
 
@@ -93,7 +95,8 @@ is not approval; its `status:` line is.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
 
 For `dev-design`, option 1 below is always `/dev-plan <ticket-id>` once
-GATE 1 passes; a blocker takes its place instead.
+GATE 1 passes — unless `path: spike`, where option 1 is `/dev-handover
+<ticket-id>`; a blocker takes its place instead.
 
 ## Next step — ALWAYS end your response with this block
 

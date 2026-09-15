@@ -224,8 +224,9 @@ def render_resolved(
 
 CACHE_MARKER = "<!-- kb:placeholder-map -->"
 _RESOLVED_HEADING = "## Resolved sections\n"
+_PLACEHOLDER_HEADING = "## Placeholder map"
 _PLACEHOLDER_STUB = (
-    "## Placeholder map\n"
+    f"{_PLACEHOLDER_HEADING}\n"
     "| placeholder | verified value | evidence (file:line or ref) |\n"
     "|---|---|---|\n"
 )
@@ -265,6 +266,12 @@ def render_cache(
     segment = render_resolved(results) + "\n\n"
     if previous is not None and CACHE_MARKER in previous:
         tail = previous[previous.index(CACHE_MARKER):]
+    elif previous is not None and _PLACEHOLDER_HEADING in previous:
+        # Pre-0.23 cache: agent-written placeholder map, no marker yet.
+        # Splice the marker in front of it instead of stubbing over the
+        # rows — the file is gitignored, so this is the only copy.
+        idx = previous.index(_PLACEHOLDER_HEADING)
+        tail = CACHE_MARKER + "\n" + previous[idx:]
     else:
         tail = CACHE_MARKER + "\n" + _PLACEHOLDER_STUB
     header = (

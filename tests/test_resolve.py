@@ -260,6 +260,21 @@ def test_render_cache_carries_the_placeholder_map_over_byte_for_byte(fed_hub):
     assert cache_problem(second, ctx.version, results) == ""
 
 
+def test_render_cache_migrates_a_pre_0_23_cache_without_marker(fed_hub):
+    ctx, results = _results(fed_hub)
+    previous = (
+        "# Context cache — T-7\n\n"
+        "## Placeholder map\n"
+        "| placeholder | verified value | evidence (file:line or ref) |\n"
+        "|---|---|---|\n"
+        "| <max-alt> | 45000 | src/limits.py:12 |\n"
+    )
+    text = render_cache(ctx.version, results, today="2026-09-15", stem="T-7", previous=previous)
+    assert CACHE_MARKER + "\n## Placeholder map" in text
+    assert "| <max-alt> | 45000 | src/limits.py:12 |" in text
+    assert cache_problem(text, ctx.version, results) == ""
+
+
 def test_editing_above_the_marker_is_detected(fed_hub):
     ctx, results = _results(fed_hub)
     text = render_cache(ctx.version, results, today="2026-09-15", stem="T-7", previous=None)

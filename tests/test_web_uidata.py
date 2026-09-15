@@ -95,6 +95,58 @@ def test_mixed_status_queue_catalog_and_status_map(mixed_status_hub):
     }
 
 
+@pytest.fixture
+def svc_with_hist_hub(tmp_path: Path, run_git) -> Path:
+    """A `-svc`-shaped doc: one `hist.*` row (machine-authored by `kb svc
+    note`, forever `summarized`) alongside a real section that is reviewed.
+    review_queue and catalog must both carve out the hist.* row the way
+    publish.unreviewed_sections already does, or the doc can never show as
+    fully reviewed (final-review finding 5)."""
+    from center_kb.federation import write_federation_index
+
+    hub = tmp_path / "kb-hub"
+    (hub / ".kb").mkdir(parents=True)
+    models.save_yaml_model(hub / ".kb" / "index.yaml", models.KBIndex())
+    fed = hub / "federation"
+    entry = make_fed_entry(fed, "svc-kb", "svc-doc", sec_id="1.1", sec_title="A")
+    models.save_yaml_model(
+        entry / "svc-doc" / "_manifest.yaml",
+        models.Manifest(
+            id="svc-doc",
+            title="svc-doc",
+            sections=[
+                models.SectionEntry(
+                    id="1.1", title="A", summary="s", status="reviewed", file="ch1"
+                ),
+                models.SectionEntry(
+                    id="hist.2026-09-15", title="service history",
+                    summary="s", status="summarized", file="ch1",
+                ),
+            ],
+        ),
+    )
+    write_federation_index(fed)
+    run_git(hub, "init")
+    run_git(hub, "config", "user.name", "test")
+    run_git(hub, "config", "user.email", "test@test.local")
+    run_git(hub, "add", "-A")
+    run_git(hub, "commit", "-m", "hub v1")
+    return hub
+
+
+def test_hist_sections_are_excluded_from_queue_and_catalog(svc_with_hist_hub):
+    hub = _hub(svc_with_hist_hub)
+
+    queue = uidata.review_queue(hub, limit=50)
+    assert queue == []
+
+    docs = uidata.catalog(hub)
+    assert len(docs) == 1
+    d = docs[0]
+    assert (d.total, d.reviewed, d.summarized, d.pending) == (1, 1, 0, 0)
+    assert d.done_pct == 100
+
+
 def test_store_stats_shapes(fed_hub):
     stats = uidata.store_stats(_hub(fed_hub))
     assert stats.docs >= 1
@@ -201,6 +253,18 @@ def test_doc_coverage_and_prev_next():
     prev, nxt = uidata.prev_next(m, "3")
     assert prev.id == "2" and nxt is None
     assert uidata.prev_next(m, "zz") == (None, None)
+
+
+def test_doc_coverage_excludes_hist_sections():
+    m = Manifest(
+        id="d", title="D",
+        sections=[
+            SectionEntry(id="1", title="A", file="a.md", status="reviewed"),
+            SectionEntry(id="hist.x", title="note", file="a.md", status="summarized"),
+        ],
+    )
+    cov = uidata.doc_coverage(m)
+    assert (cov.total, cov.reviewed, cov.summarized, cov.pending) == (1, 1, 0, 0)
 
 
 def test_status_map_keys(fed_hub):

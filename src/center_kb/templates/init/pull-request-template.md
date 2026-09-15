@@ -34,7 +34,10 @@ Write `none` if the ticket carried no placeholders. -->
 
 <!--
 The real output of cmd.test and cmd.lint, plus the freshness re-check, inside a
-fenced code block. A completion claim with no pasted output does not pass.
+fenced code block. Paste the command line itself together with its output —
+e.g. `$ <cmd.test>` followed by the real run — the command text must sit
+inside the fence, not just be described above it, or `verification-missing-cmd`
+fails the check. A completion claim with no pasted output does not pass.
 -->
 
 ## TDD exemptions

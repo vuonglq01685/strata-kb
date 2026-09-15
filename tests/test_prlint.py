@@ -55,10 +55,12 @@ def test_a_fully_filled_description_passes():
 def test_an_empty_body_reports_every_section_missing():
     report = lint_body("")
     assert not report.passed
-    # >= not ==: no plan_dir given, so a plan-dir-unset warning also rides
-    # along (see test_no_plan_dir_is_a_warning_not_a_failure) alongside the
-    # eight missing-section errors this test pins.
-    assert _codes("") >= {(name, "missing-section") for name in REQUIRED_SECTIONS}
+    # Exact set: no plan_dir given, so a plan-dir-unset warning rides along
+    # (see test_no_plan_dir_is_a_warning_not_a_failure) alongside the eight
+    # missing-section errors this test pins — nothing else.
+    assert _codes("") == {
+        (name, "missing-section") for name in REQUIRED_SECTIONS
+    } | {("Verification", "plan-dir-unset")}
 
 
 def test_a_missing_heading_is_reported_by_name():
@@ -379,3 +381,12 @@ def test_plan_without_a_cmd_test_line_is_a_warning(tmp_path: Path):
     report = lint_body(_ticket_body(), plan_dir=d)
     assert report.passed
     assert [f.code for f in report.warnings] == ["cmd-test-unset"]
+
+
+def test_a_non_utf8_plan_file_is_a_warning_not_a_crash(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "ATM-7-plan.md").write_bytes(b"# plan\n\ncmd.test: \xff\xfe pytest -q\n")
+    report = lint_body(_ticket_body(), plan_dir=d)
+    assert report.passed
+    assert [f.code for f in report.warnings] == ["plan-missing"]

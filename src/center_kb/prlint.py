@@ -248,7 +248,7 @@ def plan_cmd_test(plan_dir: Path, ticket_id: str) -> str | None:
     plan or the line is absent (an unreadable plan reads as absent)."""
     try:
         text = (plan_dir / f"{ticket_id}-plan.md").read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     m = _CMD_TEST.search(text)
     return m["cmd"].strip("`").strip() if m else None
@@ -291,6 +291,13 @@ def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding
         return [Finding("Verification", "plan-missing",
                         f"{plan_path} not found — the cmd.test check did not run "
                         "(spike or no plan yet)",
+                        level="warning")]
+    try:
+        plan_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return [Finding("Verification", "plan-missing",
+                        f"{plan_path} could not be read — the cmd.test check did "
+                        "not run (spike or no plan yet)",
                         level="warning")]
     cmd = plan_cmd_test(plan_dir, ticket_id)
     if cmd is None:

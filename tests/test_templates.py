@@ -522,6 +522,24 @@ def test_dev_design_carries_gate_one_and_the_ac_rule():
         assert "reinterpreting an ac is forbidden" in text.lower(), name
 
 
+def test_dev_design_spike_path_names_dev_handover_as_option_one():
+    # Final-review finding 6: the option-1 sentence used to say
+    # `/dev-plan` unconditionally while the same file said a spike ends
+    # at `dev-handover` with no plan — self-contradictory on re-entry.
+    for name in _dev_wrapper_names("dev-design"):
+        body = _dev_wrapper_body(name)
+        assert "unless `path: spike`" in body, name
+        assert "option 1 is `/dev-handover <ticket-id>`" in body, name
+
+
+def test_dev_design_gate_one_approves_a_spike_too():
+    # A spike design left at `draft` forever (GATE 1 only mentioned
+    # `dev-plan` refusing a draft) never reads as approved on re-entry.
+    for name in _dev_wrapper_names("dev-design"):
+        body = _dev_wrapper_body(name)
+        assert "A spike's design is flipped to `status: approved`" in body, name
+
+
 def test_claude_skill_dev_design_has_expected_frontmatter():
     text = _read_init_template("claude-skill-dev-design.md")
     assert "name: dev-design\n" in text
@@ -688,6 +706,18 @@ def test_dev_handover_leaves_pr_and_merge_to_the_human():
         text = _dev_wrapper_body(name)
         assert "GATE 3" in text and "GATE 4" in text, name
         assert "The agent does neither" in text, name
+
+
+def test_dev_handover_has_a_spike_branch():
+    # Final-review finding 6: dev-design sends a spike straight to
+    # dev-handover with no plan and usually no code; the handover
+    # wrapper had no branch at all for that case (spec §3: recommendation
+    # in the PR's `## Findings`, or a ticket comment with no PR).
+    for name in _dev_wrapper_names("dev-handover"):
+        body = _dev_wrapper_body(name)
+        assert "path: spike" in body, name
+        assert "no plan and" in body and "no code" in body, name
+        assert "`n/a (spike)`" in body, name
 
 
 def test_claude_skill_dev_handover_has_expected_frontmatter():
@@ -1608,6 +1638,17 @@ def test_tdd_exemptions_doc_carries_the_four_slugs_and_the_boundary():
     assert "no observable behaviour" in _normalised(text)
     assert "when the plan is written" in text
     assert "Exempt: <config|ci|docs|style> — verified by <what>" in text
+
+
+def test_tdd_exemptions_doc_names_every_slug_prlint_recognizes():
+    # Ties the doc to prlint.EXEMPTION_SLUGS itself, not the hand-copied
+    # tuple above — a slug added in code with no matching doc update fails
+    # this test (final-review finding 4).
+    from center_kb.prlint import EXEMPTION_SLUGS as PRLINT_EXEMPTION_SLUGS
+
+    text = _read_init_template("tdd-exemptions.md")
+    for slug in PRLINT_EXEMPTION_SLUGS:
+        assert f"`{slug}`" in text, slug
 
 
 DEV_PLAN_TEMPLATES = _dev_wrapper_names("dev-plan")

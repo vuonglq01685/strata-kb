@@ -48,6 +48,9 @@ git tags and pull-request history.
 - `kb publish --require-reviewed` no longer counts machine-authored
   `hist.*` sections (they are never flipped by a whole-doc approve); `kb
   approve` says so when they are the only summarized sections left.
+- The web hub's review queue and per-doc coverage counters carry the same
+  `hist.*` carve-out — a `-svc` doc's history rows no longer crowd the
+  queue or keep it from reading as fully reviewed.
 - `kb usage report` reports the hook-error count even when the ledger is
   empty, and `kb doctor` survives a non-UTF-8 hook log.
 - Java preset: 2-space indent to match google-java-format; `maxWarnings = 0`

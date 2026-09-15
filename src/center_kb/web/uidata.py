@@ -17,6 +17,7 @@ from center_kb.federation import load_federation
 from center_kb.hub import HubHandle
 from center_kb.mdutils import count_tokens
 from center_kb.models import Manifest, SectionEntry
+from center_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("center_kb.web.uidata")
 
@@ -108,12 +109,19 @@ def catalog(hub: HubHandle) -> list[CatalogDoc]:
     out: list[CatalogDoc] = []
     for repo_id, m in _iter_manifests(hub):
         counts = {"reviewed": 0, "summarized": 0, "pending": 0}
+        total = 0
         for s in m.sections:
+            # hist.* rows are machine-authored and never reviewed by design
+            # (review.py, publish.unreviewed_sections) — counting them here
+            # keeps a -svc doc's summarized/pending totals inflated forever.
+            if s.id.startswith(MACHINE_SECTION_PREFIX):
+                continue
             counts[s.status] += 1
+            total += 1
         out.append(
             CatalogDoc(
                 id=m.id, repo=repo_id, title=m.title, revision=m.revision,
-                total=len(m.sections), **counts,
+                total=total, **counts,
             )
         )
     return out
@@ -135,7 +143,7 @@ def review_queue(hub: HubHandle, limit: int = 8) -> list[QueueItem]:
                   title=s.title, status=s.status)
         for repo_id, m in _iter_manifests(hub)
         for s in m.sections
-        if s.status != "reviewed"
+        if s.status != "reviewed" and not s.id.startswith(MACHINE_SECTION_PREFIX)
     ]
     items.sort(key=lambda i: (_QUEUE_ORDER[i.status], i.doc_id, i.section_id))
     return items[:limit]
@@ -173,9 +181,13 @@ def last_publish(hub: HubHandle) -> PublishInfo:
 
 def doc_coverage(manifest: Manifest) -> Coverage:
     counts = {"reviewed": 0, "summarized": 0, "pending": 0}
+    total = 0
     for s in manifest.sections:
+        if s.id.startswith(MACHINE_SECTION_PREFIX):
+            continue
         counts[s.status] += 1
-    return Coverage(total=len(manifest.sections), **counts)
+        total += 1
+    return Coverage(total=total, **counts)
 
 
 def section_tree(manifest: Manifest) -> list[TreeNode]:
