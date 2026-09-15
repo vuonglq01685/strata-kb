@@ -47,10 +47,13 @@ chosen and escalating to L3 only for a value that will be encoded in code
 or tests, then searches within a 500–800 token budget for broad discovery
 — `<repo_id>-code` and `<repo_id>-svc` for structure and responsibility
 before reading the actual code, skipping whichever document is missing and
-reading the code directly for that half instead — `<repo_id>-code` is
-missing whenever `kb code-ingest` has not run yet in this repo,
-`<repo_id>-svc` is missing whenever this repo has not run `dev-code-seed`
-(or the seed is not yet published); **Placeholders** verifies every
+reading the code directly for that half — a document missing from the hub
+means either not yet generated (`kb code-ingest` for `<repo_id>-code`,
+`dev-code-seed` for `<repo_id>-svc`) or generated and not yet published,
+checked via `.kb/<repo_id>-code/` and `.kb/<repo_id>-svc/` locally
+(present → say "generated, unpublished: run `kb publish`"; absent → "not
+generated"), reads staying hub-only either way and never reported as a KB
+gap; **Placeholders** verifies every
 `%%TODO: verify against codebase%%` against the codebase, reports the list
 to the BA, **never edits the ticket**, and records the map in the cache
 file's `## Placeholder map` table below the marker

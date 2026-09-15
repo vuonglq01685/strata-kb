@@ -736,7 +736,7 @@ def test_dev_implement_ticket_caveats_the_svc_document_by_repo_state():
     # a KB gap.
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert (
-            "is missing whenever this repo has not run `dev-code-seed`"
+            "generated, unpublished: run `kb publish`"
             in _dev_wrapper_body(name)
         ), name
 
@@ -755,7 +755,7 @@ def test_dev_plan_and_dev_implement_ticket_caveat_the_code_document_by_repo_stat
         assert "`kb code-ingest` not yet run" in _dev_wrapper_body(name), name
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert (
-            "`kb code-ingest` has not run yet in this repo"
+            "`kb code-ingest` for `<repo_id>-code`"
             in _dev_wrapper_body(name)
         ), name
 
@@ -1859,3 +1859,23 @@ def test_dev_implement_ticket_names_every_re_entry_case():
                        "--state closed", "two tickets in flight",
                        "git switch -c <ticket-id>", "gh not installed"):
             assert needle in body, f"{name}: {needle}"
+
+
+def test_quickstart_dev_separates_machine_enforced_from_prompt_only():
+    text = _read_init_template("QUICKSTART-dev.md")
+    _, _, rest = text.partition("## What is enforced")
+    machine, _, prompt_only = rest.partition("### Prompt-only")
+    assert "### Machine-enforced" in machine
+    assert "`kb pr lint`" in machine and "`kb build`" in machine
+    for rule in ("TDD", "verbatim", "read-only", "GATE 1", "OPEN(BA)"):
+        assert rule in prompt_only, rule
+    assert "nothing in `kb` enforces or measures" in prompt_only
+    assert "No such command 'pr'" not in text
+
+
+def test_dev_implement_ticket_ground_step_tells_generated_from_published():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        body = _dev_wrapper_body(name)
+        assert ".kb/<repo_id>-code/" in body, name
+        assert "generated, unpublished: run `kb publish`" in body, name
+        assert "is missing whenever" not in body, name
