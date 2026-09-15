@@ -271,12 +271,12 @@ def test_note_appends_a_row_by_hand(tmp_path: Path):
         app,
         ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
          "--model", "claude-opus-5", "--tokens-in", "10", "--tokens-out", "20",
-         "--kb-dir", str(d)],
+         "--assistant", "copilot", "--kb-dir", str(d)],
     )
 
     assert result.exit_code == 0, result.output
     (row,) = ledger.read_rows(d)
-    assert (row.ticket, row.phase, row.tokens_out, row.est) == ("ATM-7", "dev-plan", 20, False)
+    assert (row.ticket, row.phase, row.tokens_out, row.est) == ("ATM-7", "dev-plan", 20, True)
 
 
 def test_note_est_marks_the_row_as_an_estimate(tmp_path: Path):
@@ -321,6 +321,30 @@ def test_note_rejects_a_negative_token_count(tmp_path: Path):
 
     assert result.exit_code != 0
     assert ledger.read_rows(d) == []
+
+
+def test_note_requires_an_assistant(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
+         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
+         "--kb-dir", str(d)],
+    )
+    assert result.exit_code != 0
+    assert "--assistant" in result.output
+
+
+def test_note_measured_overrides_the_estimate_default(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    runner.invoke(
+        app,
+        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
+         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
+         "--measured", "--assistant", "cursor", "--kb-dir", str(d)],
+    )
+    (row,) = ledger.read_rows(d)
+    assert (row.est, row.assistant) == (False, "cursor")
 
 
 def test_report_writes_a_self_contained_html_file(tmp_path: Path):

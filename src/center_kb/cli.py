@@ -1246,9 +1246,13 @@ def usage_note(
     cache_write_1h: int = typer.Option(0, "--cache-write-1h", min=0),
     cache_write_5m: int = typer.Option(0, "--cache-write-5m", min=0),
     est: bool = typer.Option(
-        False, "--est", help="Mark the numbers as an estimate, not a measurement"
+        True, "--est/--measured",
+        help="A hand-entered row is a self-reported estimate (default); "
+        "--measured marks a figure read from the assistant's own meter",
     ),
-    assistant: str = typer.Option("claude-code", "--assistant"),
+    assistant: str = typer.Option(
+        ..., "--assistant", help="Which assistant made the calls, e.g. copilot, cursor"
+    ),
     session: str = typer.Option("", "--session"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
