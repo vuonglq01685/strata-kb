@@ -447,11 +447,13 @@ def check_review_record(text: str) -> list[Issue]:
 
     Once there is a real table, its SHAPE is checked at ERROR level: a
     malformed row, a wrong or missing header, no data rows at all, a
-    non-'gap-verifier' reviewer from round 2 on, or rounds that do not
-    increase. A fabricated or hand-edited row should be visible as a hard
-    failure, not a silent pass — that is what let reviewer E's T18
-    (`| 2026-09-08 | 1 | 5 | 5 |  |`, an empty reviewer cell with a
-    self-declared 5/5) through with no warning at all.
+    non-'gap-verifier' reviewer in rounds 2-3 (the gap-verifier pass,
+    docs/review-rubric.md — round 4 and beyond are outside that pass and
+    are not held to it, since a 4th round is itself only a warning), or
+    rounds that do not increase. A fabricated or hand-edited row should be
+    visible as a hard failure, not a silent pass — that is what let
+    reviewer E's T18 (`| 2026-09-08 | 1 | 5 | 5 |  |`, an empty reviewer
+    cell with a self-declared 5/5) through with no warning at all.
 
     Once the shape is sound, its JUDGMENT stays at WARNING level: a score
     below the maturity threshold, or more than the rubric's 3-round cap.
@@ -504,8 +506,9 @@ def check_review_record(text: str) -> list[Issue]:
             Issue(
                 "error",
                 f"'{REVIEW_RECORD_HEADING}' table header is "
-                f"{rows[0]} — expected "
-                "'| Date | Round | Business | Dev | Reviewer |'",
+                f"\"| {' | '.join(rows[0])} |\" — expected "
+                "'| Date | Round | Business | Dev | Reviewer |' "
+                "(rubric: docs/review-rubric.md)",
             )
         ]
     if len(rows) == 1:
@@ -521,13 +524,18 @@ def check_review_record(text: str) -> list[Issue]:
     issues: list[Issue] = []
     parsed: list[acquality.ReviewRow] = []
     previous: int | None = None
-    for cells in rows[1:]:
-        row = acquality.parse_review_row(cells)
-        if isinstance(row, str):
+    for position, cells in enumerate(rows[1:], start=1):
+        parsed_or_reason = acquality.parse_review_row(cells)
+        if isinstance(parsed_or_reason, str):
             issues.append(
-                Issue("error", f"'{REVIEW_RECORD_HEADING}' row {row}")
+                Issue(
+                    "error",
+                    f"'{REVIEW_RECORD_HEADING}' row {position} "
+                    f"{parsed_or_reason}",
+                )
             )
             continue
+        row = parsed_or_reason
         if previous is not None and row.round <= previous:
             issues.append(
                 Issue(
@@ -538,7 +546,10 @@ def check_review_record(text: str) -> list[Issue]:
                 )
             )
         previous = row.round
-        if row.round >= 2 and row.reviewer.strip().lower() != GAP_VERIFIER:
+        if (
+            2 <= row.round <= REVIEW_ROUND_CAP
+            and row.reviewer.strip().lower() != GAP_VERIFIER
+        ):
             issues.append(
                 Issue(
                     "error",

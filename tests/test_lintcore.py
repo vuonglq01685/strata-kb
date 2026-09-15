@@ -845,6 +845,23 @@ def test_a_well_formed_record_is_clean():
     assert lintcore.check_review_record(text) == []
 
 
+def test_gap_verifier_rule_does_not_reach_round_four():
+    """Rounds 2-3 are the gap-verifier pass (docs/review-rubric.md); round
+    4 is outside it and is itself only a warning ('more than 3 review
+    rounds'). A human reviewer signing round 4 must not also draw the
+    gap-verifier error — that would hard-fail a record for doing MORE
+    review than required, and the early return would hide the warning
+    that actually applies."""
+    rows = "".join(
+        f"| 2026-09-0{n} | {n} | 5 | 5 | "
+        f"{'gap-verifier' if n in (2, 3) else 'human-reviewer'} |\n"
+        for n in (1, 2, 3, 4)
+    )
+    issues = lintcore.check_review_record(_RECORD.format(rows=rows))
+    assert [i.level for i in issues] == ["warning"]
+    assert "more than 3 review rounds" in issues[0].message
+
+
 # --- Task 3: kb-context tags must exist on the federation ---
 
 
