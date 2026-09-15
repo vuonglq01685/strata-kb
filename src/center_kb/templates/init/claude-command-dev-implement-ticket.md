@@ -18,12 +18,13 @@ and subagent-driven-development.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
-`version:` matches the ticket's block, run `kb resolve --status-only
-<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
-cache; do NOT re-pull pinned content. No cache, version mismatch, or a
-non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
-rewrite the cache, keeping its `## Placeholder map`.
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
@@ -37,9 +38,10 @@ Steps the skill enforces: **Intake** reads the ticket's `## Dependencies`
 (`Blocked by:` / `Blocks:`) and, when a `> Parent mission:` line is
 present, that mission's `## Sequencing` row, and stops if there is no
 `kb-context` block to resolve; **Resolve** triages exactly as in the
-Freshness re-check above, then, after a full resolve, writes the cache
-file `docs/impl/<ticket-id>-context.md` — the block's `version:`, the
-resolve output verbatim, and a `## Placeholder map` section; **Ground**
+Freshness re-check above; the full resolve is `kb resolve --write-cache
+docs/impl/<ticket-id>-context.md <ticket-file>`, which writes the header
+and the resolved sections — you never edit above the
+`<!-- kb:placeholder-map -->` marker; **Ground**
 reads resolved L2, calling `kb_get_section` only for a section already
 chosen and escalating to L3 only for a value that will be encoded in code
 or tests, then searches within a 500–800 token budget for broad discovery
@@ -50,9 +52,9 @@ missing whenever `kb code-ingest` has not run yet in this repo,
 `<repo_id>-svc` is missing whenever this repo has not run `dev-code-seed`
 (or the seed is not yet published); **Placeholders** verifies every
 `%%TODO: verify against codebase%%` against the codebase, reports the list
-to the BA, **never edits the ticket**, records the map in the cache file's
-`## Placeholder map` table
-(`| placeholder | verified value | evidence (file:line or ref) |`), and
+to the BA, **never edits the ticket**, and records the map in the cache
+file's `## Placeholder map` table below the marker
+(`| placeholder | verified value | evidence (file:line or ref) |`); and
 anything unverifiable becomes `OPEN(BA)`; **Run the phases** invokes the
 `dev-design`, `dev-plan`, `dev-execute`, then `dev-handover` skills in
 order, detecting re-entry state from

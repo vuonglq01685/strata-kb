@@ -17,12 +17,13 @@ and subagent-driven-development.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
-`version:` matches the ticket's block, run `kb resolve --status-only
-<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
-cache; do NOT re-pull pinned content. No cache, version mismatch, or a
-non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
-rewrite the cache, keeping its `## Placeholder map`.
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
@@ -42,9 +43,10 @@ rewrite the cache, keeping its `## Placeholder map`.
   the ticket is not Ready.
 - **Resolve** — triage exactly as in the Freshness re-check above:
   `broken` → stop and report to the BA; `stale` → show both versions and
-  let the Dev decide; `ok` → continue. After a full resolve, write the
-  cache file `docs/impl/<ticket-id>-context.md`: the block's `version:`,
-  the resolve output verbatim, and a `## Placeholder map` section.
+  let the Dev decide; `ok` → continue. A full resolve is
+  `kb resolve --write-cache docs/impl/<ticket-id>-context.md <ticket-file>`:
+  the command writes the header and the resolved sections; you never
+  edit above the `<!-- kb:placeholder-map -->` marker.
 - **Ground** — read resolved L2; escalate to L3 via `kb_get_section … l3`
   (or `kb get <doc> <section> --level l3`) only for a value that will be
   encoded in code or tests, and call `kb_get_section` only for a section
@@ -62,8 +64,8 @@ rewrite the cache, keeping its `## Placeholder map`.
   the real name against the codebase and record `placeholder → verified
   value (file:line or code-knowledge ref)`; report the list to the BA;
   **never edit the ticket**; unverifiable here → `OPEN(BA)`. Record the
-  map in the cache file's `## Placeholder map` table (`| placeholder |
-  verified value | evidence (file:line or ref) |`).
+  map in the cache file's `## Placeholder map` table below the marker
+  (`| placeholder | verified value | evidence (file:line or ref) |`).
 - **Run the phases** — invoke the `dev-design` skill, then — after the Dev
   approves it — the `dev-plan` skill, then the `dev-execute` skill, then
   the `dev-handover` skill. On re-entry, detect state from

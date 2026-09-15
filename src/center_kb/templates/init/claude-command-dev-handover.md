@@ -15,12 +15,13 @@ pipeline, invoked once every task in the plan is ticked.
 
 ## Freshness re-check (run this FIRST, every time)
 
-Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
-`version:` matches the ticket's block, run `kb resolve --status-only
-<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
-cache; do NOT re-pull pinned content. No cache, version mismatch, or a
-non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
-rewrite the cache, keeping its `## Placeholder map`.
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
