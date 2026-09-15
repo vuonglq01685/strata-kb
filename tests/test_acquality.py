@@ -102,7 +102,13 @@ def test_means_word_inside_owned_marker_does_not_suppress_outside_phrase():
 @pytest.mark.parametrize(
     "body",
     ["", "TBD", "  tbd  ", "TODO", "N/A", "...", "…", "<...>", "-", "xxx",
-     "chưa rõ", "đang cập nhật"],
+     "chưa rõ", "đang cập nhật",
+     # I3: the shipped templates' own angle-bracket placeholders — a body
+     # that reduces to nothing but '<...>' spans (plus punctuation) once
+     # they are removed is unfilled, whatever prose sits inside the
+     # brackets.
+     "<role>",
+     "<context; every industry-standard claim cites `[doc-id §section]`>"],
 )
 def test_is_unfilled_true_for_placeholders(body):
     assert acquality.is_unfilled(body) is True
@@ -111,7 +117,10 @@ def test_is_unfilled_true_for_placeholders(body):
 @pytest.mark.parametrize(
     "body",
     ["The importer stores the designator.", "Bộ nhập lưu mã định danh.",
-     "5 seconds", "None", "N/A - no retention policy applies"],
+     "5 seconds", "None", "N/A - no retention policy applies",
+     # I3: a real '<' with no closing '>' anywhere (a comparison, not a
+     # placeholder) must not be mistaken for one.
+     "latency < 200 ms p95"],
 )
 def test_is_unfilled_false_for_real_content(body):
     assert acquality.is_unfilled(body) is False

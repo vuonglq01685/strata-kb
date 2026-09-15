@@ -107,6 +107,30 @@ def test_one_kb_context_block_still_parses():
     assert ctx.version == "272953a"
 
 
+def test_a_commented_out_block_plus_one_real_block_still_parses():
+    """I2: `_count_blocks` counted every bare 'kb-context:' key line
+    regardless of an enclosing HTML comment, so a commented-out old pin
+    left in place plus the current real block raised the new "2
+    'kb-context:' blocks found" error. Only the REAL block should count."""
+    text = (
+        "kb-context:\n"
+        '  version: "abc1234"\n'
+        "  refs:\n"
+        "    - a §1\n"
+        "\n"
+        "<!--\n"
+        "kb-context:\n"
+        '  version: "0000000"\n'
+        "  refs:\n"
+        "    - old §1\n"
+        "-->\n"
+    )
+
+    ctx = kbcontext.parse(text)
+
+    assert ctx.version == "abc1234"
+
+
 def test_parse_missing_version_raises():
     with pytest.raises(kbcontext.KBContextError, match="version"):
         kbcontext.parse("kb-context:\n  refs:\n    - a §1\n")

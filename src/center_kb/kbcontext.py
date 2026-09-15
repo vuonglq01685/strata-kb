@@ -42,6 +42,11 @@ class KBContext(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+# An HTML comment. `kbcontext` cannot import `lintcore.HTML_COMMENT_RE`
+# (lintcore imports kbcontext, so the reverse import would cycle) — kept
+# local rather than moved to a new shared module for one constant.
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
 _REF_RE = re.compile(
     r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
     r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s+§?(?P<sec>\S+)$"
@@ -177,8 +182,17 @@ def _extract_block(text: str) -> str:
 
 def _count_blocks(text: str) -> int:
     """How many bare 'kb-context:' key lines the text carries, at any
-    indent — the same line `_extract_block` anchors on."""
-    return sum(1 for line in text.splitlines() if _KEY_RE.match(line))
+    indent — the same line `_extract_block` anchors on.
+
+    HTML comments are stripped first: a commented-out old pin left in
+    place (a BA re-running `kb context new` and leaving the previous
+    block commented out instead of deleting it) is not rendered, so it
+    is not a second block either — only a REAL, visible block counts."""
+    return sum(
+        1
+        for line in _HTML_COMMENT_RE.sub("", text).splitlines()
+        if _KEY_RE.match(line)
+    )
 
 
 def parse(text: str) -> KBContext:

@@ -103,6 +103,13 @@ description — what that service is actually responsible for — and labels
 `Rel(...)` arrows between containers. Only write
 `%%TODO: verify against codebase%%` when **neither** document answers.
 
+The section reference itself, spelled the way a real citation is:
+
+```text
+<repo>-code §svc.<name>
+<repo>-svc §svc.<name>
+```
+
 **One caution:** `<repo>-svc` grounds a diagram — it is never a substitute
 for a domain citation in an Acceptance Criterion. A code/format/enum/
 threshold that encodes a standard still has to come from a pinned domain

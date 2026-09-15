@@ -109,16 +109,30 @@ _PLACEHOLDER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A '<...>' placeholder span, exactly as the shipped templates write one
+# ('<role>', '<context; every industry-standard claim cites
+# `[doc-id §section]`>'). Bounded at the first '>' and never crosses a
+# newline, so a real '<' used as a comparison with no closing '>' on the
+# same line ('latency < 200 ms p95') never matches at all — there is
+# nothing here for it to pair with.
+_ANGLE_PLACEHOLDER_RE = re.compile(r"<[^>\n]*>")
+
 
 def is_unfilled(visible: str) -> bool:
-    """True when `visible` says nothing: empty, or only placeholder
-    phrases and punctuation once they are removed.
+    """True when `visible` says nothing: empty, or only '<...>'
+    placeholder spans, placeholder phrases, and punctuation once they are
+    removed.
 
     `visible` is what a reader sees — callers pass
     `lintcore.visible_body(body)`, so the templates' guidance comments
-    never count as content.
+    never count as content. The angle-bracket spans are the templates'
+    OTHER placeholder shape: `<role>` or a whole unfilled section such as
+    `<context; ...>` carries real words inside the brackets, so a bare
+    "does this contain letters" check would wave it through — this must
+    strip the bracket span itself before judging what is left.
     """
-    remainder = _PLACEHOLDER_RE.sub("", visible)
+    remainder = _ANGLE_PLACEHOLDER_RE.sub("", visible)
+    remainder = _PLACEHOLDER_RE.sub("", remainder)
     return not re.sub(r"[\W_]+", "", remainder, flags=re.UNICODE)
 
 

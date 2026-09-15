@@ -1611,6 +1611,7 @@ def test_ci_gate_dispatch_loop_pins_stale_verdict(tmp_path):
             "KB_STUB_LOG": str(log_path),
             "KB_STUB_FAIL": "tickets/T-stale.md",
             "KB_STUB_RC": "2",
+            "KB_FAIL_ON_STALE": "1",
             "RUNNER_TEMP": str(tmp_path),
             "GITHUB_STEP_SUMMARY": str(summary_path),
         },
@@ -1620,6 +1621,13 @@ def test_ci_gate_dispatch_loop_pins_stale_verdict(tmp_path):
     assert result.returncode != 0
     summary = summary_path.read_text(encoding="utf-8")
     assert "| `tickets/T-stale.md` | STALE | 1 | 0 |" in summary
+    # The dispatch script forwards KB_FAIL_ON_STALE as --fail-on-stale
+    # (kb-ticket-lint.yml ~127-128) — pin that it actually reaches the CLI.
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    stale_line = next(
+        line for line in log_lines if "tickets/T-stale.md" in line
+    )
+    assert "--fail-on-stale" in stale_line
 
 
 @_needs_bash

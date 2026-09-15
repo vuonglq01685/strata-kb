@@ -9,6 +9,7 @@ the ticket contract.
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -385,6 +386,13 @@ def lint(
     missions_dir: Path | None = None,
     fail_on_stale: bool = False,
 ) -> LintReport:
+    # NFC-normalize once, at the one entry point every check reads from:
+    # `acquality`'s bilingual regexes (GWT_RE, _WEASEL_RE, _PLACEHOLDER_RE,
+    # _UNOWNED via owned_open_markers) match NFC only, and an NFD-encoded
+    # Vietnamese AC (macOS/IMEs spell an accented letter as base + combining
+    # mark) would otherwise mismatch every one of them — see
+    # `searchdb.tokenize`'s identical rationale and its test's NFD fixture.
+    text = unicodedata.normalize("NFC", text)
     issues: list[Issue] = []
     notes: list[str] = []
     issues += lintcore.check_title(text)

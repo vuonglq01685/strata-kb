@@ -8,6 +8,7 @@ pins and cites both.
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -234,6 +235,33 @@ def test_heading_inside_a_fence_is_reported_missing(
     assert report.passed is False
     assert any(
         "missing required heading: '## Summary'" in m for m in _errors(report)
+    )
+
+
+def test_leftover_comment_fence_marker_does_not_hide_an_unfilled_section(
+    fed_hub: Path, golden_block: str
+):
+    """C1: a bare ``` a BA left in place from the template's own
+    '<!-- paste an example like: ``` -->' guidance must not re-pair with
+    a LATER real fence (here, '## KB context's yaml fence) and blank
+    '## Use cases' out of the scan. BEFORE the `_blank_invisible` fix,
+    `section_body` returned None for '## Use cases' (mistaken for
+    "heading missing, already reported elsewhere"), so its literal
+    'TBD' body silently passed."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "<!-- paste an example like:\n```\n-->\n"
+                + _default_sections(golden_block)["## Acceptance Criteria"]
+            ),
+            "## Use cases": "TBD",
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any(
+        "'## Use cases' is empty or only placeholder text" in m
+        for m in _errors(report)
     )
 
 
@@ -1108,6 +1136,56 @@ def test_a_short_but_real_user_story_passes(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert not any("User Story part" in m for m in _errors(report))
+
+
+def test_nfd_vietnamese_gwt_ac_does_not_error(fed_hub: Path, golden_block: str):
+    """I1: `acquality.GWT_RE` (and the other bilingual regexes) match NFC
+    text only — an NFD-encoded accented letter (macOS/IMEs; the same
+    fixture shape as `test_searchdb_tokenize.py`) is base + combining
+    mark, which `\\b`/literal-phrase matching does not see as the
+    composed Vietnamese word. Normalizing once at the `lint()` boundary
+    must make an NFD Given/When/Then AC lint clean instead of reporting
+    'has no Given/When/Then'."""
+    # No digit, backtick, or dotted/CamelCase identifier anywhere in this
+    # line — MEASURABLE_RE must not be what accepts it; only GWT_RE can.
+    ac_line = unicodedata.normalize(
+        "NFD", "AC1: Giả sử có bản ghi vùng cấm, khi nhập, thì hệ thống lưu mã"
+    )
+    assert ac_line != unicodedata.normalize("NFC", ac_line)  # sanity: fixture is NFD
+
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                f"- [ ] {ac_line}\n"
+                "- [ ] AC2: Show ICAO designation per "
+                "[icao-kb:icao-annex-2 §1.1]"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("has no Given/When/Then" in m for m in _errors(report))
+
+
+def test_the_template_placeholder_user_story_fails(
+    fed_hub: Path, golden_block: str
+):
+    """I3: the shipped template's own verbatim placeholder line —
+    'As a <role>, I want <capability>, so that <value>.' — must not pass
+    as a real story. Each bracketed part has >= 2 letters INSIDE the
+    brackets ('role', 'capability', 'value'), so the length guard alone
+    let it through before `is_unfilled` learned to treat a '<...>'-only
+    part as unfilled."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## User Story": (
+                "As a <role>, I want <capability>, so that <value>."
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert sum("User Story part" in m for m in _errors(report)) == 3
 
 
 def test_an_unquantified_nfr_row_fails(fed_hub: Path, golden_block: str):

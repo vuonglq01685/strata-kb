@@ -263,6 +263,55 @@ def test_section_body_survives_a_trailing_fence_with_no_final_newline():
     assert "- [ ] AC2 — second" in body
 
 
+# --- _blank_invisible: comments must blank BEFORE fences (C1) ---
+
+
+def test_a_bare_fence_marker_inside_a_comment_does_not_swallow_later_headings():
+    """BEFORE: `_blank_invisible` blanked fences THEN comments, so a bare
+    ``` a BA left over from the template's own '<!-- paste an example
+    like: ``` -->' guidance re-paired with the NEXT real fence opener
+    later in the document (here, the '## KB context' yaml fence) and
+    blanked every heading in between — including '## Sequence diagram'
+    and '## Use cases' themselves. `section_body` then returned None for
+    a heading `check_headings` correctly says is present, so
+    `check_diagram`/`_check_required_filled` silently skip the section
+    instead of judging it. AFTER: comments are blanked first (mirroring
+    `_visible_text`), so the embedded backtick never reaches `FENCE_RE`."""
+    text = (
+        "## Acceptance Criteria\n"
+        "<!-- paste an example like:\n"
+        "```\n"
+        "-->\n"
+        "- [ ] AC1 — value 5\n"
+        "- [ ] AC2 — value 6\n"
+        "\n"
+        "## Sequence diagram\n"
+        "there is no diagram here at all\n"
+        "\n"
+        "## Use cases\n"
+        "TBD\n"
+        "\n"
+        "## KB context\n"
+        "```yaml\n"
+        "kb-context:\n"
+        '  version: "abc1234"\n'
+        "  refs:\n"
+        "    - a §1\n"
+        "```\n"
+    )
+
+    body = lintcore.section_body(text, "## Sequence diagram")
+
+    assert body is not None
+    assert "there is no diagram here at all" in body
+
+    issues = lintcore.check_diagram(
+        text, "## Sequence diagram", ("sequenceDiagram",)
+    )
+    assert [i.level for i in issues] == ["error"]
+    assert "must contain" in issues[0].message
+
+
 # --- check_diagram: line-start keyword anchoring ---
 
 

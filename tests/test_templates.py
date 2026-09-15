@@ -1718,13 +1718,22 @@ _CITATION_TEMPLATES = (
 
 @pytest.mark.parametrize("name", _CITATION_TEMPLATES)
 def test_every_citation_example_is_bracketed(name):
-    """A template that teaches the bare form teaches a migration
-    warning."""
+    """A template that teaches the bare form, in the text a BA might
+    actually copy into ticket prose, teaches a migration warning.
+
+    Scans `lintcore.citation_scan_text` — the same view the gate itself
+    scans (comments, fences, and kb-context blocks stripped) — rather
+    than the raw file: a template may show the real, un-bracketed
+    citation SYNTAX once inside a fenced block as reference material
+    (e.g. QUICKSTART-ba.md's '<repo>-code §svc.<name>'), which is never
+    prose a BA would paste verbatim and never reaches the gate's own
+    scan of a real ticket either."""
     text = _read_init_template(name)
+    scanned = lintcore.citation_scan_text(text)
     bare = [
         m.group(0)
         for m in lintcore.INLINE_CITE_RE.finditer(
-            lintcore.BRACKET_CITE_RE.sub("", text)
+            lintcore.BRACKET_CITE_RE.sub("", scanned)
         )
     ]
     assert bare == []

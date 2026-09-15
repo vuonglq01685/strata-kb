@@ -10,6 +10,7 @@ specific to the mission contract.
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -338,6 +339,10 @@ def lint(
     coverage check. Each omission is recorded as a note rather than
     silently passing.
     """
+    # NFC-normalize once, at the one entry point every check reads from —
+    # see ticketlint.lint's identical note (acquality's bilingual regexes
+    # match NFC only).
+    text = unicodedata.normalize("NFC", text)
     issues: list[Issue] = []
     notes: list[str] = []
 

@@ -45,7 +45,10 @@ def _visible_text(text: str) -> str:
     inside it is either). This is the one home for that ordering:
     `check_headings`'s and `check_recommended_sections`'s presence checks
     and `citation_scan_text` all scan this same view rather than each
-    re-typing the two `.sub()` calls in the same order."""
+    re-typing the two `.sub()` calls in the same order. `_blank_invisible`
+    below is a different view (it blanks rather than strips, for index
+    alignment) but MUST keep the same comments-before-fences order — see
+    its own docstring."""
     return FENCE_RE.sub("", HTML_COMMENT_RE.sub("", text))
 
 
@@ -176,20 +179,29 @@ def _blank_invisible(text: str) -> str:
     newline appears, so this one case needs the caller to pad rather than
     trust a 1:1 line correspondence — see `section_body`.
 
-    Deliberately NOT the same view as `visible_body`/`_visible_text`: this
-    function blanks FENCES then comments and keeps every line index
-    aligned with `text`, for `section_body`'s slicing. `visible_body` and
-    `_visible_text` strip COMMENTS then fences and return plain,
-    non-index-aligned text, for presence/emptiness/citation scans. Two
-    different contracts for two different jobs — see `section_body` for
-    why this one must stay index-aligned, and do not merge one into the
-    other.
+    Comments are blanked BEFORE fences — same order, same reason as
+    `_visible_text`: a commented-out region contributes no fence of its
+    own (it isn't rendered, so a bare ``` a BA left over from the
+    template's own '<!-- paste an example like: ``` -->' guidance is not
+    one either). Blanking fences FIRST (the pre-fix order) let that
+    embedded backtick re-pair with the next REAL fence opener later in
+    the document and swallow every heading in between — including the
+    section's own — so `section_body` returned None for a heading
+    `check_headings` correctly reports as present. This is the one
+    respect this function differs from `visible_body`/`_visible_text`:
+    this one BLANKS (replaces content with blank lines, keeping every
+    line index aligned with `text`, for `section_body`'s slicing) where
+    they STRIP (remove the matched span outright, returning plain,
+    non-index-aligned text, for presence/emptiness/citation scans) — two
+    different contracts for two different jobs, so do not merge one into
+    the other, but the comments-before-fences ORDER must stay the same
+    invariant in both.
     """
 
     def _blank(m: re.Match[str]) -> str:
         return "\n" * m.group(0).count("\n")
 
-    return HTML_COMMENT_RE.sub(_blank, FENCE_RE.sub(_blank, text))
+    return FENCE_RE.sub(_blank, HTML_COMMENT_RE.sub(_blank, text))
 
 
 def section_body(text: str, heading: str) -> str | None:
