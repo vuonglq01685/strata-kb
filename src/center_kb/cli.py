@@ -1546,7 +1546,9 @@ def publish(
         False, "--direct", help="Force direct mode (push straight to the hub's main)"
     ),
     require_reviewed: bool = typer.Option(
-        False, "--require-reviewed", help="Fail when any section is not reviewed"
+        False,
+        "--require-reviewed",
+        help="Fail when any section other than machine-authored `hist.*` is not reviewed",
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
@@ -1742,7 +1744,9 @@ def ci_publish(
         help="Intake base URL (default: .kb/config.yaml `intake:`)",
     ),
     require_reviewed: bool = typer.Option(
-        False, "--require-reviewed", help="Fail when any section is not reviewed"
+        False,
+        "--require-reviewed",
+        help="Fail when any section other than machine-authored `hist.*` is not reviewed",
     ),
 ) -> None:
     """Publish from the child's CI via OIDC — no secrets. Run by kb-publish.yml."""

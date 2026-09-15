@@ -3,6 +3,60 @@
 Releases before 0.21.0 are not recorded here -- they are tracked only through
 git tags and pull-request history.
 
+## 0.23.0
+
+### Breaking — `kb pr lint` checks more, `kb usage note` asks more
+
+- `## TDD exemptions` must read `none` or name only `config`, `ci`, `docs`,
+  `style` (one per line). Anything else fails the PR.
+- A `## Verification` fence must contain the plan's `cmd.test:` command
+  when `docs/impl/<ticket-id>-plan.md` carries one; the scaffolded
+  `kb-pr-lint.yml` now checks out the branch read-only to read it. No plan
+  or no id is a warning, not a failure. New flag `--plan-dir`.
+- `kb usage note` requires `--assistant` and records rows as estimates by
+  default (`--measured` to override).
+- The `kb usage note` examples in both scaffolded QUICKSTARTs now show
+  `--assistant`.
+
+### Added
+
+- `kb resolve --write-cache PATH` writes `docs/impl/<ticket-id>-context.md`
+  (header with version, ref set and sha256 + the resolved sections) and
+  keeps everything below `<!-- kb:placeholder-map -->`; `kb resolve
+  --status-only --cache PATH` refuses a cache whose version, ref set or
+  resolved block differs (exit 1). The 20 dev wrappers use both.
+- `kb init --lang <id>` forces a conventions pack; manifests are now found
+  up to three levels deep. `langs:` is recorded in `.kb/config.yaml`.
+- Unknown ids in `.kb/config.yaml` `langs:` are reported and skipped
+  instead of crashing `kb init`; a plain `--lang` against an
+  already-recorded `langs:` key reports the hand-edit needed.
+- Usage report: `(N estimated)`, per-assistant rows, "priced as" for
+  point-release ids (`claude-fable-5-1` → `claude-fable-5`) and the bare
+  `opus` / `sonnet` / `haiku` aliases, a markdown staleness warning, and a
+  hook-error count that `kb doctor` also reports.
+- `dev-design` writes `docs/impl/<ticket-id>-design.md` on every path with
+  `path:` / `status:` headers; GATE 1 and GATE 2 flip `status: approved`.
+  The State line and the orchestrator's re-entry table name draft, merged,
+  closed, missing-plan-with-commits and two-tickets-in-flight.
+
+### Fixed
+
+- The stale hint in `kb resolve` names `kb get … --level l3`, not the
+  forbidden `kb diff`.
+- The usage hook never creates a ghost `.kb/usage/` in the wrong directory.
+- `kb approve <doc>` without `--section` skips machine-authored `hist.*`.
+- `kb publish --require-reviewed` no longer counts machine-authored
+  `hist.*` sections (they are never flipped by a whole-doc approve); `kb
+  approve` says so when they are the only summarized sections left.
+- `kb usage report` reports the hook-error count even when the ledger is
+  empty, and `kb doctor` survives a non-UTF-8 hook log.
+- Java preset: 2-space indent to match google-java-format; `maxWarnings = 0`
+  is a tightening step, not the starting point. Python preset lints `T20`
+  and `N`; TS preset sets `no-console: error`. Every preset carries the one
+  tightening rule that `dev-plan` now points at.
+- QUICKSTART-dev separates what `kb` enforces from what the wrappers only
+  state.
+
 ## 0.22.0
 
 ### Breaking — the BA Definition-of-Ready gate now reads section bodies
