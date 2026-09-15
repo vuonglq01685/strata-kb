@@ -239,3 +239,52 @@ def test_render_names_the_failing_sections_and_to_json_round_trips():
     assert len(payload["findings"]) == len(REQUIRED_SECTIONS)
     assert payload["findings"][0]["code"] == "missing-section"
     assert lint_body(_body()).to_json() == {"passed": True, "findings": []}
+
+
+from center_kb.prlint import EXEMPTION_SLUGS, Finding, PRLintReport
+
+
+def test_the_four_exemption_slugs_are_the_canon():
+    assert EXEMPTION_SLUGS == frozenset({"config", "ci", "docs", "style"})
+
+
+def test_exemption_lines_naming_a_known_slug_pass():
+    body = _body(**{"TDD exemptions": (
+        "- config: ruff.toml — verified by running `ruff check .`\n"
+        "- docs — README only, rendered locally\n"
+        "Exempt: ci — verified by the workflow's own run on this PR\n"
+        "- `style`: renames, suite green before and after"
+    )})
+    assert lint_body(body).passed
+
+
+def test_none_still_passes_the_exemption_section():
+    assert lint_body(_body(**{"TDD exemptions": "None."})).passed
+
+
+def test_an_unknown_exemption_class_is_an_error():
+    report = lint_body(_body(**{"TDD exemptions": "Exempt: deadline"}))
+    assert not report.passed
+    (f,) = [f for f in report.findings if f.section == "TDD exemptions"]
+    assert f.code == "unknown-exemption-class"
+    assert f.level == "error"
+    for slug in ("config", "ci", "docs", "style"):
+        assert slug in f.message
+
+
+def test_prose_in_the_exemption_section_is_an_error():
+    body = _body(**{"TDD exemptions": "we skipped tests because it was late"})
+    assert ("TDD exemptions", "unknown-exemption-class") in _codes(body)
+
+
+def test_a_warning_level_finding_does_not_fail_the_report():
+    report = PRLintReport((Finding("Ticket", "x", "y", level="warning"),))
+    assert report.passed
+    assert report.warnings == report.findings
+    assert report.errors == ()
+    assert "warning" in report.render()
+    assert report.to_json()["findings"][0]["level"] == "warning"
+
+
+def test_findings_default_to_error_level():
+    assert Finding("Ticket", "x", "y").level == "error"

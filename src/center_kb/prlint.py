@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from typing import Literal
 
 REQUIRED_SECTIONS: tuple[str, ...] = (
     "Ticket",
@@ -52,12 +53,27 @@ _UNTERMINATED_COMMENT = re.compile(r"<!--.*\Z", re.DOTALL)
 # `## Verification` still needs a fence whatever it says. SENTINEL_SECTIONS
 # exists to word the error message, not to branch the logic.
 
+# The four exemption classes of `docs/tdd-exemptions.md`, mirrored here so
+# `## TDD exemptions` cannot pass on `Exempt: deadline` (reviewer F, H1).
+EXEMPTION_SLUGS: frozenset[str] = frozenset({"config", "ci", "docs", "style"})
+
+# One exemption per line, in either the plan's shape
+# (`Exempt: config — verified by …`) or a bullet (`- config: …`). The slug
+# may be back-ticked; the separator is `:`, `—`, `–` or `-`.
+_EXEMPTION_LINE = re.compile(
+    r"^(?:-\s*)?(?:Exempt:\s*)?`?(?P<slug>[a-z]+)`?\s*(?::|—|–|-)\s*\S"
+)
+_NONE = re.compile(r"^none\.?$", re.IGNORECASE)
+
+Level = Literal["error", "warning"]
+
 
 @dataclass(frozen=True)
 class Finding:
     section: str
     code: str
     message: str
+    level: Level = "error"
 
 
 @dataclass(frozen=True)
@@ -65,26 +81,45 @@ class PRLintReport:
     findings: tuple[Finding, ...]
 
     @property
+    def errors(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.level == "error")
+
+    @property
+    def warnings(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.level == "warning")
+
+    @property
     def passed(self) -> bool:
-        return not self.findings
+        return not self.errors
 
     def render(self) -> str:
         if self.passed:
-            return (
+            lines = [
                 f"PR description: PASS — all {len(REQUIRED_SECTIONS)} required "
                 "sections present and filled."
+            ]
+        else:
+            lines = [f"PR description: FAIL ({len(self.errors)} finding(s))"]
+            lines.extend(
+                f"  [{f.code}] ## {f.section}: {f.message}" for f in self.errors
             )
-        lines = [f"PR description: FAIL ({len(self.findings)} finding(s))"]
-        lines.extend(
-            f"  [{f.code}] ## {f.section}: {f.message}" for f in self.findings
-        )
+        if self.warnings:
+            lines.append("warnings:")
+            lines.extend(
+                f"  [{f.code}] ## {f.section}: {f.message}" for f in self.warnings
+            )
         return "\n".join(lines)
 
     def to_json(self) -> dict:
         return {
             "passed": self.passed,
             "findings": [
-                {"section": f.section, "code": f.code, "message": f.message}
+                {
+                    "section": f.section,
+                    "code": f.code,
+                    "message": f.message,
+                    "level": f.level,
+                }
                 for f in self.findings
             ],
         }
@@ -210,6 +245,33 @@ def _has_fenced_output(text: str) -> bool:
     return False
 
 
+def _exemption_finding(visible: str) -> Finding | None:
+    """`none`, or every non-blank line names one of EXEMPTION_SLUGS.
+
+    `_NONE` is checked against the text with markdown emphasis markers
+    stripped (`` ` ``, `_`, `*`) so the two sentinel sections keep accepting
+    the same "none" spellings (`` `None` ``, `_none_`) the emptiness check
+    already tolerated pre-Task-1 (test_none_is_a_valid_answer_...).
+    """
+    if _NONE.match(visible.strip().strip("`_*")):
+        return None
+    for line in visible.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = _EXEMPTION_LINE.match(stripped)
+        if m is None or m["slug"] not in EXEMPTION_SLUGS:
+            return Finding(
+                "TDD exemptions",
+                "unknown-exemption-class",
+                f"line {stripped[:60]!r} names no exemption class — each line "
+                "is `Exempt: <slug> — verified by <what>` (or `- <slug>: …`) "
+                f"with <slug> one of {', '.join(sorted(EXEMPTION_SLUGS))}, or "
+                "the whole section reads `none`",
+            )
+    return None
+
+
 def lint_body(body: str) -> PRLintReport:
     """Check a PR description against REQUIRED_SECTIONS."""
     found = _split_sections(body)
@@ -262,4 +324,8 @@ def lint_body(body: str) -> PRLintReport:
                     "and cmd.lint output; a claim is not evidence",
                 )
             )
+        if section == "TDD exemptions":
+            bad = _exemption_finding(visible)
+            if bad is not None:
+                findings.append(bad)
     return PRLintReport(tuple(findings))
