@@ -184,3 +184,34 @@ def test_an_override_unit_other_than_per_mtok_is_rejected(tmp_path: Path):
 
     with pytest.raises(ValidationError):
         prices.load_prices(tmp_path)
+
+
+def test_a_point_release_id_falls_back_to_its_family_row(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    assert prices.resolve_model(table, "claude-fable-5-1") == "claude-fable-5"
+    assert prices.resolve_model(table, "claude-opus-5-2-1") == "claude-opus-5"
+    assert prices.cost_of(row("u1", model="claude-fable-5-1", tokens_out=1_000_000,
+                              tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0),
+                          table) == 50.0
+
+
+def test_the_packaged_aliases_price_the_bare_family_names(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    assert table.aliases == {"opus": "claude-opus-5", "sonnet": "claude-sonnet-5",
+                             "haiku": "claude-haiku-4-5"}
+    assert prices.resolve_model(table, "opus") == "claude-opus-5"
+
+
+def test_a_genuinely_unknown_model_still_resolves_to_none(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    assert prices.resolve_model(table, "gpt-9") is None
+    assert prices.resolve_model(table, "claude-sonnet-4") is None
+
+
+def test_an_override_merges_aliases_per_key(tmp_path: Path):
+    (tmp_path / "usage-prices.yaml").write_text(
+        "aliases:\n  opus: claude-opus-4-8\n", encoding="utf-8"
+    )
+    table = prices.load_prices(tmp_path)
+    assert table.aliases["opus"] == "claude-opus-4-8"
+    assert table.aliases["sonnet"] == "claude-sonnet-5"

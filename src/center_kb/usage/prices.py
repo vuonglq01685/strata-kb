@@ -11,6 +11,7 @@ shows looks complete.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from importlib import resources
 from pathlib import Path
@@ -50,6 +51,7 @@ class PriceTable(BaseModel):
     currency: str = "USD"
     unit: str = "per_mtok"
     models: dict[str, ModelRates] = {}
+    aliases: dict[str, str] = {}
 
     @field_validator("effective_date", mode="before")
     @classmethod
@@ -94,15 +96,38 @@ def load_prices(kb_dir: Path) -> PriceTable:
         override = yaml.safe_load(override_path.read_text(encoding="utf-8")) or {}
         models = dict(data.get("models") or {})
         models.update(override.get("models") or {})
-        data = {**data, **override, "models": models}
+        aliases = dict(data.get("aliases") or {})
+        aliases.update(override.get("aliases") or {})
+        data = {**data, **override, "models": models, "aliases": aliases}
     return PriceTable.model_validate(data)
+
+
+_POINT_RELEASE = re.compile(r"-\d+$")
+
+
+def resolve_model(table: PriceTable, model: str) -> str | None:
+    """The table row that prices `model`: exact id, then an alias, then the
+    family row after stripping trailing `-<digits>` segments one at a time
+    (`claude-fable-5-1` → `claude-fable-5`). None when nothing matches."""
+    candidate = model
+    while True:
+        if candidate in table.models:
+            return candidate
+        alias = table.aliases.get(candidate)
+        if alias in table.models:
+            return alias
+        stripped = _POINT_RELEASE.sub("", candidate)
+        if stripped == candidate:
+            return None
+        candidate = stripped
 
 
 def cost_of(row: UsageRow, table: PriceTable) -> float | None:
     """USD for one row, or None when the model has no rates."""
-    rates = table.models.get(row.model)
-    if rates is None:
+    key = resolve_model(table, row.model)
+    if key is None:
         return None
+    rates = table.models[key]
     return (
         row.tokens_in * rates.input
         + row.tokens_out * rates.output

@@ -25,3 +25,11 @@ models:
   claude-sonnet-5:   {input: 3.0,  output: 15.0, cache_read: 0.30, cache_write_5m: 3.75, cache_write_1h: 6.0}
   claude-sonnet-4-6: {input: 3.0,  output: 15.0, cache_read: 0.30, cache_write_5m: 3.75, cache_write_1h: 6.0}
   claude-haiku-4-5:  {input: 1.0,  output:  5.0, cache_read: 0.10, cache_write_5m: 1.25, cache_write_1h: 2.0}
+
+# Bare family names Claude Code writes on some calls. A trailing
+# point-release suffix (`claude-fable-5-1`) needs no row: it falls back to
+# its family (`claude-fable-5`) and the report lists it under "priced as".
+aliases:
+  opus: claude-opus-5
+  sonnet: claude-sonnet-5
+  haiku: claude-haiku-4-5
