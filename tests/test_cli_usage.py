@@ -300,7 +300,7 @@ def test_note_refuses_an_unusable_ticket_id(tmp_path: Path):
         app,
         ["usage", "note", "--ticket", "../escape", "--phase", "dev-plan",
          "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
-         "--kb-dir", str(d)],
+         "--assistant", "copilot", "--kb-dir", str(d)],
     )
 
     assert result.exit_code == 1
