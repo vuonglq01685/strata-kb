@@ -13,8 +13,11 @@ from center_kb.prlint import REQUIRED_SECTIONS
 runner = CliRunner()
 
 GOOD = "\n\n".join(
-    f"## {name}\n\nfilled" if name != "Verification"
-    else "## Verification\n\n```\n12 passed in 0.4s\n```"
+    "## Verification\n\n```\n12 passed in 0.4s\n```"
+    if name == "Verification"
+    else "## TDD exemptions\n\nNone."
+    if name == "TDD exemptions"
+    else f"## {name}\n\nfilled"
     for name in REQUIRED_SECTIONS
 )
 
