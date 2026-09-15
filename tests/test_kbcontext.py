@@ -131,6 +131,33 @@ def test_a_commented_out_block_plus_one_real_block_still_parses():
     assert ctx.version == "abc1234"
 
 
+def test_a_commented_out_block_before_the_real_block_is_ignored():
+    """I2 follow-up: `_extract_block` scanned raw text for the FIRST
+    'kb-context:' line regardless of an enclosing HTML comment, so a
+    commented-out old pin placed BEFORE the real block was the one
+    actually parsed — agreeing with `_count_blocks` on the COUNT (1) is
+    not enough if the wrong block is the one extracted. `_extract_block`
+    must share `_count_blocks`'s comment-stripped view."""
+    text = (
+        "<!--\n"
+        "kb-context:\n"
+        '  version: "0000000"\n'
+        "  refs:\n"
+        "    - old §1\n"
+        "-->\n"
+        "\n"
+        "kb-context:\n"
+        '  version: "abc1234"\n'
+        "  refs:\n"
+        "    - a §1\n"
+    )
+
+    ctx = kbcontext.parse(text)
+
+    assert ctx.version == "abc1234"
+    assert [str(r) for r in ctx.refs] == ["a §1"]
+
+
 def test_parse_missing_version_raises():
     with pytest.raises(kbcontext.KBContextError, match="version"):
         kbcontext.parse("kb-context:\n  refs:\n    - a §1\n")
