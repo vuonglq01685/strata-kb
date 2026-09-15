@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from center_kb import gitio, kbcontext
 from center_kb.cli import app
+from tests.conftest import _make_stale
 from tests.test_ticketlint import REFS, _build_ticket, _hub
 
 runner = CliRunner()
@@ -249,3 +250,46 @@ def test_ticket_lint_resolves_sibling_missions_dir(fed_hub, tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "DoR: PASS" in result.output
+
+
+def test_lint_exits_2_when_only_the_ref_is_stale(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    path = tmp_path / "M-airspace-US1.md"
+    path.write_text(_build_ticket(block), encoding="utf-8")
+    _make_stale(fed_hub)
+
+    result = runner.invoke(
+        app,
+        ["ticket", "lint", str(path), "--hub", str(fed_hub),
+         "--fail-on-stale"],
+    )
+    assert result.exit_code == 2
+
+
+def test_lint_exits_1_when_something_else_also_fails(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    path = tmp_path / "M-airspace-US1.md"
+    path.write_text(
+        _build_ticket(block).replace("## Use cases", "## Use case"),
+        encoding="utf-8",
+    )
+    _make_stale(fed_hub)
+
+    result = runner.invoke(
+        app,
+        ["ticket", "lint", str(path), "--hub", str(fed_hub),
+         "--fail-on-stale"],
+    )
+    assert result.exit_code == 1
+
+
+def test_lint_exits_0_on_a_stale_ref_without_the_flag(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    path = tmp_path / "M-airspace-US1.md"
+    path.write_text(_build_ticket(block), encoding="utf-8")
+    _make_stale(fed_hub)
+
+    result = runner.invoke(
+        app, ["ticket", "lint", str(path), "--hub", str(fed_hub)]
+    )
+    assert result.exit_code == 0

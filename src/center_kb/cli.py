@@ -2091,6 +2091,13 @@ def ticket_lint(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    fail_on_stale: bool = typer.Option(
+        False,
+        "--fail-on-stale",
+        help="Treat a stale ref (the cited content changed upstream since "
+        "the pinned commit) as an error; exit 2 when that is the only "
+        "failure, mirroring `kb resolve`",
+    ),
 ) -> None:
     """Definition-of-Ready gate: lint a ticket against the DoR checklist."""
     from center_kb.ticketlint import lint
@@ -2142,13 +2149,24 @@ def ticket_lint(
             resolved_missions = sibling
 
     handle = _hub_or_exit(hub, kb_dir)
-    report = lint(text, handle, path=path, missions_dir=resolved_missions)
+    report = lint(
+        text,
+        handle,
+        path=path,
+        missions_dir=resolved_missions,
+        fail_on_stale=fail_on_stale,
+    )
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
         typer.echo(report.render())
-    if not report.passed:
-        raise typer.Exit(1)
+    if report.passed:
+        return
+    errors = sum(1 for i in report.issues if i.level == "error")
+    # Mirror `kb resolve`: 2 means "everything resolves, but the cited
+    # content moved", which a caller may want to treat differently from a
+    # ticket that is simply not ready.
+    raise typer.Exit(2 if report.stale_errors == errors else 1)
 
 
 @pr_app.command("lint")
@@ -2210,6 +2228,13 @@ def mission_lint(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    fail_on_stale: bool = typer.Option(
+        False,
+        "--fail-on-stale",
+        help="Treat a stale ref (the cited content changed upstream since "
+        "the pinned commit) as an error; exit 2 when that is the only "
+        "failure, mirroring `kb resolve`",
+    ),
 ) -> None:
     """Definition-of-Ready gate: lint a mission plan against the DoR checklist."""
     from center_kb.missionlint import lint
@@ -2262,13 +2287,24 @@ def mission_lint(
             resolved_tickets = sibling
 
     handle = _hub_or_exit(hub, kb_dir)
-    report = lint(text, handle, path=path, tickets_dir=resolved_tickets)
+    report = lint(
+        text,
+        handle,
+        path=path,
+        tickets_dir=resolved_tickets,
+        fail_on_stale=fail_on_stale,
+    )
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
         typer.echo(report.render())
-    if not report.passed:
-        raise typer.Exit(1)
+    if report.passed:
+        return
+    errors = sum(1 for i in report.issues if i.level == "error")
+    # Mirror `kb resolve`: 2 means "everything resolves, but the cited
+    # content moved", which a caller may want to treat differently from a
+    # mission that is simply not ready.
+    raise typer.Exit(2 if report.stale_errors == errors else 1)
 
 
 @app.command()

@@ -330,6 +330,7 @@ def lint(
     *,
     path: Path | None = None,
     tickets_dir: Path | None = None,
+    fail_on_stale: bool = False,
 ) -> LintReport:
     """Run the mission DoR gate. Checks run in spec §5.1 order.
 
@@ -363,7 +364,9 @@ def lint(
     backlog_issues, us_ids = check_backlog(text, mission_id)
     issues += backlog_issues
 
-    ctx_issues, _ctx = lintcore.check_context_block(text, hub)
+    ctx_issues, _ctx = lintcore.check_context_block(
+        text, hub, fail_on_stale=fail_on_stale
+    )
     issues += ctx_issues
 
     # Coverage is skipped — visibly — when the backlog itself is broken.

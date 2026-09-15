@@ -123,6 +123,13 @@ class LintReport:
     def passed(self) -> bool:
         return not any(i.level == "error" for i in self.issues)
 
+    @property
+    def stale_errors(self) -> int:
+        """Errors that exist only because `--fail-on-stale` promoted them."""
+        return sum(
+            1 for i in self.issues if i.level == "error" and i.code == "stale-ref"
+        )
+
     def to_json(self) -> dict:
         return {
             "pass": self.passed,
@@ -811,13 +818,17 @@ def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
 
 
 def check_context_block(
-    text: str, hub: "HubHandle | None"
+    text: str, hub: "HubHandle | None", *, fail_on_stale: bool = False
 ) -> tuple[list[Issue], KBContext | None]:
     """Parse the kb-context block, resolve its refs at the pinned version,
     validate its tags against the federation's tag vocabulary, and
     cross-check inline citations against it. Returns the issues and the
     parsed context (None when the block did not parse, in which case the
-    ref/citation checks are meaningless and are skipped)."""
+    ref/citation checks are meaningless and are skipped).
+
+    `fail_on_stale` promotes a stale ref from a warning to an error — the
+    default stays a warning (the 2026-07-17 spec's deliberate choice); the
+    flag exists so a caller (`kb ticket lint --fail-on-stale`) can opt in."""
     try:
         ctx = kbcontext.parse(text)
     except kbcontext.KBContextError as exc:
@@ -833,7 +844,9 @@ def check_context_block(
             )
         )
     else:
-        ctx_issues, _results = check_context(text, hub)
+        ctx_issues, _results = check_context(
+            text, hub, stale_level="error" if fail_on_stale else "warning"
+        )
         issues += ctx_issues
         issues += check_context_tags(ctx, hub)
     issues += check_citation_consistency(text, ctx)

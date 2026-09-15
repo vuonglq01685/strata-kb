@@ -383,6 +383,7 @@ def lint(
     *,
     path: Path | None = None,
     missions_dir: Path | None = None,
+    fail_on_stale: bool = False,
 ) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
@@ -401,7 +402,9 @@ def lint(
     )
     issues += lintcore.check_diagram(text, "## Business flow", ("flowchart",))
 
-    ctx_issues, _ctx = lintcore.check_context_block(text, hub)
+    ctx_issues, _ctx = lintcore.check_context_block(
+        text, hub, fail_on_stale=fail_on_stale
+    )
     issues += ctx_issues
 
     issues += _check_ac_citations(ac_items)

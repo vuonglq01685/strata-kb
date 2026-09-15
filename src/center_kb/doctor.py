@@ -21,6 +21,11 @@ if TYPE_CHECKING:
 class Issue:
     level: Literal["error", "warning"]
     message: str
+    # A stable machine tag for the checks a caller needs to tell apart —
+    # today only "stale-ref", so `kb ticket lint --fail-on-stale` can
+    # report exit code 2 ("only staleness failed") the way `kb resolve`
+    # does. Defaulted, so every existing construction is unchanged.
+    code: str = ""
 
 
 def _flatten(exc: Exception) -> str:
@@ -175,7 +180,10 @@ def check_asset_store(kb_dir: Path, handle, store=None) -> list[Issue]:
 
 
 def check_context(
-    text: str, hub: "HubHandle"
+    text: str,
+    hub: "HubHandle",
+    *,
+    stale_level: Literal["error", "warning"] = "warning",
 ) -> tuple[list[Issue], list[ResolvedRef]]:
     try:
         ctx = kbcontext.parse(text)
@@ -191,7 +199,7 @@ def check_context(
         if r.status == "broken":
             issues.append(Issue("error", f"{r.ref}: {r.reason}"))
         elif r.status == "stale":
-            issues.append(Issue("warning", f"{r.ref}: {r.reason}"))
+            issues.append(Issue(stale_level, f"{r.ref}: {r.reason}", "stale-ref"))
     return issues, results
 
 

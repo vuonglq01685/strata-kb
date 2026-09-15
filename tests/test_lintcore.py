@@ -48,6 +48,20 @@ def test_notes_appear_in_json():
     assert report.to_json()["notes"] == ["n1", "n2"]
 
 
+def test_stale_errors_counts_only_error_level_stale_ref_issues():
+    """`stale_errors` exists so a caller can tell 'only staleness failed'
+    (exit 2, mirroring `kb resolve`) apart from any other failure — a
+    still-a-warning stale ref and an unrelated error must not count."""
+    report = LintReport(
+        issues=[
+            Issue("error", "old ref", "stale-ref"),
+            Issue("error", "unrelated failure"),
+            Issue("warning", "still just a warning", "stale-ref"),
+        ]
+    )
+    assert report.stale_errors == 1
+
+
 # --- check_headings: fenced headings do not count as present ---
 
 

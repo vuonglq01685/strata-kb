@@ -123,9 +123,8 @@ checks:
   Acceptance Criteria, Use cases, both Mermaid diagrams, KB context,
   Definition of Ready).
 - Every `## KB context` ref resolves at its pinned hub commit — no
-  broken, malformed, or stale refs.
-- Every inline `doc-id §section` citation is backed by a pinned ref
-  (and vice versa) — citations and pins must agree.
+  broken or malformed refs.
+- Every inline `doc-id §section` citation is backed by a pinned ref.
 
 (See "Mission plans" above for what the mission gate checks.)
 
@@ -135,6 +134,15 @@ What lint does **not** enforce — still the BA's judgment call:
 - The business quality of the story itself.
 - Whether the maturity review actually happened: lint only warns when
   `## Review record` is missing, empty, or still holds the placeholder.
+- **Stale refs.** A ref still resolves after the cited section is amended
+  upstream; lint reports it as a warning and exits 0. Run
+  `kb ticket lint <file> --fail-on-stale` (exit 2 when staleness is the only
+  failure) or set the repo variable `KB_FAIL_ON_STALE` to make the CI gate
+  do it for you. `kb resolve <file> --status-only` reports the same thing on
+  its own.
+- **The reverse citation direction.** A pinned ref that the body never cites
+  is a warning, not an error — the pin may be background the ticket did not
+  need to quote.
 
 **Branch protection:** lint running in CI does not by itself block a
 merge. On the BA repo's GitHub settings, require the `kb-ticket-lint`

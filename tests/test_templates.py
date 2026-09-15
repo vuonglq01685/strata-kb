@@ -1676,3 +1676,11 @@ def test_claude_skill_summarize_contract_and_validation():
     assert "HARD LIMIT" in text and "≤ 25 words" in text
     assert "kb build --allow-pending --strict" in text
     assert "max 30 words" in text
+
+
+def test_quickstart_ba_does_not_claim_ci_enforces_stale_refs():
+    text = _read_init_template("QUICKSTART-ba.md")
+    enforced, _, not_enforced = text.partition("What lint does **not** enforce")
+    assert "stale" not in enforced.lower()
+    assert "stale" in not_enforced.lower()
+    assert "--fail-on-stale" in text
