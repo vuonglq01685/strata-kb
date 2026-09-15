@@ -20,6 +20,11 @@
 name: kb-ticket-lint
 on:
   pull_request:
+# One in-flight run per PR: a force-push should cancel the old gate, not
+# race it. Mirrors this project's own ci.yml.
+concurrency:
+  group: kb-ticket-lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 env:
@@ -30,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE_REF: ${{ github.base_ref }}
+      KB_FAIL_ON_STALE: ${{ vars.KB_FAIL_ON_STALE }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,11 +43,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install center-kb
+      - run: pip install center-kb=={version}
       - name: Authenticate the hub URL (private hub only)
         if: env.KB_HUB_TOKEN != ''
         run: |
-          echo "CENTER_KB_HUB=https://x-access-token:${KB_HUB_TOKEN}@${CENTER_KB_HUB#https://}" >> "$GITHUB_ENV"
+          # Split the scheme off generically and put it back: '#https://'
+          # mangled every hub that was not https (a self-hosted http hub
+          # became 'https://x-access-token:…@http://host/hub').
+          scheme="${CENTER_KB_HUB%%://*}"
+          rest="${CENTER_KB_HUB#*://}"
+          echo "CENTER_KB_HUB=${scheme}://x-access-token:${KB_HUB_TOKEN}@${rest}" >> "$GITHUB_ENV"
       - name: Lint changed tickets and missions (Definition of Ready)
         run: |
           # core.quotePath defaults to true, which makes `git diff --name-only`
@@ -89,6 +100,15 @@ jobs:
             "origin/${BASE_REF}..." \
             -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md' \
             > "$RUNNER_TEMP/changed.nul"
+          # Table header printed once, before any row — the per-file rows
+          # below each append one line, so a rewritten header per iteration
+          # would either repeat or need its own conditional.
+          {
+            echo "### DoR lint results"
+            echo
+            echo "| File | Verdict | Errors | Warnings |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
           while IFS= read -r -d '' f; do
             count=$((count + 1))
             case "$f" in
@@ -104,8 +124,26 @@ jobs:
               echo "::warning::skipping '$f' — not present in the checkout"
               continue
             fi
+            flags=""
+            if [ -n "${KB_FAIL_ON_STALE}" ]; then flags="--fail-on-stale"; fi
             echo "::group::$cmd $f"
-            $cmd "$f" --hub "$CENTER_KB_HUB" || status=1
+            if $cmd "$f" --hub "$CENTER_KB_HUB" $flags --json > "$RUNNER_TEMP/report.json"; then
+              verdict="PASS"
+            else
+              rc=$?
+              verdict="FAIL"
+              [ "$rc" -eq 2 ] && verdict="STALE"
+              status=1
+            fi
+            python - "$f" "$verdict" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os, sys
+          path, verdict = sys.argv[1], sys.argv[2]
+          report = json.load(open(os.environ["RUNNER_TEMP"] + "/report.json"))
+          print(f"| `{path}` | {verdict} | {len(report['errors'])} | {len(report['warnings'])} |")
+          for message in report["errors"]:
+              print(f"::error file={path}::{message}", file=sys.stderr)
+          PY
+            cat "$RUNNER_TEMP/report.json"
             echo "::endgroup::"
           done < "$RUNNER_TEMP/changed.nul"
           if [ "$count" -eq 0 ]; then

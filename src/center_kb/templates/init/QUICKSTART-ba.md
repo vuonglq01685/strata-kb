@@ -157,6 +157,22 @@ check would leave any PR touching neither directory waiting forever.
 Instead the job always starts, and its own lint step (above) is what
 decides there was nothing to check.
 
+### Configuring the CI gate
+
+The scaffolded `kb-ticket-lint` workflow reads these repository settings:
+
+| Setting | Where | What it is |
+|---|---|---|
+| `vars.CENTER_KB_HUB` | Settings → Secrets and variables → Actions → **Variables** | The hub URL or path the gate resolves refs against |
+| `secrets.KB_HUB_TOKEN` | same page → **Secrets** | A token with read access, for a private hub only |
+| `vars.KB_FAIL_ON_STALE` | **Variables**, optional | Set to any value to make an upstream amendment fail the gate |
+
+A pull request opened **from a fork** cannot read repository secrets, so on
+a private hub the gate fails there with a hub-unreachable message. That is
+the gate refusing to go green without checking, not a network fault — merge
+fork contributions through a branch in this repository, or make the hub
+readable without a token.
+
 ## Upgrading an existing BA repo
 
 Re-run `kb init --kind ba` to pick up new templates. This only ever

@@ -1230,14 +1230,42 @@ def _replace_git_diff_with_synthetic_paths(run_script: str, paths: list[str]) ->
 
 
 _KB_STUB_BODY = (
-    "import os, sys\n"
+    "import json, os, sys\n"
+    "argv = sys.argv[1:]\n"
     "log = os.environ.get('KB_STUB_LOG')\n"
     "if log:\n"
     "    with open(log, 'a', encoding='utf-8') as fh:\n"
-    "        fh.write('\\t'.join(sys.argv[1:]) + '\\n')\n"
+    "        fh.write('\\t'.join(argv) + '\\n')\n"
     "fail_markers = [m for m in os.environ.get('KB_STUB_FAIL', '').split(os.pathsep) if m]\n"
-    "sys.exit(1 if any(a in fail_markers for a in sys.argv[1:]) else 0)\n"
+    "failed = any(a in fail_markers for a in argv)\n"
+    # Task 13 (MEDIUM-6): the real dispatch step always passes --json and
+    # parses the report for its step-summary table, so the stub must emit
+    # the same {pass, errors, warnings, notes} shape kb ticket/mission lint
+    # --json actually produces (lintcore.LintReport.to_json), or the
+    # dispatch step's own `json.load` blows up on empty/missing output.
+    "if '--json' in argv:\n"
+    "    print(json.dumps({\n"
+    "        'pass': not failed,\n"
+    "        'errors': ['stub configured to fail'] if failed else [],\n"
+    "        'warnings': [],\n"
+    "        'notes': [],\n"
+    "    }))\n"
+    "sys.exit(1 if failed else 0)\n"
 )
+
+
+def _write_python_shim(bindir: Path) -> None:
+    """The dispatch step's `python -` heredoc (Task 13, MEDIUM-6) relies on
+    a bare `python` on PATH — guaranteed on a real GitHub Actions runner by
+    `actions/setup-python`, but not on every dev box (macOS ships only
+    `python3`). Shim it in the same bindir the `kb` stub already lives in,
+    so these hermetic subprocess tests don't depend on the host's PATH."""
+    bindir.mkdir(parents=True, exist_ok=True)
+    shim = bindir / "python"
+    shim.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8", newline="\n"
+    )
+    shim.chmod(shim.stat().st_mode | 0o111)
 
 
 @_needs_bash
@@ -1294,6 +1322,7 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
 
     bindir = tmp_path / "bin"
     write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
     log_path = tmp_path / "kb.log"
 
     base_env = {
@@ -1303,6 +1332,9 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
         "CENTER_KB_HUB": "https://example.invalid/hub",
         "KB_STUB_LOG": str(log_path),
         "RUNNER_TEMP": str(tmp_path),
+        # Real GitHub Actions always provides this; the dispatch step now
+        # writes its per-file summary table there (Task 13, MEDIUM-6).
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
     }
 
     # --- Run 1: nothing configured to fail. ---
@@ -1317,12 +1349,14 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     log_lines = log_path.read_text(encoding="utf-8").splitlines()
 
     # Dispatch pairing: missions/ -> mission lint, tickets/ -> ticket lint.
+    # Trailing `--json` (Task 13, MEDIUM-6): the dispatch step now always
+    # requests a machine-readable report for its step-summary table.
     assert (
-        "mission\tlint\tmissions/M-Đăng-nhập.md\t--hub\thttps://example.invalid/hub"
+        "mission\tlint\tmissions/M-Đăng-nhập.md\t--hub\thttps://example.invalid/hub\t--json"
         in log_lines
     )
     assert (
-        "ticket\tlint\ttickets/T-new.md\t--hub\thttps://example.invalid/hub"
+        "ticket\tlint\ttickets/T-new.md\t--hub\thttps://example.invalid/hub\t--json"
         in log_lines
     )
     # The deleted ticket was never handed to `kb` at all.
@@ -1448,6 +1482,7 @@ def test_ci_gate_prints_notice_and_exits_zero_when_nothing_changed(tmp_path):
             "BASE_REF": "main",
             "CENTER_KB_HUB": "https://example.invalid/hub",
             "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
         },
         capture_output=True,
         text=True,
@@ -1486,6 +1521,7 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
 
     bindir = tmp_path / "bin-synthetic"
     write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
     log_path = tmp_path / "kb-synthetic.log"
 
     result = subprocess.run(
@@ -1499,6 +1535,7 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
             "KB_STUB_LOG": str(log_path),
             "KB_STUB_FAIL": "",
             "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
         },
         capture_output=True,
         text=True,
@@ -2305,6 +2342,22 @@ def test_no_template_leaves_an_unfilled_version_placeholder(tmp_path):
         for path in dest.rglob("*"):
             if path.is_file() and path.suffix in {".yml", ".yaml"}:
                 assert "{version}" not in path.read_text(encoding="utf-8")
+
+
+from importlib.metadata import version as _dist_version
+
+
+@pytest.mark.parametrize(
+    ("kind", "workflow"),
+    [("ba", "kb-ticket-lint.yml"), ("dev", "kb-pr-lint.yml")],
+)
+def test_scaffolded_workflows_pin_the_cli(tmp_path, kind, workflow):
+    initcmd.init_repo(tmp_path, kind)
+    text = (tmp_path / ".github" / "workflows" / workflow).read_text(
+        encoding="utf-8"
+    )
+    assert f"pip install center-kb=={_dist_version('center-kb')}" in text
+    assert "{version}" not in text
 
 
 def test_hub_and_child_scaffolds_pin_lf_line_endings(tmp_path):

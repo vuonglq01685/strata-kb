@@ -1731,3 +1731,30 @@ def test_every_citation_example_is_bracketed(name):
 
 def test_the_ticket_template_shows_the_bracketed_form():
     assert "[doc-id §section]" in _read_init_template("ticket-template.md")
+
+
+# --- Task 13 (MEDIUM-6): pinned CLI, concurrency, annotated failures --------
+
+
+def test_ticket_lint_workflow_has_a_concurrency_block():
+    assert "concurrency:" in _read_init_template("kb-ticket-lint.yml")
+
+
+def test_ticket_lint_workflow_annotates_and_summarises():
+    text = _read_init_template("kb-ticket-lint.yml")
+    assert "--json" in text
+    assert "GITHUB_STEP_SUMMARY" in text
+    assert "::error file=" in text
+
+
+def test_ticket_lint_workflow_keeps_a_non_https_hub_scheme():
+    assert "${CENTER_KB_HUB#https://}" not in _read_init_template(
+        "kb-ticket-lint.yml"
+    )
+
+
+def test_quickstart_ba_documents_the_ci_variables():
+    text = _read_init_template("QUICKSTART-ba.md")
+    assert "vars.CENTER_KB_HUB" in text
+    assert "secrets.KB_HUB_TOKEN" in text
+    assert "fork" in text.lower()
