@@ -75,7 +75,7 @@ row here, with an owner. -->
 kb-context:
   version: "<hub commit>"
   refs:
-    - [repo:doc-id §section]
+    - <repo:doc-id> §<section>
   tags: [ … ]
 ```
 

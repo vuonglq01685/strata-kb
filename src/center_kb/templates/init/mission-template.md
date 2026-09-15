@@ -75,7 +75,7 @@ closed BEFORE foundational stories start. -->
 kb-context:
   version: "<hub commit>"
   refs:
-    - [repo:doc-id §section]
+    - <repo:doc-id> §<section>
   tags: [ … ]
 ```
 
