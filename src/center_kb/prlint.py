@@ -51,10 +51,12 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 # nobody reviewing the PR can actually see.
 _UNTERMINATED_COMMENT = re.compile(r"<!--.*\Z", re.DOTALL)
 
-# There is deliberately no `none` matcher. `none` is ordinary non-empty text,
-# so the emptiness check already accepts it in the two sentinel sections, and
-# `## Verification` still needs a fence whatever it says. SENTINEL_SECTIONS
-# exists to word the error message, not to branch the logic.
+# The `none` matcher below (`_NONE`) exists only for the exemption-class
+# check on `## TDD exemptions`; emptiness still handles the rest — `none` is
+# ordinary non-empty text there too, so the emptiness check alone accepts it
+# in `## Findings`, and `## Verification` still needs a fence whatever it
+# says. SENTINEL_SECTIONS exists to word the error message, not to branch
+# that part of the logic.
 
 # The four exemption classes of `docs/tdd-exemptions.md`, mirrored here so
 # `## TDD exemptions` cannot pass on `Exempt: deadline` (reviewer F, H1).
