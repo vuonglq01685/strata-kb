@@ -1789,3 +1789,13 @@ def test_quickstart_ba_documents_the_ci_variables():
     assert "vars.CENTER_KB_HUB" in text
     assert "secrets.KB_HUB_TOKEN" in text
     assert "fork" in text.lower()
+
+
+def test_pr_workflow_checks_out_the_branch_read_only_for_the_plan_file():
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-pr-lint.yml"))
+    steps = wf["jobs"]["pr-lint"]["steps"]
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
+    assert checkout["with"]["persist-credentials"] is False
+    assert steps.index(checkout) < steps.index(next(s for s in steps if "Check the PR" in s.get("name", "")))

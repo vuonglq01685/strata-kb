@@ -1,7 +1,9 @@
 """Lint a pull-request description against the required-section canon.
 
-Pure text: no hub access, no git, no network, standard library only — so the
-CI job that runs it needs no checkout, no token, and works on fork PRs.
+Pure text plus a local plan-file read: no hub access, no git, no network,
+standard library only — so the CI job that runs it needs only a read-only
+checkout (for `docs/impl/<ticket-id>-plan.md`), no token, and works on fork
+PRs.
 
 `REQUIRED_SECTIONS` below is the single source of truth for the section list.
 The shipped PR template and the `dev-handover` wrappers are pinned against it
@@ -14,6 +16,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 REQUIRED_SECTIONS: tuple[str, ...] = (
@@ -228,21 +231,82 @@ def _visible(content: str) -> str:
     return text.strip()
 
 
-def _has_fenced_output(text: str) -> bool:
-    """True when a fenced block holds at least one non-blank line."""
+_TICKET_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
+_CMD_TEST = re.compile(r"^cmd\.test:\s*(?P<cmd>\S.*?)\s*$", re.MULTILINE)
+
+
+def ticket_id_of(visible_ticket_section: str) -> str | None:
+    """First `ABC-12`-shaped token in the visible `## Ticket` text."""
+    m = _TICKET_ID.search(visible_ticket_section)
+    return m.group(0) if m else None
+
+
+def plan_cmd_test(plan_dir: Path, ticket_id: str) -> str | None:
+    """The plan's `cmd.test:` header value, back-ticks stripped; None when the
+    plan or the line is absent (an unreadable plan reads as absent)."""
+    try:
+        text = (plan_dir / f"{ticket_id}-plan.md").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = _CMD_TEST.search(text)
+    return m["cmd"].strip("`").strip() if m else None
+
+
+def _fenced_blocks(text: str) -> list[str]:
+    """The bodies of every balanced fenced block, in order."""
+    blocks: list[str] = []
     open_fence = ""
+    current: list[str] = []
     for line in text.split("\n"):
         marker = _is_fence(line)
         if not open_fence:
             if marker:
                 open_fence = marker
+                current = []
             continue
         if marker == open_fence:
+            blocks.append("\n".join(current))
             open_fence = ""
             continue
-        if line.strip():
-            return True
-    return False
+        current.append(line)
+    return blocks
+
+
+def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding]:
+    """The cmd.test check, or the one warning saying why it did not run."""
+    if plan_dir is None:
+        return [Finding("Verification", "plan-dir-unset",
+                        "no plan directory given — the cmd.test check did not run",
+                        level="warning")]
+    ticket_id = ticket_id_of(_visible(first.get("Ticket", "")))
+    if ticket_id is None:
+        return [Finding("Ticket", "ticket-id-unparsed",
+                        "no ABC-12-shaped ticket id found, so the plan's cmd.test "
+                        "could not be checked — start the section with the id",
+                        level="warning")]
+    plan_path = plan_dir / f"{ticket_id}-plan.md"
+    if not plan_path.is_file():
+        return [Finding("Verification", "plan-missing",
+                        f"{plan_path} not found — the cmd.test check did not run "
+                        "(spike or no plan yet)",
+                        level="warning")]
+    cmd = plan_cmd_test(plan_dir, ticket_id)
+    if cmd is None:
+        return [Finding("Verification", "cmd-test-unset",
+                        f"{plan_path} has no `cmd.test:` header line — the "
+                        "cmd.test check did not run",
+                        level="warning")]
+    fences = _fenced_blocks(_visible(first.get("Verification", "")))
+    if any(cmd in block for block in fences):
+        return []
+    return [Finding("Verification", "verification-missing-cmd",
+                    f"no fenced block contains the plan's cmd.test `{cmd}` "
+                    f"(from {plan_path}) — paste that command's real run")]
+
+
+def _has_fenced_output(text: str) -> bool:
+    """True when a fenced block holds at least one non-blank line."""
+    return any(block.strip() for block in _fenced_blocks(text))
 
 
 def _exemption_finding(visible: str) -> Finding | None:
@@ -272,7 +336,7 @@ def _exemption_finding(visible: str) -> Finding | None:
     return None
 
 
-def lint_body(body: str) -> PRLintReport:
+def lint_body(body: str, *, plan_dir: Path | None = None) -> PRLintReport:
     """Check a PR description against REQUIRED_SECTIONS."""
     found = _split_sections(body)
     counts = Counter(name for name, _ in found)
@@ -328,4 +392,5 @@ def lint_body(body: str) -> PRLintReport:
             bad = _exemption_finding(visible)
             if bad is not None:
                 findings.append(bad)
+    findings.extend(_plan_findings(first, plan_dir))
     return PRLintReport(tuple(findings))

@@ -2180,6 +2180,12 @@ def pr_lint(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    plan_dir: Path = typer.Option(
+        Path("docs/impl"),
+        "--plan-dir",
+        help="Where docs/impl/<ticket-id>-plan.md lives; its `cmd.test:` line "
+        "must appear inside a Verification fence. Absent plan = warning.",
+    ),
 ) -> None:
     """Gate: every required PR section is present and actually filled in.
 
@@ -2204,7 +2210,7 @@ def pr_lint(
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
 
-    report = lint_body(text)
+    report = lint_body(text, plan_dir=plan_dir)
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
