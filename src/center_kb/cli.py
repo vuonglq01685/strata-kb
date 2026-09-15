@@ -2049,11 +2049,31 @@ def resolve(
         help="Print only the citation + freshness verdict per ref, no "
         "section content — for cheap re-checks against a context cache.",
     ),
+    write_cache: Path | None = typer.Option(
+        None,
+        "--write-cache",
+        help="Also write docs/impl/<ticket-id>-context.md: header (version, "
+        "refs, sha256) + the resolved sections; everything below the "
+        "`<!-- kb:placeholder-map -->` marker is kept from the existing file.",
+    ),
+    cache: Path | None = typer.Option(
+        None,
+        "--cache",
+        help="With --status-only: validate this context cache against the "
+        "ticket (version, ref set, sha256 of the resolved block); a bad or "
+        "missing cache exits 1.",
+    ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
     from center_kb import gitio, kbcontext
-    from center_kb.resolve import render_resolved, resolve_refs
+    from center_kb.resolve import render_resolved, resolve_refs, render_cache, cache_problem
 
+    if write_cache is not None and status_only:
+        typer.secho("--write-cache needs a full resolve; drop --status-only", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if cache is not None and not status_only:
+        typer.secho("--cache only makes sense with --status-only", fg=typer.colors.RED)
+        raise typer.Exit(1)
     if source == "-":
         text = sys.stdin.read()
     else:
@@ -2070,7 +2090,38 @@ def resolve(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.echo(render_resolved(results, include_content=not status_only))
-    if any(r.status == "broken" for r in results):
+    if write_cache is not None:
+        from datetime import date
+
+        previous = (
+            write_cache.read_text(encoding="utf-8") if write_cache.exists() else None
+        )
+        stem = write_cache.stem.removesuffix("-context")
+        try:
+            write_cache.parent.mkdir(parents=True, exist_ok=True)
+            write_cache.write_text(
+                render_cache(ctx.version, results, today=date.today().isoformat(),
+                             stem=stem, previous=previous),
+                encoding="utf-8", newline="\n",
+            )
+        except OSError as exc:
+            typer.secho(f"could not write cache '{write_cache}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    cache_bad = False
+    if cache is not None:
+        if not cache.is_file():
+            typer.echo(f"!! cache-missing: {cache}")
+            cache_bad = True
+        else:
+            try:
+                cache_text = cache.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                cache_text = ""
+            problem = cache_problem(cache_text, ctx.version, results) if cache_text else "header"
+            if problem:
+                typer.echo(f"!! cache-invalid: {problem}")
+                cache_bad = True
+    if cache_bad or any(r.status == "broken" for r in results):
         raise typer.Exit(1)
     if any(r.status == "stale" for r in results):
         raise typer.Exit(2)
