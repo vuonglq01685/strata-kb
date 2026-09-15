@@ -77,12 +77,12 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
 6. **Lint** — run `kb ticket lint <file>` (CLI, primary), or the MCP tool
    `kb_ticket_lint` as a fallback. Fix every error and re-run until it
    reports `DoR: PASS`. Report any remaining warnings to the BA.
-7. **Maturity review** — once lint reports `DoR: PASS`, run TWO
+7. **Maturity review** — once lint reports `DoR: PASS`, read
+   `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
+   exists — the local file overrides the base one (same for
+   `docs/ac-quality.md` and `docs/ac-quality.local.md`). Run TWO
    sequential review passes yourself, one role per pass — never blend
-   the perspectives. Read `docs/review-rubric.md`, then
-   `docs/review-rubric.local.md` if it exists — the local file
-   overrides the base one. Same for `docs/ac-quality.md` and
-   `docs/ac-quality.local.md`:
+   the perspectives:
    - Pass 1, *Business-coverage reviewer* — act as PO/stakeholder;
      score the "Business coverage" axis of the rubric.
    - Pass 2, *Dev-implementability reviewer* — act as the dev who picks

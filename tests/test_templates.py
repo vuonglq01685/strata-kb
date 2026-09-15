@@ -1106,6 +1106,10 @@ BA_WRAPPERS = (
 def test_every_ba_wrapper_names_the_local_override(name):
     text = _read_init_template(name)
     assert "docs/review-rubric.local.md" in text
+    # Task 11 review Minor 2: pin the ac-quality half too, so a future
+    # reflow can't silently drop it from any wrapper while this test
+    # keeps passing on the rubric half alone.
+    assert "docs/ac-quality.local.md" in text
 
 
 def _ba_wrapper_text(name: str) -> str:

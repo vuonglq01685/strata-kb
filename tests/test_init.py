@@ -884,6 +884,24 @@ def test_cli_init_ba_next_steps(tmp_path: Path):
     assert "kb ingest" not in result.output
 
 
+def test_cli_init_local_override_skip_has_no_force_hint(tmp_path: Path):
+    """Task 11 review Important 1: `--force` cannot touch a `.local.md`
+    override (scaffold_ba_local_overrides takes no `force` parameter and
+    the call site passes none), so the CLI must not tell a BA it can.
+    A genuinely protected file's skip line still carries the hint.
+    """
+    runner.invoke(app, ["init", str(tmp_path), "--kind", "ba"])
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", "ba"])
+    assert result.exit_code == 0
+    lines = result.output.splitlines()
+    local_lines = [ln for ln in lines if "review-rubric.local.md" in ln]
+    assert local_lines, result.output
+    assert "--force" not in local_lines[0], local_lines[0]
+    protected_lines = [ln for ln in lines if ln.strip().startswith("skipped") and ".kb/config.yaml" in ln]
+    assert protected_lines, result.output
+    assert "--force" in protected_lines[0], protected_lines[0]
+
+
 def test_cli_init_assets_rejected_for_ba(tmp_path: Path):
     result = runner.invoke(
         app, ["init", str(tmp_path), "--kind", "ba", "--assets", "s3"]

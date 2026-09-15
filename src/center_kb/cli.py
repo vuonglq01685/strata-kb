@@ -173,7 +173,7 @@ def init(
     ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
-    from center_kb.initcmd import init_repo
+    from center_kb.initcmd import PROTECTED_FILES, init_repo
 
     resolved = _resolve_kind(path, kind)
     if assets is not None and resolved != "hub":
@@ -189,10 +189,13 @@ def init(
     for rel in report.updated:
         typer.echo(f"  updated  {rel}")
     for rel in report.skipped:
-        typer.secho(
-            f"  skipped  {rel} (protected data — use --force to overwrite)",
-            fg=typer.colors.YELLOW,
-        )
+        # `--force` only re-writes PROTECTED_FILES; a `.local.md` override
+        # (or any other skip entry, e.g. `.gitignore`'s merge-only skip)
+        # already carries its own explanation and `--force` cannot touch
+        # it, so the hint below must not be printed for those — it would
+        # tell a BA/dev a flag exists that provably cannot do what it says.
+        hint = " (protected data — use --force to overwrite)" if rel in PROTECTED_FILES else ""
+        typer.secho(f"  skipped  {rel}{hint}", fg=typer.colors.YELLOW)
     for note in report.notes:
         typer.secho(f"  note     {note}", fg=typer.colors.YELLOW)
     typer.echo(

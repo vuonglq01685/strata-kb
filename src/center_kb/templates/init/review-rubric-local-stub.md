@@ -14,3 +14,8 @@ where the two disagree, this file wins.
 ## Dev implementability — extra checklist items
 
 <!-- e.g. - [ ] Every AC touching the feed names the record type. -->
+
+## Base items we do not apply
+
+<!-- e.g. - [ ] (Business coverage) "Every screen names its owning team" —
+     we're a single-team repo; this criterion never applies here. -->
