@@ -2097,18 +2097,18 @@ def resolve(
     if write_cache is not None:
         from datetime import date
 
-        previous = (
-            write_cache.read_text(encoding="utf-8") if write_cache.exists() else None
-        )
         stem = write_cache.stem.removesuffix("-context")
         try:
+            previous = (
+                write_cache.read_text(encoding="utf-8") if write_cache.exists() else None
+            )
             write_cache.parent.mkdir(parents=True, exist_ok=True)
             write_cache.write_text(
                 render_cache(ctx.version, results, today=date.today().isoformat(),
                              stem=stem, previous=previous),
                 encoding="utf-8", newline="\n",
             )
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             typer.secho(f"could not write cache '{write_cache}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
     cache_bad = False
