@@ -171,6 +171,13 @@ def init(
         help="Hub asset storage: none (assets in git, default) or s3 "
         "(object store — spec B). Hub kind only.",
     ),
+    lang: list[str] = typer.Option(
+        [],
+        "--lang",
+        help="Force a conventions pack for a language whose manifest is not "
+        "detectable (repeatable): python, ts, java, go, dotnet, php. Dev kind only; "
+        "recorded in .kb/config.yaml so a plain re-init keeps it.",
+    ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
     from center_kb.initcmd import PROTECTED_FILES, init_repo
@@ -183,7 +190,21 @@ def init(
             fg=typer.colors.RED,
         )
         raise typer.Exit(2)
-    report = init_repo(path, resolved, force=force, assets=assets.value if assets else None)
+    if lang:
+        from center_kb.conventions import LANG_IDS
+
+        unknown = [lang_id for lang_id in lang if lang_id not in LANG_IDS]
+        if unknown:
+            typer.secho(
+                f"unknown --lang {', '.join(unknown)} — choose from {', '.join(LANG_IDS)}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        if resolved != "dev":
+            typer.secho("--lang applies to dev repos only", fg=typer.colors.RED)
+            raise typer.Exit(2)
+    report = init_repo(path, resolved, force=force,
+                       assets=assets.value if assets else None, langs=lang)
     for rel in report.created:
         typer.echo(f"  created  {rel}")
     for rel in report.updated:

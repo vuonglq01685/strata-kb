@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -258,6 +259,7 @@ def _apply_gitignore(dest: Path, template_text: str, report: InitReport) -> None
     report.updated.append(".gitignore")
 
 _KIND_LINE = re.compile(r"^kind:", re.MULTILINE)
+_LANGS_LINE = re.compile(r"^langs:", re.MULTILINE)
 
 ASSET_MODES = ("none", "s3")
 _ASSET_STORE_LINE = re.compile(r"^asset_store:", re.MULTILINE)
@@ -343,6 +345,31 @@ def _record_kind(config_path: Path, kind: str) -> bool:
     return True
 
 
+def record_langs(config_path: Path, langs: Sequence[str]) -> bool:
+    """Append `langs: [a, b]` to a config.yaml that lacks the key — append-
+    only, like _record_kind; an existing line is the operator's data."""
+    if not langs or not config_path.exists():
+        return False
+    text = config_path.read_text(encoding="utf-8")
+    if _LANGS_LINE.search(text):
+        return False
+    if text and not text.endswith("\n"):
+        text += "\n"
+    config_path.write_text(
+        text + f"langs: [{', '.join(sorted(set(langs)))}]\n", encoding="utf-8", newline="\n"
+    )
+    return True
+
+
+def _recorded_langs(config_path: Path) -> list[str]:
+    from center_kb.config import load_config
+
+    try:
+        return list(load_config(config_path.parent).langs)
+    except Exception:  # a broken config is doctor's job, not init's
+        return []
+
+
 def record_asset_store(config_path: Path, mode: str) -> str:
     """Append an asset_store block to config.yaml when absent.
 
@@ -363,7 +390,11 @@ def record_asset_store(config_path: Path, mode: str) -> str:
 
 
 def init_repo(
-    target: Path, kind: str, force: bool = False, assets: str | None = None
+    target: Path,
+    kind: str,
+    force: bool = False,
+    assets: str | None = None,
+    langs: Sequence[str] = (),
 ) -> InitReport:
     """Scaffold a KB repo as the given kind (hub | child).
 
@@ -406,9 +437,13 @@ def init_repo(
     if kind == KIND_BA:
         scaffold_ba_local_overrides(target, report)
     if kind == KIND_DEV:
-        langs = conventions.scaffold_conventions(target, report)
-        if langs:
+        cfg_path = target / ".kb" / "config.yaml"
+        forced = sorted(set(langs) | set(_recorded_langs(cfg_path)))
+        scaffolded = conventions.scaffold_conventions(target, report, forced=forced)
+        if scaffolded:
             conventions.ensure_claude_block(target, report)
+        if langs and record_langs(cfg_path, forced):
+            report.updated.append(".kb/config.yaml (langs recorded)")
     if assets is not None:
         outcome = record_asset_store(target / ".kb" / "config.yaml", assets)
         if outcome == "recorded":

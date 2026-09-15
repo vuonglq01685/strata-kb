@@ -2521,3 +2521,27 @@ def test_hub_and_child_scaffolds_pin_lf_line_endings(tmp_path):
         initcmd.init_repo(dest, kind)
         text = (dest / ".gitattributes").read_text(encoding="utf-8")
         assert "* text=auto eol=lf" in text
+
+
+# --- Task 12: depth-3 detection and `kb init --lang` (M7) -------------------
+
+
+def test_init_dev_lang_scaffolds_the_pack_records_it_and_reinit_reuses_it(tmp_path: Path):
+    init_repo(tmp_path, "dev", langs=["python"])
+    assert (tmp_path / "docs" / "conventions" / "python.md").is_file()
+    assert (tmp_path / "CLAUDE.md").is_file()
+    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    (tmp_path / "docs" / "conventions" / "python.md").unlink()
+    report = init_repo(tmp_path, "dev")   # plain re-init, no flag
+    assert "docs/conventions/python.md" in report.created
+
+
+def test_init_cli_rejects_an_unknown_lang(tmp_path: Path):
+    from typer.testing import CliRunner
+
+    from center_kb.cli import app
+
+    result = CliRunner().invoke(app, ["init", str(tmp_path), "--kind", "dev", "--lang", "cobol"])
+    assert result.exit_code == 1
+    assert "cobol" in result.output and "python" in result.output
+    assert not (tmp_path / ".kb").exists()
