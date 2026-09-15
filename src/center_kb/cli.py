@@ -1337,17 +1337,28 @@ def usage_report(
     if ticket:
         rows = [r for r in rows if r.ticket == ticket]
     generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    hook_error_count, _ = ledger.hook_errors(kb_dir)
     if not rows:
         if json_out:
             # --json is the machine surface a PR/CI step consumes, and it
             # must stay parseable even in the state every repo starts in —
             # before its first ingest. The human-facing guidance below is
             # prose on purpose and is not a substitute here.
-            typer.echo(report_mod.Aggregate(generated=generated).model_dump_json(indent=2))
+            typer.echo(
+                report_mod.Aggregate(
+                    generated=generated, hook_errors=hook_error_count
+                ).model_dump_json(indent=2)
+            )
             return
+        note = (
+            f"; {hook_error_count} hook ingest error(s) logged in "
+            ".kb/usage/ingest-errors.log"
+            if hook_error_count
+            else ""
+        )
         typer.echo(
             "no usage recorded yet — run `kb usage ingest-transcript <path>` on a "
-            "Claude Code transcript, or check that the Stop hook is wired"
+            f"Claude Code transcript, or check that the Stop hook is wired{note}"
         )
         return
     agg = report_mod.aggregate(
@@ -1356,7 +1367,7 @@ def usage_report(
         today=date.today(),
         generated=generated,
     )
-    agg.hook_errors, _ = ledger.hook_errors(kb_dir)
+    agg.hook_errors = hook_error_count
     if md:
         typer.echo(report_mod.render_markdown(agg))
         return

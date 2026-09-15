@@ -424,3 +424,19 @@ def test_report_footer_counts_hook_errors(tmp_path: Path):
     assert "2 hook ingest error(s) logged" in result.output
     as_json = json.loads(runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output)
     assert as_json["hook_errors"] == 2
+
+
+def test_report_counts_hook_errors_even_with_no_ledger(tmp_path: Path):
+    # A Stop hook failing every turn ingests nothing — rows is empty exactly
+    # when the log is full, so both empty-ledger paths must still surface it.
+    d = kb_dir(tmp_path)
+    (d / "usage").mkdir()
+    (d / "usage" / "ingest-errors.log").write_text("t1 boom\nt2 bang\n", encoding="utf-8")
+
+    as_json = json.loads(
+        runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output
+    )
+    assert as_json["hook_errors"] == 2
+
+    result = runner.invoke(app, ["usage", "report", "--md", "--kb-dir", str(d)])
+    assert "2 hook ingest error(s) logged" in result.output

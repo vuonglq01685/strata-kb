@@ -175,3 +175,14 @@ def test_read_rows_raises_a_named_ledger_error_for_a_line_that_fails_the_schema(
     message = str(exc.value)
     assert "open-new-flight.jsonl" in message
     assert ":1" in message
+
+
+def test_hook_errors_survives_a_non_utf8_log(tmp_path: Path):
+    log = tmp_path / "usage" / "ingest-errors.log"
+    log.parent.mkdir()
+    log.write_bytes(b"t1 boom\nt2 \xff\xfe bang\n")  # truncated multi-byte sequence
+
+    count, last = ledger.hook_errors(tmp_path)
+
+    assert count == 2
+    assert "bang" in last

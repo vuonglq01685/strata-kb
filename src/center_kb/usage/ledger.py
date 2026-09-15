@@ -98,9 +98,10 @@ def hook_errors(kb_dir: Path) -> tuple[int, str]:
     """(number of logged hook failures, last log line) — (0, '') without a log."""
     path = usage_dir(kb_dir) / "ingest-errors.log"
     try:
-        lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return 0, ""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
     return len(lines), (lines[-1] if lines else "")
 
 
