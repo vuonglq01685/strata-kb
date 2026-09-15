@@ -61,7 +61,7 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    `## Test data & verification`, `## Open questions`. Not applicable →
    write `N/A — <reason>`; a blank section reads as "not considered".
 
-   Every claim that touches a standard cites `doc-id §section`, only from
+   Every claim that touches a standard cites `[doc-id §section]`, only from
    candidates the BA confirmed in step 3. Code-level detail the KB and
    the BA cannot supply (service names, DB tables, …) →
    `%%TODO: verify against codebase%%` — never invented.

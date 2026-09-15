@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from center_kb import lintcore
 from center_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
 
 WEB_TEMPLATES = [
@@ -1697,3 +1698,36 @@ def test_quickstart_ba_does_not_claim_ci_enforces_stale_refs():
     assert "stale" not in enforced.lower()
     assert "stale" in not_enforced.lower()
     assert "--fail-on-stale" in text
+
+
+# Task 12: Task 3 made `[doc-id §section]` (BRACKET_CITE_RE) the only
+# citation form the gate parses; the bare `doc-id §section` form
+# (INLINE_CITE_RE) is now a migration warning. Every scaffolded template
+# and BA wrapper must teach the bracketed form so a freshly authored
+# ticket does not collect a migration warning from its first line.
+_CITATION_TEMPLATES = (
+    "ticket-template.md",
+    "mission-template.md",
+    "review-rubric.md",
+    "ac-quality.md",
+    "QUICKSTART-ba.md",
+    *BA_WRAPPERS,
+)
+
+
+@pytest.mark.parametrize("name", _CITATION_TEMPLATES)
+def test_every_citation_example_is_bracketed(name):
+    """A template that teaches the bare form teaches a migration
+    warning."""
+    text = _read_init_template(name)
+    bare = [
+        m.group(0)
+        for m in lintcore.INLINE_CITE_RE.finditer(
+            lintcore.BRACKET_CITE_RE.sub("", text)
+        )
+    ]
+    assert bare == []
+
+
+def test_the_ticket_template_shows_the_bracketed_form():
+    assert "[doc-id §section]" in _read_init_template("ticket-template.md")

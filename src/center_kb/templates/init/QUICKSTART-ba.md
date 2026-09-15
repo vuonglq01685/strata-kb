@@ -38,7 +38,7 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
    3. **Ground** — it calls `kb_search`; review ALL candidates it shows
       you and pick the ones that actually apply.
    4. **Draft** — it fills the ticket template (story, ACs, use cases,
-      sequence + business-flow diagrams), citing `doc-id §section` for
+      sequence + business-flow diagrams), citing `[doc-id §section]` for
       every claim that touches a standard.
    5. **Pin** — once you confirm which sections apply, it calls
       `kb_context_new` and embeds the returned `## KB context` block.
@@ -97,11 +97,11 @@ other hub content, so `ba-ticket-author` and `ba-mission-plan` can ground
 diagrams in them without you naming the repo specially.
 
 Use them to fill a C4 `Container(alias, label, technology, description)`:
-`<repo>-code §svc.<name>` gives the alias, label, and technology (detected
-framework); `<repo>-svc §svc.<name>` gives the description — what that
-service is actually responsible for — and labels `Rel(...)` arrows between
-containers. Only write `%%TODO: verify against codebase%%` when **neither**
-document answers.
+`<repo>-code` section `svc.<name>` gives the alias, label, and technology
+(detected framework); `<repo>-svc` section `svc.<name>` gives the
+description — what that service is actually responsible for — and labels
+`Rel(...)` arrows between containers. Only write
+`%%TODO: verify against codebase%%` when **neither** document answers.
 
 **One caution:** `<repo>-svc` grounds a diagram — it is never a substitute
 for a domain citation in an Acceptance Criterion. A code/format/enum/
@@ -124,7 +124,9 @@ checks:
   Definition of Ready).
 - Every `## KB context` ref resolves at its pinned hub commit — no
   broken or malformed refs.
-- Every inline `doc-id §section` citation is backed by a pinned ref.
+- Every inline `[doc-id §section]` citation is backed by a pinned ref.
+- Citations are written `[doc-id §section]`. A citation in the old bare
+  form still counts, with a warning telling you to bracket it.
 
 (See "Mission plans" above for what the mission gate checks.)
 

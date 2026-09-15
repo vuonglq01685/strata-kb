@@ -65,8 +65,8 @@ for it during Intake.
    `## Test data & verification`, `## Open questions`. Not applicable →
    write `N/A — <reason>`; a blank section reads as "not considered".
 
-   Every claim that touches an industry standard cites `doc-id
-   §section` — and only from the candidates the BA confirmed in step 3,
+   Every claim that touches an industry standard cites `[doc-id
+   §section]` — and only from the candidates the BA confirmed in step 3,
    never a fresh, unconfirmed search hit. Where a diagram needs
    code-level detail (service names, DB tables, …) that neither the KB
    nor the BA can supply, mark it `%%TODO: verify against codebase%%` —
