@@ -135,15 +135,21 @@ jobs:
               [ "$rc" -eq 2 ] && verdict="STALE"
               status=1
             fi
+            cat "$RUNNER_TEMP/report.json"
             python - "$f" "$verdict" <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json, os, sys
           path, verdict = sys.argv[1], sys.argv[2]
-          report = json.load(open(os.environ["RUNNER_TEMP"] + "/report.json"))
+          try:
+              report = json.load(open(os.environ["RUNNER_TEMP"] + "/report.json"))
+          except ValueError:
+              report = {
+                  "errors": ["lint exited without a JSON report — see the log above"],
+                  "warnings": [],
+              }
           print(f"| `{path}` | {verdict} | {len(report['errors'])} | {len(report['warnings'])} |")
           for message in report["errors"]:
               print(f"::error file={path}::{message}", file=sys.stderr)
           PY
-            cat "$RUNNER_TEMP/report.json"
             echo "::endgroup::"
           done < "$RUNNER_TEMP/changed.nul"
           if [ "$count" -eq 0 ]; then

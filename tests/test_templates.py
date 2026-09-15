@@ -2,6 +2,7 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
+import yaml
 
 from center_kb import lintcore
 from center_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
@@ -1740,11 +1741,32 @@ def test_ticket_lint_workflow_has_a_concurrency_block():
     assert "concurrency:" in _read_init_template("kb-ticket-lint.yml")
 
 
+def _lint_dispatch_run_script(text: str) -> str:
+    """The `run:` body of the 'Lint changed ...' step, parsed out of the raw
+    workflow YAML (mirrors tests/test_init.py's `_extract_lint_dispatch_script`,
+    which needs a rendered `init_repo()` checkout this module doesn't have)."""
+    data = yaml.safe_load(text)
+    for step in data["jobs"]["lint"]["steps"]:
+        if "Lint changed" in step.get("name", ""):
+            return step["run"]
+    raise AssertionError("no step with 'Lint changed' in its name in kb-ticket-lint.yml")
+
+
 def test_ticket_lint_workflow_annotates_and_summarises():
+    # Task 13 review (Important 2): a raw substring check on the whole file
+    # would pass even if these strings only ever appeared in a comment. Pin
+    # them to actual (non-comment) lines of the executed dispatch script.
     text = _read_init_template("kb-ticket-lint.yml")
-    assert "--json" in text
-    assert "GITHUB_STEP_SUMMARY" in text
-    assert "::error file=" in text
+    run_script = _lint_dispatch_run_script(text)
+    code_lines = [
+        line
+        for line in run_script.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    code = "\n".join(code_lines)
+    assert "--json" in code
+    assert "GITHUB_STEP_SUMMARY" in code
+    assert "::error file=" in code
 
 
 def test_ticket_lint_workflow_keeps_a_non_https_hub_scheme():

@@ -1238,6 +1238,19 @@ _KB_STUB_BODY = (
     "        fh.write('\\t'.join(argv) + '\\n')\n"
     "fail_markers = [m for m in os.environ.get('KB_STUB_FAIL', '').split(os.pathsep) if m]\n"
     "failed = any(a in fail_markers for a in argv)\n"
+    # Task 13 review (Important 1): _hub_or_exit can exit before --json ever
+    # writes a report at all (unreachable hub) -- it prints a plain-text
+    # message to stdout instead. KB_STUB_NONJSON reproduces that exit shape
+    # for a given path so the dispatch step's non-JSON-tolerant parsing can
+    # be exercised without a real hub.
+    "nonjson_markers = [m for m in os.environ.get('KB_STUB_NONJSON', '').split(os.pathsep) if m]\n"
+    "if any(a in nonjson_markers for a in argv):\n"
+    "    print('hub unreachable: could not resolve center-kb-hub.example')\n"
+    "    sys.exit(1)\n"
+    # Task 13 review (Important 2): the stub used to only ever exit 0/1, so
+    # the dispatch step's rc==2 -> STALE branch never actually ran under
+    # test. KB_STUB_RC lets a failing run pin a specific exit code.
+    "rc = int(os.environ.get('KB_STUB_RC', '1'))\n"
     # Task 13 (MEDIUM-6): the real dispatch step always passes --json and
     # parses the report for its step-summary table, so the stub must emit
     # the same {pass, errors, warnings, notes} shape kb ticket/mission lint
@@ -1250,7 +1263,7 @@ _KB_STUB_BODY = (
     "        'warnings': [],\n"
     "        'notes': [],\n"
     "    }))\n"
-    "sys.exit(1 if failed else 0)\n"
+    "sys.exit(rc if failed else 0)\n"
 )
 
 
@@ -1377,6 +1390,13 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     # the loop) even though the job as a whole must fail.
     assert any("missions/M-Đăng-nhập.md" in line for line in log_lines)
     assert any("tickets/T-new.md" in line for line in log_lines)
+    # Task 13 review (Important 2): the failure must be annotated on the
+    # failing file and pinned in the step-summary table with an error count.
+    assert (
+        "::error file=tickets/T-new.md::stub configured to fail" in result.stderr
+    )
+    summary = (tmp_path / "step-summary.md").read_text(encoding="utf-8")
+    assert "| `tickets/T-new.md` | FAIL | 1 | 0 |" in summary
 
 
 @_needs_bash
@@ -1548,6 +1568,130 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
     # the unrecognised one were still dispatched.
     assert any("tickets/T-new.md" in line for line in log_lines)
     assert any("missions/M-new.md" in line for line in log_lines)
+
+
+@_needs_bash
+def test_ci_gate_dispatch_loop_pins_stale_verdict(tmp_path):
+    """Task 13 review (Important 2): the `kb` stub used to only ever exit
+    0/1, so the dispatch step's `rc == 2 -> STALE` branch never actually ran
+    under test. KB_STUB_RC lets the stub exit 2 to exercise it end to end."""
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step-stale.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo-stale"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+    (repo / "tickets").mkdir()
+    (repo / "tickets" / "base.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "tickets/base.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    (repo / "tickets" / "T-stale.md").write_text("stale\n", encoding="utf-8")
+    _git(repo, "add", "tickets/T-stale.md")
+    _git(repo, "commit", "-q", "-m", "pr: add ticket")
+
+    bindir = tmp_path / "bin-stale"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
+    log_path = tmp_path / "kb-stale.log"
+    summary_path = tmp_path / "step-summary-stale.md"
+
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BASE_REF": "main",
+            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
+            "KB_STUB_FAIL": "tickets/T-stale.md",
+            "KB_STUB_RC": "2",
+            "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(summary_path),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "| `tickets/T-stale.md` | STALE | 1 | 0 |" in summary
+
+
+@_needs_bash
+def test_ci_gate_dispatch_loop_survives_a_non_json_lint_exit(tmp_path):
+    """Important 1 (task-13 review): `_hub_or_exit` (cli.py) can exit before
+    `kb ticket lint --json` ever writes a JSON report -- e.g. an unreachable
+    private hub prints a plain-text message to stdout and exits 1. The
+    dispatch step's `python - ... <<PY` heredoc used to `json.load` that
+    non-JSON output unguarded: the traceback made the heredoc itself exit
+    non-zero, which (under `bash -e`) aborted the whole step mid-loop --
+    `cat`/`::endgroup::` never ran and every later file was silently never
+    linted. KB_STUB_NONJSON reproduces the exit shape without a real hub.
+    """
+    run_script = _extract_lint_dispatch_script(tmp_path)
+    script_path = tmp_path / "lint-step-nonjson.sh"
+    script_path.write_text(run_script, encoding="utf-8")
+
+    repo = tmp_path / "repo-nonjson"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+    (repo / "tickets").mkdir()
+    (repo / "tickets" / "base.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "tickets/base.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    # 'A-broken' sorts before 'Z-after' so `git diff --name-only` (tree
+    # order) hands the broken file to the loop first -- proving the second
+    # file is reached only if the loop survives the first one's crash.
+    (repo / "tickets" / "A-broken.md").write_text("a\n", encoding="utf-8")
+    (repo / "tickets" / "Z-after.md").write_text("z\n", encoding="utf-8")
+    _git(repo, "add", "tickets/A-broken.md", "tickets/Z-after.md")
+    _git(repo, "commit", "-q", "-m", "pr: add two tickets")
+
+    bindir = tmp_path / "bin-nonjson"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
+    log_path = tmp_path / "kb-nonjson.log"
+    summary_path = tmp_path / "step-summary-nonjson.md"
+
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BASE_REF": "main",
+            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
+            "KB_STUB_NONJSON": "tickets/A-broken.md",
+            "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(summary_path),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    # The raw non-JSON message still reaches the log.
+    assert "hub unreachable" in result.stdout
+    assert "::endgroup::" in result.stdout
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "| `tickets/A-broken.md` | FAIL | 1 | 0 |" in summary
+    assert (
+        "::error file=tickets/A-broken.md::lint exited without a JSON report"
+        in result.stderr
+    )
+    # The loop did not short-circuit: the file after the broken one was
+    # still linted.
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert any("tickets/Z-after.md" in line for line in log_lines)
 
 
 # --- Phase 5 Stage A: kind `dev` (product code repo) ------------------------

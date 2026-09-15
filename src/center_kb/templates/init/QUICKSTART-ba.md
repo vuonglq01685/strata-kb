@@ -163,9 +163,11 @@ The scaffolded `kb-ticket-lint` workflow reads these repository settings:
 
 | Setting | Where | What it is |
 |---|---|---|
-| `vars.CENTER_KB_HUB` | Settings → Secrets and variables → Actions → **Variables** | The hub URL or path the gate resolves refs against |
-| `secrets.KB_HUB_TOKEN` | same page → **Secrets** | A token with read access, for a private hub only |
-| `vars.KB_FAIL_ON_STALE` | **Variables**, optional | Set to any value to make an upstream amendment fail the gate |
+| `CENTER_KB_HUB` | Settings → Secrets and variables → Actions → **Variables** | The hub URL or path the gate resolves refs against |
+| `KB_HUB_TOKEN` | same page → **Secrets** | A token with read access, for a private hub only |
+| `KB_FAIL_ON_STALE` | **Variables**, optional | Set to any value to make an upstream amendment fail the gate |
+
+The workflow reads them as `vars.CENTER_KB_HUB`, `secrets.KB_HUB_TOKEN` and `vars.KB_FAIL_ON_STALE`.
 
 A pull request opened **from a fork** cannot read repository secrets, so on
 a private hub the gate fails there with a hub-unreachable message. That is
