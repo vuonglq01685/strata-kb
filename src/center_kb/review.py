@@ -10,12 +10,19 @@ from center_kb.diff import diff_doc
 from center_kb.mdutils import heading_occurrences, slice_section
 
 
+# `hist.*` rows are written by `kb svc note` (Hard rule 12: never hand-
+# edited), so a whole-document approve has nothing to sign off there;
+# naming one explicitly still works (reviewer F L7).
+MACHINE_SECTION_PREFIX = "hist."
+
+
 @dataclass
 class ApproveReport:
     doc_id: str
     flipped: list[str] = field(default_factory=list)
     skipped_pending: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    skipped_machine: list[str] = field(default_factory=list)
 
 
 def _indexed_doc_ids(kb_dir: Path) -> list[str]:
@@ -120,21 +127,26 @@ def _resolve_wanted_sections(
 
 def _flip_summarized_sections(
     kb_dir: Path, doc_id: str, manifest: models.Manifest, wanted: set[str] | None, by: str
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """Flip status summarized → reviewed for the wanted sections; return
-    (flipped ids, skipped-pending ids). Ids repeat within a file (duplicate
-    §-numbering across parts), so the hash must be pinned to THIS row's
-    heading occurrence — the same occurrence `kb build` resolves it to —
-    or two summarized rows sharing an id would both hash occurrence 0, and
-    the second row's review record would drift from its real L2 slice on
-    the very next build."""
+    (flipped ids, skipped-pending ids, skipped-machine ids). Ids repeat within
+    a file (duplicate §-numbering across parts), so the hash must be pinned
+    to THIS row's heading occurrence — the same occurrence `kb build`
+    resolves it to — or two summarized rows sharing an id would both hash
+    occurrence 0, and the second row's review record would drift from its
+    real L2 slice on the very next build."""
     occurrences = heading_occurrences(manifest.sections)
     l2_cache: dict[str, str] = {}
     at = _now()
     flipped: list[str] = []
     skipped_pending: list[str] = []
+    skipped_machine: list[str] = []
     for row, sec in enumerate(manifest.sections):
         if wanted is not None and sec.id not in wanted:
+            continue
+        if wanted is None and sec.id.startswith(MACHINE_SECTION_PREFIX):
+            if sec.id not in skipped_machine:
+                skipped_machine.append(sec.id)
             continue
         if sec.status == "summarized":
             if sec.file not in l2_cache:
@@ -147,7 +159,7 @@ def _flip_summarized_sections(
             flipped.append(sec.id)
         elif sec.status == "pending":
             skipped_pending.append(sec.id)
-    return flipped, skipped_pending
+    return flipped, skipped_pending, skipped_machine
 
 
 def approve_sections(
@@ -169,7 +181,7 @@ def approve_sections(
 
     report = ApproveReport(doc_id=doc_id)
     wanted, report.missing = _resolve_wanted_sections(manifest, section_ids)
-    report.flipped, report.skipped_pending = _flip_summarized_sections(
+    report.flipped, report.skipped_pending, report.skipped_machine = _flip_summarized_sections(
         kb_dir, doc_id, manifest, wanted, by
     )
 

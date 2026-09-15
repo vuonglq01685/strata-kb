@@ -2514,6 +2514,12 @@ def approve(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
+        for sid in rep.skipped_machine:
+            typer.secho(
+                f"[note] {rep.doc_id} §{sid} is machine-authored — skipped "
+                "(pass --section to force)",
+                fg=typer.colors.YELLOW, err=True,
+            )
         for sid in rep.missing:
             has_missing = True
             typer.secho(
