@@ -284,6 +284,11 @@ def test_diagram_fails_when_keyword_only_appears_inside_a_node_label():
 
     assert len(issues) == 1
     assert issues[0].level == "error"
+    # The keyword itself never matched (it's buried in a node label), so
+    # this must be the keyword-missing message, never the keyword-seen
+    # "no relationship" message — a regression could satisfy the two
+    # asserts above by emitting the wrong text for the wrong reason.
+    assert "must contain" in issues[0].message
 
 
 def test_diagram_raises_on_empty_keywords_tuple():
@@ -314,12 +319,65 @@ def test_check_diagram_rejects_a_fence_with_no_edge():
     assert "no relationship" in issues[0].message
 
 
+def test_check_diagram_rejects_a_completely_empty_fence():
+    """The docstring above promises an empty fence is rejected, not just
+    a keyword-plus-garbage one — this pins that half of the claim."""
+    text = "## Sequence diagram\n```mermaid\nsequenceDiagram\n```\n"
+    issues = check_diagram(text, "## Sequence diagram", ("sequenceDiagram",))
+    assert [i.level for i in issues] == ["error"]
+    assert "no relationship" in issues[0].message
+
+
+def test_check_diagram_passes_when_a_later_fence_has_the_edge():
+    """Two mermaid fences under one heading: the first has the keyword
+    but no edge, the second has both. The loop must keep scanning past
+    the first fence's failure instead of stopping there."""
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "zzzz !!! not a diagram at all\n"
+        "```\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  Importer->>Store: write designator\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []
+
+
 def test_check_diagram_accepts_a_sequence_arrow():
     text = (
         "## Sequence diagram\n"
         "```mermaid\n"
         "sequenceDiagram\n"
         "  Importer->>Store: write designator\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []
+
+
+def test_check_diagram_accepts_a_thick_flowchart_arrow():
+    """Fix-loop finding: '==>' (thick arrow) is standard, documented
+    flowchart syntax and was false-ERRORing before `_EDGE_RE` widened."""
+    text = (
+        "## Business flow\n"
+        "```mermaid\n"
+        "flowchart TD\n"
+        "  A ==> B\n"
+        "```\n"
+    )
+    assert check_diagram(text, "## Business flow", ("flowchart",)) == []
+
+
+def test_check_diagram_accepts_an_async_sequence_message():
+    """Fix-loop finding: '-x' (async cross, sequence) was false-ERRORing
+    before `_EDGE_RE` widened."""
+    text = (
+        "## Sequence diagram\n"
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "  A-xB: fire\n"
         "```\n"
     )
     assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []

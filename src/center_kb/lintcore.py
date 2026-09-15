@@ -266,10 +266,29 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
 
 
 # A relationship in any diagram dialect the two gates accept: mermaid
-# arrows (flowchart, sequence) and C4's Rel()/BiRel() calls. A diagram
-# with nodes and no relationships is a list drawn in a box.
+# arrows/links (flowchart, sequence) and C4's Rel()/BiRel() calls. A
+# diagram with nodes and no relationships is a list drawn in a box.
+#
+# Deliberately over-inclusive rather than a minimal non-overlapping set:
+# '->' alone already matches '-->', '->>' and '-.->' (each contains '->'
+# as a substring), '--' alone already matches '-->' too, and '-\.-'
+# (dotted open link) already matches '-.->' as well. The effective,
+# non-redundant matchers are '->', '--', '\.\.>' ('..>' — no arrowhead),
+# '=+>'/'==' (thick flowchart links: '==>' arrow, '===' open link),
+# '~~~' (invisible link), '-x'/'-\)' (async sequence messages), and
+# 'Rel\w*\('/'BiRel\w*\(' for C4. Each spelling stays anyway: it names
+# one real, documented mermaid/C4 link type, and a `.search()` boolean
+# check pays no runtime cost for the overlap — collapsing them would
+# shorten the pattern but make it harder to map back to "which mermaid
+# syntax does this cover" for the next editor.
+#
+# Missing one of these link spellings means a false ERROR on an
+# error-level gate for a BA who drew a perfectly real diagram — the
+# failure mode that matters most here — so this list stays wide rather
+# than tight.
 _EDGE_RE = re.compile(
     r"-->|->>|-\.->|\.\.>|->|--|\bRel\w*\(|\bBiRel\w*\("
+    r"|=+>|==|~~~|-\.-|-x|-\)"
 )
 
 
