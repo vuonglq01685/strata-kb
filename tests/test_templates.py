@@ -1799,3 +1799,26 @@ def test_pr_workflow_checks_out_the_branch_read_only_for_the_plan_file():
     checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
     assert checkout["with"]["persist-credentials"] is False
     assert steps.index(checkout) < steps.index(next(s for s in steps if "Check the PR" in s.get("name", "")))
+
+
+# --- Task 13: one tightening rule in every preset, plus the lint values ----
+
+TIGHTENING_RULE = "The preset below is the target strength."
+
+
+def test_every_conventions_preset_carries_the_one_tightening_rule():
+    for lang in ("python", "ts", "java", "go", "dotnet", "php"):
+        text = _normalised(_read_init_template(f"conventions-{lang}.md"))
+        assert TIGHTENING_RULE in text, lang
+        assert "narrow" in text and "## Findings" in text, lang
+        assert "exactly as shown" not in text, lang
+
+
+def test_presets_lint_the_rules_their_prose_states():
+    py = _read_init_template("conventions-python.md")
+    assert '"T20"' in py and '"N"' in py
+    ts = _read_init_template("conventions-ts.md")
+    assert '"no-console": "error"' in ts
+    java = _read_init_template("conventions-java.md")
+    assert "[*.java]\nindent_size = 2" in java
+    assert "maxWarnings = 0" not in java.split("```groovy")[1].split("```")[0]

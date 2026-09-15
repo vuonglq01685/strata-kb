@@ -62,8 +62,11 @@ const MAX_ALTITUDE_FT = 60_000; // per ATM-STD §5.3 @ v2.1
 
 ## Linting (preset)
 
-When this repo has no linter, the first task of a dev plan creates the
-files below exactly as shown and records the command as `cmd.lint`.
+The preset below is the target strength. When this repo has no linter, the
+first task of a dev plan creates these files and records the command as
+`cmd.lint`. Where `cmd.lint` fails on the untouched tree, narrow `select` /
+rules / warning caps to what passes, and list each narrowed rule under
+`## Findings` in the PR body as a tightening still owed.
 
 `eslint.config.mjs`:
 
@@ -74,6 +77,7 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  { rules: { "no-console": "error" } },
 );
 ```
 

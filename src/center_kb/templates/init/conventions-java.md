@@ -60,13 +60,16 @@ static final int MAX_ALTITUDE_FT = 60_000; // per ATM-STD §5.3 @ v2.1
 
 ## Linting (preset)
 
-When this repo has no linter, the first task of a dev plan wires the
-preset below into the repo's build tool and records the command as
-`cmd.lint`. Format = spotless (google-java-format), wired for both
-build tools. Lint = checkstyle with the built-in Google ruleset,
-wired for Gradle below; the Maven variant covers formatting only, so
-a Maven repo's `cmd.lint` is format-only until a checkstyle plugin is
-added — record that gap as a finding in the PR.
+The preset below is the target strength. When this repo has no linter,
+the first task of a dev plan wires the preset below into the repo's
+build tool and records the command as `cmd.lint`. Where `cmd.lint` fails
+on the untouched tree, narrow `select` / rules / warning caps to what
+passes, and list each narrowed rule under `## Findings` in the PR body
+as a tightening still owed. Format = spotless (google-java-format),
+wired for both build tools. Lint = checkstyle with the built-in Google
+ruleset, wired for Gradle below; the Maven variant covers formatting
+only, so a Maven repo's `cmd.lint` is format-only until a checkstyle
+plugin is added — record that gap as a finding in the PR.
 
 Gradle (`build.gradle`) — merge these blocks into the existing file;
 assumes the `java` plugin and a `repositories { }` block are already
@@ -91,9 +94,11 @@ spotless {
 checkstyle {
     toolVersion = "10.21.0"
     config = resources.text.fromArchiveEntry(configurations.checkstyleConfig, "google_checks.xml")
-    maxWarnings = 0
 }
 ```
+
+Set `maxWarnings = 0` once the tree is clean — with `google_checks.xml`
+at severity `warning`, a pre-existing repo fails on day one otherwise.
 
 `build.gradle.kts` is also a detected manifest, but the block above is
 Groovy DSL. The Kotlin DSL needs different syntax for `configurations
@@ -126,7 +131,7 @@ trim_trailing_whitespace = true
 indent_style = space
 
 [*.java]
-indent_size = 4
+indent_size = 2
 ```
 
 Run:
