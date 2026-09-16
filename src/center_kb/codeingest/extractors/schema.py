@@ -161,16 +161,16 @@ def _warn_duplicate(kind: str, name: str, rel: str, warnings: list[str]) -> None
     warnings.append(f"duplicate {kind} {name!r} in {rel}; keeping first")
 
 
-def _dirname(rel: str) -> str:
-    """Directory part of a repo-relative posix path (`"."` at the root)."""
-    return rel.rsplit("/", 1)[0] if "/" in rel else "."
-
-
 def _join_source(existing: str, new_rel: str) -> str:
     parts = [p for p in existing.split(", ") if p] if existing else []
     if new_rel not in parts:
         parts.append(new_rel)
     return ", ".join(parts)
+
+
+def _dirname(rel: str) -> str:
+    """Directory part of a repo-relative posix path (`"."` at the root)."""
+    return rel.rsplit("/", 1)[0] if "/" in rel else "."
 
 
 def _pk_clause(pk: str) -> str:
