@@ -1,3 +1,6 @@
+import os
+import platform
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,6 +26,31 @@ def _opts(root: Path, **kw):
 
 def _by_id(result: core.ExtractResult) -> dict[str, core.CodeSection]:
     return {s.id: s for s in result.sections}
+
+
+def _try_make_dir_link(link: Path, target: Path) -> bool:
+    """I1: mirrors `test_codeingest_scaffold._make_dir_link` (not imported
+    -- these are two separate test modules and importing a private helper
+    across them is more indirection than copying ~10 lines) but tolerates
+    failure instead of raising, since this helper's whole point is to let
+    the caller skip gracefully: a Windows NTFS junction (`mklink /J`, no
+    elevated privilege needed) on `nt`, else a POSIX symlink -- `os.symlink`
+    on Windows needs `SeCreateSymbolicLinkPrivilege`, which
+    `test_assetstore.py`/`test_assetcmd.py` already document as commonly
+    absent (`WinError 1314`), so a junction is what actually runs there.
+    Returns whether the link now exists."""
+    target.mkdir(parents=True, exist_ok=True)
+    if platform.system() == "Windows":
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True, text=True,
+        )
+        return result.returncode == 0 and link.exists()
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except OSError:
+        return False
+    return link.exists()
 
 
 class TestTreeExtractor:
@@ -1752,13 +1780,23 @@ class TestServicesExtractor:
         # whenever a symlink sits in a collapsed segment, so a `build:`
         # context using `link/..` could read a Dockerfile outside the
         # repo while labelling it as the in-repo `Dockerfile`.
+        #
+        # I1: `Path.symlink_to` needs `SeCreateSymbolicLinkPrivilege` on
+        # Windows, absent on this project's own development machine
+        # (`WinError 1314`) -- an NTFS junction reproduces the exact
+        # divergence this test is about (`os.path.normpath` still
+        # collapses `link/..` textually without following it, while the
+        # OS itself follows the junction when the path is actually
+        # opened), so `_try_make_dir_link` reaches for a junction on `nt`
+        # and only skips if neither link kind can be created at all.
         root = tmp_path / "symrepo"
         root.mkdir()
         outside_dir = tmp_path / "outside_secret"
-        outside_dir.mkdir()
+        if not _try_make_dir_link(root / "link", outside_dir):
+            pytest.skip("this machine can create neither a symlink nor a junction")
         # What the OS actually resolves `root/link/../Dockerfile` to,
-        # once `link` (a symlink to `outside_dir`) is followed: go up one
-        # from `outside_dir` (i.e. `tmp_path`), then `Dockerfile`.
+        # once `link` (a symlink/junction to `outside_dir`) is followed:
+        # go up one from `outside_dir` (i.e. `tmp_path`), then `Dockerfile`.
         (tmp_path / "Dockerfile").write_text(
             'FROM outside-the-repo-secret:1\nCMD ["leak"]\n', encoding="utf-8"
         )
@@ -1767,7 +1805,6 @@ class TestServicesExtractor:
         (root / "Dockerfile").write_text(
             'FROM safe-in-repo:1\nCMD ["safe"]\n', encoding="utf-8"
         )
-        (root / "link").symlink_to(outside_dir, target_is_directory=True)
         (root / "docker-compose.yml").write_text(
             "services:\n  hub:\n    build: link/..\n", encoding="utf-8"
         )
