@@ -5,16 +5,16 @@ evidence rule (spec §3.14) — this is the task that makes Stage A's
 verification gate executable: until these sections exist, a Dev agent has
 no machine-readable answer to "how do I test this repo?".
 
-Five readers surface command evidence from five sources — CI workflows, npm
-scripts, a Makefile, tox/pytest config, and presence-based defaults for
-Maven/Gradle/.NET/Go — each returning `list[Candidate]` (a `(purpose,
-command, source)` triple) plus warnings, never raising. For each of the
-four purposes in `PURPOSES`, the primary command is the first CI-sourced
-candidate; failing that, the first local candidate in reader order (npm,
-make, python, presence-based). Every other candidate for that purpose is
-kept as an alternative — never silently dropped — because CI evidence is
-what *actually* runs in the pipeline, while a local script only *could*
-run something similar.
+Six readers surface command evidence from six sources — CI workflows, npm
+scripts, a Makefile, tox/pytest config, shell scripts at the root or under
+`scripts/`, and presence-based defaults for Maven/Gradle/.NET/Go — each
+returning `list[Candidate]` (a `(purpose, command, source)` triple) plus
+warnings, never raising. For each of the four purposes in `PURPOSES`, the
+primary command is the first CI-sourced candidate; failing that, the first
+local candidate in reader order (npm, make, python, shell, presence-based).
+Every other candidate for that purpose is kept as an alternative — never
+silently dropped — because CI evidence is what *actually* runs in the
+pipeline, while a local script only *could* run something similar.
 
 Classification (`_classify()`) matches a keyword against a token when the
 keyword equals the whole token, or is a prefix of the token cut off by a
@@ -430,6 +430,27 @@ def _tox_env_names(text: str) -> set[str]:
     return names
 
 
+def _tox_commands(text: str) -> list[tuple[str, str]]:
+    """`(invocation, logical command line)` for every `commands =` value
+    of `[testenv]` (invocation `tox`) and `[testenv:<name>]` (`tox -e
+    <name>`), continuations joined. Env names alone say nothing about
+    what an env runs (reviewer G-2: `envlist = py311` + `commands =
+    pytest -q` contributed nothing)."""
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read_string(text)
+    found: list[tuple[str, str]] = []
+    for section in parser.sections():
+        if section == "testenv":
+            invocation = "tox"
+        elif section.startswith("testenv:"):
+            invocation = f"tox -e {section.split(':', 1)[1].strip()}"
+        else:
+            continue
+        raw = parser.get(section, "commands", fallback="")
+        found.extend((invocation, line) for line in join_continuations(raw))
+    return found
+
+
 def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
     candidates: list[Candidate] = []
     warnings: list[str] = []
@@ -449,6 +470,12 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
                 if purpose is not None:
                     candidates.append((purpose, command, rel))
 
+            for invocation, line in _tox_commands(text):
+                purpose = _classify(line)
+                candidate = (purpose, invocation, rel)
+                if purpose is not None and candidate not in candidates:
+                    candidates.append(candidate)
+
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         rel = relposix(root, pyproject)
@@ -463,6 +490,46 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
             if isinstance(ini_options, dict):
                 candidates.append(("test", "pytest", rel))
 
+    return candidates, warnings
+
+
+# ---------------------------------------------------------------------------
+# reader: shell — *.sh at the repo root and directly under scripts/
+# ---------------------------------------------------------------------------
+
+_SHELL_DIRS = (Path("."), Path("scripts"))
+
+
+def _read_shell(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
+    """Every `*.sh` at the repo root or directly under `scripts/`. The
+    script's logical lines are classified; for each purpose that appears
+    at least once the candidate is `bash <script>` with the script as
+    source — a Dev agent is told to run the script, not one line torn out
+    of it. `bash scripts/gate.sh` is aero's own documented release gate
+    and was invisible before this reader (reviewer G-2)."""
+    candidates: list[Candidate] = []
+    warnings: list[str] = []
+    for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
+        if reldir not in _SHELL_DIRS:
+            continue
+        for name in filenames:
+            if not name.endswith(".sh"):
+                continue
+            path = root / reldir / name
+            rel = relposix(root, path)
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                warnings.append(f"could not parse {rel}: {exc}")
+                continue
+            purposes = {
+                purpose
+                for purpose in (_classify(line) for line in join_continuations(text))
+                if purpose is not None
+            }
+            for purpose in PURPOSES:
+                if purpose in purposes:
+                    candidates.append((purpose, f"bash {rel}", rel))
     return candidates, warnings
 
 
@@ -522,7 +589,7 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
 
 def _select(all_candidates: list[Candidate], purpose: str) -> tuple[Candidate, list[Candidate]] | None:
     """`all_candidates` is already CI-first, then local readers in the
-    brief's fixed order (npm, make, python, presence-based) — so the
+    brief's fixed order (npm, make, python, shell, presence-based) — so the
     first match for a purpose is, by construction, the first CI-sourced
     candidate if one exists, else the first local one. Everything else
     for that purpose is an alternative, never dropped."""
@@ -591,6 +658,8 @@ class CommandsExtractor:
                 fnmatch.fnmatch(f, "*.y*ml") for f in filenames
             ):
                 return True
+            if reldir in _SHELL_DIRS and any(f.endswith(".sh") for f in filenames):
+                return True
             for name in filenames:
                 if name == "package.json" and depth <= _NODE_MAX_DEPTH:
                     return True
@@ -627,6 +696,7 @@ class CommandsExtractor:
             + _run(_read_npm, "npm scripts", root, opts)
             + _run(_read_make, "Makefile", root)
             + _run(_read_python, "Python tooling (tox/pytest)", root)
+            + _run(_read_shell, "shell scripts", root, opts)
             + _run(_read_presence, "presence-based defaults", root, opts)
         )
 

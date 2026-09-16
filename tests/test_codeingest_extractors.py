@@ -1663,6 +1663,49 @@ class TestCommandsExtractor:
         sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
         assert "(in web/)" in sections["cmd.build"].l2_md
 
+    def test_tox_commands_are_read_not_only_env_names(self, tmp_path):
+        # Reviewer G-2: `[testenv] commands = pytest -q` with envlist py311
+        # contributed nothing, because only env *names* were classified.
+        root = tmp_path / "toxrepo"
+        root.mkdir()
+        (root / "tox.ini").write_text(
+            "[tox]\nenvlist = py311\n\n[testenv]\ncommands =\n    pytest -q \\\n        --maxfail=1\n"
+            "\n[testenv:style]\ncommands = ruff check .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.test"].l2_md.splitlines()[0] == "**Primary:** `tox`"
+        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `tox -e style`"
+        # one candidate per (purpose, invocation), even though two lines matched
+        assert sections["cmd.lint"].l3_md.count("tox -e style") == 1
+
+    def test_shell_scripts_at_root_and_scripts_dir_are_command_sources(self, tmp_path):
+        # Reviewer G-2: aero's own release gate, scripts/gate.sh, appeared nowhere.
+        root = tmp_path / "shrepo"
+        (root / "scripts").mkdir(parents=True)
+        (root / "scripts" / "gate.sh").write_text(
+            '#!/usr/bin/env bash\nset -euo pipefail\n"$PY" -m ruff check .\n'
+            '"$PY" -m pytest -q\n"$PY" -m build\n',
+            encoding="utf-8",
+        )
+        (root / "run.sh").write_text("#!/bin/sh\nuvicorn app:main\n", encoding="utf-8")
+        (root / "deep").mkdir()
+        (root / "deep" / "ignored.sh").write_text("pytest\n", encoding="utf-8")
+        assert cmd_ext.CommandsExtractor().detect(root) is True
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        for purpose in ("lint", "test", "build"):
+            assert "bash scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
+            assert "scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
+        assert "bash run.sh" in sections["cmd.run"].l2_md
+        assert "deep/ignored.sh" not in sections["cmd.test"].l2_md + sections["cmd.test"].l3_md
+
+    def test_shell_script_is_an_alternative_when_ci_exists(self, repo):
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "gate.sh").write_text("pytest -q\n", encoding="utf-8")
+        s = _by_id(cmd_ext.CommandsExtractor().extract(repo, _opts(repo)))["cmd.test"]
+        assert "pytest -q --cov=airspace" in s.l2_md.splitlines()[0]   # CI still primary
+        assert "bash scripts/gate.sh" in s.l3_md
+
 
 import sqlite3
 
