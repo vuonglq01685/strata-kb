@@ -138,17 +138,8 @@ def _clean_name(raw: str) -> str:
 def _clean_type(raw: str) -> str:
     """Collapse embedded whitespace/newlines to single spaces — the one
     place every reader's column *type-and-constraints* text is cleaned.
-    `ALEMBIC_COLUMN_RE`'s `[^,)]+` capture (verbatim from the brief) can
-    stop mid-call — `sa.Integer()` arrives as `sa.Integer(`,
-    `sa.Numeric(10, 2)` as `sa.Numeric(10` — and is deliberately left
-    that way, visibly incomplete, rather than "balanced" into a
-    plausible-but-wrong type: appending a `)` cannot tell a genuinely
-    single-argument call from one whose remaining arguments were simply
-    never captured, and a fabricated `sa.Numeric(10)` silently drops the
-    `2` while looking complete. (Task review round 1 tried the
-    paren-balancing approach; round 2 found the exact case above and
-    reverted it — a visible truncation beats a plausible-looking wrong
-    answer, same principle as Ruling R36's desync guard below.)"""
+    Never appends a closing paren: a literal like `DEFAULT '('` is
+    genuinely unbalanced and must stay visibly so (Ruling R36)."""
     return " ".join(raw.split())
 
 
@@ -169,7 +160,13 @@ def _join_source(existing: str, new_rel: str) -> str:
 
 
 def _dirname(rel: str) -> str:
-    """Directory part of a repo-relative posix path (`"."` at the root)."""
+    """Directory part of a repo-relative posix path (`"."` at the root).
+    An empty `rel` (an unset `TableRecord.created_in`) returns `""`, never
+    `"."` — the `_apply_sql_file` guards below compare two `_dirname(...)`
+    results, and "created_in was never set" must never compare equal to
+    "created at the repo root" (carried finding from Task 7's review)."""
+    if not rel:
+        return ""
     return rel.rsplit("/", 1)[0] if "/" in rel else "."
 
 
@@ -830,7 +827,7 @@ def _apply_prisma_file(text: str, rel: str, tables: dict[str, TableRecord], warn
             continue
         tables[name] = TableRecord(
             name=name, columns=columns, pk=pk,
-            ddl=_reconstruct_ddl(name, columns, pk), source=rel,
+            ddl=_reconstruct_ddl(name, columns, pk), source=rel, created_in=rel,
         )
 
 
@@ -858,7 +855,12 @@ def _read_prisma(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRe
 
 ALEMBIC_GLOB = "**/versions/*.py"
 ALEMBIC_TABLE_RE = re.compile(r"op\.create_table\(\s*['\"](\w+)['\"]")
-ALEMBIC_COLUMN_RE = re.compile(r"sa\.Column\(\s*['\"](\w+)['\"]\s*,\s*([^,)]+)")
+# Only the column *name* is captured; the type is the call's first
+# top-level argument, found by balanced-paren scanning (reviewer G-13 —
+# `[^,)]+` stopped at the first paren, so `sa.Integer()` rendered as
+# `sa.Integer(`). `primary_key=True` among the remaining arguments marks
+# the column as the PK.
+ALEMBIC_COLUMN_RE = re.compile(r"sa\.Column\(\s*['\"](\w+)['\"]\s*,")
 
 
 def _matching_close_paren(text: str, open_idx: int) -> int:
@@ -878,6 +880,24 @@ def _matching_close_paren(text: str, open_idx: int) -> int:
     return len(text) - 1
 
 
+def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
+    """`(columns, pk)` for every `sa.Column('name', <type>, ...)` call in
+    `scope` (one `op.create_table(...)` call's text)."""
+    columns: list[tuple[str, str]] = []
+    pk = ""
+    for cm in ALEMBIC_COLUMN_RE.finditer(scope):
+        call_open = scope.index("(", cm.start())
+        call_close = _matching_close_paren(scope, call_open)
+        args = _split_top_level_quote_blind(scope[cm.end():call_close])
+        if not args:
+            continue
+        cname = _clean_name(cm.group(1))
+        columns.append((cname, _clean_type(args[0])))
+        if not pk and any(a.replace(" ", "") == "primary_key=True" for a in args[1:]):
+            pk = cname
+    return columns, pk
+
+
 def _apply_alembic_file(text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]) -> None:
     for m in ALEMBIC_TABLE_RE.finditer(text):
         name = m.group(1)
@@ -886,16 +906,13 @@ def _apply_alembic_file(text: str, rel: str, tables: dict[str, TableRecord], war
             continue
         close_idx = _matching_close_paren(text, open_idx)
         scope = text[open_idx:close_idx + 1]
-        columns = [
-            (_clean_name(cm.group(1)), _clean_type(cm.group(2)))
-            for cm in ALEMBIC_COLUMN_RE.finditer(scope)
-        ]
+        columns, pk = _alembic_columns(scope)
         if name in tables:
             _warn_duplicate("alembic table", name, rel, warnings)
             continue
         tables[name] = TableRecord(
-            name=name, columns=columns, pk="",
-            ddl=_reconstruct_ddl(name, columns, ""), source=rel,
+            name=name, columns=columns, pk=pk,
+            ddl=_reconstruct_ddl(name, columns, pk), source=rel, created_in=rel,
         )
 
 
@@ -933,13 +950,15 @@ def _apply_ef_file(text: str, rel: str, tables: dict[str, TableRecord], warnings
             continue
         tables[name] = TableRecord(
             name=name, columns=[], pk="", ddl=_reconstruct_ddl(name, [], ""), source=rel,
+            created_in=rel, columns_known=False,
         )
 
 
 def _read_ef(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecord], list[str]]:
     """No column regex is given for EF in the brief — only the table
     name is recognised, so every EF-sourced `TableRecord` has an empty
-    column list. This is a documented limitation, not a bug."""
+    column list and `columns_known=False`, which the renderer states in
+    the document."""
     tables: dict[str, TableRecord] = {}
     warnings: list[str] = []
     paths = sorted(_glob_via_walk(root, opts.kb_dir, EF_GLOB), key=lambda p: relposix(root, p))
@@ -1057,7 +1076,9 @@ def _read_sqlite(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRe
                     )
                     continue
                 ddl = (sql_text or "").strip() or _reconstruct_ddl(name, columns, pk)
-                tables[name] = TableRecord(name=name, columns=columns, pk=pk, ddl=ddl, source=label)
+                tables[name] = TableRecord(
+                    name=name, columns=columns, pk=pk, ddl=ddl, source=label, created_in=label,
+                )
         except Exception as exc:
             # Defense in depth (task review round 1, Minor 5's sibling):
             # a failure partway through this db's tables must not also
@@ -1116,10 +1137,20 @@ def _pk_columns(pk: str) -> set[str]:
 
 def _render_section(record: TableRecord) -> CodeSection:
     pk_cols = _pk_columns(record.pk)
-    l2_lines = ["| Column | Type | PK |", "| --- | --- | --- |"]
-    for cname, ctype in record.columns:
-        mark = "yes" if cname.casefold() in pk_cols else ""
-        l2_lines.append(f"| {escape_cell(cname)} | {escape_cell(ctype)} | {mark} |")
+    if record.columns_known:
+        l2_lines = ["| Column | Type | PK |", "| --- | --- | --- |"]
+        for cname, ctype in record.columns:
+            mark = "yes" if cname.casefold() in pk_cols else ""
+            l2_lines.append(f"| {escape_cell(cname)} | {escape_cell(ctype)} | {mark} |")
+        columns_phrase = f"{len(record.columns)} columns"
+    else:
+        # An EF migration names the table but this reader extracts no
+        # columns from it — say so in the document, never an empty table
+        # a reader would take for "no columns" (reviewer G-13).
+        l2_lines = [
+            "_Columns not extracted: EF Core migrations are recognised by table name only._"
+        ]
+        columns_phrase = "columns not extracted (EF migration)"
     l2_lines.append("")
     l2_lines.append(f"_Source: {record.source}_")
     l2_md = "\n".join(l2_lines) + "\n"
@@ -1128,7 +1159,7 @@ def _render_section(record: TableRecord) -> CodeSection:
     l3_md = f"```sql\n{record.ddl}\n```\n\n```\n{source_files}\n```\n"
 
     summary = (
-        f"Table {record.name}: {len(record.columns)} columns, "
+        f"Table {record.name}: {columns_phrase}, "
         f"PK {record.pk or 'none detected'} (source: {record.source})."
     )
 

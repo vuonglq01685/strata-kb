@@ -1869,15 +1869,12 @@ class TestSchemaExtractor:
         finally:
             check.close()
 
-    def test_alembic_truncated_column_type_is_left_visibly_incomplete_not_fabricated(self, tmp_path):
-        # Task review round 2 New Minor: round 1's fix for Minor 11
-        # "balanced" ALEMBIC_COLUMN_RE's truncated capture by appending a
-        # closing paren -- but a multi-arg call like sa.Numeric(10, 2) is
-        # truncated by the same [^,)]+ capture to "sa.Numeric(10", and
-        # "balancing" that produces sa.Numeric(10) -- a syntactically
-        # plausible type that silently drops the scale argument, worse
-        # than the visible truncation it replaced. The fix is to leave
-        # the truncated text alone.
+    def test_alembic_column_types_are_captured_whole_and_primary_key_is_seen(self, tmp_path):
+        # Reviewer G-13: `[^,)]+` stopped at the first paren, rendering
+        # `sa.Integer(` and missing `primary_key=True`. Round 2's concern —
+        # never fabricate `sa.Numeric(10)` from `sa.Numeric(10, 2)` — holds
+        # because the type is now the first top-level argument, parens
+        # balanced, not a truncated capture with a paren appended.
         root = tmp_path / "alembic-types"
         versions = root / "versions"
         versions.mkdir(parents=True)
@@ -1887,14 +1884,15 @@ class TestSchemaExtractor:
             "        'widgets',\n"
             "        sa.Column('id', sa.Integer(), primary_key=True),\n"
             "        sa.Column('amt', sa.Numeric(10, 2), nullable=False),\n"
+            "        sa.Column('meta', sa.JSON(none_as_null=True)),\n"
             "    )\n",
             encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
-        assert "sa.Integer(" in s.l2_md   # visibly incomplete
-        assert "sa.Integer()" not in s.l2_md   # never fabricated as "complete"
-        assert "sa.Numeric(10" in s.l2_md
-        assert "sa.Numeric(10)" not in s.l2_md   # would silently drop the ", 2" scale arg
+        assert "| id | sa.Integer() | yes |" in s.l2_md
+        assert "| amt | sa.Numeric(10, 2) |  |" in s.l2_md
+        assert "| meta | sa.JSON(none_as_null=True) |  |" in s.l2_md
+        assert "PK id" in s.summary
 
     def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(self, tmp_path):
         # New Minor: a literal like DEFAULT '(' has a genuinely unbalanced
@@ -2454,6 +2452,33 @@ class TestSchemaExtractor:
     def test_alter_in_the_same_directory_still_applies(self, repo):
         s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
         assert "| effective_date |" in s.l2_md
+
+    def test_ef_table_says_columns_not_extracted_instead_of_an_empty_table(self, tmp_path):
+        # Reviewer G-13: a header row with no rows and "0 columns" reads as
+        # "this table has no columns".
+        root = tmp_path / "efrepo"
+        mig = root / "Migrations"
+        mig.mkdir(parents=True)
+        (mig / "20240101_Init.cs").write_text(
+            'migrationBuilder.CreateTable(\n    name: "Invoices",\n    columns: table => new {}\n);\n',
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.Invoices"]
+        assert "| Column | Type | PK |" not in s.l2_md
+        assert "_Columns not extracted: EF Core migrations are recognised by table name only._" in s.l2_md
+        assert "_Source: Migrations/20240101_Init.cs_" in s.l2_md
+        assert "Table Invoices: columns not extracted (EF migration), PK none detected" in s.summary
+
+    def test_created_in_empty_string_never_matches_a_root_level_created_in(self):
+        # Carried from Task 7's review: _dirname("") returns "." same as a
+        # root-level migration file's _dirname. A record whose created_in
+        # was never set (columns_known=False readers before this task did
+        # not set it) must not be treated as "created at the repo root" by
+        # the _dirname guards in _apply_sql_file — a later root-level SQL
+        # migration redefining the same table name is a different reader's
+        # table entirely (sql wins by reader precedence before this check
+        # even runs), so this pins the guard directly against _dirname.
+        assert schema_ext._dirname("") != schema_ext._dirname("root_level.sql")
 
 
 class TestIntegrationsExtractor:
