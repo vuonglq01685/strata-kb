@@ -1847,6 +1847,177 @@ class TestCommandsExtractor:
         assert len(table_lines) == 3
         assert "echo one echo two" in table_lines[-1]
 
+    @pytest.mark.parametrize(
+        ("line", "purpose"),
+        [
+            # Reviewer G-2's seven lines: substring matching classified all
+            # but the last two wrongly (`/dev/null` ⊃ dev, `:latest` ⊃ test).
+            ('code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)', None),
+            ('pip install "ruff>=0.15,<0.16"', None),
+            ("-e CENTER_KB_HTTP_TOKEN=smoke-test-token", None),
+            ("--tag ghcr.io/vuonglq01685/center-kb:latest", None),
+            ('echo "starting deployment"', None),
+            ("aws s3 cp devops.txt s3://bucket", None),
+            ("bash scripts/gate.sh", None),
+            ("ruff check .", "lint"),
+            ("python -m build", "build"),
+            ("npm run dev", "run"),
+            ("go test ./...", "test"),
+            ("tox -e lint", "lint"),
+            ('"$PY" -m pytest -q', "test"),
+            ("vite (npm run start)", "run"),
+            ("cd web && npm run build", "build"),
+            ("pytest -q --cov=airspace", "test"),
+            # Widened rule (user-approved): a keyword also matches a token
+            # when it's a prefix of that token immediately followed by a
+            # `-` or `:` separator -- otherwise a Makefile/npm-script target
+            # like `test-unit` or `lint:fix` classified as None (a repo
+            # whose Makefile only has `test-unit` produced no cmd.test
+            # section at all).
+            ("make test-unit", "test"),
+            ("npm run lint:fix", "lint"),
+            ("yarn build:prod", "build"),
+            # Still None -- the false-positive class the whole-token rule
+            # exists to close must stay closed: keyword not at position 0
+            # of the token, or not followed by a separator.
+            ("smoke-test-token", None),
+            ("devops.txt", None),
+            ("/dev/null", None),
+            ("center-kb:latest", None),
+            ("starting", None),
+            ("ruff>=0.15", None),
+            # Containment (user-approved): the separator rule reopened an
+            # adjacent false-positive class -- a keyword prefix cut by
+            # `-`/`:` also matched the start of a filename. This still
+            # classifies (the rule's genuine win, no extension to key on):
+            ("npx lint-staged", "lint"),
+            # ... but a token carrying a recognized file extension no
+            # longer counts, even though the prefix+separator shape
+            # otherwise matches:
+            ("pip install -r dev-requirements.txt", None),
+            ("cp test-fixtures/a.json /tmp", None),
+            ("curl -o start-script.sh https://x", None),
+            # Extension-set gap (reviewer): the frozen set was
+            # under-inclusive -- `.in` is pip-tools' source for the very
+            # `.txt` case above, and archive/script extensions common in
+            # download/copy/interpreter-invocation steps were missing too.
+            ("pip install -r dev-requirements.in", None),
+            ("curl -o test-data.tar.gz https://x", None),
+            ("curl -o start-bundle.zip https://x", None),
+            ("cp build-out.zip /tmp", None),
+            ("node build-config.mjs", None),
+            ("bash dev-setup.bash", None),
+            # Trailing punctuation (reviewer, Finding 4): `_TOKEN_STRIP`
+            # didn't include `;`/`,`, so a `;`-joined command's filename
+            # token kept its trailing `;` and missed the frozenset --
+            # unlike the equivalent `&&` form, which already gives None.
+            ("cp test-fixtures/a.json; ls", None),
+            # Reachable justification for the frozen set over a "has a
+            # dot" rule (reviewer, Finding 3): Python version matrices.
+            ("make test-3.11", "test"),
+            ("tox -e lint-3.12", "lint"),
+            # Accepted, not closed: no file extension to key on.
+            ("apt-get install -y build-essential", "build"),
+        ],
+    )
+    def test_classify_matches_keyword_prefixes_but_not_filenames(self, line, purpose):
+        assert cmd_ext._classify(line) == purpose
+
+    def test_install_step_before_the_real_command_does_not_win(self, tmp_path):
+        # aero's own _gate.yml: `pip install "ruff..."` precedes `ruff check .`.
+        root = tmp_path / "gate"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "_gate.yml").write_text(
+            "on: [push]\njobs:\n  t0-lint:\n    runs-on: ubuntu-latest\n    steps:\n"
+            '      - run: pip install "ruff>=0.15,<0.16"\n'
+            "      - run: ruff check .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `ruff check .`"
+        assert "cmd.build" not in sections
+
+    def test_continued_run_block_is_one_command_not_fragments(self, tmp_path):
+        root = tmp_path / "cont"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  img:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          docker build \\\n"
+            "            --tag ghcr.io/x/y:latest \\\n"
+            "            .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.build"].l2_md.splitlines()[0] == (
+            "**Primary:** `docker build --tag ghcr.io/x/y:latest .`"
+        )
+        assert "cmd.test" not in sections
+
+    def test_leading_comment_before_cd_still_resolves_directory_label(self, tmp_path):
+        # Fix wave, Finding 3: `_step_dir_label` receives `lines` after
+        # `join_continuations` already dropped comments and blanks, so
+        # a leading `# comment` no longer hides the `cd` right after it
+        # -- this used to resolve to no directory label at all.
+        root = tmp_path / "commentcd"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          # set up\n"
+            "          cd web\n"
+            "          npm run build\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert "(in web/)" in sections["cmd.build"].l2_md
+
+    def test_tox_commands_are_read_not_only_env_names(self, tmp_path):
+        # Reviewer G-2: `[testenv] commands = pytest -q` with envlist py311
+        # contributed nothing, because only env *names* were classified.
+        root = tmp_path / "toxrepo"
+        root.mkdir()
+        (root / "tox.ini").write_text(
+            "[tox]\nenvlist = py311\n\n[testenv]\ncommands =\n    pytest -q \\\n        --maxfail=1\n"
+            "\n[testenv:style]\ncommands = ruff check .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.test"].l2_md.splitlines()[0] == "**Primary:** `tox`"
+        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `tox -e style`"
+        # one candidate per (purpose, invocation), even though two lines matched
+        assert sections["cmd.lint"].l3_md.count("tox -e style") == 1
+
+    def test_shell_scripts_at_root_and_scripts_dir_are_command_sources(self, tmp_path):
+        # Reviewer G-2: aero's own release gate, scripts/gate.sh, appeared nowhere.
+        root = tmp_path / "shrepo"
+        (root / "scripts").mkdir(parents=True)
+        (root / "scripts" / "gate.sh").write_text(
+            '#!/usr/bin/env bash\nset -euo pipefail\n"$PY" -m ruff check .\n'
+            '"$PY" -m pytest -q\n"$PY" -m build\n',
+            encoding="utf-8",
+        )
+        (root / "run.sh").write_text("#!/bin/sh\nuvicorn app:main\n", encoding="utf-8")
+        (root / "deep").mkdir()
+        (root / "deep" / "ignored.sh").write_text("pytest\n", encoding="utf-8")
+        assert cmd_ext.CommandsExtractor().detect(root) is True
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        for purpose in ("lint", "test", "build"):
+            assert "bash scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
+            assert "scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
+        assert "bash run.sh" in sections["cmd.run"].l2_md
+        assert "deep/ignored.sh" not in sections["cmd.test"].l2_md + sections["cmd.test"].l3_md
+
+    def test_shell_script_is_an_alternative_when_ci_exists(self, repo):
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "gate.sh").write_text("pytest -q\n", encoding="utf-8")
+        s = _by_id(cmd_ext.CommandsExtractor().extract(repo, _opts(repo)))["cmd.test"]
+        assert "pytest -q --cov=airspace" in s.l2_md.splitlines()[0]   # CI still primary
+        assert "bash scripts/gate.sh" in s.l3_md
+
 
 import sqlite3
 

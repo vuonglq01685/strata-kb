@@ -5,29 +5,31 @@ evidence rule (spec §3.14) — this is the task that makes Stage A's
 verification gate executable: until these sections exist, a Dev agent has
 no machine-readable answer to "how do I test this repo?".
 
-Five readers surface command evidence from five sources — CI workflows, npm
-scripts, a Makefile, tox/pytest config, and presence-based defaults for
-Maven/Gradle/.NET/Go — each returning `list[Candidate]` (a `(purpose,
-command, source)` triple) plus warnings, never raising. For each of the
-four purposes in `PURPOSES`, the primary command is the first CI-sourced
-candidate; failing that, the first local candidate in reader order (npm,
-make, python, presence-based). Every other candidate for that purpose is
-kept as an alternative — never silently dropped — because CI evidence is
-what *actually* runs in the pipeline, while a local script only *could*
-run something similar.
+Six readers surface command evidence from six sources — CI workflows, npm
+scripts, a Makefile, tox/pytest config, shell scripts at the root or under
+`scripts/`, and presence-based defaults for Maven/Gradle/.NET/Go — each
+returning `list[Candidate]` (a `(purpose, command, source)` triple) plus
+warnings, never raising. For each of the four purposes in `PURPOSES`, the
+primary command is the first CI-sourced candidate; failing that, the first
+local candidate in reader order (npm, make, python, shell, presence-based).
+Every other candidate for that purpose is kept as an alternative — never
+silently dropped — because CI evidence is what *actually* runs in the
+pipeline, while a local script only *could* run something similar.
 
-Classification (`_classify()`) is a single keyword lookup against
-`PURPOSE_KEYWORDS`, checked in the dict's own declaration order — `test`
-before `lint` before `build` before `run` — so `pytest` (whose last four
-letters spell "test") is never miscounted as a generic `build`. The npm
-reader folds its `npm run <name>` / `npm test` invocation into the same
-string it classifies and displays (Ruling R2): a script's raw body is
-still what's shown and matched primarily, but the invocation travels
-alongside it rather than replacing it, which also lets a reserved script
-name (`start`) pull in the `run` purpose's `"start"` keyword even when the
-body itself (`vite`) carries no keyword of its own. The `make` reader
-differs deliberately: its command is `make <target>` — the recipe body is
-never shown or classified, only the target name embedded in that string.
+Classification (`_classify()`) matches a keyword against a token when the
+keyword equals the whole token, or is a prefix of the token cut off by a
+`-` or `:` separator (`test-unit`, `lint:fix`) — never a bare substring:
+`/dev/null` is not `dev` — against `PURPOSE_KEYWORDS`, checked in the
+dict's own declaration order — `test` before `lint` before `build` before
+`run` — so `pytest` (whose last four letters spell "test") is never
+miscounted as a generic `build`. The npm reader folds its `npm run <name>` /
+`npm test` invocation into the same string it classifies and displays (Ruling
+R2): a script's raw body is still what's shown and matched primarily, but the
+invocation travels alongside it rather than replacing it, which also lets a
+reserved script name (`start`) pull in the `run` purpose's `"start"` keyword
+even when the body itself (`vite`) carries no keyword of its own. The `make`
+reader differs deliberately: its command is `make <target>` — the recipe body
+is never shown or classified, only the target name embedded in that string.
 
 Every reader degrades rather than raises: a malformed or wrong-shaped file
 (a `package.json` that's a list, a `jobs:` that's a list, ...) becomes a
@@ -48,6 +50,7 @@ import yaml
 
 from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
 from center_kb.codeingest.extractors._envkeys import redact_userinfo
+from center_kb.codeingest.extractors._lines import join_continuations
 from center_kb.codeingest.extractors._mdcells import escape_cell
 from center_kb.codeingest.extractors.tree import relposix, walk_tree
 
@@ -59,7 +62,7 @@ PURPOSE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "lint": ("ruff", "eslint", "flake8", "mypy", "golangci-lint",
              "dotnet format", "checkstyle", "lint", "format"),
     "build": ("build", "compile", "tsc", "vite build", "mvn package",
-              "gradle build", "dotnet build", "pip install", "go build"),
+              "gradle build", "dotnet build", "go build"),
     "run": ("start", "serve", "uvicorn", "gunicorn", "dotnet run",
             "go run", "dev"),
 }
@@ -76,12 +79,15 @@ _CD_LINE_RE = re.compile(r"^cd\s+(\S+)$")
 def _step_dir_label(step: dict, lines: list[str]) -> str | None:
     """The directory a step's `run:` block actually executes in, when
     that isn't the repo root — from `working-directory:` if the step
-    sets it, else a leading, standalone `cd <dir>` line in the block
-    itself (checked only on the first non-blank line: a `cd` buried
-    mid-block doesn't apply to the earlier commands). Used only to
-    annotate the source label (`... (in web/)`) — the command text
-    itself is never rewritten into `cd web && ...`; rewriting invites
-    its own errors, and the label alone is enough to stop a
+    sets it, else a standalone `cd <dir>` line at `lines[0]` (checked
+    only there: a `cd` after an earlier command doesn't apply to that
+    earlier command). `lines` has already been comment- and blank-
+    dropped and continuation-joined by `join_continuations`, so a
+    leading `# comment` no longer hides the `cd` right after it —
+    `# set up` / `cd web` / `npm run build` now labels `web`, not
+    `None`. Used only to annotate the source label (`... (in web/)`) — the
+    command text itself is never rewritten into `cd web && ...`; rewriting
+    invites its own errors, and the label alone is enough to stop a
     subdirectory-only command from being read as root-runnable
     (task review round 1, Finding 1 / controller ruling R33).
 
@@ -151,15 +157,83 @@ def _defaults_working_directory(
     return stripped.rstrip("/") if stripped else None
 
 
+_TOKEN_STRIP = "\"'();,"
+_TOKEN_SEPARATORS = ("-", ":")
+
+# Recognized file extensions, checked against a token's final dot-suffix.
+# A frozen list, not a generic "has a dot" rule: `ruff>=0.15` and `v1.2`
+# already fail the separator/position check on their own (no keyword
+# prefix followed by `-`/`:`), so neither argues for a frozen set --
+# and `lint:fix` / `build:prod` have no dot at all, so a dot-rule would
+# ignore them by construction and never even reach this check either
+# way. What does argue for a frozen set: `make test-3.11` -> `test` and
+# `tox -e lint-3.12` -> `lint` (Python version matrices) are genuine
+# separator-rule matches whose matched token carries a dot -- a generic
+# "has a dot" rule would wrongly exclude both.
+_FILENAME_EXTENSIONS = frozenset({
+    "txt", "json", "yml", "yaml", "sh", "py", "js", "ts", "md",
+    "cfg", "ini", "toml", "lock", "csv", "log", "sql", "xml",
+    "in", "gz", "tgz", "zip", "tar", "bz2", "xz", "mjs", "cjs", "bash",
+})
+
+
+def _looks_like_filename(token: str) -> bool:
+    """True when `token` ends in a recognized file extension. Case-
+    sensitive: `token` must already be lowercased -- `_classify` does
+    this before `token` ever reaches here, its only caller, so
+    `_looks_like_filename("x.TXT")` returning `False` is unreached in
+    practice."""
+    _, dot, suffix = token.rpartition(".")
+    return bool(dot) and suffix in _FILENAME_EXTENSIONS
+
+
+def _token_matches_keyword(token: str, keyword: str) -> bool:
+    """`keyword` matches `token` when they're equal, or when `keyword` is
+    a prefix of `token` immediately followed by a separator in
+    `_TOKEN_SEPARATORS` and `token` doesn't look like a filename -- so a
+    Makefile target `test-unit` or an npm script `lint:fix` still
+    classifies (user-approved widening: a whole-token-only rule left a
+    repo whose Makefile has only `test-unit` with no `cmd.test` section
+    at all), but a CI `run:` line's own install/copy/download step
+    (`pip install -r dev-requirements.txt`, `cp test-fixtures/a.json
+    /tmp`, `curl -o start-script.sh https://x`) doesn't reopen the
+    false-positive class the separator rule was meant to close
+    (user-approved containment). The keyword must still start at
+    position 0 of the token: `devops.txt` (`dev` then `o`), `/dev/null`
+    (`dev` isn't at position 0), `smoke-test-token` (`test` isn't at
+    position 0) and `starting` (`start` then `i`) all stay unmatched."""
+    if token == keyword:
+        return True
+    return (
+        token.startswith(keyword)
+        and token[len(keyword)] in _TOKEN_SEPARATORS
+        and not _looks_like_filename(token)
+    )
+
+
 def _classify(text: str) -> str | None:
-    """First purpose in `PURPOSE_KEYWORDS`' own declaration order whose
-    keyword appears in `text` (case-insensitive substring match) — `test`
-    is checked before `build` so `pytest` is never mistaken for a generic
-    build command."""
-    lowered = text.lower()
+    """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
+    before `lint` before `build` before `run`) whose keyword matches a
+    run of `text`'s tokens: a one-word keyword must match one whitespace-
+    delimited token (outer quotes and parens stripped) per
+    `_token_matches_keyword`, a multi-word keyword must match that many
+    consecutive tokens the same way. A bare substring match classified
+    `/dev/null` as `run` and `:latest` as `test` (reviewer G-2); this
+    still can't -- only a whole token, or a keyword prefix cut by `-`/`:`,
+    counts."""
+    tokens = [tok.strip(_TOKEN_STRIP) for tok in text.lower().split()]
     for purpose, keywords in PURPOSE_KEYWORDS.items():
-        if any(kw in lowered for kw in keywords):
-            return purpose
+        for keyword in keywords:
+            kw_tokens = keyword.split()
+            width = len(kw_tokens)
+            if any(
+                all(
+                    _token_matches_keyword(tok, kw)
+                    for tok, kw in zip(tokens[i:i + width], kw_tokens)
+                )
+                for i in range(len(tokens) - width + 1)
+            ):
+                return purpose
     return None
 
 
@@ -174,7 +248,8 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
     `services.py`'s convention of sorting a parsed mapping's keys) then
     step order (a step list's position is meaningful — the file's own
     execution order — so it is never re-sorted). A multi-line `run:`
-    block is split on newlines into one candidate per line. Source label
+    block is split into logical lines by `join_continuations` (a `\\`
+    continuation is one command) — one candidate per line. Source label
     is `f"CI: {file}#{job}"` so every candidate from the same job shares
     one traceable label — with a `" (in <dir>/)"` suffix when the command
     doesn't actually run at the repo root; without that, a
@@ -244,7 +319,7 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                             f"could not parse {rel}: job {job_name!r} step 'run' is not a string"
                         )
                         continue
-                    lines = run.splitlines()
+                    lines = join_continuations(run)
                     # Ruling R34: step's own directory beats the job's
                     # `defaults.run.working-directory`, which beats the
                     # workflow's -- GitHub Actions' own precedence.
@@ -253,12 +328,9 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                     )
                     source = f"{source_base} (in {dir_label}/)" if dir_label else source_base
                     for line in lines:
-                        stripped = line.strip()
-                        if not stripped:
-                            continue
-                        purpose = _classify(stripped)
+                        purpose = _classify(line)
                         if purpose is not None:
-                            candidates.append((purpose, stripped, source))
+                            candidates.append((purpose, line, source))
 
     return candidates, warnings
 
@@ -358,6 +430,27 @@ def _tox_env_names(text: str) -> set[str]:
     return names
 
 
+def _tox_commands(text: str) -> list[tuple[str, str]]:
+    """`(invocation, logical command line)` for every `commands =` value
+    of `[testenv]` (invocation `tox`) and `[testenv:<name>]` (`tox -e
+    <name>`), continuations joined. Env names alone say nothing about
+    what an env runs (reviewer G-2: `envlist = py311` + `commands =
+    pytest -q` contributed nothing)."""
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read_string(text)
+    found: list[tuple[str, str]] = []
+    for section in parser.sections():
+        if section == "testenv":
+            invocation = "tox"
+        elif section.startswith("testenv:"):
+            invocation = f"tox -e {section.split(':', 1)[1].strip()}"
+        else:
+            continue
+        raw = parser.get(section, "commands", fallback="")
+        found.extend((invocation, line) for line in join_continuations(raw))
+    return found
+
+
 def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
     candidates: list[Candidate] = []
     warnings: list[str] = []
@@ -377,6 +470,12 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
                 if purpose is not None:
                     candidates.append((purpose, command, rel))
 
+            for invocation, line in _tox_commands(text):
+                purpose = _classify(line)
+                candidate = (purpose, invocation, rel)
+                if purpose is not None and candidate not in candidates:
+                    candidates.append(candidate)
+
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         rel = relposix(root, pyproject)
@@ -391,6 +490,46 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
             if isinstance(ini_options, dict):
                 candidates.append(("test", "pytest", rel))
 
+    return candidates, warnings
+
+
+# ---------------------------------------------------------------------------
+# reader: shell — *.sh at the repo root and directly under scripts/
+# ---------------------------------------------------------------------------
+
+_SHELL_DIRS = (Path("."), Path("scripts"))
+
+
+def _read_shell(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
+    """Every `*.sh` at the repo root or directly under `scripts/`. The
+    script's logical lines are classified; for each purpose that appears
+    at least once the candidate is `bash <script>` with the script as
+    source — a Dev agent is told to run the script, not one line torn out
+    of it. `bash scripts/gate.sh` is aero's own documented release gate
+    and was invisible before this reader (reviewer G-2)."""
+    candidates: list[Candidate] = []
+    warnings: list[str] = []
+    for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
+        if reldir not in _SHELL_DIRS:
+            continue
+        for name in filenames:
+            if not name.endswith(".sh"):
+                continue
+            path = root / reldir / name
+            rel = relposix(root, path)
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                warnings.append(f"could not parse {rel}: {exc}")
+                continue
+            purposes = {
+                purpose
+                for purpose in (_classify(line) for line in join_continuations(text))
+                if purpose is not None
+            }
+            for purpose in PURPOSES:
+                if purpose in purposes:
+                    candidates.append((purpose, f"bash {rel}", rel))
     return candidates, warnings
 
 
@@ -450,7 +589,7 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
 
 def _select(all_candidates: list[Candidate], purpose: str) -> tuple[Candidate, list[Candidate]] | None:
     """`all_candidates` is already CI-first, then local readers in the
-    brief's fixed order (npm, make, python, presence-based) — so the
+    brief's fixed order (npm, make, python, shell, presence-based) — so the
     first match for a purpose is, by construction, the first CI-sourced
     candidate if one exists, else the first local one. Everything else
     for that purpose is an alternative, never dropped."""
@@ -519,6 +658,8 @@ class CommandsExtractor:
                 fnmatch.fnmatch(f, "*.y*ml") for f in filenames
             ):
                 return True
+            if reldir in _SHELL_DIRS and any(f.endswith(".sh") for f in filenames):
+                return True
             for name in filenames:
                 if name == "package.json" and depth <= _NODE_MAX_DEPTH:
                     return True
@@ -555,6 +696,7 @@ class CommandsExtractor:
             + _run(_read_npm, "npm scripts", root, opts)
             + _run(_read_make, "Makefile", root)
             + _run(_read_python, "Python tooling (tox/pytest)", root)
+            + _run(_read_shell, "shell scripts", root, opts)
             + _run(_read_presence, "presence-based defaults", root, opts)
         )
 
