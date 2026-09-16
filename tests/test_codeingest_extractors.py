@@ -158,6 +158,26 @@ class TestTreeExtractor:
         s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
         assert "scratch.txt" not in s.l3_md
 
+    def test_git_ls_files_cache_invalidates_on_a_new_commit(self, repo, run_git):
+        # I3: `_git_ls_files` is memoised per process, keyed on
+        # `.git/index`'s (mtime_ns, size), so repeated `walk_tree()` calls
+        # within one ingest don't re-run the git subprocess. That must
+        # never let a later, real change go unseen by a later call in the
+        # SAME process: `git add`/`git commit` rewrite `.git/index`, which
+        # is exactly the key this test proves invalidates the cache.
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        before = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert "new_file.py" not in before.l3_md
+
+        (repo / "new_file.py").write_text("", encoding="utf-8")
+        run_git(repo, "add", "new_file.py")
+        run_git(repo, "commit", "-m", "c2")
+
+        after = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert "new_file.py" in after.l3_md
+
     def test_non_git_root_is_unfiltered_and_says_so(self, repo):
         result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
         s = _by_id(result)["struct.tree"]

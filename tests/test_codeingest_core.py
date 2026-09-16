@@ -354,6 +354,49 @@ def test_full_extractor_set_on_the_fixture_repo_builds_clean(tmp_path):
     assert build.ok
 
 
+def test_ingest_calls_git_ls_files_a_small_bounded_number_of_times(
+    tmp_path, run_git, monkeypatch
+):
+    # I3: measured on this repository's own self-ingest, `_git_ls_files`
+    # (shared by every extractor's `walk_tree()` call, plus a second call
+    # `TreeExtractor.extract()` itself used to make purely to word its
+    # summary) ran ~23 times -- 78% of one ingest's wall time -- because
+    # nothing memoised it. Memoising it on `.git/index`'s (mtime_ns, size)
+    # collapses every one of those calls within a single `core.run()` to
+    # the same cache entry, since nothing mutates the index mid-run. This
+    # instruments the real subprocess call, not the wall clock (a timing
+    # assertion is flaky by construction), against a real git fixture
+    # exercising every extractor (`build_code_repo`).
+    from tests.fixtures_coderepo import build_code_repo
+
+    root = build_code_repo(tmp_path)
+    run_git(root, "init")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "c1")
+
+    from center_kb.codeingest.extractors import tree as tree_ext
+
+    calls: list[Path] = []
+    real_uncached = tree_ext._git_ls_files_uncached
+
+    def _counting(root_arg: Path):
+        calls.append(root_arg)
+        return real_uncached(root_arg)
+
+    monkeypatch.setattr(tree_ext, "_git_ls_files_uncached", _counting)
+
+    core.run(core.CodeIngestOptions(
+        repo_root=root, kb_dir=root / ".kb", doc_id="demo-code", repo_id="demo",
+    ))
+
+    # A small named bound, not "== 1": this pins that memoisation is
+    # actually collapsing the many `walk_tree()` calls every extractor
+    # makes in one run, without being so tight that one legitimate extra
+    # call (a boundary this test doesn't control) turns it red.
+    _MAX_REAL_LS_FILES_CALLS = 2
+    assert len(calls) <= _MAX_REAL_LS_FILES_CALLS, calls
+
+
 def test_generated_document_is_searchable_through_the_hub(
     tmp_path, run_git, monkeypatch
 ):

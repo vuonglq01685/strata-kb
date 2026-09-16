@@ -52,15 +52,65 @@ def relposix(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def _index_cache_key(root: Path) -> tuple[str, int, int] | None:
+    """A cache key for `root`'s git index — `(resolved root, .git/index
+    mtime_ns, size)` — or `None` when no stable key can be obtained, in
+    which case the caller must never cache (I3). `None` covers: `root`
+    has no `.git` at all; `.git/index` does not exist for some other
+    reason (stat raises); and, deliberately, `root/.git` being a *file*
+    rather than a directory — a linked worktree or a submodule's gitlink,
+    where the real `.git` directory (and so the real index) lives
+    somewhere else entirely. Resolving that indirection to find the real
+    index is possible, but this function does not guess where it points —
+    keying on the wrong file would either cache a wrong answer forever or
+    silently ignore a change to the real index, either of which is worse
+    than just not caching that root."""
+    resolved = root.resolve()
+    git_path = resolved / ".git"
+    if not git_path.is_dir():
+        return None
+    try:
+        st = (git_path / "index").stat()
+    except OSError:
+        return None
+    return (str(resolved), st.st_mtime_ns, st.st_size)
+
+
+# I3: `_git_ls_files` used to run fresh on every call — ~23 times in one
+# self-ingest of this repository (walk_tree() is shared by every
+# extractor, and `TreeExtractor.extract()` itself called it twice; see
+# `_walk_tree_with_git_state` below for the second call). Memoised per
+# process, keyed by `_index_cache_key()`: every test in this suite that
+# changes what `git ls-files` would report does so through `git
+# add`/`git commit`, both of which rewrite `.git/index` and so
+# invalidate the key — this answers the spec's stated objection to
+# caching ("tests mutate trees between calls in one process") directly,
+# rather than working around it with a manual invalidation hook.
+_LS_FILES_CACHE: dict[tuple[str, int, int], tuple[bool, list[str]]] = {}
+
+
+def _git_ls_files_uncached(root: Path) -> tuple[bool, list[str]]:
+    """The actual `git ls-files -z` subprocess call — `_git_ls_files`'s
+    memoised wrapper is the only caller other than tests that need to
+    instrument the real call count."""
+    proc = _git(root, "ls-files", "-z")
+    if proc.returncode != 0:
+        return False, []
+    paths = [p for p in proc.stdout.split("\0") if p]
+    return True, sorted(set(paths))
+
+
 def _git_ls_files(root: Path) -> tuple[bool, list[str]]:
-    """Runs `git ls-files -z` under `root`. Returns `(is_git_repo, paths)`:
-    `is_git_repo` is whether git succeeded (`root` is inside a git
-    worktree); `paths` is the sorted, de-duplicated `/`-separated tracked
-    paths, empty when git succeeded but nothing is tracked. Deduplicated
-    because an unresolved merge conflict makes `git ls-files` print a
-    conflicted path once per index stage (base/ours/theirs) — without
-    this, that path would be listed (and counted, and re-parsed by every
-    consuming extractor) 3x. `-z` keeps non-ASCII names unquoted.
+    """Runs `git ls-files -z` under `root`, memoised (see
+    `_index_cache_key`/`_LS_FILES_CACHE` above). Returns `(is_git_repo,
+    paths)`: `is_git_repo` is whether git succeeded (`root` is inside a
+    git worktree); `paths` is the sorted, de-duplicated `/`-separated
+    tracked paths, empty when git succeeded but nothing is tracked.
+    Deduplicated because an unresolved merge conflict makes `git
+    ls-files` print a conflicted path once per index stage
+    (base/ours/theirs) — without this, that path would be listed (and
+    counted, and re-parsed by every consuming extractor) 3x. `-z` keeps
+    non-ASCII names unquoted.
 
     Split out from `tracked_files()` so `TreeExtractor.extract()` can tell
     "not a repository" apart from "a repository with nothing tracked" for
@@ -68,11 +118,13 @@ def _git_ls_files(root: Path) -> tuple[bool, list[str]]:
     single `None` for both — its other caller, `walk_tree()`, only needs
     "can a tree be built from git here?" and falls back to `os.walk`
     identically either way."""
-    proc = _git(root, "ls-files", "-z")
-    if proc.returncode != 0:
-        return False, []
-    paths = [p for p in proc.stdout.split("\0") if p]
-    return True, sorted(set(paths))
+    key = _index_cache_key(root)
+    if key is None:
+        return _git_ls_files_uncached(root)
+    cached = _LS_FILES_CACHE.get(key)
+    if cached is None:
+        cached = _LS_FILES_CACHE[key] = _git_ls_files_uncached(root)
+    return cached
 
 
 def tracked_files(root: Path) -> list[str] | None:
@@ -117,6 +169,58 @@ def _entries_from_tracked(
     return entries
 
 
+def _os_walk_entries(
+    root: Path, resolved_kb_dir: Path | None
+) -> list[tuple[int, Path, list[str]]]:
+    """The `os.walk`-based fallback tree — used both when `root` is not a
+    git repository at all and when it is one with nothing tracked yet —
+    pruned exactly like the `git ls-files` branch. Factored out so
+    `_walk_tree_with_git_state()`'s two non-tracked-file branches share
+    one copy of this loop rather than two."""
+    entries: list[tuple[int, Path, list[str]]] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        current = Path(dirpath)
+        dirnames.sort()
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in IGNORED_DIRS
+            and (resolved_kb_dir is None or (current / d).resolve() != resolved_kb_dir)
+        ]
+        filenames.sort()
+        rel = current.relative_to(root)
+        depth = 0 if rel == Path(".") else len(rel.parts)
+        entries.append((depth, rel, filenames))
+    return entries
+
+
+def _walk_tree_with_git_state(
+    root: Path, kb_dir: Path | None = None
+) -> tuple[list[tuple[int, Path, list[str]]], bool, bool]:
+    """Does everything `walk_tree()` (below) does, but also returns
+    `(is_repo, has_tracked)` — the two facts `TreeExtractor.extract()`
+    needs to word its "not a git repository" vs. "repository with
+    nothing tracked" summary/warning (see `_git_ls_files`'s docstring).
+    Giving `extract()` this function directly, instead of it calling
+    `walk_tree()` and then separately calling `_git_ls_files()` again
+    (I3), means the whole ingest run's very first `walk_tree`-family call
+    is the only one that can ever miss `_git_ls_files`'s cache — every
+    other extractor's own `walk_tree()` call below hits it. `walk_tree()`
+    itself just discards the extra two values; every other caller is
+    unaffected."""
+    resolved_kb_dir: Path | None = None
+    if kb_dir is not None:
+        resolved_root = root.resolve()
+        candidate = (kb_dir if kb_dir.is_absolute() else root / kb_dir).resolve()
+        if resolved_root in candidate.parents:
+            resolved_kb_dir = candidate
+
+    is_repo, tracked_paths = _git_ls_files(root)
+    if is_repo and tracked_paths:
+        entries = _entries_from_tracked(root.resolve(), tracked_paths, resolved_kb_dir)
+        return entries, True, True
+    return _os_walk_entries(root, resolved_kb_dir), is_repo, False
+
+
 def walk_tree(
     root: Path, kb_dir: Path | None = None
 ) -> list[tuple[int, Path, list[str]]]:
@@ -144,30 +248,7 @@ def walk_tree(
     each recursive step, so the traversal itself is already alphabetical at
     every level regardless of OS or underlying filesystem order.
     """
-    resolved_kb_dir: Path | None = None
-    if kb_dir is not None:
-        resolved_root = root.resolve()
-        candidate = (kb_dir if kb_dir.is_absolute() else root / kb_dir).resolve()
-        if resolved_root in candidate.parents:
-            resolved_kb_dir = candidate
-
-    tracked = tracked_files(root)
-    if tracked is not None:
-        return _entries_from_tracked(root.resolve(), tracked, resolved_kb_dir)
-
-    entries: list[tuple[int, Path, list[str]]] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        current = Path(dirpath)
-        dirnames.sort()
-        dirnames[:] = [
-            d for d in dirnames
-            if d not in IGNORED_DIRS
-            and (resolved_kb_dir is None or (current / d).resolve() != resolved_kb_dir)
-        ]
-        filenames.sort()
-        rel = current.relative_to(root)
-        depth = 0 if rel == Path(".") else len(rel.parts)
-        entries.append((depth, rel, filenames))
+    entries, _is_repo, _has_tracked = _walk_tree_with_git_state(root, kb_dir)
     return entries
 
 
@@ -208,13 +289,17 @@ def _render_l2(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
     return "\n".join(lines)
 
 
-def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> tuple[str, int]:
-    """(rendered listing capped at `_L3_MAX_LINES` lines, number of lines
-    cut). When truncated, a trailing marker line names the first dropped
-    entry (`lines[_L3_MAX_LINES]`) so a reader can tell *where* the real
-    tree kept going, not just how much was lost — entries arrive in a
-    stable alphabetical preorder (`walk_tree`), so the entry named here is
-    deterministic across machines."""
+def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
+    """Rendered listing capped at `_L3_MAX_LINES` lines. When truncated, a
+    trailing marker line names the first dropped entry
+    (`lines[_L3_MAX_LINES]`) so a reader can tell *where* the real tree
+    kept going, not just how much was lost — entries arrive in a stable
+    alphabetical preorder (`walk_tree`), so the entry named here is
+    deterministic across machines. (M6: this used to also return the
+    `omitted` count for a caller that only ever discarded it — the marker
+    line above already carries that number for anyone reading the
+    rendered text, so there was nothing left for a second, dead return
+    value to do.)"""
     lines: list[str] = []
     for depth, rel, filenames in entries:
         if depth > _L3_DEPTH:
@@ -232,7 +317,7 @@ def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> tuple[
             f"\n# … {omitted} more {noun} omitted from `{first_dropped}` "
             f"onward (capped at {_L3_MAX_LINES} lines)"
         )
-    return body, omitted
+    return body
 
 
 class TreeExtractor:
@@ -245,7 +330,14 @@ class TreeExtractor:
         return True
 
     def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
-        entries = walk_tree(root, opts.kb_dir)
+        # Calls `_walk_tree_with_git_state()` directly, not the public
+        # `walk_tree()` followed by its own separate `_git_ls_files()`
+        # call (I3) -- the `(is_repo, tracked)` pair below used to cost a
+        # second `git ls-files` subprocess purely to distinguish "not a
+        # repository" from "a repository with nothing tracked" for the
+        # wording further down, information the entries-building call
+        # already had.
+        entries, is_repo, tracked = _walk_tree_with_git_state(root, opts.kb_dir)
         n_dirs = sum(1 for _depth, rel, _filenames in entries if rel != Path("."))
         n_files = sum(len(filenames) for _depth, _rel, filenames in entries)
         entry_points, console_scripts = _detect_entry_points(root, entries)
@@ -265,17 +357,16 @@ class TreeExtractor:
         # anywhere else); the other names the _L3_MAX_LINES cut along with
         # how many lines and which entry it dropped first. Both live inside
         # the fence so neither can register as a pipe table.
-        body, _omitted_lines = _render_l3(root, entries)
+        body = _render_l3(root, entries)
         l3_md = "```\n# tree, capped at depth 4\n" + body + "\n```\n"
 
-        # Re-checks git directly (rather than `tracked_files(root) is not
-        # None`) because tracked_files() collapses two different causes
-        # into one None -- git failing (root is not a repository) and git
-        # succeeding with nothing tracked (root is a repository with no
-        # tracked file yet) -- and those need different, honest wording
-        # here. See `_git_ls_files`'s docstring.
+        # `is_repo`/`tracked` (from `_walk_tree_with_git_state` above) tell
+        # apart "not a repository" from "a repository with nothing
+        # tracked" for the wording below -- the same distinction
+        # `tracked_files(root) is not None` alone can't make, since that
+        # function collapses both causes into one `None`. See
+        # `_git_ls_files`'s docstring.
         warnings: list[str] = []
-        is_repo, tracked = _git_ls_files(root)
         if not is_repo:
             files_phrase = f"{n_files} files (not a git repository — listing unfiltered)"
             warnings.append(
