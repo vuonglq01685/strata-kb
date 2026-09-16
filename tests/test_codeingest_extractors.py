@@ -254,7 +254,9 @@ class TestTreeExtractor:
 
     def test_small_tree_has_no_omitted_marker(self, repo):
         s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
-        assert "more entries omitted" not in s.l3_md
+        # "omitted" (not just the plural "more entries omitted") covers both
+        # the plural and singular ("1 more entry omitted") marker forms.
+        assert "omitted" not in s.l3_md
 
     def test_l3_at_exactly_the_line_cap_has_no_omitted_marker(self, tmp_path):
         # Boundary the 700-file test doesn't reach: exactly _L3_MAX_LINES
@@ -264,7 +266,15 @@ class TestTreeExtractor:
         for i in range(tree_ext._L3_MAX_LINES):
             (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
         s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
-        assert "more entries omitted" not in s.l3_md
+        # "omitted" (not just the plural "more entries omitted") is the
+        # substring that actually catches an off-by-one at this boundary:
+        # dropping exactly one entry renders the *singular* "1 more entry
+        # omitted", which doesn't contain "more entries omitted".
+        assert "omitted" not in s.l3_md
+        # Pin that all 600 lines survived -- the plain "no marker" check
+        # alone can't distinguish "nothing was cut" from "everything from
+        # the 600th entry on was silently cut with no marker at all".
+        assert "- f0599.txt" in s.l3_md
         assert len(s.l3_md.splitlines()) <= tree_ext._L3_MAX_LINES + 3  # fences + depth marker
 
     def test_l3_one_over_the_cap_pluralizes_singular_and_names_the_entry(self, tmp_path):
