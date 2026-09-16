@@ -190,6 +190,30 @@ class TestTreeExtractor:
         after = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
         assert "new_file.py" in after.l3_md
 
+    def test_ls_files_cache_size_does_not_grow_across_many_index_states_of_one_root(
+        self, repo, run_git
+    ):
+        # R2-6 (re-review round 2): a long-lived process (this project's
+        # MCP server) can ingest the same root repeatedly as its tree
+        # changes over the process's lifetime -- keying the cache on the
+        # full `(root, mtime_ns, size)` tuple would retain one entry per
+        # distinct index state that root has EVER been in, unbounded.
+        # Keying on the resolved root alone and keeping only the newest
+        # state bounds it: one root, however many commits, is still one
+        # cache entry.
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        tree_ext.walk_tree(repo)
+        before_size = len(tree_ext._LS_FILES_CACHE)
+        for i in range(5):
+            (repo / f"extra_{i}.py").write_text("", encoding="utf-8")
+            run_git(repo, "add", f"extra_{i}.py")
+            run_git(repo, "commit", "-m", f"c{i + 2}")
+            tree_ext.walk_tree(repo)
+        after_size = len(tree_ext._LS_FILES_CACHE)
+        assert after_size == before_size
+
     def test_non_git_root_is_unfiltered_and_says_so(self, repo):
         result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
         s = _by_id(result)["struct.tree"]

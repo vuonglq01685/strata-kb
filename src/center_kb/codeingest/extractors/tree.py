@@ -86,7 +86,19 @@ def _index_cache_key(root: Path) -> tuple[str, int, int] | None:
 # invalidate the key — this answers the spec's stated objection to
 # caching ("tests mutate trees between calls in one process") directly,
 # rather than working around it with a manual invalidation hook.
-_LS_FILES_CACHE: dict[tuple[str, int, int], tuple[bool, list[str]]] = {}
+#
+# R2-6 (re-review round 2): keyed by resolved root alone (not by the
+# full `(root, mtime_ns, size)` key), holding only the newest
+# `(full_key, result)` pair seen for that root -- one entry per root is
+# all one ingest ever needs, since it never revisits an older index
+# state of the same root, and it bounds this cache's memory in a
+# long-lived process (this project ships an MCP server as a first-class
+# entry point, so "the same root ingested repeatedly as its tree
+# changes over the server's lifetime" is a real deployment, not a
+# hypothetical). A dict keyed by the full `(root, mtime_ns, size)`
+# tuple instead would retain one entry per distinct index state that
+# root has ever been in, unbounded over the server's lifetime.
+_LS_FILES_CACHE: dict[str, tuple[tuple[str, int, int], tuple[bool, list[str]]]] = {}
 
 
 def _git_ls_files_uncached(root: Path) -> tuple[bool, list[str]]:
@@ -112,19 +124,24 @@ def _git_ls_files(root: Path) -> tuple[bool, list[str]]:
     counted, and re-parsed by every consuming extractor) 3x. `-z` keeps
     non-ASCII names unquoted.
 
-    Split out from `tracked_files()` so `TreeExtractor.extract()` can tell
-    "not a repository" apart from "a repository with nothing tracked" for
-    its summary/warning wording, while `tracked_files()` keeps returning a
-    single `None` for both — its other caller, `walk_tree()`, only needs
-    "can a tree be built from git here?" and falls back to `os.walk`
-    identically either way."""
+    Split out from `tracked_files()` so `_walk_tree_with_git_state()` (and
+    through it, `TreeExtractor.extract()`) can tell "not a repository"
+    apart from "a repository with nothing tracked" for its summary/
+    warning wording, while `tracked_files()` keeps returning a single
+    `None` for both (R2-5, re-review round 2: `tracked_files()` itself
+    has had no `src/` caller since `_walk_tree_with_git_state()` started
+    calling this function directly — see `tracked_files()`'s own
+    docstring)."""
     key = _index_cache_key(root)
     if key is None:
         return _git_ls_files_uncached(root)
-    cached = _LS_FILES_CACHE.get(key)
-    if cached is None:
-        cached = _LS_FILES_CACHE[key] = _git_ls_files_uncached(root)
-    return cached
+    root_key = key[0]
+    entry = _LS_FILES_CACHE.get(root_key)
+    if entry is not None and entry[0] == key:
+        return entry[1]
+    result = _git_ls_files_uncached(root)
+    _LS_FILES_CACHE[root_key] = (key, result)
+    return result
 
 
 def tracked_files(root: Path) -> list[str] | None:
@@ -133,7 +150,20 @@ def tracked_files(root: Path) -> list[str] | None:
     for the tree: git failed (not a repository) or listed nothing (a
     repository with no tracked file under `root`: a brand-new checkout, or
     the wrong root — an empty tree would be a lie). See `_git_ls_files` for
-    the dedup rationale and the `-z` note."""
+    the dedup rationale and the `-z` note.
+
+    R2-5 (re-review round 2): this has no `src/` caller — `walk_tree()`
+    was rewritten to call `_walk_tree_with_git_state()`, which calls
+    `_git_ls_files()` directly (it needs `is_repo` and "has tracked
+    paths" as two separate facts, which this function's single collapsed
+    `None` can't give it) — so this function is now a test/diagnostic
+    entry point only: `tests/test_codeingest_extractors.py` calls it
+    directly to assert the merge-conflict dedup independently of the
+    rest of the tree-building pipeline. Kept rather than deleted because
+    that assertion reads more clearly against this function's own
+    simple, direct contract than against `_git_ls_files`'s two-tuple one,
+    and removing a still-tested, still-documented public function for a
+    docstring fix alone is not worth the churn."""
     is_repo, paths = _git_ls_files(root)
     if not is_repo:
         return None
@@ -238,9 +268,10 @@ def walk_tree(
     than the directory actually on disk.
 
     The file list comes from `git ls-files` when `root` is inside a git
-    repository with at least one tracked file (see `tracked_files`);
-    otherwise from `os.walk`. Both branches apply the same prunes and
-    return the same shape.
+    repository with at least one tracked file (see `_walk_tree_with_git_state`,
+    which this function is a thin wrapper over); otherwise from
+    `os.walk`. Both branches apply the same prunes and return the same
+    shape.
 
     Returns `(depth, dir_relpath, sorted_filenames)` for every directory —
     root included, at depth 0 — in a stable preorder: `os.walk` recurses in
