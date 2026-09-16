@@ -86,7 +86,8 @@ class TestTreeExtractor:
         assert "structure.md" not in body
         assert "docs" in body  # only the kb subtree is pruned, not its parent
 
-    def test_prunes_relative_kb_dir(self, repo):
+    def test_prunes_relative_kb_dir(self, repo, monkeypatch):
+        monkeypatch.chdir(repo)
         (repo / "docs" / "kb" / "demo-code").mkdir(parents=True)
         (repo / "docs" / "kb" / "demo-code" / "structure.md").write_text(
             "stub\n", encoding="utf-8"
@@ -494,7 +495,9 @@ class TestDepsExtractor:
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.go"]
         assert "pinned" not in s.l3_md
-        assert s.summary == "1 direct Go dependencies."
+        # G-5 fixed the Gin prefix to the real module path, so this fixture's
+        # own github.com/gin-gonic/gin dependency now correctly matches it.
+        assert s.summary == "1 direct Go dependencies; frameworks: Gin."
 
     def test_php_deps_come_from_composer_json(self, repo):
         # Review Finding 6: php had zero test coverage.
@@ -571,6 +574,86 @@ class TestDepsExtractor:
         assert "S3CR3TV4LUE" not in s.l3_md
         assert "git+https://***@github.com/o/r.git" in s.l3_md
 
+    def test_optional_dependency_groups_are_read_and_rendered(self, repo):
+        # Reviewer G-5: five extras (the whole PDF-ingest engine among them)
+        # were absent; only [project].dependencies was read.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110", "pydantic>=2.7"]\n'
+            "[project.optional-dependencies]\n"
+            'ingest = ["docling>=2.0", "Pillow>=10"]\n'
+            'dev = ["ruff>=0.15,<0.16", "pytest>=8.0"]\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.python"]
+        assert "| fastapi | >=0.110 |" in s.l2_md
+        assert "| Group | Packages |" in s.l2_md
+        assert "| extra:dev | pytest, ruff |" in s.l2_md
+        assert "| extra:ingest | docling, Pillow |" in s.l2_md
+        assert ">=0.15,<0.16" not in s.l2_md            # constraints live in L3
+        assert "# extra:dev\npytest>=8.0\nruff>=0.15,<0.16" in s.l3_md
+        assert s.summary == (
+            "2 direct Python dependencies; 4 more in 2 groups (extra:dev, extra:ingest); "
+            "frameworks: FastAPI."
+        )
+
+    def test_non_root_requirements_files_are_their_own_group(self, repo):
+        # Reviewer G-5: requirements-gate.txt merged into `direct` duplicated
+        # mcp/pyyaml and hid that pytest was a runner-venv dependency.
+        (repo / "requirements.txt").write_text("fastapi>=0.110\n", encoding="utf-8")
+        (repo / "requirements-gate.txt").write_text("pytest>=8.0\nfastapi>=0.100\n", encoding="utf-8")
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.python"]
+        assert s.l2_md.count("| fastapi |") == 1
+        assert "| requirements-gate.txt | fastapi, pytest |" in s.l2_md
+        assert "# requirements-gate.txt\nfastapi>=0.100\npytest>=8.0" in s.l3_md
+        # direct = fastapi (from the base fixture's pyproject.toml, deduped
+        # against requirements.txt's own "fastapi>=0.110") + pydantic.
+        # fastapi is already counted there — only pytest is "more".
+        assert s.summary == (
+            "2 direct Python dependencies; 1 more in 1 group (requirements-gate.txt); "
+            "frameworks: FastAPI."
+        )
+
+    def test_node_dev_dependencies_are_rendered(self, repo):
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.node"]
+        assert "| dev | eslint |" in s.l2_md
+        assert "# dev\neslint^9.0.0" in s.l3_md
+        assert s.summary == "1 direct Node dependencies; 1 more in 1 group (dev); frameworks: React."
+
+    def test_optional_dependency_extra_that_is_not_a_list_warns_and_continues(self, repo):
+        # Fix wave (G-5 follow-up): an extra whose value isn't a list must
+        # degrade like every other wrong-shaped manifest here — one warning
+        # naming the file, no raise, and the rest of the extraction (this
+        # file's own `dependencies`, and every other ecosystem) still runs.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            "[project.optional-dependencies]\n"
+            'dev = "not-a-list"\n',
+            encoding="utf-8",
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        sections = _by_id(result)
+        assert "| fastapi | >=0.110 |" in sections["dep.python"].l2_md
+        assert "react" in sections["dep.node"].l2_md
+        assert any("pyproject.toml" in w for w in result.warnings)
+
+    def test_optional_dependencies_table_that_is_not_a_table_warns_and_continues(self, repo):
+        # Fix wave (G-5 follow-up): `[project.optional-dependencies]` itself
+        # being the wrong shape (here, a list instead of a table) must also
+        # degrade rather than raise.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            'optional-dependencies = ["oops"]\n',
+            encoding="utf-8",
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        sections = _by_id(result)
+        assert "| fastapi | >=0.110 |" in sections["dep.python"].l2_md
+        assert "react" in sections["dep.node"].l2_md
+        assert any("pyproject.toml" in w for w in result.warnings)
+
 
 class TestFrameworkLookup:
     @pytest.mark.parametrize(
@@ -608,6 +691,11 @@ class TestFrameworkLookup:
         # prefix against any longer name that merely began with it, so a
         # Java dependency on `reactive-streams` was mislabeled as React.
         assert deps_ext.detect_frameworks([dep]) == []
+
+    def test_gin_is_detected_from_a_real_go_module_path(self):
+        # Reviewer G-5: ("gin-gonic/gin", "Gin") never matched go.mod's
+        # `github.com/gin-gonic/gin`.
+        assert deps_ext.detect_frameworks(["github.com/gin-gonic/gin"]) == ["Gin"]
 
 
 from center_kb.codeingest.extractors import services as svc_ext
@@ -1929,7 +2017,7 @@ class TestSchemaExtractor:
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
         assert "2 columns" in s.summary          # not 3 -- "PRIMARY" is not a fabricated column
-        assert "(a, b)" in s.summary              # the PK constraint was still captured
+        assert "PK a, b" in s.summary   # the PK constraint was still captured
         assert "| PRIMARY |" not in s.l2_md
 
     def test_line_comment_inside_create_table_does_not_fabricate_or_destroy_columns(self, tmp_path):
@@ -2014,7 +2102,7 @@ class TestSchemaExtractor:
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
-        assert "1 columns" in s.summary
+        assert "1 column," in s.summary
         assert "CONSTRAINT" not in s.l2_md
         assert any("002.sql" in w for w in result.warnings)
 
@@ -2093,15 +2181,12 @@ class TestSchemaExtractor:
         finally:
             check.close()
 
-    def test_alembic_truncated_column_type_is_left_visibly_incomplete_not_fabricated(self, tmp_path):
-        # Task review round 2 New Minor: round 1's fix for Minor 11
-        # "balanced" ALEMBIC_COLUMN_RE's truncated capture by appending a
-        # closing paren -- but a multi-arg call like sa.Numeric(10, 2) is
-        # truncated by the same [^,)]+ capture to "sa.Numeric(10", and
-        # "balancing" that produces sa.Numeric(10) -- a syntactically
-        # plausible type that silently drops the scale argument, worse
-        # than the visible truncation it replaced. The fix is to leave
-        # the truncated text alone.
+    def test_alembic_column_types_are_captured_whole_and_primary_key_is_seen(self, tmp_path):
+        # Reviewer G-13: `[^,)]+` stopped at the first paren, rendering
+        # `sa.Integer(` and missing `primary_key=True`. Round 2's concern —
+        # never fabricate `sa.Numeric(10)` from `sa.Numeric(10, 2)` — holds
+        # because the type is now the first top-level argument, parens
+        # balanced, not a truncated capture with a paren appended.
         root = tmp_path / "alembic-types"
         versions = root / "versions"
         versions.mkdir(parents=True)
@@ -2111,14 +2196,145 @@ class TestSchemaExtractor:
             "        'widgets',\n"
             "        sa.Column('id', sa.Integer(), primary_key=True),\n"
             "        sa.Column('amt', sa.Numeric(10, 2), nullable=False),\n"
+            "        sa.Column('meta', sa.JSON(none_as_null=True)),\n"
             "    )\n",
             encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
-        assert "sa.Integer(" in s.l2_md   # visibly incomplete
-        assert "sa.Integer()" not in s.l2_md   # never fabricated as "complete"
-        assert "sa.Numeric(10" in s.l2_md
-        assert "sa.Numeric(10)" not in s.l2_md   # would silently drop the ", 2" scale arg
+        assert "| id | sa.Integer() | yes |" in s.l2_md
+        assert "| amt | sa.Numeric(10, 2) |  |" in s.l2_md
+        assert "| meta | sa.JSON(none_as_null=True) |  |" in s.l2_md
+        assert "PK id" in s.summary
+
+    def test_alembic_column_truncated_at_end_of_file_stays_visibly_incomplete(self, tmp_path):
+        # Reviewer G-13 round 2: _matching_close_paren returns an index AT
+        # the last real character (not past it) when a call never closes.
+        # The old exclusive slice `scope[cm.end():call_close]` dropped that
+        # character, turning a visibly truncated `sa.Integer(` into a
+        # plausible-looking, complete (and wrong) `sa.Integer`.
+        root = tmp_path / "alembic-truncated"
+        versions = root / "versions"
+        versions.mkdir(parents=True)
+        (versions / "0001_x.py").write_text(
+            "def upgrade():\n"
+            "    op.create_table(\n"
+            "        'widgets',\n"
+            "        sa.Column('id', sa.Integer(",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
+        assert "| id | sa.Integer( |  |" in s.l2_md
+        assert "sa.Integer()" not in s.l2_md
+
+    def test_alembic_composite_primary_key_is_not_reduced_to_its_first_column(self, tmp_path):
+        # Reviewer G-13 round 2 (plan-overriding ruling): `if not pk`
+        # stopped at the first `primary_key=True`, so a 2-column composite
+        # PK rendered as PK on only the first column and left the second's
+        # PK cell blank -- a confident false statement. Composite PKs are
+        # ordinary in Alembic; the full clause must reach the document.
+        #
+        # Fix wave 2, finding 1: rendering the stored `PRIMARY KEY (...)`
+        # clause after a bare `PK ` prefix stuttered -- `PK PRIMARY KEY
+        # (team_id, user_id)`. The summary now shows just the column
+        # list, consistent with the single-column `PK id` shape.
+        root = tmp_path / "alembic-composite-pk"
+        versions = root / "versions"
+        versions.mkdir(parents=True)
+        (versions / "0001_x.py").write_text(
+            "def upgrade():\n"
+            "    op.create_table(\n"
+            "        'membership',\n"
+            "        sa.Column('team_id', sa.Integer(), primary_key=True),\n"
+            "        sa.Column('user_id', sa.Integer(), primary_key=True),\n"
+            "    )\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "| team_id | sa.Integer() | yes |" in s.l2_md
+        assert "| user_id | sa.Integer() | yes |" in s.l2_md
+        assert "PK team_id, user_id" in s.summary
+        assert "PK PRIMARY KEY" not in s.summary
+
+    def test_sql_composite_primary_key_summary_does_not_stutter(self, tmp_path):
+        # Fix wave 2, finding 1 (sql/sqlite half): the same stored
+        # `PRIMARY KEY (...)` clause the alembic reader produces is also
+        # what `_split_sql_columns` stores verbatim in `pk` for a
+        # table-constraint composite key -- this reader hits
+        # `_render_section` through the identical code path, so it must
+        # render the identical corrected phrasing, not just the alembic
+        # source.
+        root = tmp_path / "sql-composite-pk"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE membership (\n"
+            "  team_id INT,\n"
+            "  user_id INT,\n"
+            "  PRIMARY KEY (team_id, user_id)\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "| team_id | INT | yes |" in s.l2_md
+        assert "| user_id | INT | yes |" in s.l2_md
+        assert "PK team_id, user_id" in s.summary
+        assert "PK PRIMARY KEY" not in s.summary
+
+    def test_primary_key_clause_with_no_columns_degrades_to_none_detected(self, tmp_path):
+        # Fix wave 3, finding 1: `PRIMARY KEY ()` / `PRIMARY KEY (   )`
+        # match `_PK_LIST_RE` but capture no column names -- the old
+        # fallback only ran on no-match, so this collapsed to a
+        # value-less "PK  (source: ...)" (double space, no PK named).
+        # Must degrade the same way an empty `record.pk` does.
+        root = tmp_path / "pk-empty-parens"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE t (\n  a INT,\n  b INT,\n  PRIMARY KEY ()\n);\n",
+            encoding="utf-8",
+        )
+        (mig / "002.sql").write_text(
+            "CREATE TABLE u (\n  a INT,\n  b INT,\n  PRIMARY KEY (   )\n);\n",
+            encoding="utf-8",
+        )
+        by_id = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))
+        for table_id in ("db.t", "db.u"):
+            s = by_id[table_id]
+            assert "PK none detected" in s.summary
+            assert "PK  (" not in s.summary          # no double space, no bare "PK "
+            # row cells and DDL are untouched by the summary-only fix
+            assert "| a | INT |  |" in s.l2_md
+            assert "| b | INT |  |" in s.l2_md
+        assert "PRIMARY KEY ()" in by_id["db.t"].l3_md
+        assert "PRIMARY KEY (   )" in by_id["db.u"].l3_md
+
+    def test_wrapped_composite_primary_key_summary_stays_one_line(self, tmp_path):
+        # Fix wave 3, finding 2: a composite `PRIMARY KEY (...)` clause
+        # wrapped across multiple source lines was captured verbatim
+        # (newlines and all) and interpolated into the one-line summary
+        # field, breaking it across lines. Must collapse to one line
+        # without losing or reordering the column names.
+        root = tmp_path / "pk-wrapped"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE membership (\n"
+            "  team_id INT,\n"
+            "  user_id INT,\n"
+            "  PRIMARY KEY (\n"
+            "    team_id,\n"
+            "    user_id\n"
+            "  )\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "\n" not in s.summary
+        assert "PK team_id, user_id (source: migrations/001.sql)." in s.summary
+        # row cells and DDL are untouched -- only the summary rendering changed
+        assert "| team_id | INT | yes |" in s.l2_md
+        assert "| user_id | INT | yes |" in s.l2_md
+        assert "PRIMARY KEY (\n    team_id,\n    user_id\n  )" in s.l3_md
 
     def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(self, tmp_path):
         # New Minor: a literal like DEFAULT '(' has a genuinely unbalanced
@@ -2626,6 +2842,85 @@ class TestSchemaExtractor:
         sections = _by_id(result)
         assert "db.good" in sections
         assert any("001.sql" in w and "CREATE TABLE" in w for w in result.warnings)
+
+    def _two_dir_users(self, tmp_path):
+        root = tmp_path / "twodirs"
+        billing = root / "services" / "billing" / "migrations"
+        flyway = root / "src" / "main" / "resources" / "db" / "migration"
+        billing.mkdir(parents=True)
+        flyway.mkdir(parents=True)
+        (billing / "001_init.sql").write_text(
+            "CREATE TABLE users (\n  id BIGINT NOT NULL,\n  plan VARCHAR(32) NOT NULL\n);\n",
+            encoding="utf-8",
+        )
+        (flyway / "V1__init.sql").write_text(
+            "CREATE TABLE users (\n  id BIGINT NOT NULL,\n  email VARCHAR(255) NOT NULL,\n"
+            "  created_at DATETIME NOT NULL,\n  PRIMARY KEY (id)\n);\n",
+            encoding="utf-8",
+        )
+        (flyway / "V2__alter.sql").write_text(
+            "ALTER TABLE users ADD COLUMN last_login DATETIME NULL;\n", encoding="utf-8"
+        )
+        return root
+
+    def test_duplicate_table_in_another_directory_is_not_merged(self, tmp_path):
+        # Reviewer G-4: `plan` + `last_login` were joined into a users table
+        # that exists in neither schema.
+        root = self._two_dir_users(tmp_path)
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root))
+        s = _by_id(result)["db.users"]
+        assert "| plan |" in s.l2_md
+        assert "email" not in s.l2_md
+        assert "last_login" not in s.l2_md
+        assert "Table users: 2 columns" in s.summary
+        assert any(
+            "duplicate CREATE TABLE 'users' in src/main/resources/db/migration/V1__init.sql" in w
+            and "keeping the definition from services/billing/migrations/001_init.sql" in w
+            and "not merged" in w
+            for w in result.warnings
+        )
+
+    def test_alter_from_another_directory_is_not_applied_and_warns(self, tmp_path):
+        root = self._two_dir_users(tmp_path)
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root))
+        s = _by_id(result)["db.users"]
+        assert "V2__alter.sql" not in s.l2_md          # not in Source either
+        assert any(
+            "ALTER TABLE 'users' ADD COLUMN in src/main/resources/db/migration/V2__alter.sql not applied"
+            in w and "created in services/billing/migrations/001_init.sql" in w
+            for w in result.warnings
+        )
+
+    def test_alter_in_the_same_directory_still_applies(self, repo):
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        assert "| effective_date |" in s.l2_md
+
+    def test_ef_table_says_columns_not_extracted_instead_of_an_empty_table(self, tmp_path):
+        # Reviewer G-13: a header row with no rows and "0 columns" reads as
+        # "this table has no columns".
+        root = tmp_path / "efrepo"
+        mig = root / "Migrations"
+        mig.mkdir(parents=True)
+        (mig / "20240101_Init.cs").write_text(
+            'migrationBuilder.CreateTable(\n    name: "Invoices",\n    columns: table => new {}\n);\n',
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.Invoices"]
+        assert "| Column | Type | PK |" not in s.l2_md
+        assert "_Columns not extracted: EF Core migrations are recognised by table name only._" in s.l2_md
+        assert "_Source: Migrations/20240101_Init.cs_" in s.l2_md
+        assert "Table Invoices: columns not extracted (EF migration), PK none detected" in s.summary
+
+    def test_created_in_empty_string_never_matches_a_root_level_created_in(self):
+        # Carried from Task 7's review: _dirname("") returns "." same as a
+        # root-level migration file's _dirname. After this task all five
+        # TableRecord construction sites set created_in, so an unset value
+        # is not actually reachable today -- this guard is defensive
+        # against a future reader that forgets to set the field, ensuring
+        # that "created_in was never set" could never be silently treated
+        # as "created at the repo root" by the _dirname guards in
+        # _apply_sql_file. Cheap to keep, pinned directly against _dirname.
+        assert schema_ext._dirname("") != schema_ext._dirname("root_level.sql")
 
 
 class TestIntegrationsExtractor:
