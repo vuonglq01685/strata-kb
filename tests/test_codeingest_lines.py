@@ -29,3 +29,10 @@ def test_escaped_trailing_backslash_pair_is_not_a_continuation():
     # anyway, merging two unrelated commands into one.
     text = "printf a\\\\\nruff check .\n"
     assert join_continuations(text) == ["printf a\\\\", "ruff check ."]
+
+
+def test_continuation_whose_continued_text_starts_with_hash_is_kept():
+    # A continuation is command text, not a fresh comment -- only a
+    # *fresh* line starting with `#` is dropped (docstring lines 16-17).
+    text = "echo a \\\n# not a comment\n"
+    assert join_continuations(text) == ["echo a # not a comment"]

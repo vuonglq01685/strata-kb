@@ -22,9 +22,9 @@ keyword equals the whole token, or is a prefix of the token cut off by a
 `/dev/null` is not `dev` — against `PURPOSE_KEYWORDS`, checked in the
 dict's own declaration order — `test` before `lint` before `build` before
 `run` — so `pytest` (whose last four letters spell "test") is never
-miscounted as a generic `build`. The npm reader folds its `npm run <name>` / `npm test`
-invocation into the same string it classifies and displays (Ruling R2): a
-script's raw body is still what's shown and matched primarily, but the
+miscounted as a generic `build`. The npm reader folds its `npm run <name>` /
+`npm test` invocation into the same string it classifies and displays (Ruling
+R2): a script's raw body is still what's shown and matched primarily, but the
 invocation travels alongside it rather than replacing it, which also lets a
 reserved script name (`start`) pull in the `run` purpose's `"start"` keyword
 even when the body itself (`vite`) carries no keyword of its own. The `make`
@@ -85,10 +85,9 @@ def _step_dir_label(step: dict, lines: list[str]) -> str | None:
     dropped and continuation-joined by `join_continuations`, so a
     leading `# comment` no longer hides the `cd` right after it —
     `# set up` / `cd web` / `npm run build` now labels `web`, not
-    `None`. Used only to annotate the source label (`... (in web/)`) —
-    the command text
-    itself is never rewritten into `cd web && ...`; rewriting invites
-    its own errors, and the label alone is enough to stop a
+    `None`. Used only to annotate the source label (`... (in web/)`) — the
+    command text itself is never rewritten into `cd web && ...`; rewriting
+    invites its own errors, and the label alone is enough to stop a
     subdirectory-only command from being read as root-runnable
     (task review round 1, Finding 1 / controller ruling R33).
 
@@ -161,24 +160,45 @@ def _defaults_working_directory(
 _TOKEN_STRIP = "\"'()"
 _TOKEN_SEPARATORS = ("-", ":")
 
+# Recognized file extensions, checked against a token's final dot-suffix.
+# A frozen list, not a generic "has a dot" rule: `lint:fix` and
+# `build:prod` have no dot at all, but a version pin like `ruff>=0.15` or
+# `v1.2` does and is not a filename -- keying on a specific extension set
+# instead of "contains a dot" avoids excluding matches that were never
+# filenames to begin with.
+_FILENAME_EXTENSIONS = frozenset({
+    "txt", "json", "yml", "yaml", "sh", "py", "js", "ts", "md",
+    "cfg", "ini", "toml", "lock", "csv", "log", "sql", "xml",
+})
+
+
+def _looks_like_filename(token: str) -> bool:
+    """True when `token` ends in a recognized file extension."""
+    _, dot, suffix = token.rpartition(".")
+    return bool(dot) and suffix in _FILENAME_EXTENSIONS
+
 
 def _token_matches_keyword(token: str, keyword: str) -> bool:
     """`keyword` matches `token` when they're equal, or when `keyword` is
     a prefix of `token` immediately followed by a separator in
-    `_TOKEN_SEPARATORS` -- so a Makefile target `test-unit` or an npm
-    script `lint:fix` still classifies (user-approved widening: a
-    whole-token-only rule left a repo whose Makefile has only
-    `test-unit` with no `cmd.test` section at all). The keyword must
-    still start at position 0 of the token: `devops.txt` (`dev` then
-    `o`), `/dev/null` (`dev` isn't at position 0), `smoke-test-token`
-    (`test` isn't at position 0) and `starting` (`start` then `i`) all
-    stay unmatched."""
+    `_TOKEN_SEPARATORS` and `token` doesn't look like a filename -- so a
+    Makefile target `test-unit` or an npm script `lint:fix` still
+    classifies (user-approved widening: a whole-token-only rule left a
+    repo whose Makefile has only `test-unit` with no `cmd.test` section
+    at all), but a CI `run:` line's own install/copy/download step
+    (`pip install -r dev-requirements.txt`, `cp test-fixtures/a.json
+    /tmp`, `curl -o start-script.sh https://x`) doesn't reopen the
+    false-positive class the separator rule was meant to close
+    (user-approved containment). The keyword must still start at
+    position 0 of the token: `devops.txt` (`dev` then `o`), `/dev/null`
+    (`dev` isn't at position 0), `smoke-test-token` (`test` isn't at
+    position 0) and `starting` (`start` then `i`) all stay unmatched."""
     if token == keyword:
         return True
     return (
         token.startswith(keyword)
-        and len(token) > len(keyword)
         and token[len(keyword)] in _TOKEN_SEPARATORS
+        and not _looks_like_filename(token)
     )
 
 

@@ -1574,9 +1574,26 @@ class TestCommandsExtractor:
             ("center-kb:latest", None),
             ("starting", None),
             ("ruff>=0.15", None),
+            # Containment (user-approved): the separator rule reopened an
+            # adjacent false-positive class -- a keyword prefix cut by
+            # `-`/`:` also matched the start of a filename. These four
+            # still classify (the rule's genuine wins, no extension to
+            # key on):
+            ("make test-unit", "test"),
+            ("npm run lint:fix", "lint"),
+            ("yarn build:prod", "build"),
+            ("npx lint-staged", "lint"),
+            # ... but a token carrying a recognized file extension no
+            # longer counts, even though the prefix+separator shape
+            # otherwise matches:
+            ("pip install -r dev-requirements.txt", None),
+            ("cp test-fixtures/a.json /tmp", None),
+            ("curl -o start-script.sh https://x", None),
+            # Accepted, not closed: no file extension to key on.
+            ("apt-get install -y build-essential", "build"),
         ],
     )
-    def test_classify_matches_whole_tokens_only(self, line, purpose):
+    def test_classify_matches_keyword_prefixes_but_not_filenames(self, line, purpose):
         assert cmd_ext._classify(line) == purpose
 
     def test_install_step_before_the_real_command_does_not_win(self, tmp_path):
