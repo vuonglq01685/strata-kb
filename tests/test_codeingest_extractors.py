@@ -1,6 +1,4 @@
 import os
-import platform
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -28,24 +26,36 @@ def _by_id(result: core.ExtractResult) -> dict[str, core.CodeSection]:
     return {s.id: s for s in result.sections}
 
 
-def _try_make_dir_link(link: Path, target: Path) -> bool:
-    """I1: mirrors `test_codeingest_scaffold._make_dir_link` (not imported
-    -- these are two separate test modules and importing a private helper
-    across them is more indirection than copying ~10 lines) but tolerates
-    failure instead of raising, since this helper's whole point is to let
-    the caller skip gracefully: a Windows NTFS junction (`mklink /J`, no
-    elevated privilege needed) on `nt`, else a POSIX symlink -- `os.symlink`
-    on Windows needs `SeCreateSymbolicLinkPrivilege`, which
-    `test_assetstore.py`/`test_assetcmd.py` already document as commonly
-    absent (`WinError 1314`), so a junction is what actually runs there.
-    Returns whether the link now exists."""
+def _try_make_symlink(link: Path, target: Path) -> bool:
+    """Create a real symlink at `link` pointing to `target`, returning
+    whether it succeeded -- `os.symlink` on Windows needs
+    `SeCreateSymbolicLinkPrivilege`, absent on this development machine
+    (`WinError 1314`, as `test_assetstore.py`/`test_assetcmd.py` already
+    document), so this commonly returns `False` there.
+
+    Deliberately NO NTFS-junction fallback here, unlike
+    `test_codeingest_scaffold._make_dir_link` and the dangling-link
+    helpers in `test_assetstore.py`/`test_assetcmd.py`: a junction does
+    NOT reproduce the escape `test_dockerfile_symlink_segment_is_not_read_outside_the_repo`
+    (below) is about, confirmed by direct experiment on this machine
+    rather than assumed. `Path.resolve()`, `Path.is_file()` and `open()`
+    all route an ordinary (non `\\\\?\\`-prefixed) Windows path through
+    the OS's own path canonicalisation, which collapses a `..` component
+    *lexically* -- against `link`'s own position in the path string --
+    before any reparse point on that path is dereferenced at all: with
+    `link` an NTFS junction to an outside directory, `root/link/../Dockerfile`
+    canonicalises straight back to `root/Dockerfile` (verified: both
+    `.is_file()` and `.resolve()` return the in-repo path, never the
+    junction's target's parent). Reverting the production code under
+    test to read via the symlink-preserving `dockerfile_path` instead of
+    the textually-collapsed `normalised` left this test PASSING even
+    then, with a junction -- a fake-green regression guard, worse than a
+    skipped one. A POSIX symlink is resolved differently: the kernel
+    redirects at the symlink component itself, so a trailing `..`
+    applies *after* redirection, relative to the symlink's target -- the
+    real divergence this test exists to catch, and precisely why only a
+    genuine symlink (never a junction) can stand in for it here."""
     target.mkdir(parents=True, exist_ok=True)
-    if platform.system() == "Windows":
-        result = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
-            capture_output=True, text=True,
-        )
-        return result.returncode == 0 and link.exists()
     try:
         os.symlink(target, link, target_is_directory=True)
     except OSError:
@@ -1836,20 +1846,27 @@ class TestServicesExtractor:
         #
         # I1: `Path.symlink_to` needs `SeCreateSymbolicLinkPrivilege` on
         # Windows, absent on this project's own development machine
-        # (`WinError 1314`) -- an NTFS junction reproduces the exact
-        # divergence this test is about (`os.path.normpath` still
-        # collapses `link/..` textually without following it, while the
-        # OS itself follows the junction when the path is actually
-        # opened), so `_try_make_dir_link` reaches for a junction on `nt`
-        # and only skips if neither link kind can be created at all.
+        # (`WinError 1314`) -- this test used to crash outright there
+        # instead of running or skipping. This assertion depends
+        # specifically on a genuine symlink, never an NTFS junction: see
+        # `_try_make_symlink`'s docstring for why a junction was tried
+        # and rejected (it does not reproduce the escape on Windows, so
+        # a junction fallback here would be a fake-green regression
+        # guard). Skip cleanly when a symlink can't be created, rather
+        # than crash or silently pass something that proves nothing.
         root = tmp_path / "symrepo"
         root.mkdir()
         outside_dir = tmp_path / "outside_secret"
-        if not _try_make_dir_link(root / "link", outside_dir):
-            pytest.skip("this machine can create neither a symlink nor a junction")
+        if not _try_make_symlink(root / "link", outside_dir):
+            pytest.skip(
+                "this machine cannot create a symlink "
+                "(no SeCreateSymbolicLinkPrivilege) -- an NTFS junction "
+                "does not reproduce this escape on Windows, so there is "
+                "no fallback"
+            )
         # What the OS actually resolves `root/link/../Dockerfile` to,
-        # once `link` (a symlink/junction to `outside_dir`) is followed:
-        # go up one from `outside_dir` (i.e. `tmp_path`), then `Dockerfile`.
+        # once `link` (a symlink to `outside_dir`) is followed: go up one
+        # from `outside_dir` (i.e. `tmp_path`), then `Dockerfile`.
         (tmp_path / "Dockerfile").write_text(
             'FROM outside-the-repo-secret:1\nCMD ["leak"]\n', encoding="utf-8"
         )
