@@ -2403,6 +2403,58 @@ class TestSchemaExtractor:
         assert "db.good" in sections
         assert any("001.sql" in w and "CREATE TABLE" in w for w in result.warnings)
 
+    def _two_dir_users(self, tmp_path):
+        root = tmp_path / "twodirs"
+        billing = root / "services" / "billing" / "migrations"
+        flyway = root / "src" / "main" / "resources" / "db" / "migration"
+        billing.mkdir(parents=True)
+        flyway.mkdir(parents=True)
+        (billing / "001_init.sql").write_text(
+            "CREATE TABLE users (\n  id BIGINT NOT NULL,\n  plan VARCHAR(32) NOT NULL\n);\n",
+            encoding="utf-8",
+        )
+        (flyway / "V1__init.sql").write_text(
+            "CREATE TABLE users (\n  id BIGINT NOT NULL,\n  email VARCHAR(255) NOT NULL,\n"
+            "  created_at DATETIME NOT NULL,\n  PRIMARY KEY (id)\n);\n",
+            encoding="utf-8",
+        )
+        (flyway / "V2__alter.sql").write_text(
+            "ALTER TABLE users ADD COLUMN last_login DATETIME NULL;\n", encoding="utf-8"
+        )
+        return root
+
+    def test_duplicate_table_in_another_directory_is_not_merged(self, tmp_path):
+        # Reviewer G-4: `plan` + `last_login` were joined into a users table
+        # that exists in neither schema.
+        root = self._two_dir_users(tmp_path)
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root))
+        s = _by_id(result)["db.users"]
+        assert "| plan |" in s.l2_md
+        assert "email" not in s.l2_md
+        assert "last_login" not in s.l2_md
+        assert "Table users: 2 columns" in s.summary
+        assert any(
+            "duplicate CREATE TABLE 'users' in src/main/resources/db/migration/V1__init.sql" in w
+            and "keeping the definition from services/billing/migrations/001_init.sql" in w
+            and "not merged" in w
+            for w in result.warnings
+        )
+
+    def test_alter_from_another_directory_is_not_applied_and_warns(self, tmp_path):
+        root = self._two_dir_users(tmp_path)
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root))
+        s = _by_id(result)["db.users"]
+        assert "V2__alter.sql" not in s.l2_md          # not in Source either
+        assert any(
+            "ALTER TABLE 'users' ADD COLUMN in src/main/resources/db/migration/V2__alter.sql not applied"
+            in w and "created in services/billing/migrations/001_init.sql" in w
+            for w in result.warnings
+        )
+
+    def test_alter_in_the_same_directory_still_applies(self, repo):
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        assert "| effective_date |" in s.l2_md
+
 
 class TestIntegrationsExtractor:
     def test_detects_env_example_or_openapi_servers(self, repo, tmp_path):

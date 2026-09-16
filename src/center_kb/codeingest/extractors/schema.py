@@ -125,6 +125,8 @@ class TableRecord:
     pk: str = ""    # bare column name, or a full "PRIMARY KEY (a, b)" clause
     ddl: str = ""   # genuine DDL text (sql, sqlite) or a reconstruction (prisma, alembic, ef)
     source: str = ""  # comma-joined list of contributing files/paths
+    created_in: str = ""       # the file whose CREATE TABLE produced this record
+    columns_known: bool = True  # False when the reader recognises the table name only (EF)
 
 
 def _clean_name(raw: str) -> str:
@@ -157,6 +159,11 @@ def _warn_duplicate(kind: str, name: str, rel: str, warnings: list[str]) -> None
     four differently-worded warnings (task review round 1, Minor 4's
     "five-paths-one-rule" note)."""
     warnings.append(f"duplicate {kind} {name!r} in {rel}; keeping first")
+
+
+def _dirname(rel: str) -> str:
+    """Directory part of a repo-relative posix path (`"."` at the root)."""
+    return rel.rsplit("/", 1)[0] if "/" in rel else "."
 
 
 def _join_source(existing: str, new_rel: str) -> str:
@@ -670,17 +677,29 @@ def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warning
         stmt_end = semi_idx + 1 if semi_idx != -1 else len(text)
         ddl_text = text[m.start():stmt_end].strip()
         if name in tables:
-            # A re-`CREATE TABLE` of a name this reader already has (most
-            # plausibly `CREATE TABLE IF NOT EXISTS` re-asserting a table
-            # a prior file already created) must not silently discard
-            # whatever ALTER TABLE ... ADD COLUMN already accumulated
-            # onto it (task review round 1, Minor 4) — keep the first,
-            # warn, exactly like prisma/alembic/ef already do.
-            _warn_duplicate("CREATE TABLE", name, rel, warnings)
+            existing = tables[name]
+            if _dirname(existing.created_in) != _dirname(rel):
+                # Two independent migration directories (a per-service
+                # schema and a Flyway tree, say) that both create a table
+                # of this name describe two different tables. Merging
+                # them fabricated a schema that exists nowhere (reviewer
+                # G-4); the first in sorted-path order is kept whole and
+                # the warning names both files.
+                warnings.append(
+                    f"duplicate CREATE TABLE {name!r} in {rel} — keeping the "
+                    f"definition from {existing.created_in} (a different "
+                    "migration directory); the two are not merged"
+                )
+            else:
+                # A same-directory re-CREATE (most plausibly `IF NOT
+                # EXISTS` re-asserting a table) must not discard the
+                # ALTER TABLE ... ADD COLUMNs already accumulated (task
+                # review round 1, Minor 4) — keep the first, warn.
+                _warn_duplicate("CREATE TABLE", name, rel, warnings)
             continue
         columns, pk = _split_sql_columns(body, rel, warnings)
         tables[name] = TableRecord(
-            name=name, columns=columns, pk=pk, ddl=ddl_text, source=rel,
+            name=name, columns=columns, pk=pk, ddl=ddl_text, source=rel, created_in=rel,
         )
 
     # A `CREATE TABLE` occurrence CREATE_RE never matched at all (a name
@@ -724,6 +743,13 @@ def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warning
         record = tables.get(name)
         if record is None:
             warnings.append(f"ALTER TABLE ADD COLUMN on unknown table {name!r} in {rel}")
+            continue
+        if _dirname(record.created_in) != _dirname(rel):
+            warnings.append(
+                f"ALTER TABLE {name!r} ADD COLUMN in {rel} not applied — the "
+                f"table kept for {name!r} was created in {record.created_in}, "
+                "a different migration directory"
+            )
             continue
         record.columns.append((cname, rest))
         record.ddl = record.ddl + "\n\n" + stmt.strip()
