@@ -1565,6 +1565,39 @@ class TestServicesExtractor:
         assert [s.title for s in result.sections] == ["db"]
         assert any("'workspaces' is not a list" in w for w in result.warnings)
 
+    def test_workspace_pattern_escaping_the_repo_root_is_rejected(self, tmp_path):
+        # I2: `Path.glob` accepts a `..` component in the pattern, and
+        # `relposix()`/`Path.relative_to()` alone does not reject the
+        # result -- a root package.json declaring `"workspaces":
+        # ["../*"]` could otherwise publish a sibling directory's package
+        # name, path and dependency-derived technology into this
+        # document, and open files outside `--repo-root` doing it
+        # (mirror image of G-11 on the read side). `../*` also matches
+        # the repo root itself from its own parent directory's
+        # perspective -- legitimately in-repo, so that match is still
+        # accepted -- only the escaping sibling must be rejected.
+        root = tmp_path / "repo"
+        root.mkdir()
+        sibling = tmp_path / "secretpkg"
+        sibling.mkdir()
+        (sibling / "package.json").write_text(
+            '{"name": "@internal/leaked", "dependencies": {"express": "^4.19.0"}}\n',
+            encoding="utf-8",
+        )
+        (root / "package.json").write_text(
+            '{"workspaces": ["../*"]}\n', encoding="utf-8"
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        rendered = "\n".join(s.l2_md + s.l3_md for s in result.sections)
+        assert "@internal/leaked" not in rendered
+        assert "secretpkg" not in rendered
+        assert "Express" not in rendered
+        assert not any(s.title == "@internal/leaked" for s in result.sections)
+        assert any(
+            "workspace pattern '../*'" in w and "outside the repository" in w
+            for w in result.warnings
+        )
+
     def test_compose_service_with_the_same_name_as_a_workspace_keeps_compose_evidence(self, tmp_path):
         root = self._mono(tmp_path)
         (root / "docker-compose.yml").write_text(

@@ -127,6 +127,35 @@ def _env_keys_from(value: object) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _within_repo(root: Path, candidate: Path) -> bool:
+    """True when `candidate` denotes a path that is textually inside
+    `root`, once `.`/`..` segments are collapsed *algebraically*
+    (`os.path.normpath` — pure string manipulation) rather than by
+    following any symlink/junction on disk. `Path.relative_to()` alone is
+    not this check: it is purely lexical and happily returns a result
+    that still starts with `..` when `root` is merely a textual prefix of
+    `candidate`'s parts followed by a `..` component (`root.glob("../*")`
+    matches exactly this way, since `Path.glob` never collapses a
+    pattern's own `..` component) — that gap is I2. Deliberately not
+    `candidate.resolve().is_relative_to(root.resolve())`: resolving
+    follows a symlink out of the repo before this check ever runs, which
+    is precisely the divergence `_read_compose`'s build-context boundary
+    (below) depends on catching (see
+    `test_dockerfile_symlink_segment_is_not_read_outside_the_repo`, I1) —
+    a symlinked segment must be judged by where it textually collapses
+    to, not where the OS would actually follow it.
+
+    Shared by that compose `build:` boundary and `_read_workspaces`'s
+    workspace-glob boundary (I2) — one boundary rule, used both places,
+    per the review's recommendation 4."""
+    normalised = Path(os.path.normpath(candidate))
+    try:
+        normalised.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def _resolve_build(compose_dir: Path, build: object) -> tuple[str, Path | None]:
     """`(context label, Dockerfile path)` for a compose `build:` value — a
     string context, or a mapping with `context` (default `.`) and
@@ -205,24 +234,27 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                     Path(os.path.normpath(dockerfile_path))
                     if dockerfile_path is not None else None
                 )
-                escapes_repo = False
-                dockerfile_rel = None
-                if normalised is not None:
-                    try:
-                        dockerfile_rel = relposix(root, normalised)
-                    except ValueError:
-                        # Fix wave finding 1 (previous wave): a build
-                        # context that escapes the repo root (e.g. `build:
-                        # ../outside`) must never render this machine's
-                        # absolute path — that breaks Determinism (same
-                        # repo, two machines, different documents) and
-                        # leaks this machine's filesystem layout. Declined
-                        # by policy: no read. Kept as its own wording
-                        # (re-review finding 2), distinct from a genuinely
-                        # missing Dockerfile below — the file often exists,
-                        # it was deliberately not read, and the document
-                        # should say which situation this is.
-                        escapes_repo = True
+                # Fix wave finding 1 (previous wave): a build context that
+                # escapes the repo root (e.g. `build: ../outside`) must
+                # never render this machine's absolute path — that breaks
+                # Determinism (same repo, two machines, different
+                # documents) and leaks this machine's filesystem layout.
+                # Declined by policy: no read. Kept as its own wording
+                # (re-review finding 2), distinct from a genuinely missing
+                # Dockerfile below — the file often exists, it was
+                # deliberately not read, and the document should say which
+                # situation this is. `_within_repo` (I2) is the same
+                # boundary check `_read_workspaces` uses further down this
+                # module; this call site keeps its own `normalised`/
+                # `dockerfile_rel` bookkeeping around it rather than
+                # inlining the whole branch into that helper, since the
+                # `.is_file()` read below needs `normalised` regardless of
+                # which of the two rejects it.
+                escapes_repo = normalised is not None and not _within_repo(root, normalised)
+                dockerfile_rel = (
+                    relposix(root, normalised)
+                    if normalised is not None and not escapes_repo else None
+                )
                 if escapes_repo:
                     image = f"build: {context or '.'} (outside the repository)"
                     warnings.append(
@@ -469,7 +501,10 @@ def _read_workspaces(root: Path) -> tuple[list[ServiceRecord], list[str]]:
     `directory` set so the Technology column reads the package's own
     dependencies. Listed in the spec and README from the start, never
     implemented (reviewer G-6); without it a Node monorepo has no
-    `svc.*` and no Stage-D join key."""
+    `svc.*` and no Stage-D join key. A workspace glob that resolves
+    outside `--repo-root` (`_within_repo`) is rejected with a warning,
+    never read (I2) -- the same boundary the compose `build:` context
+    above already enforces."""
     path = root / "package.json"
     if not path.is_file():
         return [], []
@@ -497,6 +532,21 @@ def _read_workspaces(root: Path) -> tuple[list[ServiceRecord], list[str]]:
             continue
         for match in sorted(root.glob(pattern)):
             if not match.is_dir():
+                continue
+            if not _within_repo(root, match):
+                # I2: `Path.glob` accepts a `..` component in `pattern`
+                # (`root.glob("../secret*")` matches a sibling directory)
+                # and `relposix()`/`Path.relative_to()` alone would not
+                # catch it -- see `_within_repo`'s docstring. Never render
+                # `match` itself here: it may be this machine's own
+                # absolute path to somewhere outside the repo, which is
+                # exactly the leak/non-determinism the compose `build:`
+                # boundary above already declines by policy; naming the
+                # operator-supplied pattern is enough to act on.
+                warnings.append(
+                    f"workspace pattern {pattern!r} in {rel}: matched path "
+                    "is outside the repository; not read"
+                )
                 continue
             rel_dir = relposix(root, match)
             if any(part in IGNORED_DIRS for part in Path(rel_dir).parts):
