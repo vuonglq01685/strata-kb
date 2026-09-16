@@ -191,10 +191,10 @@ def _detect_entry_points(
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError):
             data = {}
-        project = data.get("project", {}) if isinstance(data, dict) else {}
+        project = data.get("project", {})
         scripts = project.get("scripts", {}) if isinstance(project, dict) else {}
         if isinstance(scripts, dict):
-            console = [f"{k} = {scripts[k]}" for k in sorted(scripts, key=str)]
+            console = [f"{k} = {scripts[k]}" for k in sorted(scripts)]
 
     return sorted(found), console
 
@@ -209,7 +209,12 @@ def _render_l2(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
 
 
 def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> tuple[str, int]:
-    """(rendered listing capped at `_L3_MAX_LINES`, number of lines cut)."""
+    """(rendered listing capped at `_L3_MAX_LINES` lines, number of lines
+    cut). When truncated, a trailing marker line names the first dropped
+    entry (`lines[_L3_MAX_LINES]`) so a reader can tell *where* the real
+    tree kept going, not just how much was lost — entries arrive in a
+    stable alphabetical preorder (`walk_tree`), so the entry named here is
+    deterministic across machines."""
     lines: list[str] = []
     for depth, rel, filenames in entries:
         if depth > _L3_DEPTH:
@@ -219,7 +224,15 @@ def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> tuple[
         file_indent = "  " * depth
         lines.extend(f"{file_indent}- {name}" for name in filenames)
     omitted = max(0, len(lines) - _L3_MAX_LINES)
-    return "\n".join(lines[:_L3_MAX_LINES]), omitted
+    body = "\n".join(lines[:_L3_MAX_LINES])
+    if omitted:
+        first_dropped = lines[_L3_MAX_LINES].strip().removeprefix("- ")
+        noun = "entry" if omitted == 1 else "entries"
+        body += (
+            f"\n# … {omitted} more {noun} omitted from `{first_dropped}` "
+            f"onward (capped at {_L3_MAX_LINES} lines)"
+        )
+    return body, omitted
 
 
 class TreeExtractor:
@@ -246,16 +259,14 @@ class TreeExtractor:
             + ("\n".join(f"- {cs}" for cs in console_scripts) or "- none detected")
             + "\n"
         )
-        # Two markers keep the fenced block honest about its own caps —
-        # depth 4 and _L3_MAX_LINES — so the summary's whole-tree counts
-        # never silently contradict a truncated listing. Both live inside
-        # the fence so they can never register as a pipe table.
-        body, omitted = _render_l3(root, entries)
-        tail = (
-            f"\n# … {omitted} more entries omitted (capped at {_L3_MAX_LINES} lines)"
-            if omitted else ""
-        )
-        l3_md = "```\n# tree, capped at depth 4\n" + body + tail + "\n```\n"
+        # Two markers keep the fenced block from silently disagreeing with
+        # the summary's whole-tree counts: one names the depth-4 cut (it
+        # only names its cap — entries it drops are never counted, here or
+        # anywhere else); the other names the _L3_MAX_LINES cut along with
+        # how many lines and which entry it dropped first. Both live inside
+        # the fence so neither can register as a pipe table.
+        body, _omitted_lines = _render_l3(root, entries)
+        l3_md = "```\n# tree, capped at depth 4\n" + body + "\n```\n"
 
         # Re-checks git directly (rather than `tracked_files(root) is not
         # None`) because tracked_files() collapses two different causes

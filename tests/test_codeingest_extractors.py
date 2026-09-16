@@ -241,12 +241,60 @@ class TestTreeExtractor:
         s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
         lines = s.l3_md.splitlines()
         assert len(lines) <= tree_ext._L3_MAX_LINES + 4   # fences + two markers
-        assert "# … 100 more entries omitted (capped at 600 lines)" in s.l3_md
+        # Reviewer G-3b follow-up: the marker must name *where* it cut, not
+        # just how much it cut -- alphabetical order means one wide,
+        # unignored directory can consume the whole cap and hide everything
+        # after it, so the first dropped entry (f0600.txt, index 600) has to
+        # be nameable from the marker alone.
+        assert (
+            "# … 100 more entries omitted from `f0600.txt` onward "
+            "(capped at 600 lines)" in s.l3_md
+        )
         assert "700 files" in s.summary   # the summary still counts the whole tree
 
     def test_small_tree_has_no_omitted_marker(self, repo):
         s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
         assert "more entries omitted" not in s.l3_md
+
+    def test_l3_at_exactly_the_line_cap_has_no_omitted_marker(self, tmp_path):
+        # Boundary the 700-file test doesn't reach: exactly _L3_MAX_LINES
+        # entries must render with no marker at all -- nothing was cut.
+        root = tmp_path / "exact"
+        root.mkdir()
+        for i in range(tree_ext._L3_MAX_LINES):
+            (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
+        assert "more entries omitted" not in s.l3_md
+        assert len(s.l3_md.splitlines()) <= tree_ext._L3_MAX_LINES + 3  # fences + depth marker
+
+    def test_l3_one_over_the_cap_pluralizes_singular_and_names_the_entry(self, tmp_path):
+        # Findings 1+2: exactly one entry dropped must still read as
+        # singular ("1 more entry", not "1 more entries") and must still
+        # name that one entry.
+        root = tmp_path / "one-over"
+        root.mkdir()
+        for i in range(tree_ext._L3_MAX_LINES + 1):
+            (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
+        assert (
+            "# … 1 more entry omitted from `f0600.txt` onward "
+            "(capped at 600 lines)" in s.l3_md
+        )
+        assert "more entries omitted" not in s.l3_md
+
+    def test_malformed_pyproject_toml_degrades_the_tree_section_without_raising(self, repo):
+        # ⚠️ raised in review: _detect_entry_points widened its except
+        # clause to OSError and added isinstance guards, but nothing pinned
+        # that a malformed pyproject.toml still lets struct.tree render.
+        # Readers degrade, never raise.
+        (repo / "pyproject.toml").write_text("[project\n", encoding="utf-8")
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert (
+            "Console scripts (pyproject [project.scripts]):\n\n- none detected\n"
+            in s.l2_md
+        )
+        assert "console scripts: none detected." in s.summary
 
     def test_console_scripts_are_listed_apart_from_file_entry_points(self, repo):
         # Reviewer G-16: `[project.scripts]` keys were mixed into a list of
