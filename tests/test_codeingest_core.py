@@ -82,7 +82,7 @@ def test_manifest_records_commit_and_commit_date_not_wall_clock(tmp_path, monkey
     )
     head = run_git(tmp_path, "rev-parse", "HEAD")
     assert m.revision == head[:7]
-    assert m.source_sha256 == head
+    assert m.source_sha256 == ""   # G-15: the field is a content hash, not a git SHA
     assert m.ingested.isoformat() == "2020-01-02"
     assert all(s.status == "summarized" and s.summary for s in m.sections)
 
@@ -450,3 +450,81 @@ def test_every_subprocess_run_call_in_codeingest_core_has_a_verifiably_safe_stdi
     assert offenders == [], (
         f"subprocess.run() in codeingest/core.py has an unsafe or unverifiable stdin= at: {offenders}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Reviewer G-1: a hand-curated document at <repo>-code was deleted without
+# a warning. The destination guard now also refuses any document this
+# command did not itself generate — no override flag.
+# ---------------------------------------------------------------------------
+
+
+def _write_human_doc(doc_dir: Path, title: str = "Poly hand-written domain doc") -> None:
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "body.md").write_text("## ch1 Chapter one\n\nHuman prose.\n", encoding="utf-8")
+    (doc_dir / "body.raw.md").write_text("## ch1 Chapter one\n\nRaw prose.\n", encoding="utf-8")
+    models.save_yaml_model(
+        doc_dir / "_manifest.yaml",
+        models.Manifest(
+            id="demo-code", title=title,
+            sections=[models.SectionEntry(
+                id="ch1", title="Chapter one", summary="A curated chapter.",
+                status="reviewed", file="body",
+            )],
+        ),
+    )
+
+
+def test_human_document_at_the_code_slot_is_refused_and_left_intact(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
+    doc_dir = tmp_path / ".kb" / "demo-code"
+    _write_human_doc(doc_dir)
+    before = {p.name: p.read_bytes() for p in doc_dir.iterdir()}
+
+    with pytest.raises(core.CodeIngestError) as excinfo:
+        core.run(_opts(tmp_path))
+
+    assert "did not generate" in str(excinfo.value)
+    assert "Poly hand-written domain doc" in str(excinfo.value)
+    assert {p.name: p.read_bytes() for p in doc_dir.iterdir()} == before
+    assert not (tmp_path / ".kb" / "index.yaml").exists()
+
+
+def test_document_with_a_foreign_section_id_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
+    doc_dir = tmp_path / ".kb" / "demo-code"
+    _write_human_doc(doc_dir, title="demo — code knowledge")   # title passes, id does not
+    with pytest.raises(core.CodeIngestError) as excinfo:
+        core.run(_opts(tmp_path))
+    assert "ch1" in str(excinfo.value)
+
+
+def test_markdown_without_a_manifest_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
+    doc_dir = tmp_path / ".kb" / "demo-code"
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "notes.md").write_text("mine\n", encoding="utf-8")
+    with pytest.raises(core.CodeIngestError) as excinfo:
+        core.run(_opts(tmp_path))
+    assert "missing or unreadable" in str(excinfo.value)
+    assert (doc_dir / "notes.md").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_previous_run_with_rewritten_statuses_still_reingests(tmp_path, monkeypatch):
+    # `kb summarize --redo` / `kb approve` rewrite statuses on a -code
+    # manifest; neither touches the title or the ids, so a re-run proceeds.
+    monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
+    core.run(_opts(tmp_path))
+    manifest_path = tmp_path / ".kb" / "demo-code" / "_manifest.yaml"
+    m = models.load_yaml_model(manifest_path, models.Manifest)
+    for s in m.sections:
+        s.status = "pending"
+    models.save_yaml_model(manifest_path, m)
+    report = core.run(_opts(tmp_path))
+    assert report.files_written
+
+
+def test_empty_destination_directory_is_fine(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
+    (tmp_path / ".kb" / "demo-code").mkdir(parents=True)
+    assert core.run(_opts(tmp_path)).files_written

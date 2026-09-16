@@ -86,7 +86,8 @@ class TestTreeExtractor:
         assert "structure.md" not in body
         assert "docs" in body  # only the kb subtree is pruned, not its parent
 
-    def test_prunes_relative_kb_dir(self, repo):
+    def test_prunes_relative_kb_dir(self, repo, monkeypatch):
+        monkeypatch.chdir(repo)
         (repo / "docs" / "kb" / "demo-code").mkdir(parents=True)
         (repo / "docs" / "kb" / "demo-code" / "structure.md").write_text(
             "stub\n", encoding="utf-8"
@@ -99,6 +100,230 @@ class TestTreeExtractor:
         body = s.l2_md + s.l3_md
         assert "docs/kb" not in body
         assert "structure.md" not in body
+
+    def test_git_ignored_directories_are_absent_when_root_is_a_repo(self, repo, run_git):
+        # Reviewer G-3: an unfiltered os.walk shipped .venv-artifact/,
+        # .worktrees/ and a previous run's own output as "tracked files".
+        (repo / ".gitignore").write_text(".venv-x/\nkb1/\n", encoding="utf-8")
+        (repo / ".venv-x" / "lib").mkdir(parents=True)
+        (repo / ".venv-x" / "lib" / "site.py").write_text("", encoding="utf-8")
+        (repo / "kb1" / "demo-code").mkdir(parents=True)
+        (repo / "kb1" / "demo-code" / "structure.md").write_text("x", encoding="utf-8")
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        body = s.l2_md + s.l3_md
+        assert ".venv-x" not in body
+        assert "kb1" not in body
+        assert "src/airspace" in body
+        assert "tracked files" in s.summary
+        assert "no tracked files" not in s.summary
+        assert result.warnings == []
+
+    def test_untracked_file_in_a_repo_is_not_listed(self, repo, run_git):
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        (repo / "scratch.txt").write_text("x", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert "scratch.txt" not in s.l3_md
+
+    def test_non_git_root_is_unfiltered_and_says_so(self, repo):
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert "tracked" not in s.summary
+        assert "not a git repository" in s.summary
+        assert any("not a git repository" in w for w in result.warnings)
+        assert "src/airspace" in s.l3_md
+
+    def test_repo_with_nothing_tracked_falls_back_to_the_unfiltered_walk(self, repo, run_git):
+        # User-approved correction (reviewer G-3a wording split): a repo
+        # with nothing tracked is a real repository, so "not a git
+        # repository" would be false here -- it gets its own message.
+        run_git(repo, "init")   # no add, no commit: `git ls-files` lists nothing
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert "src/airspace" in s.l3_md
+        assert "no tracked files" in s.summary
+        assert "not a git repository" not in s.summary
+        assert result.warnings == [
+            f"{repo} is inside a git repository with no tracked files "
+            "under it — the tree is an unfiltered directory walk, not "
+            "the tracked files"
+        ]
+
+    def test_tracked_walk_still_prunes_ignored_dirs_and_the_kb_dir(self, repo, run_git):
+        (repo / "dist").mkdir()
+        (repo / "dist" / "bundle.js").write_text("", encoding="utf-8")
+        (repo / ".kb" / "demo-code").mkdir(parents=True)
+        (repo / ".kb" / "demo-code" / "structure.md").write_text("x", encoding="utf-8")
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        entries = tree_ext.walk_tree(repo, repo / ".kb")
+        dirs = {rel.as_posix() for _d, rel, _f in entries}
+        assert "dist" not in dirs
+        assert ".kb" not in dirs and ".kb/demo-code" not in dirs
+        assert "src/airspace" in dirs
+        # preorder, alphabetical, root first at depth 0; every ancestor of a
+        # kept file is present, pruned directories are not
+        assert [e[1].as_posix() for e in entries] == [
+            ".", ".github", ".github/workflows", "db", "db/migration",
+            "src", "src/airspace", "web",
+        ]
+        assert entries[0][0] == 0
+
+    def test_unresolved_merge_conflict_stages_are_deduplicated(self, repo, run_git):
+        # Reviewer G finding (Important): during an unresolved merge, plain
+        # `git ls-files` prints a conflicted path once per index stage
+        # (base/ours/theirs) -- three times for a two-sided conflict.
+        # Without dedup in tracked_files(), struct.tree lists that file 3x
+        # and n_files inflates. Real git, real conflict, no mocks.
+        import re
+        import subprocess
+
+        (repo / "conflict.txt").write_text("base\n", encoding="utf-8")
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "base")
+        base = run_git(repo, "rev-parse", "HEAD")
+        run_git(repo, "checkout", "-b", "ours")
+        (repo / "conflict.txt").write_text("ours\n", encoding="utf-8")
+        run_git(repo, "commit", "-am", "ours edit")
+        run_git(repo, "checkout", "-b", "theirs", base)
+        (repo / "conflict.txt").write_text("theirs\n", encoding="utf-8")
+        run_git(repo, "commit", "-am", "theirs edit")
+
+        # A failing `git merge` is the expected outcome here -- run_git's
+        # check=True would raise on this exit code, so invoke it directly.
+        merge = subprocess.run(
+            ["git", "-c", "user.name=test", "-c", "user.email=test@test.local",
+             "-c", "core.excludesFile=", "merge", "ours"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        assert merge.returncode != 0
+        assert "<<<<<<<" in (repo / "conflict.txt").read_text(encoding="utf-8")
+
+        # Sanity: confirms this repro actually produces the 3x-staged git
+        # entry the fix targets, so the test can't silently rot into a
+        # no-op if git's ls-files behavior ever changes.
+        raw = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=repo, capture_output=True, text=True,
+        ).stdout
+        raw_paths = [p for p in raw.split("\0") if p]
+        assert raw_paths.count("conflict.txt") == 3
+
+        tracked = tree_ext.tracked_files(repo)
+        assert tracked.count("conflict.txt") == 1
+
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert s.l3_md.count("conflict.txt") == 1
+        # n_files (the reported count) must match what's actually rendered
+        # -- ground truth from the markdown itself, not a re-derivation of
+        # tracked_files()'s own pruning logic -- so a duplicate would be
+        # caught whether it inflated the summary, the listing, or both.
+        file_lines = [
+            ln for ln in s.l3_md.splitlines()
+            if ln.strip().startswith("- ") and not ln.strip().endswith("/")
+        ]
+        n_files = int(re.search(r"(\d+) tracked files", s.summary).group(1))
+        assert n_files == len(file_lines)
+
+    def test_l3_is_capped_by_line_count_with_a_marker(self, tmp_path):
+        # Reviewer G-3: 6 000 files in one unignored directory produced a
+        # 25 k-token section; depth alone is not a cap.
+        root = tmp_path / "wide"
+        root.mkdir()
+        for i in range(700):
+            (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
+        lines = s.l3_md.splitlines()
+        assert len(lines) <= tree_ext._L3_MAX_LINES + 4   # fences + two markers
+        # Reviewer G-3b follow-up: the marker must name *where* it cut, not
+        # just how much it cut -- alphabetical order means one wide,
+        # unignored directory can consume the whole cap and hide everything
+        # after it, so the first dropped entry (f0600.txt, index 600) has to
+        # be nameable from the marker alone.
+        assert (
+            "# … 100 more entries omitted from `f0600.txt` onward "
+            "(capped at 600 lines)" in s.l3_md
+        )
+        assert "700 files" in s.summary   # the summary still counts the whole tree
+
+    def test_small_tree_has_no_omitted_marker(self, repo):
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        # "omitted" (not just the plural "more entries omitted") covers both
+        # the plural and singular ("1 more entry omitted") marker forms.
+        assert "omitted" not in s.l3_md
+
+    def test_l3_at_exactly_the_line_cap_has_no_omitted_marker(self, tmp_path):
+        # Boundary the 700-file test doesn't reach: exactly _L3_MAX_LINES
+        # entries must render with no marker at all -- nothing was cut.
+        root = tmp_path / "exact"
+        root.mkdir()
+        for i in range(tree_ext._L3_MAX_LINES):
+            (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
+        # "omitted" (not just the plural "more entries omitted") is the
+        # substring that actually catches an off-by-one at this boundary:
+        # dropping exactly one entry renders the *singular* "1 more entry
+        # omitted", which doesn't contain "more entries omitted".
+        assert "omitted" not in s.l3_md
+        # Pin that all 600 lines survived -- the plain "no marker" check
+        # alone can't distinguish "nothing was cut" from "everything from
+        # the 600th entry on was silently cut with no marker at all".
+        assert "- f0599.txt" in s.l3_md
+        assert len(s.l3_md.splitlines()) <= tree_ext._L3_MAX_LINES + 3  # fences + depth marker
+
+    def test_l3_one_over_the_cap_pluralizes_singular_and_names_the_entry(self, tmp_path):
+        # Findings 1+2: exactly one entry dropped must still read as
+        # singular ("1 more entry", not "1 more entries") and must still
+        # name that one entry.
+        root = tmp_path / "one-over"
+        root.mkdir()
+        for i in range(tree_ext._L3_MAX_LINES + 1):
+            (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
+        assert (
+            "# … 1 more entry omitted from `f0600.txt` onward "
+            "(capped at 600 lines)" in s.l3_md
+        )
+        assert "more entries omitted" not in s.l3_md
+
+    def test_malformed_pyproject_toml_degrades_the_tree_section_without_raising(self, repo):
+        # ⚠️ raised in review: _detect_entry_points widened its except
+        # clause to OSError and added isinstance guards, but nothing pinned
+        # that a malformed pyproject.toml still lets struct.tree render.
+        # Readers degrade, never raise.
+        (repo / "pyproject.toml").write_text("[project\n", encoding="utf-8")
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert (
+            "Console scripts (pyproject [project.scripts]):\n\n- none detected\n"
+            in s.l2_md
+        )
+        assert "console scripts: none detected." in s.summary
+
+    def test_console_scripts_are_listed_apart_from_file_entry_points(self, repo):
+        # Reviewer G-16: `[project.scripts]` keys were mixed into a list of
+        # file paths, so a bare `kb` sat next to `src/center_kb/web/app.py`.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            '[project.scripts]\nairspace = "airspace.cli:app"\n',
+            encoding="utf-8",
+        )
+        (repo / "src" / "airspace" / "main.py").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert "Detected entry points:\n\n- src/airspace/main.py\n" in s.l2_md
+        assert (
+            "Console scripts (pyproject [project.scripts]):\n\n- airspace = airspace.cli:app\n"
+            in s.l2_md
+        )
+        assert "entry points: src/airspace/main.py; console scripts: airspace." in s.summary
 
 
 from center_kb.codeingest.extractors import deps as deps_ext
@@ -270,7 +495,9 @@ class TestDepsExtractor:
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.go"]
         assert "pinned" not in s.l3_md
-        assert s.summary == "1 direct Go dependencies."
+        # G-5 fixed the Gin prefix to the real module path, so this fixture's
+        # own github.com/gin-gonic/gin dependency now correctly matches it.
+        assert s.summary == "1 direct Go dependencies; frameworks: Gin."
 
     def test_php_deps_come_from_composer_json(self, repo):
         # Review Finding 6: php had zero test coverage.
@@ -347,6 +574,86 @@ class TestDepsExtractor:
         assert "S3CR3TV4LUE" not in s.l3_md
         assert "git+https://***@github.com/o/r.git" in s.l3_md
 
+    def test_optional_dependency_groups_are_read_and_rendered(self, repo):
+        # Reviewer G-5: five extras (the whole PDF-ingest engine among them)
+        # were absent; only [project].dependencies was read.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110", "pydantic>=2.7"]\n'
+            "[project.optional-dependencies]\n"
+            'ingest = ["docling>=2.0", "Pillow>=10"]\n'
+            'dev = ["ruff>=0.15,<0.16", "pytest>=8.0"]\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.python"]
+        assert "| fastapi | >=0.110 |" in s.l2_md
+        assert "| Group | Packages |" in s.l2_md
+        assert "| extra:dev | pytest, ruff |" in s.l2_md
+        assert "| extra:ingest | docling, Pillow |" in s.l2_md
+        assert ">=0.15,<0.16" not in s.l2_md            # constraints live in L3
+        assert "# extra:dev\npytest>=8.0\nruff>=0.15,<0.16" in s.l3_md
+        assert s.summary == (
+            "2 direct Python dependencies; 4 more in 2 groups (extra:dev, extra:ingest); "
+            "frameworks: FastAPI."
+        )
+
+    def test_non_root_requirements_files_are_their_own_group(self, repo):
+        # Reviewer G-5: requirements-gate.txt merged into `direct` duplicated
+        # mcp/pyyaml and hid that pytest was a runner-venv dependency.
+        (repo / "requirements.txt").write_text("fastapi>=0.110\n", encoding="utf-8")
+        (repo / "requirements-gate.txt").write_text("pytest>=8.0\nfastapi>=0.100\n", encoding="utf-8")
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.python"]
+        assert s.l2_md.count("| fastapi |") == 1
+        assert "| requirements-gate.txt | fastapi, pytest |" in s.l2_md
+        assert "# requirements-gate.txt\nfastapi>=0.100\npytest>=8.0" in s.l3_md
+        # direct = fastapi (from the base fixture's pyproject.toml, deduped
+        # against requirements.txt's own "fastapi>=0.110") + pydantic.
+        # fastapi is already counted there — only pytest is "more".
+        assert s.summary == (
+            "2 direct Python dependencies; 1 more in 1 group (requirements-gate.txt); "
+            "frameworks: FastAPI."
+        )
+
+    def test_node_dev_dependencies_are_rendered(self, repo):
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.node"]
+        assert "| dev | eslint |" in s.l2_md
+        assert "# dev\neslint^9.0.0" in s.l3_md
+        assert s.summary == "1 direct Node dependencies; 1 more in 1 group (dev); frameworks: React."
+
+    def test_optional_dependency_extra_that_is_not_a_list_warns_and_continues(self, repo):
+        # Fix wave (G-5 follow-up): an extra whose value isn't a list must
+        # degrade like every other wrong-shaped manifest here — one warning
+        # naming the file, no raise, and the rest of the extraction (this
+        # file's own `dependencies`, and every other ecosystem) still runs.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            "[project.optional-dependencies]\n"
+            'dev = "not-a-list"\n',
+            encoding="utf-8",
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        sections = _by_id(result)
+        assert "| fastapi | >=0.110 |" in sections["dep.python"].l2_md
+        assert "react" in sections["dep.node"].l2_md
+        assert any("pyproject.toml" in w for w in result.warnings)
+
+    def test_optional_dependencies_table_that_is_not_a_table_warns_and_continues(self, repo):
+        # Fix wave (G-5 follow-up): `[project.optional-dependencies]` itself
+        # being the wrong shape (here, a list instead of a table) must also
+        # degrade rather than raise.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            'optional-dependencies = ["oops"]\n',
+            encoding="utf-8",
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        sections = _by_id(result)
+        assert "| fastapi | >=0.110 |" in sections["dep.python"].l2_md
+        assert "react" in sections["dep.node"].l2_md
+        assert any("pyproject.toml" in w for w in result.warnings)
+
 
 class TestFrameworkLookup:
     @pytest.mark.parametrize(
@@ -384,6 +691,11 @@ class TestFrameworkLookup:
         # prefix against any longer name that merely began with it, so a
         # Java dependency on `reactive-streams` was mislabeled as React.
         assert deps_ext.detect_frameworks([dep]) == []
+
+    def test_gin_is_detected_from_a_real_go_module_path(self):
+        # Reviewer G-5: ("gin-gonic/gin", "Gin") never matched go.mod's
+        # `github.com/gin-gonic/gin`.
+        assert deps_ext.detect_frameworks(["github.com/gin-gonic/gin"]) == ["Gin"]
 
 
 from center_kb.codeingest.extractors import services as svc_ext
@@ -1595,6 +1907,177 @@ class TestCommandsExtractor:
         assert len(table_lines) == 3
         assert "echo one echo two" in table_lines[-1]
 
+    @pytest.mark.parametrize(
+        ("line", "purpose"),
+        [
+            # Reviewer G-2's seven lines: substring matching classified all
+            # but the last two wrongly (`/dev/null` ⊃ dev, `:latest` ⊃ test).
+            ('code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)', None),
+            ('pip install "ruff>=0.15,<0.16"', None),
+            ("-e CENTER_KB_HTTP_TOKEN=smoke-test-token", None),
+            ("--tag ghcr.io/vuonglq01685/center-kb:latest", None),
+            ('echo "starting deployment"', None),
+            ("aws s3 cp devops.txt s3://bucket", None),
+            ("bash scripts/gate.sh", None),
+            ("ruff check .", "lint"),
+            ("python -m build", "build"),
+            ("npm run dev", "run"),
+            ("go test ./...", "test"),
+            ("tox -e lint", "lint"),
+            ('"$PY" -m pytest -q', "test"),
+            ("vite (npm run start)", "run"),
+            ("cd web && npm run build", "build"),
+            ("pytest -q --cov=airspace", "test"),
+            # Widened rule (user-approved): a keyword also matches a token
+            # when it's a prefix of that token immediately followed by a
+            # `-` or `:` separator -- otherwise a Makefile/npm-script target
+            # like `test-unit` or `lint:fix` classified as None (a repo
+            # whose Makefile only has `test-unit` produced no cmd.test
+            # section at all).
+            ("make test-unit", "test"),
+            ("npm run lint:fix", "lint"),
+            ("yarn build:prod", "build"),
+            # Still None -- the false-positive class the whole-token rule
+            # exists to close must stay closed: keyword not at position 0
+            # of the token, or not followed by a separator.
+            ("smoke-test-token", None),
+            ("devops.txt", None),
+            ("/dev/null", None),
+            ("center-kb:latest", None),
+            ("starting", None),
+            ("ruff>=0.15", None),
+            # Containment (user-approved): the separator rule reopened an
+            # adjacent false-positive class -- a keyword prefix cut by
+            # `-`/`:` also matched the start of a filename. This still
+            # classifies (the rule's genuine win, no extension to key on):
+            ("npx lint-staged", "lint"),
+            # ... but a token carrying a recognized file extension no
+            # longer counts, even though the prefix+separator shape
+            # otherwise matches:
+            ("pip install -r dev-requirements.txt", None),
+            ("cp test-fixtures/a.json /tmp", None),
+            ("curl -o start-script.sh https://x", None),
+            # Extension-set gap (reviewer): the frozen set was
+            # under-inclusive -- `.in` is pip-tools' source for the very
+            # `.txt` case above, and archive/script extensions common in
+            # download/copy/interpreter-invocation steps were missing too.
+            ("pip install -r dev-requirements.in", None),
+            ("curl -o test-data.tar.gz https://x", None),
+            ("curl -o start-bundle.zip https://x", None),
+            ("cp build-out.zip /tmp", None),
+            ("node build-config.mjs", None),
+            ("bash dev-setup.bash", None),
+            # Trailing punctuation (reviewer, Finding 4): `_TOKEN_STRIP`
+            # didn't include `;`/`,`, so a `;`-joined command's filename
+            # token kept its trailing `;` and missed the frozenset --
+            # unlike the equivalent `&&` form, which already gives None.
+            ("cp test-fixtures/a.json; ls", None),
+            # Reachable justification for the frozen set over a "has a
+            # dot" rule (reviewer, Finding 3): Python version matrices.
+            ("make test-3.11", "test"),
+            ("tox -e lint-3.12", "lint"),
+            # Accepted, not closed: no file extension to key on.
+            ("apt-get install -y build-essential", "build"),
+        ],
+    )
+    def test_classify_matches_keyword_prefixes_but_not_filenames(self, line, purpose):
+        assert cmd_ext._classify(line) == purpose
+
+    def test_install_step_before_the_real_command_does_not_win(self, tmp_path):
+        # aero's own _gate.yml: `pip install "ruff..."` precedes `ruff check .`.
+        root = tmp_path / "gate"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "_gate.yml").write_text(
+            "on: [push]\njobs:\n  t0-lint:\n    runs-on: ubuntu-latest\n    steps:\n"
+            '      - run: pip install "ruff>=0.15,<0.16"\n'
+            "      - run: ruff check .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `ruff check .`"
+        assert "cmd.build" not in sections
+
+    def test_continued_run_block_is_one_command_not_fragments(self, tmp_path):
+        root = tmp_path / "cont"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  img:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          docker build \\\n"
+            "            --tag ghcr.io/x/y:latest \\\n"
+            "            .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.build"].l2_md.splitlines()[0] == (
+            "**Primary:** `docker build --tag ghcr.io/x/y:latest .`"
+        )
+        assert "cmd.test" not in sections
+
+    def test_leading_comment_before_cd_still_resolves_directory_label(self, tmp_path):
+        # Fix wave, Finding 3: `_step_dir_label` receives `lines` after
+        # `join_continuations` already dropped comments and blanks, so
+        # a leading `# comment` no longer hides the `cd` right after it
+        # -- this used to resolve to no directory label at all.
+        root = tmp_path / "commentcd"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          # set up\n"
+            "          cd web\n"
+            "          npm run build\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert "(in web/)" in sections["cmd.build"].l2_md
+
+    def test_tox_commands_are_read_not_only_env_names(self, tmp_path):
+        # Reviewer G-2: `[testenv] commands = pytest -q` with envlist py311
+        # contributed nothing, because only env *names* were classified.
+        root = tmp_path / "toxrepo"
+        root.mkdir()
+        (root / "tox.ini").write_text(
+            "[tox]\nenvlist = py311\n\n[testenv]\ncommands =\n    pytest -q \\\n        --maxfail=1\n"
+            "\n[testenv:style]\ncommands = ruff check .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.test"].l2_md.splitlines()[0] == "**Primary:** `tox`"
+        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `tox -e style`"
+        # one candidate per (purpose, invocation), even though two lines matched
+        assert sections["cmd.lint"].l3_md.count("tox -e style") == 1
+
+    def test_shell_scripts_at_root_and_scripts_dir_are_command_sources(self, tmp_path):
+        # Reviewer G-2: aero's own release gate, scripts/gate.sh, appeared nowhere.
+        root = tmp_path / "shrepo"
+        (root / "scripts").mkdir(parents=True)
+        (root / "scripts" / "gate.sh").write_text(
+            '#!/usr/bin/env bash\nset -euo pipefail\n"$PY" -m ruff check .\n'
+            '"$PY" -m pytest -q\n"$PY" -m build\n',
+            encoding="utf-8",
+        )
+        (root / "run.sh").write_text("#!/bin/sh\nuvicorn app:main\n", encoding="utf-8")
+        (root / "deep").mkdir()
+        (root / "deep" / "ignored.sh").write_text("pytest\n", encoding="utf-8")
+        assert cmd_ext.CommandsExtractor().detect(root) is True
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        for purpose in ("lint", "test", "build"):
+            assert "bash scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
+            assert "scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
+        assert "bash run.sh" in sections["cmd.run"].l2_md
+        assert "deep/ignored.sh" not in sections["cmd.test"].l2_md + sections["cmd.test"].l3_md
+
+    def test_shell_script_is_an_alternative_when_ci_exists(self, repo):
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "gate.sh").write_text("pytest -q\n", encoding="utf-8")
+        s = _by_id(cmd_ext.CommandsExtractor().extract(repo, _opts(repo)))["cmd.test"]
+        assert "pytest -q --cov=airspace" in s.l2_md.splitlines()[0]   # CI still primary
+        assert "bash scripts/gate.sh" in s.l3_md
+
 
 import sqlite3
 
@@ -1765,7 +2248,7 @@ class TestSchemaExtractor:
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
         assert "2 columns" in s.summary          # not 3 -- "PRIMARY" is not a fabricated column
-        assert "(a, b)" in s.summary              # the PK constraint was still captured
+        assert "PK a, b" in s.summary   # the PK constraint was still captured
         assert "| PRIMARY |" not in s.l2_md
 
     def test_line_comment_inside_create_table_does_not_fabricate_or_destroy_columns(self, tmp_path):
@@ -1850,7 +2333,7 @@ class TestSchemaExtractor:
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
-        assert "1 columns" in s.summary
+        assert "1 column," in s.summary
         assert "CONSTRAINT" not in s.l2_md
         assert any("002.sql" in w for w in result.warnings)
 
@@ -1929,15 +2412,12 @@ class TestSchemaExtractor:
         finally:
             check.close()
 
-    def test_alembic_truncated_column_type_is_left_visibly_incomplete_not_fabricated(self, tmp_path):
-        # Task review round 2 New Minor: round 1's fix for Minor 11
-        # "balanced" ALEMBIC_COLUMN_RE's truncated capture by appending a
-        # closing paren -- but a multi-arg call like sa.Numeric(10, 2) is
-        # truncated by the same [^,)]+ capture to "sa.Numeric(10", and
-        # "balancing" that produces sa.Numeric(10) -- a syntactically
-        # plausible type that silently drops the scale argument, worse
-        # than the visible truncation it replaced. The fix is to leave
-        # the truncated text alone.
+    def test_alembic_column_types_are_captured_whole_and_primary_key_is_seen(self, tmp_path):
+        # Reviewer G-13: `[^,)]+` stopped at the first paren, rendering
+        # `sa.Integer(` and missing `primary_key=True`. Round 2's concern —
+        # never fabricate `sa.Numeric(10)` from `sa.Numeric(10, 2)` — holds
+        # because the type is now the first top-level argument, parens
+        # balanced, not a truncated capture with a paren appended.
         root = tmp_path / "alembic-types"
         versions = root / "versions"
         versions.mkdir(parents=True)
@@ -1947,14 +2427,145 @@ class TestSchemaExtractor:
             "        'widgets',\n"
             "        sa.Column('id', sa.Integer(), primary_key=True),\n"
             "        sa.Column('amt', sa.Numeric(10, 2), nullable=False),\n"
+            "        sa.Column('meta', sa.JSON(none_as_null=True)),\n"
             "    )\n",
             encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
-        assert "sa.Integer(" in s.l2_md   # visibly incomplete
-        assert "sa.Integer()" not in s.l2_md   # never fabricated as "complete"
-        assert "sa.Numeric(10" in s.l2_md
-        assert "sa.Numeric(10)" not in s.l2_md   # would silently drop the ", 2" scale arg
+        assert "| id | sa.Integer() | yes |" in s.l2_md
+        assert "| amt | sa.Numeric(10, 2) |  |" in s.l2_md
+        assert "| meta | sa.JSON(none_as_null=True) |  |" in s.l2_md
+        assert "PK id" in s.summary
+
+    def test_alembic_column_truncated_at_end_of_file_stays_visibly_incomplete(self, tmp_path):
+        # Reviewer G-13 round 2: _matching_close_paren returns an index AT
+        # the last real character (not past it) when a call never closes.
+        # The old exclusive slice `scope[cm.end():call_close]` dropped that
+        # character, turning a visibly truncated `sa.Integer(` into a
+        # plausible-looking, complete (and wrong) `sa.Integer`.
+        root = tmp_path / "alembic-truncated"
+        versions = root / "versions"
+        versions.mkdir(parents=True)
+        (versions / "0001_x.py").write_text(
+            "def upgrade():\n"
+            "    op.create_table(\n"
+            "        'widgets',\n"
+            "        sa.Column('id', sa.Integer(",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
+        assert "| id | sa.Integer( |  |" in s.l2_md
+        assert "sa.Integer()" not in s.l2_md
+
+    def test_alembic_composite_primary_key_is_not_reduced_to_its_first_column(self, tmp_path):
+        # Reviewer G-13 round 2 (plan-overriding ruling): `if not pk`
+        # stopped at the first `primary_key=True`, so a 2-column composite
+        # PK rendered as PK on only the first column and left the second's
+        # PK cell blank -- a confident false statement. Composite PKs are
+        # ordinary in Alembic; the full clause must reach the document.
+        #
+        # Fix wave 2, finding 1: rendering the stored `PRIMARY KEY (...)`
+        # clause after a bare `PK ` prefix stuttered -- `PK PRIMARY KEY
+        # (team_id, user_id)`. The summary now shows just the column
+        # list, consistent with the single-column `PK id` shape.
+        root = tmp_path / "alembic-composite-pk"
+        versions = root / "versions"
+        versions.mkdir(parents=True)
+        (versions / "0001_x.py").write_text(
+            "def upgrade():\n"
+            "    op.create_table(\n"
+            "        'membership',\n"
+            "        sa.Column('team_id', sa.Integer(), primary_key=True),\n"
+            "        sa.Column('user_id', sa.Integer(), primary_key=True),\n"
+            "    )\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "| team_id | sa.Integer() | yes |" in s.l2_md
+        assert "| user_id | sa.Integer() | yes |" in s.l2_md
+        assert "PK team_id, user_id" in s.summary
+        assert "PK PRIMARY KEY" not in s.summary
+
+    def test_sql_composite_primary_key_summary_does_not_stutter(self, tmp_path):
+        # Fix wave 2, finding 1 (sql/sqlite half): the same stored
+        # `PRIMARY KEY (...)` clause the alembic reader produces is also
+        # what `_split_sql_columns` stores verbatim in `pk` for a
+        # table-constraint composite key -- this reader hits
+        # `_render_section` through the identical code path, so it must
+        # render the identical corrected phrasing, not just the alembic
+        # source.
+        root = tmp_path / "sql-composite-pk"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE membership (\n"
+            "  team_id INT,\n"
+            "  user_id INT,\n"
+            "  PRIMARY KEY (team_id, user_id)\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "| team_id | INT | yes |" in s.l2_md
+        assert "| user_id | INT | yes |" in s.l2_md
+        assert "PK team_id, user_id" in s.summary
+        assert "PK PRIMARY KEY" not in s.summary
+
+    def test_primary_key_clause_with_no_columns_degrades_to_none_detected(self, tmp_path):
+        # Fix wave 3, finding 1: `PRIMARY KEY ()` / `PRIMARY KEY (   )`
+        # match `_PK_LIST_RE` but capture no column names -- the old
+        # fallback only ran on no-match, so this collapsed to a
+        # value-less "PK  (source: ...)" (double space, no PK named).
+        # Must degrade the same way an empty `record.pk` does.
+        root = tmp_path / "pk-empty-parens"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE t (\n  a INT,\n  b INT,\n  PRIMARY KEY ()\n);\n",
+            encoding="utf-8",
+        )
+        (mig / "002.sql").write_text(
+            "CREATE TABLE u (\n  a INT,\n  b INT,\n  PRIMARY KEY (   )\n);\n",
+            encoding="utf-8",
+        )
+        by_id = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))
+        for table_id in ("db.t", "db.u"):
+            s = by_id[table_id]
+            assert "PK none detected" in s.summary
+            assert "PK  (" not in s.summary          # no double space, no bare "PK "
+            # row cells and DDL are untouched by the summary-only fix
+            assert "| a | INT |  |" in s.l2_md
+            assert "| b | INT |  |" in s.l2_md
+        assert "PRIMARY KEY ()" in by_id["db.t"].l3_md
+        assert "PRIMARY KEY (   )" in by_id["db.u"].l3_md
+
+    def test_wrapped_composite_primary_key_summary_stays_one_line(self, tmp_path):
+        # Fix wave 3, finding 2: a composite `PRIMARY KEY (...)` clause
+        # wrapped across multiple source lines was captured verbatim
+        # (newlines and all) and interpolated into the one-line summary
+        # field, breaking it across lines. Must collapse to one line
+        # without losing or reordering the column names.
+        root = tmp_path / "pk-wrapped"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE membership (\n"
+            "  team_id INT,\n"
+            "  user_id INT,\n"
+            "  PRIMARY KEY (\n"
+            "    team_id,\n"
+            "    user_id\n"
+            "  )\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "\n" not in s.summary
+        assert "PK team_id, user_id (source: migrations/001.sql)." in s.summary
+        # row cells and DDL are untouched -- only the summary rendering changed
+        assert "| team_id | INT | yes |" in s.l2_md
+        assert "| user_id | INT | yes |" in s.l2_md
+        assert "PRIMARY KEY (\n    team_id,\n    user_id\n  )" in s.l3_md
 
     def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(self, tmp_path):
         # New Minor: a literal like DEFAULT '(' has a genuinely unbalanced
@@ -2462,6 +3073,85 @@ class TestSchemaExtractor:
         sections = _by_id(result)
         assert "db.good" in sections
         assert any("001.sql" in w and "CREATE TABLE" in w for w in result.warnings)
+
+    def _two_dir_users(self, tmp_path):
+        root = tmp_path / "twodirs"
+        billing = root / "services" / "billing" / "migrations"
+        flyway = root / "src" / "main" / "resources" / "db" / "migration"
+        billing.mkdir(parents=True)
+        flyway.mkdir(parents=True)
+        (billing / "001_init.sql").write_text(
+            "CREATE TABLE users (\n  id BIGINT NOT NULL,\n  plan VARCHAR(32) NOT NULL\n);\n",
+            encoding="utf-8",
+        )
+        (flyway / "V1__init.sql").write_text(
+            "CREATE TABLE users (\n  id BIGINT NOT NULL,\n  email VARCHAR(255) NOT NULL,\n"
+            "  created_at DATETIME NOT NULL,\n  PRIMARY KEY (id)\n);\n",
+            encoding="utf-8",
+        )
+        (flyway / "V2__alter.sql").write_text(
+            "ALTER TABLE users ADD COLUMN last_login DATETIME NULL;\n", encoding="utf-8"
+        )
+        return root
+
+    def test_duplicate_table_in_another_directory_is_not_merged(self, tmp_path):
+        # Reviewer G-4: `plan` + `last_login` were joined into a users table
+        # that exists in neither schema.
+        root = self._two_dir_users(tmp_path)
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root))
+        s = _by_id(result)["db.users"]
+        assert "| plan |" in s.l2_md
+        assert "email" not in s.l2_md
+        assert "last_login" not in s.l2_md
+        assert "Table users: 2 columns" in s.summary
+        assert any(
+            "duplicate CREATE TABLE 'users' in src/main/resources/db/migration/V1__init.sql" in w
+            and "keeping the definition from services/billing/migrations/001_init.sql" in w
+            and "not merged" in w
+            for w in result.warnings
+        )
+
+    def test_alter_from_another_directory_is_not_applied_and_warns(self, tmp_path):
+        root = self._two_dir_users(tmp_path)
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root))
+        s = _by_id(result)["db.users"]
+        assert "V2__alter.sql" not in s.l2_md          # not in Source either
+        assert any(
+            "ALTER TABLE 'users' ADD COLUMN in src/main/resources/db/migration/V2__alter.sql not applied"
+            in w and "created in services/billing/migrations/001_init.sql" in w
+            for w in result.warnings
+        )
+
+    def test_alter_in_the_same_directory_still_applies(self, repo):
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        assert "| effective_date |" in s.l2_md
+
+    def test_ef_table_says_columns_not_extracted_instead_of_an_empty_table(self, tmp_path):
+        # Reviewer G-13: a header row with no rows and "0 columns" reads as
+        # "this table has no columns".
+        root = tmp_path / "efrepo"
+        mig = root / "Migrations"
+        mig.mkdir(parents=True)
+        (mig / "20240101_Init.cs").write_text(
+            'migrationBuilder.CreateTable(\n    name: "Invoices",\n    columns: table => new {}\n);\n',
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.Invoices"]
+        assert "| Column | Type | PK |" not in s.l2_md
+        assert "_Columns not extracted: EF Core migrations are recognised by table name only._" in s.l2_md
+        assert "_Source: Migrations/20240101_Init.cs_" in s.l2_md
+        assert "Table Invoices: columns not extracted (EF migration), PK none detected" in s.summary
+
+    def test_created_in_empty_string_never_matches_a_root_level_created_in(self):
+        # Carried from Task 7's review: _dirname("") returns "." same as a
+        # root-level migration file's _dirname. After this task all five
+        # TableRecord construction sites set created_in, so an unset value
+        # is not actually reachable today -- this guard is defensive
+        # against a future reader that forgets to set the field, ensuring
+        # that "created_in was never set" could never be silently treated
+        # as "created at the repo root" by the _dirname guards in
+        # _apply_sql_file. Cheap to keep, pinned directly against _dirname.
+        assert schema_ext._dirname("") != schema_ext._dirname("root_level.sql")
 
 
 class TestIntegrationsExtractor:
