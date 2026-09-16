@@ -548,14 +548,29 @@ def _read_workspaces(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                     "is outside the repository; not read"
                 )
                 continue
-            rel_dir = relposix(root, match)
+            # R2-4 (re-review round 2): `match` itself can still carry a
+            # literal, un-normalised `..` component even once it has
+            # passed `_within_repo` above -- `../*` matching the repo
+            # root itself is exactly this case (`_within_repo` judges
+            # the *normalised* path, which is `root`, but `match` is
+            # literally `root/../<checkout-dir-name>`). Publishing
+            # `relposix(root, match)` verbatim put this checkout's own
+            # directory name into the published `-code` document, so two
+            # clones into differently-named directories produced
+            # different output -- a determinism break, the exact class
+            # I2 (this same function) was opened to close. Deriving
+            # `rel_dir`/`pkg`/`name` from the same normalised path
+            # `_within_repo` already judged keeps the published path
+            # free of anything checkout- or machine-specific.
+            normalised = Path(os.path.normpath(match))
+            rel_dir = relposix(root, normalised)
             if any(part in IGNORED_DIRS for part in Path(rel_dir).parts):
                 continue
-            pkg = match / "package.json"
+            pkg = normalised / "package.json"
             if not pkg.is_file() or rel_dir in seen:
                 continue
             seen.add(rel_dir)
-            name = match.name
+            name = normalised.name
             try:
                 pkg_data = json.loads(pkg.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:

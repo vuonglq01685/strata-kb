@@ -1608,6 +1608,17 @@ class TestServicesExtractor:
         # the repo root itself from its own parent directory's
         # perspective -- legitimately in-repo, so that match is still
         # accepted -- only the escaping sibling must be rejected.
+        #
+        # R2-4 (re-review round 2): that self-match's own `match` object
+        # is literally `root/../repo` (un-normalised) even though it
+        # denotes `root` itself -- publishing it verbatim put this
+        # checkout's own directory name (`repo`, this test's arbitrary
+        # choice) into `directory`/`source`, a determinism break (two
+        # clones into differently-named directories would publish
+        # different paths). The fix derives `rel_dir`/`pkg`/`name` from
+        # `Path(os.path.normpath(match))` instead, so the self-match
+        # renders as the checkout-independent `.` — asserted below,
+        # not just "does not contain the checkout's name" by omission.
         root = tmp_path / "repo"
         root.mkdir()
         sibling = tmp_path / "secretpkg"
@@ -1629,6 +1640,10 @@ class TestServicesExtractor:
             "workspace pattern '../*'" in w and "outside the repository" in w
             for w in result.warnings
         )
+        self_record = next(s for s in result.sections if s.title == "repo")
+        assert "| Source | ./package.json |" in self_record.l2_md
+        assert "in `.` — no container image." in self_record.l2_md
+        assert "../repo" not in (self_record.l2_md + self_record.l3_md)
 
     def test_compose_service_with_the_same_name_as_a_workspace_keeps_compose_evidence(self, tmp_path):
         root = self._mono(tmp_path)
