@@ -1535,6 +1535,65 @@ class TestCommandsExtractor:
         assert len(table_lines) == 3
         assert "echo one echo two" in table_lines[-1]
 
+    @pytest.mark.parametrize(
+        ("line", "purpose"),
+        [
+            # Reviewer G-2's seven lines: substring matching classified all
+            # but the last two wrongly (`/dev/null` ⊃ dev, `:latest` ⊃ test).
+            ('code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)', None),
+            ('pip install "ruff>=0.15,<0.16"', None),
+            ("-e CENTER_KB_HTTP_TOKEN=smoke-test-token", None),
+            ("--tag ghcr.io/vuonglq01685/center-kb:latest", None),
+            ('echo "starting deployment"', None),
+            ("aws s3 cp devops.txt s3://bucket", None),
+            ("bash scripts/gate.sh", None),
+            ("ruff check .", "lint"),
+            ("python -m build", "build"),
+            ("npm run dev", "run"),
+            ("go test ./...", "test"),
+            ("tox -e lint", "lint"),
+            ('"$PY" -m pytest -q', "test"),
+            ("vite (npm run start)", "run"),
+            ("cd web && npm run build", "build"),
+            ("pytest -q --cov=airspace", "test"),
+        ],
+    )
+    def test_classify_matches_whole_tokens_only(self, line, purpose):
+        assert cmd_ext._classify(line) == purpose
+
+    def test_install_step_before_the_real_command_does_not_win(self, tmp_path):
+        # aero's own _gate.yml: `pip install "ruff..."` precedes `ruff check .`.
+        root = tmp_path / "gate"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "_gate.yml").write_text(
+            "on: [push]\njobs:\n  t0-lint:\n    runs-on: ubuntu-latest\n    steps:\n"
+            '      - run: pip install "ruff>=0.15,<0.16"\n'
+            "      - run: ruff check .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `ruff check .`"
+        assert "cmd.build" not in sections
+
+    def test_continued_run_block_is_one_command_not_fragments(self, tmp_path):
+        root = tmp_path / "cont"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  img:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          docker build \\\n"
+            "            --tag ghcr.io/x/y:latest \\\n"
+            "            .\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert sections["cmd.build"].l2_md.splitlines()[0] == (
+            "**Primary:** `docker build --tag ghcr.io/x/y:latest .`"
+        )
+        assert "cmd.test" not in sections
+
 
 import sqlite3
 

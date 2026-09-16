@@ -16,10 +16,11 @@ kept as an alternative — never silently dropped — because CI evidence is
 what *actually* runs in the pipeline, while a local script only *could*
 run something similar.
 
-Classification (`_classify()`) is a single keyword lookup against
-`PURPOSE_KEYWORDS`, checked in the dict's own declaration order — `test`
-before `lint` before `build` before `run` — so `pytest` (whose last four
-letters spell "test") is never miscounted as a generic `build`. The npm
+Classification (`_classify()`) is a whole-token match (never a substring:
+`/dev/null` is not `dev`) against `PURPOSE_KEYWORDS`, checked in the dict's
+own declaration order — `test` before `lint` before `build` before `run` —
+so `pytest` (whose last four letters spell "test") is never miscounted as
+a generic `build`. The npm
 reader folds its `npm run <name>` / `npm test` invocation into the same
 string it classifies and displays (Ruling R2): a script's raw body is
 still what's shown and matched primarily, but the invocation travels
@@ -48,6 +49,7 @@ import yaml
 
 from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
 from center_kb.codeingest.extractors._envkeys import redact_userinfo
+from center_kb.codeingest.extractors._lines import join_continuations
 from center_kb.codeingest.extractors._mdcells import escape_cell
 from center_kb.codeingest.extractors.tree import relposix, walk_tree
 
@@ -59,7 +61,7 @@ PURPOSE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "lint": ("ruff", "eslint", "flake8", "mypy", "golangci-lint",
              "dotnet format", "checkstyle", "lint", "format"),
     "build": ("build", "compile", "tsc", "vite build", "mvn package",
-              "gradle build", "dotnet build", "pip install", "go build"),
+              "gradle build", "dotnet build", "go build"),
     "run": ("start", "serve", "uvicorn", "gunicorn", "dotnet run",
             "go run", "dev"),
 }
@@ -151,15 +153,27 @@ def _defaults_working_directory(
     return stripped.rstrip("/") if stripped else None
 
 
+_TOKEN_STRIP = "\"'()"
+
+
 def _classify(text: str) -> str | None:
-    """First purpose in `PURPOSE_KEYWORDS`' own declaration order whose
-    keyword appears in `text` (case-insensitive substring match) — `test`
-    is checked before `build` so `pytest` is never mistaken for a generic
-    build command."""
-    lowered = text.lower()
+    """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
+    before `lint` before `build` before `run`) whose keyword appears in
+    `text` as whole tokens: a one-word keyword must equal a whitespace-
+    delimited token (outer quotes and parens stripped), a multi-word
+    keyword must equal a run of consecutive tokens. A substring match
+    classified `/dev/null` as `run` and `:latest` as `test` (reviewer
+    G-2); a token match cannot."""
+    tokens = [tok.strip(_TOKEN_STRIP) for tok in text.lower().split()]
     for purpose, keywords in PURPOSE_KEYWORDS.items():
-        if any(kw in lowered for kw in keywords):
-            return purpose
+        for keyword in keywords:
+            kw_tokens = keyword.split()
+            width = len(kw_tokens)
+            if any(
+                tokens[i:i + width] == kw_tokens
+                for i in range(len(tokens) - width + 1)
+            ):
+                return purpose
     return None
 
 
@@ -174,7 +188,8 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
     `services.py`'s convention of sorting a parsed mapping's keys) then
     step order (a step list's position is meaningful — the file's own
     execution order — so it is never re-sorted). A multi-line `run:`
-    block is split on newlines into one candidate per line. Source label
+    block is split into logical lines by `join_continuations` (a `\\`
+    continuation is one command) — one candidate per line. Source label
     is `f"CI: {file}#{job}"` so every candidate from the same job shares
     one traceable label — with a `" (in <dir>/)"` suffix when the command
     doesn't actually run at the repo root; without that, a
@@ -244,7 +259,7 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                             f"could not parse {rel}: job {job_name!r} step 'run' is not a string"
                         )
                         continue
-                    lines = run.splitlines()
+                    lines = join_continuations(run)
                     # Ruling R34: step's own directory beats the job's
                     # `defaults.run.working-directory`, which beats the
                     # workflow's -- GitHub Actions' own precedence.
@@ -253,12 +268,9 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                     )
                     source = f"{source_base} (in {dir_label}/)" if dir_label else source_base
                     for line in lines:
-                        stripped = line.strip()
-                        if not stripped:
-                            continue
-                        purpose = _classify(stripped)
+                        purpose = _classify(line)
                         if purpose is not None:
-                            candidates.append((purpose, stripped, source))
+                            candidates.append((purpose, line, source))
 
     return candidates, warnings
 
