@@ -100,6 +100,70 @@ class TestTreeExtractor:
         assert "docs/kb" not in body
         assert "structure.md" not in body
 
+    def test_git_ignored_directories_are_absent_when_root_is_a_repo(self, repo, run_git):
+        # Reviewer G-3: an unfiltered os.walk shipped .venv-artifact/,
+        # .worktrees/ and a previous run's own output as "tracked files".
+        (repo / ".gitignore").write_text(".venv-x/\nkb1/\n", encoding="utf-8")
+        (repo / ".venv-x" / "lib").mkdir(parents=True)
+        (repo / ".venv-x" / "lib" / "site.py").write_text("", encoding="utf-8")
+        (repo / "kb1" / "demo-code").mkdir(parents=True)
+        (repo / "kb1" / "demo-code" / "structure.md").write_text("x", encoding="utf-8")
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        body = s.l2_md + s.l3_md
+        assert ".venv-x" not in body
+        assert "kb1" not in body
+        assert "src/airspace" in body
+        assert "tracked files" in s.summary
+        assert result.warnings == []
+
+    def test_untracked_file_in_a_repo_is_not_listed(self, repo, run_git):
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        (repo / "scratch.txt").write_text("x", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert "scratch.txt" not in s.l3_md
+
+    def test_non_git_root_is_unfiltered_and_says_so(self, repo):
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert "tracked" not in s.summary
+        assert "not a git repository" in s.summary
+        assert any("not a git repository" in w for w in result.warnings)
+        assert "src/airspace" in s.l3_md
+
+    def test_repo_with_nothing_tracked_falls_back_to_the_unfiltered_walk(self, repo, run_git):
+        run_git(repo, "init")   # no add, no commit: `git ls-files` lists nothing
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert "src/airspace" in s.l3_md
+        assert any("not a git repository" in w for w in result.warnings)
+
+    def test_tracked_walk_still_prunes_ignored_dirs_and_the_kb_dir(self, repo, run_git):
+        (repo / "dist").mkdir()
+        (repo / "dist" / "bundle.js").write_text("", encoding="utf-8")
+        (repo / ".kb" / "demo-code").mkdir(parents=True)
+        (repo / ".kb" / "demo-code" / "structure.md").write_text("x", encoding="utf-8")
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "c1")
+        entries = tree_ext.walk_tree(repo, repo / ".kb")
+        dirs = {rel.as_posix() for _d, rel, _f in entries}
+        assert "dist" not in dirs
+        assert ".kb" not in dirs and ".kb/demo-code" not in dirs
+        assert "src/airspace" in dirs
+        # preorder, alphabetical, root first at depth 0; every ancestor of a
+        # kept file is present, pruned directories are not
+        assert [e[1].as_posix() for e in entries] == [
+            ".", ".github", ".github/workflows", "db", "db/migration",
+            "src", "src/airspace", "web",
+        ]
+        assert entries[0][0] == 0
+
 
 from center_kb.codeingest.extractors import deps as deps_ext
 
