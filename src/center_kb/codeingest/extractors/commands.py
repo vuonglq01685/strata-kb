@@ -19,27 +19,43 @@ pipeline, while a local script only *could* run something similar.
 Classification (`_classify()`) matches a keyword against a token when the
 keyword equals the whole token, or is a prefix of the token cut off by a
 `-` or `:` separator (`test-unit`, `lint:fix`) — never a bare substring:
-`/dev/null` is not `dev` — against `PURPOSE_KEYWORDS`, checked in the
-dict's own declaration order — `test` before `lint` before `build` before
-`run` — so `pytest` (whose last four letters spell "test") is never
-miscounted as a generic `build`. The npm reader folds its `npm run <name>` /
-`npm test` invocation into the same string it classifies and displays (Ruling
-R2): a script's raw body is still what's shown and matched primarily, but the
+`/dev/null` is not `dev`. A logical line is first split into segments on
+unquoted `&&`/`;` (`_split_unquoted_segments`; a plain matching quote
+pair is respected, nesting/escaping is not) — each segment's own tokens
+checked independently against `PURPOSE_KEYWORDS` — and the line's
+purpose is the first purpose in `PURPOSE_KEYWORDS`'s own declaration
+order — `test` before `lint` before `build` before `run` — that is named
+by *any* non-excluded segment, never whichever segment happens to come
+first (R3-1, re-review round 3: position is not evidence of purpose —
+the leftmost segment of a chained line is routinely `cd`, `rm`, `mkdir`
+or an install step, none of which say anything about what the line is
+*for*; `rm -rf build && pytest -q` is a `test` line even though its
+first segment's own last token is literally `build`). This is also why
+`pytest` (whose last four letters spell "test") is never miscounted as a
+generic `build`: `test` is checked, across every segment, before `build`
+ever is. The npm reader folds its `npm run <name>` / `npm test`
+invocation into the same string it classifies and displays (Ruling R2):
+a script's raw body is still what's shown and matched primarily, but the
 invocation travels alongside it rather than replacing it, which also lets a
 reserved script name (`start`) pull in the `run` purpose's `"start"` keyword
 even when the body itself (`vite`) carries no keyword of its own. The `make`
 reader differs deliberately: its command is `make <target>` — the recipe body
 is never shown or classified, only the target name embedded in that string.
 
-Before any keyword is even considered, `_classify()` drops two shapes that
-are not commands at all (fix wave, 2026-09-16, findings C1/I5): a line
-whose leading tokens are a package-manager install verb (`pip install`,
-`npm ci`, `apt-get install`, ...) — the *installed package name* can
-itself be a keyword (`pip install build twine` classified as `build`),
-which whole-token matching alone does not close, only narrows — and a
-`test`/`[`/`[[` shell-conditional line (`test "$code" = "401"`), which is
-an exact match against the bare `"test"` keyword every Makefile/raw-`test`
-invocation still needs. See `_is_install_line`/`_is_shell_conditional`.
+Before a segment's tokens are even checked against `PURPOSE_KEYWORDS`,
+`_classify()` drops two shapes that are not commands at all (fix wave,
+2026-09-16, findings C1/I5): a segment whose leading tokens are a
+package-manager install verb (`pip install`, `npm ci`, `apt-get
+install`, ...) — the *installed package name* can itself be a keyword
+(`pip install build twine` classified as `build`), which whole-token
+matching alone does not close, only narrows — and a `test`/`[`/`[[`
+shell-conditional segment (`test "$code" = "401"`), which is an exact
+match against the bare `"test"` keyword every Makefile/raw-`test`
+invocation still needs. Excluding a segment removes only its own
+contribution to the purposes considered above; it never demotes another
+segment in the same line (R2-3: `npm ci && npm run build` classifies as
+`build` from its second segment, not `None` from treating the whole
+line as one excluded unit). See `_is_install_line`/`_is_shell_conditional`.
 
 Every reader degrades rather than raises: a malformed or wrong-shaped file
 (a `package.json` that's a list, a `jobs:` that's a list, ...) becomes a
@@ -255,12 +271,15 @@ def _is_install_line(tokens: list[str]) -> bool:
     """True when `tokens` (already lowercased/quote-stripped, exactly as
     `_classify` builds them) *start* with one of `_INSTALL_VERBS` --
     matched only at position 0, unlike `_classify`'s scan-anywhere keyword
-    search, because this is asked about one already-split logical line:
-    whatever a line does after its own leading install verb (there isn't
-    anything, in every real CI/tox/shell line this closes) is not this
-    function's concern, only whether the line's *purpose* is "install a
-    tool", which is setup, never a command a Dev agent should be told to
-    run."""
+    search, because this is asked about one already-split SEGMENT of a
+    logical line (`_split_unquoted_segments`, R2-3), never the whole
+    line: a `&&`/`;`-chained segment that follows an install step
+    (`npm ci && npm run build`) very much does have something after it,
+    and does contribute its own purpose to the line -- see `_classify`'s
+    docstring (R2-3 originally, corrected by R3-1) for how the purposes
+    of every non-excluded segment combine. This function's only job is
+    whether ITS segment's purpose is "install a tool", which is setup,
+    never a command a Dev agent should be told to run."""
     return any(tuple(tokens[:len(verb)]) == verb for verb in _INSTALL_VERBS)
 
 
@@ -342,66 +361,95 @@ def _split_unquoted_segments(text: str) -> list[str]:
     return segments
 
 
+def _keyword_purpose(tokens: list[str]) -> str | None:
+    """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
+    before `lint` before `build` before `run`) whose keyword matches a
+    run of `tokens`: a one-word keyword must match one whitespace-
+    delimited token (outer quotes and parens stripped, per
+    `_token_matches_keyword`) already stripped by the caller, a
+    multi-word keyword must match that many consecutive tokens the same
+    way. A bare substring match classified `/dev/null` as `run` and
+    `:latest` as `test` (reviewer G-2); this still can't -- only a whole
+    token, or a keyword prefix cut by `-`/`:`, counts. Only ever called
+    on ONE segment's tokens (see `_classify`) -- it has no notion of
+    "the rest of the line" and returns as soon as any keyword in the
+    highest-priority purpose that has one matches, never continuing on
+    to see whether a lower-priority purpose's keyword also appears."""
+    for purpose, keywords in PURPOSE_KEYWORDS.items():
+        for keyword in keywords:
+            kw_tokens = keyword.split()
+            width = len(kw_tokens)
+            if any(
+                all(
+                    _token_matches_keyword(tok, kw)
+                    for tok, kw in zip(tokens[i:i + width], kw_tokens)
+                )
+                for i in range(len(tokens) - width + 1)
+            ):
+                return purpose
+    return None
+
+
 def _classify(text: str) -> str | None:
-    """The purpose of the first segment of `text` (split on unquoted
-    `&&`/`;` by `_split_unquoted_segments`, R2-3) that classifies to one
-    -- a single-segment `text` (no `&&`/`;` at all) is simply that one
-    segment, unchanged from before R2-3.
+    """The first purpose in `PURPOSE_KEYWORDS`' own declaration order
+    (`test` before `lint` before `build` before `run`) named by ANY
+    segment of `text` (split on unquoted `&&`/`;` by
+    `_split_unquoted_segments`) whose own tokens aren't excluded by one
+    of the two guards below -- purpose priority across every segment,
+    never "whichever segment comes first" (R3-1, re-review round 3,
+    correcting R2-3's own fix): position in a `&&`/`;`-chained line is
+    not evidence of purpose. `rm -rf build && pytest -q` and `cd build
+    && make test` both classify as `test`, not `build`, even though
+    each one's *first* segment's own last token happens to be `build` --
+    `cd`/`rm`/`mkdir` are routinely a chained line's leading segment and
+    say nothing about what the line is for, exactly as `_keyword_purpose`
+    checking `test` before `build` already does *within* one segment (so
+    `pytest`, whose last four letters spell "test", is never miscounted
+    as a generic `build`); this makes the same guarantee hold *across*
+    segments too.
 
-    Within one segment: first purpose in `PURPOSE_KEYWORDS`' own
-    declaration order (`test` before `lint` before `build` before `run`)
-    whose keyword matches a run of the segment's tokens: a one-word
-    keyword must match one whitespace-delimited token (outer quotes and
-    parens stripped) per `_token_matches_keyword`, a multi-word keyword
-    must match that many consecutive tokens the same way. A bare
-    substring match classified `/dev/null` as `run` and `:latest` as
-    `test` (reviewer G-2); this still can't -- only a whole token, or a
-    keyword prefix cut by `-`/`:`, counts.
+    A single-segment `text` (no `&&`/`;` at all -- the overwhelmingly
+    common case) is simply `_keyword_purpose` of that one segment,
+    unchanged from before R2-3/R3-1 ever existed.
 
-    Two guards run before any keyword is even considered for a segment,
-    both added in the same fix wave (C1/I5) and both applied here -- the
-    one function every reader that classifies a shell line (CI `run:`,
-    `*.sh`, tox `commands =`) already shares, so a single check point
-    covers all three rather than three copies of it. Placing the guards
-    inside `_classify` itself (rather than only in those three readers'
-    own call sites) is safe for its other callers too: the npm reader's
-    command is `<script body> (npm run <name>)` (a script body starting
-    with an install verb is exceedingly unlikely, and not a shape any
-    existing test relies on), the make reader's is always exactly `make
-    <target>` (never two install-verb tokens, since a Makefile target
-    name has no spaces), and the presence-based reader bypasses
-    `_classify` entirely -- none of them can spuriously trip either
-    guard.
+    Two guards run before a segment's tokens are even checked against
+    `PURPOSE_KEYWORDS`, both added in the same fix wave (C1/I5) and both
+    applied here -- the one function every reader that classifies a
+    shell line (CI `run:`, `*.sh`, tox `commands =`) already shares, so a
+    single check point covers all three rather than three copies of it.
+    Placing the guards inside `_classify` itself (rather than only in
+    those three readers' own call sites) is safe for its other callers
+    too: the npm reader's command is `<script body> (npm run <name>)` (a
+    script body starting with an install verb is exceedingly unlikely,
+    and not a shape any existing test relies on), the make reader's is
+    always exactly `make <target>` (never two install-verb tokens, since
+    a Makefile target name has no spaces), and the presence-based reader
+    bypasses `_classify` entirely -- none of them can spuriously trip
+    either guard.
     - `_is_install_line`: a segment whose leading tokens are a package-
       manager install verb (`pip install`, `npm ci`, `apt-get install`,
       ...) is setup, never a command to run (C1) -- `pip install build
       twine` no longer classifies as `build` merely because `build`
-      happens to be an installed package name -- but (R2-3) only THAT
-      segment is excluded: `npm ci && npm run build` still classifies as
-      `build` from its second segment, rather than the whole line
-      silently classifying as nothing.
+      happens to be an installed package name -- but (R2-3) excluding a
+      segment removes only ITS OWN contribution: `npm ci && npm run
+      build` still classifies as `build`, from its second segment.
     - `_is_shell_conditional`: a `test`/`[`/`[[` shell conditional is not
       a test *command* (I5) -- `test "$code" = "401"` no longer
       classifies as `test`, and (R2-3) only its own segment is excluded
       when it's chained with `&&` (`[ "$OK" = 1 ] && make build` still
       classifies as `build`).
     """
+    found_purposes: set[str] = set()
     for segment in _split_unquoted_segments(text):
         tokens = [tok.strip(_TOKEN_STRIP) for tok in segment.lower().split()]
         if _is_install_line(tokens) or _is_shell_conditional(tokens):
             continue
-        for purpose, keywords in PURPOSE_KEYWORDS.items():
-            for keyword in keywords:
-                kw_tokens = keyword.split()
-                width = len(kw_tokens)
-                if any(
-                    all(
-                        _token_matches_keyword(tok, kw)
-                        for tok, kw in zip(tokens[i:i + width], kw_tokens)
-                    )
-                    for i in range(len(tokens) - width + 1)
-                ):
-                    return purpose
+        purpose = _keyword_purpose(tokens)
+        if purpose is not None:
+            found_purposes.add(purpose)
+    for purpose in PURPOSE_KEYWORDS:
+        if purpose in found_purposes:
+            return purpose
     return None
 
 

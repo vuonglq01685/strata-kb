@@ -2345,14 +2345,37 @@ class TestCommandsExtractor:
             # WHOLE line to None -- a regression this fix wave itself
             # introduced (a Node repo whose only CI build line is `npm
             # ci && npm run build` got no cmd.build candidate from CI at
-            # all). `_split_unquoted_segments` classifies each segment
-            # independently; the line is the first segment that
-            # classifies.
+            # all). `_split_unquoted_segments` classifies each
+            # non-excluded segment independently.
             ("npm ci && npm run build", "build"),
             ("npm install && npm run build", "build"),
             ("pip install -e .[dev] && pytest -q", "test"),
             ('[ "$OK" = 1 ] && make build', "build"),
             ("cd web && npm run build", "build"),  # regression (already worked; still must)
+            # R3-1 (re-review round 3): R2-3's own fix picked the
+            # *leftmost* classifying segment as the line's purpose --
+            # wrong, because position in a chained line is not evidence
+            # of purpose: the leftmost segment is routinely `cd`, `rm`,
+            # `mkdir` or an install step, none of which say what the
+            # line is FOR. Purpose priority (test before lint before
+            # build before run) now applies ACROSS every non-excluded
+            # segment, exactly as it already did within one segment --
+            # so a `build`-shaped leading segment never outranks a
+            # `test`-shaped one that follows it, the same guarantee that
+            # keeps `pytest` from being miscounted as a generic `build`.
+            ("rm -rf build && pytest -q", "test"),
+            ("cd build && make test", "test"),
+            ("npm run build && npm test", "test"),
+            ("tsc --noEmit && eslint .", "lint"),
+            ("go build ./... && go test ./...", "test"),
+            ("npm run lint && jest", "test"),
+            # The npm reader's own folded `(npm run <name>)`/`(npm test)`
+            # invocation (Ruling R2) lands at the END of the string --
+            # exactly the shape that exposed R2-3's leftmost-wins bug,
+            # since the declared script name could no longer contribute
+            # its purpose to a chained body.
+            ("tsc --noEmit && eslint . (npm run lint)", "lint"),
+            ("npm run build && jest (npm test)", "test"),
             ("ruff check .", "lint"),
             ("python -m build", "build"),
             ("npm run dev", "run"),
@@ -2402,9 +2425,17 @@ class TestCommandsExtractor:
             ("node build-config.mjs", None),
             ("bash dev-setup.bash", None),
             # Trailing punctuation (reviewer, Finding 4): `_TOKEN_STRIP`
-            # didn't include `;`/`,`, so a `;`-joined command's filename
-            # token kept its trailing `;` and missed the frozenset --
-            # unlike the equivalent `&&` form, which already gives None.
+            # originally didn't include `;`/`,`, so a `;`-joined command's
+            # filename token kept its trailing `;` and missed the
+            # frozenset -- unlike the equivalent `&&` form, which already
+            # gave None. R3-4 (re-review round 3): since R2-3,
+            # `_split_unquoted_segments` consumes an unquoted `;` as a
+            # segment boundary before either segment is ever tokenised,
+            # so `_TOKEN_STRIP` including `;` no longer does anything for
+            # THIS row -- the token "test-fixtures/a.json" never carries
+            # a trailing `;` to begin with. Still `None`: segment 1
+            # ("cp test-fixtures/a.json") fails the filename check as
+            # before, and segment 2 ("ls") matches no keyword either.
             ("cp test-fixtures/a.json; ls", None),
             # Reachable justification for the frozen set over a "has a
             # dot" rule (reviewer, Finding 3): Python version matrices.
