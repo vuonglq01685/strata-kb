@@ -71,7 +71,7 @@ FRAMEWORKS: tuple[tuple[str, str], ...] = (
     ("vue", "Vue"),
     ("svelte", "Svelte"),
     ("express", "Express"),
-    ("gin-gonic/gin", "Gin"),
+    ("github.com/gin-gonic/gin", "Gin"),
     ("laravel/framework", "Laravel"),
     ("symfony/framework-bundle", "Symfony"),
 )
@@ -118,9 +118,11 @@ def detect_frameworks(names: Iterable[str]) -> list[str]:
 # shared reader helpers
 # ---------------------------------------------------------------------------
 
-# Groups map a scope name ("direct", "dev") to its (name, constraint) pairs.
-# Every ecosystem uses "direct"; node and php additionally use "dev" for
-# their respective devDependencies / require-dev.
+# Groups map a scope name to its (name, constraint) pairs. Every ecosystem
+# uses "direct"; node and php add "dev"; python adds "extra:<name>" per
+# `[project.optional-dependencies]` table and one group per non-root
+# `requirements*.txt`, named by that file's repo-relative path. Every group
+# is rendered (reviewer G-5) — names in L2, constraints in L3.
 Groups = dict[str, list[tuple[str, str]]]
 
 _NODE_MAX_DEPTH = 2  # package.json is only searched at depth <= 2
@@ -250,6 +252,24 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
                             f"could not parse {rel}: 'project.dependencies' is not a list"
                         )
 
+                    extras = project.get("optional-dependencies", {})
+                    if isinstance(extras, dict):
+                        for extra in sorted(extras, key=str):
+                            specs = extras[extra]
+                            if isinstance(specs, list):
+                                _merge(groups, f"extra:{extra}", [
+                                    _split_pep508(d) for d in specs if isinstance(d, str)
+                                ])
+                            else:
+                                warnings.append(
+                                    f"could not parse {rel}: optional-dependencies "
+                                    f"{extra!r} is not a list"
+                                )
+                    elif extras:
+                        warnings.append(
+                            f"could not parse {rel}: 'project.optional-dependencies' is not a table"
+                        )
+
     setup_cfg = root / "setup.cfg"
     if setup_cfg.is_file():
         rel = relposix(root, setup_cfg)
@@ -294,7 +314,10 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
                 if not code_part:
                     continue
                 pairs.append(_split_pep508(code_part))
-            _merge(groups, "direct", pairs)
+            # Only the root requirements.txt is the runtime set; every other
+            # requirements file (a CI runner venv, a docs build) is its own
+            # group so nothing is duplicated or misattributed (reviewer G-5).
+            _merge(groups, "direct" if rel == "requirements.txt" else rel, pairs)
 
     return _finish(groups, warnings, existing)
 
@@ -540,6 +563,7 @@ _READERS = {
 
 def _render_section(section_id: str, label: str, groups: Groups) -> CodeSection:
     direct = groups.get("direct", [])
+    others = [(g, groups[g]) for g in sorted(groups) if g != "direct" and groups[g]]
     all_names = (name for deps in groups.values() for name, _constraint in deps)
     labels = detect_frameworks(all_names)
 
@@ -553,21 +577,32 @@ def _render_section(section_id: str, label: str, groups: Groups) -> CodeSection:
         f"| {escape_cell(redact_userinfo(name))} | {escape_cell(redact_userinfo(constraint))} |"
         for name, constraint in direct
     )
+    if others:
+        # Names only — constraints are in L3 — so the L2 stays the condensed layer.
+        l2_lines += ["", "| Group | Packages |", "| --- | --- |"]
+        l2_lines.extend(
+            f"| {escape_cell(group)} | "
+            f"{escape_cell(', '.join(redact_userinfo(name) for name, _c in deps))} |"
+            for group, deps in others
+        )
     l2_md = "\n".join(l2_lines) + "\n"
 
     l3_blocks = []
-    for group_name in ("direct", "dev"):
-        deps = groups.get(group_name)
+    for group_name, deps in [("direct", direct), *others]:
         if not deps:
             continue
         body = "\n".join(_fmt_dep(name, constraint) for name, constraint in deps)
         l3_blocks.append(f"```\n# {group_name}\n{body}\n```")
     l3_md = "\n\n".join(l3_blocks) + "\n"
 
-    summary = (
-        f"{len(direct)} direct {label} dependencies"
-        + (f"; frameworks: {', '.join(labels)}." if labels else ".")
-    )
+    extra_count = sum(len(deps) for _g, deps in others)
+    summary = f"{len(direct)} direct {label} dependencies"
+    if others:
+        summary += (
+            f"; {extra_count} more in {len(others)} groups "
+            f"({', '.join(group for group, _d in others)})"
+        )
+    summary += f"; frameworks: {', '.join(labels)}." if labels else "."
 
     return CodeSection(
         id=section_id,

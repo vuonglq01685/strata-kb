@@ -270,7 +270,9 @@ class TestDepsExtractor:
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.go"]
         assert "pinned" not in s.l3_md
-        assert s.summary == "1 direct Go dependencies."
+        # G-5 fixed the Gin prefix to the real module path, so this fixture's
+        # own github.com/gin-gonic/gin dependency now correctly matches it.
+        assert s.summary == "1 direct Go dependencies; frameworks: Gin."
 
     def test_php_deps_come_from_composer_json(self, repo):
         # Review Finding 6: php had zero test coverage.
@@ -347,6 +349,45 @@ class TestDepsExtractor:
         assert "S3CR3TV4LUE" not in s.l3_md
         assert "git+https://***@github.com/o/r.git" in s.l3_md
 
+    def test_optional_dependency_groups_are_read_and_rendered(self, repo):
+        # Reviewer G-5: five extras (the whole PDF-ingest engine among them)
+        # were absent; only [project].dependencies was read.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110", "pydantic>=2.7"]\n'
+            "[project.optional-dependencies]\n"
+            'ingest = ["docling>=2.0", "Pillow>=10"]\n'
+            'dev = ["ruff>=0.15,<0.16", "pytest>=8.0"]\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.python"]
+        assert "| fastapi | >=0.110 |" in s.l2_md
+        assert "| Group | Packages |" in s.l2_md
+        assert "| extra:dev | pytest, ruff |" in s.l2_md
+        assert "| extra:ingest | docling, Pillow |" in s.l2_md
+        assert ">=0.15,<0.16" not in s.l2_md            # constraints live in L3
+        assert "# extra:dev\npytest>=8.0\nruff>=0.15,<0.16" in s.l3_md
+        assert s.summary == (
+            "2 direct Python dependencies; 4 more in 2 groups (extra:dev, extra:ingest); "
+            "frameworks: FastAPI."
+        )
+
+    def test_non_root_requirements_files_are_their_own_group(self, repo):
+        # Reviewer G-5: requirements-gate.txt merged into `direct` duplicated
+        # mcp/pyyaml and hid that pytest was a runner-venv dependency.
+        (repo / "requirements.txt").write_text("fastapi>=0.110\n", encoding="utf-8")
+        (repo / "requirements-gate.txt").write_text("pytest>=8.0\nfastapi>=0.100\n", encoding="utf-8")
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.python"]
+        assert s.l2_md.count("| fastapi |") == 1
+        assert "| requirements-gate.txt | fastapi, pytest |" in s.l2_md
+        assert "# requirements-gate.txt\nfastapi>=0.100\npytest>=8.0" in s.l3_md
+
+    def test_node_dev_dependencies_are_rendered(self, repo):
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.node"]
+        assert "| dev | eslint |" in s.l2_md
+        assert "# dev\neslint^9.0.0" in s.l3_md
+        assert s.summary == "1 direct Node dependencies; 1 more in 1 groups (dev); frameworks: React."
+
 
 class TestFrameworkLookup:
     @pytest.mark.parametrize(
@@ -384,6 +425,11 @@ class TestFrameworkLookup:
         # prefix against any longer name that merely began with it, so a
         # Java dependency on `reactive-streams` was mislabeled as React.
         assert deps_ext.detect_frameworks([dep]) == []
+
+    def test_gin_is_detected_from_a_real_go_module_path(self):
+        # Reviewer G-5: ("gin-gonic/gin", "Gin") never matched go.mod's
+        # `github.com/gin-gonic/gin`.
+        assert deps_ext.detect_frameworks(["github.com/gin-gonic/gin"]) == ["Gin"]
 
 
 from center_kb.codeingest.extractors import services as svc_ext
