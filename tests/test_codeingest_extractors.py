@@ -1556,6 +1556,24 @@ class TestCommandsExtractor:
             ("vite (npm run start)", "run"),
             ("cd web && npm run build", "build"),
             ("pytest -q --cov=airspace", "test"),
+            # Widened rule (user-approved): a keyword also matches a token
+            # when it's a prefix of that token immediately followed by a
+            # `-` or `:` separator -- otherwise a Makefile/npm-script target
+            # like `test-unit` or `lint:fix` classified as None (a repo
+            # whose Makefile only has `test-unit` produced no cmd.test
+            # section at all).
+            ("make test-unit", "test"),
+            ("npm run lint:fix", "lint"),
+            ("yarn build:prod", "build"),
+            # Still None -- the false-positive class the whole-token rule
+            # exists to close must stay closed: keyword not at position 0
+            # of the token, or not followed by a separator.
+            ("smoke-test-token", None),
+            ("devops.txt", None),
+            ("/dev/null", None),
+            ("center-kb:latest", None),
+            ("starting", None),
+            ("ruff>=0.15", None),
         ],
     )
     def test_classify_matches_whole_tokens_only(self, line, purpose):

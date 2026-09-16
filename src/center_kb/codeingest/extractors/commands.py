@@ -16,11 +16,13 @@ kept as an alternative — never silently dropped — because CI evidence is
 what *actually* runs in the pipeline, while a local script only *could*
 run something similar.
 
-Classification (`_classify()`) is a whole-token match (never a substring:
-`/dev/null` is not `dev`) against `PURPOSE_KEYWORDS`, checked in the dict's
-own declaration order — `test` before `lint` before `build` before `run` — so
-`pytest` (whose last four letters spell "test") is never miscounted as a
-generic `build`. The npm reader folds its `npm run <name>` / `npm test`
+Classification (`_classify()`) matches a keyword against a token when the
+keyword equals the whole token, or is a prefix of the token cut off by a
+`-` or `:` separator (`test-unit`, `lint:fix`) — never a bare substring:
+`/dev/null` is not `dev` — against `PURPOSE_KEYWORDS`, checked in the
+dict's own declaration order — `test` before `lint` before `build` before
+`run` — so `pytest` (whose last four letters spell "test") is never
+miscounted as a generic `build`. The npm reader folds its `npm run <name>` / `npm test`
 invocation into the same string it classifies and displays (Ruling R2): a
 script's raw body is still what's shown and matched primarily, but the
 invocation travels alongside it rather than replacing it, which also lets a
@@ -157,23 +159,49 @@ def _defaults_working_directory(
 
 
 _TOKEN_STRIP = "\"'()"
+_TOKEN_SEPARATORS = ("-", ":")
+
+
+def _token_matches_keyword(token: str, keyword: str) -> bool:
+    """`keyword` matches `token` when they're equal, or when `keyword` is
+    a prefix of `token` immediately followed by a separator in
+    `_TOKEN_SEPARATORS` -- so a Makefile target `test-unit` or an npm
+    script `lint:fix` still classifies (user-approved widening: a
+    whole-token-only rule left a repo whose Makefile has only
+    `test-unit` with no `cmd.test` section at all). The keyword must
+    still start at position 0 of the token: `devops.txt` (`dev` then
+    `o`), `/dev/null` (`dev` isn't at position 0), `smoke-test-token`
+    (`test` isn't at position 0) and `starting` (`start` then `i`) all
+    stay unmatched."""
+    if token == keyword:
+        return True
+    return (
+        token.startswith(keyword)
+        and len(token) > len(keyword)
+        and token[len(keyword)] in _TOKEN_SEPARATORS
+    )
 
 
 def _classify(text: str) -> str | None:
     """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
-    before `lint` before `build` before `run`) whose keyword appears in
-    `text` as whole tokens: a one-word keyword must equal a whitespace-
-    delimited token (outer quotes and parens stripped), a multi-word
-    keyword must equal a run of consecutive tokens. A substring match
-    classified `/dev/null` as `run` and `:latest` as `test` (reviewer
-    G-2); a token match cannot."""
+    before `lint` before `build` before `run`) whose keyword matches a
+    run of `text`'s tokens: a one-word keyword must match one whitespace-
+    delimited token (outer quotes and parens stripped) per
+    `_token_matches_keyword`, a multi-word keyword must match that many
+    consecutive tokens the same way. A bare substring match classified
+    `/dev/null` as `run` and `:latest` as `test` (reviewer G-2); this
+    still can't -- only a whole token, or a keyword prefix cut by `-`/`:`,
+    counts."""
     tokens = [tok.strip(_TOKEN_STRIP) for tok in text.lower().split()]
     for purpose, keywords in PURPOSE_KEYWORDS.items():
         for keyword in keywords:
             kw_tokens = keyword.split()
             width = len(kw_tokens)
             if any(
-                tokens[i:i + width] == kw_tokens
+                all(
+                    _token_matches_keyword(tok, kw)
+                    for tok, kw in zip(tokens[i:i + width], kw_tokens)
+                )
                 for i in range(len(tokens) - width + 1)
             ):
                 return purpose
