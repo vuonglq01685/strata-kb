@@ -2154,6 +2154,36 @@ class TestCommandsExtractor:
             ('echo "starting deployment"', None),
             ("aws s3 cp devops.txt s3://bucket", None),
             ("bash scripts/gate.sh", None),
+            # C1 (final whole-branch review, this fix wave): the seven
+            # rows above closed the *substring* false positives, but a
+            # *whole-token* match still fires when an installed
+            # package's own name is itself a `PURPOSE_KEYWORDS` entry --
+            # `pip install build twine` classified as `build`, demoting
+            # `python -m build` (the line that actually builds this
+            # repository) to an alternative. Fixed by dropping a line
+            # whose leading tokens are a package-manager install verb
+            # before classification ever runs (`_is_install_line`), never
+            # by reinstating "last line wins" (ruled out; plan Task 12
+            # Step 2 / spec Decision 6).
+            ("pip install build twine", None),
+            ("pip install ruff", None),
+            ("npm install -D vite", None),
+            ("python -m build", "build"),  # regression: the real command still wins
+            ("pytest -q", "test"),  # regression
+            # I5 (same review, same intake-filter surface): the shell
+            # builtin `test`/`[`/`[[` conditional shape is likewise a
+            # whole-token match against the bare `"test"` keyword --
+            # `release.yml#docker-verify`'s `test "$code" = "401"`
+            # surfaced as a `cmd.test` alternative. Fixed by rejecting
+            # the conditional shape (`_is_shell_conditional`), never by
+            # removing the bare `"test"` keyword itself (which is what
+            # lets a Makefile `test:` target or a raw `test` invocation
+            # classify at all).
+            ('test "$code" = "401"', None),
+            ('[ -z "$TOKEN" ]', None),
+            ('[[ "$x" != "y" ]]', None),
+            ("go test ./...", "test"),  # regression
+            ("npm run test", "test"),  # regression
             ("ruff check .", "lint"),
             ("python -m build", "build"),
             ("npm run dev", "run"),
@@ -2211,8 +2241,12 @@ class TestCommandsExtractor:
             # dot" rule (reviewer, Finding 3): Python version matrices.
             ("make test-3.11", "test"),
             ("tox -e lint-3.12", "lint"),
-            # Accepted, not closed: no file extension to key on.
-            ("apt-get install -y build-essential", "build"),
+            # Was "accepted, not closed: no file extension to key on" --
+            # closed as a side effect of C1's install-verb guard (this fix
+            # wave): `apt-get install` is one of the leading-token verbs
+            # `_is_install_line` drops before classification ever sees the
+            # `build-essential` package name that used to leak through.
+            ("apt-get install -y build-essential", None),
         ],
     )
     def test_classify_matches_keyword_prefixes_but_not_filenames(self, line, purpose):

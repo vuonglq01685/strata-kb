@@ -31,6 +31,16 @@ even when the body itself (`vite`) carries no keyword of its own. The `make`
 reader differs deliberately: its command is `make <target>` — the recipe body
 is never shown or classified, only the target name embedded in that string.
 
+Before any keyword is even considered, `_classify()` drops two shapes that
+are not commands at all (fix wave, 2026-09-16, findings C1/I5): a line
+whose leading tokens are a package-manager install verb (`pip install`,
+`npm ci`, `apt-get install`, ...) — the *installed package name* can
+itself be a keyword (`pip install build twine` classified as `build`),
+which whole-token matching alone does not close, only narrows — and a
+`test`/`[`/`[[` shell-conditional line (`test "$code" = "401"`), which is
+an exact match against the bare `"test"` keyword every Makefile/raw-`test`
+invocation still needs. See `_is_install_line`/`_is_shell_conditional`.
+
 Every reader degrades rather than raises: a malformed or wrong-shaped file
 (a `package.json` that's a list, a `jobs:` that's a list, ...) becomes a
 warning naming the file, and every other reader still runs — the same
@@ -211,6 +221,75 @@ def _token_matches_keyword(token: str, keyword: str) -> bool:
     )
 
 
+# C1 (final whole-branch review): a *whole-token* match still fires when
+# the installed package name itself is a `PURPOSE_KEYWORDS` entry --
+# `pip install build twine` classified as `build` (the package `build`),
+# `pip install ruff` as `lint` (the package `ruff`) -- so an install step
+# outranked the real command it precedes in every CI job that installs
+# its own tooling before running it. Spec Decision 6 assumed whole-token
+# matching alone closed this ("the install step ... no longer classifies
+# at all"); it does not, whenever the package name coincides with a
+# keyword, which is the common case. This is not solved by reinstating
+# "last line wins" (ruled out by the plan's Task 12 Step 2 and by Decision
+# 6 for other reasons) -- instead, a line whose leading tokens are a
+# package-manager install verb is recognised as setup and dropped before
+# classification ever runs, regardless of what package name follows.
+_INSTALL_VERBS: tuple[tuple[str, ...], ...] = (
+    ("pip", "install"), ("pip3", "install"), ("python", "-m", "pip", "install"),
+    ("uv", "pip", "install"), ("uv", "add"), ("uv", "sync"),
+    ("pipx", "install"),
+    ("poetry", "install"), ("poetry", "add"),
+    ("npm", "install"), ("npm", "i"), ("npm", "ci"), ("npm", "add"),
+    ("yarn", "add"), ("yarn", "install"),
+    ("pnpm", "install"), ("pnpm", "add"),
+    ("apt-get", "install"), ("apt", "install"), ("apk", "add"),
+    ("brew", "install"),
+    ("go", "install"),
+    ("cargo", "install"),
+    ("gem", "install"),
+    ("dotnet", "add"), ("dotnet", "restore"), ("dotnet", "tool", "install"),
+)
+
+
+def _is_install_line(tokens: list[str]) -> bool:
+    """True when `tokens` (already lowercased/quote-stripped, exactly as
+    `_classify` builds them) *start* with one of `_INSTALL_VERBS` --
+    matched only at position 0, unlike `_classify`'s scan-anywhere keyword
+    search, because this is asked about one already-split logical line:
+    whatever a line does after its own leading install verb (there isn't
+    anything, in every real CI/tox/shell line this closes) is not this
+    function's concern, only whether the line's *purpose* is "install a
+    tool", which is setup, never a command a Dev agent should be told to
+    run."""
+    return any(tuple(tokens[:len(verb)]) == verb for verb in _INSTALL_VERBS)
+
+
+# I5 (same review, same intake-filter surface as C1): the bare keyword
+# `"test"` (needed so a Makefile `test:` target or a raw `test`
+# invocation classifies at all) is also an exact token match against the
+# shell builtin/`[`/`[[` conditional -- `release.yml#docker-verify`'s
+# `test "$code" = "401"` surfaced as a `cmd.test` alternative. Rejecting
+# the conditional *shape* (rather than removing the keyword) keeps
+# legitimate commands that merely contain "test" classifying normally.
+_CONDITIONAL_HEADS = ("test", "[", "[[")
+_CONDITIONAL_OPERATORS = ("!=", "-eq", "-z", "-n", "=")
+
+
+def _is_shell_conditional(tokens: list[str]) -> bool:
+    """True when `tokens` has the shape of a shell conditional test --
+    first token `test`, `[` or `[[`, with a later token carrying a
+    comparison operator (`=`, `!=`, `-eq`, `-z`, `-n` -- checked by
+    substring, which also catches `!=` via its trailing `=`) or the
+    line's own last token ending in `]`/`]]`. `pytest -q`, `go test
+    ./...`, `npm run test` and `dotnet test` don't start with a bare
+    `test`/`[`/`[[` token, so none of them match."""
+    if not tokens or tokens[0] not in _CONDITIONAL_HEADS:
+        return False
+    if tokens[-1].endswith("]"):
+        return True
+    return any(op in tok for tok in tokens[1:] for op in _CONDITIONAL_OPERATORS)
+
+
 def _classify(text: str) -> str | None:
     """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
     before `lint` before `build` before `run`) whose keyword matches a
@@ -220,8 +299,34 @@ def _classify(text: str) -> str | None:
     consecutive tokens the same way. A bare substring match classified
     `/dev/null` as `run` and `:latest` as `test` (reviewer G-2); this
     still can't -- only a whole token, or a keyword prefix cut by `-`/`:`,
-    counts."""
+    counts.
+
+    Two guards run before any keyword is even considered, both added in
+    the same fix wave (C1/I5) and both applied here -- the one function
+    every reader that classifies a shell line (CI `run:`, `*.sh`, tox
+    `commands =`) already shares, so a single check point covers all
+    three rather than three copies of it. Placing the guards inside
+    `_classify` itself (rather than only in those three readers' own
+    call sites) is safe for its other callers too: the npm reader's
+    command is `<script body> (npm run <name>)` (a script body starting
+    with an install verb is exceedingly unlikely, and not a shape any
+    existing test relies on), the make reader's is always exactly `make
+    <target>` (never two install-verb tokens, since a Makefile target
+    name has no spaces), and the presence-based reader bypasses
+    `_classify` entirely -- none of them can spuriously trip either
+    guard.
+    - `_is_install_line`: a line whose leading tokens are a package-
+      manager install verb (`pip install`, `npm ci`, `apt-get install`,
+      ...) is setup, never a command to run (C1) -- `pip install build
+      twine` no longer classifies as `build` merely because `build`
+      happens to be an installed package name.
+    - `_is_shell_conditional`: a `test`/`[`/`[[` shell conditional is not
+      a test *command* (I5) -- `test "$code" = "401"` no longer
+      classifies as `test`.
+    """
     tokens = [tok.strip(_TOKEN_STRIP) for tok in text.lower().split()]
+    if _is_install_line(tokens) or _is_shell_conditional(tokens):
+        return None
     for purpose, keywords in PURPOSE_KEYWORDS.items():
         for keyword in keywords:
             kw_tokens = keyword.split()

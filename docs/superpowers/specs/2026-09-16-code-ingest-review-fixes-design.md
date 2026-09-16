@@ -108,6 +108,19 @@ does not cover, not a broken test.
    the real command in every CI job no longer classifies at all, so the
    reviewer's "last line wins" suggestion is unnecessary churn.
 
+   **Correction (2026-09-16, final whole-branch review, finding C1):**
+   this premise is false whenever the installed *package name* is itself
+   a `PURPOSE_KEYWORDS` entry — `pip install build twine` still classified
+   as `build`, and `pip install ruff` as `lint`, under whole-token matching
+   alone, because `build` and `ruff` are exact tokens. Token matching
+   narrowed the false-positive class G-2 was about; it did not close it.
+   The branch's own acceptance test caught this at the release commit
+   (`cmd.build` was `pip install build twine`, not `python -m build`). The
+   actual fix drops a line whose leading tokens are a package-manager
+   install verb (`pip install`, `npm ci`, `apt-get install`, ...) before
+   classification ever runs — still not "last line wins", which stays
+   ruled out for the reasons this decision already gives.
+
 ## Scope
 
 In scope, one release (0.23.0):
