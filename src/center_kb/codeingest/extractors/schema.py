@@ -1182,9 +1182,15 @@ def _render_section(record: TableRecord) -> CodeSection:
     # composite keys this way). Rendering the clause after a bare `PK `
     # prefix stuttered — `PK PRIMARY KEY (team_id, user_id)` — so the
     # summary shows just the column list for a composite key, matching
-    # the single-column `PK id` shape (reviewer finding 1).
+    # the single-column `PK id` shape (reviewer finding 1). A clause that
+    # matches but names no columns (`PRIMARY KEY ()`/`PRIMARY KEY (   )`)
+    # must degrade to "none detected" too, not a value-less `PK ` — the
+    # `or` runs *after* picking the matched group, not before (fix wave 3,
+    # finding 1). `" ".join(...split())` then collapses a composite
+    # clause wrapped across source lines back to the one-line field this
+    # summary is persisted as (fix wave 3, finding 2).
     pk_match = _PK_LIST_RE.search(record.pk)
-    pk_phrase = pk_match.group(1).strip() if pk_match else (record.pk or "none detected")
+    pk_phrase = " ".join(((pk_match.group(1).strip() if pk_match else record.pk) or "none detected").split())
     summary = (
         f"Table {record.name}: {columns_phrase}, "
         f"PK {pk_phrase} (source: {record.source})."

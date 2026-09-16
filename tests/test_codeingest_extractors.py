@@ -1968,6 +1968,62 @@ class TestSchemaExtractor:
         assert "PK team_id, user_id" in s.summary
         assert "PK PRIMARY KEY" not in s.summary
 
+    def test_primary_key_clause_with_no_columns_degrades_to_none_detected(self, tmp_path):
+        # Fix wave 3, finding 1: `PRIMARY KEY ()` / `PRIMARY KEY (   )`
+        # match `_PK_LIST_RE` but capture no column names -- the old
+        # fallback only ran on no-match, so this collapsed to a
+        # value-less "PK  (source: ...)" (double space, no PK named).
+        # Must degrade the same way an empty `record.pk` does.
+        root = tmp_path / "pk-empty-parens"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE t (\n  a INT,\n  b INT,\n  PRIMARY KEY ()\n);\n",
+            encoding="utf-8",
+        )
+        (mig / "002.sql").write_text(
+            "CREATE TABLE u (\n  a INT,\n  b INT,\n  PRIMARY KEY (   )\n);\n",
+            encoding="utf-8",
+        )
+        by_id = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))
+        for table_id in ("db.t", "db.u"):
+            s = by_id[table_id]
+            assert "PK none detected" in s.summary
+            assert "PK  (" not in s.summary          # no double space, no bare "PK "
+            # row cells and DDL are untouched by the summary-only fix
+            assert "| a | INT |  |" in s.l2_md
+            assert "| b | INT |  |" in s.l2_md
+        assert "PRIMARY KEY ()" in by_id["db.t"].l3_md
+        assert "PRIMARY KEY (   )" in by_id["db.u"].l3_md
+
+    def test_wrapped_composite_primary_key_summary_stays_one_line(self, tmp_path):
+        # Fix wave 3, finding 2: a composite `PRIMARY KEY (...)` clause
+        # wrapped across multiple source lines was captured verbatim
+        # (newlines and all) and interpolated into the one-line summary
+        # field, breaking it across lines. Must collapse to one line
+        # without losing or reordering the column names.
+        root = tmp_path / "pk-wrapped"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE membership (\n"
+            "  team_id INT,\n"
+            "  user_id INT,\n"
+            "  PRIMARY KEY (\n"
+            "    team_id,\n"
+            "    user_id\n"
+            "  )\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "\n" not in s.summary
+        assert "PK team_id, user_id (source: migrations/001.sql)." in s.summary
+        # row cells and DDL are untouched -- only the summary rendering changed
+        assert "| team_id | INT | yes |" in s.l2_md
+        assert "| user_id | INT | yes |" in s.l2_md
+        assert "PRIMARY KEY (\n    team_id,\n    user_id\n  )" in s.l3_md
+
     def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(self, tmp_path):
         # New Minor: a literal like DEFAULT '(' has a genuinely unbalanced
         # paren count, but it is not a truncated capture -- it is exactly
