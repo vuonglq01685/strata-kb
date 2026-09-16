@@ -86,7 +86,8 @@ class TestTreeExtractor:
         assert "structure.md" not in body
         assert "docs" in body  # only the kb subtree is pruned, not its parent
 
-    def test_prunes_relative_kb_dir(self, repo):
+    def test_prunes_relative_kb_dir(self, repo, monkeypatch):
+        monkeypatch.chdir(repo)
         (repo / "docs" / "kb" / "demo-code").mkdir(parents=True)
         (repo / "docs" / "kb" / "demo-code" / "structure.md").write_text(
             "stub\n", encoding="utf-8"

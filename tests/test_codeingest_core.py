@@ -82,7 +82,7 @@ def test_manifest_records_commit_and_commit_date_not_wall_clock(tmp_path, monkey
     )
     head = run_git(tmp_path, "rev-parse", "HEAD")
     assert m.revision == head[:7]
-    assert m.source_sha256 == head
+    assert m.source_sha256 == ""   # G-15: the field is a content hash, not a git SHA
     assert m.ingested.isoformat() == "2020-01-02"
     assert all(s.status == "summarized" and s.summary for s in m.sections)
 

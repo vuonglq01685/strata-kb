@@ -160,7 +160,9 @@ def test_repo_id_falls_back_to_folder_name_when_unconfigured(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_kb_dir_relative_path_resolves_against_repo_root_not_cwd(tmp_path, monkeypatch):
+def test_kb_dir_relative_path_resolves_against_cwd_like_every_other_kb_command(tmp_path, monkeypatch):
+    # Reviewer G-11: resolving against --repo-root was undocumented and
+    # created directories inside a repo the reviewer had been told not to touch.
     root = tmp_path / "proj"
     build_code_repo(root)
     other_cwd = tmp_path / "elsewhere"
@@ -169,8 +171,8 @@ def test_kb_dir_relative_path_resolves_against_repo_root_not_cwd(tmp_path, monke
     result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
                                 "--kb-dir", "out/.kb", "--repo-id", "demo"])
     assert result.exit_code == 0, result.output
-    assert (root / "out" / ".kb" / "demo-code" / "_manifest.yaml").is_file()
-    assert not (other_cwd / "out").exists()
+    assert (other_cwd / "out" / ".kb" / "demo-code" / "_manifest.yaml").is_file()
+    assert not (root / "out").exists()
 
 
 # ---------------------------------------------------------------------------

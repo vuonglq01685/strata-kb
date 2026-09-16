@@ -484,7 +484,7 @@ def test_wrong_shaped_existing_code_manifest_is_refused_not_degraded(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_options_post_init_resolves_relative_kb_dir_against_repo_root(tmp_path, monkeypatch):
+def test_options_post_init_resolves_relative_kb_dir_against_cwd(tmp_path, monkeypatch):
     root = build_code_repo(tmp_path)
     other_cwd = tmp_path / "elsewhere"
     other_cwd.mkdir()
@@ -493,11 +493,11 @@ def test_options_post_init_resolves_relative_kb_dir_against_repo_root(tmp_path, 
     opts = core.CodeIngestOptions(
         repo_root=root, kb_dir=Path("out/.kb"), doc_id="demo-code", repo_id="demo",
     )
-    assert opts.kb_dir == (root / "out" / ".kb").resolve()
+    assert opts.kb_dir == (other_cwd / "out" / ".kb").resolve()
 
     core.run(opts)
-    assert (root / "out" / ".kb" / "demo-code" / "_manifest.yaml").is_file()
-    assert not (other_cwd / "out").exists()
+    assert (other_cwd / "out" / ".kb" / "demo-code" / "_manifest.yaml").is_file()
+    assert not (root / "out").exists()
 
 
 def test_options_post_init_resolves_relative_db_paths_against_repo_root(tmp_path, monkeypatch):

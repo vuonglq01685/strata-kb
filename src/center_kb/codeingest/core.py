@@ -59,21 +59,16 @@ class CodeIngestOptions:
     scaffold_svc: bool = False
 
     def __post_init__(self) -> None:
-        # Ruling R23, made durable for every caller (not just the CLI):
-        # `tree.walk_tree()` resolves a relative `kb_dir` against
-        # `repo_root`, while this module's own writer previously left a
-        # relative `kb_dir` to resolve against the process CWD — a
-        # legitimate source directory that happens to share a relative
-        # --kb-dir's name could be pruned from the tree while the real
-        # output directory landed somewhere else entirely. Doing this once
-        # here, on the frozen dataclass itself, means every construction
-        # site (the CLI, a test, a future MCP tool) gets it for free
-        # instead of each caller needing its own copy of the fix.
-        # `db_paths` gets the same treatment: a relative `--db` used to
-        # resolve against the CWD too, the exact ambiguity R23 removed for
-        # `kb_dir`.
+        # A relative `kb_dir` is relative to the process CWD — the same
+        # rule every other `kb` command's --kb-dir follows (reviewer G-11
+        # replaced Ruling R23's repo-root resolution, which no help text
+        # documented and which wrote inside a repo the operator had not
+        # pointed at). `tree.walk_tree()` prunes an absolute kb_dir only
+        # when it lies inside repo_root, so a KB outside the repo is
+        # simply not pruned — correct. `db_paths` keep resolving against
+        # `repo_root`: a --db names a file inside the repository.
         root = self.repo_root.resolve()
-        kb = self.kb_dir if self.kb_dir.is_absolute() else root / self.kb_dir
+        kb = self.kb_dir if self.kb_dir.is_absolute() else Path.cwd() / self.kb_dir
         db_paths = tuple(
             (p if p.is_absolute() else root / p).resolve() for p in self.db_paths
         )
@@ -472,7 +467,9 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             id=opts.doc_id,
             title=f"{opts.repo_id} — code knowledge",
             revision=short_commit,
-            source_sha256=full_commit,
+            # G-15: `source_sha256` is the PDF ingest's content hash; a git
+            # SHA-1 does not belong in it. `revision` carries the commit.
+            source_sha256="",
             ingested=_head_date(opts.repo_root),
             sections=[
                 models.SectionEntry(
@@ -547,7 +544,7 @@ def _load_manifest_guarded(
 # The section-id prefixes the seven extractors produce (README §7.12's
 # section-id contract). A -code manifest holding any other id was not
 # written by `run()`.
-_GENERATED_PREFIXES = ("struct.", "cmd.", "dep.", "db.", "svc.", "int.", "api.")
+_GENERATED_PREFIXES: tuple[str, ...] = ("struct.", "cmd.", "dep.", "db.", "svc.", "int.", "api.")
 
 
 def _foreign_destination_reason(
@@ -1247,7 +1244,7 @@ def scaffold_svc(opts, sections, report) -> None:
             id=svc_doc_id,
             title=f"{opts.repo_id} — curated service knowledge",
             revision=short_commit,
-            source_sha256=full_commit,
+            source_sha256="",
             ingested=_head_date(opts.repo_root),
             sections=sorted(
                 manifest_entries + other_entries, key=lambda e: (e.file, e.id)
