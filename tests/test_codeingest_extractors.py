@@ -381,12 +381,53 @@ class TestDepsExtractor:
         assert s.l2_md.count("| fastapi |") == 1
         assert "| requirements-gate.txt | fastapi, pytest |" in s.l2_md
         assert "# requirements-gate.txt\nfastapi>=0.100\npytest>=8.0" in s.l3_md
+        # direct = fastapi (from the base fixture's pyproject.toml, deduped
+        # against requirements.txt's own "fastapi>=0.110") + pydantic.
+        # fastapi is already counted there — only pytest is "more".
+        assert s.summary == (
+            "2 direct Python dependencies; 1 more in 1 group (requirements-gate.txt); "
+            "frameworks: FastAPI."
+        )
 
     def test_node_dev_dependencies_are_rendered(self, repo):
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.node"]
         assert "| dev | eslint |" in s.l2_md
         assert "# dev\neslint^9.0.0" in s.l3_md
-        assert s.summary == "1 direct Node dependencies; 1 more in 1 groups (dev); frameworks: React."
+        assert s.summary == "1 direct Node dependencies; 1 more in 1 group (dev); frameworks: React."
+
+    def test_optional_dependency_extra_that_is_not_a_list_warns_and_continues(self, repo):
+        # Fix wave (G-5 follow-up): an extra whose value isn't a list must
+        # degrade like every other wrong-shaped manifest here — one warning
+        # naming the file, no raise, and the rest of the extraction (this
+        # file's own `dependencies`, and every other ecosystem) still runs.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            "[project.optional-dependencies]\n"
+            'dev = "not-a-list"\n',
+            encoding="utf-8",
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        sections = _by_id(result)
+        assert "| fastapi | >=0.110 |" in sections["dep.python"].l2_md
+        assert "react" in sections["dep.node"].l2_md
+        assert any("pyproject.toml" in w for w in result.warnings)
+
+    def test_optional_dependencies_table_that_is_not_a_table_warns_and_continues(self, repo):
+        # Fix wave (G-5 follow-up): `[project.optional-dependencies]` itself
+        # being the wrong shape (here, a list instead of a table) must also
+        # degrade rather than raise.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            'optional-dependencies = ["oops"]\n',
+            encoding="utf-8",
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        sections = _by_id(result)
+        assert "| fastapi | >=0.110 |" in sections["dep.python"].l2_md
+        assert "react" in sections["dep.node"].l2_md
+        assert any("pyproject.toml" in w for w in result.warnings)
 
 
 class TestFrameworkLookup:

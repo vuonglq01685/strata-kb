@@ -595,11 +595,19 @@ def _render_section(section_id: str, label: str, groups: Groups) -> CodeSection:
         l3_blocks.append(f"```\n# {group_name}\n{body}\n```")
     l3_md = "\n\n".join(l3_blocks) + "\n"
 
-    extra_count = sum(len(deps) for _g, deps in others)
+    # Count only names not already listed under `direct` — a non-root
+    # requirements file that repeats a direct dependency (pinned to a
+    # different constraint for that file) must not be claimed as "more"
+    # when it isn't (reviewer finding: extra_count over-counted overlap).
+    direct_names = {name for name, _constraint in direct}
+    extra_count = sum(
+        1 for _g, deps in others for name, _c in deps if name not in direct_names
+    )
     summary = f"{len(direct)} direct {label} dependencies"
     if others:
+        group_word = "group" if len(others) == 1 else "groups"
         summary += (
-            f"; {extra_count} more in {len(others)} groups "
+            f"; {extra_count} more in {len(others)} {group_word} "
             f"({', '.join(group for group, _d in others)})"
         )
     summary += f"; frameworks: {', '.join(labels)}." if labels else "."
