@@ -155,8 +155,8 @@ def test_repo_id_falls_back_to_folder_name_when_unconfigured(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Ruling R23 — a relative `--kb-dir` must resolve against `--repo-root`,
-# never against the process's current working directory.
+# G-11 — a relative `--kb-dir` resolves against the process's current
+# working directory, like every other `kb` command's --kb-dir.
 # ---------------------------------------------------------------------------
 
 

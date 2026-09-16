@@ -1244,6 +1244,8 @@ def scaffold_svc(opts, sections, report) -> None:
             id=svc_doc_id,
             title=f"{opts.repo_id} — curated service knowledge",
             revision=short_commit,
+            # G-15: `source_sha256` is a content hash, not a git SHA — see
+            # the matching comment in run()'s manifest above.
             source_sha256="",
             ingested=_head_date(opts.repo_root),
             sections=sorted(

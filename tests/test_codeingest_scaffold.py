@@ -33,6 +33,7 @@ def test_scaffold_creates_pending_svc_sections_with_the_exact_marker(tmp_path):
     assert "<!-- TODO:summarize svc.airspace-service -->" in l2
     manifest = models.load_yaml_model(svc_dir / "_manifest.yaml", models.Manifest)
     assert all(s.status == "pending" for s in manifest.sections)
+    assert manifest.source_sha256 == ""  # G-15: content hash, not a git SHA
 
 
 def test_scaffold_l3_holds_deterministic_code_evidence(tmp_path):
@@ -478,9 +479,10 @@ def test_wrong_shaped_existing_code_manifest_is_refused_not_degraded(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Review round 2 — the durable form of Ruling R23: `CodeIngestOptions.
-# __post_init__` normalises repo_root/kb_dir/db_paths for *every* caller,
-# not just the CLI.
+# Review round 2 — `CodeIngestOptions.__post_init__` normalises
+# repo_root/kb_dir/db_paths for *every* caller, not just the CLI. Only the
+# `db_paths`-against-`repo_root` half of the original Ruling R23 still
+# holds; `kb_dir` was overturned by G-11 and is now cwd-relative.
 # ---------------------------------------------------------------------------
 
 
