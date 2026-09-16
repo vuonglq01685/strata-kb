@@ -1576,12 +1576,8 @@ class TestCommandsExtractor:
             ("ruff>=0.15", None),
             # Containment (user-approved): the separator rule reopened an
             # adjacent false-positive class -- a keyword prefix cut by
-            # `-`/`:` also matched the start of a filename. These four
-            # still classify (the rule's genuine wins, no extension to
-            # key on):
-            ("make test-unit", "test"),
-            ("npm run lint:fix", "lint"),
-            ("yarn build:prod", "build"),
+            # `-`/`:` also matched the start of a filename. This still
+            # classifies (the rule's genuine win, no extension to key on):
             ("npx lint-staged", "lint"),
             # ... but a token carrying a recognized file extension no
             # longer counts, even though the prefix+separator shape
@@ -1589,6 +1585,25 @@ class TestCommandsExtractor:
             ("pip install -r dev-requirements.txt", None),
             ("cp test-fixtures/a.json /tmp", None),
             ("curl -o start-script.sh https://x", None),
+            # Extension-set gap (reviewer): the frozen set was
+            # under-inclusive -- `.in` is pip-tools' source for the very
+            # `.txt` case above, and archive/script extensions common in
+            # download/copy/interpreter-invocation steps were missing too.
+            ("pip install -r dev-requirements.in", None),
+            ("curl -o test-data.tar.gz https://x", None),
+            ("curl -o start-bundle.zip https://x", None),
+            ("cp build-out.zip /tmp", None),
+            ("node build-config.mjs", None),
+            ("bash dev-setup.bash", None),
+            # Trailing punctuation (reviewer, Finding 4): `_TOKEN_STRIP`
+            # didn't include `;`/`,`, so a `;`-joined command's filename
+            # token kept its trailing `;` and missed the frozenset --
+            # unlike the equivalent `&&` form, which already gives None.
+            ("cp test-fixtures/a.json; ls", None),
+            # Reachable justification for the frozen set over a "has a
+            # dot" rule (reviewer, Finding 3): Python version matrices.
+            ("make test-3.11", "test"),
+            ("tox -e lint-3.12", "lint"),
             # Accepted, not closed: no file extension to key on.
             ("apt-get install -y build-essential", "build"),
         ],

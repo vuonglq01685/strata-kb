@@ -157,23 +157,32 @@ def _defaults_working_directory(
     return stripped.rstrip("/") if stripped else None
 
 
-_TOKEN_STRIP = "\"'()"
+_TOKEN_STRIP = "\"'();,"
 _TOKEN_SEPARATORS = ("-", ":")
 
 # Recognized file extensions, checked against a token's final dot-suffix.
-# A frozen list, not a generic "has a dot" rule: `lint:fix` and
-# `build:prod` have no dot at all, but a version pin like `ruff>=0.15` or
-# `v1.2` does and is not a filename -- keying on a specific extension set
-# instead of "contains a dot" avoids excluding matches that were never
-# filenames to begin with.
+# A frozen list, not a generic "has a dot" rule: `ruff>=0.15` and `v1.2`
+# already fail the separator/position check on their own (no keyword
+# prefix followed by `-`/`:`), so neither argues for a frozen set --
+# and `lint:fix` / `build:prod` have no dot at all, so a dot-rule would
+# ignore them by construction and never even reach this check either
+# way. What does argue for a frozen set: `make test-3.11` -> `test` and
+# `tox -e lint-3.12` -> `lint` (Python version matrices) are genuine
+# separator-rule matches whose matched token carries a dot -- a generic
+# "has a dot" rule would wrongly exclude both.
 _FILENAME_EXTENSIONS = frozenset({
     "txt", "json", "yml", "yaml", "sh", "py", "js", "ts", "md",
     "cfg", "ini", "toml", "lock", "csv", "log", "sql", "xml",
+    "in", "gz", "tgz", "zip", "tar", "bz2", "xz", "mjs", "cjs", "bash",
 })
 
 
 def _looks_like_filename(token: str) -> bool:
-    """True when `token` ends in a recognized file extension."""
+    """True when `token` ends in a recognized file extension. Case-
+    sensitive: `token` must already be lowercased -- `_classify` does
+    this before `token` ever reaches here, its only caller, so
+    `_looks_like_filename("x.TXT")` returning `False` is unreached in
+    practice."""
     _, dot, suffix = token.rpartition(".")
     return bool(dot) and suffix in _FILENAME_EXTENSIONS
 
