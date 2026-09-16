@@ -882,19 +882,37 @@ def _matching_close_paren(text: str, open_idx: int) -> int:
 
 def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
     """`(columns, pk)` for every `sa.Column('name', <type>, ...)` call in
-    `scope` (one `op.create_table(...)` call's text)."""
+    `scope` (one `op.create_table(...)` call's text). `pk` is a bare
+    column name for a single primary key, or a `PRIMARY KEY (a, b)`
+    clause for a composite one — the same form `_pk_clause`/
+    `_reconstruct_ddl` and `_pk_columns` already parse (reviewer G-13
+    round 2: a composite PK must not be silently reduced to its first
+    column)."""
     columns: list[tuple[str, str]] = []
-    pk = ""
+    pk_names: list[str] = []
     for cm in ALEMBIC_COLUMN_RE.finditer(scope):
         call_open = scope.index("(", cm.start())
         call_close = _matching_close_paren(scope, call_open)
-        args = _split_top_level_quote_blind(scope[cm.end():call_close])
+        # `call_close` is the closing `)`'s own index only when the call
+        # actually closed; when `_matching_close_paren` fell back to
+        # `len(scope) - 1` (never closed), that index is *at* the last
+        # real character, and the exclusive slice below would silently
+        # drop it — turning a visibly truncated `sa.Integer(` into a
+        # plausible-looking, wrong, complete `sa.Integer` (reviewer
+        # G-13 round 2). Slice through the end of `scope` instead so the
+        # truncation stays visible.
+        end = call_close if scope[call_close:call_close + 1] == ")" else len(scope)
+        args = _split_top_level_quote_blind(scope[cm.end():end])
         if not args:
             continue
         cname = _clean_name(cm.group(1))
         columns.append((cname, _clean_type(args[0])))
-        if not pk and any(a.replace(" ", "") == "primary_key=True" for a in args[1:]):
-            pk = cname
+        if any(a.replace(" ", "") == "primary_key=True" for a in args[1:]):
+            pk_names.append(cname)
+    if len(pk_names) <= 1:
+        pk = pk_names[0] if pk_names else ""
+    else:
+        pk = f"PRIMARY KEY ({', '.join(pk_names)})"
     return columns, pk
 
 

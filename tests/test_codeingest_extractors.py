@@ -1894,6 +1894,49 @@ class TestSchemaExtractor:
         assert "| meta | sa.JSON(none_as_null=True) |  |" in s.l2_md
         assert "PK id" in s.summary
 
+    def test_alembic_column_truncated_at_end_of_file_stays_visibly_incomplete(self, tmp_path):
+        # Reviewer G-13 round 2: _matching_close_paren returns an index AT
+        # the last real character (not past it) when a call never closes.
+        # The old exclusive slice `scope[cm.end():call_close]` dropped that
+        # character, turning a visibly truncated `sa.Integer(` into a
+        # plausible-looking, complete (and wrong) `sa.Integer`.
+        root = tmp_path / "alembic-truncated"
+        versions = root / "versions"
+        versions.mkdir(parents=True)
+        (versions / "0001_x.py").write_text(
+            "def upgrade():\n"
+            "    op.create_table(\n"
+            "        'widgets',\n"
+            "        sa.Column('id', sa.Integer(",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
+        assert "| id | sa.Integer( |  |" in s.l2_md
+        assert "sa.Integer()" not in s.l2_md
+
+    def test_alembic_composite_primary_key_is_not_reduced_to_its_first_column(self, tmp_path):
+        # Reviewer G-13 round 2 (plan-overriding ruling): `if not pk`
+        # stopped at the first `primary_key=True`, so a 2-column composite
+        # PK rendered as PK on only the first column and left the second's
+        # PK cell blank -- a confident false statement. Composite PKs are
+        # ordinary in Alembic; the full clause must reach the document.
+        root = tmp_path / "alembic-composite-pk"
+        versions = root / "versions"
+        versions.mkdir(parents=True)
+        (versions / "0001_x.py").write_text(
+            "def upgrade():\n"
+            "    op.create_table(\n"
+            "        'membership',\n"
+            "        sa.Column('team_id', sa.Integer(), primary_key=True),\n"
+            "        sa.Column('user_id', sa.Integer(), primary_key=True),\n"
+            "    )\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "| team_id | sa.Integer() | yes |" in s.l2_md
+        assert "| user_id | sa.Integer() | yes |" in s.l2_md
+        assert "PK PRIMARY KEY (team_id, user_id)" in s.summary
+
     def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(self, tmp_path):
         # New Minor: a literal like DEFAULT '(' has a genuinely unbalanced
         # paren count, but it is not a truncated capture -- it is exactly
@@ -2471,13 +2514,13 @@ class TestSchemaExtractor:
 
     def test_created_in_empty_string_never_matches_a_root_level_created_in(self):
         # Carried from Task 7's review: _dirname("") returns "." same as a
-        # root-level migration file's _dirname. A record whose created_in
-        # was never set (columns_known=False readers before this task did
-        # not set it) must not be treated as "created at the repo root" by
-        # the _dirname guards in _apply_sql_file — a later root-level SQL
-        # migration redefining the same table name is a different reader's
-        # table entirely (sql wins by reader precedence before this check
-        # even runs), so this pins the guard directly against _dirname.
+        # root-level migration file's _dirname. After this task all five
+        # TableRecord construction sites set created_in, so an unset value
+        # is not actually reachable today -- this guard is defensive
+        # against a future reader that forgets to set the field, ensuring
+        # that "created_in was never set" could never be silently treated
+        # as "created at the repo root" by the _dirname guards in
+        # _apply_sql_file. Cheap to keep, pinned directly against _dirname.
         assert schema_ext._dirname("") != schema_ext._dirname("root_level.sql")
 
 
