@@ -1160,7 +1160,8 @@ def _render_section(record: TableRecord) -> CodeSection:
         for cname, ctype in record.columns:
             mark = "yes" if cname.casefold() in pk_cols else ""
             l2_lines.append(f"| {escape_cell(cname)} | {escape_cell(ctype)} | {mark} |")
-        columns_phrase = f"{len(record.columns)} columns"
+        column_count = len(record.columns)
+        columns_phrase = f"{column_count} column" + ("" if column_count == 1 else "s")
     else:
         # An EF migration names the table but this reader extracts no
         # columns from it — say so in the document, never an empty table
@@ -1176,9 +1177,17 @@ def _render_section(record: TableRecord) -> CodeSection:
     source_files = "\n".join(record.source.split(", ")) if record.source else ""
     l3_md = f"```sql\n{record.ddl}\n```\n\n```\n{source_files}\n```\n"
 
+    # `record.pk` is either empty, a bare column name, or a verbatim
+    # `PRIMARY KEY (a, b)` clause (sql/alembic/sqlite readers all store
+    # composite keys this way). Rendering the clause after a bare `PK `
+    # prefix stuttered — `PK PRIMARY KEY (team_id, user_id)` — so the
+    # summary shows just the column list for a composite key, matching
+    # the single-column `PK id` shape (reviewer finding 1).
+    pk_match = _PK_LIST_RE.search(record.pk)
+    pk_phrase = pk_match.group(1).strip() if pk_match else (record.pk or "none detected")
     summary = (
         f"Table {record.name}: {columns_phrase}, "
-        f"PK {record.pk or 'none detected'} (source: {record.source})."
+        f"PK {pk_phrase} (source: {record.source})."
     )
 
     return CodeSection(

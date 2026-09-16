@@ -1705,7 +1705,7 @@ class TestSchemaExtractor:
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
         assert "2 columns" in s.summary          # not 3 -- "PRIMARY" is not a fabricated column
-        assert "(a, b)" in s.summary              # the PK constraint was still captured
+        assert "PK a, b" in s.summary   # the PK constraint was still captured
         assert "| PRIMARY |" not in s.l2_md
 
     def test_line_comment_inside_create_table_does_not_fabricate_or_destroy_columns(self, tmp_path):
@@ -1790,7 +1790,7 @@ class TestSchemaExtractor:
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
-        assert "1 columns" in s.summary
+        assert "1 column," in s.summary
         assert "CONSTRAINT" not in s.l2_md
         assert any("002.sql" in w for w in result.warnings)
 
@@ -1920,6 +1920,11 @@ class TestSchemaExtractor:
         # PK rendered as PK on only the first column and left the second's
         # PK cell blank -- a confident false statement. Composite PKs are
         # ordinary in Alembic; the full clause must reach the document.
+        #
+        # Fix wave 2, finding 1: rendering the stored `PRIMARY KEY (...)`
+        # clause after a bare `PK ` prefix stuttered -- `PK PRIMARY KEY
+        # (team_id, user_id)`. The summary now shows just the column
+        # list, consistent with the single-column `PK id` shape.
         root = tmp_path / "alembic-composite-pk"
         versions = root / "versions"
         versions.mkdir(parents=True)
@@ -1935,7 +1940,33 @@ class TestSchemaExtractor:
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
         assert "| team_id | sa.Integer() | yes |" in s.l2_md
         assert "| user_id | sa.Integer() | yes |" in s.l2_md
-        assert "PK PRIMARY KEY (team_id, user_id)" in s.summary
+        assert "PK team_id, user_id" in s.summary
+        assert "PK PRIMARY KEY" not in s.summary
+
+    def test_sql_composite_primary_key_summary_does_not_stutter(self, tmp_path):
+        # Fix wave 2, finding 1 (sql/sqlite half): the same stored
+        # `PRIMARY KEY (...)` clause the alembic reader produces is also
+        # what `_split_sql_columns` stores verbatim in `pk` for a
+        # table-constraint composite key -- this reader hits
+        # `_render_section` through the identical code path, so it must
+        # render the identical corrected phrasing, not just the alembic
+        # source.
+        root = tmp_path / "sql-composite-pk"
+        mig = root / "migrations"
+        mig.mkdir(parents=True)
+        (mig / "001.sql").write_text(
+            "CREATE TABLE membership (\n"
+            "  team_id INT,\n"
+            "  user_id INT,\n"
+            "  PRIMARY KEY (team_id, user_id)\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        assert "| team_id | INT | yes |" in s.l2_md
+        assert "| user_id | INT | yes |" in s.l2_md
+        assert "PK team_id, user_id" in s.summary
+        assert "PK PRIMARY KEY" not in s.summary
 
     def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(self, tmp_path):
         # New Minor: a literal like DEFAULT '(' has a genuinely unbalanced
