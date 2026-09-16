@@ -33,6 +33,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import os
 import re
 import tomllib
 import unicodedata
@@ -43,7 +44,8 @@ from pathlib import Path
 import yaml
 
 from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
-from center_kb.codeingest.extractors._envkeys import env_keys_from
+from center_kb.codeingest.extractors._envkeys import env_keys_from, redact_userinfo
+from center_kb.codeingest.extractors._lines import join_continuations
 from center_kb.codeingest.extractors._mdcells import escape_cell
 from center_kb.codeingest.extractors.deps import detect_frameworks
 from center_kb.codeingest.extractors.tree import IGNORED_DIRS, relposix, walk_tree
@@ -125,6 +127,23 @@ def _env_keys_from(value: object) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_build(compose_dir: Path, build: object) -> tuple[str, Path | None]:
+    """`(context label, Dockerfile path)` for a compose `build:` value — a
+    string context, or a mapping with `context` (default `.`) and
+    `dockerfile` (default `Dockerfile`). `None` when the value has the
+    wrong shape."""
+    if isinstance(build, str):
+        context, dockerfile = build, "Dockerfile"
+    elif isinstance(build, dict):
+        context = build.get("context", ".")
+        dockerfile = build.get("dockerfile", "Dockerfile")
+        if not isinstance(context, str) or not isinstance(dockerfile, str):
+            return "", None
+    else:
+        return "", None
+    return context, compose_dir / context / dockerfile
+
+
 def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
     """Every `compose*.y*ml` or `docker-compose*.y*ml` directly at the
     repo root (overrides and profile files live there by convention,
@@ -164,13 +183,52 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
             image = spec.get("image", "")
             if not isinstance(image, str):
                 image = str(image) if image is not None else ""
+            ports = _stringify_list(spec.get("ports", []))
+            source = rel
+            command = ""
+            base_image = ""
+            build = spec.get("build")
+            if not image and build is not None:
+                # A `build:` service has no image name, but it has a
+                # Dockerfile — and that Dockerfile's runtime stage, EXPOSE
+                # and CMD are the knowledge a reader wants (reviewer G-8:
+                # aero's own hub service rendered an empty image).
+                context, dockerfile_path = _resolve_build(path.parent, build)
+                if dockerfile_path is not None and dockerfile_path.is_file():
+                    # normpath (not resolve) collapses `./` and `../` without
+                    # following symlinks, so the label stays repo-relative.
+                    normalised = Path(os.path.normpath(dockerfile_path))
+                    try:
+                        dockerfile_rel = relposix(root, normalised)
+                    except ValueError:  # a build context outside the repo
+                        dockerfile_rel = normalised.as_posix()
+                    try:
+                        base_image, exposed, command = _parse_dockerfile(
+                            dockerfile_path.read_text(encoding="utf-8")
+                        )
+                    except (OSError, UnicodeDecodeError) as exc:
+                        warnings.append(f"could not parse {dockerfile_rel}: {exc}")
+                        exposed = []
+                    image = f"build: {dockerfile_rel} (FROM {base_image or 'unknown'})"
+                    if not ports:
+                        ports = exposed
+                    source = f"{rel}, {dockerfile_rel}"
+                else:
+                    image = f"build: {context or '.'} (Dockerfile not found)"
+                    warnings.append(
+                        f"service {name!r} in {rel}: build context {context or '.'!r} "
+                        "has no Dockerfile"
+                    )
             records.append(ServiceRecord(
                 name=str(name),
                 image=image,
-                ports=_stringify_list(spec.get("ports", [])),
+                ports=ports,
                 depends_on=_stringify_list(spec.get("depends_on", [])),
                 env_keys=_env_keys_from(spec.get("environment", {})),
-                source=rel,
+                source=source,
+                command=command,
+                env_files=_stringify_list(spec.get("env_file", [])),
+                base_image=base_image,
             ))
 
     return records, warnings
@@ -181,11 +239,51 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
 # ---------------------------------------------------------------------------
 
 
+def _exec_form_to_shell(rest: str) -> str:
+    """`["python", "-m", "x"]` -> `python -m x`; shell form is returned as is."""
+    if rest.startswith("["):
+        try:
+            items = json.loads(rest)
+        except json.JSONDecodeError:
+            return rest
+        if isinstance(items, list) and all(isinstance(i, str) for i in items):
+            return " ".join(items)
+    return rest
+
+
+def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
+    """`(image, ports, command)`: the image of the *last* `FROM` (the
+    runtime stage of a multi-stage build — the first `FROM` is a build
+    stage that never runs), every `EXPOSE` port, and the last
+    `CMD`/`ENTRYPOINT` rendered as one shell line. Continuations joined.
+
+    `FROM` and `CMD`/`ENTRYPOINT` are attacker-adjacent content — a
+    registry reference or a command line can carry a `user:pass@` — so
+    both are redacted here, once, at the single point every caller (the
+    root-Dockerfile fallback and a compose `build:`'s Dockerfile) routes
+    through, rather than at each render site individually."""
+    image = ""
+    ports: list[str] = []
+    command = ""
+    for line in join_continuations(text):
+        parts = line.split()
+        directive = parts[0].upper()
+        if directive == "FROM" and len(parts) >= 2:
+            image = parts[1]
+        elif directive == "EXPOSE":
+            for token in parts[1:]:
+                port = token.split("/", 1)[0]  # "8080/tcp" -> "8080"
+                if port:
+                    ports.append(port)
+        elif directive in ("CMD", "ENTRYPOINT") and len(parts) >= 2:
+            command = _exec_form_to_shell(line.split(None, 1)[1].strip())
+    return redact_userinfo(image), ports, redact_userinfo(command)
+
+
 def _read_dockerfile(root: Path, repo_id: str) -> tuple[list[ServiceRecord], list[str]]:
     """A root `Dockerfile`, read only as the Ruling-R1 fallback (the
     caller only calls this when `_read_compose()` produced zero
-    services). Yields one service named `repo_id`; `FROM` gives the base
-    image, `EXPOSE` the ports."""
+    services). Yields one service named `repo_id`."""
     path = root / "Dockerfile"
     if not path.is_file():
         return [], []
@@ -194,23 +292,10 @@ def _read_dockerfile(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return [], [f"could not parse {rel}: {exc}"]
-
-    image = ""
-    ports: list[str] = []
-    for line in text.splitlines():
-        parts = line.strip().split()
-        if not parts:
-            continue
-        directive = parts[0].upper()
-        if directive == "FROM" and not image and len(parts) >= 2:
-            image = parts[1]
-        elif directive == "EXPOSE":
-            for token in parts[1:]:
-                port = token.split("/", 1)[0]  # "8080/tcp" -> "8080"
-                if port:
-                    ports.append(port)
-
-    record = ServiceRecord(name=repo_id, image=image, ports=ports, source=rel)
+    image, ports, command = _parse_dockerfile(text)
+    record = ServiceRecord(
+        name=repo_id, image=image, ports=ports, source=rel, command=command, base_image=image,
+    )
     return [record], []
 
 
@@ -460,10 +545,14 @@ def _dedupe(records: list[ServiceRecord]) -> tuple[list[ServiceRecord], list[str
     image field via `dataclasses.replace` — it does NOT swap in the
     later record wholesale, which would silently discard the kept
     record's `ports`/`depends_on`/`env_keys` and re-attribute its
-    `source` (Important review finding, round 2): a compose service
-    declared with `build:` instead of `image:` has `image == ""` but
-    real ports/depends_on/environment, and a later k8s record that only
-    supplies the image must not erase them.
+    `source` (Important review finding, round 2): a compose service with
+    neither `image:` nor `build:` has `image == ""` but real
+    ports/depends_on/environment, and a later k8s record that only
+    supplies the image must not erase them. (`build:` itself always
+    yields a descriptive, non-empty image string as of Task 11/G-8 —
+    see `_resolve_build`/`_parse_dockerfile` — so it no longer reaches
+    this path, but the same fill-not-swap guarantee still matters for
+    any other reader that legitimately produces an empty image.)
 
     `extract()` appends readers in priority order (compose, dockerfile,
     k8s, sln), so absent the image-fill override this still naturally
@@ -601,6 +690,19 @@ def _assign_slugs(records: list[ServiceRecord]) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------------
 
 
+# Infrastructure images have no dependency manifest to read; label them by
+# repository name (reviewer G-8: Technology was `none` on every service in
+# every fixture). Matched on the image's base name, exactly.
+_INFRA_IMAGES: dict[str, str] = {
+    "postgres": "PostgreSQL", "postgresql": "PostgreSQL", "mysql": "MySQL",
+    "mariadb": "MariaDB", "redis": "Redis", "nginx": "nginx", "mongo": "MongoDB",
+    "rabbitmq": "RabbitMQ", "kafka": "Kafka", "cp-kafka": "Kafka",
+    "elasticsearch": "Elasticsearch", "traefik": "Traefik", "minio": "MinIO",
+    "memcached": "Memcached", "python": "Python", "node": "Node.js",
+    "golang": "Go", "openjdk": "Java", "eclipse-temurin": "Java", "amazoncorretto": "Java",
+}
+
+
 def _image_base_name(image: str) -> str:
     """`registry.example.com/team/airspace:1.0` -> `airspace`: strip any
     registry/namespace path and the tag, leaving the bare repository name
@@ -666,10 +768,13 @@ def _dep_names_from_directory(directory: Path) -> list[str]:
 def _technology_for(root: Path, record: ServiceRecord) -> str:
     directory = root / (record.directory or record.name)
     names = _dep_names_from_directory(directory) if directory.is_dir() else []
-    if not names:
-        base = _image_base_name(record.base_image or record.image)
-        names = [base] if base else []
     labels = detect_frameworks(names)
+    if labels:
+        return ", ".join(labels)
+    base = _image_base_name(record.base_image or record.image)
+    if base in _INFRA_IMAGES:
+        return _INFRA_IMAGES[base]
+    labels = detect_frameworks([base]) if base else []
     return ", ".join(labels) if labels else "none"
 
 
@@ -679,6 +784,9 @@ def _technology_for(root: Path, record: ServiceRecord) -> str:
 
 
 def _lead_sentence(name: str, record: ServiceRecord) -> str:
+    if record.base_image and record.image.startswith("build: "):
+        dockerfile = record.image[len("build: "):].split(" (", 1)[0]
+        return f"Container `{name}` — built from `{dockerfile}` (base `{record.base_image}`)."
     if not record.image and record.directory:
         return f"Workspace package `{name}` in `{record.directory}` — no container image."
     return f"Container `{name}` — image `{record.image}`."
@@ -719,9 +827,11 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
         "| --- | --- |",
         f"| Image | {escape_cell(record.image)} |",
         f"| Ports | {escape_cell(ports_str) or 'none'} |",
+        *([f"| Command | {escape_cell(redact_userinfo(record.command))} |"] if record.command else []),
         f"| Depends on | {escape_cell(depends_str) or 'nothing'} |",
         f"| Technology | {escape_cell(technology)} |",
         f"| Env keys | {escape_cell(env_str) or 'none'} |",
+        *([f"| Env file | {escape_cell(redact_userinfo(', '.join(record.env_files)))} |"] if record.env_files else []),
         f"| Source | {escape_cell(record.source)} |",
     ]
     l2_md = "\n".join(l2_lines) + "\n"
@@ -733,6 +843,13 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
         "depends_on": record.depends_on,
         "env_keys": record.env_keys,
     }
+    for key, value in (
+        ("command", redact_userinfo(record.command)),
+        ("env_files", [redact_userinfo(f) for f in record.env_files]),
+        ("directory", record.directory),
+    ):
+        if value:
+            record_dict[key] = value
     yaml_block = yaml.safe_dump(
         record_dict, allow_unicode=True, sort_keys=False
     ).rstrip("\n")

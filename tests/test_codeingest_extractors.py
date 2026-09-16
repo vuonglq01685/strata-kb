@@ -1111,14 +1111,18 @@ class TestServicesExtractor:
         # New Important Finding (round 2): round 1's fix for "prefer a
         # non-empty image when the kept record's is empty" swapped in the
         # WHOLE later record instead of just filling the image field. A
-        # compose service declared with `build:` instead of `image:` has
+        # compose service with neither `image:` nor `build:` has
         # image="" but real ports/depends_on/environment; a k8s Deployment
         # that merely supplies the image must not erase them or
-        # re-attribute provenance to itself.
+        # re-attribute provenance to itself. (Task 11/G-8 made `build:`
+        # itself always produce a descriptive, non-empty image string —
+        # `build: <dockerfile> (FROM ...)` or `(Dockerfile not found)` —
+        # so it no longer reaches this empty-image path; this test omits
+        # `build:` entirely to keep exercising it.)
         root = tmp_path / "buildonly"
         root.mkdir()
         (root / "docker-compose.yml").write_text(
-            "services:\n  web:\n    build: .\n"
+            "services:\n  web:\n"
             '    ports: ["8080:8080"]\n'
             "    depends_on: [postgres]\n"
             "    environment:\n"
@@ -1542,6 +1546,103 @@ class TestServicesExtractor:
         web = {s.title: s for s in result.sections}["web"]
         assert "| Image | web:1.0 |" in web.l2_md
         assert "| Technology | React |" in web.l2_md      # directory filled from the workspace record
+
+    def test_compose_build_reads_the_dockerfile_for_image_ports_and_command(self, tmp_path):
+        # Reviewer G-8: aero's svc.hub rendered ``image ` ` `` because
+        # compose says `build: .` and the Dockerfile reader ran only when
+        # there was no compose file at all.
+        root = tmp_path / "hubrepo"
+        root.mkdir()
+        (root / "docker-compose.yml").write_text(
+            "services:\n  hub:\n    build: .\n    env_file: .env\n", encoding="utf-8"
+        )
+        (root / "Dockerfile").write_text(
+            "FROM python:3.12-slim AS build\nRUN pip install build\n"
+            "FROM python:3.12-slim\nEXPOSE 8321\n"
+            'CMD ["python", "-m", "center_kb.mcp", \\\n     "--transport", "http"]\n',
+            encoding="utf-8",
+        )
+        (root / ".env").write_text("SECRET=hunter2\n", encoding="utf-8")
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        s = _by_id(result)["svc.hub"]
+        assert "Container `hub` — built from `Dockerfile` (base `python:3.12-slim`)." in s.l2_md
+        assert "| Image | build: Dockerfile (FROM python:3.12-slim) |" in s.l2_md
+        assert "| Ports | 8321 |" in s.l2_md
+        assert "| Command | python -m center_kb.mcp --transport http |" in s.l2_md
+        assert "| Env file | .env |" in s.l2_md
+        assert "| Technology | Python |" in s.l2_md
+        assert "| Source | docker-compose.yml, Dockerfile |" in s.l2_md
+        assert "hunter2" not in s.l2_md + s.l3_md
+        assert result.warnings == []
+
+    def test_compose_build_mapping_with_context_and_dockerfile_keys(self, tmp_path):
+        root = tmp_path / "ctx"
+        (root / "services" / "api").mkdir(parents=True)
+        (root / "docker-compose.yml").write_text(
+            "services:\n  api:\n    build:\n      context: services/api\n"
+            "      dockerfile: Dockerfile.prod\n    ports: ['9000:9000']\n",
+            encoding="utf-8",
+        )
+        (root / "services" / "api" / "Dockerfile.prod").write_text(
+            "FROM node:20\nEXPOSE 3000\n", encoding="utf-8"
+        )
+        s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.api"]
+        assert "| Image | build: services/api/Dockerfile.prod (FROM node:20) |" in s.l2_md
+        assert "| Ports | 9000:9000 |" in s.l2_md        # compose ports win over EXPOSE
+        assert "| Technology | Node.js |" in s.l2_md
+
+    def test_compose_build_without_a_dockerfile_warns(self, tmp_path):
+        root = tmp_path / "nodf"
+        root.mkdir()
+        (root / "docker-compose.yml").write_text(
+            "services:\n  worker:\n    build: ./worker\n", encoding="utf-8"
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        s = _by_id(result)["svc.worker"]
+        assert "| Image | build: ./worker (Dockerfile not found) |" in s.l2_md
+        assert any("worker" in w and "no Dockerfile" in w for w in result.warnings)
+
+    def test_infrastructure_images_get_a_technology_label(self, repo):
+        s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))["svc.postgres"]
+        assert "| Technology | PostgreSQL |" in s.l2_md
+
+    def test_dockerfile_fallback_uses_the_runtime_stage_and_command(self, tmp_path):
+        root = tmp_path / "solo2"
+        root.mkdir()
+        (root / "Dockerfile").write_text(
+            "FROM golang:1.22 AS build\nFROM gcr.io/distroless/static\nEXPOSE 8080\n"
+            'ENTRYPOINT ["/app"]\n',
+            encoding="utf-8",
+        )
+        s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.demo"]
+        assert "| Image | gcr.io/distroless/static |" in s.l2_md
+        assert "| Command | /app |" in s.l2_md
+
+    def test_command_base_image_and_env_file_are_redacted(self, tmp_path):
+        # G-8 review guard: `command`, `base_image` and `env_files` are all
+        # new fields Task 11 surfaces in the rendered document, and a
+        # Dockerfile's FROM/CMD is attacker-adjacent content (a registry
+        # reference or command line can carry `user:pass@`). Every one of
+        # the three must come out redacted in both l2_md and l3_md.
+        root = tmp_path / "credrepo"
+        root.mkdir()
+        (root / "docker-compose.yml").write_text(
+            "services:\n  api:\n    build: .\n"
+            "    env_file: https://user:pass@example.com/secrets.env\n",
+            encoding="utf-8",
+        )
+        (root / "Dockerfile").write_text(
+            "FROM https://user:pass@registry.example.com/base:1.0\n"
+            'CMD ["curl", "https://user:pass@evil.example.com/x"]\n',
+            encoding="utf-8",
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        s = _by_id(result)["svc.api"]
+        body = s.l2_md + s.l3_md
+        assert "user:pass@" not in body
+        assert "https://***@registry.example.com/base:1.0" in body    # base_image
+        assert "https://***@evil.example.com/x" in body               # command
+        assert "https://***@example.com/secrets.env" in body          # env_files
 
 
 from center_kb.codeingest.extractors import commands as cmd_ext
