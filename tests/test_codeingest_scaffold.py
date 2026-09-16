@@ -459,19 +459,22 @@ def test_wrong_shaped_index_yaml_degrades_instead_of_crashing(tmp_path):
     assert (root / ".kb" / "index.yaml").read_text(encoding="utf-8") == "- a\n- b\n"
 
 
-def test_wrong_shaped_existing_code_manifest_degrades_instead_of_crashing(tmp_path):
+def test_wrong_shaped_existing_code_manifest_is_refused_not_degraded(tmp_path):
+    """Superseded by reviewer G-1: this used to degrade (warn, then
+    silently overwrite with a fresh manifest). Nobody can tell whose
+    document an unreadable manifest belongs to, so it is refused instead,
+    and the existing (wrong-shaped) manifest is left untouched."""
     root = build_code_repo(tmp_path)
     _run(root)
     manifest_path = root / ".kb" / "demo-code" / "_manifest.yaml"
     manifest_path.write_text("- a\n- b\n", encoding="utf-8")
 
-    report = _run(root)
+    with pytest.raises(core.CodeIngestError) as excinfo:
+        _run(root)
 
-    assert report.doc_id == "demo-code"
-    assert any("_manifest.yaml" in w for w in report.warnings)
-    # A fresh, valid manifest was still written (tokens just reset to 0).
-    fresh = models.load_yaml_model(manifest_path, models.Manifest)
-    assert fresh.sections
+    assert "did not generate" in str(excinfo.value)
+    assert any("_manifest.yaml" in w for w in excinfo.value.report.warnings)
+    assert manifest_path.read_text(encoding="utf-8") == "- a\n- b\n"
 
 
 # ---------------------------------------------------------------------------
@@ -985,15 +988,20 @@ def test_manifest_read_for_the_destination_check_is_not_duplicated(tmp_path):
     `_load_manifest_guarded()` on the -code document's own _manifest.yaml,
     and run() called it again right after, purely to preserve token
     counts — a wrong-shaped file then emitted the identical "could not
-    read" warning twice instead of the one review round 2 intended."""
+    read" warning twice instead of the one review round 2 intended.
+    Reviewer G-1 now refuses this destination outright rather than
+    degrading and overwriting it, but the single-read guarantee still
+    matters: the "could not read" warning must still appear exactly once,
+    on the partial report the refusal carries."""
     root = build_code_repo(tmp_path)
     _run(root)
     manifest_path = root / ".kb" / "demo-code" / "_manifest.yaml"
     manifest_path.write_text("- a\n- b\n", encoding="utf-8")
 
-    report = _run(root)
+    with pytest.raises(core.CodeIngestError) as excinfo:
+        _run(root)
 
-    matches = [w for w in report.warnings if "_manifest.yaml" in w]
+    matches = [w for w in excinfo.value.report.warnings if "_manifest.yaml" in w]
     assert len(matches) == 1
 
 
@@ -1030,18 +1038,25 @@ def test_curated_index_tag_on_a_different_document_does_not_block_this_run(tmp_p
     assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
 
 
-def test_code_run_into_a_directory_with_an_unrelated_md_file_is_not_blocked(tmp_path):
-    """Over-fire re-check: a target directory that merely has a leftover,
-    non-curated .md file in it (no banner, no flow./hist. manifest
-    entries, no flows.md/history.md) must not be treated as curated."""
+def test_code_run_into_a_directory_with_an_unrelated_md_file_is_refused_as_foreign(tmp_path):
+    """Over-fire re-check for the *curated* guard: a target directory that
+    merely has a leftover, non-curated .md file in it (no banner, no
+    flow./hist. manifest entries, no flows.md/history.md) must not be
+    treated as *curated*. But reviewer G-1's broader foreign-destination
+    guard still refuses it: with no manifest naming it, nobody can tell
+    whose file NOTES.md is."""
     root = build_code_repo(tmp_path)
     doc_dir = root / ".kb" / "demo-code"
     doc_dir.mkdir(parents=True)
     (doc_dir / "NOTES.md").write_text("scratch notes, not curated\n", encoding="utf-8")
 
-    report = _run(root)
-    assert report.doc_id == "demo-code"
-    assert (doc_dir / "_manifest.yaml").is_file()
+    with pytest.raises(core.CodeIngestError) as excinfo:
+        _run(root)
+
+    assert "already holds a curated document" not in str(excinfo.value)
+    assert "did not generate" in str(excinfo.value)
+    assert not (doc_dir / "_manifest.yaml").exists()
+    assert (doc_dir / "NOTES.md").read_text(encoding="utf-8") == "scratch notes, not curated\n"
 
 
 def test_repo_id_dotdot_escape_cannot_leave_kb_dir_via_scaffold_svc(tmp_path):

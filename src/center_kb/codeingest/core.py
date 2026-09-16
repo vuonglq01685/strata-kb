@@ -352,6 +352,22 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             report=report,
         )
 
+    # Reviewer G-1: the curated guard above knows what a -svc document
+    # looks like; it cannot recognise *any other* human document that
+    # happens to sit at this run's destination — which the stale-.md prune
+    # below would then delete. The property that matters is "did this
+    # command write what is here?", answered from the manifest this
+    # command itself writes. Checked before anything is written.
+    foreign_reason = _foreign_destination_reason(doc_dir, existing_code_manifest)
+    if foreign_reason is not None:
+        raise CodeIngestError(
+            f"--doc-id {opts.doc_id!r} targets {doc_dir}, which holds a "
+            f"document kb code-ingest did not generate ({foreign_reason}); "
+            "choose a different --doc-id or --repo-id, or move that "
+            "document away — nothing was written",
+            report=report,
+        )
+
     report.dirty_tree = _is_dirty(opts.repo_root)
 
     owned: list[tuple[str, CodeSection]] = []
@@ -526,6 +542,37 @@ def _load_manifest_guarded(
             "as if it had no prior state"
         )
         return None
+
+
+# The section-id prefixes the seven extractors produce (README §7.12's
+# section-id contract). A -code manifest holding any other id was not
+# written by `run()`.
+_GENERATED_PREFIXES = ("struct.", "cmd.", "dep.", "db.", "svc.", "int.", "api.")
+
+
+def _foreign_destination_reason(
+    doc_dir: Path, manifest: models.Manifest | None
+) -> str | None:
+    """A one-line reason when `doc_dir` holds content this command did not
+    generate, else None. "Content" is any `*.md` or a `_manifest.yaml`;
+    an absent or empty directory is never foreign. With content present,
+    the manifest must be readable, carry `run()`'s own title suffix, and
+    list only generated section ids — `kb summarize --redo` and `kb
+    approve` rewrite statuses, never the title or the ids, so a previous
+    run always passes."""
+    has_content = (doc_dir / "_manifest.yaml").is_file() or any(doc_dir.glob("*.md"))
+    if not has_content:
+        return None
+    if manifest is None:
+        return "its _manifest.yaml is missing or unreadable"
+    if not manifest.title.endswith("— code knowledge"):
+        return f"title: {manifest.title!r}"
+    foreign_ids = sorted(
+        s.id for s in manifest.sections if not s.id.startswith(_GENERATED_PREFIXES)
+    )
+    if foreign_ids:
+        return f"section(s) {', '.join(foreign_ids)} were not produced by any extractor"
+    return None
 
 
 def _is_curated_destination(

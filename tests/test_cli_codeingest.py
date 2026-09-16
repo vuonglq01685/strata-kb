@@ -191,18 +191,24 @@ def test_cli_degrades_on_wrong_shaped_index_yaml(tmp_path):
     assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
 
 
-def test_cli_degrades_on_wrong_shaped_existing_code_manifest(tmp_path):
+def test_cli_refuses_a_wrong_shaped_existing_code_manifest_without_a_traceback(tmp_path):
+    # Review round 2 wanted no traceback here; reviewer G-1 wants no
+    # overwrite either: an unreadable manifest at the -code slot means
+    # nobody can tell whose document this is, so it is refused, intact.
     root = build_code_repo(tmp_path)
     _init_config(root)
     first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
                                 "--kb-dir", str(root / ".kb")])
     assert first.exit_code == 0, first.output
-    (root / ".kb" / "demo-code" / "_manifest.yaml").write_text(
-        "- a\n- b\n", encoding="utf-8"
-    )
+    manifest = root / ".kb" / "demo-code" / "_manifest.yaml"
+    manifest.write_text("- a\n- b\n", encoding="utf-8")
     result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
                                 "--kb-dir", str(root / ".kb")])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1
+    assert "could not read" in result.output          # the guarded-load warning
+    assert "did not generate" in result.output
+    assert "Traceback" not in result.output
+    assert manifest.read_text(encoding="utf-8") == "- a\n- b\n"
 
 
 # ---------------------------------------------------------------------------
