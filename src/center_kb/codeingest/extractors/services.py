@@ -14,12 +14,13 @@ Ruling R31) — see `_assign_slugs()`. `title`, the L2 description, and
 ever slugified, so the human-readable, grep-able name is never lost even
 when the id had to be mangled or hashed (review findings 2-4).
 
-Four readers below share a uniform return shape, `(list[ServiceRecord],
+Five readers below share a uniform return shape, `(list[ServiceRecord],
 list[warning])`, and each degrades rather than raises: a malformed or
 wrong-shaped manifest becomes a warning naming the file, never a crash,
 and the other readers still run. `environment:` is read in both the
 mapping and `KEY=value` list forms, but only the *key* ever survives into
-a `ServiceRecord` — never the value (spec §3.11).
+a `ServiceRecord` — never the value (spec §3.11). The manifest kinds are
+compose, Dockerfile, k8s, `.sln`, and a workspace `package.json`.
 
 Ruling R1 (controller): the Dockerfile fallback fires whenever the
 compose readers produced zero services — a parse failure counts as "no
@@ -45,7 +46,7 @@ from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractRes
 from center_kb.codeingest.extractors._envkeys import env_keys_from
 from center_kb.codeingest.extractors._mdcells import escape_cell
 from center_kb.codeingest.extractors.deps import detect_frameworks
-from center_kb.codeingest.extractors.tree import relposix, walk_tree
+from center_kb.codeingest.extractors.tree import IGNORED_DIRS, relposix, walk_tree
 from center_kb.mdutils import slugify_id
 
 # Ruling R27: `compose.yaml` is the Compose Specification's preferred
@@ -71,6 +72,10 @@ class ServiceRecord:
     depends_on: list[str] = field(default_factory=list)
     env_keys: list[str] = field(default_factory=list)
     source: str = ""  # the file this record came from, e.g. "docker-compose.yml"
+    directory: str = ""                 # the service's own code directory, when known
+    command: str = ""                   # Dockerfile CMD/ENTRYPOINT as one shell line (Task 11)
+    env_files: list[str] = field(default_factory=list)  # compose env_file *names*, never opened
+    base_image: str = ""                # FROM of a built service (Task 11); feeds technology
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +326,71 @@ def _read_sln(root: Path) -> tuple[list[ServiceRecord], list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# reader: workspace package.json (Node monorepos)
+# ---------------------------------------------------------------------------
+
+
+def _read_workspaces(root: Path) -> tuple[list[ServiceRecord], list[str]]:
+    """The root `package.json`'s `workspaces` — a list of globs, or the
+    `{"packages": [...]}` object form — each resolved to directories that
+    hold their own `package.json`. One image-less record per package,
+    named from that package's `name` (else the directory name), with
+    `directory` set so the Technology column reads the package's own
+    dependencies. Listed in the spec and README from the start, never
+    implemented (reviewer G-6); without it a Node monorepo has no
+    `svc.*` and no Stage-D join key."""
+    path = root / "package.json"
+    if not path.is_file():
+        return [], []
+    rel = relposix(root, path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [], [f"could not parse {rel}: {exc}"]
+    if not isinstance(data, dict):
+        return [], [f"could not parse {rel}: top-level is not an object"]
+    workspaces = data.get("workspaces")
+    if workspaces is None:
+        return [], []
+    if isinstance(workspaces, dict):
+        workspaces = workspaces.get("packages")
+    if not isinstance(workspaces, list):
+        return [], [f"could not parse {rel}: 'workspaces' is not a list"]
+
+    records: list[ServiceRecord] = []
+    warnings: list[str] = []
+    seen: set[str] = set()
+    for pattern in workspaces:
+        if not isinstance(pattern, str):
+            warnings.append(f"could not parse {rel}: workspace entry {pattern!r} is not a string")
+            continue
+        for match in sorted(root.glob(pattern)):
+            if not match.is_dir():
+                continue
+            rel_dir = relposix(root, match)
+            if any(part in IGNORED_DIRS for part in Path(rel_dir).parts):
+                continue
+            pkg = match / "package.json"
+            if not pkg.is_file() or rel_dir in seen:
+                continue
+            seen.add(rel_dir)
+            name = match.name
+            try:
+                pkg_data = json.loads(pkg.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                warnings.append(f"could not parse {rel_dir}/package.json: {exc}")
+            else:
+                pkg_name = pkg_data.get("name") if isinstance(pkg_data, dict) else None
+                if isinstance(pkg_name, str) and pkg_name.strip():
+                    name = pkg_name
+            records.append(ServiceRecord(
+                name=name, image="", source=f"{rel_dir}/package.json", directory=rel_dir,
+            ))
+    records.sort(key=lambda r: r.directory)
+    return records, warnings
+
+
+# ---------------------------------------------------------------------------
 # de-duplication and id assignment (Rulings R30, R31)
 # ---------------------------------------------------------------------------
 
@@ -418,6 +488,10 @@ def _dedupe(records: list[ServiceRecord]) -> tuple[list[ServiceRecord], list[str
                 f"service {rec.name!r}: filled empty image from {rec.source} "
                 f"onto the record kept from {prior.source}"
             )
+        if not merged.directory and rec.directory:
+            # Metadata, not evidence: a workspace record only tells a
+            # compose-declared service where its code lives.
+            merged = replace(merged, directory=rec.directory)
         if prior.name != rec.name:
             warnings.append(
                 f"merged {rec.name!r} ({rec.source}) into {prior.name!r} "
@@ -590,10 +664,10 @@ def _dep_names_from_directory(directory: Path) -> list[str]:
 
 
 def _technology_for(root: Path, record: ServiceRecord) -> str:
-    directory = root / record.name
+    directory = root / (record.directory or record.name)
     names = _dep_names_from_directory(directory) if directory.is_dir() else []
     if not names:
-        base = _image_base_name(record.image)
+        base = _image_base_name(record.base_image or record.image)
         names = [base] if base else []
     labels = detect_frameworks(names)
     return ", ".join(labels) if labels else "none"
@@ -602,6 +676,12 @@ def _technology_for(root: Path, record: ServiceRecord) -> str:
 # ---------------------------------------------------------------------------
 # section rendering
 # ---------------------------------------------------------------------------
+
+
+def _lead_sentence(name: str, record: ServiceRecord) -> str:
+    if not record.image and record.directory:
+        return f"Workspace package `{name}` in `{record.directory}` — no container image."
+    return f"Container `{name}` — image `{record.image}`."
 
 
 def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection:
@@ -633,7 +713,7 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
     technology = _technology_for(root, record)
 
     l2_lines = [
-        f"Container `{name}` — image `{record.image}`.",
+        _lead_sentence(name, record),
         "",
         "| Property | Value |",
         "| --- | --- |",
@@ -659,7 +739,7 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
     l3_md = f"```yaml\n{yaml_block}\n```\n\n```\nsource: {record.source}\n```\n"
 
     summary = (
-        f"Container {name} from {record.source}: image {record.image}, "
+        f"Container {name} from {record.source}: image {record.image or 'none'}, "
         f"ports {ports_str or 'none'}, depends on {depends_str or 'nothing'}."
     )
 
@@ -691,6 +771,14 @@ class ServicesExtractor:
             return True
         if any(p.is_file() for p in root.glob("*.sln")):
             return True
+        pkg = root / "package.json"
+        if pkg.is_file():
+            try:
+                data = json.loads(pkg.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                data = None
+            if isinstance(data, dict) and "workspaces" in data:
+                return True
         # No `opts` at detect() time (`Extractor.detect(self, root)` is a
         # frozen protocol method), so `kb_dir` can't be threaded through
         # here — the same accepted limitation documented on
@@ -733,6 +821,13 @@ class ServicesExtractor:
             sln_records, sln_warnings = [], [f"could not read .sln files: {exc}"]
         records.extend(sln_records)
         warnings.extend(sln_warnings)
+
+        try:
+            ws_records, ws_warnings = _read_workspaces(root)
+        except Exception as exc:
+            ws_records, ws_warnings = [], [f"could not read workspace package.json: {exc}"]
+        records.extend(ws_records)
+        warnings.extend(ws_warnings)
 
         merged, dedupe_warnings = _dedupe(records)
         warnings.extend(dedupe_warnings)

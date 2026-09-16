@@ -1171,6 +1171,66 @@ class TestServicesExtractor:
             assert key in s.l2_md, key
         assert "| Env keys | none |" not in s.l2_md
 
+    def _mono(self, tmp_path):
+        root = tmp_path / "mono"
+        (root / "packages" / "api").mkdir(parents=True)
+        (root / "packages" / "web").mkdir(parents=True)
+        (root / "package.json").write_text(
+            '{"name": "mono", "private": true, "workspaces": ["packages/*"]}\n',
+            encoding="utf-8",
+        )
+        (root / "packages" / "api" / "package.json").write_text(
+            '{"name": "@mono/api", "dependencies": {"express": "^4.19.0"}}\n', encoding="utf-8"
+        )
+        (root / "packages" / "web" / "package.json").write_text(
+            '{"name": "web", "dependencies": {"react": "^18.2.0"}}\n', encoding="utf-8"
+        )
+        (root / "packages" / "stray.txt").write_text("", encoding="utf-8")
+        return root
+
+    def test_workspace_packages_become_services_in_a_node_monorepo(self, tmp_path):
+        # Reviewer G-6: spec and README list workspace package.json as a
+        # services source; no reader existed, so a monorepo got no svc.* at all.
+        root = self._mono(tmp_path)
+        assert svc_ext.ServicesExtractor().detect(root) is True
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        titles = sorted(s.title for s in result.sections)
+        assert titles == ["@mono/api", "web"]
+        by_title = {s.title: s for s in result.sections}
+        assert "| Technology | Express |" in by_title["@mono/api"].l2_md
+        assert "| Technology | React |" in by_title["web"].l2_md
+        assert "| Source | packages/web/package.json |" in by_title["web"].l2_md
+        assert "Workspace package `web` in `packages/web` — no container image." in by_title["web"].l2_md
+
+    def test_workspaces_object_form_and_missing_package_json_are_handled(self, tmp_path):
+        root = self._mono(tmp_path)
+        (root / "package.json").write_text(
+            '{"workspaces": {"packages": ["packages/*", "tools/*"]}}\n', encoding="utf-8"
+        )
+        (root / "tools" / "empty").mkdir(parents=True)       # no package.json: not a service
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        assert sorted(s.title for s in result.sections) == ["@mono/api", "web"]
+
+    def test_malformed_workspaces_value_warns_and_continues(self, tmp_path):
+        root = self._mono(tmp_path)
+        (root / "package.json").write_text('{"workspaces": "packages/*"}\n', encoding="utf-8")
+        (root / "docker-compose.yml").write_text(
+            "services:\n  db:\n    image: postgres:16\n", encoding="utf-8"
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        assert [s.title for s in result.sections] == ["db"]
+        assert any("'workspaces' is not a list" in w for w in result.warnings)
+
+    def test_compose_service_with_the_same_name_as_a_workspace_keeps_compose_evidence(self, tmp_path):
+        root = self._mono(tmp_path)
+        (root / "docker-compose.yml").write_text(
+            "services:\n  web:\n    image: web:1.0\n    ports: ['3000:3000']\n", encoding="utf-8"
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        web = {s.title: s for s in result.sections}["web"]
+        assert "| Image | web:1.0 |" in web.l2_md
+        assert "| Technology | React |" in web.l2_md      # directory filled from the workspace record
+
 
 from center_kb.codeingest.extractors import commands as cmd_ext
 
