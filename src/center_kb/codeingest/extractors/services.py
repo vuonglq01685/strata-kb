@@ -194,30 +194,45 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                 # and CMD are the knowledge a reader wants (reviewer G-8:
                 # aero's own hub service rendered an empty image).
                 context, dockerfile_path = _resolve_build(path.parent, build)
-                # normpath (not resolve) collapses `./` and `../` without
-                # following symlinks, so the label stays repo-relative.
+                # normpath (not resolve) collapses `./` and `../` textually
+                # without following symlinks, so the label stays
+                # repo-relative and — because the check and the read below
+                # both use `normalised`, never `dockerfile_path` — a
+                # symlink in a collapsed segment can't pull in a file from
+                # outside the repo while labelling it as the checked
+                # in-repo path (re-review finding 3).
                 normalised = (
                     Path(os.path.normpath(dockerfile_path))
                     if dockerfile_path is not None else None
                 )
+                escapes_repo = False
                 dockerfile_rel = None
                 if normalised is not None:
                     try:
                         dockerfile_rel = relposix(root, normalised)
                     except ValueError:
-                        # Fix wave finding 1: a build context that escapes
-                        # the repo root (e.g. `build: ../outside`) must
-                        # never render this machine's absolute path — that
-                        # breaks Determinism (same repo, two machines,
-                        # different documents) and leaks this machine's
-                        # filesystem layout. Treated exactly like a missing
-                        # Dockerfile, below: warn, no read, relative label
-                        # only.
-                        dockerfile_rel = None
-                if dockerfile_rel is not None and normalised.is_file():
+                        # Fix wave finding 1 (previous wave): a build
+                        # context that escapes the repo root (e.g. `build:
+                        # ../outside`) must never render this machine's
+                        # absolute path — that breaks Determinism (same
+                        # repo, two machines, different documents) and
+                        # leaks this machine's filesystem layout. Declined
+                        # by policy: no read. Kept as its own wording
+                        # (re-review finding 2), distinct from a genuinely
+                        # missing Dockerfile below — the file often exists,
+                        # it was deliberately not read, and the document
+                        # should say which situation this is.
+                        escapes_repo = True
+                if escapes_repo:
+                    image = f"build: {context or '.'} (outside the repository)"
+                    warnings.append(
+                        f"service {name!r} in {rel}: build context {context or '.'!r} "
+                        "is outside the repository; not read"
+                    )
+                elif dockerfile_rel is not None and normalised.is_file():
                     try:
                         base_image, exposed, command = _parse_dockerfile(
-                            dockerfile_path.read_text(encoding="utf-8")
+                            normalised.read_text(encoding="utf-8")
                         )
                     except (OSError, UnicodeDecodeError) as exc:
                         warnings.append(f"could not parse {dockerfile_rel}: {exc}")
@@ -274,7 +289,11 @@ def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
     ENTRYPOINT with CMD concatenated on as its default arguments; either
     one alone is unchanged (fix wave finding 2: `last CMD/ENTRYPOINT`
     silently dropped ENTRYPOINT's executable whenever both were set).
-    Continuations joined.
+    Both reset at each new `FROM` — a build/dev stage's directive never
+    runs in the real container, so it must never join the runtime
+    stage's (re-review finding 1: tracking two variables without
+    resetting them let a non-final stage's directive leak into the
+    final command). Continuations joined.
 
     `FROM` and the resulting command are attacker-adjacent content — a
     registry reference or a command line can carry a `user:pass@` — so
@@ -292,6 +311,8 @@ def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
         directive = parts[0].upper()
         if directive == "FROM" and len(parts) >= 2:
             image = parts[1]
+            entrypoint = ""
+            cmd = ""
         elif directive == "EXPOSE":
             for token in parts[1:]:
                 port = token.split("/", 1)[0]  # "8080/tcp" -> "8080"

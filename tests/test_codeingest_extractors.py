@@ -1676,13 +1676,17 @@ class TestServicesExtractor:
             s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.demo"]
             assert f"| Command | {expected} |" in s.l2_md, (label, s.l2_md)
 
-    def test_compose_build_context_outside_repo_root_is_treated_as_not_found(self, tmp_path):
+    def test_compose_build_context_outside_repo_root_is_declined_not_read(self, tmp_path):
         # Finding 1 (fix wave, user-ruled): a build context that escapes the
         # repo root must never render this machine's absolute path — that
         # breaks the plan's Determinism constraint (the same repo on two
         # machines would render different documents) and leaks this
-        # machine's filesystem layout. Treated the same as any other
-        # missing Dockerfile: a relative label, a warning, nothing read.
+        # machine's filesystem layout. Declined by policy: nothing read.
+        #
+        # Re-review finding 2: the Dockerfile genuinely exists here (this
+        # test creates it) — it was declined, not missing. The rendered
+        # wording must say that, distinct from the "not found" case, so
+        # the reader doesn't draw a false conclusion about the repository.
         root = tmp_path / "repo"
         root.mkdir()
         outside = tmp_path / "outside"
@@ -1695,11 +1699,84 @@ class TestServicesExtractor:
         s = _by_id(result)["svc.hub"]
         # Fixed relative string, not `tmp_path` presence — the reliable
         # assertion per the finding.
-        assert "| Image | build: ../outside (Dockerfile not found) |" in s.l2_md
+        assert "| Image | build: ../outside (outside the repository) |" in s.l2_md
         assert "| Source | docker-compose.yml |" in s.l2_md
-        assert any("hub" in w and "no Dockerfile" in w for w in result.warnings)
+        assert any(
+            "hub" in w and "outside the repository; not read" in w for w in result.warnings
+        )
         # Weaker additional guard: the machine's tmp path must not leak.
         assert str(tmp_path) not in (s.l2_md + s.l3_md + " ".join(result.warnings))
+
+    def test_compose_build_missing_dockerfile_keeps_not_found_wording(self, tmp_path):
+        # Re-review finding 2: the escaping case (above) and a genuinely
+        # missing Dockerfile are two distinct situations now, and must
+        # keep two distinct wordings. This pins the missing case.
+        root = tmp_path / "nodf2"
+        root.mkdir()
+        (root / "docker-compose.yml").write_text(
+            "services:\n  worker:\n    build: ./worker\n", encoding="utf-8"
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        s = _by_id(result)["svc.worker"]
+        assert "| Image | build: ./worker (Dockerfile not found) |" in s.l2_md
+        assert any("worker" in w and "no Dockerfile" in w for w in result.warnings)
+        assert not any("outside the repository" in w for w in result.warnings)
+
+    def test_multi_stage_directives_do_not_leak_into_the_runtime_stage(self, tmp_path):
+        # Finding 1 (re-review): entrypoint/cmd must reset at each new
+        # `FROM`, or a non-final stage's directive joins the runtime
+        # stage's — a command that never runs in the real container.
+        cases = {
+            "buildstage_entrypoint": (
+                'FROM golang AS build\nENTRYPOINT ["/usr/local/bin/build.sh"]\n'
+                'FROM distroless\nCMD ["serve"]\n',
+                "serve",
+            ),
+            "devstage_cmd": (
+                'FROM node:20 AS dev\nCMD ["npm","run","dev"]\n'
+                'FROM node:20-slim\nENTRYPOINT ["node","server.js"]\n',
+                "node server.js",
+            ),
+        }
+        for label, (dockerfile, expected) in cases.items():
+            root = tmp_path / label
+            root.mkdir()
+            (root / "Dockerfile").write_text(dockerfile, encoding="utf-8")
+            s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.demo"]
+            assert f"| Command | {expected} |" in s.l2_md, (label, s.l2_md)
+
+    def test_dockerfile_symlink_segment_is_not_read_outside_the_repo(self, tmp_path):
+        # Finding 3 (re-review): `normalised.is_file()` checks the
+        # textually-collapsed path, but the pre-fix code read
+        # `dockerfile_path` (symlink-preserving) — the two diverge
+        # whenever a symlink sits in a collapsed segment, so a `build:`
+        # context using `link/..` could read a Dockerfile outside the
+        # repo while labelling it as the in-repo `Dockerfile`.
+        root = tmp_path / "symrepo"
+        root.mkdir()
+        outside_dir = tmp_path / "outside_secret"
+        outside_dir.mkdir()
+        # What the OS actually resolves `root/link/../Dockerfile` to,
+        # once `link` (a symlink to `outside_dir`) is followed: go up one
+        # from `outside_dir` (i.e. `tmp_path`), then `Dockerfile`.
+        (tmp_path / "Dockerfile").write_text(
+            'FROM outside-the-repo-secret:1\nCMD ["leak"]\n', encoding="utf-8"
+        )
+        # The genuinely in-repo Dockerfile — what `normalised` (textually
+        # collapsed, no symlink followed) points at.
+        (root / "Dockerfile").write_text(
+            'FROM safe-in-repo:1\nCMD ["safe"]\n', encoding="utf-8"
+        )
+        (root / "link").symlink_to(outside_dir, target_is_directory=True)
+        (root / "docker-compose.yml").write_text(
+            "services:\n  hub:\n    build: link/..\n", encoding="utf-8"
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        s = _by_id(result)["svc.hub"]
+        assert "| Image | build: Dockerfile (FROM safe-in-repo:1) |" in s.l2_md
+        assert "| Command | safe |" in s.l2_md
+        assert "outside-the-repo-secret" not in (s.l2_md + s.l3_md)
+        assert "leak" not in (s.l2_md + s.l3_md)
 
 
 from center_kb.codeingest.extractors import commands as cmd_ext
