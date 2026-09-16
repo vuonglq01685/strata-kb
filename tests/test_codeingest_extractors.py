@@ -118,6 +118,7 @@ class TestTreeExtractor:
         assert "kb1" not in body
         assert "src/airspace" in body
         assert "tracked files" in s.summary
+        assert "no tracked files" not in s.summary
         assert result.warnings == []
 
     def test_untracked_file_in_a_repo_is_not_listed(self, repo, run_git):
@@ -147,8 +148,9 @@ class TestTreeExtractor:
         assert "no tracked files" in s.summary
         assert "not a git repository" not in s.summary
         assert result.warnings == [
-            f"{repo} is a git repository with no tracked files — the tree "
-            "is an unfiltered directory walk, not the tracked files"
+            f"{repo} is inside a git repository with no tracked files "
+            "under it — the tree is an unfiltered directory walk, not "
+            "the tracked files"
         ]
 
     def test_tracked_walk_still_prunes_ignored_dirs_and_the_kb_dir(self, repo, run_git):
@@ -228,6 +230,41 @@ class TestTreeExtractor:
         ]
         n_files = int(re.search(r"(\d+) tracked files", s.summary).group(1))
         assert n_files == len(file_lines)
+
+    def test_l3_is_capped_by_line_count_with_a_marker(self, tmp_path):
+        # Reviewer G-3: 6 000 files in one unignored directory produced a
+        # 25 k-token section; depth alone is not a cap.
+        root = tmp_path / "wide"
+        root.mkdir()
+        for i in range(700):
+            (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
+        lines = s.l3_md.splitlines()
+        assert len(lines) <= tree_ext._L3_MAX_LINES + 4   # fences + two markers
+        assert "# … 100 more entries omitted (capped at 600 lines)" in s.l3_md
+        assert "700 files" in s.summary   # the summary still counts the whole tree
+
+    def test_small_tree_has_no_omitted_marker(self, repo):
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert "more entries omitted" not in s.l3_md
+
+    def test_console_scripts_are_listed_apart_from_file_entry_points(self, repo):
+        # Reviewer G-16: `[project.scripts]` keys were mixed into a list of
+        # file paths, so a bare `kb` sat next to `src/center_kb/web/app.py`.
+        (repo / "pyproject.toml").write_text(
+            '[project]\nname = "airspace"\nversion = "1.0.0"\n'
+            'dependencies = ["fastapi>=0.110"]\n'
+            '[project.scripts]\nairspace = "airspace.cli:app"\n',
+            encoding="utf-8",
+        )
+        (repo / "src" / "airspace" / "main.py").write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert "Detected entry points:\n\n- src/airspace/main.py\n" in s.l2_md
+        assert (
+            "Console scripts (pyproject [project.scripts]):\n\n- airspace = airspace.cli:app\n"
+            in s.l2_md
+        )
+        assert "entry points: src/airspace/main.py; console scripts: airspace." in s.summary
 
 
 from center_kb.codeingest.extractors import deps as deps_ext

@@ -40,6 +40,11 @@ _ENTRY_POINT_NAMES = frozenset({
 _L2_DEPTH = 2  # L2 directory listing depth
 _L3_DEPTH = 4  # L3 full-tree listing depth
 
+# Hard line cap on the L3 listing (≈ 5 000 tokens, C3's ceiling). Depth
+# alone does not bound a wide directory — reviewer G grew a 27-file repo's
+# L3 to 25 k tokens with one unignored vendor directory.
+_L3_MAX_LINES = 600
+
 
 def relposix(root: Path, path: Path) -> str:
     """Shared path helper: `path` relative to `root` as a `/`-separated
@@ -166,24 +171,32 @@ def walk_tree(
     return entries
 
 
-def _detect_entry_points(root: Path, entries: list[tuple[int, Path, list[str]]]) -> list[str]:
+def _detect_entry_points(
+    root: Path, entries: list[tuple[int, Path, list[str]]]
+) -> tuple[list[str], list[str]]:
+    """(file entry points, console scripts). Files are repo-relative paths
+    whose basename is in `_ENTRY_POINT_NAMES`; console scripts are the
+    `[project.scripts]` entries rendered `name = module:attr` — kept
+    apart because a script *name* is not a path."""
     found: set[str] = set()
     for _depth, rel, filenames in entries:
         for name in filenames:
             if name in _ENTRY_POINT_NAMES:
                 found.add(relposix(root, root / rel / name))
 
+    console: list[str] = []
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         try:
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError):
             data = {}
-        scripts = data.get("project", {}).get("scripts", {})
+        project = data.get("project", {}) if isinstance(data, dict) else {}
+        scripts = project.get("scripts", {}) if isinstance(project, dict) else {}
         if isinstance(scripts, dict):
-            found.update(scripts.keys())
+            console = [f"{k} = {scripts[k]}" for k in sorted(scripts, key=str)]
 
-    return sorted(found)
+    return sorted(found), console
 
 
 def _render_l2(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
@@ -195,7 +208,8 @@ def _render_l2(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
     return "\n".join(lines)
 
 
-def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
+def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> tuple[str, int]:
+    """(rendered listing capped at `_L3_MAX_LINES`, number of lines cut)."""
     lines: list[str] = []
     for depth, rel, filenames in entries:
         if depth > _L3_DEPTH:
@@ -204,7 +218,8 @@ def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
             lines.append(f"{'  ' * (depth - 1)}- {relposix(root, root / rel)}/")
         file_indent = "  " * depth
         lines.extend(f"{file_indent}- {name}" for name in filenames)
-    return "\n".join(lines)
+    omitted = max(0, len(lines) - _L3_MAX_LINES)
+    return "\n".join(lines[:_L3_MAX_LINES]), omitted
 
 
 class TreeExtractor:
@@ -220,21 +235,27 @@ class TreeExtractor:
         entries = walk_tree(root, opts.kb_dir)
         n_dirs = sum(1 for _depth, rel, _filenames in entries if rel != Path("."))
         n_files = sum(len(filenames) for _depth, _rel, filenames in entries)
-        entry_points = _detect_entry_points(root, entries)
+        entry_points, console_scripts = _detect_entry_points(root, entries)
 
         l2_md = (
             "Directory layout (depth 2):\n\n"
             f"{_render_l2(root, entries)}\n\n"
             "Detected entry points:\n\n"
             + ("\n".join(f"- {ep}" for ep in entry_points) or "- none detected")
+            + "\n\nConsole scripts (pyproject [project.scripts]):\n\n"
+            + ("\n".join(f"- {cs}" for cs in console_scripts) or "- none detected")
             + "\n"
         )
-        # The marker line keeps the fenced block honest about its own cap —
-        # without it the summary's whole-tree counts and this listing's
-        # depth-4 truncation would silently contradict each other on any
-        # repo nested deeper than 4 levels. Kept inside the fence so it can
-        # never register as a pipe table.
-        l3_md = "```\n# tree, capped at depth 4\n" + _render_l3(root, entries) + "\n```\n"
+        # Two markers keep the fenced block honest about its own caps —
+        # depth 4 and _L3_MAX_LINES — so the summary's whole-tree counts
+        # never silently contradict a truncated listing. Both live inside
+        # the fence so they can never register as a pipe table.
+        body, omitted = _render_l3(root, entries)
+        tail = (
+            f"\n# … {omitted} more entries omitted (capped at {_L3_MAX_LINES} lines)"
+            if omitted else ""
+        )
+        l3_md = "```\n# tree, capped at depth 4\n" + body + tail + "\n```\n"
 
         # Re-checks git directly (rather than `tracked_files(root) is not
         # None`) because tracked_files() collapses two different causes
@@ -253,15 +274,18 @@ class TreeExtractor:
         elif not tracked:
             files_phrase = f"{n_files} files (no tracked files — listing unfiltered)"
             warnings.append(
-                f"{root} is a git repository with no tracked files — the tree "
-                "is an unfiltered directory walk, not the tracked files"
+                f"{root} is inside a git repository with no tracked files "
+                "under it — the tree is an unfiltered directory walk, not "
+                "the tracked files"
             )
         else:
             files_phrase = f"{n_files} tracked files"
 
         summary = (
             f"Repository layout: {n_dirs} directories, {files_phrase}, "
-            f"entry points: {', '.join(entry_points) or 'none detected'}."
+            f"entry points: {', '.join(entry_points) or 'none detected'}; "
+            f"console scripts: "
+            f"{', '.join(cs.split(' = ', 1)[0] for cs in console_scripts) or 'none detected'}."
         )
 
         section = CodeSection(
