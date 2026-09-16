@@ -712,8 +712,14 @@ skipped rather than guessed at, but **with a warning naming the file**:
 the reader also counts how many `CREATE TABLE` keywords a file's text
 contains and compares that to how many it actually recognised, so a
 skipped statement is never silent. `build.gradle{,.kts}` is matched by
-regex, not parsed as a Groovy/Kotlin DSL. This is why §3.9 of the design
-spec says the code, not the generated document, is always the final word.
+regex, not parsed as a Groovy/Kotlin DSL. A file `git ls-files` still
+lists (it is in the **index**) but that has since been deleted from the
+working tree — staged for deletion but not yet committed, or removed
+outside git's knowledge — appears in `struct.tree` as a listed entry with
+no content behind it: every reader that tries to open it warns "could not
+parse" naming the file, rather than silently dropping it from the
+listing. This is why §3.9 of the design spec says the code, not the
+generated document, is always the final word.
 
 **Reserved doc-id suffixes.** `<repo_id>-code` (this document, generated,
 tagged `[code, generated]`) and `<repo_id>-svc` (curated by a human,
@@ -752,8 +758,9 @@ technology, description)` from `-code` (the first three) and `-svc` (the
 fourth).
 
 **Determinism guarantee, and the dirty-tree caveat.** Extractors are pure
-functions of the tracked files at HEAD (plus `--db` files named
-explicitly): sections sort by `(group, id)`,
+functions of the files git tracks in the index — contents read from the
+working tree, with `dirty_tree` flagging uncommitted changes — plus
+`--db` files named explicitly: sections sort by `(group, id)`,
 dependencies by name, tables by name (column order is preserved — it
 carries meaning), and YAML/JSON keys sort on write so dict order cannot
 leak. Path separators always normalise to `/` and line endings to `\n`,

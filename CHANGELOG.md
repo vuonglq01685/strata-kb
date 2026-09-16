@@ -10,6 +10,11 @@ git tags and pull-request history.
 - A relative `--kb-dir` is relative to the current directory, like every
   other `kb` command — no longer to `--repo-root`. `kb-code.yml` runs at
   the checkout root with the default and is unaffected.
+- `--repo-id`'s config fallback moved along with `--kb-dir`: it now reads
+  `.kb/config.yaml` relative to the resolved `--kb-dir` (which itself
+  defaults to the *current directory*, not `--repo-root` — see above), so
+  `kb code-ingest --repo-root /other/proj` no longer picks up that other
+  repository's own configured repo id unless `--kb-dir` also points there.
 - A destination `.kb/<doc_id>/` that holds a document this command did
   not generate (missing/unreadable manifest, foreign title, foreign
   section id) is refused with exit 1 instead of being overwritten.
@@ -18,9 +23,10 @@ git tags and pull-request history.
 
 ### Fixed — the generated `-code` document (reviewer G, 2026-09-08)
 
-- `struct.tree` lists `git ls-files`, not an unfiltered walk: git-ignored
-  virtualenvs and worktrees are gone, "tracked files" is true, two
-  checkouts of one commit agree, and L3 is capped at 600 lines (G-3).
+- `struct.tree` lists `git ls-files` — the files git tracks in the
+  index, not HEAD (`dirty_tree` flags uncommitted changes) — instead of
+  an unfiltered walk: git-ignored virtualenvs and worktrees are gone,
+  two checkouts of one commit agree, and L3 is capped at 600 lines (G-3).
 - `cmd.*` classify commands by whole token (`/dev/null` is not `dev`,
   `:latest` is not `test`), join `\` continuations, no longer treat `pip
   install` as a build, and read tox `commands =` and `*.sh` at the root
