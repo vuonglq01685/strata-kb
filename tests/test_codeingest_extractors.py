@@ -1621,9 +1621,12 @@ class TestServicesExtractor:
     def test_command_base_image_and_env_file_are_redacted(self, tmp_path):
         # G-8 review guard: `command`, `base_image` and `env_files` are all
         # new fields Task 11 surfaces in the rendered document, and a
-        # Dockerfile's FROM/CMD is attacker-adjacent content (a registry
-        # reference or command line can carry `user:pass@`). Every one of
-        # the three must come out redacted in both l2_md and l3_md.
+        # Dockerfile's FROM/CMD/ENTRYPOINT is attacker-adjacent content (a
+        # registry reference or command line can carry `user:pass@`). Every
+        # one of the three must come out redacted in both l2_md and l3_md —
+        # including the fix-wave ENTRYPOINT+CMD concatenation (finding 2),
+        # so the redaction point stays the single one inside
+        # `_parse_dockerfile` even after the join.
         root = tmp_path / "credrepo"
         root.mkdir()
         (root / "docker-compose.yml").write_text(
@@ -1633,7 +1636,8 @@ class TestServicesExtractor:
         )
         (root / "Dockerfile").write_text(
             "FROM https://user:pass@registry.example.com/base:1.0\n"
-            'CMD ["curl", "https://user:pass@evil.example.com/x"]\n',
+            'ENTRYPOINT ["curl", "https://user:pass@entry.example.com/y"]\n'
+            'CMD ["https://user:pass@evil.example.com/x"]\n',
             encoding="utf-8",
         )
         result = svc_ext.ServicesExtractor().extract(root, _opts(root))
@@ -1641,8 +1645,61 @@ class TestServicesExtractor:
         body = s.l2_md + s.l3_md
         assert "user:pass@" not in body
         assert "https://***@registry.example.com/base:1.0" in body    # base_image
-        assert "https://***@evil.example.com/x" in body               # command
+        assert "https://***@entry.example.com/y" in body              # ENTRYPOINT half
+        assert "https://***@evil.example.com/x" in body               # CMD half
         assert "https://***@example.com/secrets.env" in body          # env_files
+        assert (
+            "curl https://***@entry.example.com/y https://***@evil.example.com/x"
+            in body
+        )  # the two halves actually joined, not one dropped
+
+    def test_entrypoint_and_cmd_concatenate_docker_semantics(self, tmp_path):
+        # Finding 2 (fix wave, user-ruled): Docker runs ENTRYPOINT then CMD
+        # *concatenated* — CMD supplies ENTRYPOINT's default arguments.
+        # Last-CMD/last-ENTRYPOINT wins independently (Docker's rule for
+        # repeats), and either form missing leaves the other unchanged.
+        # Covers exec-array and shell form on each side.
+        cases = {
+            "both_exec": ('ENTRYPOINT ["/app"]\nCMD ["--flag", "x"]\n', "/app --flag x"),
+            "both_shell": ("ENTRYPOINT /app\nCMD --flag x\n", "/app --flag x"),
+            "entry_exec_cmd_shell": ('ENTRYPOINT ["/app"]\nCMD --flag x\n', "/app --flag x"),
+            "entry_shell_cmd_exec": ("ENTRYPOINT /app\nCMD [\"--flag\", \"x\"]\n", "/app --flag x"),
+            "repeated_cmd_last_wins": ('CMD ["one"]\nCMD ["two"]\n', "two"),
+            "repeated_entrypoint_last_wins": (
+                'ENTRYPOINT ["one"]\nENTRYPOINT ["two"]\n', "two",
+            ),
+        }
+        for label, (body, expected) in cases.items():
+            root = tmp_path / label
+            root.mkdir()
+            (root / "Dockerfile").write_text(f"FROM alpine:3\n{body}", encoding="utf-8")
+            s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.demo"]
+            assert f"| Command | {expected} |" in s.l2_md, (label, s.l2_md)
+
+    def test_compose_build_context_outside_repo_root_is_treated_as_not_found(self, tmp_path):
+        # Finding 1 (fix wave, user-ruled): a build context that escapes the
+        # repo root must never render this machine's absolute path — that
+        # breaks the plan's Determinism constraint (the same repo on two
+        # machines would render different documents) and leaks this
+        # machine's filesystem layout. Treated the same as any other
+        # missing Dockerfile: a relative label, a warning, nothing read.
+        root = tmp_path / "repo"
+        root.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "Dockerfile").write_text("FROM alpine:3\n", encoding="utf-8")
+        (root / "docker-compose.yml").write_text(
+            "services:\n  hub:\n    build: ../outside\n", encoding="utf-8"
+        )
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        s = _by_id(result)["svc.hub"]
+        # Fixed relative string, not `tmp_path` presence — the reliable
+        # assertion per the finding.
+        assert "| Image | build: ../outside (Dockerfile not found) |" in s.l2_md
+        assert "| Source | docker-compose.yml |" in s.l2_md
+        assert any("hub" in w and "no Dockerfile" in w for w in result.warnings)
+        # Weaker additional guard: the machine's tmp path must not leak.
+        assert str(tmp_path) not in (s.l2_md + s.l3_md + " ".join(result.warnings))
 
 
 from center_kb.codeingest.extractors import commands as cmd_ext

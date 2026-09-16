@@ -194,14 +194,27 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                 # and CMD are the knowledge a reader wants (reviewer G-8:
                 # aero's own hub service rendered an empty image).
                 context, dockerfile_path = _resolve_build(path.parent, build)
-                if dockerfile_path is not None and dockerfile_path.is_file():
-                    # normpath (not resolve) collapses `./` and `../` without
-                    # following symlinks, so the label stays repo-relative.
-                    normalised = Path(os.path.normpath(dockerfile_path))
+                # normpath (not resolve) collapses `./` and `../` without
+                # following symlinks, so the label stays repo-relative.
+                normalised = (
+                    Path(os.path.normpath(dockerfile_path))
+                    if dockerfile_path is not None else None
+                )
+                dockerfile_rel = None
+                if normalised is not None:
                     try:
                         dockerfile_rel = relposix(root, normalised)
-                    except ValueError:  # a build context outside the repo
-                        dockerfile_rel = normalised.as_posix()
+                    except ValueError:
+                        # Fix wave finding 1: a build context that escapes
+                        # the repo root (e.g. `build: ../outside`) must
+                        # never render this machine's absolute path — that
+                        # breaks Determinism (same repo, two machines,
+                        # different documents) and leaks this machine's
+                        # filesystem layout. Treated exactly like a missing
+                        # Dockerfile, below: warn, no read, relative label
+                        # only.
+                        dockerfile_rel = None
+                if dockerfile_rel is not None and normalised.is_file():
                     try:
                         base_image, exposed, command = _parse_dockerfile(
                             dockerfile_path.read_text(encoding="utf-8")
@@ -254,17 +267,26 @@ def _exec_form_to_shell(rest: str) -> str:
 def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
     """`(image, ports, command)`: the image of the *last* `FROM` (the
     runtime stage of a multi-stage build — the first `FROM` is a build
-    stage that never runs), every `EXPOSE` port, and the last
-    `CMD`/`ENTRYPOINT` rendered as one shell line. Continuations joined.
+    stage that never runs), every `EXPOSE` port, and the container's
+    actual command. `ENTRYPOINT` and `CMD` are tracked separately (each
+    keeping only its *last* occurrence, Docker's own rule for repeats)
+    and joined with a space when both are present — Docker runs
+    ENTRYPOINT with CMD concatenated on as its default arguments; either
+    one alone is unchanged (fix wave finding 2: `last CMD/ENTRYPOINT`
+    silently dropped ENTRYPOINT's executable whenever both were set).
+    Continuations joined.
 
-    `FROM` and `CMD`/`ENTRYPOINT` are attacker-adjacent content — a
+    `FROM` and the resulting command are attacker-adjacent content — a
     registry reference or a command line can carry a `user:pass@` — so
     both are redacted here, once, at the single point every caller (the
     root-Dockerfile fallback and a compose `build:`'s Dockerfile) routes
-    through, rather than at each render site individually."""
+    through, rather than at each render site individually. The join
+    happens before this one redaction call, so a credential in either
+    half is still caught."""
     image = ""
     ports: list[str] = []
-    command = ""
+    entrypoint = ""
+    cmd = ""
     for line in join_continuations(text):
         parts = line.split()
         directive = parts[0].upper()
@@ -275,8 +297,11 @@ def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
                 port = token.split("/", 1)[0]  # "8080/tcp" -> "8080"
                 if port:
                     ports.append(port)
-        elif directive in ("CMD", "ENTRYPOINT") and len(parts) >= 2:
-            command = _exec_form_to_shell(line.split(None, 1)[1].strip())
+        elif directive == "ENTRYPOINT" and len(parts) >= 2:
+            entrypoint = _exec_form_to_shell(line.split(None, 1)[1].strip())
+        elif directive == "CMD" and len(parts) >= 2:
+            cmd = _exec_form_to_shell(line.split(None, 1)[1].strip())
+    command = " ".join(part for part in (entrypoint, cmd) if part)
     return redact_userinfo(image), ports, redact_userinfo(command)
 
 
