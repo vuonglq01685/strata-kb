@@ -290,24 +290,81 @@ def _is_shell_conditional(tokens: list[str]) -> bool:
     return any(op in tok for tok in tokens[1:] for op in _CONDITIONAL_OPERATORS)
 
 
-def _classify(text: str) -> str | None:
-    """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
-    before `lint` before `build` before `run`) whose keyword matches a
-    run of `text`'s tokens: a one-word keyword must match one whitespace-
-    delimited token (outer quotes and parens stripped) per
-    `_token_matches_keyword`, a multi-word keyword must match that many
-    consecutive tokens the same way. A bare substring match classified
-    `/dev/null` as `run` and `:latest` as `test` (reviewer G-2); this
-    still can't -- only a whole token, or a keyword prefix cut by `-`/`:`,
-    counts.
+def _split_unquoted_segments(text: str) -> list[str]:
+    """Split `text` on `&&`/`;` into logical segments, ignoring either
+    operator when it appears inside a single- or double-quoted run
+    (`echo "a && b"` is one segment, not two). R2-3 (re-review round 2):
+    `_classify` used to treat a whole `&&`-chained line as one
+    classification unit, so `_is_install_line`/`_is_shell_conditional`
+    matching the *first* segment (`npm ci && npm run build`, `pip
+    install -e .[dev] && pytest -q`) dropped the entire line to `None`,
+    silencing the real command that follows -- a regression this fix
+    wave itself introduced, in the exact accuracy class (G-2: name the
+    command that actually runs) the whole batch exists to close.
 
-    Two guards run before any keyword is even considered, both added in
-    the same fix wave (C1/I5) and both applied here -- the one function
-    every reader that classifies a shell line (CI `run:`, `*.sh`, tox
-    `commands =`) already shares, so a single check point covers all
-    three rather than three copies of it. Placing the guards inside
-    `_classify` itself (rather than only in those three readers' own
-    call sites) is safe for its other callers too: the npm reader's
+    Only a plain matching quote pair is handled -- no backslash-escaping
+    of a quote inside a quote, no nesting. Real CI/tox/shell `run:`
+    lines don't need more than that; a line with escaped quotes around
+    its own `&&`/`;` is not a shape this module's other readers or tests
+    exercise, so building a full shell-quoting parser for it here would
+    be disproportionate to what it buys."""
+    segments: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            current.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            current.append(ch)
+            i += 1
+            continue
+        if text.startswith("&&", i):
+            segments.append("".join(current))
+            current = []
+            i += 2
+            continue
+        if ch == ";":
+            segments.append("".join(current))
+            current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+    segments.append("".join(current))
+    return segments
+
+
+def _classify(text: str) -> str | None:
+    """The purpose of the first segment of `text` (split on unquoted
+    `&&`/`;` by `_split_unquoted_segments`, R2-3) that classifies to one
+    -- a single-segment `text` (no `&&`/`;` at all) is simply that one
+    segment, unchanged from before R2-3.
+
+    Within one segment: first purpose in `PURPOSE_KEYWORDS`' own
+    declaration order (`test` before `lint` before `build` before `run`)
+    whose keyword matches a run of the segment's tokens: a one-word
+    keyword must match one whitespace-delimited token (outer quotes and
+    parens stripped) per `_token_matches_keyword`, a multi-word keyword
+    must match that many consecutive tokens the same way. A bare
+    substring match classified `/dev/null` as `run` and `:latest` as
+    `test` (reviewer G-2); this still can't -- only a whole token, or a
+    keyword prefix cut by `-`/`:`, counts.
+
+    Two guards run before any keyword is even considered for a segment,
+    both added in the same fix wave (C1/I5) and both applied here -- the
+    one function every reader that classifies a shell line (CI `run:`,
+    `*.sh`, tox `commands =`) already shares, so a single check point
+    covers all three rather than three copies of it. Placing the guards
+    inside `_classify` itself (rather than only in those three readers'
+    own call sites) is safe for its other callers too: the npm reader's
     command is `<script body> (npm run <name>)` (a script body starting
     with an install verb is exceedingly unlikely, and not a shape any
     existing test relies on), the make reader's is always exactly `make
@@ -315,30 +372,36 @@ def _classify(text: str) -> str | None:
     name has no spaces), and the presence-based reader bypasses
     `_classify` entirely -- none of them can spuriously trip either
     guard.
-    - `_is_install_line`: a line whose leading tokens are a package-
+    - `_is_install_line`: a segment whose leading tokens are a package-
       manager install verb (`pip install`, `npm ci`, `apt-get install`,
       ...) is setup, never a command to run (C1) -- `pip install build
       twine` no longer classifies as `build` merely because `build`
-      happens to be an installed package name.
+      happens to be an installed package name -- but (R2-3) only THAT
+      segment is excluded: `npm ci && npm run build` still classifies as
+      `build` from its second segment, rather than the whole line
+      silently classifying as nothing.
     - `_is_shell_conditional`: a `test`/`[`/`[[` shell conditional is not
       a test *command* (I5) -- `test "$code" = "401"` no longer
-      classifies as `test`.
+      classifies as `test`, and (R2-3) only its own segment is excluded
+      when it's chained with `&&` (`[ "$OK" = 1 ] && make build` still
+      classifies as `build`).
     """
-    tokens = [tok.strip(_TOKEN_STRIP) for tok in text.lower().split()]
-    if _is_install_line(tokens) or _is_shell_conditional(tokens):
-        return None
-    for purpose, keywords in PURPOSE_KEYWORDS.items():
-        for keyword in keywords:
-            kw_tokens = keyword.split()
-            width = len(kw_tokens)
-            if any(
-                all(
-                    _token_matches_keyword(tok, kw)
-                    for tok, kw in zip(tokens[i:i + width], kw_tokens)
-                )
-                for i in range(len(tokens) - width + 1)
-            ):
-                return purpose
+    for segment in _split_unquoted_segments(text):
+        tokens = [tok.strip(_TOKEN_STRIP) for tok in segment.lower().split()]
+        if _is_install_line(tokens) or _is_shell_conditional(tokens):
+            continue
+        for purpose, keywords in PURPOSE_KEYWORDS.items():
+            for keyword in keywords:
+                kw_tokens = keyword.split()
+                width = len(kw_tokens)
+                if any(
+                    all(
+                        _token_matches_keyword(tok, kw)
+                        for tok, kw in zip(tokens[i:i + width], kw_tokens)
+                    )
+                    for i in range(len(tokens) - width + 1)
+                ):
+                    return purpose
     return None
 
 

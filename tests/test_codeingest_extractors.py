@@ -2301,6 +2301,19 @@ class TestCommandsExtractor:
             ('[[ "$x" != "y" ]]', None),
             ("go test ./...", "test"),  # regression
             ("npm run test", "test"),  # regression
+            # R2-3 (re-review round 2): C1/I5's guards matched a
+            # `&&`-chained line's *leading* segment and dropped the
+            # WHOLE line to None -- a regression this fix wave itself
+            # introduced (a Node repo whose only CI build line is `npm
+            # ci && npm run build` got no cmd.build candidate from CI at
+            # all). `_split_unquoted_segments` classifies each segment
+            # independently; the line is the first segment that
+            # classifies.
+            ("npm ci && npm run build", "build"),
+            ("npm install && npm run build", "build"),
+            ("pip install -e .[dev] && pytest -q", "test"),
+            ('[ "$OK" = 1 ] && make build', "build"),
+            ("cd web && npm run build", "build"),  # regression (already worked; still must)
             ("ruff check .", "lint"),
             ("python -m build", "build"),
             ("npm run dev", "run"),
