@@ -164,6 +164,63 @@ class TestTreeExtractor:
         ]
         assert entries[0][0] == 0
 
+    def test_unresolved_merge_conflict_stages_are_deduplicated(self, repo, run_git):
+        # Reviewer G finding (Important): during an unresolved merge, plain
+        # `git ls-files` prints a conflicted path once per index stage
+        # (base/ours/theirs) -- three times for a two-sided conflict.
+        # Without dedup in tracked_files(), struct.tree lists that file 3x
+        # and n_files inflates. Real git, real conflict, no mocks.
+        import re
+        import subprocess
+
+        (repo / "conflict.txt").write_text("base\n", encoding="utf-8")
+        run_git(repo, "init")
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-m", "base")
+        base = run_git(repo, "rev-parse", "HEAD")
+        run_git(repo, "checkout", "-b", "ours")
+        (repo / "conflict.txt").write_text("ours\n", encoding="utf-8")
+        run_git(repo, "commit", "-am", "ours edit")
+        run_git(repo, "checkout", "-b", "theirs", base)
+        (repo / "conflict.txt").write_text("theirs\n", encoding="utf-8")
+        run_git(repo, "commit", "-am", "theirs edit")
+
+        # A failing `git merge` is the expected outcome here -- run_git's
+        # check=True would raise on this exit code, so invoke it directly.
+        merge = subprocess.run(
+            ["git", "-c", "user.name=test", "-c", "user.email=test@test.local",
+             "-c", "core.excludesFile=", "merge", "ours"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        assert merge.returncode != 0
+        assert "<<<<<<<" in (repo / "conflict.txt").read_text(encoding="utf-8")
+
+        # Sanity: confirms this repro actually produces the 3x-staged git
+        # entry the fix targets, so the test can't silently rot into a
+        # no-op if git's ls-files behavior ever changes.
+        raw = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=repo, capture_output=True, text=True,
+        ).stdout
+        raw_paths = [p for p in raw.split("\0") if p]
+        assert raw_paths.count("conflict.txt") == 3
+
+        tracked = tree_ext.tracked_files(repo)
+        assert tracked.count("conflict.txt") == 1
+
+        result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
+        s = _by_id(result)["struct.tree"]
+        assert s.l3_md.count("conflict.txt") == 1
+        # n_files (the reported count) must match what's actually rendered
+        # -- ground truth from the markdown itself, not a re-derivation of
+        # tracked_files()'s own pruning logic -- so a duplicate would be
+        # caught whether it inflated the summary, the listing, or both.
+        file_lines = [
+            ln for ln in s.l3_md.splitlines()
+            if ln.strip().startswith("- ") and not ln.strip().endswith("/")
+        ]
+        n_files = int(re.search(r"(\d+) tracked files", s.summary).group(1))
+        assert n_files == len(file_lines)
+
 
 from center_kb.codeingest.extractors import deps as deps_ext
 

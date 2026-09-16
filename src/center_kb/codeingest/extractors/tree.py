@@ -48,17 +48,20 @@ def relposix(root: Path, path: Path) -> str:
 
 
 def tracked_files(root: Path) -> list[str] | None:
-    """`git ls-files` under `root`, as `/`-separated paths relative to
-    `root` — or `None` when that listing cannot stand in for the tree:
-    git failed (not a repository, git not installed) or listed nothing
-    (a repository with no tracked file under `root`: a brand-new
-    checkout, or the wrong root — an empty tree would be a lie). `-z`
-    keeps non-ASCII names unquoted."""
+    """`git ls-files` under `root`, as sorted, de-duplicated `/`-separated
+    paths relative to `root` — or `None` when that listing cannot stand in
+    for the tree: git failed (not a repository) or listed nothing (a
+    repository with no tracked file under `root`: a brand-new checkout, or
+    the wrong root — an empty tree would be a lie). Deduplicated because an
+    unresolved merge conflict makes `git ls-files` print a conflicted path
+    once per stage (base/ours/theirs) — without this, that path would be
+    listed (and counted, and re-parsed by every consuming extractor) 3x.
+    `-z` keeps non-ASCII names unquoted."""
     proc = _git(root, "ls-files", "-z")
     if proc.returncode != 0:
         return None
     paths = [p for p in proc.stdout.split("\0") if p]
-    return paths or None
+    return sorted(set(paths)) or None
 
 
 def _entries_from_tracked(

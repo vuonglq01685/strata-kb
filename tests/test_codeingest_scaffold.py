@@ -326,9 +326,11 @@ def test_reviewed_l2_subheadings_are_never_truncated(tmp_path):
     assert "### Runbook" in after
     assert "Restart via `make restart`." in after
     # build_code_repo() is not a git repo, so struct.tree's honest
-    # not-a-git-repository warning (Task 1, G-3) is expected here; this
-    # assertion is about the reviewed-subheading pipeline being otherwise
-    # clean, not about git detection.
+    # not-a-git-repository warning (Task 1, G-3) is expected here — exactly
+    # once; this assertion is about the reviewed-subheading pipeline being
+    # otherwise clean, not about git detection.
+    git_warnings = [w for w in report.warnings if "not a git repository" in w]
+    assert len(git_warnings) == 1
     assert [w for w in report.warnings if "not a git repository" not in w] == []
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     reviewed = next(s for s in manifest.sections if s.id == "svc.airspace-service")
@@ -848,9 +850,11 @@ def test_human_preamble_before_the_first_heading_is_preserved(tmp_path):
     after = l2_path.read_text(encoding="utf-8")
     assert preamble in after
     # build_code_repo() is not a git repo, so struct.tree's honest
-    # not-a-git-repository warning (Task 1, G-3) is expected here; this
-    # assertion is about preamble preservation being otherwise clean, not
-    # about git detection.
+    # not-a-git-repository warning (Task 1, G-3) is expected here — exactly
+    # once; this assertion is about preamble preservation being otherwise
+    # clean, not about git detection.
+    git_warnings = [w for w in report.warnings if "not a git repository" in w]
+    assert len(git_warnings) == 1
     assert [w for w in report.warnings if "not a git repository" not in w] == []
 
     # Idempotent: a further run doesn't drift or duplicate the preamble.
