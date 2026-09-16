@@ -1594,6 +1594,25 @@ class TestCommandsExtractor:
         )
         assert "cmd.test" not in sections
 
+    def test_leading_comment_before_cd_still_resolves_directory_label(self, tmp_path):
+        # Fix wave, Finding 3: `_step_dir_label` receives `lines` after
+        # `join_continuations` already dropped comments and blanks, so
+        # a leading `# comment` no longer hides the `cd` right after it
+        # -- this used to resolve to no directory label at all.
+        root = tmp_path / "commentcd"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          # set up\n"
+            "          cd web\n"
+            "          npm run build\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert "(in web/)" in sections["cmd.build"].l2_md
+
 
 import sqlite3
 

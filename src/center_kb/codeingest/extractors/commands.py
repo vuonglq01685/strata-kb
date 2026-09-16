@@ -18,17 +18,16 @@ run something similar.
 
 Classification (`_classify()`) is a whole-token match (never a substring:
 `/dev/null` is not `dev`) against `PURPOSE_KEYWORDS`, checked in the dict's
-own declaration order — `test` before `lint` before `build` before `run` —
-so `pytest` (whose last four letters spell "test") is never miscounted as
-a generic `build`. The npm
-reader folds its `npm run <name>` / `npm test` invocation into the same
-string it classifies and displays (Ruling R2): a script's raw body is
-still what's shown and matched primarily, but the invocation travels
-alongside it rather than replacing it, which also lets a reserved script
-name (`start`) pull in the `run` purpose's `"start"` keyword even when the
-body itself (`vite`) carries no keyword of its own. The `make` reader
-differs deliberately: its command is `make <target>` — the recipe body is
-never shown or classified, only the target name embedded in that string.
+own declaration order — `test` before `lint` before `build` before `run` — so
+`pytest` (whose last four letters spell "test") is never miscounted as a
+generic `build`. The npm reader folds its `npm run <name>` / `npm test`
+invocation into the same string it classifies and displays (Ruling R2): a
+script's raw body is still what's shown and matched primarily, but the
+invocation travels alongside it rather than replacing it, which also lets a
+reserved script name (`start`) pull in the `run` purpose's `"start"` keyword
+even when the body itself (`vite`) carries no keyword of its own. The `make`
+reader differs deliberately: its command is `make <target>` — the recipe body
+is never shown or classified, only the target name embedded in that string.
 
 Every reader degrades rather than raises: a malformed or wrong-shaped file
 (a `package.json` that's a list, a `jobs:` that's a list, ...) becomes a
@@ -78,10 +77,14 @@ _CD_LINE_RE = re.compile(r"^cd\s+(\S+)$")
 def _step_dir_label(step: dict, lines: list[str]) -> str | None:
     """The directory a step's `run:` block actually executes in, when
     that isn't the repo root — from `working-directory:` if the step
-    sets it, else a leading, standalone `cd <dir>` line in the block
-    itself (checked only on the first non-blank line: a `cd` buried
-    mid-block doesn't apply to the earlier commands). Used only to
-    annotate the source label (`... (in web/)`) — the command text
+    sets it, else a standalone `cd <dir>` line at `lines[0]` (checked
+    only there: a `cd` after an earlier command doesn't apply to that
+    earlier command). `lines` has already been comment- and blank-
+    dropped and continuation-joined by `join_continuations`, so a
+    leading `# comment` no longer hides the `cd` right after it —
+    `# set up` / `cd web` / `npm run build` now labels `web`, not
+    `None`. Used only to annotate the source label (`... (in web/)`) —
+    the command text
     itself is never rewritten into `cd web && ...`; rewriting invites
     its own errors, and the label alone is enough to stop a
     subdirectory-only command from being read as root-runnable
