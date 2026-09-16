@@ -493,18 +493,19 @@ def _read_sln(root: Path) -> tuple[list[ServiceRecord], list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def _read_workspaces(root: Path) -> tuple[list[ServiceRecord], list[str]]:
+def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], list[str]]:
     """The root `package.json`'s `workspaces` — a list of globs, or the
     `{"packages": [...]}` object form — each resolved to directories that
     hold their own `package.json`. One image-less record per package,
-    named from that package's `name` (else the directory name), with
-    `directory` set so the Technology column reads the package's own
-    dependencies. Listed in the spec and README from the start, never
-    implemented (reviewer G-6); without it a Node monorepo has no
-    `svc.*` and no Stage-D join key. A workspace glob that resolves
-    outside `--repo-root` (`_within_repo`) is rejected with a warning,
-    never read (I2) -- the same boundary the compose `build:` context
-    above already enforces."""
+    named from that package's `name` (else the directory name -- or,
+    when the match is the repo root itself, `repo_id`; see the `name =`
+    assignment below), with `directory` set so the Technology column
+    reads the package's own dependencies. Listed in the spec and README
+    from the start, never implemented (reviewer G-6); without it a Node
+    monorepo has no `svc.*` and no Stage-D join key. A workspace glob
+    that resolves outside `--repo-root` (`_within_repo`) is rejected
+    with a warning, never read (I2) -- the same boundary the compose
+    `build:` context above already enforces."""
     path = root / "package.json"
     if not path.is_file():
         return [], []
@@ -570,7 +571,20 @@ def _read_workspaces(root: Path) -> tuple[list[ServiceRecord], list[str]]:
             if not pkg.is_file() or rel_dir in seen:
                 continue
             seen.add(rel_dir)
-            name = normalised.name
+            # R3-3 (re-review round 3): when `match` is the repo root
+            # itself (`rel_dir == "."` -- the `../*`-matches-`root` case
+            # R2-4 already normalises), `normalised.name` is the
+            # CHECKOUT DIRECTORY's own basename: machine-dependent,
+            # since nothing constrains what a clone is named, and
+            # normalising the path can't help -- the normalised path *is*
+            # `root`. `repo_id` is the deterministic name the rest of
+            # this module already falls back to in the equivalent
+            # situation (`_read_dockerfile` below names its fallback
+            # service `repo_id` for the same reason: no repo-supplied
+            # name to key on). Every OTHER match is a real subdirectory
+            # inside the repo's own tracked structure, so its name stays
+            # exactly as before.
+            name = repo_id if rel_dir == "." else normalised.name
             try:
                 pkg_data = json.loads(pkg.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -1051,7 +1065,7 @@ class ServicesExtractor:
         warnings.extend(sln_warnings)
 
         try:
-            ws_records, ws_warnings = _read_workspaces(root)
+            ws_records, ws_warnings = _read_workspaces(root, opts.repo_id)
         except Exception as exc:
             ws_records, ws_warnings = [], [f"could not read workspace package.json: {exc}"]
         records.extend(ws_records)

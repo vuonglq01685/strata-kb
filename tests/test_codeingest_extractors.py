@@ -1643,6 +1643,22 @@ class TestServicesExtractor:
         # `Path(os.path.normpath(match))` instead, so the self-match
         # renders as the checkout-independent `.` — asserted below,
         # not just "does not contain the checkout's name" by omission.
+        #
+        # R3-3 (re-review round 3): `directory`/`source` normalising to
+        # `.` doesn't fix `name` -- `normalised.name` for a root
+        # self-match is STILL the checkout directory's own basename
+        # (there's no further "normalising" a bare root path), so the
+        # section title/id carried it whenever the root package.json had
+        # no `"name"` key of its own, exactly as this fixture's does not.
+        # Chose to make the fallback stable rather than change what this
+        # test asserts: `_read_workspaces` now falls back to `repo_id`
+        # for a root self-match specifically (never for a real
+        # subdirectory, where the directory name is part of the repo's
+        # own tracked structure) -- the same fallback `_read_dockerfile`
+        # already uses in the equivalent situation, so this test's
+        # `tmp_path`-derived folder name (`repo`, below) must never
+        # appear anywhere in the record, only `_opts()`'s `repo_id`
+        # (`"demo"`).
         root = tmp_path / "repo"
         root.mkdir()
         sibling = tmp_path / "secretpkg"
@@ -1664,10 +1680,11 @@ class TestServicesExtractor:
             "workspace pattern '../*'" in w and "outside the repository" in w
             for w in result.warnings
         )
-        self_record = next(s for s in result.sections if s.title == "repo")
+        self_record = next(s for s in result.sections if s.title == "demo")
         assert "| Source | ./package.json |" in self_record.l2_md
         assert "in `.` — no container image." in self_record.l2_md
         assert "../repo" not in (self_record.l2_md + self_record.l3_md)
+        assert "repo" not in (self_record.l2_md + self_record.l3_md)
 
     def test_compose_service_with_the_same_name_as_a_workspace_keeps_compose_evidence(self, tmp_path):
         root = self._mono(tmp_path)
