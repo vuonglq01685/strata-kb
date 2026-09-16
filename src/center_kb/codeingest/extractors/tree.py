@@ -9,7 +9,7 @@ worktree or previous run's output never appears, and two checkouts of the
 same commit list the same tree), with `IGNORED_DIRS` (and the caller's
 `kb_dir`) pruned on top. A root that is not a git repository, or has no
 tracked file, falls back to one deterministic `os.walk` with the same
-pruning, and the section says so.
+pruning, and the section says which of the two applies.
 """
 from __future__ import annotations
 
@@ -47,21 +47,40 @@ def relposix(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def _git_ls_files(root: Path) -> tuple[bool, list[str]]:
+    """Runs `git ls-files -z` under `root`. Returns `(is_git_repo, paths)`:
+    `is_git_repo` is whether git succeeded (`root` is inside a git
+    worktree); `paths` is the sorted, de-duplicated `/`-separated tracked
+    paths, empty when git succeeded but nothing is tracked. Deduplicated
+    because an unresolved merge conflict makes `git ls-files` print a
+    conflicted path once per index stage (base/ours/theirs) — without
+    this, that path would be listed (and counted, and re-parsed by every
+    consuming extractor) 3x. `-z` keeps non-ASCII names unquoted.
+
+    Split out from `tracked_files()` so `TreeExtractor.extract()` can tell
+    "not a repository" apart from "a repository with nothing tracked" for
+    its summary/warning wording, while `tracked_files()` keeps returning a
+    single `None` for both — its other caller, `walk_tree()`, only needs
+    "can a tree be built from git here?" and falls back to `os.walk`
+    identically either way."""
+    proc = _git(root, "ls-files", "-z")
+    if proc.returncode != 0:
+        return False, []
+    paths = [p for p in proc.stdout.split("\0") if p]
+    return True, sorted(set(paths))
+
+
 def tracked_files(root: Path) -> list[str] | None:
     """`git ls-files` under `root`, as sorted, de-duplicated `/`-separated
     paths relative to `root` — or `None` when that listing cannot stand in
     for the tree: git failed (not a repository) or listed nothing (a
     repository with no tracked file under `root`: a brand-new checkout, or
-    the wrong root — an empty tree would be a lie). Deduplicated because an
-    unresolved merge conflict makes `git ls-files` print a conflicted path
-    once per stage (base/ours/theirs) — without this, that path would be
-    listed (and counted, and re-parsed by every consuming extractor) 3x.
-    `-z` keeps non-ASCII names unquoted."""
-    proc = _git(root, "ls-files", "-z")
-    if proc.returncode != 0:
+    the wrong root — an empty tree would be a lie). See `_git_ls_files` for
+    the dedup rationale and the `-z` note."""
+    is_repo, paths = _git_ls_files(root)
+    if not is_repo:
         return None
-    paths = [p for p in proc.stdout.split("\0") if p]
-    return sorted(set(paths)) or None
+    return paths or None
 
 
 def _entries_from_tracked(
@@ -217,15 +236,28 @@ class TreeExtractor:
         # never register as a pipe table.
         l3_md = "```\n# tree, capped at depth 4\n" + _render_l3(root, entries) + "\n```\n"
 
+        # Re-checks git directly (rather than `tracked_files(root) is not
+        # None`) because tracked_files() collapses two different causes
+        # into one None -- git failing (root is not a repository) and git
+        # succeeding with nothing tracked (root is a repository with no
+        # tracked file yet) -- and those need different, honest wording
+        # here. See `_git_ls_files`'s docstring.
         warnings: list[str] = []
-        if tracked_files(root) is not None:
-            files_phrase = f"{n_files} tracked files"
-        else:
+        is_repo, tracked = _git_ls_files(root)
+        if not is_repo:
             files_phrase = f"{n_files} files (not a git repository — listing unfiltered)"
             warnings.append(
                 f"{root} is not a git repository — the tree is an unfiltered "
                 "directory walk, not the tracked files"
             )
+        elif not tracked:
+            files_phrase = f"{n_files} files (no tracked files — listing unfiltered)"
+            warnings.append(
+                f"{root} is a git repository with no tracked files — the tree "
+                "is an unfiltered directory walk, not the tracked files"
+            )
+        else:
+            files_phrase = f"{n_files} tracked files"
 
         summary = (
             f"Repository layout: {n_dirs} directories, {files_phrase}, "

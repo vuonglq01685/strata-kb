@@ -137,11 +137,19 @@ class TestTreeExtractor:
         assert "src/airspace" in s.l3_md
 
     def test_repo_with_nothing_tracked_falls_back_to_the_unfiltered_walk(self, repo, run_git):
+        # User-approved correction (reviewer G-3a wording split): a repo
+        # with nothing tracked is a real repository, so "not a git
+        # repository" would be false here -- it gets its own message.
         run_git(repo, "init")   # no add, no commit: `git ls-files` lists nothing
         result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
         s = _by_id(result)["struct.tree"]
         assert "src/airspace" in s.l3_md
-        assert any("not a git repository" in w for w in result.warnings)
+        assert "no tracked files" in s.summary
+        assert "not a git repository" not in s.summary
+        assert result.warnings == [
+            f"{repo} is a git repository with no tracked files — the tree "
+            "is an unfiltered directory walk, not the tracked files"
+        ]
 
     def test_tracked_walk_still_prunes_ignored_dirs_and_the_kb_dir(self, repo, run_git):
         (repo / "dist").mkdir()
