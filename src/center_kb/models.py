@@ -35,6 +35,15 @@ class ReviewRecord(BaseModel):
 
 
 class SectionEntry(BaseModel):
+    # extra="forbid", same reason as RegistryEntry below: a plausible
+    # operator typo in an authored YAML file (`sumary:` for `summary:`)
+    # used to validate cleanly, take the field's default, and publish an
+    # empty L1 summary. `kb doctor` reported OK on it (M10). Also read
+    # cross-install: nested inside every mirrored _manifest.yaml
+    # (Manifest.sections), so a field added here is a wire-compat break
+    # for an older reader too -- see FedIndexEntry's comment below.
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     title: str
     summary: str = ""
@@ -54,6 +63,13 @@ class IngestConfig(BaseModel):
 
 
 class Manifest(BaseModel):
+    # extra="forbid": see SectionEntry. Also read cross-install off a hub's
+    # mirrored federation/<repo-id>/ tree (web/api.py's manifest lookup
+    # parses the matched holder's mirrored _manifest.yaml through this
+    # model) -- see FedIndexEntry's comment below for what that means for
+    # adding fields.
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     title: str
     revision: str = ""
@@ -64,6 +80,13 @@ class Manifest(BaseModel):
 
 
 class IndexEntry(BaseModel):
+    # extra="forbid": see SectionEntry. Also read cross-install: nested
+    # inside every mirrored index.yaml (KBIndex.docs), which
+    # federation.load_federation parses unconditionally and drops the
+    # WHOLE repo on ValidationError -- the worst-case outcome of the four
+    # authored models (see FedIndexEntry's comment below).
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     title: str
     revision: str = ""
@@ -80,11 +103,38 @@ class LLMConfig(BaseModel):
 
 
 class KBIndex(BaseModel):
+    # extra="forbid": see SectionEntry. Also read cross-install off a hub's
+    # mirrored federation/<repo-id>/ tree (federation.load_federation parses
+    # every mirrored index.yaml through this model) -- see FedIndexEntry's
+    # comment below for what that means for adding fields.
+    model_config = ConfigDict(extra="forbid")
+
     docs: list[IndexEntry] = Field(default_factory=list)
     llm: LLMConfig = Field(default_factory=LLMConfig)
 
 
 class FedIndexEntry(BaseModel):
+    # NOT extra="forbid", unlike the authored models above. Their own
+    # comment draws an "authored vs wire format" line, but that line isn't
+    # clean: SectionEntry, Manifest, IndexEntry and KBIndex are ALL read
+    # cross-install too, off a hub's mirrored federation/<repo-id>/ tree --
+    # federation.load_federation parses every mirrored index.yaml through
+    # KBIndex (nesting IndexEntry); web/api.py's manifest lookup parses the
+    # matched holder's mirrored _manifest.yaml through Manifest (nesting
+    # SectionEntry) -- so a field added to any of them is a wire-compat
+    # break for an older reader too, exactly like a field added here. They
+    # stay strict anyway: a human types those files before they are ever
+    # mirrored, and the typo-catching value (M10) is worth that risk for
+    # them. This file differs because nothing types it by hand --
+    # build_federation_index generates it -- so there is no typo to catch
+    # and nothing offsets the same risk. Whenever a field is added to any
+    # of those four, it must be optional with a safe default -- the way
+    # every field here already is except repo_id/doc_id, this entry's
+    # required identity since the format's first version -- so an older
+    # reader that doesn't know the new field yet still loads a newer
+    # writer's file instead of dropping the whole repo (see
+    # load_federation's ValidationError handling, which does exactly that
+    # today).
     repo_id: str
     doc_id: str
     title: str = ""
@@ -93,6 +143,11 @@ class FedIndexEntry(BaseModel):
     summary: str = ""
     source_commit: str = ""
     published_at: str = ""
+    # sha256 of the snapshot's own content tree (federation/<rid>/**),
+    # written by reindex/publish so `kb doctor` at the HUB can detect
+    # content edited in place — the hub has no local .kb to diff against
+    # (M9 row #18). "" = published before 0.24, not verifiable.
+    content_sha256: str = ""
 
 
 class FederationIndex(BaseModel):

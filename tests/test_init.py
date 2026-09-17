@@ -197,7 +197,7 @@ def test_cli_init_updates_stale_scaffold(tmp_path: Path):
 
 def test_cli_init_non_interactive_requires_kind(tmp_path: Path):
     result = runner.invoke(app, ["init", str(tmp_path)])
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "kb init requires --kind hub|child when not running interactively." in result.output
 
 
@@ -610,7 +610,7 @@ def test_cli_init_assets_rejected_for_child(tmp_path: Path):
     result = runner.invoke(
         app, ["init", str(tmp_path), "--kind", "child", "--assets", "s3"]
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "hub" in result.output
 
 
@@ -906,7 +906,7 @@ def test_cli_init_assets_rejected_for_ba(tmp_path: Path):
     result = runner.invoke(
         app, ["init", str(tmp_path), "--kind", "ba", "--assets", "s3"]
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "hub" in result.output
 
 
@@ -1862,7 +1862,7 @@ def test_kind_descriptions_lists_four_kinds():
 def test_noninteractive_init_error_string_is_unchanged(tmp_path: Path):
     # Frozen by contract (cli.py comment): the message still reads hub|child.
     result = runner.invoke(app, ["init", str(tmp_path)])
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "kb init requires --kind hub|child when not running interactively." in result.output
 
 

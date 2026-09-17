@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import yaml
+from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -15,6 +17,7 @@ from center_kb.query import (
     get_section,
     normalize_level,
     search,
+    stale_hub_note,
 )
 
 logger = logging.getLogger("center_kb.web.api")
@@ -80,6 +83,20 @@ def known_doc_ids(config: ServerConfig) -> list[str]:
     return [f"{d['repo']}:{d['id']}" for d in docs]
 
 
+class SnapshotCorruptError(Exception):
+    """A published snapshot's _manifest.yaml does not parse or validate.
+
+    uidata._iter_manifests survives this (the doc simply does not list), so
+    /ui keeps working — but the doc routes used to propagate it into a bare
+    500 with no shell (M8).
+    """
+
+    def __init__(self, doc_id: str = "", detail: str = "") -> None:
+        super().__init__(f"{doc_id}: {detail}")
+        self.doc_id = doc_id
+        self.detail = detail
+
+
 def load_manifest(
     config: ServerConfig, doc_id: str, repo: str | None = None
 ) -> tuple[models.Manifest, str] | None:
@@ -99,21 +116,26 @@ def load_manifest(
     if len(holders) > 1:
         raise AmbiguousDocError(doc_id, [r.meta.repo_id for r in holders])
     r = holders[0]
-    manifest = models.load_yaml_model(
-        r.kb_dir / doc_id / "_manifest.yaml", models.Manifest
-    )
+    try:
+        manifest = models.load_yaml_model(
+            r.kb_dir / doc_id / "_manifest.yaml", models.Manifest
+        )
+    except (yaml.YAMLError, ValidationError, ValueError) as exc:
+        raise SnapshotCorruptError(doc_id, " ".join(str(exc).split())) from exc
     return manifest, r.meta.repo_id
 
 
 def build_routes(config: ServerConfig) -> list[Route]:
     async def health(request: Request) -> JSONResponse:
-        return JSONResponse(
-            {
-                "status": "ok",
-                "hub_configured": bool(config.hub),
-                "hub_reachable": hub_handle(config) is not None,
-            }
-        )
+        # Fix round 3: this route is auth-exempt (EXEMPT_PATHS, auth.py) so
+        # TokenAuthMiddleware never calls the limiter for it -- an
+        # auth-varying body here would let a caller compare guesses against
+        # the token at full, unmetered speed (measured: 20/20 wrong guesses
+        # -> 200, limiter never touched). The route does not vary by auth at
+        # all now; unauthenticated liveness (L22) is satisfied by returning
+        # liveness to everyone. hub_configured/hub_reachable stay available
+        # through the authenticated /ui and `kb doctor`.
+        return JSONResponse({"status": "ok"})
 
     async def docs(request: Request) -> JSONResponse:
         listed = list_docs(config)
@@ -163,6 +185,8 @@ def build_routes(config: ServerConfig) -> list[Route]:
             result = get_section(hub, doc_id, section_id, level=level, repo=repo)
         except AmbiguousDocError as exc:
             return _error(400, "ambiguous_doc", str(exc))
+        except (yaml.YAMLError, ValidationError, ValueError) as exc:
+            raise SnapshotCorruptError(doc_id, " ".join(str(exc).split())) from exc
         if result is None:
             known = ", ".join(known_doc_ids(config))
             return _error(
@@ -204,24 +228,36 @@ def build_routes(config: ServerConfig) -> list[Route]:
             return _error(400, "too_many_tags", str(exc))
         except searchdb.IndexBusyError as exc:
             return _error(503, "index_busy", str(exc))
-        return JSONResponse(
-            {
-                "query": q,
-                "results": [
-                    {
-                        "doc_id": r.doc_id,
-                        "section_id": r.section_id,
-                        "title": r.title,
-                        "score": r.score,
-                        "citation": r.citation,
-                        "tokens": r.tokens,
-                        "content": r.content,
-                        "source": r.source,
-                    }
-                    for r in results
-                ],
-            }
-        )
+        except (yaml.YAMLError, ValidationError, ValueError) as exc:
+            # No single doc_id here -- search() syncs every federated repo's
+            # manifest before it ever searches (searchdb._sync_repo), so a
+            # corrupt manifest anywhere in the federation surfaces here with
+            # no way to know which one without re-walking it (not worth it).
+            raise SnapshotCorruptError("", " ".join(str(exc).split())) from exc
+        body = {
+            "query": q,
+            "results": [
+                {
+                    "doc_id": r.doc_id,
+                    "section_id": r.section_id,
+                    "title": r.title,
+                    "score": r.score,
+                    "citation": r.citation,
+                    # content_tokens, not tokens: this response carries only
+                    # r.content, never r.snippet -- reporting the budget-spend
+                    # figure (tokens) here would describe text the caller
+                    # never received (M17).
+                    "tokens": r.content_tokens,
+                    "content": r.content,
+                    "source": r.source,
+                }
+                for r in results
+            ],
+        }
+        note = stale_hub_note(hub)
+        if note:
+            body["notes"] = [note]
+        return JSONResponse(body)
 
     return [
         Route("/api/health", health, methods=["GET"]),

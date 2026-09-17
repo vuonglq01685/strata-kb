@@ -60,7 +60,7 @@ def cache_key(hub: str) -> str:
     token inside it -- on every rotation.
     """
     stripped, _ = gitio.split_credentials(hub)
-    return hashlib.sha1(stripped.encode("utf-8")).hexdigest()[:12]
+    return hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 
 def strip_remote_credentials(root: Path) -> None:
@@ -151,15 +151,16 @@ def _marker_age(marker: Path) -> float | None:
 
 
 def _touch_marker(marker: Path) -> None:
+    # newline-exempt: TTL marker in the local hub cache (~/.center-kb/hub),
+    # outside the cloned repo -- never committed, never diffed.
     marker.write_text(str(time.time()), encoding="utf-8")
 
 
 def resolve_hub(hub: str) -> HubHandle | None:
     """Local path with a .kb/ → use it directly; otherwise clone/pull into the cache per TTL.
 
-    None = the hub is unreachable and there is no cache yet — the caller
-    continues with the local KB only (the hub is an enhancement, not a
-    hard requirement).
+    None = the hub is unreachable and there is no cache yet — since the
+    2026-07-13 hub-first change, that is not "continue with the local KB".
     """
     direct = Path(hub)
     if direct.is_dir() and (direct / ".kb").is_dir():
@@ -185,7 +186,8 @@ def resolve_hub(hub: str) -> HubHandle | None:
             gitio.clone(hub, cache)
         except gitio.GitError as exc:
             logger.warning(
-                "could not clone hub '%s' — continuing with local KB only: %s",
+                "could not clone hub '%s' and no cache exists: %s — this is "
+                "not a degraded-but-working state",
                 gitio.redact_url(hub),
                 exc,
             )

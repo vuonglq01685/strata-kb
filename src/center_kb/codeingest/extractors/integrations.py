@@ -287,7 +287,7 @@ class IntegrationsExtractor:
 
         try:
             env_sources, env_warnings = _read_env_files(root, opts.kb_dir)
-        except Exception as exc:  # defense in depth: readers must never crash extract()
+        except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract()
             env_sources, env_warnings = {}, [f"could not read env files: {exc}"]
         warnings.extend(env_warnings)
         for key, sources in env_sources.items():
@@ -295,7 +295,7 @@ class IntegrationsExtractor:
 
         try:
             compose_sources, compose_warnings = _read_compose_env(root, opts.kb_dir)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
             compose_sources, compose_warnings = {}, [f"could not read compose manifests: {exc}"]
         warnings.extend(compose_warnings)
         for key, sources in compose_sources.items():

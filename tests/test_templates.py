@@ -34,6 +34,86 @@ def test_all_web_templates_exist_as_package_resources():
         assert base.joinpath(name).is_file(), name
 
 
+# headers.py's CSP ships `script-src 'self'` with no 'unsafe-inline' /
+# 'unsafe-hashes' — every current browser refuses to run an inline
+# event-handler attribute under that policy (Task 10 fix round 1). TestClient
+# never enforces CSP and never runs JS, so this is the only test that can
+# catch a template regressing back to one.
+#
+# Round 2 fix: the first version of this pattern was double-quote-only
+# (missed onchange='...' and unquoted onclick=go()) and matched any
+# on<letters>= lookalike (onward="x"). Both are fixed the same way — an
+# explicit whitelist of real HTML event-handler attribute names, with the
+# quote made optional so single-quoted and unquoted values both match.
+# Scan is HTML-only now (was also scanning .js/.css, which is how app.js's
+# OWN explanatory comment about onchange tripped this test on itself).
+_EVENT_HANDLER_ATTRS = (
+    "onclick", "ondblclick", "onchange", "oninput", "onsubmit", "onreset",
+    "onload", "onerror", "onfocus", "onblur",
+    "onkeydown", "onkeyup", "onkeypress",
+    "onmousedown", "onmouseup", "onmouseover", "onmouseout",
+    "onmouseenter", "onmouseleave", "onmousemove",
+    "ondrag", "ondragstart", "ondragend", "ondragenter", "ondragleave",
+    "ondragover", "ondrop",
+    "onscroll", "onwheel", "ontoggle", "onselect", "oncontextmenu",
+    "oncopy", "oncut", "onpaste",
+)
+_INLINE_HANDLER_RE_SRC = (
+    r"\b(?:" + "|".join(_EVENT_HANDLER_ATTRS) + r")\s*=\s*['\"]?"
+)
+_SCANNED_SUFFIXES = (".html",)
+
+
+def test_web_templates_carry_no_inline_event_handlers():
+    import re
+
+    pattern = re.compile(_INLINE_HANDLER_RE_SRC, re.IGNORECASE)
+    base = resources.files("center_kb").joinpath("templates/web")
+    with resources.as_file(base) as root:
+        root = Path(root)
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.suffix not in _SCANNED_SUFFIXES:
+                continue
+            text = path.read_text(encoding="utf-8")
+            for match in pattern.finditer(text):
+                line_no = text.count("\n", 0, match.start()) + 1
+                pytest.fail(
+                    f"{path.relative_to(root)}:{line_no}: inline event "
+                    f"handler {match.group()!r} — headers.py's CSP ships "
+                    "script-src 'self' with no 'unsafe-inline', so a "
+                    "browser refuses to run this; move it to "
+                    "static/app.js as a delegated listener instead"
+                )
+
+
+def test_inline_handler_pattern_catches_single_and_unquoted_handlers():
+    """Two-direction proof for round 2's fix: single-quoted and unquoted
+    handlers must both trip the pattern; CSS/Jinja lookalikes must not."""
+    import re
+
+    pattern = re.compile(_INLINE_HANDLER_RE_SRC, re.IGNORECASE)
+    assert pattern.search("<input onclick='go()'>")  # single-quoted
+    assert pattern.search("<input onclick=go()>")  # unquoted
+    assert pattern.search('<input onchange="this.form.submit()">')  # double-quoted
+    assert not pattern.search('<div style="transition:.2s">')
+    assert not pattern.search('<button data-status-btn="all">')
+    assert not pattern.search("{{ 'checked' if semantic_on }}")
+    assert not pattern.search('<input data-onward="x">')  # not a real event name
+
+
+def test_data_autosubmit_contract_between_search_html_and_app_js():
+    """data-autosubmit is a cross-file string contract -- search.html's two
+    controls carry the attribute, app.js's delegated listener selects it by
+    the same string. No shared constant ties them together, so a typo or
+    rename in either file silently kills both controls and nothing else
+    would notice."""
+    base = resources.files("center_kb").joinpath("templates/web")
+    search_html = base.joinpath("search.html").read_text(encoding="utf-8")
+    app_js = base.joinpath("static/app.js").read_text(encoding="utf-8")
+    assert search_html.count("data-autosubmit") == 2
+    assert "[data-autosubmit]" in app_js
+
+
 def test_all_init_templates_exist_as_package_resources():
     base = resources.files("center_kb").joinpath("templates/init")
     for mapping in (COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES):

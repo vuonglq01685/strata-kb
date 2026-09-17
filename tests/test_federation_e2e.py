@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from center_kb import models
 from center_kb.cli import app
+from center_kb.mdutils import count_tokens, slice_section
 
 runner = CliRunner()
 
@@ -14,12 +15,10 @@ def _make_repo(base: Path, run_git, name: str, doc_id: str, sec_id: str, keyword
     kb = root / ".kb"
     doc = kb / doc_id
     doc.mkdir(parents=True)
-    (doc / "ch1.md").write_text(
-        f"## {sec_id} Title\n\nCondensed {keyword} content.\n", encoding="utf-8"
-    )
-    (doc / "ch1.raw.md").write_text(
-        f"## {sec_id} Title\n\nVerbatim {keyword} content.\n", encoding="utf-8"
-    )
+    l2_text = f"## {sec_id} Title\n\nCondensed {keyword} content.\n"
+    l3_text = f"## {sec_id} Title\n\nVerbatim {keyword} content.\n"
+    (doc / "ch1.md").write_text(l2_text, encoding="utf-8")
+    (doc / "ch1.raw.md").write_text(l3_text, encoding="utf-8")
     models.save_yaml_model(
         doc / "_manifest.yaml",
         models.Manifest(
@@ -27,6 +26,12 @@ def _make_repo(base: Path, run_git, name: str, doc_id: str, sec_id: str, keyword
             sections=[models.SectionEntry(
                 id=sec_id, title="Title", summary=f"{keyword} summary.",
                 status="summarized", file="ch1",
+                # Real counts, not the 0/0 default -- doctor now recounts
+                # L2/L3 tokens and reports drift (M9).
+                tokens=models.SectionTokens(
+                    l2=count_tokens(slice_section(l2_text, sec_id)),
+                    l3=count_tokens(slice_section(l3_text, sec_id)),
+                ),
             )],
         ),
     )

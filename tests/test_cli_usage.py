@@ -157,7 +157,7 @@ def test_ingest_without_a_path_or_hook_stdin_is_a_usage_error(tmp_path: Path):
 
     result = runner.invoke(app, ["usage", "ingest-transcript", "--kb-dir", str(d)])
 
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "exactly one" in result.output
 
 

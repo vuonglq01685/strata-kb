@@ -374,7 +374,7 @@ def _recorded_langs(config_path: Path, report: InitReport) -> list[str]:
 
     try:
         recorded = list(load_config(config_path.parent).langs)
-    except Exception:  # a broken config is doctor's job, not init's
+    except Exception:  # noqa: BLE001 -- a broken config is doctor's job, not init's
         return []
     unknown = [lang for lang in recorded if lang not in conventions.LANG_IDS]
     if unknown:

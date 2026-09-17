@@ -9,10 +9,10 @@ import pytest
 
 pytest.importorskip("sqlite_vec")
 
-from center_kb import searchdb  # noqa: E402
-from center_kb.federation import write_federation_index  # noqa: E402
-from center_kb.hub import HubHandle  # noqa: E402
-from center_kb.query import search_detailed  # noqa: E402
+from center_kb import searchdb
+from center_kb.federation import write_federation_index
+from center_kb.hub import HubHandle
+from center_kb.query import search_detailed
 
 
 def _wide_hub(tmp_path, n_sections: int) -> HubHandle:

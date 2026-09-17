@@ -4,10 +4,39 @@ Goal: BAs query the KB via MCP without cloning the repo (Phase 3 spec §10).
 
 ## Internal server
 
-Note: hub clones used by the server/publishers should keep `core.autocrlf=false`
-(the tool sets this repo-locally during publish/intake; a global
-`autocrlf=true` on other hub clones degrades no-op detection but not
-correctness).
+Line endings need no operator action: `kb init` scaffolds `.gitattributes`
+(`federation/** -text` on a hub, `.kb/** -text` on a child) — that's what
+protects the operator's own `git clone` in step 1 below from CRLF
+rewriting on Windows. Separately, any hub *cache* clone `gitio.clone` makes
+(e.g. for a child repo consuming this hub) forces `core.autocrlf=false` /
+`core.eol=lf` and writes them into that clone's local config.
+`tests/test_windows_hygiene.py` scans every text-mode write call under
+`src/center_kb` and `scripts/` and requires `newline="\n"`, unless the call
+is binary-mode (no newline translation applies) or carries a
+`# newline-exempt: <reason>` comment.
+
+Behind a TLS-terminating reverse proxy, set
+`CENTER_KB_TRUSTED_PROXIES=<number of proxies>`. It does two things: the
+rate limiter keys on the real client instead of collapsing every user into
+the proxy's bucket, and the `/ui` session cookie earns its `Secure` flag
+from `X-Forwarded-Proto`. Left unset behind a proxy, the server logs a
+warning and sets the cookie without `Secure`. Each trusted proxy in the
+chain must *append* the address/scheme it observed to
+`X-Forwarded-For`/`X-Forwarded-Proto`, not overwrite it — with more than
+one proxy in the chain, an overwriting hop discards the proxies before it,
+so the key silently falls back to the peer, which is the exact
+shared-bucket failure described below.
+
+Every response carries `Content-Security-Policy` (`script-src 'self'`),
+`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin` and a
+`Permissions-Policy`; HSTS is added only when the request reaches this
+server over https. This server unconditionally disables uvicorn's own
+`X-Forwarded-Proto` handling, so if you put a TLS-terminating reverse proxy
+in front of it, the connection it actually sees is plain HTTP: HSTS never
+fires, even though the client used HTTPS. That is an accepted gap, not
+something `CENTER_KB_TRUSTED_PROXIES` closes; set HSTS at the reverse
+proxy if you need it.
 
 1. Clone the hub: `git clone <kb-hub-url> /srv/kb-hub`
 2. Install the tool: `pip install center-kb` (add `.[embed]` if you want semantic search)

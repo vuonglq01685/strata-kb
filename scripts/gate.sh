@@ -34,7 +34,7 @@ elif command -v python >/dev/null 2>&1; then
     PY="$(command -v python)"
 else
     echo "No Python interpreter found (tried .venv, python3, python)." >&2
-    echo "  -> Run: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'" >&2
+    echo "  -> Run: python3 -m venv .venv && $(venv_bin "$ROOT/.venv")/pip install -e '.[dev]'" >&2
     exit 1
 fi
 echo "==> Interpreter: $PY ($("$PY" --version 2>&1))"

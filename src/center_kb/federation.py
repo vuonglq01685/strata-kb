@@ -287,6 +287,23 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
     return repos
 
 
+def entry_content_digest(entry_dir: Path) -> str:
+    """Digest of one snapshot's content tree — the value stored in
+    federation/index.yaml as FedIndexEntry.content_sha256.
+
+    entry_dir is a LEAF (federation/<rid>/, a full .kb mirror) -- its own
+    index.yaml is real mirrored content (doc titles/revisions/tags/L0
+    summaries), not the top-of-federation aggregate _fed_tree_digest's
+    default skip set was written to exempt. Only .gitkeep (the placeholder
+    that keeps an otherwise-empty dir tracked by git) can legitimately show
+    up at a leaf's own top level."""
+    # Function-local: doctor.py imports federation.py already, so a
+    # module-level import here would be circular.
+    from center_kb.doctor import _fed_tree_digest
+
+    return _fed_tree_digest(entry_dir, skip=frozenset({".gitkeep"}))
+
+
 def build_federation_index(federation_dir: Path) -> models.FederationIndex:
     """The aggregate index — 100% deterministic from the sub-snapshots.
 
@@ -296,6 +313,7 @@ def build_federation_index(federation_dir: Path) -> models.FederationIndex:
     """
     entries: list[models.FedIndexEntry] = []
     for repo in load_federation(federation_dir):
+        digest = entry_content_digest(repo.kb_dir)
         for doc in repo.index.docs:
             entries.append(
                 models.FedIndexEntry(
@@ -307,6 +325,7 @@ def build_federation_index(federation_dir: Path) -> models.FederationIndex:
                     summary=doc.summary,
                     source_commit=repo.meta.source_commit,
                     published_at=repo.meta.published_at,
+                    content_sha256=digest,
                 )
             )
     return models.FederationIndex(docs=entries)

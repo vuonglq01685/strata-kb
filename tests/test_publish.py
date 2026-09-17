@@ -116,7 +116,7 @@ def test_direct_publish_threads_the_hub_token_into_the_push(
     stripped = "https://example.invalid/hub.git"
     cache_base = tmp_path / "cache"
     monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
-    key = hashlib.sha1(stripped.encode("utf-8")).hexdigest()[:12]
+    key = hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)
     run_git(tmp_path, "clone", str(origin), str(cache))

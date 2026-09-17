@@ -578,7 +578,7 @@ def _dep_names_from_directory(directory: Path) -> list[str]:
     pom = directory / "pom.xml"
     if pom.is_file():
         try:
-            xml_tree = ET.parse(pom)
+            xml_tree = ET.parse(pom)  # noqa: S314 -- ET resolves no external entities (no XXE); expat's amplification limit refuses billion-laughs/quadratic blowup as ET.ParseError, already handled below
         except (ET.ParseError, OSError, UnicodeDecodeError):
             xml_tree = None
         if xml_tree is not None:
@@ -703,7 +703,7 @@ class ServicesExtractor:
 
         try:
             compose_records, compose_warnings = _read_compose(root)
-        except Exception as exc:  # defense in depth: readers must never crash extract()
+        except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract()
             compose_records, compose_warnings = [], [f"could not read compose manifests: {exc}"]
         warnings.extend(compose_warnings)
 
@@ -715,21 +715,21 @@ class ServicesExtractor:
             # is what triggers the Dockerfile fallback.
             try:
                 dockerfile_records, dockerfile_warnings = _read_dockerfile(root, opts.repo_id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
                 dockerfile_records, dockerfile_warnings = [], [f"could not read Dockerfile: {exc}"]
             records = list(dockerfile_records)
             warnings.extend(dockerfile_warnings)
 
         try:
             k8s_records, k8s_warnings = _read_k8s(root, opts.kb_dir)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
             k8s_records, k8s_warnings = [], [f"could not read k8s manifests: {exc}"]
         records.extend(k8s_records)
         warnings.extend(k8s_warnings)
 
         try:
             sln_records, sln_warnings = _read_sln(root)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
             sln_records, sln_warnings = [], [f"could not read .sln files: {exc}"]
         records.extend(sln_records)
         warnings.extend(sln_warnings)

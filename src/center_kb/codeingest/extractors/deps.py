@@ -353,7 +353,7 @@ def _read_java(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
         rel = relposix(root, pom)
         existing.append(rel)
         try:
-            xml_tree = ET.parse(pom)
+            xml_tree = ET.parse(pom)  # noqa: S314 -- ET resolves no external entities (no XXE); expat's amplification limit refuses billion-laughs/quadratic blowup as ET.ParseError, already handled below
         except (ET.ParseError, OSError, UnicodeDecodeError) as exc:
             warnings.append(f"could not parse {rel}: {exc}")
         else:
@@ -409,7 +409,7 @@ def _read_dotnet(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
             rel = relposix(root, path)
             existing.append(rel)
             try:
-                xml_tree = ET.parse(path)
+                xml_tree = ET.parse(path)  # noqa: S314 -- ET resolves no external entities (no XXE); expat's amplification limit refuses billion-laughs/quadratic blowup as ET.ParseError, already handled below
             except (ET.ParseError, OSError, UnicodeDecodeError) as exc:
                 warnings.append(f"could not parse {rel}: {exc}")
                 continue
@@ -612,7 +612,7 @@ class DepsExtractor:
             reader = _READERS[key]
             try:
                 groups, warns = reader(root, opts)
-            except Exception as exc:  # defense in depth: readers must never crash extract()
+            except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract()
                 groups, warns = {}, [f"could not read {label} manifests: {exc}"]
             warnings.extend(warns)
             if sum(len(v) for v in groups.values()) == 0:

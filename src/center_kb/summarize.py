@@ -18,7 +18,7 @@ from center_kb.mdutils import HEADING_RE, heading_occurrences, slice_section
 from center_kb.quality import (
     BRIEF_LABEL,
     TABLE_ONLY_LABEL,
-    TABLE_PLACEHOLDER,  # noqa: F401 — re-exported for callers/tests
+    TABLE_PLACEHOLDER,  # re-exported for callers/tests
 )
 
 SECTION_PROMPT = """You are filling in summaries for a knowledge-base section.
@@ -277,7 +277,7 @@ def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
         except (RunnerError, ValueError) as exc:
             last = exc
             if attempt == 0 and RETRY_PAUSE_SECONDS:
-                time.sleep(RETRY_PAUSE_SECONDS + random.random() * RETRY_PAUSE_SECONDS / 2)
+                time.sleep(RETRY_PAUSE_SECONDS + random.random() * RETRY_PAUSE_SECONDS / 2)  # noqa: S311 -- retry backoff jitter, not security-sensitive
             continue
         if len(reply["l2_summary"]) <= limit:
             return reply

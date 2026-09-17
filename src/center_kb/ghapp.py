@@ -30,7 +30,7 @@ class AppCreds:
 
 def _default_http(req: urllib.request.Request) -> tuple[int, bytes]:
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 -- req.full_url is always built from the hardcoded API constant below, never operator-configured
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
@@ -57,7 +57,7 @@ def _app_jwt(creds: AppCreds) -> str:
 def _call(
     method: str, url: str, bearer: str, body: dict | None, http
 ) -> tuple[int, dict | list]:
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- url is always built from the hardcoded API constant, never operator-configured
         url,
         method=method,
         data=json.dumps(body).encode("utf-8") if body is not None else None,

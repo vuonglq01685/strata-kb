@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import io
+import os
 import re
+import shutil
+import stat
+import subprocess
 import sys
 import tarfile
+import venv as venv_module
 import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-from check_package import (  # noqa: E402
+from check_package import (
+    installed_version,
     pyproject_version,
     sdist_offenders,
     tag_matches,
@@ -244,3 +250,46 @@ def test_venv_bin_picks_bin_on_posix_layout(tmp_path):
     (venv / "bin").mkdir(parents=True)
 
     assert venv_bin(venv).name == "bin"
+
+
+def test_installed_version_reads_the_venv_entry_point(tmp_path):
+    """The one helper venv_bin exists for, and the only one still untested.
+
+    Does not rely on venv_bin() to build the fixture itself: on a fresh
+    tmp_path neither "Scripts" nor "bin" exists yet, so venv_bin() would
+    return "bin" even on Windows (it only picks "Scripts" when that dir
+    already is_dir()). Windows builds a real venv via the stdlib (which
+    creates its own "Scripts"); POSIX builds "bin" directly.
+    """
+    venv = tmp_path / "v"
+    if os.name == "nt":
+        # installed_version runs the venv_bin(venv)/"kb" path with no
+        # extension. Windows' CreateProcess auto-appends only ".exe" to an
+        # extensionless command -- never ".bat"/".cmd" -- so a .bat stub is
+        # silently unreachable here (verified empirically: subprocess.run on
+        # an extensionless path finds a sibling "name.exe" but raises
+        # FileNotFoundError for a sibling "name.bat"). A copied python.exe
+        # is not a drop-in stand-in either: it needs its OWN venv's
+        # pyvenv.cfg beside it to locate its home, and the BASE install's
+        # python.exe (as opposed to a venv's Scripts/python.exe, a small
+        # launcher) crashes outright when copied away from its DLLs. Build
+        # a real venv with the stdlib and reuse ITS OWN launcher as "kb.exe"
+        # -- ~0.1s, and no fresh .exe bytes are hand-fabricated for a
+        # scanner to be suspicious of.
+        venv_module.create(venv, with_pip=False)
+        bindir = venv / "Scripts"
+        shutil.copy(bindir / "python.exe", bindir / "kb.exe")
+        expected = subprocess.run(
+            [sys.executable, "--version"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    else:
+        bindir = venv / "bin"
+        bindir.mkdir(parents=True)
+        stub = bindir / "kb"
+        stub.write_text('#!/bin/sh\necho "kb, version 9.9.9"\n', encoding="utf-8")
+        stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+        expected = "kb, version 9.9.9"
+
+    # installed_version returns the WHOLE `kb --version` line
+    # (proc.stdout.strip()), not a bare version -- match that shape.
+    assert installed_version(venv) == expected

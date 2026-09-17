@@ -101,7 +101,7 @@ def _iter_manifests(hub: HubHandle) -> Iterator[tuple[str, Manifest]]:
                 continue
             try:
                 yield repo.meta.repo_id, models.load_yaml_model(path, Manifest)
-            except Exception as exc:  # malformed manifest: skip, keep the page up
+            except Exception as exc:  # noqa: BLE001 -- malformed manifest: skip, keep the page up
                 logger.warning("skipping manifest %s: %s", path, exc)
 
 
@@ -174,7 +174,7 @@ def last_publish(hub: HubHandle) -> PublishInfo:
             fed = models.load_yaml_model(index_path, models.FederationIndex)
             repos = sorted({e.repo_id for e in fed.docs})
             published_at = max((e.published_at for e in fed.docs), default="")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- best-effort: last-publish info stays empty on failure
             logger.warning("federation index unreadable: %s", exc)
     return PublishInfo(commit=commit, repos=repos, published_at=published_at)
 

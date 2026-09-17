@@ -1021,14 +1021,17 @@ def test_result_head_hides_raw_rrf_score(fed_hub):
 
 
 def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch):
+    from center_kb.mdutils import count_tokens
     from center_kb.query import QueryResult
     from center_kb.web import ui as ui_module
 
+    content = "## 1.1 Airspace Records\n\nFuzzy semantic match."
     fake_result = QueryResult(
         doc_id="demo-doc", section_id="1.1", title="Airspace Records",
         score=0.42, citation="demo-doc §1.1 (Rev 1)",
-        content="## 1.1 Airspace Records\n\nFuzzy semantic match.",
-        tokens=5, source="local", match_mode="semantic",
+        content=content,
+        tokens=5, content_tokens=count_tokens(content),
+        source="local", match_mode="semantic",
     )
     monkeypatch.setattr(ui_module, "search", lambda *a, **k: [fake_result])
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
@@ -1046,14 +1049,17 @@ def test_home_query_never_renders_raw_snippet_block(fed_hub, monkeypatch):
     # by tests/test_web_mdrender.py; this test preserves the original
     # intent — a raw <b>GRYPHON42</b> snippet must never leak into the page
     # unescaped or otherwise — under the new markup.
+    from center_kb.mdutils import count_tokens
     from center_kb.query import QueryResult
     from center_kb.web import ui as ui_module
 
+    content = "## 1.1 Airspace Records\n\nCondensed match."
     fake_result = QueryResult(
         doc_id="demo-doc", section_id="1.1", title="Airspace Records",
         score=0.42, citation="demo-doc §1.1 (Rev 1)",
-        content="## 1.1 Airspace Records\n\nCondensed match.",
-        tokens=5, source="local", match_mode="keyword",
+        content=content,
+        tokens=5, content_tokens=count_tokens(content),
+        source="local", match_mode="keyword",
         snippet="raw <b>GRYPHON42</b> context",
     )
     monkeypatch.setattr(ui_module, "search", lambda *a, **k: [fake_result])
@@ -1065,6 +1071,40 @@ def test_home_query_never_renders_raw_snippet_block(fed_hub, monkeypatch):
     # test_home_query_hides_snippet_block_when_empty folded in here: both
     # covered the same "result-snippet" absence, just via a real (unmocked)
     # search vs. this monkeypatched one — the monkeypatched case subsumes it.
+
+
+def test_home_query_tokens_describe_the_rendered_text(fed_hub):
+    """M17: the rendered result card shows only r.content (via md_render
+    below), never r.snippet -- so its 'tk' figure must be content_tokens, not
+    the budget-spend tokens figure. Reuses the fold-notes trick
+    (test_query_semantic.py) to force a genuine snippet-bearing result;
+    fed_hub's stock fixture never produces one, so without it both
+    assertions below would hold vacuously (tokens == content_tokens) whether
+    or not ui.py reports the right field."""
+    from center_kb import models
+    from center_kb.federation import FederationMeta
+    from center_kb.hub import HubHandle
+    from center_kb.query import search
+
+    entry = fed_hub / "federation" / "arinc-kb"
+    (entry / "arinc-424" / "ch1.raw.md").write_text(
+        "## 5.3 Restrictive Airspace\n\nRaw text.\n\n"
+        "### 5.3-notes Folded notes\n\nUnique fact GRYPHON42 lives here only.\n",
+        encoding="utf-8",
+    )
+    meta_path = entry / "_meta.yaml"
+    meta = models.load_yaml_model(meta_path, FederationMeta)
+    meta.published_at = "2026-07-14T09:00:00+00:00"
+    models.save_yaml_model(meta_path, meta)
+
+    r = search(HubHandle(root=fed_hub), "GRYPHON42")[0]
+    assert r.snippet and r.tokens != r.content_tokens  # fixture bears a real snippet
+
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"q": "GRYPHON42"}
+    )
+    assert f'class="tk">{r.content_tokens} tk' in resp.text
+    assert f'class="tk">{r.tokens} tk' not in resp.text
 
 
 def test_static_css_widens_main_and_defines_new_styles(fed_hub):
@@ -1379,7 +1419,7 @@ def test_shell_ctx_hub_up_populates_tags_not_catalog(demo_doc_hub):
 
 def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing-hub"))
-    resp = ui._error_page(config, 404, "Not found", "boom-42")
+    resp = ui.render_error_page(config, status=404, title="Not found", detail="boom-42")
     assert resp.status_code == 404
     body = resp.body.decode()
     assert "hub offline" in body  # shell chip reflects hub_ok=False
@@ -1681,13 +1721,15 @@ def test_section_toc_hidden_without_headings(fed_hub, monkeypatch):
     # via _append_section_body/_add_section still yields a 1-entry TOC, same
     # as any normal section). Stub get_section() to return heading-free
     # content instead, isolating the {% if toc %} branch in section.html.
+    from center_kb.mdutils import count_tokens
     from center_kb.query import QueryResult
 
     def fake_get_section(hub, doc_id, section_id, level="l2", repo=None):
+        content = "Plain paragraph only."
         return QueryResult(
             doc_id=doc_id, section_id=section_id, title="No Heading",
-            score=0.0, citation="arinc-kb:arinc-424 §5.3", content="Plain paragraph only.",
-            tokens=3, source="arinc-kb",
+            score=0.0, citation="arinc-kb:arinc-424 §5.3", content=content,
+            tokens=3, content_tokens=count_tokens(content), source="arinc-kb",
         )
 
     monkeypatch.setattr("center_kb.web.ui.get_section", fake_get_section)

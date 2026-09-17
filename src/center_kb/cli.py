@@ -7,11 +7,31 @@ from enum import Enum
 from pathlib import Path
 
 import typer
+import yaml
+from pydantic import ValidationError
 
 from center_kb import models
 from center_kb.utf8io import force_utf8_streams
 
 force_utf8_streams()
+
+# One tuple for every "an operator-authored YAML file did not parse or did
+# not validate" read in this module. yaml.YAMLError is not a ValueError;
+# UnicodeDecodeError and pydantic.ValidationError both are, but all three are
+# kept explicit (like models.load_yaml_model's other callers) so a non-UTF-8
+# file is not left to an OSError arm.
+# Was three identical locals inside publish(), ci_publish() and reindex()
+# (ci_publish() and reindex() each pointed at publish()'s comment; publish()'s
+# own carried the reasoning inline) -- _hub_or_exit needs it too, which is
+# what made the duplication untenable.
+_CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+
+
+def _invalid_yaml_exit(path: Path, exc: Exception) -> None:
+    """Report an unparseable/invalid operator-authored YAML file and exit 1."""
+    typer.secho(f"{path} is invalid: {' '.join(str(exc).split())}", fg=typer.colors.RED)
+    raise typer.Exit(1)
+
 
 app = typer.Typer(
     help="CENTER-KB — Knowledge Base as Code for large reference documents.",
@@ -146,7 +166,7 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         "kb init requires --kind hub|child when not running interactively.",
         fg=typer.colors.RED,
     )
-    raise typer.Exit(2)
+    raise typer.Exit(1)
 
 
 @app.command()
@@ -189,7 +209,7 @@ def init(
             "storage (bytes ride the publish transport to the hub).",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
+        raise typer.Exit(1)
     if lang:
         from center_kb.conventions import LANG_IDS
 
@@ -202,7 +222,7 @@ def init(
             raise typer.Exit(1)
         if resolved != "dev":
             typer.secho("--lang applies to dev repos only", fg=typer.colors.RED)
-            raise typer.Exit(2)
+            raise typer.Exit(1)
     report = init_repo(path, resolved, force=force,
                        assets=assets.value if assets else None, langs=lang)
     for rel in report.created:
@@ -405,6 +425,12 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     except HubConfigError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        # require_hub -> load_config -> models.load_yaml_model raises
+        # ValidationError / yaml.YAMLError for an operator-edited
+        # .kb/config.yaml. 11 commands funnel through here, so this is the
+        # one place that keeps any of them from printing a traceback (H1).
+        _invalid_yaml_exit(kb_dir / "config.yaml", exc)
     # cli.py's own last unguarded resolve_hub call site (release review,
     # 2026-09-11): resolve_hub can raise gitio.GitError (hub.py's
     # _discard_cache) when a stale cache's removal is blocked -- e.g. a
@@ -540,7 +566,7 @@ def _validate_llm_choice(llm_choice: str) -> None:
             f"--llm must be one of: claude, copilot, none (got '{llm_choice}')",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
+        raise typer.Exit(1)
 
 
 def _resolve_runner(kb_dir: Path, llm_choice: str, max_workers: int):
@@ -869,13 +895,19 @@ def status(
     if not index_path.exists():
         typer.echo("KB is empty — no index.yaml yet.")
         raise typer.Exit(0)
-    index = models.load_yaml_model(index_path, models.KBIndex)
+    try:
+        index = models.load_yaml_model(index_path, models.KBIndex)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(index_path, exc)
     total_pending = 0
     for entry in index.docs:
         manifest_path = kb_dir / entry.id / "_manifest.yaml"
         if not manifest_path.exists():
             continue
-        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        try:
+            manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:
+            _invalid_yaml_exit(manifest_path, exc)
         pending = [s for s in manifest.sections if s.status == "pending"]
         total_pending += len(pending)
         typer.echo(
@@ -1113,7 +1145,7 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with path.open("a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{stamp} {message.rstrip()}\n")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- deliberate: see docstring, this sink must never raise
         pass
 
 
@@ -1190,7 +1222,7 @@ def usage_ingest_transcript(
                     kb_dir, "both a path and --hook-stdin were given; used the payload"
                 )
             _usage_ingest(kb_dir, source, session=session, ticket=ticket)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- deliberate: see comment above, must absorb every failure mode
             # The exception's class name is part of the message, not just
             # str(exc): "Expecting value: line 1 column 1" alone does not say
             # this was a JSON parse failure, and this log is the only place a
@@ -1217,7 +1249,7 @@ def usage_ingest_transcript(
             "pass exactly one of a transcript path or --hook-stdin",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
+        raise typer.Exit(1)
 
     try:
         report = _usage_ingest(kb_dir, path, session="", ticket=ticket)
@@ -1387,7 +1419,7 @@ def query(
     budget: int = typer.Option(2000, help="Token budget for returned content"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     semantic: bool = typer.Option(
         False,
@@ -1444,7 +1476,7 @@ def get(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Fetch exactly one section at the given level."""
@@ -1552,27 +1584,20 @@ def publish(
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
-    import yaml
-    from pydantic import ValidationError
-
     from center_kb import ghio, gitio, hashsync
     from center_kb import publish as publish_mod
     from center_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
     from center_kb.errors import KbError
 
-    # yaml.YAMLError / ValidationError / ValueError (UnicodeDecodeError and
-    # pydantic.ValidationError are both ValueError subclasses, but yaml.YAMLError
-    # is not -- keeping all three explicit, like models.load_yaml_model's other
-    # callers, so a non-UTF-8 file is not left to an OSError arm) cover every
-    # corrupt-YAML/schema-invalid/non-UTF-8 .kb file this command can meet
-    # (F-D9 finding 2): _CONFIG_READ_ERRORS below is reused at every point this
-    # function reads a .kb/*.yaml or federation/*.yaml file outside a call that
-    # already wraps its own read.
-    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+    # module-level _CONFIG_READ_ERRORS (see its definition for why exactly
+    # these three classes) covers every corrupt-YAML/schema-invalid/non-UTF-8
+    # .kb file this command can meet (F-D9 finding 2): reused at every point
+    # this function reads a .kb/*.yaml or federation/*.yaml file outside a
+    # call that already wraps its own read.
 
     if pr and direct:
         typer.secho("--pr and --direct are mutually exclusive", fg=typer.colors.RED)
-        raise typer.Exit(2)
+        raise typer.Exit(1)
 
     try:
         cfg = load_config(kb_dir)
@@ -1622,7 +1647,7 @@ def publish(
                     "remove `intake:` from .kb/config.yaml or pass --direct/--pr",
                     fg=typer.colors.RED,
                 )
-                raise typer.Exit(2)
+                raise typer.Exit(1)
             try:
                 report = publish_mod.publish_federation(
                     kb_dir, hub_ref,
@@ -1750,17 +1775,13 @@ def ci_publish(
     ),
 ) -> None:
     """Publish from the child's CI via OIDC — no secrets. Run by kb-publish.yml."""
-    import yaml
-    from pydantic import ValidationError
-
     from center_kb import cipublish, gitio
     from center_kb.config import effective_repo_id, load_config
     from center_kb.errors import KbError
 
-    # See publish()'s _CONFIG_READ_ERRORS: same three classes, same reason
+    # See module-level _CONFIG_READ_ERRORS: same three classes, same reason
     # (yaml.YAMLError is not a ValueError; UnicodeDecodeError/ValidationError
     # both are, but stay explicit).
-    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
 
     try:
         url = intake or load_config(kb_dir).intake
@@ -1776,7 +1797,7 @@ def ci_publish(
             "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
+        raise typer.Exit(1)
     try:
         cipublish.run(
             kb_dir, url, effective_repo_id(repo_id, kb_dir), require_reviewed=require_reviewed
@@ -1819,15 +1840,11 @@ def reindex(
     """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
     import sqlite3
 
-    import yaml
-    from pydantic import ValidationError
-
     from center_kb import gitio, searchdb
     from center_kb.embed import default_embedder
     from center_kb.federation import write_federation_index
 
-    # See publish()'s _CONFIG_READ_ERRORS.
-    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+    # See module-level _CONFIG_READ_ERRORS.
 
     try:
         handle = _hub_or_exit(hub, kb_dir)
@@ -2030,7 +2047,7 @@ def context_new(
     tags: str = typer.Option("", help="Tags, comma-separated"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
@@ -2055,7 +2072,7 @@ def context_new(
 def tags(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """List every tag published on the hub federation — the vocabulary a
@@ -2084,7 +2101,7 @@ def resolve(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     status_only: bool = typer.Option(
         False,
@@ -2177,7 +2194,7 @@ def ticket_lint(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     missions_dir: Path | None = typer.Option(
         None,
@@ -2320,7 +2337,7 @@ def mission_lint(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     tickets_dir: Path | None = typer.Option(
         None,
@@ -2564,12 +2581,14 @@ def doctor(
         None, "--context", help="File containing the kb-context block (or '-' to read from stdin)"
     ),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
     from center_kb.config import effective_repo_id
     from center_kb.doctor import (
+        Issue,
+        _flatten,
         check_asset_store,
         check_context,
         check_hub,
@@ -2578,15 +2597,30 @@ def doctor(
         check_usage_log,
     )
 
+    # check_kind first: it is the only check that can report a broken
+    # config.yaml, and _hub_or_exit reads that same file to find the hub —
+    # resolving first meant doctor exited before its own handler ran (H1).
+    kind_issues = check_kind(kb_dir)
+    if any(i.level == "error" for i in kind_issues):
+        for issue in kind_issues:
+            typer.secho(f"[{issue.level}] {issue.message}", fg=typer.colors.RED)
+        raise typer.Exit(1)
     handle = _hub_or_exit(hub, kb_dir)
-    issues = check_kind(kb_dir) + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
+    issues = kind_issues + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
     repo_id = effective_repo_id("", kb_dir)
     if not repo_id:
-        try:
-            from center_kb import gitio as _gitio
+        from center_kb import gitio as _gitio
 
+        try:
             repo_id = _gitio.git_root(kb_dir.resolve()).name
-        except Exception:
+        except _gitio.GitError as exc:
+            issues.append(
+                Issue(
+                    "error",
+                    f"could not determine the repo id — .kb is not inside a git "
+                    f"repo and repo_id is unset in config.yaml: {_flatten(exc)}",
+                )
+            )
             repo_id = None
 
     cfg_kind = ""
@@ -2594,17 +2628,26 @@ def doctor(
         from center_kb.config import load_config as _load_config
 
         cfg_kind = _load_config(kb_dir).kind
-    except Exception:  # config hỏng đã được check_kind báo
-        pass
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        # check_kind (doctor.py) now catches this exact class set on this
+        # exact file first and exits above -- this read can only still fire
+        # on a TOCTOU race between the two reads (config.yaml changes or
+        # vanishes between check_kind's read and this one). Kept as a
+        # backstop for that race rather than removed, so a hit here still
+        # reports instead of continuing with an empty kind and silently
+        # skipping the kind-specific checks below.
+        issues.append(
+            Issue("error", f"could not read .kb/config.yaml: {_flatten(exc)}")
+        )
     if cfg_kind in ("ba", "dev"):
         issues += check_usage_log(kb_dir)
     if cfg_kind == "hub":
         from center_kb import gitio as _gitio2
         from center_kb.config import load_config as _load_config2
-        from center_kb.doctor import Issue, check_federation_publish
+        from center_kb.doctor import check_federation_publish
 
         hub_issues, hub_stale = check_hub(
-            kb_dir, handle, repo_id=None, warn_untracked_index=True
+            kb_dir, handle, repo_id=repo_id, warn_untracked_index=True
         )
         issues += hub_issues
         try:
@@ -2624,7 +2667,17 @@ def doctor(
                 # (same repo_id in its config) is still "self".
                 try:
                     dest_rid = _load_config2(handle.kb_dir).repo_id
-                except Exception:
+                except (*_CONFIG_READ_ERRORS, OSError) as exc:
+                    # publish.py:1291 fails closed on this exact read
+                    # ("a corrupt upstream config must not silently blind
+                    # the cycle guard"). One condition, one policy.
+                    issues.append(
+                        Issue(
+                            "error",
+                            "could not read the upstream hub's .kb/config.yaml: "
+                            f"{_flatten(exc)}",
+                        )
+                    )
                     dest_rid = ""
                 if not (repo_id and dest_rid and dest_rid == repo_id):
                     upstream = handle

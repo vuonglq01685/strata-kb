@@ -16,7 +16,7 @@ import anyio.to_thread
 from mcp.server.fastmcp import FastMCP as MCPServer
 
 from center_kb import gitio, kbcontext
-from center_kb.query import get_section, search_detailed
+from center_kb.query import get_section, search_detailed, stale_hub_note
 from center_kb.resolve import render_resolved, resolve_refs
 from center_kb.ticketlint import lint as lint_ticket
 from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
@@ -145,12 +145,6 @@ def create_server(config: ServerConfig) -> MCPServer:
                 )
                 return None
 
-    def _stale_note(hub) -> str:
-        if hub is not None and hub.stale:
-            age = f"~{hub.age_seconds:.0f}s" if hub.age_seconds else "unknown age"
-            return f"[warn] hub cache is stale ({age}) — results may lag the hub\n\n"
-        return ""
-
     @mcp.tool()
     @_canonical_docstring
     async def kb_search(
@@ -186,7 +180,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                 return notes + (
                     "No matching section found — try dropping tags or changing keywords."
                 )
-            note = _stale_note(hub) + notes + _ambiguity_note(outcome.results)
+            note = stale_hub_note(hub) + notes + _ambiguity_note(outcome.results)
             return note + "\n\n".join(
                 f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk\n{r.content}"
                 + (f"\nraw match: {r.snippet}" if r.snippet else "")
@@ -221,7 +215,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                 hint = f" Available docs: {known}." if known else ""
                 return f"Not found: {doc} §{section}.{hint}"
             return (
-                _stale_note(hub)
+                stale_hub_note(hub)
                 + f"--- [{result.citation}] ~{result.tokens}tk\n{result.content}"
             )
 
@@ -274,7 +268,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                 results = resolve_refs(hub, ctx)
             except gitio.GitError as exc:
                 return f"git error: {exc}"
-            return _stale_note(hub) + render_resolved(results)
+            return stale_hub_note(hub) + render_resolved(results)
 
         return await anyio.to_thread.run_sync(_run)
 
@@ -296,7 +290,7 @@ def create_server(config: ServerConfig) -> MCPServer:
             if hub is None:
                 return HUB_DOWN
             report = lint_ticket(ticket_markdown, hub)
-            return _stale_note(hub) + report.render()
+            return stale_hub_note(hub) + report.render()
 
         return await anyio.to_thread.run_sync(_run)
 

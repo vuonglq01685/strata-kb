@@ -343,7 +343,7 @@ class ApiExtractor:
             ops_by_id, servers_by_id, raw_tags_by_id, warnings = _read_openapi(
                 root, opts.kb_dir
             )
-        except Exception as exc:  # defense in depth: must never crash extract()
+        except Exception as exc:  # noqa: BLE001 -- defense in depth: must never crash extract()
             return ExtractResult(
                 sections=[], warnings=[f"could not read OpenAPI/Swagger sources: {exc}"]
             )

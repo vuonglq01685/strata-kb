@@ -538,7 +538,7 @@ class CommandsExtractor:
         ) -> list[Candidate]:
             try:
                 found, warns = reader(*args)
-            except Exception as exc:  # defense in depth, mirrors DepsExtractor
+            except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors DepsExtractor
                 # A human label, not `reader.__name__` (Finding 2, task
                 # review round 1): a private function name leaking into a
                 # user-visible KB warning is both unhelpful and, per

@@ -26,6 +26,12 @@
     {% endif %}
     <span class="topbar-fed">federation · {{ shell.repo_count }} repos</span>
   </div>
+  {# ponytail: shown unconditionally (no shell.authenticated context yet) --
+     harmless when logged out, just clears a cookie that isn't set. Add a
+     shell auth flag to hide it for anonymous visitors if that matters. #}
+  <form method="post" action="/ui/logout" class="nav-logout">
+    <button type="submit" class="seg">Sign out</button>
+  </form>
 </header>
 <div class="columns">
   {% include "_partials/left_rail.html" %}
