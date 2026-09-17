@@ -5,29 +5,57 @@ evidence rule (spec §3.14) — this is the task that makes Stage A's
 verification gate executable: until these sections exist, a Dev agent has
 no machine-readable answer to "how do I test this repo?".
 
-Five readers surface command evidence from five sources — CI workflows, npm
-scripts, a Makefile, tox/pytest config, and presence-based defaults for
-Maven/Gradle/.NET/Go — each returning `list[Candidate]` (a `(purpose,
-command, source)` triple) plus warnings, never raising. For each of the
-four purposes in `PURPOSES`, the primary command is the first CI-sourced
-candidate; failing that, the first local candidate in reader order (npm,
-make, python, presence-based). Every other candidate for that purpose is
-kept as an alternative — never silently dropped — because CI evidence is
-what *actually* runs in the pipeline, while a local script only *could*
-run something similar.
+Six readers surface command evidence from six sources — CI workflows, npm
+scripts, a Makefile, tox/pytest config, shell scripts at the root or under
+`scripts/`, and presence-based defaults for Maven/Gradle/.NET/Go — each
+returning `list[Candidate]` (a `(purpose, command, source)` triple) plus
+warnings, never raising. For each of the four purposes in `PURPOSES`, the
+primary command is the first CI-sourced candidate; failing that, the first
+local candidate in reader order (npm, make, python, shell, presence-based).
+Every other candidate for that purpose is kept as an alternative — never
+silently dropped — because CI evidence is what *actually* runs in the
+pipeline, while a local script only *could* run something similar.
 
-Classification (`_classify()`) is a single keyword lookup against
-`PURPOSE_KEYWORDS`, checked in the dict's own declaration order — `test`
-before `lint` before `build` before `run` — so `pytest` (whose last four
-letters spell "test") is never miscounted as a generic `build`. The npm
-reader folds its `npm run <name>` / `npm test` invocation into the same
-string it classifies and displays (Ruling R2): a script's raw body is
-still what's shown and matched primarily, but the invocation travels
-alongside it rather than replacing it, which also lets a reserved script
-name (`start`) pull in the `run` purpose's `"start"` keyword even when the
-body itself (`vite`) carries no keyword of its own. The `make` reader
-differs deliberately: its command is `make <target>` — the recipe body is
-never shown or classified, only the target name embedded in that string.
+Classification (`_classify()`) matches a keyword against a token when the
+keyword equals the whole token, or is a prefix of the token cut off by a
+`-` or `:` separator (`test-unit`, `lint:fix`) — never a bare substring:
+`/dev/null` is not `dev`. A logical line is first split into segments on
+unquoted `&&`/`;` (`_split_unquoted_segments`; a plain matching quote
+pair is respected, nesting/escaping is not) — each segment's own tokens
+checked independently against `PURPOSE_KEYWORDS` — and the line's
+purpose is the first purpose in `PURPOSE_KEYWORDS`'s own declaration
+order — `test` before `lint` before `build` before `run` — that is named
+by *any* non-excluded segment, never whichever segment happens to come
+first (R3-1, re-review round 3: position is not evidence of purpose —
+the leftmost segment of a chained line is routinely `cd`, `rm`, `mkdir`
+or an install step, none of which say anything about what the line is
+*for*; `rm -rf build && pytest -q` is a `test` line even though its
+first segment's own last token is literally `build`). This is also why
+`pytest` (whose last four letters spell "test") is never miscounted as a
+generic `build`: `test` is checked, across every segment, before `build`
+ever is. The npm reader folds its `npm run <name>` / `npm test`
+invocation into the same string it classifies and displays (Ruling R2):
+a script's raw body is still what's shown and matched primarily, but the
+invocation travels alongside it rather than replacing it, which also lets a
+reserved script name (`start`) pull in the `run` purpose's `"start"` keyword
+even when the body itself (`vite`) carries no keyword of its own. The `make`
+reader differs deliberately: its command is `make <target>` — the recipe body
+is never shown or classified, only the target name embedded in that string.
+
+Before a segment's tokens are even checked against `PURPOSE_KEYWORDS`,
+`_classify()` drops two shapes that are not commands at all (fix wave,
+2026-09-16, findings C1/I5): a segment whose leading tokens are a
+package-manager install verb (`pip install`, `npm ci`, `apt-get
+install`, ...) — the *installed package name* can itself be a keyword
+(`pip install build twine` classified as `build`), which whole-token
+matching alone does not close, only narrows — and a `test`/`[`/`[[`
+shell-conditional segment (`test "$code" = "401"`), which is an exact
+match against the bare `"test"` keyword every Makefile/raw-`test`
+invocation still needs. Excluding a segment removes only its own
+contribution to the purposes considered above; it never demotes another
+segment in the same line (R2-3: `npm ci && npm run build` classifies as
+`build` from its second segment, not `None` from treating the whole
+line as one excluded unit). See `_is_install_line`/`_is_shell_conditional`.
 
 Every reader degrades rather than raises: a malformed or wrong-shaped file
 (a `package.json` that's a list, a `jobs:` that's a list, ...) becomes a
@@ -48,6 +76,7 @@ import yaml
 
 from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
 from center_kb.codeingest.extractors._envkeys import redact_userinfo
+from center_kb.codeingest.extractors._lines import join_continuations
 from center_kb.codeingest.extractors._mdcells import escape_cell
 from center_kb.codeingest.extractors.tree import relposix, walk_tree
 
@@ -59,7 +88,7 @@ PURPOSE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "lint": ("ruff", "eslint", "flake8", "mypy", "golangci-lint",
              "dotnet format", "checkstyle", "lint", "format"),
     "build": ("build", "compile", "tsc", "vite build", "mvn package",
-              "gradle build", "dotnet build", "pip install", "go build"),
+              "gradle build", "dotnet build", "go build"),
     "run": ("start", "serve", "uvicorn", "gunicorn", "dotnet run",
             "go run", "dev"),
 }
@@ -76,12 +105,15 @@ _CD_LINE_RE = re.compile(r"^cd\s+(\S+)$")
 def _step_dir_label(step: dict, lines: list[str]) -> str | None:
     """The directory a step's `run:` block actually executes in, when
     that isn't the repo root — from `working-directory:` if the step
-    sets it, else a leading, standalone `cd <dir>` line in the block
-    itself (checked only on the first non-blank line: a `cd` buried
-    mid-block doesn't apply to the earlier commands). Used only to
-    annotate the source label (`... (in web/)`) — the command text
-    itself is never rewritten into `cd web && ...`; rewriting invites
-    its own errors, and the label alone is enough to stop a
+    sets it, else a standalone `cd <dir>` line at `lines[0]` (checked
+    only there: a `cd` after an earlier command doesn't apply to that
+    earlier command). `lines` has already been comment- and blank-
+    dropped and continuation-joined by `join_continuations`, so a
+    leading `# comment` no longer hides the `cd` right after it —
+    `# set up` / `cd web` / `npm run build` now labels `web`, not
+    `None`. Used only to annotate the source label (`... (in web/)`) — the
+    command text itself is never rewritten into `cd web && ...`; rewriting
+    invites its own errors, and the label alone is enough to stop a
     subdirectory-only command from being read as root-runnable
     (task review round 1, Finding 1 / controller ruling R33).
 
@@ -151,14 +183,272 @@ def _defaults_working_directory(
     return stripped.rstrip("/") if stripped else None
 
 
-def _classify(text: str) -> str | None:
-    """First purpose in `PURPOSE_KEYWORDS`' own declaration order whose
-    keyword appears in `text` (case-insensitive substring match) — `test`
-    is checked before `build` so `pytest` is never mistaken for a generic
-    build command."""
-    lowered = text.lower()
+_TOKEN_STRIP = "\"'();,"
+_TOKEN_SEPARATORS = ("-", ":")
+
+# Recognized file extensions, checked against a token's final dot-suffix.
+# A frozen list, not a generic "has a dot" rule: `ruff>=0.15` and `v1.2`
+# already fail the separator/position check on their own (no keyword
+# prefix followed by `-`/`:`), so neither argues for a frozen set --
+# and `lint:fix` / `build:prod` have no dot at all, so a dot-rule would
+# ignore them by construction and never even reach this check either
+# way. What does argue for a frozen set: `make test-3.11` -> `test` and
+# `tox -e lint-3.12` -> `lint` (Python version matrices) are genuine
+# separator-rule matches whose matched token carries a dot -- a generic
+# "has a dot" rule would wrongly exclude both.
+_FILENAME_EXTENSIONS = frozenset({
+    "txt", "json", "yml", "yaml", "sh", "py", "js", "ts", "md",
+    "cfg", "ini", "toml", "lock", "csv", "log", "sql", "xml",
+    "in", "gz", "tgz", "zip", "tar", "bz2", "xz", "mjs", "cjs", "bash",
+})
+
+
+def _looks_like_filename(token: str) -> bool:
+    """True when `token` ends in a recognized file extension. Case-
+    sensitive: `token` must already be lowercased -- `_classify` does
+    this before `token` ever reaches here, its only caller, so
+    `_looks_like_filename("x.TXT")` returning `False` is unreached in
+    practice."""
+    _, dot, suffix = token.rpartition(".")
+    return bool(dot) and suffix in _FILENAME_EXTENSIONS
+
+
+def _token_matches_keyword(token: str, keyword: str) -> bool:
+    """`keyword` matches `token` when they're equal, or when `keyword` is
+    a prefix of `token` immediately followed by a separator in
+    `_TOKEN_SEPARATORS` and `token` doesn't look like a filename -- so a
+    Makefile target `test-unit` or an npm script `lint:fix` still
+    classifies (user-approved widening: a whole-token-only rule left a
+    repo whose Makefile has only `test-unit` with no `cmd.test` section
+    at all), but a CI `run:` line's own install/copy/download step
+    (`pip install -r dev-requirements.txt`, `cp test-fixtures/a.json
+    /tmp`, `curl -o start-script.sh https://x`) doesn't reopen the
+    false-positive class the separator rule was meant to close
+    (user-approved containment). The keyword must still start at
+    position 0 of the token: `devops.txt` (`dev` then `o`), `/dev/null`
+    (`dev` isn't at position 0), `smoke-test-token` (`test` isn't at
+    position 0) and `starting` (`start` then `i`) all stay unmatched."""
+    if token == keyword:
+        return True
+    return (
+        token.startswith(keyword)
+        and token[len(keyword)] in _TOKEN_SEPARATORS
+        and not _looks_like_filename(token)
+    )
+
+
+# C1 (final whole-branch review): a *whole-token* match still fires when
+# the installed package name itself is a `PURPOSE_KEYWORDS` entry --
+# `pip install build twine` classified as `build` (the package `build`),
+# `pip install ruff` as `lint` (the package `ruff`) -- so an install step
+# outranked the real command it precedes in every CI job that installs
+# its own tooling before running it. Spec Decision 6 assumed whole-token
+# matching alone closed this ("the install step ... no longer classifies
+# at all"); it does not, whenever the package name coincides with a
+# keyword, which is the common case. This is not solved by reinstating
+# "last line wins" (ruled out by the plan's Task 12 Step 2 and by Decision
+# 6 for other reasons) -- instead, a line whose leading tokens are a
+# package-manager install verb is recognised as setup and dropped before
+# classification ever runs, regardless of what package name follows.
+_INSTALL_VERBS: tuple[tuple[str, ...], ...] = (
+    ("pip", "install"), ("pip3", "install"), ("python", "-m", "pip", "install"),
+    ("uv", "pip", "install"), ("uv", "add"), ("uv", "sync"),
+    ("pipx", "install"),
+    ("poetry", "install"), ("poetry", "add"),
+    ("npm", "install"), ("npm", "i"), ("npm", "ci"), ("npm", "add"),
+    ("yarn", "add"), ("yarn", "install"),
+    ("pnpm", "install"), ("pnpm", "add"),
+    ("apt-get", "install"), ("apt", "install"), ("apk", "add"),
+    ("brew", "install"),
+    ("go", "install"),
+    ("cargo", "install"),
+    ("gem", "install"),
+    ("dotnet", "add"), ("dotnet", "restore"), ("dotnet", "tool", "install"),
+)
+
+
+def _is_install_line(tokens: list[str]) -> bool:
+    """True when `tokens` (already lowercased/quote-stripped, exactly as
+    `_classify` builds them) *start* with one of `_INSTALL_VERBS` --
+    matched only at position 0, unlike `_classify`'s scan-anywhere keyword
+    search, because this is asked about one already-split SEGMENT of a
+    logical line (`_split_unquoted_segments`, R2-3), never the whole
+    line: a `&&`/`;`-chained segment that follows an install step
+    (`npm ci && npm run build`) very much does have something after it,
+    and does contribute its own purpose to the line -- see `_classify`'s
+    docstring (R2-3 originally, corrected by R3-1) for how the purposes
+    of every non-excluded segment combine. This function's only job is
+    whether ITS segment's purpose is "install a tool", which is setup,
+    never a command a Dev agent should be told to run."""
+    return any(tuple(tokens[:len(verb)]) == verb for verb in _INSTALL_VERBS)
+
+
+# I5 (same review, same intake-filter surface as C1): the bare keyword
+# `"test"` (needed so a Makefile `test:` target or a raw `test`
+# invocation classifies at all) is also an exact token match against the
+# shell builtin/`[`/`[[` conditional -- `release.yml#docker-verify`'s
+# `test "$code" = "401"` surfaced as a `cmd.test` alternative. Rejecting
+# the conditional *shape* (rather than removing the keyword) keeps
+# legitimate commands that merely contain "test" classifying normally.
+_CONDITIONAL_HEADS = ("test", "[", "[[")
+_CONDITIONAL_OPERATORS = ("!=", "-eq", "-z", "-n", "=")
+
+
+def _is_shell_conditional(tokens: list[str]) -> bool:
+    """True when `tokens` has the shape of a shell conditional test --
+    first token `test`, `[` or `[[`, with a later token carrying a
+    comparison operator (`=`, `!=`, `-eq`, `-z`, `-n` -- checked by
+    substring, which also catches `!=` via its trailing `=`) or the
+    line's own last token ending in `]`/`]]`. `pytest -q`, `go test
+    ./...`, `npm run test` and `dotnet test` don't start with a bare
+    `test`/`[`/`[[` token, so none of them match."""
+    if not tokens or tokens[0] not in _CONDITIONAL_HEADS:
+        return False
+    if tokens[-1].endswith("]"):
+        return True
+    return any(op in tok for tok in tokens[1:] for op in _CONDITIONAL_OPERATORS)
+
+
+def _split_unquoted_segments(text: str) -> list[str]:
+    """Split `text` on `&&`/`;` into logical segments, ignoring either
+    operator when it appears inside a single- or double-quoted run
+    (`echo "a && b"` is one segment, not two). R2-3 (re-review round 2):
+    `_classify` used to treat a whole `&&`-chained line as one
+    classification unit, so `_is_install_line`/`_is_shell_conditional`
+    matching the *first* segment (`npm ci && npm run build`, `pip
+    install -e .[dev] && pytest -q`) dropped the entire line to `None`,
+    silencing the real command that follows -- a regression this fix
+    wave itself introduced, in the exact accuracy class (G-2: name the
+    command that actually runs) the whole batch exists to close.
+
+    Only a plain matching quote pair is handled -- no backslash-escaping
+    of a quote inside a quote, no nesting. Real CI/tox/shell `run:`
+    lines don't need more than that; a line with escaped quotes around
+    its own `&&`/`;` is not a shape this module's other readers or tests
+    exercise, so building a full shell-quoting parser for it here would
+    be disproportionate to what it buys."""
+    segments: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            current.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            current.append(ch)
+            i += 1
+            continue
+        if text.startswith("&&", i):
+            segments.append("".join(current))
+            current = []
+            i += 2
+            continue
+        if ch == ";":
+            segments.append("".join(current))
+            current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+    segments.append("".join(current))
+    return segments
+
+
+def _keyword_purpose(tokens: list[str]) -> str | None:
+    """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
+    before `lint` before `build` before `run`) whose keyword matches a
+    run of `tokens`: a one-word keyword must match one whitespace-
+    delimited token (outer quotes and parens stripped, per
+    `_token_matches_keyword`) already stripped by the caller, a
+    multi-word keyword must match that many consecutive tokens the same
+    way. A bare substring match classified `/dev/null` as `run` and
+    `:latest` as `test` (reviewer G-2); this still can't -- only a whole
+    token, or a keyword prefix cut by `-`/`:`, counts. Only ever called
+    on ONE segment's tokens (see `_classify`) -- it has no notion of
+    "the rest of the line" and returns as soon as any keyword in the
+    highest-priority purpose that has one matches, never continuing on
+    to see whether a lower-priority purpose's keyword also appears."""
     for purpose, keywords in PURPOSE_KEYWORDS.items():
-        if any(kw in lowered for kw in keywords):
+        for keyword in keywords:
+            kw_tokens = keyword.split()
+            width = len(kw_tokens)
+            if any(
+                all(
+                    _token_matches_keyword(tok, kw)
+                    for tok, kw in zip(tokens[i:i + width], kw_tokens)
+                )
+                for i in range(len(tokens) - width + 1)
+            ):
+                return purpose
+    return None
+
+
+def _classify(text: str) -> str | None:
+    """The first purpose in `PURPOSE_KEYWORDS`' own declaration order
+    (`test` before `lint` before `build` before `run`) named by ANY
+    segment of `text` (split on unquoted `&&`/`;` by
+    `_split_unquoted_segments`) whose own tokens aren't excluded by one
+    of the two guards below -- purpose priority across every segment,
+    never "whichever segment comes first" (R3-1, re-review round 3,
+    correcting R2-3's own fix): position in a `&&`/`;`-chained line is
+    not evidence of purpose. `rm -rf build && pytest -q` and `cd build
+    && make test` both classify as `test`, not `build`, even though
+    each one's *first* segment's own last token happens to be `build` --
+    `cd`/`rm`/`mkdir` are routinely a chained line's leading segment and
+    say nothing about what the line is for, exactly as `_keyword_purpose`
+    checking `test` before `build` already does *within* one segment (so
+    `pytest`, whose last four letters spell "test", is never miscounted
+    as a generic `build`); this makes the same guarantee hold *across*
+    segments too.
+
+    A single-segment `text` (no `&&`/`;` at all -- the overwhelmingly
+    common case) is simply `_keyword_purpose` of that one segment,
+    unchanged from before R2-3/R3-1 ever existed.
+
+    Two guards run before a segment's tokens are even checked against
+    `PURPOSE_KEYWORDS`, both added in the same fix wave (C1/I5) and both
+    applied here -- the one function every reader that classifies a
+    shell line (CI `run:`, `*.sh`, tox `commands =`) already shares, so a
+    single check point covers all three rather than three copies of it.
+    Placing the guards inside `_classify` itself (rather than only in
+    those three readers' own call sites) is safe for its other callers
+    too: the npm reader's command is `<script body> (npm run <name>)` (a
+    script body starting with an install verb is exceedingly unlikely,
+    and not a shape any existing test relies on), the make reader's is
+    always exactly `make <target>` (never two install-verb tokens, since
+    a Makefile target name has no spaces), and the presence-based reader
+    bypasses `_classify` entirely -- none of them can spuriously trip
+    either guard.
+    - `_is_install_line`: a segment whose leading tokens are a package-
+      manager install verb (`pip install`, `npm ci`, `apt-get install`,
+      ...) is setup, never a command to run (C1) -- `pip install build
+      twine` no longer classifies as `build` merely because `build`
+      happens to be an installed package name -- but (R2-3) excluding a
+      segment removes only ITS OWN contribution: `npm ci && npm run
+      build` still classifies as `build`, from its second segment.
+    - `_is_shell_conditional`: a `test`/`[`/`[[` shell conditional is not
+      a test *command* (I5) -- `test "$code" = "401"` no longer
+      classifies as `test`, and (R2-3) only its own segment is excluded
+      when it's chained with `&&` (`[ "$OK" = 1 ] && make build` still
+      classifies as `build`).
+    """
+    found_purposes: set[str] = set()
+    for segment in _split_unquoted_segments(text):
+        tokens = [tok.strip(_TOKEN_STRIP) for tok in segment.lower().split()]
+        if _is_install_line(tokens) or _is_shell_conditional(tokens):
+            continue
+        purpose = _keyword_purpose(tokens)
+        if purpose is not None:
+            found_purposes.add(purpose)
+    for purpose in PURPOSE_KEYWORDS:
+        if purpose in found_purposes:
             return purpose
     return None
 
@@ -174,7 +464,8 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
     `services.py`'s convention of sorting a parsed mapping's keys) then
     step order (a step list's position is meaningful — the file's own
     execution order — so it is never re-sorted). A multi-line `run:`
-    block is split on newlines into one candidate per line. Source label
+    block is split into logical lines by `join_continuations` (a `\\`
+    continuation is one command) — one candidate per line. Source label
     is `f"CI: {file}#{job}"` so every candidate from the same job shares
     one traceable label — with a `" (in <dir>/)"` suffix when the command
     doesn't actually run at the repo root; without that, a
@@ -244,7 +535,7 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                             f"could not parse {rel}: job {job_name!r} step 'run' is not a string"
                         )
                         continue
-                    lines = run.splitlines()
+                    lines = join_continuations(run)
                     # Ruling R34: step's own directory beats the job's
                     # `defaults.run.working-directory`, which beats the
                     # workflow's -- GitHub Actions' own precedence.
@@ -253,12 +544,9 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                     )
                     source = f"{source_base} (in {dir_label}/)" if dir_label else source_base
                     for line in lines:
-                        stripped = line.strip()
-                        if not stripped:
-                            continue
-                        purpose = _classify(stripped)
+                        purpose = _classify(line)
                         if purpose is not None:
-                            candidates.append((purpose, stripped, source))
+                            candidates.append((purpose, line, source))
 
     return candidates, warnings
 
@@ -358,6 +646,27 @@ def _tox_env_names(text: str) -> set[str]:
     return names
 
 
+def _tox_commands(text: str) -> list[tuple[str, str]]:
+    """`(invocation, logical command line)` for every `commands =` value
+    of `[testenv]` (invocation `tox`) and `[testenv:<name>]` (`tox -e
+    <name>`), continuations joined. Env names alone say nothing about
+    what an env runs (reviewer G-2: `envlist = py311` + `commands =
+    pytest -q` contributed nothing)."""
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read_string(text)
+    found: list[tuple[str, str]] = []
+    for section in parser.sections():
+        if section == "testenv":
+            invocation = "tox"
+        elif section.startswith("testenv:"):
+            invocation = f"tox -e {section.split(':', 1)[1].strip()}"
+        else:
+            continue
+        raw = parser.get(section, "commands", fallback="")
+        found.extend((invocation, line) for line in join_continuations(raw))
+    return found
+
+
 def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
     candidates: list[Candidate] = []
     warnings: list[str] = []
@@ -377,6 +686,12 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
                 if purpose is not None:
                     candidates.append((purpose, command, rel))
 
+            for invocation, line in _tox_commands(text):
+                purpose = _classify(line)
+                candidate = (purpose, invocation, rel)
+                if purpose is not None and candidate not in candidates:
+                    candidates.append(candidate)
+
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         rel = relposix(root, pyproject)
@@ -391,6 +706,46 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
             if isinstance(ini_options, dict):
                 candidates.append(("test", "pytest", rel))
 
+    return candidates, warnings
+
+
+# ---------------------------------------------------------------------------
+# reader: shell — *.sh at the repo root and directly under scripts/
+# ---------------------------------------------------------------------------
+
+_SHELL_DIRS = (Path("."), Path("scripts"))
+
+
+def _read_shell(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
+    """Every `*.sh` at the repo root or directly under `scripts/`. The
+    script's logical lines are classified; for each purpose that appears
+    at least once the candidate is `bash <script>` with the script as
+    source — a Dev agent is told to run the script, not one line torn out
+    of it. `bash scripts/gate.sh` is aero's own documented release gate
+    and was invisible before this reader (reviewer G-2)."""
+    candidates: list[Candidate] = []
+    warnings: list[str] = []
+    for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
+        if reldir not in _SHELL_DIRS:
+            continue
+        for name in filenames:
+            if not name.endswith(".sh"):
+                continue
+            path = root / reldir / name
+            rel = relposix(root, path)
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                warnings.append(f"could not parse {rel}: {exc}")
+                continue
+            purposes = {
+                purpose
+                for purpose in (_classify(line) for line in join_continuations(text))
+                if purpose is not None
+            }
+            for purpose in PURPOSES:
+                if purpose in purposes:
+                    candidates.append((purpose, f"bash {rel}", rel))
     return candidates, warnings
 
 
@@ -450,7 +805,7 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
 
 def _select(all_candidates: list[Candidate], purpose: str) -> tuple[Candidate, list[Candidate]] | None:
     """`all_candidates` is already CI-first, then local readers in the
-    brief's fixed order (npm, make, python, presence-based) — so the
+    brief's fixed order (npm, make, python, shell, presence-based) — so the
     first match for a purpose is, by construction, the first CI-sourced
     candidate if one exists, else the first local one. Everything else
     for that purpose is an alternative, never dropped."""
@@ -519,6 +874,8 @@ class CommandsExtractor:
                 fnmatch.fnmatch(f, "*.y*ml") for f in filenames
             ):
                 return True
+            if reldir in _SHELL_DIRS and any(f.endswith(".sh") for f in filenames):
+                return True
             for name in filenames:
                 if name == "package.json" and depth <= _NODE_MAX_DEPTH:
                     return True
@@ -555,6 +912,7 @@ class CommandsExtractor:
             + _run(_read_npm, "npm scripts", root, opts)
             + _run(_read_make, "Makefile", root)
             + _run(_read_python, "Python tooling (tox/pytest)", root)
+            + _run(_read_shell, "shell scripts", root, opts)
             + _run(_read_presence, "presence-based defaults", root, opts)
         )
 

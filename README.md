@@ -659,10 +659,10 @@ kb code-ingest [--repo-root .] [--kb-dir .kb] [--repo-id <cfg>]
 | Flag | Meaning |
 |---|---|
 | `--repo-root` | Repository root to scan (default: `.`) |
-| `--kb-dir` | KB directory to write into (default: `.kb`) |
+| `--kb-dir` | KB directory to write into (default: `.kb`, relative to the current directory like every other `kb` command) |
 | `--repo-id` | Repo id (default: `.kb/config.yaml`, then the folder name) |
 | `--doc-id` | Document id (default: `<repo_id>-code`) |
-| `--db` | An explicit SQLite file to read for schema — repeatable; never inferred (§3.11 below) |
+| `--db` | An explicit SQLite file to read for schema — repeatable; never inferred (§3.11 below). A relative path is relative to `--repo-root` |
 | `--tags` | Extra `index.yaml` tags, comma-separated — added on top of `[code, generated]`, existing/user-added tags are preserved across reruns |
 | `--scaffold-svc` | Also upsert the curated `<repo_id>-svc` scaffold (Stage C's document — see [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)) |
 | `--json` | Machine-readable report instead of the human-readable summary |
@@ -674,10 +674,10 @@ repos hit the zero-detection failure below on day one.
 
 | Extractor | Reads | Section prefix |
 |---|---|---|
-| `services` | `docker-compose*.yml`, `Dockerfile`, k8s manifests, `*.sln`, workspace `package.json` | `svc.<name>` |
-| `deps` | `pyproject.toml`, `requirements*.txt`, `setup.cfg`, `package.json`, `pom.xml`, `build.gradle{,.kts}`, `*.csproj`, `go.mod`, `composer.json` | `dep.<ecosystem>` |
-| `commands` | `package.json` `scripts`, `Makefile` targets, `tox.ini`, `pyproject` tool sections, `pom.xml`, `*.csproj`, and `.github/workflows/*.yml` `run:` steps (CI wins over a local script when both exist) | `cmd.build`/`cmd.test`/`cmd.lint`/`cmd.run` |
-| `tree` | The directory tree, ignoring `node_modules`/`target`/`bin`/`obj`/`dist`/`build`/`venv`/`__pycache__`/`.git` | `struct.tree` |
+| `services` | `docker-compose*.yml` (a `build:` service is read through its Dockerfile — runtime-stage `FROM`, `EXPOSE`, `CMD`; `env_file` by name only), `Dockerfile`, k8s manifests, `*.sln`, workspace `package.json` | `svc.<name>` |
+| `deps` | `pyproject.toml` (`dependencies` and every `optional-dependencies` group), `requirements*.txt` (the root file is `direct`; any other is its own group), `setup.cfg`, `package.json` (`dependencies` and `devDependencies`), `pom.xml`, `build.gradle{,.kts}`, `*.csproj`, `go.mod`, `composer.json` (`require` and `require-dev`) | `dep.<ecosystem>` |
+| `commands` | `package.json` `scripts`, `Makefile` targets, `tox.ini` (env names and `commands =`), `pyproject` tool sections, `*.sh` at the root or under `scripts/`, `pom.xml`, `*.csproj`, and `.github/workflows/*.yml` `run:` steps (CI wins over a local script when both exist; commands are classified by whole token, never substring) | `cmd.build`/`cmd.test`/`cmd.lint`/`cmd.run` |
+| `tree` | `git ls-files` — the files git tracks in the index, so a git-ignored virtualenv or worktree never appears and two checkouts of one commit agree — plus the always-pruned `node_modules`/`target`/`bin`/`obj`/`dist`/`build`/`venv`/`__pycache__`/`.git`/`.kb`. Outside a git repository it is an unfiltered walk and the section says so. The L3 listing is capped at 600 lines (and depth 4) with a marker | `struct.tree` |
 | `schema` | `**/migrations/*.sql`, Flyway/Liquibase layouts, `schema.prisma`, Alembic `versions/*.py`, EF `Migrations/*.cs`, plus explicit `--db` SQLite | `db.<table>` |
 | `integrations` | `.env.example`/`.sample`/`.template` **keys**, compose `environment:` **keys** (OpenAPI `servers:` only decides *whether* this extractor detects anything — no server URL is ever extracted into a section) | `int.<name>` |
 | `api` | `openapi*.y*ml`, `swagger*.json` | `api.<tag>` |
@@ -690,6 +690,14 @@ misconfiguration, not knowledge.
 **Deliberate parser limits, stated so they are not mistaken for bugs.**
 `schema` recognises `CREATE TABLE` and `ALTER TABLE … ADD COLUMN`,
 applied in sorted filename order; it does not implement a SQL dialect.
+A `CREATE TABLE` of a name already created in a *different* migration
+directory is dropped with a warning naming both files, and an `ALTER
+TABLE … ADD COLUMN` is applied only inside the directory of its `CREATE
+TABLE` — two independent schemas that share a table name are never
+merged into one that exists nowhere. EF Core migrations are recognised by
+table name only and the section says "columns not extracted". Maven
+`<plugins>`, `setup.cfg` `extras_require`, `pnpm-workspace.yaml` and
+compose `healthcheck:` are not read.
 `ALTER TABLE … RENAME`/`DROP` and an `ALTER TABLE ADD CONSTRAINT`/`INDEX`
 (not a column) are recognised as out of scope and **warn**, naming the
 file. A dialect-specific trailing clause between a table's closing paren
@@ -704,14 +712,28 @@ skipped rather than guessed at, but **with a warning naming the file**:
 the reader also counts how many `CREATE TABLE` keywords a file's text
 contains and compares that to how many it actually recognised, so a
 skipped statement is never silent. `build.gradle{,.kts}` is matched by
-regex, not parsed as a Groovy/Kotlin DSL. This is why §3.9 of the design
-spec says the code, not the generated document, is always the final word.
+regex, not parsed as a Groovy/Kotlin DSL. A file `git ls-files` still
+lists (it is in the **index**) but that has since been deleted from the
+working tree — staged for deletion but not yet committed, or removed
+outside git's knowledge — appears in `struct.tree` as a listed entry with
+no content behind it: every reader that tries to open it warns "could not
+parse" naming the file, rather than silently dropping it from the
+listing. This is why §3.9 of the design spec says the code, not the
+generated document, is always the final word.
 
 **Reserved doc-id suffixes.** `<repo_id>-code` (this document, generated,
 tagged `[code, generated]`) and `<repo_id>-svc` (curated by a human,
 tagged `[code, curated]`, see
 [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed))
 are reserved — a domain document must never take either suffix.
+
+**A destination this command did not write is refused.** If
+`.kb/<doc_id>/` already holds Markdown or a manifest and that manifest is
+missing, unreadable, not titled `… — code knowledge`, or lists a section
+id outside the seven generated prefixes, `kb code-ingest` exits 1 and
+writes nothing — a hand-curated document that happens to sit at
+`<repo_id>-code` is never deleted. Move it or choose another `--doc-id`;
+there is no override flag.
 
 **Section-id prefix contract (spec §6.2).** Each prefix has exactly one
 owner; the BA Agent, the Dev workflow, and future tooling key on these,
@@ -736,7 +758,9 @@ technology, description)` from `-code` (the first three) and `-svc` (the
 fourth).
 
 **Determinism guarantee, and the dirty-tree caveat.** Extractors are pure
-functions of the working tree: sections sort by `(group, id)`,
+functions of the files git tracks in the index — contents read from the
+working tree, with `dirty_tree` flagging uncommitted changes — plus
+`--db` files named explicitly: sections sort by `(group, id)`,
 dependencies by name, tables by name (column order is preserved — it
 carries meaning), and YAML/JSON keys sort on write so dict order cannot
 leak. Path separators always normalise to `/` and line endings to `\n`,
