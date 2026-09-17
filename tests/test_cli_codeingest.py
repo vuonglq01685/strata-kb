@@ -155,12 +155,14 @@ def test_repo_id_falls_back_to_folder_name_when_unconfigured(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Ruling R23 — a relative `--kb-dir` must resolve against `--repo-root`,
-# never against the process's current working directory.
+# G-11 — a relative `--kb-dir` resolves against the process's current
+# working directory, like every other `kb` command's --kb-dir.
 # ---------------------------------------------------------------------------
 
 
-def test_kb_dir_relative_path_resolves_against_repo_root_not_cwd(tmp_path, monkeypatch):
+def test_kb_dir_relative_path_resolves_against_cwd_like_every_other_kb_command(tmp_path, monkeypatch):
+    # Reviewer G-11: resolving against --repo-root was undocumented and
+    # created directories inside a repo the reviewer had been told not to touch.
     root = tmp_path / "proj"
     build_code_repo(root)
     other_cwd = tmp_path / "elsewhere"
@@ -169,8 +171,8 @@ def test_kb_dir_relative_path_resolves_against_repo_root_not_cwd(tmp_path, monke
     result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
                                 "--kb-dir", "out/.kb", "--repo-id", "demo"])
     assert result.exit_code == 0, result.output
-    assert (root / "out" / ".kb" / "demo-code" / "_manifest.yaml").is_file()
-    assert not (other_cwd / "out").exists()
+    assert (other_cwd / "out" / ".kb" / "demo-code" / "_manifest.yaml").is_file()
+    assert not (root / "out").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -191,18 +193,24 @@ def test_cli_degrades_on_wrong_shaped_index_yaml(tmp_path):
     assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
 
 
-def test_cli_degrades_on_wrong_shaped_existing_code_manifest(tmp_path):
+def test_cli_refuses_a_wrong_shaped_existing_code_manifest_without_a_traceback(tmp_path):
+    # Review round 2 wanted no traceback here; reviewer G-1 wants no
+    # overwrite either: an unreadable manifest at the -code slot means
+    # nobody can tell whose document this is, so it is refused, intact.
     root = build_code_repo(tmp_path)
     _init_config(root)
     first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
                                 "--kb-dir", str(root / ".kb")])
     assert first.exit_code == 0, first.output
-    (root / ".kb" / "demo-code" / "_manifest.yaml").write_text(
-        "- a\n- b\n", encoding="utf-8"
-    )
+    manifest = root / ".kb" / "demo-code" / "_manifest.yaml"
+    manifest.write_text("- a\n- b\n", encoding="utf-8")
     result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
                                 "--kb-dir", str(root / ".kb")])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1
+    assert "could not read" in result.output          # the guarded-load warning
+    assert "did not generate" in result.output
+    assert "Traceback" not in result.output
+    assert manifest.read_text(encoding="utf-8") == "- a\n- b\n"
 
 
 # ---------------------------------------------------------------------------

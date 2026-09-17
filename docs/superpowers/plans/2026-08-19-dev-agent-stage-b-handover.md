@@ -97,6 +97,11 @@ per the stage's own plan. Stage C/D should not assume `Technology` is
 populated for services built from source; a curator amending `-svc` by
 hand may need to fill this in manually until that enhancement lands.
 
+> 2026-09-16: paid in part by the reviewer-G batch (0.23.0) — a compose
+> `build:` service now reads its Dockerfile and `Technology` labels
+> infrastructure images and workspace packages. The `tables:` heuristic in
+> §2 is unchanged.
+
 ## 4. The `-svc` L3 evidence is a file list only — no file contents, by deliberate security ruling
 
 Controller Ruling R42 removed an earlier version of `_service_evidence()`
