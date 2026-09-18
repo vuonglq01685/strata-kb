@@ -286,7 +286,7 @@ def build_routes(
                 secure=secure,
                 max_age=SESSION_MAX_AGE,
             )
-            # Fix (final review item 4): pre-0.24 set center_kb_token = the
+            # Fix (final review item 4): pre-0.25 set center_kb_token = the
             # raw shared secret (no max_age -> a session cookie, but that was
             # luck, not design -- M4's whole point is that a cookie which IS
             # the token is an admin-equivalent credential at rest). The
@@ -307,7 +307,7 @@ def build_routes(
     async def logout_post(request: Request) -> Response:
         resp = RedirectResponse("/ui/login", status_code=303, headers=NO_STORE)
         resp.delete_cookie(COOKIE_NAME, path="/")
-        # Fix (final review item 4): same pre-0.24 raw-token cookie as
+        # Fix (final review item 4): same pre-0.25 raw-token cookie as
         # login_post above -- logout must clear it too, not just the current
         # session cookie.
         resp.delete_cookie("center_kb_token", path="/")

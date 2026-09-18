@@ -452,7 +452,7 @@ def _ignoring_digests(idx: models.FederationIndex) -> models.FederationIndex:
     """Fix round 1, Critical 1: `content_sha256` is live (recomputed on every
     call to build_federation_index), so comparing it as part of "is the
     stored aggregate index in sync with the snapshots" makes that check fire
-    on every hub that predates 0.24 (stored defaults to "") and on every
+    on every hub that predates 0.25 (stored defaults to "") and on every
     tampered snapshot (stored is the old digest, rebuilt is the new one) --
     the latter also means `kb reindex` would silently launder the tamper by
     overwriting the stored digest with the live one. That verdict belongs to
@@ -963,7 +963,7 @@ def check_published_digests(fed: Path, live: dict[str, str] | None = None) -> li
             issues.append(
                 Issue(
                     "warning",
-                    f"federation/{repo_id} was published before 0.24 — content "
+                    f"federation/{repo_id} was published before 0.25 — content "
                     "digest not verified; run `kb reindex` on the hub to record it",
                 )
             )

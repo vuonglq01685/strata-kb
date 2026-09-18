@@ -146,7 +146,7 @@ class FedIndexEntry(BaseModel):
     # sha256 of the snapshot's own content tree (federation/<rid>/**),
     # written by reindex/publish so `kb doctor` at the HUB can detect
     # content edited in place — the hub has no local .kb to diff against
-    # (M9 row #18). "" = published before 0.24, not verifiable.
+    # (M9 row #18). "" = published before 0.25, not verifiable.
     content_sha256: str = ""
 
 

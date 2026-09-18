@@ -1,3 +1,16 @@
+import os
+
+# Typer force-enables Rich's colored/wrapped error rendering whenever
+# GITHUB_ACTIONS is set (typer.rich_utils.FORCE_TERMINAL), which is meant to
+# make CI log output readable but instead makes it non-deterministic for
+# tests: Rich's option-name highlighter can split a flag like "--assistant"
+# into two separately-styled spans with a reset code between them, so a
+# plain `"--assistant" in result.output` substring check that passes locally
+# fails only in CI. Must be set before typer.rich_utils is first imported
+# (its FORCE_TERMINAL is computed once, at module import time) — hence
+# first thing in this file, ahead of every other import.
+os.environ.setdefault("_TYPER_FORCE_DISABLE_TERMINAL", "1")
+
 import subprocess
 from pathlib import Path
 

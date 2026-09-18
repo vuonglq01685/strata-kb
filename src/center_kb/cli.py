@@ -2602,21 +2602,6 @@ def doctor(
         raise typer.Exit(1)
     handle = _hub_or_exit(hub, kb_dir)
     issues = kind_issues + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
-    repo_id = effective_repo_id("", kb_dir)
-    if not repo_id:
-        from center_kb import gitio as _gitio
-
-        try:
-            repo_id = _gitio.git_root(kb_dir.resolve()).name
-        except _gitio.GitError as exc:
-            issues.append(
-                Issue(
-                    "error",
-                    f"could not determine the repo id — .kb is not inside a git "
-                    f"repo and repo_id is unset in config.yaml: {_flatten(exc)}",
-                )
-            )
-            repo_id = None
 
     cfg_kind = ""
     try:
@@ -2634,6 +2619,30 @@ def doctor(
         issues.append(
             Issue("error", f"could not read .kb/config.yaml: {_flatten(exc)}")
         )
+
+    repo_id = effective_repo_id("", kb_dir)
+    if not repo_id:
+        from center_kb import gitio as _gitio
+
+        try:
+            repo_id = _gitio.git_root(kb_dir.resolve()).name
+        except _gitio.GitError as exc:
+            # A reader .kb (any kind other than "hub") never consumes
+            # repo_id below — see the "hub"-only uses further down — so an
+            # undeterminable repo_id there is not this KB's problem to
+            # report. Only a hub's own checks (check_hub, federation
+            # publish) actually need it.
+            if cfg_kind == "hub":
+                issues.append(
+                    Issue(
+                        "error",
+                        f"could not determine the repo id — .kb is not inside a "
+                        f"git repo and repo_id is unset in config.yaml: "
+                        f"{_flatten(exc)}",
+                    )
+                )
+            repo_id = None
+
     if cfg_kind in ("ba", "dev"):
         issues += check_usage_log(kb_dir)
     if cfg_kind == "hub":
