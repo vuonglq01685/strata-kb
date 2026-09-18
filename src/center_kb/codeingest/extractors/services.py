@@ -14,12 +14,13 @@ Ruling R31) — see `_assign_slugs()`. `title`, the L2 description, and
 ever slugified, so the human-readable, grep-able name is never lost even
 when the id had to be mangled or hashed (review findings 2-4).
 
-Four readers below share a uniform return shape, `(list[ServiceRecord],
+Five readers below share a uniform return shape, `(list[ServiceRecord],
 list[warning])`, and each degrades rather than raises: a malformed or
 wrong-shaped manifest becomes a warning naming the file, never a crash,
 and the other readers still run. `environment:` is read in both the
 mapping and `KEY=value` list forms, but only the *key* ever survives into
-a `ServiceRecord` — never the value (spec §3.11).
+a `ServiceRecord` — never the value (spec §3.11). The manifest kinds are
+compose, Dockerfile, k8s, `.sln`, and a workspace `package.json`.
 
 Ruling R1 (controller): the Dockerfile fallback fires whenever the
 compose readers produced zero services — a parse failure counts as "no
@@ -32,6 +33,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import os
 import re
 import tomllib
 import unicodedata
@@ -42,10 +44,11 @@ from pathlib import Path
 import yaml
 
 from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
-from center_kb.codeingest.extractors._envkeys import env_keys_from
+from center_kb.codeingest.extractors._envkeys import env_keys_from, redact_userinfo
+from center_kb.codeingest.extractors._lines import join_continuations
 from center_kb.codeingest.extractors._mdcells import escape_cell
 from center_kb.codeingest.extractors.deps import detect_frameworks
-from center_kb.codeingest.extractors.tree import relposix, walk_tree
+from center_kb.codeingest.extractors.tree import IGNORED_DIRS, relposix, walk_tree
 from center_kb.mdutils import slugify_id
 
 # Ruling R27: `compose.yaml` is the Compose Specification's preferred
@@ -71,6 +74,10 @@ class ServiceRecord:
     depends_on: list[str] = field(default_factory=list)
     env_keys: list[str] = field(default_factory=list)
     source: str = ""  # the file this record came from, e.g. "docker-compose.yml"
+    directory: str = ""                 # the service's own code directory, when known
+    command: str = ""                   # Dockerfile CMD/ENTRYPOINT as one shell line (Task 11)
+    env_files: list[str] = field(default_factory=list)  # compose env_file *names*, never opened
+    base_image: str = ""                # FROM of a built service (Task 11); feeds technology
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +127,52 @@ def _env_keys_from(value: object) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _within_repo(root: Path, candidate: Path) -> bool:
+    """True when `candidate` denotes a path that is textually inside
+    `root`, once `.`/`..` segments are collapsed *algebraically*
+    (`os.path.normpath` — pure string manipulation) rather than by
+    following any symlink/junction on disk. `Path.relative_to()` alone is
+    not this check: it is purely lexical and happily returns a result
+    that still starts with `..` when `root` is merely a textual prefix of
+    `candidate`'s parts followed by a `..` component (`root.glob("../*")`
+    matches exactly this way, since `Path.glob` never collapses a
+    pattern's own `..` component) — that gap is I2. Deliberately not
+    `candidate.resolve().is_relative_to(root.resolve())`: resolving
+    follows a symlink out of the repo before this check ever runs, which
+    is precisely the divergence `_read_compose`'s build-context boundary
+    (below) depends on catching (see
+    `test_dockerfile_symlink_segment_is_not_read_outside_the_repo`, I1) —
+    a symlinked segment must be judged by where it textually collapses
+    to, not where the OS would actually follow it.
+
+    Shared by that compose `build:` boundary and `_read_workspaces`'s
+    workspace-glob boundary (I2) — one boundary rule, used both places,
+    per the review's recommendation 4."""
+    normalised = Path(os.path.normpath(candidate))
+    try:
+        normalised.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_build(compose_dir: Path, build: object) -> tuple[str, Path | None]:
+    """`(context label, Dockerfile path)` for a compose `build:` value — a
+    string context, or a mapping with `context` (default `.`) and
+    `dockerfile` (default `Dockerfile`). `None` when the value has the
+    wrong shape."""
+    if isinstance(build, str):
+        context, dockerfile = build, "Dockerfile"
+    elif isinstance(build, dict):
+        context = build.get("context", ".")
+        dockerfile = build.get("dockerfile", "Dockerfile")
+        if not isinstance(context, str) or not isinstance(dockerfile, str):
+            return "", None
+    else:
+        return "", None
+    return context, compose_dir / context / dockerfile
+
+
 def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
     """Every `compose*.y*ml` or `docker-compose*.y*ml` directly at the
     repo root (overrides and profile files live there by convention,
@@ -159,13 +212,83 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
             image = spec.get("image", "")
             if not isinstance(image, str):
                 image = str(image) if image is not None else ""
+            ports = _stringify_list(spec.get("ports", []))
+            source = rel
+            command = ""
+            base_image = ""
+            build = spec.get("build")
+            if not image and build is not None:
+                # A `build:` service has no image name, but it has a
+                # Dockerfile — and that Dockerfile's runtime stage, EXPOSE
+                # and CMD are the knowledge a reader wants (reviewer G-8:
+                # aero's own hub service rendered an empty image).
+                context, dockerfile_path = _resolve_build(path.parent, build)
+                # normpath (not resolve) collapses `./` and `../` textually
+                # without following symlinks, so the label stays
+                # repo-relative and — because the check and the read below
+                # both use `normalised`, never `dockerfile_path` — a
+                # symlink in a collapsed segment can't pull in a file from
+                # outside the repo while labelling it as the checked
+                # in-repo path (re-review finding 3).
+                normalised = (
+                    Path(os.path.normpath(dockerfile_path))
+                    if dockerfile_path is not None else None
+                )
+                # Fix wave finding 1 (previous wave): a build context that
+                # escapes the repo root (e.g. `build: ../outside`) must
+                # never render this machine's absolute path — that breaks
+                # Determinism (same repo, two machines, different
+                # documents) and leaks this machine's filesystem layout.
+                # Declined by policy: no read. Kept as its own wording
+                # (re-review finding 2), distinct from a genuinely missing
+                # Dockerfile below — the file often exists, it was
+                # deliberately not read, and the document should say which
+                # situation this is. `_within_repo` (I2) is the same
+                # boundary check `_read_workspaces` uses further down this
+                # module; this call site keeps its own `normalised`/
+                # `dockerfile_rel` bookkeeping around it rather than
+                # inlining the whole branch into that helper, since the
+                # `.is_file()` read below needs `normalised` regardless of
+                # which of the two rejects it.
+                escapes_repo = normalised is not None and not _within_repo(root, normalised)
+                dockerfile_rel = (
+                    relposix(root, normalised)
+                    if normalised is not None and not escapes_repo else None
+                )
+                if escapes_repo:
+                    image = f"build: {context or '.'} (outside the repository)"
+                    warnings.append(
+                        f"service {name!r} in {rel}: build context {context or '.'!r} "
+                        "is outside the repository; not read"
+                    )
+                elif dockerfile_rel is not None and normalised.is_file():
+                    try:
+                        base_image, exposed, command = _parse_dockerfile(
+                            normalised.read_text(encoding="utf-8")
+                        )
+                    except (OSError, UnicodeDecodeError) as exc:
+                        warnings.append(f"could not parse {dockerfile_rel}: {exc}")
+                        exposed = []
+                    image = f"build: {dockerfile_rel} (FROM {base_image or 'unknown'})"
+                    if not ports:
+                        ports = exposed
+                    source = f"{rel}, {dockerfile_rel}"
+                else:
+                    image = f"build: {context or '.'} (Dockerfile not found)"
+                    warnings.append(
+                        f"service {name!r} in {rel}: build context {context or '.'!r} "
+                        "has no Dockerfile"
+                    )
             records.append(ServiceRecord(
                 name=str(name),
                 image=image,
-                ports=_stringify_list(spec.get("ports", [])),
+                ports=ports,
                 depends_on=_stringify_list(spec.get("depends_on", [])),
                 env_keys=_env_keys_from(spec.get("environment", {})),
-                source=rel,
+                source=source,
+                command=command,
+                env_files=_stringify_list(spec.get("env_file", [])),
+                base_image=base_image,
             ))
 
     return records, warnings
@@ -176,11 +299,69 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
 # ---------------------------------------------------------------------------
 
 
+def _exec_form_to_shell(rest: str) -> str:
+    """`["python", "-m", "x"]` -> `python -m x`; shell form is returned as is."""
+    if rest.startswith("["):
+        try:
+            items = json.loads(rest)
+        except json.JSONDecodeError:
+            return rest
+        if isinstance(items, list) and all(isinstance(i, str) for i in items):
+            return " ".join(items)
+    return rest
+
+
+def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
+    """`(image, ports, command)`: the image of the *last* `FROM` (the
+    runtime stage of a multi-stage build — the first `FROM` is a build
+    stage that never runs), every `EXPOSE` port, and the container's
+    actual command. `ENTRYPOINT` and `CMD` are tracked separately (each
+    keeping only its *last* occurrence, Docker's own rule for repeats)
+    and joined with a space when both are present — Docker runs
+    ENTRYPOINT with CMD concatenated on as its default arguments; either
+    one alone is unchanged (fix wave finding 2: `last CMD/ENTRYPOINT`
+    silently dropped ENTRYPOINT's executable whenever both were set).
+    Both reset at each new `FROM` — a build/dev stage's directive never
+    runs in the real container, so it must never join the runtime
+    stage's (re-review finding 1: tracking two variables without
+    resetting them let a non-final stage's directive leak into the
+    final command). Continuations joined.
+
+    `FROM` and the resulting command are attacker-adjacent content — a
+    registry reference or a command line can carry a `user:pass@` — so
+    both are redacted here, once, at the single point every caller (the
+    root-Dockerfile fallback and a compose `build:`'s Dockerfile) routes
+    through, rather than at each render site individually. The join
+    happens before this one redaction call, so a credential in either
+    half is still caught."""
+    image = ""
+    ports: list[str] = []
+    entrypoint = ""
+    cmd = ""
+    for line in join_continuations(text):
+        parts = line.split()
+        directive = parts[0].upper()
+        if directive == "FROM" and len(parts) >= 2:
+            image = parts[1]
+            entrypoint = ""
+            cmd = ""
+        elif directive == "EXPOSE":
+            for token in parts[1:]:
+                port = token.split("/", 1)[0]  # "8080/tcp" -> "8080"
+                if port:
+                    ports.append(port)
+        elif directive == "ENTRYPOINT" and len(parts) >= 2:
+            entrypoint = _exec_form_to_shell(line.split(None, 1)[1].strip())
+        elif directive == "CMD" and len(parts) >= 2:
+            cmd = _exec_form_to_shell(line.split(None, 1)[1].strip())
+    command = " ".join(part for part in (entrypoint, cmd) if part)
+    return redact_userinfo(image), ports, redact_userinfo(command)
+
+
 def _read_dockerfile(root: Path, repo_id: str) -> tuple[list[ServiceRecord], list[str]]:
     """A root `Dockerfile`, read only as the Ruling-R1 fallback (the
     caller only calls this when `_read_compose()` produced zero
-    services). Yields one service named `repo_id`; `FROM` gives the base
-    image, `EXPOSE` the ports."""
+    services). Yields one service named `repo_id`."""
     path = root / "Dockerfile"
     if not path.is_file():
         return [], []
@@ -189,23 +370,10 @@ def _read_dockerfile(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return [], [f"could not parse {rel}: {exc}"]
-
-    image = ""
-    ports: list[str] = []
-    for line in text.splitlines():
-        parts = line.strip().split()
-        if not parts:
-            continue
-        directive = parts[0].upper()
-        if directive == "FROM" and not image and len(parts) >= 2:
-            image = parts[1]
-        elif directive == "EXPOSE":
-            for token in parts[1:]:
-                port = token.split("/", 1)[0]  # "8080/tcp" -> "8080"
-                if port:
-                    ports.append(port)
-
-    record = ServiceRecord(name=repo_id, image=image, ports=ports, source=rel)
+    image, ports, command = _parse_dockerfile(text)
+    record = ServiceRecord(
+        name=repo_id, image=image, ports=ports, source=rel, command=command, base_image=image,
+    )
     return [record], []
 
 
@@ -321,6 +489,118 @@ def _read_sln(root: Path) -> tuple[list[ServiceRecord], list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# reader: workspace package.json (Node monorepos)
+# ---------------------------------------------------------------------------
+
+
+def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], list[str]]:
+    """The root `package.json`'s `workspaces` — a list of globs, or the
+    `{"packages": [...]}` object form — each resolved to directories that
+    hold their own `package.json`. One image-less record per package,
+    named from that package's `name` (else the directory name -- or,
+    when the match is the repo root itself, `repo_id`; see the `name =`
+    assignment below), with `directory` set so the Technology column
+    reads the package's own dependencies. Listed in the spec and README
+    from the start, never implemented (reviewer G-6); without it a Node
+    monorepo has no `svc.*` and no Stage-D join key. A workspace glob
+    that resolves outside `--repo-root` (`_within_repo`) is rejected
+    with a warning, never read (I2) -- the same boundary the compose
+    `build:` context above already enforces."""
+    path = root / "package.json"
+    if not path.is_file():
+        return [], []
+    rel = relposix(root, path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [], [f"could not parse {rel}: {exc}"]
+    if not isinstance(data, dict):
+        return [], [f"could not parse {rel}: top-level is not an object"]
+    workspaces = data.get("workspaces")
+    if workspaces is None:
+        return [], []
+    if isinstance(workspaces, dict):
+        workspaces = workspaces.get("packages")
+    if not isinstance(workspaces, list):
+        return [], [f"could not parse {rel}: 'workspaces' is not a list"]
+
+    records: list[ServiceRecord] = []
+    warnings: list[str] = []
+    seen: set[str] = set()
+    for pattern in workspaces:
+        if not isinstance(pattern, str):
+            warnings.append(f"could not parse {rel}: workspace entry {pattern!r} is not a string")
+            continue
+        for match in sorted(root.glob(pattern)):
+            if not match.is_dir():
+                continue
+            if not _within_repo(root, match):
+                # I2: `Path.glob` accepts a `..` component in `pattern`
+                # (`root.glob("../secret*")` matches a sibling directory)
+                # and `relposix()`/`Path.relative_to()` alone would not
+                # catch it -- see `_within_repo`'s docstring. Never render
+                # `match` itself here: it may be this machine's own
+                # absolute path to somewhere outside the repo, which is
+                # exactly the leak/non-determinism the compose `build:`
+                # boundary above already declines by policy; naming the
+                # operator-supplied pattern is enough to act on.
+                warnings.append(
+                    f"workspace pattern {pattern!r} in {rel}: matched path "
+                    "is outside the repository; not read"
+                )
+                continue
+            # R2-4 (re-review round 2): `match` itself can still carry a
+            # literal, un-normalised `..` component even once it has
+            # passed `_within_repo` above -- `../*` matching the repo
+            # root itself is exactly this case (`_within_repo` judges
+            # the *normalised* path, which is `root`, but `match` is
+            # literally `root/../<checkout-dir-name>`). Publishing
+            # `relposix(root, match)` verbatim put this checkout's own
+            # directory name into the published `-code` document, so two
+            # clones into differently-named directories produced
+            # different output -- a determinism break, the exact class
+            # I2 (this same function) was opened to close. Deriving
+            # `rel_dir`/`pkg`/`name` from the same normalised path
+            # `_within_repo` already judged keeps the published path
+            # free of anything checkout- or machine-specific.
+            normalised = Path(os.path.normpath(match))
+            rel_dir = relposix(root, normalised)
+            if any(part in IGNORED_DIRS for part in Path(rel_dir).parts):
+                continue
+            pkg = normalised / "package.json"
+            if not pkg.is_file() or rel_dir in seen:
+                continue
+            seen.add(rel_dir)
+            # R3-3 (re-review round 3): when `match` is the repo root
+            # itself (`rel_dir == "."` -- the `../*`-matches-`root` case
+            # R2-4 already normalises), `normalised.name` is the
+            # CHECKOUT DIRECTORY's own basename: machine-dependent,
+            # since nothing constrains what a clone is named, and
+            # normalising the path can't help -- the normalised path *is*
+            # `root`. `repo_id` is the deterministic name the rest of
+            # this module already falls back to in the equivalent
+            # situation (`_read_dockerfile` below names its fallback
+            # service `repo_id` for the same reason: no repo-supplied
+            # name to key on). Every OTHER match is a real subdirectory
+            # inside the repo's own tracked structure, so its name stays
+            # exactly as before.
+            name = repo_id if rel_dir == "." else normalised.name
+            try:
+                pkg_data = json.loads(pkg.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                warnings.append(f"could not parse {rel_dir}/package.json: {exc}")
+            else:
+                pkg_name = pkg_data.get("name") if isinstance(pkg_data, dict) else None
+                if isinstance(pkg_name, str) and pkg_name.strip():
+                    name = pkg_name
+            records.append(ServiceRecord(
+                name=name, image="", source=f"{rel_dir}/package.json", directory=rel_dir,
+            ))
+    records.sort(key=lambda r: r.directory)
+    return records, warnings
+
+
+# ---------------------------------------------------------------------------
 # de-duplication and id assignment (Rulings R30, R31)
 # ---------------------------------------------------------------------------
 
@@ -390,10 +670,14 @@ def _dedupe(records: list[ServiceRecord]) -> tuple[list[ServiceRecord], list[str
     image field via `dataclasses.replace` — it does NOT swap in the
     later record wholesale, which would silently discard the kept
     record's `ports`/`depends_on`/`env_keys` and re-attribute its
-    `source` (Important review finding, round 2): a compose service
-    declared with `build:` instead of `image:` has `image == ""` but
-    real ports/depends_on/environment, and a later k8s record that only
-    supplies the image must not erase them.
+    `source` (Important review finding, round 2): a compose service with
+    neither `image:` nor `build:` has `image == ""` but real
+    ports/depends_on/environment, and a later k8s record that only
+    supplies the image must not erase them. (`build:` itself always
+    yields a descriptive, non-empty image string as of Task 11/G-8 —
+    see `_resolve_build`/`_parse_dockerfile` — so it no longer reaches
+    this path, but the same fill-not-swap guarantee still matters for
+    any other reader that legitimately produces an empty image.)
 
     `extract()` appends readers in priority order (compose, dockerfile,
     k8s, sln), so absent the image-fill override this still naturally
@@ -418,6 +702,10 @@ def _dedupe(records: list[ServiceRecord]) -> tuple[list[ServiceRecord], list[str
                 f"service {rec.name!r}: filled empty image from {rec.source} "
                 f"onto the record kept from {prior.source}"
             )
+        if not merged.directory and rec.directory:
+            # Metadata, not evidence: a workspace record only tells a
+            # compose-declared service where its code lives.
+            merged = replace(merged, directory=rec.directory)
         if prior.name != rec.name:
             warnings.append(
                 f"merged {rec.name!r} ({rec.source}) into {prior.name!r} "
@@ -527,6 +815,19 @@ def _assign_slugs(records: list[ServiceRecord]) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------------
 
 
+# Infrastructure images have no dependency manifest to read; label them by
+# repository name (reviewer G-8: Technology was `none` on every service in
+# every fixture). Matched on the image's base name, exactly.
+_INFRA_IMAGES: dict[str, str] = {
+    "postgres": "PostgreSQL", "postgresql": "PostgreSQL", "mysql": "MySQL",
+    "mariadb": "MariaDB", "redis": "Redis", "nginx": "nginx", "mongo": "MongoDB",
+    "rabbitmq": "RabbitMQ", "kafka": "Kafka", "cp-kafka": "Kafka",
+    "elasticsearch": "Elasticsearch", "traefik": "Traefik", "minio": "MinIO",
+    "memcached": "Memcached", "python": "Python", "node": "Node.js",
+    "golang": "Go", "openjdk": "Java", "eclipse-temurin": "Java", "amazoncorretto": "Java",
+}
+
+
 def _image_base_name(image: str) -> str:
     """`registry.example.com/team/airspace:1.0` -> `airspace`: strip any
     registry/namespace path and the tag, leaving the bare repository name
@@ -590,18 +891,30 @@ def _dep_names_from_directory(directory: Path) -> list[str]:
 
 
 def _technology_for(root: Path, record: ServiceRecord) -> str:
-    directory = root / record.name
+    directory = root / (record.directory or record.name)
     names = _dep_names_from_directory(directory) if directory.is_dir() else []
-    if not names:
-        base = _image_base_name(record.image)
-        names = [base] if base else []
     labels = detect_frameworks(names)
+    if labels:
+        return ", ".join(labels)
+    base = _image_base_name(record.base_image or record.image)
+    if base in _INFRA_IMAGES:
+        return _INFRA_IMAGES[base]
+    labels = detect_frameworks([base]) if base else []
     return ", ".join(labels) if labels else "none"
 
 
 # ---------------------------------------------------------------------------
 # section rendering
 # ---------------------------------------------------------------------------
+
+
+def _lead_sentence(name: str, record: ServiceRecord) -> str:
+    if record.base_image and record.image.startswith("build: "):
+        dockerfile = record.image[len("build: "):].split(" (", 1)[0]
+        return f"Container `{name}` — built from `{dockerfile}` (base `{record.base_image}`)."
+    if not record.image and record.directory:
+        return f"Workspace package `{name}` in `{record.directory}` — no container image."
+    return f"Container `{name}` — image `{record.image}`."
 
 
 def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection:
@@ -633,15 +946,17 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
     technology = _technology_for(root, record)
 
     l2_lines = [
-        f"Container `{name}` — image `{record.image}`.",
+        _lead_sentence(name, record),
         "",
         "| Property | Value |",
         "| --- | --- |",
         f"| Image | {escape_cell(record.image)} |",
         f"| Ports | {escape_cell(ports_str) or 'none'} |",
+        *([f"| Command | {escape_cell(redact_userinfo(record.command))} |"] if record.command else []),
         f"| Depends on | {escape_cell(depends_str) or 'nothing'} |",
         f"| Technology | {escape_cell(technology)} |",
         f"| Env keys | {escape_cell(env_str) or 'none'} |",
+        *([f"| Env file | {escape_cell(redact_userinfo(', '.join(record.env_files)))} |"] if record.env_files else []),
         f"| Source | {escape_cell(record.source)} |",
     ]
     l2_md = "\n".join(l2_lines) + "\n"
@@ -653,13 +968,20 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
         "depends_on": record.depends_on,
         "env_keys": record.env_keys,
     }
+    for key, value in (
+        ("command", redact_userinfo(record.command)),
+        ("env_files", [redact_userinfo(f) for f in record.env_files]),
+        ("directory", record.directory),
+    ):
+        if value:
+            record_dict[key] = value
     yaml_block = yaml.safe_dump(
         record_dict, allow_unicode=True, sort_keys=False
     ).rstrip("\n")
     l3_md = f"```yaml\n{yaml_block}\n```\n\n```\nsource: {record.source}\n```\n"
 
     summary = (
-        f"Container {name} from {record.source}: image {record.image}, "
+        f"Container {name} from {record.source}: image {record.image or 'none'}, "
         f"ports {ports_str or 'none'}, depends on {depends_str or 'nothing'}."
     )
 
@@ -691,6 +1013,14 @@ class ServicesExtractor:
             return True
         if any(p.is_file() for p in root.glob("*.sln")):
             return True
+        pkg = root / "package.json"
+        if pkg.is_file():
+            try:
+                data = json.loads(pkg.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                data = None
+            if isinstance(data, dict) and "workspaces" in data:
+                return True
         # No `opts` at detect() time (`Extractor.detect(self, root)` is a
         # frozen protocol method), so `kb_dir` can't be threaded through
         # here — the same accepted limitation documented on
@@ -733,6 +1063,13 @@ class ServicesExtractor:
             sln_records, sln_warnings = [], [f"could not read .sln files: {exc}"]
         records.extend(sln_records)
         warnings.extend(sln_warnings)
+
+        try:
+            ws_records, ws_warnings = _read_workspaces(root, opts.repo_id)
+        except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
+            ws_records, ws_warnings = [], [f"could not read workspace package.json: {exc}"]
+        records.extend(ws_records)
+        warnings.extend(ws_warnings)
 
         merged, dedupe_warnings = _dedupe(records)
         warnings.extend(dedupe_warnings)

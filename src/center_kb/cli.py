@@ -951,7 +951,10 @@ def build(
 @app.command(name="code-ingest")
 def code_ingest(
     repo_root: Path = typer.Option(Path("."), "--repo-root", help="Repository root to scan"),
-    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    kb_dir: Path = typer.Option(
+        Path(".kb"),
+        help="KB directory (default: .kb, relative to the current directory like every other kb command)",
+    ),
     repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config, then folder name)"),
     doc_id: str = typer.Option("", "--doc-id", help="Document ID (default: <repo_id>-code)"),
     db: list[Path] = typer.Option([], "--db", help="SQLite file to read (repeatable, explicit only)"),
@@ -968,17 +971,9 @@ def code_ingest(
     from center_kb import config
     from center_kb.codeingest import core
 
-    # Ruling R23: resolve both paths here, once, before CodeIngestOptions is
-    # built — `core.run()`'s writer treats a relative `kb_dir` as relative to
-    # the process CWD while `tree.walk_tree()` (used by every extractor's
-    # walk) resolves it against `repo_root`; with a relative --kb-dir and a
-    # --repo-root different from the CWD those two disagree. The CLI is the
-    # only place `CodeIngestOptions` is built from user input, so it's the
-    # single point this gets resolved once, consistently.
     resolved_root = repo_root.resolve()
-    resolved_kb_dir = (
-        kb_dir.resolve() if kb_dir.is_absolute() else (resolved_root / kb_dir).resolve()
-    )
+    # Relative --kb-dir is cwd-relative, like every other kb command (G-11).
+    resolved_kb_dir = kb_dir.resolve()
 
     # Ruling R4: effective_repo_id() returns None when neither --repo-id nor
     # .kb/config.yaml supplies one; the help text above promises a folder-

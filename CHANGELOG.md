@@ -3,7 +3,7 @@
 Releases before 0.21.0 are not recorded here -- they are tracked only through
 git tags and pull-request history.
 
-## 0.24.0
+## 0.25.0
 
 ### Breaking — session cookie rotation, strict models, and a stricter `kb doctor`
 
@@ -51,7 +51,7 @@ git tags and pull-request history.
   templates.
 - `federation/index.yaml` records `content_sha256` per snapshot, written by
   `kb reindex`, so `kb doctor` at the hub detects tampering. Snapshots
-  published before 0.24 report "not verified" rather than failing.
+  published before 0.25 report "not verified" rather than failing.
 - `kb diff` reports section title changes and manifest reorders.
 
 ### Fixed
@@ -88,7 +88,7 @@ git tags and pull-request history.
   `# newline-exempt: <reason>` comment, rather than silently going
   unchecked the way anything outside the old list did.
 
-## 0.23.0
+## 0.24.0
 
 ### Breaking — `kb pr lint` checks more, `kb usage note` asks more
 
@@ -144,6 +144,47 @@ git tags and pull-request history.
   tightening rule that `dev-plan` now points at.
 - QUICKSTART-dev separates what `kb` enforces from what the wrappers only
   state.
+
+## 0.23.0
+
+### Breaking — `kb code-ingest` paths and destinations
+
+- A relative `--kb-dir` is relative to the current directory, like every
+  other `kb` command — no longer to `--repo-root`. `kb-code.yml` runs at
+  the checkout root with the default and is unaffected.
+- `--repo-id`'s config fallback moved along with `--kb-dir`: it now reads
+  `.kb/config.yaml` relative to the resolved `--kb-dir` (which itself
+  defaults to the *current directory*, not `--repo-root` — see above), so
+  `kb code-ingest --repo-root /other/proj` no longer picks up that other
+  repository's own configured repo id unless `--kb-dir` also points there.
+- A destination `.kb/<doc_id>/` that holds a document this command did
+  not generate (missing/unreadable manifest, foreign title, foreign
+  section id) is refused with exit 1 instead of being overwritten.
+- `_manifest.yaml`'s `source_sha256` is empty for `-code`/`-svc`
+  documents; `revision` carries the commit.
+
+### Fixed — the generated `-code` document (reviewer G, 2026-09-08)
+
+- `struct.tree` lists `git ls-files` — the files git tracks in the
+  index, not HEAD (`dirty_tree` flags uncommitted changes) — instead of
+  an unfiltered walk: git-ignored virtualenvs and worktrees are gone,
+  two checkouts of one commit agree, and L3 is capped at 600 lines (G-3).
+- `cmd.*` classify commands by whole token (`/dev/null` is not `dev`,
+  `:latest` is not `test`), join `\` continuations, no longer treat `pip
+  install` as a build, and read tox `commands =` and `*.sh` at the root
+  or under `scripts/` (G-2).
+- `db.*` never merge a table across migration directories; the warning
+  names both files (G-4). EF tables say "columns not extracted"; Alembic
+  types render whole and `primary_key=True` is seen; a composite primary
+  key renders in full (`PK team_id, user_id`), not just its first
+  column (G-13).
+- `dep.*` render every group: `optional-dependencies`, `devDependencies`,
+  `require-dev`, and each non-root `requirements*.txt` as its own group;
+  Gin is detected from `github.com/gin-gonic/gin` (G-5).
+- `svc.*` come from workspace `package.json` too (G-6); a compose
+  `build:` service shows its Dockerfile's runtime image, `EXPOSE`, `CMD`
+  and `env_file` names; infrastructure images get a Technology label (G-8).
+- Console scripts are listed apart from file entry points (G-16).
 
 ## 0.22.0
 

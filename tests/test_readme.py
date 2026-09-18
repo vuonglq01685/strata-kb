@@ -109,7 +109,7 @@ def test_readme_pins_the_exit_code_contract():
     doctor --context`, `kb ticket lint --fail-on-stale`, and `kb mission
     lint --fail-on-stale`. There is no `kb ba lint` command.
 
-    Release 0.24.0 fix round 1, Important 1: the table used to add "only"
+    Release 0.25.0 fix round 1, Important 1: the table used to add "only"
     after that list, which is false -- `cli.py`'s `doctor` command exits 2
     whenever `hub_stale` is set (from `check_hub`'s `handle.stale`), with
     or without `--context`, so a stale hub-cache pull shares exit 2 with
