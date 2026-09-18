@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -794,6 +795,130 @@ class TestDepsExtractor:
         assert "http^1.2.0" in s.l3_md
         assert "test^1.24.0" in s.l3_md
         assert "Flutter" in s.l2_md
+
+    def test_dart_non_string_key_does_not_destroy_the_whole_ecosystem(self, repo):
+        # Same class as test_wrong_shaped_manifest_does_not_destroy_the_whole_ecosystem
+        # above, reached through YAML rather than JSON/TOML: YAML mapping
+        # keys are not necessarily strings (`1.5:` is a float, and YAML 1.1
+        # reads a bare `no:`/`on:` as a bool), while every shared helper
+        # downstream -- `_dedupe_sorted`'s `p[0].lower()` first -- assumes
+        # a `str` name. That AttributeError unwound past this reader's
+        # per-file `try` to `extract()`'s blanket handler, dropping every
+        # OTHER pubspec.yaml in the repo with it and naming no file.
+        (repo / "pubspec.yaml").write_text(
+            "name: root_app\ndependencies:\n  1.5: ^2.0\n  no: ^1.0\n",
+            encoding="utf-8",
+        )
+        other = repo / "packages" / "app" / "pubspec.yaml"
+        other.parent.mkdir(parents=True)
+        other.write_text(
+            "name: app\ndependencies:\n  http: ^1.2.0\n", encoding="utf-8"
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.dart"]
+        assert "http^1.2.0" in s.l3_md
+
+    def test_malformed_cargo_toml_warns_and_leaves_the_other_manifests(self, repo):
+        # "Degrade, don't raise" is the module's headline contract, pinned
+        # for the older ecosystems (pom.xml, package.json) but not for any
+        # of the three added here: one syntactically broken manifest must
+        # cost exactly one warning naming it, never the ecosystem.
+        (repo / "Cargo.toml").write_text(
+            '[dependencies\nserde = "1.0"\n', encoding="utf-8"
+        )
+        member = repo / "crates" / "api" / "Cargo.toml"
+        member.parent.mkdir(parents=True)
+        member.write_text('[dependencies]\nserde = "1.0"\n', encoding="utf-8")
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        assert any("Cargo.toml" in w for w in result.warnings)
+        assert "serde 1.0" in _by_id(result)["dep.rust"].l3_md
+
+    def test_malformed_pubspec_warns_and_leaves_the_other_manifests(self, repo):
+        (repo / "pubspec.yaml").write_text(
+            "name: root\ndependencies:\n  http: [unclosed\n", encoding="utf-8"
+        )
+        other = repo / "packages" / "app" / "pubspec.yaml"
+        other.parent.mkdir(parents=True)
+        other.write_text(
+            "name: app\ndependencies:\n  dio: ^5.4.0\n", encoding="utf-8"
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        assert any("pubspec.yaml" in w for w in result.warnings)
+        assert "dio^5.4.0" in _by_id(result)["dep.dart"].l3_md
+
+    def test_swift_commented_out_package_is_not_reported(self, repo):
+        # Commenting a dependency out while migrating off it is routine,
+        # and the scanner reads Swift *source*: a `//`-ed or `/* */`-ed
+        # `.package(...)` is not a dependency of this repo, and reporting
+        # it is exactly the claim `-code` must not make. The live entry's
+        # own `https://` proves the comment stripping is string-aware --
+        # a naive `//` strip would eat every dependency URL instead.
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    dependencies: [\n'
+            '        // .package(url: "https://github.com/old/removed.git", from: "0.1.0"),\n'
+            '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
+            '        /* .package(url: "https://github.com/old/alsogone.git", from: "0.2.0") */\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "swift-log 1.5.3" in s.l3_md
+        assert "removed" not in s.l2_md + s.l3_md
+        assert "alsogone" not in s.l2_md + s.l3_md
+
+    def test_swift_up_to_next_major_range_is_recorded(self, repo):
+        # The nested-paren form is the entire reason _iter_swift_package_calls
+        # counts parens instead of matching a flat regex, and nothing
+        # exercised it.
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    dependencies: [\n'
+            '        .package(url: "https://github.com/apple/swift-nio.git", '
+            '.upToNextMajor(from: "2.62.0")),\n'
+            '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "swift-nio 2.62.0" in s.l3_md
+        assert "swift-log 1.5.3" in s.l3_md
+
+    def test_swift_exact_version_pin_is_recorded(self, repo):
+        (repo / "Package.swift").write_text(
+            'let package = Package(dependencies: [\n'
+            '    .package(url: "https://github.com/apple/swift-crypto.git", exact: "3.2.0"),\n'
+            '])\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "swift-crypto 3.2.0" in s.l3_md
+
+    def test_swift_named_local_package_uses_its_declared_name(self, repo):
+        # The `name:`-without-`url:` branch: a local module named
+        # differently from its directory keeps the declared name.
+        (repo / "Package.swift").write_text(
+            'let package = Package(dependencies: [\n'
+            '    .package(name: "FeatureKit", path: "../modules/feature-kit"),\n'
+            '])\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "FeatureKit" in s.l3_md
+
+    def test_swift_unterminated_package_calls_do_not_blow_up_scan_time(self, repo):
+        # _iter_swift_package_calls used to restart its forward scan from
+        # every `.package(` match; when a call never closes, each scan runs
+        # to EOF and the pass is quadratic -- measured 2.1s at 18 KB, 10.2s
+        # at 36 KB, 28.3s at 72 KB, i.e. ~90 minutes for a ~1 MB manifest.
+        # A hang is the one failure `extract()`'s blanket `except Exception`
+        # cannot rescue, so this is pinned by time, generously (the fixed
+        # scan is linear and finishes in milliseconds).
+        (repo / "Package.swift").write_text(".package(" * 4000, encoding="utf-8")
+        started = time.perf_counter()
+        deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        assert time.perf_counter() - started < 3.0
 
     def test_vendored_node_modules_package_json_is_ignored(self, repo):
         # Review Finding 6: nothing pinned that a vendored package.json

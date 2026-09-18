@@ -651,22 +651,87 @@ _SWIFT_PATH_RE = re.compile(r'path:\s*"([^"]+)"')
 _SWIFT_VERSION_RE = re.compile(r'(?:from|exact)\s*:\s*"([^"]+)"')
 
 
+def _strip_swift_comments(text: str) -> str:
+    """Blank out `//` line comments and `/* */` block comments (Swift's
+    nest, unlike C's), leaving string literals intact.
+
+    A dependency that has been commented out while the repo migrates off
+    it is not a dependency, and reporting one is exactly the claim the
+    `-code` document must not make -- but the strip has to be
+    string-aware to find that out: every `.package(url: ...)` carries a
+    `https://` whose `//` a naive line-comment strip would read as the
+    start of a comment, deleting the URL, the version and the closing
+    paren of a live dependency. Swift's raw strings (`#"..."#`) are not
+    modelled: one holding a `//` or `/*` is conceivable but has no reason
+    to appear in a manifest, and the failure would be a dropped
+    dependency, not a crash."""
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text.startswith('"""', i):
+            end = text.find('"""', i + 3)
+            stop = n if end < 0 else end + 3
+            out.append(text[i:stop])
+            i = stop
+        elif text[i] == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            stop = min(j + 1, n)
+            out.append(text[i:stop])
+            i = stop
+        elif text.startswith("//", i):
+            end = text.find("\n", i)
+            # Stop *at* the newline, never past it: it still separates
+            # this line from the next for anything scanning afterwards.
+            i = n if end < 0 else end
+        elif text.startswith("/*", i):
+            depth = 1
+            j = i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                elif text.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            i = j
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
 def _iter_swift_package_calls(text: str) -> Iterable[str]:
     """Yield each `.package(...)` call's argument text, delimited by
     counting parens from the `.package(` that opens it -- a plain regex
     can't stop at the right `)` when the call nests one of its own
-    (`.upToNextMajor(from: "1.2.3")`)."""
-    for match in _SWIFT_PACKAGE_CALL_RE.finditer(text):
+    (`.upToNextMajor(from: "1.2.3")`).
+
+    Scanning resumes *after* the call just consumed, never from the next
+    `.package(` inside it. With `re.finditer` an unterminated call (one
+    stray `(`, or a truncated manifest) made every later match re-scan to
+    EOF, which is quadratic in the file size -- measured 2.1s at 18 KB,
+    10.2s at 36 KB, 28.3s at 72 KB, so ~90 minutes for a ~1 MB file. A
+    hang is the one failure `DepsExtractor.extract`'s blanket
+    `except Exception` cannot degrade into a warning."""
+    pos = 0
+    n = len(text)
+    while (match := _SWIFT_PACKAGE_CALL_RE.search(text, pos)) is not None:
         start = match.end()
         depth = 1
         i = start
-        while i < len(text) and depth > 0:
+        while i < n and depth > 0:
             if text[i] == "(":
                 depth += 1
             elif text[i] == ")":
                 depth -= 1
             i += 1
-        yield text[start : i - 1]
+        yield text[start : i - 1] if depth == 0 else text[start:i]
+        pos = i
 
 
 def _swift_dep_name(locator: str) -> str:
@@ -691,7 +756,7 @@ def _read_swift(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]
             warnings.append(f"could not parse {rel}: {exc}")
             continue
         pairs = []
-        for call in _iter_swift_package_calls(text):
+        for call in _iter_swift_package_calls(_strip_swift_comments(text)):
             url_match = _SWIFT_URL_RE.search(call)
             if url_match:
                 name = _swift_dep_name(url_match.group(1))
@@ -746,10 +811,18 @@ def _read_dart(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
             continue
         direct = data.get("dependencies", {})
         dev = data.get("dev_dependencies", {})
+        # `str(k)` for the same reason `_read_node` wraps its constraint:
+        # a YAML mapping key is not necessarily a string (`1.5:` parses to
+        # a float, and YAML 1.1 reads a bare `no:`/`on:` as a bool), while
+        # every shared helper downstream -- `_dedupe_sorted`'s
+        # `p[0].lower()` first -- assumes a `str` name. Without the cast
+        # that AttributeError unwinds past this reader's per-file `try`
+        # to `extract()`'s blanket handler and drops every other
+        # pubspec.yaml in the repo with it, naming no file.
         if isinstance(direct, dict):
-            _merge(groups, "direct", [(k, _dart_constraint(v)) for k, v in direct.items()])
+            _merge(groups, "direct", [(str(k), _dart_constraint(v)) for k, v in direct.items()])
         if isinstance(dev, dict):
-            _merge(groups, "dev", [(k, _dart_constraint(v)) for k, v in dev.items()])
+            _merge(groups, "dev", [(str(k), _dart_constraint(v)) for k, v in dev.items()])
 
     return _finish(groups, warnings, existing)
 
