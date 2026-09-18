@@ -1,4 +1,4 @@
-"""deps extractor — dependency manifests across six ecosystems, with a
+"""deps extractor — dependency manifests across nine ecosystems, with a
 shared framework-detection table.
 
 Each per-ecosystem reader below degrades rather than raises: a malformed
@@ -22,7 +22,7 @@ root)` is a frozen protocol method that is never passed `opts`, so its one
 tree walk always runs unpruned-by-kb_dir. Consequence: if `--kb-dir` points
 somewhere *inside* the repo that happens to contain a file matching one of
 this module's multi-file patterns (`package.json`, `requirements*.txt`,
-`*.csproj`, `build.gradle*`) — most plausibly the KB's own previously
+`*.csproj`, `build.gradle*`, `Cargo.toml`) — most plausibly the KB's own previously
 generated output sitting next to a real manifest — `detect()` can still
 report `True` from evidence elsewhere in the tree (so `core.run()`'s
 zero-detection guard correctly isn't tripped), while `extract()` — which
@@ -42,6 +42,8 @@ import tomllib
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from pathlib import Path
+
+import yaml
 
 from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
 from center_kb.codeingest.extractors._envkeys import redact_userinfo
@@ -74,6 +76,12 @@ FRAMEWORKS: tuple[tuple[str, str], ...] = (
     ("github.com/gin-gonic/gin", "Gin"),
     ("laravel/framework", "Laravel"),
     ("symfony/framework-bundle", "Symfony"),
+    ("@playwright/test", "Playwright"),
+    ("actix-web", "Actix Web"),
+    ("axum", "Axum"),
+    ("rocket", "Rocket"),
+    ("vapor", "Vapor"),
+    ("flutter", "Flutter"),
 )
 
 
@@ -533,12 +541,167 @@ def _read_php(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# rust — every Cargo.toml in the tree (workspace members included)
+# ---------------------------------------------------------------------------
+
+
+def _cargo_constraint(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        version = value.get("version", "")
+        return version if isinstance(version, str) else ""
+    return ""
+
+
+def _read_rust(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
+    groups: Groups = {}
+    warnings: list[str] = []
+    existing: list[str] = []
+
+    for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
+        if "Cargo.toml" not in filenames:
+            continue
+        path = root / reldir / "Cargo.toml"
+        rel = relposix(root, path)
+        existing.append(rel)
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
+            warnings.append(f"could not parse {rel}: {exc}")
+            continue
+        if not isinstance(data, dict):
+            warnings.append(f"could not parse {rel}: top-level is not a table")
+            continue
+        direct = data.get("dependencies", {})
+        dev = data.get("dev-dependencies", {})
+        if isinstance(direct, dict):
+            _merge(groups, "direct", [(k, _cargo_constraint(v)) for k, v in direct.items()])
+        if isinstance(dev, dict):
+            _merge(groups, "dev", [(k, _cargo_constraint(v)) for k, v in dev.items()])
+
+    return _finish(groups, warnings, existing)
+
+
+# ---------------------------------------------------------------------------
+# swift — Package.swift, best-effort text scan (it is Swift source, not
+# data: SwiftPM has no data-only manifest format)
+# ---------------------------------------------------------------------------
+
+_SWIFT_PACKAGE_CALL_RE = re.compile(r"\.package\(")
+_SWIFT_URL_RE = re.compile(r'url:\s*"([^"]+)"')
+_SWIFT_NAME_RE = re.compile(r'name:\s*"([^"]+)"')
+_SWIFT_PATH_RE = re.compile(r'path:\s*"([^"]+)"')
+_SWIFT_VERSION_RE = re.compile(r'(?:from|exact)\s*:\s*"([^"]+)"')
+
+
+def _iter_swift_package_calls(text: str) -> Iterable[str]:
+    """Yield each `.package(...)` call's argument text, delimited by
+    counting parens from the `.package(` that opens it -- a plain regex
+    can't stop at the right `)` when the call nests one of its own
+    (`.upToNextMajor(from: "1.2.3")`)."""
+    for match in _SWIFT_PACKAGE_CALL_RE.finditer(text):
+        start = match.end()
+        depth = 1
+        i = start
+        while i < len(text) and depth > 0:
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+            i += 1
+        yield text[start : i - 1]
+
+
+def _swift_dep_name(locator: str) -> str:
+    name = locator.rstrip("/").rsplit("/", 1)[-1]
+    return name[: -len(".git")] if name.endswith(".git") else name
+
+
+def _read_swift(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
+    groups: Groups = {}
+    warnings: list[str] = []
+    existing: list[str] = []
+
+    manifest = root / "Package.swift"
+    if manifest.is_file():
+        rel = relposix(root, manifest)
+        existing.append(rel)
+        try:
+            text = manifest.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            warnings.append(f"could not parse {rel}: {exc}")
+        else:
+            pairs = []
+            for call in _iter_swift_package_calls(text):
+                url_match = _SWIFT_URL_RE.search(call)
+                if url_match:
+                    name = _swift_dep_name(url_match.group(1))
+                else:
+                    name_match = _SWIFT_NAME_RE.search(call)
+                    path_match = _SWIFT_PATH_RE.search(call)
+                    if name_match:
+                        name = name_match.group(1)
+                    elif path_match:
+                        name = _swift_dep_name(path_match.group(1))
+                    else:
+                        continue
+                version_match = _SWIFT_VERSION_RE.search(call)
+                pairs.append((name, version_match.group(1) if version_match else ""))
+            _merge(groups, "direct", pairs)
+
+    return _finish(groups, warnings, existing)
+
+
+# ---------------------------------------------------------------------------
+# dart — pubspec.yaml
+# ---------------------------------------------------------------------------
+
+
+def _dart_constraint(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        version = value.get("version", "")
+        return version if isinstance(version, str) else ""
+    return ""
+
+
+def _read_dart(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
+    groups: Groups = {}
+    warnings: list[str] = []
+    existing: list[str] = []
+
+    pubspec = root / "pubspec.yaml"
+    if pubspec.is_file():
+        rel = relposix(root, pubspec)
+        existing.append(rel)
+        try:
+            data = yaml.safe_load(pubspec.read_text(encoding="utf-8"))
+        except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
+            warnings.append(f"could not parse {rel}: {exc}")
+        else:
+            if not isinstance(data, dict):
+                warnings.append(f"could not parse {rel}: top-level is not a mapping")
+            else:
+                direct = data.get("dependencies", {})
+                dev = data.get("dev_dependencies", {})
+                if isinstance(direct, dict):
+                    _merge(groups, "direct", [(k, _dart_constraint(v)) for k, v in direct.items()])
+                if isinstance(dev, dict):
+                    _merge(groups, "dev", [(k, _dart_constraint(v)) for k, v in dev.items()])
+
+    return _finish(groups, warnings, existing)
+
+
+# ---------------------------------------------------------------------------
 # section rendering + extractor
 # ---------------------------------------------------------------------------
 
-# (section id, human label, reader key) — order matches the brief's Step 4
-# ecosystem list (python, node, java, dotnet, go, php), not alphabetical by
-# id. core.run() re-sorts every extractor's sections by (group, id) before
+# (section id, human label, reader key) — the first six match the brief's
+# Step 4 ecosystem list (python, node, java, dotnet, go, php); rust/swift/
+# dart were appended later, not alphabetical by id either way.
+# core.run() re-sorts every extractor's sections by (group, id) before
 # writing them out, so this order has no effect on the emitted files — it
 # only affects which warning appears first when more than one ecosystem's
 # manifest fails to parse in the same run.
@@ -549,6 +712,9 @@ _ECOSYSTEMS: tuple[tuple[str, str, str], ...] = (
     ("dep.dotnet", ".NET", "dotnet"),
     ("dep.go", "Go", "go"),
     ("dep.php", "PHP", "php"),
+    ("dep.rust", "Rust", "rust"),
+    ("dep.swift", "Swift", "swift"),
+    ("dep.dart", "Dart", "dart"),
 )
 
 _READERS = {
@@ -558,6 +724,9 @@ _READERS = {
     "dotnet": _read_dotnet,
     "go": _read_go,
     "php": _read_php,
+    "rust": _read_rust,
+    "swift": _read_swift,
+    "dart": _read_dart,
 }
 
 
@@ -628,7 +797,10 @@ class DepsExtractor:
     def detect(self, root: Path) -> bool:
         if any(
             (root / name).is_file()
-            for name in ("pyproject.toml", "setup.cfg", "pom.xml", "go.mod", "composer.json")
+            for name in (
+                "pyproject.toml", "setup.cfg", "pom.xml", "go.mod", "composer.json",
+                "Package.swift", "pubspec.yaml",
+            )
         ):
             return True
         # No `opts` is available at detect() time (the Extractor protocol
@@ -644,6 +816,8 @@ class DepsExtractor:
                 if fname.endswith(".csproj"):
                     return True
                 if fname in ("build.gradle", "build.gradle.kts"):
+                    return True
+                if fname == "Cargo.toml":
                     return True
         return False
 

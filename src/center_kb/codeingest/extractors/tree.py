@@ -34,7 +34,7 @@ IGNORED_DIRS = frozenset({
 
 _ENTRY_POINT_NAMES = frozenset({
     "main.py", "app.py", "manage.py", "index.js", "index.ts", "main.go",
-    "Program.cs", "Application.java",
+    "Program.cs", "Application.java", "main.rs", "main.dart", "main.swift",
 })
 
 _L2_DEPTH = 2  # L2 directory listing depth

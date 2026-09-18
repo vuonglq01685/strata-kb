@@ -409,6 +409,12 @@ class TestTreeExtractor:
         )
         assert "entry points: src/airspace/main.py; console scripts: airspace." in s.summary
 
+    @pytest.mark.parametrize("rel", ["main.rs", "main.dart", "main.swift"])
+    def test_detects_entry_points_for_new_languages(self, repo, rel):
+        (repo / rel).write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert f"Detected entry points:\n\n- {rel}\n" in s.l2_md
+
 
 from center_kb.codeingest.extractors import deps as deps_ext
 
@@ -596,6 +602,77 @@ class TestDepsExtractor:
         assert "phpunit/phpunit" in s.l3_md
         assert "Symfony" in s.l2_md
 
+    def test_rust_deps_come_from_cargo_toml(self, repo):
+        (repo / "Cargo.toml").write_text(
+            '[dependencies]\n'
+            'serde = "1.0"\n'
+            'tokio = { version = "1.35", features = ["full"] }\n'
+            'actix-web = "4.4"\n\n'
+            '[dev-dependencies]\n'
+            'proptest = "1.4"\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
+        assert "serde 1.0" in s.l3_md
+        assert "tokio 1.35" in s.l3_md
+        assert "proptest 1.4" in s.l3_md
+        assert "Actix Web" in s.l2_md
+
+    def test_rust_workspace_member_cargo_toml_is_also_read(self, repo):
+        (repo / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/api"]\n', encoding="utf-8"
+        )
+        member = repo / "crates" / "api" / "Cargo.toml"
+        member.parent.mkdir(parents=True)
+        member.write_text('[dependencies]\nserde = "1.0"\n', encoding="utf-8")
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
+        assert "serde 1.0" in s.l3_md
+
+    def test_swift_deps_come_from_package_swift(self, repo):
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    name: "MyApp",\n'
+            '    dependencies: [\n'
+            '        .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),\n'
+            '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "vapor 4.89.0" in s.l3_md
+        assert "swift-log 1.5.3" in s.l3_md
+        assert "Vapor" in s.l2_md
+
+    def test_swift_path_dependency_with_no_version_is_recorded_by_name(self, repo):
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    dependencies: [\n'
+            '        .package(path: "../LocalLib"),\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "LocalLib" in s.l3_md
+
+    def test_dart_deps_come_from_pubspec_yaml(self, repo):
+        (repo / "pubspec.yaml").write_text(
+            "name: my_app\n"
+            "dependencies:\n"
+            "  flutter:\n"
+            "    sdk: flutter\n"
+            "  http: ^1.2.0\n"
+            "dev_dependencies:\n"
+            "  test: ^1.24.0\n",
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.dart"]
+        assert "http" in s.l2_md
+        assert "http^1.2.0" in s.l3_md
+        assert "test^1.24.0" in s.l3_md
+        assert "Flutter" in s.l2_md
+
     def test_vendored_node_modules_package_json_is_ignored(self, repo):
         # Review Finding 6: nothing pinned that a vendored package.json
         # inside node_modules/ (installed dependencies, not the project's
@@ -752,6 +829,12 @@ class TestFrameworkLookup:
             ("next", "Next.js"),
             ("@angular/core", "Angular"),
             ("vue", "Vue"),
+            ("@playwright/test", "Playwright"),
+            ("actix-web", "Actix Web"),
+            ("axum", "Axum"),
+            ("rocket", "Rocket"),
+            ("vapor", "Vapor"),
+            ("flutter", "Flutter"),
         ],
     )
     def test_known_frameworks_map_to_labels(self, dep, expected):
