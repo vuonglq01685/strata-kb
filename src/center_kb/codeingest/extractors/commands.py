@@ -86,11 +86,12 @@ PURPOSE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "test": ("pytest", "vitest", "jest", "mocha", "go test", "dotnet test",
              "mvn test", "gradle test", "phpunit", "test"),
     "lint": ("ruff", "eslint", "flake8", "mypy", "golangci-lint",
-             "dotnet format", "checkstyle", "lint", "format"),
+             "dotnet format", "checkstyle", "lint", "format", "cargo clippy",
+             "cargo fmt"),
     "build": ("build", "compile", "tsc", "vite build", "mvn package",
               "gradle build", "dotnet build", "go build"),
     "run": ("start", "serve", "uvicorn", "gunicorn", "dotnet run",
-            "go run", "dev"),
+            "go run", "dev", "cargo run", "flutter run", "swift run"),
 }
 
 # (purpose, command, source) — the uniform shape every reader below returns.
@@ -772,9 +773,17 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
     """No file content is read here — presence alone is the evidence, and
     the purpose of each canonical command is known statically, so these
     candidates bypass `_classify()` entirely (unlike every other reader).
-    Maven and Gradle each contribute one default `build` command; .NET
-    and Go each contribute both a `build` and a `test` default, per the
-    brief's table."""
+    Maven and Gradle each contribute one default `build` command; .NET,
+    Go, Rust and Swift each contribute both a `build` and a `test`
+    default, per the brief's table.
+
+    Dart/`pubspec.yaml` deliberately has no entry here: presence alone
+    can't tell a pure-Dart package (`dart test`) from a Flutter app
+    (`flutter test` — `dart test` errors on Flutter's widget tests, since
+    it never initialises Flutter's test bindings), and reading
+    `pubspec.yaml`'s content to disambiguate would break this reader's
+    one invariant. A wrong default is worse than none for the evidence
+    rule this module exists to satisfy."""
     candidates: list[Candidate] = []
 
     if (root / "pom.xml").is_file():
@@ -794,6 +803,14 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
     if (root / "go.mod").is_file():
         candidates.append(("build", "go build ./...", "go.mod"))
         candidates.append(("test", "go test ./...", "go.mod"))
+
+    if (root / "Cargo.toml").is_file():
+        candidates.append(("build", "cargo build", "Cargo.toml"))
+        candidates.append(("test", "cargo test", "Cargo.toml"))
+
+    if (root / "Package.swift").is_file():
+        candidates.append(("build", "swift build", "Package.swift"))
+        candidates.append(("test", "swift test", "Package.swift"))
 
     return candidates, []
 

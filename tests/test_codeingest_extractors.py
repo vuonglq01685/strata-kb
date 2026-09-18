@@ -628,6 +628,19 @@ class TestDepsExtractor:
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
         assert "serde 1.0" in s.l3_md
 
+    def test_vendored_rust_crate_cargo_toml_is_ignored(self, repo):
+        # _read_rust's tree walk has no depth cap (unlike node's, to
+        # support workspace members) -- a `cargo vendor`-populated
+        # vendor/ directory, if committed, carries a real Cargo.toml per
+        # vendored crate that must not be read as the repo's own direct
+        # dependency, the same class of bug the node_modules test below
+        # already pins for Node.
+        vendored = repo / "vendor" / "serde-1.0.200" / "Cargo.toml"
+        vendored.parent.mkdir(parents=True)
+        vendored.write_text('[dependencies]\nshould-not-appear = "9.9.9"\n', encoding="utf-8")
+        sections = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))
+        assert "dep.rust" not in sections
+
     def test_swift_deps_come_from_package_swift(self, repo):
         (repo / "Package.swift").write_text(
             'let package = Package(\n'
@@ -1838,6 +1851,20 @@ class TestServicesExtractor:
         s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))["svc.postgres"]
         assert "| Technology | PostgreSQL |" in s.l2_md
 
+    @pytest.mark.parametrize(
+        "image,technology",
+        [("rust:1.75", "Rust"), ("swift:5.9", "Swift"), ("dart:stable", "Dart")],
+    )
+    def test_new_language_base_images_get_a_technology_label(self, tmp_path, image, technology):
+        root = tmp_path / "svc"
+        root.mkdir()
+        (root / "docker-compose.yml").write_text(
+            "services:\n  app:\n    build: .\n", encoding="utf-8"
+        )
+        (root / "Dockerfile").write_text(f"FROM {image}\n", encoding="utf-8")
+        s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.app"]
+        assert f"| Technology | {technology} |" in s.l2_md
+
     def test_dockerfile_fallback_uses_the_runtime_stage_and_command(self, tmp_path):
         root = tmp_path / "solo2"
         root.mkdir()
@@ -2479,6 +2506,18 @@ class TestCommandsExtractor:
             ("ruff check .", "lint"),
             ("python -m build", "build"),
             ("npm run dev", "run"),
+            # Rust/Flutter/Swift each invoke their own tool's bare `run`
+            # subcommand -- unlike `dotnet run`/`go run`, there is no
+            # compound keyword for these, and no bare "run" keyword either
+            # (only "start"/"serve"/"dev"/... which don't apply here).
+            ("cargo run", "run"),
+            ("flutter run", "run"),
+            ("swift run", "run"),
+            # `cargo clippy`/`cargo fmt` are Rust's canonical lint commands
+            # (the ones the conventions pack records as `cmd.lint`), but
+            # neither "clippy" nor "fmt" is a lint keyword.
+            ("cargo clippy --all-targets -- -D warnings", "lint"),
+            ("cargo fmt --check", "lint"),
             ("go test ./...", "test"),
             ("tox -e lint", "lint"),
             ('"$PY" -m pytest -q', "test"),
@@ -2646,6 +2685,30 @@ class TestCommandsExtractor:
         s = _by_id(cmd_ext.CommandsExtractor().extract(repo, _opts(repo)))["cmd.test"]
         assert "pytest -q --cov=airspace" in s.l2_md.splitlines()[0]   # CI still primary
         assert "bash scripts/gate.sh" in s.l3_md
+
+    def test_presence_reader_gives_rust_build_and_test_defaults(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
+        candidates, warnings = cmd_ext._read_presence(tmp_path, _opts(tmp_path))
+        assert ("build", "cargo build", "Cargo.toml") in candidates
+        assert ("test", "cargo test", "Cargo.toml") in candidates
+        assert warnings == []
+
+    def test_presence_reader_gives_swift_build_and_test_defaults(self, tmp_path):
+        (tmp_path / "Package.swift").write_text("", encoding="utf-8")
+        candidates, warnings = cmd_ext._read_presence(tmp_path, _opts(tmp_path))
+        assert ("build", "swift build", "Package.swift") in candidates
+        assert ("test", "swift test", "Package.swift") in candidates
+
+    def test_presence_reader_gives_no_dart_default(self, tmp_path):
+        # Unlike Cargo.toml/Package.swift, pubspec.yaml alone can't say
+        # whether the test command is `dart test` or `flutter test` --
+        # presence alone (this reader reads no file content) can't
+        # disambiguate a pure-Dart package from a Flutter app, and a wrong
+        # default is worse than none here (dart test errors out on a
+        # Flutter package's widget tests).
+        (tmp_path / "pubspec.yaml").write_text("name: x\n", encoding="utf-8")
+        candidates, _warnings = cmd_ext._read_presence(tmp_path, _opts(tmp_path))
+        assert candidates == []
 
 
 import sqlite3

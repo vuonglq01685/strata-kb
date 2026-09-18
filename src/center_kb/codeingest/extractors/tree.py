@@ -27,9 +27,9 @@ from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractRes
 # name; a non-default `--kb-dir` is handled by `walk_tree()`'s `kb_dir`
 # argument instead, since the actual directory could be named anything.
 IGNORED_DIRS = frozenset({
-    ".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build",
-    "target", "bin", "obj", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    ".tox", ".idea", ".vscode", ".kb",
+    ".git", ".venv", "venv", "node_modules", "vendor", "__pycache__", "dist",
+    "build", "target", "bin", "obj", ".mypy_cache", ".pytest_cache",
+    ".ruff_cache", ".tox", ".idea", ".vscode", ".kb",
 })
 
 _ENTRY_POINT_NAMES = frozenset({
