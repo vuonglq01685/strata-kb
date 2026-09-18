@@ -30,6 +30,13 @@ IGNORED_DIRS = frozenset({
     ".git", ".venv", "venv", "node_modules", "vendor", "__pycache__", "dist",
     "build", "target", "bin", "obj", ".mypy_cache", ".pytest_cache",
     ".ruff_cache", ".tox", ".idea", ".vscode", ".kb",
+    # Someone else's source, checked out or committed into this tree —
+    # same class as `vendor` and `node_modules`. Each of these carries a
+    # full `Package.swift`/`pubspec.yaml` per dependency, which deps.py's
+    # uncapped Swift/Dart walks (needed for multi-module and melos
+    # layouts) would otherwise read as this repo's own direct
+    # dependencies. `Pods/` in particular is routinely committed.
+    ".build", "Pods", "Carthage", ".dart_tool",
 })
 
 _ENTRY_POINT_NAMES = frozenset({

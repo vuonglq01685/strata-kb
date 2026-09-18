@@ -5,13 +5,16 @@ evidence rule (spec §3.14) — this is the task that makes Stage A's
 verification gate executable: until these sections exist, a Dev agent has
 no machine-readable answer to "how do I test this repo?".
 
-Six readers surface command evidence from six sources — CI workflows, npm
-scripts, a Makefile, tox/pytest config, shell scripts at the root or under
-`scripts/`, and presence-based defaults for Maven/Gradle/.NET/Go — each
+Seven readers surface command evidence from seven sources — CI workflows,
+npm scripts, a Makefile, tox/pytest config, shell scripts at the root or
+under `scripts/`, `pubspec.yaml` (Dart/Flutter), and presence-based
+defaults for Maven/Gradle/.NET/Go/Rust/Swift — each
 returning `list[Candidate]` (a `(purpose, command, source)` triple) plus
 warnings, never raising. For each of the four purposes in `PURPOSES`, the
 primary command is the first CI-sourced candidate; failing that, the first
-local candidate in reader order (npm, make, python, shell, presence-based).
+local candidate in reader order (npm, make, python, shell, pubspec,
+presence-based), with one tie-break inside `test`: an e2e suite is
+demoted below a unit suite (see `_select`).
 Every other candidate for that purpose is kept as an alternative — never
 silently dropped — because CI evidence is what *actually* runs in the
 pipeline, while a local script only *could* run something similar.
@@ -87,7 +90,7 @@ PURPOSE_KEYWORDS: dict[str, tuple[str, ...]] = {
              "mvn test", "gradle test", "phpunit", "test"),
     "lint": ("ruff", "eslint", "flake8", "mypy", "golangci-lint",
              "dotnet format", "checkstyle", "lint", "format", "cargo clippy",
-             "cargo fmt"),
+             "cargo fmt", "analyze", "swiftlint"),
     "build": ("build", "compile", "tsc", "vite build", "mvn package",
               "gradle build", "dotnet build", "go build"),
     "run": ("start", "serve", "uvicorn", "gunicorn", "dotnet run",
@@ -201,6 +204,12 @@ _FILENAME_EXTENSIONS = frozenset({
     "txt", "json", "yml", "yaml", "sh", "py", "js", "ts", "md",
     "cfg", "ini", "toml", "lock", "csv", "log", "sql", "xml",
     "in", "gz", "tgz", "zip", "tar", "bz2", "xz", "mjs", "cjs", "bash",
+    # The compiled languages' own source extensions. Without these, a
+    # download/copy step naming a source file (`curl -o test-helper.rs`,
+    # `cp build-Program.cs /tmp`) matched its keyword through the
+    # `-`/`:` separator rule and classified as a real command -- the
+    # same false-positive class the scripting extensions above close.
+    "rs", "dart", "swift", "go", "cs", "java", "php", "kt",
 })
 
 
@@ -362,6 +371,24 @@ def _split_unquoted_segments(text: str) -> list[str]:
     return segments
 
 
+def _matches_keyword(tokens: list[str], keyword: str) -> bool:
+    """True when `keyword` matches a run of `tokens`: a one-word keyword
+    must match one whitespace-delimited token (per
+    `_token_matches_keyword`), a multi-word keyword that many
+    consecutive tokens the same way. The one matching rule in this
+    module -- `_keyword_purpose` and `_is_e2e_command` share it so a
+    keyword never means one thing in one place and another elsewhere."""
+    kw_tokens = keyword.split()
+    width = len(kw_tokens)
+    return any(
+        all(
+            _token_matches_keyword(tok, kw)
+            for tok, kw in zip(tokens[i:i + width], kw_tokens)
+        )
+        for i in range(len(tokens) - width + 1)
+    )
+
+
 def _keyword_purpose(tokens: list[str]) -> str | None:
     """First purpose in `PURPOSE_KEYWORDS`' own declaration order (`test`
     before `lint` before `build` before `run`) whose keyword matches a
@@ -378,15 +405,7 @@ def _keyword_purpose(tokens: list[str]) -> str | None:
     to see whether a lower-priority purpose's keyword also appears."""
     for purpose, keywords in PURPOSE_KEYWORDS.items():
         for keyword in keywords:
-            kw_tokens = keyword.split()
-            width = len(kw_tokens)
-            if any(
-                all(
-                    _token_matches_keyword(tok, kw)
-                    for tok, kw in zip(tokens[i:i + width], kw_tokens)
-                )
-                for i in range(len(tokens) - width + 1)
-            ):
+            if _matches_keyword(tokens, keyword):
                 return purpose
     return None
 
@@ -751,7 +770,8 @@ def _read_shell(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], l
 
 
 # ---------------------------------------------------------------------------
-# reader: presence-based defaults — maven / gradle / dotnet / go
+# reader: presence-based defaults — maven / gradle / dotnet / go / rust /
+# swift, then the content-reading pubspec.yaml reader for dart / flutter
 # ---------------------------------------------------------------------------
 
 
@@ -783,7 +803,9 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
     it never initialises Flutter's test bindings), and reading
     `pubspec.yaml`'s content to disambiguate would break this reader's
     one invariant. A wrong default is worse than none for the evidence
-    rule this module exists to satisfy."""
+    rule this module exists to satisfy. That disambiguation lives in
+    `_read_pubspec`, which is allowed to open the file — so Dart is
+    covered, just not from here."""
     candidates: list[Candidate] = []
 
     if (root / "pom.xml").is_file():
@@ -815,20 +837,89 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
     return candidates, []
 
 
+def _read_pubspec(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
+    """`pubspec.yaml`'s *content* — what `_read_presence` is barred from
+    reading, and the only way to settle the question that kept Dart out
+    of it: a Flutter app's runner is `flutter test`, a pure-Dart
+    package's is `dart test`, and `dart test` errors on a Flutter
+    package's widget tests because it never initialises Flutter's test
+    bindings. A repo is a Flutter app when it declares `flutter` under
+    `dependencies` or carries a top-level `flutter:` block (the
+    assets/fonts section an app has even when it pins the SDK through
+    `environment:` alone); otherwise it is pure Dart. Same manifest
+    answers `cmd.lint` too — `analyze` is that toolchain's linter under
+    either name.
+
+    Still **no** `build` candidate: `flutter build` needs a target
+    (apk/ios/web) and `dart compile` needs an entry point, neither of
+    which the manifest states, so the "a wrong default is worse than
+    none" rule that governs `_read_presence` governs this reader's
+    build column exactly as before.
+
+    Root-only, like `_read_presence`: these are the repo's own commands,
+    and a nested package's manifest describes how to test that package,
+    not this repository.
+    """
+    pubspec = root / "pubspec.yaml"
+    if not pubspec.is_file():
+        return [], []
+    rel = relposix(root, pubspec)
+    try:
+        data = yaml.safe_load(pubspec.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
+        return [], [f"could not parse {rel}: {exc}"]
+    if not isinstance(data, dict):
+        return [], [f"could not parse {rel}: top-level is not a mapping"]
+
+    deps = data.get("dependencies")
+    is_flutter = "flutter" in data or (isinstance(deps, dict) and "flutter" in deps)
+    tool = "flutter" if is_flutter else "dart"
+    return [("test", f"{tool} test", rel), ("lint", f"{tool} analyze", rel)], []
+
+
 # ---------------------------------------------------------------------------
 # priority merge + section rendering
 # ---------------------------------------------------------------------------
 
 
+# An e2e suite and a unit suite both classify as `test`, and source
+# order alone would hand `cmd.test` to whichever ran first in CI. A Dev
+# agent told to run `cmd.test` after a one-file change needs the unit
+# suite: an e2e run drives a real browser against a built, running app
+# and is minutes slower, so it is the wrong thing to reach for first —
+# but it is still a genuine test command, so it is demoted, never
+# dropped.
+_E2E_KEYWORDS = ("playwright test", "cypress run", "cypress open")
+
+
+def _is_e2e_command(text: str) -> bool:
+    """Whole-token matching, the same rule `_keyword_purpose` uses (via
+    `_matches_keyword`) — never a bare substring, which would catch a
+    path or image tag that merely contains one of these words."""
+    tokens = [tok.strip(_TOKEN_STRIP) for tok in text.lower().split()]
+    return any(_matches_keyword(tokens, keyword) for keyword in _E2E_KEYWORDS)
+
+
 def _select(all_candidates: list[Candidate], purpose: str) -> tuple[Candidate, list[Candidate]] | None:
     """`all_candidates` is already CI-first, then local readers in the
-    brief's fixed order (npm, make, python, shell, presence-based) — so the
-    first match for a purpose is, by construction, the first CI-sourced
-    candidate if one exists, else the first local one. Everything else
-    for that purpose is an alternative, never dropped."""
+    brief's fixed order (npm, make, python, shell, pubspec,
+    presence-based) — so the first match for a purpose is, by
+    construction, the first CI-sourced candidate if one exists, else the
+    first local one. Everything else for that purpose is an alternative,
+    never dropped.
+
+    The one tie-break on top of that order: within `test`, every
+    non-e2e candidate outranks every e2e one, each group keeping its own
+    relative (CI-first) order. This only ever REORDERS — an e2e-only
+    repo still gets its `cmd.test` section, with the e2e command as its
+    primary."""
     matches = [c for c in all_candidates if c[0] == purpose]
     if not matches:
         return None
+    if purpose == "test":
+        unit = [c for c in matches if not _is_e2e_command(c[1])]
+        if unit:
+            matches = unit + [c for c in matches if _is_e2e_command(c[1])]
     return matches[0], matches[1:]
 
 
@@ -881,9 +972,18 @@ class CommandsExtractor:
         # one) — same accepted limitation `DepsExtractor.detect()`
         # documents: this walk can't be pruned by a non-default
         # `--kb-dir`, but `extract()`'s walks all are.
+        # Every manifest a *root-only* reader keys on belongs here, or
+        # that reader is unreachable: `core.run()` skips `extract()`
+        # entirely when `detect()` says False, so a Cargo/SwiftPM/pub
+        # repo carrying no CI, Makefile or pyproject would never reach
+        # `_read_presence`'s Rust/Swift defaults or `_read_pubspec` at
+        # all — on precisely the repos they were written for.
         if any(
             (root / name).is_file()
-            for name in ("Makefile", "tox.ini", "pyproject.toml", "pom.xml", "go.mod")
+            for name in (
+                "Makefile", "tox.ini", "pyproject.toml", "pom.xml", "go.mod",
+                "Cargo.toml", "Package.swift", "pubspec.yaml",
+            )
         ):
             return True
         for depth, reldir, filenames in walk_tree(root):
@@ -930,6 +1030,7 @@ class CommandsExtractor:
             + _run(_read_make, "Makefile", root)
             + _run(_read_python, "Python tooling (tox/pytest)", root)
             + _run(_read_shell, "shell scripts", root, opts)
+            + _run(_read_pubspec, "pubspec.yaml", root, opts)
             + _run(_read_presence, "presence-based defaults", root, opts)
         )
 
