@@ -37,6 +37,21 @@ Override it in <code>.kb/usage-prices.yaml</code>.</p>
 cost is not, and is not treated as zero.</p>
 {% endif %}
 
+{% if agg.priced_as %}
+<p class="meta">Priced as a family rate:
+{% for raw, key in agg.priced_as.items() %}{{ raw }} priced as {{ key }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+{% endif %}
+
+{% if agg.hook_errors %}
+<p class="warn">{{ agg.hook_errors }} hook ingest error(s) logged in
+<code>.kb/usage/ingest-errors.log</code> — some turns may be missing below.</p>
+{% endif %}
+
+{% if agg.total.est_rows %}
+<p class="meta">{{ agg.total.est_rows }} estimated: self-reported rows from
+<code>kb usage note</code>, not measurements.</p>
+{% endif %}
+
 {% macro rows(buckets, label, currency) %}
 <table>
   <thead><tr><th>{{ label }}</th><th>calls</th><th>in</th><th>out</th>
@@ -67,6 +82,9 @@ cost is not, and is not treated as zero.</p>
 
 <h2>By actor</h2>
 {{ rows(agg.by_actor, "actor", agg.currency) }}
+
+<h2>By assistant</h2>
+{{ rows(agg.by_assistant, "assistant", agg.currency) }}
 
 <h2>Main thread vs subagents</h2>
 {{ rows([agg.main, agg.sidechain], "thread", agg.currency) }}

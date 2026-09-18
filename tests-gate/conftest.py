@@ -6,8 +6,18 @@ center_kb. The artifact is only ever touched through subprocess.
 
 from __future__ import annotations
 
-import json
 import os
+
+# See tests/conftest.py's identical line: Typer force-enables colored/wrapped
+# Rich error rendering under GITHUB_ACTIONS, which can split a CLI flag name
+# like "--assistant" across a reset code, breaking plain substring checks on
+# `kb`'s stdout/stderr in only CI. kb_run() below builds each subprocess's
+# env from a fresh read of os.environ, so setting this here — before any
+# `kb` subprocess is ever spawned — is sufficient; no import-order subtlety,
+# since this env var only affects the separate `kb` process, not this one.
+os.environ.setdefault("_TYPER_FORCE_DISABLE_TERMINAL", "1")
+
+import json
 import shutil
 import socket
 import subprocess
@@ -111,6 +121,40 @@ def strip_legacy_config_mirror_warning():
             line
             for line in stdout.splitlines()
             if LEGACY_CONFIG_MIRROR_WARNING not in line
+        )
+
+    return _strip
+
+
+# A federation snapshot published before content_sha256 existed (0.25, doctor.py's
+# check_published_digests) has no stored digest to verify against -- doctor warns
+# rather than treating an empty digest as tampering. Every golden fixture in this
+# suite predates 0.25 by construction, so this warning is expected on all of them
+# and, like LEGACY_CONFIG_MIRROR_WARNING, its ABSENCE should also fail the gate:
+# a test that merely tolerated it would stay green even if check_published_digests
+# stopped firing on unverifiable snapshots entirely.
+CONTENT_DIGEST_NOT_VERIFIED_WARNING = "content digest not verified"
+
+
+@pytest.fixture
+def strip_content_digest_not_verified_warning():
+    """Assert the "published before 0.25, content digest not verified" warning
+    fired for the given repo_id, then remove it so the strict 'not a single
+    [warning]' assertions keep guarding everything else."""
+
+    def _strip(stdout: str, repo_id: str) -> str:
+        expected = f"federation/{repo_id} was published before 0.25 — content"
+        assert expected in stdout, (
+            "expected doctor to warn that this old snapshot's content digest "
+            "is not verified, but it did not -- either check_published_digests "
+            "stopped firing on a snapshot with no stored content_sha256, or "
+            "this fixture unexpectedly already carries one\n"
+            f"--- stdout ---\n{stdout}"
+        )
+        return "\n".join(
+            line
+            for line in stdout.splitlines()
+            if CONTENT_DIGEST_NOT_VERIFIED_WARNING not in line
         )
 
     return _strip

@@ -67,6 +67,8 @@ def build_hub(root: Path, n_sections: int, n_repos: int) -> None:
                     status="summarized", file="body",
                 )
             )
+        # newline-exempt: manual perf smoke, root is always tempfile.mkdtemp()
+        # scratch (see main()), never committed.
         (doc_dir / "body.md").write_text("\n".join(lines), encoding="utf-8")
         models.save_yaml_model(
             doc_dir / "_manifest.yaml",

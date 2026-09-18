@@ -51,10 +51,10 @@ def test_summarize_runner_none_exit_1(tmp_path: Path):
     assert "none" in result.output
 
 
-def test_summarize_bad_llm_value_exit_2(tmp_path: Path):
+def test_summarize_bad_llm_value_exit_1(tmp_path: Path):
     kb = make_kb(tmp_path, {})
     result = runner.invoke(app, ["summarize", "--kb-dir", str(kb), "--llm", "gemini"])
-    assert result.exit_code == 2
+    assert result.exit_code == 1
 
 
 def test_summarize_bad_effort_literal_is_a_clean_error_not_a_traceback(tmp_path: Path):

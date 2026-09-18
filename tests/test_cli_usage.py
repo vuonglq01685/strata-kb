@@ -134,8 +134,7 @@ def test_hook_mode_skips_a_kb_dir_with_no_config_and_writes_no_ledger(tmp_path: 
 
     assert result.exit_code == 0, result.output
     assert result.output == ""
-    assert not list((d / "usage").glob("*.jsonl"))
-    assert (d / "usage" / "ingest-errors.log").exists()
+    assert not (d / "usage").exists()
 
 
 def test_report_over_a_corrupt_ledger_exits_one_with_a_message_not_a_traceback(
@@ -158,7 +157,7 @@ def test_ingest_without_a_path_or_hook_stdin_is_a_usage_error(tmp_path: Path):
 
     result = runner.invoke(app, ["usage", "ingest-transcript", "--kb-dir", str(d)])
 
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "exactly one" in result.output
 
 
@@ -271,12 +270,12 @@ def test_note_appends_a_row_by_hand(tmp_path: Path):
         app,
         ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
          "--model", "claude-opus-5", "--tokens-in", "10", "--tokens-out", "20",
-         "--kb-dir", str(d)],
+         "--assistant", "copilot", "--kb-dir", str(d)],
     )
 
     assert result.exit_code == 0, result.output
     (row,) = ledger.read_rows(d)
-    assert (row.ticket, row.phase, row.tokens_out, row.est) == ("ATM-7", "dev-plan", 20, False)
+    assert (row.ticket, row.phase, row.tokens_out, row.est) == ("ATM-7", "dev-plan", 20, True)
 
 
 def test_note_est_marks_the_row_as_an_estimate(tmp_path: Path):
@@ -300,7 +299,7 @@ def test_note_refuses_an_unusable_ticket_id(tmp_path: Path):
         app,
         ["usage", "note", "--ticket", "../escape", "--phase", "dev-plan",
          "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
-         "--kb-dir", str(d)],
+         "--assistant", "copilot", "--kb-dir", str(d)],
     )
 
     assert result.exit_code == 1
@@ -321,6 +320,30 @@ def test_note_rejects_a_negative_token_count(tmp_path: Path):
 
     assert result.exit_code != 0
     assert ledger.read_rows(d) == []
+
+
+def test_note_requires_an_assistant(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
+         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
+         "--kb-dir", str(d)],
+    )
+    assert result.exit_code != 0
+    assert "--assistant" in result.output
+
+
+def test_note_measured_overrides_the_estimate_default(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    runner.invoke(
+        app,
+        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
+         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
+         "--measured", "--assistant", "cursor", "--kb-dir", str(d)],
+    )
+    (row,) = ledger.read_rows(d)
+    assert (row.est, row.assistant) == (False, "cursor")
 
 
 def test_report_writes_a_self_contained_html_file(tmp_path: Path):
@@ -388,3 +411,32 @@ def test_report_json_on_an_empty_ledger_is_still_valid_json(tmp_path: Path):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["total"]["rows"] == 0
+
+
+def test_report_footer_counts_hook_errors(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    t = write_transcript(tmp_path, [user_row("tickets/open-new-flight.md"), usage_row("a1")])
+    runner.invoke(app, ["usage", "ingest-transcript", str(t), "--kb-dir", str(d)])
+    (d / "usage" / "ingest-errors.log").write_text("t1 boom\nt2 bang\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["usage", "report", "--md", "--kb-dir", str(d)])
+
+    assert "2 hook ingest error(s) logged" in result.output
+    as_json = json.loads(runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output)
+    assert as_json["hook_errors"] == 2
+
+
+def test_report_counts_hook_errors_even_with_no_ledger(tmp_path: Path):
+    # A Stop hook failing every turn ingests nothing — rows is empty exactly
+    # when the log is full, so both empty-ledger paths must still surface it.
+    d = kb_dir(tmp_path)
+    (d / "usage").mkdir()
+    (d / "usage" / "ingest-errors.log").write_text("t1 boom\nt2 bang\n", encoding="utf-8")
+
+    as_json = json.loads(
+        runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output
+    )
+    assert as_json["hook_errors"] == 2
+
+    result = runner.invoke(app, ["usage", "report", "--md", "--kb-dir", str(d)])
+    assert "2 hook ingest error(s) logged" in result.output

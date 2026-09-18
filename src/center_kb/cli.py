@@ -7,11 +7,31 @@ from enum import Enum
 from pathlib import Path
 
 import typer
+import yaml
+from pydantic import ValidationError
 
 from center_kb import models
 from center_kb.utf8io import force_utf8_streams
 
 force_utf8_streams()
+
+# One tuple for every "an operator-authored YAML file did not parse or did
+# not validate" read in this module. yaml.YAMLError is not a ValueError;
+# UnicodeDecodeError and pydantic.ValidationError both are, but all three are
+# kept explicit (like models.load_yaml_model's other callers) so a non-UTF-8
+# file is not left to an OSError arm.
+# Was three identical locals inside publish(), ci_publish() and reindex()
+# (ci_publish() and reindex() each pointed at publish()'s comment; publish()'s
+# own carried the reasoning inline) -- _hub_or_exit needs it too, which is
+# what made the duplication untenable.
+_CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+
+
+def _invalid_yaml_exit(path: Path, exc: Exception) -> None:
+    """Report an unparseable/invalid operator-authored YAML file and exit 1."""
+    typer.secho(f"{path} is invalid: {' '.join(str(exc).split())}", fg=typer.colors.RED)
+    raise typer.Exit(1)
+
 
 app = typer.Typer(
     help="CENTER-KB — Knowledge Base as Code for large reference documents.",
@@ -146,7 +166,7 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         "kb init requires --kind hub|child when not running interactively.",
         fg=typer.colors.RED,
     )
-    raise typer.Exit(2)
+    raise typer.Exit(1)
 
 
 @app.command()
@@ -171,6 +191,13 @@ def init(
         help="Hub asset storage: none (assets in git, default) or s3 "
         "(object store — spec B). Hub kind only.",
     ),
+    lang: list[str] = typer.Option(
+        [],
+        "--lang",
+        help="Force a conventions pack for a language whose manifest is not "
+        "detectable (repeatable): python, ts, java, go, dotnet, php. Dev kind only; "
+        "recorded in .kb/config.yaml so a plain re-init keeps it.",
+    ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
     from center_kb.initcmd import PROTECTED_FILES, init_repo
@@ -182,8 +209,22 @@ def init(
             "storage (bytes ride the publish transport to the hub).",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
-    report = init_repo(path, resolved, force=force, assets=assets.value if assets else None)
+        raise typer.Exit(1)
+    if lang:
+        from center_kb.conventions import LANG_IDS
+
+        unknown = [lang_id for lang_id in lang if lang_id not in LANG_IDS]
+        if unknown:
+            typer.secho(
+                f"unknown --lang {', '.join(unknown)} — choose from {', '.join(LANG_IDS)}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        if resolved != "dev":
+            typer.secho("--lang applies to dev repos only", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    report = init_repo(path, resolved, force=force,
+                       assets=assets.value if assets else None, langs=lang)
     for rel in report.created:
         typer.echo(f"  created  {rel}")
     for rel in report.updated:
@@ -384,6 +425,12 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     except HubConfigError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        # require_hub -> load_config -> models.load_yaml_model raises
+        # ValidationError / yaml.YAMLError for an operator-edited
+        # .kb/config.yaml. 11 commands funnel through here, so this is the
+        # one place that keeps any of them from printing a traceback (H1).
+        _invalid_yaml_exit(kb_dir / "config.yaml", exc)
     # cli.py's own last unguarded resolve_hub call site (release review,
     # 2026-09-11): resolve_hub can raise gitio.GitError (hub.py's
     # _discard_cache) when a stale cache's removal is blocked -- e.g. a
@@ -519,7 +566,7 @@ def _validate_llm_choice(llm_choice: str) -> None:
             f"--llm must be one of: claude, copilot, none (got '{llm_choice}')",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
+        raise typer.Exit(1)
 
 
 def _resolve_runner(kb_dir: Path, llm_choice: str, max_workers: int):
@@ -848,13 +895,19 @@ def status(
     if not index_path.exists():
         typer.echo("KB is empty — no index.yaml yet.")
         raise typer.Exit(0)
-    index = models.load_yaml_model(index_path, models.KBIndex)
+    try:
+        index = models.load_yaml_model(index_path, models.KBIndex)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(index_path, exc)
     total_pending = 0
     for entry in index.docs:
         manifest_path = kb_dir / entry.id / "_manifest.yaml"
         if not manifest_path.exists():
             continue
-        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        try:
+            manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:
+            _invalid_yaml_exit(manifest_path, exc)
         pending = [s for s in manifest.sections if s.status == "pending"]
         total_pending += len(pending)
         typer.echo(
@@ -1081,11 +1134,13 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
 
     try:
         path = _ledger.usage_dir(kb_dir) / "ingest-errors.log"
+        if not (kb_dir / "config.yaml").is_file():
+            return  # wrong directory: nowhere correct to write (reviewer F L2)
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with path.open("a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{stamp} {message.rstrip()}\n")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- deliberate: see docstring, this sink must never raise
         pass
 
 
@@ -1162,7 +1217,7 @@ def usage_ingest_transcript(
                     kb_dir, "both a path and --hook-stdin were given; used the payload"
                 )
             _usage_ingest(kb_dir, source, session=session, ticket=ticket)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- deliberate: see comment above, must absorb every failure mode
             # The exception's class name is part of the message, not just
             # str(exc): "Expecting value: line 1 column 1" alone does not say
             # this was a JSON parse failure, and this log is the only place a
@@ -1189,7 +1244,7 @@ def usage_ingest_transcript(
             "pass exactly one of a transcript path or --hook-stdin",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
+        raise typer.Exit(1)
 
     try:
         report = _usage_ingest(kb_dir, path, session="", ticket=ticket)
@@ -1241,9 +1296,13 @@ def usage_note(
     cache_write_1h: int = typer.Option(0, "--cache-write-1h", min=0),
     cache_write_5m: int = typer.Option(0, "--cache-write-5m", min=0),
     est: bool = typer.Option(
-        False, "--est", help="Mark the numbers as an estimate, not a measurement"
+        True, "--est/--measured",
+        help="A hand-entered row is a self-reported estimate (default); "
+        "--measured marks a figure read from the assistant's own meter",
     ),
-    assistant: str = typer.Option("claude-code", "--assistant"),
+    assistant: str = typer.Option(
+        ..., "--assistant", help="Which assistant made the calls, e.g. copilot, cursor"
+    ),
     session: str = typer.Option("", "--session"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
@@ -1305,17 +1364,28 @@ def usage_report(
     if ticket:
         rows = [r for r in rows if r.ticket == ticket]
     generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    hook_error_count, _ = ledger.hook_errors(kb_dir)
     if not rows:
         if json_out:
             # --json is the machine surface a PR/CI step consumes, and it
             # must stay parseable even in the state every repo starts in —
             # before its first ingest. The human-facing guidance below is
             # prose on purpose and is not a substitute here.
-            typer.echo(report_mod.Aggregate(generated=generated).model_dump_json(indent=2))
+            typer.echo(
+                report_mod.Aggregate(
+                    generated=generated, hook_errors=hook_error_count
+                ).model_dump_json(indent=2)
+            )
             return
+        note = (
+            f"; {hook_error_count} hook ingest error(s) logged in "
+            ".kb/usage/ingest-errors.log"
+            if hook_error_count
+            else ""
+        )
         typer.echo(
             "no usage recorded yet — run `kb usage ingest-transcript <path>` on a "
-            "Claude Code transcript, or check that the Stop hook is wired"
+            f"Claude Code transcript, or check that the Stop hook is wired{note}"
         )
         return
     agg = report_mod.aggregate(
@@ -1324,6 +1394,7 @@ def usage_report(
         today=date.today(),
         generated=generated,
     )
+    agg.hook_errors = hook_error_count
     if md:
         typer.echo(report_mod.render_markdown(agg))
         return
@@ -1343,7 +1414,7 @@ def query(
     budget: int = typer.Option(2000, help="Token budget for returned content"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     semantic: bool = typer.Option(
         False,
@@ -1400,7 +1471,7 @@ def get(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Fetch exactly one section at the given level."""
@@ -1502,31 +1573,26 @@ def publish(
         False, "--direct", help="Force direct mode (push straight to the hub's main)"
     ),
     require_reviewed: bool = typer.Option(
-        False, "--require-reviewed", help="Fail when any section is not reviewed"
+        False,
+        "--require-reviewed",
+        help="Fail when any section other than machine-authored `hist.*` is not reviewed",
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
-    import yaml
-    from pydantic import ValidationError
-
     from center_kb import ghio, gitio, hashsync
     from center_kb import publish as publish_mod
     from center_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
     from center_kb.errors import KbError
 
-    # yaml.YAMLError / ValidationError / ValueError (UnicodeDecodeError and
-    # pydantic.ValidationError are both ValueError subclasses, but yaml.YAMLError
-    # is not -- keeping all three explicit, like models.load_yaml_model's other
-    # callers, so a non-UTF-8 file is not left to an OSError arm) cover every
-    # corrupt-YAML/schema-invalid/non-UTF-8 .kb file this command can meet
-    # (F-D9 finding 2): _CONFIG_READ_ERRORS below is reused at every point this
-    # function reads a .kb/*.yaml or federation/*.yaml file outside a call that
-    # already wraps its own read.
-    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+    # module-level _CONFIG_READ_ERRORS (see its definition for why exactly
+    # these three classes) covers every corrupt-YAML/schema-invalid/non-UTF-8
+    # .kb file this command can meet (F-D9 finding 2): reused at every point
+    # this function reads a .kb/*.yaml or federation/*.yaml file outside a
+    # call that already wraps its own read.
 
     if pr and direct:
         typer.secho("--pr and --direct are mutually exclusive", fg=typer.colors.RED)
-        raise typer.Exit(2)
+        raise typer.Exit(1)
 
     try:
         cfg = load_config(kb_dir)
@@ -1576,7 +1642,7 @@ def publish(
                     "remove `intake:` from .kb/config.yaml or pass --direct/--pr",
                     fg=typer.colors.RED,
                 )
-                raise typer.Exit(2)
+                raise typer.Exit(1)
             try:
                 report = publish_mod.publish_federation(
                     kb_dir, hub_ref,
@@ -1698,21 +1764,19 @@ def ci_publish(
         help="Intake base URL (default: .kb/config.yaml `intake:`)",
     ),
     require_reviewed: bool = typer.Option(
-        False, "--require-reviewed", help="Fail when any section is not reviewed"
+        False,
+        "--require-reviewed",
+        help="Fail when any section other than machine-authored `hist.*` is not reviewed",
     ),
 ) -> None:
     """Publish from the child's CI via OIDC — no secrets. Run by kb-publish.yml."""
-    import yaml
-    from pydantic import ValidationError
-
     from center_kb import cipublish, gitio
     from center_kb.config import effective_repo_id, load_config
     from center_kb.errors import KbError
 
-    # See publish()'s _CONFIG_READ_ERRORS: same three classes, same reason
+    # See module-level _CONFIG_READ_ERRORS: same three classes, same reason
     # (yaml.YAMLError is not a ValueError; UnicodeDecodeError/ValidationError
     # both are, but stay explicit).
-    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
 
     try:
         url = intake or load_config(kb_dir).intake
@@ -1728,7 +1792,7 @@ def ci_publish(
             "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(2)
+        raise typer.Exit(1)
     try:
         cipublish.run(
             kb_dir, url, effective_repo_id(repo_id, kb_dir), require_reviewed=require_reviewed
@@ -1771,15 +1835,11 @@ def reindex(
     """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
     import sqlite3
 
-    import yaml
-    from pydantic import ValidationError
-
     from center_kb import gitio, searchdb
     from center_kb.embed import default_embedder
     from center_kb.federation import write_federation_index
 
-    # See publish()'s _CONFIG_READ_ERRORS.
-    _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
+    # See module-level _CONFIG_READ_ERRORS.
 
     try:
         handle = _hub_or_exit(hub, kb_dir)
@@ -1982,7 +2042,7 @@ def context_new(
     tags: str = typer.Option("", help="Tags, comma-separated"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
@@ -2007,7 +2067,7 @@ def context_new(
 def tags(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """List every tag published on the hub federation — the vocabulary a
@@ -2036,7 +2096,7 @@ def resolve(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     status_only: bool = typer.Option(
         False,
@@ -2044,11 +2104,31 @@ def resolve(
         help="Print only the citation + freshness verdict per ref, no "
         "section content — for cheap re-checks against a context cache.",
     ),
+    write_cache: Path | None = typer.Option(
+        None,
+        "--write-cache",
+        help="Also write docs/impl/<ticket-id>-context.md: header (version, "
+        "refs, sha256) + the resolved sections; everything below the "
+        "`<!-- kb:placeholder-map -->` marker is kept from the existing file.",
+    ),
+    cache: Path | None = typer.Option(
+        None,
+        "--cache",
+        help="With --status-only: validate this context cache against the "
+        "ticket (version, ref set, sha256 of the resolved block); a bad or "
+        "missing cache exits 1.",
+    ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
     from center_kb import gitio, kbcontext
-    from center_kb.resolve import render_resolved, resolve_refs
+    from center_kb.resolve import render_resolved, resolve_refs, render_cache, cache_problem
 
+    if write_cache is not None and status_only:
+        typer.secho("--write-cache needs a full resolve; drop --status-only", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if cache is not None and not status_only:
+        typer.secho("--cache only makes sense with --status-only", fg=typer.colors.RED)
+        raise typer.Exit(1)
     if source == "-":
         text = sys.stdin.read()
     else:
@@ -2065,7 +2145,38 @@ def resolve(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.echo(render_resolved(results, include_content=not status_only))
-    if any(r.status == "broken" for r in results):
+    if write_cache is not None:
+        from datetime import date
+
+        stem = write_cache.stem.removesuffix("-context")
+        try:
+            previous = (
+                write_cache.read_text(encoding="utf-8") if write_cache.exists() else None
+            )
+            write_cache.parent.mkdir(parents=True, exist_ok=True)
+            write_cache.write_text(
+                render_cache(ctx.version, results, today=date.today().isoformat(),
+                             stem=stem, previous=previous),
+                encoding="utf-8", newline="\n",
+            )
+        except (OSError, UnicodeDecodeError) as exc:
+            typer.secho(f"could not write cache '{write_cache}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    cache_bad = False
+    if cache is not None:
+        if not cache.is_file():
+            typer.echo(f"!! cache-missing: {cache}")
+            cache_bad = True
+        else:
+            try:
+                cache_text = cache.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                cache_text = ""
+            problem = cache_problem(cache_text, ctx.version, results) if cache_text else "header"
+            if problem:
+                typer.echo(f"!! cache-invalid: {problem}")
+                cache_bad = True
+    if cache_bad or any(r.status == "broken" for r in results):
         raise typer.Exit(1)
     if any(r.status == "stale" for r in results):
         raise typer.Exit(2)
@@ -2078,7 +2189,7 @@ def ticket_lint(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     missions_dir: Path | None = typer.Option(
         None,
@@ -2175,6 +2286,12 @@ def pr_lint(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    plan_dir: Path = typer.Option(
+        Path("docs/impl"),
+        "--plan-dir",
+        help="Where docs/impl/<ticket-id>-plan.md lives; its `cmd.test:` line "
+        "must appear inside a Verification fence. Absent plan = warning.",
+    ),
 ) -> None:
     """Gate: every required PR section is present and actually filled in.
 
@@ -2199,7 +2316,7 @@ def pr_lint(
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
 
-    report = lint_body(text)
+    report = lint_body(text, plan_dir=plan_dir)
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
@@ -2215,7 +2332,7 @@ def mission_lint(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     tickets_dir: Path | None = typer.Option(
         None,
@@ -2406,12 +2523,20 @@ def approve(
 
     flipped_total = 0
     has_missing = False
+    has_skipped_machine = False
     for rep in reports:
         for sid in rep.skipped_pending:
             typer.secho(
                 f"[warn] {rep.doc_id} §{sid} is still pending — cannot approve",
                 fg=typer.colors.YELLOW,
                 err=True,
+            )
+        for sid in rep.skipped_machine:
+            has_skipped_machine = True
+            typer.secho(
+                f"[note] {rep.doc_id} §{sid} is machine-authored — skipped "
+                "(pass --section to force)",
+                fg=typer.colors.YELLOW, err=True,
             )
         for sid in rep.missing:
             has_missing = True
@@ -2430,6 +2555,13 @@ def approve(
     if flipped_total == 0:
         if all_changed:
             typer.echo("kb approve: nothing to approve")
+        elif has_skipped_machine:
+            typer.secho(
+                "kb approve: only machine-authored sections remain summarized — "
+                "pass --section <id> to force",
+                fg=typer.colors.YELLOW,
+            )
+            raise typer.Exit(1)
         else:
             typer.secho(
                 "kb approve: no summarized section to approve", fg=typer.colors.RED
@@ -2444,44 +2576,82 @@ def doctor(
         None, "--context", help="File containing the kb-context block (or '-' to read from stdin)"
     ),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = don't use)"
+        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
     from center_kb.config import effective_repo_id
     from center_kb.doctor import (
+        Issue,
+        _flatten,
         check_asset_store,
         check_context,
         check_hub,
         check_kb,
         check_kind,
+        check_usage_log,
     )
 
+    # check_kind first: it is the only check that can report a broken
+    # config.yaml, and _hub_or_exit reads that same file to find the hub —
+    # resolving first meant doctor exited before its own handler ran (H1).
+    kind_issues = check_kind(kb_dir)
+    if any(i.level == "error" for i in kind_issues):
+        for issue in kind_issues:
+            typer.secho(f"[{issue.level}] {issue.message}", fg=typer.colors.RED)
+        raise typer.Exit(1)
     handle = _hub_or_exit(hub, kb_dir)
-    issues = check_kind(kb_dir) + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
-    repo_id = effective_repo_id("", kb_dir)
-    if not repo_id:
-        try:
-            from center_kb import gitio as _gitio
-
-            repo_id = _gitio.git_root(kb_dir.resolve()).name
-        except Exception:
-            repo_id = None
+    issues = kind_issues + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
 
     cfg_kind = ""
     try:
         from center_kb.config import load_config as _load_config
 
         cfg_kind = _load_config(kb_dir).kind
-    except Exception:  # config hỏng đã được check_kind báo
-        pass
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        # check_kind (doctor.py) now catches this exact class set on this
+        # exact file first and exits above -- this read can only still fire
+        # on a TOCTOU race between the two reads (config.yaml changes or
+        # vanishes between check_kind's read and this one). Kept as a
+        # backstop for that race rather than removed, so a hit here still
+        # reports instead of continuing with an empty kind and silently
+        # skipping the kind-specific checks below.
+        issues.append(
+            Issue("error", f"could not read .kb/config.yaml: {_flatten(exc)}")
+        )
+
+    repo_id = effective_repo_id("", kb_dir)
+    if not repo_id:
+        from center_kb import gitio as _gitio
+
+        try:
+            repo_id = _gitio.git_root(kb_dir.resolve()).name
+        except _gitio.GitError as exc:
+            # A reader .kb (any kind other than "hub") never consumes
+            # repo_id below — see the "hub"-only uses further down — so an
+            # undeterminable repo_id there is not this KB's problem to
+            # report. Only a hub's own checks (check_hub, federation
+            # publish) actually need it.
+            if cfg_kind == "hub":
+                issues.append(
+                    Issue(
+                        "error",
+                        f"could not determine the repo id — .kb is not inside a "
+                        f"git repo and repo_id is unset in config.yaml: "
+                        f"{_flatten(exc)}",
+                    )
+                )
+            repo_id = None
+
+    if cfg_kind in ("ba", "dev"):
+        issues += check_usage_log(kb_dir)
     if cfg_kind == "hub":
         from center_kb import gitio as _gitio2
         from center_kb.config import load_config as _load_config2
-        from center_kb.doctor import Issue, check_federation_publish
+        from center_kb.doctor import check_federation_publish
 
         hub_issues, hub_stale = check_hub(
-            kb_dir, handle, repo_id=None, warn_untracked_index=True
+            kb_dir, handle, repo_id=repo_id, warn_untracked_index=True
         )
         issues += hub_issues
         try:
@@ -2501,7 +2671,17 @@ def doctor(
                 # (same repo_id in its config) is still "self".
                 try:
                     dest_rid = _load_config2(handle.kb_dir).repo_id
-                except Exception:
+                except (*_CONFIG_READ_ERRORS, OSError) as exc:
+                    # publish.py:1291 fails closed on this exact read
+                    # ("a corrupt upstream config must not silently blind
+                    # the cycle guard"). One condition, one policy.
+                    issues.append(
+                        Issue(
+                            "error",
+                            "could not read the upstream hub's .kb/config.yaml: "
+                            f"{_flatten(exc)}",
+                        )
+                    )
                     dest_rid = ""
                 if not (repo_id and dest_rid and dest_rid == repo_id):
                     upstream = handle

@@ -163,6 +163,30 @@ def heading_id_titles(md: str, *, fence_aware: bool = False) -> list[tuple[str, 
     return out
 
 
+def orphan_heading_ids(text: str, suffix: str, known_ids: set[str]) -> list[str]:
+    """Ids of every real `## <id> …` heading in one L2 (`.md`) or L3
+    (`.raw.md`) file body that is NOT a known manifest id.
+
+    The shared predicate behind `kb build`'s orphan-heading check
+    (`build._check_orphan_headings`) and `kb doctor`'s (`doctor._check_doc`)
+    -- they must never diverge on it again (fix round 1, Critical 2: doctor
+    used to skip the exemption below and flagged a KB `kb build` calls
+    clean). `suffix` is the caller's literal ".md"/".raw.md" loop variable:
+    the one exemption is L2-only -- a title-less heading ('## Ownership', a
+    single token, no title) in the L2 `.md` is a human's own free-form
+    subheading, not a scaffold section break (Ruling R16), mirroring
+    codeingest's own `_slice_known_section` reader. `.raw.md` gets no such
+    exemption; a title-less heading there is still an orphan."""
+    out = []
+    for sid, has_title in heading_id_titles(text, fence_aware=True):
+        if sid in known_ids:
+            continue
+        if suffix == ".md" and not has_title:
+            continue  # human free-form subheading, e.g. '## Ownership'
+        out.append(sid)
+    return out
+
+
 _IMAGE_MD_RE = re.compile(r"!\[([^\]]*)\]\(assets/[0-9a-f]{64}\.(?:png|webp)\)")
 
 

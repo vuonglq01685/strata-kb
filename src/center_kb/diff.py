@@ -16,6 +16,7 @@ class SectionChange:
     summary_changed: bool = False
     prose_changed: bool = False
     content_changed: bool = False
+    title_changed: bool = False
     reviewed_by: str = ""
     reviewed_at: str = ""
 
@@ -27,10 +28,11 @@ class DiffReport:
     added: list[SectionChange] = field(default_factory=list)
     removed: list[SectionChange] = field(default_factory=list)
     changed: list[SectionChange] = field(default_factory=list)
+    order_changed: bool = False
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.added or self.removed or self.changed)
+        return bool(self.added or self.removed or self.changed or self.order_changed)
 
 
 def _raw_section(text: str | None, section_id: str) -> str | None:
@@ -109,6 +111,7 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
         if old_sec is None:
             continue
         summary_changed = old_sec.summary.strip() != sec.summary.strip()
+        title_changed = old_sec.title.strip() != sec.title.strip()
         prose_changed = _level_changed(
             root, against, doc_dir, sec.id, sec.file, old_sec.file,
             ".md", prose_cache_new, prose_cache_old,
@@ -117,17 +120,26 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
             root, against, doc_dir, sec.id, sec.file, old_sec.file,
             ".raw.md", raw_cache_new, raw_cache_old,
         )
-        if summary_changed or prose_changed or content_changed:
+        if summary_changed or title_changed or prose_changed or content_changed:
             report.changed.append(
                 SectionChange(
                     sec.id,
                     sec.title,
                     summary_changed=summary_changed,
+                    title_changed=title_changed,
                     prose_changed=prose_changed,
                     content_changed=content_changed,
                     **_reviewed_fields(sec),
                 )
             )
+
+    # Order, restricted to ids present on both sides: an add or a remove
+    # alone shifts the sequence without being a reorder, and reporting it as
+    # one would fire on every amendment (M14).
+    common = new_by_id.keys() & old_by_id.keys()
+    report.order_changed = [s.id for s in new.sections if s.id in common] != [
+        s.id for s in old.sections if s.id in common
+    ]
     return report
 
 
@@ -146,6 +158,7 @@ def render_diff(report: DiffReport) -> str:
         kinds = [
             k
             for k, on in (
+                ("title", c.title_changed),
                 ("summary", c.summary_changed),
                 ("prose", c.prose_changed),
                 ("content", c.content_changed),
@@ -156,4 +169,6 @@ def render_diff(report: DiffReport) -> str:
         if c.reviewed_by:
             line += f" — reviewed by {c.reviewed_by} at {c.reviewed_at}"
         lines.append(line)
+    if report.order_changed:
+        lines.append("• section order changed")
     return "\n".join(lines)

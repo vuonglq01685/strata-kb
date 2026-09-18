@@ -207,3 +207,19 @@ def test_asset_store_none_mode_size_warning(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "ASSET_SIZE_WARN_BYTES", 1024)
     issues = doctor.check_asset_store(kb, None)
     assert any(i.level == "warning" and "s3" in i.message for i in issues)
+
+
+def test_check_usage_log_warns_with_the_count_and_last_line(tmp_path: Path):
+    log = tmp_path / "usage" / "ingest-errors.log"
+    log.parent.mkdir()
+    log.write_text("t1 boom\nt2 bang\n", encoding="utf-8")
+    (issue,) = doctor.check_usage_log(tmp_path)
+    assert issue.level == "warning"
+    assert "2 hook ingest error(s)" in issue.message and "t2 bang" in issue.message
+
+
+def test_check_usage_log_is_silent_without_a_log(tmp_path: Path):
+    assert doctor.check_usage_log(tmp_path) == []
+    (tmp_path / "usage").mkdir()
+    (tmp_path / "usage" / "ingest-errors.log").write_text("", encoding="utf-8")
+    assert doctor.check_usage_log(tmp_path) == []

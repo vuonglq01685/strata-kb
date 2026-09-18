@@ -122,7 +122,7 @@ the PR, not in the assistant's memory:
 | Situation | Run |
 | --- | --- |
 | New ticket, nothing started | `/dev-implement-ticket <ticket>` |
-| Small ticket, the whole change is obvious | `/dev-implement-ticket <ticket>` — the flow collapses itself; the design stays in chat |
+| Small ticket, the whole change is obvious | `/dev-implement-ticket <ticket>` — the flow collapses itself; the design is still written to `docs/impl/<ticket-id>-design.md`, just a bounded one (a paragraph, `path: bounded`) instead of the full template |
 | Design approved, no plan yet | `/dev-plan <id>` |
 | Plan approved, or execution already in progress | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
@@ -164,30 +164,44 @@ Nothing in this pipeline merges or ships without a human:
 
 ## What is enforced
 
-- **TDD** — no production code without a failing test observed first, at
-  every step of `dev-execute`. No exception for a small ticket, a
-  deadline, or an "obvious" change. The only exempt change classes —
-  config, CI, docs, style — are named in `docs/tdd-exemptions.md`, are
-  declared in the plan, and each owes a substitute verification.
+### Machine-enforced
+
 - **The PR carries its evidence** — `.github/workflows/kb-pr-lint.yml`
-  runs `kb pr lint` on every pull request and fails it when a required
-  section of the description is missing, still holds the template's
-  comment, or claims verification with no pasted output. Add **`pr-lint`
-  to the branch's required checks** once: `kb init` writes the workflow
-  but cannot turn on branch protection for you. Unlike `kb-ticket-lint`,
-  this gate never self-skips — once required, it blocks **every** PR
-  without the eight sections, bot PRs (a Dependabot bump, a revert)
-  included, so make that required-check decision knowingly. The workflow
-  runs `pip install center-kb` unpinned, so it only works once a released
-  `center-kb` carries `kb pr lint`; a repo that scaffolds ahead of that
-  release gets `No such command 'pr'` on every PR.
-- **Shown verification** — no completion claim without pasting the real
-  command output; a claim without it is never accepted.
-- **Pinned values, verbatim** — every code/format/enum/threshold that
-  encodes a standard comes from the resolved section at its pinned hub
-  version, with a citation comment. Nothing is invented or "remembered."
-- **The ticket is read-only** — the agent reports placeholder resolutions
-  and findings back to the BA; it never edits the ticket itself.
+  checks out the branch read-only and runs `kb pr lint` on every pull
+  request. It fails when a required section is missing, still holds the
+  template's comment, claims verification with no pasted output, when no
+  Verification fence contains the plan's `cmd.test:` command, or when
+  `## TDD exemptions` names a class outside `config`, `ci`, `docs`,
+  `style`. Add **`pr-lint` to the branch's required checks** once:
+  `kb init` writes the workflow but cannot turn on branch protection for
+  you. Unlike `kb-ticket-lint`, this gate never self-skips — once
+  required, it blocks **every** PR without the eight sections, bot PRs
+  (a Dependabot bump, a revert) included, so make that required-check
+  decision knowingly.
+- **Unreviewed knowledge cannot reach the hub** — `kb build` (run by
+  `kb-code.yml` on push and PR) exits 1 while any `<repo_id>-svc`
+  section is `pending`.
+- **The context cache is CLI-owned** — `kb resolve --status-only --cache`
+  refuses a cache whose version, ref set or resolved block differs from
+  the ticket's.
+
+### Prompt-only — stated in every wrapper, measured by nothing
+
+A recommendation the skills repeat as a rule; nothing in `kb` enforces or
+measures compliance with it. The only check is the human at the gate.
+
+- **TDD** — no production code without a failing test observed first, at
+  every step of `dev-execute`; exempt classes are named in
+  `docs/tdd-exemptions.md` and declared in the plan.
+- **Shown verification** — a completion claim without the real command
+  output; `kb pr lint` checks the PR body, not the session.
+- **Pinned values, verbatim** — every standard-derived value comes from
+  the resolved section at its pinned hub version with a citation comment.
+- **The ticket is read-only** — findings go back to the BA; the agent
+  never edits the ticket.
+- **GATE 1 and GATE 2** — design and plan approved before the next phase;
+  the `status:` header records it, a human grants it.
+- **`OPEN(BA)`** — an ambiguous AC is escalated, never reinterpreted.
 
 ## Keeping it current
 
@@ -300,8 +314,9 @@ transcript itself is ~60ms). That is the price of the data.
   rows are de-duplicated by the transcript's own row ids.
 - Subagent cost is recorded separately (`sidechain`), so a `dev-execute` run
   that fans work out to subagents shows where the tokens actually went.
-- `kb usage note --ticket <id> --phase <p> --model <m> --tokens-in N --tokens-out N`
-  — record a row by hand. It always **appends** a new row, so it is never
+- `kb usage note --ticket <id> --phase <p> --model <m> --tokens-in N --tokens-out N --assistant <name>`
+  — record a row by hand. Rows entered this way are estimates unless
+  `--measured` is given. It always **appends** a new row, so it is never
   the way to fix one the automatic attribution got wrong — using it that way
   double-counts the tokens. The real repair is editing the stored row
   directly in `.kb/usage/<ticket>.jsonl`, then re-running `kb usage report`.

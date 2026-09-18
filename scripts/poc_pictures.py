@@ -66,7 +66,7 @@ def main() -> None:
         caption = ""
         try:
             caption = item.caption_text(doc) or ""
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- best-effort caption in a manual docling exploration script
             pass
         in_table = any(tp == page and inside(tb, bbox) for tp, tb in tables)
         n_in_table += in_table

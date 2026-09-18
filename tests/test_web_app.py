@@ -140,3 +140,19 @@ def test_hub_locked_cache_returns_503_not_a_crash(
             r.name == "center_kb.web.api" and str(legacy) in r.message
             for r in caplog.records
         ), caplog.records
+
+
+def test_sweep_drops_expired_keys(monkeypatch):
+    from center_kb.web import ratelimit
+
+    monkeypatch.setattr(ratelimit, "_SWEEP_THRESHOLD", 2)
+    clock = [1000.0]
+    limiter = ratelimit.SlidingWindowLimiter(5, 60.0, clock=lambda: clock[0])
+    for i in range(3):
+        limiter.allow(f"ip-{i}")
+    assert len(limiter._hits) == 3
+
+    clock[0] += 61.0
+    limiter.allow("ip-new")
+
+    assert set(limiter._hits) == {"ip-new"}

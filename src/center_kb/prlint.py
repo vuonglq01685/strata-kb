@@ -1,7 +1,9 @@
 """Lint a pull-request description against the required-section canon.
 
-Pure text: no hub access, no git, no network, standard library only — so the
-CI job that runs it needs no checkout, no token, and works on fork PRs.
+Pure text plus a local plan-file read: no hub access, no git, no network,
+standard library only — so the CI job that runs it needs only a read-only
+checkout (for `docs/impl/<ticket-id>-plan.md`), no token, and works on fork
+PRs.
 
 `REQUIRED_SECTIONS` below is the single source of truth for the section list.
 The shipped PR template and the `dev-handover` wrappers are pinned against it
@@ -14,6 +16,8 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
 REQUIRED_SECTIONS: tuple[str, ...] = (
     "Ticket",
@@ -47,10 +51,26 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 # nobody reviewing the PR can actually see.
 _UNTERMINATED_COMMENT = re.compile(r"<!--.*\Z", re.DOTALL)
 
-# There is deliberately no `none` matcher. `none` is ordinary non-empty text,
-# so the emptiness check already accepts it in the two sentinel sections, and
-# `## Verification` still needs a fence whatever it says. SENTINEL_SECTIONS
-# exists to word the error message, not to branch the logic.
+# The `none` matcher below (`_NONE`) exists only for the exemption-class
+# check on `## TDD exemptions`; emptiness still handles the rest — `none` is
+# ordinary non-empty text there too, so the emptiness check alone accepts it
+# in `## Findings`, and `## Verification` still needs a fence whatever it
+# says. SENTINEL_SECTIONS exists to word the error message, not to branch
+# that part of the logic.
+
+# The four exemption classes of `docs/tdd-exemptions.md`, mirrored here so
+# `## TDD exemptions` cannot pass on `Exempt: deadline` (reviewer F, H1).
+EXEMPTION_SLUGS: frozenset[str] = frozenset({"config", "ci", "docs", "style"})
+
+# One exemption per line, in either the plan's shape
+# (`Exempt: config — verified by …`) or a bullet (`- config: …`). The slug
+# may be back-ticked; the separator is `:`, `—`, `–` or `-`.
+_EXEMPTION_LINE = re.compile(
+    r"^(?:-\s*)?(?:Exempt:\s*)?`?(?P<slug>[a-z]+)`?\s*(?::|—|–|-)\s*\S"
+)
+_NONE = re.compile(r"^none\.?$", re.IGNORECASE)
+
+Level = Literal["error", "warning"]
 
 
 @dataclass(frozen=True)
@@ -58,6 +78,7 @@ class Finding:
     section: str
     code: str
     message: str
+    level: Level = "error"
 
 
 @dataclass(frozen=True)
@@ -65,26 +86,45 @@ class PRLintReport:
     findings: tuple[Finding, ...]
 
     @property
+    def errors(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.level == "error")
+
+    @property
+    def warnings(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.level == "warning")
+
+    @property
     def passed(self) -> bool:
-        return not self.findings
+        return not self.errors
 
     def render(self) -> str:
         if self.passed:
-            return (
+            lines = [
                 f"PR description: PASS — all {len(REQUIRED_SECTIONS)} required "
                 "sections present and filled."
+            ]
+        else:
+            lines = [f"PR description: FAIL ({len(self.errors)} finding(s))"]
+            lines.extend(
+                f"  [{f.code}] ## {f.section}: {f.message}" for f in self.errors
             )
-        lines = [f"PR description: FAIL ({len(self.findings)} finding(s))"]
-        lines.extend(
-            f"  [{f.code}] ## {f.section}: {f.message}" for f in self.findings
-        )
+        if self.warnings:
+            lines.append("warnings:")
+            lines.extend(
+                f"  [{f.code}] ## {f.section}: {f.message}" for f in self.warnings
+            )
         return "\n".join(lines)
 
     def to_json(self) -> dict:
         return {
             "passed": self.passed,
             "findings": [
-                {"section": f.section, "code": f.code, "message": f.message}
+                {
+                    "section": f.section,
+                    "code": f.code,
+                    "message": f.message,
+                    "level": f.level,
+                }
                 for f in self.findings
             ],
         }
@@ -193,24 +233,119 @@ def _visible(content: str) -> str:
     return text.strip()
 
 
-def _has_fenced_output(text: str) -> bool:
-    """True when a fenced block holds at least one non-blank line."""
+_TICKET_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
+_CMD_TEST = re.compile(r"^cmd\.test:\s*(?P<cmd>\S.*?)\s*$", re.MULTILINE)
+
+
+def ticket_id_of(visible_ticket_section: str) -> str | None:
+    """First `ABC-12`-shaped token in the visible `## Ticket` text."""
+    m = _TICKET_ID.search(visible_ticket_section)
+    return m.group(0) if m else None
+
+
+def plan_cmd_test(plan_dir: Path, ticket_id: str) -> str | None:
+    """The plan's `cmd.test:` header value, back-ticks stripped; None when the
+    plan or the line is absent (an unreadable plan reads as absent)."""
+    try:
+        text = (plan_dir / f"{ticket_id}-plan.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    m = _CMD_TEST.search(text)
+    return m["cmd"].strip("`").strip() if m else None
+
+
+def _fenced_blocks(text: str) -> list[str]:
+    """The bodies of every balanced fenced block, in order."""
+    blocks: list[str] = []
     open_fence = ""
+    current: list[str] = []
     for line in text.split("\n"):
         marker = _is_fence(line)
         if not open_fence:
             if marker:
                 open_fence = marker
+                current = []
             continue
         if marker == open_fence:
+            blocks.append("\n".join(current))
             open_fence = ""
             continue
-        if line.strip():
-            return True
-    return False
+        current.append(line)
+    return blocks
 
 
-def lint_body(body: str) -> PRLintReport:
+def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding]:
+    """The cmd.test check, or the one warning saying why it did not run."""
+    if plan_dir is None:
+        return [Finding("Verification", "plan-dir-unset",
+                        "no plan directory given — the cmd.test check did not run",
+                        level="warning")]
+    ticket_id = ticket_id_of(_visible(first.get("Ticket", "")))
+    if ticket_id is None:
+        return [Finding("Ticket", "ticket-id-unparsed",
+                        "no ABC-12-shaped ticket id found, so the plan's cmd.test "
+                        "could not be checked — start the section with the id",
+                        level="warning")]
+    plan_path = plan_dir / f"{ticket_id}-plan.md"
+    if not plan_path.is_file():
+        return [Finding("Verification", "plan-missing",
+                        f"{plan_path} not found — the cmd.test check did not run "
+                        "(spike or no plan yet)",
+                        level="warning")]
+    try:
+        plan_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return [Finding("Verification", "plan-missing",
+                        f"{plan_path} could not be read — the cmd.test check did "
+                        "not run (spike or no plan yet)",
+                        level="warning")]
+    cmd = plan_cmd_test(plan_dir, ticket_id)
+    if cmd is None:
+        return [Finding("Verification", "cmd-test-unset",
+                        f"{plan_path} has no `cmd.test:` header line — the "
+                        "cmd.test check did not run",
+                        level="warning")]
+    fences = _fenced_blocks(_visible(first.get("Verification", "")))
+    if any(cmd in block for block in fences):
+        return []
+    return [Finding("Verification", "verification-missing-cmd",
+                    f"no fenced block contains the plan's cmd.test `{cmd}` "
+                    f"(from {plan_path}) — paste that command's real run")]
+
+
+def _has_fenced_output(text: str) -> bool:
+    """True when a fenced block holds at least one non-blank line."""
+    return any(block.strip() for block in _fenced_blocks(text))
+
+
+def _exemption_finding(visible: str) -> Finding | None:
+    """`none`, or every non-blank line names one of EXEMPTION_SLUGS.
+
+    `_NONE` is checked against the text with markdown emphasis markers
+    stripped (`` ` ``, `_`, `*`) so the two sentinel sections keep accepting
+    the same "none" spellings (`` `None` ``, `_none_`) the emptiness check
+    already tolerated pre-Task-1 (test_none_is_a_valid_answer_...).
+    """
+    if _NONE.match(visible.strip().strip("`_*")):
+        return None
+    for line in visible.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = _EXEMPTION_LINE.match(stripped)
+        if m is None or m["slug"] not in EXEMPTION_SLUGS:
+            return Finding(
+                "TDD exemptions",
+                "unknown-exemption-class",
+                f"line {stripped[:60]!r} names no exemption class — each line "
+                "is `Exempt: <slug> — verified by <what>` (or `- <slug>: …`) "
+                f"with <slug> one of {', '.join(sorted(EXEMPTION_SLUGS))}, or "
+                "the whole section reads `none`",
+            )
+    return None
+
+
+def lint_body(body: str, *, plan_dir: Path | None = None) -> PRLintReport:
     """Check a PR description against REQUIRED_SECTIONS."""
     found = _split_sections(body)
     counts = Counter(name for name, _ in found)
@@ -262,4 +397,9 @@ def lint_body(body: str) -> PRLintReport:
                     "and cmd.lint output; a claim is not evidence",
                 )
             )
+        if section == "TDD exemptions":
+            bad = _exemption_finding(visible)
+            if bad is not None:
+                findings.append(bad)
+    findings.extend(_plan_findings(first, plan_dir))
     return PRLintReport(tuple(findings))

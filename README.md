@@ -469,10 +469,27 @@ Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the r
 |---|---|---|
 | `kb context new --refs "<doc> §<section>,..."` | BA generates a `kb-context` block pinned at current HEAD — paste into a Jira ticket | `0` OK, `1` ref unresolvable / git error |
 | `kb resolve <file\|->` | Re-read a `kb-context` block (file or stdin), return pinned-version sections + freshness | `0` all refs `ok`, `1` any `broken`, `2` no broken but some `stale` |
-| `kb diff <doc-id> --against <rev>` | Diff added/removed/changed sections for one doc between the worktree and a git rev — what an amendment changed | `0` OK (even if empty), `1` error (missing doc, bad rev…) |
-| `kb doctor [--context <file\|->]` | KB health check (broken TOC, missing files…); add `--context` to also check citation staleness | `0` OK, `1` KB errors, `2` no KB error but citation `stale` — CI uses this to flag "BA needs to reconfirm" |
+| `kb diff <doc-id> --against <rev>` | Diff added/removed/changed sections (including title changes) and manifest reorders for one doc between the worktree and a git rev — what an amendment changed | `0` OK (even if empty), `1` error (missing doc, bad rev…) |
+| `kb doctor [--context <file\|->]` | KB health check (broken TOC, missing files…); add `--context` to also check citation staleness | `0` OK, `1` KB errors, `2` no KB error but citation `stale`, or the hub cache itself is stale (with or without `--context`) — CI uses this to flag "BA needs to reconfirm" or a stale cache |
 
-`kb resolve` / `kb doctor --context` detect L2 content changes (what BAs read); `kb diff` reports L1 summary and L3 original changes (SME review scope). An L2-only edit shows stale on resolve but not in diff.
+These codes are global across every `kb` command:
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | error — including a misconfiguration (bad flag combination, missing required setting) |
+| 2 | citation stale — `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale`, `kb mission lint --fail-on-stale`; `kb doctor` also exits 2, with or without `--context`, when the hub cache itself is stale (a failed pull) |
+
+Caveat: click emits 2 of its own accord for an unrecognised flag or a bad
+parameter type. A CI script that must distinguish "stale" from "you called
+me wrong" should check the command it ran, not only the code.
+
+`kb resolve` / `kb doctor --context` detect that pinned L2 content moved
+since a citation was taken; `kb diff` reports what changed between two revs
+of a doc — section title and L1 summary, the L2 slice (`prose`), the L3
+original (`content`), added and removed sections, and whether the manifest
+order changed. A renumbered section shows as an add plus a remove, because
+the id is the citation key.
 
 #### BA → Jira → Dev flow
 
@@ -550,8 +567,8 @@ Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml` in
 
 | Command | Purpose | Exit code |
 |---|---|---|
-| `kb ticket lint <file\|-> [--hub <url>] [--json]` | Definition-of-Ready gate: required sections present, every `## KB context` ref resolves at its pinned hub commit, every inline `doc-id §section` citation is backed by a pinned ref (and vice versa) | `0` PASS, `1` FAIL |
-| `kb mission lint <file\|-> [--hub <url>] [--json]` | Mission Definition-of-Ready gate: required structure, C4 L1 + L2 diagrams present, a well-formed backlog whose ids derive from the mission id, every citation resolving at its pinned hub commit | `0` PASS, `1` FAIL |
+| `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Definition-of-Ready gate: required sections present, every `## KB context` ref resolves at its pinned hub commit, every inline `doc-id §section` citation is backed by a pinned ref (and vice versa) | `0` PASS, `1` FAIL, `2` citation stale (with `--fail-on-stale`) |
+| `kb mission lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Mission Definition-of-Ready gate: required structure, C4 L1 + L2 diagrams present, a well-formed backlog whose ids derive from the mission id, every citation resolving at its pinned hub commit | `0` PASS, `1` FAIL, `2` citation stale (with `--fail-on-stale`) |
 
 Scaffold a `ba` repo with `kb init --kind ba`; see `QUICKSTART-BA.md` (generated into the repo) for the full setup, including the two environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that wire the assistant to the hub's MCP server, and the CI variable/secret (`CENTER_KB_HUB`, `KB_HUB_TOKEN`) the lint workflow needs.
 

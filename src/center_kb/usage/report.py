@@ -16,7 +16,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from pydantic import BaseModel
 
 from center_kb.usage.ledger import UsageRow
-from center_kb.usage.prices import PriceTable, cost_of, stale_days
+from center_kb.usage.prices import PriceTable, cost_of, resolve_model, stale_days
 
 STALE_AFTER_DAYS = 90
 
@@ -30,6 +30,7 @@ class Bucket(BaseModel):
     cache_write: int = 0
     cost: float = 0.0
     unpriced_rows: int = 0
+    est_rows: int = 0
 
 
 class Aggregate(BaseModel):
@@ -38,10 +39,13 @@ class Aggregate(BaseModel):
     by_phase: list[Bucket] = []
     by_model: list[Bucket] = []
     by_actor: list[Bucket] = []
+    by_assistant: list[Bucket] = []
     main: Bucket = Bucket(key="main")
     sidechain: Bucket = Bucket(key="sidechain")
     unattributed: Bucket = Bucket(key="unattributed")
     unpriced_models: list[str] = []
+    priced_as: dict[str, str] = {}
+    hook_errors: int = 0
     effective_date: str = ""
     currency: str = "USD"
     stale_days: int = 0
@@ -65,6 +69,8 @@ def _add(bucket: Bucket, row: UsageRow, cost: float | None) -> None:
         bucket.unpriced_rows += 1
     else:
         bucket.cost += cost
+    if row.est:
+        bucket.est_rows += 1
 
 
 def _ranked(buckets: dict[str, Bucket]) -> list[Bucket]:
@@ -100,11 +106,16 @@ def aggregate(
     phases: dict[str, Bucket] = defaultdict(Bucket)
     models: dict[str, Bucket] = defaultdict(Bucket)
     actors: dict[str, Bucket] = defaultdict(Bucket)
+    assistants: dict[str, Bucket] = defaultdict(Bucket)
     unpriced: set[str] = set()
+    priced_as: dict[str, str] = {}
     for row in rows:
         cost = cost_of(row, table)
-        if cost is None:
+        key = resolve_model(table, row.model)
+        if key is None:
             unpriced.add(row.model)
+        elif key != row.model:
+            priced_as[row.model] = key
         _add(agg.total, row, cost)
         _add(agg.sidechain if row.sidechain else agg.main, row, cost)
         if row.ticket is None:
@@ -112,14 +123,17 @@ def aggregate(
         else:
             tickets[row.ticket].key = row.ticket
             _add(tickets[row.ticket], row, cost)
-        for store, key in ((phases, row.phase), (models, row.model), (actors, row.actor)):
-            store[key].key = key
-            _add(store[key], row, cost)
+        for store, key_ in ((phases, row.phase), (models, row.model),
+                             (actors, row.actor), (assistants, row.assistant)):
+            store[key_].key = key_
+            _add(store[key_], row, cost)
     agg.by_ticket = _ranked(tickets)
     agg.by_phase = _ranked(phases)
     agg.by_model = _ranked(models)
     agg.by_actor = _ranked(actors)
+    agg.by_assistant = _ranked(assistants)
     agg.unpriced_models = sorted(unpriced)
+    agg.priced_as = dict(sorted(priced_as.items()))
     return agg
 
 
@@ -166,16 +180,27 @@ def _md_row(bucket: Bucket, currency: str) -> str:
 
 def render_markdown(agg: Aggregate) -> str:
     """A PR-body table: what it cost, and where the cost went."""
-    lines = [
+    lines: list[str] = []
+    if agg.stale:
+        lines += [f"**Warning: price table is {agg.stale_days} days old — update "
+                  ".kb/usage-prices.yaml.**", ""]
+    total_key = "total" + (f" ({agg.total.est_rows} estimated)" if agg.total.est_rows else "")
+    lines += [
         "| scope | calls | output tokens | cache read | cost |",
         "| --- | --- | --- | --- | --- |",
-        _md_row(agg.total, agg.currency),
+        _md_row(Bucket(**{**agg.total.model_dump(), "key": total_key}), agg.currency),
     ]
     for bucket in agg.by_ticket:
         lines.append(_md_row(bucket, agg.currency))
     for bucket in agg.by_phase:
         lines.append(_md_row(Bucket(**{**bucket.model_dump(), "key": f"phase: {bucket.key}"}), agg.currency))
+    for bucket in agg.by_assistant:
+        lines.append(_md_row(Bucket(**{**bucket.model_dump(), "key": f"assistant: {bucket.key}"}), agg.currency))
     lines.append("")
+    if agg.priced_as:
+        lines.append("Priced as: " + "; ".join(f"{raw} priced as {key}" for raw, key in agg.priced_as.items()) + ".")
+    if agg.hook_errors:
+        lines.append(f"{agg.hook_errors} hook ingest error(s) logged — see .kb/usage/ingest-errors.log.")
     lines.append(
         f"Prices effective {agg.effective_date} ({agg.stale_days} days old); "
         f"generated {agg.generated}."

@@ -39,6 +39,7 @@ class KBConfig(BaseModel):
     kind: Literal["", "hub", "child", "ba", "dev"] = ""
     intake: str = ""  # intake service base URL — child publishes via OIDC CI
     asset_store: AssetStoreConfig = Field(default_factory=AssetStoreConfig)
+    langs: list[str] = Field(default_factory=list)
 
 
 def load_config(kb_dir: Path) -> KBConfig:

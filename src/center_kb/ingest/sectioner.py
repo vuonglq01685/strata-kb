@@ -648,7 +648,7 @@ def _layout_order(page_items: list[DocItem]) -> list[DocItem]:
     inside a band, left column before right, top to bottom. Stable, so
     docling's order breaks ties."""
     boxes = [i.bbox for i in page_items]
-    assert all(b is not None for b in boxes)
+    assert all(b is not None for b in boxes)  # noqa: S101 -- internal invariant (docling always sets bbox), not input validation
     left = min(b[0] for b in boxes)
     right = max(b[2] for b in boxes)
     span = right - left

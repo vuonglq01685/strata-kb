@@ -410,3 +410,32 @@ Full raw text of the second occurrence. Designation, type, level fields are docu
     report = build_kb(kb, strict=True)
     assert not any("L2 changed after review" in e for e in report.errors)
     assert report.errors == []
+
+
+def _add_hist_section(kb):
+    manifest_path = kb / "demo-doc" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    src = manifest.sections[0]
+    manifest.sections.append(models.SectionEntry(
+        id="hist.api", title="api — ticket history", summary="Tickets: 1.",
+        status="summarized", file=src.file,
+    ))
+    models.save_yaml_model(manifest_path, manifest)
+    l2 = kb / "demo-doc" / f"{src.file}.md"
+    with l2.open("a", encoding="utf-8") as fh:
+        fh.write("\n## hist.api api — ticket history\n\n```text\nT-1 | x\n```\n")
+
+
+def test_whole_doc_approve_skips_machine_authored_hist_sections(git_kb):
+    _add_hist_section(git_kb["kb"])
+    report = approve_sections(git_kb["kb"], "demo-doc", by="sme <sme@x>")
+    assert "hist.api" not in report.flipped
+    assert report.skipped_machine == ["hist.api"]
+    assert _statuses(git_kb["kb"])["hist.api"] == "summarized"
+
+
+def test_naming_a_hist_section_still_approves_it(git_kb):
+    _add_hist_section(git_kb["kb"])
+    report = approve_sections(git_kb["kb"], "demo-doc", ["hist.api"], by="sme <sme@x>")
+    assert report.flipped == ["hist.api"]
+    assert report.skipped_machine == []

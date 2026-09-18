@@ -120,6 +120,11 @@ resolved: <YYYY-MM-DD>
 | placeholder | verified value | evidence (file:line or ref) |
 ```
 
+*Superseded 2026-09-15 by
+`2026-09-15-dev-workflow-usage-review-fixes-design.md` §2: the CLI writes
+everything above `<!-- kb:placeholder-map -->` (`kb resolve --write-cache`)
+and validates it (`--status-only --cache`); the agent owns the map below.*
+
 Rules:
 
 - Written once by the orchestrator after its Resolve + Placeholders steps.

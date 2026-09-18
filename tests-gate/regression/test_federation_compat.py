@@ -78,7 +78,8 @@ def test_new_binary_queries_a_v090_federation(tmp_path, run_git, kb_run):
 
 
 def test_new_binary_doctors_a_v090_federation(
-    tmp_path, run_git, kb_run, strip_kind_warning, strip_legacy_config_mirror_warning
+    tmp_path, run_git, kb_run, strip_kind_warning, strip_legacy_config_mirror_warning,
+    strip_content_digest_not_verified_warning,
 ):
     """Not just "no Traceback" — that bar is far too low (see the reasoning in
     test_kb_backcompat.py::test_new_binary_runs_doctor_on_a_legacy_kb). We must
@@ -94,7 +95,12 @@ def test_new_binary_doctors_a_v090_federation(
     v0.9.1-published file (see the module docstring above) that `kb publish`
     itself would never write anymore — so the legacy-mirror nudge is
     expected too, and must actually fire: see LEGACY_CONFIG_MIRROR_WARNING in
-    tests-gate/conftest.py. Every other warning still fails the gate."""
+    tests-gate/conftest.py.
+
+    This v0.9.0-published snapshot also predates content_sha256 (0.25), so the
+    "content digest not verified" nudge is expected too — see
+    CONTENT_DIGEST_NOT_VERIFIED_WARNING in tests-gate/conftest.py. Every other
+    warning still fails the gate."""
     hub = _hub_from_fixture(tmp_path, run_git)
     repo = tmp_path / "reader"
     (repo / ".kb").mkdir(parents=True)
@@ -114,6 +120,7 @@ def test_new_binary_doctors_a_v090_federation(
     )
     stdout = strip_kind_warning(proc.stdout)
     stdout = strip_legacy_config_mirror_warning(stdout)
+    stdout = strip_content_digest_not_verified_warning(stdout, _repo_id())
     assert "[warning]" not in stdout, (
         "doctor printed 'kb doctor: OK' yet still emitted an unexpected "
         f"[warning] on a federation published by v0.9.0\n"

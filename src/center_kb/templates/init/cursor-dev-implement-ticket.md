@@ -17,12 +17,13 @@ and subagent-driven-development.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
-`version:` matches the ticket's block, run `kb resolve --status-only
-<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
-cache; do NOT re-pull pinned content. No cache, version mismatch, or a
-non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
-rewrite the cache, keeping its `## Placeholder map`.
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
@@ -42,9 +43,10 @@ rewrite the cache, keeping its `## Placeholder map`.
   the ticket is not Ready.
 - **Resolve** — triage exactly as in the Freshness re-check above:
   `broken` → stop and report to the BA; `stale` → show both versions and
-  let the Dev decide; `ok` → continue. After a full resolve, write the
-  cache file `docs/impl/<ticket-id>-context.md`: the block's `version:`,
-  the resolve output verbatim, and a `## Placeholder map` section.
+  let the Dev decide; `ok` → continue. A full resolve is
+  `kb resolve --write-cache docs/impl/<ticket-id>-context.md <ticket-file>`:
+  the command writes the header and the resolved sections; you never
+  edit above the `<!-- kb:placeholder-map -->` marker.
 - **Ground** — read resolved L2; escalate to L3 via
   `kb get <doc> <section> --level l3` (or the `kb_get_section` MCP tool
   when your client exposes it) only for a value that will be encoded in
@@ -54,25 +56,40 @@ rewrite the cache, keeping its `## Placeholder map`.
   structure and `<repo_id>-svc` for responsibility — (or the `kb_search`
   MCP tool when available) and then read the actual code. State the rule:
   *knowledge orients, code decides* — skip whichever document is missing
-  and read the code directly for that half instead: `<repo_id>-code` is
-  missing whenever `kb code-ingest` has not run yet in this repo;
-  `<repo_id>-svc` is missing whenever this repo has not run
-  `dev-code-seed` (or the seed is not yet published). Say so in one line
-  rather than reporting it as a KB gap.
+  and read the code directly for that half. A document missing from the
+  hub means either not yet generated (`kb code-ingest` for
+  `<repo_id>-code`, `dev-code-seed` for `<repo_id>-svc`) or generated and
+  not yet published — check `.kb/<repo_id>-code/` and
+  `.kb/<repo_id>-svc/` locally: present → say "generated, unpublished:
+  run `kb publish`" in one line; absent → "not generated". Reads stay
+  hub-only either way; never report it as a KB gap.
 - **Placeholders** — for each `%%TODO: verify against codebase%%`, verify
   the real name against the codebase and record `placeholder → verified
   value (file:line or code-knowledge ref)`; report the list to the BA;
   **never edit the ticket**; unverifiable here → `OPEN(BA)`. Record the
-  map in the cache file's `## Placeholder map` table (`| placeholder |
-  verified value | evidence (file:line or ref) |`).
+  map in the cache file's `## Placeholder map` table below the marker
+  (`| placeholder | verified value | evidence (file:line or ref) |`).
 - **Run the phases** — run the `/dev-design` prompt (or follow
   `docs/impl/` conventions inline if prompts are unavailable), then —
   after the Dev approves it — the `/dev-plan` prompt, then the
-  `/dev-execute` prompt, then the `/dev-handover` prompt. On re-entry,
-  detect state from `docs/impl/<ticket-id>-design.md`,
-  `docs/impl/<ticket-id>-plan.md`, the ticked-checkbox ratio in the plan,
-  the current branch, and whether a PR exists — then skip finished phases
-  and offer the next one.
+  `/dev-execute` prompt, then the `/dev-handover` prompt.
+  On re-entry, derive the state — never store it — and name the case:
+  - `docs/impl/<ticket-id>-design.md` with `status: draft` →
+    `design 📝 draft`, offer GATE 1; `status: approved` → `design ✅`.
+  - design approved, plan absent, and `git log --oneline <default>..HEAD`
+    non-empty → `plan ⚠ missing, N commits on branch`: ask before running
+    `dev-plan` — work may already be committed.
+  - plan with `status: draft` → `plan 📝 draft`, offer GATE 2; approved →
+    tasks = ticked/total checkboxes.
+  - `gh pr list --head <branch> --state merged` non-empty → `PR ✅ merged`,
+    flow done; `--state closed` non-empty → `PR ❌ closed`, next step is
+    re-handover or reopen — never end the flow silently; `gh` absent →
+    `PR ? unknown (gh not installed)`.
+  - no branch matches `git branch --list "*<ticket-id>*"` and HEAD is the
+    default branch → offer `git switch -c <ticket-id>`.
+  - the current branch names a *different* `ABC-12` ticket id → STOP:
+    "two tickets in flight; switch branches first".
+  Then skip finished phases and offer the next one.
 
 ## Hard rules
 
@@ -102,7 +119,7 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.

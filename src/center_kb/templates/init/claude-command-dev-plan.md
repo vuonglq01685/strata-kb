@@ -14,12 +14,13 @@ Dev has approved the design at GATE 1.
 
 ## Freshness re-check (run this FIRST, every time)
 
-Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
-`version:` matches the ticket's block, run `kb resolve --status-only
-<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
-cache; do NOT re-pull pinned content. No cache, version mismatch, or a
-non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
-rewrite the cache, keeping its `## Placeholder map`.
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
@@ -30,41 +31,48 @@ rewrite the cache, keeping its `## Placeholder map`.
 - **ok** → continue.
 
 Steps the skill enforces: read the design —
-`docs/impl/<ticket-id>-design.md` on the architectural path, the
-approved in-chat design otherwise — then write
-`docs/impl/<ticket-id>-plan.md` with one task per AC, or several tasks
-for a large AC; every task names the test that proves it and carries
-three headings — **Files** (create/modify/test), **Interfaces** (what it
-consumes from earlier tasks and produces for later ones, exact names and
-types, since a task's implementer sees only their own task), and
-**Steps** as `- [ ]` checkboxes, step 1 always being the failing test.
-A task with no test declares its exemption instead, with exactly four
-exception classes — config, CI, docs and style changes, defined in
+`docs/impl/<ticket-id>-design.md`. Its header must say `status:
+approved`; a `draft` design means GATE 1 has not passed, so say so in
+one line and stop, and a `path: spike` design has no plan — point at
+`dev-handover` instead. Then write `docs/impl/<ticket-id>-plan.md`,
+opening with three header lines under its title — `cmd.test:
+<command>`, `cmd.lint: <command>` (from `-code §cmd.*`, or the Dev's
+answer) and `status: draft`, since `kb pr lint` reads `cmd.test:` from
+this file and requires it inside the PR's Verification fence — with one
+task per AC, or several tasks for a large AC; every task names the test
+that proves it and carries three headings — **Files**
+(create/modify/test), **Interfaces** (what it consumes from earlier
+tasks and produces for later ones, exact names and types, since a
+task's implementer sees only their own task), and **Steps** as `- [ ]`
+checkboxes, step 1 always being the failing test. A task with no test
+declares its exemption instead, with exactly four exception classes —
+config, CI, docs and style changes, defined in
 `docs/tdd-exemptions.md` — carrying one line, and no other shape
 accepted: `Exempt: <config|ci|docs|style> — verified by <what>`; the
 slug comes from that document, a change fitting none of the four is
 not exempt, and a change that alters behaviour an AC can see is never
 exempt whatever its file extension. Tasks are ordered so each one
-leaves the repo green, and the plan closes
-with one cross-cutting verification task (full suite + lint) that names
-the commands it will run — `cmd.test` and `cmd.lint` from
-`-code §cmd.*`; when that document has not been
-generated yet in this repo (`kb code-ingest` not yet run), the skill
-asks the Dev once for the build/test/lint commands and records them at
-the top of the plan file so this closing task, `dev-execute`, and
-`dev-handover` all have something to run; and when the repo has no
-linter at all to record as `cmd.lint`, the plan's first task sets one
-up from the *Linting* section of `docs/conventions/<lang>.md` (plus
-`docs/conventions/<lang>.local.md` overrides) and records the command
-it establishes as `cmd.lint` — its red step is running that command
-and watching it fail because no linter is configured, and the initial
-config is scoped so `cmd.lint` passes on the untouched tree, with
-tightening it to full strength recorded as a finding for the PR body.
-Ends at **GATE 2**: the Dev approves the plan before any code is
-written, and once approved, option 1 in the Next-step block below is
-`/dev-execute <ticket-id>`; because the checkbox file is also the
-resume point, it must be complete enough for a different session to
-pick up cold.
+leaves the repo green, and the plan closes with one cross-cutting
+verification task (full suite + lint) that names the commands it will
+run — `cmd.test` and `cmd.lint` from `-code §cmd.*`; when that document
+has not been generated yet in this repo (`kb code-ingest` not yet run),
+the skill asks the Dev once for the build/test/lint commands and
+records them in the `cmd.test:` / `cmd.lint:` header lines, so this
+closing task, `dev-execute`, and `dev-handover` all have something to
+run; and when the repo has no linter at all to record as `cmd.lint`,
+the plan's first task sets one up from the *Linting* section of
+`docs/conventions/<lang>.md` (plus `docs/conventions/<lang>.local.md`
+overrides) and records the command it establishes as `cmd.lint` — its
+red step is running that command and watching it fail because no
+linter is configured. Whether the preset applies at full strength or
+is narrowed so it passes on the current tree is decided by the
+*Linting* section of `docs/conventions/<lang>.md` — follow it, and
+carry every narrowed rule into the PR's `## Findings`. Ends at **GATE
+2**: the Dev approves the plan before any code is written, and once
+approved, flip the plan header to `status: approved` and option 1 in
+the Next-step block below is `/dev-execute <ticket-id>`; because the
+checkbox file is also the resume point, it must be complete enough for
+a different session to pick up cold.
 
 ## Hard rules
 
@@ -94,7 +102,7 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.

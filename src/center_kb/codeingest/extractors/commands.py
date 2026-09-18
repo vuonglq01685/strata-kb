@@ -183,7 +183,7 @@ def _defaults_working_directory(
     return stripped.rstrip("/") if stripped else None
 
 
-_TOKEN_STRIP = "\"'();,"
+_TOKEN_STRIP = "\"'();,"  # noqa: S105 -- shell-token punctuation to strip, not a credential value
 _TOKEN_SEPARATORS = ("-", ":")
 
 # Recognized file extensions, checked against a token's final dot-suffix.
@@ -895,7 +895,7 @@ class CommandsExtractor:
         ) -> list[Candidate]:
             try:
                 found, warns = reader(*args)
-            except Exception as exc:  # defense in depth, mirrors DepsExtractor
+            except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors DepsExtractor
                 # A human label, not `reader.__name__` (Finding 2, task
                 # review round 1): a private function name leaking into a
                 # user-visible KB warning is both unhelpful and, per

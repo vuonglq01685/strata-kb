@@ -10,7 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from center_kb import gitio, kbcontext, models
-from center_kb.mdutils import slice_section
+from center_kb.mdutils import count_tokens, heading_occurrences, orphan_heading_ids, slice_section
 from center_kb.resolve import ResolvedRef, resolve_refs
 
 if TYPE_CHECKING:
@@ -49,7 +49,8 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
     issues: list[Issue] = []
     pending = 0
     referenced: set[str] = {"_manifest.yaml"}
-    for sec in manifest.sections:
+    occurrences = heading_occurrences(manifest.sections)
+    for row, sec in enumerate(manifest.sections):
         if sec.status == "pending":
             pending += 1
         for suffix, layer in ((".md", "L2"), (".raw.md", "L3")):
@@ -60,13 +61,103 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
                 issues.append(
                     Issue("error", f"{doc_id} §{sec.id}: missing {layer} file '{name}'")
                 )
-            elif slice_section(path.read_text(encoding="utf-8"), sec.id) is None:
+                continue
+            sliced = slice_section(
+                path.read_text(encoding="utf-8"), sec.id, occurrences[row]
+            )
+            if sliced is None:
                 issues.append(
                     Issue(
                         "error",
                         f"{doc_id} §{sec.id}: could not slice section in '{name}'",
                     )
                 )
+                continue
+            recount = count_tokens(sliced)
+            stored = sec.tokens.l2 if suffix == ".md" else sec.tokens.l3
+            field = "tokens.l2" if suffix == ".md" else "tokens.l3"
+            if stored != recount:
+                # Warning, not error (Important 4, fix round 1): svc_note
+                # deliberately leaves stale counts in place (svcnote.py) and
+                # code-ingest leaves every section unbuilt -- both routine,
+                # both fixed by the next `kb build`. Still reported (review
+                # row #9's actual drift case), just not a red doctor exit on
+                # a healthy day-to-day workflow.
+                issues.append(
+                    Issue(
+                        "warning",
+                        f"{doc_id} §{sec.id}: {field} is {stored}, recount is "
+                        f"{recount} — run 'kb build'",
+                    )
+                )
+    # Repeated ids are legal WITHIN one file -- heading_occurrences/
+    # slice_section(occurrence=) exist for exactly that, spec-allowed
+    # "repeated numbering" (mdutils.py). heading_occurrences scopes its
+    # count per (file, id), so same id + different files each independently
+    # slice fine and "could not slice" above never catches this. The only
+    # real ambiguity is a citation `doc#<id>` that cannot say which FILE it
+    # meant -- so flag an id only when its rows span more than one file
+    # (Critical 3, fix round 1 -- narrows the original brief's check).
+    files_by_id: dict[str, set[str]] = {}
+    for s in manifest.sections:
+        files_by_id.setdefault(s.id, set()).add(s.file)
+    for sid in sorted(sid for sid, files in files_by_id.items() if len(files) > 1):
+        issues.append(
+            Issue(
+                "error",
+                f"{doc_id} §{sid}: duplicate section id in _manifest.yaml — "
+                "ids are the citation key and must be unique within a doc",
+            )
+        )
+
+    # Final review item 5: re-widened after the batch's own narrowing ruling
+    # turned out half right. A within-file repeat IS legal (heading_
+    # occurrences/slice_section(occurrence=) exist for exactly that,
+    # spec-allowed "repeated numbering") and a citation `doc#<id>` truly
+    # cannot name a FILE (the reason the check above stays scoped to
+    # cross-file) -- but it cannot name an OCCURRENCE either, and nothing on
+    # the read path does that job for it: query.py, resolve.py, searchdb.py,
+    # diff.py and svcnote.py all resolve occurrence 0 only (`_get_section_in`
+    # picks the first matching manifest row, then slices occurrence 0). So a
+    # within-file repeat's 2nd-and-later rows build, publish, and are
+    # permanently unreachable by `kb get`/`kb resolve`/the section API/any
+    # MCP tool -- not an error (the format allows the repeat and four write
+    # modules rely on it), but not silently doctor-green either.
+    per_file_counts: dict[tuple[str, str], int] = {}
+    for s in manifest.sections:
+        per_file_counts[(s.file, s.id)] = per_file_counts.get((s.file, s.id), 0) + 1
+    for (file, sid), count in sorted(per_file_counts.items()):
+        if count > 1:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"{doc_id} §{sid}: id repeated {count}x in '{file}' — the "
+                    "2nd and later occurrences are unreachable by citation "
+                    "(kb get/resolve, the section API and MCP tools all "
+                    "resolve the first occurrence only)",
+                )
+            )
+
+    # The manifest→file direction is checked above (missing file, unsliceable
+    # section). This is the file→manifest direction for headings, the way the
+    # orphan-file loop below is for files: a heading nothing lists is content
+    # no citation can reach (M9, review row #4).
+    listed = {s.id for s in manifest.sections}
+    for suffix in (".md", ".raw.md"):
+        for name in sorted({f"{s.file}{suffix}" for s in manifest.sections}):
+            path = doc_dir / name
+            if not path.exists():
+                continue  # already reported above
+            text = path.read_text(encoding="utf-8")
+            for sid in orphan_heading_ids(text, suffix, listed):
+                issues.append(
+                    Issue(
+                        "error",
+                        f"{doc_id}: heading '{sid}' in '{name}' is not in "
+                        "_manifest.yaml",
+                    )
+                )
+
     if pending:
         issues.append(Issue("warning", f"{doc_id}: {pending} section pending"))
     for f in sorted(doc_dir.glob("*.md")):
@@ -122,7 +213,16 @@ def check_kind(kb_dir: Path) -> list[Issue]:
 
     try:
         kind = load_config(kb_dir).kind
-    except (yaml.YAMLError, ValidationError) as exc:
+    # OSError is a vanished or unreadable file -- doctor's job is to report
+    # it, not die on it (H1: check_kind now runs before _hub_or_exit, which
+    # used to catch this first); worded like cli.py's identical condition
+    # rather than "invalid", which is only true of the branch below.
+    except OSError as exc:
+        return [Issue("error", f"could not read .kb/config.yaml: {_flatten(exc)}")]
+    # ValidationError is a ValueError subclass (covers a bad literal like
+    # kind: bogus); UnicodeDecodeError (a non-UTF-8 file) is also a
+    # ValueError subclass.
+    except (yaml.YAMLError, ValueError) as exc:
         return [Issue("error", f"config.yaml is invalid: {_flatten(exc)}")]
     if not kind:
         return [
@@ -133,6 +233,23 @@ def check_kind(kb_dir: Path) -> list[Issue]:
             )
         ]
     return []
+
+
+def check_usage_log(kb_dir: Path) -> list[Issue]:
+    """The Stop hook swallows every failure into ingest-errors.log; this is
+    the one place a human hears about it (reviewer F L3)."""
+    from center_kb.usage.ledger import hook_errors
+
+    count, last = hook_errors(kb_dir)
+    if not count:
+        return []
+    return [
+        Issue(
+            "warning",
+            f"{count} hook ingest error(s) logged in {kb_dir / 'usage' / 'ingest-errors.log'} "
+            f"— last: {last}; truncate the file once handled",
+        )
+    ]
 
 
 ASSET_SIZE_WARN_BYTES = 100 * 1024 * 1024
@@ -312,7 +429,14 @@ def _kb_tree_digest(root: Path, synthesized: dict[str, str] | None = None) -> st
         rel = path.relative_to(root).as_posix()
         if not pubgate.is_kb_artifact(rel):
             continue
-        manifest[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        # Legacy self-heal: a hub cache cloned before F-D10 (which now forces
+        # core.autocrlf=false and ships .gitattributes) still has a CRLF
+        # working tree, and neutralize_line_endings runs on clone, never on
+        # pull. Normalising here keeps a byte-identical tree from reading as
+        # drift until the TTL re-clone (H3c).
+        manifest[rel] = hashlib.sha256(
+            path.read_bytes().replace(b"\r\n", b"\n")
+        ).hexdigest()
     if synthesized:
         manifest.update(synthesized)
     h = hashlib.sha256()
@@ -322,6 +446,24 @@ def _kb_tree_digest(root: Path, synthesized: dict[str, str] | None = None) -> st
         h.update(manifest[rel].encode("utf-8"))
         h.update(b"\0")
     return h.hexdigest()
+
+
+def _ignoring_digests(idx: models.FederationIndex) -> models.FederationIndex:
+    """Fix round 1, Critical 1: `content_sha256` is live (recomputed on every
+    call to build_federation_index), so comparing it as part of "is the
+    stored aggregate index in sync with the snapshots" makes that check fire
+    on every hub that predates 0.25 (stored defaults to "") and on every
+    tampered snapshot (stored is the old digest, rebuilt is the new one) --
+    the latter also means `kb reindex` would silently launder the tamper by
+    overwriting the stored digest with the live one. That verdict belongs to
+    check_published_digests alone; strip the field before this equality."""
+    return idx.model_copy(
+        update={
+            "docs": [
+                d.model_copy(update={"content_sha256": ""}) for d in idx.docs
+            ]
+        }
+    )
 
 
 def check_hub(
@@ -644,7 +786,12 @@ def check_hub(
                 )
             )
         else:
-            if stored != build_federation_index(fed):
+            # Hoisted once (Fix round 1, Important 3): build_federation_index
+            # hashes every published entry's content to fill content_sha256 --
+            # computing it again inside check_published_digests would hash
+            # the whole hub tree a second time on every `kb doctor` run.
+            rebuilt = build_federation_index(fed)
+            if _ignoring_digests(stored) != _ignoring_digests(rebuilt):
                 issues.append(
                     Issue(
                         "error",
@@ -652,16 +799,41 @@ def check_hub(
                         "run `kb reindex`",
                     )
                 )
+            # Fix round 2, item 2: last-wins here, first-wins in
+            # check_published_digests's own `expected.setdefault(...)` --
+            # identical today only because build_federation_index hoists one
+            # digest per repo and stamps every entry (one per doc) with it;
+            # if that ever becomes per-doc, the two must be reconciled.
+            issues += check_published_digests(
+                fed, {d.repo_id: d.content_sha256 for d in rebuilt.docs}
+            )
 
     if repo_id:
         entry = fed / repo_id
+        # Fix round 4: a self-hub (its own configured hub resolves to
+        # itself -- handle.kb_dir IS kb_dir) does not ordinarily publish
+        # itself into its own federation/<repo_id>/; "has not published to
+        # the hub yet — run `kb publish`" is meaningless there (you cannot
+        # publish a hub to itself in the usual sense), and a pre-existing
+        # test (test_cli_doctor_hub_kind_self_hub_no_false_warnings) already
+        # asserted this warning must not appear for that shape. A CHILD, or
+        # a mid-hub pointed at a genuinely different upstream, still gets
+        # the warning -- only identity with the configured hub suppresses
+        # it. Checked here (not by the cli.py call site) because check_hub
+        # already has both pieces of identity it needs (kb_dir, handle) and
+        # needs no git lookup to compare them, unlike cli.py's own
+        # source_root/upstream computation a few lines down its own call
+        # site, which requires a real git repo and has its own error path
+        # when there isn't one.
+        is_self_hub = handle.kb_dir.resolve() == kb_dir.resolve()
         if not entry.is_dir():
-            issues.append(
-                Issue(
-                    "warning",
-                    f"repo '{repo_id}' has not published to the hub yet — run `kb publish`",
+            if not is_self_hub:
+                issues.append(
+                    Issue(
+                        "warning",
+                        f"repo '{repo_id}' has not published to the hub yet — run `kb publish`",
+                    )
                 )
-            )
         else:
             from center_kb import assetstore
 
@@ -707,28 +879,104 @@ _ENTRY_SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
 
 
-def _fed_tree_digest(root: Path) -> str:
+def _fed_tree_digest(root: Path, skip: frozenset[str] | set[str] = _FED_TOP_SKIP) -> str:
     """Digest deterministic của một cây federation — bỏ file tầng đỉnh mà
     publish không mirror (index/registry/.gitkeep). KHÔNG bỏ _meta.yaml ở
     đây (khác _kb_tree_digest): _snapshot_federation mirror leaf _meta.yaml
     verbatim từ nguồn sang đích — không có bước ghi lại meta như _snapshot
     của .kb/ — nên cả hai phía đều mang cùng bytes khi thật sự đồng bộ;
     bỏ _meta.yaml khỏi digest sẽ che mất drift thật (vd. child republish
-    chỉ đổi source_commit của một leaf mà không đổi nội dung nào khác)."""
+    chỉ đổi source_commit của một leaf mà không đổi nội dung nào khác).
+
+    `skip` defaults to _FED_TOP_SKIP (root IS the top of a federation/ tree,
+    e.g. check_federation_publish's fed_src/dest). Final review item 2: a
+    LEAF entry (federation/<rid>/, e.g. entry_content_digest's root) has its
+    own index.yaml -- the doc titles/revisions/tags/summaries mirrored from
+    that repo's .kb -- which is real content, not the top-level aggregate
+    index.yaml/registry.yaml this set was written to exempt. The exclusion
+    is by bare relative name, not depth, so a leaf root must pass a
+    narrower `skip` or its own index.yaml silently drops out of the digest."""
     import hashlib
 
-    h = hashlib.sha256()
-    for path in sorted(root.rglob("*")):
+    # Fix round 1, Important 4: fold over a {rel: sha256hex} manifest, sorted
+    # by the STRING key, exactly like _kb_tree_digest -- not directly over
+    # sorted(root.rglob("*")) (Path order), which is case-folded on Windows
+    # and case-sensitive on POSIX. A digest is now written on the publisher's
+    # machine and verified on the operator's, so a platform-dependent fold
+    # order is a real red-on-an-untampered-hub risk, not a same-process
+    # curiosity -- and free to fix now, before any hub has one on disk.
+    manifest: dict[str, str] = {}
+    for path in root.rglob("*"):
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
-        if rel in _FED_TOP_SKIP:
+        if rel in skip:
             continue
+        # Legacy self-heal: a hub cache cloned before F-D10 (which now forces
+        # core.autocrlf=false and ships .gitattributes) still has a CRLF
+        # working tree, and neutralize_line_endings runs on clone, never on
+        # pull. Normalising here keeps a byte-identical tree from reading as
+        # drift until the TTL re-clone (H3c).
+        manifest[rel] = hashlib.sha256(
+            path.read_bytes().replace(b"\r\n", b"\n")
+        ).hexdigest()
+    h = hashlib.sha256()
+    for rel in sorted(manifest):
         h.update(rel.encode("utf-8"))
         h.update(b"\0")
-        h.update(path.read_bytes())
+        h.update(manifest[rel].encode("utf-8"))
         h.update(b"\0")
     return h.hexdigest()
+
+
+def check_published_digests(fed: Path, live: dict[str, str] | None = None) -> list[Issue]:
+    """Compare each snapshot's content against the digest stored for it in
+    federation/index.yaml. This is the only tamper check available at the
+    hub: there is no local .kb there to diff against.
+
+    `live` is {repo_id: content_sha256} from a build_federation_index(fed)
+    the caller already ran (check_hub hoists one for its own out-of-sync
+    compare and passes it through here) -- avoids hashing every entry's
+    content a second time. Left optional (recomputed via
+    build_federation_index when omitted) so this check still works called on
+    its own, e.g. from a test."""
+    from center_kb.federation import FEDERATION_INDEX_NAME, build_federation_index
+
+    index_path = fed / FEDERATION_INDEX_NAME
+    if not index_path.exists():
+        return []  # missing index is reported by check_hub
+    try:
+        stored = models.load_yaml_model(index_path, models.FederationIndex)
+    except (yaml.YAMLError, ValidationError):
+        return []  # corruption is reported by check_hub
+    if live is None:
+        live = {d.repo_id: d.content_sha256 for d in build_federation_index(fed).docs}
+    expected: dict[str, str] = {}
+    for doc in stored.docs:
+        expected.setdefault(doc.repo_id, doc.content_sha256)
+
+    issues: list[Issue] = []
+    for repo_id, digest in sorted(expected.items()):
+        if repo_id not in live:
+            continue  # missing/broken entry -- reported by check_hub
+        if not digest:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"federation/{repo_id} was published before 0.25 — content "
+                    "digest not verified; run `kb reindex` on the hub to record it",
+                )
+            )
+            continue
+        if live[repo_id] != digest:
+            issues.append(
+                Issue(
+                    "error",
+                    f"federation/{repo_id} content does not match its published "
+                    "digest — the snapshot was modified outside `kb publish`",
+                )
+            )
+    return issues
 
 
 def check_federation_publish(

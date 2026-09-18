@@ -221,7 +221,7 @@ def test_cache_key_survives_a_token_rotation(tmp_path, monkeypatch):
         "https://x-access-token:ghs_ROTATED@github.com/org/kb-hub.git"
     )
     assert key_a == key_b
-    assert key_a == hashlib.sha1(STRIPPED.encode("utf-8")).hexdigest()[:12]
+    assert key_a == hashlib.sha1(STRIPPED.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 
 @pytest.mark.skipif(
@@ -260,7 +260,7 @@ def test_resolve_hub_uses_the_stripped_key_cache_and_rewrites_its_origin(
     bare = tmp_path / "bare.git"
     run_git(tmp_path, "init", "--bare", str(bare))
 
-    key = hashlib.sha1(UNREACHABLE_STRIPPED.encode("utf-8")).hexdigest()[:12]
+    key = hashlib.sha1(UNREACHABLE_STRIPPED.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)
     run_git(tmp_path, "clone", str(bare), str(cache))
@@ -340,7 +340,7 @@ def _seed_credentialed_cache(tmp_path, origin, token: str, run_git, monkeypatch)
     stripped = "https://example.invalid/hub.git"
     cache_base = tmp_path / "cache"
     monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
-    key = hashlib.sha1(stripped.encode("utf-8")).hexdigest()[:12]
+    key = hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)
     # -c core.autocrlf=false at clone time (not just configured afterwards)

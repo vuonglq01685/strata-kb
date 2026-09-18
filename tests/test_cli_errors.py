@@ -610,6 +610,13 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
             "to an HTTP response, not a CLI one-liner; folding it in would "
             "make a CLI guard claim a contract it does not have"
         ),
+        "center_kb.web.api.SnapshotCorruptError": (
+            "ruling: server-side only (M8) -- raised inside Starlette "
+            "endpoint handlers (api.py's doc_detail/section/api_search) and "
+            "consumed by app.py's exception_handlers entry, which maps it "
+            "to a 503 JSON body or the error-page shell; never reaches "
+            "cli.py, same shape as intake.IntakeError above"
+        ),
         "center_kb.searchdb.IndexBusyError": (
             "ruling: transient and deliberately swallowed in "
             "publish._publish_direct -- joining would invite a guard to "

@@ -1249,7 +1249,7 @@ def safe_extract(
                         )
                     target.parent.mkdir(parents=True, exist_ok=True)
                     src = tf.extractfile(member)
-                    assert src is not None  # isreg() checked above
+                    assert src is not None  # noqa: S101 -- type narrowing, isreg() checked above
                     # HIGH-1 (round 4): this is the one place a read of the
                     # member's own (already-budgeted) content is expected
                     # to be large -- exempt it from the header-metadata
@@ -1327,6 +1327,8 @@ class StatusStore:
             }
             if self._path is not None:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
+                # newline-exempt: server-side PR-state file under
+                # ~/.center-kb/hub (IntakeConfig.status_path), never committed.
                 self._path.write_text(json.dumps(self._data), encoding="utf-8")
 
     def get(self, repo_id: str, commit: str) -> dict | None:

@@ -1,6 +1,6 @@
 [project]
 name = "center-kb"
-version = "0.23.0"
+version = "0.25.0"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
@@ -73,9 +73,64 @@ packages = ["src/center_kb"]
 only-include = ["src"]
 force-include = { "CHANGELOG.md" = "CHANGELOG.md" }
 
+[tool.ruff.lint]
+# Default is E4/E7/E9/F only, which made "ruff check passed" mean very
+# little: the 11 `# noqa: BLE001` markers in src/ were inert because BLE
+# was never enabled, and RUF100 was not there to say so. B/I/UP/SIM are
+# deliberately NOT here yet — 198 mechanical edits belong in their own PR.
+select = ["E4", "E7", "E9", "F", "BLE", "RUF100", "S"]
+
 [tool.ruff.lint.per-file-ignores]
-# pytest.importorskip must run before the guarded import
-"tests/*" = ["E402"]
+# pytest.importorskip must run before the guarded import (E402); asserts are
+# the pytest idiom (S101); every subprocess call under tests/ is a fixed
+# git/python argv built from literal strings for fixture setup -- never
+# shell=True, never network- or user-supplied data (S603/S607); every
+# hardcoded token/password/tempfile path here is a literal test fixture
+# value, never a real credential (S105/S106/S107/S108).
+"tests/*" = ["E402", "S101", "S603", "S607", "S105", "S106", "S107", "S108"]
+
+# Same test idioms as tests/*, plus S310: test_server.py's e2e helper opens a
+# fixed http://127.0.0.1:<port> URL against a server this suite itself
+# started, never user- or network-supplied. Needs its own entry, not a
+# broader "tests/*" glob, because tests-gate/ nests real subdirectories
+# (regression/, e2e/, golden/, fixtures/) that a plain "tests/*" glob does
+# not reach.
+"tests-gate/**" = [
+    "E402", "S101", "S603", "S607", "S105", "S106", "S107", "S108", "S310",
+]
+
+# S603/S607: every subprocess call here is a fixed git argv built in code,
+# never a shell string and never user-interpolated; this is the chokepoint
+# for every git call except the two documented exceptions below (codeingest/
+# core.py, publish.py) that deliberately bypass it.
+"src/center_kb/gitio.py" = ["S603", "S607"]
+
+# S603/S607: fixed git argv (`_git`), same shape as gitio._run -- deliberately
+# NOT routed through gitio because a non-git scratch dir is a valid
+# code-ingest target and this helper must degrade gracefully instead of
+# raising (see comment above `_git` in this file).
+"src/center_kb/codeingest/core.py" = ["S603", "S607"]
+
+# S603/S607: fixed `gh` CLI argv built in code, never a shell string and
+# never user-interpolated.
+"src/center_kb/ghio.py" = ["S603", "S607"]
+
+# S603: cmd is built from shutil.which(name) where name is constrained to the
+# literal "claude"/"copilot" candidates (detect_runner) -- never a shell
+# string, never user-interpolated.
+"src/center_kb/llm.py" = ["S603"]
+
+# S607: fixed `docker`/`docker compose` argv built in code, never a shell
+# string and never user-interpolated.
+"src/center_kb/dockersetup.py" = ["S607"]
+
+# S607: the one `git config` call here is a fixed literal argv, never a shell
+# string and never user-interpolated.
+"src/center_kb/publish.py" = ["S607"]
+
+# S603: verifies the freshly built venv's own `kb` executable during release
+# checks -- path is built from the venv argument, not external input.
+"scripts/check_package.py" = ["S603"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

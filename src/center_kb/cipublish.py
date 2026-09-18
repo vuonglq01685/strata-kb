@@ -17,6 +17,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+import typer
+
 from center_kb import gitio, hashsync, pubgate
 from center_kb import publish as publish_mod
 from center_kb.errors import KbError
@@ -33,9 +35,15 @@ def _decode(raw) -> str:
 
 
 def _default_http(method: str, url: str, headers: dict, body: bytes | None):
-    req = urllib.request.Request(url, method=method, data=body, headers=headers)
+    # The intake URL is operator-configured (--intake / CENTER_KB_INTAKE /
+    # config.yaml `intake:`), not a fixed constant like ghapp.py's API host --
+    # refuse anything but http(s) so a `file://`/custom-scheme value can never
+    # make urlopen read a local path instead of hitting the network (S310).
+    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        return 0, f"refusing non-http(s) URL: {url}".encode("utf-8")
+    req = urllib.request.Request(url, method=method, data=body, headers=headers)  # noqa: S310 -- scheme validated above
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 -- scheme validated above
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
@@ -74,13 +82,18 @@ def _fetch_remote_manifest(
     # child can never diff another child's tree.
     status, raw = http("GET", url, {"Authorization": f"Bearer {token}"}, None)
     if status != 200:
-        print(f"[warn] manifest endpoint returned {status} — falling back to full upload")
+        typer.echo(
+            f"[warn] manifest endpoint returned {status} — falling back to full upload",
+            err=True,
+        )
         return {}
     return json.loads(raw).get("files", {})
 
 
 def _build_archive(kb_abs: Path, changed: list[str]) -> bytes:
     buf = io.BytesIO()
+    # newline-exempt: gzip tar bytes into an in-memory buffer for HTTP
+    # upload -- binary, never on disk; tarfile.open() has no newline= param.
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
         for rel in changed:
             tf.add(kb_abs / rel, arcname=rel, recursive=False)
@@ -110,7 +123,7 @@ def _check_unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> None:
     same helper `kb publish` calls, run here before any upload."""
     gate = publish_mod.unreviewed_gate(kb_dir, require_reviewed)
     if gate.line is not None:
-        print(gate.line)
+        typer.echo(gate.line)
         if gate.blocked:
             raise CIPublishError(gate.line)
 
@@ -149,15 +162,16 @@ def run(
     # remote side is implicitly already held to.
     local_man, skipped = pubgate.split_allowlist(local_man)
     if skipped:
-        print(
+        typer.echo(
             f"[warn] {len(skipped)} file(s) under .kb/ are not KB artefacts and "
-            f"were not published (allowlist): {', '.join(skipped)}"
+            f"were not published (allowlist): {', '.join(skipped)}",
+            err=True,
         )
     changed, deleted = hashsync.diff_manifests(local_man, remote_man)
     if not changed and not deleted:
-        print("nothing to publish — hub snapshot already matches .kb/")
+        typer.echo("nothing to publish — hub snapshot already matches .kb/")
         return ""
-    print(f"publishing {len(changed)} changed file(s), {len(deleted)} deletion(s)")
+    typer.echo(f"publishing {len(changed)} changed file(s), {len(deleted)} deletion(s)")
 
     archive = _build_archive(kb_abs, changed)
     body, content_type = _multipart(
@@ -178,5 +192,5 @@ def run(
             detail = _decode(raw[:200] if isinstance(raw, bytes) else raw)
         raise CIPublishError(f"intake rejected the publish (HTTP {status}): {detail}")
     pr_url = json.loads(raw).get("pr_url", "")
-    print(f"PR: {pr_url}" if pr_url else "published (no content change on the hub)")
+    typer.echo(f"PR: {pr_url}" if pr_url else "published (no content change on the hub)")
     return pr_url

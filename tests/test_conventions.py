@@ -46,9 +46,27 @@ def test_detects_manifests_up_to_two_levels_below_root(tmp_path: Path):
     assert detect_langs(tmp_path) == ["go", "ts"]
 
 
-def test_ignores_manifests_below_depth_two(tmp_path: Path):
-    _touch(tmp_path, "a/b/c/pyproject.toml")    # depth 3
+def test_detects_manifests_three_levels_below_root(tmp_path: Path):
+    _touch(tmp_path, "apps/web/frontend/package.json")   # depth 3
+    assert detect_langs(tmp_path) == ["ts"]
+
+
+def test_ignores_manifests_below_depth_three(tmp_path: Path):
+    _touch(tmp_path, "a/b/c/d/pyproject.toml")           # depth 4
     assert detect_langs(tmp_path) == []
+
+
+def test_forced_langs_union_with_detected(tmp_path: Path):
+    _touch(tmp_path, "package.json")
+    report = InitReport()
+    assert scaffold_conventions(tmp_path, report, forced=["python"]) == ["python", "ts"]
+    assert (tmp_path / "docs" / "conventions" / "python.md").is_file()
+
+
+def test_the_no_manifest_note_names_the_lang_flag(tmp_path: Path):
+    report = InitReport()
+    scaffold_conventions(tmp_path, report)
+    assert any("--lang" in n for n in report.notes)
 
 
 def test_multi_language_repo_is_sorted_and_deduped(tmp_path: Path):

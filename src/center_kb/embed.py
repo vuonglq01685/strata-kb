@@ -71,7 +71,7 @@ def _resolve_default() -> Embedder | None:
             '(enable with: pip install "center-kb[embed]")'
         )
         return None
-    except Exception as exc:  # model download failed (first run offline...)
+    except Exception as exc:  # noqa: BLE001 -- degrade to FTS-only: model download failed (first run offline...)
         logger.warning(
             "could not initialize embedder — keyword search only: %s", exc
         )

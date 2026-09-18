@@ -1,9 +1,23 @@
+import os
+
+# Typer force-enables Rich's colored/wrapped error rendering whenever
+# GITHUB_ACTIONS is set (typer.rich_utils.FORCE_TERMINAL), which is meant to
+# make CI log output readable but instead makes it non-deterministic for
+# tests: Rich's option-name highlighter can split a flag like "--assistant"
+# into two separately-styled spans with a reset code between them, so a
+# plain `"--assistant" in result.output` substring check that passes locally
+# fails only in CI. Must be set before typer.rich_utils is first imported
+# (its FORCE_TERMINAL is computed once, at module import time) — hence
+# first thing in this file, ahead of every other import.
+os.environ.setdefault("_TYPER_FORCE_DISABLE_TERMINAL", "1")
+
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from center_kb import models
+from center_kb.mdutils import count_tokens, slice_section
 
 
 class FakeEmbedder:
@@ -99,6 +113,13 @@ def fixture_kb(tmp_path: Path) -> Path:
                 summary="Airspace record structure: designation, type, level.",
                 status="summarized",
                 file="ch1-records",
+                # Real counts, not the 0/0 default -- doctor now recounts L2/L3
+                # tokens and reports drift (M9), so a fixture claiming to be a
+                # clean KB must carry the counts its own content would produce.
+                tokens=models.SectionTokens(
+                    l2=count_tokens(slice_section(L2_CONTENT, "1.1")),
+                    l3=count_tokens(slice_section(L3_CONTENT, "1.1")),
+                ),
             ),
             models.SectionEntry(
                 id="1.2",
@@ -106,6 +127,10 @@ def fixture_kb(tmp_path: Path) -> Path:
                 summary="Airway record structure and route identifiers.",
                 status="summarized",
                 file="ch1-records",
+                tokens=models.SectionTokens(
+                    l2=count_tokens(slice_section(L2_CONTENT, "1.2")),
+                    l3=count_tokens(slice_section(L3_CONTENT, "1.2")),
+                ),
             ),
         ],
     )
@@ -181,6 +206,11 @@ def git_kb(fixture_kb: Path, run_git) -> dict:
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     manifest.sections[0].summary = (
         "Airspace record structure: designation, type, multiple code."
+    )
+    # The amendment above changed §1.1's L2 body -- recount, or doctor's
+    # stale-token check (M9) flags this fixture's own "clean" state as drift.
+    manifest.sections[0].tokens.l2 = count_tokens(
+        slice_section(l2.read_text(encoding="utf-8"), "1.1")
     )
     models.save_yaml_model(manifest_path, manifest)
     run_git(root, "add", "-A")
@@ -422,6 +452,70 @@ def fed_hub(tmp_path: Path, run_git) -> Path:
     run_git(hub, "add", "-A")
     run_git(hub, "commit", "-m", "hub v1")
     return hub
+
+
+# ==========================================================================
+# Web /ui session fixtures (M4, Task 9) — shared by tests/test_web_session.py
+# and every web-lane task that follows it (10-13). Function-scoped: Task 11
+# shares one rate-limiter instance between the login form and the
+# Authorization path (5-attempt window) -- a session/module-scoped client
+# would leak 429s from one test into the next.
+# ==========================================================================
+
+
+@pytest.fixture
+def token() -> str:
+    return "s3cr3t-token-abcdefgh"
+
+
+@pytest.fixture
+def hub_dir(fed_hub: Path) -> Path:
+    return fed_hub
+
+
+@pytest.fixture
+def web_client(hub_dir: Path, token: str):
+    """A TestClient over the full app (auth middleware + /api + /ui + /mcp
+    mount point), not just ui.build_routes -- unauthenticated /ui* requests
+    must actually redirect to /ui/login, which only the middleware enforces.
+
+    Used as a context manager so Starlette's lifespan startup/shutdown
+    actually runs (create_app(mcp_server=None) has no real lifespan work
+    today, so this is a no-op in practice -- but a fixture every later
+    web-lane task inherits must not silently skip it)."""
+    from starlette.testclient import TestClient
+
+    from center_kb.mcp import ServerConfig
+    from center_kb.web.app import create_app
+
+    config = ServerConfig(kb_dir=hub_dir / ".kb", hub=str(hub_dir))
+    with TestClient(create_app(config, token)) as c:
+        yield c
+
+
+@pytest.fixture
+def web_client_https(hub_dir: Path, token: str):
+    """web_client, but the request presents as https on the wire -- for
+    cookie_is_secure's request.url.scheme branch (Task 10 needs this exact
+    fixture name)."""
+    from starlette.testclient import TestClient
+
+    from center_kb.mcp import ServerConfig
+    from center_kb.web.app import create_app
+
+    config = ServerConfig(kb_dir=hub_dir / ".kb", hub=str(hub_dir))
+    with TestClient(
+        create_app(config, token), base_url="https://testserver"
+    ) as c:
+        yield c
+
+
+@pytest.fixture
+def web_client_logged_in(web_client, token: str):
+    """web_client, already carrying a real session cookie from a genuine
+    /ui/login round trip."""
+    web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
+    return web_client
 
 
 def make_stale(fed_hub: Path) -> None:

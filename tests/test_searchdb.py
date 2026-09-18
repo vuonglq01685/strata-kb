@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-sqlite_vec = pytest.importorskip("sqlite_vec")  # noqa: F401
+sqlite_vec = pytest.importorskip("sqlite_vec")
 
 from center_kb import models, searchdb
 from center_kb.federation import FederationMeta

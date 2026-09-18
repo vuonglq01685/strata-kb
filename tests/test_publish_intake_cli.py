@@ -20,6 +20,14 @@ def _git(cwd: Path, *args: str) -> str:
     return proc.stdout
 
 
+def test_cipublish_default_http_rejects_non_http_scheme():
+    """Fix round 1, Important 2: pin the scheme guard so a future refactor
+    that drops it goes red instead of silently re-opening the file:// read."""
+    status, raw = cipublish._default_http("GET", "file:///etc/passwd", {}, None)
+    assert status == 0
+    assert b"non-http" in raw
+
+
 @pytest.fixture
 def child(tmp_path):
     root = tmp_path / "child"
@@ -45,6 +53,15 @@ class TestPublishViaIntake:
         with pytest.raises(publish_mod.PublishError) as exc:
             publish_mod.publish_via_intake(root / ".kb", "https://kb.test", "child")
         assert "commit" in str(exc.value).lower()
+        assert "kb-publish/" not in _git(root, "tag", "--list")
+
+    def test_bad_scheme_raises_before_tagging(self, child):
+        """Fix round 1, Important 1/2: a bad intake scheme must fail loudly,
+        before anything is tagged or pushed -- not silently poll to timeout."""
+        root, _ = child
+        with pytest.raises(publish_mod.PublishError) as exc:
+            publish_mod.publish_via_intake(root / ".kb", "file:///etc/passwd", "child")
+        assert "http" in str(exc.value).lower()
         assert "kb-publish/" not in _git(root, "tag", "--list")
 
     def test_happy_path_tags_pushes_polls(self, child):

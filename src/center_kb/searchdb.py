@@ -109,7 +109,7 @@ def warm_vec() -> bool:
         import sqlite_vec
     except ImportError:
         _VEC_MODULE = None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- degrade to FTS-only, see comment below
         # Not a plain "not installed" — a partially-initialized numpy, a
         # DLL/version mismatch, or some other failure the import machinery
         # doesn't wrap as ImportError. Degrade to FTS-only same as above, but
@@ -599,7 +599,7 @@ def _sync_vectors(
         chunk = missing_ids[start : start + _EMBED_BATCH]
         placeholders = ",".join("?" * len(chunk))
         batch = conn.execute(
-            "SELECT s.id, f.title, f.summary, f.body_l2 FROM sections s "
+            "SELECT s.id, f.title, f.summary, f.body_l2 FROM sections s "  # noqa: S608 -- placeholders is a "?"-count string only, values bind via `chunk` below
             f"JOIN fts f ON f.rowid = s.id WHERE s.id IN ({placeholders})",
             chunk,
         ).fetchall()
@@ -781,7 +781,7 @@ def fts_search(
     if not match:
         return []
     sql = (
-        f"SELECT fts.rowid, -bm25(fts, {_BM25_WEIGHTS}) FROM fts "
+        f"SELECT fts.rowid, -bm25(fts, {_BM25_WEIGHTS}) FROM fts "  # noqa: S608 -- _BM25_WEIGHTS is a fixed module constant; text/tags bind as params below
         "JOIN sections s ON s.id = fts.rowid WHERE fts MATCH ?"
     )
     params: list[object] = [match]
@@ -789,7 +789,7 @@ def fts_search(
     if tag_list:
         placeholders = ",".join("?" * len(tag_list))
         sql += (
-            " AND EXISTS (SELECT 1 FROM doc_tags t WHERE t.repo_id = s.repo_id"
+            " AND EXISTS (SELECT 1 FROM doc_tags t WHERE t.repo_id = s.repo_id"  # noqa: S608 -- placeholders is a "?"-count string only, values bind via `params` below
             f" AND t.doc_id = s.doc_id AND t.tag IN ({placeholders}))"
         )
         params += tag_list
@@ -806,7 +806,7 @@ def _tagged_rowids(
     ph_rows = ",".join("?" * len(rowids))
     ph_tags = ",".join("?" * len(tag_list))
     rows = conn.execute(
-        f"SELECT s.id FROM sections s WHERE s.id IN ({ph_rows}) AND EXISTS ("
+        f"SELECT s.id FROM sections s WHERE s.id IN ({ph_rows}) AND EXISTS ("  # noqa: S608 -- ph_rows/ph_tags are "?"-count strings only, values bind via the list below
         "SELECT 1 FROM doc_tags t WHERE t.repo_id = s.repo_id "
         f"AND t.doc_id = s.doc_id AND t.tag IN ({ph_tags}))",
         [*rowids, *tag_list],
@@ -878,7 +878,7 @@ def load_sections(
         return {}
     placeholders = ",".join("?" * len(ids))
     rows = conn.execute(
-        "SELECT id, repo_id, doc_id, section_id, title, file, doc_revision "
+        "SELECT id, repo_id, doc_id, section_id, title, file, doc_revision "  # noqa: S608 -- placeholders is a "?"-count string only, values bind via `ids` below
         f"FROM sections WHERE id IN ({placeholders})",
         ids,
     )

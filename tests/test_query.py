@@ -226,6 +226,54 @@ def test_doc_id_is_an_accepted_tag(fed_hub):
     assert outcome.notes == []
 
 
+def test_stale_hub_note_reports_age_when_stale_else_empty(fed_hub):
+    """M17 judgment call 1: moved verbatim from mcp.py's `_stale_note` to a
+    public `query.stale_hub_note`. Pins its own branches directly -- no
+    existing test (MCP or otherwise) ever exercised the `stale=True` branch
+    before this move; every MCP fixture handle was fresh."""
+    from center_kb.query import stale_hub_note
+
+    assert stale_hub_note(HubHandle(root=fed_hub)) == ""
+    assert stale_hub_note(None) == ""
+    note = stale_hub_note(HubHandle(root=fed_hub, stale=True, age_seconds=42.0))
+    assert note == "[warn] hub cache is stale (~42s) — results may lag the hub\n\n"
+
+
+def test_budget_tokens_still_include_the_snippet(fed_hub):
+    """M17: `tokens` keeps counting content + snippet (the budget the search
+    loop actually spent); `content_tokens` is content alone. Reuses the
+    fold-notes trick from test_query_semantic.py's snippet tests (a raw-only
+    L3 subsection so `_l3_snippet` actually fires) to guarantee a
+    snippet-bearing result -- fed_hub's stock fixture content never produces
+    one, so an assertion here would otherwise pass vacuously (tokens ==
+    content_tokens for every result) both before and after this change.
+    Falsifiable: before `content_tokens` existed this raised AttributeError;
+    even with the field merely defaulted to 0 and never populated at the
+    construction site, the second assertion would fail here because
+    count_tokens(r.content) is nonzero for this fixture."""
+    from center_kb import models
+    from center_kb.federation import FederationMeta
+    from center_kb.mdutils import count_tokens
+
+    entry = fed_hub / "federation" / "arinc-kb"
+    (entry / "arinc-424" / "ch1.raw.md").write_text(
+        "## 5.3 Restrictive Airspace\n\nRaw text.\n\n"
+        "### 5.3-notes Folded notes\n\nUnique fact GRYPHON42 lives here only.\n",
+        encoding="utf-8",
+    )
+    meta_path = entry / "_meta.yaml"
+    meta = models.load_yaml_model(meta_path, FederationMeta)
+    meta.published_at = "2026-07-14T09:00:00+00:00"
+    models.save_yaml_model(meta_path, meta)
+
+    results = search(_handle(fed_hub), "GRYPHON42", budget=8000)
+    assert results
+    r = results[0]
+    assert r.snippet, "fixture must produce a snippet-bearing result"
+    assert r.content_tokens == count_tokens(r.content)
+    assert r.tokens == r.content_tokens + count_tokens(r.snippet)
+
+
 def test_doc_id_tag_is_not_reported_unknown_on_the_empty_path(fed_hub):
     """F-C14 review fix: `test_doc_id_is_an_accepted_tag` never reaches the
     `not results and tags` branch (it has results), so it cannot tell the

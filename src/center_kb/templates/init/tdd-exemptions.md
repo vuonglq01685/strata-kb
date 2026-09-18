@@ -42,5 +42,6 @@ this file's extension?"*.
 
 Every exemption taken during a ticket is reported in the PR description under
 `## TDD exemptions`, one line each, copied from the plan. The CI gate
-(`kb pr lint`) requires that section to be present and non-empty; write `none`
-when every task was test-first.
+(`kb pr lint`) requires that section to read `none`, or hold one line per
+exemption naming one of `config`, `ci`, `docs`, `style`; write `none` when
+every task was test-first.

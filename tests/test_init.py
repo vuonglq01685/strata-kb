@@ -197,7 +197,7 @@ def test_cli_init_updates_stale_scaffold(tmp_path: Path):
 
 def test_cli_init_non_interactive_requires_kind(tmp_path: Path):
     result = runner.invoke(app, ["init", str(tmp_path)])
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "kb init requires --kind hub|child when not running interactively." in result.output
 
 
@@ -610,7 +610,7 @@ def test_cli_init_assets_rejected_for_child(tmp_path: Path):
     result = runner.invoke(
         app, ["init", str(tmp_path), "--kind", "child", "--assets", "s3"]
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "hub" in result.output
 
 
@@ -906,7 +906,7 @@ def test_cli_init_assets_rejected_for_ba(tmp_path: Path):
     result = runner.invoke(
         app, ["init", str(tmp_path), "--kind", "ba", "--assets", "s3"]
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "hub" in result.output
 
 
@@ -1862,7 +1862,7 @@ def test_kind_descriptions_lists_four_kinds():
 def test_noninteractive_init_error_string_is_unchanged(tmp_path: Path):
     # Frozen by contract (cli.py comment): the message still reads hub|child.
     result = runner.invoke(app, ["init", str(tmp_path)])
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "kb init requires --kind hub|child when not running interactively." in result.output
 
 
@@ -2276,7 +2276,7 @@ def test_the_shipped_pr_template_fails_the_linter(tmp_path: Path):
     )
     report = lint_body(text)
     assert not report.passed
-    assert {f.code for f in report.findings} == {"empty-section"}
+    assert {f.code for f in report.errors} == {"empty-section"}
 
 
 def test_hub_scaffold_ignores_the_search_index(tmp_path):
@@ -2521,3 +2521,51 @@ def test_hub_and_child_scaffolds_pin_lf_line_endings(tmp_path):
         initcmd.init_repo(dest, kind)
         text = (dest / ".gitattributes").read_text(encoding="utf-8")
         assert "* text=auto eol=lf" in text
+
+
+# --- Task 12: depth-3 detection and `kb init --lang` (M7) -------------------
+
+
+def test_init_dev_lang_scaffolds_the_pack_records_it_and_reinit_reuses_it(tmp_path: Path):
+    init_repo(tmp_path, "dev", langs=["python"])
+    assert (tmp_path / "docs" / "conventions" / "python.md").is_file()
+    assert (tmp_path / "CLAUDE.md").is_file()
+    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    (tmp_path / "docs" / "conventions" / "python.md").unlink()
+    report = init_repo(tmp_path, "dev")   # plain re-init, no flag
+    assert "docs/conventions/python.md" in report.created
+
+
+def test_init_cli_rejects_an_unknown_lang(tmp_path: Path):
+    from typer.testing import CliRunner
+
+    from center_kb.cli import app
+
+    result = CliRunner().invoke(app, ["init", str(tmp_path), "--kind", "dev", "--lang", "cobol"])
+    assert result.exit_code == 1
+    assert "cobol" in result.output and "python" in result.output
+    assert not (tmp_path / ".kb").exists()
+
+
+# --- Task 12 fix round 1: validate recorded langs; note an already-recorded
+# `langs:` when --lang can't change it (append-only) -------------------------
+
+
+def test_init_dev_drops_unknown_recorded_langs_and_notes_them(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    cfg = tmp_path / ".kb" / "config.yaml"
+    cfg.write_text(
+        cfg.read_text(encoding="utf-8") + "langs: [nodejs, python]\n", encoding="utf-8"
+    )
+    report = init_repo(tmp_path, "dev")
+    assert (tmp_path / "docs" / "conventions" / "python.md").is_file()
+    assert not (tmp_path / "docs" / "conventions" / "nodejs.md").exists()
+    assert any("nodejs" in n for n in report.notes)
+
+
+def test_init_dev_lang_notes_when_langs_already_recorded(tmp_path: Path):
+    init_repo(tmp_path, "dev", langs=["python"])
+    report = init_repo(tmp_path, "dev", langs=["java"])
+    assert (tmp_path / "docs" / "conventions" / "java.md").is_file()
+    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert any("hand-edit" in n and "python" in n for n in report.notes)

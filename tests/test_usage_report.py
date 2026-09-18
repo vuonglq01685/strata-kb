@@ -204,3 +204,37 @@ def test_html_and_markdown_spell_a_zero_row_bucket_the_same_way(tmp_path: Path):
     html = report.render_html(agg)
 
     assert "0.00" not in html
+
+
+def test_estimated_rows_are_counted_and_shown(tmp_path: Path):
+    rows = [row("u1"), row("u2", est=True, assistant="copilot")]
+    agg = agg_of(rows, tmp_path)
+    assert agg.total.est_rows == 1
+    assert {b.key: b.rows for b in agg.by_assistant} == {"claude-code": 1, "copilot": 1}
+    md = report.render_markdown(agg)
+    assert "(1 estimated)" in md
+    assert "| assistant: copilot |" in md
+    html = report.render_html(agg)
+    assert "By assistant" in html and "copilot" in html and "1 estimated" in html
+    assert agg.model_dump()["total"]["est_rows"] == 1
+
+
+def test_priced_as_lists_ids_priced_at_a_family_rate(tmp_path: Path):
+    agg = agg_of([row("u1", model="claude-fable-5-1")], tmp_path)
+    assert agg.priced_as == {"claude-fable-5-1": "claude-fable-5"}
+    assert agg.unpriced_models == []
+    assert "claude-fable-5-1 priced as claude-fable-5" in report.render_markdown(agg)
+    assert "priced as" in report.render_html(agg)
+
+
+def test_markdown_warns_when_the_price_table_is_old(tmp_path: Path):
+    (tmp_path / "usage-prices.yaml").write_text("effective_date: '2026-01-01'\n", encoding="utf-8")
+    md = report.render_markdown(agg_of([row("u1")], tmp_path))
+    assert md.startswith("**Warning: price table is 234 days old")
+
+
+def test_markdown_and_html_mention_hook_errors_when_present(tmp_path: Path):
+    agg = agg_of([row("u1")], tmp_path)
+    agg.hook_errors = 3
+    assert "3 hook ingest error(s) logged" in report.render_markdown(agg)
+    assert "3 hook ingest error(s)" in report.render_html(agg)

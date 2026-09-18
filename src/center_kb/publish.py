@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from center_kb import federation, ghio, gitio, models, pubgate
 from center_kb import hub as hub_mod
 from center_kb.errors import KbError
+from center_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("center_kb.publish")
 
@@ -1113,11 +1114,22 @@ def warn_legacy_ids(kb_dir: Path) -> list[str]:
 
 
 def unreviewed_sections(kb_dir: Path) -> tuple[int, int]:
-    """(sections whose status is not `reviewed`, docs that contain one)."""
+    """(sections whose status is not `reviewed`, docs that contain one).
+
+    `hist.*` rows are excluded: they are machine-authored by `kb svc note`,
+    which always leaves a fresh row `summarized`, and a whole-doc `kb
+    approve` deliberately never flips them (F-L7) -- counting them here
+    would re-trip `--require-reviewed` after every `kb svc note` with no
+    way to clear it short of naming the section explicitly.
+    """
     n_sections = n_docs = 0
     for man_path in sorted(kb_dir.glob("*/_manifest.yaml")):
         manifest = _load_manifest_or_raise(man_path)
-        n = sum(1 for s in manifest.sections if s.status != "reviewed")
+        n = sum(
+            1
+            for s in manifest.sections
+            if s.status != "reviewed" and not s.id.startswith(MACHINE_SECTION_PREFIX)
+        )
         if n:
             n_sections += n
             n_docs += 1
@@ -1276,8 +1288,9 @@ def publish_federation(
     rid = pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
     try:
         dest_rid = config_mod.load_config(handle.kb_dir).repo_id or None
-    except Exception as exc:  # noqa: BLE001 — fail closed: a corrupt upstream
-        # config must not silently blind the identity-based cycle guard below.
+    except Exception as exc:
+        # fail closed: a corrupt upstream config must not silently blind the
+        # identity-based cycle guard below.
         raise PublishError(
             f"could not read the upstream hub's .kb/config.yaml: {exc}"
         ) from exc
@@ -1297,7 +1310,7 @@ def publish_federation(
                 src_url = gitio.remote_url(source_root)
                 if dest_url and dest_url == src_url:
                     is_self = True
-        except Exception:  # noqa: BLE001 — see comment above
+        except Exception:  # noqa: BLE001, S110 — see comment above
             pass
     if is_self:
         raise PublishError(
@@ -1416,7 +1429,7 @@ def _publish_direct(
 
     try:
         searchdb.sync(handle, default_embedder())
-    except Exception as exc:  # eager refresh best-effort — query sau rebuild lazy
+    except Exception as exc:  # noqa: BLE001 -- eager refresh best-effort, query still rebuilds lazily
         logger.warning("search index refresh failed: %s", exc)
     return PublishReport(
         rid,
@@ -1482,7 +1495,7 @@ def _default_get_json(url: str) -> tuple[int, dict]:
     import urllib.request
 
     try:
-        with urllib.request.urlopen(url, timeout=30) as resp:
+        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 -- scheme validated by the only caller, publish_via_intake, before this is ever invoked
             import json as json_mod
 
             return resp.status, json_mod.loads(resp.read())
@@ -1507,6 +1520,14 @@ def publish_via_intake(
     """
     import time as time_mod
     import urllib.parse
+
+    # A bad scheme is permanent, not transient like the OSError branch
+    # _default_get_json degrades to -- catching it there would be
+    # indistinguishable from a network hiccup and the caller would poll the
+    # full `timeout` before reporting the wrong thing (Actions logs, not the
+    # real cause). Reject loudly here, before anything is tagged or pushed.
+    if urllib.parse.urlparse(intake_url).scheme not in ("http", "https"):
+        raise PublishError(f"refusing non-http(s) intake URL: {intake_url}")
 
     get_json = http_get_json or _default_get_json
     kb_abs = kb_dir.resolve()

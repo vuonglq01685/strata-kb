@@ -101,3 +101,29 @@ def test_readme_pins_the_registry_mistake_guard_framing():
     authentication claim."""
     text = _normalised(_readme_text())
     assert "mistake guard" in text
+
+
+def test_readme_pins_the_exit_code_contract():
+    """M11 (task 8): usage errors now exit 1, not 2 -- exit 2 means
+    citation stale, and the citation-stale producers are `kb resolve`, `kb
+    doctor --context`, `kb ticket lint --fail-on-stale`, and `kb mission
+    lint --fail-on-stale`. There is no `kb ba lint` command.
+
+    Release 0.25.0 fix round 1, Important 1: the table used to add "only"
+    after that list, which is false -- `cli.py`'s `doctor` command exits 2
+    whenever `hub_stale` is set (from `check_hub`'s `handle.stale`), with
+    or without `--context`, so a stale hub-cache pull shares exit 2 with
+    citation staleness. Pin the corrected prose together with the real
+    command names so the table can't quietly drift back to a non-existent
+    command, lose a producer `cli.py` still has, or reclaim the false
+    "only"."""
+    text = _normalised(_readme_text())
+    assert "error — including a misconfiguration" in text
+    assert (
+        "`kb ticket lint --fail-on-stale`, `kb mission lint --fail-on-stale`; "
+        "`kb doctor` also exits 2, with or without `--context`, when the hub "
+        "cache itself is stale"
+        in text
+    )
+    assert "kb ba lint" not in text
+    assert "--fail-on-stale` only" not in text
