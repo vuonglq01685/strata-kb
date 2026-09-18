@@ -8,6 +8,7 @@ Deliberately standalone: `codeingest.extractors.deps` parses manifest
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -24,13 +25,15 @@ LANG_MANIFESTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ts", ("package.json",)),
 )
 
+LANG_IDS: tuple[str, ...] = tuple(lang for lang, _ in LANG_MANIFESTS)
+
 # Directories whose contents are someone else's code or generated output —
 # a manifest inside them says nothing about what THIS repo is written in.
 _SKIP_DIRS = frozenset({".git", ".kb", "docs", "node_modules", "vendor"})
 
 
 def detect_langs(root: Path) -> list[str]:
-    """Language ids whose manifest exists at root or up to two levels below.
+    """Language ids whose manifest exists at root or up to three levels below.
 
     Root is depth 0 (`web/package.json` is depth 1) — the depth the
     codeingest node reader searches. Defensive: unreadable directories are
@@ -39,7 +42,7 @@ def detect_langs(root: Path) -> list[str]:
     found: set[str] = set()
     for lang, patterns in LANG_MANIFESTS:
         for pattern in patterns:
-            for prefix in ("", "*/", "*/*/"):
+            for prefix in ("", "*/", "*/*/", "*/*/*/"):
                 try:
                     hits = list(root.glob(prefix + pattern))
                 except OSError:
@@ -102,20 +105,23 @@ def _sync(target: Path, rel: str, text: str, report: InitReport) -> None:
     report.created.append(rel)
 
 
-def scaffold_conventions(target: Path, report: InitReport) -> list[str]:
-    """Scaffold conventions files for every detected language.
+def scaffold_conventions(
+    target: Path, report: InitReport, forced: Iterable[str] = ()
+) -> list[str]:
+    """Scaffold conventions files for every detected-or-forced language.
 
     Base + pointer files are package-owned (create-or-refresh); the
     `.local.md` stub is user data — created once, then never compared,
     never rewritten, not even with ``--force`` (its path is dynamic, so it
     cannot sit in PROTECTED_FILES; this function enforces the skip
-    itself). Returns the detected language ids.
+    itself). Returns the scaffolded language ids: detected ∪ forced.
     """
-    langs = detect_langs(target)
+    langs = sorted(set(detect_langs(target)) | set(forced))
     if not langs:
         report.notes.append(
-            "no language manifests detected — conventions skipped; "
-            "re-run kb init after adding code"
+            "no language manifests detected — conventions skipped; re-run "
+            "kb init after adding code, or pass --lang <id> (one of "
+            f"{', '.join(LANG_IDS)})"
         )
         return []
     stub = _template_text("conventions-local-stub.md")

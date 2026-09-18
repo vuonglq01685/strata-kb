@@ -16,10 +16,11 @@ import pytest
 
 pytest.importorskip("sqlite_vec")
 
-from center_kb.federation import write_federation_index  # noqa: E402
-from center_kb.hub import HubHandle  # noqa: E402
-from center_kb.query import QueryResult, _ambiguity_notes, search_detailed  # noqa: E402
-from tests.conftest import make_fed_entry  # noqa: E402
+from center_kb.federation import write_federation_index
+from center_kb.hub import HubHandle
+from center_kb.mdutils import count_tokens
+from center_kb.query import QueryResult, _ambiguity_notes, search_detailed
+from tests.conftest import make_fed_entry
 
 
 @pytest.fixture
@@ -60,6 +61,7 @@ def _keyword_result(section_id: str) -> QueryResult:
         citation=f"arinc-kb:arinc-424 §{section_id}",
         content="content",
         tokens=1,
+        content_tokens=count_tokens("content"),
         source="arinc-kb",
         match_mode="keyword",
     )

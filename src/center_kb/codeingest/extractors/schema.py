@@ -786,7 +786,7 @@ def _read_sql(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecor
             continue
         try:
             _apply_sql_file(text, rel, tables, warnings)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, see comment below
             # Defense in depth (task review round 1, Minor 5): a
             # parse-time bug on this one file must never unwind past
             # this loop and discard every other file's already-
@@ -844,7 +844,7 @@ def _read_prisma(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRe
             continue
         try:
             _apply_prisma_file(text, rel, tables, warnings)
-        except Exception as exc:  # defense in depth, mirrors _read_sql (Minor 5)
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql (Minor 5)
             warnings.append(f"could not parse {rel}: {exc}")
     return tables, warnings
 
@@ -947,7 +947,7 @@ def _read_alembic(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableR
             continue
         try:
             _apply_alembic_file(text, rel, tables, warnings)
-        except Exception as exc:  # defense in depth, mirrors _read_sql (Minor 5)
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql (Minor 5)
             warnings.append(f"could not parse {rel}: {exc}")
     return tables, warnings
 
@@ -989,7 +989,7 @@ def _read_ef(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecord
             continue
         try:
             _apply_ef_file(text, rel, tables, warnings)
-        except Exception as exc:  # defense in depth, mirrors _read_sql (Minor 5)
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql (Minor 5)
             warnings.append(f"could not parse {rel}: {exc}")
     return tables, warnings
 
@@ -1097,8 +1097,7 @@ def _read_sqlite(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRe
                 tables[name] = TableRecord(
                     name=name, columns=columns, pk=pk, ddl=ddl, source=label, created_in=label,
                 )
-        except Exception as exc:
-            # Defense in depth (task review round 1, Minor 5's sibling):
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, see comment below
             # a failure partway through this db's tables must not also
             # discard tables already collected from an earlier db_path.
             warnings.append(f"could not read {label}: {exc}")
@@ -1226,7 +1225,7 @@ class SchemaExtractor:
         def _run(key: str, reader, *args: object) -> None:
             try:
                 tables, warns = reader(*args)
-            except Exception as exc:  # defense in depth, mirrors deps.py/commands.py
+            except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors deps.py/commands.py
                 tables, warns = {}, [f"could not read {key} schema sources: {exc}"]
             per_reader[key] = tables
             warnings.extend(warns)

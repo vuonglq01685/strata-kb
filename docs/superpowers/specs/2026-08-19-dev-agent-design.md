@@ -537,7 +537,7 @@ Order is mandatory: **C needs B** (normalised `svc.<name>` ids, §6.2), **D need
 | Completion claims | **Evidence required (§3.14)** — run the command, show the output. This is why the `commands` extractor is in Stage B rather than deferred |
 | State management | **Derived from files, never stored** — design file, plan file, ticked checkboxes, branch, PR. Any entry point is safe; any interruption recovers |
 | Next-step guidance | **Mandatory block in every skill** (§5.3): state line + ordered options, option 1 = next in flow, exact commands, and blockers promoted above the flow default |
-| Design artifact | File only on the architectural path; a bounded ticket's design stays in chat. Forcing a file on every small ticket would be ceremony that gets skipped, taking the gate with it |
+| Design artifact | File only on the architectural path; a bounded ticket's design stays in chat. Forcing a file on every small ticket would be ceremony that gets skipped, taking the gate with it — **Superseded 2026-09-15** by `2026-09-15-dev-workflow-usage-review-fixes-design.md` §3: every path writes the file; `status:` carries the gate, not existence. |
 | Extractor classification | By **artifact kind** (container/dependency manifest, migration, API contract, CI workflow), never by language (§3.12). Rejected: the per-language set (`python` AST + `deps` + `sqlite`), which exits 1 on most adopting repos |
 | `struct.api.<module>` | **Dropped.** Per-language function signatures are the most expensive extractor and the least useful: C4 L2 is containers, and the Dev reads real code anyway |
 | `cmd.*` source priority | CI `run:` steps beat local scripts — CI is what actually builds and tests the repo; the local variant is listed as an alternative |

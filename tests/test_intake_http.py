@@ -643,7 +643,7 @@ def test_publish_cancelled_mid_publish_still_reaches_a_terminal_status(
 
     c, pem = client
     monkeypatch.setattr(intake, "intake_publish", boom)
-    with pytest.raises(BaseException):  # noqa: B017 -- CancelledError itself
+    with pytest.raises(BaseException):  # B017 once B is enabled -- CancelledError itself, intentional
         _post(c, _jwt(pem))
     st = _get_status(c, _jwt(pem))
     assert st.status_code == 200

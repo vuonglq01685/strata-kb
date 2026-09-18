@@ -112,7 +112,7 @@ class S3Store:
             return True
         except AssetStoreError:
             raise
-        except Exception as exc:  # noqa: BLE001 — classify, then wrap
+        except Exception as exc:  # classify, then wrap
             if _is_missing(exc):
                 return False
             raise AssetStoreError(f"asset store HEAD failed: {exc}") from exc
@@ -128,7 +128,7 @@ class S3Store:
                 ContentType=_media_type(name),
                 CacheControl=_IMMUTABLE,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise AssetStoreError(f"asset store PUT failed: {exc}") from exc
 
     def get(self, name: str) -> bytes | None:
@@ -139,7 +139,7 @@ class S3Store:
             return resp["Body"].read()
         except AssetStoreError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing(exc):
                 return None
             raise AssetStoreError(f"asset store GET failed: {exc}") from exc

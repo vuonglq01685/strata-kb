@@ -3,6 +3,148 @@
 Releases before 0.21.0 are not recorded here -- they are tracked only through
 git tags and pull-request history.
 
+## 0.25.0
+
+### Breaking — session cookie rotation, strict models, and a stricter `kb doctor`
+
+- The `/ui` session cookie is now a signed, expiring value derived from the
+  token (`center_kb_session`) instead of the token itself
+  (`center_kb_token`). Every browser session needs one re-login. New:
+  `POST /ui/logout`.
+- `Manifest`, `SectionEntry`, `IndexEntry` and `KBIndex` reject unknown
+  keys. A typo'd manifest key (`sumary:` for `summary:`) used to load and
+  publish an empty L1 summary; it is now an error. The federation index
+  stays permissive on purpose, so an older install can still read a newer
+  hub.
+- Eight misconfiguration exits -- across `kb init`, `kb ingest`/`kb
+  summarize`'s shared `--llm` validation, `kb usage ingest-transcript`,
+  `kb publish`, and `kb ci-publish` -- that returned 2 now return 1. Exit 2
+  means citation stale -- `kb resolve`, `kb doctor --context`, `kb ticket
+  lint --fail-on-stale`, `kb mission lint --fail-on-stale` -- and `kb
+  doctor` (with or without `--context`) also exits 2 when the hub cache
+  itself is stale (a failed pull), a separate, pre-existing condition that
+  shares the same code. Click still emits its own 2 for a bad flag.
+- `kb doctor` now fails trees it previously called OK: a section id whose
+  manifest rows span more than one file within the same doc (repeated ids
+  within a single file are still legal -- the format allows repeated
+  numbering); a `## ` heading absent from the manifest (a bare, title-less
+  heading like `## Ownership` is exempt only in the L2 `.md` file -- the
+  same heading in L3 `.raw.md` still errors); and published content
+  modified in place on the hub. Stale `tokens:` counts are reported too,
+  but only as a warning -- they no longer affect the exit code. A KB that
+  was green can go red on upgrade with nothing having changed on disk --
+  run `kb build` and `kb reindex` as the messages say.
+- `/api/health` used to return `hub_configured`/`hub_reachable` to every
+  caller, including unauthenticated ones. It now returns
+  `{"status": "ok"}` only, for everyone -- an unauthenticated monitoring
+  probe that parsed either field breaks on upgrade. Get those two facts
+  from `/ui` or `kb doctor` instead.
+
+### Added
+
+- Security headers on every response: CSP (`script-src 'self'`),
+  `X-Frame-Options: DENY`, nosniff, `Referrer-Policy`,
+  `Permissions-Policy`; HSTS on https only. The stricter `script-src`
+  forced `search.html`'s token-budget slider and semantic-KNN checkbox off
+  their inline `onchange` handlers onto a delegated `change` listener in
+  `app.js` (`data-autosubmit`) -- only relevant if you forked those
+  templates.
+- `federation/index.yaml` records `content_sha256` per snapshot, written by
+  `kb reindex`, so `kb doctor` at the hub detects tampering. Snapshots
+  published before 0.25 report "not verified" rather than failing.
+- `kb diff` reports section title changes and manifest reorders.
+
+### Fixed
+
+- **Security:** an operator-configured intake URL (`--intake` /
+  `CENTER_KB_INTAKE` / `.kb/config.yaml`'s `intake:`) reached `urlopen`
+  with no scheme check in `cipublish.py` and the dev-machine intake flow
+  in `publish.py` -- a `file://` value could read local files instead of
+  hitting the network. Both now reject non-http(s) schemes; the
+  dev-machine flow raises before it tags or pushes anything.
+- `kb doctor` no longer dies with a traceback on an invalid
+  `.kb/config.yaml` -- the guard lives in the shared hub funnel, so the
+  other 10 hub commands are covered too, and doctor's own
+  "config.yaml is invalid" check finally runs.
+- Failed authentication over `Authorization` now shares the login form's
+  rate-limit bucket; the lockout can no longer be side-stepped by using the
+  header.
+- A corrupt published snapshot renders an error page (503) instead of a
+  bare 500 on `/api/docs/<doc>`, `/api/docs/<doc>/sections/<section>`,
+  `/api/search`, `/ui/docs/<doc>`, `/ui/docs/<doc>/<section>`, and the
+  `/ui` search screen. `/api/*` gets a JSON error body; `/ui/*` gets an
+  HTML error page.
+- The login form caps its request body and its pages are `no-store`.
+- REST and Web UI `tokens` count only the text the response carries;
+  `/api/search` now surfaces the stale-hub-cache note MCP already had.
+- Three doctor code paths that failed open on an unreadable config now fail
+  closed, matching `kb publish`.
+- `ruff` runs `BLE`, `RUF100` and `S` in addition to the default `E4`/`E7`/
+  `E9`/`F`, so the `# noqa: BLE001` markers in `src/` are live and dead
+  ones are flagged. The Windows-newline regression test
+  (`tests/test_windows_hygiene.py`) is now an AST scan over
+  `src/center_kb/` and `scripts/` instead of a hardcoded module list -- a
+  new file-writing call site must use `newline="\n"` or add a
+  `# newline-exempt: <reason>` comment, rather than silently going
+  unchecked the way anything outside the old list did.
+
+## 0.24.0
+
+### Breaking — `kb pr lint` checks more, `kb usage note` asks more
+
+- `## TDD exemptions` must read `none` or name only `config`, `ci`, `docs`,
+  `style` (one per line). Anything else fails the PR.
+- A `## Verification` fence must contain the plan's `cmd.test:` command
+  when `docs/impl/<ticket-id>-plan.md` carries one; the scaffolded
+  `kb-pr-lint.yml` now checks out the branch read-only to read it. No plan
+  or no id is a warning, not a failure. New flag `--plan-dir`.
+- `kb usage note` requires `--assistant` and records rows as estimates by
+  default (`--measured` to override).
+- The `kb usage note` examples in both scaffolded QUICKSTARTs now show
+  `--assistant`.
+
+### Added
+
+- `kb resolve --write-cache PATH` writes `docs/impl/<ticket-id>-context.md`
+  (header with version, ref set and sha256 + the resolved sections) and
+  keeps everything below `<!-- kb:placeholder-map -->`; `kb resolve
+  --status-only --cache PATH` refuses a cache whose version, ref set or
+  resolved block differs (exit 1). The 20 dev wrappers use both.
+- `kb init --lang <id>` forces a conventions pack; manifests are now found
+  up to three levels deep. `langs:` is recorded in `.kb/config.yaml`.
+- Unknown ids in `.kb/config.yaml` `langs:` are reported and skipped
+  instead of crashing `kb init`; a plain `--lang` against an
+  already-recorded `langs:` key reports the hand-edit needed.
+- Usage report: `(N estimated)`, per-assistant rows, "priced as" for
+  point-release ids (`claude-fable-5-1` → `claude-fable-5`) and the bare
+  `opus` / `sonnet` / `haiku` aliases, a markdown staleness warning, and a
+  hook-error count that `kb doctor` also reports.
+- `dev-design` writes `docs/impl/<ticket-id>-design.md` on every path with
+  `path:` / `status:` headers; GATE 1 and GATE 2 flip `status: approved`.
+  The State line and the orchestrator's re-entry table name draft, merged,
+  closed, missing-plan-with-commits and two-tickets-in-flight.
+
+### Fixed
+
+- The stale hint in `kb resolve` names `kb get … --level l3`, not the
+  forbidden `kb diff`.
+- The usage hook never creates a ghost `.kb/usage/` in the wrong directory.
+- `kb approve <doc>` without `--section` skips machine-authored `hist.*`.
+- `kb publish --require-reviewed` no longer counts machine-authored
+  `hist.*` sections (they are never flipped by a whole-doc approve); `kb
+  approve` says so when they are the only summarized sections left.
+- The web hub's review queue and per-doc coverage counters carry the same
+  `hist.*` carve-out — a `-svc` doc's history rows no longer crowd the
+  queue or keep it from reading as fully reviewed.
+- `kb usage report` reports the hook-error count even when the ledger is
+  empty, and `kb doctor` survives a non-UTF-8 hook log.
+- Java preset: 2-space indent to match google-java-format; `maxWarnings = 0`
+  is a tightening step, not the starting point. Python preset lints `T20`
+  and `N`; TS preset sets `no-console: error`. Every preset carries the one
+  tightening rule that `dev-plan` now points at.
+- QUICKSTART-dev separates what `kb` enforces from what the wrappers only
+  state.
+
 ## 0.23.0
 
 ### Breaking — `kb code-ingest` paths and destinations

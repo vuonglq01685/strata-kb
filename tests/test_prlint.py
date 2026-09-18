@@ -46,13 +46,21 @@ def test_canon_is_the_eight_sections_in_order():
 def test_a_fully_filled_description_passes():
     report = lint_body(_body())
     assert report.passed, report.render()
-    assert report.findings == ()
+    # No plan_dir given (default None) — the plan-dir-unset warning is
+    # expected (see test_no_plan_dir_is_a_warning_not_a_failure); only
+    # errors are pinned to zero here.
+    assert report.errors == ()
 
 
 def test_an_empty_body_reports_every_section_missing():
     report = lint_body("")
     assert not report.passed
-    assert _codes("") == {(name, "missing-section") for name in REQUIRED_SECTIONS}
+    # Exact set: no plan_dir given, so a plan-dir-unset warning rides along
+    # (see test_no_plan_dir_is_a_warning_not_a_failure) alongside the eight
+    # missing-section errors this test pins — nothing else.
+    assert _codes("") == {
+        (name, "missing-section") for name in REQUIRED_SECTIONS
+    } | {("Verification", "plan-dir-unset")}
 
 
 def test_a_missing_heading_is_reported_by_name():
@@ -236,6 +244,149 @@ def test_render_names_the_failing_sections_and_to_json_round_trips():
         assert name in text
     payload = report.to_json()
     assert payload["passed"] is False
-    assert len(payload["findings"]) == len(REQUIRED_SECTIONS)
+    assert len(report.errors) == len(REQUIRED_SECTIONS)
     assert payload["findings"][0]["code"] == "missing-section"
-    assert lint_body(_body()).to_json() == {"passed": True, "findings": []}
+    # No plan_dir given, so the payload also carries the plan-dir-unset
+    # warning; passed stays True and it is the only non-error finding.
+    filled_payload = lint_body(_body()).to_json()
+    assert filled_payload["passed"] is True
+    assert all(f["level"] == "warning" for f in filled_payload["findings"])
+
+
+from center_kb.prlint import EXEMPTION_SLUGS, Finding, PRLintReport
+
+
+def test_the_four_exemption_slugs_are_the_canon():
+    assert EXEMPTION_SLUGS == frozenset({"config", "ci", "docs", "style"})
+
+
+def test_exemption_lines_naming_a_known_slug_pass():
+    body = _body(**{"TDD exemptions": (
+        "- config: ruff.toml — verified by running `ruff check .`\n"
+        "- docs — README only, rendered locally\n"
+        "Exempt: ci — verified by the workflow's own run on this PR\n"
+        "- `style`: renames, suite green before and after"
+    )})
+    assert lint_body(body).passed
+
+
+def test_none_still_passes_the_exemption_section():
+    assert lint_body(_body(**{"TDD exemptions": "None."})).passed
+
+
+def test_an_unknown_exemption_class_is_an_error():
+    report = lint_body(_body(**{"TDD exemptions": "Exempt: deadline"}))
+    assert not report.passed
+    (f,) = [f for f in report.findings if f.section == "TDD exemptions"]
+    assert f.code == "unknown-exemption-class"
+    assert f.level == "error"
+    for slug in ("config", "ci", "docs", "style"):
+        assert slug in f.message
+
+
+def test_prose_in_the_exemption_section_is_an_error():
+    body = _body(**{"TDD exemptions": "we skipped tests because it was late"})
+    assert ("TDD exemptions", "unknown-exemption-class") in _codes(body)
+
+
+def test_a_warning_level_finding_does_not_fail_the_report():
+    report = PRLintReport((Finding("Ticket", "x", "y", level="warning"),))
+    assert report.passed
+    assert report.warnings == report.findings
+    assert report.errors == ()
+    assert "warning" in report.render()
+    assert report.to_json()["findings"][0]["level"] == "warning"
+
+
+def test_findings_default_to_error_level():
+    assert Finding("Ticket", "x", "y").level == "error"
+
+
+from pathlib import Path
+
+from center_kb.prlint import plan_cmd_test, ticket_id_of
+
+
+def _plan(tmp_path: Path, ticket: str = "ATM-7", cmd: str = "pytest -q") -> Path:
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / f"{ticket}-plan.md").write_text(
+        f"# {ticket} plan\n\ncmd.test: `{cmd}`\ncmd.lint: ruff check .\nstatus: approved\n",
+        encoding="utf-8",
+    )
+    return d
+
+
+def _ticket_body(**overrides: str) -> str:
+    return _body(Ticket="ATM-7 — add the new-flight endpoint", **overrides)
+
+
+def test_ticket_id_is_the_first_upper_dash_number_token():
+    assert ticket_id_of("ATM-7 — add the endpoint") == "ATM-7"
+    assert ticket_id_of("see PROJ-10 and PROJ-2") == "PROJ-10"
+    assert ticket_id_of("open-new-flight — no id here") is None
+
+
+def test_plan_cmd_test_reads_the_header_line_and_strips_backticks(tmp_path: Path):
+    d = _plan(tmp_path)
+    assert plan_cmd_test(d, "ATM-7") == "pytest -q"
+    assert plan_cmd_test(d, "ATM-8") is None
+
+
+def test_verification_fence_holding_cmd_test_passes(tmp_path: Path):
+    d = _plan(tmp_path)
+    body = _ticket_body(Verification="```\n$ pytest -q\n12 passed in 0.4s\n```")
+    report = lint_body(body, plan_dir=d)
+    assert report.passed, report.render()
+    assert report.warnings == ()
+
+
+def test_verification_fence_without_cmd_test_is_an_error(tmp_path: Path):
+    d = _plan(tmp_path)
+    body = _ticket_body(Verification="```\n12 passed in 0.4s\n```")
+    report = lint_body(body, plan_dir=d)
+    assert not report.passed
+    (f,) = [f for f in report.errors if f.code == "verification-missing-cmd"]
+    assert "pytest -q" in f.message and "ATM-7-plan.md" in f.message
+
+
+def test_cmd_test_in_prose_outside_the_fence_does_not_count(tmp_path: Path):
+    d = _plan(tmp_path)
+    body = _ticket_body(Verification="ran pytest -q\n\n```\n12 passed\n```")
+    assert not lint_body(body, plan_dir=d).passed
+
+
+def test_no_plan_dir_is_a_warning_not_a_failure():
+    report = lint_body(_ticket_body())
+    assert report.passed
+    assert [f.code for f in report.warnings] == ["plan-dir-unset"]
+
+
+def test_unparsed_ticket_id_is_a_warning(tmp_path: Path):
+    report = lint_body(_body(), plan_dir=_plan(tmp_path))
+    assert report.passed
+    assert [f.code for f in report.warnings] == ["ticket-id-unparsed"]
+
+
+def test_missing_plan_file_is_a_warning(tmp_path: Path):
+    report = lint_body(_ticket_body(), plan_dir=tmp_path / "nowhere")
+    assert report.passed
+    assert [f.code for f in report.warnings] == ["plan-missing"]
+
+
+def test_plan_without_a_cmd_test_line_is_a_warning(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "ATM-7-plan.md").write_text("# plan\n\nstatus: draft\n", encoding="utf-8")
+    report = lint_body(_ticket_body(), plan_dir=d)
+    assert report.passed
+    assert [f.code for f in report.warnings] == ["cmd-test-unset"]
+
+
+def test_a_non_utf8_plan_file_is_a_warning_not_a_crash(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "ATM-7-plan.md").write_bytes(b"# plan\n\ncmd.test: \xff\xfe pytest -q\n")
+    report = lint_body(_ticket_body(), plan_dir=d)
+    assert report.passed
+    assert [f.code for f in report.warnings] == ["plan-missing"]

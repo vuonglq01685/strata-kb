@@ -5,9 +5,9 @@ import hashlib
 import pytest
 
 PIL = pytest.importorskip("PIL")
-from PIL import Image  # noqa: E402
+from PIL import Image
 
-from center_kb.ingest import images  # noqa: E402
+from center_kb.ingest import images
 
 
 def _img(w: int, h: int, color=(200, 30, 30)) -> Image.Image:

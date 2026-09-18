@@ -126,6 +126,8 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
     result = converter.convert(str(pdf_path))
     doc = result.document
     work_dir.mkdir(parents=True, exist_ok=True)
+    # newline-exempt: docling parse cache under .kb-work, local scratch,
+    # never committed or hub-synced.
     cache.write_text(json.dumps(doc.export_to_dict()), encoding="utf-8")
     return doc
 
@@ -298,7 +300,7 @@ def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str |
             return None
         return images.image_ref(images.resolve_description("", images.ocr_image(crop)),
                                 images.save_asset(crop, assets_dir))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- cell crop best-effort, page rendering continues without it
         logger.warning("cell crop on page %s skipped: %s", page, exc)
         return None
 
@@ -314,7 +316,7 @@ def _picture_md(item, doc, assets_dir: Path) -> str | None:
             return None
         try:
             caption = item.caption_text(doc) or ""
-        except Exception:
+        except Exception:  # noqa: BLE001 -- caption best-effort, image itself is still saved
             caption = ""
         ocr_text = "" if caption.strip() else images.ocr_image(img)
         desc = images.resolve_description(caption, ocr_text)
@@ -346,7 +348,7 @@ def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str
     try:
         reader = PdfReader(str(pdf_path))
         walk(reader.outline)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- see docstring: None means "outline unreadable", not a crash
         logger.debug("outline unreadable for %s: %s", pdf_path, exc)
         return None
     return ids
@@ -369,7 +371,7 @@ def outline_parts(
     try:
         reader = PdfReader(str(pdf_path))
         outline = reader.outline
-    except Exception:
+    except Exception:  # noqa: BLE001 -- see docstring: None means "no usable outline", not a crash
         return None
 
     matched: list[Part] = []
@@ -384,7 +386,7 @@ def outline_parts(
             title = " ".join(((getattr(entry, "title", "") or "")).split())
             try:
                 page_index = reader.get_destination_page_number(entry)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- one bad bookmark must not abort the whole outline walk
                 logger.debug("bookmark '%s' skipped — bad destination: %s", title, exc)
                 continue
             if page_index is None:  # pypdf: destination without a page number

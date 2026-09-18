@@ -30,13 +30,15 @@ def test_version_flag_does_not_require_a_subcommand():
 
 def test_query_prints_raw_match_snippet_when_present(fed_hub, fixture_kb, monkeypatch):
     from center_kb import query as query_module
+    from center_kb.mdutils import count_tokens
     from center_kb.query import QueryResult, SearchOutcome
 
     fake_results = [
         QueryResult(
             doc_id="arinc-424", section_id="5.3", title="Restrictive Airspace",
             score=1.0, citation="arinc-kb:arinc-424 §5.3", content="Condensed body.",
-            tokens=5, source="arinc-kb", match_mode="keyword",
+            tokens=5, content_tokens=count_tokens("Condensed body."),
+            source="arinc-kb", match_mode="keyword",
             snippet="...GRYPHON42 in raw...",
         )
     ]
@@ -57,13 +59,15 @@ def test_query_prints_raw_match_snippet_when_present(fed_hub, fixture_kb, monkey
 
 def test_query_omits_raw_match_line_when_snippet_empty(fed_hub, fixture_kb, monkeypatch):
     from center_kb import query as query_module
+    from center_kb.mdutils import count_tokens
     from center_kb.query import QueryResult, SearchOutcome
 
     fake_results = [
         QueryResult(
             doc_id="arinc-424", section_id="5.3", title="Restrictive Airspace",
             score=1.0, citation="arinc-kb:arinc-424 §5.3", content="Condensed body.",
-            tokens=5, source="arinc-kb", match_mode="keyword",
+            tokens=5, content_tokens=count_tokens("Condensed body."),
+            source="arinc-kb", match_mode="keyword",
         )
     ]
     monkeypatch.setattr(
@@ -257,6 +261,18 @@ def test_build_strict_flag_and_quality_warn_rendering(fixture_kb):
 
 
 def test_stats_hints_when_tokens_never_built(fixture_kb):
+    """fixture_kb now carries real (non-zero) token counts (M9 fix round 1 --
+    doctor recounts them, so a fixture claiming "clean" must be honest about
+    them) -- zero them here to get back to this test's actual precondition:
+    a KB that has never been built."""
+    from center_kb import models
+
+    manifest_path = fixture_kb / "demo-doc" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    for sec in manifest.sections:
+        sec.tokens = models.SectionTokens()
+    models.save_yaml_model(manifest_path, manifest)
+
     result = runner.invoke(app, ["stats", "--kb-dir", str(fixture_kb)])
     assert result.exit_code == 0
     assert "run kb build to refresh token counts" in result.output

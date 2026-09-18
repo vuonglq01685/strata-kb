@@ -114,7 +114,7 @@ def test_forced_two_thread_race_is_idempotent(fed_hub):
             conn = searchdb.open_db(hub)
             barrier.wait()  # release both threads into _sync_conn together
             searchdb._sync_conn(conn, hub, None, vectors_strict=False)
-        except BaseException as exc:  # capture for the assertion below, incl. BrokenBarrierError
+        except BaseException as exc:  # noqa: BLE001 -- capture for the assertion below, incl. BrokenBarrierError
             errors.append((n, exc))
         finally:
             if conn is not None:

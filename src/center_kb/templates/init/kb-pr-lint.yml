@@ -16,9 +16,10 @@
 # never started, so a `paths:` filter on a trigger backing a *required* check
 # leaves any PR outside the filter waiting forever.
 #
-# No checkout, no hub URL, no token: `kb pr lint` is pure text, so this job
-# also runs green on pull requests from forks, where a hub credential would
-# not be available.
+# Read-only checkout, no hub URL, no token: `kb pr lint` reads the PR body
+# plus `docs/impl/<ticket-id>-plan.md` from the branch (its `cmd.test:` must
+# appear inside the Verification fence). `persist-credentials: false` keeps
+# the job green and inert on pull requests from forks.
 name: kb-pr-lint
 on:
   pull_request:
@@ -42,6 +43,9 @@ jobs:
       # payload the attacker chooses. tests/test_templates.py pins this.
       PR_BODY: ${{ github.event.pull_request.body }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

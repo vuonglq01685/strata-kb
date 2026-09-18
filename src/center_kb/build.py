@@ -8,9 +8,9 @@ from center_kb import models, quality
 from center_kb.mdutils import (
     count_tokens,
     extract_tables,
-    heading_id_titles,
     heading_occurrences,
     normalize_table,
+    orphan_heading_ids,
     slice_section,
 )
 
@@ -124,23 +124,14 @@ def _check_orphan_headings(
     cache: dict[str, str],
 ) -> None:
     """Every real `## <id> …` heading in a doc's L2/L3 files must be a known
-    manifest id (Ruling R16). Two exceptions, both mirroring codeingest's
-    own `_slice_known_section` reader:
-    - a '## ' line inside a ``` / ~~~ fenced block is never a heading (a
-      `.raw.md` may embed a source file whose own text contains one);
-    - in the L2 `.md` only, a title-less heading ('## Ownership' -- a
-      single token, no second whitespace-separated title token) is a
-      human's own free-form subheading, not a scaffold section break.
-    """
+    manifest id (Ruling R16) -- see `mdutils.orphan_heading_ids` for the
+    shared per-file predicate (also used by doctor's `_check_doc`, and it
+    must stay the single source of the fence/title-less exemptions)."""
     ids = {s.id for s in manifest.sections}
     for stem in sorted({s.file for s in manifest.sections}):
         for suffix in (".md", ".raw.md"):
             text = _read_cached(kb_dir / doc_id / f"{stem}{suffix}", cache)
-            for sid, has_title in heading_id_titles(text, fence_aware=True):
-                if sid in ids:
-                    continue
-                if suffix == ".md" and not has_title:
-                    continue  # human free-form subheading, e.g. '## Ownership'
+            for sid in orphan_heading_ids(text, suffix, ids):
                 report.errors.append(
                     f"{doc_id}: heading '{sid}' in {stem}{suffix} is not in the manifest"
                 )

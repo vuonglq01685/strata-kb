@@ -169,7 +169,7 @@ def test_matching_requested_repo_id_is_accepted():
         ("direct", True, True, False, "direct"),
         ("direct", False, False, True, "direct"),   # local-path governed hub
         ("pr", True, True, False, "pr"),
-        ("auto", False, False, False, "direct"),    # README:479's stated behaviour
+        ("auto", False, False, False, "direct"),    # README's stated kb publish mode behaviour (§7.9)
         ("auto", False, False, True, "direct"),
         ("auto", True, True, False, "pr"),
         ("auto", True, True, True, "pr"),

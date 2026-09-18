@@ -1,4 +1,5 @@
 import pytest
+import yaml
 
 from center_kb import models
 from center_kb.diff import diff_doc, render_diff
@@ -52,6 +53,9 @@ def test_added_and_removed_sections(git_kb):
     report = diff_doc(git_kb["kb"], "demo-doc", against="HEAD")
     assert [c.section_id for c in report.added] == ["1.3"]
     assert [c.section_id for c in report.removed] == ["1.2"]
+    # add+remove alone must not read as a reorder (guards the `common`-id
+    # restriction in diff_doc: dropping it made this pass by accident).
+    assert report.order_changed is False
 
 
 def test_unknown_doc_raises(git_kb):
@@ -122,3 +126,55 @@ def test_prose_changed_when_l2_edited(git_kb):
     assert change.summary_changed is False
     assert change.content_changed is False
     assert "prose" in render_diff(report)
+
+
+def test_title_change_in_the_manifest_only_is_reported(git_kb):
+    # git_kb's worktree is clean against HEAD (see test_no_changes_against_head)
+    # -- reuse it rather than hand-rolling a second repo builder.
+    manifest = git_kb["kb"] / "demo-doc" / "_manifest.yaml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(
+        text.replace("title: Airspace Records", "title: Airspace Records and scope"),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    report = diff_doc(git_kb["kb"], "demo-doc", against="HEAD")
+
+    assert [c.section_id for c in report.changed] == ["1.1"]
+    assert report.changed[0].title_changed is True
+    assert "(title)" in render_diff(report)
+
+
+def test_manifest_reorder_is_reported_once(git_kb):
+    manifest = git_kb["kb"] / "demo-doc" / "_manifest.yaml"
+    m = models.Manifest.model_validate(
+        yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    )
+    m.sections.reverse()
+    models.save_yaml_model(manifest, m)
+
+    report = diff_doc(git_kb["kb"], "demo-doc", against="HEAD")
+
+    assert report.order_changed is True
+    assert report.has_changes is True
+    assert "section order changed" in render_diff(report)
+
+
+def test_renumber_stays_add_plus_remove(git_kb):
+    """A section id is the citation key -- an SME must see the old one go."""
+    manifest = git_kb["kb"] / "demo-doc" / "_manifest.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("id: '1.1'", "id: '1.4'"),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    report = diff_doc(git_kb["kb"], "demo-doc", against="HEAD")
+
+    assert [c.section_id for c in report.added] == ["1.4"]
+    assert [c.section_id for c in report.removed] == ["1.1"]
+    assert report.changed == []
+    # add+remove (a renumber) alone must not read as a reorder -- this is
+    # the guard `diff_doc` restricts order comparison to common ids for.
+    assert report.order_changed is False

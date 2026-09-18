@@ -256,11 +256,13 @@ async def test_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
 
 
 def _qr(mode: str, score: float, cite: str = "r:d §1"):
+    from center_kb.mdutils import count_tokens
     from center_kb.query import QueryResult
 
     return QueryResult(
         doc_id="d", section_id="1", title="t", score=score,
-        citation=cite, content="c", tokens=1, match_mode=mode,
+        citation=cite, content="c", tokens=1, content_tokens=count_tokens("c"),
+        match_mode=mode,
     )
 
 

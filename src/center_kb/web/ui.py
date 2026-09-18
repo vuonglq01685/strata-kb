@@ -11,6 +11,8 @@ from urllib.parse import quote, urlencode
 
 from pathlib import Path
 
+import yaml
+from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
@@ -22,7 +24,12 @@ from center_kb.federation import load_federation
 from center_kb.mcp import ServerConfig
 from center_kb.query import AmbiguousDocError, get_section, search, tokenize
 from center_kb.web import api, templating, uidata
-from center_kb.web.auth import COOKIE_NAME
+from center_kb.web.auth import (
+    COOKIE_NAME,
+    SESSION_MAX_AGE,
+    cookie_is_secure,
+    make_session,
+)
 from center_kb.web.mdrender import render as md_render
 from center_kb.web.ratelimit import (
     LOGIN_MAX_ATTEMPTS,
@@ -33,6 +40,25 @@ from center_kb.web.ratelimit import (
 )
 
 logger = logging.getLogger("center_kb.web.ui")
+
+# /ui/login is unauthenticated and auth-exempt, and Starlette applies no size
+# limit to a form body -- the same reason intake_routes caps every upload
+# (intake_routes.read_capped). A token is tens of bytes; 8 KiB is generous.
+#
+# Fix round 1 (Minor C): a chunked request (no Content-Length) skips the
+# header check below and reaches request.form() regardless -- still bounded,
+# but not because "the token field is not a file part" (that reasoning was
+# wrong: Starlette's FormParser, not just MultiPartParser, enforces its own
+# limits on plain url-encoded fields too). Verified against pinned Starlette
+# 1.6.0: FormParser caps each field at max_part_size (1 MiB) and the whole
+# form at max_fields (1000), raising HTTPException(400) past either. Residual
+# worth naming: up to ~1000 fields x 1 MiB can accumulate in
+# FormParser.messages before the field-count check trips -- reachable only
+# via chunked, and bounded to LOGIN_MAX_ATTEMPTS per client per
+# LOGIN_WINDOW_SECONDS because login_post's limiter check runs before form().
+LOGIN_MAX_BODY = 8 * 1024
+
+NO_STORE = {"Cache-Control": "no-store"}
 
 
 def _tag_links(
@@ -138,12 +164,14 @@ def _render_page(
     )
 
 
-def _error_page(
-    config: ServerConfig, code: int, heading: str, message: str
+def render_error_page(
+    config: ServerConfig, *, status: int, title: str, detail: str
 ) -> HTMLResponse:
+    """Render the shared error shell (used for the 404 path, and by app.py's
+    SnapshotCorruptError handler for a corrupt published snapshot, M8)."""
     return _render_page(
-        "error.html", config, screen="", status=code,
-        title=heading, code=str(code), heading=heading, message=message,
+        "error.html", config, screen="", status=status,
+        title=title, code=str(status), heading=title, message=detail,
     )
 
 
@@ -195,7 +223,8 @@ def _tree_extra(manifest, doc_id: str, rid: str, active: str = "") -> dict:
 
 
 def build_routes(
-    config: ServerConfig, token: str, store_factory=None, login_limiter=None
+    config: ServerConfig, token: str, store_factory=None, login_limiter=None,
+    trusted_proxies: int | None = None,
 ) -> list[Route]:
     limiter = login_limiter or SlidingWindowLimiter(
         LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS
@@ -204,12 +233,27 @@ def build_routes(
     # gets ServerConfig), so it reads the same env var through ratelimit.py's
     # shared parser rather than duplicating intake.py's parsing -- one
     # authority for CENTER_KB_TRUSTED_PROXIES, covering both limiters.
-    trusted_proxies = trusted_proxies_from_env()
+    # Task 11: create_app now reads it once and passes it in, so the
+    # middleware and the login form cannot disagree about the proxy count --
+    # the env fallback stays for direct unit callers (e.g. test_web_ui.py)
+    # that build routes without going through create_app.
+    if trusted_proxies is None:
+        trusted_proxies = trusted_proxies_from_env()
 
     async def login_get(request: Request) -> HTMLResponse:
-        return HTMLResponse(templating.render("login.html", error=""))
+        return HTMLResponse(templating.render("login.html", error=""), headers=NO_STORE)
 
     async def login_post(request: Request) -> Response:
+        # Checked first, before the rate limiter and before request.form()
+        # touches the body: a fat-fingered paste (an honest mistake) is not
+        # an attempt at the shared secret, so it must not spend a lockout
+        # attempt the same way a wrong token does (M6's own rule for
+        # _credential_presented -- absence/non-attempt doesn't count). An
+        # attacker sending oversized bodies to probe gains nothing either:
+        # this is a header-only check, no body is ever read, so it costs the
+        # server nothing regardless of whether it is rate-limited.
+        if int(request.headers.get("content-length") or 0) > LOGIN_MAX_BODY:
+            return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
         client_ip = client_key(request, trusted_proxies)
         # Checked before the token compare: a brute-forcer must not learn of
         # a hit inside the lockout window.
@@ -220,18 +264,54 @@ def build_routes(
                     "login.html", error="Too many attempts — try again later."
                 ),
                 status_code=429,
+                headers=NO_STORE,
             )
         form = await request.form()
         submitted = str(form.get("token", ""))
         if hmac.compare_digest(submitted, token):
-            resp = RedirectResponse("/ui", status_code=303)
-            resp.set_cookie(COOKIE_NAME, submitted, httponly=True, samesite="lax")
+            resp = RedirectResponse("/ui", status_code=303, headers=NO_STORE)
+            secure = cookie_is_secure(request, trusted_proxies)
+            if not secure:
+                logger.warning(
+                    "session cookie set without Secure — request arrived over "
+                    "plain HTTP. Behind a TLS proxy, set "
+                    "CENTER_KB_TRUSTED_PROXIES to the number of proxies in "
+                    "front so X-Forwarded-Proto is believed."
+                )
+            resp.set_cookie(
+                COOKIE_NAME,
+                make_session(token),
+                httponly=True,
+                samesite="lax",
+                secure=secure,
+                max_age=SESSION_MAX_AGE,
+            )
+            # Fix (final review item 4): pre-0.25 set center_kb_token = the
+            # raw shared secret (no max_age -> a session cookie, but that was
+            # luck, not design -- M4's whole point is that a cookie which IS
+            # the token is an admin-equivalent credential at rest). The
+            # session-cookie switch stopped READING it but never told any
+            # existing browser to drop it, so upgrading left that secret
+            # sitting in every user's jar indefinitely. Path="/" confirmed
+            # against the pre-M4 set_cookie call (no path kwarg -> Starlette
+            # default "/").
+            resp.delete_cookie("center_kb_token", path="/")
             return resp
         # never log the submitted value — it may be a near-miss of the token
         logger.warning("failed login attempt from %s", client_ip)
         return HTMLResponse(
-            templating.render("login.html", error="Invalid token — check for trailing spaces.")
+            templating.render("login.html", error="Invalid token — check for trailing spaces."),
+            headers=NO_STORE,
         )
+
+    async def logout_post(request: Request) -> Response:
+        resp = RedirectResponse("/ui/login", status_code=303, headers=NO_STORE)
+        resp.delete_cookie(COOKIE_NAME, path="/")
+        # Fix (final review item 4): same pre-0.25 raw-token cookie as
+        # login_post above -- logout must clear it too, not just the current
+        # session cookie.
+        resp.delete_cookie("center_kb_token", path="/")
+        return resp
 
     def _budget(request: Request) -> int:
         try:
@@ -278,6 +358,11 @@ def build_routes(
             # state rather than a 500; the reason is still logged server-side.
             logger.warning("search screen: %s", exc)
             found = []
+        except (yaml.YAMLError, ValidationError, ValueError) as exc:
+            # Same as api.py's api_search: search() syncs every federated
+            # repo's manifest before searching, so a corrupt manifest
+            # anywhere surfaces here with no single doc_id to name.
+            raise api.SnapshotCorruptError("", " ".join(str(exc).split())) from exc
         docs_count = len({r.doc_id for r in found})
         smap = uidata.status_map(hub)
         top = max((r.score for r in found), default=1.0) or 1.0
@@ -287,7 +372,9 @@ def build_routes(
                 "title": r.title,
                 "status": smap.get((r.source, r.doc_id, r.section_id), "pending"),
                 "match_mode": r.match_mode,
-                "tokens": r.tokens,
+                # content_tokens, not tokens: the rendered card shows only
+                # r.content (via md_render below), never r.snippet (M17).
+                "tokens": r.content_tokens,
                 "score_pct": round(100 * r.score / top),
                 "body_html": md_render(r.content, terms=terms),
                 "file": f"{r.doc_id}/{r.section_id}",
@@ -355,9 +442,14 @@ def build_routes(
         try:
             found = api.load_manifest(config, doc_id, repo=repo)
         except AmbiguousDocError as exc:
-            return _error_page(config, 400, "Ambiguous document", str(exc))
+            return render_error_page(
+                config, status=400, title="Ambiguous document", detail=str(exc)
+            )
         if found is None:
-            return _error_page(config, 404, "Not found", f"Unknown doc '{doc_id}'.")
+            return render_error_page(
+                config, status=404, title="Not found",
+                detail=f"Unknown doc '{doc_id}'.",
+            )
         manifest, rid = found
         # filter_raw preserves the caller's original casing for echoing back
         # into the filter input's value= attribute (passed to the template
@@ -391,17 +483,22 @@ def build_routes(
         repo = request.query_params.get("repo") or None
         hub = api.hub_handle(config)
         if hub is None:
-            return _error_page(
-                config, 503, "Hub unreachable",
-                "The federation is the only read source.",
+            return render_error_page(
+                config, status=503, title="Hub unreachable",
+                detail="The federation is the only read source.",
             )
         try:
             result = get_section(hub, doc_id, section_id, level=level, repo=repo)
         except AmbiguousDocError as exc:
-            return _error_page(config, 400, "Ambiguous document", str(exc))
+            return render_error_page(
+                config, status=400, title="Ambiguous document", detail=str(exc)
+            )
+        except (yaml.YAMLError, ValidationError, ValueError) as exc:
+            raise api.SnapshotCorruptError(doc_id, " ".join(str(exc).split())) from exc
         if result is None:
-            return _error_page(
-                config, 404, "Not found", f"{doc_id} §{section_id} not found."
+            return render_error_page(
+                config, status=404, title="Not found",
+                detail=f"{doc_id} §{section_id} not found.",
             )
         prev = nxt = entry = None
         revision = ""
@@ -547,6 +644,7 @@ def build_routes(
         Route("/ui", home, methods=["GET"]),
         Route("/ui/login", login_get, methods=["GET"]),
         Route("/ui/login", login_post, methods=["POST"]),
+        Route("/ui/logout", logout_post, methods=["POST"]),
         Route("/ui/docs", docs_page, methods=["GET"]),
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),
         Route("/ui/docs/{doc}/{section}", section_page, methods=["GET"]),

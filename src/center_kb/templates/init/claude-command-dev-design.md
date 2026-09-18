@@ -18,12 +18,13 @@ is installed it is the newer source for the three-path method.*
 
 ## Freshness re-check (run this FIRST, every time)
 
-Cheap check first: when `docs/impl/<ticket-id>-context.md` exists and its
-`version:` matches the ticket's block, run `kb resolve --status-only
-<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the
-cache; do NOT re-pull pinned content. No cache, version mismatch, or a
-non-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then
-rewrite the cache, keeping its `## Placeholder map`.
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
 
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
@@ -36,18 +37,29 @@ rewrite the cache, keeping its `## Placeholder map`.
 Classify the ticket out loud before designing, so the Dev can override
 it: **spike** — a feasibility question the ticket itself raises, answered
 with a recommendation and any throwaway build labelled as such;
-**bounded** — a change to a flow that already exists in this repo,
-written as a few sentences to a few short paragraphs **in chat** with no
-design file; **architectural** — a new service, new table, new
-interface, or a change to how components fit, written to
-`docs/impl/<ticket-id>-design.md` (**architectural path only**).
+**bounded** — a change to a flow that already exists in this repo, with
+a design a few sentences to a few short paragraphs long; **architectural**
+— a new service, new table, new interface, or a change to how components
+fit, with a design covering every item under *Design content* below.
 Classification measures the repo, not your familiarity with it, so no
 existing flow to change means it is not bounded; between two paths,
 take the heavier one. The ratchet turns **one-way**: complexity that
 surfaces mid-ticket promotes the path — say so when it does — and
-nothing ever demotes it. The design content covers modules touched,
-interfaces added or changed, data changes, and the placeholder
-resolutions from the orchestrator's Placeholders step, with every
+nothing ever demotes it. Every path writes
+`docs/impl/<ticket-id>-design.md` — one paragraph on the bounded path is
+the resume point the orchestrator reads, not ceremony — opening with two
+header lines under its title: `path: <spike|bounded|architectural>` and
+`status: draft`. A spike's body is the question, what was tried, the
+recommendation, and the sentence "anything built for this is throwaway";
+it ends there — no plan, no execute — with `dev-handover` as its next
+step, putting the recommendation under `## Findings`. When the Dev
+approves, flip the header to `status: approved` before anything else —
+`dev-plan` refuses a `draft` design; a file's existence is not approval,
+its `status:` line is. A spike's design is flipped to `status: approved`
+here too — approving the recommendation, not a plan — so `design ✅`
+reads correctly if the ticket is re-opened. The design content covers
+modules touched, interfaces added or changed, data changes, and the
+placeholder resolutions from the orchestrator's Placeholders step, with every
 standard-derived value quoted verbatim with its `doc-id §section`; any
 AC that cannot be implemented as written becomes `OPEN(BA)` —
 reinterpreting an AC is forbidden.
@@ -70,7 +82,8 @@ reinterpreting an AC is forbidden.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
 
 For `dev-design`, option 1 below is always `/dev-plan <ticket-id>` once
-GATE 1 passes; a blocker takes its place instead.
+GATE 1 passes — unless `path: spike`, where option 1 is `/dev-handover
+<ticket-id>`; a blocker takes its place instead.
 
 ## Next step — ALWAYS end your response with this block
 
@@ -83,7 +96,7 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.

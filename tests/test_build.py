@@ -25,12 +25,12 @@ def test_build_write_tokens_false_never_persists(fixture_kb: Path):
     the tree — not even to write real token counts into a passing manifest."""
     manifest_path = fixture_kb / "demo-doc" / "_manifest.yaml"
     before = manifest_path.read_bytes()
+    before_tokens = models.load_yaml_model(manifest_path, models.Manifest).sections[0].tokens
     report = build_kb(fixture_kb, write_tokens=False)
     assert report.ok, report.errors
     assert manifest_path.read_bytes() == before
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
-    assert manifest.sections[0].tokens.l2 == 0
-    assert manifest.sections[0].tokens.l3 == 0
+    assert manifest.sections[0].tokens == before_tokens
 
 
 def test_build_fails_on_todo_marker(fixture_kb: Path):

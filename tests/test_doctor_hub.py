@@ -112,6 +112,32 @@ def test_out_of_sync_aggregate_index_errors(git_kb, hub_worktree):
     assert any(i.level == "error" and "kb reindex" in i.message for i in issues)
 
 
+def test_a_pre_024_stored_index_does_not_turn_doctor_red(git_kb, hub_worktree):
+    """Fix round 1, Critical 1: build_federation_index now fills a live
+    content_sha256, so a stored index that predates 0.24 (content_sha256
+    defaults to "") used to make `stored != build_federation_index(fed)`
+    True on EVERY pre-0.24 hub -- an 'out of sync, run kb reindex' error on
+    an otherwise perfectly healthy hub, for every child pointed at one too
+    (check_hub also runs for ba/dev/child kinds). check_published_digests
+    (called directly, bypassing check_hub) could not have caught this -- the
+    bug lives in check_hub's OWN comparison, nine lines above the new call.
+    Simulate a 0.23-shaped stored index the same way the isolated
+    check_published_digests test does (strip content_sha256), but go through
+    check_hub itself."""
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
+    index_path = hub_worktree / "federation" / "index.yaml"
+    text = index_path.read_text(encoding="utf-8")
+    stripped = "\n".join(
+        ln for ln in text.splitlines() if "content_sha256" not in ln
+    )
+    index_path.write_text(stripped + "\n", encoding="utf-8", newline="\n")
+
+    issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb")
+
+    assert not any(i.level == "error" for i in issues), issues
+    assert any("not verified" in i.message for i in issues), issues
+
+
 def test_missing_aggregate_index_errors(git_kb, hub_worktree):
     # hub_worktree has never been published to → no federation/index.yaml yet
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))

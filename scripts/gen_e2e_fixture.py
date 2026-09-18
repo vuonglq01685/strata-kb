@@ -52,7 +52,7 @@ def generate(kb_dir: Path) -> None:
         shutil.rmtree(kb_dir)
     kb_dir.mkdir(parents=True)
     # index.yaml must exist first: scaffold_doc reads-then-writes it.
-    (kb_dir / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (kb_dir / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
     scaffold_doc(
         UNITS,
         doc_id="demo-doc",

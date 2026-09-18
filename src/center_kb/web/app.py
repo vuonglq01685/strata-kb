@@ -5,12 +5,15 @@ import logging
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Mount, Route
 
 from center_kb.mcp import ServerConfig
 from center_kb.web import api, ui
 from center_kb.web.auth import TokenAuthMiddleware
+from center_kb.web.headers import SecurityHeadersMiddleware
+
+logger = logging.getLogger("center_kb.web.app")
 
 
 def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=None):
@@ -21,24 +24,37 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     intake_cfg=None (default): no /intake/* routes — publish intake disabled.
     """
     from center_kb import searchdb
+    from center_kb.web.ratelimit import (
+        LOGIN_MAX_ATTEMPTS,
+        LOGIN_WINDOW_SECONDS,
+        SlidingWindowLimiter,
+        trusted_proxies_from_env,
+    )
 
     # F-C1, same reason as mcp.create_server. NOT in `lifespan`: line 36 leaves
     # lifespan None when mcp_server is None, so the API-only app would skip it.
     searchdb.warm_vec()
+
+    # One bucket for "a failed attempt at the shared secret", wherever it
+    # arrives (M6). Read once here rather than inside build_routes, so the
+    # middleware and the login form cannot disagree about the proxy count.
+    trusted_proxies = trusted_proxies_from_env()
+    auth_limiter = SlidingWindowLimiter(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS)
 
     async def root(request: Request) -> RedirectResponse:
         return RedirectResponse("/ui", status_code=302)
 
     routes: list = [Route("/", root, methods=["GET"])]
     routes += api.build_routes(config)
-    routes += ui.build_routes(config, token)
+    routes += ui.build_routes(
+        config, token, login_limiter=auth_limiter, trusted_proxies=trusted_proxies
+    )
     if intake_cfg is not None:
         from center_kb import gitio
         from center_kb import hub as hub_mod
         from center_kb import intake as intake_mod
         from center_kb.web import intake_routes
 
-        logger = logging.getLogger("center_kb.web.app")
         # round-4 appended-section fix: resolve_hub can raise gitio.GitError
         # (a stale/locked hub cache it cannot clean up itself) -- unguarded,
         # that used to crash create_app itself, so the SERVER FAILED TO BOOT
@@ -84,5 +100,33 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
         # which serves them at its internal /mcp path.
         routes.append(Mount("/", app=mcp_app))
 
-    app = Starlette(routes=routes, lifespan=lifespan)
-    return TokenAuthMiddleware(app, token)
+    async def snapshot_corrupt(request: Request, exc: api.SnapshotCorruptError):
+        logger.warning("corrupt published snapshot: %s", exc)
+        if request.url.path.startswith("/api"):
+            json_detail = (
+                f"published snapshot for '{exc.doc_id}' is corrupt" if exc.doc_id
+                else "a published snapshot is corrupt"
+            )
+            return JSONResponse(
+                {"error": "snapshot_corrupt", "detail": json_detail},
+                status_code=503,
+            )
+        html_detail = (
+            f"The published snapshot for '{exc.doc_id}' is corrupt. "
+            "Re-publish it from the owning repo." if exc.doc_id
+            else "A published snapshot is corrupt. Re-publish it from the owning repo."
+        )
+        return ui.render_error_page(
+            config, status=503, title="Document unavailable", detail=html_detail,
+        )
+
+    app = Starlette(
+        routes=routes,
+        lifespan=lifespan,
+        exception_handlers={api.SnapshotCorruptError: snapshot_corrupt},
+    )
+    return SecurityHeadersMiddleware(
+        TokenAuthMiddleware(
+            app, token, limiter=auth_limiter, trusted_proxies=trusted_proxies
+        )
+    )

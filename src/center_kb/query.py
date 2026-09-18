@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from center_kb import models
 from center_kb.mdutils import count_tokens, slice_section, slice_subsection
-from center_kb.searchdb import tokenize  # noqa: F401 — re-export (web/ui.py import)
+from center_kb.searchdb import tokenize  # re-export (web/ui.py import)
 
 if TYPE_CHECKING:
     from center_kb.hub import HubHandle
@@ -56,6 +56,13 @@ class QueryResult:
     citation: str
     content: str
     tokens: int
+    # content_tokens = what a caller that does not receive the snippet
+    # actually got (content alone) — REST and the web UI report this one,
+    # so their number stops describing text they never send. `tokens`
+    # (above) keeps counting content + snippet: the budget this result
+    # actually spent (M17). Required, not defaulted: a construction site
+    # that forgets it would otherwise silently report 0 tk on REST/the UI.
+    content_tokens: int
     source: str = ""  # repo-id within the federation
     match_mode: str = "keyword"  # "keyword" | "semantic" | "hybrid"
     snippet: str = ""  # L3 excerpt around the match when no term appears in L2
@@ -76,6 +83,17 @@ class SearchOutcome:
 def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
     base = f"{repo_id}:{doc_id} §{section_id}"
     return f"{base} ({revision})" if revision else base
+
+
+def stale_hub_note(hub: "HubHandle | None") -> str:
+    """One-line staleness warning shared by every caller that resolves a
+    hub handle -- moved here from mcp.py's `_stale_note` (M17, identical
+    body) so the CLI and REST surfaces can print/report the same wording
+    instead of re-deriving it from `hub.stale`/`hub.age_seconds` themselves."""
+    if hub is not None and hub.stale:
+        age = f"~{hub.age_seconds:.0f}s" if hub.age_seconds else "unknown age"
+        return f"[warn] hub cache is stale ({age}) — results may lag the hub\n\n"
+    return ""
 
 
 def _row_content(hub: "HubHandle", row: "SectionRow") -> str | None:
@@ -163,7 +181,7 @@ def _search_index(
                     knn_hits = searchdb.knn_search(conn, embedder, text, tags)
                 except sqlite3.DatabaseError:
                     raise  # index corrupt — let the rebuild branch handle it
-                except Exception as exc:  # embedding best-effort, must not break the query
+                except Exception as exc:  # noqa: BLE001 -- embedding best-effort, must not break the query
                     logger.warning("semantic leg failed — keyword only: %s", exc)
             fused = searchdb.rrf_merge(fts_hits, knn_hits)
             truncated = (
@@ -354,7 +372,8 @@ def search_detailed(
         if content is None:
             continue
         snippet = "" if mode == "semantic" else _l3_snippet(hub, row, terms, content)
-        n_tokens = count_tokens(content) + (count_tokens(snippet) if snippet else 0)
+        content_tokens = count_tokens(content)
+        n_tokens = content_tokens + (count_tokens(snippet) if snippet else 0)
         if results and used + n_tokens > budget:
             break
         results.append(
@@ -371,6 +390,7 @@ def search_detailed(
                 source=row.repo_id,
                 match_mode=mode,
                 snippet=snippet,
+                content_tokens=content_tokens,
             )
         )
         result_rowids.append(rowid)
@@ -455,6 +475,7 @@ def _folded_result(
         return None
     head = content.splitlines()[0].split(None, 2)
     title = head[2] if len(head) == 3 else parent.title
+    content_tokens = count_tokens(content)
     return QueryResult(
         doc_id=doc_id,
         section_id=section_id,
@@ -462,8 +483,9 @@ def _folded_result(
         score=0.0,
         citation=_citation(repo_id, manifest.id, manifest.revision, section_id),
         content=content,
-        tokens=count_tokens(content),
+        tokens=content_tokens,
         source=repo_id,
+        content_tokens=content_tokens,
     )
 
 
@@ -486,6 +508,7 @@ def _get_section_in(
     content = slice_section(path.read_text(encoding="utf-8"), section_id)
     if content is None:
         return None
+    content_tokens = count_tokens(content)
     return QueryResult(
         doc_id=doc_id,
         section_id=section_id,
@@ -493,8 +516,9 @@ def _get_section_in(
         score=0.0,
         citation=_citation(repo_id, manifest.id, manifest.revision, section_id),
         content=content,
-        tokens=count_tokens(content),
+        tokens=content_tokens,
         source=repo_id,
+        content_tokens=content_tokens,
     )
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from center_kb.config import load_config
 from center_kb.errors import KbError
 
-TOKEN_VAR = "CENTER_KB_HTTP_TOKEN"
+TOKEN_VAR = "CENTER_KB_HTTP_TOKEN"  # noqa: S105 -- this is the env var's name, not a credential value
 _TOKEN_LINE = re.compile(rf"^{TOKEN_VAR}=.*$", re.MULTILINE)
 _DEFAULT_ENV = f"{TOKEN_VAR}=change-me\n"
 

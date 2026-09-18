@@ -94,6 +94,17 @@ def usage_dir(kb_dir: Path) -> Path:
     return kb_dir / "usage"
 
 
+def hook_errors(kb_dir: Path) -> tuple[int, str]:
+    """(number of logged hook failures, last log line) — (0, '') without a log."""
+    path = usage_dir(kb_dir) / "ingest-errors.log"
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0, ""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return len(lines), (lines[-1] if lines else "")
+
+
 def ledger_path(kb_dir: Path, ticket: str | None) -> Path:
     if ticket is None:
         return usage_dir(kb_dir) / f"{UNATTRIBUTED}.jsonl"

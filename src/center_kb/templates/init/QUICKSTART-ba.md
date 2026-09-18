@@ -257,8 +257,9 @@ transcript itself is ~60ms). That is the price of the data.
 - `kb usage ingest-transcript <path>` — backfill. Every transcript under
   `~/.claude/projects/<this-repo>/` can be ingested now; re-ingesting is safe,
   rows are de-duplicated by the transcript's own row ids.
-- `kb usage note --ticket <id> --phase <p> --model <m> --tokens-in N --tokens-out N`
-  — record a row by hand. It always **appends** a new row, so it is never
+- `kb usage note --ticket <id> --phase <p> --model <m> --tokens-in N --tokens-out N --assistant <name>`
+  — record a row by hand. Rows entered this way are estimates unless
+  `--measured` is given. It always **appends** a new row, so it is never
   the way to fix one the automatic attribution got wrong — using it that way
   double-counts the tokens. The real repair is editing the stored row
   directly in `.kb/usage/<ticket>.jsonl`, then re-running `kb usage report`.

@@ -34,6 +34,86 @@ def test_all_web_templates_exist_as_package_resources():
         assert base.joinpath(name).is_file(), name
 
 
+# headers.py's CSP ships `script-src 'self'` with no 'unsafe-inline' /
+# 'unsafe-hashes' — every current browser refuses to run an inline
+# event-handler attribute under that policy (Task 10 fix round 1). TestClient
+# never enforces CSP and never runs JS, so this is the only test that can
+# catch a template regressing back to one.
+#
+# Round 2 fix: the first version of this pattern was double-quote-only
+# (missed onchange='...' and unquoted onclick=go()) and matched any
+# on<letters>= lookalike (onward="x"). Both are fixed the same way — an
+# explicit whitelist of real HTML event-handler attribute names, with the
+# quote made optional so single-quoted and unquoted values both match.
+# Scan is HTML-only now (was also scanning .js/.css, which is how app.js's
+# OWN explanatory comment about onchange tripped this test on itself).
+_EVENT_HANDLER_ATTRS = (
+    "onclick", "ondblclick", "onchange", "oninput", "onsubmit", "onreset",
+    "onload", "onerror", "onfocus", "onblur",
+    "onkeydown", "onkeyup", "onkeypress",
+    "onmousedown", "onmouseup", "onmouseover", "onmouseout",
+    "onmouseenter", "onmouseleave", "onmousemove",
+    "ondrag", "ondragstart", "ondragend", "ondragenter", "ondragleave",
+    "ondragover", "ondrop",
+    "onscroll", "onwheel", "ontoggle", "onselect", "oncontextmenu",
+    "oncopy", "oncut", "onpaste",
+)
+_INLINE_HANDLER_RE_SRC = (
+    r"\b(?:" + "|".join(_EVENT_HANDLER_ATTRS) + r")\s*=\s*['\"]?"
+)
+_SCANNED_SUFFIXES = (".html",)
+
+
+def test_web_templates_carry_no_inline_event_handlers():
+    import re
+
+    pattern = re.compile(_INLINE_HANDLER_RE_SRC, re.IGNORECASE)
+    base = resources.files("center_kb").joinpath("templates/web")
+    with resources.as_file(base) as root:
+        root = Path(root)
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.suffix not in _SCANNED_SUFFIXES:
+                continue
+            text = path.read_text(encoding="utf-8")
+            for match in pattern.finditer(text):
+                line_no = text.count("\n", 0, match.start()) + 1
+                pytest.fail(
+                    f"{path.relative_to(root)}:{line_no}: inline event "
+                    f"handler {match.group()!r} — headers.py's CSP ships "
+                    "script-src 'self' with no 'unsafe-inline', so a "
+                    "browser refuses to run this; move it to "
+                    "static/app.js as a delegated listener instead"
+                )
+
+
+def test_inline_handler_pattern_catches_single_and_unquoted_handlers():
+    """Two-direction proof for round 2's fix: single-quoted and unquoted
+    handlers must both trip the pattern; CSS/Jinja lookalikes must not."""
+    import re
+
+    pattern = re.compile(_INLINE_HANDLER_RE_SRC, re.IGNORECASE)
+    assert pattern.search("<input onclick='go()'>")  # single-quoted
+    assert pattern.search("<input onclick=go()>")  # unquoted
+    assert pattern.search('<input onchange="this.form.submit()">')  # double-quoted
+    assert not pattern.search('<div style="transition:.2s">')
+    assert not pattern.search('<button data-status-btn="all">')
+    assert not pattern.search("{{ 'checked' if semantic_on }}")
+    assert not pattern.search('<input data-onward="x">')  # not a real event name
+
+
+def test_data_autosubmit_contract_between_search_html_and_app_js():
+    """data-autosubmit is a cross-file string contract -- search.html's two
+    controls carry the attribute, app.js's delegated listener selects it by
+    the same string. No shared constant ties them together, so a typo or
+    rename in either file silently kills both controls and nothing else
+    would notice."""
+    base = resources.files("center_kb").joinpath("templates/web")
+    search_html = base.joinpath("search.html").read_text(encoding="utf-8")
+    app_js = base.joinpath("static/app.js").read_text(encoding="utf-8")
+    assert search_html.count("data-autosubmit") == 2
+    assert "[data-autosubmit]" in app_js
+
+
 def test_all_init_templates_exist_as_package_resources():
     base = resources.files("center_kb").joinpath("templates/init")
     for mapping in (COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES):
@@ -310,9 +390,9 @@ SHARED_BLOCKS = {
 # deletes or rewords a hard rule now fails here, where the pairwise-only
 # version did not.
 SHARED_BLOCK_TEXT = {
-    'SHARED-FRESHNESS': "## Freshness re-check (run this FIRST, every time)\n\nCheap check first: when `docs/impl/<ticket-id>-context.md` exists and its\n`version:` matches the ticket's block, run `kb resolve --status-only\n<ticket-file>` (no CLI → `kb_resolve`, full output). All **ok** → use the\ncache; do NOT re-pull pinned content. No cache, version mismatch, or a\nnon-ok verdict → full `kb resolve <ticket-file>` (else `kb_resolve`), then\nrewrite the cache, keeping its `## Placeholder map`.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
+    'SHARED-FRESHNESS': '## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n',
     'SHARED-HARD-RULES': '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
-    'SHARED-NEXT-STEP': '## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|⬜ not written> · plan <✅ approved|⬜ not written> · tasks <n>/<m> · PR <✅ opened|⬜ not opened>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n',
+    'SHARED-NEXT-STEP': '## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n',
 }
 
 
@@ -501,11 +581,15 @@ def test_dev_design_carries_the_three_paths_and_the_ratchet():
         assert "take the heavier one" in text, name
 
 
-def test_dev_design_writes_the_design_file_only_on_the_architectural_path():
+def test_dev_design_writes_the_design_file_on_every_path():
+    # Task F-H2/F-M8 supersedes the old architectural-only contract this
+    # test used to pin (Phase 5 Stage A): every path now writes the design
+    # file, so "architectural path only" is gone from the wrapper's own
+    # prose — see test_dev_design_writes_a_file_on_every_path_with_a_status_header
+    # for the full new contract, asserted against the body.
     for name in _dev_wrapper_names("dev-design"):
         text = _dev_wrapper_text(name)
         assert "docs/impl/<ticket-id>-design.md" in text, name
-        assert "architectural path only" in text, name
 
 
 def test_dev_design_carries_gate_one_and_the_ac_rule():
@@ -516,6 +600,24 @@ def test_dev_design_carries_gate_one_and_the_ac_rule():
         # wrapper's own AC escape hatch is asserted against the body.
         assert "OPEN(BA)" in _dev_wrapper_body(name), name
         assert "reinterpreting an ac is forbidden" in text.lower(), name
+
+
+def test_dev_design_spike_path_names_dev_handover_as_option_one():
+    # Final-review finding 6: the option-1 sentence used to say
+    # `/dev-plan` unconditionally while the same file said a spike ends
+    # at `dev-handover` with no plan — self-contradictory on re-entry.
+    for name in _dev_wrapper_names("dev-design"):
+        body = _dev_wrapper_body(name)
+        assert "unless `path: spike`" in body, name
+        assert "option 1 is `/dev-handover <ticket-id>`" in body, name
+
+
+def test_dev_design_gate_one_approves_a_spike_too():
+    # A spike design left at `draft` forever (GATE 1 only mentioned
+    # `dev-plan` refusing a draft) never reads as approved on re-entry.
+    for name in _dev_wrapper_names("dev-design"):
+        body = _dev_wrapper_body(name)
+        assert "A spike's design is flipped to `status: approved`" in body, name
 
 
 def test_claude_skill_dev_design_has_expected_frontmatter():
@@ -686,6 +788,18 @@ def test_dev_handover_leaves_pr_and_merge_to_the_human():
         assert "The agent does neither" in text, name
 
 
+def test_dev_handover_has_a_spike_branch():
+    # Final-review finding 6: dev-design sends a spike straight to
+    # dev-handover with no plan and usually no code; the handover
+    # wrapper had no branch at all for that case (spec §3: recommendation
+    # in the PR's `## Findings`, or a ticket comment with no PR).
+    for name in _dev_wrapper_names("dev-handover"):
+        body = _dev_wrapper_body(name)
+        assert "path: spike" in body, name
+        assert "no plan and" in body and "no code" in body, name
+        assert "`n/a (spike)`" in body, name
+
+
 def test_claude_skill_dev_handover_has_expected_frontmatter():
     assert "name: dev-handover\n" in _read_init_template("claude-skill-dev-handover.md")
 
@@ -732,7 +846,7 @@ def test_dev_implement_ticket_caveats_the_svc_document_by_repo_state():
     # a KB gap.
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert (
-            "is missing whenever this repo has not run `dev-code-seed`"
+            "generated, unpublished: run `kb publish`"
             in _dev_wrapper_body(name)
         ), name
 
@@ -751,7 +865,7 @@ def test_dev_plan_and_dev_implement_ticket_caveat_the_code_document_by_repo_stat
         assert "`kb code-ingest` not yet run" in _dev_wrapper_body(name), name
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert (
-            "`kb code-ingest` has not run yet in this repo"
+            "`kb code-ingest` for `<repo_id>-code`"
             in _dev_wrapper_body(name)
         ), name
 
@@ -1212,8 +1326,8 @@ def test_shared_freshness_keeps_the_kb_diff_trap_and_the_three_verdicts():
 
 def test_shared_freshness_prefers_the_cache_and_status_only():
     block = _normalised(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"])
-    for needle in ("--status-only", "-context.md", "`version:`",
-                   "rewrite the cache"):
+    for needle in ("--status-only --cache", "-context.md", "--write-cache",
+                   "below the marker", "never edit above it", "`cache-*`"):
         assert needle in block, needle
 
 
@@ -1606,6 +1720,17 @@ def test_tdd_exemptions_doc_carries_the_four_slugs_and_the_boundary():
     assert "Exempt: <config|ci|docs|style> — verified by <what>" in text
 
 
+def test_tdd_exemptions_doc_names_every_slug_prlint_recognizes():
+    # Ties the doc to prlint.EXEMPTION_SLUGS itself, not the hand-copied
+    # tuple above — a slug added in code with no matching doc update fails
+    # this test (final-review finding 4).
+    from center_kb.prlint import EXEMPTION_SLUGS as PRLINT_EXEMPTION_SLUGS
+
+    text = _read_init_template("tdd-exemptions.md")
+    for slug in PRLINT_EXEMPTION_SLUGS:
+        assert f"`{slug}`" in text, slug
+
+
 DEV_PLAN_TEMPLATES = _dev_wrapper_names("dev-plan")
 DEV_EXECUTE_TEMPLATES = _dev_wrapper_names("dev-execute")
 
@@ -1789,3 +1914,89 @@ def test_quickstart_ba_documents_the_ci_variables():
     assert "vars.CENTER_KB_HUB" in text
     assert "secrets.KB_HUB_TOKEN" in text
     assert "fork" in text.lower()
+
+
+def test_pr_workflow_checks_out_the_branch_read_only_for_the_plan_file():
+    import yaml
+
+    wf = yaml.safe_load(_read_init_template("kb-pr-lint.yml"))
+    steps = wf["jobs"]["pr-lint"]["steps"]
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
+    assert checkout["with"]["persist-credentials"] is False
+    assert steps.index(checkout) < steps.index(next(s for s in steps if "Check the PR" in s.get("name", "")))
+
+
+# --- Task 13: one tightening rule in every preset, plus the lint values ----
+
+TIGHTENING_RULE = "The preset below is the target strength."
+
+
+def test_every_conventions_preset_carries_the_one_tightening_rule():
+    for lang in ("python", "ts", "java", "go", "dotnet", "php"):
+        text = _normalised(_read_init_template(f"conventions-{lang}.md"))
+        assert TIGHTENING_RULE in text, lang
+        assert "narrow" in text and "## Findings" in text, lang
+        assert "exactly as shown" not in text, lang
+
+
+def test_presets_lint_the_rules_their_prose_states():
+    py = _read_init_template("conventions-python.md")
+    assert '"T20"' in py and '"N"' in py
+    ts = _read_init_template("conventions-ts.md")
+    assert '"no-console": "error"' in ts
+    java = _read_init_template("conventions-java.md")
+    assert "[*.java]\nindent_size = 2" in java
+    assert "maxWarnings = 0" not in java.split("```groovy")[1].split("```")[0]
+
+
+def test_dev_design_writes_a_file_on_every_path_with_a_status_header():
+    for name in _dev_wrapper_names("dev-design"):
+        body = _dev_wrapper_body(name)
+        assert "Every path writes `docs/impl/<ticket-id>-design.md`" in body, name
+        assert "`path: <spike|bounded|architectural>`" in body, name
+        assert "`status: draft`" in body, name
+        assert "`status: approved`" in body, name
+        assert "in chat" not in body, name
+        assert "architectural path only" not in body, name
+
+
+def test_dev_plan_refuses_a_draft_design_and_writes_the_cmd_headers():
+    for name in _dev_wrapper_names("dev-plan"):
+        body = _dev_wrapper_body(name)
+        assert "`status: approved`" in body, name
+        assert "`cmd.test: <command>`" in body, name
+        assert "`cmd.lint: <command>`" in body, name
+        assert "`status: draft`" in body, name
+        assert "path: spike" in body, name
+        assert "in chat" not in body, name
+        assert "untouched tree" not in body, name
+        assert "Linting* section of `docs/conventions/<lang>.md`" in body, name
+
+
+def test_dev_implement_ticket_names_every_re_entry_case():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        body = _dev_wrapper_body(name)
+        for needle in ("status: draft", "N commits on branch", "--state merged",
+                       "--state closed", "two tickets in flight",
+                       "git switch -c <ticket-id>", "gh not installed"):
+            assert needle in body, f"{name}: {needle}"
+
+
+def test_quickstart_dev_separates_machine_enforced_from_prompt_only():
+    text = _read_init_template("QUICKSTART-dev.md")
+    _, _, rest = text.partition("## What is enforced")
+    machine, _, prompt_only = rest.partition("### Prompt-only")
+    assert "### Machine-enforced" in machine
+    assert "`kb pr lint`" in machine and "`kb build`" in machine
+    for rule in ("TDD", "verbatim", "read-only", "GATE 1", "OPEN(BA)"):
+        assert rule in prompt_only, rule
+    assert "nothing in `kb` enforces or measures" in prompt_only
+    assert "No such command 'pr'" not in text
+
+
+def test_dev_implement_ticket_ground_step_tells_generated_from_published():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        body = _dev_wrapper_body(name)
+        assert ".kb/<repo_id>-code/" in body, name
+        assert "generated, unpublished: run `kb publish`" in body, name
+        assert "is missing whenever" not in body, name

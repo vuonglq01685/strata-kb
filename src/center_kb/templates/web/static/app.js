@@ -70,6 +70,20 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// data-autosubmit: search.html's token-budget slider and semantic-KNN
+// checkbox used to auto-submit their form via an inline onchange handler —
+// headers.py's CSP ships script-src 'self' with no 'unsafe-inline', which a
+// browser refuses to run. Prefer requestSubmit() so the form's constraint
+// validation and submit event still fire; fall back to submit() on engines
+// without it (Safari < 16) so the control keeps working there too, instead
+// of silently doing nothing the way the old inline handler never did.
+document.addEventListener("change", (e) => {
+  const el = e.target.closest("[data-autosubmit]");
+  if (!el || !el.form) return;
+  if (el.form.requestSubmit) el.form.requestSubmit();
+  else el.form.submit();
+});
+
 // Live section-table filter (doc page). Buttons switch from submit to client
 // filtering when JS is available.
 const filterBox = document.querySelector("[data-filter]");

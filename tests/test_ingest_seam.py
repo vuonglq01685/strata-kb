@@ -27,10 +27,10 @@ REPO = Path(__file__).parent.parent
 FIXTURE = REPO / "tests-gate" / "fixtures" / "pending-kb"
 
 sys.path.insert(0, str(REPO / "scripts"))
-from gen_e2e_fixture import generate  # noqa: E402
+from gen_e2e_fixture import generate
 
 PIL = pytest.importorskip("PIL")
-from PIL import Image  # noqa: E402
+from PIL import Image
 
 runner = CliRunner()
 
