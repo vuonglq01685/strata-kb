@@ -195,8 +195,9 @@ def init(
         [],
         "--lang",
         help="Force a conventions pack for a language whose manifest is not "
-        "detectable (repeatable): python, ts, java, go, dotnet, php. Dev kind only; "
-        "recorded in .kb/config.yaml so a plain re-init keeps it.",
+        "detectable (repeatable): python, ts, java, go, dotnet, php, rust, "
+        "swift, dart, e2e-playwright. Dev kind only; recorded in "
+        ".kb/config.yaml so a plain re-init keeps it.",
     ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""

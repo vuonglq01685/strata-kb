@@ -33,11 +33,30 @@ def _touch(root: Path, rel: str) -> None:
         ("go.mod", "go"),
         ("composer.json", "php"),
         ("App.csproj", "dotnet"),
+        ("Cargo.toml", "rust"),
+        ("Package.swift", "swift"),
+        ("pubspec.yaml", "dart"),
+        ("playwright.config.ts", "e2e-playwright"),
     ],
 )
 def test_detects_each_manifest_at_root(tmp_path: Path, rel: str, lang: str):
     _touch(tmp_path, rel)
     assert detect_langs(tmp_path) == [lang]
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "playwright.config.ts",
+        "playwright.config.js",
+        "playwright.config.mjs",
+        "playwright.config.cts",
+        "playwright.config.mts",
+    ],
+)
+def test_detects_every_playwright_config_variant(tmp_path: Path, rel: str):
+    _touch(tmp_path, rel)
+    assert detect_langs(tmp_path) == ["e2e-playwright"]
 
 
 def test_detects_manifests_up_to_two_levels_below_root(tmp_path: Path):
@@ -205,6 +224,10 @@ def test_lang_globs_covers_every_manifest_lang():
         ("go.mod", "go"),
         ("composer.json", "php"),
         ("App.csproj", "dotnet"),
+        ("Cargo.toml", "rust"),
+        ("Package.swift", "swift"),
+        ("pubspec.yaml", "dart"),
+        ("playwright.config.ts", "e2e-playwright"),
     ],
 )
 def test_scaffold_produces_four_files_for_every_manifest_lang(
