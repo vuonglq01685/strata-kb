@@ -23,6 +23,19 @@ LANG_MANIFESTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("php", ("composer.json",)),
     ("python", ("pyproject.toml", "setup.cfg", "requirements*.txt")),
     ("ts", ("package.json",)),
+    ("rust", ("Cargo.toml",)),
+    ("swift", ("Package.swift",)),
+    ("dart", ("pubspec.yaml",)),
+    (
+        "e2e-playwright",
+        (
+            "playwright.config.ts",
+            "playwright.config.js",
+            "playwright.config.mjs",
+            "playwright.config.cts",
+            "playwright.config.mts",
+        ),
+    ),
 )
 
 LANG_IDS: tuple[str, ...] = tuple(lang for lang, _ in LANG_MANIFESTS)
@@ -70,6 +83,10 @@ LANG_GLOBS: dict[str, str] = {
     "php": "**/*.php",
     "python": "**/*.py",
     "ts": "**/*.ts,**/*.tsx,**/*.js,**/*.jsx",
+    "rust": "**/*.rs",
+    "swift": "**/*.swift",
+    "dart": "**/*.dart",
+    "e2e-playwright": "**/*.spec.ts,**/*.spec.js,**/e2e/**/*.ts,**/e2e/**/*.js",
 }
 
 
