@@ -2094,3 +2094,14 @@ def test_the_contract_is_absent_from_the_non_dispatching_wrappers():
     for skill in ("dev-implement-ticket", "dev-code-seed"):
         for name in _dev_wrapper_names(skill):
             assert first not in _read_init_template(name), name
+
+
+def test_dev_plan_dispatches_an_independent_reviewer_before_gate_two():
+    for name in _dev_wrapper_names("dev-plan"):
+        body = _normalised(_dev_wrapper_body(name))
+        assert "A2" in body, name
+        assert "plan-author" in body, name
+        assert "plan-reviewer" in body, name
+        assert "Pre-code axes" in body, name
+        assert "one task per AC" in body, name
+        assert "GATE 2 is offered only after A2 comes back clean" in body, name

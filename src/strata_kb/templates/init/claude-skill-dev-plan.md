@@ -81,6 +81,29 @@ edit above it.
   file is also the resume point, so it must be complete enough for a
   different session to pick up cold.
 
+## A2 — independent plan review (before GATE 2)
+
+Dispatch a `plan-author` subagent to turn the approved design into the plan —
+it gets the design file path, the ticket's acceptance criteria and the
+`cmd.test` / `cmd.lint` commands, and nothing else. Then review it with a
+different context.
+
+Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
+path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
+`## Pre-code axes` of the rubric. It answers four questions and nothing else:
+
+- Is there exactly one task per AC — none missing, none invented?
+- Does every task state its failing test before its implementation?
+- Is each task's **Interfaces** entry complete enough that its implementer
+  never has to read outside its own task block? An incomplete entry is a
+  BLOCKER: it is what forces an implementer to read wider and guess.
+- Does every task with no test declare `Exempt: <config|ci|docs|style>` and
+  name its verification?
+
+Fix subagent, re-review, at most 3 rounds. Record each round in the plan file's
+`## Review record` table, same shape as the design file's. GATE 2 is offered
+only after A2 comes back clean.
+
 ## Review dispatch contract (every review in this flow)
 
 - The author and the reviewer are NEVER the same subagent. A self-review
