@@ -353,16 +353,21 @@ def _exemption_finding(visible: str) -> Finding | None:
 
 
 def _check_review(visible: str) -> Finding | None:
-    """A5's verdict: recorded at all, and what it says."""
-    match = _BLOCKING.search(visible)
-    if match is None:
+    """A5's verdict: recorded at all, and what it says.
+
+    Fail-closed: a body with two verdict lines (e.g. leftover template
+    boilerplate above the author's own line) fails if ANY of them reads
+    `Blocking: Yes`, not just the first one found.
+    """
+    matches = list(_BLOCKING.finditer(visible))
+    if not matches:
         return Finding(
             "Review",
             "no-review-verdict",
             "no `Blocking: Yes|No` line — the merge-risk review's verdict was "
             "never recorded; a clean review still states `Blocking: No`",
         )
-    if match.group("verdict").lower() == "yes":
+    if any(m.group("verdict").lower() == "yes" for m in matches):
         return Finding(
             "Review",
             "review-blocking",

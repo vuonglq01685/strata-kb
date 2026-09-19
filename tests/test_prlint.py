@@ -418,3 +418,24 @@ def test_a_blocking_review_fails_the_pr():
 
 def test_the_verdict_line_is_case_insensitive():
     assert lint_body(_body(Review="blocking: no")).passed
+
+
+def test_a_second_blocking_yes_fails_even_after_a_leading_blocking_no():
+    # Fail-closed: leftover template boilerplate (`Blocking: No`) above the
+    # author's own verdict must not shadow a real `Blocking: Yes` below it.
+    body = _body(
+        Review=(
+            "| Severity | File | Line | Why | Fix |\n|---|---|---|---|---|\n\n"
+            "Blocking: No\n\n"
+            "| BLOCKER | a.py | 1 | leaks | fix |\n\nBlocking: Yes"
+        )
+    )
+    assert ("Review", "review-blocking") in _codes(body)
+    assert not lint_body(body).passed
+
+
+def test_the_word_blocking_in_a_sentence_is_not_a_verdict_line():
+    # The verdict pattern is anchored at line start so a sentence merely
+    # mentioning the word cannot pass for a recorded verdict.
+    body = _body(Review="Nothing here is blocking: no big deal")
+    assert ("Review", "no-review-verdict") in _codes(body)

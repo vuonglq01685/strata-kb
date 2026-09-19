@@ -94,9 +94,7 @@ below the design body on round 1:
     | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |
 
 GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and
-no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed. A BLOCKER
-surviving round 3 goes to the Dev with the reviewer's text and yours, and the
-flow stops there.
+no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.
 
 ## GATE 1 — Dev approval before any plan is written
 

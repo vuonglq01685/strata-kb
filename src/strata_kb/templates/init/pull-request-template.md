@@ -73,7 +73,7 @@ still states `Blocking: No`.
 
 | Severity | File | Line | Why it is dangerous | Fix |
 |---|---|---|---|---|
-| BLOCKER | src/orders/service.py | 118 | ... | ... |
+| SUGGESTED | src/orders/service.py | 118 | ... | ... |
 
 Blocking: No
 -->
