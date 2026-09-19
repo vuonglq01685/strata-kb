@@ -2105,3 +2105,14 @@ def test_dev_design_dispatches_an_independent_reviewer_before_gate_one():
         assert "Pre-code axes" in body, name
         assert "## Review record" in body, name
         assert "GATE 1 is offered only after A1 comes back clean" in body, name
+
+
+def test_dev_plan_dispatches_an_independent_reviewer_before_gate_two():
+    for name in _dev_wrapper_names("dev-plan"):
+        body = _normalised(_dev_wrapper_body(name))
+        assert "A2" in body, name
+        assert "plan-author" in body, name
+        assert "plan-reviewer" in body, name
+        assert "Pre-code axes" in body, name
+        assert "one task per AC" in body, name
+        assert "GATE 2 is offered only after A2 comes back clean" in body, name
