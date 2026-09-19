@@ -146,6 +146,29 @@ def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
         report.created.append(rel)
 
 
+# Created once, never refreshed — the dev repo's own merge-risk criteria.
+# Same contract as BA_LOCAL_OVERRIDES: the BASE rubric stays package-owned
+# and keeps being refreshed, so a repo gets improved criteria on upgrade
+# without losing the stack-specific ones it wrote.
+DEV_LOCAL_OVERRIDES: dict[str, str] = {
+    "docs/pr-review-rubric.local.md": "pr-review-rubric-local-stub.md",
+}
+
+
+def scaffold_dev_local_overrides(target: Path, report: InitReport) -> None:
+    """Create the dev repo's `.local.md` override once, then never touch it."""
+    for rel, resource_name in DEV_LOCAL_OVERRIDES.items():
+        dest = target / rel
+        if dest.exists():
+            report.skipped.append(f"{rel} (local overrides — never refreshed)")
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(
+            _init_template_text(resource_name), encoding="utf-8", newline="\n"
+        )
+        report.created.append(rel)
+
+
 # Kind `dev` — product code repo. It consumes the shared KB while implementing
 # BA tickets and publishes knowledge about its OWN source code. Like BA_TEMPLATES
 # this is deliberately NOT merged with COMMON_TEMPLATES (spec §4): a dev repo
@@ -173,6 +196,7 @@ DEV_TEMPLATES: dict[str, str] = {
     ".github/pull_request_template.md": "pull-request-template.md",
     ".github/workflows/kb-pr-lint.yml": "kb-pr-lint.yml",
     "docs/tdd-exemptions.md": "tdd-exemptions.md",
+    "docs/pr-review-rubric.md": "pr-review-rubric.md",
     **{
         path: resource
         for skill in (
@@ -466,6 +490,7 @@ def init_repo(
     if kind == KIND_BA:
         scaffold_ba_local_overrides(target, report)
     if kind == KIND_DEV:
+        scaffold_dev_local_overrides(target, report)
         cfg_path = target / ".kb" / "config.yaml"
         recorded = _recorded_langs(cfg_path, report)
         forced = sorted(set(langs) | set(recorded))

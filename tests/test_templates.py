@@ -2000,3 +2000,50 @@ def test_dev_implement_ticket_ground_step_tells_generated_from_published():
         assert ".kb/<repo_id>-code/" in body, name
         assert "generated, unpublished: run `kb publish`" in body, name
         assert "is missing whenever" not in body, name
+
+
+def test_pr_review_rubric_templates_exist_as_package_resources():
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for name in ("pr-review-rubric.md", "pr-review-rubric-local-stub.md"):
+        assert base.joinpath(name).is_file(), name
+
+
+def test_pr_review_rubric_carries_both_halves_and_the_ladder():
+    text = _read_init_template("pr-review-rubric.md")
+    assert "## Pre-code axes" in text
+    assert "## Merge-risk axes" in text
+    for level in ("BLOCKER", "SUGGESTED", "NOTE", "NITS"):
+        assert level in text, level
+    # The wide reviewer's defining rule: the diff alone is not the review.
+    assert "not the review" in _normalised(text)
+
+
+def test_pr_review_rubric_names_every_merge_risk_axis():
+    body = _normalised(_read_init_template("pr-review-rubric.md"))
+    for axis in (
+        "Security & authorization",
+        "Data integrity",
+        "Performance & scale",
+        "Contract & backward compatibility",
+        "Migration, rollout & rollback",
+        "Observability",
+        "Test adequacy",
+        "Production readiness",
+    ):
+        assert axis in body, axis
+
+
+def test_pr_review_rubric_is_wired_into_dev_kind_only():
+    from strata_kb import initcmd
+
+    assert initcmd.DEV_TEMPLATES["docs/pr-review-rubric.md"] == "pr-review-rubric.md"
+    assert initcmd.DEV_LOCAL_OVERRIDES == {
+        "docs/pr-review-rubric.local.md": "pr-review-rubric-local-stub.md",
+    }
+    for kind in ("hub", "child", "ba"):
+        assert "docs/pr-review-rubric.md" not in initcmd.expected_files(kind), kind
+
+
+def test_impl_gitignore_excludes_the_review_artefacts():
+    text = _read_init_template("impl-gitignore.txt")
+    assert "*-review/" in text

@@ -1741,8 +1741,10 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # (Wave G fix round 2 Minor 1: .gitattributes, the same F-D10 exemption
     # a child repo gets) + 4 (the kb-mcp-setup wrappers, MCP_CLIENT_TEMPLATES)
     # = 53.
-    assert len(expected_files("dev")) == 53
-    assert sorted(report.created) == sorted(expected_files("dev"))
+    assert len(expected_files("dev")) == 54
+    assert sorted(report.created) == sorted(
+        expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES)
+    )
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
         assert (tmp_path / rel).is_file(), rel
@@ -2615,3 +2617,20 @@ def test_mcp_setup_wrappers_never_take_the_token_in_chat(tmp_path: Path):
         assert "NEVER ask for the token" in text, rel
         assert "their own terminal" in text, rel
         assert "kb mcp-setup --hub-url" in text, rel
+
+
+def test_init_kind_dev_scaffolds_the_review_rubric_and_its_override(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    assert (tmp_path / "docs" / "pr-review-rubric.md").is_file()
+    assert (tmp_path / "docs" / "pr-review-rubric.local.md").is_file()
+
+
+def test_the_dev_rubric_override_is_never_refreshed(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    local = tmp_path / "docs" / "pr-review-rubric.local.md"
+    local.write_text("# mine\n", encoding="utf-8")
+    report = init_repo(tmp_path, "dev")
+    assert local.read_text(encoding="utf-8") == "# mine\n"
+    assert any(
+        "local overrides — never refreshed" in entry for entry in report.skipped
+    )
