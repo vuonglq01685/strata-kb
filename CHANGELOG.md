@@ -3,6 +3,32 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.1.0 — 2026-09-19
+
+### Added
+
+- **`kb mcp-setup`** — connects a `child`, `ba` or `dev` repo to the hub's
+  HTTP MCP service. `kb init` scaffolds `.mcp.json` with
+  `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` placeholders that
+  nothing set; this writes both into `.env`, makes sure git ignores it, and
+  verifies them against `GET /api/health` (no token) and `GET /api/docs`
+  (token), so a wrong URL and a rejected token give different errors. Values
+  resolve flag → environment → the value already in `.env` → hidden prompt,
+  so a bare re-run verifies again without retyping. `/kb-mcp-setup` wrappers
+  ship for Claude Code, Copilot and Cursor; they never take the token in
+  chat.
+
+### Fixed
+
+- `kb docker-setup` on a `ba` or `dev` repo reported "repo kind is not
+  recorded — run `kb init` first" about a kind that *is* recorded. It now
+  names the actual kind and points at `kb mcp-setup`.
+
+### Internal
+
+- `cipublish`'s urllib wrapper moved to `strata_kb.httpio` with a `timeout`
+  parameter, so the `file://` scheme guard exists once rather than per caller.
+
 ## 1.0.1 — 2026-09-19
 
 First release of **Strata** (`strata-kb`) — Knowledge Base as Code for large

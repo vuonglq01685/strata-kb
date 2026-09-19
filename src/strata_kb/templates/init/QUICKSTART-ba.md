@@ -12,12 +12,21 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
    folder creates it).
 2. **Point at the hub** — fill `hub:` in `.kb/config.yaml` with the main
    hub's git URL or path. Used by `kb ticket lint` and `kb query`.
-3. **Connect the shared MCP server** — set two environment variables so
-   your AI assistant can reach the hub's search/citation tools:
+3. **Connect the shared MCP server** — run `kb mcp-setup` (in your assistant:
+   `/kb-mcp-setup`). It asks for the hub's HTTP base URL and token, writes
+   both into `.env`, makes sure git ignores that file, and then verifies them
+   against the hub so a wrong URL and a rejected token give you different
+   errors.
    - `STRATA_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
    - `STRATA_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
-   `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) are already
-   wired to these two variables — nothing else to configure.
+
+   `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) already read
+   those two variables from your environment, so load `.env` into your shell
+   (`set -a; source .env; set +a`, or use direnv) and restart your assistant —
+   MCP reads the environment only at startup.
+
+   This is a *different* value from `hub:` in `.kb/config.yaml`, which is the
+   git/path federation hub used by `kb query` and the lint gates.
 4. **Open this repo** in Claude Code, GitHub Copilot Chat, or Cursor —
    the `ba-ticket-author` skill/command/prompt is scaffolded for all
    three.
@@ -366,3 +375,7 @@ tiering change shows up in the report the next ticket generates.
   repo's tickets
 - `kb usage ingest-transcript <path>` — backfill usage from a Claude Code
   transcript
+- `kb mcp-setup [--hub-url URL] [--token T] [--no-verify]` — write the hub's
+  HTTP MCP credentials into `.env` and verify them. Re-run it bare to verify
+  again without retyping anything.
+  (in your assistant: `/kb-mcp-setup`)

@@ -5,10 +5,11 @@ description: Connect this repo to the hub's HTTP MCP — write STRATA_KB_HUB_URL
 
 # kb-mcp-setup — connect this repo to the hub's MCP
 
-Thin wrapper around the `kb mcp-setup` CLI. `.mcp.json` and
-`.cursor/mcp.json` were scaffolded with `${STRATA_KB_HUB_URL}` and
-`${STRATA_KB_HTTP_TOKEN}` placeholders that your editor expands from the
-process environment. This command fills them in and proves they work.
+Thin wrapper around the `kb mcp-setup` CLI. `.mcp.json` was scaffolded with
+`${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` placeholders, and
+`.cursor/mcp.json` with Cursor's `${env:STRATA_KB_HUB_URL}` and
+`${env:STRATA_KB_HTTP_TOKEN}` — both expanded by the editor from the process
+environment. This command fills them in and proves they work.
 
 Hard rules:
 - **NEVER ask for the token in chat, and never print it.** You run the CLI

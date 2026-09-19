@@ -158,3 +158,24 @@ without this variable every child sits behind one shared bucket.
 
 Note: run only on an internal network/VPN — documents are copyrighted. The server
 refuses to start without `STRATA_KB_HTTP_TOKEN`.
+
+## Connecting a reader repo
+
+On a `child`, `ba` or `dev` repo, `kb mcp-setup` does the client half:
+
+```
+kb mcp-setup --hub-url http://kb-hub.example.com:8321
+```
+
+It prompts for the token (hidden), writes `STRATA_KB_HUB_URL` and
+`STRATA_KB_HTTP_TOKEN` into `.env`, adds `.env` to `.gitignore` when the repo
+has no entry for it, and then probes the hub: `GET /api/health` without the
+token to check the URL, then `GET /api/docs` with it to check the token. A
+wrong URL and a rejected token therefore produce different messages.
+
+Load `.env` into the shell your editor inherits (`set -a; source .env; set
++a`, or direnv) and restart the editor — MCP clients read the environment
+only at startup.
+
+`--no-verify` writes the credentials without the probe, for a hub that is
+temporarily down.

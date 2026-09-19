@@ -243,7 +243,7 @@ def _apply_gitignore(dest: Path, template_text: str, report: InitReport) -> None
     credentials) a maintainer added after scaffolding; `kb docker setup`
     itself appends `.env` there. `kb init --force` must never overwrite the
     whole file (that would silently un-ignore a bearer token). Mirrors
-    `dockersetup._ensure_gitignored`'s append pattern: read lines, only
+    `dockersetup.ensure_gitignored`'s append pattern: read lines, only
     append the missing entry, never rewrite existing content.
     """
     if not dest.exists():
