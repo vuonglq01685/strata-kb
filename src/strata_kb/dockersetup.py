@@ -10,8 +10,24 @@ from strata_kb.config import load_config
 from strata_kb.errors import KbError
 
 TOKEN_VAR = "STRATA_KB_HTTP_TOKEN"  # noqa: S105 -- this is the env var's name, not a credential value
-_TOKEN_LINE = re.compile(rf"^{TOKEN_VAR}=.*$", re.MULTILINE)
 _DEFAULT_ENV = f"{TOKEN_VAR}=change-me\n"
+
+
+def set_env_line(text: str, var: str, value: str) -> str:
+    """Return `text` with `var=value` set — replacing the first existing
+    assignment, appending when there is none. Every other line survives, so
+    a `.env` that already carries docker-compose variables keeps them.
+
+    The replacement is passed as a function so a backslash in `value` is
+    literal, not a regex escape.
+    """
+    line = f"{var}={value}"
+    pattern = re.compile(rf"^{re.escape(var)}=.*$", re.MULTILINE)
+    if pattern.search(text):
+        return pattern.sub(lambda _match: line, text, count=1)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    return text + line + "\n"
 
 
 class DockerSetupError(KbError):
@@ -50,26 +66,25 @@ def run_setup(repo_root: Path, regenerate: bool = False) -> SetupReport:
         )
     else:
         base = env_path.read_text(encoding="utf-8")
-    line = f"{TOKEN_VAR}={secrets.token_hex(24)}"
-    if _TOKEN_LINE.search(base):
-        content = _TOKEN_LINE.sub(lambda _match: line, base, count=1)
-    else:
-        if base and not base.endswith("\n"):
-            base += "\n"
-        content = base + line + "\n"
+    content = set_env_line(base, TOKEN_VAR, secrets.token_hex(24))
     env_path.write_text(content, encoding="utf-8", newline="\n")
     return SetupReport(
-        env_created=env_created, gitignore_updated=_ensure_gitignored(repo_root)
+        env_created=env_created, gitignore_updated=ensure_gitignored(repo_root)
     )
 
 
 def repo_kind(repo_root: Path) -> str:
-    """Return the recorded repo kind ('hub' | 'child'); raise when unset."""
+    """Return the recorded repo kind ('hub' | 'child' | 'ba' | 'dev').
+
+    Raises only when the kind is missing or unrecognised. It used to raise
+    for `ba`/`dev` too, reporting "not recorded" about a kind that *is*
+    recorded — each caller asserts the kinds it supports instead.
+    """
     kind = load_config(repo_root / ".kb").kind
-    if kind not in ("hub", "child"):
+    if kind not in ("hub", "child", "ba", "dev"):
         raise DockerSetupError(
             "repo kind is not recorded — run `kb init` first "
-            "(it records kind: hub|child in .kb/config.yaml)"
+            "(it records kind: hub|child|ba|dev in .kb/config.yaml)"
         )
     return kind
 
@@ -97,14 +112,16 @@ def compose_pull(repo_root: Path) -> int:
 
 
 def _require_hub_kind(repo_root: Path) -> None:
-    if repo_kind(repo_root) == "child":
+    kind = repo_kind(repo_root)
+    if kind != "hub":
         raise DockerSetupError(
-            "this repo is a child — kb docker-setup prepares the MAIN hub "
-            "(the repo that hosts federation/ and the shared MCP/Web service)"
+            f"this repo is kind: {kind} — kb docker-setup's .env/token step "
+            "prepares the MAIN hub (the repo that hosts federation/ and the "
+            "shared MCP/Web service)"
         )
 
 
-def _ensure_gitignored(repo_root: Path) -> bool:
+def ensure_gitignored(repo_root: Path) -> bool:
     """Make sure .env never lands in git; returns True when .gitignore changed."""
     gitignore = repo_root / ".gitignore"
     lines = (
