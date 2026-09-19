@@ -68,7 +68,8 @@ linter is configured. Whether the preset applies at full strength or
 is narrowed so it passes on the current tree is decided by the
 *Linting* section of `docs/conventions/<lang>.md` — follow it, and
 carry every narrowed rule into the PR's `## Findings`. Ends at **GATE
-2**: the Dev approves the plan before any code is written, and once
+2**, offered only after A2 comes back clean: the Dev approves the plan
+before any code is written, and once
 approved, flip the plan header to `status: approved` and option 1 in
 the Next-step block below is `/dev-execute <ticket-id>`; because the
 checkbox file is also the resume point, it must be complete enough for
@@ -85,7 +86,8 @@ different context.
 
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
 path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
-`## Pre-code axes` of the rubric. It answers four questions and nothing else:
+`## Pre-code axes` of `docs/pr-review-rubric.md` plus
+`docs/pr-review-rubric.local.md`. It answers four questions and nothing else:
 
 - Is there exactly one task per AC — none missing, none invented?
 - Does every task state its failing test before its implementation?
@@ -97,7 +99,8 @@ path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
 
 Fix subagent, re-review, at most 3 rounds. Record each round in the plan file's
 `## Review record` table, same shape as the design file's. GATE 2 is offered
-only after A2 comes back clean.
+only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
+left open; NOTE and NITS are recorded, not fixed.
 
 ## Review dispatch contract (every review in this flow)
 
@@ -124,7 +127,9 @@ only after A2 comes back clean.
   that reads ONLY the paths it was handed and reuses nothing it remembers from
   drafting, and write up its findings the same way — then STOP and hand the
   result to the Dev. The phase does not advance on a fallback pass: one
-  context reviewing itself is a weaker substitute, not an equivalent.
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 

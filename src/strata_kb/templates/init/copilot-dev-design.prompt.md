@@ -78,9 +78,10 @@ orchestrate; you do not draft and then judge your own draft.
 
 That design is a draft until a reviewer that never saw it being written
 says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
-three things: the path `docs/impl/<ticket-id>-design.md`, the ticket's
-acceptance criteria, and the `## Pre-code axes` of the rubric. Not your
-reasoning, not this conversation.
+these things: the path `docs/impl/<ticket-id>-design.md`, the ticket's
+acceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`
+plus `docs/pr-review-rubric.local.md`. Not your reasoning, not this
+conversation.
 
 It returns pass/fail per axis plus a gap list in which every gap names the
 section it lives in, its severity, and a proposed fix. Apply BLOCKER and
@@ -131,7 +132,9 @@ so `design ✅` reads correctly if the ticket is re-opened.
   that reads ONLY the paths it was handed and reuses nothing it remembers from
   drafting, and write up its findings the same way — then STOP and hand the
   result to the Dev. The phase does not advance on a fallback pass: one
-  context reviewing itself is a weaker substitute, not an equivalent.
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 

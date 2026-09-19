@@ -115,4 +115,8 @@ A review returns a table and a verdict line, nothing else:
 |---|---|---|---|---|
 | BLOCKER | `src/orders/service.py` | 118 | … | … |
 
-    Blocking: Yes|No   (Yes while any BLOCKER stands)
+Blocking: No
+
+The verdict line sits at column zero, exactly as shown — `Blocking: Yes`
+while any BLOCKER stands, `Blocking: No` otherwise; the CI checker anchors
+on `^Blocking:` and rejects an indented copy as a missing verdict.

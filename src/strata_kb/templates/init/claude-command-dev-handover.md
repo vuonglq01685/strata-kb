@@ -62,17 +62,24 @@ template's comment counts as empty and fails the check. Then run `kb usage repor
 heading, keeping the heading with a one-line reason when the command answers
 `no usage recorded yet` instead of a table; if the ticket changed what a
 service is responsible for, report `amend needed: <repo_id>-svc §svc.<name>`
-as a PR finding. Never edit a `reviewed` section. **GATE 3** the Dev opens
-the PR; **GATE 4** the Dev merges. **The agent does neither.** Option 1 in
-the Next-step block below is always "Open the PR yourself" with the branch
-name already filled in — this is the terminal phase of the flow, so there is
-no next automated command; a blocker takes its place instead.
+as a PR finding. Never edit a `reviewed` section. **GATE 3** — offered only after A5 comes
+back clean — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
+does neither.** Option 1 in the Next-step block below is always "Open the PR
+yourself" with the branch name already filled in — this is the terminal
+phase of the flow, so there is no next automated command; a blocker takes
+its place instead.
 
 ## A5 — merge-risk review (before GATE 3)
 
 A4 asked whether the branch does what the ticket said. A5 asks a different
 question, in a different context: is this safe to merge into the default
 branch?
+
+If `docs/impl/<ticket-id>-review/branch.diff` does not exist yet — a cold
+handover session, a fresh clone or worktree, or hand-implemented code that
+never ran `dev-execute` — build it yourself first, with the same command A4
+uses: `mkdir -p docs/impl/<ticket-id>-review && git diff $(git merge-base
+<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>-review/branch.diff`.
 
 Dispatch a `merge-risk-reviewer` subagent on the most capable model available.
 Give it the persona plainly: a tech lead reviewing before a production deploy,
@@ -127,7 +134,9 @@ becomes the fix, not the PR.
   that reads ONLY the paths it was handed and reuses nothing it remembers from
   drafting, and write up its findings the same way — then STOP and hand the
   result to the Dev. The phase does not advance on a fallback pass: one
-  context reviewing itself is a weaker substitute, not an equivalent.
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 

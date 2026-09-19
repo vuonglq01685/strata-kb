@@ -57,13 +57,16 @@ then commit the task's changes and write the full report to
 `docs/impl/<ticket-id>-review/task-<n>-report.md`. The self-review **never
 satisfies A3**: back in the orchestrator, write `git diff <BASE>..HEAD` —
 `<BASE>` recorded before the dispatch, never `HEAD~1` — to
-`docs/impl/<ticket-id>-review/task-<n>.diff` and dispatch a `task-reviewer`
-subagent with a fresh context and exactly three paths (task block, report
-file, diff file) plus the constraints copied verbatim from the plan; it
-returns **two verdicts**, spec compliance and code quality, both required.
-Fix subagent, re-review, at most 3 rounds. Only once A3 is clean does the
-orchestrator tick the checkboxes and append `Review: ✅ r<n>` under the task
-— the plan file itself is never handed to the implementer. A task block carrying
+`docs/impl/<ticket-id>-review/task-<n>.diff` (creating
+`docs/impl/<ticket-id>-review/` first if it does not exist yet) and dispatch
+a `task-reviewer` subagent with a fresh context and exactly two paths (report
+file, diff file) plus the task block it was given and its binding
+constraints copied verbatim from the plan, and `docs/conventions/<lang>.md`
+plus its `.local.md` override; it returns **two verdicts**, spec compliance
+against the task block and code quality against the conventions doc, both
+required. Fix subagent, re-review, at most 3 rounds. Only once A3 is clean
+does the orchestrator tick the checkboxes and append `Review: ✅ r<n>` under
+the task — the plan file itself is never handed to the implementer. A task block carrying
 an `Exempt:` line skips step 1 and runs the verification that line names
 instead, showing its output like any other; a task block with no `Exempt:`
 line whose implementer believes no test is possible does not decide that
@@ -84,11 +87,13 @@ in the Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
 
 Every box ticked is not the same as the ticket being done. Write the branch
 diff to `docs/impl/<ticket-id>-review/branch.diff`
-(`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
-`branch-reviewer` subagent with that path, the plan, and the ticket. One
-question only: does this branch fulfil the ticket — every AC covered by a
-test, nothing built that no AC asked for, and no later task quietly breaking
-an earlier one?
+(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
+`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
+`branch-reviewer` subagent with that path, the plan, the ticket, and
+`docs/conventions/<lang>.md` plus its `.local.md` override. One question
+only: does this branch fulfil the ticket — every AC covered by a test,
+nothing built that no AC asked for, and no later task quietly breaking an
+earlier one?
 
 Keep the lens narrow here; merge risk is A5's job in `dev-handover`, against a
 different rubric. Fix subagent, re-review, at most 3 rounds. Only once A4
@@ -120,7 +125,9 @@ comes back clean — no BLOCKER and no SUGGESTED left — is option 1
   that reads ONLY the paths it was handed and reuses nothing it remembers from
   drafting, and write up its findings the same way — then STOP and hand the
   result to the Dev. The phase does not advance on a fallback pass: one
-  context reviewing itself is a weaker substitute, not an equivalent.
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 
