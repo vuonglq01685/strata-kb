@@ -3,32 +3,6 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.1.0 — 2026-09-19
-
-### Added
-
-- **`kb mcp-setup`** — connects a `child`, `ba` or `dev` repo to the hub's
-  HTTP MCP service. `kb init` scaffolds `.mcp.json` with
-  `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` placeholders that
-  nothing set; this writes both into `.env`, makes sure git ignores it, and
-  verifies them against `GET /api/health` (no token) and `GET /api/docs`
-  (token), so a wrong URL and a rejected token give different errors. Values
-  resolve flag → environment → the value already in `.env` → hidden prompt,
-  so a bare re-run verifies again without retyping. `/kb-mcp-setup` wrappers
-  ship for Claude Code, Copilot and Cursor; they never take the token in
-  chat.
-
-### Fixed
-
-- `kb docker-setup` on a `ba` or `dev` repo reported "repo kind is not
-  recorded — run `kb init` first" about a kind that *is* recorded. It now
-  names the actual kind and points at `kb mcp-setup`.
-
-### Internal
-
-- `cipublish`'s urllib wrapper moved to `strata_kb.httpio` with a `timeout`
-  parameter, so the `file://` scheme guard exists once rather than per caller.
-
 ## 1.0.1 — 2026-09-19
 
 First release of **Strata** (`strata-kb`) — Knowledge Base as Code for large
@@ -58,7 +32,17 @@ about its own source code. Re-running `kb init` refreshes scaffolding and
 preserves data unless `--force`.
 
 Slash commands are scaffolded for Claude Code, GitHub Copilot and Cursor, and
-MCP client wiring ships as `.mcp.json` and `.cursor/mcp.json` on every kind.
+MCP client wiring ships as `.mcp.json` and `.cursor/mcp.json` on every kind —
+but with `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` placeholders
+that nothing sets on their own. **`kb mcp-setup`** connects a `child`, `ba` or
+`dev` repo to the hub's HTTP MCP service: it writes both values into `.env`,
+makes sure git ignores it, and verifies them against `GET /api/health` (no
+token) and `GET /api/docs` (token), so a wrong URL and a rejected token give
+different errors. Values resolve flag → environment → the value already in
+`.env` → hidden prompt, so a bare re-run verifies again without retyping.
+`/kb-mcp-setup` wrappers ship for Claude Code, Copilot and Cursor; they never
+take the token in chat. `kb docker-setup` run against a `ba` or `dev` repo
+names the actual kind and points at `kb mcp-setup` instead.
 
 ### Authoring
 
@@ -102,7 +86,9 @@ MCP client wiring ships as `.mcp.json` and `.cursor/mcp.json` on every kind.
   dotfiles never reach the hub.
 - `kb ci-publish` publishes from a child's own GitHub Actions job using OIDC, no
   secrets. Uploaded paths are capped at 110 UTF-16 code units so
-  `federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH`.
+  `federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH`. Its
+  urllib wrapper lives in `strata_kb.httpio` with a `timeout` parameter, so the
+  `file://` scheme guard exists once rather than per caller.
 - **Multi-tier federation:** a hub may publish its own `federation/` upward into
   another hub, unbounded in depth, with cycle detection. Scope a search by
   choosing which hub you query.
