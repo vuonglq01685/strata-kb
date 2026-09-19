@@ -81,6 +81,32 @@ edit above it.
   file is also the resume point, so it must be complete enough for a
   different session to pick up cold.
 
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from `docs/pr-review-rubric.md`, then
+  `docs/pr-review-rubric.local.md` — the local file wins. Severity is always
+  BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting — and say so in the report: one context reviewing
+  itself is a weaker substitute, not an equivalent.
+
 ## Hard rules
 
 - A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.

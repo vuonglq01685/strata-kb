@@ -2047,3 +2047,50 @@ def test_pr_review_rubric_is_wired_into_dev_kind_only():
 def test_impl_gitignore_excludes_the_review_artefacts():
     text = _read_init_template("impl-gitignore.txt")
     assert "*-review/" in text
+
+
+REVIEW_CONTRACT_SKILLS = ("dev-design", "dev-plan", "dev-execute", "dev-handover")
+
+REVIEW_CONTRACT_BOUNDS = (
+    "## Review dispatch contract (every review in this flow)\n",
+    "  itself is a weaker substitute, not an equivalent.\n",
+)
+
+
+def _review_contract(name: str) -> str:
+    first, last = REVIEW_CONTRACT_BOUNDS
+    text = _read_init_template(name)
+    assert text.count(first) == 1, f"{name}: contract opening line not found once"
+    assert text.count(last) == 1, f"{name}: contract closing line not found once"
+    start = text.index(first)
+    return text[start : text.index(last, start) + len(last)]
+
+
+def test_review_contract_is_byte_identical_across_the_four_phase_skills():
+    """1 block x 16 files. The four phases dispatch reviewers; the two
+    remaining dev wrappers (dev-implement-ticket, dev-code-seed) dispatch
+    none, so the contract deliberately does not live there."""
+    names = [
+        name for skill in REVIEW_CONTRACT_SKILLS for name in _dev_wrapper_names(skill)
+    ]
+    assert len(names) == 16
+    canon = _review_contract(names[0])
+    for name in names[1:]:
+        assert _review_contract(name) == canon, name
+
+
+def test_review_contract_pins_the_rules_that_make_it_independent():
+    body = _normalised(_review_contract("claude-skill-dev-design.md"))
+    assert "NEVER the same subagent" in body
+    assert "no conversation history" in body
+    assert "FILE PATHS, never pasted" in body
+    assert "never rates a finding's severity for it" in body
+    assert "at most 3 rounds" in body
+    assert "most capable one available" in body
+
+
+def test_the_contract_is_absent_from_the_non_dispatching_wrappers():
+    first = REVIEW_CONTRACT_BOUNDS[0]
+    for skill in ("dev-implement-ticket", "dev-code-seed"):
+        for name in _dev_wrapper_names(skill):
+            assert first not in _read_init_template(name), name
