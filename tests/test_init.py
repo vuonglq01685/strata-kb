@@ -2615,3 +2615,17 @@ def test_mcp_setup_wrappers_never_take_the_token_in_chat(tmp_path: Path):
         assert "NEVER ask for the token" in text, rel
         assert "their own terminal" in text, rel
         assert "kb mcp-setup --hub-url" in text, rel
+
+
+@pytest.mark.parametrize(
+    "kind,quickstart",
+    [("child", "QUICKSTART.md"), ("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")],
+)
+def test_quickstart_points_at_mcp_setup(tmp_path: Path, kind, quickstart):
+    init_repo(tmp_path, kind)
+    text = (tmp_path / quickstart).read_text(encoding="utf-8")
+    assert "kb mcp-setup" in text, kind
+    assert "/kb-mcp-setup" in text, kind
+    # both variable names stay documented — the user may still set them by hand
+    assert "STRATA_KB_HUB_URL" in text, kind
+    assert "STRATA_KB_HTTP_TOKEN" in text, kind

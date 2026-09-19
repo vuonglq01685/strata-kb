@@ -51,11 +51,22 @@ the hub's `federation/`.
 ## Query (reads the hub)
 
 6. **Query** — `kb query "your question"` (hub from `.kb/config.yaml`), the
-   hub's web UI, or MCP. `.mcp.json` (Claude Code) and `.cursor/mcp.json`
-   (Cursor) are pre-wired to the hub's HTTP endpoint — set two environment
-   variables locally:
+   hub's web UI, or MCP.
+7. **Connect the shared MCP server** — run `kb mcp-setup` (in your assistant:
+   `/kb-mcp-setup`). It asks for the hub's HTTP base URL and token, writes
+   both into `.env`, makes sure git ignores that file, and then verifies them
+   against the hub so a wrong URL and a rejected token give you different
+   errors.
    - `STRATA_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
    - `STRATA_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
+
+   `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) already read
+   those two variables from your environment, so load `.env` into your shell
+   (`set -a; source .env; set +a`, or use direnv) and restart your assistant —
+   MCP reads the environment only at startup.
+
+   This is a *different* value from `hub:` in `.kb/config.yaml`, which is the
+   git/path federation hub used by `kb query` and the lint gates.
 
 ## CLI reference
 
@@ -84,3 +95,7 @@ the hub's `federation/`.
 - `kb ticket lint <file|->` — Definition-of-Ready gate for BA tickets (in
   your assistant: part of /ba-ticket-author)
 - `kb tags` — list every tag published on the hub federation
+- `kb mcp-setup [--hub-url URL] [--token T] [--no-verify]` — write the hub's
+  HTTP MCP credentials into `.env` and verify them. Re-run it bare to verify
+  again without retyping anything.
+  (in your assistant: `/kb-mcp-setup`)
