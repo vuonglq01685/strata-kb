@@ -443,7 +443,8 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | Cảnh báo `dirty_tree` | Có thay đổi chưa commit trong khi revision của manifest lấy từ HEAD | Vô hại khi chạy cục bộ; CI luôn chạy trên bản checkout sạch |
 | `pr-lint` fail trên PR của Dependabot | Cổng này không tự bỏ qua một khi đã bắt buộc | Đúng như thiết kế. Hãy cân nhắc có giữ nó bắt buộc với PR của bot hay không. |
 | Một trích dẫn báo `stale` giữa chừng | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi BA. Đừng tự diễn giải lại tiêu chí chấp nhận. |
-| Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token; nếu token bị từ chối, xin token mới từ người quản trị hub |
+| Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
+| `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |
 
 ---
 
@@ -451,7 +452,7 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 
 | Lệnh | Mục đích | Mã thoát |
 |---|---|---|
-| `kb mcp-setup [--hub-url URL] [--no-verify]` | Ghi thông tin xác thực HTTP MCP của hub vào `.env` và xác minh chúng | `0` |
+| `kb mcp-setup [--hub-url URL] [--no-verify]` | Ghi thông tin xác thực HTTP MCP của hub vào `.env` và xác minh chúng | `0` ok, `1` thiếu giá trị hoặc kiểm tra kết nối thất bại |
 | `kb code-ingest [--db p] [--scaffold-svc] [--json]` | Trích cấu trúc code vào `-code` | `0` ok, `1` không phát hiện gì hoặc từ chối đích đến |
 | `kb svc note <svc> --ticket <id> --title "…"` | Thêm một dòng vào `hist.<svc>` | `0` ok, `1` service không xác định hoặc thiếu tài liệu |
 | `kb build [--strict]` | Kiểm tra kho | `0` ok, `1` lỗi |

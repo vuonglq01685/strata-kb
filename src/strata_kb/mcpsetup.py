@@ -19,7 +19,7 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata_kb import dockersetup, httpio
+from strata_kb import dockersetup, gitio, httpio
 from strata_kb.dockersetup import TOKEN_VAR
 from strata_kb.errors import KbError
 
@@ -35,6 +35,7 @@ __all__ = [
     "EnvReport",
     "McpSetupError",
     "ProbeResult",
+    "is_plaintext_remote",
     "normalize_hub_url",
     "probe",
     "read_env_value",
@@ -60,6 +61,7 @@ class ProbeResult:
     ok: bool
     message: str
     warning: str = ""
+    token_rejected: bool = False
 
 
 def normalize_hub_url(raw: str) -> str:
@@ -79,6 +81,19 @@ def normalize_hub_url(raw: str) -> str:
             f"the hub URL must start with http:// or https:// — got '{shown}'"
         )
     return url
+
+
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def is_plaintext_remote(url: str) -> bool:
+    """True for `http://` to a host that isn't loopback -- the token would
+    cross the network unencrypted. `https://` and loopback hosts are fine."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "http":
+        return False
+    host = (parsed.hostname or "").lower()
+    return host not in _LOOPBACK_HOSTS
 
 
 def require_client_kind(repo_root: Path) -> str:
@@ -144,6 +159,17 @@ def write_env(repo_root: Path, hub_url: str, token: str) -> EnvReport:
     token = token.strip()
     _reject_line_breaks(HUB_URL_VAR, hub_url)
     _reject_line_breaks(TOKEN_VAR, token)
+    # A pre-existing, git-tracked .env (adopting an existing product/
+    # requirements repo) is the one case ensure_gitignored below can't
+    # cover -- .gitignore stops FUTURE tracking, it can't untrack a file
+    # already in the index. Refuse before writing, rather than reporting
+    # success while a `git commit -a` would publish the token.
+    if (repo_root / ".env").exists() and gitio.is_tracked(repo_root, ".env"):
+        raise McpSetupError(
+            ".env is already tracked by git — refusing to write a token "
+            "into it. Untrack it first (git rm --cached .env), keep it "
+            "on disk, then re-run kb mcp-setup."
+        )
     # Ensure git ignores .env before the token ever touches it, so a failed
     # gitignore write (e.g. no permission) never leaves a bare token sitting
     # in a file git could track.
@@ -211,6 +237,14 @@ def probe(hub_url: str, token: str, http=None) -> ProbeResult:
             False,
             f"the hub was reached but the token was rejected ({status}) — "
             "ask the hub maintainer for a fresh token",
+            token_rejected=True,
+        )
+    if status == 429:
+        return ProbeResult(
+            False,
+            f"{hub_url}/api/docs returned 429 — too many failed attempts. "
+            "The hub's auth limiter blocks retries for about a minute; "
+            "wait, then re-run `kb mcp-setup`",
         )
     if status == 503:
         # Auth ran before the handler, so a 503 here still proves the token.

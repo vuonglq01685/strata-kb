@@ -276,8 +276,8 @@ def init(
     elif resolved == "ba":
         typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
         typer.echo(
-            "  2. Set STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN so your AI "
-            "assistant can reach the shared MCP server"
+            "  2. kb mcp-setup   (or /kb-mcp-setup)"
+            "  # writes STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN into .env"
         )
         typer.echo(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
@@ -292,8 +292,8 @@ def init(
             "usable yet"
         )
         typer.echo(
-            "  2. Set STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN so your AI "
-            "assistant can reach the shared MCP server"
+            "  2. kb mcp-setup   (or /kb-mcp-setup)"
+            "  # writes STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN into .env"
         )
         typer.echo(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
@@ -449,8 +449,9 @@ def mcp_setup(
         mcpsetup.require_client_kind(path)
         if token:
             typer.secho(
-                "--token puts the token in your shell history — prefer the "
-                f"prompt or {mcpsetup.TOKEN_VAR}.",
+                "--token puts the token in your shell history and in "
+                "`ps`/process-listing output for any other user on this "
+                f"machine — prefer the prompt or {mcpsetup.TOKEN_VAR}.",
                 fg=typer.colors.YELLOW,
             )
         url = mcpsetup.normalize_hub_url(
@@ -461,6 +462,13 @@ def mcp_setup(
                 prompt="Hub HTTP base URL (e.g. http://kb-hub.example.com:8321)",
             )
         )
+        if mcpsetup.is_plaintext_remote(url):
+            typer.secho(
+                f"{url} is http:// to a non-loopback host — the token will "
+                "cross the network in clear. Use https:// if the hub "
+                "supports it.",
+                fg=typer.colors.YELLOW,
+            )
         secret = _resolve_mcp_value(
             path,
             flag=token,
@@ -505,9 +513,22 @@ def mcp_setup(
         result = mcpsetup.probe(url, secret)
         if not result.ok:
             typer.secho(result.message, fg=typer.colors.RED)
-            typer.echo(
-                ".env is written — correct the value and re-run `kb mcp-setup`."
-            )
+            if result.token_rejected:
+                # A plain re-run reads the same rejected value straight
+                # back out of .env (the resolution ladder never reaches the
+                # prompt once anything is on disk) -- name the one escape
+                # that actually replaces it, not the loop that doesn't.
+                typer.echo(
+                    "Got a new token from the hub maintainer? A bare "
+                    "re-run will just read the old one back out of .env. "
+                    f"Override it once with: {mcpsetup.TOKEN_VAR}=<new-token> "
+                    "kb mcp-setup — or delete the "
+                    f"{mcpsetup.TOKEN_VAR} line from .env and re-run."
+                )
+            else:
+                typer.echo(
+                    ".env is written — correct the value and re-run `kb mcp-setup`."
+                )
             raise typer.Exit(1)
         typer.echo(result.message)
         if result.warning:

@@ -358,7 +358,8 @@ kb mission lint missions/M-checkout.md
 | Lint: "missing required heading" | Thiếu một mục bắt buộc — hoặc mục đó chỉ nằm bên trong khối code | Đưa tiêu đề thật ra ngoài khối code |
 | Lint pass cục bộ, fail trên CI | Chưa đặt `STRATA_KB_HUB` trong Actions variables, hoặc hub riêng tư mà thiếu `KB_HUB_TOKEN` | Cấu hình cả hai; xem mục 2.4 |
 | Cổng fail trên PR từ fork | Fork không đọc được secret của repository | Merge qua một nhánh trong chính repository này |
-| Trợ lý không kết nối được hub | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token; nếu token bị từ chối, xin token mới từ người quản trị hub |
+| Trợ lý không kết nối được hub | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
+| `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |
 | `kb query` không tìm thấy gì | Tài liệu chưa được publish, hoặc tag quá hẹp | Bỏ `--tags`; hỏi chủ hub xem PR publish đã merge chưa |
 | Sau khi nâng cấp mọi thứ đều `broken` | Ticket mang khối ghim theo định dạng cũ | Ghim lại bằng `kb context new` |
 
@@ -368,7 +369,7 @@ kb mission lint missions/M-checkout.md
 
 | Lệnh | Mục đích | Mã thoát |
 |---|---|---|
-| `kb mcp-setup [--hub-url URL] [--no-verify]` | Ghi thông tin xác thực HTTP MCP của hub vào `.env` và xác minh chúng | `0` |
+| `kb mcp-setup [--hub-url URL] [--no-verify]` | Ghi thông tin xác thực HTTP MCP của hub vào `.env` và xác minh chúng | `0` ok, `1` thiếu giá trị hoặc kiểm tra kết nối thất bại |
 | `kb query <text> [--tags t]` | Tìm trong tri thức đã publish | `0` |
 | `kb get <doc> <section>` | Lấy một section | `0` |
 | `kb tags` | Liệt kê từ vựng tag đã publish | `0` |

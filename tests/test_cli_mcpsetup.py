@@ -41,6 +41,20 @@ def _failing_probe(monkeypatch, message: str = "cannot reach the hub"):
     return calls
 
 
+def _token_rejected_probe(monkeypatch):
+    from strata_kb import mcpsetup
+
+    def fake(hub_url, token, http=None):
+        return mcpsetup.ProbeResult(
+            False,
+            "the hub was reached but the token was rejected (401) — ask "
+            "the hub maintainer for a fresh token",
+            token_rejected=True,
+        )
+
+    monkeypatch.setattr(mcpsetup, "probe", fake)
+
+
 def _never_probe(monkeypatch):
     from strata_kb import mcpsetup
 
@@ -89,6 +103,27 @@ def test_mcp_setup_warns_that_token_flag_hits_shell_history(
         app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
     )
     assert "shell history" in result.output
+    assert "ps" in result.output  # visible in a process listing too
+
+
+def test_mcp_setup_warns_on_a_plaintext_remote_hub_url(tmp_path: Path, monkeypatch):
+    init_repo(tmp_path, "ba")
+    _ok_probe(monkeypatch)
+    result = runner.invoke(
+        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
+    )
+    assert "cross the network in clear" in result.output
+
+
+def test_mcp_setup_does_not_warn_on_loopback_http(tmp_path: Path, monkeypatch):
+    init_repo(tmp_path, "ba")
+    _ok_probe(monkeypatch)
+    result = runner.invoke(
+        app,
+        ["mcp-setup", str(tmp_path), "--hub-url", "http://localhost:8321",
+         "--token", TOKEN],
+    )
+    assert "cross the network in clear" not in result.output
 
 
 def test_mcp_setup_creates_gitignore_on_a_ba_repo(tmp_path: Path, monkeypatch):
@@ -100,6 +135,26 @@ def test_mcp_setup_creates_gitignore_on_a_ba_repo(tmp_path: Path, monkeypatch):
     assert result.exit_code == 0
     assert ".env" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert ".gitignore updated" in result.output
+
+
+def test_mcp_setup_refuses_a_git_tracked_env(tmp_path: Path, monkeypatch, run_git):
+    """I-3: a pre-existing ba/dev repo may already track .env. Writing a
+    live bearer token into it and reporting success would leave the token
+    one `git commit -a` from being published."""
+    init_repo(tmp_path, "ba")
+    (tmp_path / ".env").write_text("OTHER=keep-me\n", encoding="utf-8")
+    run_git(tmp_path, "init")
+    run_git(tmp_path, "add", ".env")
+    run_git(tmp_path, "commit", "-m", "track .env")
+    _ok_probe(monkeypatch)
+
+    result = runner.invoke(
+        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
+    )
+    assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
+    assert "tracked by git" in result.output
+    assert TOKEN not in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
 def test_mcp_setup_refuses_the_hub_kind(tmp_path: Path):
@@ -176,6 +231,38 @@ def test_mcp_setup_keeps_env_written_when_the_probe_fails(
     assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
         tmp_path / ".env"
     ).read_text(encoding="utf-8")
+
+
+def test_mcp_setup_on_a_rejected_token_names_a_working_escape(
+    tmp_path: Path, monkeypatch
+):
+    """I-1: the resolution ladder (flag > env > .env > prompt) means a
+    plain re-run can never replace a rejected token once one is on disk --
+    the failure message must name an escape that actually works, not the
+    generic "correct the value and re-run" that just re-probes the same
+    stale value."""
+    init_repo(tmp_path, "child")
+    _token_rejected_probe(monkeypatch)
+    result = runner.invoke(
+        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
+    )
+    assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
+    assert "token was rejected" in result.output
+    assert "STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup" in result.output
+    assert ".env is written — correct the value and re-run" not in result.output
+
+
+def test_mcp_setup_on_a_non_token_failure_keeps_the_generic_hint(
+    tmp_path: Path, monkeypatch
+):
+    init_repo(tmp_path, "child")
+    _failing_probe(monkeypatch, message="cannot reach the hub")
+    result = runner.invoke(
+        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
+    )
+    assert result.exit_code == 1
+    assert ".env is written — correct the value and re-run" in result.output
 
 
 def test_mcp_setup_exits_zero_on_the_503_warning(tmp_path: Path, monkeypatch):

@@ -249,6 +249,7 @@ that follows it.
 |---|---|
 | `kb init` | Scaffold or refresh a KB repo of a given kind |
 | `kb docker-setup` | Prepare the repo for Docker (hub: `.env` + token + start; child: pull image) |
+| `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
 | `kb status` | List sections still pending summarization |
@@ -898,7 +899,8 @@ completed the seed needs no further per-ticket documentation discipline.
   The rule must therefore be **path-scoped to `.kb/<repo_id>-code/**`**, never a
   whole-PR or whole-repo rule, or it will auto-merge `-svc` content riding
   along.
-- **Set `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`** for each developer.
+- **Run `kb mcp-setup`** (or `/kb-mcp-setup`) for each developer — it writes
+  `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` into `.env` and verifies them.
 - **Budget the one-time seed:** ~10–15 min per service.
 
 `kb-code.yml` ships two jobs: on `push` to the default branch it regenerates

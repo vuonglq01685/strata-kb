@@ -363,7 +363,8 @@ kb mission lint missions/M-checkout.md
 | Lint: "missing required heading" | A required section is absent — or present only inside a fenced code block | Move the real heading outside the fence |
 | Lint passes locally, fails in CI | `STRATA_KB_HUB` is unset in Actions variables, or the hub is private and `KB_HUB_TOKEN` is missing | Configure both; see §2.4 |
 | The gate fails on a fork PR | Forks cannot read repository secrets | Merge through a branch in this repository |
-| The assistant cannot reach the hub | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token; ask the hub maintainer for a current token if it is rejected |
+| The assistant cannot reach the hub | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
+| `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |
 | `kb query` finds nothing | The document is not published yet, or the tags are too narrow | Drop `--tags`; check with the hub owner that the publish PR merged |
 | Everything resolves `broken` after an upgrade | The ticket carries a pin from an older block format | Re-pin with `kb context new` |
 
@@ -373,7 +374,7 @@ kb mission lint missions/M-checkout.md
 
 | Command | Purpose | Exit |
 |---|---|---|
-| `kb mcp-setup [--hub-url URL] [--no-verify]` | Write the hub's HTTP MCP credentials into `.env` and verify them | `0` |
+| `kb mcp-setup [--hub-url URL] [--no-verify]` | Write the hub's HTTP MCP credentials into `.env` and verify them | `0` ok, `1` no value/probe failed |
 | `kb query <text> [--tags t]` | Search published knowledge | `0` |
 | `kb get <doc> <section>` | Fetch one section | `0` |
 | `kb tags` | List the published tag vocabulary | `0` |

@@ -28,6 +28,28 @@ def test_rev_exists(git_kb):
     assert not gitio.rev_exists(git_kb["root"], "deadbeef")
 
 
+def test_is_tracked_true_for_a_committed_file(git_kb):
+    tracked = next(git_kb["kb"].rglob("*.md"))
+    rel = tracked.resolve().relative_to(git_kb["root"]).as_posix()
+    assert gitio.is_tracked(git_kb["root"], rel) is True
+
+
+def test_is_tracked_false_for_an_untracked_file(git_kb):
+    (git_kb["root"] / "untracked.env").write_text("X=1\n", encoding="utf-8")
+    assert gitio.is_tracked(git_kb["root"], "untracked.env") is False
+
+
+def test_is_tracked_false_outside_any_git_repo(tmp_path: Path):
+    (tmp_path / ".env").write_text("X=1\n", encoding="utf-8")
+    assert gitio.is_tracked(tmp_path, ".env") is False
+
+
+def test_is_tracked_false_when_git_is_not_on_path(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PATH", "")
+    (tmp_path / ".env").write_text("X=1\n", encoding="utf-8")
+    assert gitio.is_tracked(tmp_path, ".env") is False
+
+
 def test_read_at_returns_old_content(git_kb):
     path = git_kb["kb"] / "demo-doc" / "ch1-records.md"
     old = gitio.read_at(git_kb["root"], git_kb["rev1"], path)

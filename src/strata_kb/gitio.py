@@ -116,6 +116,20 @@ def rev_exists(root: Path, rev: str) -> bool:
     return proc.returncode == 0
 
 
+def is_tracked(root: Path, relpath: str) -> bool:
+    """True when `relpath` is tracked by git under `root`.
+
+    False, never raised, when `root` isn't a git repo or git isn't on
+    PATH -- callers use this to decide whether to refuse writing a secret
+    into a file, and "can't tell" must not crash that decision.
+    """
+    try:
+        proc = _run(root, "ls-files", "--error-unmatch", "--", relpath)
+    except FileNotFoundError:
+        return False
+    return proc.returncode == 0
+
+
 def _relpath(root: Path, path: Path) -> str:
     try:
         return path.resolve().relative_to(root).as_posix()

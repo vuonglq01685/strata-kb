@@ -259,6 +259,32 @@ def test_probe_reports_a_rejected_token(status: int):
     assert result.ok is False
     assert "token was rejected" in result.message
     assert str(status) in result.message
+    # I-1: the CLI needs this flag to tell a rejected-token failure apart
+    # from a bad-URL failure, so it can print the escape that actually
+    # replaces a stale token instead of the generic "correct and re-run".
+    assert result.token_rejected is True
+
+
+def test_probe_reports_a_rate_limited_docs_check():
+    from strata_kb.mcpsetup import probe
+
+    result = probe(HUB, TOKEN, http=_scripted((200, b"{}"), (429, b"")))
+    assert result.ok is False
+    assert "429" in result.message
+    assert "wait" in result.message
+    assert result.token_rejected is False
+
+
+def test_probe_does_not_flag_token_rejected_for_other_failures():
+    from strata_kb.mcpsetup import probe
+
+    for responses in (
+        ((0, b"refused"),),
+        ((404, b""),),
+        ((200, b"{}"), (500, b"")),
+    ):
+        result = probe(HUB, TOKEN, http=_scripted(*responses))
+        assert result.token_rejected is False, responses
 
 
 def test_probe_treats_503_as_a_valid_token_with_a_warning():
@@ -338,3 +364,88 @@ def test_write_env_leaves_no_token_on_disk_when_gitignore_cannot_be_written(
     with pytest.raises(OSError):
         mcpsetup.write_env(tmp_path, HUB, TOKEN)
     assert not (tmp_path / ".env").exists()
+
+
+# --- write_env refuses a git-tracked .env (I-3) -----------------------------
+#
+# ba/dev repos are adopted product/requirements repos that may already track
+# a .env with non-secret defaults. .gitignore can only stop FUTURE tracking
+# -- it cannot untrack a file already in the index -- so this is the one
+# configuration ensure_gitignored cannot cover. write_env must refuse
+# rather than append a live bearer token to a file the next `git commit -a`
+# would publish.
+
+
+def test_write_env_refuses_a_git_tracked_env(tmp_path: Path, run_git):
+    from strata_kb import mcpsetup
+
+    init_repo(tmp_path, "ba")
+    (tmp_path / ".env").write_text("OTHER=keep-me\n", encoding="utf-8")
+    run_git(tmp_path, "init")
+    run_git(tmp_path, "add", ".env")
+    run_git(tmp_path, "commit", "-m", "track .env")
+
+    with pytest.raises(mcpsetup.McpSetupError, match="tracked by git"):
+        mcpsetup.write_env(tmp_path, HUB, TOKEN)
+
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert env == "OTHER=keep-me\n"  # untouched -- no token was written
+
+
+def test_write_env_allows_an_untracked_env_in_a_git_repo(tmp_path: Path, run_git):
+    from strata_kb.mcpsetup import HUB_URL_VAR, write_env
+
+    init_repo(tmp_path, "ba")
+    run_git(tmp_path, "init")
+
+    report = write_env(tmp_path, HUB, TOKEN)
+    assert report.env_created is True
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"{HUB_URL_VAR}={HUB}" in env
+
+
+def test_write_env_works_outside_any_git_repo(tmp_path: Path):
+    """No .git at all -- must not crash, matches the pre-refusal behaviour."""
+    from strata_kb.mcpsetup import HUB_URL_VAR, write_env
+
+    init_repo(tmp_path, "ba")
+    report = write_env(tmp_path, HUB, TOKEN)
+    assert report.env_created is True
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"{HUB_URL_VAR}={HUB}" in env
+
+
+def test_write_env_works_when_git_is_not_on_path(tmp_path: Path, monkeypatch):
+    """git missing from PATH must degrade to "can't tell, don't crash",
+    not raise -- the is_tracked() check is a safety net, not a hard gate."""
+    from strata_kb.mcpsetup import HUB_URL_VAR, write_env
+
+    init_repo(tmp_path, "ba")
+    monkeypatch.setenv("PATH", "")
+    report = write_env(tmp_path, HUB, TOKEN)
+    assert report.env_created is True
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"{HUB_URL_VAR}={HUB}" in env
+
+
+# --- is_plaintext_remote (smaller item) -------------------------------------
+
+
+def test_is_plaintext_remote_flags_http_to_a_remote_host():
+    from strata_kb.mcpsetup import is_plaintext_remote
+
+    assert is_plaintext_remote("http://kb-hub.example.com:8321") is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://kb-hub.example.com:8321",
+        "http://localhost:8321",
+        "http://127.0.0.1:8321",
+    ],
+)
+def test_is_plaintext_remote_allows_https_and_loopback(url: str):
+    from strata_kb.mcpsetup import is_plaintext_remote
+
+    assert is_plaintext_remote(url) is False
