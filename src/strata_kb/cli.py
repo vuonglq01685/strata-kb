@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import os
 import sys
 from enum import Enum
 from pathlib import Path
@@ -421,6 +422,114 @@ def _docker_setup_child(path: Path, no_docker: bool) -> None:
         "kb-model-cache volume (one-time wait)."
     )
     typer.echo("(The shared MCP server + Web UI run on the MAIN hub, not here.)")
+
+
+@app.command("mcp-setup")
+def mcp_setup(
+    path: Path = typer.Argument(Path("."), help="Repo root (default: current)"),
+    hub_url: str = typer.Option(
+        "", "--hub-url", help="Hub HTTP base URL, e.g. http://kb-hub.example.com:8321"
+    ),
+    token: str = typer.Option(
+        "", "--token", help="Hub HTTP token (env: STRATA_KB_HTTP_TOKEN)"
+    ),
+    no_verify: bool = typer.Option(
+        False, "--no-verify", help="Write the files; skip the connection probe"
+    ),
+) -> None:
+    """Connect this repo to the hub's HTTP MCP — write .env, then verify."""
+    from strata_kb import mcpsetup
+    from strata_kb.errors import KbError
+
+    try:
+        mcpsetup.require_client_kind(path)
+        if token:
+            typer.secho(
+                "--token puts the token in your shell history — prefer the "
+                f"prompt or {mcpsetup.TOKEN_VAR}.",
+                fg=typer.colors.YELLOW,
+            )
+        url = mcpsetup.normalize_hub_url(
+            _resolve_mcp_value(
+                path,
+                flag=hub_url,
+                var=mcpsetup.HUB_URL_VAR,
+                prompt="Hub HTTP base URL (e.g. http://kb-hub.example.com:8321)",
+            )
+        )
+        secret = _resolve_mcp_value(
+            path,
+            flag=token,
+            var=mcpsetup.TOKEN_VAR,
+            prompt="Hub HTTP token",
+            hide_input=True,
+        )
+        report = mcpsetup.write_env(path, url, secret)
+    except KbError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    action = "created" if report.env_created else "updated"
+    typer.echo(
+        f".env {action} — {mcpsetup.HUB_URL_VAR} and {mcpsetup.TOKEN_VAR} "
+        "written (token not shown; see .env)."
+    )
+    if report.gitignore_updated:
+        typer.echo(".gitignore updated: added .env")
+    typer.echo("Load it into the current shell:")
+    typer.echo("  bash/zsh:   set -a; source .env; set +a")
+    typer.echo(
+        "  PowerShell: Get-Content .env | %{ $k,$v = $_.Split('=',2); "
+        "[Environment]::SetEnvironmentVariable($k,$v) }"
+    )
+    typer.echo(
+        "To persist, add that line to your shell profile (~/.zshrc), or use "
+        "direnv."
+    )
+
+    if not no_verify:
+        result = mcpsetup.probe(url, secret)
+        if not result.ok:
+            typer.secho(result.message, fg=typer.colors.RED)
+            typer.echo(
+                ".env is written — correct the value and re-run `kb mcp-setup`."
+            )
+            raise typer.Exit(1)
+        typer.echo(result.message)
+        if result.warning:
+            typer.secho(result.warning, fg=typer.colors.YELLOW)
+
+    typer.echo(
+        "Restart Claude Code / Cursor so MCP picks up the environment — MCP "
+        "servers read env only at client startup."
+    )
+
+
+def _resolve_mcp_value(
+    path: Path, flag: str, var: str, prompt: str, hide_input: bool = False
+) -> str:
+    """flag > environment > the value already in .env > TTY prompt > error.
+
+    The `.env` rung is what makes a bare `kb mcp-setup` on a configured repo
+    mean "verify again", and it is how the assistant wrapper re-runs this
+    command without ever handling the token itself.
+
+    The final check strips before testing emptiness (not just `not value`):
+    a whitespace-only flag or prompt answer must fail here too, since
+    `write_env` strips on the way in and would otherwise write an empty
+    value, clobbering whatever good value was already on disk.
+    """
+    from strata_kb import mcpsetup
+
+    value = flag or os.environ.get(var, "") or mcpsetup.read_env_value(path, var)
+    if not value and _stdin_isatty():
+        value = typer.prompt(prompt, hide_input=hide_input)
+    if not value.strip():
+        raise mcpsetup.McpSetupError(
+            f"no value for {var} — pass the flag, set the environment "
+            "variable, or run this in a terminal where it can prompt"
+        )
+    return value
 
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):

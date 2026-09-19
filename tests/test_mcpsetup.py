@@ -303,3 +303,27 @@ def test_default_http_forwards_headers_and_the_probe_timeout(monkeypatch):
     _, _, sent_headers, _, sent_timeout = calls[0]
     assert sent_headers == headers
     assert sent_timeout == PROBE_TIMEOUT
+
+
+# --- write_env / ensure_gitignored ordering (fix wave, reviewer carry) -----
+#
+# write_env() calls ensure_gitignored(repo_root) before ever touching .env,
+# so a failed .gitignore write leaves no token on disk. Nothing but a
+# comment pinned that ordering -- proven: swapping the two calls still
+# passed the full suite. This test fails if the write happens first.
+
+
+def test_write_env_leaves_no_token_on_disk_when_gitignore_cannot_be_written(
+    tmp_path, monkeypatch
+):
+    from strata_kb import dockersetup, mcpsetup
+
+    init_repo(tmp_path, "ba")
+    monkeypatch.setattr(
+        dockersetup,
+        "ensure_gitignored",
+        lambda root: (_ for _ in ()).throw(OSError("Permission denied")),
+    )
+    with pytest.raises(OSError):
+        mcpsetup.write_env(tmp_path, HUB, TOKEN)
+    assert not (tmp_path / ".env").exists()
