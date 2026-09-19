@@ -321,8 +321,16 @@ def docker_setup(
         raise typer.Exit(1)
     if kind == "hub":
         _docker_setup_hub(path, force, no_docker)
-    else:
+    elif kind == "child":
         _docker_setup_child(path, no_docker)
+    else:
+        typer.secho(
+            f"kind: {kind} does not run Docker — kb docker-setup applies to "
+            "hub (serves the KB) and child (pulls the ingest image). "
+            "To connect this repo to a hub, run `kb mcp-setup`.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
 
 
 def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:

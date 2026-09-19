@@ -302,3 +302,80 @@ def test_compose_helpers_run_in_repo_root(tmp_path: Path, monkeypatch):
         (["docker", "compose", "up", "-d"], tmp_path),
         (["docker", "compose", "pull"], tmp_path),
     ]
+
+
+def test_repo_kind_returns_ba_and_dev_instead_of_raising(tmp_path: Path):
+    from strata_kb.dockersetup import repo_kind
+
+    for kind in ("ba", "dev"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        assert repo_kind(repo) == kind
+
+
+def test_repo_kind_still_raises_when_kind_is_unset(tmp_path: Path):
+    import pytest
+
+    from strata_kb.dockersetup import DockerSetupError, repo_kind
+
+    # A bare directory: load_config returns its defaults, so kind is "".
+    # Same construction test_run_setup_refuses_child_and_kindless uses.
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    with pytest.raises(DockerSetupError, match="kb init"):
+        repo_kind(bare)
+
+
+def test_require_hub_kind_rejects_every_non_hub_kind(tmp_path: Path):
+    import pytest
+
+    from strata_kb.dockersetup import DockerSetupError, _require_hub_kind
+
+    for kind in ("child", "ba", "dev"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        with pytest.raises(DockerSetupError):
+            _require_hub_kind(repo)
+
+
+def test_set_env_line_appends_when_absent():
+    from strata_kb.dockersetup import set_env_line
+
+    assert set_env_line("", "A", "1") == "A=1\n"
+    assert set_env_line("B=2\n", "A", "1") == "B=2\nA=1\n"
+    assert set_env_line("B=2", "A", "1") == "B=2\nA=1\n"
+
+
+def test_set_env_line_replaces_in_place_and_keeps_other_lines():
+    from strata_kb.dockersetup import set_env_line
+
+    out = set_env_line("B=2\nA=old\nC=3\n", "A", "new")
+    assert out == "B=2\nA=new\nC=3\n"
+
+
+def test_set_env_line_treats_the_value_literally():
+    from strata_kb.dockersetup import set_env_line
+
+    # A backslash in the value must not be read as a regex escape.
+    assert set_env_line("A=old\n", "A", r"c:\x") == "A=c:\\x\n"
+
+
+def test_ensure_gitignored_creates_the_file_when_absent(tmp_path: Path):
+    from strata_kb.dockersetup import ensure_gitignored
+
+    assert ensure_gitignored(tmp_path) is True
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == ".env\n"
+    assert ensure_gitignored(tmp_path) is False
+
+
+def test_cli_docker_setup_rejects_ba_and_dev_by_name(tmp_path: Path):
+    for kind in ("ba", "dev"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        result = runner.invoke(app, ["docker-setup", str(repo)])
+        assert result.exit_code == 1
+        assert f"kind: {kind}" in result.output
+        assert "hub" in result.output and "child" in result.output
