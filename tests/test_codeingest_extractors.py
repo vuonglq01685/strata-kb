@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -409,6 +410,12 @@ class TestTreeExtractor:
         )
         assert "entry points: src/airspace/main.py; console scripts: airspace." in s.summary
 
+    @pytest.mark.parametrize("rel", ["main.rs", "main.dart", "main.swift"])
+    def test_detects_entry_points_for_new_languages(self, repo, rel):
+        (repo / rel).write_text("", encoding="utf-8")
+        s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        assert f"Detected entry points:\n\n- {rel}\n" in s.l2_md
+
 
 from center_kb.codeingest.extractors import deps as deps_ext
 
@@ -596,6 +603,323 @@ class TestDepsExtractor:
         assert "phpunit/phpunit" in s.l3_md
         assert "Symfony" in s.l2_md
 
+    def test_rust_deps_come_from_cargo_toml(self, repo):
+        (repo / "Cargo.toml").write_text(
+            '[dependencies]\n'
+            'serde = "1.0"\n'
+            'tokio = { version = "1.35", features = ["full"] }\n'
+            'actix-web = "4.4"\n\n'
+            '[dev-dependencies]\n'
+            'proptest = "1.4"\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
+        assert "serde 1.0" in s.l3_md
+        assert "tokio 1.35" in s.l3_md
+        assert "proptest 1.4" in s.l3_md
+        assert "Actix Web" in s.l2_md
+
+    def test_rust_workspace_member_cargo_toml_is_also_read(self, repo):
+        (repo / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/api"]\n', encoding="utf-8"
+        )
+        member = repo / "crates" / "api" / "Cargo.toml"
+        member.parent.mkdir(parents=True)
+        member.write_text('[dependencies]\nserde = "1.0"\n', encoding="utf-8")
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
+        assert "serde 1.0" in s.l3_md
+
+    def test_vendored_rust_crate_cargo_toml_is_ignored(self, repo):
+        # _read_rust's tree walk has no depth cap (unlike node's, to
+        # support workspace members) -- a `cargo vendor`-populated
+        # vendor/ directory, if committed, carries a real Cargo.toml per
+        # vendored crate that must not be read as the repo's own direct
+        # dependency, the same class of bug the node_modules test below
+        # already pins for Node.
+        vendored = repo / "vendor" / "serde-1.0.200" / "Cargo.toml"
+        vendored.parent.mkdir(parents=True)
+        vendored.write_text('[dependencies]\nshould-not-appear = "9.9.9"\n', encoding="utf-8")
+        sections = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))
+        assert "dep.rust" not in sections
+
+    def test_swift_deps_come_from_package_swift(self, repo):
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    name: "MyApp",\n'
+            '    dependencies: [\n'
+            '        .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),\n'
+            '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "vapor 4.89.0" in s.l3_md
+        assert "swift-log 1.5.3" in s.l3_md
+        assert "Vapor" in s.l2_md
+
+    def test_rust_build_dependencies_are_recorded_in_their_own_group(self, repo):
+        (repo / "Cargo.toml").write_text(
+            '[dependencies]\nserde = "1.0"\n\n'
+            '[build-dependencies]\ntonic-build = "0.11"\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
+        assert "tonic-build 0.11" in s.l3_md
+        assert "build" in s.l2_md
+
+    def test_rust_workspace_inherited_dependency_gets_the_workspace_version(self, repo):
+        # `foo.workspace = true` is how every member of a modern Cargo
+        # workspace declares a dependency; the version lives once in the
+        # root's `[workspace.dependencies]`. Reading only the member's
+        # own table recorded the name with an empty constraint -- the
+        # version is right there in the same repo, so an empty constraint
+        # is a fact this extractor had and dropped.
+        (repo / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/api"]\n\n'
+            '[workspace.dependencies]\nserde = "1.0.200"\n'
+            'tokio = { version = "1.35", features = ["full"] }\n',
+            encoding="utf-8",
+        )
+        member = repo / "crates" / "api" / "Cargo.toml"
+        member.parent.mkdir(parents=True)
+        member.write_text(
+            "[dependencies]\n"
+            "serde = { workspace = true }\n"
+            "tokio.workspace = true\n",
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
+        assert "serde 1.0.200" in s.l3_md
+        assert "tokio 1.35" in s.l3_md
+
+    def test_workspace_dependencies_alone_are_not_the_repos_own_deps(self, repo):
+        # `[workspace.dependencies]` is a version catalogue, not a
+        # declaration of use: a root listing 30 entries of which members
+        # use 5 must not report 30. It is a lookup table only.
+        (repo / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/api"]\n\n'
+            '[workspace.dependencies]\nunused-by-every-member = "9.9"\n',
+            encoding="utf-8",
+        )
+        member = repo / "crates" / "api" / "Cargo.toml"
+        member.parent.mkdir(parents=True)
+        member.write_text('[dependencies]\nserde = "1.0"\n', encoding="utf-8")
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
+        assert "unused-by-every-member" not in s.l2_md + s.l3_md
+
+    def test_swift_package_swift_in_a_subdirectory_is_read(self, repo):
+        # Root-only reading missed every multi-module SwiftPM layout,
+        # while Rust/Java/Python readers all walk the tree and
+        # `conventions.detect_langs` detects Swift three levels down.
+        manifest = repo / "Modules" / "Core" / "Package.swift"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(
+            'let package = Package(\n'
+            '    dependencies: [\n'
+            '        .package(url: "https://github.com/apple/swift-nio.git", from: "2.62.0"),\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "swift-nio 2.62.0" in s.l3_md
+
+    def test_dart_pubspec_in_a_subdirectory_is_read(self, repo):
+        # The melos/monorepo layout: `packages/<name>/pubspec.yaml`.
+        manifest = repo / "packages" / "app" / "pubspec.yaml"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(
+            "name: app\ndependencies:\n  http: ^1.2.0\n", encoding="utf-8"
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.dart"]
+        assert "http^1.2.0" in s.l3_md
+
+    def test_deps_extractor_detects_a_subdirectory_swift_or_dart_manifest(self, tmp_path):
+        root = tmp_path / "nested"
+        (root / "Modules" / "Core").mkdir(parents=True)
+        (root / "Modules" / "Core" / "Package.swift").write_text("", encoding="utf-8")
+        assert deps_ext.DepsExtractor().detect(root) is True
+
+    def test_checked_out_swift_dependency_manifests_are_ignored(self, repo):
+        # Same class as the vendored-Cargo.toml and node_modules cases:
+        # SwiftPM checkouts under .build/ and committed CocoaPods under
+        # Pods/ carry a full Package.swift each, which the now-uncapped
+        # walk would otherwise read as this repo's own dependencies.
+        for rel in (".build/checkouts/swift-nio", "Pods/Alamofire"):
+            manifest = repo / rel / "Package.swift"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                'let package = Package(dependencies: [.package(url: '
+                '"https://github.com/x/should-not-appear.git", from: "1.0.0")])\n',
+                encoding="utf-8",
+            )
+        sections = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))
+        assert "dep.swift" not in sections
+
+    def test_dart_tool_generated_pubspec_is_ignored(self, repo):
+        manifest = repo / ".dart_tool" / "pkg" / "pubspec.yaml"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(
+            "name: generated\ndependencies:\n  should-not-appear: ^1.0.0\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))
+        assert "dep.dart" not in sections
+
+    def test_swift_path_dependency_with_no_version_is_recorded_by_name(self, repo):
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    dependencies: [\n'
+            '        .package(path: "../LocalLib"),\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "LocalLib" in s.l3_md
+
+    def test_dart_deps_come_from_pubspec_yaml(self, repo):
+        (repo / "pubspec.yaml").write_text(
+            "name: my_app\n"
+            "dependencies:\n"
+            "  flutter:\n"
+            "    sdk: flutter\n"
+            "  http: ^1.2.0\n"
+            "dev_dependencies:\n"
+            "  test: ^1.24.0\n",
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.dart"]
+        assert "http" in s.l2_md
+        assert "http^1.2.0" in s.l3_md
+        assert "test^1.24.0" in s.l3_md
+        assert "Flutter" in s.l2_md
+
+    def test_dart_non_string_key_does_not_destroy_the_whole_ecosystem(self, repo):
+        # Same class as test_wrong_shaped_manifest_does_not_destroy_the_whole_ecosystem
+        # above, reached through YAML rather than JSON/TOML: YAML mapping
+        # keys are not necessarily strings (`1.5:` is a float, and YAML 1.1
+        # reads a bare `no:`/`on:` as a bool), while every shared helper
+        # downstream -- `_dedupe_sorted`'s `p[0].lower()` first -- assumes
+        # a `str` name. That AttributeError unwound past this reader's
+        # per-file `try` to `extract()`'s blanket handler, dropping every
+        # OTHER pubspec.yaml in the repo with it and naming no file.
+        (repo / "pubspec.yaml").write_text(
+            "name: root_app\ndependencies:\n  1.5: ^2.0\n  no: ^1.0\n",
+            encoding="utf-8",
+        )
+        other = repo / "packages" / "app" / "pubspec.yaml"
+        other.parent.mkdir(parents=True)
+        other.write_text(
+            "name: app\ndependencies:\n  http: ^1.2.0\n", encoding="utf-8"
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.dart"]
+        assert "http^1.2.0" in s.l3_md
+
+    def test_malformed_cargo_toml_warns_and_leaves_the_other_manifests(self, repo):
+        # "Degrade, don't raise" is the module's headline contract, pinned
+        # for the older ecosystems (pom.xml, package.json) but not for any
+        # of the three added here: one syntactically broken manifest must
+        # cost exactly one warning naming it, never the ecosystem.
+        (repo / "Cargo.toml").write_text(
+            '[dependencies\nserde = "1.0"\n', encoding="utf-8"
+        )
+        member = repo / "crates" / "api" / "Cargo.toml"
+        member.parent.mkdir(parents=True)
+        member.write_text('[dependencies]\nserde = "1.0"\n', encoding="utf-8")
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        assert any("Cargo.toml" in w for w in result.warnings)
+        assert "serde 1.0" in _by_id(result)["dep.rust"].l3_md
+
+    def test_malformed_pubspec_warns_and_leaves_the_other_manifests(self, repo):
+        (repo / "pubspec.yaml").write_text(
+            "name: root\ndependencies:\n  http: [unclosed\n", encoding="utf-8"
+        )
+        other = repo / "packages" / "app" / "pubspec.yaml"
+        other.parent.mkdir(parents=True)
+        other.write_text(
+            "name: app\ndependencies:\n  dio: ^5.4.0\n", encoding="utf-8"
+        )
+        result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        assert any("pubspec.yaml" in w for w in result.warnings)
+        assert "dio^5.4.0" in _by_id(result)["dep.dart"].l3_md
+
+    def test_swift_commented_out_package_is_not_reported(self, repo):
+        # Commenting a dependency out while migrating off it is routine,
+        # and the scanner reads Swift *source*: a `//`-ed or `/* */`-ed
+        # `.package(...)` is not a dependency of this repo, and reporting
+        # it is exactly the claim `-code` must not make. The live entry's
+        # own `https://` proves the comment stripping is string-aware --
+        # a naive `//` strip would eat every dependency URL instead.
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    dependencies: [\n'
+            '        // .package(url: "https://github.com/old/removed.git", from: "0.1.0"),\n'
+            '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
+            '        /* .package(url: "https://github.com/old/alsogone.git", from: "0.2.0") */\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "swift-log 1.5.3" in s.l3_md
+        assert "removed" not in s.l2_md + s.l3_md
+        assert "alsogone" not in s.l2_md + s.l3_md
+
+    def test_swift_up_to_next_major_range_is_recorded(self, repo):
+        # The nested-paren form is the entire reason _iter_swift_package_calls
+        # counts parens instead of matching a flat regex, and nothing
+        # exercised it.
+        (repo / "Package.swift").write_text(
+            'let package = Package(\n'
+            '    dependencies: [\n'
+            '        .package(url: "https://github.com/apple/swift-nio.git", '
+            '.upToNextMajor(from: "2.62.0")),\n'
+            '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
+            '    ]\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "swift-nio 2.62.0" in s.l3_md
+        assert "swift-log 1.5.3" in s.l3_md
+
+    def test_swift_exact_version_pin_is_recorded(self, repo):
+        (repo / "Package.swift").write_text(
+            'let package = Package(dependencies: [\n'
+            '    .package(url: "https://github.com/apple/swift-crypto.git", exact: "3.2.0"),\n'
+            '])\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "swift-crypto 3.2.0" in s.l3_md
+
+    def test_swift_named_local_package_uses_its_declared_name(self, repo):
+        # The `name:`-without-`url:` branch: a local module named
+        # differently from its directory keeps the declared name.
+        (repo / "Package.swift").write_text(
+            'let package = Package(dependencies: [\n'
+            '    .package(name: "FeatureKit", path: "../modules/feature-kit"),\n'
+            '])\n',
+            encoding="utf-8",
+        )
+        s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
+        assert "FeatureKit" in s.l3_md
+
+    def test_swift_unterminated_package_calls_do_not_blow_up_scan_time(self, repo):
+        # _iter_swift_package_calls used to restart its forward scan from
+        # every `.package(` match; when a call never closes, each scan runs
+        # to EOF and the pass is quadratic -- measured 2.1s at 18 KB, 10.2s
+        # at 36 KB, 28.3s at 72 KB, i.e. ~90 minutes for a ~1 MB manifest.
+        # A hang is the one failure `extract()`'s blanket `except Exception`
+        # cannot rescue, so this is pinned by time, generously (the fixed
+        # scan is linear and finishes in milliseconds).
+        (repo / "Package.swift").write_text(".package(" * 4000, encoding="utf-8")
+        started = time.perf_counter()
+        deps_ext.DepsExtractor().extract(repo, _opts(repo))
+        assert time.perf_counter() - started < 3.0
+
     def test_vendored_node_modules_package_json_is_ignored(self, repo):
         # Review Finding 6: nothing pinned that a vendored package.json
         # inside node_modules/ (installed dependencies, not the project's
@@ -752,6 +1076,12 @@ class TestFrameworkLookup:
             ("next", "Next.js"),
             ("@angular/core", "Angular"),
             ("vue", "Vue"),
+            ("@playwright/test", "Playwright"),
+            ("actix-web", "Actix Web"),
+            ("axum", "Axum"),
+            ("rocket", "Rocket"),
+            ("vapor", "Vapor"),
+            ("flutter", "Flutter"),
         ],
     )
     def test_known_frameworks_map_to_labels(self, dep, expected):
@@ -1755,6 +2085,20 @@ class TestServicesExtractor:
         s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))["svc.postgres"]
         assert "| Technology | PostgreSQL |" in s.l2_md
 
+    @pytest.mark.parametrize(
+        "image,technology",
+        [("rust:1.75", "Rust"), ("swift:5.9", "Swift"), ("dart:stable", "Dart")],
+    )
+    def test_new_language_base_images_get_a_technology_label(self, tmp_path, image, technology):
+        root = tmp_path / "svc"
+        root.mkdir()
+        (root / "docker-compose.yml").write_text(
+            "services:\n  app:\n    build: .\n", encoding="utf-8"
+        )
+        (root / "Dockerfile").write_text(f"FROM {image}\n", encoding="utf-8")
+        s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.app"]
+        assert f"| Technology | {technology} |" in s.l2_md
+
     def test_dockerfile_fallback_uses_the_runtime_stage_and_command(self, tmp_path):
         root = tmp_path / "solo2"
         root.mkdir()
@@ -1961,6 +2305,19 @@ class TestCommandsExtractor:
         empty = tmp_path / "empty3"
         empty.mkdir()
         assert cmd_ext.CommandsExtractor().detect(empty) is False
+
+    @pytest.mark.parametrize("manifest", ["Cargo.toml", "Package.swift", "pubspec.yaml"])
+    def test_detects_a_repo_whose_only_command_source_is_its_manifest(self, tmp_path, manifest):
+        # `core.run()` does `if not detected: continue` -- an extractor
+        # whose detect() says False never has extract() called at all.
+        # Rust/Swift's presence-based defaults and Dart's pubspec reader
+        # are therefore unreachable on exactly the repos they exist for
+        # (a Cargo/SwiftPM/pub repo with no CI, Makefile or pyproject)
+        # unless detect() knows about these manifests too.
+        root = tmp_path / "manifestonly"
+        root.mkdir()
+        (root / manifest).write_text("", encoding="utf-8")
+        assert cmd_ext.CommandsExtractor().detect(root) is True
 
     def test_emits_purpose_sections(self, repo):
         sections = _by_id(cmd_ext.CommandsExtractor().extract(repo, _opts(repo)))
@@ -2396,6 +2753,32 @@ class TestCommandsExtractor:
             ("ruff check .", "lint"),
             ("python -m build", "build"),
             ("npm run dev", "run"),
+            # Rust/Flutter/Swift each invoke their own tool's bare `run`
+            # subcommand -- unlike `dotnet run`/`go run`, there is no
+            # compound keyword for these, and no bare "run" keyword either
+            # (only "start"/"serve"/"dev"/... which don't apply here).
+            ("cargo run", "run"),
+            ("flutter run", "run"),
+            ("swift run", "run"),
+            # `cargo clippy`/`cargo fmt` are Rust's canonical lint commands
+            # (the ones the conventions pack records as `cmd.lint`), but
+            # neither "clippy" nor "fmt" is a lint keyword.
+            ("cargo clippy --all-targets -- -D warnings", "lint"),
+            ("cargo fmt --check", "lint"),
+            # Dart/Flutter's canonical linter is `analyze`, and Swift's is
+            # `swiftlint` -- neither matched any lint keyword, so a Dart,
+            # Flutter or Swift repo produced no `cmd.lint` section at all
+            # even when its CI ran one. `swiftlint` in particular cannot
+            # match the bare "lint" keyword: `_token_matches_keyword`
+            # requires the keyword at position 0 of the token.
+            ("dart analyze", "lint"),
+            ("flutter analyze", "lint"),
+            ("swiftlint", "lint"),
+            ("swiftlint --strict", "lint"),
+            # `analyze` is still only a whole-token (or `-`/`:`-cut)
+            # match, so a Maven goal that merely ends in it doesn't
+            # classify off the keyword's own name.
+            ("mvn sonar:analyze", None),
             ("go test ./...", "test"),
             ("tox -e lint", "lint"),
             ('"$PY" -m pytest -q', "test"),
@@ -2441,6 +2824,19 @@ class TestCommandsExtractor:
             ("cp build-out.zip /tmp", None),
             ("node build-config.mjs", None),
             ("bash dev-setup.bash", None),
+            # Same gap, the compiled languages' own source extensions:
+            # `test-helper.rs` matched the `test` keyword through the
+            # `-` separator rule because "rs" wasn't a recognised
+            # extension, so a download/copy step naming a source file
+            # classified as a real command.
+            ("curl -o test-helper.rs https://x", None),
+            ("cp build-main.dart /tmp", None),
+            ("cp lint-rules.swift /tmp", None),
+            ("curl -o test-main.go https://x", None),
+            ("cp build-Program.cs /tmp", None),
+            ("cp test-Helper.java /tmp", None),
+            ("cp lint-rules.php /tmp", None),
+            ("cp build-Main.kt /tmp", None),
             # Trailing punctuation (reviewer, Finding 4): `_TOKEN_STRIP`
             # originally didn't include `;`/`,`, so a `;`-joined command's
             # filename token kept its trailing `;` and missed the
@@ -2564,6 +2960,109 @@ class TestCommandsExtractor:
         assert "pytest -q --cov=airspace" in s.l2_md.splitlines()[0]   # CI still primary
         assert "bash scripts/gate.sh" in s.l3_md
 
+    def test_presence_reader_gives_rust_build_and_test_defaults(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
+        candidates, warnings = cmd_ext._read_presence(tmp_path, _opts(tmp_path))
+        assert ("build", "cargo build", "Cargo.toml") in candidates
+        assert ("test", "cargo test", "Cargo.toml") in candidates
+        assert warnings == []
+
+    def test_presence_reader_gives_swift_build_and_test_defaults(self, tmp_path):
+        (tmp_path / "Package.swift").write_text("", encoding="utf-8")
+        candidates, warnings = cmd_ext._read_presence(tmp_path, _opts(tmp_path))
+        assert ("build", "swift build", "Package.swift") in candidates
+        assert ("test", "swift test", "Package.swift") in candidates
+
+    def test_presence_reader_gives_no_dart_default(self, tmp_path):
+        # Unlike Cargo.toml/Package.swift, pubspec.yaml alone can't say
+        # whether the test command is `dart test` or `flutter test` --
+        # presence alone (this reader reads no file content) can't
+        # disambiguate a pure-Dart package from a Flutter app, and a wrong
+        # default is worse than none here (dart test errors out on a
+        # Flutter package's widget tests). `_read_pubspec`, which does
+        # open the file, is what covers this ecosystem -- see below.
+        (tmp_path / "pubspec.yaml").write_text("name: x\n", encoding="utf-8")
+        candidates, _warnings = cmd_ext._read_presence(tmp_path, _opts(tmp_path))
+        assert candidates == []
+
+    def test_pubspec_reader_gives_flutter_defaults_for_a_flutter_app(self, tmp_path):
+        # What `_read_presence` deliberately cannot do, a reader that
+        # opens the file can: `dependencies.flutter` names this a Flutter
+        # app, so its test runner is `flutter test`, never `dart test`.
+        (tmp_path / "pubspec.yaml").write_text(
+            "name: my_app\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1.2.0\n",
+            encoding="utf-8",
+        )
+        candidates, warnings = cmd_ext._read_pubspec(tmp_path, _opts(tmp_path))
+        assert ("test", "flutter test", "pubspec.yaml") in candidates
+        assert ("lint", "flutter analyze", "pubspec.yaml") in candidates
+        assert warnings == []
+
+    def test_pubspec_reader_gives_dart_defaults_for_a_pure_dart_package(self, tmp_path):
+        (tmp_path / "pubspec.yaml").write_text(
+            "name: my_lib\ndependencies:\n  http: ^1.2.0\n", encoding="utf-8"
+        )
+        candidates, _warnings = cmd_ext._read_pubspec(tmp_path, _opts(tmp_path))
+        assert ("test", "dart test", "pubspec.yaml") in candidates
+        assert ("lint", "dart analyze", "pubspec.yaml") in candidates
+
+    def test_pubspec_reader_treats_a_top_level_flutter_key_as_a_flutter_app(self, tmp_path):
+        # A Flutter app that declares assets/fonts but pins the SDK only
+        # through `environment:` still has a top-level `flutter:` block.
+        (tmp_path / "pubspec.yaml").write_text(
+            "name: my_app\nflutter:\n  uses-material-design: true\n", encoding="utf-8"
+        )
+        candidates, _warnings = cmd_ext._read_pubspec(tmp_path, _opts(tmp_path))
+        assert ("test", "flutter test", "pubspec.yaml") in candidates
+
+    def test_pubspec_reader_offers_no_build_default(self, tmp_path):
+        # `flutter build` needs a target (apk/ios/web) and `dart compile`
+        # needs an entry point -- neither is knowable from the manifest,
+        # and the "a wrong default is worse than none" rule applies to
+        # build exactly as it did to test before this reader existed.
+        (tmp_path / "pubspec.yaml").write_text("name: x\n", encoding="utf-8")
+        candidates, _warnings = cmd_ext._read_pubspec(tmp_path, _opts(tmp_path))
+        assert [c for c in candidates if c[0] == "build"] == []
+
+    def test_pubspec_reader_degrades_on_a_malformed_manifest(self, tmp_path):
+        (tmp_path / "pubspec.yaml").write_text("name: [unclosed\n", encoding="utf-8")
+        candidates, warnings = cmd_ext._read_pubspec(tmp_path, _opts(tmp_path))
+        assert candidates == []
+        assert any("pubspec.yaml" in w for w in warnings)
+
+    def test_e2e_command_is_an_alternative_never_the_primary_test(self, tmp_path):
+        # An e2e suite and a unit suite share the `test` purpose, and CI
+        # order alone would make whichever ran first the primary. A Dev
+        # agent told to "run cmd.test" after a one-file change must get
+        # the unit suite, not a browser-driving Playwright run -- the e2e
+        # command stays visible as an alternative, never dropped.
+        root = tmp_path / "e2e"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: npx playwright test\n"
+            "      - run: vitest run\n",
+            encoding="utf-8",
+        )
+        s = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))["cmd.test"]
+        assert s.l2_md.splitlines()[0] == "**Primary:** `vitest run`"
+        assert "npx playwright test" in s.l3_md
+
+    def test_e2e_command_is_still_the_primary_when_it_is_the_only_test(self, tmp_path):
+        # The demotion is a tie-break among test candidates, not a filter:
+        # an e2e-only repo must still get a `cmd.test` section.
+        root = tmp_path / "e2eonly"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: npx playwright test\n",
+            encoding="utf-8",
+        )
+        s = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))["cmd.test"]
+        assert s.l2_md.splitlines()[0] == "**Primary:** `npx playwright test`"
+
 
 import sqlite3
 
@@ -2571,6 +3070,27 @@ from center_kb.codeingest.extractors import schema as schema_ext
 
 
 class TestSchemaExtractor:
+    def test_diesel_style_per_migration_directory_is_read(self, tmp_path):
+        # diesel (Rust's most-used migration tool) puts each migration in
+        # its own directory as `up.sql`/`down.sql` -- one level deeper
+        # than `MIGRATION_GLOBS`' `**/migrations/*.sql`, whose `*` does
+        # not cross a path separator, so a diesel repo surfaced no
+        # `db.*` at all. Only `up.sql` is read: `down.sql` is all
+        # `DROP TABLE`, which would warn through UNSUPPORTED_RE for
+        # every migration in the repo.
+        root = tmp_path / "diesel"
+        migration = root / "migrations" / "2024-01-01-000000_create_users"
+        migration.mkdir(parents=True)
+        (migration / "up.sql").write_text(
+            "CREATE TABLE users (\n  id SERIAL PRIMARY KEY,\n  email TEXT NOT NULL\n);\n",
+            encoding="utf-8",
+        )
+        (migration / "down.sql").write_text("DROP TABLE users;\n", encoding="utf-8")
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root))
+        s = _by_id(result)["db.users"]
+        assert "email" in s.l2_md
+        assert not [w for w in result.warnings if "down.sql" in w]
+
     def test_detects_migration_directories(self, repo, tmp_path):
         assert schema_ext.SchemaExtractor().detect(repo) is True
         empty = tmp_path / "empty4"

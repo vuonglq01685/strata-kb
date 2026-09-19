@@ -1,4 +1,4 @@
-"""deps extractor — dependency manifests across six ecosystems, with a
+"""deps extractor — dependency manifests across nine ecosystems, with a
 shared framework-detection table.
 
 Each per-ecosystem reader below degrades rather than raises: a malformed
@@ -22,7 +22,8 @@ root)` is a frozen protocol method that is never passed `opts`, so its one
 tree walk always runs unpruned-by-kb_dir. Consequence: if `--kb-dir` points
 somewhere *inside* the repo that happens to contain a file matching one of
 this module's multi-file patterns (`package.json`, `requirements*.txt`,
-`*.csproj`, `build.gradle*`) — most plausibly the KB's own previously
+`*.csproj`, `build.gradle*`, `Cargo.toml`, `Package.swift`,
+`pubspec.yaml`) — most plausibly the KB's own previously
 generated output sitting next to a real manifest — `detect()` can still
 report `True` from evidence elsewhere in the tree (so `core.run()`'s
 zero-detection guard correctly isn't tripped), while `extract()` — which
@@ -42,6 +43,8 @@ import tomllib
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from pathlib import Path
+
+import yaml
 
 from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
 from center_kb.codeingest.extractors._envkeys import redact_userinfo
@@ -74,6 +77,12 @@ FRAMEWORKS: tuple[tuple[str, str], ...] = (
     ("github.com/gin-gonic/gin", "Gin"),
     ("laravel/framework", "Laravel"),
     ("symfony/framework-bundle", "Symfony"),
+    ("@playwright/test", "Playwright"),
+    ("actix-web", "Actix Web"),
+    ("axum", "Axum"),
+    ("rocket", "Rocket"),
+    ("vapor", "Vapor"),
+    ("flutter", "Flutter"),
 )
 
 
@@ -533,12 +542,299 @@ def _read_php(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# rust — every Cargo.toml in the tree (workspace members included)
+# ---------------------------------------------------------------------------
+
+
+def _cargo_constraint(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        version = value.get("version", "")
+        return version if isinstance(version, str) else ""
+    return ""
+
+
+def _inherits_workspace(value: object) -> bool:
+    """`serde = { workspace = true }` / `serde.workspace = true` — the
+    member declares the dependency but delegates its version to the
+    workspace root's `[workspace.dependencies]`. Both spellings parse to
+    the same table, so one check covers them."""
+    return isinstance(value, dict) and value.get("workspace") is True
+
+
+# (manifest table, group name) — `build-dependencies` (build scripts:
+# tonic-build, cc, bindgen) is a real, separately-installed set, so it
+# gets its own group rather than being folded into `direct` or dropped.
+_CARGO_TABLES: tuple[tuple[str, str], ...] = (
+    ("dependencies", "direct"),
+    ("dev-dependencies", "dev"),
+    ("build-dependencies", "build"),
+)
+
+
+def _read_rust(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
+    """Every `Cargo.toml` in the tree, in two passes.
+
+    The first pass parses each manifest and collects the workspace
+    root's `[workspace.dependencies]` into a version catalogue; the
+    second resolves each member's `workspace = true` entries against it.
+    Two passes because a workspace root need not be walked before its
+    members, and no reader may depend on `walk_tree`'s order for
+    correctness.
+
+    That catalogue is a **lookup table only** — its entries are never
+    themselves reported as dependencies. `[workspace.dependencies]`
+    declares available versions, not use: a root listing thirty of them
+    for members that pull five would otherwise report thirty, which is
+    exactly the kind of claim the `-code` document must not make. And a
+    member that overrides an entry (`serde = { git = ... }`, no
+    `workspace = true`) keeps its own constraint, never the catalogue's.
+    """
+    groups: Groups = {}
+    warnings: list[str] = []
+    existing: list[str] = []
+    manifests: list[dict] = []
+    workspace_versions: dict[str, str] = {}
+
+    for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
+        if "Cargo.toml" not in filenames:
+            continue
+        path = root / reldir / "Cargo.toml"
+        rel = relposix(root, path)
+        existing.append(rel)
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
+            warnings.append(f"could not parse {rel}: {exc}")
+            continue
+        if not isinstance(data, dict):
+            warnings.append(f"could not parse {rel}: top-level is not a table")
+            continue
+        manifests.append(data)
+        workspace = data.get("workspace")
+        catalogue = workspace.get("dependencies") if isinstance(workspace, dict) else None
+        if isinstance(catalogue, dict):
+            for name, value in catalogue.items():
+                constraint = _cargo_constraint(value)
+                if constraint:
+                    workspace_versions.setdefault(name, constraint)
+
+    for data in manifests:
+        for table, group in _CARGO_TABLES:
+            section = data.get(table, {})
+            if not isinstance(section, dict):
+                continue
+            _merge(groups, group, [
+                (
+                    name,
+                    workspace_versions.get(name, "")
+                    if _inherits_workspace(value)
+                    else _cargo_constraint(value),
+                )
+                for name, value in section.items()
+            ])
+
+    return _finish(groups, warnings, existing)
+
+
+# ---------------------------------------------------------------------------
+# swift — every Package.swift in the tree (multi-module layouts), each a
+# best-effort text scan (it is Swift source, not data: SwiftPM has no
+# data-only manifest format)
+# ---------------------------------------------------------------------------
+
+_SWIFT_PACKAGE_CALL_RE = re.compile(r"\.package\(")
+_SWIFT_URL_RE = re.compile(r'url:\s*"([^"]+)"')
+_SWIFT_NAME_RE = re.compile(r'name:\s*"([^"]+)"')
+_SWIFT_PATH_RE = re.compile(r'path:\s*"([^"]+)"')
+_SWIFT_VERSION_RE = re.compile(r'(?:from|exact)\s*:\s*"([^"]+)"')
+
+
+def _strip_swift_comments(text: str) -> str:
+    """Blank out `//` line comments and `/* */` block comments (Swift's
+    nest, unlike C's), leaving string literals intact.
+
+    A dependency that has been commented out while the repo migrates off
+    it is not a dependency, and reporting one is exactly the claim the
+    `-code` document must not make -- but the strip has to be
+    string-aware to find that out: every `.package(url: ...)` carries a
+    `https://` whose `//` a naive line-comment strip would read as the
+    start of a comment, deleting the URL, the version and the closing
+    paren of a live dependency. Swift's raw strings (`#"..."#`) are not
+    modelled: one holding a `//` or `/*` is conceivable but has no reason
+    to appear in a manifest, and the failure would be a dropped
+    dependency, not a crash."""
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text.startswith('"""', i):
+            end = text.find('"""', i + 3)
+            stop = n if end < 0 else end + 3
+            out.append(text[i:stop])
+            i = stop
+        elif text[i] == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            stop = min(j + 1, n)
+            out.append(text[i:stop])
+            i = stop
+        elif text.startswith("//", i):
+            end = text.find("\n", i)
+            # Stop *at* the newline, never past it: it still separates
+            # this line from the next for anything scanning afterwards.
+            i = n if end < 0 else end
+        elif text.startswith("/*", i):
+            depth = 1
+            j = i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                elif text.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            i = j
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+def _iter_swift_package_calls(text: str) -> Iterable[str]:
+    """Yield each `.package(...)` call's argument text, delimited by
+    counting parens from the `.package(` that opens it -- a plain regex
+    can't stop at the right `)` when the call nests one of its own
+    (`.upToNextMajor(from: "1.2.3")`).
+
+    Scanning resumes *after* the call just consumed, never from the next
+    `.package(` inside it. With `re.finditer` an unterminated call (one
+    stray `(`, or a truncated manifest) made every later match re-scan to
+    EOF, which is quadratic in the file size -- measured 2.1s at 18 KB,
+    10.2s at 36 KB, 28.3s at 72 KB, so ~90 minutes for a ~1 MB file. A
+    hang is the one failure `DepsExtractor.extract`'s blanket
+    `except Exception` cannot degrade into a warning."""
+    pos = 0
+    n = len(text)
+    while (match := _SWIFT_PACKAGE_CALL_RE.search(text, pos)) is not None:
+        start = match.end()
+        depth = 1
+        i = start
+        while i < n and depth > 0:
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+            i += 1
+        yield text[start : i - 1] if depth == 0 else text[start:i]
+        pos = i
+
+
+def _swift_dep_name(locator: str) -> str:
+    name = locator.rstrip("/").rsplit("/", 1)[-1]
+    return name[: -len(".git")] if name.endswith(".git") else name
+
+
+def _read_swift(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
+    groups: Groups = {}
+    warnings: list[str] = []
+    existing: list[str] = []
+
+    for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
+        if "Package.swift" not in filenames:
+            continue
+        manifest = root / reldir / "Package.swift"
+        rel = relposix(root, manifest)
+        existing.append(rel)
+        try:
+            text = manifest.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            warnings.append(f"could not parse {rel}: {exc}")
+            continue
+        pairs = []
+        for call in _iter_swift_package_calls(_strip_swift_comments(text)):
+            url_match = _SWIFT_URL_RE.search(call)
+            if url_match:
+                name = _swift_dep_name(url_match.group(1))
+            else:
+                name_match = _SWIFT_NAME_RE.search(call)
+                path_match = _SWIFT_PATH_RE.search(call)
+                if name_match:
+                    name = name_match.group(1)
+                elif path_match:
+                    name = _swift_dep_name(path_match.group(1))
+                else:
+                    continue
+            version_match = _SWIFT_VERSION_RE.search(call)
+            pairs.append((name, version_match.group(1) if version_match else ""))
+        _merge(groups, "direct", pairs)
+
+    return _finish(groups, warnings, existing)
+
+
+# ---------------------------------------------------------------------------
+# dart — every pubspec.yaml in the tree (melos/monorepo packages)
+# ---------------------------------------------------------------------------
+
+
+def _dart_constraint(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        version = value.get("version", "")
+        return version if isinstance(version, str) else ""
+    return ""
+
+
+def _read_dart(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
+    groups: Groups = {}
+    warnings: list[str] = []
+    existing: list[str] = []
+
+    for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
+        if "pubspec.yaml" not in filenames:
+            continue
+        pubspec = root / reldir / "pubspec.yaml"
+        rel = relposix(root, pubspec)
+        existing.append(rel)
+        try:
+            data = yaml.safe_load(pubspec.read_text(encoding="utf-8"))
+        except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
+            warnings.append(f"could not parse {rel}: {exc}")
+            continue
+        if not isinstance(data, dict):
+            warnings.append(f"could not parse {rel}: top-level is not a mapping")
+            continue
+        direct = data.get("dependencies", {})
+        dev = data.get("dev_dependencies", {})
+        # `str(k)` for the same reason `_read_node` wraps its constraint:
+        # a YAML mapping key is not necessarily a string (`1.5:` parses to
+        # a float, and YAML 1.1 reads a bare `no:`/`on:` as a bool), while
+        # every shared helper downstream -- `_dedupe_sorted`'s
+        # `p[0].lower()` first -- assumes a `str` name. Without the cast
+        # that AttributeError unwinds past this reader's per-file `try`
+        # to `extract()`'s blanket handler and drops every other
+        # pubspec.yaml in the repo with it, naming no file.
+        if isinstance(direct, dict):
+            _merge(groups, "direct", [(str(k), _dart_constraint(v)) for k, v in direct.items()])
+        if isinstance(dev, dict):
+            _merge(groups, "dev", [(str(k), _dart_constraint(v)) for k, v in dev.items()])
+
+    return _finish(groups, warnings, existing)
+
+
+# ---------------------------------------------------------------------------
 # section rendering + extractor
 # ---------------------------------------------------------------------------
 
-# (section id, human label, reader key) — order matches the brief's Step 4
-# ecosystem list (python, node, java, dotnet, go, php), not alphabetical by
-# id. core.run() re-sorts every extractor's sections by (group, id) before
+# (section id, human label, reader key) — the first six match the brief's
+# Step 4 ecosystem list (python, node, java, dotnet, go, php); rust/swift/
+# dart were appended later, not alphabetical by id either way.
+# core.run() re-sorts every extractor's sections by (group, id) before
 # writing them out, so this order has no effect on the emitted files — it
 # only affects which warning appears first when more than one ecosystem's
 # manifest fails to parse in the same run.
@@ -549,6 +845,9 @@ _ECOSYSTEMS: tuple[tuple[str, str, str], ...] = (
     ("dep.dotnet", ".NET", "dotnet"),
     ("dep.go", "Go", "go"),
     ("dep.php", "PHP", "php"),
+    ("dep.rust", "Rust", "rust"),
+    ("dep.swift", "Swift", "swift"),
+    ("dep.dart", "Dart", "dart"),
 )
 
 _READERS = {
@@ -558,6 +857,9 @@ _READERS = {
     "dotnet": _read_dotnet,
     "go": _read_go,
     "php": _read_php,
+    "rust": _read_rust,
+    "swift": _read_swift,
+    "dart": _read_dart,
 }
 
 
@@ -628,7 +930,9 @@ class DepsExtractor:
     def detect(self, root: Path) -> bool:
         if any(
             (root / name).is_file()
-            for name in ("pyproject.toml", "setup.cfg", "pom.xml", "go.mod", "composer.json")
+            for name in (
+                "pyproject.toml", "setup.cfg", "pom.xml", "go.mod", "composer.json",
+            )
         ):
             return True
         # No `opts` is available at detect() time (the Extractor protocol
@@ -644,6 +948,8 @@ class DepsExtractor:
                 if fname.endswith(".csproj"):
                     return True
                 if fname in ("build.gradle", "build.gradle.kts"):
+                    return True
+                if fname in ("Cargo.toml", "Package.swift", "pubspec.yaml"):
                     return True
         return False
 
