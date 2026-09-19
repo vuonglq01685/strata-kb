@@ -28,6 +28,7 @@ REQUIRED_SECTIONS: tuple[str, ...] = (
     "TDD exemptions",
     "Findings",
     "Usage",
+    "Review",
 )
 
 # The two sections that legitimately have nothing to report. `none` there is
@@ -69,6 +70,12 @@ _EXEMPTION_LINE = re.compile(
     r"^(?:-\s*)?(?:Exempt:\s*)?`?(?P<slug>[a-z]+)`?\s*(?::|—|–|-)\s*\S"
 )
 _NONE = re.compile(r"^none\.?$", re.IGNORECASE)
+
+# The merge-risk review's verdict line (A5). Anchored at line start so a
+# sentence mentioning the word cannot pass for a verdict.
+_BLOCKING = re.compile(
+    r"^Blocking:[ \t]*(?P<verdict>Yes|No)\b", re.IGNORECASE | re.MULTILINE
+)
 
 Level = Literal["error", "warning"]
 
@@ -345,6 +352,31 @@ def _exemption_finding(visible: str) -> Finding | None:
     return None
 
 
+def _check_review(visible: str) -> Finding | None:
+    """A5's verdict: recorded at all, and what it says.
+
+    Fail-closed: a body with two verdict lines (e.g. leftover template
+    boilerplate above the author's own line) fails if ANY of them reads
+    `Blocking: Yes`, not just the first one found.
+    """
+    matches = list(_BLOCKING.finditer(visible))
+    if not matches:
+        return Finding(
+            "Review",
+            "no-review-verdict",
+            "no `Blocking: Yes|No` line — the merge-risk review's verdict was "
+            "never recorded; a clean review still states `Blocking: No`",
+        )
+    if any(m.group("verdict").lower() == "yes" for m in matches):
+        return Finding(
+            "Review",
+            "review-blocking",
+            "the merge-risk review still reports blocking findings — fix them "
+            "and re-review; `Blocking: Yes` never merges",
+        )
+    return None
+
+
 def lint_body(body: str, *, plan_dir: Path | None = None) -> PRLintReport:
     """Check a PR description against REQUIRED_SECTIONS."""
     found = _split_sections(body)
@@ -401,5 +433,9 @@ def lint_body(body: str, *, plan_dir: Path | None = None) -> PRLintReport:
             bad = _exemption_finding(visible)
             if bad is not None:
                 findings.append(bad)
+        if section == "Review":
+            finding = _check_review(visible)
+            if finding is not None:
+                findings.append(finding)
     findings.extend(_plan_findings(first, plan_dir))
     return PRLintReport(tuple(findings))

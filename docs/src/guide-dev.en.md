@@ -98,7 +98,7 @@ MCP reads the environment only at startup.
 protection for you. Add **`pr-lint` to the branch's required checks**.
 
 > Decide this knowingly. Unlike the BA repo's gate, this one never self-skips.
-> Once required, it blocks **every** pull request lacking the eight required
+> Once required, it blocks **every** pull request lacking the required
 > sections — including bot pull requests such as a dependency bump or a revert.
 
 ## 2.4 Ask about the hub's auto-merge policy
@@ -178,10 +178,10 @@ Five commands, scaffolded for Claude Code, GitHub Copilot and Cursor.
 ```
 /dev-implement-ticket <ticket>     intake · resolve · ground · placeholders
         │
-        ├─► dev-design       ── GATE 1: you approve the design
-        ├─► dev-plan         ── GATE 2: you approve the plan
-        ├─► dev-execute         (repeatable, resumable)
-        └─► dev-handover     ── GATE 3: you open the PR
+        ├─► dev-design       ── A1: independent reviewer ── GATE 1: you approve the design
+        ├─► dev-plan         ── A2: independent reviewer ── GATE 2: you approve the plan
+        ├─► dev-execute         A3 per task · A4 at branch end  (repeatable, resumable)
+        └─► dev-handover     ── A5: merge-risk review ── GATE 3: you open the PR
                                 GATE 4: you merge it
 ```
 
@@ -212,15 +212,20 @@ today. Checking only at handover would be too late.
 | `docs/impl/<id>-design.md` | `dev-design` | the design |
 | `docs/impl/<id>-plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes |
 | `docs/impl/<id>-context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
+| `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
+
+The design and plan files each grow a `## Review record` table as their
+reviews run — the committed history of every round, not a separate file.
 
 State is derived from the first two files, the current branch, and whether a PR
 is open — **never from conversation history**. Any phase resumes cold in a brand
 new session.
 
 `kb init` never touches your `docs/impl/` content. It only adds `.gitkeep` and a
-`.gitignore` so the context cache never lands in a pull request.
+`.gitignore` so the context cache and the review artefacts never land in a pull
+request.
 
-## 4.3 The four gates
+## 4.3 Four human gates, five agent review rounds
 
 Nothing in this pipeline merges or ships without a human.
 
@@ -230,6 +235,29 @@ Nothing in this pipeline merges or ships without a human.
 4. **Merged** — you review and merge.
 
 The agent does neither of the last two itself.
+
+Before each of the first three gates, a different agent has already read the
+work back in a context of its own — never the same agent that produced it:
+
+| | Where | What it looks at |
+|---|---|---|
+| A1 | `dev-design`, before GATE 1 | whether the design matches the ticket |
+| A2 | `dev-plan`, before GATE 2 | whether the plan is test-first and runnable |
+| A3 | `dev-execute`, per task | whether this task's diff meets its spec, and whether the code is good |
+| A4 | `dev-execute`, after the last task | whether the finished branch rounds out the ticket |
+| A5 | `dev-handover`, before GATE 3 | whether merging into the default branch is safe |
+
+Criteria live in `docs/pr-review-rubric.md`, overridden by
+`docs/pr-review-rubric.local.md`. Each round allows at most 3 fix/review
+passes. A round only counts as clean once no BLOCKER and no SUGGESTED finding
+is left open — NOTE and NITS get recorded, not fixed — and a BLOCKER or
+SUGGESTED still standing after round 3 stops the flow and hands it to you.
+
+Where your assistant's runtime cannot dispatch subagents — the default for
+the Copilot and Cursor wrappers — the review still runs, but as a single pass
+reading only what it was handed, and it is a **report, not a gate**: the
+phase stops there and hands the result to you instead of advancing on its own
+say-so.
 
 ---
 
@@ -244,6 +272,7 @@ Be clear-eyed about the difference.
 | The PR carries its evidence | `kb pr lint` in `kb-pr-lint.yml` on every pull request |
 | Unreviewed knowledge cannot reach the hub | `kb build` exits 1 while any `-svc` section is `pending` |
 | The context cache is CLI-owned | `kb resolve --status-only --cache` refuses a cache whose version, ref set or resolved block differs from the ticket's |
+| The merge-risk review has run and no BLOCKER remains | `kb pr lint` — the `## Review` section must carry a `Blocking: No` line |
 
 `kb pr lint` fails when a required section is missing, still holds the template's
 comment, claims verification with no pasted output, has no Verification fence
@@ -268,6 +297,11 @@ only check is the human at the gate — which means you.
   `status:` header records it; a human grants it.
 - **`OPEN(BA)`.** An ambiguous acceptance criterion is escalated, never
   reinterpreted.
+- **A1–A4.** The four agent reviews before GATE 3 are prompt discipline.
+  Nothing in `kb` measures whether they ran. Only A5 has teeth: `kb pr lint`
+  reads the PR's `## Review` section. An agent that skips A1–A4 and writes an
+  honest `Blocking: No` still passes — the gate sits where the merge actually
+  happens, not at every step before it.
 
 ---
 
@@ -438,6 +472,8 @@ should look.
 | `kb ci-publish` refused | This repo is not in the hub's `federation/registry.yaml` | Ask the hub maintainer to add it |
 | `dirty_tree` warning | Uncommitted changes while the manifest revision comes from HEAD | Harmless locally; CI always runs clean |
 | `pr-lint` fails on a Dependabot PR | The gate never self-skips once required | Expected. Decide whether to keep it required for bot PRs. |
+| `pr-lint` fails: `no-review-verdict` | The PR's `## Review` section carries no `Blocking:` line | Run A5 (`dev-handover`'s merge-risk review) and record its verdict — even a clean review states `Blocking: No` |
+| `pr-lint` fails: `review-blocking` | The `## Review` section says `Blocking: Yes` | Fix the BLOCKER findings and re-review; a PR with `Blocking: Yes` never merges |
 | A citation resolves `stale` mid-implementation | The hub published after the ticket was written | `kb diff`, then ask the analyst. Do not reinterpret the AC yourself. |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
 | `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |

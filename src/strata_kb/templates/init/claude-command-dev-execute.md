@@ -34,46 +34,102 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
-Steps the skill enforces: **Isolate** the work onto a dedicated branch
-and, where the environment supports it, a git worktree named from the
-ticket id. Never work directly on the default branch. Then, per
-unticked task, in its own subagent where the runtime supports it
-(sequential passes otherwise), handed exactly its own task block from
-the plan, that task's **Interfaces** entry, and the `cmd.test` /
-`cmd.lint` commands (from `-code §cmd.*`, or the commands recorded at
-the top of the plan file) — not the rest of the plan and not the
-ticket; when the task block does not carry something the implementer
-needs, the plan is incomplete, so stop and send it back to `dev-plan`
-rather than reading wider: write the test, run it, and observe it
-fail — a test that was never seen red proves nothing; write the
-minimum code and get it passing; hold a **review checkpoint**
-(pass/fail, not a score) confirming the test actually exercises that
-AC, every standard-derived value is verbatim with a citation comment,
-the change follows `docs/conventions/<lang>.md` plus
-`docs/conventions/<lang>.local.md` overrides (local wins; where either
-conflicts with the repo's existing dominant style, the repo wins
-locally — the conflict is recorded as a finding for the PR body), and
-nothing else broke; then **verify** by running `cmd.test` and `cmd.lint` (the
-commands it was handed) and show the output; then commit the task's
-changes — ticking its checkboxes in the plan file happens next, back
-in the orchestrator, since the plan file itself is never handed to
-the subagent. A task block carrying an `Exempt:` line skips step 1
-and runs the verification that line names instead, showing its
-output like any other; a task block with no `Exempt:` line whose
-implementer believes no test is possible does not decide that alone
-— stop and return the task to `dev-plan`, the same route an
-unimplementable AC takes (see `docs/tdd-exemptions.md`). When a test
-fails unexpectedly, reproduce it, find the actual cause, and fix the
-cause. Never edit a test to make it green,
-never widen a tolerance to pass, and never mark a task done with a
-failing test. When an AC turns out not to be implementable as
-written, stop that task, return to `dev-design`, and record
-`OPEN(BA)` — never decide the ambiguity yourself, and never push past
-it because the code is half written. The skill is resumable: a later
-run re-checks freshness, re-reads the plan, and continues at the
-first unticked task. Once every task is ticked, option 1 in the
-Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
+Steps the skill enforces: **Isolate** the work onto a dedicated branch and,
+where the environment supports it, a git worktree named from the ticket id.
+Never work directly on the default branch. Then, per unticked task, in its
+own subagent where the runtime supports it (sequential passes otherwise),
+handed exactly its own task block from the plan, that task's **Interfaces**
+entry, and the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the
+commands recorded at the top of the plan file) — not the rest of the plan
+and not the ticket; when the task block does not carry something the
+implementer needs, the plan is incomplete, so stop and send it back to
+`dev-plan` rather than reading wider: write the test, run it, and observe it
+fail — a test that was never seen red proves nothing; write the minimum code
+and get it passing; hold a **review checkpoint** (pass/fail, not a score)
+confirming the test actually exercises that AC, every standard-derived value
+is verbatim with a citation comment, the change follows
+`docs/conventions/<lang>.md` plus `docs/conventions/<lang>.local.md`
+overrides (local wins; where either conflicts with the repo's existing
+dominant style, the repo wins locally — the conflict is recorded as a
+finding for the PR body), and nothing else broke; then **verify** by running
+`cmd.test` and `cmd.lint` (the commands it was handed) and show the output;
+then commit the task's changes and write the full report to
+`docs/impl/<ticket-id>-review/task-<n>-report.md`. The self-review **never
+satisfies A3**: back in the orchestrator, write `git diff <BASE>..HEAD` —
+`<BASE>` recorded before the dispatch, never `HEAD~1` — to
+`docs/impl/<ticket-id>-review/task-<n>.diff` (creating
+`docs/impl/<ticket-id>-review/` first if it does not exist yet) and dispatch
+a `task-reviewer` subagent with a fresh context and exactly two paths (report
+file, diff file) plus the task block it was given and its binding
+constraints copied verbatim from the plan, and `docs/conventions/<lang>.md`
+plus its `.local.md` override; it returns **two verdicts**, spec compliance
+against the task block and code quality against the conventions doc, both
+required. Fix subagent, re-review, at most 3 rounds. Only once A3 is clean
+does the orchestrator tick the checkboxes and append `Review: ✅ r<n>` under
+the task — the plan file itself is never handed to the implementer. A task block carrying
+an `Exempt:` line skips step 1 and runs the verification that line names
+instead, showing its output like any other; a task block with no `Exempt:`
+line whose implementer believes no test is possible does not decide that
+alone — stop and return the task to `dev-plan`, the same route an
+unimplementable AC takes (see `docs/tdd-exemptions.md`). When a test fails
+unexpectedly, reproduce it, find the actual cause, and fix the cause. Never
+edit a test to make it green, never widen a tolerance to pass, and never
+mark a task done with a failing test. When an AC turns out not to be
+implementable as written, stop that task, return to `dev-design`, and record
+`OPEN(BA)` — never decide the ambiguity yourself, and never push past it
+because the code is half written. The skill is resumable: a later run
+re-checks freshness, re-reads the plan, and continues at the first unticked
+task. Once every task is ticked, A4 runs; once A4 comes back clean, option 1
+in the Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
 `/dev-execute <ticket-id>` to continue.
+
+## A4 — narrow branch review (after the last task)
+
+Every box ticked is not the same as the ticket being done. Write the branch
+diff to `docs/impl/<ticket-id>-review/branch.diff`
+(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
+`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
+`branch-reviewer` subagent with that path, the plan, the ticket, and
+`docs/conventions/<lang>.md` plus its `.local.md` override. One question
+only: does this branch fulfil the ticket — every AC covered by a test,
+nothing built that no AC asked for, and no later task quietly breaking an
+earlier one?
+
+Keep the lens narrow here; merge risk is A5's job in `dev-handover`, against a
+different rubric. Fix subagent, re-review, at most 3 rounds. Only once A4
+comes back clean — no BLOCKER and no SUGGESTED left — is option 1
+`/dev-handover <ticket-id>`.
+
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
+  override wins over its base file. Severity is always
+  BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 

@@ -54,18 +54,43 @@ edit above it.
   1. write the test → run it → **observe it fail**. State the reason: a
      test that was **never seen red proves nothing**.
   2. write the minimum code → run → pass.
-  3. **review checkpoint** — pass/fail, not a score: does the test
-     actually exercise that AC; is every standard-derived value
-     verbatim with a citation comment; does the change follow
+  3. **self-review checkpoint** — pass/fail, not a score: does the test
+     actually exercise that AC; is every standard-derived value verbatim
+     with a citation comment; does the change follow
      `docs/conventions/<lang>.md` plus `docs/conventions/<lang>.local.md`
      overrides (local wins; where either conflicts with the repo's
      existing dominant style, the repo wins locally — record the
      conflict as a finding for the PR body); did anything else break.
+     This is the implementer checking its own work: it catches slips
+     early and **never satisfies A3**.
   4. **verify** — run `cmd.test` and `cmd.lint` (the commands you were
      handed) and **show the output**.
-  5. **commit the task's changes.** Ticking its checkboxes in the plan
-     file is the orchestrator's job, done after the subagent reports
-     back — the plan file is the one thing the subagent never opens.
+  5. **commit the task's changes**, then write the full report to
+     `docs/impl/<ticket-id>-review/task-<n>-report.md` and return only
+     status, commits, a one-line test summary, and concerns.
+
+  Then, back in the orchestrator — never inside the implementer:
+
+  6. **A3 — independent task review.** Write the diff to a file:
+     `mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
+     `git diff <BASE>..HEAD > docs/impl/<ticket-id>-review/task-<n>.diff`,
+     where `<BASE>` is the commit you recorded **before** dispatching the
+     implementer — never `HEAD~1`, which silently drops every commit of a
+     multi-commit task but the last. Dispatch a `task-reviewer` subagent
+     with a fresh context and exactly two paths — the report file and the
+     diff file — plus the task block it was given and its binding
+     constraints, copied verbatim from the plan, and
+     `docs/conventions/<lang>.md` plus its `.local.md` override. It
+     returns **two verdicts, both required**: spec compliance (nothing
+     missing, nothing extra, against the task block) and code quality
+     (against the conventions doc). A report carrying one verdict is not a
+     review; send it back. Fix subagent for BLOCKER and SUGGESTED
+     findings, then re-review, at most 3 rounds.
+  7. **Only once A3 is clean**, tick the task's checkboxes in the plan file
+     and append `Review: ✅ r<n>` under the task. A ticked box means
+     reviewed, so a later session — or a session after compaction — resumes
+     at the first unticked task and never re-runs finished work. NOTE and
+     NITS findings go to the PR's `## Findings` instead of a fix round.
 
   A task block carrying an `Exempt:` line skips step 1 and runs the
   verification that line names instead, showing its output like any other.
@@ -81,9 +106,58 @@ edit above it.
   decide the ambiguity yourself, and do not push past it because the
   code is half written.
 - **Resumable** — a later run re-checks freshness, re-reads the plan,
-  and continues at the first unticked task. Once every task is ticked,
-  option 1 in the Next-step block below is `/dev-handover <ticket-id>`;
-  otherwise it is `/dev-execute <ticket-id>` to continue.
+  and continues at the first unticked task. Once every task is ticked, A4
+  runs; once A4 comes back clean, option 1 in the Next-step block below is
+  `/dev-handover <ticket-id>`; otherwise it is `/dev-execute <ticket-id>` to
+  continue.
+
+## A4 — narrow branch review (after the last task)
+
+Every box ticked is not the same as the ticket being done. Write the branch
+diff to `docs/impl/<ticket-id>-review/branch.diff`
+(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
+`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
+`branch-reviewer` subagent with that path, the plan, the ticket, and
+`docs/conventions/<lang>.md` plus its `.local.md` override. One question
+only: does this branch fulfil the ticket — every AC covered by a test,
+nothing built that no AC asked for, and no later task quietly breaking an
+earlier one?
+
+Keep the lens narrow here; merge risk is A5's job in `dev-handover`, against a
+different rubric. Fix subagent, re-review, at most 3 rounds. Only once A4
+comes back clean — no BLOCKER and no SUGGESTED left — is option 1
+`/dev-handover <ticket-id>`.
+
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
+  override wins over its base file. Severity is always
+  BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 

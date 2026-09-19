@@ -1740,9 +1740,12 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # (batch 7: the PR template, its workflow, and the TDD exemption doc) + 1
     # (Wave G fix round 2 Minor 1: .gitattributes, the same F-D10 exemption
     # a child repo gets) + 4 (the kb-mcp-setup wrappers, MCP_CLIENT_TEMPLATES)
-    # = 53.
-    assert len(expected_files("dev")) == 53
-    assert sorted(report.created) == sorted(expected_files("dev"))
+    # + 1 (docs/pr-review-rubric.md, the dev PR review rubric)
+    # = 54.
+    assert len(expected_files("dev")) == 54
+    assert sorted(report.created) == sorted(
+        expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES)
+    )
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
         assert (tmp_path / rel).is_file(), rel
@@ -2629,3 +2632,20 @@ def test_quickstart_points_at_mcp_setup(tmp_path: Path, kind, quickstart):
     # both variable names stay documented — the user may still set them by hand
     assert "STRATA_KB_HUB_URL" in text, kind
     assert "STRATA_KB_HTTP_TOKEN" in text, kind
+
+
+def test_init_kind_dev_scaffolds_the_review_rubric_and_its_override(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    assert (tmp_path / "docs" / "pr-review-rubric.md").is_file()
+    assert (tmp_path / "docs" / "pr-review-rubric.local.md").is_file()
+
+
+def test_the_dev_rubric_override_is_never_refreshed(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    local = tmp_path / "docs" / "pr-review-rubric.local.md"
+    local.write_text("# mine\n", encoding="utf-8")
+    report = init_repo(tmp_path, "dev")
+    assert local.read_text(encoding="utf-8") == "# mine\n"
+    assert any(
+        "local overrides — never refreshed" in entry for entry in report.skipped
+    )

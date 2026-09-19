@@ -146,6 +146,15 @@ does not have.
   execute, handover) with four human gates, resumable across sessions from
   artifacts alone — no sidecar state file. No production code without a failing
   test observed first; no completion claim without shown verification output.
+- Five independent review subagents in front of those gates — A1 (design), A2
+  (plan), A3 (per task), A4 (branch), A5 (merge-risk) — so the agent that
+  writes an artifact never judges it. A shared `## Review dispatch contract`
+  in every phase wrapper keeps author and reviewer in separate contexts; only
+  A5 is machine-checked.
+- `docs/pr-review-rubric.md` and its create-once
+  `docs/pr-review-rubric.local.md` override, scaffolded by `kb init --kind
+  dev`, hold the pre-code and merge-risk axes and the BLOCKER/SUGGESTED/
+  NOTE/NITS severity ladder every review uses.
 - `kb code-ingest` extracts a codebase's structure into `.kb/<repo_id>-code/`,
   deterministically and with no LLM, through seven extractors organised by
   artifact kind rather than language: services, deps, commands, tree, schema,
@@ -169,7 +178,9 @@ does not have.
 
 - `kb usage` ingests agent transcripts, records rows and renders a token/cost
   report.
-- `kb pr lint` checks that a pull-request description carries its evidence.
+- `kb pr lint` checks that a pull-request description carries its evidence,
+  across nine required sections including `## Review`, which fails the PR on
+  a missing verdict line or on `Blocking: Yes`.
 - `kb assets migrate` / `verify` operate a hub's asset store.
 - `kb docker-setup` prepares a hub (`.env`, token, `docker compose up -d`) or a
   child (pull the ingest image). Release tags publish to PyPI and push

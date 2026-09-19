@@ -62,11 +62,13 @@ anything unverifiable becomes `OPEN(BA)`; **Run the phases** invokes the
 `dev-design`, `dev-plan`, `dev-execute`, then `dev-handover` skills in
 order, deriving re-entry state — never stored — from
 `docs/impl/<ticket-id>-design.md` and `-plan.md` by their own `status:`
-header: `status: draft` offers the matching gate, `status: approved` moves
-on; design approved with no plan file but `git log --oneline
-<default>..HEAD` non-empty is `plan ⚠ missing, N commits on branch` — ask
-before running `dev-plan`, work may already be committed; an approved plan
-turns tasks into ticked/total checkboxes; `gh pr list --head <branch>
+header and `## Review record` table: `status: draft` with no clean round
+recorded runs that phase's review first (A1 for design, A2 for plan);
+`status: draft` with a clean round recorded offers the matching gate;
+`status: approved` moves on; design approved with no plan file but `git log
+--oneline <default>..HEAD` non-empty is `plan ⚠ missing, N commits on
+branch` — ask before running `dev-plan`, work may already be committed; an
+approved plan turns tasks into ticked/total checkboxes; `gh pr list --head <branch>
 --state merged` non-empty ends the flow, `--state closed` non-empty offers
 re-handover or reopen, and `gh` absent leaves the PR state unknown (gh not
 installed); no branch matching the ticket id while on the default branch

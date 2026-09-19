@@ -75,11 +75,70 @@ edit above it.
   tree is decided by the *Linting* section of
   `docs/conventions/<lang>.md` — follow it, and carry every narrowed
   rule into the PR's `## Findings`.
-- **GATE 2** — the Dev approves the plan before any code is written; once
-  approved, flip the plan header to `status: approved` and option 1 in
-  the Next-step block below is `/dev-execute <ticket-id>`. The checkbox
-  file is also the resume point, so it must be complete enough for a
-  different session to pick up cold.
+- **GATE 2** — offered only after A2 comes back clean. The Dev approves
+  the plan before any code is written; once approved, flip the plan
+  header to `status: approved` and option 1 in the Next-step block below
+  is `/dev-execute <ticket-id>`. The checkbox file is also the resume
+  point, so it must be complete enough for a different session to pick up
+  cold.
+
+## A2 — independent plan review (before GATE 2)
+
+Dispatch a `plan-author` subagent to turn the approved design into the plan —
+it gets the design file path, the ticket's acceptance criteria, the
+`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
+— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
+format, the ordering rules — and nothing else. Then review it with a
+different context.
+
+Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
+path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
+`## Pre-code axes` of `docs/pr-review-rubric.md` plus
+`docs/pr-review-rubric.local.md`. It answers four questions and nothing else:
+
+- Is there exactly one task per AC — none missing, none invented?
+- Does every task state its failing test before its implementation?
+- Is each task's **Interfaces** entry complete enough that its implementer
+  never has to read outside its own task block? An incomplete entry is a
+  BLOCKER: it is what forces an implementer to read wider and guess.
+- Does every task with no test declare `Exempt: <config|ci|docs|style>` and
+  name its verification?
+
+Fix subagent, re-review, at most 3 rounds. Record each round in the plan file's
+`## Review record` table, same shape as the design file's. GATE 2 is offered
+only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
+left open; NOTE and NITS are recorded, not fixed.
+
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
+  override wins over its base file. Severity is always
+  BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 

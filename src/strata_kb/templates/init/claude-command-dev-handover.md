@@ -32,42 +32,113 @@ edit above it.
 - **ok** → continue.
 
 Steps the skill enforces: for a `path: spike` design there is no plan and
-usually no code — put the recommendation under `## Findings` in the PR
-body, or as a ticket comment when there is no PR, and mark the ticket's
-plan state `n/a (spike)`; otherwise, re-check freshness one final time — a hub
-publish mid-implementation must surface here, not in review; paste the
-freshness output (the `--status-only` output when the cache path was
-taken) into the PR; run the full suite and linters (`cmd.test` and
-`cmd.lint` from `-code §cmd.*`, or the commands recorded at the top of the
-plan file) and paste the real output, since a completion claim without it
-is not accepted; record service history by running `kb svc note <service>
---ticket <id> --title "<title>" --refs "<refs>"` for each service touched
-so the entries land in this same PR (if the ticket added or renamed a
-service, run `kb code-ingest` first — `kb svc note` validates against this
-repo's own committed `<repo_id>-code`, which CI regenerates on the hub but
-never writes back here; if this repo has no `<repo_id>-svc` yet —
-`dev-code-seed` never run — say so in one line in the PR and record the
-history there instead); then assemble the PR description using the
-repo's `.github/pull_request_template.md`, whose eight sections CI
-checks with `kb pr lint`: Ticket; kb-context refs so the reviewer can
-`kb resolve` them; the AC→test map; the Placeholder resolutions list;
-the Verification output, pasted inside a fenced block together with
-the `cmd.test` command line itself (e.g. `$ pytest -q`), not claimed;
-the `## TDD exemptions` section, every `Exempt:` line from the plan,
-or `none`; the Findings, every `OPEN(...)`, KB gap, ambiguity or
-contradiction as a concrete feedback item on the owning repo, or
-`none`; and the Usage table — a section left as the template's
-comment counts as empty and fails the check; run `kb usage report
+usually no code — put the recommendation under `## Findings` in the PR body,
+or as a ticket comment when there is no PR, and mark the ticket's plan state
+`n/a (spike)`; otherwise, re-check freshness one final time — a hub publish
+mid-implementation must surface here, not in review; paste the freshness
+output (the `--status-only` output when the cache path was taken) into the
+PR; run the full suite and linters (`cmd.test` and `cmd.lint` from `-code
+§cmd.*`, or the commands recorded at the top of the plan file) and paste the
+real output, since a completion claim without it is not accepted; record
+service history by running `kb svc note <service> --ticket <id> --title
+"<title>" --refs "<refs>"` for each service touched so the entries land in
+this same PR (if the ticket added or renamed a service, run `kb code-ingest`
+first — `kb svc note` validates against this repo's own committed
+`<repo_id>-code`, which CI regenerates on the hub but never writes back
+here; if this repo has no `<repo_id>-svc` yet — `dev-code-seed` never run —
+say so in one line in the PR and record the history there instead); then
+assemble the PR description using the repo's
+`.github/pull_request_template.md`, whose sections CI checks with `kb
+pr lint`: Ticket; kb-context refs so the reviewer can `kb resolve` them; the
+AC→test map; the Placeholder resolutions list; the Verification output,
+pasted inside a fenced block together with the `cmd.test` command line
+itself (e.g. `$ pytest -q`), not claimed; the `## TDD exemptions` section,
+every `Exempt:` line from the plan, or `none`; the Findings, every
+`OPEN(...)`, KB gap, ambiguity or contradiction as a concrete feedback item
+on the owning repo, or `none`; and the Usage table; and Review — A5's
+finding table and its `Blocking:` verdict line. A section left as the
+template's comment counts as empty and fails the check. Then run `kb usage report
 --ticket <id> --md` and paste the table into the PR under a `## Usage`
-heading, keeping the heading with a one-line
-reason when the command answers `no usage recorded yet` instead of a
-table; if the ticket changed what a service is responsible for, report
-`amend needed: <repo_id>-svc §svc.<name>` as a PR finding. Never edit a
-`reviewed` section. **GATE 3** the Dev opens the PR; **GATE 4** the Dev
-merges. **The agent does neither.** Option 1 in the Next-step block below
-is always "Open the PR yourself" with the branch name already filled in —
-this is the terminal phase of the flow, so there is no next automated
-command; a blocker takes its place instead.
+heading, keeping the heading with a one-line reason when the command answers
+`no usage recorded yet` instead of a table; if the ticket changed what a
+service is responsible for, report `amend needed: <repo_id>-svc §svc.<name>`
+as a PR finding. Never edit a `reviewed` section. **GATE 3** — offered only after A5 comes
+back clean — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
+does neither.** Option 1 in the Next-step block below is always "Open the PR
+yourself" with the branch name already filled in — this is the terminal
+phase of the flow, so there is no next automated command; a blocker takes
+its place instead.
+
+## A5 — merge-risk review (before GATE 3)
+
+A4 asked whether the branch does what the ticket said. A5 asks a different
+question, in a different context: is this safe to merge into the default
+branch?
+
+If `docs/impl/<ticket-id>-review/branch.diff` does not exist yet — a cold
+handover session, a fresh clone or worktree, or hand-implemented code that
+never ran `dev-execute` — build it yourself first, with the same command A4
+uses: `mkdir -p docs/impl/<ticket-id>-review && git diff $(git merge-base
+<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>-review/branch.diff`.
+
+Dispatch a `merge-risk-reviewer` subagent on the most capable model available.
+Give it the persona plainly: a tech lead reviewing before a production deploy,
+assuming real traffic, concurrent requests, retries, and more than one running
+instance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and
+the `## Merge-risk axes` of `docs/pr-review-rubric.md` plus
+`docs/pr-review-rubric.local.md`.
+
+**The diff alone is not the review.** Say so in the dispatch: the reviewer
+opens the files the change reaches — callers, siblings, migrations, permission
+declarations, contracts, tests — and traces the affected flow end to end before
+judging. A finding that only names a category is not a finding; it states why
+this code, on this path, is dangerous.
+
+It writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding
+(severity, file, line, why it is dangerous, proposed fix), then the verdict
+line `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.
+BLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3
+rounds — same routing as A3: only a standing BLOCKER keeps the verdict
+`Blocking: Yes`.
+
+Copy the table and the verdict line into the PR body's `## Review` section —
+`kb pr lint` fails the PR when the verdict line is missing and when it reads
+`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback
+items, recorded rather than fixed.
+
+A branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1
+becomes the fix, not the PR.
+
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
+  override wins over its base file. Severity is always
+  BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
 
 ## Hard rules
 

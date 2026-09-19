@@ -97,8 +97,8 @@ nhánh.
 
 > Hãy quyết định điều này một cách có ý thức. Khác với cổng của repo BA, cổng này
 > không bao giờ tự bỏ qua. Một khi đã bắt buộc, nó chặn **mọi** pull request
-> thiếu tám mục bắt buộc — kể cả pull request của bot như nâng cấp dependency hay
-> revert.
+> thiếu các mục bắt buộc — kể cả pull request của bot như nâng cấp dependency
+> hay revert.
 
 ## 2.4 Hỏi về chính sách auto-merge của hub
 
@@ -179,10 +179,10 @@ Năm lệnh, được dựng sẵn cho Claude Code, GitHub Copilot và Cursor.
 ```
 /dev-implement-ticket <ticket>     intake · resolve · ground · placeholders
         │
-        ├─► dev-design       ── GATE 1: bạn duyệt thiết kế
-        ├─► dev-plan         ── GATE 2: bạn duyệt kế hoạch
-        ├─► dev-execute         (lặp lại được, tiếp tục được)
-        └─► dev-handover     ── GATE 3: bạn mở PR
+        ├─► dev-design       ── A1: reviewer độc lập ── GATE 1: bạn duyệt thiết kế
+        ├─► dev-plan         ── A2: reviewer độc lập ── GATE 2: bạn duyệt kế hoạch
+        ├─► dev-execute         A3 mỗi task · A4 cuối nhánh  (lặp lại được, tiếp tục được)
+        └─► dev-handover     ── A5: merge-risk review ── GATE 3: bạn mở PR
                                 GATE 4: bạn merge
 ```
 
@@ -213,16 +213,21 @@ nay có thể đã `stale`. Chỉ kiểm tra lúc handover thì quá muộn.
 | `docs/impl/<id>-design.md` | `dev-design` | bản thiết kế |
 | `docs/impl/<id>-plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]` |
 | `docs/impl/<id>-context.md` | `dev-implement-ticket` | cache ngữ cảnh đã phân giải; bị gitignore, sinh lại khi cần |
+| `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
+
+File thiết kế và kế hoạch mỗi file đều có thêm bảng `## Review record` khi các
+vòng review chạy — đây là lịch sử được commit của mọi vòng, không phải một file
+riêng.
 
 Trạng thái được suy ra từ hai file đầu, nhánh git hiện tại, và việc PR đã mở hay
 chưa — **không bao giờ từ lịch sử hội thoại**. Bất kỳ pha nào cũng tiếp tục được
 từ đầu trong một phiên làm việc hoàn toàn mới.
 
 `kb init` không bao giờ đụng tới nội dung `docs/impl/` của bạn. Nó chỉ thêm
-`.gitkeep` và một `.gitignore` để cache ngữ cảnh không bao giờ lọt vào pull
-request.
+`.gitkeep` và một `.gitignore` để cache ngữ cảnh và các artefact review không
+bao giờ lọt vào pull request.
 
-## 4.3 Bốn cổng
+## 4.3 Bốn cổng người, năm vòng review agent
 
 Không gì trong quy trình này merge hay ship mà không có con người.
 
@@ -232,6 +237,29 @@ Không gì trong quy trình này merge hay ship mà không có con người.
 4. **Merge** — bạn review và merge.
 
 Agent không tự làm hai việc cuối.
+
+Trước mỗi cổng trong ba cổng đầu, một agent khác đã đọc lại công việc trong một
+ngữ cảnh riêng — không bao giờ là chính agent đã làm ra nó:
+
+| | Ở đâu | Nhìn cái gì |
+|---|---|---|
+| A1 | `dev-design`, trước GATE 1 | thiết kế có khớp ticket không |
+| A2 | `dev-plan`, trước GATE 2 | kế hoạch có test-first, có chạy được không |
+| A3 | `dev-execute`, mỗi task | diff của task này có đúng spec, code có tốt không |
+| A4 | `dev-execute`, sau task cuối | nhánh hoàn chỉnh có làm tròn ticket không |
+| A5 | `dev-handover`, trước GATE 3 | merge vào nhánh chính có an toàn không |
+
+Tiêu chí nằm ở `docs/pr-review-rubric.md`, ghi đè bằng
+`docs/pr-review-rubric.local.md`. Mỗi vòng tối đa 3 lượt fix/review. Một vòng
+chỉ tính là sạch khi không còn BLOCKER và không còn SUGGESTED nào bỏ ngỏ —
+NOTE và NITS chỉ được ghi lại, không bị bắt sửa — và một BLOCKER hoặc SUGGESTED
+còn đứng sau lượt 3 sẽ dừng luồng và chuyển cho bạn.
+
+Ở nơi runtime của trợ lý không dispatch được subagent — mặc định với wrapper
+Copilot và Cursor — vòng review vẫn chạy, nhưng chỉ là một lượt đọc đúng những
+gì được giao, và đó là một **báo cáo, không phải một cổng**: pha đó dừng lại
+tại chỗ và chuyển kết quả cho bạn, thay vì tự tiến bước dựa trên lời tự nhận
+của mình.
 
 ---
 
@@ -246,6 +274,7 @@ Hãy tỉnh táo về sự khác nhau này.
 | PR mang theo bằng chứng của nó | `kb pr lint` trong `kb-pr-lint.yml` ở mọi pull request |
 | Tri thức chưa review không lên được hub | `kb build` thoát 1 khi còn section `-svc` ở trạng thái `pending` |
 | Cache ngữ cảnh do CLI sở hữu | `kb resolve --status-only --cache` từ chối cache có version, tập tham chiếu hoặc khối đã phân giải khác với ticket |
+| Merge-risk review đã chạy và không còn BLOCKER | `kb pr lint` — mục `## Review` phải có dòng `Blocking: No` |
 
 `kb pr lint` fail khi thiếu một mục bắt buộc, khi mục đó còn nguyên dòng chú
 thích mẫu, khi tuyên bố đã verify mà không dán output, khi không có khối
@@ -270,6 +299,11 @@ một loại nằm ngoài `config`, `ci`, `docs`, `style`.
   sau. Dòng `status:` ghi lại điều đó; con người mới là người duyệt.
 - **`OPEN(BA)`.** Một tiêu chí chấp nhận mơ hồ phải được đưa lên hỏi, không bao
   giờ được tự diễn giải lại.
+- **A1–A4.** Bốn vòng review agent trước GATE 3 là kỷ luật trong prompt.
+  Không có gì trong `kb` đo được rằng chúng đã chạy. Chỉ A5 có răng: `kb pr
+  lint` đọc mục `## Review` của PR. Một agent bỏ qua A1–A4 rồi viết một dòng
+  `Blocking: No` trung thực vẫn qua cổng — cổng nằm ở chỗ merge thật sự xảy
+  ra, không phải ở mọi bước trước đó.
 
 ---
 
@@ -442,6 +476,8 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | `kb ci-publish` bị từ chối | Repo này chưa có trong `federation/registry.yaml` của hub | Đề nghị người quản trị hub thêm vào |
 | Cảnh báo `dirty_tree` | Có thay đổi chưa commit trong khi revision của manifest lấy từ HEAD | Vô hại khi chạy cục bộ; CI luôn chạy trên bản checkout sạch |
 | `pr-lint` fail trên PR của Dependabot | Cổng này không tự bỏ qua một khi đã bắt buộc | Đúng như thiết kế. Hãy cân nhắc có giữ nó bắt buộc với PR của bot hay không. |
+| `pr-lint` fail: `no-review-verdict` | Mục `## Review` của PR không có dòng `Blocking:` | Chạy A5 (review rủi ro merge của `dev-handover`) và ghi lại kết luận — dù review sạch vẫn phải ghi `Blocking: No` |
+| `pr-lint` fail: `review-blocking` | Mục `## Review` ghi `Blocking: Yes` | Sửa các phát hiện BLOCKER rồi review lại; PR còn `Blocking: Yes` thì không bao giờ được merge |
 | Một trích dẫn báo `stale` giữa chừng | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi BA. Đừng tự diễn giải lại tiêu chí chấp nhận. |
 | Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
 | `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |

@@ -72,13 +72,17 @@ edit above it.
   approves it — the `dev-plan` skill, then the `dev-execute` skill, then
   the `dev-handover` skill.
   On re-entry, derive the state — never store it — and name the case:
-  - `docs/impl/<ticket-id>-design.md` with `status: draft` →
-    `design 📝 draft`, offer GATE 1; `status: approved` → `design ✅`.
+  - `docs/impl/<ticket-id>-design.md` with `status: draft` and no clean
+    round recorded in its `## Review record` table → run `dev-design`'s
+    A1 review first; a clean round recorded → `design 📝 draft`, offer
+    GATE 1. `status: approved` → `design ✅`.
   - design approved, plan absent, and `git log --oneline <default>..HEAD`
     non-empty → `plan ⚠ missing, N commits on branch`: ask before running
     `dev-plan` — work may already be committed.
-  - plan with `status: draft` → `plan 📝 draft`, offer GATE 2; approved →
-    tasks = ticked/total checkboxes.
+  - plan with `status: draft` and no clean round recorded in its
+    `## Review record` table → run `dev-plan`'s A2 review first; a clean
+    round recorded → `plan 📝 draft`, offer GATE 2. approved → tasks =
+    ticked/total checkboxes.
   - `gh pr list --head <branch> --state merged` non-empty → `PR ✅ merged`,
     flow done; `--state closed` non-empty → `PR ❌ closed`, next step is
     re-handover or reopen — never end the flow silently; `gh` absent →

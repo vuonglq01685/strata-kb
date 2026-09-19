@@ -159,7 +159,7 @@ resume cold in a brand-new session. `kb init` never touches your
 directory exists before your first ticket does) and `docs/impl/.gitignore`
 (so the context cache never lands in a PR).
 
-## The four gates
+## The four gates, five agent review rounds
 
 Nothing in this pipeline merges or ships without a human:
 
@@ -170,6 +170,29 @@ Nothing in this pipeline merges or ships without a human:
 3. **PR opened** — `dev-handover` writes up the PR body; a human opens it.
 4. **Merged** — a human reviews and merges. The agent does neither of the
    last two itself.
+
+Before each of the first three gates, a different agent has already read
+the work back in a context of its own — never the same agent that
+produced it:
+
+| | Where | What it looks at |
+|---|---|---|
+| A1 | `dev-design`, before GATE 1 | whether the design matches the ticket |
+| A2 | `dev-plan`, before GATE 2 | whether the plan is test-first and runnable |
+| A3 | `dev-execute`, per task | whether this task's diff meets its spec, and whether the code is good |
+| A4 | `dev-execute`, after the last task | whether the finished branch rounds out the ticket |
+| A5 | `dev-handover`, before GATE 3 | whether merging into the default branch is safe |
+
+Criteria live in `docs/pr-review-rubric.md`, overridden by
+`docs/pr-review-rubric.local.md`. Each round allows at most 3 fix/review
+passes; a round only counts as clean once no BLOCKER and no SUGGESTED
+finding is left open — NOTE and NITS get recorded, not fixed.
+
+Where your assistant's runtime cannot dispatch subagents — the default
+for the Copilot and Cursor wrappers — the review still runs, but as a
+single pass reading only what it was handed, and it is a **report, not a
+gate**: the phase stops there and hands the result to you instead of
+advancing on its own say-so.
 
 ## What is enforced
 
@@ -184,7 +207,7 @@ Nothing in this pipeline merges or ships without a human:
   `style`. Add **`pr-lint` to the branch's required checks** once:
   `kb init` writes the workflow but cannot turn on branch protection for
   you. Unlike `kb-ticket-lint`, this gate never self-skips — once
-  required, it blocks **every** PR without the eight sections, bot PRs
+  required, it blocks **every** PR without the required sections, bot PRs
   (a Dependabot bump, a revert) included, so make that required-check
   decision knowingly.
 - **Unreviewed knowledge cannot reach the hub** — `kb build` (run by
@@ -193,6 +216,8 @@ Nothing in this pipeline merges or ships without a human:
 - **The context cache is CLI-owned** — `kb resolve --status-only --cache`
   refuses a cache whose version, ref set or resolved block differs from
   the ticket's.
+- **The merge-risk review has run and no BLOCKER remains** — `kb pr lint`
+  requires the PR's `## Review` section to carry a `Blocking: No` line.
 
 ### Prompt-only — stated in every wrapper, measured by nothing
 
@@ -211,6 +236,11 @@ measures compliance with it. The only check is the human at the gate.
 - **GATE 1 and GATE 2** — design and plan approved before the next phase;
   the `status:` header records it, a human grants it.
 - **`OPEN(BA)`** — an ambiguous AC is escalated, never reinterpreted.
+- **A1–A4** — the four agent reviews before GATE 3 are prompt discipline;
+  nothing in `kb` measures whether they ran. Only A5 has teeth: `kb pr
+  lint` reads the PR's `## Review` section. An agent that skips A1–A4 and
+  writes an honest `Blocking: No` still passes — the gate sits where the
+  merge actually happens, not at every step before it.
 
 ## Keeping it current
 
@@ -397,8 +427,8 @@ running both on the same model pays the judgment price for the mechanical half.
 
 | Tier | Steps |
 | --- | --- |
-| Strong | `dev-design`, `dev-plan`, and the review checkpoint inside each `dev-execute` task |
-| Cheap | the lint/format fix loop, re-running the suite until green, ticking plan checkboxes, assembling the PR body, `kb usage report --ticket <id> --md`, and the `kb svc note` calls at handover |
+| Strong | `dev-design`, `dev-plan`, the review subagents (A1–A5, including the `task-reviewer`), and assembling the PR body (it now carries A5's finding table) |
+| Cheap | the lint/format fix loop, re-running the suite until green, ticking plan checkboxes, the self-review checkpoint inside each `dev-execute` task (it never satisfies A3), `kb usage report --ticket <id> --md`, and the `kb svc note` calls at handover |
 
 Which model belongs to which tier follows the price table in force —
 `usage-prices.yaml` shipped with the package, overridable per model at

@@ -64,6 +64,67 @@ standard-derived value quoted verbatim with its `doc-id §section`; any
 AC that cannot be implemented as written becomes `OPEN(BA)` —
 reinterpreting an AC is forbidden.
 
+## A1 — independent design review (before GATE 1)
+
+Write the design in its own context: dispatch a `design-author` subagent with
+the resolved context cache path, the ticket's acceptance criteria, the
+conventions paths, and this phase's own authoring rules above — what the
+design must cover, and how placeholders and standard values are cited — and
+let it write `docs/impl/<ticket-id>-design.md` with `status: draft`. You
+orchestrate; you do not draft and then judge your own draft.
+
+That design is a draft until a reviewer that never saw it being written
+says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
+these things: the path `docs/impl/<ticket-id>-design.md`, the ticket's
+acceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`
+plus `docs/pr-review-rubric.local.md`. Not your reasoning, not this
+conversation.
+
+It returns pass/fail per axis plus a gap list in which every gap names the
+section it lives in, its severity, and a proposed fix. Apply BLOCKER and
+SUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.
+
+Record every round in the design file's `## Review record` table, creating it
+below the design body on round 1:
+
+    | Date | Round | Verdict | Reviewer | Open gaps |
+    |---|---|---|---|---|
+    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |
+
+GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and
+no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.
+
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
+  override wins over its base file. Severity is always
+  BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
+
 ## Hard rules
 
 - A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.
