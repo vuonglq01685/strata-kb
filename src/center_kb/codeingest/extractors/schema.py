@@ -204,7 +204,15 @@ def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
     "migration")`, so it also matches (and, via the caller's dedup, does
     not double-count relative to) the shorter `"**/migration/*.sql"`
     pattern on the very same directory. The final segment is matched
-    against each filename with `fnmatch`."""
+    against each filename with `fnmatch`.
+
+    A middle segment may itself be a wildcard (`"**/migrations/*/up.sql"`
+    — diesel's per-migration directories), matched with `fnmatchcase`:
+    case-sensitively, so a directory named `Migrations` matches
+    `Migrations` and nothing else on every platform. `fnmatch` would
+    fold case on Windows alone, and this module's output is published to
+    the federation hub — it must not depend on which OS ran the
+    ingest."""
     parts = pattern.split("/")
     if parts[0] != "**":
         # A `raise` here (not an `assert`) because every call site is
@@ -219,7 +227,10 @@ def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
     for _depth, reldir, filenames in walk_tree(root, kb_dir):
         if dir_suffix:
             dir_parts = reldir.parts
-            if len(dir_parts) < len(dir_suffix) or dir_parts[-len(dir_suffix):] != dir_suffix:
+            if len(dir_parts) < len(dir_suffix) or not all(
+                fnmatch.fnmatchcase(part, expected)
+                for part, expected in zip(dir_parts[-len(dir_suffix):], dir_suffix)
+            ):
                 continue
         for name in filenames:
             if fnmatch.fnmatch(name, file_glob):
@@ -233,6 +244,13 @@ def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
 
 MIGRATION_GLOBS = (
     "**/migrations/*.sql", "**/migration/*.sql", "**/db/migration/*.sql", "**/changelog/*.sql",
+    # diesel (Rust) gives each migration its own directory holding
+    # `up.sql` and `down.sql` — one level deeper than the flat globs
+    # above, whose `*` does not cross a path separator. Only `up.sql` is
+    # read: `down.sql` is the reverse migration, all `DROP TABLE`, which
+    # would warn through `UNSUPPORTED_RE` once per migration in the repo
+    # while adding no column anyone can see.
+    "**/migrations/*/up.sql",
 )
 
 # CREATE_RE matches only the *header* up to and including the table's

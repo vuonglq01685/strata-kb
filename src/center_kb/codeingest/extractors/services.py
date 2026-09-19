@@ -825,6 +825,7 @@ _INFRA_IMAGES: dict[str, str] = {
     "elasticsearch": "Elasticsearch", "traefik": "Traefik", "minio": "MinIO",
     "memcached": "Memcached", "python": "Python", "node": "Node.js",
     "golang": "Go", "openjdk": "Java", "eclipse-temurin": "Java", "amazoncorretto": "Java",
+    "rust": "Rust", "swift": "Swift", "dart": "Dart",
 }
 
 
