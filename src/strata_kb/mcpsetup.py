@@ -108,6 +108,11 @@ def read_env_value(repo_root: Path, var: str) -> str:
 def _reject_line_breaks(var: str, value: str) -> None:
     """Refuse a value that would inject extra lines into `.env`.
 
+    Called after the value has been stripped, so this only ever sees an
+    *interior* break — a leading/trailing newline (the most common artefact
+    of pasting a token out of chat or email) is gone by this point and never
+    trips the refusal.
+
     `dockersetup.set_env_line` does not validate `value` -- it trusted its
     only caller (a `secrets.token_hex(24)` value, which never carries a
     newline). Here both values are user-supplied (a pasted hub URL, a
@@ -126,16 +131,26 @@ def write_env(repo_root: Path, hub_url: str, token: str) -> EnvReport:
     Merge, not overwrite: on a child, `.env` is also docker-compose's
     substitution source. `ba` and `dev` repos get no root `.gitignore` from
     `kb init`, so `ensure_gitignored` creates one.
+
+    Both values are stripped before anything else — `read_env_value` already
+    strips on the way out, so an unstripped write here would make the
+    re-verify path check a value that was never the one saved to disk.
     """
+    hub_url = hub_url.strip()
+    token = token.strip()
     _reject_line_breaks(HUB_URL_VAR, hub_url)
     _reject_line_breaks(TOKEN_VAR, token)
+    # Ensure git ignores .env before the token ever touches it, so a failed
+    # gitignore write (e.g. no permission) never leaves a bare token sitting
+    # in a file git could track.
+    gitignore_updated = dockersetup.ensure_gitignored(repo_root)
     env_path = repo_root / ".env"
     env_created = not env_path.exists()
     text = "" if env_created else env_path.read_text(encoding="utf-8")
     text = dockersetup.set_env_line(text, HUB_URL_VAR, hub_url)
     text = dockersetup.set_env_line(text, TOKEN_VAR, token)
     env_path.write_text(text, encoding="utf-8", newline="\n")
-    return EnvReport(env_created, dockersetup.ensure_gitignored(repo_root))
+    return EnvReport(env_created, gitignore_updated)
 
 
 def _default_http(method: str, url: str, headers: dict, body: bytes | None):

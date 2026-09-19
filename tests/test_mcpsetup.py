@@ -130,7 +130,7 @@ def test_read_env_value_returns_empty_without_env(tmp_path: Path):
 # shared helper.
 
 
-def test_write_env_rejects_a_token_with_a_newline(tmp_path: Path):
+def test_write_env_rejects_a_token_with_an_interior_newline(tmp_path: Path):
     from strata_kb.mcpsetup import McpSetupError, write_env
 
     init_repo(tmp_path, "child")
@@ -141,7 +141,7 @@ def test_write_env_rejects_a_token_with_a_newline(tmp_path: Path):
     assert not (tmp_path / ".env").exists()
 
 
-def test_write_env_rejects_a_hub_url_with_a_newline(tmp_path: Path):
+def test_write_env_rejects_a_hub_url_with_an_interior_newline(tmp_path: Path):
     from strata_kb.mcpsetup import McpSetupError, write_env
 
     init_repo(tmp_path, "child")
@@ -151,12 +151,48 @@ def test_write_env_rejects_a_hub_url_with_a_newline(tmp_path: Path):
     assert not (tmp_path / ".env").exists()
 
 
-def test_write_env_rejects_a_carriage_return_in_a_value(tmp_path: Path):
+def test_write_env_rejects_an_interior_carriage_return_in_a_value(tmp_path: Path):
     from strata_kb.mcpsetup import McpSetupError, write_env
 
     init_repo(tmp_path, "child")
     with pytest.raises(McpSetupError, match="newline"):
         write_env(tmp_path, HUB, "token\rEVIL=1")
+
+
+# --- write_env / read_env_value strip symmetry (fix wave 1, finding 1) -----
+#
+# read_env_value already strips its match; write_env did not strip on the
+# way in, so a padded or newline-terminated paste survived to disk exactly
+# as pasted while the re-verify path silently checked a stripped copy that
+# was never what .env actually held.
+
+
+def test_write_env_strips_leading_and_trailing_whitespace_from_both_values(
+    tmp_path: Path,
+):
+    from strata_kb.mcpsetup import HUB_URL_VAR, TOKEN_VAR, read_env_value, write_env
+
+    init_repo(tmp_path, "child")
+    write_env(tmp_path, f"  {HUB}  ", f" {TOKEN} ")
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"{HUB_URL_VAR}={HUB}" in env
+    assert f"{TOKEN_VAR}={TOKEN}" in env
+    assert read_env_value(tmp_path, HUB_URL_VAR) == HUB
+    assert read_env_value(tmp_path, TOKEN_VAR) == TOKEN
+
+
+def test_write_env_accepts_a_token_with_a_trailing_newline(tmp_path: Path):
+    """A trailing newline is the most common artefact of pasting a token out
+    of chat or email -- it must be stripped, not rejected as injection."""
+    from strata_kb.mcpsetup import TOKEN_VAR, read_env_value, write_env
+
+    init_repo(tmp_path, "child")
+    write_env(tmp_path, HUB, f"{TOKEN}\n")
+    assert read_env_value(tmp_path, TOKEN_VAR) == TOKEN
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"{TOKEN_VAR}={TOKEN}\n" in env
+    # Exactly one line for the token var -- no injected blank/extra line.
+    assert env.count(f"{TOKEN_VAR}=") == 1
 
 
 # --- probe -----------------------------------------------------------------
@@ -239,3 +275,31 @@ def test_probe_reports_a_connection_lost_between_the_two_checks():
     result = probe(HUB, TOKEN, http=_scripted((200, b"{}"), (0, b"timed out")))
     assert result.ok is False
     assert "timed out" in result.message
+
+
+# --- _default_http (fix wave 1, finding 2) ----------------------------------
+#
+# probe()'s own tests only ever exercise the injected `http` seam, so they
+# never touch _default_http itself. That left the _default_http -> httpio
+# .request -> urllib.Request chain unpinned: a mutant that forwards {}
+# instead of `headers` passed the whole suite. Pin it directly.
+
+
+def test_default_http_forwards_headers_and_the_probe_timeout(monkeypatch):
+    from strata_kb import httpio
+    from strata_kb.mcpsetup import PROBE_TIMEOUT, _default_http
+
+    calls = []
+
+    def fake_request(method, url, headers, body, timeout=60):
+        calls.append((method, url, headers, body, timeout))
+        return 200, b"{}"
+
+    monkeypatch.setattr(httpio, "request", fake_request)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    _default_http("GET", f"{HUB}/api/docs", headers, None)
+
+    assert len(calls) == 1
+    _, _, sent_headers, _, sent_timeout = calls[0]
+    assert sent_headers == headers
+    assert sent_timeout == PROBE_TIMEOUT
