@@ -2,8 +2,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
+from strata_kb import models
+from strata_kb.cli import app
 from tests.conftest import make_fed_entry
 from tests.test_publish_hub import _git_repo
 

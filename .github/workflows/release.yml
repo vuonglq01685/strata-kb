@@ -9,7 +9,7 @@
 # PyPI is immutable — once a version is published it can NEVER be deleted or
 # overwritten. Therefore: NOTHING irreversible is allowed to happen before the
 # ENTIRE gate (gate + docker-verify) is green.
-#   - docker-verify builds the image with a REAL `pip install center-kb[ingest]`
+#   - docker-verify builds the image with a REAL `pip install strata-kb[ingest]`
 #     (see Dockerfile) → this is precisely the gatekeeper for the heavy extras
 #     (docling/torch/rapidocr): if [ingest] does not resolve, PyPI will not be
 #     touched at all (pypi needs docker-verify).
@@ -22,7 +22,7 @@
 #     two tags.
 #
 # The incident Task 11 uncovered, recorded so it is never repeated:
-# `center-kb==0.9.0` NEVER made it to PyPI (PyPI jumped straight from 0.8.0 →
+# `strata-kb==0.9.0` NEVER made it to PyPI (PyPI jumped straight from 0.8.0 →
 # 0.9.1) because in the OLD pipeline `docker` only had `needs: test` and ran in
 # parallel with `pypi` — when `build`/`pypi` failed (post-0.9 `kb doctor`
 # requires `--hub`, see d3d6e36), `docker` stayed green and pushed `:latest` as
@@ -69,8 +69,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build image (a REAL pip install center-kb[ingest] — see Dockerfile)
-        run: docker build -t ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA} .
+      - name: Build image (a REAL pip install strata-kb[ingest] — see Dockerfile)
+        run: docker build -t ghcr.io/vuonglq01685/strata-kb:sha-${GITHUB_SHA} .
       - name: Smoke — serve an empty KB; health must answer, the API must 401
         run: |
           # The hub is mandatory as of 0.9 (federation is the only read source) —
@@ -80,9 +80,9 @@ jobs:
           echo "docs: []" > /tmp/data/.kb/index.yaml
           echo "docs: []" > /tmp/data/federation/index.yaml
           docker run -d --name kb -p 8321:8321 \
-            -e CENTER_KB_HTTP_TOKEN=smoke-test-token \
+            -e STRATA_KB_HTTP_TOKEN=smoke-test-token \
             -v /tmp/data:/data \
-            ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA}
+            ghcr.io/vuonglq01685/strata-kb:sha-${GITHUB_SHA}
           for i in $(seq 1 30); do
             curl -sf http://localhost:8321/api/health && break
             sleep 2
@@ -92,7 +92,7 @@ jobs:
           test "$code" = "401"
           docker rm -f kb
       - name: Push the sha- tag (harmless — NOT a release tag, nobody pulls it)
-        run: docker push ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA}
+        run: docker push ghcr.io/vuonglq01685/strata-kb:sha-${GITHUB_SHA}
 
   pypi:
     name: Publish to PyPI (irreversible — comes after EVERY gate)
@@ -126,6 +126,6 @@ jobs:
       - name: Retag (no rebuild — just copies the manifest to the new tags, seconds)
         run: |
           docker buildx imagetools create \
-            --tag ghcr.io/vuonglq01685/center-kb:${GITHUB_REF_NAME} \
-            --tag ghcr.io/vuonglq01685/center-kb:latest \
-            ghcr.io/vuonglq01685/center-kb:sha-${GITHUB_SHA}
+            --tag ghcr.io/vuonglq01685/strata-kb:${GITHUB_REF_NAME} \
+            --tag ghcr.io/vuonglq01685/strata-kb:latest \
+            ghcr.io/vuonglq01685/strata-kb:sha-${GITHUB_SHA}

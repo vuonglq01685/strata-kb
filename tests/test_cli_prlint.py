@@ -7,8 +7,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb.cli import app
-from center_kb.prlint import REQUIRED_SECTIONS
+from strata_kb.cli import app
+from strata_kb.prlint import REQUIRED_SECTIONS
 
 runner = CliRunner()
 
@@ -17,6 +17,8 @@ GOOD = "\n\n".join(
     if name == "Verification"
     else "## TDD exemptions\n\nNone."
     if name == "TDD exemptions"
+    else "## Review\n\nBlocking: No"
+    if name == "Review"
     else f"## {name}\n\nfilled"
     for name in REQUIRED_SECTIONS
 )

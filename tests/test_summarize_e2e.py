@@ -4,8 +4,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
+from strata_kb import models
+from strata_kb.cli import app
 from tests.cli_stub import echo_after_stdin, write_cli_stub
 from tests.test_summarize import make_kb
 

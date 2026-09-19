@@ -16,10 +16,10 @@ import pytest
 
 pytest.importorskip("sqlite_vec")
 
-from center_kb.federation import write_federation_index
-from center_kb.hub import HubHandle
-from center_kb.mdutils import count_tokens
-from center_kb.query import QueryResult, _ambiguity_notes, search_detailed
+from strata_kb.federation import write_federation_index
+from strata_kb.hub import HubHandle
+from strata_kb.mdutils import count_tokens
+from strata_kb.query import QueryResult, _ambiguity_notes, search_detailed
 from tests.conftest import make_fed_entry
 
 

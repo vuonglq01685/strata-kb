@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from center_kb.prlint import (
+from strata_kb.prlint import (
     REQUIRED_SECTIONS,
     SENTINEL_SECTIONS,
     lint_body,
@@ -20,6 +20,7 @@ def _body(**overrides: str) -> str:
         "TDD exemptions": "none",
         "Findings": "none",
         "Usage": "| phase | cost |\n|---|---|\n| dev-execute | $1.20 |",
+        "Review": "| Severity | File | Line | Why | Fix |\n|---|---|---|---|---|\n\nBlocking: No",
     }
     filled.update(overrides)
     return "\n\n".join(f"## {name}\n\n{filled[name]}" for name in REQUIRED_SECTIONS)
@@ -29,7 +30,7 @@ def _codes(body: str) -> set[tuple[str, str]]:
     return {(f.section, f.code) for f in lint_body(body).findings}
 
 
-def test_canon_is_the_eight_sections_in_order():
+def test_canon_is_the_nine_sections_in_order():
     assert REQUIRED_SECTIONS == (
         "Ticket",
         "kb-context",
@@ -39,6 +40,7 @@ def test_canon_is_the_eight_sections_in_order():
         "TDD exemptions",
         "Findings",
         "Usage",
+        "Review",
     )
     assert SENTINEL_SECTIONS == frozenset({"TDD exemptions", "Findings"})
 
@@ -253,7 +255,7 @@ def test_render_names_the_failing_sections_and_to_json_round_trips():
     assert all(f["level"] == "warning" for f in filled_payload["findings"])
 
 
-from center_kb.prlint import EXEMPTION_SLUGS, Finding, PRLintReport
+from strata_kb.prlint import EXEMPTION_SLUGS, Finding, PRLintReport
 
 
 def test_the_four_exemption_slugs_are_the_canon():
@@ -304,7 +306,7 @@ def test_findings_default_to_error_level():
 
 from pathlib import Path
 
-from center_kb.prlint import plan_cmd_test, ticket_id_of
+from strata_kb.prlint import plan_cmd_test, ticket_id_of
 
 
 def _plan(tmp_path: Path, ticket: str = "ATM-7", cmd: str = "pytest -q") -> Path:
@@ -390,3 +392,50 @@ def test_a_non_utf8_plan_file_is_a_warning_not_a_crash(tmp_path: Path):
     report = lint_body(_ticket_body(), plan_dir=d)
     assert report.passed
     assert [f.code for f in report.warnings] == ["plan-missing"]
+
+
+def test_a_clean_review_passes():
+    assert lint_body(_body()).passed
+
+
+def test_review_without_a_verdict_line_fails():
+    body = _body(Review="Looks fine to me.")
+    assert ("Review", "no-review-verdict") in _codes(body)
+
+
+def test_none_does_not_satisfy_the_review_section():
+    # Review is deliberately NOT a sentinel section: a clean review still
+    # states its verdict.
+    assert "Review" not in SENTINEL_SECTIONS
+    assert ("Review", "no-review-verdict") in _codes(_body(Review="none"))
+
+
+def test_a_blocking_review_fails_the_pr():
+    body = _body(Review="| BLOCKER | a.py | 1 | leaks | fix |\n\nBlocking: Yes")
+    assert ("Review", "review-blocking") in _codes(body)
+    assert not lint_body(body).passed
+
+
+def test_the_verdict_line_is_case_insensitive():
+    assert lint_body(_body(Review="blocking: no")).passed
+
+
+def test_a_second_blocking_yes_fails_even_after_a_leading_blocking_no():
+    # Fail-closed: leftover template boilerplate (`Blocking: No`) above the
+    # author's own verdict must not shadow a real `Blocking: Yes` below it.
+    body = _body(
+        Review=(
+            "| Severity | File | Line | Why | Fix |\n|---|---|---|---|---|\n\n"
+            "Blocking: No\n\n"
+            "| BLOCKER | a.py | 1 | leaks | fix |\n\nBlocking: Yes"
+        )
+    )
+    assert ("Review", "review-blocking") in _codes(body)
+    assert not lint_body(body).passed
+
+
+def test_the_word_blocking_in_a_sentence_is_not_a_verdict_line():
+    # The verdict pattern is anchored at line start so a sentence merely
+    # mentioning the word cannot pass for a recorded verdict.
+    body = _body(Review="Nothing here is blocking: no big deal")
+    assert ("Review", "no-review-verdict") in _codes(body)

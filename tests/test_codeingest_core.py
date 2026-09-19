@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models
-from center_kb.build import build_kb
-from center_kb.codeingest import core
+from strata_kb import models
+from strata_kb.build import build_kb
+from strata_kb.codeingest import core
 from tests.test_gitio import _stdin_offenders_in_module
 
 
@@ -374,7 +374,7 @@ def test_ingest_calls_git_ls_files_a_small_bounded_number_of_times(
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "c1")
 
-    from center_kb.codeingest.extractors import tree as tree_ext
+    from strata_kb.codeingest.extractors import tree as tree_ext
 
     calls: list[Path] = []
     real_uncached = tree_ext._git_ls_files_uncached
@@ -409,11 +409,11 @@ def test_generated_document_is_searchable_through_the_hub(
     # suite does (tests/test_publish.py, tests/test_mcp.py,
     # tests/test_web_api.py) — so a future reorder of this test, or a
     # change to `hub.py`'s direct-path condition, cannot make this test
-    # silently write into the real `~/.center-kb/hub/` on the host.
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hub-cache"))
+    # silently write into the real `~/.strata-kb/hub/` on the host.
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hub-cache"))
 
-    from center_kb.hub import resolve_hub
-    from center_kb.query import get_section, search
+    from strata_kb.hub import resolve_hub
+    from strata_kb.query import get_section, search
     from tests.fixtures_coderepo import build_code_repo
 
     root = build_code_repo(tmp_path / "repo")
@@ -447,9 +447,9 @@ def test_generated_document_is_searchable_through_the_hub(
     # `kb publish`'s `_snapshot()` also writes a `_meta.yaml` at the leaf
     # (federation.FederationMeta) — `iter_entry_dirs()` only recognises a
     # directory as a leaf entry when BOTH `_meta.yaml` and `index.yaml`
-    # are present (src/center_kb/federation.py); without it this entry is
+    # are present (src/strata_kb/federation.py); without it this entry is
     # silently skipped ("missing _meta.yaml or index.yaml").
-    from center_kb.federation import FederationMeta
+    from strata_kb.federation import FederationMeta
 
     models.save_yaml_model(
         dest / "_meta.yaml",
@@ -460,7 +460,7 @@ def test_generated_document_is_searchable_through_the_hub(
     # (direct / ".kb").is_dir()` check) — every real hub has one (its own
     # local KB, alongside `federation/`). Without it, `resolve_hub` falls
     # through to `git clone`-ing this path into the *real* on-disk hub
-    # cache under the current user's home directory (`~/.center-kb/hub/`
+    # cache under the current user's home directory (`~/.strata-kb/hub/`
     # by default) instead of staying inside `tmp_path`, which would leave
     # stray state on the host and break this suite's hermetic-tests rule.
     (hub / ".kb").mkdir(parents=True)

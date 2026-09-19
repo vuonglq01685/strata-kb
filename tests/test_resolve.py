@@ -2,10 +2,10 @@ import shutil
 
 import yaml
 
-from center_kb import kbcontext
-from center_kb.hub import HubHandle
-from center_kb.kbcontext import KBContext, KBRef, build_context_block
-from center_kb.resolve import render_resolved, resolve_refs
+from strata_kb import kbcontext
+from strata_kb.hub import HubHandle
+from strata_kb.kbcontext import KBContext, KBRef, build_context_block
+from strata_kb.resolve import render_resolved, resolve_refs
 from tests.conftest import make_fed_entry
 
 REF = "arinc-kb:arinc-424 §5.3"
@@ -208,7 +208,7 @@ def test_legacy_two_version_block_is_broken(fed_hub):
     assert "hub_version" in results[0].reason
 
 
-from center_kb.resolve import (
+from strata_kb.resolve import (
     CACHE_MARKER,
     cache_digest,
     cache_problem,

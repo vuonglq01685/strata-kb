@@ -3,8 +3,8 @@ published under someone else's repo-id."""
 import pytest
 import yaml
 
-from center_kb import models, pubgate
-from center_kb.publish import publish
+from strata_kb import models, pubgate
+from strata_kb.publish import publish
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ def test_unreadable_registry_fails_closed(hub_worktree, git_kb, run_git):
     (fed / "registry.yaml").write_text("repos: [not, a, mapping\n", encoding="utf-8")
     run_git(hub_worktree, "add", "-A")
     run_git(hub_worktree, "commit", "-m", "hub: broken registry")
-    from center_kb.publish import PublishError
+    from strata_kb.publish import PublishError
 
     with pytest.raises(PublishError, match="registry.yaml is invalid"):
         publish(git_kb["kb"], str(hub_worktree), repo_id="anything", mode="direct")
@@ -146,7 +146,7 @@ def test_reserved_device_name_is_refused_before_anything_is_written(
 
 
 def test_registry_map_flattens_the_model():
-    from center_kb import federation
+    from strata_kb import federation
 
     reg = models.Registry(repos={"org/repo": "rid"})
     assert federation.registry_map(reg) == {"org/repo": "rid"}

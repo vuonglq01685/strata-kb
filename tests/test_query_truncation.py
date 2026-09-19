@@ -9,16 +9,16 @@ import pytest
 
 pytest.importorskip("sqlite_vec")
 
-from center_kb import searchdb
-from center_kb.federation import write_federation_index
-from center_kb.hub import HubHandle
-from center_kb.query import search_detailed
+from strata_kb import searchdb
+from strata_kb.federation import write_federation_index
+from strata_kb.hub import HubHandle
+from strata_kb.query import search_detailed
 
 
 def _wide_hub(tmp_path, n_sections: int) -> HubHandle:
     """One doc whose N sections all contain the term 'record'."""
-    from center_kb import models
-    from center_kb.federation import FederationMeta
+    from strata_kb import models
+    from strata_kb.federation import FederationMeta
 
     fed = tmp_path / "hub" / "federation"
     entry = fed / "wide-kb" / "wide-doc"

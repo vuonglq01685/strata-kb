@@ -4,8 +4,8 @@ from pathlib import Path
 import yaml
 from typer.testing import CliRunner
 
-from center_kb.cli import app
-from center_kb.usage import ledger
+from strata_kb.cli import app
+from strata_kb.usage import ledger
 from tests.test_usage_transcript import usage_row, user_row, write_transcript
 
 runner = CliRunner()

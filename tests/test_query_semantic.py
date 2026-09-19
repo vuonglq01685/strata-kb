@@ -1,9 +1,9 @@
 import pytest
 
-from center_kb import models
-from center_kb.federation import FederationMeta
-from center_kb.hub import HubHandle
-from center_kb.query import search
+from strata_kb import models
+from strata_kb.federation import FederationMeta
+from strata_kb.hub import HubHandle
+from strata_kb.query import search
 from tests.conftest import FakeEmbedder
 
 pytest.importorskip("sqlite_vec")
@@ -55,7 +55,7 @@ def test_garbage_query_semantic_returns_empty_not_nearest(fed_hub):
 
 
 def test_semantic_flag_without_embedder_warns(fed_hub, caplog):
-    with caplog.at_level("WARNING", logger="center_kb.query"):
+    with caplog.at_level("WARNING", logger="strata_kb.query"):
         results = search(HubHandle(root=fed_hub), "airspace", semantic=True)
     assert results  # FTS leg still returns
     assert any("semantic" in r.message.lower() for r in caplog.records)
@@ -72,7 +72,7 @@ def test_knn_leg_error_falls_back_to_keyword(fed_hub, caplog):
                 raise RuntimeError("boom")
             return super().embed(texts)
 
-    with caplog.at_level("WARNING", logger="center_kb.query"):
+    with caplog.at_level("WARNING", logger="strata_kb.query"):
         results = search(
             HubHandle(root=fed_hub), "restrictive airspace",
             embedder=ExplodingEmbedder(),
@@ -91,10 +91,10 @@ class BrokenEmbedder(FakeEmbedder):
 def test_embedder_failure_during_sync_degrades_to_keyword(fed_hub, caplog):
     # spec §5: embedding is best-effort — an embed failure during lazy sync must not
     # kill the query; the FTS leg must still return results
-    from center_kb import searchdb
+    from strata_kb import searchdb
 
     hub = HubHandle(root=fed_hub)
-    with caplog.at_level("WARNING", logger="center_kb.searchdb"):
+    with caplog.at_level("WARNING", logger="strata_kb.searchdb"):
         results = search(hub, "restrictive airspace", embedder=BrokenEmbedder())
     assert results
     assert all(r.match_mode == "keyword" for r in results)
@@ -112,7 +112,7 @@ def test_corruption_during_freshness_sync_rebuilds_once(fed_hub, monkeypatch):
     # DML fails) must also rebuild-once like corruption during query (spec §5)
     import sqlite3
 
-    from center_kb import searchdb
+    from strata_kb import searchdb
 
     hub = HubHandle(root=fed_hub)
     search(hub, "airspace")  # build index
@@ -154,7 +154,7 @@ def test_locked_db_error_propagates_without_delete(fed_hub, monkeypatch):
     # must raise, absolutely never delete an index that is being written (spec §3.2)
     import sqlite3
 
-    from center_kb import searchdb
+    from strata_kb import searchdb
 
     hub = HubHandle(root=fed_hub)
     search(hub, "airspace")  # build index
@@ -175,8 +175,8 @@ def test_search_serves_stale_index_when_sync_locked(fed_hub, monkeypatch):
     # query serves the existing (stale) index instead of failing after busy_timeout
     import sqlite3
 
-    from center_kb import models, searchdb
-    from center_kb.federation import FederationMeta
+    from strata_kb import models, searchdb
+    from strata_kb.federation import FederationMeta
 
     hub = HubHandle(root=fed_hub)
     assert search(hub, "restrictive airspace")  # build index
@@ -196,7 +196,7 @@ def test_search_serves_stale_index_when_sync_locked(fed_hub, monkeypatch):
 
 
 def test_corrupt_db_rebuilt_once_transparently(fed_hub):
-    from center_kb import searchdb
+    from strata_kb import searchdb
 
     hub = HubHandle(root=fed_hub)
     search(hub, "airspace")  # build index
@@ -239,7 +239,7 @@ def test_search_snippet_counts_into_budget(fed_hub):
     _bump_meta(entry)
     hub = HubHandle(root=fed_hub)
     results = search(hub, "GRYPHON42", embedder=None)
-    from center_kb.mdutils import count_tokens
+    from strata_kb.mdutils import count_tokens
 
     r = results[0]
     assert r.tokens == count_tokens(r.content) + count_tokens(r.snippet)

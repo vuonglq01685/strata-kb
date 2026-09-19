@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb.config import (
+from strata_kb.config import (
     HUB_GUIDE,
     HubConfigError,
     KBConfig,
@@ -55,7 +55,7 @@ def test_effective_repo_id_priority_and_none(tmp_path):
 
 
 def test_config_kind_defaults_to_empty(tmp_path):
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     assert load_config(tmp_path).kind == ""  # no config.yaml at all
     (tmp_path / "config.yaml").write_text("hub: /h\n", encoding="utf-8")
@@ -63,7 +63,7 @@ def test_config_kind_defaults_to_empty(tmp_path):
 
 
 def test_config_kind_roundtrip(tmp_path):
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     (tmp_path / "config.yaml").write_text(
         "hub: '.'\nrepo_id: my-repo\nkind: hub\n", encoding="utf-8"
@@ -77,7 +77,7 @@ def test_config_kind_rejects_unknown_value(tmp_path):
     import pytest
     from pydantic import ValidationError
 
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     (tmp_path / "config.yaml").write_text("kind: server\n", encoding="utf-8")
     with pytest.raises(ValidationError):

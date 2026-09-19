@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from center_kb.cli import app
+from strata_kb.cli import app
 
 runner = CliRunner()
 

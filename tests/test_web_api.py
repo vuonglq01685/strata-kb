@@ -2,9 +2,9 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from center_kb import searchdb
-from center_kb.mcp import ServerConfig
-from center_kb.web import api
+from strata_kb import searchdb
+from strata_kb.mcp import ServerConfig
+from strata_kb.web import api
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ def test_ambiguous_doc_returns_400(client_factory, fed_hub):
 
 
 def test_hub_unreachable_returns_503(client_factory, tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     client = client_factory(hub=str(tmp_path / "missing-hub"))
     assert client.get("/api/docs").status_code == 503
 
@@ -81,7 +81,7 @@ def test_hub_unreachable_returns_503(client_factory, tmp_path, monkeypatch):
 
 
 def test_health_stays_minimal_when_hub_unreachable(client_factory, tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache2"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache2"))
     resp = client_factory(hub=str(tmp_path / "missing-hub-2")).get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
@@ -190,11 +190,11 @@ def test_api_search_tokens_describe_the_returned_text(client_factory, fed_hub):
     result -- fed_hub's stock fixture never produces one, and without it this
     assertion would pass on the pre-change code too (r.tokens ==
     count_tokens(content) whenever the snippet is empty)."""
-    from center_kb import models
-    from center_kb.federation import FederationMeta
-    from center_kb.hub import HubHandle
-    from center_kb.mdutils import count_tokens
-    from center_kb.query import search
+    from strata_kb import models
+    from strata_kb.federation import FederationMeta
+    from strata_kb.hub import HubHandle
+    from strata_kb.mdutils import count_tokens
+    from strata_kb.query import search
 
     entry = fed_hub / "federation" / "arinc-kb"
     (entry / "arinc-424" / "ch1.raw.md").write_text(
@@ -226,13 +226,13 @@ def test_api_search_tokens_describe_the_returned_text(client_factory, fed_hub):
 def test_api_search_reports_stale_hub_note(client_factory, fed_hub, monkeypatch):
     """M17 step 5: api_search adds a "notes" key carrying stale_hub_note(hub)
     when the resolved hub is stale -- untested before this task added it.
-    Faking `center_kb.hub.resolve_hub` (the name `hub_handle` actually
+    Faking `strata_kb.hub.resolve_hub` (the name `hub_handle` actually
     resolves, same seam test_mcp.py/test_cli_hub.py already use for this)
     is the only way to get a stale HubHandle through a real route: a
     local-path hub (what client_factory always builds) is never stale on
     its own."""
-    from center_kb import hub as hub_mod
-    from center_kb.hub import HubHandle
+    from strata_kb import hub as hub_mod
+    from strata_kb.hub import HubHandle
 
     monkeypatch.setattr(
         hub_mod, "resolve_hub",
@@ -260,7 +260,7 @@ def test_search_index_busy_503(client_factory, fed_hub, monkeypatch):
     def fake_search(*a, **k):
         raise searchdb.IndexBusyError("search index is in use by another process")
 
-    monkeypatch.setattr("center_kb.web.api.search", fake_search)
+    monkeypatch.setattr("strata_kb.web.api.search", fake_search)
     resp = client_factory(hub=str(fed_hub)).get("/api/search", params={"q": "x"})
     assert resp.status_code == 503
     assert resp.json()["error"] == "index_busy"

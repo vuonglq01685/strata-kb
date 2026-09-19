@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import gitio
+from strata_kb import gitio
 
 
 def _git(cwd: Path, *args: str) -> str:

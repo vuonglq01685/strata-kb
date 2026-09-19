@@ -3,9 +3,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
-from center_kb.mdutils import count_tokens, slice_section
+from strata_kb import models
+from strata_kb.cli import app
+from strata_kb.mdutils import count_tokens, slice_section
 
 runner = CliRunner()
 

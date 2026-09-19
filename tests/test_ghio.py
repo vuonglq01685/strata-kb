@@ -2,7 +2,7 @@ import subprocess
 
 import pytest
 
-from center_kb import ghio
+from strata_kb import ghio
 
 
 def _proc(returncode: int, stdout: str = "", stderr: str = ""):
@@ -76,7 +76,7 @@ def test_create_pr_failure_raises(tmp_path, monkeypatch):
 
 
 def test_can_open_pr_is_false_without_gh(tmp_path, monkeypatch):
-    from center_kb import ghio
+    from strata_kb import ghio
 
     monkeypatch.setattr(ghio, "gh_available", lambda: False)
     assert ghio.can_open_pr(tmp_path) is False

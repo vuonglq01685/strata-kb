@@ -1,0 +1,184 @@
+# src/strata_kb/cipublish.py
+"""kb ci-publish — runs inside the child's GitHub Actions job.
+
+OIDC JWT ← ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN; manifest diff against the hub
+(via the intake service); uploads only changed files + a delete list.
+No static secret anywhere in the child repo.
+"""
+from __future__ import annotations
+
+import io
+import json
+import os
+import tarfile
+import urllib.parse
+import uuid
+from pathlib import Path
+
+import typer
+
+from strata_kb import gitio, hashsync, httpio, pubgate
+from strata_kb import publish as publish_mod
+from strata_kb.errors import KbError
+
+
+class CIPublishError(KbError):
+    """ci-publish failed — the Actions job should go red."""
+
+
+def _decode(raw) -> str:
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return str(raw)
+
+
+def _default_http(method: str, url: str, headers: dict, body: bytes | None):
+    # The name and signature stay put — `http = http or _default_http` below
+    # binds it, and tests call it directly. The implementation, including the
+    # S310 scheme guard that keeps an operator-supplied `file://` out of
+    # urlopen, now lives in httpio instead of being duplicated per CI caller
+    # (publish.py's separate dev-machine intake flow keeps its own copy on
+    # purpose — see httpio.py's module docstring).
+    return httpio.request(method, url, headers, body, timeout=60)
+
+
+def _request_oidc_token(audience: str, http) -> str:
+    req_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "")
+    req_tok = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
+    if not req_url or not req_tok:
+        raise CIPublishError(
+            "not inside GitHub Actions (ACTIONS_ID_TOKEN_REQUEST_* missing) — "
+            "ci-publish only runs in the child's workflow; use `kb publish` locally"
+        )
+    url = f"{req_url}&audience={urllib.parse.quote(audience, safe='')}"
+    status, raw = http("GET", url, {"Authorization": f"Bearer {req_tok}"}, None)
+    if status == 0:
+        raise CIPublishError(f"OIDC token endpoint unreachable: {_decode(raw)}")
+    if status != 200:
+        raise CIPublishError(f"OIDC token request failed: HTTP {status}")
+    return json.loads(raw)["value"]
+
+
+def _fetch_remote_manifest(
+    intake_url: str, rid: str, token: str, http
+) -> dict[str, str]:
+    url = (
+        f"{intake_url.rstrip('/')}/intake/manifest?"
+        + urllib.parse.urlencode({"repo_id": rid})
+    )
+    # The manifest endpoint is OIDC-gated (same audience as publish) so one
+    # child can never diff another child's tree.
+    status, raw = http("GET", url, {"Authorization": f"Bearer {token}"}, None)
+    if status != 200:
+        typer.echo(
+            f"[warn] manifest endpoint returned {status} — falling back to full upload",
+            err=True,
+        )
+        return {}
+    return json.loads(raw).get("files", {})
+
+
+def _build_archive(kb_abs: Path, changed: list[str]) -> bytes:
+    buf = io.BytesIO()
+    # newline-exempt: gzip tar bytes into an in-memory buffer for HTTP
+    # upload -- binary, never on disk; tarfile.open() has no newline= param.
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for rel in changed:
+            tf.add(kb_abs / rel, arcname=rel, recursive=False)
+    return buf.getvalue()
+
+
+def _multipart(meta: dict, archive: bytes) -> tuple[bytes, str]:
+    boundary = f"kb-{uuid.uuid4().hex}"
+    meta_json = json.dumps(meta).encode("utf-8")
+    body = b"".join(
+        [
+            f"--{boundary}\r\n".encode(),
+            b'Content-Disposition: form-data; name="meta"\r\n\r\n',
+            meta_json, b"\r\n",
+            f"--{boundary}\r\n".encode(),
+            b'Content-Disposition: form-data; name="archive"; filename="kb.tar.gz"\r\n',
+            b"Content-Type: application/gzip\r\n\r\n",
+            archive, b"\r\n",
+            f"--{boundary}--\r\n".encode(),
+        ]
+    )
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
+def _check_unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> None:
+    """Warn/refuse on sections published without SME review (R18) — the
+    same helper `kb publish` calls, run here before any upload."""
+    gate = publish_mod.unreviewed_gate(kb_dir, require_reviewed)
+    if gate.line is not None:
+        typer.echo(gate.line)
+        if gate.blocked:
+            raise CIPublishError(gate.line)
+
+
+def run(
+    kb_dir: Path,
+    intake_url: str,
+    repo_id: str | None,
+    require_reviewed: bool = False,
+    http=None,
+    token_requester=None,
+) -> str:
+    """Diff -> upload -> return PR URL; "" when there is nothing to publish."""
+    _check_unreviewed_gate(kb_dir, require_reviewed)
+    http = http or _default_http
+    kb_abs = kb_dir.resolve()
+    root = gitio.git_root(kb_abs)
+    rid = repo_id or root.name
+    commit = gitio.head_commit(root)
+
+    # Token first: the manifest diff GET below authenticates with the same
+    # OIDC JWT as the publish POST.
+    audience = intake_url.rstrip("/")
+    token = (token_requester or _request_oidc_token)(audience, http)
+
+    remote_man = _fetch_remote_manifest(intake_url, rid, token, http)
+    local_man = hashsync.build_manifest(kb_abs)
+    # F-D6/finding 4: remote_man reflects the hub's already-allowlist-filtered
+    # federation/<rid>/ (nothing else was ever committed there), but local_man
+    # was built raw -- every child has a .kb/config.yaml (kb init always
+    # writes one) that can never appear on the remote side, so the diff was
+    # permanently non-empty: the "nothing to publish" fast path below never
+    # fired, every CI run uploaded + churned a branch, and config.yaml (which
+    # may hold a hub token/URL) was archived and sent to the intake server on
+    # every single run. Filter local_man through the same predicate the
+    # remote side is implicitly already held to.
+    local_man, skipped = pubgate.split_allowlist(local_man)
+    if skipped:
+        typer.echo(
+            f"[warn] {len(skipped)} file(s) under .kb/ are not KB artefacts and "
+            f"were not published (allowlist): {', '.join(skipped)}",
+            err=True,
+        )
+    changed, deleted = hashsync.diff_manifests(local_man, remote_man)
+    if not changed and not deleted:
+        typer.echo("nothing to publish — hub snapshot already matches .kb/")
+        return ""
+    typer.echo(f"publishing {len(changed)} changed file(s), {len(deleted)} deletion(s)")
+
+    archive = _build_archive(kb_abs, changed)
+    body, content_type = _multipart(
+        {"source_commit": commit, "deletes": deleted}, archive
+    )
+    status, raw = http(
+        "POST",
+        f"{intake_url.rstrip('/')}/intake/publish",
+        {"Authorization": f"Bearer {token}", "Content-Type": content_type},
+        body,
+    )
+    if status == 0:
+        raise CIPublishError(f"intake unreachable: {_decode(raw)}")
+    if status != 200:
+        try:
+            detail = json.loads(raw).get("detail", "")
+        except (json.JSONDecodeError, AttributeError):
+            detail = _decode(raw[:200] if isinstance(raw, bytes) else raw)
+        raise CIPublishError(f"intake rejected the publish (HTTP {status}): {detail}")
+    pr_url = json.loads(raw).get("pr_url", "")
+    typer.echo(f"PR: {pr_url}" if pr_url else "published (no content change on the hub)")
+    return pr_url

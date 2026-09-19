@@ -26,7 +26,7 @@ WHAT assert_golden() ACTUALLY PROTECTS (kb_search, MCP and CLI alike):
     changes which results fit into the budget, turns the golden red even when
     every other unit test stays green.
   - the "score closely — both may be relevant..." note, which
-    `src/center_kb/mcp.py::_ambiguity_note` only emits when the top two
+    `src/strata_kb/mcp.py::_ambiguity_note` only emits when the top two
     results are both dual-leg ("hybrid") and within `_AMBIGUOUS_MIN_RATIO` of
     each other, or exactly tied. A ranking change that crosses that boundary
     makes the note appear/disappear — golden red even if the order held.

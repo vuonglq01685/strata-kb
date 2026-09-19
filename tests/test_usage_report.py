@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb.usage import prices, report
+from strata_kb.usage import prices, report
 from tests.test_usage_ledger import row
 
 GEN = "2026-08-23T12:00:00Z"

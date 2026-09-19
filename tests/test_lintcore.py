@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import pytest
 
-from center_kb import lintcore
-from center_kb.doctor import Issue
-from center_kb.kbcontext import KBContext, KBRef
-from center_kb.lintcore import (
+from strata_kb import lintcore
+from strata_kb.doctor import Issue
+from strata_kb.kbcontext import KBContext, KBRef
+from strata_kb.lintcore import (
     INLINE_CITE_RE,
     LintReport,
     check_citation_consistency,
@@ -705,7 +705,7 @@ def test_a_bracketed_citation_is_not_also_reported_as_bare():
 
 # --- new-template shared helpers (BA upgrade v2) ---
 
-from center_kb.lintcore import (
+from strata_kb.lintcore import (
     check_open_question_owners,
     check_recommended_sections,
     open_question_rows,
@@ -929,7 +929,7 @@ def test_gap_verifier_rule_does_not_reach_round_four():
 
 
 def test_check_context_tags_rejects_a_tag_no_document_publishes(fed_hub):
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     ctx = KBContext(
         version="abc1234",
@@ -950,7 +950,7 @@ def test_check_context_tags_rejects_a_tag_no_document_publishes(fed_hub):
 
 
 def test_check_context_tags_accepts_a_published_tag(fed_hub):
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     ctx = KBContext(
         version="abc1234",
@@ -962,7 +962,7 @@ def test_check_context_tags_accepts_a_published_tag(fed_hub):
 
 
 def test_check_context_tags_ignores_casing(fed_hub):
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     # searchdb lowercases tags when indexing, so a casing difference has no
     # downstream effect and must not cost a BA an edit.
@@ -976,7 +976,7 @@ def test_check_context_tags_ignores_casing(fed_hub):
 
 
 def test_check_context_tags_suggests_the_nearest_real_tag(fed_hub):
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     ctx = KBContext(
         version="abc1234",
@@ -990,7 +990,7 @@ def test_check_context_tags_suggests_the_nearest_real_tag(fed_hub):
 
 
 def test_check_context_tags_reports_every_unknown_tag(fed_hub):
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     ctx = KBContext(
         version="abc1234",
@@ -1015,8 +1015,8 @@ def test_check_context_tags_is_silent_when_the_vocabulary_is_empty(fed_hub):
     fabricated tag through when the whole federation carries no tags.
     Built the way `test_cli.py::test_tags_on_a_kb_with_no_tags_exits_zero...`
     does: overwrite both fed_hub repos' index.yaml with an empty KBIndex."""
-    from center_kb import models
-    from center_kb.hub import HubHandle
+    from strata_kb import models
+    from strata_kb.hub import HubHandle
 
     for rid in ("arinc-kb", "icao-kb"):
         models.save_yaml_model(
@@ -1040,7 +1040,7 @@ def test_check_context_tags_message_names_the_incomplete_mirror_possibility(
     missing that repo's tags, with no signal left behind. The message must
     therefore name that possibility rather than assert the tag was
     fabricated."""
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     ctx = KBContext(
         version="abc1234",
@@ -1059,7 +1059,7 @@ def test_check_context_tags_incomplete_mirror_caveat_appears_once(fed_hub):
     incomplete-mirror caveat must not repeat per bad tag — it belongs on
     the first issue only; later issues keep the short form (tag, hint,
     `kb tags`, fix instruction)."""
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     ctx = KBContext(
         version="abc1234",

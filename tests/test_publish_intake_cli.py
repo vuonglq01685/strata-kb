@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import cipublish, gitio
-from center_kb import publish as publish_mod
+from strata_kb import cipublish, gitio
+from strata_kb import publish as publish_mod
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -148,7 +148,7 @@ class TestCIPublish:
     def test_nothing_to_publish_when_manifest_matches(self, child, monkeypatch):
         root, _ = child
         self._env(monkeypatch)
-        from center_kb import hashsync
+        from strata_kb import hashsync
 
         local = hashsync.build_manifest(root / ".kb")
         http = FakeHTTP(
@@ -173,7 +173,7 @@ class TestCIPublish:
         token) was archived and POSTed to the intake server on every run."""
         root, _ = child
         self._env(monkeypatch)
-        from center_kb import hashsync
+        from strata_kb import hashsync
 
         (root / ".kb" / "config.yaml").write_text(
             'hub: "https://x-access-token:ghs_SECRET@github.com/org/kb-hub.git"\n',

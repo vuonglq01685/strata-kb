@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from center_kb import federation
+from strata_kb import federation
 
 
 def test_missing_file_returns_empty(tmp_path):

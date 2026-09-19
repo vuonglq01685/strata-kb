@@ -1,0 +1,7 @@
+# The per-ticket context cache is derivable from one full `kb resolve` —
+# never committed (C1). Design and plan files ARE committed.
+*-context.md
+
+# Review artefacts (diffs, reviewer reports) are derivable from git and the
+# review records in the design/plan files — never committed.
+*-review/

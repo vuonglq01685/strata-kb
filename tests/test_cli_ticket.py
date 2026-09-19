@@ -11,8 +11,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb import gitio, kbcontext
-from center_kb.cli import app
+from strata_kb import gitio, kbcontext
+from strata_kb.cli import app
 from tests.conftest import make_stale
 from tests.test_ticketlint import REFS, _build_ticket, _hub
 

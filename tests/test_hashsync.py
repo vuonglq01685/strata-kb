@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import hashsync
+from strata_kb import hashsync
 
 
 def _write(root: Path, rel: str, content: str) -> Path:

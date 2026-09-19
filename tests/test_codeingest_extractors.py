@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from center_kb.codeingest import core
-from center_kb.codeingest.extractors import api as api_ext
-from center_kb.codeingest.extractors import integrations as int_ext
-from center_kb.codeingest.extractors import tree as tree_ext
+from strata_kb.codeingest import core
+from strata_kb.codeingest.extractors import api as api_ext
+from strata_kb.codeingest.extractors import integrations as int_ext
+from strata_kb.codeingest.extractors import tree as tree_ext
 from tests.fixtures_coderepo import build_code_repo
 
 
@@ -394,7 +394,7 @@ class TestTreeExtractor:
 
     def test_console_scripts_are_listed_apart_from_file_entry_points(self, repo):
         # Reviewer G-16: `[project.scripts]` keys were mixed into a list of
-        # file paths, so a bare `kb` sat next to `src/center_kb/web/app.py`.
+        # file paths, so a bare `kb` sat next to `src/strata_kb/web/app.py`.
         (repo / "pyproject.toml").write_text(
             '[project]\nname = "airspace"\nversion = "1.0.0"\n'
             'dependencies = ["fastapi>=0.110"]\n'
@@ -417,7 +417,7 @@ class TestTreeExtractor:
         assert f"Detected entry points:\n\n- {rel}\n" in s.l2_md
 
 
-from center_kb.codeingest.extractors import deps as deps_ext
+from strata_kb.codeingest.extractors import deps as deps_ext
 
 
 class TestDepsExtractor:
@@ -1112,7 +1112,7 @@ class TestFrameworkLookup:
         assert deps_ext.detect_frameworks(["github.com/gin-gonic/gin"]) == ["Gin"]
 
 
-from center_kb.codeingest.extractors import services as svc_ext
+from strata_kb.codeingest.extractors import services as svc_ext
 
 
 class TestServicesExtractor:
@@ -1305,7 +1305,7 @@ class TestServicesExtractor:
         # collapses a fully non-Latin name to an empty string, giving
         # id="svc." and title="" -- an unparseable "## svc. " heading that
         # made `kb build` fail. slugify_id() keeps non-ASCII scripts intact.
-        from center_kb import mdutils
+        from strata_kb import mdutils
 
         root = tmp_path / "unicode"
         root.mkdir()
@@ -1683,7 +1683,7 @@ class TestServicesExtractor:
         # through the real L2/L3 rendering `core.run()` uses
         # (`core._render_group` + `mdutils.slice_section`), not just a
         # regex match on a hand-assembled heading string.
-        from center_kb import mdutils
+        from strata_kb import mdutils
 
         root = tmp_path / "emptykey"
         root.mkdir()
@@ -1712,7 +1712,7 @@ class TestServicesExtractor:
         # is falsy" from "name is all whitespace" and would catch an
         # implementation that checked `if not name` instead of
         # `if not name.strip()`.
-        from center_kb import mdutils
+        from strata_kb import mdutils
 
         root = tmp_path / "whitespace"
         root.mkdir()
@@ -2038,7 +2038,7 @@ class TestServicesExtractor:
         (root / "Dockerfile").write_text(
             "FROM python:3.12-slim AS build\nRUN pip install build\n"
             "FROM python:3.12-slim\nEXPOSE 8321\n"
-            'CMD ["python", "-m", "center_kb.mcp", \\\n     "--transport", "http"]\n',
+            'CMD ["python", "-m", "strata_kb.mcp", \\\n     "--transport", "http"]\n',
             encoding="utf-8",
         )
         (root / ".env").write_text("SECRET=hunter2\n", encoding="utf-8")
@@ -2047,7 +2047,7 @@ class TestServicesExtractor:
         assert "Container `hub` — built from `Dockerfile` (base `python:3.12-slim`)." in s.l2_md
         assert "| Image | build: Dockerfile (FROM python:3.12-slim) |" in s.l2_md
         assert "| Ports | 8321 |" in s.l2_md
-        assert "| Command | python -m center_kb.mcp --transport http |" in s.l2_md
+        assert "| Command | python -m strata_kb.mcp --transport http |" in s.l2_md
         assert "| Env file | .env |" in s.l2_md
         assert "| Technology | Python |" in s.l2_md
         assert "| Source | docker-compose.yml, Dockerfile |" in s.l2_md
@@ -2296,7 +2296,7 @@ class TestServicesExtractor:
         assert "leak" not in (s.l2_md + s.l3_md)
 
 
-from center_kb.codeingest.extractors import commands as cmd_ext
+from strata_kb.codeingest.extractors import commands as cmd_ext
 
 
 class TestCommandsExtractor:
@@ -2679,8 +2679,8 @@ class TestCommandsExtractor:
             # but the last two wrongly (`/dev/null` ⊃ dev, `:latest` ⊃ test).
             ('code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)', None),
             ('pip install "ruff>=0.15,<0.16"', None),
-            ("-e CENTER_KB_HTTP_TOKEN=smoke-test-token", None),
-            ("--tag ghcr.io/vuonglq01685/center-kb:latest", None),
+            ("-e STRATA_KB_HTTP_TOKEN=smoke-test-token", None),
+            ("--tag ghcr.io/vuonglq01685/strata-kb:latest", None),
             ('echo "starting deployment"', None),
             ("aws s3 cp devops.txt s3://bucket", None),
             ("bash scripts/gate.sh", None),
@@ -2800,7 +2800,7 @@ class TestCommandsExtractor:
             ("smoke-test-token", None),
             ("devops.txt", None),
             ("/dev/null", None),
-            ("center-kb:latest", None),
+            ("strata-kb:latest", None),
             ("starting", None),
             ("ruff>=0.15", None),
             # Containment (user-approved): the separator rule reopened an
@@ -3066,7 +3066,7 @@ class TestCommandsExtractor:
 
 import sqlite3
 
-from center_kb.codeingest.extractors import schema as schema_ext
+from strata_kb.codeingest.extractors import schema as schema_ext
 
 
 class TestSchemaExtractor:

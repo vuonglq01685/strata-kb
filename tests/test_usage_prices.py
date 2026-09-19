@@ -5,7 +5,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from center_kb.usage import prices
+from strata_kb.usage import prices
 from tests.test_usage_ledger import row
 
 

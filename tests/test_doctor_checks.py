@@ -5,19 +5,19 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
+from strata_kb import models
+from strata_kb.cli import app
 
 runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
 def _no_hub_env(monkeypatch):
-    """`--hub` carries envvar="CENTER_KB_HUB" -- without this, a dev/CI box
+    """`--hub` carries envvar="STRATA_KB_HUB" -- without this, a dev/CI box
     with that variable set would resolve a different hub than every test
     here assumes, silently. No global scrub exists in conftest.py today;
     fixed once in this file since Tasks 3-6 all extend it."""
-    monkeypatch.delenv("CENTER_KB_HUB", raising=False)
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
 
 
 def _minimal_kb(root: Path, kind: str = "child") -> Path:
@@ -60,7 +60,7 @@ def test_doctor_reports_an_unreadable_upstream_config_instead_of_skipping(
     "multi-tier checks skipped" warning first) — neither is optional
     plumbing here, both gate reaching the block under test.
     """
-    from center_kb import config as config_mod
+    from strata_kb import config as config_mod
 
     kb = _minimal_kb(tmp_path, kind="hub")
     (tmp_path / "hub" / ".kb").mkdir(parents=True)
@@ -90,7 +90,7 @@ def test_doctor_reports_unreadable_own_config_instead_of_a_traceback(
     check_kind's to catch -- before the reorder, _hub_or_exit's broader
     (*_CONFIG_READ_ERRORS, OSError) guard caught it first; check_kind's
     narrower (yaml.YAMLError, ValidationError) clause let it escape."""
-    from center_kb import config as config_mod
+    from strata_kb import config as config_mod
 
     kb = _minimal_kb(tmp_path)
 
@@ -169,7 +169,7 @@ def test_duplicate_section_id_across_files_within_a_doc_is_an_error(tmp_path):
     slice_section(occurrence=)). The real ambiguity is a citation `doc#<id>`
     that cannot say which FILE it meant, so the illegal case needs two
     different `file:` values."""
-    from center_kb import doctor
+    from strata_kb import doctor
 
     kb = _minimal_kb(tmp_path)
     d = kb / "d1"
@@ -205,7 +205,7 @@ def test_duplicate_section_id_in_the_same_file_is_legal_but_warns(tmp_path):
     occurrence of a within-file repeat is legal, builds, publishes, and is
     permanently unreachable by citation -- doctor now WARNS about that
     instead of staying silent."""
-    from center_kb import doctor
+    from strata_kb import doctor
 
     kb = _minimal_kb(tmp_path)
     _doc_with(
@@ -234,7 +234,7 @@ def test_titleless_l2_subheading_is_not_flagged_as_orphan(tmp_path):
     must hold for doctor's orphan-heading check too, not just kb build's.
     The title-less heading is only in the .md; .raw.md gets no exemption
     (it isn't tested here because it isn't the point of this test)."""
-    from center_kb import doctor
+    from strata_kb import doctor
 
     kb = _minimal_kb(tmp_path)
     d = kb / "d1"
@@ -261,7 +261,7 @@ def test_titleless_l2_subheading_is_not_flagged_as_orphan(tmp_path):
 
 
 def test_heading_absent_from_the_manifest_is_an_error(tmp_path):
-    from center_kb import doctor
+    from strata_kb import doctor
 
     kb = _minimal_kb(tmp_path)
     _doc_with(
@@ -286,7 +286,7 @@ def test_stale_token_counts_are_a_warning(tmp_path):
     the next `kb build`) -- error would turn doctor red after every routine
     `kb svc note`. Still reported (review row #9's actual drift case), just
     not at a level that fails a healthy day-to-day workflow."""
-    from center_kb import doctor
+    from strata_kb import doctor
 
     kb = _minimal_kb(tmp_path)
     _doc_with(
@@ -308,7 +308,7 @@ def test_stale_token_counts_are_a_warning(tmp_path):
 
 def test_tampered_hub_content_is_an_error(tmp_path):
     """M9 row #18: editing a published L2 file in place used to pass."""
-    from center_kb import doctor, federation
+    from strata_kb import doctor, federation
 
     fed = tmp_path / "hub" / "federation"
     entry = fed / "child"
@@ -350,7 +350,7 @@ def test_tampered_leaf_index_yaml_is_detected(tmp_path):
     revisions, tags and L0 summaries /api/docs, the /ui overview and search
     serve. Tamper only that file (leave doc content alone) and the digest
     must still move."""
-    from center_kb import doctor, federation
+    from strata_kb import doctor, federation
 
     fed = tmp_path / "hub" / "federation"
     entry = fed / "child"
@@ -390,7 +390,7 @@ def test_tampered_leaf_index_yaml_is_detected(tmp_path):
 
 def test_a_snapshot_without_a_stored_digest_is_skipped_with_a_note(tmp_path):
     """Pre-0.24 hubs stay green: absent field is not a failure."""
-    from center_kb import doctor, federation
+    from strata_kb import doctor, federation
 
     fed = tmp_path / "hub" / "federation"
     entry = fed / "child"
@@ -422,7 +422,7 @@ def test_fed_tree_digest_ignores_line_ending_differences(tmp_path):
     tree (neutralize_line_endings runs on clone, never on pull) -- a
     byte-identical tree must not read as tamper drift just because its
     line endings differ from what was hashed at publish time."""
-    from center_kb import doctor
+    from strata_kb import doctor
 
     lf_root = tmp_path / "lf"
     crlf_root = tmp_path / "crlf"
@@ -441,7 +441,7 @@ def test_fed_tree_digest_ignores_line_ending_differences(tmp_path):
 def test_kb_tree_digest_ignores_line_ending_differences(tmp_path):
     """Same H3c self-heal, other digest (_kb_tree_digest, the local-vs-
     published compare)."""
-    from center_kb import doctor
+    from strata_kb import doctor
 
     lf_root = tmp_path / "lf" / ".kb"
     crlf_root = tmp_path / "crlf" / ".kb"
@@ -469,7 +469,7 @@ def test_fed_tree_digest_folds_in_string_sorted_order_not_path_order(tmp_path):
     folded in string order, and this test pins the function to the latter."""
     import hashlib
 
-    from center_kb import doctor
+    from strata_kb import doctor
 
     (tmp_path / "doc-a").mkdir()
     (tmp_path / "DOC-B").mkdir()

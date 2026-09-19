@@ -1,4 +1,4 @@
-"""tools/list is a HARD contract with every agent plugged into center-kb.
+"""tools/list is a HARD contract with every agent plugged into strata-kb.
 
 WHAT RED MEANS: you just changed the MCP surface. If that was deliberate, re-run
 with UPDATE_GOLDEN=1 and commit the new golden file — it will show up plainly in
@@ -36,7 +36,7 @@ def _snapshot(tools) -> dict:
     # (every unused field is None), but any field that gets SET later will show
     # up in the snapshot.
     #
-    # Normalizing "description" here is no longer needed: src/center_kb/mcp.py now
+    # Normalizing "description" here is no longer needed: src/strata_kb/mcp.py now
     # cleandoc()s the docstring itself at tool-registration time (see
     # _canonical_docstring in create_server), so the on-the-wire description is
     # already stable across Python versions AT THE SOURCE — the golden compares

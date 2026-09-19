@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from center_kb.cli import app
+from strata_kb.cli import app
 
 runner = CliRunner()
 
@@ -18,7 +18,7 @@ def test_query_reads_federation_only(fed_hub, fixture_kb):
 
 
 def test_query_without_hub_config_errors_with_guide(fixture_kb, monkeypatch):
-    monkeypatch.delenv("CENTER_KB_HUB", raising=False)
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
     result = runner.invoke(
         app, ["query", "anything", "--kb-dir", str(fixture_kb)]
     )
@@ -27,7 +27,7 @@ def test_query_without_hub_config_errors_with_guide(fixture_kb, monkeypatch):
 
 
 def test_query_hub_from_config_file(fed_hub, fixture_kb, monkeypatch):
-    monkeypatch.delenv("CENTER_KB_HUB", raising=False)
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
     (fixture_kb / "config.yaml").write_text(f"hub: {fed_hub}\n", encoding="utf-8")
     result = runner.invoke(
         app, ["query", "restrictive airspace", "--kb-dir", str(fixture_kb)]
@@ -67,8 +67,8 @@ def test_query_warns_when_the_hub_cache_is_stale(fed_hub, fixture_kb, monkeypatc
     duplicate one from `stale_hub_note` (which stays MCP/REST-only). Not
     falsifiable against this task's own changes (cli.py is untouched), only
     against a future regression in `_hub_or_exit`'s existing warning."""
-    from center_kb import hub as hub_mod
-    from center_kb.hub import HubHandle
+    from strata_kb import hub as hub_mod
+    from strata_kb.hub import HubHandle
 
     monkeypatch.setattr(
         hub_mod, "resolve_hub",
@@ -85,8 +85,8 @@ def test_query_warns_when_the_hub_cache_is_stale(fed_hub, fixture_kb, monkeypatc
 
 def test_get_warns_when_the_hub_cache_is_stale(fed_hub, fixture_kb, monkeypatch):
     """Same as test_query_warns_when_the_hub_cache_is_stale, for `get`."""
-    from center_kb import hub as hub_mod
-    from center_kb.hub import HubHandle
+    from strata_kb import hub as hub_mod
+    from strata_kb.hub import HubHandle
 
     monkeypatch.setattr(
         hub_mod, "resolve_hub",
@@ -101,7 +101,7 @@ def test_get_warns_when_the_hub_cache_is_stale(fed_hub, fixture_kb, monkeypatch)
 
 
 def test_reindex_repairs_aggregate_index(git_kb, hub_worktree):
-    from center_kb.publish import publish
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
     (hub_worktree / "federation" / "index.yaml").write_text(
@@ -111,7 +111,7 @@ def test_reindex_repairs_aggregate_index(git_kb, hub_worktree):
         app, ["reindex", "--hub", str(hub_worktree), "--kb-dir", str(git_kb["kb"])]
     )
     assert result.exit_code == 0
-    from center_kb import models
+    from strata_kb import models
 
     idx = models.load_yaml_model(
         hub_worktree / "federation" / "index.yaml", models.FederationIndex
@@ -120,7 +120,7 @@ def test_reindex_repairs_aggregate_index(git_kb, hub_worktree):
 
 
 def test_publish_cli_prints_pr_url(git_kb, hub_worktree, monkeypatch):
-    from center_kb import publish as publish_mod
+    from strata_kb import publish as publish_mod
 
     calls: dict = {}
 
@@ -154,7 +154,7 @@ def test_reindex_builds_search_db(fed_hub, git_kb):
 def test_reindex_commits_index_before_search_sync(fed_hub, git_kb, run_git, monkeypatch):
     # a sync (embed) blowup must still surface the error, but the rebuilt
     # federation/index.yaml must not sit uncommitted — commit first, sync after
-    from center_kb import searchdb as searchdb_mod
+    from strata_kb import searchdb as searchdb_mod
 
     (fed_hub / "federation" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     run_git(fed_hub, "add", "-A")
@@ -181,7 +181,7 @@ def test_reindex_push_threads_the_hub_token(tmp_path, run_git, monkeypatch, git_
     import hashlib
     import time
 
-    from center_kb import gitio
+    from strata_kb import gitio
 
     origin = tmp_path / "hub-origin.git"
     run_git(tmp_path, "init", "--bare", str(origin))
@@ -199,7 +199,7 @@ def test_reindex_push_threads_the_hub_token(tmp_path, run_git, monkeypatch, git_
     fake_hub_ref = "https://x-access-token:ghs_REINDEXTOKEN@example.invalid/hub.git"
     stripped = "https://example.invalid/hub.git"
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     key = hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)
@@ -240,7 +240,7 @@ def test_reindex_push_threads_the_hub_token(tmp_path, run_git, monkeypatch, git_
 def test_cli_publish_hub_kind_dispatches_federation(tmp_path, run_git, monkeypatch):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
     from tests.conftest import make_fed_entry
     from tests.test_publish_hub import _git_repo
 
@@ -267,7 +267,7 @@ def test_cli_publish_hub_kind_dispatches_federation(tmp_path, run_git, monkeypat
 def test_cli_publish_root_hub_without_upstream_errors(tmp_path, run_git):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
     from tests.test_publish_hub import _git_repo
 
     root_hub = tmp_path / "root-hub"
@@ -305,7 +305,7 @@ def test_doctor_hub_kind_without_self_entry_stays_green(tmp_path, run_git, monke
         "kind: hub\nrepo_id: hub-self\nhub: .\n", encoding="utf-8", newline="\n"
     )
     (hub / "federation").mkdir()
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     write_federation_index(hub / "federation")
     _git_repo(run_git, hub)
@@ -378,7 +378,7 @@ def test_doctor_hub_kind_self_entry_digest_compare_runs(tmp_path, run_git, monke
 def test_cli_publish_hub_kind_self_hub_publishes_own_kb(tmp_path, run_git):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
     from tests.test_publish_hub import _git_repo
 
     hub = tmp_path / "hub"
@@ -416,7 +416,7 @@ def test_cli_publish_hub_kind_self_hub_publishes_own_kb(tmp_path, run_git):
 def test_cli_publish_hub_kind_self_hub_dot_from_other_cwd(tmp_path, run_git, monkeypatch):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
     from tests.test_publish_hub import _git_repo
 
     hub = tmp_path / "hub2"
@@ -448,7 +448,7 @@ def test_cli_publish_hub_kind_self_hub_dot_from_other_cwd(tmp_path, run_git, mon
 def test_cli_publish_hub_kind_intake_without_direct_or_pr_errors(tmp_path, run_git):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
     from tests.test_publish_hub import _git_repo
 
     root_hub = tmp_path / "root-hub-intake"
@@ -519,7 +519,7 @@ def test_hub_to_hub_publish_gate_refusal_is_one_line_not_a_traceback(
     hub has a remote `gh` cannot open a PR against. Mutation-proven in this
     round: narrowing this branch's tuple back to `except
     (publish_mod.PublishError,)` turns this test red."""
-    from center_kb import ghio
+    from strata_kb import ghio
     from tests.conftest import make_fed_entry
     from tests.test_publish_hub import _git_repo
 

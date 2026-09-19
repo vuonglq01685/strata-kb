@@ -21,8 +21,8 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.testclient import TestClient
 
-from center_kb import ghapp, intake
-from center_kb.web import intake_routes
+from strata_kb import ghapp, intake
+from strata_kb.web import intake_routes
 
 AUD = "https://kb.test"
 
@@ -315,8 +315,8 @@ def test_manifest_and_status_503_not_500_on_a_locked_hub_cache(
     _git(seed, "push", "-u", "origin", "HEAD")
 
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
-    from center_kb import hub as hub_mod
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
+    from strata_kb import hub as hub_mod
 
     key = hub_mod.cache_key(str(bare))
     legacy = cache_base / key
@@ -377,7 +377,7 @@ def _run_two_publishes_concurrently(app, pem, monkeypatch):
     scratchpad) that combination reliably HANGS one of the two threads
     once the request carries a real multipart file upload (works fine for
     a bodyless GET, reproduced the hang with a minimal Starlette app with
-    no center_kb code at all, so this is a TestClient/threading fragility,
+    no strata_kb code at all, so this is a TestClient/threading fragility,
     not a bug in the routes under test). httpx.AsyncClient over
     httpx.ASGITransport, driven from one anyio task group in a single
     event loop, exercises the exact same ASGI app and ran the same
@@ -486,7 +486,7 @@ def test_publish_concurrency_control_overlaps_when_the_limiter_allows_it(
 
 def test_auth_middleware_exempts_exact_intake_paths_only():
     """No prefix wildcard: a future /intake/* route must not be exposed by accident."""
-    from center_kb.web import auth
+    from strata_kb.web import auth
 
     assert all(not p.startswith("/intake") for p in auth.EXEMPT_PREFIXES)
     for path in ("/intake/publish", "/intake/manifest", "/intake/status"):
@@ -520,7 +520,7 @@ def test_publish_invalid_registry_503(client, hub_with_registry):
 
 
 def test_publish_rate_limited_429(hub_with_registry, keypair, tmp_path, monkeypatch):
-    from center_kb.web.ratelimit import SlidingWindowLimiter
+    from strata_kb.web.ratelimit import SlidingWindowLimiter
 
     pem, pub = keypair
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
@@ -557,7 +557,7 @@ def test_route_wires_trusted_proxies_into_the_rate_limit_key(
     the SAME bucket (429 on repeat) when trusted_proxies=1, and a request
     with a DIFFERENT real tail gets its own bucket instead of also being
     blocked."""
-    from center_kb.web.ratelimit import SlidingWindowLimiter
+    from strata_kb.web.ratelimit import SlidingWindowLimiter
 
     pem, pub = keypair
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
@@ -651,7 +651,7 @@ def test_publish_cancelled_mid_publish_still_reaches_a_terminal_status(
 
 
 def test_publish_git_error_maps_502_and_records_error(client, monkeypatch):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     def boom(*args, **kwargs):
         raise gitio.GitError("boom")
@@ -676,7 +676,7 @@ def full_stack(hub_with_registry, keypair, tmp_path, monkeypatch):
     from starlette.responses import JSONResponse
     from starlette.routing import Route
 
-    from center_kb.web.auth import TokenAuthMiddleware
+    from strata_kb.web.auth import TokenAuthMiddleware
 
     pem, pub = keypair
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
@@ -753,13 +753,13 @@ def test_stack_non_intake_route_still_requires_mcp_token(full_stack):
 
 
 def test_intake_config_from_env(tmp_path, monkeypatch):
-    monkeypatch.delenv("CENTER_KB_GH_APP_ID", raising=False)
+    monkeypatch.delenv("STRATA_KB_GH_APP_ID", raising=False)
     assert intake.intake_config_from_env("hub") is None
     pem_path = tmp_path / "app.pem"
     pem_path.write_text("PEM", encoding="utf-8")
-    monkeypatch.setenv("CENTER_KB_GH_APP_ID", "1234")
-    monkeypatch.setenv("CENTER_KB_GH_APP_KEY", str(pem_path))
-    monkeypatch.setenv("CENTER_KB_INTAKE_AUDIENCE", AUD)
+    monkeypatch.setenv("STRATA_KB_GH_APP_ID", "1234")
+    monkeypatch.setenv("STRATA_KB_GH_APP_KEY", str(pem_path))
+    monkeypatch.setenv("STRATA_KB_INTAKE_AUDIENCE", AUD)
     cfg = intake.intake_config_from_env("hub")
     assert cfg is not None
     assert cfg.creds.app_id == "1234"
@@ -767,22 +767,22 @@ def test_intake_config_from_env(tmp_path, monkeypatch):
     assert cfg.audience == AUD
     assert cfg.trusted_proxies == 0  # default -- X-Forwarded-For ignored
     # broken PEM path → None (fail closed), no raise
-    monkeypatch.setenv("CENTER_KB_GH_APP_KEY", str(tmp_path / "missing.pem"))
+    monkeypatch.setenv("STRATA_KB_GH_APP_KEY", str(tmp_path / "missing.pem"))
     assert intake.intake_config_from_env("hub") is None
 
 
 def _env_for_trusted_proxies(tmp_path, monkeypatch):
-    """Shared valid GH App env so only CENTER_KB_TRUSTED_PROXIES varies."""
+    """Shared valid GH App env so only STRATA_KB_TRUSTED_PROXIES varies."""
     pem_path = tmp_path / "app.pem"
     pem_path.write_text("PEM", encoding="utf-8")
-    monkeypatch.setenv("CENTER_KB_GH_APP_ID", "1234")
-    monkeypatch.setenv("CENTER_KB_GH_APP_KEY", str(pem_path))
-    monkeypatch.setenv("CENTER_KB_INTAKE_AUDIENCE", AUD)
+    monkeypatch.setenv("STRATA_KB_GH_APP_ID", "1234")
+    monkeypatch.setenv("STRATA_KB_GH_APP_KEY", str(pem_path))
+    monkeypatch.setenv("STRATA_KB_INTAKE_AUDIENCE", AUD)
 
 
 def test_trusted_proxies_env_valid_value_is_parsed(tmp_path, monkeypatch):
     _env_for_trusted_proxies(tmp_path, monkeypatch)
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "2")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "2")
     cfg = intake.intake_config_from_env("hub")
     assert cfg is not None
     assert cfg.trusted_proxies == 2
@@ -794,10 +794,10 @@ def test_trusted_proxies_env_non_numeric_exits_loudly(tmp_path, monkeypatch):
     silently fall back to 0 -- a silent fallback would silently defeat an
     operator's declared trusted-proxy count."""
     _env_for_trusted_proxies(tmp_path, monkeypatch)
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "not-a-number")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "not-a-number")
     with pytest.raises(SystemExit) as exc:
         intake.intake_config_from_env("hub")
-    assert "CENTER_KB_TRUSTED_PROXIES" in str(exc.value)
+    assert "STRATA_KB_TRUSTED_PROXIES" in str(exc.value)
     assert "not-a-number" in str(exc.value)
 
 
@@ -807,10 +807,10 @@ def test_trusted_proxies_env_negative_exits_loudly(tmp_path, monkeypatch):
     failure exists to prevent, so it must be rejected too, not just
     non-numeric garbage."""
     _env_for_trusted_proxies(tmp_path, monkeypatch)
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "-1")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "-1")
     with pytest.raises(SystemExit) as exc:
         intake.intake_config_from_env("hub")
-    assert "CENTER_KB_TRUSTED_PROXIES" in str(exc.value)
+    assert "STRATA_KB_TRUSTED_PROXIES" in str(exc.value)
 
 
 def test_oversized_upload_is_refused_without_buffering_the_whole_body():
@@ -860,7 +860,7 @@ def test_chunked_oversized_body_with_no_content_length_is_still_capped(
     detail text and the numeric cap both changed from round 1's version of
     this test.
     """
-    from center_kb.web import intake_routes
+    from strata_kb.web import intake_routes
 
     pem, _ = keypair
     intake_cfg.max_tar_bytes = 1024
@@ -897,7 +897,7 @@ def test_chunked_oversized_body_with_no_content_length_is_still_capped(
 
 
 def test_forwarded_for_is_ignored_by_default():
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff="1.2.3.4, 10.0.0.9")
     assert ratelimit.client_key(request, trusted_proxies=0) == "10.0.0.1"
@@ -915,14 +915,14 @@ def test_forwarded_for_is_honoured_behind_a_declared_proxy():
     NOTE: with exactly two entries, hops[-1] == hops[1], so this alone
     cannot distinguish right-indexing from an off-by-one left-indexed
     implementation -- see the three-entry case below, which does."""
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff="1.2.3.4, 10.0.0.9")
     assert ratelimit.client_key(request, trusted_proxies=1) == "10.0.0.9"
 
 
 def test_forwarded_for_shorter_than_the_proxy_chain_falls_back_to_the_peer():
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff="1.2.3.4")
     assert ratelimit.client_key(request, trusted_proxies=3) == "10.0.0.1"
@@ -941,7 +941,7 @@ def test_forwarded_for_three_entries_separates_right_from_left_indexing():
     The two-entry test above cannot tell these apart (hops[-1] == hops[1]
     when there are only two hops); this one can, and is the case a
     well-meaning "simplify the indexing" refactor would actually break."""
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff="1.1.1.1, 2.2.2.2, 3.3.3.3")
     assert ratelimit.client_key(request, trusted_proxies=1) == "3.3.3.3"
@@ -954,7 +954,7 @@ def test_forwarded_for_multiple_header_lines_are_joined_before_indexing():
     would return only the client's forged first line and never see the
     proxy's line at all; getlist() + per-line split collects both before
     indexing from the right."""
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff_lines=["1.1.1.1", "2.2.2.2, 9.9.9.9"])
     assert ratelimit.client_key(request, trusted_proxies=1) == "9.9.9.9"
@@ -970,7 +970,7 @@ def test_forwarded_for_multiple_header_lines_are_joined_before_indexing():
     ],
 )
 def test_forwarded_for_degenerate_header_falls_back_to_the_peer(xff_lines):
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff_lines=xff_lines)
     assert ratelimit.client_key(request, trusted_proxies=1) == "10.0.0.1"
@@ -980,7 +980,7 @@ def test_forwarded_for_negative_trusted_proxies_falls_back_to_the_peer():
     """Mirrors the `trusted_proxies <= 0` guard -- a negative value must be
     as inert as 0, never trust the header, and never raise (e.g. from a
     negative list index)."""
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff="1.1.1.1, 2.2.2.2")
     assert ratelimit.client_key(request, trusted_proxies=-1) == "10.0.0.1"
@@ -990,7 +990,7 @@ def test_forwarded_for_non_ip_hop_falls_back_to_the_peer():
     """The selected hop becomes an unvalidated dict key logged verbatim for
     an unauthenticated caller -- a hop that isn't even a parseable IP is
     malformed by definition and must not be trusted as the rate-limit key."""
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host="10.0.0.1", xff="<script>alert(1)</script>")
     assert ratelimit.client_key(request, trusted_proxies=1) == "10.0.0.1"
@@ -999,7 +999,7 @@ def test_forwarded_for_non_ip_hop_falls_back_to_the_peer():
 def test_client_key_no_socket_peer_returns_unknown():
     """request.client is None (e.g. a raw ASGI test double, or certain
     embedded transports) must not raise -- falls back to the sentinel."""
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     request = _request(client_host=None)
     assert ratelimit.client_key(request, trusted_proxies=0) == "unknown"
@@ -1319,7 +1319,7 @@ def test_capped_request_is_closed_exactly_once_on_bad_meta_400(
     substitutes the `Request` class `_parse_capped_form` calls (module-level
     name in intake_routes, not the original inbound request's own class) so
     only the CAPPED request's close() is counted."""
-    from center_kb.web import intake_routes as ir
+    from strata_kb.web import intake_routes as ir
 
     close_calls: list[int] = []
 
@@ -1342,7 +1342,7 @@ def test_capped_request_is_closed_exactly_once_on_bad_meta_400(
 def test_capped_request_is_closed_exactly_once_on_success(
     hub_with_registry, keypair, tmp_path, monkeypatch
 ):
-    from center_kb.web import intake_routes as ir
+    from strata_kb.web import intake_routes as ir
 
     close_calls: list[int] = []
 

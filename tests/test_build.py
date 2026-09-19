@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from center_kb import models
-from center_kb.build import build_kb
+from strata_kb import models
+from strata_kb.build import build_kb
 
 
 def test_build_ok_on_valid_kb(fixture_kb: Path):
@@ -213,7 +213,7 @@ def test_build_allows_l2_table_when_l3_has_no_tables(fixture_kb):
     """R6 guard, direction 1: L3 has no table at all for this section (§1.2,
     table-free in both files) -- an L2 table added on top of it must not be
     flagged, since there is no L3 table to have diverged from."""
-    from center_kb.mdutils import extract_tables, slice_section
+    from strata_kb.mdutils import extract_tables, slice_section
 
     l3_text = _l3(fixture_kb).read_text(encoding="utf-8")
     l3_slice = slice_section(l3_text, "1.2")
@@ -242,7 +242,7 @@ def test_build_rejects_l2_missing_the_l3_table(fixture_kb):
     assert any("§1.1" in e and "missing or altered in L2" in e for e in errs)
 
 
-from center_kb import quality
+from strata_kb import quality
 
 LONG = " ".join(f"Sentence number {i} explains the record layout in detail." for i in range(10))
 
@@ -294,7 +294,7 @@ def test_l3_hash_drift_is_an_error(fixture_kb):
 
 
 def test_l3_hash_matching_is_silent(fixture_kb):
-    from center_kb.mdutils import slice_section
+    from strata_kb.mdutils import slice_section
     mpath = fixture_kb / "demo-doc" / "_manifest.yaml"
     m = models.load_yaml_model(mpath, models.Manifest)
     l3 = _l3(fixture_kb).read_text(encoding="utf-8")
@@ -313,7 +313,7 @@ def test_reviewed_l2_hash_drift_is_an_error(fixture_kb):
 
 
 def test_reviewed_l2_hash_matching_is_silent(fixture_kb):
-    from center_kb.mdutils import slice_section
+    from strata_kb.mdutils import slice_section
 
     mpath = fixture_kb / "demo-doc" / "_manifest.yaml"
     m = models.load_yaml_model(mpath, models.Manifest)
@@ -347,7 +347,7 @@ def test_l3_hash_drift_respects_occurrence_for_duplicate_ids(fixture_kb):
     headings in the same file). Each row's l3_sha256 must be checked against
     the slice at its OWN occurrence, not always occurrence 0 -- otherwise
     duplicate-id sections produce spurious drift errors."""
-    from center_kb.mdutils import heading_occurrences, slice_section
+    from strata_kb.mdutils import heading_occurrences, slice_section
 
     dup_l2 = "\n\n## 1.2 Airway Records\n\nSecond airway paragraph, continued route identifiers.\n"
     dup_l3 = "\n\n## 1.2 Airway Records\n\nSecond full airway paragraph, continued route identifiers text.\n"

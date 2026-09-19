@@ -29,11 +29,11 @@ import pytest
 
 pytest.importorskip("sqlite_vec")
 
-from center_kb import searchdb
-from center_kb.hub import HubHandle
+from strata_kb import searchdb
+from strata_kb.hub import HubHandle
 
 # No `__main__` module in the package: reach the Typer app directly.
-_KB = [sys.executable, "-c", "from center_kb.cli import app; app()"]
+_KB = [sys.executable, "-c", "from strata_kb.cli import app; app()"]
 
 
 def _run_query(fed_hub) -> subprocess.CompletedProcess:

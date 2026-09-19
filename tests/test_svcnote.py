@@ -3,10 +3,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from center_kb import models, svcnote
-from center_kb.build import build_kb
-from center_kb.cli import app
-from center_kb.codeingest import core
+from strata_kb import models, svcnote
+from strata_kb.build import build_kb
+from strata_kb.cli import app
+from strata_kb.codeingest import core
 from tests.fixtures_coderepo import build_code_repo
 
 runner = CliRunner()

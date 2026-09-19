@@ -55,7 +55,7 @@ def test_a_header_the_wrapped_app_already_set_is_not_duplicated():
     `.lower()` call free to be deleted without failing this test."""
     from starlette.testclient import TestClient
 
-    from center_kb.web.headers import SecurityHeadersMiddleware
+    from strata_kb.web.headers import SecurityHeadersMiddleware
 
     async def app(scope, receive, send):
         await send(

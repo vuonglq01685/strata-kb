@@ -1,3 +1,0 @@
-# The per-ticket context cache is derivable from one full `kb resolve` —
-# never committed (C1). Design and plan files ARE committed.
-*-context.md

@@ -1,7 +1,7 @@
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
+from strata_kb import models
+from strata_kb.cli import app
 
 runner = CliRunner()
 
@@ -246,7 +246,7 @@ def test_approve_all_changed_blocked_by_unrelated_doc_error(git_kb, run_git):
 
 
 def test_build_fails_after_l2_edit_post_approval(git_kb, run_git):
-    from center_kb.build import build_kb
+    from strata_kb.build import build_kb
 
     assert runner.invoke(app, ["approve", "demo-doc", "--kb-dir", str(git_kb["kb"])]).exit_code == 0
     l2 = git_kb["kb"] / "demo-doc" / "ch1-records.md"

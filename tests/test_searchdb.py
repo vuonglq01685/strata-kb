@@ -6,9 +6,9 @@ import pytest
 
 sqlite_vec = pytest.importorskip("sqlite_vec")
 
-from center_kb import models, searchdb
-from center_kb.federation import FederationMeta
-from center_kb.hub import HubHandle
+from strata_kb import models, searchdb
+from strata_kb.federation import FederationMeta
+from strata_kb.hub import HubHandle
 from tests.conftest import FakeEmbedder, make_fed_entry
 
 
@@ -216,7 +216,7 @@ def test_delete_db_held_file_raises_index_busy_error(tmp_path, monkeypatch):
     # F-C2 review fix: exercise the raise site itself, not just the CLI
     # handler — a still-held file must become a clean IndexBusyError naming
     # the file, never the raw PermissionError from hashsync.unlink_force.
-    from center_kb import hashsync
+    from strata_kb import hashsync
 
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
@@ -235,7 +235,7 @@ def test_delete_db_survives_file_vanishing_between_exists_and_unlink(tmp_path, m
     # delete_db (or SQLite's own -wal/-shm cleanup) can remove the file
     # between the exists() check and unlink_force's unlink(); that must be
     # treated as "already gone", not surfaced as a raw FileNotFoundError.
-    from center_kb import hashsync
+    from strata_kb import hashsync
 
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
@@ -340,7 +340,7 @@ def test_bm25_title_match_outranks_l3_only_match(fed_hub, tmp_path):
         l2="## 2.1 Unrelated Title\n\nUnrelated condensed.\n",
         l3="## 2.1 Unrelated Title\n\ncorridor corridor corridor mentioned in raw.\n",
     )
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     write_federation_index(fed)
     hub = HubHandle(root=fed_hub)
@@ -726,7 +726,7 @@ def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
 def test_vector_backfill_survives_low_sql_variable_limit(tmp_path, monkeypatch):
     # many SQLite builds cap SQLITE_MAX_VARIABLE_NUMBER=32766 — backfilling
     # 100k sections must chunk IN(...) instead of 1 bind/section in a single SQL statement
-    from center_kb.federation import FederationMeta
+    from strata_kb.federation import FederationMeta
 
     hub = _handle(tmp_path)
     entry = tmp_path / "federation" / "big-kb"
@@ -953,8 +953,8 @@ def test_rrf_merge_modes_and_order():
     reason="requires --run-slow (downloads a ~100MB model)",
 )
 def test_real_fastembed_roundtrip(fed_hub):
-    from center_kb.embed import default_embedder
-    from center_kb.query import search
+    from strata_kb.embed import default_embedder
+    from strata_kb.query import search
 
     embedder = default_embedder()
     if embedder is None:
@@ -992,7 +992,7 @@ def test_warm_vec_swallows_unexpected_import_error(monkeypatch, caplog):
 
     monkeypatch.setattr(builtins, "__import__", _boom)
 
-    with caplog.at_level(logging.WARNING, logger="center_kb.searchdb"):
+    with caplog.at_level(logging.WARNING, logger="strata_kb.searchdb"):
         assert searchdb.warm_vec() is False  # did not raise
     assert "native init boom" in caplog.text
 
@@ -1025,8 +1025,8 @@ def test_classify_db_error(exc, expected):
 
 
 def test_client_error_never_deletes_the_index(fed_hub, monkeypatch):
-    from center_kb import query as query_mod
-    from center_kb.hub import HubHandle
+    from strata_kb import query as query_mod
+    from strata_kb.hub import HubHandle
 
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
@@ -1050,8 +1050,8 @@ def test_oversized_tag_list_is_refused_and_the_index_survives(fed_hub):
     `too many SQL variables` — an OperationalError that was read as corruption,
     and `delete_db()` destroyed the index shared by every user of that hub.
     `tags` is agent-supplied on the MCP tool, so a malformed call reached it."""
-    from center_kb import query as query_mod
-    from center_kb.hub import HubHandle
+    from strata_kb import query as query_mod
+    from strata_kb.hub import HubHandle
 
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)
@@ -1065,8 +1065,8 @@ def test_oversized_tag_list_is_refused_and_the_index_survives(fed_hub):
 
 
 def test_tag_list_at_the_cap_is_accepted(fed_hub):
-    from center_kb import query as query_mod
-    from center_kb.hub import HubHandle
+    from strata_kb import query as query_mod
+    from strata_kb.hub import HubHandle
 
     hub = HubHandle(root=fed_hub)
     tags = [f"t{i}" for i in range(searchdb.MAX_TAGS - 1)] + ["arinc424"]

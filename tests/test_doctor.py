@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from center_kb import doctor, gitio, kbcontext, models
-from center_kb.doctor import check_context, check_kb
-from center_kb.hub import HubHandle
+from strata_kb import doctor, gitio, kbcontext, models
+from strata_kb.doctor import check_context, check_kb
+from strata_kb.hub import HubHandle
 
 
 def _errors(issues):
@@ -140,7 +140,7 @@ def test_check_context_bad_block_is_error(fed_hub):
 
 
 def test_check_kind_warns_when_missing(tmp_path):
-    from center_kb.doctor import check_kind
+    from strata_kb.doctor import check_kind
 
     # no config at all -> warn
     issues = check_kind(tmp_path)
@@ -181,14 +181,14 @@ def test_asset_store_s3_empty_bucket_errors(tmp_path):
 
 
 def test_asset_store_s3_probe_ok(tmp_path):
-    from center_kb import assetstore
+    from strata_kb import assetstore
 
     kb = _hub_cfg(tmp_path, "asset_store:\n  mode: s3\n  bucket: b\n")
     assert doctor.check_asset_store(kb, None, store=assetstore.MemoryStore()) == []
 
 
 def test_asset_store_s3_probe_failure_errors(tmp_path):
-    from center_kb import assetstore
+    from strata_kb import assetstore
 
     class _Down(assetstore.MemoryStore):
         def exists(self, name):

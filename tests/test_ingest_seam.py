@@ -20,7 +20,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from center_kb.cli import app
+from strata_kb.cli import app
 from tests.test_parser import _StubDoc, _StubItem, _StubLabel, _StubProv
 
 REPO = Path(__file__).parent.parent
@@ -94,7 +94,7 @@ def test_ingest_writes_assets_and_l3_ref(tmp_path, monkeypatch):
     an image markdown reference in the section's raw L3. Only load_or_parse
     is stubbed here — doc_to_items runs for real, unlike test_ingest_cli.py
     which stubs doc_to_items itself and never touches the assets seam."""
-    from center_kb.ingest import parser
+    from strata_kb.ingest import parser
 
     fake_doc = _StubDoc(
         items=[

@@ -1,8 +1,8 @@
 """M6: the same secret over Authorization had no lockout at all."""
 import time
 
-from center_kb.web.auth import COOKIE_NAME, SESSION_MAX_AGE, make_session
-from center_kb.web.ratelimit import LOGIN_MAX_ATTEMPTS
+from strata_kb.web.auth import COOKIE_NAME, SESSION_MAX_AGE, make_session
+from strata_kb.web.ratelimit import LOGIN_MAX_ATTEMPTS
 
 
 def test_failed_header_auth_is_eventually_429(web_client):

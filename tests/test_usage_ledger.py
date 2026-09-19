@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb.usage import ledger
+from strata_kb.usage import ledger
 
 
 def row(uuid: str, ticket: str | None = "open-new-flight", **kw) -> ledger.UsageRow:

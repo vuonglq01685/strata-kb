@@ -6,10 +6,10 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from center_kb import assetstore, ghio, gitio, models, pubgate
-from center_kb.federation import FederationMeta, write_federation_index
-from center_kb.hub import HubHandle
-from center_kb.publish import (
+from strata_kb import assetstore, ghio, gitio, models, pubgate
+from strata_kb.federation import FederationMeta, write_federation_index
+from strata_kb.hub import HubHandle
+from strata_kb.publish import (
     PublishError,
     _dest_record_assets,
     _neutralize_excludes,
@@ -33,7 +33,7 @@ def test_neutralize_excludes_does_not_inherit_stdin(tmp_path, monkeypatch):
         captured.update(kwargs)
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("center_kb.publish.subprocess.run", fake_run)
+    monkeypatch.setattr("strata_kb.publish.subprocess.run", fake_run)
 
     _neutralize_excludes(tmp_path)
 
@@ -115,7 +115,7 @@ def test_direct_publish_threads_the_hub_token_into_the_push(
     fake_hub_ref = "https://x-access-token:ghs_FAKETOKEN@example.invalid/hub.git"
     stripped = "https://example.invalid/hub.git"
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     key = hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)
@@ -162,7 +162,7 @@ def test_invalid_repo_id_rejected(git_kb, hub_worktree):
 
 
 def test_unreachable_hub_raises(git_kb, tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     with pytest.raises(PublishError):
         publish(git_kb["kb"], str(tmp_path / "does-not-exist"))
 
@@ -268,7 +268,7 @@ def test_publish_removed_file_deleted_on_hub(git_kb, hub_worktree):
 def test_warn_legacy_ids_flags_xn_sections(tmp_path, caplog):
     import logging
 
-    from center_kb import models, publish
+    from strata_kb import models, publish
 
     doc_dir = tmp_path / "kb" / "old-doc"
     doc_dir.mkdir(parents=True)
@@ -283,7 +283,7 @@ def test_warn_legacy_ids_flags_xn_sections(tmp_path, caplog):
             ],
         ),
     )
-    with caplog.at_level(logging.WARNING, logger="center_kb.publish"):
+    with caplog.at_level(logging.WARNING, logger="strata_kb.publish"):
         hits = publish.warn_legacy_ids(tmp_path / "kb")
     assert hits == ["old-doc §5.6-x74"]
     assert any("re-ingest" in r.message for r in caplog.records)
@@ -292,7 +292,7 @@ def test_warn_legacy_ids_flags_xn_sections(tmp_path, caplog):
 def test_warn_legacy_ids_clean_kb_silent(tmp_path, caplog):
     import logging
 
-    from center_kb import models, publish
+    from strata_kb import models, publish
 
     doc_dir = tmp_path / "kb" / "clean-doc"
     doc_dir.mkdir(parents=True)
@@ -304,7 +304,7 @@ def test_warn_legacy_ids_clean_kb_silent(tmp_path, caplog):
             sections=[models.SectionEntry(id="5.6-commentary", title="C", file="ch5")],
         ),
     )
-    with caplog.at_level(logging.WARNING, logger="center_kb.publish"):
+    with caplog.at_level(logging.WARNING, logger="strata_kb.publish"):
         hits = publish.warn_legacy_ids(tmp_path / "kb")
     assert hits == []
     assert not caplog.records
@@ -379,7 +379,7 @@ def _child_kb_with_asset(tmp_path) -> Path:
 
 
 def test_snapshot_diverts_assets_and_keeps_child_intact(tmp_path, hub_worktree):
-    from center_kb import publish
+    from strata_kb import publish
 
     kb_abs = _child_kb_with_asset(tmp_path)
     handle = HubHandle(root=hub_worktree)
@@ -396,7 +396,7 @@ def test_snapshot_diverts_assets_and_keeps_child_intact(tmp_path, hub_worktree):
 
 
 def test_snapshot_second_publish_is_noop_with_store(tmp_path, hub_worktree):
-    from center_kb import publish
+    from strata_kb import publish
 
     kb_abs = _child_kb_with_asset(tmp_path)
     handle = HubHandle(root=hub_worktree)
@@ -407,7 +407,7 @@ def test_snapshot_second_publish_is_noop_with_store(tmp_path, hub_worktree):
 
 
 def test_snapshot_upload_failure_raises_before_any_write_is_kept(tmp_path, hub_worktree):
-    from center_kb import publish
+    from strata_kb import publish
 
     kb_abs = _child_kb_with_asset(tmp_path)
     handle = HubHandle(root=hub_worktree)
@@ -428,7 +428,7 @@ def test_snapshot_store_outage_then_retry_never_commits_binaries(tmp_path, hub_w
     "unchanged" *before* ever reaching divert again -- so _publish_direct /
     _publish_pr would git-add + commit the leftover PNG straight into hub git.
     """
-    from center_kb import publish
+    from strata_kb import publish
 
     kb_abs = _child_kb_with_asset(tmp_path)
     handle = HubHandle(root=hub_worktree)
@@ -494,7 +494,7 @@ def test_a_no_change_publish_reports_the_commit_actually_snapshotted(
     """_snapshot leaves _meta.yaml alone when nothing changed, so on a second
     publish after an unrelated commit the CLI was printing the source repo's
     new HEAD next to a hub entry that still records the old one."""
-    from center_kb import gitio
+    from strata_kb import gitio
 
     first = publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
     (git_kb["root"] / "README.md").write_text(
@@ -513,7 +513,7 @@ def test_cli_does_not_claim_a_hub_has_no_remote_when_it_does(
 ):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
 
     runner = CliRunner()
     runner.invoke(

@@ -1,6 +1,6 @@
 import pytest
 
-from center_kb import pubgate
+from strata_kb import pubgate
 
 
 @pytest.mark.parametrize("rid", ["repo-alpha", "a", "a.b", "a_b", "A1", "kb-hub"])
@@ -299,6 +299,6 @@ def test_asset_record_basename_stays_in_sync_with_assetstore():
     pin the sync guarantee the comment at pubgate.py already promises, so the
     two names drifting apart fails here instead of silently reopening the
     `_assets.yaml` predicate mismatch item 1 exists to close."""
-    from center_kb import assetstore
+    from strata_kb import assetstore
 
     assert pubgate._ASSET_RECORD_BASENAME == assetstore.RECORD_NAME

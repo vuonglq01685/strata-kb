@@ -1,0 +1,9 @@
+# Strata — repo config (commit to git).
+# kind: this repo's role. "hub" hosts federation/ (the single source of truth
+#       for search) and runs the shared HTTP MCP server + Web UI.
+kind: hub
+# hub: git URL or kb-hub path — the ONLY read source for kb query / MCP / Web UI.
+#      This repo IS the hub, so it points at itself.
+hub: "."
+# repo_id: repo name on the federation (pre-filled from the folder name)
+repo_id: "{repo_id}"

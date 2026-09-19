@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "center-kb": {
-      "url": "${env:CENTER_KB_HUB_URL}/mcp",
-      "headers": { "Authorization": "Bearer ${env:CENTER_KB_HTTP_TOKEN}" }
-    }
-  }
-}

@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "center-kb": {
-      "command": "python",
-      "args": ["-m", "center_kb.mcp", "--kb", ".kb/"]
-    }
-  }
-}
