@@ -116,7 +116,7 @@ becomes the fix, not the PR.
 - Name the model on every dispatch — a standard model for authors and
   implementers, the most capable one available for reviewers. Never inherit
   the session default silently.
-- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER still
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
   standing after round 3 stops the flow and goes to the Dev.
 - A finding that contradicts the approved design or plan is never auto-fixed:
   show the finding beside the text that mandates it and let the Dev choose.
