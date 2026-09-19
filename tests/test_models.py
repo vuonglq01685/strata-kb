@@ -5,7 +5,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from center_kb import models
+from strata_kb import models
 
 
 def test_manifest_yaml_roundtrip(tmp_path: Path):
@@ -87,7 +87,7 @@ def test_kbindex_llm_block_roundtrip(tmp_path):
 
 
 def test_federation_index_roundtrip(tmp_path):
-    from center_kb.models import (
+    from strata_kb.models import (
         FederationIndex,
         FedIndexEntry,
         load_yaml_model,
@@ -115,7 +115,7 @@ def test_federation_index_roundtrip(tmp_path):
 
 
 def test_federation_index_defaults():
-    from center_kb.models import FederationIndex, FedIndexEntry
+    from strata_kb.models import FederationIndex, FedIndexEntry
 
     e = FedIndexEntry(repo_id="r", doc_id="d")
     assert e.tags == [] and e.revision == "" and e.published_at == ""
@@ -123,7 +123,7 @@ def test_federation_index_defaults():
 
 
 def test_section_status_still_parses_reviewed():
-    from center_kb.models import SectionEntry
+    from strata_kb.models import SectionEntry
 
     sec = SectionEntry(id="1.1", title="T", file="ch1", status="reviewed")
     assert sec.status == "reviewed"
@@ -179,9 +179,14 @@ def test_bundled_manifests_roundtrip_byte_identical(tmp_path: Path):
     build.py:77), not a hand-rolled yaml.safe_dump — otherwise this test
     would not exercise (or protect) the code it claims to pin.
     """
+    # The corpus used to be this repo's own `.kb/`. Strata ships no sample KB
+    # of its own any more, so the guard reads the golden manifests instead —
+    # completed documents with populated optional fields, which is what an
+    # exclude_none round-trip actually exercises. (The `pending-kb` fixture is
+    # pre-summarize: empty summaries and empty strings, not None.)
     root = Path(__file__).resolve().parents[1]
-    mans = sorted((root / ".kb").glob("*/_manifest.yaml"))
-    assert mans, "no bundled .kb/*/_manifest.yaml found — glob root is wrong"
+    mans = sorted((root / "tests-gate" / "golden").glob("**/_manifest.yaml"))
+    assert mans, "no golden _manifest.yaml found — glob root is wrong"
     for man in mans:
         text = man.read_text(encoding="utf-8")
         obj = models.load_yaml_model(man, models.Manifest)
