@@ -1,4 +1,4 @@
-# src/center_kb/web/mdrender.py
+# src/strata_kb/web/mdrender.py
 """Minimal markdown→HTML for the exact subset used in L2/L3 files.
 
 Supported: #..###### headings, blank-line paragraphs, GitHub pipe tables,

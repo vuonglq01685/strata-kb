@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from center_kb import models
-from center_kb.ingest.sectioner import HeadingConfig, SectionUnit
-from center_kb.mdutils import count_tokens, extract_image_descs, slugify
+from strata_kb import models
+from strata_kb.ingest.sectioner import HeadingConfig, SectionUnit
+from strata_kb.mdutils import count_tokens, extract_image_descs, slugify
 
 __all__ = [
     "ScaffoldReport",

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-SRC = ROOT / "src" / "center_kb"
+SRC = ROOT / "src" / "strata_kb"
 SCRIPTS = ROOT / "scripts"
 
 

@@ -1,4 +1,4 @@
-# src/center_kb/hashsync.py
+# src/strata_kb/hashsync.py
 from __future__ import annotations
 
 import hashlib
@@ -7,7 +7,7 @@ import shutil
 import stat
 from pathlib import Path
 
-from center_kb.errors import KbError
+from strata_kb.errors import KbError
 
 
 class HashSyncError(KbError):

@@ -4,7 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from center_kb.errors import KbError
+from strata_kb.errors import KbError
 
 _GH_TIMEOUT_SECONDS = 60
 

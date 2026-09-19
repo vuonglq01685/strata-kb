@@ -27,7 +27,7 @@ import json
 import re
 from pathlib import Path
 
-from center_kb.usage.ledger import UsageRow, is_safe_stem
+from strata_kb.usage.ledger import UsageRow, is_safe_stem
 
 # A ticket file mention. The separator class allows one or more of `/` and `\`
 # because a Windows path inside the JSONL is backslash-escaped

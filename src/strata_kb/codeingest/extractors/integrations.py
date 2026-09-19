@@ -75,11 +75,11 @@ from pathlib import Path
 
 import yaml
 
-from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
-from center_kb.codeingest.extractors._envkeys import env_keys_from
-from center_kb.codeingest.extractors._mdcells import escape_cell
-from center_kb.codeingest.extractors.api import find_openapi_files
-from center_kb.codeingest.extractors.tree import relposix, walk_tree
+from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
+from strata_kb.codeingest.extractors._envkeys import env_keys_from
+from strata_kb.codeingest.extractors._mdcells import escape_cell
+from strata_kb.codeingest.extractors.api import find_openapi_files
+from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 
 # spec §3.11 -- never a secret channel: read only these three committed,
 # template-style filenames. NEVER a real `.env`, which holds live values.

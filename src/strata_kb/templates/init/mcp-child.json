@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "center-kb": {
+    "strata-kb": {
       "type": "http",
-      "url": "${CENTER_KB_HUB_URL}/mcp",
-      "headers": { "Authorization": "Bearer ${CENTER_KB_HTTP_TOKEN}" }
+      "url": "${STRATA_KB_HUB_URL}/mcp",
+      "headers": { "Authorization": "Bearer ${STRATA_KB_HTTP_TOKEN}" }
     }
   }
 }

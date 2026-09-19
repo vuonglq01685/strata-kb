@@ -3,10 +3,10 @@ from mcp.shared.memory import (
     create_connected_server_and_client_session as connect_client,
 )
 
-from center_kb import gitio
-from center_kb.hub import HubHandle
-from center_kb.kbcontext import build_context_block
-from center_kb.mcp import ServerConfig, create_server, parse_args
+from strata_kb import gitio
+from strata_kb.hub import HubHandle
+from strata_kb.kbcontext import build_context_block
+from strata_kb.mcp import ServerConfig, create_server, parse_args
 from tests.conftest import make_fed_entry
 from tests.test_ticketlint import REFS, _build_ticket
 
@@ -25,7 +25,7 @@ def _config(fed_hub) -> ServerConfig:
 
 
 def test_parse_args_requires_hub(tmp_path, monkeypatch):
-    monkeypatch.delenv("CENTER_KB_HUB", raising=False)
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
     kb = tmp_path / ".kb"
     kb.mkdir()
     with pytest.raises(SystemExit):
@@ -33,7 +33,7 @@ def test_parse_args_requires_hub(tmp_path, monkeypatch):
 
 
 def test_parse_args_reads_config_file(tmp_path, monkeypatch):
-    monkeypatch.delenv("CENTER_KB_HUB", raising=False)
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
     kb = tmp_path / ".kb"
     kb.mkdir()
     (kb / "config.yaml").write_text("hub: /srv/kb-hub\n", encoding="utf-8")
@@ -42,7 +42,7 @@ def test_parse_args_reads_config_file(tmp_path, monkeypatch):
 
 
 def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB", "/from-env")
+    monkeypatch.setenv("STRATA_KB_HUB", "/from-env")
     kb = tmp_path / ".kb"
     kb.mkdir()
     config = parse_args(["--kb", str(kb), "--hub", "/from-flag"])
@@ -198,7 +198,7 @@ async def test_kb_ticket_lint_broken_ref_fails(fed_hub):
 
 @pytest.mark.anyio
 async def test_kb_ticket_lint_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
     server = create_server(config)
     async with connect_client(server, raise_exceptions=True) as client:
@@ -219,7 +219,7 @@ async def test_hub_locked_cache_returns_guidance_not_a_crash(
     Before the round-3 fix, `_hub()` let that GitError propagate out of the
     tool call as an unhandled crash instead of the same "hub unreachable"
     guidance every other unreachable-hub path already returns. Fakes
-    center_kb.hub.resolve_hub itself, not some mcp-module alias -- `_hub()`
+    strata_kb.hub.resolve_hub itself, not some mcp-module alias -- `_hub()`
     re-imports the name fresh on every call (see the concurrency test
     below).
 
@@ -227,7 +227,7 @@ async def test_hub_locked_cache_returns_guidance_not_a_crash(
     GitError with no log record -- pin that the caught exception now
     reaches the log at warning, the same way resolve_hub's own clone/pull
     failures already do (hub.py)."""
-    from center_kb import hub as hub_mod
+    from strata_kb import hub as hub_mod
 
     detail = "could not remove the stale hub cache at '...'"
 
@@ -236,18 +236,18 @@ async def test_hub_locked_cache_returns_guidance_not_a_crash(
 
     monkeypatch.setattr(hub_mod, "resolve_hub", fake_resolve_hub)
     server = create_server(_config(fed_hub))
-    with caplog.at_level("WARNING", logger="center_kb.mcp"):
+    with caplog.at_level("WARNING", logger="strata_kb.mcp"):
         async with connect_client(server, raise_exceptions=True) as client:
             result = await client.call_tool("kb_search", {"query": "anything"})
             assert "hub unreachable" in _text(result)
     assert any(
-        r.name == "center_kb.mcp" and detail in r.message for r in caplog.records
+        r.name == "strata_kb.mcp" and detail in r.message for r in caplog.records
     ), caplog.records
 
 
 @pytest.mark.anyio
 async def test_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
     server = create_server(config)
     async with connect_client(server, raise_exceptions=True) as client:
@@ -256,8 +256,8 @@ async def test_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
 
 
 def _qr(mode: str, score: float, cite: str = "r:d §1"):
-    from center_kb.mdutils import count_tokens
-    from center_kb.query import QueryResult
+    from strata_kb.mdutils import count_tokens
+    from strata_kb.query import QueryResult
 
     return QueryResult(
         doc_id="d", section_id="1", title="t", score=score,
@@ -268,7 +268,7 @@ def _qr(mode: str, score: float, cite: str = "r:d §1"):
 
 def test_ambiguity_note_silent_for_single_leg_adjacent_ranks():
     # RRF: adjacent ranks within one leg always differ ~1.6% — a relative gap only adds noise
-    from center_kb.mcp import _ambiguity_note
+    from strata_kb.mcp import _ambiguity_note
 
     note = _ambiguity_note([_qr("keyword", 1 / 61), _qr("keyword", 1 / 62)])
     assert note == ""
@@ -276,7 +276,7 @@ def test_ambiguity_note_silent_for_single_leg_adjacent_ranks():
 
 def test_ambiguity_note_fires_when_top2_both_hybrid():
     # both confirmed by 2 legs → genuinely ambiguous, worth prompting review of both
-    from center_kb.mcp import _ambiguity_note
+    from strata_kb.mcp import _ambiguity_note
 
     note = _ambiguity_note(
         [_qr("hybrid", 0.032, "a:x §1"), _qr("hybrid", 0.031, "b:y §2")]
@@ -286,7 +286,7 @@ def test_ambiguity_note_fires_when_top2_both_hybrid():
 
 
 def test_ambiguity_note_fires_on_exact_tie():
-    from center_kb.mcp import _ambiguity_note
+    from strata_kb.mcp import _ambiguity_note
 
     assert "score closely" in _ambiguity_note(
         [_qr("keyword", 0.016), _qr("keyword", 0.016)]
@@ -306,7 +306,7 @@ async def test_kb_search_no_note_for_ordinary_keyword_ranking(fed_hub):
 def test_ambiguity_note_silent_for_distant_hybrid_pair():
     # both hybrid but scores far apart (top rank in both legs vs rank ~40)
     # — not "score closely"
-    from center_kb.mcp import _ambiguity_note
+    from strata_kb.mcp import _ambiguity_note
 
     assert _ambiguity_note([_qr("hybrid", 0.0328), _qr("hybrid", 0.020)]) == ""
 
@@ -327,8 +327,8 @@ async def test_kb_search_shows_match_mode_not_raw_score(fed_hub):
 def test_create_server_warms_the_native_import(fed_hub, monkeypatch):
     """F-C1: the warm-up must happen while create_server runs (no loop yet),
     not on the first tool call (on the loop)."""
-    from center_kb import mcp as mcp_mod
-    from center_kb import searchdb
+    from strata_kb import mcp as mcp_mod
+    from strata_kb import searchdb
 
     calls = []
     monkeypatch.setattr(searchdb, "warm_vec", lambda: (calls.append(1), True)[1])
@@ -343,11 +343,11 @@ async def test_tool_body_does_not_block_the_event_loop(fed_hub, monkeypatch):
     import asyncio
     import time as _time
 
-    from center_kb import mcp as mcp_mod
+    from strata_kb import mcp as mcp_mod
 
     def slow_search(*args, **kwargs):
         _time.sleep(0.5)
-        from center_kb.query import SearchOutcome
+        from strata_kb.query import SearchOutcome
 
         return SearchOutcome(results=[])
 
@@ -377,16 +377,16 @@ async def test_hub_resolution_is_serialized_under_concurrent_calls(fed_hub, monk
     clones/pulls into a cache shared by every call, so without a lock around
     it in `_hub()`, two concurrent URL-hub resolutions could run
     `git clone`/`git pull` against the same directory at the same time.
-    `_hub()` does `from center_kb.hub import resolve_hub` fresh on every
-    call, so the fake must replace `center_kb.hub.resolve_hub` itself (the
+    `_hub()` does `from strata_kb.hub import resolve_hub` fresh on every
+    call, so the fake must replace `strata_kb.hub.resolve_hub` itself (the
     name `_hub()` actually resolves), not some module-level alias in
-    `center_kb.mcp`."""
+    `strata_kb.mcp`."""
     import asyncio
     import threading as _threading
     import time as _time
 
-    from center_kb import hub as hub_mod
-    from center_kb.hub import HubHandle
+    from strata_kb import hub as hub_mod
+    from strata_kb.hub import HubHandle
 
     lock = _threading.Lock()
     active = 0
@@ -420,7 +420,7 @@ async def test_kb_search_too_many_tags_returns_message_not_error(fed_hub):
     """F-C10 addition 1 (MCP half): `tags` is agent-supplied on this tool —
     an oversized list must come back as in-band tool text, not a raised
     ValueError the agent sees as a tool error."""
-    from center_kb.searchdb import MAX_TAGS
+    from strata_kb.searchdb import MAX_TAGS
 
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
@@ -436,8 +436,8 @@ async def test_kb_search_too_many_tags_returns_message_not_error(fed_hub):
 async def test_kb_search_index_busy_returns_message_not_error(fed_hub, monkeypatch):
     """F-C10 addition 2: the CLI already turns IndexBusyError into a clean
     message (Task 4) — kb_search must do the same in-band, not raise."""
-    from center_kb import mcp as mcp_mod
-    from center_kb.searchdb import IndexBusyError
+    from strata_kb import mcp as mcp_mod
+    from strata_kb.searchdb import IndexBusyError
 
     def raise_busy(*a, **k):
         raise IndexBusyError("search index search.db is in use by another process")
@@ -459,7 +459,7 @@ async def test_kb_search_client_db_error_returns_message_not_error(
     wording, not a raised exception."""
     import sqlite3
 
-    from center_kb import mcp as mcp_mod
+    from strata_kb import mcp as mcp_mod
 
     def raise_integrity(*a, **k):
         raise sqlite3.IntegrityError("UNIQUE constraint failed: sections.repo_id")
@@ -484,7 +484,7 @@ async def test_kb_search_unrelated_value_error_is_not_swallowed(fed_hub, monkeyp
     answer — the worst place for this to happen. Only
     `searchdb.TooManyTagsError` gets the clean in-band message; any other
     ValueError must keep propagating as a tool error."""
-    from center_kb import mcp as mcp_mod
+    from strata_kb import mcp as mcp_mod
 
     def raise_unrelated(*a, **k):
         raise ValueError("3 validation errors for Manifest")
@@ -507,7 +507,7 @@ async def test_kb_search_corrupt_db_error_still_propagates(fed_hub, monkeypatch)
     Mirrors the CLI's `test_query_lock_db_error_still_propagates`."""
     import sqlite3
 
-    from center_kb import mcp as mcp_mod
+    from strata_kb import mcp as mcp_mod
 
     def raise_corrupt(*a, **k):
         raise sqlite3.DatabaseError("database disk image is malformed")

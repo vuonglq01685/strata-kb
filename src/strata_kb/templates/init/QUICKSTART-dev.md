@@ -1,4 +1,4 @@
-# CENTER-KB Quickstart (dev repo)
+# Strata Quickstart (dev repo)
 
 This repo is a **product code** repo: it consumes the shared knowledge base
 while implementing BA tickets, and it publishes two knowledge documents
@@ -13,7 +13,7 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
 
 ## Setup once
 
-1. **Install** — `pip install center-kb` (or clone this repo if someone
+1. **Install** — `pip install strata-kb` (or clone this repo if someone
    already scaffolded it; otherwise `kb init --kind dev` in an empty
    folder creates it).
 2. **Point at the hub** — fill `hub:` in `.kb/config.yaml` with the main
@@ -54,8 +54,8 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
    two-document split exists to protect.
 4. **Connect the shared MCP server** — set two environment variables so
    your AI assistant can reach the hub's search/citation tools:
-   - `CENTER_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
-   - `CENTER_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
+   - `STRATA_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
+   - `STRATA_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
    `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) are already
    wired to these two variables — nothing else to configure.
 5. **Open this repo** in Claude Code, GitHub Copilot Chat, or Cursor — the
@@ -65,7 +65,7 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
 ## Onboarding an existing project (once)
 
 An existing product repo already has services doing real work — adopting
-center-kb should not mean documenting the system from a blank page. Run
+strata-kb should not mean documenting the system from a blank page. Run
 `/dev-code-seed` (the `dev-code-seed` skill/command/prompt) once per repo,
 and it walks seven steps:
 

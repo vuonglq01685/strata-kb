@@ -1,4 +1,4 @@
-# CENTER-KB Quickstart (child repo)
+# Strata Quickstart (child repo)
 
 This repo AUTHORS knowledge and publishes it to the main hub. It does not
 host the company-wide search service — `kb query` / MCP / Web UI read only
@@ -22,15 +22,15 @@ the hub's `federation/`.
 
 2. **Pull the ingest image (optional but recommended)** — run
    `kb docker-setup` (in your assistant: `/kb-docker-setup`). It checks
-   Docker and pulls the CENTER-KB image so ingest runs fully inside Docker —
+   Docker and pulls the Strata image so ingest runs fully inside Docker —
    no local Python needed. Skip it if you install the ingest extra locally
-   instead (`pip install "center-kb[ingest]"`). Without Docker installed,
+   instead (`pip install "strata-kb[ingest]"`). Without Docker installed,
    pass `--no-docker` to just print the commands.
 3. **Ingest the first document** — put the PDF in `source/`, then:
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
    In Claude Code, Copilot Chat, or Cursor, prefer the `/kb-ingest` slash
    command — it asks for the id/tags/revision so you don't have to remember
-   flags. (needs the ingest extra: `pip install "center-kb[ingest]"` — or run
+   flags. (needs the ingest extra: `pip install "strata-kb[ingest]"` — or run
    it inside Docker, no local Python needed:
    `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc --no-summarize`)
 4. **Summarize** — `kb ingest` does this automatically when the Claude Code or
@@ -54,8 +54,8 @@ the hub's `federation/`.
    hub's web UI, or MCP. `.mcp.json` (Claude Code) and `.cursor/mcp.json`
    (Cursor) are pre-wired to the hub's HTTP endpoint — set two environment
    variables locally:
-   - `CENTER_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
-   - `CENTER_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
+   - `STRATA_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
+   - `STRATA_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
 
 ## CLI reference
 

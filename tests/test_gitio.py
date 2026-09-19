@@ -7,7 +7,7 @@ from pathlib import Path
 import anyio
 import pytest
 
-from center_kb import gitio
+from strata_kb import gitio
 
 
 def test_git_root_finds_repo_from_kb_dir(git_kb):
@@ -61,7 +61,7 @@ def test_neutralize_line_endings_logs_on_config_failure(tmp_path, caplog):
 
     not_a_repo = tmp_path / "not-a-repo"
     not_a_repo.mkdir()
-    with caplog.at_level(logging.DEBUG, logger="center_kb.gitio"):
+    with caplog.at_level(logging.DEBUG, logger="strata_kb.gitio"):
         gitio.neutralize_line_endings(not_a_repo)  # must not raise
     assert "core.autocrlf" in caplog.text
 
@@ -178,7 +178,7 @@ def test_has_remote_and_remote_url(bare_origin, fixture_kb, run_git):
 
 
 def test_branch_helpers_roundtrip(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     root = tmp_path / "repo"
     root.mkdir()
@@ -205,7 +205,7 @@ def test_branch_helpers_roundtrip(tmp_path, run_git):
 
 
 def test_push_branch_to_local_bare_origin(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     origin = tmp_path / "origin.git"
     run_git(tmp_path, "init", "--bare", str(origin))
@@ -224,7 +224,7 @@ def test_push_branch_to_local_bare_origin(tmp_path, run_git):
 
 
 def test_worktree_add_and_remove_leave_the_main_tree_on_its_branch(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -251,7 +251,7 @@ def test_worktree_add_and_remove_leave_the_main_tree_on_its_branch(tmp_path, run
 
 
 def test_worktree_add_can_reuse_an_existing_branch(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -284,7 +284,7 @@ def test_worktree_add_can_reuse_an_existing_branch(tmp_path, run_git):
 def test_worktree_prune_forgets_a_deleted_worktree(tmp_path, run_git):
     import shutil
 
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -300,7 +300,7 @@ def test_worktree_prune_forgets_a_deleted_worktree(tmp_path, run_git):
 
 
 def test_default_branch_and_path_exists_at(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -316,7 +316,7 @@ def test_default_branch_and_path_exists_at(tmp_path, run_git):
 
 
 def test_default_branch_reads_origin_head_and_strips_the_origin_prefix(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     origin = tmp_path / "origin.git"
     run_git(tmp_path, "init", "--bare", str(origin))
@@ -336,7 +336,7 @@ def test_default_branch_reads_origin_head_and_strips_the_origin_prefix(tmp_path,
 
 
 def test_path_exists_at_normalises_windows_separators(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -351,7 +351,7 @@ def test_path_exists_at_normalises_windows_separators(tmp_path, run_git):
 
 
 def test_path_exists_at_raises_on_unresolvable_rev(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -643,7 +643,7 @@ import functools, sys
 from io import TextIOWrapper
 import anyio
 import anyio.to_thread
-from center_kb import gitio
+from strata_kb import gitio
 
 async def main():
     stdin = anyio.wrap_file(
@@ -734,7 +734,7 @@ import functools, sys
 from io import TextIOWrapper
 import anyio
 import anyio.to_thread
-from center_kb import gitio
+from strata_kb import gitio
 
 async def main():
     stdin = anyio.wrap_file(

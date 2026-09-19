@@ -15,7 +15,7 @@ def _run_py(code: str, input_bytes: bytes = b"") -> subprocess.CompletedProcess[
 
 
 def test_cli_import_forces_utf8_stdout():
-    proc = _run_py("from center_kb import cli\nprint('§ tiếng Việt')")
+    proc = _run_py("from strata_kb import cli\nprint('§ tiếng Việt')")
     assert proc.returncode == 0, proc.stderr
     assert "§ tiếng Việt".encode("utf-8") in proc.stdout
 
@@ -23,7 +23,7 @@ def test_cli_import_forces_utf8_stdout():
 def test_cli_import_forces_utf8_stdin():
     # Without the fix, UTF-8 bytes on stdin decode as cp1252 → mojibake.
     proc = _run_py(
-        "from center_kb import cli\nimport sys\nsys.stdout.write(sys.stdin.read())",
+        "from strata_kb import cli\nimport sys\nsys.stdout.write(sys.stdin.read())",
         input_bytes="§ tiếng Việt".encode("utf-8"),
     )
     assert proc.returncode == 0, proc.stderr
@@ -40,7 +40,7 @@ class _FakeStream:
 
 
 def test_force_utf8_streams_skips_utf8_and_reconfigures_legacy(monkeypatch):
-    from center_kb import utf8io
+    from strata_kb import utf8io
 
     legacy, modern = _FakeStream("cp1252"), _FakeStream("utf-8")
     monkeypatch.setattr(utf8io.sys, "stdin", legacy)
@@ -52,7 +52,7 @@ def test_force_utf8_streams_skips_utf8_and_reconfigures_legacy(monkeypatch):
 
 
 def test_force_utf8_streams_tolerates_streams_without_reconfigure(monkeypatch):
-    from center_kb import utf8io
+    from strata_kb import utf8io
 
     monkeypatch.setattr(utf8io.sys, "stdin", object())  # e.g. test doubles
     utf8io.force_utf8_streams()  # must not raise

@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from center_kb import gitio, intake
+from strata_kb import gitio, intake
 
 
 def test_two_repo_ids_publishing_together_do_not_cross_contaminate(

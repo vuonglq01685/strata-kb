@@ -9,9 +9,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from center_kb import gitio, models, searchdb
-from center_kb.mcp import ServerConfig
-from center_kb.query import (
+from strata_kb import gitio, models, searchdb
+from strata_kb.mcp import ServerConfig
+from strata_kb.query import (
     AmbiguousDocError,
     InvalidLevelError,
     get_section,
@@ -20,7 +20,7 @@ from center_kb.query import (
     stale_hub_note,
 )
 
-logger = logging.getLogger("center_kb.web.api")
+logger = logging.getLogger("strata_kb.web.api")
 
 MAX_BUDGET = 20000
 
@@ -28,7 +28,7 @@ HUB_DOWN_DETAIL = "hub unreachable — the federation is the only read source"
 
 
 def hub_handle(config: ServerConfig):
-    from center_kb.hub import resolve_hub
+    from strata_kb.hub import resolve_hub
 
     # resolve_hub can raise gitio.GitError (hub.py's _discard_cache) when a
     # stale cache cannot be removed -- e.g. Windows holding a lock on
@@ -43,7 +43,7 @@ def hub_handle(config: ServerConfig):
     # review-webapi-guard-verdict.md Important 1): a bare
     # `except ... return None` here discarded the ONLY diagnostic -- a full
     # locked-cache request sweep at DEBUG across all loggers produced zero
-    # center_kb.* records. Worse, in that exact condition HUB_DOWN_DETAIL's
+    # strata_kb.* records. Worse, in that exact condition HUB_DOWN_DETAIL's
     # "and no local cache" is false on both halves (the hub can be
     # perfectly reachable, and the whole reason this raised is that a
     # cache DOES exist -- it is merely locked); the detail text above was
@@ -66,7 +66,7 @@ def _error(status: int, error: str, detail: str = "") -> JSONResponse:
 
 def list_docs(config: ServerConfig) -> list[dict] | None:
     """None = hub unreachable (the caller returns 503)."""
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     hub = hub_handle(config)
     if hub is None:
@@ -101,7 +101,7 @@ def load_manifest(
     config: ServerConfig, doc_id: str, repo: str | None = None
 ) -> tuple[models.Manifest, str] | None:
     """Find a manifest in federation; raise AmbiguousDocError on doc-id collision."""
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     hub = hub_handle(config)
     if hub is None:

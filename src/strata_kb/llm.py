@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
-from center_kb.models import LLMConfig
+from strata_kb.models import LLMConfig
 
 # `claude -p` has no public effort flag; a large thinking budget is the
 # closest supported knob for effort=high (spec §6 — best-effort).

@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from pathlib import PurePosixPath
 from typing import Literal
 
-from center_kb.errors import KbError
+from strata_kb.errors import KbError
 
 REPO_ID_MAX = 64
 REPO_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")

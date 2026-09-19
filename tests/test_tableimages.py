@@ -8,7 +8,7 @@ tests pin the geometry -> cell mapping and the markdown injection.
 
 from __future__ import annotations
 
-from center_kb.ingest import tableimages as ti
+from strata_kb.ingest import tableimages as ti
 
 
 def _cell(row: int, col: int, left: float, top: float, right: float, bottom: float):

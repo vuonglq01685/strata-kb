@@ -2,9 +2,9 @@
 applyTo: ".kb/**"
 ---
 
-# CENTER-KB summarize instructions
+# Strata summarize instructions
 
-Files under `.kb/` belong to a CENTER-KB knowledge base. When editing them
+Files under `.kb/` belong to a Strata knowledge base. When editing them
 to fill in summaries (after `kb ingest`), follow these rules exactly.
 
 ## What to edit

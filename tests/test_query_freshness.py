@@ -16,10 +16,10 @@ from typer.testing import CliRunner
 
 pytest.importorskip("sqlite_vec")
 
-from center_kb import searchdb
-from center_kb.cli import app
-from center_kb.hub import HubHandle
-from center_kb.query import get_section, search
+from strata_kb import searchdb
+from strata_kb.cli import app
+from strata_kb.hub import HubHandle
+from strata_kb.query import get_section, search
 
 MARKER = "ZZHUBFIXMARKERZZ"
 

@@ -1,4 +1,4 @@
-from center_kb.web import templating
+from strata_kb.web import templating
 
 
 def test_render_escapes_by_default():

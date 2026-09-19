@@ -11,12 +11,12 @@ rewriting on Windows. Separately, any hub *cache* clone `gitio.clone` makes
 (e.g. for a child repo consuming this hub) forces `core.autocrlf=false` /
 `core.eol=lf` and writes them into that clone's local config.
 `tests/test_windows_hygiene.py` scans every text-mode write call under
-`src/center_kb` and `scripts/` and requires `newline="\n"`, unless the call
+`src/strata_kb` and `scripts/` and requires `newline="\n"`, unless the call
 is binary-mode (no newline translation applies) or carries a
 `# newline-exempt: <reason>` comment.
 
 Behind a TLS-terminating reverse proxy, set
-`CENTER_KB_TRUSTED_PROXIES=<number of proxies>`. It does two things: the
+`STRATA_KB_TRUSTED_PROXIES=<number of proxies>`. It does two things: the
 rate limiter keys on the real client instead of collapsing every user into
 the proxy's bucket, and the `/ui` session cookie earns its `Secure` flag
 from `X-Forwarded-Proto`. Left unset behind a proxy, the server logs a
@@ -35,25 +35,25 @@ server over https. This server unconditionally disables uvicorn's own
 `X-Forwarded-Proto` handling, so if you put a TLS-terminating reverse proxy
 in front of it, the connection it actually sees is plain HTTP: HSTS never
 fires, even though the client used HTTPS. That is an accepted gap, not
-something `CENTER_KB_TRUSTED_PROXIES` closes; set HSTS at the reverse
+something `STRATA_KB_TRUSTED_PROXIES` closes; set HSTS at the reverse
 proxy if you need it.
 
 1. Clone the hub: `git clone <kb-hub-url> /srv/kb-hub`
-2. Install the tool: `pip install center-kb` (add `.[embed]` if you want semantic search)
-3. Set a token: `export CENTER_KB_HTTP_TOKEN=$(openssl rand -hex 24)` — store it in a secret manager
+2. Install the tool: `pip install strata-kb` (add `.[embed]` if you want semantic search)
+3. Set a token: `export STRATA_KB_HTTP_TOKEN=$(openssl rand -hex 24)` — store it in a secret manager
 4. Start the server:
-   `python -m center_kb.mcp --kb /srv/kb-hub/.kb --hub /srv/kb-hub --transport http --host 0.0.0.0 --port 8321`
+   `python -m strata_kb.mcp --kb /srv/kb-hub/.kb --hub /srv/kb-hub --transport http --host 0.0.0.0 --port 8321`
 5. Cron to keep the hub fresh (every 5 minutes): `*/5 * * * * git -C /srv/kb-hub pull --ff-only`
 
 ### Sample systemd unit
 
     [Unit]
-    Description=CENTER-KB remote MCP
+    Description=Strata remote MCP
     After=network.target
 
     [Service]
-    Environment=CENTER_KB_HTTP_TOKEN=<token>
-    ExecStart=/usr/bin/python3 -m center_kb.mcp --kb /srv/kb-hub/.kb --hub /srv/kb-hub --transport http --host 0.0.0.0 --port 8321
+    Environment=STRATA_KB_HTTP_TOKEN=<token>
+    ExecStart=/usr/bin/python3 -m strata_kb.mcp --kb /srv/kb-hub/.kb --hub /srv/kb-hub --transport http --host 0.0.0.0 --port 8321
     Restart=on-failure
 
     [Install]
@@ -71,9 +71,9 @@ the PR itself using a GitHub App.
    Download the private key PEM.
 2. Extra env for the server:
 
-       Environment=CENTER_KB_GH_APP_ID=<app id>
-       Environment=CENTER_KB_GH_APP_KEY=/etc/center-kb/app-key.pem
-       Environment=CENTER_KB_INTAKE_AUDIENCE=https://kb.internal:8321
+       Environment=STRATA_KB_GH_APP_ID=<app id>
+       Environment=STRATA_KB_GH_APP_KEY=/etc/strata-kb/app-key.pem
+       Environment=STRATA_KB_INTAKE_AUDIENCE=https://kb.internal:8321
 
    All three present → `/intake/*` routes turn on. Any missing → intake stays
    off, read-only MCP still works.
@@ -91,23 +91,23 @@ the PR itself using a GitHub App.
    **git** path (`kb publish` run directly, not through intake), a mismatch
    is refused: `pubgate.resolve_identity` raises before anything is written,
    naming the repo-id the registry actually maps the remote to.
-4. Install deps on the server: `pip install "center-kb[server]"`.
+4. Install deps on the server: `pip install "strata-kb[server]"`.
 
-The three intake routes are exempt from `CENTER_KB_HTTP_TOKEN` (children don't
+The three intake routes are exempt from `STRATA_KB_HTTP_TOKEN` (children don't
 hold that token): POST /intake/publish and GET /intake/manifest are
 OIDC-authenticated — a child can only diff/publish its own registered repo-id.
 GET /intake/status is public by design (the zero-secret dev CLI polls it) and
 returns only state/PR URL keyed by repo-id + commit — same internal-network
 assumption as the MCP itself.
 
-### Rate-limit key behind a reverse proxy (`CENTER_KB_TRUSTED_PROXIES`)
+### Rate-limit key behind a reverse proxy (`STRATA_KB_TRUSTED_PROXIES`)
 
 `/intake/publish` is rate-limited per caller (30 attempts/minute by default).
 The key is normally the TCP socket peer, which cannot be spoofed — but every
 request from behind a reverse proxy arrives from the *proxy's* address, so
 without this variable every child sits behind one shared bucket.
 
-- `CENTER_KB_TRUSTED_PROXIES` (default `0`): the number of reverse proxies you
+- `STRATA_KB_TRUSTED_PROXIES` (default `0`): the number of reverse proxies you
   operate in front of this server. `0` means `X-Forwarded-For` is ignored
   entirely and the socket peer is used — safe by default, and correct for the
   documented single-node deployment above (no proxy in front). Set it to `N`
@@ -118,18 +118,18 @@ without this variable every child sits behind one shared bucket.
   value isn't a non-negative integer — a malformed value must not silently
   fall back to "header ignored" when an operator meant it trusted, so this
   fails loud rather than quiet.
-- **Warning:** at `CENTER_KB_TRUSTED_PROXIES >= 1`, a client that connects
+- **Warning:** at `STRATA_KB_TRUSTED_PROXIES >= 1`, a client that connects
   **directly** to this server — bypassing your proxy — fully controls the
   `X-Forwarded-For` value it sends, and therefore its own rate-limit bucket.
   Setting this variable is only safe when the server is bound (firewalled,
   or listening on an address) so that only your proxy can reach it; do not
   set it on a server also reachable directly from the internet.
 - This server also disables uvicorn's own `X-Forwarded-For` handling
-  (`proxy_headers=False`) unconditionally — `CENTER_KB_TRUSTED_PROXIES` /
+  (`proxy_headers=False`) unconditionally — `STRATA_KB_TRUSTED_PROXIES` /
   `client_key` is the single authority on `X-Forwarded-For` here. Two
   independent, differently-trusted implementations reading the same header
   is the hazard this avoids; do not re-enable uvicorn's proxy headers.
-- Because uvicorn's own handling is disabled, `CENTER_KB_TRUSTED_PROXIES` is
+- Because uvicorn's own handling is disabled, `STRATA_KB_TRUSTED_PROXIES` is
   the single authority for the **whole app**, not just `/intake/publish` —
   it also governs the web UI's login rate limiter (`/ui/login`), which has
   no separate variable of its own.
@@ -141,14 +141,14 @@ without this variable every child sits behind one shared bucket.
   attempts share one 5-per-minute bucket, so one locked-out user locks out
   everyone else too. This is the failure an operator deploying behind a
   reverse proxy will actually hit, and it is the mirror image of the
-  spoofing risk described above — get `CENTER_KB_TRUSTED_PROXIES` right in
+  spoofing risk described above — get `STRATA_KB_TRUSTED_PROXIES` right in
   *both* directions, not just against a spoofing attacker.
 
 ## Client config (Claude Code / Cowork)
 
     {
       "mcpServers": {
-        "center-kb": {
+        "strata-kb": {
           "type": "http",
           "url": "http://kb.internal:8321/mcp",
           "headers": { "Authorization": "Bearer <token>" }
@@ -157,4 +157,4 @@ without this variable every child sits behind one shared bucket.
     }
 
 Note: run only on an internal network/VPN — documents are copyrighted. The server
-refuses to start without `CENTER_KB_HTTP_TOKEN`.
+refuses to start without `STRATA_KB_HTTP_TOKEN`.

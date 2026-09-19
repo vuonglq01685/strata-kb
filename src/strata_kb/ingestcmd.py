@@ -1,4 +1,4 @@
-# src/center_kb/ingestcmd.py
+# src/strata_kb/ingestcmd.py
 """`kb ingest` orchestration — parse → section → scaffold.
 
 Keeps cli.py a thin wrapper (same pattern as dockersetup/initcmd/publish):
@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from center_kb import models
-from center_kb.ingest import parser, scaffold, sectioner
-from center_kb.ingest.scaffold import ScaffoldReport
+from strata_kb import models
+from strata_kb.ingest import parser, scaffold, sectioner
+from strata_kb.ingest.scaffold import ScaffoldReport
 
 
 @dataclass
@@ -33,7 +33,7 @@ class IngestOptions:
 
 _MAX_UNCOVERED_SHOWN = 10
 _MAX_NOTES_SHOWN = 20
-_INGEST_LOGGER = "center_kb.ingest"
+_INGEST_LOGGER = "strata_kb.ingest"
 
 
 class _ReportHandler(logging.Handler):

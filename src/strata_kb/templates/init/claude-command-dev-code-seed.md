@@ -1,12 +1,12 @@
 ---
-description: Bootstrap curated service knowledge for a repo adopting center-kb — extract structure, draft each service's responsibility from code evidence, correct it, approve it, and publish
+description: Bootstrap curated service knowledge for a repo adopting strata-kb — extract structure, draft each service's responsibility from code evidence, correct it, approve it, and publish
 ---
 
 Invoke the `dev-code-seed` skill with the Skill tool and follow its
 workflow exactly. This is a one-time flow: run it once when a running
-project adopts center-kb, never as part of the per-ticket Dev workflow.
+project adopts strata-kb, never as part of the per-ticket Dev workflow.
 
-*Counterpart in the superpowers plugin: none — this is center-kb's own
+*Counterpart in the superpowers plugin: none — this is strata-kb's own
 onboarding flow.*
 
 ## Steps

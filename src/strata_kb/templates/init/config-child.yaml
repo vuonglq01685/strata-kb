@@ -1,4 +1,4 @@
-# CENTER-KB — repo config (commit to git).
+# Strata — repo config (commit to git).
 # kind: this repo's role. "child" authors content locally and publishes it to
 #       the main hub; it does not host the company-wide MCP/Web service.
 kind: child

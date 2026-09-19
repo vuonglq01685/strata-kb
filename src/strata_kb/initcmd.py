@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
-from center_kb import conventions
+from strata_kb import conventions
 
 KIND_HUB = "hub"
 KIND_CHILD = "child"
@@ -109,7 +109,7 @@ BA_LOCAL_OVERRIDES: dict[str, str] = {
 
 def _init_template_text(name: str) -> str:
     return (
-        resources.files("center_kb")
+        resources.files("strata_kb")
         .joinpath("templates/init")
         .joinpath(name)
         .read_text(encoding="utf-8")
@@ -309,7 +309,7 @@ def _render(resource_name: str, text: str, repo_id: str) -> str:
     `kb --version` prints and the T2 release gate checks against
     pyproject.toml), not a hand-maintained constant that can drift from it.
 
-    An unpinned `pip install center-kb` inside a job that holds
+    An unpinned `pip install strata-kb` inside a job that holds
     `id-token: write` means every child picks up whatever PyPI serves at run
     time, in a job able to write to the hub.
 
@@ -324,8 +324,8 @@ def _render(resource_name: str, text: str, repo_id: str) -> str:
     # back to "0+unknown" for a source tree with no install. A scaffold must
     # never pin a placeholder version into a child's CI, so a missing
     # distribution here has to raise and fail `kb init` loudly, not render
-    # `center-kb==0+unknown` into a job that writes to the hub.
-    return text.replace("{version}", _dist_version("center-kb"))
+    # `strata-kb==0+unknown` into a job that writes to the hub.
+    return text.replace("{version}", _dist_version("strata-kb"))
 
 
 def _record_kind(config_path: Path, kind: str) -> bool:
@@ -370,7 +370,7 @@ def _recorded_langs(config_path: Path, report: InitReport) -> list[str]:
     after the sorted loop has already half-written earlier packs. Drop
     unknown ids here instead and say so.
     """
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     try:
         recorded = list(load_config(config_path.parent).langs)
@@ -420,7 +420,7 @@ def init_repo(
     never wholesale-overwritten, even with ``force=True`` (R18).
     """
     templates = template_map(kind)
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     repo_id = target.resolve().name
     report = InitReport()
     for rel, resource_name in templates.items():

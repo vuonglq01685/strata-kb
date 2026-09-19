@@ -1,4 +1,4 @@
-# src/center_kb/cipublish.py
+# src/strata_kb/cipublish.py
 """kb ci-publish — runs inside the child's GitHub Actions job.
 
 OIDC JWT ← ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN; manifest diff against the hub
@@ -11,17 +11,15 @@ import io
 import json
 import os
 import tarfile
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 from pathlib import Path
 
 import typer
 
-from center_kb import gitio, hashsync, pubgate
-from center_kb import publish as publish_mod
-from center_kb.errors import KbError
+from strata_kb import gitio, hashsync, httpio, pubgate
+from strata_kb import publish as publish_mod
+from strata_kb.errors import KbError
 
 
 class CIPublishError(KbError):
@@ -35,23 +33,11 @@ def _decode(raw) -> str:
 
 
 def _default_http(method: str, url: str, headers: dict, body: bytes | None):
-    # The intake URL is operator-configured (--intake / CENTER_KB_INTAKE /
-    # config.yaml `intake:`), not a fixed constant like ghapp.py's API host --
-    # refuse anything but http(s) so a `file://`/custom-scheme value can never
-    # make urlopen read a local path instead of hitting the network (S310).
-    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
-        return 0, f"refusing non-http(s) URL: {url}".encode("utf-8")
-    req = urllib.request.Request(url, method=method, data=body, headers=headers)  # noqa: S310 -- scheme validated above
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 -- scheme validated above
-            return resp.status, resp.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read()
-    except (urllib.error.URLError, OSError) as exc:
-        # Connection-level failure (DNS, refused, timeout): status 0 so the
-        # manifest GET can fall back to a full upload, while POST/token paths
-        # turn it into a loud CIPublishError with this text as the detail.
-        return 0, str(exc).encode("utf-8")
+    # The name and signature stay put — `http = http or _default_http` below
+    # binds it, and tests call it directly. The implementation, including the
+    # S310 scheme guard that keeps an operator-supplied `file://` out of
+    # urlopen, now lives in httpio so it exists exactly once.
+    return httpio.request(method, url, headers, body, timeout=60)
 
 
 def _request_oidc_token(audience: str, http) -> str:

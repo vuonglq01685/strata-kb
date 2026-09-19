@@ -11,12 +11,12 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from center_kb import federation, ghio, gitio, models, pubgate
-from center_kb import hub as hub_mod
-from center_kb.errors import KbError
-from center_kb.review import MACHINE_SECTION_PREFIX
+from strata_kb import federation, ghio, gitio, models, pubgate
+from strata_kb import hub as hub_mod
+from strata_kb.errors import KbError
+from strata_kb.review import MACHINE_SECTION_PREFIX
 
-logger = logging.getLogger("center_kb.publish")
+logger = logging.getLogger("strata_kb.publish")
 
 _LEGACY_ID_RE = re.compile(r"(^|-)x\d+$")
 
@@ -209,7 +209,7 @@ def _dest_record_assets(record_path: Path) -> list[str]:
     function entirely, because this function had already returned by then.
     That one is closed at the merge, in _reconcile_asset_records.
     """
-    from center_kb import assetstore
+    from strata_kb import assetstore
 
     if not record_path.is_file():
         # os.path.lexists(), not Path.exists() -- wave I-1 round 4, Minor 4;
@@ -311,7 +311,7 @@ def _inheritable_assets(src_record_path: Path, dest_record_path: Path) -> list[s
     following this module's own rule (see the `dropped` loop below): a thing
     the system drops must be a thing the operator can see it dropped.
     """
-    from center_kb import assetstore
+    from strata_kb import assetstore
 
     names = _record_assets(src_record_path)
     keep = [a for a in names if assetstore.is_asset_name(a)]
@@ -480,7 +480,7 @@ def _snapshot(
     each newly creating one file at the same path with different content is a
     conflict that cannot be auto-merged, whatever the rebase strategy).
     """
-    from center_kb import assetstore, hashsync
+    from strata_kb import assetstore, hashsync
 
     dest = handle.federation_dir / rid
     fed_root = handle.federation_dir.resolve()
@@ -637,7 +637,7 @@ def _prepare_hub_to_hub_manifests(
     leaf-validity predicate misses entries a plain manifest walk still
     finds, and what breaks when the two disagree.
     """
-    from center_kb import assetstore, hashsync
+    from strata_kb import assetstore, hashsync
 
     src_man = hashsync.build_manifest(fed_src, exclude=_FED_TOP_EXCLUDE)
     # keep_records=True: an _assets.yaml already mirrored from a lower hub
@@ -822,7 +822,7 @@ def _reconcile_asset_records(
     of P34 survives. The full reasoning sits with the two filter loops
     below, next to the code that implements it.
     """
-    from center_kb import assetstore
+    from strata_kb import assetstore
 
     record_changed = False
     entries: dict[str, Path] = dict(federation.iter_entry_dirs(dest))
@@ -1000,7 +1000,7 @@ def _snapshot_federation(
     storeless publish leaves an existing dest record untouched rather than
     deleting or truncating it.
     """
-    from center_kb import assetstore, hashsync
+    from strata_kb import assetstore, hashsync
 
     if not fed_src.is_dir():
         raise PublishError(
@@ -1265,7 +1265,7 @@ def publish_federation(
     Self-entry (`federation/<rid>/` do hub tự publish) được miễn — nó không
     phải nội dung quay vòng.
     """
-    from center_kb import config as config_mod
+    from strata_kb import config as config_mod
 
     kb_abs = kb_dir.resolve()
     source_root = gitio.git_root(kb_abs)
@@ -1424,8 +1424,8 @@ def _publish_direct(
     )
     if idx_committed:
         pushed = _push_with_retry(handle, rid, max_retries) or pushed
-    from center_kb import searchdb
-    from center_kb.embed import default_embedder
+    from strata_kb import searchdb
+    from strata_kb.embed import default_embedder
 
     try:
         searchdb.sync(handle, default_embedder())

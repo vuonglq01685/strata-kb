@@ -9,13 +9,13 @@ the same way on every run:
 """
 from __future__ import annotations
 
-from center_kb.codeingest.extractors.api import ApiExtractor
-from center_kb.codeingest.extractors.commands import CommandsExtractor
-from center_kb.codeingest.extractors.deps import DepsExtractor
-from center_kb.codeingest.extractors.integrations import IntegrationsExtractor
-from center_kb.codeingest.extractors.schema import SchemaExtractor
-from center_kb.codeingest.extractors.services import ServicesExtractor
-from center_kb.codeingest.extractors.tree import TreeExtractor
+from strata_kb.codeingest.extractors.api import ApiExtractor
+from strata_kb.codeingest.extractors.commands import CommandsExtractor
+from strata_kb.codeingest.extractors.deps import DepsExtractor
+from strata_kb.codeingest.extractors.integrations import IntegrationsExtractor
+from strata_kb.codeingest.extractors.schema import SchemaExtractor
+from strata_kb.codeingest.extractors.services import ServicesExtractor
+from strata_kb.codeingest.extractors.tree import TreeExtractor
 
 ALL_EXTRACTORS: list = [
     ServicesExtractor(), DepsExtractor(), CommandsExtractor(), TreeExtractor(),

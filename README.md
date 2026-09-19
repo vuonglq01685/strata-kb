@@ -1,671 +1,741 @@
-# CENTER-KB — A structured knowledge base that knows how to summarize itself
+# Strata
 
-> This guide is written for **non-technical readers** (domain SMEs, reviewers, project managers). If you only need to understand the system and how to review, reading start to finish is enough. If you need to run commands, sections [7](#7-kb-command-dictionary) and [8](#8-end-to-end-workflow-step-by-step) have real, copy-paste examples.
->
-> CENTER-KB is domain-agnostic — it turns *any* large, structured reference document (technical standards, regulations, internal specs, compliance manuals, engineering handbooks…) into a layered, AI-queryable, human-reviewable knowledge base. The worked examples throughout this guide happen to use an aviation standards dataset (ARINC 424, ICAO Annex 3) because that's the demo data bundled in this repo — nothing about the tool itself is aviation-specific. Swap in any PDF-based reference material for your own domain.
+**Knowledge Base as Code.** Strata turns large reference documents — standards,
+regulations, internal specs, policy manuals, engineering handbooks, compliance
+frameworks — into a layered knowledge base that humans review in a pull request
+and AI agents query for exactly the passage they need.
+
+Nothing about Strata is tied to a domain or an industry. If your organisation
+has documents too long for anyone to re-read on demand, Strata is for those
+documents.
+
+- **No database, no runtime state.** The knowledge base is `.yaml` and `.md`
+  files in Git. Review it the way you review code.
+- **Tables are never rewritten by an AI.** They are machine-copied from the
+  source and automatically diffed against the original on every build.
+- **A query loads a slice, not a corpus.** Typical lookups return 1–4 sections
+  instead of a whole document — routinely a >90% reduction in tokens per call.
+
+```bash
+pip install strata-kb
+kb init --kind hub
+kb ingest sources/employee-handbook.pdf --id hr-handbook --tags hr,policy
+kb build
+kb query "parental leave eligibility"
+```
 
 ---
 
 ## Table of contents
 
-1. [30-second summary](#1-30-second-summary)
-2. [The problem CENTER-KB solves](#2-the-problem-center-kb-solves)
-3. [Core idea: 4 layers L0 → L1 → L2 → L3](#3-core-idea-4-layers-l0--l1--l2--l3)
-4. [How a document moves through the system](#4-how-a-document-moves-through-the-system)
-5. [Directory layout — what lives where](#5-directory-layout--what-lives-where)
-6. [Installation (first-time setup)](#6-installation-first-time-setup)
-7. [`kb` command dictionary](#7-kb-command-dictionary)
-8. [End-to-end workflow, step by step](#8-end-to-end-workflow-step-by-step)
-9. [SME review role — checklist](#9-sme-review-role--checklist)
-10. [Proof it works (real PoC numbers)](#10-proof-it-works-real-poc-numbers)
-11. [Current limits & unfinished work](#11-current-limits--unfinished-work)
-12. [FAQ](#12-faq)
-13. [What to do when something breaks](#13-what-to-do-when-something-breaks)
+1. [The problem](#1-the-problem)
+2. [Four layers: L0 → L1 → L2 → L3](#2-four-layers-l0--l1--l2--l3)
+3. [Repo kinds](#3-repo-kinds)
+4. [Installation](#4-installation)
+5. [The lifecycle](#5-the-lifecycle)
+6. [Command reference](#6-command-reference)
+7. [Authoring a document](#7-authoring-a-document)
+8. [Searching](#8-searching)
+9. [The hub and federation](#9-the-hub-and-federation)
+10. [MCP server and Web UI](#10-mcp-server-and-web-ui)
+11. [Citations that pin a version](#11-citations-that-pin-a-version)
+12. [BA repos — tickets and missions](#12-ba-repos--tickets-and-missions)
+13. [Dev repos — code knowledge](#13-dev-repos--code-knowledge)
+14. [Reviewing content](#14-reviewing-content)
+15. [Configuration](#15-configuration)
+16. [Exit codes](#16-exit-codes)
+17. [Troubleshooting](#17-troubleshooting)
+18. [FAQ](#18-faq)
+19. [Development and release](#19-development-and-release)
 
 ---
 
-## 1. 30-second summary
+## 1. The problem
 
-CENTER-KB takes **hundreds-of-pages** reference documents — technical standards, regulations, internal specs, compliance manuals (this repo's demo data: ARINC 424, ICAO Annex 3) — and turns them into a **structured knowledge base** where:
-
-- **People** can read plain text/markdown files (no special software) and review via Pull Request — like reviewing a Word doc with track changes.
-- **AI assistants** (such as Claude) can look up **exactly the needed passage**, instead of stuffing hundreds of thousands of tokens from the whole document into every question — saving **over 90% cost** per query.
-
-No server, no database. The entire knowledge base is `.yaml` and `.md` files under `.kb/`, managed with Git just like code — the "**docs as code**" philosophy.
-
----
-
-## 2. The problem CENTER-KB solves
-
-Long reference documents — regardless of domain — share two painful traits:
+Long reference documents share two traits, whatever the field:
 
 | Trait | Why it hurts |
 |---|---|
-| **Very long** — hundreds of pages is normal for a standard, regulation, or spec (this repo's demo: ARINC 424 is 487 pages, ICAO Annex 3 is 224) | Nobody (human or AI) re-reads the whole document just to look up one field |
-| **Tables that matter character-by-character** — codes, field lengths, character types, thresholds | If you summarize in prose (even with AI), it is easy to **miscopy one character in a table** → dangerous drift for whatever system relies on that data |
+| **Hundreds of pages** | Nobody — human or model — re-reads the whole thing to answer one question. Pasting it into a prompt is slow and expensive; doing it on every question is untenable. |
+| **Detail that matters character-by-character** | Codes, field lengths, thresholds, identifiers. Summarise those into prose and a single miscopied character silently becomes wrong data in whatever depends on it. |
 
-CENTER-KB addresses both at once:
+Strata attacks both at once:
 
-- **Split by section** (e.g. in the demo data, each ARINC 424 field is its own section: §5.129 "Restrictive Airspace Designation") so lookup hits the right place, not the whole file.
-- **Tables never go through AI for "rephrasing"** — tables are extracted verbatim by code (not rewritten by AI), and an automated check ensures tables in the summary **match 100%** the original. This is the system's most important safety latch (see section 3).
-
----
-
-## 3. Core idea: 4 layers L0 → L1 → L2 → L3
-
-Think of a **library lookup stack** with 4 layers from coarse to fine — like finding a book: department catalog → book table of contents → chapter summary → full text.
-
-| Layer | Name | What it is | Size | Example in this repo's demo data |
-|---|---|---|---|---|
-| **L0** | Master catalog | A single `index.yaml` listing **every document** in the store: name, revision, tags, one-line description | Tiny (187 "tokens" for the whole store — see section 10) | `.kb/index.yaml` |
-| **L1** | Detailed TOC | Per document, a `_manifest.yaml` listing **each section**: id, title, one-line summary (≤ 25 words), status | Tens of thousands of tokens per document | `.kb/arinc-424/_manifest.yaml` |
-| **L2** | Condensed summary | `.md` file — prose condensed to ~20–30% of original length **in the source document's language**, **tables kept verbatim 100%** | Medium | `.kb/arinc-424/ch5-navigation-data-field-definitions.md` |
-| **L3** | Full original | `.md` file — full text extracted from the PDF, nothing cut | Largest | `.kb/arinc-424/ch5-navigation-data-field-definitions.raw.md` |
-
-**Why four layers instead of one copy?**
-A typical lookup only needs L0 (which docs matter) → L1 (which sections matter — almost free, one-line summaries) → L2 (condensed content of the 1–4 relevant sections). Only when you need absolute legal/technical fidelity do you open L3. That way an AI can answer while loading only a tiny slice of the whole store.
-
-### Concrete example — section §5.4 "Section Code"
-
-**L1 (in the manifest — one search-oriented summary line):**
-> Defines the Section Code field (SEC CODE) identifying the major navigation database section for a record, per Table 5-1, 1 alpha character.
-
-**L2 (condensed prose in the `.md` file):**
-> The Section Code field (SEC CODE) defines the major section of the navigation system database in which a record resides, per the encoding scheme in Table 5-1. Used on all records; length 1 character; alpha.
-
-And immediately below is **Table 5-1 copied verbatim** — never rewritten by AI, because code extracts it straight from the PDF.
-
-**Non-negotiable rule:** tables are **never** rewritten by AI. AI may only write the prose summary around tables; the tables themselves are always machine-copied from the source PDF at both L2 and L3. Before a change is accepted into the store (`kb build`), the system **automatically diffs every L2 table against L3** — if anything differs after whitespace/alignment normalization (NBSP, tabs, trailing spaces, `:--` alignment and extra separator rows are folded; everything else is byte-compared), `kb build` fails and blocks the change — in both directions: a table missing from L2, altered, duplicated, reordered, or invented is rejected (a section whose L3 slice has no tables is not checked).
+- **Split by section**, so a lookup lands on the right passage instead of the
+  right document.
+- **Tables never pass through a model.** Code extracts them verbatim, and
+  `kb build` diffs every summary table against the original. A table that was
+  altered, dropped, duplicated, reordered or invented fails the build and
+  blocks the change — in both directions.
 
 ---
 
-## 4. How a document moves through the system
+## 2. Four layers: L0 → L1 → L2 → L3
 
-```
-   Source PDF (487 pages, copyrighted)
-          │
-          │  kb ingest   ← step 1: machine, automatic
-          ▼
-   Split PDF into ~100–300 small "sections"
-   (each field/item is one section, with standard ids: §5.3, §ch2, §appendix-3...)
-          │
-          ▼
-   Pre-generate:
-   - L3 (original) for every section — DONE IMMEDIATELY
-   - L2 (empty scaffold: tables present + blanks for summaries)
-   - L1 (manifest, each section status = "pending")
-          │
-          │  kb ingest auto-summarize (claude → copilot, auto-detect)
-          │  ← step 2: AI fills summaries (--no-summarize to skip;
-          │    kb summarize to re-run/retry; /kb-summarize = manual fallback)
-          ▼
-   For each pending section:
-   - Read L3 (original)
-   - Write summary into L2 (in the source's language)
-   - Write one-line summary into L1 (manifest)
-   - Flip status: pending → summarized
-          │
-          │  kb build   ← step 3: machine checks, cannot be skipped
-          ▼
-   ✓ No sections still "pending"
-   ✓ Every L2 table matches L3 100%
-   ✓ Recount tokens per layer
-          │
-          │  Pull Request on GitHub (this repo)   ← step 4: HUMAN review
-          ▼
-   SME (domain expert) reads the diff, compares to the PDF, edits if needed
-          │
-          │  Merge into this repo's main
-          ▼
-   .kb/ updated locally — NOT yet searchable anywhere.
-          │
-          │  kb publish   ← step 5: mirror to the hub + open a PR there
-          ▼
-   Hub PR merges (direct push instead, only for a hub with no git remote) →
-   federation/ updated — this is the single review gate that makes content
-   live.
-          │
-          │  kb query "your question..."   ← step 6: day-to-day use (reads the hub only)
-          ▼
-   Returns the 1–4 most relevant sections with clear citations
-   (e.g. repo-id:arinc-424 §5.129 (Supplement 22))
-```
+Think of a library lookup stack, coarse to fine: department catalogue → table of
+contents → chapter summary → full text.
 
-In short: **machines do the mechanical work** (sectioning, verbatim tables, integrity checks), **AI does the language work** (writing summaries), **humans do final sign-off** (PR review) — no step skips the check that follows it.
+| Layer | Name | What it holds | Typical size |
+|---|---|---|---|
+| **L0** | Master catalogue | One `index.yaml` listing every document: id, revision, tags, one-line description | Hundreds of tokens for the whole store |
+| **L1** | Detailed contents | Per document, a `_manifest.yaml` listing each section: id, title, a ≤ 25-word summary, status | Tens of thousands of tokens per document |
+| **L2** | Condensed summary | `.md` — prose condensed to ~20–30% of the original, **in the source document's language**, tables kept verbatim | Medium |
+| **L3** | Full original | `.raw.md` — full extracted text, nothing cut | Largest |
+
+A lookup walks L0 (which documents matter) → L1 (which sections matter — almost
+free) → L2 (condensed content of the few relevant sections). L3 is opened only
+when absolute fidelity is required. That is where the token saving comes from:
+the model never loads what it did not need.
+
+**Example — a section at L1 and L2.**
+
+L1, one search-oriented line in the manifest:
+
+> Defines the Record Type field identifying whether a record is standard or
+> tailored, per Table 4-1, 1 alpha character.
+
+L2, condensed prose in the `.md`:
+
+> The Record Type field identifies whether a record is a standard record or a
+> tailored record, per the encoding in Table 4-1. Used on all records; length 1
+> character; alpha.
+
+Immediately below it sits Table 4-1, copied verbatim — never rewritten, because
+code extracted it straight from the source.
+
+**The non-negotiable rule:** an AI may write the prose *around* tables. The
+tables themselves are always machine-copied at both L2 and L3, and
+`kb build` verifies it. Whitespace and alignment differences are normalised
+(NBSP, tabs, trailing spaces, `:--` alignment rows); everything else is compared
+byte for byte.
 
 ---
 
-## 5. Directory layout — what lives where
+## 3. Repo kinds
 
-```
-CENTER-KB/
-├── .kb/                    ← ★ MAIN PRODUCT — what you review; this is the "knowledge base"
-│   ├── index.yaml                          (L0 — master catalog)
-│   ├── arinc-424/
-│   │   ├── _manifest.yaml                  (L1 — detailed TOC)
-│   │   ├── ch5-navigation-...md            (L2 — summary; READ THIS when reviewing)
-│   │   └── ch5-navigation-...raw.md        (L3 — full original; use to cross-check)
-│   └── icao-annex-3/  (same structure)
-│
-├── sources/                ← Copyrighted source PDFs — NOT committed to Git (see FAQ)
-├── .kb-work/                ← Intermediate files from PDF parsing — ignore
-├── .venv/                   ← Python install environment — ignore
-│
-├── .mcp.json                 ← MCP server config for Claude Code (Phase 2, see §7.8)
-├── src/center_kb/              ← Tool source (devs only)
-│   ├── cli.py                       `kb` CLI (20 commands, see §7)
-│   ├── ingest/                      "split PDF into sections"
-│   ├── build.py                     integrity checks
-│   ├── query.py                     search & answer
-│   ├── mcp.py                       MCP server for agent lookup (Phase 2)
-│   ├── kbcontext.py, resolve.py     kb-context blocks + pin-aware resolve (Phase 2)
-│   └── diff.py, doctor.py, gitio.py amendment diff + store health (Phase 2)
-│
-├── .claude/skills/kb-summarize/    ← "recipe" teaching AI how to summarize correctly
-├── scripts/demo-federation.sh      ← demo: spins up kb-hub + 2 sample repos end-to-end (Phase 3)
-├── .github/workflows/kb-publish.yml ← CI sample: publish to kb-hub on `kb-publish/*` tags created by `kb publish` (Phase 3)
-├── docs/                            ← design docs & plans (tool developers)
-│   └── deploy-remote-mcp.md                deploy a shared HTTP MCP server (Phase 3)
-└── tests/                           ← automated tests for the tool
-```
-
-**Quick rule:** if you are an SME reviewing content, you **only need `.kb/`**. Everything else (`.venv/`, `.kb-work/`, `src/`) is internal machinery, unrelated to reading/reviewing domain content.
-
----
-
-## 6. Installation (first-time setup)
-
-Do this only if you want to **run `kb` on your machine** (e.g. try `kb query`, or `kb build` before opening a PR). If you only review PRs on GitHub, **skip this whole section**.
-
-### Requirements
-- **Python 3.11+** (this project uses Python 3.13).
-- **Git** installed, with access to the repo. **Git 2.31 or newer** if your
-  `.kb/config.yaml` `hub:` URL carries a credential (the
-  `https://x-access-token:<token>@github.com/org/repo.git` shape the CI
-  templates use): from 0.21.0 the token is kept out of the clone's git
-  config and handed to git through `GIT_CONFIG_COUNT`, which git added in
-  2.31 and older versions ignore silently — below that floor no
-  `Authorization` header is sent at all and every hub command fails, the
-  first clone included, with git's own authentication error. This applies on
-  every machine that clones the hub — your workstation, any runner running
-  `kb publish`/`kb reindex`/`kb doctor`/`kb query`, and the intake server (a
-  `kb ci-publish` runner does not clone the hub itself; its intake server
-  does, and answers `503` if it cannot). Debian 11 (git 2.30.2) and Ubuntu
-  20.04 LTS (2.25.1) are both under the floor. An ssh `hub:` (`git@…`),
-  a public `https://` hub, and a `hub:` that is a directory on this machine
-  carry no credential and need no particular git version.
-
-### Steps
-
-```bash
-# 1. Enter the project directory
-cd CENTER-KB
-
-# 2. Create a Python virtualenv (once)
-python3 -m venv .venv
-
-# 3. Activate it (every new terminal)
-source .venv/bin/activate
-
-# 4. Install the tool + extras
-#    (ingest = needed for "kb ingest"; dev = needed to run tests)
-pip install -e ".[ingest,dev]"
-
-# 5. Confirm install
-kb --help
-```
-
-If step 5 prints the command list (`init`, `docker-setup`, `ingest`, `summarize`, `status`, `build`, `query`, `get`, `stats`, `publish`, `ci-publish`, `reindex`, `resolve`, `diff`, `approve`, `doctor`, `context`, `assets`, `ticket`, `mission`) — install succeeded.
-
-> **Note:** every new terminal session, run `source .venv/bin/activate` again first (you'll see `(.venv)` in the prompt).
-
-### 6.1. Install from PyPI, web UI, and Docker
-
-**Install the package** (once published): `pip install center-kb` — gives you the `kb` CLI and MCP server.
-Create a new KB repo: `kb init` — it asks which of four kinds the repo is,
-scaffolds accordingly, and records the choice as `kind:` in
-`.kb/config.yaml` (re-runs reuse it); non-interactive runs pass
+`kb init` asks which of four kinds a repo is and scaffolds accordingly, recording
+the choice as `kind:` in `.kb/config.yaml`. Non-interactive runs pass
 `--kind hub|child|ba|dev`.
 
 | Kind | Purpose |
 |---|---|
-| `hub` | Central knowledge hub. Hosts `federation/` — the single source of truth for search — and runs the shared HTTP MCP server + Web UI. Receives publishes from child repos; merging hub PRs is the review gate that makes content searchable. |
-| `child` | Authoring repo. Ingest PDFs → summarize → `kb build` → `kb publish` to the hub. Must point `hub:` in `.kb/config.yaml` at the main hub; does not host the company-wide MCP/Web service. |
-| `ba` | Requirements repo (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)). Drafts Dev-ready tickets — and, upstream of them for large features, epic-level mission plans (Phase 4.1) — grounded in the KB via the `ba-ticket-author` and `ba-mission-plan` skills, versions them under `tickets/` and `missions/`, and gates both with CI Definition-of-Ready checks (`kb ticket lint`, `kb mission lint`). Never ingests, summarizes, or publishes KB content. |
-| `dev` | Product code repo (Phase 5, see [7.11](#711-phase-5--dev-agent-workflow), [7.12](#712-phase-5-stage-b--kb-code-ingest), and [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)). Implements BA tickets grounded in the KB via the `dev-implement-ticket` orchestrator and its four phase skills — design → plan → execute → handover, TDD enforced. Never ingests documents from outside the repo; it publishes generated (`-code`) knowledge about its own source code automatically via `kb-code.yml`, and curated (`-svc`) knowledge via a one-time `/dev-code-seed` bootstrap plus per-ticket `kb svc note` accrual. |
+| **`hub`** | Central knowledge hub. Hosts `federation/` — the single source of truth for search — and runs the shared HTTP MCP server and Web UI. Receives publishes from every other repo; merging a hub PR is the gate that makes content searchable. |
+| **`child`** | Authoring repo. Ingest documents → summarize → `kb build` → `kb publish` to the hub. Points `hub:` at the hub. Does not host the shared service. |
+| **`ba`** | Requirements repo. Drafts Dev-ready tickets — and, for large features, epic-level mission plans — grounded in the KB, versioned under `tickets/` and `missions/` and gated by CI Definition-of-Ready checks. Never ingests or publishes KB content. |
+| **`dev`** | Product code repo. Implements BA tickets grounded in the KB through a five-command agent workflow. Never ingests outside documents; it publishes knowledge about *its own source code* — generated (`-code`) and curated (`-svc`). |
 
-Then run `kb docker-setup` (or the `/kb-docker-setup` slash command) on a hub
-or child repo: on the hub it creates `.env`, generates the HTTP token, and
-starts the service (`docker compose up -d`); on a child it pulls the ingest
-image for one-shot Docker ingest — a `ba` or `dev` repo needs neither Docker
-nor this step. Slash commands (`/kb-ingest`, `/kb-summarize`, `/kb-publish`,
-`/kb-docker-setup`) are scaffolded for **Claude Code, GitHub Copilot, and
-Cursor** on hub/child repos (a `ba` repo gets `/ba-ticket-author` and
-`/ba-mission-plan` instead, see [7.10](#710-phase-4--ba-ticket-authoring); a
-`dev` repo gets the five dev-workflow commands instead, see
-[7.11](#711-phase-5--dev-agent-workflow)); MCP client wiring ships as
-`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind —
-stdio on the hub, HTTP-with-env-vars on child, `ba`, and `dev` repos.
-Re-running `kb init` refreshes scaffold files (skills, templates) and
-preserves `.kb/index.yaml` / `.kb/config.yaml` unless `--force`.
+Re-running `kb init` refreshes scaffold files (skills, templates, workflows) and
+preserves `.kb/index.yaml` and `.kb/config.yaml` unless `--force`.
 
-**Web UI for humans:** the same HTTP process serves agents and people:
-
-```bash
-CENTER_KB_HTTP_TOKEN=secret python -m center_kb.mcp --hub . --transport http
-# → agent:  http://<host>:8321/mcp   (Bearer token)
-# → REST:   http://<host>:8321/api/… (Bearer token or cookie)
-# → human:  http://<host>:8321/ui    (sign in with token; cookie stored)
-```
-
-The hub is **mandatory** — resolved from `--hub`, `CENTER_KB_HUB`, or `.kb/config.yaml`
-(in that order); the server refuses to start without one. `/ui`, the MCP tools, and the
-REST API all search **only** `federation/` on the hub — the server's local working
-`.kb/` is never queried. Tags render as clickable chips, and a tag can be used alone
-(no keywords) to browse matching documents.
-
-**Docker:** `docker compose up -d` (image includes the full docling ingest stack);
-ingest inside the container: `docker compose run --rm hub kb ingest source/x.pdf --id x`.
-On `v*` release tags, CI publishes to PyPI and pushes image `ghcr.io/vuonglq01685/center-kb`.
-First-time setup: `kb docker-setup` — on the hub it creates `.env`, generates
-`CENTER_KB_HTTP_TOKEN` (auto-generated for convenience — replace it with your
-own secret for real deployments) and runs `docker compose up -d`; on a child
-it pulls the image so ingest needs no local Python.
+Slash commands are scaffolded for **Claude Code, GitHub Copilot and Cursor**:
+`/kb-ingest`, `/kb-summarize`, `/kb-approve`, `/kb-publish`, `/kb-docker-setup`
+on hub and child repos; `/ba-ticket-author` and `/ba-mission-plan` on a `ba`
+repo; the five dev-workflow commands on a `dev` repo. MCP client wiring ships as
+`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind — stdio
+on the hub, HTTP-with-env-vars everywhere else.
 
 ---
 
-## Windows
+## 4. Installation
 
-Windows is fully supported — `pip install center-kb` and every `kb` command
-run natively (CI gates every release on `windows-latest`).
+### Requirements
 
-One OS-level note: very deep KB trees can exceed the legacy 260-character
-path limit. If you hit `FileNotFoundError` on long paths, enable long paths
-once: `git config --global core.longpaths true`, and set the registry key
+- **Python 3.11+**
+- **Git.** Version **2.31 or newer** on any machine whose `.kb/config.yaml`
+  `hub:` URL carries a credential (the
+  `https://x-access-token:<token>@github.com/org/repo.git` shape the CI
+  templates use). The token is kept out of the clone's git config and handed to
+  git through `GIT_CONFIG_COUNT`, which git added in 2.31; older versions ignore
+  it silently and every hub command fails with git's own authentication error.
+  Debian 11 (git 2.30.2) and Ubuntu 20.04 (2.25.1) are both below the floor. An
+  ssh `hub:` (`git@…`), a public `https://` hub and a `hub:` pointing at a local
+  directory carry no credential and need no particular git version.
+
+### From PyPI
+
+```bash
+pip install strata-kb            # kb CLI + MCP server
+pip install "strata-kb[ingest]"  # + PDF ingestion (docling)
+pip install "strata-kb[embed]"   # + semantic search
+pip install "strata-kb[server]"  # + HTTP MCP/Web UI auth
+pip install "strata-kb[s3]"      # + S3 asset offloading
+```
+
+### From source
+
+```bash
+git clone https://github.com/vuonglq01685/strata-kb
+cd strata-kb
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[ingest,dev]"
+kb --help
+```
+
+Re-activate the virtualenv (`source .venv/bin/activate`) in every new terminal.
+
+### Docker
+
+`kb docker-setup` (or `/kb-docker-setup`) prepares a repo: on a hub it writes
+`.env`, generates `STRATA_KB_HTTP_TOKEN` and runs `docker compose up -d`; on a
+child it pulls the ingest image so ingestion needs no local Python. A `ba` or
+`dev` repo needs neither Docker nor this step.
+
+```bash
+docker compose up -d
+docker compose run --rm hub kb ingest source/handbook.pdf --id hr-handbook
+```
+
+Release tags publish to PyPI and push `ghcr.io/vuonglq01685/strata-kb`.
+
+### Windows
+
+Fully supported — every release is gated on `windows-latest`. `kb` forces UTF-8
+on stdin/stdout/stderr at startup on every OS, so piped I/O stays UTF-8 even
+under a non-UTF-8 console locale.
+
+Deep KB trees can exceed the legacy 260-character path limit. If you hit
+`FileNotFoundError` on long paths, enable long paths once:
+`git config --global core.longpaths true`, and set
 `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1`.
 
-`kb` also forces UTF-8 on stdin/stdout/stderr at startup on every OS, so piped I/O stays UTF-8 even under a non-UTF-8 locale (e.g. the Windows cp1252 console default).
+---
+
+## 5. The lifecycle
+
+```
+   Source document (PDF)
+          │
+          │  kb ingest                    machine, no AI
+          ▼
+   Split into sections, each with a stable id
+          │
+          ├─ L3 written immediately (full original)
+          ├─ L2 scaffolded (tables present, summaries blank)
+          └─ L1 manifest written, every section status = pending
+          │
+          │  kb summarize                 AI fills the blanks
+          ▼                               (runs inside kb ingest by default)
+   L2 prose + L1 one-liners written, status → summarized
+          │
+          │  kb build                     machine gate, cannot be skipped
+          ▼
+   ✓ nothing still pending      ✓ every L2 table matches L3
+   ✓ quality rules              ✓ token counts refreshed
+          │
+          │  Pull request                 HUMAN review
+          ▼
+   A subject-matter expert reads the diff and edits what is wrong
+          │
+          │  merge → kb publish           mirror to the hub
+          ▼
+   A pull request on the hub. Merging it is the single gate that
+   makes content live.
+          │
+          │  kb query / MCP / Web UI
+          ▼
+   The 1–4 most relevant sections, with citations
+```
+
+Machines do the mechanical work (sectioning, verbatim tables, integrity checks).
+AI does the language work (summaries). Humans sign off. No step skips the check
+that follows it.
 
 ---
 
-## 7. `kb` command dictionary
+## 6. Command reference
 
-The table below lists core commands (from Phase 1) in typical workflow order. Four Phase 2 commands — `context new`, `resolve`, `diff`, `doctor` — are in [7.8](#78-phase-2--workflow-integration). `kb publish` and the `--hub`/`--semantic` flags (Phase 3 — sharing knowledge across repos) are in [7.9](#79-phase-3--federation--remote-mcp). `kb ticket lint` and `kb mission lint` (Phase 4 — BA ticket/mission authoring, a `ba`-kind repo only) are in [7.10](#710-phase-4--ba-ticket-authoring). `kb code-ingest` (Phase 5 Stage B, a `dev`-kind repo only) is in [7.12](#712-phase-5-stage-b--kb-code-ingest); `kb svc note` (Phase 5 Stage C, a `dev`-kind repo only) is in [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed).
+| Command | Purpose |
+|---|---|
+| `kb init` | Scaffold or refresh a KB repo of a given kind |
+| `kb docker-setup` | Prepare the repo for Docker (hub: `.env` + token + start; child: pull image) |
+| `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
+| `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
+| `kb status` | List sections still pending summarization |
+| `kb build` | Validate the store: no blanks, table integrity, quality rules, token counts |
+| `kb approve` | Mark sections reviewed (`summarized` → `reviewed`) |
+| `kb query` | Hybrid search (FTS5 keyword + semantic KNN, RRF-fused) → L2 within a budget |
+| `kb get` | Fetch exactly one section at a chosen level |
+| `kb stats` | Token size per level, per document |
+| `kb tags` | List every tag published on the hub federation |
+| `kb publish` | Mirror `.kb/` (L0→L3) to the hub's `federation/<repo-id>/` and rebuild the index |
+| `kb ci-publish` | Publish from a child's GitHub Actions job via OIDC, no secrets |
+| `kb reindex` | Rebuild `federation/index.yaml` when it has drifted |
+| `kb doctor` | Store health check; `--context` also checks citation staleness |
+| `kb context new` | Generate a `kb-context` citation block pinned at the hub's current commit |
+| `kb resolve` | Resolve a `kb-context` block — sections at the pinned version, plus freshness |
+| `kb diff` | Diff added/removed/changed sections between the worktree and a git rev |
+| `kb code-ingest` | Extract a codebase's structure into `.kb/<repo_id>-code/` — deterministic, no LLM |
+| `kb svc note` | Record which tickets touched which service in `<repo_id>-svc` |
+| `kb ticket lint` | Definition-of-Ready gate for a BA ticket |
+| `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
+| `kb pr lint` | Check a pull-request description carries its evidence |
+| `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
+| `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
 
-| # | Command | Purpose | Who runs it |
-|---|---|---|---|
-| 1 | `kb ingest` | Bring one PDF in: split into sections, scaffold L1/L2/L3 | Person loading a new document |
-| 2 | `kb status` | How many sections are still **unsummarized** (`pending`) | Anyone — to see remaining work |
-| 3 | `kb summarize` | AI fills in the summary blanks via a headless LLM CLI (claude → copilot auto-detect); `kb ingest` runs this automatically unless `--no-summarize` | Automatic inside `kb ingest`; run directly to re-run/retry, or run `/kb-summarize` in Claude Code as manual fallback when no LLM CLI is installed (parallel sub-agents draft, the orchestrator writes) |
-| 4 | `kb build` | Validate the whole store: no blanks left, tables match both ways, C2 quality rules (warn; `--strict` = error) | Required before opening a Pull Request |
-| 5 | `kb query` | Natural-language question → relevant passages **from the hub federation** (a hub is mandatory — set it in `.kb/config.yaml`); add `--semantic` to force semantic search (Phase 3, see [7.9](#79-phase-3--federation--remote-mcp)) | Day-to-day lookup |
-| 6 | `kb get` | Fetch exactly one section by id (when you already know it) | When you know the section id |
-| 7 | `kb stats` | Token counts per layer — cost-savings evidence | Tracking / reporting |
-| 8 | `kb publish` | Mirror .kb/ (L0→L3) → a PR on the hub (direct commit instead when the hub has no git remote) | CI on every `.kb/` change (Phase 3) |
-| 9 | `kb reindex` | Rebuild federation/index.yaml when it has drifted out of sync | Repair |
+---
 
-### 7.1 `kb ingest` — load a PDF into the system
+## 7. Authoring a document
+
+### `kb ingest`
 
 ```bash
-kb ingest sources/ARINC424-22.pdf \
-  --id arinc-424 \
-  --tags arinc424,navdata,airspace \
-  --revision "Supplement 22" \
-  --sections 5
+kb ingest sources/employee-handbook.pdf \
+  --id hr-handbook \
+  --tags hr,policy,benefits \
+  --revision "2026 edition" \
+  --sections 4
 ```
 
-| Parameter | Meaning | Required? |
+| Flag | Meaning | Required |
 |---|---|---|
-| `PDF` (first positional arg) | Path to the source PDF | Yes |
-| `--id` | Short document id, e.g. `arinc-424` | Yes |
-| `--tags` | Comma-separated classification labels for search filtering | No |
-| `--revision` | Edition/revision label, e.g. `"Supplement 22"` — appears in every later citation | No, but **recommended** |
-| `--sections` | Only process these chapters (e.g. `5,6`); empty = whole document | No |
-| `--chapter-pattern` / `--appendix-pattern` / `--attachment-pattern` | Heading regex overrides used when splitting by heading patterns (defaults: `Chapter N` / `Appendix X` / `Attachment N`; remembered from the previous ingest) | No |
-| `--no-bookmarks` | Ignore PDF bookmarks and force heading-pattern splitting | No |
+| `PDF` (positional) | Path to the source document | yes |
+| `--id` | Short document id, e.g. `hr-handbook` | yes |
+| `--tags` | Comma-separated labels used to pre-filter search | no |
+| `--revision` | Edition label — appears in every later citation | recommended |
+| `--sections` | Only process these chapters (`4,5`); empty = whole document | no |
+| `--chapter-pattern` / `--appendix-pattern` / `--attachment-pattern` | Heading regex overrides for pattern splitting (defaults `Chapter N` / `Appendix X` / `Attachment N`; remembered between runs) | no |
+| `--no-bookmarks` | Ignore the PDF outline and split by heading pattern instead | no |
+| `--no-summarize` / `--llm none` | Skip the automatic summarize pass | no |
 
-By default, `kb ingest` splits the PDF by its own **PDF bookmarks/TOC** — parts are named after the document's own outline (chapters, `APPENDIX N` → `appendix-N`, `ATTACHMENT N` → `attachment-N`, front-matter, etc.). Pass `--no-bookmarks` to fall back to heading-pattern splitting instead (using `--chapter-pattern`/`--appendix-pattern`/`--attachment-pattern`, or their remembered defaults). The heading-pattern path also buckets everything before the first chapter (cover, TOC, foreword) into a `front-matter` part, and headings it cannot parse get readable slug ids from their titles (e.g. `2-legend-of-symbols`) grouped into their parent chapter's file.
+By default the split follows the PDF's own **bookmarks/outline**, so parts are
+named after the document's own structure (`APPENDIX N` → `appendix-N`,
+`ATTACHMENT N` → `attachment-N`, front matter, and so on). `--no-bookmarks`
+falls back to heading patterns, buckets everything before the first chapter into
+`front-matter`, and gives unparseable headings readable slug ids from their
+titles.
 
-The split/scaffold step itself **needs no AI** — fully automatic code. It takes seconds to tens of minutes depending on PDF length (first run is slower: downloads a page-layout model ~500MB; later runs reuse cache). Right after scaffolding, `kb ingest` also auto-runs the summarize step (see [7.3](#73-summarization-step)) via a headless LLM CLI unless `--no-summarize` is passed or `--llm none`.
+The split needs no AI. It takes seconds to tens of minutes depending on document
+length; the first run is slower because a page-layout model (~500 MB) is
+downloaded and cached.
 
-Result: a new `.kb/<id>/` directory with L1/L2/L3 files; every section starts as `pending`.
+**Images.** Every embedded picture is saved once as a content-addressed file at
+`.kb/<id>/assets/<sha256>.png` (icons) or `.webp` (larger figures), so identical
+bytes never duplicate across re-ingests. Descriptions are never generated — they
+come from the source, preferring the image's own caption and falling back to OCR
+of text baked into the image. L3 carries `![description](assets/<sha256>.<ext>)`;
+L2 carries the same description as a `Figure: <description>` line so it is
+searchable.
 
-Images and icons embedded in the PDF are pulled out during the same split step: each picture is saved once as a content-addressed file at `.kb/<id>/assets/<sha256>.png` (icons) or `.webp` (larger figures) — identical bytes always hash to the same filename, so re-ingesting never duplicates an asset. Descriptions are never generated; they come only from the source itself, preferring the image's own caption and falling back to OCR of any text baked into the image. L3 carries a relative `![description](assets/<sha256>.<ext>)` reference; L2 carries the same description as a `Figure: <description>` line so it's part of keyword/semantic search. In-table icon inlining and legend-based icon descriptions are planned; they activate after a per-document PoC validates docling's in-cell detection.
+**Re-ingest.** Without `--sections`, ingesting an existing `--id` is a full
+replace: every `.md` of that document is deleted before the new split is
+written. With `--sections 6`, only chapter 6's files and manifest entries are
+rewritten — every other chapter, including reviewed summaries and their status,
+is untouched. A `--sections` value matching no heading **deletes** that chapter,
+and the report says so.
 
-**Re-ingest:** without `--sections`, `kb ingest` on an existing `--id` is a full replace — every `.md` of that doc is deleted before the new split is written. With `--sections 6`, only chapter 6's files and manifest entries are rewritten; every other chapter, including reviewed L2 summaries and their `status`, is left untouched. A `--sections` value that matches no headings this run **deletes** that chapter: its existing files and manifest entries are removed, and the report says so.
+The report names every sectioning decision, so nothing is silent: headings
+demoted to text, fallback ids, numbered headings that arrived out of order,
+duplicate ids renamed `<id>-2`, bookmarks the split missed, sections the outline
+does not name, and the L3 token distribution.
 
-The ingest report names every sectioning decision so nothing is silent: headings demoted to text (table captions, `Used On: … Length: …` label lines, headings repeated on 3+ pages), every fallback id, pages whose numbered headings arrived out of order (re-ordered by layout when the PDF gives coordinates, flagged either way), duplicate ids renamed `<id>-2`, bookmarks the split missed and sections the PDF outline does not name, and the L3 token distribution (`sections: N · L3 tokens min/median/max … · K below 300, M above 5000 · F fallback ids`). Field-definition documents legitimately sit below the 300-token target — each field is its own section so it can be cited.
+### `kb status`
 
-### 7.2 `kb status` — what's left undone
-
-```bash
+```console
 $ kb status
-arinc-424: 12/325 section pending
-  - §5.312 Some Field Name (file: ch5-navigation-data-field-definitions.md)
-  - §5.313 ...
+hr-handbook: 12/325 section pending
+  - §4.12 Parental leave (file: ch4-benefits.md)
+  - §4.13 ...
 Total: 12 section pending.
 ```
 
-Use this to see **how much summarization work remains** before opening Claude Code.
+### `kb summarize`
 
-### 7.3 Summarization step
+The only AI step. `kb ingest` runs it automatically right after scaffolding,
+calling a headless LLM CLI (`claude` → `copilot`, auto-detected on `PATH`; pin
+one with `--llm`). Re-run or retry anytime with `kb summarize`.
 
-This is the only step done by **AI**. By default `kb ingest` runs it automatically right after scaffolding, calling a headless LLM CLI (`claude` → `copilot`, auto-detected on `PATH`; pin one with `--llm`, or `--llm none`/`--no-summarize` to skip). Re-run or retry failed sections anytime with `kb summarize`. If no LLM CLI is installed, sections stay `pending` — open Claude Code and run `/kb-summarize` (skill at `.claude/skills/kb-summarize/SKILL.md`) as the manual fallback: it runs `kb status`, fans the pending sections out to parallel read-only sub-agents (~5 sections each, max 10 at a time), then merges their summaries itself under fixed style rules (keep every code/number, no invention).
+With no LLM CLI installed, sections stay `pending` — open your agent and run
+`/kb-summarize` as the manual fallback: it reads `kb status`, fans pending
+sections out to parallel read-only sub-agents (~5 sections each, 10 at a time),
+and merges their output under fixed style rules.
 
-Hard rules baked into the recipe:
-- **Write in the source document's language** — never translate. A summary in a different language than its L3 source would share no vocabulary with it, and keyword search would stop matching.
-- **Do not rephrase** codes, field names, numbers, units, or cross-refs (§x.y) — keep them verbatim.
-- **Do not touch existing tables**.
-- If unsure → keep the original wording; do not invent.
+Rules baked into the recipe:
 
-> `kb summarize <doc> --redo [--section <id>] [--include-reviewed --yes] [--dry-run]` re-runs the LLM over sections that already have a summary; `--redo --all` does it for the whole KB. Reviewed sections are skipped unless `--include-reviewed`. Sections with ≤ 200 chars of prose are copied verbatim (`Brief section: <title>.`) without an LLM call. `kb summarize <doc> --print-prompt` prints the prompt a section would get, for the manual (`/kb-summarize`) path.
+- **Write in the source document's language.** Never translate — a summary in a
+  different language shares no vocabulary with its L3 source, and keyword search
+  stops matching.
+- **Never rephrase** codes, field names, numbers, units or cross-references.
+- **Never touch existing tables.**
+- If unsure, keep the original wording. Do not invent.
 
-### 7.4 `kb build` — automated gate
+Useful flags: `--redo [--section <id>] [--include-reviewed --yes] [--dry-run]`
+re-runs over sections that already have a summary (`--redo --all` for the whole
+store; reviewed sections are skipped unless `--include-reviewed`).
+`--print-prompt` prints the prompt a section would get, for the manual path.
+Sections with ≤ 200 characters of prose are copied verbatim without an LLM call.
 
-```bash
+### `kb build`
+
+```console
 $ kb build
 kb build: OK
 ```
 
-On failure, it reports clearly and **exits non-zero** (does not pass):
-
-```bash
+```console
 $ kb build
-[error] arinc-424 §5.129: L2 table does not match L3 table
+[error] hr-handbook §4.12: L2 table does not match L3 table
 ```
 
-`kb build` checks three things (the third is warn-only unless `--strict`):
-1. **No remaining `TODO` markers or empty summaries** — every section has a summary (AI or human).
-2. **Every table in the summary (L2) must match the original (L3) exactly** — the main safety latch against technical drift during summarization.
-3. **C2 quality rules** — L2 prose ≤ 35 % of L3 prose (floor 120 chars), no L2 sentence quoting ≥ 4 cells of its own table, no uppercase code in L2 that is absent from L3, ≥ 45 % of L2 words present in L3 (only measured when L2 prose is ≥ 20 words), L1 ≤ 25 words, L0 (`index.yaml`) summary ≤ 30 words, table-only / brief sections carry their fixed labels, every `index.yaml` summary filled (missing `index.yaml` summaries are always errors, even without `--strict`). Reported as `[warn] … (quality)` by default; `kb build --strict` turns them into errors and is what `kb approve` runs.
+Three checks, the third warn-only unless `--strict`:
 
-`kb build` also fails when a section's L3 changed after it was summarized (`l3_sha256`) or its L2 changed after it was approved (`reviewed.l2_sha256`), and it never writes `_manifest.yaml` while reporting an error.
+1. **No leftover `TODO` markers or empty summaries.**
+2. **Every L2 table matches its L3 original exactly** — the main safety latch.
+3. **Quality rules:** L2 prose ≤ 35% of L3 prose (floor 120 chars); no L2
+   sentence quoting ≥ 4 cells of its own table; no uppercase code in L2 absent
+   from L3; ≥ 45% of L2 words present in L3 (measured only at ≥ 20 words); L1
+   ≤ 25 words; L0 summary ≤ 30 words; table-only and brief sections carry their
+   fixed labels; every `index.yaml` summary filled. Reported as
+   `[warn] … (quality)` by default; `--strict` makes them errors.
 
-> Tip: while summarization is in progress (many `pending` sections), use `kb build --allow-pending` to validate finished parts without failing on unfinished ones.
+`kb build` also fails when a section's L3 changed after it was summarized
+(`l3_sha256`) or its L2 changed after approval (`reviewed.l2_sha256`), and it
+never writes `_manifest.yaml` while reporting an error.
 
-`kb approve` requires a clean `.kb/<doc>` tree and a passing `kb build --strict`, records `reviewed: {by, at, l2_sha256}` per section (`--by 'name <email>'` overrides the git identity), and `kb publish`/`kb ci-publish` warn how many sections ship unreviewed (`--require-reviewed` makes that fatal).
-(slash command: `/kb-approve`).
+While summarization is still in progress, `kb build --allow-pending` validates
+the finished parts without failing on the unfinished ones.
 
-> Tip: the bundled KB's 415 `(quality)` warnings and the `kb publish` unreviewed-section warning both clear once the planned re-summarize batch re-runs summarization under the 2026-09 quality gate.
+### `kb approve`
 
-### 7.5 `kb query` — natural-language lookup
+Requires a clean `.kb/<doc>` tree and a passing `kb build --strict`. Records
+`reviewed: {by, at, l2_sha256}` per section (`--by 'name <email>'` overrides the
+git identity). `kb publish` and `kb ci-publish` warn how many sections ship
+unreviewed; `--require-reviewed` makes that fatal. Slash command: `/kb-approve`.
 
-```bash
-$ kb query "restrictive airspace" --tags arinc424 --budget 400
---- [aero:arinc-424 §5.129 (Supplement 22)] match=keyword ~246tk
-## 5.129 Restrictive Airspace Designation
+---
 
-The Restrictive Airspace Designation field contains the number or name
-that uniquely identifies the restrictive airspace, derived from official
-government sources. ...
+## 8. Searching
 
-| Field Content      | Field Content   | Field Content   | Field Content   |
-|---------------------|-----------------|-----------------|-----------------|
-| Charted Designator | ICAO            | Type            | Rest. Desig.    |
-| RJ(R)-116           | RJ              | R               | 116             |
-...
+### `kb query`
 
---- [aero:arinc-424 §5.126 (Supplement 22)] match=keyword ~103tk
-## 5.126 Restrictive Airspace Name
-...
+```console
+$ kb query "parental leave eligibility" --tags hr --budget 400
+--- [ops:hr-handbook §4.12 (2026 edition)] match=keyword ~246tk
+## 4.12 Parental leave
+
+An employee becomes eligible for paid parental leave after 12 months of
+continuous service. Entitlement is calculated per the table below.
+
+| Service       | Paid weeks | Unpaid weeks |
+|---------------|------------|--------------|
+| 12–24 months  | 8          | 4            |
+| 24+ months    | 14         | 4            |
 ```
 
-| Parameter | Meaning |
+| Flag | Meaning |
 |---|---|
-| `TEXT` (first arg) | Question / search keywords |
-| `--tags` | Only search documents with these tags (pre-filter at doc level, not section) — a document id is also accepted as a tag (`--tags arinc-424`), alongside the content tags a document publishes. |
-| `--budget` | Max tokens returned — smaller = cheaper, larger = more context. Advisory: the first result is always returned whatever its size, so a very large section can exceed a small budget. Sections are never cut in the middle, which is what keeps tables verbatim. |
+| `TEXT` (positional) | The question or keywords |
+| `--tags` | Only search documents carrying these tags (document-level pre-filter); a document id is also accepted as a tag. |
+| `--budget` | Maximum tokens returned. **Advisory:** the first result is always returned whatever its size, and sections are never cut mid-way — that is what keeps tables verbatim. |
+| `--semantic` | Force semantic search; warns clearly when embeddings are unavailable |
 
-Results always include a **clear** citation of the form `<repo-id>:<doc-id> §<section> (<revision>)` — e.g. `aero:arinc-424 §5.129 (Supplement 22)` — so you know exactly which federation repo, document and revision the info came from. The repo id is always present, not only when a document id is ambiguous.
+Every result carries a citation of the form `<repo-id>:<doc-id> §<section> (<revision>)`
+— e.g. `ops:hr-handbook §4.12 (2026 edition)` — so the federation repo, document
+and revision are never ambiguous.
 
-How it works under the hood (optional to know, useful for why it's cheap): first filter by `tags` at L0 (nearly free), then rank related sections with a persistent hybrid index (SQLite FTS5 keyword search + optional semantic KNN, fused with RRF), then load L2 content of the top hits until `--budget` is hit. No AI call during lookup — pure code, fast, no model cost.
+Under the hood: filter by tags at L0 (nearly free) → rank with a persistent
+hybrid index (SQLite FTS5 keyword search + optional semantic KNN, fused with
+RRF) → load L2 content of the top hits until the budget is reached. **No model
+call happens during a lookup** — it is pure code, fast, and free.
 
-### 7.6 `kb get` — fetch one section when you know the id
+`kb query`, MCP and the Web UI all read **only** the hub's `federation/`. The
+local `.kb/` is a drafting desk; nobody queries it.
+
+### `kb get`
 
 ```bash
-kb get arinc-424 5.129 --level l2   # summary
-kb get arinc-424 5.129 --level l3   # full original
+kb get hr-handbook 4.12 --level l2   # summary
+kb get hr-handbook 4.12 --level l3   # full original
 ```
 
-Use when you already know the exact section (unlike `kb query`, which searches blind from a question).
+### `kb stats`
 
-### 7.7 `kb stats` — token numbers, savings evidence
-
-```bash
+```console
 $ kb stats
 L0 index.yaml: 187 tokens
 doc                  sections       L1         L2         L3   saving
-arinc-424                 325    28486      76126      85669    11.1%
-icao-annex-3                4      420       1778       2722    34.7%
+hr-handbook               325    28486      76126      85669    11.1%
+travel-policy               4      420       1778       2722    34.7%
 ```
 
-The `saving` column is the L2-vs-L3 saving **for that document alone** — not the real per-query saving (which is much higher; see section 10), because each query loads only 1–4 sections, not the whole L2.
-
-The 11.1 % above was measured before the 2026-09 quality gate (`kb build` now reports it as 310/325 sections over budget); the re-summarize batch replaces this number.
-
-> A "token" is the unit of text an AI model must "read" — roughly like a word. Fewer tokens → cheaper and faster each AI call.
+The `saving` column is L2-vs-L3 for that document as a whole. The real saving is
+much larger, because a query loads 1–4 sections rather than all of L2.
 
 ---
 
-### 7.8 Phase 2 — Workflow integration
+## 9. The hub and federation
 
-Phase 2 extends CENTER-KB beyond the CLI: Claude Code (or any MCP-capable agent) can query the knowledge base via an **MCP server**, and a document (Jira AC, spec…) can carry a **machine-readable citation** of a specific section, **pinning** the store version at write time — so you can detect when the store changed (amendment) while an old citation did not.
+One reference document usually matters to several repos. Rather than ingesting
+and summarizing it once per repo, shared documents live as a single copy on a
+central **hub**.
 
-#### MCP server — 5 tools
+A hub is an ordinary Git repo with the same `.kb/` layout plus a
+machine-generated `federation/` directory — a catalogue of catalogues. Each
+participating repo mirrors its **full** `.kb/` (L0→L3) under
+`federation/<repo-id>/`, alongside an aggregate `federation/index.yaml` listing
+every document across every repo. A hub is not a long-running server; it is
+still `.yaml` and `.md` files in Git.
 
-Run `python -m center_kb.mcp --kb .kb` (already declared in `.mcp.json` at the repo root — Claude Code picks it up with no extra config).
+### `kb publish`
+
+Mirrors this store's `.kb/` into `federation/<repo-id>/` on the hub and rebuilds
+the aggregate index. The hub comes from `.kb/config.yaml` (`hub:` + `repo_id:`);
+`--hub`/`--repo-id` only override it.
+
+| Mode | Behaviour |
+|---|---|
+| `--pr` | Open or update a pull request on the hub. Needs a git remote, and `gh` able to open a PR on that host. |
+| `--direct` | Commit directly. Refused on a *governed* hub — one carrying a non-empty `federation/registry.yaml` — that has a git remote. |
+| *(neither)* | It picks direct only for a hub with no git remote; for a remote hub it opens a PR, or refuses when `gh` cannot open one. |
+
+A *governed* hub that `gh` cannot open a pull request on has no publish route
+in this release — see "Known limitations" in [`CHANGELOG.md`](CHANGELOG.md) for
+what is available instead.
+
+Publish copies `.kb/` **artefacts only** — documents, indexes, manifests,
+`assets/`. Anything else (`.kb/config.yaml`, dotfiles) is withheld with a
+`[warn] … (allowlist)` line naming it. This matters because `hub:` routinely
+carries a credentialed URL.
+
+`kb ci-publish` is the CI route: it runs inside the child's own GitHub Actions
+job, authenticates to an intake service with GitHub Actions OIDC, and needs no
+secrets. Uploaded paths are capped at 110 UTF-16 code units so that
+`federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH`. A path
+crossing the cap is refused with `400` and the whole upload fails.
+
+### Multi-tier federation
+
+A `kind: hub` repo may itself declare `hub:` + `repo_id:`. Publishing such a repo
+mirrors its **`federation/`** (not its own `.kb/`) into `federation/<hub-id>/`
+upstream, keeping the nested layout (`federation/mid/repo-x/…`). Depth is
+unbounded, and entry ids become paths (`mid/repo-x:doc-id` when qualifying a
+ref). Publishing refuses with `federation cycle detected` when a chain would loop
+content back. Scope a search by choosing which hub you query: a team hub returns
+the team's knowledge, the root hub returns everything.
+
+Hub-to-hub publishing needs direct git access upstream, or `gh` for `--pr`. The
+intake/OIDC route is child-repo-only. An emptied local `federation/` will not
+propagate deletions upstream — publish refuses rather than wipe entries.
+
+### Asset offloading to S3
+
+A hub can declare `asset_store: {mode: s3, bucket: …}` in `.kb/config.yaml`.
+Publishes then upload image assets to that bucket instead of committing them,
+recording what was diverted in `_assets.yaml` next to each document.
+`/assets/<name>` on the hub serves diverted images from the bucket with a local
+disk cache. Needs `pip install "strata-kb[s3]"` plus standard AWS credentials on
+every machine that publishes or serves. The default, `mode: none`, keeps assets
+in git like any other file.
+
+### `kb reindex` and `kb doctor`
+
+`kb reindex` rebuilds `federation/index.yaml` from the sub-snapshots when it has
+drifted. `kb doctor` checks store health: broken contents, missing files, a
+section id whose manifest rows span more than one file, a `## ` heading absent
+from the manifest, published content modified in place on the hub, files a
+publish would never have written (named one by one, with "rotate any credential
+they contain"), a hub clone storing a credential in its own `.git/config`, and a
+git older than 2.31. `federation/index.yaml` records `content_sha256` per
+snapshot so tampering is detectable.
+
+### Try it end to end
+
+```bash
+bash scripts/demo-federation.sh
+```
+
+Builds a hub and two sample repos in a temp directory, runs the full lifecycle
+including cross-repo search and stale citations after an amendment, then cleans
+up without touching your data.
+
+---
+
+## 10. MCP server and Web UI
+
+The same process serves agents and people.
+
+```bash
+# local, stdio — already declared in .mcp.json
+python -m strata_kb.mcp --kb .kb
+
+# shared, HTTP
+STRATA_KB_HTTP_TOKEN=secret python -m strata_kb.mcp --hub . --transport http
+# → agent:  http://<host>:8321/mcp     (Bearer token)
+# → REST:   http://<host>:8321/api/…   (Bearer token or cookie)
+# → human:  http://<host>:8321/ui      (sign in with the token; cookie stored)
+```
+
+A hub is **mandatory** — resolved from `--hub`, `STRATA_KB_HUB`, or
+`.kb/config.yaml`, in that order. The server refuses to start without one, and
+`/ui`, the MCP tools and the REST API search only `federation/` — never the
+server's own working `.kb/`. In the UI, tags render as clickable chips and can be
+used alone to browse matching documents.
+
+### The five MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
-| `kb_search` | Find sections by natural language (tag match + hybrid FTS5/semantic search), return L2 within a token budget. Ranking is capped: each leg is capped at 50 results before fusion, and the tool says so when matches were dropped. It also flags when the top two results are the same section published by two federation repos, when their keyword scores tie exactly, or when both are hybrid-confirmed and score within the ambiguity ratio | `query`, `tags`, `budget` |
-| `kb_get_section` | Fetch exactly one section by id | `doc`, `section`, `level` (`l2`/`l3`) |
-| `kb_context_new` | Pin a `kb-context` citation block at the current KB commit, from 1+ confirmed refs — lets an agent do this from chat, without the BA opening a terminal | `refs`, `tags` |
-| `kb_resolve` | Accept a `kb-context` block (or a ticket containing one) — return the section at the **pinned version**, plus freshness `ok`/`stale`/`broken` | `kb_context` |
-| `kb_ticket_lint` | Definition-of-Ready gate (Phase 4, see [7.10](#710-phase-4--ba-ticket-authoring)): lint a draft ticket's Markdown against required sections, story/AC/diagram structure, and `kb-context` refs resolving at their pinned version — run before handing the ticket to the BA, fix errors, and re-run until it reports PASS | `ticket_markdown` |
+| `kb_search` | Find sections by natural language and return L2 within a token budget. Ranking is capped: each leg is capped at 50 results before fusion, and the tool says so when matches were dropped. It also flags when the top two results are the same section published by two repos, when their keyword scores tie exactly, or when both are hybrid-confirmed within the ambiguity ratio. | `query`, `tags`, `budget` |
+| `kb_get_section` | Fetch exactly one section | `doc`, `section`, `level` |
+| `kb_context_new` | Pin a `kb-context` citation block at the hub's current commit, from confirmed refs | `refs`, `tags` |
+| `kb_resolve` | Resolve a `kb-context` block (or a ticket containing one) — sections at the pinned version plus freshness | `kb_context` |
+| `kb_ticket_lint` | Run the Definition-of-Ready gate over a draft ticket | `ticket_markdown` |
 
-#### 4 new CLI commands
+### Security
 
-| Command | Purpose | Exit code |
-|---|---|---|
-| `kb context new --refs "<doc> §<section>,..."` | BA generates a `kb-context` block pinned at current HEAD — paste into a Jira ticket | `0` OK, `1` ref unresolvable / git error |
-| `kb resolve <file\|->` | Re-read a `kb-context` block (file or stdin), return pinned-version sections + freshness | `0` all refs `ok`, `1` any `broken`, `2` no broken but some `stale` |
-| `kb diff <doc-id> --against <rev>` | Diff added/removed/changed sections (including title changes) and manifest reorders for one doc between the worktree and a git rev — what an amendment changed | `0` OK (even if empty), `1` error (missing doc, bad rev…) |
-| `kb doctor [--context <file\|->]` | KB health check (broken TOC, missing files…); add `--context` to also check citation staleness | `0` OK, `1` KB errors, `2` no KB error but citation `stale`, or the hub cache itself is stale (with or without `--context`) — CI uses this to flag "BA needs to reconfirm" or a stale cache |
+Every response carries CSP (`script-src 'self'`), `X-Frame-Options: DENY`,
+nosniff, `Referrer-Policy` and `Permissions-Policy`; HSTS on https. The `/ui`
+session cookie is a signed, expiring value derived from the token, never the
+token itself. `POST /ui/logout` ends a session.
 
-These codes are global across every `kb` command:
+Two per-caller rate limiters exist: `/intake/publish` (30/min) and `/ui/login`
+(5/min); a failed `Authorization` attempt shares the login bucket, so the lockout
+cannot be side-stepped by using the header. **Behind a reverse proxy, set
+`STRATA_KB_TRUSTED_PROXIES`** to the number of trusted proxies in front of the
+server. The default is `0` — `X-Forwarded-For` ignored, keyed on the socket peer.
+Leaving it at `0` behind a proxy makes both limiters key every caller on the
+proxy's address, so one caller can exhaust them for everyone. Full guide:
+[`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
 
-| Exit | Meaning |
-| --- | --- |
-| 0 | success |
-| 1 | error — including a misconfiguration (bad flag combination, missing required setting) |
-| 2 | citation stale — `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale`, `kb mission lint --fail-on-stale`; `kb doctor` also exits 2, with or without `--context`, when the hub cache itself is stale (a failed pull) |
-
-Caveat: click emits 2 of its own accord for an unrecognised flag or a bad
-parameter type. A CI script that must distinguish "stale" from "you called
-me wrong" should check the command it ran, not only the code.
-
-`kb resolve` / `kb doctor --context` detect that pinned L2 content moved
-since a citation was taken; `kb diff` reports what changed between two revs
-of a doc — section title and L1 summary, the L2 slice (`prose`), the L3
-original (`content`), added and removed sections, and whether the manifest
-order changed. A renumbered section shows as an add plus a remove, because
-the id is the citation key.
-
-#### BA → Jira → Dev flow
-
-1. BA asks an AI assistant (chat, via MCP) to draft the story; the assistant calls `kb_search`, shows the BA every returned candidate section (not just the best match), and — once the BA confirms which one(s) apply — calls `kb_context_new` with those refs. (Or, working at a terminal: `kb context new --refs "<doc> §<section>"` does the same thing directly.)
-2. BA pastes the printed `kb-context` block into the Jira ticket description/AC — the block pins the current KB commit hash.
-3. Dev opens the ticket; the agent (via MCP) calls `kb_resolve` with the ticket body — gets exactly what the BA saw when writing, not a newer store version if the KB has since changed.
-4. If the result is `status=stale` (amendment after the ticket was written), Dev runs `kb diff <doc-id> --against <pinned-rev>` to see which sections changed, then checks with the BA whether the AC needs updating.
-5. `kb doctor --context <ticket>` in CI can automatically block/flag tickets with `stale` citations before merge, without humans scanning every ticket.
-
-> **Note:** `.mcp.json` already configures the MCP server in-repo — no extra setup for Claude Code to see the five tools. The `--hub` flag on `python -m center_kb.mcp` is now **active** — see [7.9](#79-phase-3--federation--remote-mcp) below.
+HTTP auth stops at a bearer token — one fixed secret, no OAuth or SSO. That is
+adequate for an internal network and not ready for the public internet.
 
 ---
 
-### 7.9 Phase 3 — Federation & remote MCP
+## 11. Citations that pin a version
 
-> **Hub-first architecture (2026-07-13):** `kb query`, MCP and the Web UI **read
-> only the hub's `federation/`** — the local `.kb/` is a drafting desk, nobody
-> queries it. `kb publish` mirrors the full L0→L3 into `federation/<repo-id>/`,
-> rebuilds the aggregate `federation/index.yaml`, and opens a PR on a hub with
-> a git remote (direct-commits instead only when the hub has none; a remote
-> hub that can't take a PR gets a refusal, not a silent push — and on a
-> *governed* hub that refusal is final, see "Known limitations" in
-> `CHANGELOG.md`) — merging that PR (or the direct commit, on a remote-less hub)
-> is the single review gate, and content only becomes searchable once it
-> lands on the hub. Details:
-> `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`.
+A ticket, spec or acceptance criterion can carry a machine-readable citation
+that pins the store version at the moment it was written. When the store is
+later amended, the citation is detectably stale instead of silently wrong.
 
-Phase 2 lets one knowledge store talk to developers via MCP and pin citations. Phase 3 solves the next problem: **one reference document often matters to many repos** (e.g. a shared technical standard used by a nav-data repo and a crew-ops repo alike) — you shouldn't ingest and summarize the same document in every repo. Phase 3 lets shared documents live as **a single copy** in a central store called **kb-hub**, while other repos only "reference" it.
-
-**What is kb-hub?** Simply another Git repo with the same `.kb/` layout, plus a machine-generated `federation/` directory — a "catalog of catalogs": each participating repo mirrors its **full** `.kb/` (L0→L3, not just a slim snapshot) under `federation/<repo-id>/`, plus an aggregate `federation/index.yaml` listing every doc across every repo. kb-hub is not a long-running server — still just `.yaml`/`.md` files in Git, same docs-as-code philosophy.
-
-**Three new things to know:**
-
-1. **`kb publish`** — mirrors this store's full `.kb/` (L0→L3) into `federation/<repo-id>/` on the hub and rebuilds `federation/index.yaml`. The hub is read from `.kb/config.yaml` (`hub:` + `repo_id:`), not a CLI flag — `--hub`/`--repo-id` only override it. `--pr` opens/updates a Pull Request there (needs a git remote; refuses if `gh` can't open one on it); `--direct` commits directly (refused on a *governed* hub — one carrying a non-empty `federation/registry.yaml` — that has a git remote); with neither flag it picks direct only for a hub with no git remote, and for a remote hub it opens a PR — or refuses when `gh` cannot open one. Run manually, or via CI (see `.github/workflows/kb-publish.yml`) on every `.kb/` change. **Upgrading to 0.21.0:** on a *governed* hub that `gh` cannot open a PR on — a GitLab/Gitea/self-hosted hub, or a GitHub hub on a machine where `gh` is not installed — all three modes now refuse where the previous release direct-pushed; see "Known limitations" in `CHANGELOG.md` for what is still available. (A GitHub hub where `gh` is installed but not authenticated is not a new refusal of a working publish: the previous release already chose PR mode there and then failed at `gh pr create`.) Check the git version too — a `hub:` URL carrying a credential now needs git ≥ 2.31 on every machine and runner, see [Requirements](#requirements). **What gets mirrored changed too:** before 0.21.0, publish copied *every* file under `.kb/` onto the hub — `.kb/config.yaml`, dotfiles and all; it now copies `.kb/` artefacts only (documents, indexes, manifests, `assets/`) and prints a `[warn] ... (allowlist)` line naming what it withheld. That is worth acting on because `.kb/config.yaml`'s `hub:` field routinely carries a `https://x-access-token:<token>@github.com/org/repo.git` URL, and it was mirrored on every publish: **run `kb doctor` against the hub before your first publish after upgrading** — it names file by file whatever an older publish left inside each `federation/<repo-id>/` entry, but that first publish strips those files out of the entry, after which `kb doctor` reports `kb doctor: OK` and names nothing. That window closes at the next publish, whoever or whatever triggers it — the scaffolded CI workflow fires on a `kb-publish/*` tag, and `kb publish` itself creates and pushes that tag; once it has happened the only record left is the hub's own history (`git log --all -- 'federation/*/config.yaml'`, run inside the hub repo). **If a token or secret was ever published into a hub entry this way, rotate it now** — removing the file from the working tree does not remove it from git history, and the warning disappearing does not mean the credential is gone.
-2. **`kb query`, `kb context new`, `kb resolve`, `kb doctor`** — all read **only** `federation/` on the hub (never the local `.kb/`). The hub is mandatory, resolved from `.kb/config.yaml` (or `--hub`/`CENTER_KB_HUB` to override). Example: `kb query "..."` returns every matching section across every published repo, full L2 content — no `[remote]`-truncated entries, because federation already holds the full mirror. Doc ids that collide across repos need qualifying as `repo-id:doc-id` (the tool tells you when it's ambiguous). The tool keeps a local hub clone fresh — no manual `git clone`.
-3. **`--semantic`** on `kb query` — hybrid search already combines keyword and meaning when the embed extra is installed; `--semantic` now only warns clearly when embeddings are unavailable. Optional extra (`pip install -e ".[embed]"`) — without it, `kb query` still works with keyword match, no error.
-
-**Offloading image assets to S3 (optional):** a hub can declare `asset_store: {mode: s3, bucket: ...}` in its `.kb/config.yaml`; from then on, publishes upload image assets (`<sha256>.png`/`.webp`) to that bucket instead of committing them into `federation/`, recording what was diverted in `_assets.yaml` alongside each doc. `/assets/<name>` on the hub server then serves diverted images straight from the bucket, with a local disk cache so repeat requests skip the round-trip. This needs `pip install "center-kb[s3]"` plus standard AWS credentials (env vars, shared config, or instance role) on any machine that publishes or serves — the intake server, CI, and the MCP/Web host. The default, `mode: none`, is unchanged: assets stay committed in git like every other `.kb/` file. **One 0.21.0 note if you publish through `kb ci-publish`:** the intake now caps every uploaded path at 110 UTF-16 code units, so that `federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH` without `git -c core.longpaths=true`; the previous release had no length check at all. Ordinary image assets fit — `kb ingest` writes them under `<doc-id>/assets/` with a content-addressed basename (`<sha256>.png`/`.webp`, 68–69 characters), so a realistic `arinc-424/assets/<sha256>.png` is 85 and publishes normally. A path that does cross 110 is refused with `400` and the whole upload fails, not just that file, so a deeply nested doc-id plus a long filename can stop a publish. A hub declaring `mode: s3` is exempt for its assets (those files never reach the published tree); `kb publish --pr`/`--direct` are not bound by the cap at all. See "Breaking changes" in `CHANGELOG.md`.
-
-**`kb-context` blocks pin one hub commit.** The generated block records the hub's `version` (HEAD at write time) and repo-qualified refs (`repo-id:doc-id §section`). `kb resolve` walks the hub's git history at that pinned commit to answer `ok`/`stale`/`broken`. Older two-version blocks (`version` + `hub_version`, from the pre-2026-07-13 design) resolve as `broken` with a hint to re-pin via `kb context new` — see the [Migration](#migration-to-the-hub-first-architecture-v090) section below.
-
-**Remote MCP lookup without cloning the repo:** previously an agent had to clone the repo first to use MCP. Phase 3 lets you run the MCP server as a shared HTTP service (not only local stdio), authenticated with a token — full deploy guide in [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md). Behind a reverse proxy, set `CENTER_KB_TRUSTED_PROXIES` (default `0` — X-Forwarded-For ignored, keyed on the socket peer) to the number of trusted proxies in front of the server, or **both** per-caller rate limiters — `/intake/publish` (30/minute) and `/ui/login` (5/minute) — key every caller on the proxy's address instead of its own, so one caller can exhaust either for everyone; see that guide's "Rate-limit key behind a reverse proxy" section for the deployment warning that comes with it.
-
-**Want to see the full lifecycle for real (2 repos contributing to one hub, cross-repo search, stale citations after amendments)?** Run `bash scripts/demo-federation.sh` — it builds a hub and 2 sample repos in a temp directory, runs end-to-end, then cleans up without touching your real data.
-
-**Multi-tier federation (hub → hub):** a `kind: hub` repo may itself declare
-`hub:` + `repo_id:` in `.kb/config.yaml` — `kb publish` on such a repo mirrors
-its **`federation/`** (not its own `.kb/`) into `federation/<hub-id>/` on the
-upstream hub, keeping the nested layout (`federation/mid/repo-x/…`) (exception:
-a hub pointing `hub:` at itself takes the self-publish route — its own `.kb/`
-is mirrored into its own `federation/<repo-id>/` as an ordinary entry). Depth
-is unbounded; entry ids become paths (`mid/repo-x:doc-id` when qualifying
-refs). Publishing refuses with `federation cycle detected` when the chain
-would loop content back (upstream resolves to itself, or an entry path
-already contains a hub id from the chain). A hub without `hub:` is a root
-hub — `kb publish` there errors with guidance. Scope search by choosing which
-hub you query: a team hub returns the team's knowledge, the root hub returns
-everything. Hub-to-hub publish needs direct git access to the upstream (or
-`gh` for `--pr` mode) — the intake/OIDC route is child-repo-only and is not
-supported anywhere in the chain; a hub with both `hub:` and `intake:` set
-gets an explicit error instead of a silent wrong route. An emptied local
-`federation/` will **not** propagate deletions upstream — publish refuses
-rather than wipe the upstream hub's entries; delete `federation/<hub-id>/`
-on the upstream manually if that is really intended.
-
----
-
-### 7.10 Phase 4 — BA ticket authoring
-
-Phase 4 adds a third `kind`, `ba` (a fourth, `dev`, follows in [7.11](#711-phase-5--dev-agent-workflow)) — a requirements repo that never ingests, summarizes, or publishes KB content, but drafts Dev-ready tickets grounded in it. The `ba-ticket-author` skill/command/prompt (Claude Code, GitHub Copilot, Cursor) runs an eight-step pipeline: **Intake** (the BA describes the business need — capability, role, value) → **Parent mission** (optional — if the BA names a parent mission, the agent reads its `missions/<mission-id>.md`, takes the story title from the US backlog row, and writes a `> Parent mission: <mission-id>` line directly under the ticket's title, saving the ticket as `tickets/<mission-id>-US<n>.md` so the back-link check below can find it) → **Ground** (`kb_search` surfaces candidate sections; the BA reviews and picks which apply) → **Draft** (fills the ticket template — story, ACs, use cases, sequence + business-flow Mermaid diagrams — citing `doc-id §section` for every claim that touches a standard) → **Pin** (`kb_context_new` embeds the returned `## KB context` block, pinned at the hub's current commit) → **Lint** (`kb ticket lint` — the Definition-of-Ready gate — runs and re-runs until it reports `DoR: PASS`) → **Maturity review** (once lint reports `DoR: PASS`, two independent reviews (parallel subagents where the runtime supports it, otherwise two sequential passes) score the draft against `docs/review-rubric.md` — Business coverage and Dev implementability — for up to 3 rounds or until both axes reach ≥ 4; a gap the agent cannot close itself becomes an owned `OPEN(<owner>)` open question; the result is recorded in `## Review record`) → **BA review** (the draft lands in `tickets/<ticket-id>.md`; the BA reads it, commits it, and pastes it into Jira themselves). The agent never pushes to Jira or opens tickets on its own — Markdown out, human-in-the-loop by design. `kb_ticket_lint` is the fifth MCP tool (see [7.8](#78-phase-2--workflow-integration) above), so an agent can run the same gate over MCP instead of a terminal.
-
-**Mission plans (Phase 4.1)** sit *upstream* of that ticket flow, for a feature that spans several User Stories (small work still goes straight to a ticket — a mission is never mandatory). The `ba-mission-plan` skill/command/prompt runs **Intake → Ground → Draft → Split → Pin → Lint → Maturity review → Review**, saving `missions/M-<slug>.md`: a required-structure document carrying a C4 **Level 1** (System Context) *and* **Level 2** (Container) Mermaid diagram, plus a US backlog whose ids derive from the mission id. `kb mission lint` is the second Definition-of-Ready gate — required structure, both diagrams present, a well-formed backlog, and every citation resolving at the pinned hub version; a `0/N US drafted` coverage warning is expected and normal before any ticket exists. The mission↔ticket relationship is deliberately loose: the mission holds the authoritative US backlog, and a ticket that implements one row may *optionally* name its parent with a `> Parent mission: <mission-id>` line directly under its title, saved as `tickets/<mission-id>-US<n>.md` so `kb ticket lint`'s back-link check can find it — dropping the line is valid, just untraceable. Mission lint is deliberately **CLI-only, no MCP tool** (its distinguishing checks need filesystem access to the sibling `tickets/` directory that the shared MCP server does not have), so the MCP tool count is unchanged at **5** — `kb_ticket_lint` is still the only lint-related tool.
-
-Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml` in CI — the workflow and job name stay `kb-ticket-lint` even though the gate now covers both directories, because branch protection on already-provisioned BA repos keys on that name and renaming it would leave them blocked on a check that never runs again. The trigger is deliberately not `paths`-filtered to `tickets/**.md`/`missions/**.md`: GitHub never synthesizes a passing status for a job that never started, so filtering a *required* check's trigger would leave any PR touching neither directory waiting forever. Instead the job always starts, and its one step inspects the PR's own diff and dispatches by directory, `kb ticket lint` for a changed ticket and `kb mission lint` for a changed mission — exiting 0 with a notice when nothing under either directory changed, and otherwise failing unless every changed file reports PASS (branch protection on the repo then blocks the merge).
-
-| Command | Purpose | Exit code |
-|---|---|---|
-| `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Definition-of-Ready gate: required sections present, every `## KB context` ref resolves at its pinned hub commit, every inline `doc-id §section` citation is backed by a pinned ref (and vice versa) | `0` PASS, `1` FAIL, `2` citation stale (with `--fail-on-stale`) |
-| `kb mission lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Mission Definition-of-Ready gate: required structure, C4 L1 + L2 diagrams present, a well-formed backlog whose ids derive from the mission id, every citation resolving at its pinned hub commit | `0` PASS, `1` FAIL, `2` citation stale (with `--fail-on-stale`) |
-
-Scaffold a `ba` repo with `kb init --kind ba`; see `QUICKSTART-BA.md` (generated into the repo) for the full setup, including the two environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that wire the assistant to the hub's MCP server, and the CI variable/secret (`CENTER_KB_HUB`, `KB_HUB_TOKEN`) the lint workflow needs.
-
----
-
-### 7.11 Phase 5 — Dev agent workflow
-
-Phase 5 Stage A adds a fourth `kind`, `dev` — a **product code repo**: it
-consumes the shared KB while implementing BA tickets, and publishes
-knowledge about its own source code back to the hub. The boundary against
-`child`: a `child` repo ingests documents from **outside** the repo and
-publishes them as domain knowledge; a `dev` repo ingests **nothing**, and
-authors only knowledge **about its own code**. Stage A ships the workflow
-that grounds that work in the KB; Stage B ships the generated half of
-that code knowledge, `kb code-ingest` (see
-[7.12](#712-phase-5-stage-b--kb-code-ingest)); Stage C ships the curated
-half, bootstrapped by `/dev-code-seed` and accrued by `kb svc note` (see
-[7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)); Stage D
-teaches the BA wrappers to read both (see
-[7.10](#710-phase-4--ba-ticket-authoring) and `QUICKSTART-BA.md`'s "Code
-knowledge on the hub" section).
-
-One orchestrator plus four phase skills implement a ticket, each
-separately invocable and resumable across sessions — state is derived
-from which artifacts exist, never stored in a sidecar file:
-
-```
-/dev-implement-ticket <ticket>            → intake · resolve · ground · placeholders
-                                          → dev-design    ── GATE 1: Dev approves design
-                                          → dev-plan      ── GATE 2: Dev approves plan
-                                          → dev-execute      (repeatable, resumable)
-                                          → dev-handover  ── GATE 3: Dev opens PR
-                                                             GATE 4: Dev merges
+```bash
+kb context new --refs "hr-handbook §4.12, travel-policy §2.1"   # BA generates the block
+kb resolve ticket.md                                            # Dev resolves it later
+kb diff hr-handbook --against <pinned-rev>                      # what changed since
+kb doctor --context ticket.md                                   # CI gate
 ```
 
-All five — the orchestrator and the four phases — are scaffolded as slash
-commands for **Claude Code, GitHub Copilot, and Cursor**:
-`/dev-implement-ticket`, `/dev-design`, `/dev-plan`, `/dev-execute`,
-`/dev-handover`. A Dev normally reaches `dev-design` through the
-orchestrator's own Run-the-phases step; the table below covers the other four
-as direct entry points, plus the CLI-only citation check:
+The generated block records the hub's `version` (HEAD at write time) and
+repo-qualified refs (`repo-id:doc-id §section`). `kb resolve` walks the hub's
+history at that commit and answers `ok`, `stale` or `broken`.
+
+`kb diff` reports what changed between two revs of a document: section title and
+L1 summary, the L2 slice, the L3 original, added and removed sections, and
+whether the manifest order changed. A renumbered section shows as an add plus a
+remove, because the id is the citation key.
+
+**The flow in practice.** A BA asks an assistant to draft a story; the assistant
+calls `kb_search`, shows every candidate section, and — once the BA confirms
+which apply — calls `kb_context_new`. The BA pastes the block into the ticket.
+When a Dev picks the ticket up, their agent calls `kb_resolve` and gets exactly
+what the BA saw, not a newer store version. If the result is `stale`, `kb diff`
+shows what the amendment changed, and the BA decides whether the acceptance
+criteria need updating. `kb doctor --context` runs the same check in CI.
+
+---
+
+## 12. BA repos — tickets and missions
+
+A `ba` repo never ingests, summarizes or publishes KB content. It drafts
+Dev-ready tickets grounded in it.
+
+**`ba-ticket-author`** runs an eight-step pipeline: **Intake** (the business
+need — capability, role, value) → **Parent mission** (optional; reads
+`missions/<mission-id>.md`, takes the story title from the backlog row, writes a
+`> Parent mission: <mission-id>` line under the title and saves as
+`tickets/<mission-id>-US<n>.md`) → **Ground** (`kb_search` surfaces candidates,
+the BA picks) → **Draft** (story, acceptance criteria, use cases, sequence and
+business-flow Mermaid diagrams, citing `doc-id §section` for every claim touching
+a standard) → **Pin** (`kb_context_new` embeds the `## KB context` block) →
+**Lint** (`kb ticket lint` until it reports `DoR: PASS`) → **Maturity review**
+(two independent reviews score Business coverage and Dev implementability
+against `docs/review-rubric.md`, up to 3 rounds or until both reach ≥ 4; a gap
+the agent cannot close becomes an owned `OPEN(<owner>)` question, recorded in
+`## Review record`) → **BA review** (the human reads it, commits it, and pastes
+it into the tracker).
+
+The agent never pushes to a tracker or opens a ticket on its own. Markdown out,
+human in the loop by design.
+
+**Mission plans** sit upstream, for a feature spanning several stories (small
+work goes straight to a ticket — a mission is never mandatory).
+`ba-mission-plan` runs **Intake → Ground → Draft → Split → Pin → Lint → Maturity
+review → Review**, saving `missions/M-<slug>.md` with a C4 **Level 1** (System
+Context) *and* **Level 2** (Container) diagram plus a user-story backlog whose
+ids derive from the mission id.
+
+| Command | Purpose | Exit |
+|---|---|---|
+| `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required sections present; every `## KB context` ref resolves at its pinned commit; every inline `doc-id §section` citation is backed by a pinned ref and vice versa | `0` PASS, `1` FAIL, `2` stale |
+| `kb mission lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required structure; C4 L1 + L2 diagrams present; a well-formed backlog whose ids derive from the mission id; every citation resolving at its pinned commit | `0` PASS, `1` FAIL, `2` stale |
+
+Mission lint is deliberately **CLI-only** — its distinguishing checks need
+filesystem access to the sibling `tickets/` directory that a shared MCP server
+does not have. `kb_ticket_lint` remains the only lint tool over MCP.
+
+Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml`.
+The trigger is deliberately **not** `paths`-filtered: GitHub never synthesises a
+passing status for a job that never starts, so filtering a required check would
+leave unrelated PRs waiting forever. The job always starts, inspects the PR's own
+diff, and dispatches `kb ticket lint` or `kb mission lint` by directory — exiting
+0 with a notice when neither directory changed.
+
+Scaffold with `kb init --kind ba`; the generated `QUICKSTART-BA.md` covers the
+two environment variables (`STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN`) that wire
+the assistant to the hub, and the CI variable and secret (`STRATA_KB_HUB`,
+`KB_HUB_TOKEN`) the lint workflow needs.
+
+---
+
+## 13. Dev repos — code knowledge
+
+A `dev` repo consumes the shared KB while implementing tickets, and publishes
+knowledge about **its own source code** back to the hub. The boundary against
+`child`: a `child` ingests documents from outside the repo; a `dev` ingests
+nothing and authors only knowledge about its own code.
+
+### The agent workflow
+
+One orchestrator plus four phase skills, each separately invocable and resumable
+across sessions. State is derived from which artifacts exist — never stored in a
+sidecar file.
+
+```
+/dev-implement-ticket <ticket>   → intake · resolve · ground · placeholders
+                                 → dev-design    ── GATE 1: Dev approves design
+                                 → dev-plan      ── GATE 2: Dev approves plan
+                                 → dev-execute      (repeatable, resumable)
+                                 → dev-handover  ── GATE 3: Dev opens PR
+                                                    GATE 4: Dev merges
+```
 
 | Situation | Command |
 |---|---|
 | New ticket, nothing started | `/dev-implement-ticket <ticket>` |
-| Small ticket, the whole change is obvious | `/dev-implement-ticket <ticket>` — the flow collapses itself; the design stays in chat |
+| Small ticket, the change is obvious | `/dev-implement-ticket <ticket>` — the flow collapses itself, the design stays in chat |
 | Design approved, no plan yet | `/dev-plan <id>` |
-| Plan approved, or execution already in progress | `/dev-execute <id>` |
+| Plan approved, or execution underway | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
-| Just want to check a citation, no implementation | `kb resolve <file>` |
+| Just checking a citation | `kb resolve <file>` |
 
-Every entry point re-checks freshness first — the hub may have published
-since the last session, so a ref that was `ok` yesterday can be `stale`
-today; checking only at handover would be too late.
+Work lives in `docs/impl/<ticket-id>-design.md` (architectural tickets only) and
+`docs/impl/<ticket-id>-plan.md` (one task per acceptance criterion, `- [ ]`
+checkboxes ticked one commit at a time). Those two files, the ticked-checkbox
+ratio, the branch, and whether a PR exists are the complete state.
 
-**Where work lives:** `docs/impl/<ticket-id>-design.md` (architectural-path
-tickets only — a bounded ticket's design stays in chat, no file) and
-`docs/impl/<ticket-id>-plan.md` (one task per AC, `- [ ]` checkboxes,
-ticked one commit at a time). Those two files' existence, the
-ticked-checkbox ratio, the branch, and whether a PR exists are the
-complete state — any phase resumes cold in a new session.
+Every entry point re-checks citation freshness first — the hub may have published
+since the last session, so a ref that was `ok` yesterday can be `stale` today.
+All four gates are human. Enforced throughout: no production code without a
+failing test observed first, and no completion claim without shown verification
+output.
 
-**The four gates — all human, the agent does none of them:** GATE 1 the
-Dev approves the design; GATE 2 the Dev approves the plan; GATE 3 the Dev
-opens the PR; GATE 4 the Dev merges it. Enforced throughout: no production
-code without a failing test observed first, and no completion claim
-without shown verification output.
+### `kb code-ingest` — the generated document
 
-**Reserved doc-id suffixes.** `<repo_id>-code` (generated) and
-`<repo_id>-svc` (curated) are reserved for a `dev` repo's own
-code-knowledge documents — a domain document must not take either suffix.
-`<repo_id>-code` ships in Stage B (see
-[7.12](#712-phase-5-stage-b--kb-code-ingest));
-`<repo_id>-svc` ships in Stage C (see
-[7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)).
-
-Scaffold a `dev` repo with `kb init --kind dev`; see `QUICKSTART-DEV.md`
-(generated into the repo) for the full setup, including the two
-environment variables (`CENTER_KB_HUB_URL`, `CENTER_KB_HTTP_TOKEN`) that
-wire the assistant to the hub's MCP server, and registering this repo in
-the hub's `federation/registry.yaml` before publishing either document
-works. A hub with a non-empty registry is *governed*: `kb publish` refuses
-a repo-id the publisher's own remote is not registered for, and refuses
-direct pushes.
-
----
-
-### 7.12 Phase 5 Stage B — `kb code-ingest`
-
-`kb code-ingest` extracts a codebase's own structure into an ordinary
-4-layer KB document, `.kb/<repo_id>-code/` — **deterministic and
-LLM-free**: pure functions of the working tree, no network call, no AI
-pass. Because the output is just another `_manifest.yaml` + `.md` +
-`.raw.md` set, `kb build`, `kb query`/`kb get`, federation, and the web
-UI need **zero code changes** to read it (see [7.5](#75-kb-query--natural-language-lookup)/[7.6](#76-kb-get--fetch-one-section-when-you-know-the-id)
-— they already work on it once it is published).
+Extracts a codebase's structure into `.kb/<repo_id>-code/` — **deterministic and
+LLM-free**: pure functions of the working tree, no network call. The output is an
+ordinary 4-layer document, so build, query, federation and the Web UI read it
+with zero special-casing.
 
 ```
 kb code-ingest [--repo-root .] [--kb-dir .kb] [--repo-id <cfg>]
@@ -673,475 +743,327 @@ kb code-ingest [--repo-root .] [--kb-dir .kb] [--repo-id <cfg>]
                [--scaffold-svc] [--json]
 ```
 
-| Flag | Meaning |
-|---|---|
-| `--repo-root` | Repository root to scan (default: `.`) |
-| `--kb-dir` | KB directory to write into (default: `.kb`, relative to the current directory like every other `kb` command) |
-| `--repo-id` | Repo id (default: `.kb/config.yaml`, then the folder name) |
-| `--doc-id` | Document id (default: `<repo_id>-code`) |
-| `--db` | An explicit SQLite file to read for schema — repeatable; never inferred (§3.11 below). A relative path is relative to `--repo-root` |
-| `--tags` | Extra `index.yaml` tags, comma-separated — added on top of `[code, generated]`, existing/user-added tags are preserved across reruns |
-| `--scaffold-svc` | Also upsert the curated `<repo_id>-svc` scaffold (Stage C's document — see [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)) |
-| `--json` | Machine-readable report instead of the human-readable summary |
-
-**The seven extractors.** Cross-stack by *artifact kind*, not by
-programming language — center-kb is a framework adopted across many
-project lines, and a single-stack extractor set would make most adopting
-repos hit the zero-detection failure below on day one.
+Seven extractors, organised by **artifact kind rather than language**, because
+Strata is adopted across many project lines and a single-stack extractor set
+would leave most repos with nothing on day one:
 
 | Extractor | Reads | Section prefix |
 |---|---|---|
 | `services` | `docker-compose*.yml` (a `build:` service is read through its Dockerfile — runtime-stage `FROM`, `EXPOSE`, `CMD`; `env_file` by name only), `Dockerfile`, k8s manifests, `*.sln`, workspace `package.json` | `svc.<name>` |
-| `deps` | `pyproject.toml` (`dependencies` and every `optional-dependencies` group), `requirements*.txt` (the root file is `direct`; any other is its own group), `setup.cfg`, `package.json` (`dependencies` and `devDependencies`), `pom.xml`, `build.gradle{,.kts}`, `*.csproj`, `go.mod`, `composer.json` (`require` and `require-dev`) | `dep.<ecosystem>` |
-| `commands` | `package.json` `scripts`, `Makefile` targets, `tox.ini` (env names and `commands =`), `pyproject` tool sections, `*.sh` at the root or under `scripts/`, `pom.xml`, `*.csproj`, and `.github/workflows/*.yml` `run:` steps (CI wins over a local script when both exist; commands are classified by whole token, never substring) | `cmd.build`/`cmd.test`/`cmd.lint`/`cmd.run` |
-| `tree` | `git ls-files` — the files git tracks in the index, so a git-ignored virtualenv or worktree never appears and two checkouts of one commit agree — plus the always-pruned `node_modules`/`target`/`bin`/`obj`/`dist`/`build`/`venv`/`__pycache__`/`.git`/`.kb`. Outside a git repository it is an unfiltered walk and the section says so. The L3 listing is capped at 600 lines (and depth 4) with a marker | `struct.tree` |
-| `schema` | `**/migrations/*.sql`, Flyway/Liquibase layouts, `schema.prisma`, Alembic `versions/*.py`, EF `Migrations/*.cs`, plus explicit `--db` SQLite | `db.<table>` |
-| `integrations` | `.env.example`/`.sample`/`.template` **keys**, compose `environment:` **keys** (OpenAPI `servers:` only decides *whether* this extractor detects anything — no server URL is ever extracted into a section) | `int.<name>` |
+| `deps` | `pyproject.toml`, `requirements*.txt`, `setup.cfg`, `package.json`, `pom.xml`, `build.gradle{,.kts}`, `*.csproj`, `go.mod`, `composer.json`, plus Rust, Swift and Dart manifests | `dep.<ecosystem>` |
+| `commands` | `package.json` scripts, `Makefile` targets, `tox.ini`, `pyproject` tool sections, `*.sh` at the root or under `scripts/`, `pom.xml`, `*.csproj`, `.github/workflows/*.yml` `run:` steps (CI wins over a local script; classified by whole token, never substring) | `cmd.build`/`test`/`lint`/`run` |
+| `tree` | `git ls-files` — so a git-ignored virtualenv never appears and two checkouts of one commit agree — plus always-pruned build directories. Outside a git repo it is an unfiltered walk and says so. L3 is capped at 600 lines and depth 4. | `struct.tree` |
+| `schema` | `**/migrations/*.sql`, Flyway/Liquibase layouts, `schema.prisma`, Alembic `versions/*.py`, EF `Migrations/*.cs`, plus explicitly named `--db` SQLite files | `db.<table>` |
+| `integrations` | `.env.example`/`.sample`/`.template` **keys**, compose `environment:` **keys** | `int.<name>` |
 | `api` | `openapi*.y*ml`, `swagger*.json` | `api.<tag>` |
 
-`tree` always detects something, so the zero-detection rule is: `kb
-code-ingest` exits `1` when **no extractor other than `tree`** found
-anything — a document holding only a folder listing is a
-misconfiguration, not knowledge.
+`tree` always finds something, so the zero-detection rule is: `kb code-ingest`
+exits `1` when **no extractor other than `tree`** found anything. A document
+holding only a folder listing is a misconfiguration, not knowledge.
 
-**Deliberate parser limits, stated so they are not mistaken for bugs.**
-`schema` recognises `CREATE TABLE` and `ALTER TABLE … ADD COLUMN`,
-applied in sorted filename order; it does not implement a SQL dialect.
-A `CREATE TABLE` of a name already created in a *different* migration
-directory is dropped with a warning naming both files, and an `ALTER
-TABLE … ADD COLUMN` is applied only inside the directory of its `CREATE
-TABLE` — two independent schemas that share a table name are never
-merged into one that exists nowhere. EF Core migrations are recognised by
-table name only and the section says "columns not extracted". Maven
-`<plugins>`, `setup.cfg` `extras_require`, `pnpm-workspace.yaml` and
-compose `healthcheck:` are not read.
-`ALTER TABLE … RENAME`/`DROP` and an `ALTER TABLE ADD CONSTRAINT`/`INDEX`
-(not a column) are recognised as out of scope and **warn**, naming the
-file. A dialect-specific trailing clause between a table's closing paren
-and its terminating `;` — MySQL `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
-SQLite `) WITHOUT ROWID;`, Postgres `) PARTITION BY RANGE (id);`, or a
-final `CREATE TABLE` in a file with no trailing `;` at all — is recognised
-correctly: the reader locates a table's real closing paren by depth, not
-by scanning for an immediately-adjacent `);`. A `CREATE TABLE` statement
-whose *name* doesn't fit the recognised identifier shape
-(`[A-Za-z_][\w.]*`, optionally quoted) is a different case — it is
-skipped rather than guessed at, but **with a warning naming the file**:
-the reader also counts how many `CREATE TABLE` keywords a file's text
-contains and compares that to how many it actually recognised, so a
-skipped statement is never silent. `build.gradle{,.kts}` is matched by
-regex, not parsed as a Groovy/Kotlin DSL. A file `git ls-files` still
-lists (it is in the **index**) but that has since been deleted from the
-working tree — staged for deletion but not yet committed, or removed
-outside git's knowledge — appears in `struct.tree` as a listed entry with
-no content behind it: every reader that tries to open it warns "could not
-parse" naming the file, rather than silently dropping it from the
-listing. This is why §3.9 of the design spec says the code, not the
-generated document, is always the final word.
+**Never a secret channel — two security properties, not conveniences.**
 
-**Reserved doc-id suffixes.** `<repo_id>-code` (this document, generated,
-tagged `[code, generated]`) and `<repo_id>-svc` (curated by a human,
-tagged `[code, curated]`, see
-[7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed))
-are reserved — a domain document must never take either suffix.
+1. The `integrations` extractor emits **keys only, never values**. The only env
+   file it opens is `.env.example`/`.sample`/`.template` — never a real `.env` —
+   and its regex has no capture group around the value at all, so there is
+   nothing to leak whatever a matched line holds. Compose `environment:` blocks
+   *are* read and do hold real inline values, but only the key survives, through
+   the same sanitiser. Neither a developer's local `.env` nor a value hardcoded
+   into `docker-compose.yml` can reach a document CI publishes.
+2. SQLite schema input is **`--db`-only, never inferred.** A stray `.db` or
+   `.sqlite` in the repo — a test fixture, a scratch database — is never read
+   unless named explicitly on the command line, so it cannot become published
+   company knowledge by accident.
 
-**A destination this command did not write is refused.** If
-`.kb/<doc_id>/` already holds Markdown or a manifest and that manifest is
-missing, unreadable, not titled `… — code knowledge`, or lists a section
-id outside the seven generated prefixes, `kb code-ingest` exits 1 and
-writes nothing — a hand-curated document that happens to sit at
-`<repo_id>-code` is never deleted. Move it or choose another `--doc-id`;
-there is no override flag.
+**Stated parser limits, so they are not mistaken for bugs.** `schema` recognises
+`CREATE TABLE` and `ALTER TABLE … ADD COLUMN` in sorted filename order; it does
+not implement a SQL dialect. A `CREATE TABLE` of a name already created in a
+*different* migration directory is dropped with a warning naming both files, and
+an `ADD COLUMN` applies only inside the directory of its `CREATE TABLE` — two
+independent schemas sharing a table name are never merged into one that exists
+nowhere. `RENAME`/`DROP` and `ADD CONSTRAINT`/`INDEX` warn as out of scope. A
+dialect-specific trailing clause (`) ENGINE=InnoDB …;`, `) WITHOUT ROWID;`,
+`) PARTITION BY RANGE (id);`, or a final statement with no `;` at all) is handled
+correctly — the closing paren is located by depth, not by scanning for an
+adjacent `);`. A table name outside the recognised identifier shape is skipped
+**with a warning naming the file**: the reader counts `CREATE TABLE` keywords and
+compares against what it recognised, so a skip is never silent. EF Core
+migrations are recognised by table name only. `build.gradle{,.kts}` is matched by
+regex, not parsed as a DSL. Maven `<plugins>`, `setup.cfg` `extras_require`,
+`pnpm-workspace.yaml` and compose `healthcheck:` are not read.
 
-**Section-id prefix contract (spec §6.2).** Each prefix has exactly one
-owner; the BA Agent, the Dev workflow, and future tooling key on these,
-so they are a stable contract:
+**A destination this command did not write is refused.** If `.kb/<doc_id>/`
+already holds Markdown or a manifest and that manifest is missing, unreadable,
+not titled `… — code knowledge`, or lists a section id outside the seven
+generated prefixes, `kb code-ingest` exits 1 and writes nothing. There is no
+override flag — move the document or choose another `--doc-id`.
+
+**Determinism, and its one caveat.** Extractors are pure functions of the files
+git tracks, plus explicitly named `--db` files. Sections sort by `(group, id)`,
+dependencies by name, tables by name (column order is preserved — it carries
+meaning), and YAML/JSON keys sort on write. Path separators normalise to `/` and
+line endings to `\n`, even on Windows. Re-running on the same commit **on the
+same platform** produces byte-identical files, which is what makes
+`kb ci-publish`'s hash diff a true no-op on an unchanged tree. Several glob
+matches case-normalise per OS, so a cross-platform re-run is not covered by this
+guarantee; CI always runs on Linux, so what gets published is stable. The
+manifest's `revision`/`ingested` derive from the **HEAD commit**, while the
+working tree may hold uncommitted changes — `kb code-ingest` prints a
+`dirty_tree` warning when it detects this.
+
+### `kb svc note` and `/dev-code-seed` — the curated document
+
+`<repo_id>-code` holds names and structure. `<repo_id>-svc` holds what each
+service is **responsible for** — LLM-drafted from the code evidence and gated by
+a human before it can publish.
+
+**Why two documents and never one:**
+
+1. **Overwrite vs. accumulate.** `-code` is fully regenerated on every merge;
+   sharing a document would silently delete human-authored content beside it.
+2. **`pending` vs. a clean build.** `-svc` carries `pending` sections during a
+   seed or an amend; folding that into `-code` would fail `kb build` for the
+   whole document, including the parts CI regenerates automatically.
+3. **Auto-merge vs. review.** `-code` is machine fact and may be auto-merged by
+   hub policy; `-svc` is a human claim and always needs review. One document can't carry
+   both publish policies at once.
+
+The two are joined by **section id, not by file**: `svc.<name>` deliberately
+exists in both. `-code §svc.<name>` supplies `alias`/`label`/`technology`,
+`-svc §svc.<name>` supplies `description` — together filling all four arguments
+of a C4 `Container(alias, label, technology, description)`.
+
+**Section-id prefix contract.** Each prefix has exactly one owner. The BA agent,
+the Dev workflow and future tooling key on these, so they are stable:
 
 | Prefix | Document | Owner | Content |
 |---|---|---|---|
-| `struct.tree` | `-code` | extractor | package/folder layout + entry points |
+| `struct.tree` | `-code` | extractor | package/folder layout and entry points |
 | `svc.<name>` | `-code` | extractor | image, ports, `depends_on`, detected technology |
 | `db.<table>` | `-code` | extractor | columns, types, PK/FK, DDL |
-| `dep.<ecosystem>` | `-code` | extractor | direct dependencies + framework detection |
-| `int.<name>` | `-code` | extractor | external integrations (keys only, see below) |
+| `dep.<ecosystem>` | `-code` | extractor | direct dependencies and framework detection |
+| `int.<name>` | `-code` | extractor | external integrations, keys only |
 | `api.<tag>` | `-code` | extractor | endpoints from an in-repo OpenAPI contract |
-| `cmd.<purpose>` | `-code` | extractor | how to build / test / lint / run this repo |
+| `cmd.<purpose>` | `-code` | extractor | how to build, test, lint and run this repo |
 | `svc.<name>` | `-svc` | human (LLM-drafted) | what this service is responsible for |
 | `flow.<name>` | `-svc` | human | a business flow and the services it crosses |
 | `hist.<name>` | `-svc` | `kb svc note` | append-only log of tickets that touched this service |
 
-`svc.<name>` deliberately collides across the two documents on purpose —
-it is the join key that lets a C4 diagram fill `Container(alias, label,
-technology, description)` from `-code` (the first three) and `-svc` (the
-fourth).
+**Bootstrapping, once per repo — `/dev-code-seed`.** A project adopting Strata
+already has services doing real work, so the seed is a one-time pass rather than
+documentation discipline that would yield nothing for what already exists. Seven
+steps: **Preflight** (hub, repo-id, intake configured and the repo allowlisted;
+warns, does not block, on a dirty tree) → **Extract** (`kb code-ingest
+--scaffold-svc` creates a `pending` `svc.<name>` per detected service) →
+**Draft** (`kb summarize <repo_id>-svc` writes each responsibility paragraph from
+that evidence) → **Review** (a human walks every draft against its evidence — the
+LLM output is a draft, never a fact, and approving one unread defeats the gate)
+→ **Approve** (`kb approve <repo_id>-svc`) → **Flows** (optional `flow.<name>`
+sections) → **Validate and publish** (`kb build` *without* `--allow-pending`,
+then `kb publish --pr`). Budget **~10–15 min per service** for the review step.
 
-**Determinism guarantee, and the dirty-tree caveat.** Extractors are pure
-functions of the files git tracks in the index — contents read from the
-working tree, with `dirty_tree` flagging uncommitted changes — plus
-`--db` files named explicitly: sections sort by `(group, id)`,
-dependencies by name, tables by name (column order is preserved — it
-carries meaning), and YAML/JSON keys sort on write so dict order cannot
-leak. Path separators always normalise to `/` and line endings to `\n`,
-even on Windows. Re-running on the same commit **on the same platform**
-produces byte-identical files, which is what makes `kb ci-publish`'s
-hash-diff a true no-op on an unchanged tree. This is narrower than
-"same machine or not": several glob matches (six extractor modules'
-`fnmatch.fnmatch` calls, plus two `Path.glob` calls in `services.py`)
-case-normalise per OS, so a repo with e.g. both `ci.yml` and a
-differently-cased duplicate could in principle differ between Windows
-and Linux — CI always runs on Linux, so what actually gets published is
-stable; a local, cross-platform re-run is not the guarantee this makes.
-The one thing this guarantee does **not** cover: `Manifest.revision`/`Manifest.ingested` are
-derived from the **HEAD commit** (short SHA and its commit date), while
-the working tree may hold uncommitted changes — so a local run can
-describe content that is in no commit yet.
-`kb code-ingest` detects this and prints a `dirty_tree` warning; CI
-always runs on a clean checkout, so published artifacts stay honest.
+**Accruing after the seed — `kb svc note`.**
 
-**Never a secret channel — two rules, both security properties, not
-conveniences.** (1) The `integrations` extractor emits **keys only,
-never values**, from two different inputs, each safe for its own
-reason: the only *env file* it ever opens is
-`.env.example`/`.env.sample`/`.env.template` — never a real `.env` —
-and the regex that reads it has no capture group around the value at
-all, so there is nothing to leak regardless of what a matched line's
-right-hand side holds; compose `environment:` **blocks are also
-read**, and those do hold real inline values in the YAML, but only the
-key is kept, via the same key-sanitiser `services.py` uses for its own
-`environment:` reading — never the value. So neither a developer's
-local `.env` nor a value hardcoded into `docker-compose.yml` can leak
-into a document CI publishes on every merge. (2) SQLite schema
-input is **`--db`-only, never inferred** — a stray
-`.db`/`.sqlite` file sitting in the repo (a test fixture, a scratch
-database) is never read unless its path is named explicitly on the
-command line, so it can never become published company knowledge by
-accident.
-
-**CI workflow `kb-code.yml` — two jobs, two triggers.**
-
-| Trigger | Steps | Purpose |
-|---|---|---|
-| `push` to `main` or `master`, `workflow_dispatch` | checkout → setup-python → `pip install center-kb` → `kb code-ingest` → `kb build` → `kb ci-publish` | Regenerate `-code`, then publish the whole `.kb/` diff to the hub in one PR — `-code` always, plus any already-merged `-svc` amend riding the same push (see [7.13](#713-phase-5-stage-c--kb-svc-note-and-dev-code-seed)) |
-| `pull_request` | checkout → setup-python → `pip install center-kb` → `kb build` | **Validate only — never publishes.** Catches a malformed `-svc` edit or a `pending` section committed before review |
-
-`--scaffold-svc` is deliberately never passed in CI — CI must never
-create `pending` content, since that would fail its own `kb build` step;
-seeding and amending the curated `-svc` document are human, local actions
-(Stage C's `/dev-code-seed`). **Auto-merging a `-code` hub PR is a
-hub-side branch-protection/labeling policy, not `kb-code.yml`'s own
-behaviour** — documented in the scaffolded `QUICKSTART-DEV.md`, not
-here — it is safe to automate because `-code` is deterministic and
-LLM-free by construction. **`-svc` PRs are never auto-merged** — that
-document is LLM-drafted and always needs a human review before it can
-publish.
-
----
-
-### 7.13 Phase 5 Stage C — `kb svc note` and `dev-code-seed`
-
-Stage B's `kb code-ingest` produces `<repo_id>-code` — names and
-structure, deterministic, no human review needed. Stage C produces
-`<repo_id>-svc` — the curated companion holding what each service is
-**responsible for**, LLM-drafted from Stage B's code evidence and gated
-by a human before it can publish.
-
-**Why two documents, never one (spec §3.8).** `-code` and `-svc` cannot
-share a document, for three independent reasons:
-
-1. **Overwrite vs. accumulate** — `-code` is fully regenerated and
-   overwritten on every merge; sharing a document would silently delete
-   any human-authored content sitting next to it.
-2. **`pending` vs. clean build** — `-svc` carries `pending` sections
-   during a seed or an amend; folding that into `-code` would fail
-   `kb build` for the whole document, including the parts CI regenerates
-   automatically on every push.
-3. **Auto-merge vs. review** — `-code` is machine fact and may be
-   auto-merged by hub policy; `-svc` is a human claim and always needs
-   review. One document can't carry both publish policies at once.
-
-The two documents are joined by **section id, not by file**:
-`svc.<name>` deliberately exists in both (see the prefix table in
-[7.12](#712-phase-5-stage-b--kb-code-ingest)) — `-code §svc.<name>` gives
-`alias`/`label`/`technology`, `-svc §svc.<name>` gives `description`,
-together filling all four arguments of `Container(alias, label,
-technology, description)`.
-
-**Bootstrapping `-svc` — `/dev-code-seed`, once per repo.** A project
-adopting center-kb already has services doing real work, so Stage C
-ships a one-time seed rather than requiring per-ticket documentation
-discipline from day one (which would yield nothing for everything that
-already exists). The `dev-code-seed` skill/command/prompt (kind `dev`
-only) walks seven steps: **Preflight** (hub/repo-id/intake configured,
-repo allowlisted; warns — doesn't block — if the tree is dirty) →
-**Extract** (`kb code-ingest
---scaffold-svc` creates a `pending` `svc.<name>` scaffold per detected
-service, backed by deterministic L3 code evidence) → **Draft** (`kb
-summarize <repo_id>-svc` asks an LLM to write each L2 responsibility
-paragraph from that evidence) → **Review** (a human walks every draft
-against its evidence and corrects it — the LLM output is a draft, never
-a fact, and approving one unread defeats the gate) → **Approve** (`kb
-approve <repo_id>-svc` flips corrected sections `summarized` →
-`reviewed`) → **Flows** (optional `flow.<name>` sections for
-multi-service business flows) → **Validate and publish** (`kb build`
-**without** `--allow-pending` must pass; then `kb publish --pr` opens a
-PR a BA or architect reviews — plain `kb publish` would instead tag the
-commit and poll the intake for a tag-triggered CI run this repo's
-`kb-code.yml` never has, then time out after ten minutes). Budget
-**~10–15 min per service** for the
-Review step — a one-time cost, not a recurring one.
-
-**Accruing `-svc` after the seed — `kb svc note`.**
-
-| Command | Purpose | Exit code |
-|---|---|---|
-| `kb svc note <service> --ticket <id> --title "<title>" [--refs "doc §s, doc §s"] [--kb-dir .kb] [--repo-id <cfg>] [--json]` | Append one row to `<repo_id>-svc §hist.<service>` — L2 is a `\| Ticket \| Title \| Domain refs \|` table sorted by ticket id, L3 is a fenced record with no pipe table (satisfies the table-integrity invariant, §3.7, by construction) | `0` OK, `1` on any of: no resolvable repo-id; the `-svc` or the paired `-code` document doesn't exist; unknown service (no matching `svc.<name>` in `-code` — a typo must not invent a service); an unreadable `-svc`/`-code` manifest; or a `hist.*` manifest/file desync |
-
-Deterministic and **idempotent**: re-running for the same ticket + service
-updates that row instead of duplicating it. `hist.*` sections are written
-with `status: summarized` and a summary `kb svc note` itself renders
-fresh on every call (e.g. `"Tickets that touched <service>: N
-recorded."`) — they are facts ("this ticket touched this service"), not
-claims, so they need no review and never block `kb build`. `dev-handover`
-(see [7.11](#711-phase-5--dev-agent-workflow)) runs this command for
-every service a ticket touched, so a repo that has completed the seed
-above needs no further per-ticket documentation discipline.
-
-**Stage D — the BA Agent reads both documents.** `ba-ticket-author` and
-`ba-mission-plan` (eight wrapper files) prefer `<repo>-code` for names
-and `<repo>-svc` for meaning, fill all four `Container(...)` arguments
-and label `Rel(...)` when both documents answer, and write
-`%%TODO: verify against codebase%%` only when neither does — see
-`QUICKSTART-BA.md`'s "Code knowledge on the hub" section for the BA-side
-walkthrough.
-
-**Operational prerequisites (spec §14, not code — set these up once per
-`dev` repo):**
-
-- Register the repo in the hub's `federation/registry.yaml` (both `-code`
-  and `-svc` publish through this). Note what the registry does and does
-  not do: on the git path it is a *mistake guard* — a child's remote URL
-  is self-asserted, so the check cannot authenticate anyone. What it
-  enforces is the route: a governed hub takes PRs or `kb ci-publish`, and
-  branch protection on the hub plus the OIDC intake are the actual
-  security boundary. Both of those routes need GitHub — `--pr` needs a
-  host `gh` can open a pull request on, and `kb ci-publish` runs only in
-  the child's GitHub Actions job against a github.com hub — so a governed
-  hub that is not on GitHub leaves a `dev` repo with no publish route at
-  all; see "Known limitations" in `CHANGELOG.md`.
-- Decide the hub's auto-merge policy for `-code` PRs, and confirm `-svc`
-  PRs are excluded from it — see the auto-merge note in
-  [7.12](#712-phase-5-stage-b--kb-code-ingest) above. **This is a
-  constraint on how that policy is implemented, not just a fact about
-  it:** `kb ci-publish` opens one hub PR per push, not per document — the
-  intake keys the publish branch by repo id and reuses it while a PR is
-  pending (`intake.py:302-330`) — so a push carrying both a regenerated
-  `-code` and an already-merged `-svc` amend lands both in that one PR.
-  The auto-merge rule must therefore be **path-scoped to
-  `.kb/<repo_id>-code/**`**, never a whole-PR or whole-repo rule, or it
-  will auto-merge `-svc` content riding along with `-code`.
-- Set `CENTER_KB_HUB_URL` and `CENTER_KB_HTTP_TOKEN` for each Dev, so
-  their assistant reaches the hub's MCP server.
-- Budget the one-time seed pass: **~10–15 min per service**.
-
----
-
-## 8. End-to-end workflow, step by step
-
-Real scenario: add a new document to the knowledge base, from PDF to ready-to-use.
-
-```
-Step 1 — Ingest PDF (technical owner runs)
-  $ kb ingest sources/ARINC424-22.pdf --id arinc-424 \
-      --tags arinc424,navdata --revision "Supplement 22" --sections 5
-  → Creates .kb/arinc-424/ with 325 sections, all "pending"
-
-Step 2 — Fill summaries (automatic — runs inside `kb ingest`)
-  → kb ingest already called a headless LLM CLI for you (claude → copilot
-    auto-detect); pass --no-summarize to skip, `kb summarize` to re-run/retry
-  → No LLM CLI installed? Sections stay "pending" — open Claude Code and run
-    `/kb-summarize` as the manual fallback (the per-wave `kb build
-    --allow-pending` self-checks after each wave of ≤ 10 sub-agents)
-
-Step 3 — Final gate check
-  $ kb build
-  kb build: OK
-  → On FAIL, go back to step 2 and fix (usually a table that was touched)
-
-Step 4 — Open a Pull Request on GitHub (this repo)
-  → Diff shows exactly the changed .kb/*.yaml and .kb/*.md files
-  → Domain SME reviews (see section 9 — review checklist)
-
-Step 5 — Merge, then publish to the hub
-  → Merge lands .kb/ on this repo's main — still not searchable anywhere
-  → `kb publish` mirrors .kb/ (L0→L3) to federation/<repo-id>/ on the hub and
-    opens a PR there (CI can do this automatically — kb-publish.yml)
-  → Merging THAT PR on the hub is the single review gate: only then is the
-    content live for kb query / MCP / Web UI
+```bash
+kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint" \
+  --refs "hr-handbook §4.12"
 ```
 
----
+Appends one row to `<repo_id>-svc §hist.<service>`. L2 is a
+`| Ticket | Title | Domain refs |` table sorted by ticket id; L3 is a fenced
+record with no pipe table, satisfying the table-integrity invariant by
+construction. Deterministic and **idempotent** — re-running for the same ticket
+and service updates that row instead of duplicating it. `hist.*` sections are
+facts, not claims, so they are written `summarized` with a freshly rendered
+summary and never block `kb build`. It exits 1 on any of: no resolvable repo-id;
+a missing `-svc` or paired `-code` document; an unknown service (a typo must not
+invent one); an unreadable manifest; or a `hist.*` manifest/file desync.
 
-## 9. SME review role — checklist
+`dev-handover` runs this for every service a ticket touched, so a repo that has
+completed the seed needs no further per-ticket documentation discipline.
 
-If you were asked to review a Pull Request changing `.kb/`, this is what to do — **no coding, no commands**, just read the GitHub diff like a Word doc with track changes:
+### Operational prerequisites for a `dev` repo
 
-- [ ] **Read the new prose (L2, `.md` files without `.raw`)** — does it match your domain understanding of this content?
-- [ ] **Cross-check the source PDF** (in `sources/` or your own copy) — did the summary omit anything important, or invent anything not in the original?
-- [ ] **Check every code, field name, number, and unit** (e.g. `S/T`, `CUST/AREA`, field length, character type) — must stay **exactly as in the source**, not rephrased.
-- [ ] **Tables:** you don't need to eyeball whether summary tables match originals — `kb build` **already checks and blocks the PR if they don't** before you see it. Still glance for Docling (PDF reader) row/column misreads vs the PDF — machines don't catch those.
-- [ ] **One-line summaries in `_manifest.yaml`** (L1) — do they correctly say "what this section is about" so search can find them later?
-- [ ] If something is wrong — **edit the `.md` or `.yaml` file directly in the GitHub UI** (like editing a normal document), comment why, or ask the PR author to fix.
+- **Register the repo in the hub's `federation/registry.yaml`.** Both `-code` and
+  `-svc` publish through it. Be clear about what it does: on the git path it is a
+  *mistake guard* — a child's remote URL is self-asserted, so the check cannot
+  authenticate anyone. Branch protection on the hub plus the OIDC intake are the
+  actual security boundary.
+- **Decide the hub's auto-merge policy for `-code` PRs, and exclude `-svc`.**
+  This is a constraint on *how* the policy is implemented: `kb ci-publish` opens
+  one hub PR per push, not per document — the intake keys the publish branch by
+  repo id and reuses it while a PR is pending — so a push carrying both a
+  regenerated `-code` and an already-merged `-svc` amend lands both in one PR.
+  The rule must therefore be **path-scoped to `.kb/<repo_id>-code/**`**, never a
+  whole-PR or whole-repo rule, or it will auto-merge `-svc` content riding
+  along.
+- **Set `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`** for each developer.
+- **Budget the one-time seed:** ~10–15 min per service.
 
-After this PR merges, the change lands on this repo's `main` — that's the SME sign-off, not an AI draft. It is **not yet searchable**: run `kb publish` (or let CI's `kb-publish.yml` do it) to mirror the content onto the hub. That opens a second PR *on the hub*; merging it is what makes the content live for `kb query`/MCP/Web (see [7.9](#79-phase-3--federation--remote-mcp)).
-
----
-
-## 10. Proof it works (real PoC numbers)
-
-As of the latest trial run (see `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md` §10 for full detail):
-
-- **Really ingested:** ARINC 424-22 chapter 5 (325 sections) + ICAO Annex 3 chapter 2 (4 sections).
-- **`kb build` PASS** — no mismatched tables, no unfinished sections.
-- **`kb query` returns the right section with the right citation** (e.g. `arinc-424 §5.213 (Supplement 22)`), truncated to the requested token budget.
-- **Savings:** L0 (master catalog) is only 187 tokens for the whole store. A typical query returns 1–4 sections (~600–1,200 tokens) **instead of loading the whole original (~400,000 tokens)** — **≥ 99%** savings per lookup, beating the ≥ 90% target.
-- **5 real bugs found and fixed** while processing real PDFs (repeated page headers mistaken for headings, "Source/Content:" labels mistaken for section titles, etc.) — each has an automated regression test.
-
----
-
-## 11. Current limits & unfinished work
-
-This is **Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 (Stages A–D)**, not a finished product. Still missing:
-
-- **HTTP MCP auth stops at bearer token** (one fixed secret), no OAuth/SSO yet — fine for today's internal/VPN network, not ready for the public internet.
-- Summarization still needs a human to open Claude Code and trigger it — not fully background-automated.
-- A small share of sections (~2.4% of ARINC chapter 5, 6/~250 items) failed PDF extraction — need manual SME cross-check when hit.
-- **`status: reviewed` in the manifest is a manual, optional marker** — nothing in the CLI sets it automatically; `kb approve` (`/kb-approve`) is a manual, SME-triggered flip, not an automated one, and the `kb-review` auto-commit CI workflow stays gone. The operative review gate is still the Pull Request that `kb publish` opens on the hub: content is unreachable via `kb query`/MCP/Web until that PR merges. If a repo wants a per-section "SME re-checked" marker, run `kb approve` (or set `status: reviewed` by hand) before merging the source PR — `kb approve` now gates on a strict build and records who approved what; `kb publish --require-reviewed` enforces it per repo.
+`kb-code.yml` ships two jobs: on `push` to the default branch it regenerates
+`-code`, builds and publishes; on `pull_request` it runs `kb build` only and
+**never publishes**. `--scaffold-svc` is deliberately never passed in CI — CI
+must never create `pending` content, since that would fail its own build step.
 
 ---
 
-## 12. FAQ
+## 14. Reviewing content
 
-**Why aren't the source PDFs in Git?**
-Source reference documents are frequently copyrighted or otherwise restricted — this repo's demo docs (ARINC, ICAO) are a good example — so they must not go into a shared source repo. They live only on local machines under `sources/`, configured so Git **always ignores** that directory (no accidental commit).
+If you were asked to review a pull request changing `.kb/`, this is the whole
+job. No commands, no code — read the diff like a document with tracked changes.
 
-**Why does Claude write summaries instead of ChatGPT/some API?**
-The project uses an existing Claude Code subscription instead of paying for a separate API — cheaper for this trial phase. It doesn't affect summary quality, only operations (a person opens Claude Code instead of fully unattended runs).
+- [ ] **Read the new prose** (L2 — the `.md` files without `.raw`). Does it match
+      your understanding of the subject?
+- [ ] **Cross-check the source document.** Did the summary omit anything
+      important, or add anything that is not in the original?
+- [ ] **Check every code, identifier, number and unit.** They must be exactly as
+      in the source, not rephrased.
+- [ ] **Tables:** you do not need to verify that summary tables match the
+      originals — `kb build` already checked and would have blocked the PR. Do
+      glance for extraction errors (a misread row or column) against the source;
+      machines do not catch those.
+- [ ] **One-line summaries in `_manifest.yaml`** (L1). Do they correctly say what
+      the section is about, so search can find it later?
+- [ ] If something is wrong, **edit the `.md` or `.yaml` directly in the web UI**,
+      comment why, or ask the author to fix it.
 
-**AI wrote the summary — how do we trust it isn't wrong?**
-Three layers of protection: (1) AI is bound by strict style rules (no invention; keep codes/numbers verbatim); (2) tables — the easiest place to err — **never go through AI**, always machine-copied and auto-verified; (3) **a human SME always reviews before merge** — AI only drafts; it cannot publish final content alone.
-
-**What is a "token", and why keep mentioning it?**
-It's the unit of text an AI model processes (roughly like a word). It drives cost and speed of each AI call. CENTER-KB's 4-layer architecture exists mainly to **cut tokens loaded per lookup** while keeping accuracy.
-
-**Do I need to code to review content?**
-No. See section 9 — review is reading `.md`/`.yaml` files in the GitHub UI, same as reading a marked-up text document.
+Merging that PR is the subject-matter sign-off — not an AI draft. It does not yet
+make the content searchable: `kb publish` mirrors it to the hub and opens a
+second PR *there*, and merging that one is what makes it live.
 
 ---
 
-## 13. What to do when something breaks
+## 15. Configuration
 
-| Situation | Likely cause | Fix |
+### `.kb/config.yaml`
+
+| Key | Meaning |
+|---|---|
+| `kind` | `hub`, `child`, `ba` or `dev` — set by `kb init`, reused on re-runs |
+| `hub` | Hub location: a git URL or a local directory. Mandatory for every command that reads the federation. |
+| `repo_id` | This repo's entry id under `federation/` |
+| `intake` | Intake service URL for `kb ci-publish` (child repos only; http(s) only) |
+| `asset_store` | `{mode: none}` (default) or `{mode: s3, bucket: …}` |
+
+### Environment variables
+
+| Variable | Meaning |
+|---|---|
+| `STRATA_KB_HUB` | Hub location — overrides `.kb/config.yaml`, overridden by `--hub` |
+| `STRATA_KB_HUB_URL` | Base URL of the hub's HTTP service, for MCP clients |
+| `STRATA_KB_HTTP_TOKEN` | Bearer token for the HTTP MCP server, REST API and Web UI |
+| `STRATA_KB_HUB_CACHE` | Local hub clone directory (default `~/.strata-kb/hub/`) |
+| `STRATA_KB_HUB_TTL` | How long the local hub clone is considered fresh |
+| `STRATA_KB_INTAKE` | Intake service URL (http(s) only) |
+| `STRATA_KB_INTAKE_AUDIENCE` | OIDC audience the intake expects |
+| `STRATA_KB_TRUSTED_PROXIES` | Number of trusted reverse proxies (default `0`) — see [§10](#10-mcp-server-and-web-ui) |
+| `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service |
+
+---
+
+## 16. Exit codes
+
+| Exit | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | error — including a misconfiguration (bad flag combination, missing required setting) |
+| `2` | citation stale — `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale`, `kb mission lint --fail-on-stale`; `kb doctor` also exits 2, with or without `--context`, when the hub cache itself is stale (a failed pull) |
+
+Caveat: the CLI framework emits `2` of its own accord for an unrecognised flag or
+a bad parameter type. A CI script that must distinguish "stale" from "you called
+me wrong" should check which command it ran, not only the code.
+
+---
+
+## 17. Troubleshooting
+
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| `kb build` errors "table mismatch" | Someone (usually AI) edited table content while summarizing — or a table was added/duplicated/reordered in L2; `kb build` reports the kind of mismatch (and the count where it applies) | Open that section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
-| `kb build` reports remaining `pending`/`TODO` | Summarization step (step 2 in §8) not finished, failed, or skipped (`--no-summarize`) | Run `kb status` to see what's left, then `kb summarize` to retry — or, with no LLM CLI installed, back to Claude Code with `/kb-summarize` |
-| `kb ingest` is very slow (10–30 min) first time | Normal — Docling downloads a layout model (~500MB) on first use | Wait, or check network if stuck. Later runs on the same PDF use cache and are much faster |
-| `kb` says "command not found" | Virtualenv not activated | Run `source .venv/bin/activate` in the project directory first |
-| `kb query` returns nothing | Keywords match no tags/content, or `--budget` too small | Drop `--tags`, raise `--budget`, or check spelling (the store keeps each document's own language — query in that language) |
-| Unsure which files changed in a PR | — | Use GitHub "Files changed" — only `.kb/` is content to review; `src/`/`tests/` changes are tool code for developers |
+| `kb build`: "table mismatch" | A table was edited, added, duplicated or reordered in L2 | Open the section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
+| `kb build`: sections still `pending`/`TODO` | Summarization did not finish, failed, or was skipped | `kb status` to see what is left, then `kb summarize` to retry — or `/kb-summarize` with no LLM CLI installed |
+| `kb ingest` is very slow on the first run | Normal — a layout model (~500 MB) is downloading | Wait. Later runs use the cache. |
+| `kb: command not found` | Virtualenv not activated | `source .venv/bin/activate` |
+| MCP server fails to start: "Executable not found in $PATH: python" | `.mcp.json` calls `python`, but the system only has `python3` or the venv is not on `PATH` | Point the `command` at an absolute interpreter path, e.g. `.venv/bin/python` |
+| Every hub command fails with a git auth error | git older than 2.31 with a credentialed `hub:` URL | Upgrade git, or switch `hub:` to ssh — see [Requirements](#requirements) |
+| `kb query` returns nothing | No tag or content match, or `--budget` too small | Drop `--tags`, raise `--budget`, check spelling — and query in the document's own language |
+| `kb publish` refuses on a governed hub | `gh` cannot open a PR on that host | Authenticate `gh` for the host (`GH_HOST=<host>` for Enterprise) until `gh repo view` succeeds inside the hub clone, then `--pr` |
+| `kb doctor` names files inside a federation entry | An older publish mirrored more than `.kb/` artefacts | Publish again to strip them, and **rotate any credential they contained** — removing a file does not remove it from git history |
 
 ---
 
-## Migration to the hub-first architecture (v0.9.0)
+## 18. FAQ
 
-1. Upgrade the CLI everywhere (`pip install -U center-kb`) — do not run two versions side by side.
-2. In every repo: add `.kb/config.yaml` (`hub:` + `repo_id:`), delete
-   `.github/workflows/kb-review.yml`, and replace `kb-publish.yml` with the new
-   template (`kb init` does all three for you).
-3. In every repo (the hub included): run `kb publish` once — the old
-   federation-format entry is replaced by the full mirror, and the aggregate
-   index is created.
-4. On a GitHub hub: enable branch protection on `main` (*require PR* + *require
-   branches up to date*).
-5. Tickets carrying an old `kb-context` block (pinned to a local repo commit):
-   `kb_resolve` will report `broken` with a hint — re-pin with `kb_context_new`
-   the next time you touch that ticket.
+**Why aren't source documents in Git?**
+They are frequently copyrighted or otherwise restricted, so they must not go into
+a shared repo. They live only on local machines under `sources/`, which Git is
+configured to always ignore.
+
+**An AI wrote the summaries — how do we trust them?**
+Three layers. (1) The model is bound by strict style rules: no invention, codes
+and numbers verbatim. (2) Tables — the easiest thing to get wrong — never pass
+through the model; they are machine-copied and automatically verified. (3) A
+human always reviews before merge. AI drafts; it cannot publish.
+
+**What is a "token", and why does it keep coming up?**
+It is the unit of text a model processes, roughly a word. It drives the cost and
+latency of every call. The four-layer architecture exists mainly to cut tokens
+per lookup while keeping accuracy.
+
+**Do I need to write code to review content?**
+No. See [§14](#14-reviewing-content) — it is reading `.md` and `.yaml` files in a
+web diff.
+
+**Can I use a model API instead of a CLI subscription?**
+The summarize step shells out to a headless LLM CLI (`claude`, `copilot`) rather
+than calling an API directly, so it runs on an existing subscription. That
+affects operations, not quality.
+
+**Is `status: reviewed` set automatically?**
+No. `kb approve` is a deliberate human action. The operative gate is the pull
+request that `kb publish` opens on the hub — content is unreachable through
+`kb query`, MCP and the Web UI until that merges. Use `kb approve` when you want
+a per-section marker, and `kb publish --require-reviewed` to enforce it.
 
 ---
 
-## Release notes (v0.13.0)
+## 19. Development and release
 
-Alongside the new mission-plan flow (Phase 4.1, see [7.10](#710-phase-4--ba-ticket-authoring)), this release changes four behaviors of the already-shipped `kb ticket lint` — a minor bump because everything is additive and `REQUIRED_HEADINGS` (the one thing the spec treats as breaking) is unchanged, but these four are worth knowing about:
-
-1. **The diagram check is stricter.** `kb ticket lint`'s Mermaid check now requires the diagram-type keyword (e.g. `sequenceDiagram`, `flowchart`) at the **start of a line** inside the fence, not merely present anywhere in it. A hand-authored diagram that only mentions the keyword inside a node label (e.g. `A["flowchart of the flow"]`) now fails where it previously passed; the scaffolded `ticket-template.md` is unaffected — its keywords already sit at column 0.
-2. **`--json` output gained a `notes` key.** The envelope is now `{"pass", "errors", "warnings", "notes"}`. Notes record checks that could not run (e.g. no hub configured); they never affect `pass` and existing consumers that only read `pass`/`errors`/`warnings` are unaffected.
-3. **A citation-parsing bug is fixed.** The inline citation pattern used to absorb a sentence-ending period into the section id, so a ticket citing `arinc-424 §5.3.` at the end of a sentence got a spurious lint error *and* a spurious "never cited" warning even though the pinned ref matched. Those tickets now pass.
-4. **A required heading inside a fenced code block no longer counts as present.** `check_headings` (shared by `kb ticket lint` and the new `kb mission lint`) used to scan every line of the document for a required heading, including lines inside a ` ``` ` fence — so a ticket or mission that pasted a reference document (e.g. `TEMPLATE.md`) into a fenced block as an example would pass the required-heading check without actually containing that section itself. Fences are now stripped before the scan, the same way citation scanning already strips them. A ticket that only passed because a required heading sat inside a fence now correctly fails with a "missing required heading" error; move the real heading out of the fence to fix it.
-
----
-
-## Release
-
-Before tagging, run the whole verification gate on your machine:
+Run the whole verification gate locally before tagging:
 
 ```bash
 ./scripts/gate.sh
 ```
 
-It runs the same tiers CI runs, on **one** interpreter and **one** OS — T0
-lint, T1 tests, T2 packaging plus an sdist install smoke, T3 e2e and T4
-regression against the built wheel. Green here is what catches a red PR
-before you push; it is not the matrix. CI additionally runs ubuntu ×
-3.11/3.12/3.13 plus windows-latest.
+It runs the same tiers CI runs, on one interpreter and one OS. Green here catches
+a red PR before you push; it is not the matrix. CI additionally runs
+ubuntu × 3.11/3.12/3.13 plus windows-latest.
 
-1. **T0 (lint)** — `ruff check .`.
-2. **T1 (unit/integration)** — `pytest` against the source tree.
-3. **T2 (packaging)** — build the wheel + sdist, `uv lock --check`, `twine check`,
-   install the wheel into a clean venv, check the version (`kb --version` matches
-   `pyproject.toml`, and matches the tag when releasing), and make sure `tests/`,
-   `.kb/` and `sources/` never sneak into the package.
-4. **T2b (sdist install smoke)** — install the built `.tar.gz` into a separate
-   clean venv, run `kb --version`, and load a packaged template through
-   `importlib.resources` to confirm the sdist installs and its package data is
-   reachable, not just the wheel.
-5. **T3 (e2e against the installed artifact)** — runs the real user journey from
-   the **installed wheel**, not the source tree, in a separate venv that has no
-   `center-kb`: `kb init` → load an already-"ingested" fixture
-   (`tests-gate/fixtures/pending-kb/`, standing in for the output of `ingest`) →
-   `summarize` → `build` → `publish` → `query`/`get`/`context`/`resolve`/
-   `diff` → `doctor`. T3 does **not** run a real `kb ingest` on a PDF — it only
-   verifies `ingest`'s error path: install the bare wheel (without the `[ingest]`
-   extra), then calling `kb ingest` must fail cleanly ("Docling is not
-   installed"), not with a traceback. **A real PDF ingest is out of scope for the
-   gate** — it needs the `[ingest]` extra (docling + torch, ~2GB) *and* a
-   copyrighted PDF that must never be committed to the repo (see `sources/` in
-   section 5), so it cannot run on a CI runner.
-6. **T4 (regression)** — backward compatibility with older `.kb/` stores
-   (v0.7.0/v0.8.0/v0.9.0), the MCP contract, golden output, and federation
-   compatibility. T4's federation fixture is a flat v0.9.0 hub. A pre-0.9
-   federation in the `manifests/` slim layout is skipped by
-   `federation.iter_entry_dirs` with a warning, so an un-republished
-   pre-0.9 entry disappears from search once the CLI reading the hub is
-   upgraded — republish from the source repo to bring it back.
+| Tier | What it does |
+|---|---|
+| **T0** | `ruff check .` |
+| **T1** | `pytest` against the source tree |
+| **T2** | Build wheel + sdist, `uv lock --check`, `twine check`, install the wheel into a clean venv, verify `kb --version` matches `pyproject.toml` (and the tag when releasing), and confirm `tests/`, `.kb/` and `sources/` never enter the package |
+| **T2b** | Install the built sdist into a separate clean venv, run `kb --version`, and load a packaged template through `importlib.resources` |
+| **T3** | The real user journey **from the installed wheel**: `kb init` → load an already-ingested fixture → `summarize` → `build` → `publish` → `query`/`get`/`context`/`resolve`/`diff` → `doctor`. It does not run a real PDF ingest — that needs the `[ingest]` extra (~2 GB) and a document that must never be committed — it verifies only that `kb ingest` fails cleanly without the extra, rather than with a traceback. |
+| **T4** | Backward compatibility with older `.kb/` stores, the MCP contract, golden output, and federation compatibility |
 
-Once the gate is green on your machine:
+Then:
 
 ```bash
-# 1. Bump the version in pyproject.toml, then:
+# 1. Bump the version in pyproject.toml
 uv lock
 git commit -am "chore: bump to X.Y.Z"
 
-# 2. Tag — CI re-runs the whole gate (T1-T4 + image build/smoke), and only
-#    publishes to PyPI and only retags the `:latest`/`:vX.Y.Z` image when
-#    EVERYTHING is green.
+# 2. Tag. CI re-runs the whole gate plus the image build and smoke test,
+#    and publishes only when everything is green.
 git tag vX.Y.Z && git push --tags
 ```
 
-A tag runs nothing different from a PR — that is deliberate
-(`.github/workflows/_gate.yml` is shared by both). **If the gate is red at any
-tier, nothing gets published**: PyPI is immutable, so `release.yml` only
-publishes after both the gate AND the Docker image (built with the real
-`[ingest]` extra) are green, and `:latest`/`:vX.Y.Z` on GHCR are only moved
-after the PyPI publish succeeds. So feel free to delete the tag, fix the
-problem, and tag again:
+A tag runs nothing different from a pull request — `.github/workflows/_gate.yml`
+is shared by both. **If any tier is red, nothing is published.** PyPI is
+immutable, so `release.yml` publishes only after both the gate and the Docker
+image (built with the real `[ingest]` extra) are green, and `:latest`/`:vX.Y.Z`
+on GHCR move only after the PyPI publish succeeds. To retry a tag:
 
 ```bash
 git push --delete origin vX.Y.Z
@@ -1150,4 +1072,6 @@ git tag -d vX.Y.Z
 
 ---
 
-*This document describes Phase 1 (PoC) + Phase 2 (workflow integration) + Phase 3 (federation & remote MCP, hub-first single source since 2026-07-13) + Phase 4 (BA ticket authoring) + Phase 5 Stage A (kind `dev`, the 5-skill dev workflow) + Phase 5 Stage B (`kb code-ingest`, the seven extractors, `kb-code.yml`) + Phase 5 Stage C (`kb svc note`, `dev-code-seed`) + Phase 5 Stage D (BA wrappers read code knowledge) — updated 2026-08-22. Full technical design: `docs/superpowers/specs/2026-07-10-aero-kb-phase1-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase2-design.md`, `docs/superpowers/specs/2026-07-10-aero-kb-phase3-design.md`, `docs/superpowers/specs/2026-07-13-hub-federation-single-source-design.md`, `docs/superpowers/specs/2026-07-17-ba-agent-design.md`, and `docs/superpowers/specs/2026-08-19-dev-agent-design.md`.*
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).

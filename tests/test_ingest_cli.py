@@ -2,9 +2,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
-from center_kb.ingest.sectioner import DocItem, Part
+from strata_kb import models
+from strata_kb.cli import app
+from strata_kb.ingest.sectioner import DocItem, Part
 
 runner = CliRunner()
 
@@ -23,7 +23,7 @@ BOOKMARK_ITEMS = [
 
 
 def _fake_parse(monkeypatch):
-    from center_kb.ingest import parser
+    from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
     monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: FAKE_ITEMS)
@@ -33,7 +33,7 @@ def _fake_parse(monkeypatch):
 
 
 def _fake_parse_with_bookmark_parts(monkeypatch):
-    from center_kb.ingest import parser
+    from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
     monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS)
@@ -46,7 +46,7 @@ def _fake_parse_with_bookmark_parts(monkeypatch):
 
 
 def _fake_parse_outline_forbidden(monkeypatch):
-    from center_kb.ingest import parser
+    from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
     monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS)
@@ -144,7 +144,7 @@ def test_ingest_auto_summarizes_by_default(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
     from tests.test_summarize import FakeRunner
-    import center_kb.llm as llm_mod
+    import strata_kb.llm as llm_mod
     monkeypatch.setattr(llm_mod, "detect_runner", lambda c, cfg: FakeRunner())
     # index.yaml is created by scaffold during ingest; default runner=auto
     result = runner.invoke(app, _ingest_args(tmp_path))
@@ -159,7 +159,7 @@ def test_ingest_auto_summarizes_by_default(tmp_path, monkeypatch):
 def test_ingest_no_summarize_flag_skips_llm(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
-    import center_kb.llm as llm_mod
+    import strata_kb.llm as llm_mod
     monkeypatch.setattr(
         llm_mod, "detect_runner",
         lambda c, cfg: (_ for _ in ()).throw(AssertionError("must not be called")),
@@ -176,7 +176,7 @@ def test_ingest_no_summarize_flag_skips_llm(tmp_path, monkeypatch):
 def test_ingest_without_runner_stays_pending_exit_0(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
-    import center_kb.llm as llm_mod
+    import strata_kb.llm as llm_mod
     monkeypatch.setattr(llm_mod, "detect_runner", lambda c, cfg: None)
     result = runner.invoke(app, _ingest_args(tmp_path))
     assert result.exit_code == 0, result.output
@@ -191,7 +191,7 @@ def test_ingest_failed_sections_still_exit_0(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
     from tests.test_summarize import FakeRunner
-    import center_kb.llm as llm_mod
+    import strata_kb.llm as llm_mod
     monkeypatch.setattr(
         llm_mod, "detect_runner", lambda c, cfg: FakeRunner(fail_ids={"5.3"})
     )
@@ -228,7 +228,7 @@ def test_ingest_no_bookmarks_flag_forces_regex_mode(tmp_path: Path, monkeypatch)
 
 
 def test_ingest_warns_when_content_never_reaches_l3(tmp_path: Path, monkeypatch):
-    from center_kb.ingest import parser
+    from strata_kb.ingest import parser
 
     # Text with no heading anywhere above it lands on the tree root, which is
     # never rendered into a section. L3 is the complete-content layer, so
@@ -253,7 +253,7 @@ def test_ingest_warns_when_content_never_reaches_l3(tmp_path: Path, monkeypatch)
 def test_ingest_is_quiet_when_every_item_reaches_l3(tmp_path: Path, monkeypatch):
     _fake_parse(monkeypatch)
     monkeypatch.setattr(
-        __import__("center_kb.ingest.parser", fromlist=["parser"]),
+        __import__("strata_kb.ingest.parser", fromlist=["parser"]),
         "bookmark_ids",
         lambda pdf, config=None: set(),
     )
@@ -268,7 +268,7 @@ def test_ingest_is_quiet_when_every_item_reaches_l3(tmp_path: Path, monkeypatch)
 
 
 def _stub_parser(monkeypatch, items, bookmark_ids=frozenset()):
-    from center_kb.ingest import parser
+    from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
     monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: items)
@@ -324,10 +324,10 @@ def test_ingest_report_names_a_page_inversion_without_layout_data(tmp_path: Path
 def test_ingest_report_carries_parser_logger_warnings_and_detaches(tmp_path: Path, monkeypatch):
     import logging
 
-    from center_kb.ingest import parser
+    from strata_kb.ingest import parser
 
     def _items(doc, assets_dir=None, pdf_path=None):
-        logging.getLogger("center_kb.ingest.parser").warning("picture on page 7 skipped: boom")
+        logging.getLogger("strata_kb.ingest.parser").warning("picture on page 7 skipped: boom")
         return FAKE_ITEMS
 
     _stub_parser(monkeypatch, FAKE_ITEMS)
@@ -336,7 +336,7 @@ def test_ingest_report_carries_parser_logger_warnings_and_detaches(tmp_path: Pat
     result = runner.invoke(app, _ingest_args(tmp_path, ["--llm", "none"]))
     assert result.exit_code == 0, result.output
     assert "[warn] picture on page 7 skipped: boom" in result.output
-    assert logging.getLogger("center_kb.ingest").handlers == []
+    assert logging.getLogger("strata_kb.ingest").handlers == []
 
 
 def test_ingest_warns_when_the_outline_is_unreadable(tmp_path: Path, monkeypatch):
@@ -364,8 +364,8 @@ def test_warn_notes_renders_every_line_class_and_the_capped_tail():
     'repeated on N pages' rendering, and the _warn_capped 'N more … not
     shown' tail. This exercises all four directly against _warn_notes,
     with >20 demotions to trigger the cap."""
-    from center_kb.ingest.sectioner import Demotion, Duplicate, Inversion, SectioningNotes
-    from center_kb.ingestcmd import _warn_notes
+    from strata_kb.ingest.sectioner import Demotion, Duplicate, Inversion, SectioningNotes
+    from strata_kb.ingestcmd import _warn_notes
 
     repeated = Demotion(
         heading="5.6 Identifier",

@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from center_kb.conventions import (
+from strata_kb.conventions import (
     CLAUDE_MARKER,
     LANG_GLOBS,
     detect_langs,
     ensure_claude_block,
     scaffold_conventions,
 )
-from center_kb.initcmd import InitReport
+from strata_kb.initcmd import InitReport
 
 
 def _touch(root: Path, rel: str) -> None:
@@ -210,7 +210,7 @@ def test_scaffold_without_manifests_notes_and_writes_nothing(tmp_path: Path):
 
 
 def test_lang_globs_covers_every_manifest_lang():
-    from center_kb.conventions import LANG_MANIFESTS
+    from strata_kb.conventions import LANG_MANIFESTS
 
     assert sorted(LANG_GLOBS) == sorted(lang for lang, _ in LANG_MANIFESTS)
 

@@ -1,5 +1,5 @@
 # tests/test_web_mdrender.py
-from center_kb.web.mdrender import render
+from strata_kb.web.mdrender import render
 
 
 def test_heading_levels():

@@ -11,21 +11,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from center_kb import models
-from center_kb.embed import (
+from strata_kb import models
+from strata_kb.embed import (
     _L2_HEAD_CHARS,
     SEMANTIC_MIN_SCORE,
     Embedder,
     _serialize,
 )
-from center_kb.federation import load_federation
-from center_kb.mdutils import slice_section
+from strata_kb.federation import load_federation
+from strata_kb.mdutils import slice_section
 
 if TYPE_CHECKING:
-    from center_kb.federation import FederatedRepo
-    from center_kb.hub import HubHandle
+    from strata_kb.federation import FederatedRepo
+    from strata_kb.hub import HubHandle
 
-logger = logging.getLogger("center_kb.searchdb")
+logger = logging.getLogger("strata_kb.searchdb")
 
 
 class IndexBusyError(RuntimeError):
@@ -263,7 +263,7 @@ def delete_db(hub: "HubHandle") -> None:
     -wal/-shm cleanup on a concurrent close), so a plain `unlink()` inside
     `unlink_force` can still raise `FileNotFoundError`. That's not busy, it's
     already gone — treat it the same as `not p.exists()` and move on."""
-    from center_kb import hashsync
+    from strata_kb import hashsync
 
     path = db_path(hub)
     for p in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):

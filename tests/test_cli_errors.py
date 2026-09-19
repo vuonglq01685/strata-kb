@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from center_kb.cli import app
+from strata_kb.cli import app
 
 runner = CliRunner()
 
@@ -40,7 +40,7 @@ def test_reserved_device_name_is_one_line(git_kb, hub_worktree):
 
 
 def test_a_failing_gh_pr_create_is_one_line(git_kb, hub_with_origin, monkeypatch):
-    from center_kb import ghio
+    from strata_kb import ghio
 
     monkeypatch.setattr(ghio, "can_open_pr", lambda root: True)
     monkeypatch.setattr(ghio, "pr_url_for_branch", lambda root, branch: "")
@@ -154,7 +154,7 @@ def test_reindex_searchdb_permission_error_is_one_line_not_a_traceback(
     catch it -- exit 1, but no message printed at all. reindex is one of the
     three commands the spec names by name for "no traceback reaches a
     user"."""
-    from center_kb import searchdb as searchdb_mod
+    from strata_kb import searchdb as searchdb_mod
 
     def boom(handle, embedder):
         raise PermissionError(13, "Permission denied")
@@ -213,7 +213,7 @@ def test_assets_verify_corrupt_only_report_exits_nonzero_and_names_the_asset(
     name shows up because of the [corrupt] line, not the [orphan] one."""
     import hashlib
 
-    from center_kb import assetstore, models
+    from strata_kb import assetstore, models
     from tests.conftest import make_fed_entry
 
     data = b"real image bytes"
@@ -248,7 +248,7 @@ def test_assets_verify_corrupt_only_report_exits_nonzero_and_names_the_asset(
 # RuntimeError, not a ValueError, so it escaped both commands as a raw
 # traceback with empty CliRunner output. Fixed by giving PublishError (and
 # GateError, CIPublishError, assetstore.AssetStoreError) a shared base,
-# center_kb.errors.KbError, and catching that base at every guard instead of
+# strata_kb.errors.KbError, and catching that base at every guard instead of
 # re-enumerating siblings one at a time.
 
 
@@ -328,7 +328,7 @@ def test_asset_store_outage_via_publish_is_one_line_not_a_traceback(
     `kb publish --direct` genuinely propagates as a raw traceback."""
     import hashlib
 
-    from center_kb import assetstore
+    from strata_kb import assetstore
 
     data = b"asset bytes for the outage test"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -363,7 +363,7 @@ def test_locked_hub_cache_discard_is_one_line_not_a_traceback(
     Ruling P49 (round 5): the undiscardable-cache recipe is the shared
     `undiscardable_hub_cache` fixture, so this runs on Linux too. See
     tests/conftest.py."""
-    from center_kb import hub as hub_mod
+    from strata_kb import hub as hub_mod
 
     origin = tmp_path / "hub-origin.git"
     run_git(tmp_path, "init", "--bare", str(origin))
@@ -379,7 +379,7 @@ def test_locked_hub_cache_discard_is_one_line_not_a_traceback(
     run_git(seed, "push", "-u", "origin", "HEAD")
 
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     key = hub_mod.cache_key(str(origin))
     legacy = cache_base / key
     run_git(tmp_path, "clone", str(origin), str(legacy))
@@ -429,10 +429,10 @@ def test_doctor_locked_hub_cache_discard_is_one_line_not_a_traceback(
     run_git(seed, "remote", "add", "origin", str(origin))
     run_git(seed, "push", "-u", "origin", "HEAD")
 
-    from center_kb import hub as hub_mod
+    from strata_kb import hub as hub_mod
 
     cache_base = tmp_path / "doctor-cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     key = hub_mod.cache_key(str(origin))
     legacy = cache_base / key
     run_git(tmp_path, "clone", str(origin), str(legacy))
@@ -462,7 +462,7 @@ def test_asset_store_outage_via_hub_to_hub_publish_is_one_line_not_a_traceback(
     (a hub-kind repo whose `hub:` config points at another hub) instead."""
     import hashlib
 
-    from center_kb import assetstore
+    from strata_kb import assetstore
     from tests.conftest import make_fed_entry
     from tests.test_publish_hub import _git_repo
 
@@ -510,7 +510,7 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
     exception=ManifestBoundsError output=''` -- the exact F-D9 traceback
     signature the whole family exists to prevent.
 
-    Discover every exception class center_kb actually defines instead
+    Discover every exception class strata_kb actually defines instead
     (pkgutil.walk_packages -- the same technique the re-reviewer prototyped)
     and require each one to either derive from KbError or be named below
     with a reason. Scoped to Exception, not RuntimeError: CodeIngestError,
@@ -524,8 +524,8 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
     import pkgutil
     import sys
 
-    import center_kb
-    from center_kb.errors import KbError
+    import strata_kb
+    from strata_kb.errors import KbError
 
     # Important 4 (Wave G fix round 2 re-review): replacing the old
     # hardcoded four-class test deleted the only assertion that pinned
@@ -539,7 +539,7 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
     assert issubclass(KbError, RuntimeError)
 
     walked = 0
-    for m in pkgutil.walk_packages(center_kb.__path__, prefix="center_kb."):
+    for m in pkgutil.walk_packages(strata_kb.__path__, prefix="strata_kb."):
         importlib.import_module(m.name)  # zero ImportErrors expected -- 76 modules
         walked += 1
     # Minor 5 (Wave G fix round 2 re-review): this must run BEFORE the
@@ -595,68 +595,68 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
     # kbcontext subclasses that used to ride the transitive exemption are
     # named explicitly instead.
     ALLOWLIST: dict[str, str] = {
-        "center_kb.gitio.GitError": (
+        "strata_kb.gitio.GitError": (
             "ruling: handling is deliberately site-specific -- swallowed in "
             "hub.resolve_hub/publish._publish_direct, re-wrapped in "
             "cli.reindex"
         ),
-        "center_kb.federation.RegistryError": (
+        "strata_kb.federation.RegistryError": (
             "ruling: not CLI-reachable -- converted to a message/response at "
             "both callers, fail-closed by design"
         ),
-        "center_kb.ghapp.GHAppError": "ruling: server-side only (GitHub App auth)",
-        "center_kb.intake.IntakeError": (
+        "strata_kb.ghapp.GHAppError": "ruling: server-side only (GitHub App auth)",
+        "strata_kb.intake.IntakeError": (
             "ruling: server-side only -- carries (status, detail) and maps "
             "to an HTTP response, not a CLI one-liner; folding it in would "
             "make a CLI guard claim a contract it does not have"
         ),
-        "center_kb.web.api.SnapshotCorruptError": (
+        "strata_kb.web.api.SnapshotCorruptError": (
             "ruling: server-side only (M8) -- raised inside Starlette "
             "endpoint handlers (api.py's doc_detail/section/api_search) and "
             "consumed by app.py's exception_handlers entry, which maps it "
             "to a 503 JSON body or the error-page shell; never reaches "
             "cli.py, same shape as intake.IntakeError above"
         ),
-        "center_kb.searchdb.IndexBusyError": (
+        "strata_kb.searchdb.IndexBusyError": (
             "ruling: transient and deliberately swallowed in "
             "publish._publish_direct -- joining would invite a guard to "
             "turn a retryable condition into a terminal refusal"
         ),
-        "center_kb.codeingest.core.CodeIngestError": (
+        "strata_kb.codeingest.core.CodeIngestError": (
             "not a RuntimeError (Exception) -- outside KbError's "
             "inheritance shape"
         ),
-        "center_kb.llm.RunnerError": (
+        "strata_kb.llm.RunnerError": (
             "not a RuntimeError (Exception) -- outside KbError's "
             "inheritance shape"
         ),
-        "center_kb.query.AmbiguousDocError": (
+        "strata_kb.query.AmbiguousDocError": (
             "not a RuntimeError (LookupError) -- outside KbError's "
             "inheritance shape"
         ),
-        "center_kb.svcnote.SvcNoteError": (
+        "strata_kb.svcnote.SvcNoteError": (
             "not a RuntimeError (Exception) -- outside KbError's "
             "inheritance shape"
         ),
-        "center_kb.kbcontext.KBContextError": (
+        "strata_kb.kbcontext.KBContextError": (
             "not a RuntimeError (ValueError) -- doctor.check_context and "
             "resolve_refs convert it themselves"
         ),
-        "center_kb.kbcontext.KBRefNotFoundError": (
+        "strata_kb.kbcontext.KBRefNotFoundError": (
             "subclass of KBContextError above -- same call sites convert "
             "it the same way, named explicitly rather than covered by "
             "transitive issubclass matching (Minor 4)"
         ),
-        "center_kb.kbcontext.UnknownTagError": (
+        "strata_kb.kbcontext.UnknownTagError": (
             "subclass of KBContextError above -- same call sites convert "
             "it the same way, named explicitly rather than covered by "
             "transitive issubclass matching (Minor 4)"
         ),
-        "center_kb.query.InvalidLevelError": (
+        "strata_kb.query.InvalidLevelError": (
             "not a RuntimeError (ValueError) -- outside KbError's "
             "inheritance shape"
         ),
-        "center_kb.searchdb.TooManyTagsError": (
+        "strata_kb.searchdb.TooManyTagsError": (
             "not a RuntimeError (ValueError) -- outside KbError's "
             "inheritance shape"
         ),
@@ -668,7 +668,7 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
 
     checked = 0
     for name, mod in list(sys.modules.items()):
-        if not name.startswith("center_kb"):
+        if not name.startswith("strata_kb"):
             continue
         for cname, cls in vars(mod).items():
             if not (inspect.isclass(cls) and issubclass(cls, Exception)):
@@ -685,7 +685,7 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
             if cls in allowed_classes:
                 continue
             raise AssertionError(
-                f"{cls.__module__}.{cls.__qualname__} is a new center_kb "
+                f"{cls.__module__}.{cls.__qualname__} is a new strata_kb "
                 "exception class that is neither a KbError subclass nor "
                 "allowlisted with a reason -- a CLI command that catches "
                 "KbError will let this one traceback to the user (the F-D9 "

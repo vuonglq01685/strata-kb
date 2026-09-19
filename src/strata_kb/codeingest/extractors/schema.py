@@ -109,9 +109,9 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
-from center_kb.codeingest.extractors._mdcells import escape_cell
-from center_kb.codeingest.extractors.tree import relposix, walk_tree
+from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
+from strata_kb.codeingest.extractors._mdcells import escape_cell
+from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 
 # ---------------------------------------------------------------------------
 # shared record shape

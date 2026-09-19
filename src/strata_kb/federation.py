@@ -8,9 +8,9 @@ from typing import NamedTuple
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from center_kb import models
+from strata_kb import models
 
-logger = logging.getLogger("center_kb.federation")
+logger = logging.getLogger("strata_kb.federation")
 
 FEDERATION_INDEX_NAME = "index.yaml"
 REGISTRY_NAME = "registry.yaml"
@@ -299,7 +299,7 @@ def entry_content_digest(entry_dir: Path) -> str:
     up at a leaf's own top level."""
     # Function-local: doctor.py imports federation.py already, so a
     # module-level import here would be circular.
-    from center_kb.doctor import _fed_tree_digest
+    from strata_kb.doctor import _fed_tree_digest
 
     return _fed_tree_digest(entry_dir, skip=frozenset({".gitkeep"}))
 

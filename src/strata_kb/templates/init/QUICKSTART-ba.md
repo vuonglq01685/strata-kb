@@ -1,4 +1,4 @@
-# CENTER-KB Quickstart (BA repo)
+# Strata Quickstart (BA repo)
 
 This repo is a **requirements** repo: it reads the shared knowledge base
 to ground tickets in cited, versioned facts, and it versions the tickets
@@ -7,15 +7,15 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
 
 ## Setup once
 
-1. **Install** — `pip install center-kb` (or clone this repo if someone
+1. **Install** — `pip install strata-kb` (or clone this repo if someone
    already scaffolded it; otherwise `kb init --kind ba` in an empty
    folder creates it).
 2. **Point at the hub** — fill `hub:` in `.kb/config.yaml` with the main
    hub's git URL or path. Used by `kb ticket lint` and `kb query`.
 3. **Connect the shared MCP server** — set two environment variables so
    your AI assistant can reach the hub's search/citation tools:
-   - `CENTER_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
-   - `CENTER_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
+   - `STRATA_KB_HUB_URL` — e.g. `http://kb-hub.example.com:8321`
+   - `STRATA_KB_HTTP_TOKEN` — the hub token (ask the hub maintainer)
    `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) are already
    wired to these two variables — nothing else to configure.
 4. **Open this repo** in Claude Code, GitHub Copilot Chat, or Cursor —
@@ -170,11 +170,11 @@ The scaffolded `kb-ticket-lint` workflow reads these repository settings:
 
 | Setting | Where | What it is |
 |---|---|---|
-| `CENTER_KB_HUB` | Settings → Secrets and variables → Actions → **Variables** | The hub URL or path the gate resolves refs against |
+| `STRATA_KB_HUB` | Settings → Secrets and variables → Actions → **Variables** | The hub URL or path the gate resolves refs against |
 | `KB_HUB_TOKEN` | same page → **Secrets** | A token with read access, for a private hub only |
 | `KB_FAIL_ON_STALE` | **Variables**, optional | Set to any value to make an upstream amendment fail the gate |
 
-The workflow reads them as `vars.CENTER_KB_HUB`, `secrets.KB_HUB_TOKEN` and `vars.KB_FAIL_ON_STALE`.
+The workflow reads them as `vars.STRATA_KB_HUB`, `secrets.KB_HUB_TOKEN` and `vars.KB_FAIL_ON_STALE`.
 
 A pull request opened **from a fork** cannot read repository secrets, so on
 a private hub the gate fails there with a hub-unreachable message. That is

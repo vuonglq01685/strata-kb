@@ -173,7 +173,7 @@ spans several User Stories — small work goes straight to
   domain section.
 - **`kb mission lint` failing to RUN is not a PASS.** There is no MCP
   fallback for this gate. If the `kb` command is unavailable, tell the BA
-  to install `center-kb` — never skip the lint step, and never hand over a
+  to install `strata-kb` — never skip the lint step, and never hand over a
   mission you could not lint.
 - Lint must report `DoR: PASS` before handover; report remaining warnings
   to the BA — do not hand over a failing mission silently.

@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-logger = logging.getLogger("center_kb.ingest.images")
+logger = logging.getLogger("strata_kb.ingest.images")
 
 ICON_MAX_DIM_PX = 128  # at images_scale=2.0 (≈64 px at print scale)
 WEBP_QUALITY = 80

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import gitio, hub as hub_mod
+from strata_kb import gitio, hub as hub_mod
 
 
 CRED = "https://x-access-token:ghs_SECRETTOKEN@github.com/org/kb-hub.git"
@@ -215,7 +215,7 @@ def test_push_branch_with_token_pushes_to_a_real_remote(tmp_path, run_git):
 
 
 def test_cache_key_survives_a_token_rotation(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     key_a = hub_mod.cache_key(CRED)
     key_b = hub_mod.cache_key(
         "https://x-access-token:ghs_ROTATED@github.com/org/kb-hub.git"
@@ -230,7 +230,7 @@ def test_cache_key_survives_a_token_rotation(tmp_path, monkeypatch):
 def test_cache_directory_is_private(tmp_path, monkeypatch):
     import stat
 
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     base = hub_mod.ensure_cache_base()
     assert stat.S_IMODE(base.stat().st_mode) == 0o700
 
@@ -256,7 +256,7 @@ def test_resolve_hub_uses_the_stripped_key_cache_and_rewrites_its_origin(
     under the reverted code resolve_hub would look in the wrong place, find
     nothing, and try to clone the fake credentialed URL for real."""
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     bare = tmp_path / "bare.git"
     run_git(tmp_path, "init", "--bare", str(bare))
 
@@ -285,8 +285,8 @@ def test_doctor_reports_a_clone_whose_credential_could_not_be_stripped(
     """The rewrite is best-effort -- a read-only .git/config, or a remote
     named something other than origin, leaves the token in place. An operator
     has to be told, because the file is the thing that needs rotating."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
 
     run_git(hub_worktree, "remote", "add", "upstream", CRED)
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
@@ -339,7 +339,7 @@ def _seed_credentialed_cache(tmp_path, origin, token: str, run_git, monkeypatch)
     uses for the one call site that IS already protected."""
     stripped = "https://example.invalid/hub.git"
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     key = hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)
@@ -370,7 +370,7 @@ def test_rebase_retry_threads_the_hub_token_into_pull_rebase(
     Force a genuine push rejection (origin moves ahead between the cache's
     clone and its own push) so the retry path is actually exercised, not
     merely constructed."""
-    from center_kb.publish import publish
+    from strata_kb.publish import publish
 
     origin = _seed_hub_with_bare_origin(tmp_path, run_git)
     fake_hub_ref = "https://x-access-token:ghs_REBASETOKEN@example.invalid/hub.git"
@@ -414,8 +414,8 @@ def test_pr_path_threads_the_hub_token_into_the_branch_push(
     (gitio.push_branch(handle.root, branch, handle.token)) dropped the token
     with 87 tests still green. Force PR mode via the ghio test seams
     test_publish.py's own PR-mode tests use."""
-    from center_kb import ghio
-    from center_kb.publish import publish
+    from strata_kb import ghio
+    from strata_kb.publish import publish
 
     origin = _seed_hub_with_bare_origin(tmp_path, run_git)
     fake_hub_ref = "https://x-access-token:ghs_PRTOKEN@example.invalid/hub.git"

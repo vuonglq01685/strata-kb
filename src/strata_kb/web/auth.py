@@ -7,11 +7,11 @@ import time
 
 from starlette.requests import Request
 
-from center_kb.web.ratelimit import client_key
+from strata_kb.web.ratelimit import client_key
 
-logger = logging.getLogger("center_kb.web.auth")
+logger = logging.getLogger("strata_kb.web.auth")
 
-COOKIE_NAME = "center_kb_session"
+COOKIE_NAME = "strata_kb_session"
 # 12 h: long enough for a working day, short enough that a cookie copied off
 # a machine stops working without an operator having to rotate the token.
 SESSION_MAX_AGE = 43200
@@ -89,7 +89,7 @@ def is_authorized_request(request, token: str) -> bool:
 
 def cookie_is_secure(request, trusted_proxies: int = 0) -> bool:
     """https on the wire, or an X-Forwarded-Proto we are configured to
-    believe. No CENTER_KB_HTTP_INSECURE_COOKIE knob: CENTER_KB_TRUSTED_PROXIES
+    believe. No STRATA_KB_HTTP_INSECURE_COOKIE knob: STRATA_KB_TRUSTED_PROXIES
     already declares whether a proxy in front is ours to trust, and a second
     flag for the same fact would let them disagree.
 
@@ -117,7 +117,7 @@ def cookie_is_secure(request, trusted_proxies: int = 0) -> bool:
 
 
 class TokenAuthMiddleware:
-    """Accept 'Authorization: Bearer <token>' OR the center_kb_session cookie.
+    """Accept 'Authorization: Bearer <token>' OR the strata_kb_session cookie.
 
     Unauthorized: browser-facing paths (/, /ui*) get a 302 to /ui/login;
     everything else (API, MCP) gets 401 JSON.
@@ -143,7 +143,7 @@ class TokenAuthMiddleware:
 
     def _credential_presented(self, scope) -> bool:
         """Whether the request carried ANY credential (an Authorization
-        header or a center_kb_session cookie), valid or not -- gates the
+        header or a strata_kb_session cookie), valid or not -- gates the
         rate limiter.
 
         Fix round 1 (Critical): M6 is "a failed attempt at the shared
@@ -238,7 +238,7 @@ class TokenAuthMiddleware:
         if path == "/" or path.startswith("/ui"):
             # anonymous browser hit — normal flow, redirect without logging.
             #
-            # Fix (final review item 1): also clear center_kb_session here.
+            # Fix (final review item 1): also clear strata_kb_session here.
             # SESSION_MAX_AGE (12h) guarantees every user's own cookie ages
             # out mid-day; without this, the browser keeps resending the
             # dead-but-real cookie on every page view, _credential_presented

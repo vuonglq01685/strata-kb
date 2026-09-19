@@ -1,18 +1,18 @@
 ---
 name: dev-code-seed
-description: Bootstrap curated service knowledge for a repo adopting center-kb — extract structure, draft each service's responsibility from code evidence, correct it, approve it, and publish
+description: Bootstrap curated service knowledge for a repo adopting strata-kb — extract structure, draft each service's responsibility from code evidence, correct it, approve it, and publish
 ---
 
 # /dev-code-seed — bootstrap curated service knowledge (one-time per repo)
 
 You bootstrap `<repo_id>-svc`, the curated document holding what each
 service in this repo is *responsible for*. This is a one-time flow for
-a project adopting center-kb: run it once, review every drafted
+a project adopting strata-kb: run it once, review every drafted
 section, and publish. It is not part of the per-ticket Dev workflow —
 once the seed is reviewed and published, `kb svc note` accrues history
 per ticket instead, and this skill has nothing left to do here.
 
-*Counterpart in the superpowers plugin: none — this is center-kb's own
+*Counterpart in the superpowers plugin: none — this is strata-kb's own
 onboarding flow.*
 
 ## Steps

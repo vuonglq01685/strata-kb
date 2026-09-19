@@ -20,8 +20,8 @@ from typing import Protocol
 import yaml
 from pydantic import ValidationError
 
-from center_kb import models
-from center_kb.mdutils import _HEADING_RE
+from strata_kb import models
+from strata_kb.mdutils import _HEADING_RE
 
 # `_HEADING_RE` is imported rather than re-derived: `mdutils.py` is frozen
 # (off-limits to edit) but this module needs the *exact* same '## <id>
@@ -122,7 +122,7 @@ class CodeIngestError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# git helpers — local (not center_kb.gitio) because a non-git scratch
+# git helpers — local (not strata_kb.gitio) because a non-git scratch
 # directory is a valid code-ingest target: these degrade gracefully instead
 # of raising.
 # ---------------------------------------------------------------------------
@@ -1273,12 +1273,12 @@ def scaffold_svc(opts, sections, report) -> None:
 
 # Imported at the bottom of the module, deliberately after every class above
 # is defined. B2-B7 extractor modules import CodeSection/ExtractResult from
-# `center_kb.codeingest.core`, and `extractors/__init__.py` imports those
+# `strata_kb.codeingest.core`, and `extractors/__init__.py` imports those
 # extractor modules to build ALL_EXTRACTORS. Importing `extractors` up top
 # (before CodeSection/ExtractResult exist) would hand those modules a
 # partially-initialized `core` module with neither name bound yet —
-# `from center_kb.codeingest.core import CodeSection` raises ImportError in
-# every import order; only `import center_kb.codeingest.core as core` +
+# `from strata_kb.codeingest.core import CodeSection` raises ImportError in
+# every import order; only `import strata_kb.codeingest.core as core` +
 # deferred `core.CodeSection` attribute access survives, by accident of
 # CPython's partial-module fallback. Deferring this import until everything
 # above it is defined makes both import styles work regardless of which
@@ -1286,7 +1286,7 @@ def scaffold_svc(opts, sections, report) -> None:
 # global at call time, so its position here doesn't affect that lookup —
 # and `monkeypatch.setattr(core, "ALL_EXTRACTORS", ...)` still works because
 # it rebinds this same module-level name.
-from center_kb.codeingest.extractors import ALL_EXTRACTORS  # noqa: E402
+from strata_kb.codeingest.extractors import ALL_EXTRACTORS  # noqa: E402
 
 # Same deferred-import reasoning as ALL_EXTRACTORS just above: `extractors.
 # tree` imports `CodeIngestOptions`/`CodeSection`/`ExtractResult` from this
@@ -1296,4 +1296,4 @@ from center_kb.codeingest.extractors import ALL_EXTRACTORS  # noqa: E402
 # ALL_EXTRACTORS, so this is just binding names already in `sys.modules`.
 # `scaffold_svc()` (defined above, called from `run()`) uses these to walk
 # the repo for its L3 evidence.
-from center_kb.codeingest.extractors.tree import relposix, walk_tree  # noqa: E402
+from strata_kb.codeingest.extractors.tree import relposix, walk_tree  # noqa: E402

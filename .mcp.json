@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "center-kb": {
+    "strata-kb": {
       "command": "python",
-      "args": ["-m", "center_kb.mcp", "--kb", ".kb/"]
+      "args": ["-m", "strata_kb.mcp", "--kb", ".kb/"]
     }
   }
 }

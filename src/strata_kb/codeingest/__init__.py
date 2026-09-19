@@ -1,7 +1,7 @@
 """`kb code-ingest` — deterministic, LLM-free codebase-to-KB extraction."""
 from __future__ import annotations
 
-from center_kb.codeingest.core import (
+from strata_kb.codeingest.core import (
     CodeIngestError,
     CodeIngestOptions,
     CodeIngestReport,

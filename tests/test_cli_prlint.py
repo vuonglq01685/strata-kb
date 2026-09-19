@@ -7,8 +7,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb.cli import app
-from center_kb.prlint import REQUIRED_SECTIONS
+from strata_kb.cli import app
+from strata_kb.prlint import REQUIRED_SECTIONS
 
 runner = CliRunner()
 

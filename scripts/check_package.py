@@ -34,7 +34,7 @@ from pathlib import Path
 # ---- Wheel: may hold only the real package + the wheel's standard metadata dir. ----
 # The directory name `<name>-<version>.dist-info/` changes with the version on
 # every build, so compare by suffix rather than hardcoding the version.
-WHEEL_PACKAGE_DIR = "center_kb"
+WHEEL_PACKAGE_DIR = "strata_kb"
 WHEEL_DIST_INFO_SUFFIX = ".dist-info"
 
 # ---- Wheel: web UI static assets the app requires at runtime (style.css,

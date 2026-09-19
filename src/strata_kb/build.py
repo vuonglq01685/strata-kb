@@ -4,8 +4,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from center_kb import models, quality
-from center_kb.mdutils import (
+from strata_kb import models, quality
+from strata_kb.mdutils import (
     count_tokens,
     extract_tables,
     heading_occurrences,

@@ -1,4 +1,4 @@
-# src/center_kb/web/ui.py
+# src/strata_kb/web/ui.py
 from __future__ import annotations
 
 import hmac
@@ -18,20 +18,20 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from center_kb import assetstore, searchdb
-from center_kb import hub as hub_mod
-from center_kb.federation import load_federation
-from center_kb.mcp import ServerConfig
-from center_kb.query import AmbiguousDocError, get_section, search, tokenize
-from center_kb.web import api, templating, uidata
-from center_kb.web.auth import (
+from strata_kb import assetstore, searchdb
+from strata_kb import hub as hub_mod
+from strata_kb.federation import load_federation
+from strata_kb.mcp import ServerConfig
+from strata_kb.query import AmbiguousDocError, get_section, search, tokenize
+from strata_kb.web import api, templating, uidata
+from strata_kb.web.auth import (
     COOKIE_NAME,
     SESSION_MAX_AGE,
     cookie_is_secure,
     make_session,
 )
-from center_kb.web.mdrender import render as md_render
-from center_kb.web.ratelimit import (
+from strata_kb.web.mdrender import render as md_render
+from strata_kb.web.ratelimit import (
     LOGIN_MAX_ATTEMPTS,
     LOGIN_WINDOW_SECONDS,
     SlidingWindowLimiter,
@@ -39,7 +39,7 @@ from center_kb.web.ratelimit import (
     trusted_proxies_from_env,
 )
 
-logger = logging.getLogger("center_kb.web.ui")
+logger = logging.getLogger("strata_kb.web.ui")
 
 # /ui/login is unauthenticated and auth-exempt, and Starlette applies no size
 # limit to a form body -- the same reason intake_routes caps every upload
@@ -195,7 +195,7 @@ async def static_file(request: Request) -> Response:
     # startswith("/") check does not.
     if media is None or ".." in name or name.startswith("/") or ":" in name or "\\" in name:
         return Response("not found", status_code=404)
-    target = resources.files("center_kb").joinpath("templates/web/static").joinpath(name)
+    target = resources.files("strata_kb").joinpath("templates/web/static").joinpath(name)
     try:
         if not target.is_file():
             return Response("not found", status_code=404)
@@ -232,7 +232,7 @@ def build_routes(
     # F-D12 item 4: this route has no IntakeConfig to read (build_routes only
     # gets ServerConfig), so it reads the same env var through ratelimit.py's
     # shared parser rather than duplicating intake.py's parsing -- one
-    # authority for CENTER_KB_TRUSTED_PROXIES, covering both limiters.
+    # authority for STRATA_KB_TRUSTED_PROXIES, covering both limiters.
     # Task 11: create_app now reads it once and passes it in, so the
     # middleware and the login form cannot disagree about the proxy count --
     # the env fallback stays for direct unit callers (e.g. test_web_ui.py)
@@ -275,7 +275,7 @@ def build_routes(
                 logger.warning(
                     "session cookie set without Secure — request arrived over "
                     "plain HTTP. Behind a TLS proxy, set "
-                    "CENTER_KB_TRUSTED_PROXIES to the number of proxies in "
+                    "STRATA_KB_TRUSTED_PROXIES to the number of proxies in "
                     "front so X-Forwarded-Proto is believed."
                 )
             resp.set_cookie(
@@ -286,16 +286,11 @@ def build_routes(
                 secure=secure,
                 max_age=SESSION_MAX_AGE,
             )
-            # Fix (final review item 4): pre-0.25 set center_kb_token = the
-            # raw shared secret (no max_age -> a session cookie, but that was
-            # luck, not design -- M4's whole point is that a cookie which IS
-            # the token is an admin-equivalent credential at rest). The
-            # session-cookie switch stopped READING it but never told any
-            # existing browser to drop it, so upgrading left that secret
-            # sitting in every user's jar indefinitely. Path="/" confirmed
-            # against the pre-M4 set_cookie call (no path kwarg -> Starlette
-            # default "/").
+            # Drop cookies from prior product names so an upgrade does not
+            # leave an old session (or the pre-0.25 raw-token cookie) in
+            # the jar. Path="/" matches those set_cookie calls.
             resp.delete_cookie("center_kb_token", path="/")
+            resp.delete_cookie("center_kb_session", path="/")
             return resp
         # never log the submitted value — it may be a near-miss of the token
         logger.warning("failed login attempt from %s", client_ip)
@@ -307,10 +302,8 @@ def build_routes(
     async def logout_post(request: Request) -> Response:
         resp = RedirectResponse("/ui/login", status_code=303, headers=NO_STORE)
         resp.delete_cookie(COOKIE_NAME, path="/")
-        # Fix (final review item 4): same pre-0.25 raw-token cookie as
-        # login_post above -- logout must clear it too, not just the current
-        # session cookie.
         resp.delete_cookie("center_kb_token", path="/")
+        resp.delete_cookie("center_kb_session", path="/")
         return resp
 
     def _budget(request: Request) -> int:

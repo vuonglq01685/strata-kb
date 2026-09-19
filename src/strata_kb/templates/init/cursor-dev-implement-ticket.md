@@ -12,7 +12,7 @@ ticket that already has work in progress, you detect how far it got and
 offer the next step instead of redoing phases that are already finished.
 
 *Counterpart in the superpowers plugin: none — this orchestrator is
-center-kb specific; the phases it runs map to brainstorming, writing-plans,
+strata-kb specific; the phases it runs map to brainstorming, writing-plans,
 and subagent-driven-development.*
 
 ## Freshness re-check (run this FIRST, every time)

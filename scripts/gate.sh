@@ -69,7 +69,7 @@ echo "==> T2b: sdist install smoke"
 "$(venv_bin "$SDIST_VENV")/kb" --version
 "$(venv_bin "$SDIST_VENV")/python" -c \
     "from importlib import resources; \
-     print(len(resources.files('center_kb').joinpath('templates/init/config-hub.yaml').read_text()))"
+     print(len(resources.files('strata_kb').joinpath('templates/init/config-hub.yaml').read_text()))"
 
 echo "==> Build the runner venv"
 "$PY" -m venv "$RUNNER"

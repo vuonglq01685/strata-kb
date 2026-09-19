@@ -2,7 +2,7 @@
 `build_kb()` run UNMODIFIED over a `--scaffold-svc` document, with a stub LLM
 runner standing in for the real CLI (hermetic — no network, no real LLM).
 
-Brief deviations, both verified against the real `center_kb.summarize` source
+Brief deviations, both verified against the real `strata_kb.summarize` source
 before writing this file (per the task's Step 5 instruction; independently
 re-verified by task review):
 
@@ -29,9 +29,9 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models, review, summarize, svcnote
-from center_kb.build import build_kb
-from center_kb.codeingest import core
+from strata_kb import models, review, summarize, svcnote
+from strata_kb.build import build_kb
+from strata_kb.codeingest import core
 from tests.fixtures_coderepo import build_code_repo
 
 

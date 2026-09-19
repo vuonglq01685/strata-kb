@@ -9,9 +9,9 @@ Vietnamese KB would be indexed and unsearchable.
 """
 import unicodedata
 
-from center_kb import searchdb
-from center_kb.hub import HubHandle
-from center_kb.query import search_detailed
+from strata_kb import searchdb
+from strata_kb.hub import HubHandle
+from strata_kb.query import search_detailed
 from tests.conftest import make_fed_entry
 
 
@@ -57,7 +57,7 @@ def test_vietnamese_term_round_trips_index_to_query(tmp_path, run_git):
         l2="## 2.1 Đường băng\n\nĐường băng phải có ký hiệu nhận dạng rõ ràng.\n",
         l3="## 2.1 Đường băng\n\nĐường băng phải có ký hiệu nhận dạng rõ ràng.\n",
     )
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     write_federation_index(fed)
     hub = HubHandle(root=tmp_path / "hub")

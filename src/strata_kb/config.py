@@ -5,14 +5,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from center_kb import models
-from center_kb.errors import KbError
+from strata_kb import models
+from strata_kb.errors import KbError
 
 CONFIG_NAME = "config.yaml"
 
 HUB_GUIDE = (
     "no hub configured — add `hub: <url|path>` to .kb/config.yaml "
-    "(or pass --hub / set CENTER_KB_HUB)"
+    "(or pass --hub / set STRATA_KB_HUB)"
 )
 
 
@@ -51,7 +51,7 @@ def load_config(kb_dir: Path) -> KBConfig:
 
 def require_hub(cli_value: str, kb_dir: Path) -> str:
     """cli_value has env folded in already (typer envvar / mcp parse_args fold
-    CENTER_KB_HUB themselves).
+    STRATA_KB_HUB themselves).
     """
     hub = cli_value or load_config(kb_dir).hub
     if not hub:

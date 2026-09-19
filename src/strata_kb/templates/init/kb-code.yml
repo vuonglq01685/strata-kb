@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install center-kb=={version}
+      - run: pip install strata-kb=={version}
       - run: kb build
 
   publish:
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
         with:
           python-version: "3.12"
-      - run: pip install center-kb=={version}
+      - run: pip install strata-kb=={version}
       # Add --db <path> flags here if this repo has SQLite databases whose
       # schema belongs in the KB. Deliberately explicit: a stray test fixture
       # must never become published company knowledge. `kb init --kind dev`

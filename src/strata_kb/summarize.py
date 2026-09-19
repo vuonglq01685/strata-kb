@@ -12,10 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from center_kb import models, quality
-from center_kb.llm import RunnerError
-from center_kb.mdutils import HEADING_RE, heading_occurrences, slice_section
-from center_kb.quality import (
+from strata_kb import models, quality
+from strata_kb.llm import RunnerError
+from strata_kb.mdutils import HEADING_RE, heading_occurrences, slice_section
+from strata_kb.quality import (
     BRIEF_LABEL,
     TABLE_ONLY_LABEL,
     TABLE_PLACEHOLDER,  # re-exported for callers/tests

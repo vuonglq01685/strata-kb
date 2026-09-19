@@ -5,7 +5,7 @@ import re
 import subprocess
 from pathlib import Path
 
-logger = logging.getLogger("center_kb.gitio")
+logger = logging.getLogger("strata_kb.gitio")
 
 # `user:pass@` / `x-access-token:<token>@` in any URL — CI templates pass
 # credential-bearing hub URLs, and git echoes the remote URL in its stderr.

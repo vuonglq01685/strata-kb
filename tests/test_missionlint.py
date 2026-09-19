@@ -12,7 +12,7 @@ mission pinning/citing published docs — none of that exists yet.
 
 from __future__ import annotations
 
-from center_kb import lintcore, mission, ticket
+from strata_kb import lintcore, mission, ticket
 
 
 def test_required_headings_are_the_agreed_contract():
@@ -161,8 +161,8 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import kbcontext, missionlint
-from center_kb.hub import HubHandle
+from strata_kb import kbcontext, missionlint
+from strata_kb.hub import HubHandle
 
 MISSION_ID = "M-airspace-filter"
 DEFAULT_TITLE = "# Filter and display controlled airspace"
@@ -862,7 +862,7 @@ def _template_text() -> str:
     from importlib import resources
 
     return (
-        resources.files("center_kb.templates.init")
+        resources.files("strata_kb.templates.init")
         .joinpath("mission-template.md")
         .read_text(encoding="utf-8")
     )

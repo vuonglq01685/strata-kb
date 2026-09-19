@@ -8,8 +8,8 @@ import yaml
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from center_kb.federation import FederatedRepo
-    from center_kb.hub import HubHandle
+    from strata_kb.federation import FederatedRepo
+    from strata_kb.hub import HubHandle
 
 
 class KBContextError(ValueError):
@@ -325,9 +325,9 @@ def build_context_block(
     Returns (block_text, stale_warning): stale_warning is a one-line warning
     when the hub cache is stale (offline), otherwise None.
     """
-    from center_kb import gitio, models
-    from center_kb.federation import load_federation
-    from center_kb.query import AmbiguousDocError
+    from strata_kb import gitio, models
+    from strata_kb.federation import load_federation
+    from strata_kb.query import AmbiguousDocError
 
     ref_list = [parse_ref(r) for r in refs if r.strip()]
     if not ref_list:

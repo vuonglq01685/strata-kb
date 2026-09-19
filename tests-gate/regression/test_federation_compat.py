@@ -8,7 +8,7 @@ WHAT RED MEANS: see the rule in test_kb_backcompat.py — either a migration, or
 an xfail with a note. Do not edit the test to make it green.
 
 FIXTURE PROVENANCE — one deviation from the original plan, stated plainly:
-`center-kb 0.9.0` NEVER made it to PyPI (`pip install center-kb==0.9.0` reports
+`strata-kb 0.9.0` NEVER made it to PyPI (`pip install strata-kb==0.9.0` reports
 "Could not find a version that satisfies the requirement" — the list of
 available versions jumps straight from 0.8.0 to 0.9.1). Cross-checking
 `git diff v0.9.0..v0.9.1 --stat` shows the ONLY differences are
@@ -16,7 +16,7 @@ available versions jumps straight from 0.8.0 to 0.9.1). Cross-checking
 — NOT a single line under `src/` changed. That is, the 0.9.0 release broke at
 the publish step (the workflow), was patched, and re-released under the number
 0.9.1 carrying exactly 0.9.0's federation source. This fixture is therefore
-generated with `pip install "center-kb==0.9.1"` (its own venv, from the real
+generated with `pip install "strata-kb==0.9.1"` (its own venv, from the real
 PyPI, never touching the source tree) — a genuinely INDEPENDENT build, truly
 older than HEAD, carrying exactly v0.9.0's publish/federation code. The
 directory name stays `federation-v0.9.0` because that is what it represents:

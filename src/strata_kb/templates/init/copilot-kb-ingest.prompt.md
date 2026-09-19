@@ -3,7 +3,7 @@ mode: agent
 description: Ingest a source PDF into the .kb/ knowledge base — interview for id/tags/revision, then run kb ingest
 ---
 
-# /kb-ingest — ingest a PDF into CENTER-KB
+# /kb-ingest — ingest a PDF into Strata
 
 Turn a source PDF into `.kb/` scaffolding via the `kb ingest` CLI. Your
 job: resolve the file, confirm metadata with the user, run the command.
@@ -38,7 +38,7 @@ missing ones. "none" is a valid answer for tags and revision.
      then validate with `docker compose run --rm hub kb build`.
    - **Local fallback** — when Docker is not available (daemon down or no
      compose file), use the local CLI (requires
-     `pip install "center-kb[ingest]"`), which auto-summarizes as usual:
+     `pip install "strata-kb[ingest]"`), which auto-summarizes as usual:
      `kb ingest source/<file>.pdf --id <id> --tags "<tags>" --revision "<revision>"`
    Omit `--tags` / `--revision` when the user answered "none".
 4. **Report the outcome.** Relay the CLI output: number of sections,

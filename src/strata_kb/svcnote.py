@@ -22,9 +22,9 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from center_kb import models
-from center_kb.codeingest.extractors._mdcells import escape_cell
-from center_kb.mdutils import _SEP_ROW_RE, slice_section
+from strata_kb import models
+from strata_kb.codeingest.extractors._mdcells import escape_cell
+from strata_kb.mdutils import _SEP_ROW_RE, slice_section
 
 # Verbatim per the task brief: used to parse existing rows back out of the
 # L2 table so the operation is idempotent without a sidecar store. Matches

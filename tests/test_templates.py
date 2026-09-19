@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from center_kb import lintcore
-from center_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
+from strata_kb import lintcore
+from strata_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
 
 WEB_TEMPLATES = [
     "base.html", "login.html", "overview.html", "search.html",
@@ -29,7 +29,7 @@ BA_TICKET_AUTHOR_PIPELINE_STEPS = (
 
 
 def test_all_web_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/web")
+    base = resources.files("strata_kb").joinpath("templates/web")
     for name in WEB_TEMPLATES:
         assert base.joinpath(name).is_file(), name
 
@@ -68,7 +68,7 @@ def test_web_templates_carry_no_inline_event_handlers():
     import re
 
     pattern = re.compile(_INLINE_HANDLER_RE_SRC, re.IGNORECASE)
-    base = resources.files("center_kb").joinpath("templates/web")
+    base = resources.files("strata_kb").joinpath("templates/web")
     with resources.as_file(base) as root:
         root = Path(root)
         for path in sorted(root.rglob("*")):
@@ -107,7 +107,7 @@ def test_data_autosubmit_contract_between_search_html_and_app_js():
     the same string. No shared constant ties them together, so a typo or
     rename in either file silently kills both controls and nothing else
     would notice."""
-    base = resources.files("center_kb").joinpath("templates/web")
+    base = resources.files("strata_kb").joinpath("templates/web")
     search_html = base.joinpath("search.html").read_text(encoding="utf-8")
     app_js = base.joinpath("static/app.js").read_text(encoding="utf-8")
     assert search_html.count("data-autosubmit") == 2
@@ -115,19 +115,19 @@ def test_data_autosubmit_contract_between_search_html_and_app_js():
 
 
 def test_all_init_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for mapping in (COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES):
         for resource_name in mapping.values():
             assert base.joinpath(resource_name).is_file(), resource_name
 
 
 def _read_init_template(name: str) -> str:
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     return base.joinpath(name).read_text(encoding="utf-8")
 
 
 def test_ba_ticket_author_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for name in BA_TICKET_AUTHOR_TEMPLATES:
         assert base.joinpath(name).is_file(), name
 
@@ -169,9 +169,9 @@ def test_copilot_ba_ticket_author_prompt_has_agent_mode():
 
 
 def test_ac_quality_doc_exists_and_is_wired_into_ba_kind():
-    from center_kb.initcmd import BA_TEMPLATES
+    from strata_kb.initcmd import BA_TEMPLATES
 
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     assert base.joinpath("ac-quality.md").is_file()
     assert BA_TEMPLATES["docs/ac-quality.md"] == "ac-quality.md"
 
@@ -243,7 +243,7 @@ def test_ba_mission_plan_templates_carry_the_v2_markers():
 
 
 def test_weasel_phrases_all_appear_in_the_shipped_ac_quality_doc():
-    from center_kb.acquality import WEASEL_PHRASES
+    from strata_kb.acquality import WEASEL_PHRASES
 
     text = _read_init_template("ac-quality.md")
     for phrase in WEASEL_PHRASES:
@@ -253,7 +253,7 @@ def test_weasel_phrases_all_appear_in_the_shipped_ac_quality_doc():
 def test_every_quoted_doc_phrase_is_in_the_detector():
     import re as _re
 
-    from center_kb.acquality import WEASEL_PHRASES
+    from strata_kb.acquality import WEASEL_PHRASES
 
     text = _read_init_template("ac-quality.md")
     banned_col = [
@@ -276,9 +276,9 @@ def test_every_quoted_doc_phrase_is_in_the_detector():
 
 
 def test_review_rubric_doc_exists_and_is_wired_into_ba_kind():
-    from center_kb.initcmd import BA_TEMPLATES
+    from strata_kb.initcmd import BA_TEMPLATES
 
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     assert base.joinpath("review-rubric.md").is_file()
     assert BA_TEMPLATES["docs/review-rubric.md"] == "review-rubric.md"
 
@@ -480,7 +480,7 @@ def test_dev_wrappers_carry_byte_identical_shared_blocks():
 
 
 def test_dev_implement_ticket_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert base.joinpath(name).is_file(), name
 
@@ -567,7 +567,7 @@ def test_every_landed_claude_command_is_a_skill_invoker():
 
 
 def test_dev_design_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for name in _dev_wrapper_names("dev-design"):
         assert base.joinpath(name).is_file(), name
 
@@ -630,7 +630,7 @@ def test_copilot_dev_design_prompt_has_agent_mode():
 
 
 def test_dev_plan_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for name in _dev_wrapper_names("dev-plan"):
         assert base.joinpath(name).is_file(), name
 
@@ -673,7 +673,7 @@ def test_copilot_dev_plan_prompt_has_agent_mode():
 
 
 def test_dev_execute_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for name in _dev_wrapper_names("dev-execute"):
         assert base.joinpath(name).is_file(), name
 
@@ -726,7 +726,7 @@ def test_copilot_dev_execute_prompt_has_agent_mode():
 
 
 def test_dev_handover_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for name in _dev_wrapper_names("dev-handover"):
         assert base.joinpath(name).is_file(), name
 
@@ -1028,7 +1028,7 @@ def _dev_code_seed_names() -> tuple[str, ...]:
 
 
 def test_dev_code_seed_templates_exist_as_package_resources():
-    base = resources.files("center_kb").joinpath("templates/init")
+    base = resources.files("strata_kb").joinpath("templates/init")
     for name in _dev_code_seed_names():
         assert base.joinpath(name).is_file(), name
 
@@ -1642,7 +1642,7 @@ def test_dev_execute_review_checkpoint_points_at_the_conventions_files():
 
 import re as _re
 
-from center_kb.prlint import REQUIRED_SECTIONS
+from strata_kb.prlint import REQUIRED_SECTIONS
 
 DEV_HANDOVER_TEMPLATES = _dev_wrapper_names("dev-handover")
 EXEMPTION_SLUGS = ("config", "ci", "docs", "style")
@@ -1724,7 +1724,7 @@ def test_tdd_exemptions_doc_names_every_slug_prlint_recognizes():
     # Ties the doc to prlint.EXEMPTION_SLUGS itself, not the hand-copied
     # tuple above — a slug added in code with no matching doc update fails
     # this test (final-review finding 4).
-    from center_kb.prlint import EXEMPTION_SLUGS as PRLINT_EXEMPTION_SLUGS
+    from strata_kb.prlint import EXEMPTION_SLUGS as PRLINT_EXEMPTION_SLUGS
 
     text = _read_init_template("tdd-exemptions.md")
     for slug in PRLINT_EXEMPTION_SLUGS:
@@ -1775,7 +1775,7 @@ SUMMARIZE_WRAPPERS = [
 
 
 def _tpl(name: str) -> str:
-    return resources.files("center_kb.templates.init").joinpath(name).read_text(encoding="utf-8")
+    return resources.files("strata_kb.templates.init").joinpath(name).read_text(encoding="utf-8")
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -1904,14 +1904,14 @@ def test_ticket_lint_workflow_annotates_and_summarises():
 
 
 def test_ticket_lint_workflow_keeps_a_non_https_hub_scheme():
-    assert "${CENTER_KB_HUB#https://}" not in _read_init_template(
+    assert "${STRATA_KB_HUB#https://}" not in _read_init_template(
         "kb-ticket-lint.yml"
     )
 
 
 def test_quickstart_ba_documents_the_ci_variables():
     text = _read_init_template("QUICKSTART-ba.md")
-    assert "vars.CENTER_KB_HUB" in text
+    assert "vars.STRATA_KB_HUB" in text
     assert "secrets.KB_HUB_TOKEN" in text
     assert "fork" in text.lower()
 

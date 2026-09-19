@@ -1,5 +1,5 @@
-from center_kb import models
-from center_kb.federation import (
+from strata_kb import models
+from strata_kb.federation import (
     build_federation_index,
     load_federation,
     write_federation_index,

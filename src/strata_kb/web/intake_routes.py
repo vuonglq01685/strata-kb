@@ -12,15 +12,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from center_kb import federation, ghapp, gitio, intake
-from center_kb.web.ratelimit import (
+from strata_kb import federation, ghapp, gitio, intake
+from strata_kb.web.ratelimit import (
     INTAKE_MAX_ATTEMPTS,
     INTAKE_WINDOW_SECONDS,
     SlidingWindowLimiter,
     client_key,
 )
 
-logger = logging.getLogger("center_kb.web.intake")
+logger = logging.getLogger("strata_kb.web.intake")
 
 _CHUNK = 64 * 1024
 # F-D12 item 3: the receive-channel cap (_capped_receive, via

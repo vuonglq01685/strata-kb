@@ -11,8 +11,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from center_kb import models
-from center_kb.mdutils import extract_tables, normalize_table
+from strata_kb import models
+from strata_kb.mdutils import extract_tables, normalize_table
 
 RATIO = 0.35            # L2 prose ≤ RATIO × L3 prose …
 FLOOR_CHARS = 120       # … but never required below this many characters

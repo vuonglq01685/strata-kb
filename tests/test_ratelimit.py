@@ -10,8 +10,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from center_kb.web.auth import TokenAuthMiddleware
-from center_kb.web.ratelimit import SlidingWindowLimiter
+from strata_kb.web.auth import TokenAuthMiddleware
+from strata_kb.web.ratelimit import SlidingWindowLimiter
 
 
 class FakeClock:
@@ -54,7 +54,7 @@ def _app_behind_auth():
 
 def test_middleware_logs_unauthorized_api_hit(caplog):
     c = _app_behind_auth()
-    with caplog.at_level(logging.WARNING, logger="center_kb.web.auth"):
+    with caplog.at_level(logging.WARNING, logger="strata_kb.web.auth"):
         resp = c.get("/api/x", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 401
     assert "/api/x" in caplog.text
@@ -64,7 +64,7 @@ def test_middleware_logs_unauthorized_api_hit(caplog):
 def test_middleware_does_not_log_browser_redirect(caplog):
     """Anonymous browser hit on /ui is a normal flow (302), not an attack signal."""
     c = _app_behind_auth()
-    with caplog.at_level(logging.WARNING, logger="center_kb.web.auth"):
+    with caplog.at_level(logging.WARNING, logger="strata_kb.web.auth"):
         resp = c.get("/ui", follow_redirects=False)
     assert resp.status_code == 302
     assert caplog.text == ""
@@ -77,26 +77,26 @@ def test_middleware_does_not_log_browser_redirect(caplog):
 
 
 def test_trusted_proxies_from_env_defaults_to_zero(monkeypatch):
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
-    monkeypatch.delenv("CENTER_KB_TRUSTED_PROXIES", raising=False)
+    monkeypatch.delenv("STRATA_KB_TRUSTED_PROXIES", raising=False)
     assert ratelimit.trusted_proxies_from_env() == 0
 
 
 def test_trusted_proxies_from_env_parses_a_valid_value(monkeypatch):
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "2")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "2")
     assert ratelimit.trusted_proxies_from_env() == 2
 
 
 def test_trusted_proxies_from_env_non_numeric_exits_loudly(monkeypatch):
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "not-a-number")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "not-a-number")
     with pytest.raises(SystemExit) as exc:
         ratelimit.trusted_proxies_from_env()
-    assert "CENTER_KB_TRUSTED_PROXIES" in str(exc.value)
+    assert "STRATA_KB_TRUSTED_PROXIES" in str(exc.value)
     assert "not-a-number" in str(exc.value)
 
 
@@ -104,9 +104,9 @@ def test_trusted_proxies_from_env_negative_exits_loudly(monkeypatch):
     """Parses fine under plain int() but client_key treats it the same as
     0 (header ignored) -- the same silent defeat the loud failure exists to
     prevent, so it must be rejected too, not just non-numeric garbage."""
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "-1")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "-1")
     with pytest.raises(SystemExit) as exc:
         ratelimit.trusted_proxies_from_env()
-    assert "CENTER_KB_TRUSTED_PROXIES" in str(exc.value)
+    assert "STRATA_KB_TRUSTED_PROXIES" in str(exc.value)

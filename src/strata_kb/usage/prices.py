@@ -19,13 +19,13 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from center_kb.usage.ledger import UsageRow
+from strata_kb.usage.ledger import UsageRow
 
 PRICES_FILE = "usage-prices.yaml"
 _MTOK = 1_000_000
 
 # extra="forbid" is new to this module rather than a repo-wide convention
-# (nothing else under src/center_kb sets model_config): UsageRow parses
+# (nothing else under src/strata_kb sets model_config): UsageRow parses
 # machine-written JSONL, where an unexpected key would mean a code bug and
 # extra fields are harmless. PriceTable and ModelRates parse a file this
 # feature expects a human to hand-edit, where a misspelled key (`modelz`,
@@ -81,7 +81,7 @@ class PriceTable(BaseModel):
 
 def _packaged() -> dict:
     text = (
-        resources.files("center_kb")
+        resources.files("strata_kb")
         .joinpath("templates/usage")
         .joinpath(PRICES_FILE)
         .read_text(encoding="utf-8")

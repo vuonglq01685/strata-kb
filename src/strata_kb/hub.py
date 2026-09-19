@@ -10,11 +10,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from center_kb import gitio
+from strata_kb import gitio
 
-logger = logging.getLogger("center_kb.hub")
+logger = logging.getLogger("strata_kb.hub")
 
-DEFAULT_TTL_SECONDS = 900  # 15 minutes — override with env CENTER_KB_HUB_TTL
+DEFAULT_TTL_SECONDS = 900  # 15 minutes — override with env STRATA_KB_HUB_TTL
 
 
 @dataclass
@@ -39,8 +39,8 @@ class HubHandle:
 
 
 def _cache_base() -> Path:
-    env = os.environ.get("CENTER_KB_HUB_CACHE")
-    return Path(env) if env else Path.home() / ".center-kb" / "hub"
+    env = os.environ.get("STRATA_KB_HUB_CACHE")
+    return Path(env) if env else Path.home() / ".strata-kb" / "hub"
 
 
 def ensure_cache_base() -> Path:
@@ -138,7 +138,7 @@ def _discard_cache(cache: Path) -> None:
 
 def _ttl() -> int:
     try:
-        return int(os.environ.get("CENTER_KB_HUB_TTL", DEFAULT_TTL_SECONDS))
+        return int(os.environ.get("STRATA_KB_HUB_TTL", DEFAULT_TTL_SECONDS))
     except ValueError:
         return DEFAULT_TTL_SECONDS
 
@@ -151,7 +151,7 @@ def _marker_age(marker: Path) -> float | None:
 
 
 def _touch_marker(marker: Path) -> None:
-    # newline-exempt: TTL marker in the local hub cache (~/.center-kb/hub),
+    # newline-exempt: TTL marker in the local hub cache (~/.strata-kb/hub),
     # outside the cloned repo -- never committed, never diffed.
     marker.write_text(str(time.time()), encoding="utf-8")
 

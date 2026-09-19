@@ -1,4 +1,4 @@
-# src/center_kb/web/uidata.py
+# src/strata_kb/web/uidata.py
 """Read-only aggregation for the web UI: Overview stats, rails, reader nav.
 
 Everything derives from the hub federation mirror each request. Failures in
@@ -12,14 +12,14 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
-from center_kb import gitio, models
-from center_kb.federation import load_federation
-from center_kb.hub import HubHandle
-from center_kb.mdutils import count_tokens
-from center_kb.models import Manifest, SectionEntry
-from center_kb.review import MACHINE_SECTION_PREFIX
+from strata_kb import gitio, models
+from strata_kb.federation import load_federation
+from strata_kb.hub import HubHandle
+from strata_kb.mdutils import count_tokens
+from strata_kb.models import Manifest, SectionEntry
+from strata_kb.review import MACHINE_SECTION_PREFIX
 
-logger = logging.getLogger("center_kb.web.uidata")
+logger = logging.getLogger("strata_kb.web.uidata")
 
 _QUEUE_ORDER = {"pending": 0, "summarized": 1}
 

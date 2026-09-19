@@ -5,7 +5,7 @@ import struct
 import threading
 from typing import Protocol
 
-logger = logging.getLogger("center_kb.embed")
+logger = logging.getLogger("strata_kb.embed")
 
 SEMANTIC_MIN_SCORE = 0.6  # score floor 1/(1+distance) — filters out nearest-but-irrelevant results; tune once measured for real
 
@@ -68,7 +68,7 @@ def _resolve_default() -> Embedder | None:
     except ImportError:
         logger.info(
             "fastembed not installed — semantic search disabled, keyword search only "
-            '(enable with: pip install "center-kb[embed]")'
+            '(enable with: pip install "strata-kb[embed]")'
         )
         return None
     except Exception as exc:  # noqa: BLE001 -- degrade to FTS-only: model download failed (first run offline...)

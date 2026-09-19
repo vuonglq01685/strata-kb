@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from center_kb import llm
-from center_kb.models import LLMConfig
-from center_kb.summarize import PendingSection, build_section_prompt
+from strata_kb import llm
+from strata_kb.models import LLMConfig
+from strata_kb.summarize import PendingSection, build_section_prompt
 from tests.cli_stub import echo_after_stdin, echo_stdin_length, write_cli_stub
 
 

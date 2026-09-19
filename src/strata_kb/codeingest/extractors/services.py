@@ -43,13 +43,13 @@ from pathlib import Path
 
 import yaml
 
-from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
-from center_kb.codeingest.extractors._envkeys import env_keys_from, redact_userinfo
-from center_kb.codeingest.extractors._lines import join_continuations
-from center_kb.codeingest.extractors._mdcells import escape_cell
-from center_kb.codeingest.extractors.deps import detect_frameworks
-from center_kb.codeingest.extractors.tree import IGNORED_DIRS, relposix, walk_tree
-from center_kb.mdutils import slugify_id
+from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
+from strata_kb.codeingest.extractors._envkeys import env_keys_from, redact_userinfo
+from strata_kb.codeingest.extractors._lines import join_continuations
+from strata_kb.codeingest.extractors._mdcells import escape_cell
+from strata_kb.codeingest.extractors.deps import detect_frameworks
+from strata_kb.codeingest.extractors.tree import IGNORED_DIRS, relposix, walk_tree
+from strata_kb.mdutils import slugify_id
 
 # Ruling R27: `compose.yaml` is the Compose Specification's preferred
 # filename and what Docker Compose v2 scaffolds by default; `docker-

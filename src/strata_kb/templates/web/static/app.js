@@ -1,4 +1,4 @@
-// CENTER-KB UI enhancements. Progressive only — every page works without this file.
+// Strata UI enhancements. Progressive only — every page works without this file.
 "use strict";
 
 document.addEventListener("keydown", (e) => {

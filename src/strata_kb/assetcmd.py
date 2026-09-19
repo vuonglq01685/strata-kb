@@ -9,10 +9,10 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from center_kb import assetstore, gitio
-from center_kb.errors import KbError
+from strata_kb import assetstore, gitio
+from strata_kb.errors import KbError
 
-logger = logging.getLogger("center_kb.assetcmd")
+logger = logging.getLogger("strata_kb.assetcmd")
 
 # Content-addressed asset filenames as referenced from markdown, e.g.
 # "assets/<sha256>.png" (spec A) — same shape as assetstore._ASSET_NAME_RE,
@@ -59,7 +59,7 @@ def _rid_dirs(handle) -> list[tuple[str, Path]]:
     path `deep/doc/assets/<sha>.png`, so the leaf every reader actually uses
     -- via federation.iter_entry_dirs -- had no record at all.
     """
-    from center_kb import federation
+    from strata_kb import federation
 
     return federation.iter_entry_dirs(handle.federation_dir)
 
@@ -109,7 +109,7 @@ def migrate_assets(handle, store=None) -> MigrateReport:
             raise
         if diverted:
             report.per_rid[entry_rel] = len(diverted)
-    from center_kb import federation
+    from strata_kb import federation
 
     report.skipped = sorted(
         entry_rel

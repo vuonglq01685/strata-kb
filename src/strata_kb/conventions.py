@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # runtime import would be circular: initcmd imports us
-    from center_kb.initcmd import InitReport
+    from strata_kb.initcmd import InitReport
 
 LANG_MANIFESTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("dotnet", ("*.csproj",)),
@@ -92,7 +92,7 @@ LANG_GLOBS: dict[str, str] = {
 
 def _template_text(name: str) -> str:
     return (
-        resources.files("center_kb")
+        resources.files("strata_kb")
         .joinpath(f"templates/init/{name}")
         .read_text(encoding="utf-8")
     )

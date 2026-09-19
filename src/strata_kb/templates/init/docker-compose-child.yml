@@ -3,7 +3,7 @@
 # The company-wide MCP HTTP server + Web UI run on the MAIN hub repo, not here.
 services:
   hub:
-    image: ghcr.io/vuonglq01685/center-kb:v{version}
+    image: ghcr.io/vuonglq01685/strata-kb:v{version}
     # A child repo never runs the intake HTTP service (see the file header
     # above) -- this is NOT sized against round-4's HIGH-1 measurements the
     # way docker-compose-hub.yml's mem_limit is. It exists as a generic

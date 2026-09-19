@@ -1,4 +1,4 @@
-# CENTER-KB Quickstart (main hub)
+# Strata Quickstart (main hub)
 
 This repo IS the hub: it hosts `federation/` (the single source of truth for
 search) and runs the shared HTTP MCP server + Web UI. Child repos publish
@@ -6,13 +6,13 @@ into it; merging their PRs here is the review gate.
 
 1. **Set up Docker serving** — run `kb docker-setup` (in Claude Code /
    Copilot Chat / Cursor: `/kb-docker-setup`). It creates `.env`, generates
-   `CENTER_KB_HTTP_TOKEN`, and starts the service (`docker compose up -d`) —
+   `STRATA_KB_HTTP_TOKEN`, and starts the service (`docker compose up -d`) —
    web UI at http://localhost:8321/ui (sign in with the token). The token is
    auto-generated for convenience — replace it with your own secret for real
    deployments. Manual fallback: `cp .env.example .env`, edit the token,
    then `docker compose up -d`. Without Docker:
-   `python -m center_kb.mcp --hub . --transport http`
-   (requires the `CENTER_KB_HTTP_TOKEN` env var).
+   `python -m strata_kb.mcp --hub . --transport http`
+   (requires the `STRATA_KB_HTTP_TOKEN` env var).
 2. **Ingest this repo's own documents (optional)** — the hub may keep its own
    `.kb/`: put the PDF in `source/`, then
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
@@ -34,8 +34,8 @@ into it; merging their PRs here is the review gate.
    child that publishes over git, not only those using this OIDC
    intake, must be registered. Then install a GitHub App on the hub repo
    (permissions `Contents: Read and write` + `Pull requests: Read and
-   write`) and set `CENTER_KB_GH_APP_ID`, `CENTER_KB_GH_APP_KEY`,
-   `CENTER_KB_INTAKE_AUDIENCE` on the server — see
+   write`) and set `STRATA_KB_GH_APP_ID`, `STRATA_KB_GH_APP_KEY`,
+   `STRATA_KB_INTAKE_AUDIENCE` on the server — see
    `docs/deploy-remote-mcp.md` § "Publish intake" for the full setup.
    **Warning:** `repo-id` here must exactly match `repo_id:` in the child's
    `.kb/config.yaml`. On the **git** path a mismatch is refused before
@@ -60,7 +60,7 @@ configures asset storage of its own.
   Export them via the standard AWS env chain (`AWS_ACCESS_KEY_ID` /
   `AWS_SECRET_ACCESS_KEY` / region) — set `endpoint` in the config instead
   for MinIO/R2 or another S3-compatible host. Install the extra:
-  `pip install "center-kb[s3]"`. Run `kb init --assets s3` (or hand-edit the
+  `pip install "strata-kb[s3]"`. Run `kb init --assets s3` (or hand-edit the
   `asset_store:` block already in `.kb/config.yaml`) and fill in `bucket` /
   `region` / `endpoint`. `kb doctor` confirms the store is reachable. If
   assets already exist in git, `kb assets migrate` diverts them rid by rid
@@ -74,7 +74,7 @@ configures asset storage of its own.
   local-first resolver keeps serving throughout, so there's no downtime.
 - **Large `mode: none` corpora** — if s3 isn't an option but the repo is
   outgrowing plain git, git-LFS for `assets/**` is a reasonable alternative;
-  `center-kb` doesn't manage LFS itself, but the local-first read path works
+  `strata-kb` doesn't manage LFS itself, but the local-first read path works
   either way.
 
 ## CLI reference

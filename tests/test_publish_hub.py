@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from center_kb import publish
-from center_kb.hub import HubHandle
+from strata_kb import publish
+from strata_kb.hub import HubHandle
 from tests.conftest import make_fed_entry
 
 
@@ -77,7 +77,7 @@ def test_snapshot_federation_mirrors_the_hub_owned_asset_record(mid_fed, upper):
     being mirrored upward on the fed->fed path, not a source artefact being
     smuggled in the way a child's config.yaml would be -- it must reach the
     upper hub like any other file under the entry."""
-    from center_kb import assetstore, models
+    from strata_kb import assetstore, models
 
     record_path = mid_fed / "repo-a" / assetstore.RECORD_NAME
     models.save_yaml_model(
@@ -100,7 +100,7 @@ def test_snapshot_federation_does_not_delete_the_asset_record_on_republish(
     absent from every src_man (filtered every call) but present in dest_man,
     so diff_manifests classified it as deleted and the republish committed
     that deletion."""
-    from center_kb import assetstore, models
+    from strata_kb import assetstore, models
 
     models.save_yaml_model(
         mid_fed / "repo-a" / assetstore.RECORD_NAME,
@@ -144,7 +144,7 @@ def test_snapshot_federation_empty_source_refuses_wipe(tmp_path, mid_fed, upper)
 
 
 def test_find_cycle_segment_detects_own_id(tmp_path):
-    from center_kb import federation
+    from strata_kb import federation
     from tests.conftest import make_fed_entry
 
     fed = tmp_path / "federation"
@@ -153,7 +153,7 @@ def test_find_cycle_segment_detects_own_id(tmp_path):
 
 
 def test_find_cycle_segment_clean(tmp_path):
-    from center_kb import federation
+    from strata_kb import federation
     from tests.conftest import make_fed_entry
 
     fed = tmp_path / "federation"
@@ -253,7 +253,7 @@ def test_publish_federation_allows_own_self_entry(mid_hub, root_hub):
 
 
 def test_find_cycle_segment_exempt_exact_only_skips_exact_match(tmp_path):
-    from center_kb import federation
+    from strata_kb import federation
 
     fed = tmp_path / "federation"
     make_fed_entry(fed, "mid", "doc-a")  # exact self-entry — exempt
@@ -286,7 +286,7 @@ def test_publish_federation_rejects_dest_with_same_repo_id(mid_hub, tmp_path, ru
 
 
 def test_find_cycle_segment_single_segment_dest_id(tmp_path):
-    from center_kb import federation
+    from strata_kb import federation
 
     fed = tmp_path / "federation"
     make_fed_entry(fed, "root-hub", "doc-d")  # entry 1 segment mang id hub đích
@@ -302,7 +302,7 @@ def test_cli_hub_to_hub_publish_error_is_one_line_not_a_traceback(mid_hub, root_
     CLI instead of calling publish_federation directly."""
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
 
     runner = CliRunner()
     make_fed_entry(mid_hub / "federation" / "root-hub", "repo-d", "doc-d")

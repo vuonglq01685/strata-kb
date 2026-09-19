@@ -1,8 +1,8 @@
 import pytest
 import yaml
 
-from center_kb import models
-from center_kb.diff import diff_doc, render_diff
+from strata_kb import models
+from strata_kb.diff import diff_doc, render_diff
 
 
 def test_changed_summary_detected(git_kb):
@@ -71,7 +71,7 @@ def test_render_diff_groups(git_kb):
 
 
 def test_render_diff_shows_review_record(git_kb):
-    from center_kb.review import approve_sections
+    from strata_kb.review import approve_sections
 
     approve_sections(git_kb["kb"], "demo-doc", ["1.1"], by="sme <sme@x>")
     out = render_diff(diff_doc(git_kb["kb"], "demo-doc", against=git_kb["rev1"]))
@@ -82,7 +82,7 @@ def test_render_diff_shows_review_record_on_added_section():
     """Important #3: an added ('+ §…') section that already carries a
     review record must show the sign-off, same as a changed ('~ §…')
     section does."""
-    from center_kb.diff import DiffReport, SectionChange
+    from strata_kb.diff import DiffReport, SectionChange
 
     report = DiffReport(
         doc_id="demo-doc",
@@ -99,7 +99,7 @@ def test_render_diff_shows_review_record_on_added_section():
 
 
 def test_render_diff_added_without_review_record_unchanged():
-    from center_kb.diff import DiffReport, SectionChange
+    from strata_kb.diff import DiffReport, SectionChange
 
     report = DiffReport(
         doc_id="demo-doc", against="HEAD",

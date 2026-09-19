@@ -1,4 +1,4 @@
-# CENTER-KB — repo config (commit to git).
+# Strata — repo config (commit to git).
 # kind: this repo's role. "dev" is a product code repo — it consumes the
 #       shared KB while implementing BA tickets, and publishes generated
 #       knowledge about its OWN source code (<repo_id>-code, live via

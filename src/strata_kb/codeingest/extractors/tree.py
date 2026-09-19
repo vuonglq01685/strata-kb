@@ -17,7 +17,7 @@ import os
 import tomllib
 from pathlib import Path
 
-from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult, _git
+from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult, _git
 
 # Shared with every other tree-walking extractor (B3-B7): each of them must
 # prune these directories too, or output would depend on whether

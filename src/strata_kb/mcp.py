@@ -15,13 +15,13 @@ import anyio.to_thread
 # FastMCP (the SDK v1 high-level API) as MCPServer.
 from mcp.server.fastmcp import FastMCP as MCPServer
 
-from center_kb import gitio, kbcontext
-from center_kb.query import get_section, search_detailed, stale_hub_note
-from center_kb.resolve import render_resolved, resolve_refs
-from center_kb.ticketlint import lint as lint_ticket
-from center_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
+from strata_kb import gitio, kbcontext
+from strata_kb.query import get_section, search_detailed, stale_hub_note
+from strata_kb.resolve import render_resolved, resolve_refs
+from strata_kb.ticketlint import lint as lint_ticket
+from strata_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
 
-logger = logging.getLogger("center_kb.mcp")
+logger = logging.getLogger("strata_kb.mcp")
 
 _AMBIGUOUS_MIN_RATIO = 0.8  # top-2 are "close" when the 2nd score >= 80% of the 1st
 
@@ -58,7 +58,7 @@ class ServerConfig:
 
 
 def _known_docs(hub) -> str:
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     return ", ".join(
         f"{r.meta.repo_id}:{d.id}"
@@ -93,12 +93,12 @@ def _canonical_docstring(fn):
 def create_server(config: ServerConfig) -> MCPServer:
     import sqlite3
 
-    from center_kb import searchdb
+    from strata_kb import searchdb
 
     # F-C1: never import sqlite_vec/numpy from inside a tool call — FastMCP runs
     # sync tools on the event-loop thread and the native import deadlocks there.
     searchdb.warm_vec()
-    mcp = MCPServer("center-kb")
+    mcp = MCPServer("strata-kb")
     # R20 (final-branch review, Important): each tool body runs on its own
     # worker thread (anyio.to_thread.run_sync) now that F-C1 moved them off
     # the loop thread — concurrent calls used to be serialized by the single
@@ -111,7 +111,7 @@ def create_server(config: ServerConfig) -> MCPServer:
     _hub_lock = threading.Lock()
 
     def _hub():
-        from center_kb.hub import resolve_hub
+        from strata_kb.hub import resolve_hub
 
         with _hub_lock:
             # Important 1 (Wave G fix round 2 re-review): resolve_hub can
@@ -129,7 +129,7 @@ def create_server(config: ServerConfig) -> MCPServer:
             # N-6 (Wave G fix round 4 re-review, review-waveG-fix3-verdict.md
             # and review-webapi-guard-verdict.md Important 1): a bare
             # `except ... return None` here discarded the ONLY diagnostic --
-            # a full locked-cache sweep at DEBUG produced zero center_kb.*
+            # a full locked-cache sweep at DEBUG produced zero strata_kb.*
             # log records. Worse, in that exact condition HUB_DOWN's "and no
             # local cache" is false on both halves (the hub can be perfectly
             # reachable, and the whole reason this raised is that a cache
@@ -202,7 +202,7 @@ def create_server(config: ServerConfig) -> MCPServer:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
-            from center_kb.query import AmbiguousDocError, InvalidLevelError
+            from strata_kb.query import AmbiguousDocError, InvalidLevelError
 
             try:
                 result = get_section(hub, doc, section, level=level, repo=repo or None)
@@ -299,8 +299,8 @@ def create_server(config: ServerConfig) -> MCPServer:
 
 def create_http_app(config: ServerConfig, token: str):
     """One ASGI app: MCP (streamable HTTP) + REST /api + HTML /ui + /intake, token-guarded."""
-    from center_kb.intake import intake_config_from_env
-    from center_kb.web.app import create_app
+    from strata_kb.intake import intake_config_from_env
+    from strata_kb.web.app import create_app
 
     return create_app(
         config, token,
@@ -311,22 +311,22 @@ def create_http_app(config: ServerConfig, token: str):
 
 def parse_args(argv: list[str] | None = None) -> ServerConfig:
     ap = argparse.ArgumentParser(
-        prog="python -m center_kb.mcp", description="CENTER-KB MCP server"
+        prog="python -m strata_kb.mcp", description="Strata MCP server"
     )
     ap.add_argument("--kb", type=Path, default=Path(".kb"),
                     help="KB directory (only to find .kb/config.yaml)")
     ap.add_argument("--hub", default=None,
-                    help="kb-hub URL/path (default: env CENTER_KB_HUB, then .kb/config.yaml)")
+                    help="kb-hub URL/path (default: env STRATA_KB_HUB, then .kb/config.yaml)")
     ap.add_argument("--transport", choices=("stdio", "http"), default="stdio",
-                    help="stdio (default) or http (requires CENTER_KB_HTTP_TOKEN)")
+                    help="stdio (default) or http (requires STRATA_KB_HTTP_TOKEN)")
     ap.add_argument("--host", default="127.0.0.1", help="Host to bind when --transport http")
     ap.add_argument("--port", type=int, default=8321, help="Port when --transport http")
     args = ap.parse_args(argv)
-    from center_kb.config import HubConfigError, require_hub
+    from strata_kb.config import HubConfigError, require_hub
 
     try:
         hub = require_hub(
-            args.hub or os.environ.get("CENTER_KB_HUB", ""), args.kb
+            args.hub or os.environ.get("STRATA_KB_HUB", ""), args.kb
         )
     except HubConfigError as exc:
         raise SystemExit(str(exc))
@@ -337,16 +337,16 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from center_kb.utf8io import force_utf8_streams
+    from strata_kb.utf8io import force_utf8_streams
 
     force_utf8_streams()
     logging.basicConfig(level=logging.INFO)
     config = parse_args(argv)
     if config.transport == "http":
-        token = os.environ.get("CENTER_KB_HTTP_TOKEN", "")
+        token = os.environ.get("STRATA_KB_HTTP_TOKEN", "")
         if not token:
             raise SystemExit(
-                "missing env CENTER_KB_HTTP_TOKEN — required for http transport "
+                "missing env STRATA_KB_HTTP_TOKEN — required for http transport "
                 "(the documents are copyrighted; do not run HTTP without auth)"
             )
         import uvicorn
@@ -358,7 +358,7 @@ def main(argv: list[str] | None = None) -> None:
             # proxy_headers=False: uvicorn's own ProxyHeadersMiddleware sits
             # BELOW Starlette and would rewrite scope["client"] from
             # X-Forwarded-For using its own trust model (forwarded_allow_ips),
-            # independent of CENTER_KB_TRUSTED_PROXIES and
+            # independent of STRATA_KB_TRUSTED_PROXIES and
             # web.ratelimit.client_key. Two independent, differently-trusted
             # XFF implementations is the hazard -- client_key must stay the
             # single authority on X-Forwarded-For. Do not re-enable this.

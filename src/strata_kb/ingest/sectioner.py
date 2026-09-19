@@ -4,10 +4,10 @@ import logging
 import re
 from dataclasses import dataclass, field, replace
 
-from center_kb import models
-from center_kb.mdutils import count_tokens, extract_tables, slugify_id
+from strata_kb import models
+from strata_kb.mdutils import count_tokens, extract_tables, slugify_id
 
-logger = logging.getLogger("center_kb.ingest.sectioner")
+logger = logging.getLogger("strata_kb.ingest.sectioner")
 
 
 @dataclass

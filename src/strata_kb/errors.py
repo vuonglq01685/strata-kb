@@ -1,4 +1,4 @@
-"""Shared base for center_kb's operational errors.
+"""Shared base for strata_kb's operational errors.
 
 Every domain error a CLI command turns into a clean, one-line, exit-1
 message -- instead of letting a raw traceback reach the user -- should
@@ -21,12 +21,12 @@ publish` path with the full suite staying green and the CLI printing a bare
 traceback). `tests/test_cli_errors.py`'s
 `test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted`
 discovers every module-level exception class defined in a module
-`pkgutil.walk_packages` reaches (`center_kb.__path__`, scoped to `Exception`
+`pkgutil.walk_packages` reaches (`strata_kb.__path__`, scoped to `Exception`
 so a sibling outside the `RuntimeError` family is not invisible either) and
 requires each one to either derive from `KbError` or be named in that test's
 allowlist with a reason -- that is what makes a sibling which forgets to join
 fail on its own, rather than reaching a user's terminal. One narrower claim
-than "every exception class center_kb defines": `pkgutil`'s file-finder skips a
+than "every exception class strata_kb defines": `pkgutil`'s file-finder skips a
 directory with no `__init__.py` (a PEP 420 namespace portion) as "not a
 package", so a class defined only there is not swept -- latent today, since
 every subpackage in this tree has an `__init__.py` (Minor 3, Wave G fix
@@ -40,5 +40,5 @@ from __future__ import annotations
 
 
 class KbError(RuntimeError):
-    """Base for center_kb errors a CLI command converts into a one-line,
+    """Base for strata_kb errors a CLI command converts into a one-line,
     exit-1 message naming the way forward, rather than letting propagate."""

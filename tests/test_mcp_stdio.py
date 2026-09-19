@@ -50,7 +50,7 @@ def _send(proc, payload: dict) -> None:
 def test_kb_search_over_stdio_answers(fed_hub):
     proc = subprocess.Popen(
         [
-            sys.executable, "-m", "center_kb.mcp",
+            sys.executable, "-m", "strata_kb.mcp",
             "--kb", str(fed_hub / ".kb"),
             "--hub", str(fed_hub),
             "--transport", "stdio",

@@ -15,8 +15,8 @@ import shutil
 import sys
 from pathlib import Path
 
-from center_kb.ingest.scaffold import scaffold_doc
-from center_kb.ingest.sectioner import SectionUnit
+from strata_kb.ingest.scaffold import scaffold_doc
+from strata_kb.ingest.sectioner import SectionUnit
 
 TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |\n| R | Restricted |"
 

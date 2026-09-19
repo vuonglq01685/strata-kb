@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: Guided setup for a CENTER-KB repo — choose the repo role (hub or child) and, for hubs, the asset storage mode, via the kb init CLI.
+description: Guided setup for a Strata repo — choose the repo role (hub or child) and, for hubs, the asset storage mode, via the kb init CLI.
 ---
 
 # /kb-init — guided repo setup
@@ -30,6 +30,6 @@ Hard rules:
    its output.
 4. Relay the CLI's next-steps list. For `--assets s3` also walk through:
    fill `bucket`/`endpoint` in `.kb/config.yaml`, export credentials,
-   `pip install "center-kb[s3]"`.
+   `pip install "strata-kb[s3]"`.
 5. Run `kb doctor` and relay the result (s3 probes the bucket; expect
    `kb doctor: OK`). Existing git assets → mention `kb assets migrate`.

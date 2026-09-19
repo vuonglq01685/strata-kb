@@ -5,7 +5,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from center_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware, make_session
+from strata_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware, make_session
 
 
 @pytest.fixture
@@ -290,6 +290,6 @@ async def test_invalid_utf8_header_bytes_are_401_not_crash():
 
 
 def test_mcp_module_still_exports_bearer_alias():
-    from center_kb.mcp import BearerAuthMiddleware
+    from strata_kb.mcp import BearerAuthMiddleware
 
     assert BearerAuthMiddleware is TokenAuthMiddleware

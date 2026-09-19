@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from center_kb.cli import app
+from strata_kb.cli import app
 
 runner = CliRunner()
 
@@ -8,7 +8,7 @@ runner = CliRunner()
 def test_cli_help_shows_app_description():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "CENTER-KB" in result.output
+    assert "Strata" in result.output
 
 
 def test_version_flag_prints_installed_version():
@@ -17,7 +17,7 @@ def test_version_flag_prints_installed_version():
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == importlib.metadata.version("center-kb")
+    assert result.output.strip() == importlib.metadata.version("strata-kb")
 
 
 def test_version_flag_does_not_require_a_subcommand():
@@ -29,9 +29,9 @@ def test_version_flag_does_not_require_a_subcommand():
 
 
 def test_query_prints_raw_match_snippet_when_present(fed_hub, fixture_kb, monkeypatch):
-    from center_kb import query as query_module
-    from center_kb.mdutils import count_tokens
-    from center_kb.query import QueryResult, SearchOutcome
+    from strata_kb import query as query_module
+    from strata_kb.mdutils import count_tokens
+    from strata_kb.query import QueryResult, SearchOutcome
 
     fake_results = [
         QueryResult(
@@ -58,9 +58,9 @@ def test_query_prints_raw_match_snippet_when_present(fed_hub, fixture_kb, monkey
 
 
 def test_query_omits_raw_match_line_when_snippet_empty(fed_hub, fixture_kb, monkeypatch):
-    from center_kb import query as query_module
-    from center_kb.mdutils import count_tokens
-    from center_kb.query import QueryResult, SearchOutcome
+    from strata_kb import query as query_module
+    from strata_kb.mdutils import count_tokens
+    from strata_kb.query import QueryResult, SearchOutcome
 
     fake_results = [
         QueryResult(
@@ -105,8 +105,8 @@ def test_query_no_usable_terms_prints_note_to_stderr(fed_hub, fixture_kb):
 def test_query_index_busy_is_a_clean_error_not_a_traceback(fed_hub, fixture_kb, monkeypatch):
     """F-C2: a still-held index file must surface as a clean red message +
     exit 1, never a raw PermissionError/IndexBusyError traceback."""
-    from center_kb import query as query_module
-    from center_kb.searchdb import IndexBusyError
+    from strata_kb import query as query_module
+    from strata_kb.searchdb import IndexBusyError
 
     def raise_busy(*a, **k):
         raise IndexBusyError("search index search.db is in use by another process")
@@ -130,7 +130,7 @@ def test_query_client_db_error_is_a_clean_error_not_a_traceback(fed_hub, fixture
     sqlite3.IntegrityError traceback."""
     import sqlite3
 
-    from center_kb import query as query_module
+    from strata_kb import query as query_module
 
     def raise_integrity(*a, **k):
         raise sqlite3.IntegrityError("UNIQUE constraint failed: sections.repo_id")
@@ -153,7 +153,7 @@ def test_query_lock_db_error_still_propagates(fed_hub, fixture_kb, monkeypatch):
     be swallowed into the clean-message branch; it keeps propagating."""
     import sqlite3
 
-    from center_kb import query as query_module
+    from strata_kb import query as query_module
 
     def raise_locked(*a, **k):
         raise sqlite3.OperationalError("database is locked")
@@ -176,8 +176,8 @@ def test_query_too_many_tags_is_a_clean_error_not_a_traceback(
     """F-C10: an oversized tag list surfaces from `search` as a
     `searchdb.TooManyTagsError` (`_norm_tags`'s refusal) — it must print as
     a clean red message + exit 1, never a raw traceback."""
-    from center_kb import query as query_module
-    from center_kb import searchdb
+    from strata_kb import query as query_module
+    from strata_kb import searchdb
 
     def raise_too_many_tags(*a, **k):
         raise searchdb.TooManyTagsError(
@@ -206,7 +206,7 @@ def test_query_unrelated_value_error_still_propagates(fed_hub, fixture_kb, monke
     tag-cap refusal. Only `searchdb.TooManyTagsError` gets the clean-message
     treatment; any other ValueError must keep propagating with its
     traceback intact."""
-    from center_kb import query as query_module
+    from strata_kb import query as query_module
 
     def raise_unrelated(*a, **k):
         raise ValueError("3 validation errors for Manifest")
@@ -232,7 +232,7 @@ def test_tags_lists_the_federation_vocabulary(fed_hub, fixture_kb):
 
 
 def test_tags_on_a_kb_with_no_tags_exits_zero_with_guidance(fed_hub, fixture_kb):
-    from center_kb import models
+    from strata_kb import models
 
     for rid in ("arinc-kb", "icao-kb"):
         models.save_yaml_model(
@@ -265,7 +265,7 @@ def test_stats_hints_when_tokens_never_built(fixture_kb):
     doctor recounts them, so a fixture claiming "clean" must be honest about
     them) -- zero them here to get back to this test's actual precondition:
     a KB that has never been built."""
-    from center_kb import models
+    from strata_kb import models
 
     manifest_path = fixture_kb / "demo-doc" / "_manifest.yaml"
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
@@ -279,7 +279,7 @@ def test_stats_hints_when_tokens_never_built(fixture_kb):
 
 
 def test_stats_omits_hint_once_tokens_are_built(fixture_kb):
-    from center_kb.build import build_kb
+    from strata_kb.build import build_kb
 
     assert build_kb(fixture_kb).ok
     result = runner.invoke(app, ["stats", "--kb-dir", str(fixture_kb)])

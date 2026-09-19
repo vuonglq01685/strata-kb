@@ -8,12 +8,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Mount, Route
 
-from center_kb.mcp import ServerConfig
-from center_kb.web import api, ui
-from center_kb.web.auth import TokenAuthMiddleware
-from center_kb.web.headers import SecurityHeadersMiddleware
+from strata_kb.mcp import ServerConfig
+from strata_kb.web import api, ui
+from strata_kb.web.auth import TokenAuthMiddleware
+from strata_kb.web.headers import SecurityHeadersMiddleware
 
-logger = logging.getLogger("center_kb.web.app")
+logger = logging.getLogger("strata_kb.web.app")
 
 
 def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=None):
@@ -23,8 +23,8 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     mcp_server=None (unit tests): no /mcp branch, no lifespan requirement.
     intake_cfg=None (default): no /intake/* routes — publish intake disabled.
     """
-    from center_kb import searchdb
-    from center_kb.web.ratelimit import (
+    from strata_kb import searchdb
+    from strata_kb.web.ratelimit import (
         LOGIN_MAX_ATTEMPTS,
         LOGIN_WINDOW_SECONDS,
         SlidingWindowLimiter,
@@ -50,10 +50,10 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
         config, token, login_limiter=auth_limiter, trusted_proxies=trusted_proxies
     )
     if intake_cfg is not None:
-        from center_kb import gitio
-        from center_kb import hub as hub_mod
-        from center_kb import intake as intake_mod
-        from center_kb.web import intake_routes
+        from strata_kb import gitio
+        from strata_kb import hub as hub_mod
+        from strata_kb import intake as intake_mod
+        from strata_kb.web import intake_routes
 
         # round-4 appended-section fix: resolve_hub can raise gitio.GitError
         # (a stale/locked hub cache it cannot clean up itself) -- unguarded,

@@ -1,6 +1,6 @@
 [project]
-name = "center-kb"
-version = "0.25.0"
+name = "strata-kb"
+version = "1.0.1"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
@@ -45,20 +45,23 @@ dev = [
 embed = ["sqlite-vec>=0.1.6", "fastembed>=0.3"]
 server = ["PyJWT[crypto]>=2.8", "python-multipart>=0.0.9"]
 s3 = ["boto3>=1.34"]
+# docs/src/build_pdf.py only — renders the role guides and architecture
+# document to PDF. Not needed to install, run or test strata-kb itself.
+docs = ["xhtml2pdf>=0.2", "markdown>=3.5"]
 
 [project.scripts]
-kb = "center_kb.cli:app"
+kb = "strata_kb.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/vuonglq01685/CENTER-KB"
-Issues = "https://github.com/vuonglq01685/CENTER-KB/issues"
+Homepage = "https://github.com/vuonglq01685/strata-kb"
+Issues = "https://github.com/vuonglq01685/strata-kb/issues"
 
 [build-system]
 requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/center_kb"]
+packages = ["src/strata_kb"]
 
 # hatchling's default sdist is "everything not covered by .gitignore" — .kb/
 # (which holds text quoted verbatim from copyrighted PDFs), docs/, tests/,
@@ -103,30 +106,30 @@ select = ["E4", "E7", "E9", "F", "BLE", "RUF100", "S"]
 # never a shell string and never user-interpolated; this is the chokepoint
 # for every git call except the two documented exceptions below (codeingest/
 # core.py, publish.py) that deliberately bypass it.
-"src/center_kb/gitio.py" = ["S603", "S607"]
+"src/strata_kb/gitio.py" = ["S603", "S607"]
 
 # S603/S607: fixed git argv (`_git`), same shape as gitio._run -- deliberately
 # NOT routed through gitio because a non-git scratch dir is a valid
 # code-ingest target and this helper must degrade gracefully instead of
 # raising (see comment above `_git` in this file).
-"src/center_kb/codeingest/core.py" = ["S603", "S607"]
+"src/strata_kb/codeingest/core.py" = ["S603", "S607"]
 
 # S603/S607: fixed `gh` CLI argv built in code, never a shell string and
 # never user-interpolated.
-"src/center_kb/ghio.py" = ["S603", "S607"]
+"src/strata_kb/ghio.py" = ["S603", "S607"]
 
 # S603: cmd is built from shutil.which(name) where name is constrained to the
 # literal "claude"/"copilot" candidates (detect_runner) -- never a shell
 # string, never user-interpolated.
-"src/center_kb/llm.py" = ["S603"]
+"src/strata_kb/llm.py" = ["S603"]
 
 # S607: fixed `docker`/`docker compose` argv built in code, never a shell
 # string and never user-interpolated.
-"src/center_kb/dockersetup.py" = ["S607"]
+"src/strata_kb/dockersetup.py" = ["S607"]
 
 # S607: the one `git config` call here is a fixed literal argv, never a shell
 # string and never user-interpolated.
-"src/center_kb/publish.py" = ["S607"]
+"src/strata_kb/publish.py" = ["S607"]
 
 # S603: verifies the freshly built venv's own `kb` executable during release
 # checks -- path is built from the venv argument, not external input.

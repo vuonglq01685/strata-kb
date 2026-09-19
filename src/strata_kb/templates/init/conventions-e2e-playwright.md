@@ -1,6 +1,6 @@
 # Playwright e2e conventions
 
-Base file — owned by the center-kb package: `kb init` refreshes it when the
+Base file — owned by the strata-kb package: `kb init` refreshes it when the
 package updates, so do not hand-edit. Record repo-specific deviations in
 `docs/conventions/e2e-playwright.local.md`; that file is never touched by
 `kb init` and OVERRIDES this one where they conflict. Where either file

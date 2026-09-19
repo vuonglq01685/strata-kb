@@ -10,8 +10,8 @@ import typer
 import yaml
 from pydantic import ValidationError
 
-from center_kb import models
-from center_kb.utf8io import force_utf8_streams
+from strata_kb import models
+from strata_kb.utf8io import force_utf8_streams
 
 force_utf8_streams()
 
@@ -34,7 +34,7 @@ def _invalid_yaml_exit(path: Path, exc: Exception) -> None:
 
 
 app = typer.Typer(
-    help="CENTER-KB — Knowledge Base as Code for large reference documents.",
+    help="Strata — Knowledge Base as Code for large reference documents.",
     no_args_is_help=True,
 )
 
@@ -68,7 +68,7 @@ app.add_typer(pr_app, name="pr")
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(importlib.metadata.version("center-kb"))
+        typer.echo(importlib.metadata.version("strata-kb"))
         raise typer.Exit()
 
 
@@ -79,10 +79,10 @@ def main(
         "--version",
         callback=_version_callback,
         is_eager=True,
-        help="Show the installed center-kb version and exit.",
+        help="Show the installed strata-kb version and exit.",
     ),
 ) -> None:
-    """CENTER-KB CLI."""
+    """Strata CLI."""
 
 
 class RepoKind(str, Enum):
@@ -130,7 +130,7 @@ def _stdin_isatty() -> bool:
 
 def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
     """persisted kind > --kind flag > interactive prompt > hard error."""
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     persisted = load_config(target / ".kb").kind
     if persisted:
@@ -201,7 +201,7 @@ def init(
     ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
-    from center_kb.initcmd import PROTECTED_FILES, init_repo
+    from strata_kb.initcmd import PROTECTED_FILES, init_repo
 
     resolved = _resolve_kind(path, kind)
     if assets is not None and resolved != "hub":
@@ -212,7 +212,7 @@ def init(
         )
         raise typer.Exit(1)
     if lang:
-        from center_kb.conventions import LANG_IDS
+        from strata_kb.conventions import LANG_IDS
 
         unknown = [lang_id for lang_id in lang if lang_id not in LANG_IDS]
         if unknown:
@@ -257,7 +257,7 @@ def init(
         if assets is AssetsMode.s3:
             typer.echo(
                 "  4. Assets (s3): fill bucket/region/endpoint in .kb/config.yaml, "
-                'export credentials (AWS env chain), pip install "center-kb[s3]", '
+                'export credentials (AWS env chain), pip install "strata-kb[s3]", '
                 "then: kb doctor"
             )
     elif resolved == "child":
@@ -271,7 +271,7 @@ def init(
     elif resolved == "ba":
         typer.echo("  1. Fill hub: in .kb/config.yaml with the main hub URL/path")
         typer.echo(
-            "  2. Set CENTER_KB_HUB_URL / CENTER_KB_HTTP_TOKEN so your AI "
+            "  2. Set STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN so your AI "
             "assistant can reach the shared MCP server"
         )
         typer.echo(
@@ -287,7 +287,7 @@ def init(
             "usable yet"
         )
         typer.echo(
-            "  2. Set CENTER_KB_HUB_URL / CENTER_KB_HTTP_TOKEN so your AI "
+            "  2. Set STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN so your AI "
             "assistant can reach the shared MCP server"
         )
         typer.echo(
@@ -312,7 +312,7 @@ def docker_setup(
     ),
 ) -> None:
     """Prepare this repo for Docker — hub: .env + token + start the service; child: pull the ingest image."""
-    from center_kb import dockersetup
+    from strata_kb import dockersetup
 
     try:
         kind = dockersetup.repo_kind(path)
@@ -326,7 +326,7 @@ def docker_setup(
 
 
 def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
-    from center_kb import dockersetup
+    from strata_kb import dockersetup
 
     try:
         try:
@@ -376,13 +376,13 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
             "  2. Open http://localhost:8321/ui (sign in with the token from .env)"
         )
     typer.echo("Point remote MCP clients at the hub:")
-    typer.echo('  { "mcpServers": { "center-kb": { "type": "http",')
+    typer.echo('  { "mcpServers": { "strata-kb": { "type": "http",')
     typer.echo('    "url": "http://<host>:8321/mcp",')
     typer.echo('    "headers": { "Authorization": "Bearer <token>" } } } }')
 
 
 def _docker_setup_child(path: Path, no_docker: bool) -> None:
-    from center_kb import dockersetup
+    from strata_kb import dockersetup
 
     typer.echo(
         "Child repo: Docker runs one-shot ingest (the image bundles the full "
@@ -417,9 +417,9 @@ def _docker_setup_child(path: Path, no_docker: bool) -> None:
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):
     """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
-    from center_kb import gitio
-    from center_kb.config import HubConfigError, require_hub
-    from center_kb.hub import resolve_hub
+    from strata_kb import gitio
+    from strata_kb.config import HubConfigError, require_hub
+    from strata_kb.hub import resolve_hub
 
     try:
         hub_ref = require_hub(hub_flag, kb_dir)
@@ -500,7 +500,7 @@ def ingest(
     ),
 ) -> None:
     """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
-    from center_kb import ingestcmd
+    from strata_kb import ingestcmd
 
     _validate_llm_choice(llm)
     opts = ingestcmd.IngestOptions(
@@ -547,7 +547,7 @@ def ingest(
             "Failed sections stay pending — re-run with: kb summarize",
             fg=typer.colors.YELLOW,
         )
-    from center_kb.build import build_kb
+    from strata_kb.build import build_kb
 
     build_report = build_kb(kb_dir, allow_pending=bool(report_s.failed))
     for err in build_report.errors:
@@ -572,7 +572,7 @@ def _validate_llm_choice(llm_choice: str) -> None:
 
 def _resolve_runner(kb_dir: Path, llm_choice: str, max_workers: int):
     """Returns (runner | None, reason, workers): reason is "disabled" | "missing" | ""."""
-    import center_kb.llm as llm_mod
+    import strata_kb.llm as llm_mod
 
     try:
         index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
@@ -603,7 +603,7 @@ def _run_summarize(
     Returns (report | None, reason): report is None when no runner ran;
     reason is "disabled" | "missing" | "" accordingly.
     """
-    from center_kb.summarize import summarize_kb
+    from strata_kb.summarize import summarize_kb
 
     runner, reason, workers = _resolve_runner(kb_dir, llm_choice, max_workers)
     if runner is None:
@@ -795,7 +795,7 @@ def _echo_redo_plan(doc_id: str, plan) -> None:
 
 
 def _confirm_and_apply_redo(kb_dir: Path, plan, yes: bool) -> None:
-    from center_kb.summarize import redo_reset
+    from strata_kb.summarize import redo_reset
 
     if plan.reviewed_items and not yes:
         try:
@@ -831,7 +831,7 @@ def _redo_or_exit(
     """Preview and (unless --dry-run) apply a `--redo` plan before the
     real summarize run. Resolves the runner FIRST: a redo must never wipe
     summaries when the subsequent run can't happen anyway."""
-    from center_kb.summarize import plan_redo
+    from strata_kb.summarize import plan_redo
 
     _validate_redo_flags(doc_id, all_docs, sections)
     runner_probe, reason, _ = _resolve_runner(kb_dir, llm, max_workers)
@@ -854,7 +854,7 @@ def _print_prompts(kb_dir: Path, doc_id: str, sections: list[str]) -> None:
     of `doc_id`, so the manual (skill-driven) path can build it without
     reading L3 directly. Table-only/brief sections need no LLM call — say
     so instead of a prompt."""
-    from center_kb.summarize import build_section_prompt, collect_pending
+    from strata_kb.summarize import build_section_prompt, collect_pending
 
     if not doc_id:
         typer.secho("--print-prompt requires a DOC_ID", fg=typer.colors.RED)
@@ -930,7 +930,7 @@ def build(
     ),
 ) -> None:
     """Validate KB: no TODOs left, table integrity, C2 quality rules, updated token counts."""
-    from center_kb.build import build_kb
+    from strata_kb.build import build_kb
 
     try:
         report = build_kb(kb_dir, allow_pending=allow_pending, strict=strict)
@@ -969,8 +969,8 @@ def code_ingest(
     """Extract code structure into .kb/<repo_id>-code/ — deterministic, no LLM."""
     import dataclasses
 
-    from center_kb import config
-    from center_kb.codeingest import core
+    from strata_kb import config
+    from strata_kb.codeingest import core
 
     resolved_root = repo_root.resolve()
     # Relative --kb-dir is cwd-relative, like every other kb command (G-11).
@@ -1075,7 +1075,7 @@ def svc_note(
     """Append a ticket to <repo_id>-svc §hist.<service>. Idempotent per ticket."""
     import dataclasses
 
-    from center_kb import config, svcnote
+    from strata_kb import config, svcnote
 
     # Ruling: effective_repo_id() returns None when neither --repo-id nor
     # .kb/config.yaml supplies one; surfaced the same way every other
@@ -1115,7 +1115,7 @@ def _usage_actor(kb_dir: Path) -> str:
     directory layout: a wrong actor silently mis-attributes a whole repo's
     cost to the other side of the workflow.
     """
-    from center_kb import config
+    from strata_kb import config
 
     return config.load_config(kb_dir).kind or "unknown"
 
@@ -1131,7 +1131,7 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
     """
     from datetime import datetime, timezone
 
-    from center_kb.usage import ledger as _ledger
+    from strata_kb.usage import ledger as _ledger
 
     try:
         path = _ledger.usage_dir(kb_dir) / "ingest-errors.log"
@@ -1152,7 +1152,7 @@ def _usage_ingest(kb_dir: Path, source: Path, *, session: str, ticket: str):
     agree on exactly what "ingest" means; only how a failure is reported
     differs between them.
     """
-    from center_kb.usage import ledger, transcript
+    from strata_kb.usage import ledger, transcript
 
     rows = transcript.rows_from_transcript(
         source,
@@ -1182,7 +1182,7 @@ def usage_ingest_transcript(
     Safe to repeat: rows are de-duplicated by the transcript row's uuid, which
     is what lets the `Stop` hook re-ingest the same growing file every turn.
     """
-    from center_kb.usage import ledger
+    from strata_kb.usage import ledger
 
     if hook_stdin:
         if not (kb_dir / "config.yaml").exists():
@@ -1312,7 +1312,7 @@ def usage_note(
     import uuid as _uuid
     from datetime import datetime, timezone
 
-    from center_kb.usage import ledger
+    from strata_kb.usage import ledger
 
     row = ledger.UsageRow(
         uuid=str(_uuid.uuid4()),
@@ -1355,7 +1355,7 @@ def usage_report(
 
     from pydantic import ValidationError
 
-    from center_kb.usage import ledger, prices, report as report_mod
+    from strata_kb.usage import ledger, prices, report as report_mod
 
     try:
         rows = ledger.read_rows(kb_dir)
@@ -1415,7 +1415,7 @@ def query(
     budget: int = typer.Option(2000, help="Token budget for returned content"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     semantic: bool = typer.Option(
         False,
@@ -1426,8 +1426,8 @@ def query(
     """Hybrid search (FTS5 keyword + semantic KNN, RRF-fused) → L2 sections within budget, with citations."""
     import sqlite3
 
-    from center_kb import searchdb
-    from center_kb.query import search_detailed
+    from strata_kb import searchdb
+    from strata_kb.query import search_detailed
 
     handle = _hub_or_exit(hub, kb_dir)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
@@ -1472,11 +1472,11 @@ def get(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Fetch exactly one section at the given level."""
-    from center_kb.query import AmbiguousDocError, InvalidLevelError, get_section
+    from strata_kb.query import AmbiguousDocError, InvalidLevelError, get_section
 
     handle = _hub_or_exit(hub, kb_dir)
     try:
@@ -1499,7 +1499,7 @@ def stats(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Token size per level, per document — for cost tracking."""
-    from center_kb.build import kb_stats
+    from strata_kb.build import kb_stats
 
     l0_tokens, docs = kb_stats(kb_dir)
     typer.echo(f"L0 index.yaml: {l0_tokens} tokens")
@@ -1559,7 +1559,7 @@ def _echo_publish_report(report) -> None:
 @app.command()
 def publish(
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB",
+        "", "--hub", envvar="STRATA_KB_HUB",
         help="kb-hub URL/path (default: .kb/config.yaml)",
     ),
     repo_id: str = typer.Option(
@@ -1580,10 +1580,10 @@ def publish(
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
-    from center_kb import ghio, gitio, hashsync
-    from center_kb import publish as publish_mod
-    from center_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
-    from center_kb.errors import KbError
+    from strata_kb import ghio, gitio, hashsync
+    from strata_kb import publish as publish_mod
+    from strata_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
+    from strata_kb.errors import KbError
 
     # module-level _CONFIG_READ_ERRORS (see its definition for why exactly
     # these three classes) covers every corrupt-YAML/schema-invalid/non-UTF-8
@@ -1761,7 +1761,7 @@ def ci_publish(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     repo_id: str = typer.Option("", "--repo-id", help="Repo ID on the hub (default: config)"),
     intake: str = typer.Option(
-        "", "--intake", envvar="CENTER_KB_INTAKE",
+        "", "--intake", envvar="STRATA_KB_INTAKE",
         help="Intake base URL (default: .kb/config.yaml `intake:`)",
     ),
     require_reviewed: bool = typer.Option(
@@ -1771,9 +1771,9 @@ def ci_publish(
     ),
 ) -> None:
     """Publish from the child's CI via OIDC — no secrets. Run by kb-publish.yml."""
-    from center_kb import cipublish, gitio
-    from center_kb.config import effective_repo_id, load_config
-    from center_kb.errors import KbError
+    from strata_kb import cipublish, gitio
+    from strata_kb.config import effective_repo_id, load_config
+    from strata_kb.errors import KbError
 
     # See module-level _CONFIG_READ_ERRORS: same three classes, same reason
     # (yaml.YAMLError is not a ValueError; UnicodeDecodeError/ValidationError
@@ -1824,7 +1824,7 @@ def ci_publish(
 @app.command()
 def reindex(
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB",
+        "", "--hub", envvar="STRATA_KB_HUB",
         help="kb-hub URL/path (default: .kb/config.yaml)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (to find the config)"),
@@ -1836,9 +1836,9 @@ def reindex(
     """Rebuild federation/index.yaml from the sub-snapshots (fix a drifted index)."""
     import sqlite3
 
-    from center_kb import gitio, searchdb
-    from center_kb.embed import default_embedder
-    from center_kb.federation import write_federation_index
+    from strata_kb import gitio, searchdb
+    from strata_kb.embed import default_embedder
+    from strata_kb.federation import write_federation_index
 
     # See module-level _CONFIG_READ_ERRORS.
 
@@ -1961,11 +1961,11 @@ def reindex(
 def migrate(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Move in-git federation assets to the configured object store (none → s3)."""
-    from center_kb import assetcmd, assetstore
+    from strata_kb import assetcmd, assetstore
 
     handle = _hub_or_exit(hub, kb_dir)
     try:
@@ -2004,11 +2004,11 @@ def migrate(
 def verify(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Check asset coverage: records vs store, markdown refs, orphans."""
-    from center_kb import assetcmd, assetstore
+    from strata_kb import assetcmd, assetstore
 
     handle = _hub_or_exit(hub, kb_dir)
     try:
@@ -2043,11 +2043,11 @@ def context_new(
     tags: str = typer.Option("", help="Tags, comma-separated"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
-    from center_kb import gitio, kbcontext
+    from strata_kb import gitio, kbcontext
 
     handle = _hub_or_exit(hub, kb_dir)
     ref_strs = [r for r in refs.split(",") if r.strip()]
@@ -2068,13 +2068,13 @@ def context_new(
 def tags(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """List every tag published on the hub federation — the vocabulary a
     kb-context block may use."""
-    from center_kb import kbcontext
-    from center_kb.federation import load_federation
+    from strata_kb import kbcontext
+    from strata_kb.federation import load_federation
 
     handle = _hub_or_exit(hub, kb_dir)
     vocab = kbcontext.tag_vocabulary(load_federation(handle.federation_dir))
@@ -2097,7 +2097,7 @@ def resolve(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     status_only: bool = typer.Option(
         False,
@@ -2121,8 +2121,8 @@ def resolve(
     ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
-    from center_kb import gitio, kbcontext
-    from center_kb.resolve import render_resolved, resolve_refs, render_cache, cache_problem
+    from strata_kb import gitio, kbcontext
+    from strata_kb.resolve import render_resolved, resolve_refs, render_cache, cache_problem
 
     if write_cache is not None and status_only:
         typer.secho("--write-cache needs a full resolve; drop --status-only", fg=typer.colors.RED)
@@ -2190,7 +2190,7 @@ def ticket_lint(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     missions_dir: Path | None = typer.Option(
         None,
@@ -2210,7 +2210,7 @@ def ticket_lint(
     ),
 ) -> None:
     """Definition-of-Ready gate: lint a ticket against the DoR checklist."""
-    from center_kb.ticketlint import lint
+    from strata_kb.ticketlint import lint
 
     path: Path | None = None
     if source == "-":
@@ -2300,7 +2300,7 @@ def pr_lint(
     attacker-controlled text, and keeping it out of argv is what stops a
     caller from interpolating it into a shell command.
     """
-    from center_kb.prlint import lint_body
+    from strata_kb.prlint import lint_body
 
     if source == "-":
         text = sys.stdin.read()
@@ -2333,7 +2333,7 @@ def mission_lint(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     tickets_dir: Path | None = typer.Option(
         None,
@@ -2353,7 +2353,7 @@ def mission_lint(
     ),
 ) -> None:
     """Definition-of-Ready gate: lint a mission plan against the DoR checklist."""
-    from center_kb.missionlint import lint
+    from strata_kb.missionlint import lint
 
     path: Path | None = None
     if source == "-":
@@ -2430,8 +2430,8 @@ def diff(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Diff added/removed/changed sections between the worktree and a git rev."""
-    from center_kb import gitio
-    from center_kb.diff import diff_doc, render_diff
+    from strata_kb import gitio
+    from strata_kb.diff import diff_doc, render_diff
 
     try:
         report = diff_doc(kb_dir, doc_id, against=against)
@@ -2445,8 +2445,8 @@ def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -
     """Resolve the `--by` reviewer identity and run the strict-build gate
     (`kb build --strict` across the whole KB) that `kb approve` requires
     before flipping anything to reviewed."""
-    from center_kb import gitio
-    from center_kb.review import check_approvable, doc_ids_with_manifest, resolve_reviewer
+    from strata_kb import gitio
+    from strata_kb.review import check_approvable, doc_ids_with_manifest, resolve_reviewer
 
     try:
         targets = [doc_id] if doc_id else doc_ids_with_manifest(kb_dir)
@@ -2488,8 +2488,8 @@ def approve(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Mark sections as reviewed (status: summarized → reviewed)."""
-    from center_kb import gitio
-    from center_kb.review import approve_all_changed, approve_sections
+    from strata_kb import gitio
+    from strata_kb.review import approve_all_changed, approve_sections
 
     if all_changed != bool(against):
         typer.secho(
@@ -2577,12 +2577,12 @@ def doctor(
         None, "--context", help="File containing the kb-context block (or '-' to read from stdin)"
     ),
     hub: str = typer.Option(
-        "", "--hub", envvar="CENTER_KB_HUB", help="kb-hub URL/path (empty = config)"
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
-    from center_kb.config import effective_repo_id
-    from center_kb.doctor import (
+    from strata_kb.config import effective_repo_id
+    from strata_kb.doctor import (
         Issue,
         _flatten,
         check_asset_store,
@@ -2606,7 +2606,7 @@ def doctor(
 
     cfg_kind = ""
     try:
-        from center_kb.config import load_config as _load_config
+        from strata_kb.config import load_config as _load_config
 
         cfg_kind = _load_config(kb_dir).kind
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
@@ -2623,7 +2623,7 @@ def doctor(
 
     repo_id = effective_repo_id("", kb_dir)
     if not repo_id:
-        from center_kb import gitio as _gitio
+        from strata_kb import gitio as _gitio
 
         try:
             repo_id = _gitio.git_root(kb_dir.resolve()).name
@@ -2647,9 +2647,9 @@ def doctor(
     if cfg_kind in ("ba", "dev"):
         issues += check_usage_log(kb_dir)
     if cfg_kind == "hub":
-        from center_kb import gitio as _gitio2
-        from center_kb.config import load_config as _load_config2
-        from center_kb.doctor import check_federation_publish
+        from strata_kb import gitio as _gitio2
+        from strata_kb.config import load_config as _load_config2
+        from strata_kb.doctor import check_federation_publish
 
         hub_issues, hub_stale = check_hub(
             kb_dir, handle, repo_id=repo_id, warn_untracked_index=True

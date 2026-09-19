@@ -19,7 +19,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from center_kb.errors import KbError
+from strata_kb.errors import KbError
 
 UNATTRIBUTED = "_unattributed"
 

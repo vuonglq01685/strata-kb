@@ -6,17 +6,17 @@ import re
 import shutil
 from pathlib import Path
 
-from center_kb.ingest import tableimages
-from center_kb.ingest.sectioner import (
+from strata_kb.ingest import tableimages
+from strata_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
     Part,
     _is_part_root,
     parse_section_id,
 )
-from center_kb.mdutils import slugify
+from strata_kb.mdutils import slugify
 
-logger = logging.getLogger("center_kb.ingest.parser")
+logger = logging.getLogger("strata_kb.ingest.parser")
 
 _HEADING_LABELS = {"section_header", "title"}
 # L3 must hold the document's complete text, so text extraction is a deny-list,
@@ -89,7 +89,7 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
         from docling_core.types.doc import DoclingDocument
     except ImportError as exc:
         raise RuntimeError(
-            "Docling is not installed. Run: pip install \"center-kb[ingest]\""
+            "Docling is not installed. Run: pip install \"strata-kb[ingest]\""
         ) from exc
 
     cache = work_dir / "parsed-v2.json"  # v2: includes generated picture images
@@ -285,7 +285,7 @@ def _render_page(pdf_path: Path, page: int):
 
 def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str | None:
     """Crop one cell out of the page raster; None when it holds no drawing."""
-    from center_kb.ingest import images
+    from strata_kb.ingest import images
 
     try:
         crop = raster.crop(
@@ -308,7 +308,7 @@ def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str |
 def _picture_md(item, doc, assets_dir: Path) -> str | None:
     """One picture → saved asset + markdown ref, or None on any failure.
     A lost image must never abort the ingest."""
-    from center_kb.ingest import images
+    from strata_kb.ingest import images
 
     try:
         img = item.get_image(doc)

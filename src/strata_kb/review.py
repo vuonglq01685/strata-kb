@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from center_kb import gitio, models, quality
-from center_kb.build import build_kb
-from center_kb.diff import diff_doc
-from center_kb.mdutils import heading_occurrences, slice_section
+from strata_kb import gitio, models, quality
+from strata_kb.build import build_kb
+from strata_kb.diff import diff_doc
+from strata_kb.mdutils import heading_occurrences, slice_section
 
 
 # `hist.*` rows are written by `kb svc note` (Hard rule 12: never hand-

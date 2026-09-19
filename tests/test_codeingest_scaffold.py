@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models
-from center_kb.build import build_kb
-from center_kb.codeingest import core
-from center_kb.mdutils import slice_section
-from center_kb.summarize import collect_pending
+from strata_kb import models
+from strata_kb.build import build_kb
+from strata_kb.codeingest import core
+from strata_kb.mdutils import slice_section
+from strata_kb.summarize import collect_pending
 from tests.fixtures_coderepo import build_code_repo
 
 
@@ -1293,7 +1293,7 @@ def test_manifest_status_signal_alone_protects_a_non_svc_named_curated_dir(tmp_p
 def test_summarize_redo_with_no_doc_id_does_not_lock_code_ingest_out_of_itself(
     tmp_path,
 ):
-    from center_kb.summarize import plan_redo, redo_reset
+    from strata_kb.summarize import plan_redo, redo_reset
 
     root = build_code_repo(tmp_path)
     _run(root)
@@ -1315,7 +1315,7 @@ def test_summarize_redo_with_no_doc_id_does_not_lock_code_ingest_out_of_itself(
 def test_approve_all_changed_with_no_doc_id_does_not_lock_code_ingest_out_of_itself(
     tmp_path, run_git
 ):
-    from center_kb.review import approve_all_changed
+    from strata_kb.review import approve_all_changed
 
     root = build_code_repo(tmp_path)
     run_git(root, "init")

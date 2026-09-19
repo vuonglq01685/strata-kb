@@ -15,11 +15,11 @@ from pathlib import Path, PurePosixPath
 import yaml
 from pydantic import ValidationError
 
-from center_kb import config as config_mod
-from center_kb import models
-from center_kb.errors import KbError
+from strata_kb import config as config_mod
+from strata_kb import models
+from strata_kb.errors import KbError
 
-logger = logging.getLogger("center_kb.assetstore")
+logger = logging.getLogger("strata_kb.assetstore")
 
 _MEDIA = {".png": "image/png", ".webp": "image/webp"}
 _IMMUTABLE = "private, max-age=31536000, immutable"
@@ -93,7 +93,7 @@ class S3Store:
                 import boto3
             except ImportError as exc:
                 raise AssetStoreError(
-                    'S3 asset store needs boto3 — run: pip install "center-kb[s3]"'
+                    'S3 asset store needs boto3 — run: pip install "strata-kb[s3]"'
                 ) from exc
             kwargs: dict = {}
             if self._cfg.region:

@@ -1,4 +1,4 @@
-# src/center_kb/web/ratelimit.py
+# src/strata_kb/web/ratelimit.py
 """In-process sliding-window rate limiter — no external dependency.
 
 Defense-in-depth for the shared-secret login and the intake surface: the
@@ -25,7 +25,7 @@ INTAKE_WINDOW_SECONDS = 60.0
 
 
 def trusted_proxies_from_env() -> int:
-    """CENTER_KB_TRUSTED_PROXIES -> the number of X-Forwarded-For hops to
+    """STRATA_KB_TRUSTED_PROXIES -> the number of X-Forwarded-For hops to
     trust in `client_key`. The single parser for BOTH rate limiters that key
     on client identity -- the intake route (via
     `intake.intake_config_from_env` -> `IntakeConfig.trusted_proxies`) and
@@ -54,13 +54,13 @@ def trusted_proxies_from_env() -> int:
     treats the same as 0 -- the same silent header-ignored defeat this loud
     failure exists to prevent) is refused here too.
     """
-    raw = os.environ.get("CENTER_KB_TRUSTED_PROXIES", "0")
+    raw = os.environ.get("STRATA_KB_TRUSTED_PROXIES", "0")
     if not raw.isdecimal():
         raise SystemExit(
-            "CENTER_KB_TRUSTED_PROXIES must be a non-negative integer, got "
+            "STRATA_KB_TRUSTED_PROXIES must be a non-negative integer, got "
             f"'{raw}' -- unset it to disable X-Forwarded-For trust (default "
             "0), or set it to the number of trusted reverse proxies in "
-            "front of this server, e.g. CENTER_KB_TRUSTED_PROXIES=1"
+            "front of this server, e.g. STRATA_KB_TRUSTED_PROXIES=1"
         )
     return int(raw)
 

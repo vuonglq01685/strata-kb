@@ -1,4 +1,4 @@
-from center_kb.codeingest.extractors._lines import join_continuations
+from strata_kb.codeingest.extractors._lines import join_continuations
 
 
 def test_backslash_continuations_are_joined_with_a_space():

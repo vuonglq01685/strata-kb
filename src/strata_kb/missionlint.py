@@ -14,12 +14,12 @@ import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from center_kb import acquality, lintcore, mission
-from center_kb.doctor import Issue
-from center_kb.lintcore import LintReport
+from strata_kb import acquality, lintcore, mission
+from strata_kb.doctor import Issue
+from strata_kb.lintcore import LintReport
 
 if TYPE_CHECKING:
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
 
 # Required sections with a stronger, section-specific check of their own.

@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models, summarize
-from center_kb.llm import RunnerError
-from center_kb.summarize import (
+from strata_kb import models, summarize
+from strata_kb.llm import RunnerError
+from strata_kb.summarize import (
     RedoItem,
     RedoPlan,
     collect_pending,
@@ -457,7 +457,7 @@ def test_collect_pending_strips_tables_and_flags_table_only(tmp_path):
     assert len(by_id["1"].l3_sha256) == 64
 
 
-from center_kb.summarize import PendingSection, _summarize_one
+from strata_kb.summarize import PendingSection, _summarize_one
 
 
 class _ExplodingRunner:
@@ -483,7 +483,7 @@ def test_brief_section_copies_prose_verbatim_without_llm():
 
 import json
 
-from center_kb.summarize import build_section_prompt
+from strata_kb.summarize import build_section_prompt
 
 
 def _prose_section(prose: str) -> PendingSection:

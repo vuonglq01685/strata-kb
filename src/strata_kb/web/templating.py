@@ -5,7 +5,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 
 def make_env() -> Environment:
     return Environment(
-        loader=PackageLoader("center_kb", "templates/web"),
+        loader=PackageLoader("strata_kb", "templates/web"),
         autoescape=select_autoescape(enabled_extensions=("html",), default=True),
     )
 

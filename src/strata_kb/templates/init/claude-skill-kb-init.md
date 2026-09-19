@@ -1,6 +1,6 @@
 ---
 name: kb-init
-description: Guided setup for a CENTER-KB repo — choose the repo role (hub or child) and, for hubs, the asset storage mode, then scaffold and verify. Use when asked to set up or initialize a KB repo, or when the user invokes /kb-init.
+description: Guided setup for a Strata repo — choose the repo role (hub or child) and, for hubs, the asset storage mode, then scaffold and verify. Use when asked to set up or initialize a KB repo, or when the user invokes /kb-init.
 ---
 
 # kb-init — guided repo setup
@@ -37,7 +37,7 @@ Hard rules:
 4. **Next steps** — relay the CLI's own next-steps list. For `--assets s3`
    additionally walk the operator through: fill `bucket` (+ `endpoint` for
    MinIO/R2) in `.kb/config.yaml`, export credentials (AWS env chain),
-   `pip install "center-kb[s3]"`.
+   `pip install "strata-kb[s3]"`.
 
 5. **Verify** — run `kb doctor` and relay the result. For s3 it probes the
    bucket; expect `kb doctor: OK` before calling setup done. If assets

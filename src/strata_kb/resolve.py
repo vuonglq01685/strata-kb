@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING, Literal
 import yaml
 from pydantic import ValidationError
 
-from center_kb import gitio, models
-from center_kb.kbcontext import KBContext, KBRef
-from center_kb.mdutils import count_tokens, slice_section
+from strata_kb import gitio, models
+from strata_kb.kbcontext import KBContext, KBRef
+from strata_kb.mdutils import count_tokens, slice_section
 
 if TYPE_CHECKING:
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
 Status = Literal["ok", "stale", "broken"]
 
@@ -149,7 +149,7 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
 
 
 def resolve_refs(hub: "HubHandle", ctx: KBContext) -> list[ResolvedRef]:
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     root = gitio.git_root(hub.root)
     if not gitio.rev_exists(root, ctx.version):

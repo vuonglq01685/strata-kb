@@ -1,6 +1,6 @@
 ---
 name: kb-summarize
-description: Fill pending CENTER-KB summaries — kb status → --print-prompt → edit L2/L1 → kb build --strict
+description: Fill pending Strata summaries — kb status → --print-prompt → edit L2/L1 → kb build --strict
 ---
 
 # /kb-summarize — fill pending summaries

@@ -5,7 +5,7 @@ import unicodedata
 
 import tiktoken
 
-from center_kb import models
+from strata_kb import models
 
 _ENCODER = None
 

@@ -1,8 +1,8 @@
 from starlette.testclient import TestClient
 
-from center_kb import ghapp, intake
-from center_kb.mcp import ServerConfig, create_http_app
-from center_kb.web.app import create_app
+from strata_kb import ghapp, intake
+from strata_kb.mcp import ServerConfig, create_http_app
+from strata_kb.web.app import create_app
 
 TOKEN = "secret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -56,7 +56,7 @@ def test_create_app_warns_at_startup_when_the_hub_clone_is_stuck_off_default(
         audience="https://kb.test",
         creds=ghapp.AppCreds(app_id="1", private_key_pem="unused"),
     )
-    with caplog.at_level("WARNING", logger="center_kb.web.app"):
+    with caplog.at_level("WARNING", logger="strata_kb.web.app"):
         create_app(config, TOKEN, intake_cfg=intake_cfg)
     warnings = "\n".join(r.message for r in caplog.records)
     assert "publish/alpha" in warnings
@@ -114,10 +114,10 @@ def test_hub_locked_cache_returns_503_not_a_crash(
     undiscardable-cache recipe now comes from the shared
     `undiscardable_hub_cache` fixture, which has a real POSIX mechanism, so
     this runs on Linux. See tests/conftest.py."""
-    from center_kb import hub as hub_mod
+    from strata_kb import hub as hub_mod
 
     cache_base = tmp_path / "hub-cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     bare = tmp_path / "hub.git"
     bare.mkdir()
     run_git(bare, "init", "--bare")
@@ -132,18 +132,18 @@ def test_hub_locked_cache_returns_503_not_a_crash(
     with undiscardable_hub_cache(legacy):
         config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(bare))
         client = TestClient(create_app(config, TOKEN))
-        with caplog.at_level("WARNING", logger="center_kb.web.api"):
+        with caplog.at_level("WARNING", logger="strata_kb.web.api"):
             resp = client.get("/api/docs", headers=AUTH)
             assert resp.status_code == 503
             assert resp.json()["error"] == "hub_unreachable"
         assert any(
-            r.name == "center_kb.web.api" and str(legacy) in r.message
+            r.name == "strata_kb.web.api" and str(legacy) in r.message
             for r in caplog.records
         ), caplog.records
 
 
 def test_sweep_drops_expired_keys(monkeypatch):
-    from center_kb.web import ratelimit
+    from strata_kb.web import ratelimit
 
     monkeypatch.setattr(ratelimit, "_SWEEP_THRESHOLD", 2)
     clock = [1000.0]

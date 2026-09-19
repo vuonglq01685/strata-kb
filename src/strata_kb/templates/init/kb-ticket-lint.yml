@@ -28,7 +28,7 @@ concurrency:
 permissions:
   contents: read
 env:
-  CENTER_KB_HUB: ${{ vars.CENTER_KB_HUB }}
+  STRATA_KB_HUB: ${{ vars.STRATA_KB_HUB }}
   KB_HUB_TOKEN: ${{ secrets.KB_HUB_TOKEN }}
 jobs:
   lint:
@@ -43,16 +43,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install center-kb=={version}
+      - run: pip install strata-kb=={version}
       - name: Authenticate the hub URL (private hub only)
         if: env.KB_HUB_TOKEN != ''
         run: |
           # Split the scheme off generically and put it back: '#https://'
           # mangled every hub that was not https (a self-hosted http hub
           # became 'https://x-access-token:…@http://host/hub').
-          scheme="${CENTER_KB_HUB%%://*}"
-          rest="${CENTER_KB_HUB#*://}"
-          echo "CENTER_KB_HUB=${scheme}://x-access-token:${KB_HUB_TOKEN}@${rest}" >> "$GITHUB_ENV"
+          scheme="${STRATA_KB_HUB%%://*}"
+          rest="${STRATA_KB_HUB#*://}"
+          echo "STRATA_KB_HUB=${scheme}://x-access-token:${KB_HUB_TOKEN}@${rest}" >> "$GITHUB_ENV"
       - name: Lint changed tickets and missions (Definition of Ready)
         run: |
           # core.quotePath defaults to true, which makes `git diff --name-only`
@@ -127,7 +127,7 @@ jobs:
             flags=""
             if [ -n "${KB_FAIL_ON_STALE}" ]; then flags="--fail-on-stale"; fi
             echo "::group::$cmd $f"
-            if $cmd "$f" --hub "$CENTER_KB_HUB" $flags --json > "$RUNNER_TEMP/report.json"; then
+            if $cmd "$f" --hub "$STRATA_KB_HUB" $flags --json > "$RUNNER_TEMP/report.json"; then
               verdict="PASS"
             else
               rc=$?

@@ -9,7 +9,7 @@ Thin wrapper around the `kb docker-setup` CLI. Your job: run the command,
 relay its output, keep any secret out of the chat.
 
 The CLI reads `kind:` from `.kb/config.yaml` and adapts:
-- **hub** — creates `.env` with a fresh `CENTER_KB_HTTP_TOKEN`, then runs
+- **hub** — creates `.env` with a fresh `STRATA_KB_HTTP_TOKEN`, then runs
   `docker compose up -d`. When Docker is not available it prints the manual
   next steps instead (still exit 0 — the token was written).
 - **child** — no `.env`/token (nothing to secure); requires Docker, runs

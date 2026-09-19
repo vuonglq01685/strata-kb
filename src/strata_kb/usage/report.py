@@ -15,8 +15,8 @@ from datetime import date
 from jinja2 import Environment, PackageLoader, select_autoescape
 from pydantic import BaseModel
 
-from center_kb.usage.ledger import UsageRow
-from center_kb.usage.prices import PriceTable, cost_of, resolve_model, stale_days
+from strata_kb.usage.ledger import UsageRow
+from strata_kb.usage.prices import PriceTable, cost_of, resolve_model, stale_days
 
 STALE_AFTER_DAYS = 90
 
@@ -155,12 +155,12 @@ def _money(bucket: Bucket, currency: str) -> str:
     return money
 
 
-# Mirrors src/center_kb/web/templating.py:7-11 — a package-local template
+# Mirrors src/strata_kb/web/templating.py:7-11 — a package-local template
 # loader with autoescaping on. `model` is copied verbatim out of a transcript
 # and is not validated the way a ticket stem is, so it is the field that can
 # actually carry markup; autoescaping is what keeps it inert in the page.
 _env = Environment(
-    loader=PackageLoader("center_kb", "templates/usage"),
+    loader=PackageLoader("strata_kb", "templates/usage"),
     autoescape=select_autoescape(enabled_extensions=("j2", "html"), default=True),
 )
 _env.globals["money"] = _money

@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING, Literal
 import yaml
 from pydantic import ValidationError
 
-from center_kb import gitio, kbcontext, models
-from center_kb.mdutils import count_tokens, heading_occurrences, orphan_heading_ids, slice_section
-from center_kb.resolve import ResolvedRef, resolve_refs
+from strata_kb import gitio, kbcontext, models
+from strata_kb.mdutils import count_tokens, heading_occurrences, orphan_heading_ids, slice_section
+from strata_kb.resolve import ResolvedRef, resolve_refs
 
 if TYPE_CHECKING:
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
 
 @dataclass
@@ -209,7 +209,7 @@ def check_kb(kb_dir: Path) -> list[Issue]:
 
 def check_kind(kb_dir: Path) -> list[Issue]:
     """Warn when the repo's hub|child kind is not recorded in config.yaml."""
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     try:
         kind = load_config(kb_dir).kind
@@ -238,7 +238,7 @@ def check_kind(kb_dir: Path) -> list[Issue]:
 def check_usage_log(kb_dir: Path) -> list[Issue]:
     """The Stop hook swallows every failure into ingest-errors.log; this is
     the one place a human hears about it (reviewer F L3)."""
-    from center_kb.usage.ledger import hook_errors
+    from strata_kb.usage.ledger import hook_errors
 
     count, last = hook_errors(kb_dir)
     if not count:
@@ -257,8 +257,8 @@ ASSET_SIZE_WARN_BYTES = 100 * 1024 * 1024
 
 def check_asset_store(kb_dir: Path, handle, store=None) -> list[Issue]:
     """Storage health per asset_store mode; [] when the block is absent."""
-    from center_kb import assetstore
-    from center_kb.config import load_config
+    from strata_kb import assetstore
+    from strata_kb.config import load_config
 
     try:
         cfg = load_config(kb_dir).asset_store
@@ -420,7 +420,7 @@ def _kb_tree_digest(root: Path, synthesized: dict[str, str] | None = None) -> st
     """
     import hashlib
 
-    from center_kb import pubgate
+    from strata_kb import pubgate
 
     manifest: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
@@ -480,7 +480,7 @@ def check_hub(
     .gitignore", so child/dev/ba callers (who reach a hub or its cache clone
     read-only) must leave it off.
     """
-    from center_kb.federation import build_federation_index, load_federation
+    from strata_kb.federation import build_federation_index, load_federation
 
     if handle is None:
         return (
@@ -568,8 +568,8 @@ def check_hub(
 
     fed = handle.federation_dir
     if fed.is_dir():
-        from center_kb import assetstore, pubgate
-        from center_kb.federation import (
+        from strata_kb import assetstore, pubgate
+        from strata_kb.federation import (
             FED_TOP_EXCLUDE,
             iter_entry_dirs,
             iter_namespace_dirs,
@@ -835,7 +835,7 @@ def check_hub(
                     )
                 )
         else:
-            from center_kb import assetstore
+            from strata_kb import assetstore
 
             # Item 7 (wave L1 brief), ruling P54's other half: the hub-side
             # digest must see a diverted asset the same way publish._snapshot
@@ -940,7 +940,7 @@ def check_published_digests(fed: Path, live: dict[str, str] | None = None) -> li
     content a second time. Left optional (recomputed via
     build_federation_index when omitted) so this check still works called on
     its own, e.g. from a test."""
-    from center_kb.federation import FEDERATION_INDEX_NAME, build_federation_index
+    from strata_kb.federation import FEDERATION_INDEX_NAME, build_federation_index
 
     index_path = fed / FEDERATION_INDEX_NAME
     if not index_path.exists():
@@ -984,7 +984,7 @@ def check_federation_publish(
 ) -> list[Issue]:
     """Health hub phân tầng: id entry hợp lệ, cảnh báo cycle, trạng thái đã
     publish lên upstream. handle = hub CẤP TRÊN (None khi root hub / offline)."""
-    from center_kb.federation import find_cycle_segment, iter_entry_dirs
+    from strata_kb.federation import find_cycle_segment, iter_entry_dirs
 
     fed_src = source_root / "federation"
     issues: list[Issue] = []

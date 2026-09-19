@@ -3,8 +3,8 @@ import sys
 import pytest
 from starlette.testclient import TestClient
 
-from center_kb import gitio, intake
-from center_kb.hub import HubHandle
+from strata_kb import gitio, intake
+from strata_kb.hub import HubHandle
 
 
 def test_a_clone_left_on_a_publish_branch_is_reported(hub_worktree, run_git, tmp_path):
@@ -141,9 +141,9 @@ def test_create_app_boots_degraded_on_a_locked_intake_hub_cache(
     test_resolve_hub_or_503_converts_a_locked_cache_into_a_503_not_a_500 in
     test_intake_core.py and test_manifest_and_status_503_not_500_on_a_locked_hub_cache
     in test_intake_http.py, driven through create_app's boot path instead."""
-    from center_kb import ghapp, hub as hub_mod
-    from center_kb.mcp import ServerConfig
-    from center_kb.web.app import create_app
+    from strata_kb import ghapp, hub as hub_mod
+    from strata_kb.mcp import ServerConfig
+    from strata_kb.web.app import create_app
 
     bare = tmp_path / "hub.git"
     run_git(tmp_path, "init", "--bare", str(bare))
@@ -168,7 +168,7 @@ def test_create_app_boots_degraded_on_a_locked_intake_hub_cache(
     locked = legacy / "locked.txt"
     locked.write_text("x", encoding="utf-8")
     fp = open(locked, "r", encoding="utf-8")
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     try:
         config = ServerConfig(kb_dir=hub_worktree / ".kb", hub=str(hub_worktree))
         intake_cfg = intake.IntakeConfig(
@@ -177,7 +177,7 @@ def test_create_app_boots_degraded_on_a_locked_intake_hub_cache(
             creds=ghapp.AppCreds(app_id="1", private_key_pem="unused"),
             status_path=tmp_path / "status.json",
         )
-        with caplog.at_level("WARNING", logger="center_kb.web.app"):
+        with caplog.at_level("WARNING", logger="strata_kb.web.app"):
             app = create_app(config, "secret-token", intake_cfg=intake_cfg)
     finally:
         fp.close()

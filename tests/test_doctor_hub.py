@@ -1,9 +1,9 @@
 import hashlib
 import subprocess
 
-from center_kb.doctor import check_hub
-from center_kb.hub import HubHandle
-from center_kb.publish import publish
+from strata_kb.doctor import check_hub
+from strata_kb.hub import HubHandle
+from strata_kb.publish import publish
 from tests.conftest import make_fed_entry
 
 CRED = "https://x-access-token:ghs_SECRETTOKEN@github.com/org/kb-hub.git"
@@ -37,7 +37,7 @@ def test_old_git_warns_when_hub_ref_carries_a_credential(
     putting it in argv) needs git >= 2.31 -- on an older git the env is
     silently ignored and the operator gets git's own opaque auth error
     instead of a message naming the way forward."""
-    from center_kb import gitio as gitio_mod
+    from strata_kb import gitio as gitio_mod
 
     real_run = gitio_mod._run
 
@@ -169,7 +169,7 @@ def test_old_format_entry_warns(git_kb, hub_worktree):
 def test_duplicate_doc_id_across_repos_warns(git_kb, hub_worktree):
     publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
     make_fed_entry(hub_worktree / "federation", "dup-kb", "demo-doc")
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     write_federation_index(hub_worktree / "federation")
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
@@ -180,8 +180,8 @@ def test_doctor_warns_when_the_index_is_untracked_and_unignored(fed_hub):
     # warn_untracked_index=True models the hub maintainer's own checkout —
     # the only caller who can act on "add it to the hub's .gitignore"
     # (F-C17 review round 2, gate backcompat).
-    from center_kb import doctor
-    from center_kb.hub import HubHandle
+    from strata_kb import doctor
+    from strata_kb.hub import HubHandle
 
     work = fed_hub / ".kb-work"
     work.mkdir(exist_ok=True)
@@ -205,8 +205,8 @@ def test_doctor_does_not_warn_about_kb_work_on_the_child_path(fed_hub):
     # never passes warn_untracked_index — "add it to the hub's .gitignore"
     # is un-actionable there. Default (no flag) must stay silent even with
     # an untracked, unignored index present.
-    from center_kb import doctor
-    from center_kb.hub import HubHandle
+    from strata_kb import doctor
+    from strata_kb.hub import HubHandle
 
     work = fed_hub / ".kb-work"
     work.mkdir(exist_ok=True)
@@ -220,8 +220,8 @@ def test_doctor_does_not_crash_on_a_non_utf8_gitignore(fed_hub):
     # F-C17 review round 2, Important: PowerShell 5.1's `echo x > .gitignore`
     # writes UTF-16LE. `check_hub` must not traceback reading a .gitignore it
     # doesn't own — an unreadable file counts as not-ignored.
-    from center_kb import doctor
-    from center_kb.hub import HubHandle
+    from strata_kb import doctor
+    from strata_kb.hub import HubHandle
 
     work = fed_hub / ".kb-work"
     work.mkdir(exist_ok=True)
@@ -237,9 +237,9 @@ def test_doctor_does_not_crash_on_a_non_utf8_gitignore(fed_hub):
 def test_doctor_warns_about_a_non_allowlisted_file_in_an_entry(
     hub_worktree, git_kb, run_git
 ):
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     (hub_worktree / "federation" / "child" / "config.yaml").write_text(
@@ -268,9 +268,9 @@ def test_doctor_catches_a_stray_at_every_federation_level(hub_worktree, git_kb):
     _snapshot_federation, so the credential-leak case this warning exists
     for was the one it missed. Plants the reviewer's own three-level repro
     and requires all three to be caught, not just the leaf."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
     from tests.conftest import make_fed_entry
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
@@ -304,9 +304,9 @@ def test_doctor_warns_about_fed_top_exclude_names_at_a_nested_level(
     index.yaml -- the latter also doubles as iter_entry_dirs'/
     iter_namespace_dirs' own leaf-marker filename, which would couple this
     probe to M3's fix instead of isolating M2's."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     mid = hub_worktree / "federation" / "mid"
@@ -330,9 +330,9 @@ def test_doctor_scans_inside_a_broken_federation_entry(hub_worktree, git_kb):
     the broken entry either to signal that a whole subtree had gone
     unscanned. Plants a leaked HUB_TOKEN directly inside the broken entry
     and a second stray one level further down, per the reviewer's repro."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     broken = hub_worktree / "federation" / "broken-mid"
@@ -370,9 +370,9 @@ def test_doctor_does_not_flag_a_legitimate_asset_inside_a_broken_entry(
     the operator to delete real data and rotate a token that was never
     there. Measured on this exact repro: 1 warning before the fix, 0
     after."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
     from tests.conftest import make_fed_entry
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
@@ -403,9 +403,9 @@ def test_doctor_scans_a_valid_leaf_entry_nested_beneath_a_broken_one(
     leaf at a healthy (non-nested) level carrying the byte-identical file --
     both must be caught. Also asserts doctor now raises an Issue naming the
     broken entry itself, so a skipped subtree is no longer silent."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
     from tests.conftest import make_fed_entry
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
@@ -459,9 +459,9 @@ def test_doctor_reports_strays_in_namespace_directories_regardless_of_name(
     directory is an entry (no _meta.yaml/index.yaml above the file at
     all, so no asset exemption can apply regardless of the directory's
     own name)."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     fed = hub_worktree / "federation"
@@ -495,9 +495,9 @@ def test_doctor_does_not_flag_a_legitimate_file_under_a_dot_named_namespace(
     it. pubgate.REPO_ID_RE requires a leading alphanumeric so `kb publish`
     can never create a dot-named entry -- only a hand-made directory
     reaches this, low reach but the same argument as N-1."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     fed = hub_worktree / "federation"
@@ -526,9 +526,9 @@ def test_doctor_reports_a_stray_beside_manifests_inside_a_broken_entry(
     Plants a leaked hub_token directly beside manifests/, nested inside a
     broken entry, and asserts both the slim-layout Issue and the stray
     warning fire for that nested path."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     fed = hub_worktree / "federation"
@@ -565,9 +565,9 @@ def test_doctor_reports_a_stray_beside_manifests_at_the_top_level(
     was unreported before this round -- only the "uses the old slim
     layout" Issue fired, which says nothing about strays. Now closed by
     the same generalized sweep that handles the nested case above."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     fed = hub_worktree / "federation"
@@ -658,9 +658,9 @@ def test_doctor_does_not_call_an_assets_dir_inside_an_entry_a_slim_entry(
     "assets"` makes its direct children artefacts), so it can never be an
     entry root -- see the sibling test below for the case where there is no
     entry above it and it still can be."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     fed = hub_worktree / "federation"
@@ -691,9 +691,9 @@ def test_doctor_still_calls_a_top_level_assets_dir_with_manifests_a_slim_entry(
     federation/assets there is no entry above the directory -- P40's
     "assets only exist inside an entry" is precisely what makes it an entry
     root here and an asset directory in the test above."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     fed = hub_worktree / "federation"
@@ -770,8 +770,8 @@ def test_doctor_is_not_permanently_drifted_by_a_diverted_asset(git_kb, hub_workt
     `kb publish`") that immediately follows the very publish it tells the
     operator to run, forever, on any hub with an asset store configured.
     """
-    from center_kb import assetstore, federation
-    from center_kb import publish as publish_mod
+    from strata_kb import assetstore, federation
+    from strata_kb import publish as publish_mod
 
     (hub_worktree / ".kb").mkdir(exist_ok=True)
     (hub_worktree / ".kb" / "config.yaml").write_text(
@@ -817,9 +817,9 @@ def test_doctor_resolves_an_asset_against_the_INNERMOST_broken_entry(
     `is_kb_artifact`'s dotfile rule, and a legitimate asset is reported as
     a leaked stray. Round 5 made `_enclosing_entry` shared by two loops, so
     it is pinned here rather than left to the next refactor."""
-    from center_kb.doctor import check_hub
-    from center_kb.hub import HubHandle
-    from center_kb.publish import publish
+    from strata_kb.doctor import check_hub
+    from strata_kb.hub import HubHandle
+    from strata_kb.publish import publish
 
     publish(git_kb["kb"], str(hub_worktree), repo_id="child", mode="direct")
     fed = hub_worktree / "federation"

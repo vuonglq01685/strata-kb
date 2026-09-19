@@ -1,4 +1,4 @@
-# CENTER-KB — repo config (commit to git).
+# Strata — repo config (commit to git).
 # kind: this repo's role. "ba" is a requirements repo — it drafts and
 #       versions tickets grounded in the shared KB via the
 #       ba-ticket-author skill; it never ingests, summarizes, or

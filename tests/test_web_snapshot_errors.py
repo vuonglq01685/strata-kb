@@ -37,7 +37,7 @@ def test_ui_doc_page_renders_the_shell_not_a_bare_500(web_client_logged_in, hub_
     resp = web_client_logged_in.get(f"/ui/docs/{doc_id}")
     assert resp.status_code == 503
     assert "Internal Server Error" not in resp.text
-    assert "CENTER-KB" in resp.text  # the shell rendered
+    assert "Strata" in resp.text  # the shell rendered
 
 
 def test_ui_home_still_degrades_to_200(web_client_logged_in, hub_dir):
@@ -59,7 +59,7 @@ def test_ui_section_page_is_503_not_a_bare_500(web_client_logged_in, hub_dir):
     resp = web_client_logged_in.get(f"/ui/docs/{doc_id}/{section_id}")
     assert resp.status_code == 503
     assert "Internal Server Error" not in resp.text
-    assert "CENTER-KB" in resp.text  # the shell rendered
+    assert "Strata" in resp.text  # the shell rendered
 
 
 def test_api_doc_detail_validation_error_manifest_is_503(web_client_logged_in, hub_dir):
@@ -83,7 +83,7 @@ def test_ui_section_page_validation_error_manifest_is_503(web_client_logged_in, 
     resp = web_client_logged_in.get(f"/ui/docs/{doc_id}/{section_id}")
     assert resp.status_code == 503
     assert "Internal Server Error" not in resp.text
-    assert "CENTER-KB" in resp.text  # the shell rendered
+    assert "Strata" in resp.text  # the shell rendered
 
 
 def test_api_search_is_503_json_not_500(web_client_logged_in, hub_dir):
@@ -98,4 +98,4 @@ def test_ui_search_screen_renders_shell_not_a_bare_500(web_client_logged_in, hub
     resp = web_client_logged_in.get("/ui?q=airspace")
     assert resp.status_code == 503
     assert "Internal Server Error" not in resp.text
-    assert "CENTER-KB" in resp.text  # the shell rendered
+    assert "Strata" in resp.text  # the shell rendered

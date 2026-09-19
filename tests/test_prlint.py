@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from center_kb.prlint import (
+from strata_kb.prlint import (
     REQUIRED_SECTIONS,
     SENTINEL_SECTIONS,
     lint_body,
@@ -253,7 +253,7 @@ def test_render_names_the_failing_sections_and_to_json_round_trips():
     assert all(f["level"] == "warning" for f in filled_payload["findings"])
 
 
-from center_kb.prlint import EXEMPTION_SLUGS, Finding, PRLintReport
+from strata_kb.prlint import EXEMPTION_SLUGS, Finding, PRLintReport
 
 
 def test_the_four_exemption_slugs_are_the_canon():
@@ -304,7 +304,7 @@ def test_findings_default_to_error_level():
 
 from pathlib import Path
 
-from center_kb.prlint import plan_cmd_test, ticket_id_of
+from strata_kb.prlint import plan_cmd_test, ticket_id_of
 
 
 def _plan(tmp_path: Path, ticket: str = "ATM-7", cmd: str = "pytest -q") -> Path:

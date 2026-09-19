@@ -12,12 +12,12 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from center_kb import acquality, kbcontext
-from center_kb.doctor import Issue, check_context
-from center_kb.kbcontext import KBContext, KBRef
+from strata_kb import acquality, kbcontext
+from strata_kb.doctor import Issue, check_context
+from strata_kb.kbcontext import KBContext, KBRef
 
 if TYPE_CHECKING:
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
 # A fenced code block: ```<lang>\n<content>```. Used both to find mermaid
 # diagrams inside a section and to strip fences (mermaid + a fenced
@@ -782,7 +782,7 @@ def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
     the two cases apart — so the per-tag error message below names that
     possibility rather than asserting the tag was fabricated.
     """
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     vocab = kbcontext.tag_vocabulary(load_federation(hub.federation_dir))
     if not vocab:

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import yaml
 
-from center_kb import gitio, models
-from center_kb.mdutils import slice_section
+from strata_kb import gitio, models
+from strata_kb.mdutils import slice_section
 
 
 @dataclass

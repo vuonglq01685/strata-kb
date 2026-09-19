@@ -1,6 +1,6 @@
 """HTTP + MCP against the installed artifact.
 
-There is no `kb serve` command — the server runs via `python -m center_kb.mcp`,
+There is no `kb serve` command — the server runs via `python -m strata_kb.mcp`,
 exactly as the Dockerfile's CMD does. So we invoke the python OF THE ARTIFACT
 VENV, not the runner's python.
 """
@@ -34,7 +34,7 @@ def _get(url: str, token: str | None = None) -> tuple[int, str]:
 def http_server(artifact, published_repo, free_port):
     proc = subprocess.Popen(
         [
-            str(artifact.python), "-m", "center_kb.mcp",
+            str(artifact.python), "-m", "strata_kb.mcp",
             "--kb", str(published_repo["kb"]),
             "--hub", str(published_repo["hub"]),
             "--transport", "http",
@@ -42,7 +42,7 @@ def http_server(artifact, published_repo, free_port):
             "--port", str(free_port),
         ],
         cwd=published_repo["repo"],
-        env={**os.environ, "CENTER_KB_HTTP_TOKEN": TOKEN},
+        env={**os.environ, "STRATA_KB_HTTP_TOKEN": TOKEN},
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

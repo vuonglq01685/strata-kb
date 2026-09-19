@@ -1,5 +1,5 @@
-from center_kb import models, quality
-from center_kb.quality import (
+from strata_kb import models, quality
+from strata_kb.quality import (
     Finding,
     budget,
     check_doc,

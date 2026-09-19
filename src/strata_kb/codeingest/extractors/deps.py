@@ -46,10 +46,10 @@ from pathlib import Path
 
 import yaml
 
-from center_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
-from center_kb.codeingest.extractors._envkeys import redact_userinfo
-from center_kb.codeingest.extractors._mdcells import escape_cell
-from center_kb.codeingest.extractors.tree import relposix, walk_tree
+from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
+from strata_kb.codeingest.extractors._envkeys import redact_userinfo
+from strata_kb.codeingest.extractors._mdcells import escape_cell
+from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 
 # ---------------------------------------------------------------------------
 # framework detection — published interface, reused by Task B4.

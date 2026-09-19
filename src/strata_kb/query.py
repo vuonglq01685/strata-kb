@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from center_kb import models
-from center_kb.mdutils import count_tokens, slice_section, slice_subsection
-from center_kb.searchdb import tokenize  # re-export (web/ui.py import)
+from strata_kb import models
+from strata_kb.mdutils import count_tokens, slice_section, slice_subsection
+from strata_kb.searchdb import tokenize  # re-export (web/ui.py import)
 
 if TYPE_CHECKING:
-    from center_kb.hub import HubHandle
-    from center_kb.searchdb import SectionRow
+    from strata_kb.hub import HubHandle
+    from strata_kb.searchdb import SectionRow
 
-logger = logging.getLogger("center_kb.query")
+logger = logging.getLogger("strata_kb.query")
 
 
 class AmbiguousDocError(LookupError):
@@ -154,7 +154,7 @@ def _search_index(
     or cold-empty) index instead of the freshly-synced one — the caller must
     tell the user, not just log a warning nobody sees (R19, final-branch
     review)."""
-    from center_kb import searchdb
+    from strata_kb import searchdb
 
     for attempt in (1, 2):
         conn: sqlite3.Connection | None = None
@@ -289,8 +289,8 @@ def _unknown_tag_notes(hub: "HubHandle", tags: list[str]) -> list[str]:
     a synthetic tag, so `--tags arinc-424` is a supported filter (F-C14). It is
     deliberately NOT part of `kbcontext.tag_vocabulary`, which governs what a
     kb-context block may carry."""
-    from center_kb import kbcontext
-    from center_kb.federation import load_federation
+    from strata_kb import kbcontext
+    from strata_kb.federation import load_federation
 
     repos = load_federation(hub.federation_dir)
     vocab = kbcontext.tag_vocabulary(repos)
@@ -336,17 +336,17 @@ def search_detailed(
     budget: int = 2000,
     semantic: bool = False,
     use_semantic: bool = True,
-    embedder=None,  # center_kb.embed.Embedder | None — injectable for tests
+    embedder=None,  # strata_kb.embed.Embedder | None — injectable for tests
 ) -> SearchOutcome:
-    from center_kb import embed as embed_mod
-    from center_kb import searchdb
+    from strata_kb import embed as embed_mod
+    from strata_kb import searchdb
 
     if embedder is None:
         embedder = embed_mod.default_embedder()
     if semantic and embedder is None:
         logger.warning(
             "semantic search requested but no embedder is available — "
-            'keyword results only (enable with: pip install "center-kb[embed]")'
+            'keyword results only (enable with: pip install "strata-kb[embed]")'
         )
     notes: list[str] = []
     terms = tokenize(text)
@@ -529,7 +529,7 @@ def get_section(
     level: str = "l2",
     repo: str | None = None,
 ) -> QueryResult | None:
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     level = normalize_level(level)
     section_id = section_id.lstrip("§")

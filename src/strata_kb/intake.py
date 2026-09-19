@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from center_kb import assetstore, federation, ghapp, gitio, hashsync, models
-from center_kb import hub as hub_mod
-from center_kb.pubgate import REPO_ID_MAX, is_reserved_device_name
-from center_kb.web import ratelimit
+from strata_kb import assetstore, federation, ghapp, gitio, hashsync, models
+from strata_kb import hub as hub_mod
+from strata_kb.pubgate import REPO_ID_MAX, is_reserved_device_name
+from strata_kb.web import ratelimit
 
-logger = logging.getLogger("center_kb.intake")
+logger = logging.getLogger("strata_kb.intake")
 
 GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 JWKS_URL = GITHUB_ISSUER + "/.well-known/jwks"
@@ -140,12 +140,12 @@ MAX_MEMBER_NAME = 4096  # POSIX PATH_MAX; no real repo-relative path is longer
 #        separator joining it to the repo-relative path. `kb`'s primary
 #        access path -- "the tool keeps a local hub clone fresh -- no manual
 #        git clone" (README) -- puts that root at
-#        `Path.home()/".center-kb"/"hub"/<12-hex cache key>`. Worst
+#        `Path.home()/".strata-kb"/"hub"/<12-hex cache key>`. Worst
 #        realistic length on Windows, measured: "C:\Users\" (9) + a
 #        20-character username (the Windows local SAM account-name limit) +
-#        "\.center-kb\hub\" (16) + the 12-character cache key = 57, plus 1
+#        "\.strata-kb\hub\" (16) + the 12-character cache key = 57, plus 1
 #        for the separator = 58. Rounded up to 64: a GUESS of 6 characters'
-#        margin, for a CENTER_KB_HUB_CACHE override one level deeper or a
+#        margin, for a STRATA_KB_HUB_CACHE override one level deeper or a
 #        longer drive/mount prefix.
 #   -11  len("federation/"), the published tree's fixed prefix.
 #   -64  REPO_ID_MAX -- the longest repo-id pubgate will accept. Computed
@@ -373,7 +373,7 @@ _TAG_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 def authorize(claims: dict, registry: models.Registry) -> str:
     """claims -> repo_id. The registry -- never the payload -- decides the write path."""
-    from center_kb.pubgate import GateError, normalize_repo_id
+    from strata_kb.pubgate import GateError, normalize_repo_id
 
     ref = claims.get("ref", "")
     if not ref.startswith(TAG_REF_PREFIX):
@@ -1328,7 +1328,7 @@ class StatusStore:
             if self._path is not None:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 # newline-exempt: server-side PR-state file under
-                # ~/.center-kb/hub (IntakeConfig.status_path), never committed.
+                # ~/.strata-kb/hub (IntakeConfig.status_path), never committed.
                 self._path.write_text(json.dumps(self._data), encoding="utf-8")
 
     def get(self, repo_id: str, commit: str) -> dict | None:
@@ -1367,19 +1367,19 @@ class IntakeConfig:
 
 def intake_config_from_env(hub_ref: str) -> IntakeConfig | None:
     """Build IntakeConfig from env; None (intake disabled, read server still runs)
-    when any of CENTER_KB_GH_APP_ID/CENTER_KB_GH_APP_KEY/CENTER_KB_INTAKE_AUDIENCE
+    when any of STRATA_KB_GH_APP_ID/STRATA_KB_GH_APP_KEY/STRATA_KB_INTAKE_AUDIENCE
     is missing or the PEM is unreadable. Raises SystemExit (no traceback, same
     convention as mcp.py's other operator-config errors) when
-    CENTER_KB_TRUSTED_PROXIES is set but not a valid non-negative integer."""
+    STRATA_KB_TRUSTED_PROXIES is set but not a valid non-negative integer."""
     import os
 
-    app_id = os.environ.get("CENTER_KB_GH_APP_ID", "")
-    key_path = os.environ.get("CENTER_KB_GH_APP_KEY", "")
-    audience = os.environ.get("CENTER_KB_INTAKE_AUDIENCE", "")
+    app_id = os.environ.get("STRATA_KB_GH_APP_ID", "")
+    key_path = os.environ.get("STRATA_KB_GH_APP_KEY", "")
+    audience = os.environ.get("STRATA_KB_INTAKE_AUDIENCE", "")
     if not (app_id and key_path and audience):
         logger.info(
-            "intake disabled -- set CENTER_KB_GH_APP_ID, CENTER_KB_GH_APP_KEY, "
-            "CENTER_KB_INTAKE_AUDIENCE to enable /intake/publish"
+            "intake disabled -- set STRATA_KB_GH_APP_ID, STRATA_KB_GH_APP_KEY, "
+            "STRATA_KB_INTAKE_AUDIENCE to enable /intake/publish"
         )
         return None
     try:
@@ -1387,7 +1387,7 @@ def intake_config_from_env(hub_ref: str) -> IntakeConfig | None:
     except OSError as exc:
         logger.error("intake disabled -- cannot read App key '%s': %s", key_path, exc)
         return None
-    # CENTER_KB_TRUSTED_PROXIES governs both this route's rate limiter and
+    # STRATA_KB_TRUSTED_PROXIES governs both this route's rate limiter and
     # the web UI's login limiter (web.ui.login_post) -- ratelimit.py owns
     # the one parser and the loud-failure rules (SystemExit, no traceback,
     # same convention as mcp.py's other operator-config errors) so the two
@@ -1525,7 +1525,7 @@ def _dest_for_rid(federation_dir: Path, rid: str) -> Path:
     disk under handle.root's federation/, not a lock-held read), matching
     normalize_repo_id's own "mistake guard, not exhaustive" scope.
     """
-    from center_kb.pubgate import GateError, normalize_repo_id
+    from strata_kb.pubgate import GateError, normalize_repo_id
 
     existing = (
         [p.name for p in federation_dir.iterdir() if p.is_dir()]
@@ -1628,7 +1628,7 @@ def intake_publish(
     (`assetstore.store_for_hub`), which is None (spec A behavior, unchanged)
     when the hub declares no `asset_store` block.
     """
-    from center_kb import publish as publish_mod
+    from strata_kb import publish as publish_mod
 
     http = cfg.http or ghapp._default_http
     # deletes is caller-supplied: reject escapes before any lock/clone/write
@@ -1737,8 +1737,8 @@ def _publish_in_worktree(
     diversion is active for this publish (round 4, P45's asset-path length
     exemption depends on the two staying in sync).
     """
-    from center_kb import publish as publish_mod
-    from center_kb import pubgate
+    from strata_kb import publish as publish_mod
+    from strata_kb import pubgate
 
     dest = work / "federation" / rid
     # upload is incremental -- every file in the archive counts as changed
