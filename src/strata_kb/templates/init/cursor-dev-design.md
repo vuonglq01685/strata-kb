@@ -67,6 +67,34 @@ step. Quote every standard-derived value verbatim with its `doc-id
 `OPEN(BA)` — reinterpreting an AC is forbidden, and so is deciding the
 ambiguity yourself.
 
+## A1 — independent design review (before GATE 1)
+
+Write the design in its own context: dispatch a `design-author` subagent with
+the resolved context cache path, the ticket's acceptance criteria and the
+conventions paths, and let it write `docs/impl/<ticket-id>-design.md` with
+`status: draft`. You orchestrate; you do not draft and then judge your own
+draft.
+
+That design is a draft until a reviewer that never saw it being written
+says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
+three things: the path `docs/impl/<ticket-id>-design.md`, the ticket's
+acceptance criteria, and the `## Pre-code axes` of the rubric. Not your
+reasoning, not this conversation.
+
+It returns pass/fail per axis plus a gap list in which every gap names the
+section it lives in, its severity, and a proposed fix. Apply Critical and
+Important gaps through a fix subagent, then re-review — at most 3 rounds.
+
+Record every round in the design file's `## Review record` table, creating it
+below the design body on round 1:
+
+    | Date | Round | Verdict | Reviewer | Open gaps |
+    |---|---|---|---|---|
+    | 2026-09-19 | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |
+
+GATE 1 is offered only after A1 comes back clean. A BLOCKER surviving round 3
+goes to the Dev with the reviewer's text and yours, and the flow stops there.
+
 ## GATE 1 — Dev approval before any plan is written
 
 The Dev approves the design before the plan is started. Presenting the
