@@ -44,6 +44,17 @@ COMMON_TEMPLATES: dict[str, str] = {
     ".cursor/commands/kb-init.md": "cursor-kb-init.md",
 }
 
+# The kinds that reach the hub over HTTP MCP. `COMMON_TEMPLATES` cannot hold
+# these: that map is the hub+child merge, and the hub serves MCP over stdio
+# from its own `.mcp.json` — it has nothing to connect to. Spread into
+# CHILD/BA/DEV instead.
+MCP_CLIENT_TEMPLATES: dict[str, str] = {
+    ".claude/skills/kb-mcp-setup/SKILL.md": "claude-skill-kb-mcp-setup.md",
+    ".claude/commands/kb-mcp-setup.md": "claude-command-kb-mcp-setup.md",
+    ".github/prompts/kb-mcp-setup.prompt.md": "copilot-kb-mcp-setup.prompt.md",
+    ".cursor/commands/kb-mcp-setup.md": "cursor-kb-mcp-setup.md",
+}
+
 HUB_TEMPLATES: dict[str, str] = {
     ".kb/config.yaml": "config-hub.yaml",
     ".gitignore": "hub-gitignore.txt",
@@ -59,6 +70,7 @@ HUB_TEMPLATES: dict[str, str] = {
 # Filled in by the child-scaffold task; kept separate so hub and child can
 # diverge artifact-by-artifact.
 CHILD_TEMPLATES: dict[str, str] = {
+    **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-child.yaml",
     ".gitattributes": "gitattributes-child.txt",
     "docker-compose.yml": "docker-compose-child.yml",
@@ -73,6 +85,7 @@ CHILD_TEMPLATES: dict[str, str] = {
 # machinery. Deliberately NOT merged with COMMON_TEMPLATES (spec §8): a ba
 # repo gets exactly this set, nothing from the hub/child authoring stack.
 BA_TEMPLATES: dict[str, str] = {
+    **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-ba.yaml",
     ".mcp.json": "mcp-child.json",
     ".claude/settings.json": "claude-settings-usage.json",
@@ -138,6 +151,7 @@ def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
 # this is deliberately NOT merged with COMMON_TEMPLATES (spec §4): a dev repo
 # never ingests outside documents, so it carries none of the ingest/docker stack.
 DEV_TEMPLATES: dict[str, str] = {
+    **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-dev.yaml",
     ".kb/index.yaml": "index.yaml",
     # Minor 1 (Wave G fix round 2): a dev repo publishes .kb/ (its own source

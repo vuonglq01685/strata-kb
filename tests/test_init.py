@@ -504,7 +504,7 @@ def test_assistant_slash_command_parity(tmp_path: Path):
     layouts = {
         "claude": lambda n: (
             Path(".claude/commands") / f"{n}.md"
-            if n in ("kb-summarize", "kb-docker-setup", "kb-approve")
+            if n in ("kb-summarize", "kb-docker-setup", "kb-approve", "kb-mcp-setup")
             else Path(".claude/skills") / n / "SKILL.md"
         ),
         "copilot": lambda n: (
@@ -515,7 +515,9 @@ def test_assistant_slash_command_parity(tmp_path: Path):
         "cursor": lambda n: Path(".cursor/commands") / f"{n}.md",
     }
     common = common + ["kb-docker-setup", "kb-approve"]
-    for kind, names in (("hub", common), ("child", common)):
+    # kb-mcp-setup is a reader-kind command: the hub serves MCP over stdio
+    # and has nothing to connect to.
+    for kind, names in (("hub", common), ("child", common + ["kb-mcp-setup"])):
         repo = tmp_path / kind
         repo.mkdir()
         init_repo(repo, kind)
@@ -795,7 +797,12 @@ def test_init_rejects_unknown_kind_still_excludes_ba_typos(tmp_path: Path):
 
 def test_hub_child_unchanged_by_phase4(tmp_path: Path):
     assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
-    assert sorted(expected_files("child")) == sorted(_PRE_PHASE4_CHILD_FILES)
+    # child gained exactly the four kb-mcp-setup wrappers since Phase 4 —
+    # named explicitly rather than folded into the frozen list, so the
+    # freeze keeps meaning "Phase 4/5 added nothing".
+    assert sorted(expected_files("child")) == sorted(
+        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
+    )
     hub_repo = tmp_path / "h"
     child_repo = tmp_path / "c"
     hub_repo.mkdir()
@@ -1732,8 +1739,9 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # (docs/impl/.gitignore — C1 keeps the context cache out of git) + 3
     # (batch 7: the PR template, its workflow, and the TDD exemption doc) + 1
     # (Wave G fix round 2 Minor 1: .gitattributes, the same F-D10 exemption
-    # a child repo gets) = 49.
-    assert len(expected_files("dev")) == 49
+    # a child repo gets) + 4 (the kb-mcp-setup wrappers, MCP_CLIENT_TEMPLATES)
+    # = 53.
+    assert len(expected_files("dev")) == 53
     assert sorted(report.created) == sorted(expected_files("dev"))
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
@@ -1822,7 +1830,9 @@ def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
 
 def test_phase5_adds_nothing_to_hub_child_or_ba(tmp_path: Path):
     assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
-    assert sorted(expected_files("child")) == sorted(_PRE_PHASE4_CHILD_FILES)
+    assert sorted(expected_files("child")) == sorted(
+        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
+    )
     for rel in expected_files("ba"):
         assert "dev-" not in rel, rel
 
@@ -2569,3 +2579,39 @@ def test_init_dev_lang_notes_when_langs_already_recorded(tmp_path: Path):
     assert (tmp_path / "docs" / "conventions" / "java.md").is_file()
     assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
     assert any("hand-edit" in n and "python" in n for n in report.notes)
+
+
+_MCP_SETUP_WRAPPERS = [
+    ".claude/skills/kb-mcp-setup/SKILL.md",
+    ".claude/commands/kb-mcp-setup.md",
+    ".github/prompts/kb-mcp-setup.prompt.md",
+    ".cursor/commands/kb-mcp-setup.md",
+]
+
+
+@pytest.mark.parametrize("kind", ["child", "ba", "dev"])
+def test_mcp_setup_wrappers_exist_on_every_reader_kind(tmp_path: Path, kind):
+    init_repo(tmp_path, kind)
+    for rel in _MCP_SETUP_WRAPPERS:
+        assert (tmp_path / rel).is_file(), (kind, rel)
+
+
+def test_mcp_setup_wrappers_are_absent_on_the_hub(tmp_path: Path):
+    init_repo(tmp_path, "hub")
+    for rel in _MCP_SETUP_WRAPPERS:
+        assert not (tmp_path / rel).exists(), rel
+
+
+def test_mcp_setup_wrappers_never_take_the_token_in_chat(tmp_path: Path):
+    """The assistant runs in a non-TTY subprocess, so the hidden prompt is
+    unavailable; asking in chat would put a live credential in the
+    transcript. Every wrapper must say so and must send the user to their
+    own terminal."""
+    init_repo(tmp_path, "child")
+    for rel in _MCP_SETUP_WRAPPERS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        if rel.endswith(".claude/commands/kb-mcp-setup.md"):
+            continue  # the thin Claude command only delegates to the skill
+        assert "NEVER ask for the token" in text, rel
+        assert "their own terminal" in text, rel
+        assert "kb mcp-setup --hub-url" in text, rel
