@@ -2139,3 +2139,14 @@ def test_dev_execute_closes_the_branch_with_a_narrow_review():
         assert "branch.diff" in body, name
         # A4's lens is ticket fulfilment; merge risk is A5's job in handover.
         assert "merge risk is A5" in body, name
+
+
+def test_dev_handover_runs_a_merge_risk_review_before_gate_three():
+    for name in _dev_wrapper_names("dev-handover"):
+        body = _normalised(_dev_wrapper_body(name))
+        assert "A5" in body, name
+        assert "merge-risk-reviewer" in body, name
+        assert "Merge-risk axes" in body, name
+        assert "The diff alone is not the review" in body, name
+        assert "Blocking: No" in body, name
+        assert "never reaches GATE 3" in body, name

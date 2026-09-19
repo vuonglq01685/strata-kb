@@ -66,8 +66,9 @@ edit above it.
   exemptions` section — every `Exempt:` line from the plan, or
   `none`; the **Findings**, every `OPEN(...)`, KB gap, ambiguity
   or contradiction as a concrete feedback item on the owning
-  repo, or `none`; and the **Usage** table. A section left as
-  the template's comment counts as empty and fails the check.
+  repo, or `none`; and the **Usage** table; and **Review** — A5's finding
+  table and its `Blocking:` verdict line. A section left as the template's
+  comment counts as empty and fails the check.
 - **Report the cost** — run `kb usage report --ticket <id> --md`
   and paste the table into the PR under a `## Usage` heading, so
   the PR carries the ticket's own token cost. When the command
@@ -86,6 +87,37 @@ edit above it.
   already filled in — this is the terminal phase of the flow,
   so there is no next automated command; a blocker takes its
   place instead.
+
+## A5 — merge-risk review (before GATE 3)
+
+A4 asked whether the branch does what the ticket said. A5 asks a different
+question, in a different context: is this safe to merge into the default
+branch?
+
+Dispatch a `merge-risk-reviewer` subagent on the most capable model available.
+Give it the persona plainly: a tech lead reviewing before a production deploy,
+assuming real traffic, concurrent requests, retries, and more than one running
+instance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and
+the `## Merge-risk axes` of `docs/pr-review-rubric.md` plus
+`docs/pr-review-rubric.local.md`.
+
+**The diff alone is not the review.** Say so in the dispatch: the reviewer
+opens the files the change reaches — callers, siblings, migrations, permission
+declarations, contracts, tests — and traces the affected flow end to end before
+judging. A finding that only names a category is not a finding; it states why
+this code, on this path, is dangerous.
+
+It writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding
+(severity, file, line, why it is dangerous, proposed fix), then the verdict
+line `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise. Fix
+subagent, re-review, at most 3 rounds.
+
+Copy the table and the verdict line into the PR body's `## Review` section —
+`kb pr lint` fails the PR when the verdict line is missing and when it reads
+`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback items.
+
+A branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1
+becomes the fix, not the PR.
 
 ## Review dispatch contract (every review in this flow)
 
