@@ -54,18 +54,40 @@ edit above it.
   1. write the test → run it → **observe it fail**. State the reason: a
      test that was **never seen red proves nothing**.
   2. write the minimum code → run → pass.
-  3. **review checkpoint** — pass/fail, not a score: does the test
-     actually exercise that AC; is every standard-derived value
-     verbatim with a citation comment; does the change follow
+  3. **self-review checkpoint** — pass/fail, not a score: does the test
+     actually exercise that AC; is every standard-derived value verbatim
+     with a citation comment; does the change follow
      `docs/conventions/<lang>.md` plus `docs/conventions/<lang>.local.md`
      overrides (local wins; where either conflicts with the repo's
      existing dominant style, the repo wins locally — record the
      conflict as a finding for the PR body); did anything else break.
+     This is the implementer checking its own work: it catches slips
+     early and **never satisfies A3**.
   4. **verify** — run `cmd.test` and `cmd.lint` (the commands you were
      handed) and **show the output**.
-  5. **commit the task's changes.** Ticking its checkboxes in the plan
-     file is the orchestrator's job, done after the subagent reports
-     back — the plan file is the one thing the subagent never opens.
+  5. **commit the task's changes**, then write the full report to
+     `docs/impl/<ticket-id>-review/task-<n>-report.md` and return only
+     status, commits, a one-line test summary, and concerns.
+
+  Then, back in the orchestrator — never inside the implementer:
+
+  6. **A3 — independent task review.** Write the diff to a file:
+     `git diff <BASE>..HEAD > docs/impl/<ticket-id>-review/task-<n>.diff`,
+     where `<BASE>` is the commit you recorded **before** dispatching the
+     implementer — never `HEAD~1`, which silently drops every commit of a
+     multi-commit task but the last. Dispatch a `task-reviewer` subagent
+     with a fresh context and exactly three paths — the task block it was
+     given, the report file, the diff file — plus the constraints that bind
+     this task, copied verbatim from the plan. It returns **two verdicts,
+     both required**: spec compliance (nothing missing, nothing extra) and
+     code quality. A report carrying one verdict is not a review; send it
+     back. Fix subagent for BLOCKER and SUGGESTED findings, then re-review,
+     at most 3 rounds.
+  7. **Only once A3 is clean**, tick the task's checkboxes in the plan file
+     and append `Review: ✅ r<n>` under the task. A ticked box means
+     reviewed, so a later session — or a session after compaction — resumes
+     at the first unticked task and never re-runs finished work. NOTE and
+     NITS findings go to the PR's `## Findings` instead of a fix round.
 
   A task block carrying an `Exempt:` line skips step 1 and runs the
   verification that line names instead, showing its output like any other.
@@ -84,6 +106,20 @@ edit above it.
   and continues at the first unticked task. Once every task is ticked,
   option 1 in the Next-step block below is `/dev-handover <ticket-id>`;
   otherwise it is `/dev-execute <ticket-id>` to continue.
+
+## A4 — narrow branch review (after the last task)
+
+Every box ticked is not the same as the ticket being done. Write the branch
+diff to `docs/impl/<ticket-id>-review/branch.diff`
+(`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
+`branch-reviewer` subagent with that path, the plan, and the ticket. One
+question only: does this branch fulfil the ticket — every AC covered by a
+test, nothing built that no AC asked for, and no later task quietly breaking
+an earlier one?
+
+Keep the lens narrow here; merge risk is A5's job in `dev-handover`, against a
+different rubric. Fix subagent, re-review, at most 3 rounds. Then option 1 is
+`/dev-handover <ticket-id>`.
 
 ## Review dispatch contract (every review in this flow)
 

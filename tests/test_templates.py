@@ -2094,3 +2094,26 @@ def test_the_contract_is_absent_from_the_non_dispatching_wrappers():
     for skill in ("dev-implement-ticket", "dev-code-seed"):
         for name in _dev_wrapper_names(skill):
             assert first not in _read_init_template(name), name
+
+
+def test_dev_execute_reviews_each_task_in_a_separate_context():
+    for name in _dev_wrapper_names("dev-execute"):
+        body = _normalised(_dev_wrapper_body(name))
+        assert "task-reviewer" in body, name
+        # The self-review stays, but it is no longer the gate.
+        assert "review checkpoint" in body, name
+        assert "never satisfies A3" in body, name
+        assert "docs/impl/<ticket-id>-review/task-<n>.diff" in body, name
+        assert "never `HEAD~1`" in body, name
+        assert "two verdicts" in body, name
+        assert "Review: ✅ r" in body, name
+
+
+def test_dev_execute_closes_the_branch_with_a_narrow_review():
+    for name in _dev_wrapper_names("dev-execute"):
+        body = _normalised(_dev_wrapper_body(name))
+        assert "A4" in body, name
+        assert "branch-reviewer" in body, name
+        assert "branch.diff" in body, name
+        # A4's lens is ticket fulfilment; merge risk is A5's job in handover.
+        assert "merge risk is A5" in body, name
