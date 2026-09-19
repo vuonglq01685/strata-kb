@@ -6,10 +6,10 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from center_kb import assetstore, models, searchdb
-from center_kb.mcp import ServerConfig
-from center_kb.web import ui
-from center_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
+from strata_kb import assetstore, models, searchdb
+from strata_kb.mcp import ServerConfig
+from strata_kb.web import ui
+from strata_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
 from tests.conftest import make_fed_entry
 
 TOKEN = "secret-token"
@@ -172,7 +172,7 @@ def test_overview_queue_and_panel_labels_match_fixture(fed_hub):
 
 
 def test_ui_root_hub_down_shows_offline(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _client(tmp_path, str(tmp_path / "nope")).get("/ui")
     assert resp.status_code == 200
     assert "hub offline" in resp.text
@@ -206,7 +206,7 @@ def test_login_wrong_token_shows_error_no_cookie(fed_hub):
 def test_login_failure_is_logged(fed_hub, caplog):
     import logging
 
-    with caplog.at_level(logging.WARNING, logger="center_kb.web.ui"):
+    with caplog.at_level(logging.WARNING, logger="strata_kb.web.ui"):
         _client(fed_hub / ".kb", str(fed_hub)).post(
             "/ui/login", data={"token": "wrong"}
         )
@@ -232,7 +232,7 @@ def test_login_limiter_honours_trusted_proxies_for_the_rate_limit_key(
     fed_hub, monkeypatch
 ):
     """F-D12 item 4: before this fix, login_post keyed on
-    request.client.host directly, ungoverned by CENTER_KB_TRUSTED_PROXIES --
+    request.client.host directly, ungoverned by STRATA_KB_TRUSTED_PROXIES --
     with uvicorn's own X-Forwarded-For handling disabled (proxy_headers=
     False, round 1 item 2), every login attempt behind a real reverse proxy
     collapsed onto the proxy's own address, sharing ONE bucket across every
@@ -243,9 +243,9 @@ def test_login_limiter_honours_trusted_proxies_for_the_rate_limit_key(
     X-Forwarded-For real-client tail land in the SAME bucket (429 on
     repeat) at trusted_proxies=1, and a request with a DIFFERENT real tail
     gets its own bucket instead of also being blocked."""
-    from center_kb.web.ratelimit import SlidingWindowLimiter
+    from strata_kb.web.ratelimit import SlidingWindowLimiter
 
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "1")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "1")
     config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
     routes = ui.build_routes(
         config, TOKEN,
@@ -274,9 +274,9 @@ def test_login_limiter_ignores_forged_xff_when_trusted_proxies_is_zero(
     cannot pick its own bucket -- every request still keys on the same
     TestClient peer, so a second request with a DIFFERENT forged tail is
     still rate-limited alongside the first."""
-    from center_kb.web.ratelimit import SlidingWindowLimiter
+    from strata_kb.web.ratelimit import SlidingWindowLimiter
 
-    monkeypatch.setenv("CENTER_KB_TRUSTED_PROXIES", "0")
+    monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "0")
     config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
     routes = ui.build_routes(
         config, TOKEN,
@@ -364,7 +364,7 @@ def test_home_hub_unreachable_shows_message(tmp_path, monkeypatch):
     # Task 6's search.html renders the shared shell (topbar "hub offline"
     # chip) with an empty result set rather than a dedicated down-message —
     # hub-down-on-overview is covered by test_ui_root_hub_down_shows_offline.
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get(
         "/ui", params={"q": "airspace"}
     )
@@ -485,7 +485,7 @@ def test_search_index_busy_falls_back_to_empty_state(fed_hub, monkeypatch):
     def fake_search(*a, **k):
         raise searchdb.IndexBusyError("search index is in use by another process")
 
-    monkeypatch.setattr("center_kb.web.ui.search", fake_search)
+    monkeypatch.setattr("strata_kb.web.ui.search", fake_search)
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui", params={"q": "airspace"}
     )
@@ -509,7 +509,7 @@ def test_search_result_shows_token_count(demo_doc_hub):
 
 
 def test_search_hub_down_shows_hub_unreachable_message(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get(
         "/ui", params={"q": "airspace"}
     )
@@ -572,7 +572,7 @@ def test_docs_page_hub_down_shows_no_tags_empty_state(tmp_path, monkeypatch):
     # Bare /ui/docs (no tags typed) with an empty/hub-down store must not
     # show the "tag spelling" copy — that variant only makes sense when the
     # visitor actually filtered by tags and got zero matches.
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get("/ui/docs")
     assert resp.status_code == 200
     main = _main(resp)
@@ -860,7 +860,7 @@ def test_section_page_ambiguous_returns_400(fed_hub):
 
 
 def test_section_page_hub_unreachable_returns_503(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get(
         "/ui/docs/arinc-424/5.3"
     )
@@ -1021,9 +1021,9 @@ def test_result_head_hides_raw_rrf_score(fed_hub):
 
 
 def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch):
-    from center_kb.mdutils import count_tokens
-    from center_kb.query import QueryResult
-    from center_kb.web import ui as ui_module
+    from strata_kb.mdutils import count_tokens
+    from strata_kb.query import QueryResult
+    from strata_kb.web import ui as ui_module
 
     content = "## 1.1 Airspace Records\n\nFuzzy semantic match."
     fake_result = QueryResult(
@@ -1049,9 +1049,9 @@ def test_home_query_never_renders_raw_snippet_block(fed_hub, monkeypatch):
     # by tests/test_web_mdrender.py; this test preserves the original
     # intent — a raw <b>GRYPHON42</b> snippet must never leak into the page
     # unescaped or otherwise — under the new markup.
-    from center_kb.mdutils import count_tokens
-    from center_kb.query import QueryResult
-    from center_kb.web import ui as ui_module
+    from strata_kb.mdutils import count_tokens
+    from strata_kb.query import QueryResult
+    from strata_kb.web import ui as ui_module
 
     content = "## 1.1 Airspace Records\n\nCondensed match."
     fake_result = QueryResult(
@@ -1081,10 +1081,10 @@ def test_home_query_tokens_describe_the_rendered_text(fed_hub):
     fed_hub's stock fixture never produces one, so without it both
     assertions below would hold vacuously (tokens == content_tokens) whether
     or not ui.py reports the right field."""
-    from center_kb import models
-    from center_kb.federation import FederationMeta
-    from center_kb.hub import HubHandle
-    from center_kb.query import search
+    from strata_kb import models
+    from strata_kb.federation import FederationMeta
+    from strata_kb.hub import HubHandle
+    from strata_kb.query import search
 
     entry = fed_hub / "federation" / "arinc-kb"
     (entry / "arinc-424" / "ch1.raw.md").write_text(
@@ -1168,7 +1168,7 @@ def test_asset_route_requires_auth(fed_hub):
 
 
 def test_asset_route_hub_unreachable_503(tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
     resp = _authed_client(tmp_path / ".kb", str(tmp_path / "missing-hub")).get(
         f"/assets/{'a' * 64}.png", headers=AUTH_HEADERS
     )
@@ -1203,7 +1203,7 @@ def test_asset_route_does_not_cache_misses(fed_hub):
 
 
 def test_a_tampered_store_object_is_not_cached_or_served(fed_hub, tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hubcache"))
     name = "e" * 64 + ".png"
     store = assetstore.MemoryStore()
     store.data[name] = b"tampered"
@@ -1222,7 +1222,7 @@ def test_a_poisoned_disk_cache_entry_heals_on_next_request(
     must not be served forever just because they are already on disk: a
     mismatch is evicted and the request falls through to the store, which
     re-populates the cache with the correct bytes."""
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hubcache"))
     data = b"good bytes from the store"
     name = hashlib.sha256(data).hexdigest() + ".png"
     cache_file = tmp_path / "hubcache" / "asset-cache" / name
@@ -1244,7 +1244,7 @@ def test_a_corrupt_local_asset_falls_through_to_the_store(
 ):
     """`kb assets verify` hash-checks a local file (assetcmd._entry_resolves);
     the web UI must agree instead of happily serving the same bad bytes."""
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hubcache"))
     data = b"good bytes from the store"
     name = hashlib.sha256(data).hexdigest() + ".png"
     assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
@@ -1261,7 +1261,7 @@ def test_a_corrupt_local_asset_falls_through_to_the_store(
 
 
 def test_asset_route_falls_through_to_store(fed_hub, tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hubcache"))
     sha = hashlib.sha256(b"WEBPBYTES").hexdigest()
     store = assetstore.MemoryStore()
     store.put(f"{sha}.webp", b"WEBPBYTES")
@@ -1279,7 +1279,7 @@ def test_asset_route_falls_through_to_store(fed_hub, tmp_path, monkeypatch):
 
 
 def test_asset_route_store_miss_404_and_error_503(fed_hub, tmp_path, monkeypatch):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "hubcache"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hubcache"))
 
     class _Boom(assetstore.MemoryStore):
         def get(self, name):
@@ -1362,7 +1362,7 @@ def test_static_rejects_absolute_path_param(fed_hub):
     # (restricted only by the STATIC_TYPES suffix allowlist). Point it at a
     # real .css file that exists outside static/ to prove the escape.
     real_css = str(
-        resources.files("center_kb").joinpath("templates/web/static/style.css")
+        resources.files("strata_kb").joinpath("templates/web/static/style.css")
     )
     resp = c.get("/ui/static/" + real_css)
     assert resp.status_code == 404
@@ -1427,7 +1427,7 @@ def test_error_page_hub_down_shows_chip_and_heading(tmp_path):
     assert ">404<" in body  # binds error.html's {{ code }}, not just the heading
     assert "boom-42" in body  # binds error.html's {{ message }}, not just the heading
     assert 'aria-label="Main navigation"' in body
-    assert "<title>Not found — CENTER-KB</title>" in body  # binds base.html's title block
+    assert "<title>Not found — Strata</title>" in body  # binds base.html's title block
 
 
 def test_app_js_ships_interactivity_hooks(fed_hub):
@@ -1482,7 +1482,7 @@ def _left_rail(resp) -> str:
 
 
 def test_tag_links_toggle_on_and_off():
-    from center_kb.web.ui import _tag_links
+    from strata_kb.web.ui import _tag_links
     links = _tag_links(["airspace", "icao"], ["icao"], q="air")
     by_label = {link["label"]: link for link in links}
     assert by_label["icao"]["on"] is True
@@ -1494,7 +1494,7 @@ def test_tag_links_toggle_on_and_off():
 
 
 def test_tag_links_no_query_no_tags_falls_back_to_search_screen():
-    from center_kb.web.ui import _tag_links
+    from strata_kb.web.ui import _tag_links
     links = _tag_links(["icao"], ["icao"], q="")
     assert links[0]["href"] == "/ui?q="
 
@@ -1505,7 +1505,7 @@ def test_tag_links_removal_with_budget_falls_back_to_search_screen():
     # router sends to the Overview screen instead of Search. The fallback
     # must be decided by intent (q and the new tag list both empty), not
     # by whether the params list happens to be non-empty.
-    from center_kb.web.ui import _tag_links
+    from strata_kb.web.ui import _tag_links
     links = _tag_links(["icao"], ["icao"], q="", budget=2000)
     assert links[0]["href"] == "/ui?q="
 
@@ -1588,21 +1588,21 @@ def test_search_tag_row_offers_removal_or_none_label(fed_hub):
 
 
 def test_tag_links_thread_budget_through_href():
-    from center_kb.web.ui import _tag_links
+    from strata_kb.web.ui import _tag_links
     links = _tag_links(["icao"], [], q="air", budget=8000)
     by_label = {link["label"]: link for link in links}
     assert "budget=8000" in by_label["icao"]["href"]
 
 
 def test_tag_links_thread_semantic_through_href():
-    from center_kb.web.ui import _tag_links
+    from strata_kb.web.ui import _tag_links
     links = _tag_links(["icao"], [], q="air", semantic_on=False)
     by_label = {link["label"]: link for link in links}
     assert "semantic=0" in by_label["icao"]["href"]
 
 
 def test_tag_links_semantic_default_none_omits_param():
-    from center_kb.web.ui import _tag_links
+    from strata_kb.web.ui import _tag_links
     links = _tag_links(["icao"], [], q="air")
     by_label = {link["label"]: link for link in links}
     assert "semantic=" not in by_label["icao"]["href"]
@@ -1619,7 +1619,7 @@ def test_search_tag_chip_hrefs_preserve_budget(fed_hub):
 
 
 def test_tag_links_render_unknown_selected_tag_removable():
-    from center_kb.web.ui import _tag_links
+    from strata_kb.web.ui import _tag_links
 
     links = _tag_links(["icao"], ["bogus"], q="air")
     bogus = [link for link in links if link["label"] == "bogus"]
@@ -1664,7 +1664,7 @@ def test_search_semantic_param_controls_flag(fed_hub, monkeypatch):
         calls["use_semantic"] = use_semantic
         return []
 
-    monkeypatch.setattr("center_kb.web.ui.search", fake_search)
+    monkeypatch.setattr("strata_kb.web.ui.search", fake_search)
     c = _client(fed_hub / ".kb", str(fed_hub))
     c.get("/ui?q=airspace&semantic=0")
     assert calls["use_semantic"] is False
@@ -1721,8 +1721,8 @@ def test_section_toc_hidden_without_headings(fed_hub, monkeypatch):
     # via _append_section_body/_add_section still yields a 1-entry TOC, same
     # as any normal section). Stub get_section() to return heading-free
     # content instead, isolating the {% if toc %} branch in section.html.
-    from center_kb.mdutils import count_tokens
-    from center_kb.query import QueryResult
+    from strata_kb.mdutils import count_tokens
+    from strata_kb.query import QueryResult
 
     def fake_get_section(hub, doc_id, section_id, level="l2", repo=None):
         content = "Plain paragraph only."
@@ -1732,7 +1732,7 @@ def test_section_toc_hidden_without_headings(fed_hub, monkeypatch):
             tokens=3, content_tokens=count_tokens(content), source="arinc-kb",
         )
 
-    monkeypatch.setattr("center_kb.web.ui.get_section", fake_get_section)
+    monkeypatch.setattr("strata_kb.web.ui.get_section", fake_get_section)
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui/docs/arinc-424/5.3?repo=arinc-kb")
     assert "On this page" not in resp.text

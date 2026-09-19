@@ -9,9 +9,9 @@ caller could not tell. Measured on §5.129: l3 = 1310 bytes, everything else
 import pytest
 from typer.testing import CliRunner
 
-from center_kb.cli import app
-from center_kb.hub import HubHandle
-from center_kb.query import InvalidLevelError, get_section
+from strata_kb.cli import app
+from strata_kb.hub import HubHandle
+from strata_kb.query import InvalidLevelError, get_section
 
 VALID = ["l2", "l3", "L2", "L3"]
 INVALID = ["verbatim", "raw", "l1", "L1", "", "  "]

@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from center_kb import kbcontext
-from center_kb.cli import app
-from center_kb.hub import HubHandle
+from strata_kb import kbcontext
+from strata_kb.cli import app
+from strata_kb.hub import HubHandle
 from tests.conftest import make_stale
 
 runner = CliRunner()

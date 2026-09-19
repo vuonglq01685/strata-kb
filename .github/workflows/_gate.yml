@@ -93,7 +93,7 @@ jobs:
           python -m venv /tmp/sdist-venv
           /tmp/sdist-venv/bin/pip install --quiet dist/*.tar.gz
           /tmp/sdist-venv/bin/kb --version
-          /tmp/sdist-venv/bin/python -c "from importlib import resources; resources.files('center_kb').joinpath('templates/web/base.html').read_text(encoding='utf-8')"
+          /tmp/sdist-venv/bin/python -c "from importlib import resources; resources.files('strata_kb').joinpath('templates/web/base.html').read_text(encoding='utf-8')"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -133,7 +133,7 @@ jobs:
           BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
           python -m venv .venv-artifact
           ".venv-artifact/$BIN/pip" install --quiet dist/*.whl
-      - name: Runner venv (pytest, WITHOUT center-kb)
+      - name: Runner venv (pytest, WITHOUT strata-kb)
         shell: bash
         run: |
           BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
@@ -178,7 +178,7 @@ jobs:
           BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)
           python -m venv .venv-artifact
           ".venv-artifact/$BIN/pip" install --quiet dist/*.whl
-      - name: Runner venv (pytest, WITHOUT center-kb)
+      - name: Runner venv (pytest, WITHOUT strata-kb)
         shell: bash
         run: |
           BIN=$([ "$RUNNER_OS" = "Windows" ] && echo Scripts || echo bin)

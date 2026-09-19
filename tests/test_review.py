@@ -1,7 +1,7 @@
 import pytest
 
-from center_kb import gitio, models, quality
-from center_kb.review import (
+from strata_kb import gitio, models, quality
+from strata_kb.review import (
     approve_all_changed,
     approve_sections,
     changed_section_ids,
@@ -339,7 +339,7 @@ def test_resolve_reviewer_fails_without_identity(tmp_path, run_git, monkeypatch)
 
 
 def test_approve_writes_review_record(git_kb):
-    from center_kb.mdutils import slice_section
+    from strata_kb.mdutils import slice_section
 
     approve_sections(git_kb["kb"], "demo-doc", ["1.1"], by="sme <sme@x>")
     m = models.load_yaml_model(git_kb["kb"] / "demo-doc" / "_manifest.yaml", models.Manifest)
@@ -354,7 +354,7 @@ def test_approve_dup_id_sections_hash_correct_occurrence(tmp_path):
     """Two `summarized` rows sharing an id in one file: each row's review
     record must hash ITS OWN heading occurrence, not always occurrence 0 —
     else the next strict build sees a false 'L2 changed after review'."""
-    from center_kb.build import build_kb
+    from strata_kb.build import build_kb
 
     kb = tmp_path / ".kb"
     doc_dir = kb / "dup-review-doc"

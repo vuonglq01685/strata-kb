@@ -22,7 +22,7 @@ if [ -d "$DEMO_DIR" ] && [ -n "$(ls -A "$DEMO_DIR" 2>/dev/null)" ]; then
 fi
 
 trap 'rm -rf "$DEMO_DIR"' EXIT
-export CENTER_KB_HUB_CACHE="$DEMO_DIR/.hub-cache"
+export STRATA_KB_HUB_CACHE="$DEMO_DIR/.hub-cache"
 G() { git -C "$1" -c user.name=demo -c user.email=demo@local -c core.excludesFile= "${@:2}"; }
 
 echo "== 1. Build kb-hub =="

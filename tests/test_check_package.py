@@ -30,7 +30,7 @@ def test_pyproject_version_reads_the_declared_version(tmp_path):
     # real version — hardcoding a number here would turn every version bump
     # into a red test.
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "center-kb"\nversion = "1.2.3"\n', encoding="utf-8"
+        '[project]\nname = "strata-kb"\nversion = "1.2.3"\n', encoding="utf-8"
     )
 
     assert pyproject_version(tmp_path) == "1.2.3"
@@ -57,7 +57,7 @@ def _make_wheel(path: Path, names: list[str]) -> Path:
 def test_wheel_offenders_is_empty_for_a_clean_wheel(tmp_path):
     wheel = _make_wheel(
         tmp_path / "clean-0.1-py3-none-any.whl",
-        ["center_kb/__init__.py", "center_kb-0.1.dist-info/METADATA"],
+        ["strata_kb/__init__.py", "strata_kb-0.1.dist-info/METADATA"],
     )
 
     assert wheel_offenders(wheel) == []
@@ -69,7 +69,7 @@ def test_wheel_offenders_allows_any_dist_info_version_suffix(tmp_path):
     # not hardcode a specific version, so any version must pass clean.
     wheel = _make_wheel(
         tmp_path / "clean-9.9.9-py3-none-any.whl",
-        ["center_kb/__init__.py", "center_kb-9.9.9.dist-info/METADATA"],
+        ["strata_kb/__init__.py", "strata_kb-9.9.9.dist-info/METADATA"],
     )
 
     assert wheel_offenders(wheel) == []
@@ -79,7 +79,7 @@ def test_wheel_offenders_flags_tests_and_kb_and_sources(tmp_path):
     wheel = _make_wheel(
         tmp_path / "dirty-0.1-py3-none-any.whl",
         [
-            "center_kb/__init__.py",
+            "strata_kb/__init__.py",
             "tests/test_cli.py",
             ".kb/index.yaml",
             "sources/secret.pdf",
@@ -97,7 +97,7 @@ def test_wheel_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path)
     wheel = _make_wheel(
         tmp_path / "dirty2-0.1-py3-none-any.whl",
         [
-            "center_kb/__init__.py",
+            "strata_kb/__init__.py",
             "AERO-KB_Architecture_v0.1.pdf",
             ".claude/settings.json",
             ".github/workflows/ci.yml",
@@ -117,11 +117,11 @@ def test_wheel_required_missing_is_empty_when_static_assets_present(tmp_path):
     wheel = _make_wheel(
         tmp_path / "clean-0.1-py3-none-any.whl",
         [
-            "center_kb/__init__.py",
-            "center_kb/templates/web/static/style.css",
-            "center_kb/templates/web/static/app.js",
-            "center_kb/templates/web/static/fonts/IBMPlexSans-Regular.woff2",
-            "center_kb-0.1.dist-info/METADATA",
+            "strata_kb/__init__.py",
+            "strata_kb/templates/web/static/style.css",
+            "strata_kb/templates/web/static/app.js",
+            "strata_kb/templates/web/static/fonts/IBMPlexSans-Regular.woff2",
+            "strata_kb-0.1.dist-info/METADATA",
         ],
     )
 
@@ -134,13 +134,13 @@ def test_wheel_required_missing_flags_absent_static_assets(tmp_path):
     # missing file isn't an extra top-level entry.
     wheel = _make_wheel(
         tmp_path / "dirty-0.1-py3-none-any.whl",
-        ["center_kb/__init__.py", "center_kb-0.1.dist-info/METADATA"],
+        ["strata_kb/__init__.py", "strata_kb-0.1.dist-info/METADATA"],
     )
 
     missing = wheel_required_missing(wheel)
 
-    assert "center_kb/templates/web/static/style.css" in missing
-    assert "center_kb/templates/web/static/app.js" in missing
+    assert "strata_kb/templates/web/static/style.css" in missing
+    assert "strata_kb/templates/web/static/app.js" in missing
     assert any("fonts" in m and m.endswith(".woff2") for m in missing)
 
 
@@ -150,11 +150,11 @@ def test_wheel_required_missing_accepts_any_woff2_font_name(tmp_path):
     wheel = _make_wheel(
         tmp_path / "clean2-0.1-py3-none-any.whl",
         [
-            "center_kb/__init__.py",
-            "center_kb/templates/web/static/style.css",
-            "center_kb/templates/web/static/app.js",
-            "center_kb/templates/web/static/fonts/SomeOtherFont-Bold.woff2",
-            "center_kb-0.1.dist-info/METADATA",
+            "strata_kb/__init__.py",
+            "strata_kb/templates/web/static/style.css",
+            "strata_kb/templates/web/static/app.js",
+            "strata_kb/templates/web/static/fonts/SomeOtherFont-Bold.woff2",
+            "strata_kb-0.1.dist-info/METADATA",
         ],
     )
 
@@ -188,7 +188,7 @@ def test_sdist_offenders_is_empty_for_a_clean_sdist(tmp_path):
             "README.md",
             "LICENSE",
             ".gitignore",
-            "src/center_kb/__init__.py",
+            "src/strata_kb/__init__.py",
         ],
     )
 
@@ -202,7 +202,7 @@ def test_sdist_offenders_flags_tests_and_kb_and_sources(tmp_path):
         root,
         [
             "PKG-INFO",
-            "src/center_kb/__init__.py",
+            "src/strata_kb/__init__.py",
             "tests/x.py",
             ".kb/index.yaml",
             "sources/secret.pdf",
@@ -222,7 +222,7 @@ def test_sdist_offenders_flags_top_levels_a_denylist_would_have_missed(tmp_path)
         root,
         [
             "PKG-INFO",
-            "src/center_kb/__init__.py",
+            "src/strata_kb/__init__.py",
             "AERO-KB_Architecture_v0.1.pdf",
             ".claude/settings.json",
             ".github/workflows/ci.yml",

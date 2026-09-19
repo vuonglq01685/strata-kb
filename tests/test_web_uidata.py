@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models
-from center_kb.hub import HubHandle
-from center_kb.models import Manifest, SectionEntry, SectionTokens
-from center_kb.web import uidata
+from strata_kb import models
+from strata_kb.hub import HubHandle
+from strata_kb.models import Manifest, SectionEntry, SectionTokens
+from strata_kb.web import uidata
 from tests.conftest import make_fed_entry
 
 
@@ -19,7 +19,7 @@ def mixed_status_hub(tmp_path: Path, run_git) -> Path:
     exercises review_queue ordering/exclusion, catalog mixed counts, and a
     multi-valued status_map, none of which a uniformly-summarized fixture
     can assert."""
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     hub = tmp_path / "kb-hub"
     (hub / ".kb").mkdir(parents=True)
@@ -102,7 +102,7 @@ def svc_with_hist_hub(tmp_path: Path, run_git) -> Path:
     review_queue and catalog must both carve out the hist.* row the way
     publish.unreviewed_sections already does, or the doc can never show as
     fully reviewed (final-review finding 5)."""
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     hub = tmp_path / "kb-hub"
     (hub / ".kb").mkdir(parents=True)

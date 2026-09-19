@@ -1,8 +1,8 @@
 import pytest
 
-from center_kb import kbcontext
-from center_kb.hub import HubHandle
-from center_kb.kbcontext import (
+from strata_kb import kbcontext
+from strata_kb.hub import HubHandle
+from strata_kb.kbcontext import (
     KBContextError,
     KBRefNotFoundError,
     build_context_block,
@@ -307,7 +307,7 @@ def test_build_block_stale_hub_warns(fed_hub):
 
 
 def test_parse_ref_nested_repo_qualifier():
-    from center_kb.kbcontext import parse_ref
+    from strata_kb.kbcontext import parse_ref
 
     ref = parse_ref("mid/repo-x:doc-a §1.1")
     assert ref.repo_id == "mid/repo-x"
@@ -317,7 +317,7 @@ def test_parse_ref_nested_repo_qualifier():
 
 
 def test_parse_ref_flat_qualifier_unchanged():
-    from center_kb.kbcontext import parse_ref
+    from strata_kb.kbcontext import parse_ref
 
     ref = parse_ref("repo-x:doc-a §1.1")
     assert ref.repo_id == "repo-x"
@@ -327,7 +327,7 @@ def test_parse_ref_flat_qualifier_unchanged():
 
 
 def test_tag_vocabulary_is_every_tag_on_the_federation(fed_hub):
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     vocab = kbcontext.tag_vocabulary(load_federation(fed_hub / "federation"))
 
@@ -337,7 +337,7 @@ def test_tag_vocabulary_is_every_tag_on_the_federation(fed_hub):
 
 
 def test_tag_vocabulary_keeps_the_first_spelling_in_dfs_order(fed_hub):
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     # 'aaa-kb' sorts before 'icao-kb', so its spelling of the same tag wins:
     # iter_entry_dirs() walks the federation name-ascending.
@@ -349,7 +349,7 @@ def test_tag_vocabulary_keeps_the_first_spelling_in_dfs_order(fed_hub):
 
 
 def test_tag_vocabulary_skips_blank_tags(fed_hub):
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     make_fed_entry(fed_hub / "federation", "blank-kb", "blank-doc", tags=["  ", ""])
 
@@ -360,7 +360,7 @@ def test_tag_vocabulary_skips_blank_tags(fed_hub):
 
 
 def test_derive_tags_takes_the_tags_of_the_refs_documents(fed_hub):
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     repos = load_federation(fed_hub / "federation")
     refs = [kbcontext.parse_ref("arinc-kb:arinc-424 §5.3")]
@@ -369,7 +369,7 @@ def test_derive_tags_takes_the_tags_of_the_refs_documents(fed_hub):
 
 
 def test_derive_tags_unions_across_repos_sorted_by_lowercase_key(fed_hub):
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     repos = load_federation(fed_hub / "federation")
     refs = [
@@ -393,7 +393,7 @@ def test_derive_tags_resolves_spelling_through_the_vocabulary_regardless_of_ref_
     same spelling no matter which ref the caller lists first. Against the
     pre-fix implementation, the reversed order used to return 'airspace'
     (icao-kb's spelling) instead."""
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     make_fed_entry(fed_hub / "federation", "aaa-kb", "aaa-doc", tags=["AIRSPACE"])
     repos = load_federation(fed_hub / "federation")
@@ -406,7 +406,7 @@ def test_derive_tags_resolves_spelling_through_the_vocabulary_regardless_of_ref_
 
 
 def test_derive_tags_dedupes_two_refs_into_one_document(fed_hub):
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     repos = load_federation(fed_hub / "federation")
     refs = [
@@ -418,8 +418,8 @@ def test_derive_tags_dedupes_two_refs_into_one_document(fed_hub):
 
 
 def test_derive_tags_ignores_a_document_absent_from_its_repo_index(fed_hub):
-    from center_kb import models
-    from center_kb.federation import load_federation
+    from strata_kb import models
+    from strata_kb.federation import load_federation
 
     # The document dir and its _manifest.yaml still exist, so the ref itself
     # resolves — but index.yaml no longer lists it, so it contributes no tag
@@ -435,7 +435,7 @@ def test_derive_tags_ignores_a_document_absent_from_its_repo_index(fed_hub):
 
 
 def test_derive_tags_ignores_an_unqualified_ref(fed_hub):
-    from center_kb.federation import load_federation
+    from strata_kb.federation import load_federation
 
     # A ref that has not been auto-qualified yet has repo_id None and cannot
     # be attributed to a repo. build_context_block always qualifies first;
@@ -495,7 +495,7 @@ def test_build_block_derived_tags_do_not_depend_on_ref_order(fed_hub):
 
 
 def test_build_block_omits_tags_line_when_nothing_is_derivable(fed_hub):
-    from center_kb import models
+    from strata_kb import models
 
     models.save_yaml_model(
         fed_hub / "federation" / "arinc-kb" / "index.yaml", models.KBIndex()
@@ -549,7 +549,7 @@ def test_build_block_unknown_tag_suggests_the_nearest_real_tag(fed_hub):
 
 
 def test_build_block_empty_vocabulary_names_the_real_cause(fed_hub):
-    from center_kb import models
+    from strata_kb import models
 
     for rid in ("arinc-kb", "icao-kb"):
         models.save_yaml_model(

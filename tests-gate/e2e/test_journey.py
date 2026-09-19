@@ -1,6 +1,6 @@
 """The full e2e journey against the installed wheel.
 
-Do NOT import center_kb here. The artifact is a black box, only ever touched
+Do NOT import strata_kb here. The artifact is a black box, only ever touched
 through subprocess.
 """
 
@@ -33,7 +33,7 @@ def l2_path(kb: Path, manifest: dict) -> Path:
 def test_version_and_help(kb_run, tmp_path):
     version = kb_run("--version", cwd=tmp_path).stdout.strip()
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    # Read pyproject as a text file — do NOT import center_kb.
+    # Read pyproject as a text file — do NOT import strata_kb.
     declared = next(
         line.split("=", 1)[1].strip().strip('"')
         for line in pyproject.splitlines()
@@ -190,7 +190,7 @@ def test_diff_detects_a_changed_section(published_repo, kb_run):
 
 def test_ingest_without_docling_fails_cleanly(kb_run, seed_kb, bare_hub, tmp_path):
     """The base wheel does NOT carry the [ingest] extras. A user who runs
-    `pip install center-kb` and then runs ingest lands on exactly this path — it
+    `pip install strata-kb` and then runs ingest lands on exactly this path — it
     must be a human sentence, not a traceback."""
     kb_run("init", "--kind", "child", cwd=tmp_path)
     seed_kb(tmp_path, bare_hub)

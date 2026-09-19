@@ -1,4 +1,4 @@
-from center_kb import mdutils, models
+from strata_kb import mdutils, models
 
 CHAPTER_MD = """## 5.1 Airport Records
 
@@ -125,7 +125,7 @@ def test_slice_subsection_missing_returns_none():
 
 
 def test_extract_image_descs_standalone_only_ordered_deduped():
-    from center_kb.mdutils import extract_image_descs
+    from strata_kb.mdutils import extract_image_descs
 
     sha_a, sha_b, sha_c = "a" * 64, "b" * 64, "c" * 64
     md = "\n".join([
@@ -150,7 +150,7 @@ def test_slice_subsection_finds_heading_with_empty_title():
     assert mdutils.slice_subsection(md, "5.15") == "### 5.15\n\nFolded body."
 
 
-from center_kb.mdutils import extract_tables, heading_ids
+from strata_kb.mdutils import extract_tables, heading_ids
 
 
 def test_extract_tables_keeps_one_line_block():
@@ -206,7 +206,7 @@ def test_heading_ids_fence_aware_skips_headings_inside_tilde_fence():
     assert heading_ids(md, fence_aware=True) == ["1.1", "1.2"]
 
 
-from center_kb.mdutils import heading_id_titles
+from strata_kb.mdutils import heading_id_titles
 
 
 def test_heading_id_titles_reports_title_presence():
@@ -219,7 +219,7 @@ def test_heading_id_titles_fence_aware_skips_headings_inside_fence():
     assert heading_id_titles(md, fence_aware=True) == [("1.1", True), ("1.2", True)]
 
 
-from center_kb.mdutils import heading_occurrences
+from strata_kb.mdutils import heading_occurrences
 
 
 def test_heading_occurrences_counts_duplicate_ids_across_all_rows():

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from center_kb.ingest import parser
+from strata_kb.ingest import parser
 
 PIL = pytest.importorskip("PIL")
 from PIL import Image
@@ -423,7 +423,7 @@ def test_doc_to_items_keeps_a_glyph_outside_any_table_as_an_image(tmp_path):
 
 
 def test_doc_to_items_empty_description_kept(tmp_path, monkeypatch):
-    from center_kb.ingest import images
+    from strata_kb.ingest import images
 
     monkeypatch.setattr(images, "ocr_image", lambda img: "")
     img = Image.new("RGB", (32, 32), (0, 0, 0))

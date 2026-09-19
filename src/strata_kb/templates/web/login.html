@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Strata</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+<div class="login-card">
+  <span class="brand-mark">KB</span>
+  <h1>Sign in to CENTER·KB</h1>
+  <p class="lede">Paste the access token from
+    <code class="inline">STRATA_KB_HTTP_TOKEN</code> to continue.</p>
+  {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+  <form method="post" action="/ui/login">
+    <label style="display:flex; flex-direction:column; gap:6px">
+      <span class="kicker">Access token</span>
+      <input type="password" name="token" placeholder="••••••••••••••••" autofocus required>
+    </label>
+    <button type="submit">Sign in</button>
+  </form>
+  <p class="meta-line">The same token authorizes /api and /mcp.</p>
+</div>
+</body>
+</html>

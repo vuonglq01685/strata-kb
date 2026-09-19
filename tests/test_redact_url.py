@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import gitio
-from center_kb.hub import resolve_hub
+from strata_kb import gitio
+from strata_kb.hub import resolve_hub
 
 SECRET = "sekret123"
 # localhost:1 — connection refused instantly, no network dependency
@@ -70,15 +70,15 @@ def test_pull_error_scrubs_credential(repo):
 
 
 def test_resolve_hub_clone_warning_scrubs_credential(tmp_path, monkeypatch, caplog):
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache"))
-    with caplog.at_level(logging.WARNING, logger="center_kb.hub"):
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    with caplog.at_level(logging.WARNING, logger="strata_kb.hub"):
         handle = resolve_hub(CRED_URL)
     assert handle is None
     assert SECRET not in caplog.text
 
 
 def test_publish_error_scrubs_credential(repo, monkeypatch):
-    from center_kb import publish as publish_mod
+    from strata_kb import publish as publish_mod
 
     kb_dir = repo / ".kb"
     kb_dir.mkdir()

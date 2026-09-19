@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import kbcontext, mission, missionlint, ticket, ticketlint
-from center_kb.hub import HubHandle
+from strata_kb import kbcontext, mission, missionlint, ticket, ticketlint
+from strata_kb.hub import HubHandle
 
 MISSION_ID = "M-traceability-demo"
 US_ID = f"{MISSION_ID}-US1"

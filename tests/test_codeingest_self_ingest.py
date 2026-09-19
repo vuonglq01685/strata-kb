@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models
-from center_kb.codeingest import core
+from strata_kb import models
+from strata_kb.codeingest import core
 
 REPO = Path(__file__).resolve().parents[1]
 

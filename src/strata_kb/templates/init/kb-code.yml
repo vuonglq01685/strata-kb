@@ -1,0 +1,57 @@
+name: kb-code
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# Two quick merges must not race two `kb ci-publish` runs each opening their
+# own hub PR against the same -code document (task review, Important 7).
+# cancel-in-progress stays false: a publish run must finish once started,
+# never be killed mid-PR — the next push's run simply waits its turn.
+concurrency:
+  group: kb-code-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # PR: validate only. Never publishes. This job is what catches a malformed
+  # -svc edit or a `pending` section committed before review — before merge,
+  # not after.
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install strata-kb=={version}
+      - run: kb build
+
+  publish:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # OIDC — no secrets in this repo
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
+        with:
+          python-version: "3.12"
+      - run: pip install strata-kb=={version}
+      # Add --db <path> flags here if this repo has SQLite databases whose
+      # schema belongs in the KB. Deliberately explicit: a stray test fixture
+      # must never become published company knowledge. `kb init --kind dev`
+      # overwrites this file on every re-run, so re-add any --db flags here
+      # after upgrading.
+      # NOTE: the flag that scaffolds a placeholder -svc document is
+      # deliberately never passed here. CI must not create `pending` content
+      # — it would fail its own `kb build` step. Seeding and amending the
+      # curated -svc document are human, local actions (see /dev-code-seed).
+      - run: kb code-ingest
+      - run: kb build
+      - run: kb ci-publish

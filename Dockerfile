@@ -7,7 +7,7 @@ COPY src ./src
 RUN python -m build --wheel --outdir /dist
 
 # Runtime stage: wheel + [ingest] extra (docling). git is required by
-# center_kb.gitio (hub clone/pull, kb-context pinning).
+# strata_kb.gitio (hub clone/pull, kb-context pinning).
 FROM python:3.12-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir "$(ls /tmp/dist/*.whl)[ingest]" && rm -rf /tmp/di
 # to redirect it elsewhere (unlike the model weights, which do). Files
 # created here as root stay world-readable, so `app` only ever needs to
 # read them at runtime, never write. This constructs the exact engine
-# center_kb.ingest.parser configures (backend="torch", lang=["en"]) so the
+# strata_kb.ingest.parser configures (backend="torch", lang=["en"]) so the
 # pre-fetched files are the ones actually requested later.
 RUN python -c "\
 from docling.datamodel.accelerator_options import AcceleratorOptions; \
@@ -48,4 +48,4 @@ USER app
 WORKDIR /data
 EXPOSE 8321
 # The KB repo is mounted at /data; the hub is the repo itself (--hub /data).
-CMD ["python", "-m", "center_kb.mcp", "--kb", "/data/.kb", "--hub", "/data", "--transport", "http", "--host", "0.0.0.0"]
+CMD ["python", "-m", "strata_kb.mcp", "--kb", "/data/.kb", "--hub", "/data", "--transport", "http", "--host", "0.0.0.0"]

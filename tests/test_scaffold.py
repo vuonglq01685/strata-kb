@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models
-from center_kb.ingest.scaffold import chapter_stem, scaffold_doc, slugify
-from center_kb.ingest.sectioner import SectionUnit
-from center_kb.mdutils import slice_section
+from strata_kb import models
+from strata_kb.ingest.scaffold import chapter_stem, scaffold_doc, slugify
+from strata_kb.ingest.sectioner import SectionUnit
+from strata_kb.mdutils import slice_section
 
 TABLE = "| Code | Meaning |\n|---|---|\n| P | Prohibited |"
 
@@ -271,7 +271,7 @@ def test_scaffold_rejects_section_id_with_path_traversal_before_writing(
 
 
 def test_scaffold_report_carries_token_stats(tmp_path: Path):
-    from center_kb.ingest.scaffold import TokenStats
+    from strata_kb.ingest.scaffold import TokenStats
 
     report = scaffold_doc(
         _units(), doc_id="d", title="D", tags=[], revision="",

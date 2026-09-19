@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from center_kb.ingest.sectioner import (
+from strata_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
     build_units,
@@ -258,7 +258,7 @@ def test_digit_only_heading_demoted_to_body():
 
 
 def test_fallback_heading_is_recorded_in_notes():
-    from center_kb.ingest.sectioner import Fallback, build_units_with_notes
+    from strata_kb.ingest.sectioner import Fallback, build_units_with_notes
 
     items = [
         DocItem("heading", "5.6 Identifier Field", 1, page=3),
@@ -277,7 +277,7 @@ def test_fallback_heading_is_recorded_in_notes():
 
 
 def test_no_fallback_note_when_every_heading_parses():
-    from center_kb.ingest.sectioner import build_units_with_notes
+    from strata_kb.ingest.sectioner import build_units_with_notes
 
     items = [
         DocItem("heading", "5.6 Identifier Field", 1),
@@ -558,8 +558,8 @@ def test_scrambled_reading_order_orphans_reattach_to_true_parent():
 
 
 def test_resolve_heading_config_attachment_priority():
-    from center_kb import models
-    from center_kb.ingest.sectioner import (
+    from strata_kb import models
+    from strata_kb.ingest.sectioner import (
         DEFAULT_ATTACHMENT_PATTERN,
         resolve_heading_config,
     )
@@ -575,7 +575,7 @@ def test_resolve_heading_config_attachment_priority():
 
 
 def test_split_by_parts_buckets_by_page():
-    from center_kb.ingest.sectioner import Part, split_by_parts
+    from strata_kb.ingest.sectioner import Part, split_by_parts
 
     parts = [Part("front-matter", "Front Matter", 1), Part("1", "INTRO", 21),
              Part("att1", "FLOW DIAGRAM", 331)]
@@ -595,7 +595,7 @@ def test_split_by_parts_buckets_by_page():
 
 
 def test_split_by_parts_item_before_first_part_page():
-    from center_kb.ingest.sectioner import Part, split_by_parts
+    from strata_kb.ingest.sectioner import Part, split_by_parts
 
     parts = [Part("1", "INTRO", 21)]
     items = [DocItem("text", "stray cover text", page=1)]
@@ -604,7 +604,7 @@ def test_split_by_parts_item_before_first_part_page():
 
 
 def test_build_units_with_parts_assigns_part_chapter():
-    from center_kb.ingest.sectioner import Part
+    from strata_kb.ingest.sectioner import Part
 
     parts = [Part("front-matter", "Front Matter", 1), Part("1", "INTRODUCTION", 21)]
     items = [
@@ -623,7 +623,7 @@ def test_build_units_with_parts_assigns_part_chapter():
 
 
 def test_build_units_with_parts_namespaces_attachment_numbering():
-    from center_kb.ingest.sectioner import Part
+    from strata_kb.ingest.sectioner import Part
 
     parts = [Part("2", "GLOSSARY", 25), Part("attachment-1", "FLOW DIAGRAM", 331)]
     items = [
@@ -713,7 +713,7 @@ def test_numbered_heading_with_trailing_colon_demoted_to_text():
 
 
 def test_build_units_numeric_part_subsections_keep_flat_ids():
-    from center_kb.ingest.sectioner import Part
+    from strata_kb.ingest.sectioner import Part
 
     parts = [Part("4", "RECORD LAYOUT", 41)]
     items = [
@@ -761,7 +761,7 @@ def test_units_ordered_by_heading_page_not_emission_order():
 
 
 def test_order_units_is_stable_and_forward_fills_pages():
-    from center_kb.ingest.sectioner import SectionUnit, order_units
+    from strata_kb.ingest.sectioner import SectionUnit, order_units
 
     a = SectionUnit(id="1", title="A", chapter="1", body_md="x", tables=[], page=5)
     b = SectionUnit(id="1.1", title="B", chapter="1", body_md="x", tables=[], page=None)
@@ -829,7 +829,7 @@ def test_unnumbered_appendix_sections_do_not_reopen_chapters():
 
 
 def test_uncovered_reports_content_that_no_unit_carries():
-    from center_kb.ingest.sectioner import SectionUnit, uncovered
+    from strata_kb.ingest.sectioner import SectionUnit, uncovered
 
     items = [
         DocItem("text", "Kept paragraph."),
@@ -848,7 +848,7 @@ def test_uncovered_reports_content_that_no_unit_carries():
 
 
 def test_uncovered_is_empty_when_every_item_landed():
-    from center_kb.ingest.sectioner import SectionUnit, uncovered
+    from strata_kb.ingest.sectioner import SectionUnit, uncovered
 
     items = [DocItem("text", "Only paragraph.")]
     units = [SectionUnit(id="1", title="X", chapter="1", body_md="Only paragraph.", tables=[])]
@@ -857,7 +857,7 @@ def test_uncovered_is_empty_when_every_item_landed():
 
 
 def test_uncovered_tolerates_whitespace_reflow():
-    from center_kb.ingest.sectioner import SectionUnit, uncovered
+    from strata_kb.ingest.sectioner import SectionUnit, uncovered
 
     items = [DocItem("text", "Spaced   out\ntext.")]
     units = [SectionUnit(id="1", title="X", chapter="1", body_md="Spaced out text.", tables=[])]
@@ -866,7 +866,7 @@ def test_uncovered_tolerates_whitespace_reflow():
 
 
 def test_content_before_a_numeric_part_first_heading_is_kept():
-    from center_kb.ingest.sectioner import Part
+    from strata_kb.ingest.sectioner import Part
 
     # A numeric part seeds no node of its own (its subsections must keep flat
     # ids), so anything ahead of its first heading landed on the tree root,
@@ -886,7 +886,7 @@ def test_content_before_a_numeric_part_first_heading_is_kept():
 
 
 def test_table_caption_heading_is_demoted_to_text():
-    from center_kb.ingest.sectioner import Demotion, build_units_with_notes
+    from strata_kb.ingest.sectioner import Demotion, build_units_with_notes
 
     items = [
         DocItem("heading", "5.7 SID Records", 1, page=129),
@@ -905,7 +905,7 @@ def test_table_caption_heading_is_demoted_to_text():
 
 
 def test_label_line_heading_is_demoted_to_text():
-    from center_kb.ingest.sectioner import Demotion, build_units_with_notes
+    from strata_kb.ingest.sectioner import Demotion, build_units_with_notes
 
     label = "Used On: Runway Record Length: 1 Character Character Type: Alpha"
     items = [
@@ -921,7 +921,7 @@ def test_label_line_heading_is_demoted_to_text():
 
 
 def test_heading_repeated_on_three_pages_is_demoted():
-    from center_kb.ingest.sectioner import Demotion, build_units_with_notes
+    from strata_kb.ingest.sectioner import Demotion, build_units_with_notes
 
     items = []
     for n, page in enumerate((61, 88, 104), start=1):
@@ -939,7 +939,7 @@ def test_heading_repeated_on_three_pages_is_demoted():
 
 
 def test_heading_repeated_on_two_pages_is_still_a_fallback():
-    from center_kb.ingest.sectioner import build_units_with_notes
+    from strata_kb.ingest.sectioner import build_units_with_notes
 
     items = []
     for n, page in enumerate((61, 88), start=1):
@@ -955,7 +955,7 @@ def test_heading_repeated_on_two_pages_is_still_a_fallback():
 
 
 def test_repeated_heading_counted_across_parts():
-    from center_kb.ingest.sectioner import Part, build_units_with_notes
+    from strata_kb.ingest.sectioner import Part, build_units_with_notes
 
     parts = [Part("5", "NAV", 1), Part("6", "PROC", 50)]
     items = [
@@ -986,7 +986,7 @@ def test_numbered_figure_title_is_not_a_caption():
 
 
 def test_noise_reason_does_not_match_table_of_contents():
-    from center_kb.ingest.sectioner import _noise_reason
+    from strata_kb.ingest.sectioner import _noise_reason
 
     assert _noise_reason("Table of Contents", 1) is None
     assert _noise_reason("Figure of Merit", 1) is None
@@ -999,7 +999,7 @@ def test_noise_reason_does_not_match_table_of_contents():
 
 
 def test_duplicate_id_across_parts_is_renamed_and_noted():
-    from center_kb.ingest.sectioner import Duplicate, Part, build_units_with_notes
+    from strata_kb.ingest.sectioner import Duplicate, Part, build_units_with_notes
 
     big = "Body text. " * 70
     parts = [Part("5", "NAV", 1), Part("6", "PROC", 10)]
@@ -1032,7 +1032,7 @@ def test_duplicate_suffix_never_steals_an_id_a_later_unit_owns():
     with the id the real Appendix 2 unit needs when it is reached, and that
     real unit gets bumped to "appendix-2-2" even though nothing but the
     stray actually duplicated "appendix"."""
-    from center_kb.ingest.sectioner import Duplicate, Part, build_units_with_notes
+    from strata_kb.ingest.sectioner import Duplicate, Part, build_units_with_notes
 
     big = "Body text. " * 70
     parts = [Part("5", "NAV", 1), Part("6", "PROC", 10), Part("7", "XYZ", 20)]
@@ -1059,7 +1059,7 @@ def test_duplicate_suffix_never_steals_an_id_a_later_unit_owns():
 
 
 def test_custom_chapter_pattern_id_never_contains_whitespace():
-    from center_kb.ingest.sectioner import HeadingConfig
+    from strata_kb.ingest.sectioner import HeadingConfig
 
     cfg = HeadingConfig(chapter_pattern=r"^(part\s+[A-Z])\s*[-–—.:]\s*(.*)$")
     assert parse_section_id("Part A - Definitions", cfg) == ("Part-A", "Definitions")
@@ -1090,7 +1090,7 @@ def _chapter_head(page: int = 200) -> list[DocItem]:
 
 
 def test_inverted_headings_on_one_page_are_reordered_by_layout():
-    from center_kb.ingest.sectioner import Inversion, build_units_with_notes
+    from strata_kb.ingest.sectioner import Inversion, build_units_with_notes
 
     units, notes = build_units_with_notes(_chapter_head() + _two_column_page())
     by_id = {u.id: u for u in units}
@@ -1105,7 +1105,7 @@ def test_inverted_headings_on_one_page_are_reordered_by_layout():
 def test_inverted_headings_without_bboxes_are_only_reported():
     from dataclasses import replace
 
-    from center_kb.ingest.sectioner import Inversion, build_units_with_notes
+    from strata_kb.ingest.sectioner import Inversion, build_units_with_notes
 
     items = [replace(i, bbox=None) for i in _chapter_head() + _two_column_page()]
     units, notes = build_units_with_notes(items)
@@ -1116,7 +1116,7 @@ def test_inverted_headings_without_bboxes_are_only_reported():
 
 
 def test_spanning_heading_stays_first_when_a_page_is_reordered():
-    from center_kb.ingest.sectioner import build_units_with_notes
+    from strata_kb.ingest.sectioner import build_units_with_notes
 
     big = "Body text. " * 70
     title = DocItem("heading", "5.0 NAV", 1, page=212, bbox=(50, 20, 550, 40))
@@ -1128,7 +1128,7 @@ def test_spanning_heading_stays_first_when_a_page_is_reordered():
 
 
 def test_page_without_inversion_keeps_docling_order_even_with_bboxes():
-    from center_kb.ingest.sectioner import build_units_with_notes
+    from strata_kb.ingest.sectioner import build_units_with_notes
 
     big = "Body text. " * 70
     # bboxes deliberately contradict docling order: docling is trusted here
@@ -1146,7 +1146,7 @@ def test_page_without_inversion_keeps_docling_order_even_with_bboxes():
 
 
 def test_inversion_across_pages_is_not_reported():
-    from center_kb.ingest.sectioner import build_units_with_notes
+    from strata_kb.ingest.sectioner import build_units_with_notes
 
     big = "Body text. " * 70
     items = _chapter_head() + [
@@ -1160,7 +1160,7 @@ def test_inversion_across_pages_is_not_reported():
 
 
 def test_inversion_only_compares_siblings():
-    from center_kb.ingest.sectioner import build_units_with_notes
+    from strata_kb.ingest.sectioner import build_units_with_notes
 
     big = "Body text. " * 70
     # 5.3.9 then 5.4 on one page is normal nesting, not an inversion
@@ -1182,7 +1182,7 @@ def test_inversion_ignores_custom_pattern_ids_that_are_not_purely_numeric():
     must reject it (spec §1.3: only numeric ids participate) instead of
     letting it reach _id_tuple, whose bare int() would raise when a second
     such heading shares the page and parent."""
-    from center_kb.ingest.sectioner import HeadingConfig, build_units_with_notes
+    from strata_kb.ingest.sectioner import HeadingConfig, build_units_with_notes
 
     cfg = HeadingConfig(chapter_pattern=r"^muc\s+([0-9]+\.[0-9]+[a-z])\s*[-.:]\s*(.*)$")
     big = "Body text. " * 70
@@ -1203,7 +1203,7 @@ def test_numeric_heading_id_rejects_non_decimal_digit_classes():
     return None for it instead of letting it reach _id_tuple's bare int()
     and raise ValueError. Fixture shape from the T6 fix-round re-review
     (isdigit() -> isdecimal())."""
-    from center_kb.ingest.sectioner import HeadingConfig, build_units_with_notes
+    from strata_kb.ingest.sectioner import HeadingConfig, build_units_with_notes
 
     cfg = HeadingConfig(chapter_pattern=r"^muc\s+(\S+)\s*[-.:]\s*(.*)$")
     big = "Body text. " * 70

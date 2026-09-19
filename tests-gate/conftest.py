@@ -1,7 +1,7 @@
 """Fixtures for tier T3 (e2e against the installed artifact).
 
 INVIOLABLE RULE: this file and every file under tests-gate/e2e/ MUST NOT import
-center_kb. The artifact is only ever touched through subprocess.
+strata_kb. The artifact is only ever touched through subprocess.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ GIT_IDENTITY = {
 # A payload valid for BOTH the section prompt and the doc prompt of kb summarize.
 # claude is invoked as: claude -p --model <m> --output-format json  (prompt via
 # stdin), and --output-format json wraps the reply in {"type":"result","result":…}
-# — see center_kb/llm.py:32 and :59.
+# — see strata_kb/llm.py:32 and :59.
 _INNER = json.dumps(
     {
         "l2_summary": "Condensed via stub.",
@@ -74,7 +74,7 @@ def strip_kind_warning():
 # Doctor deliberately warns when a hub entry holds a file `kb publish` would
 # never write (F-D6, 5bb6ea8: publish stopped mirroring .kb/config.yaml to
 # federation/, a file that carries the hub URL and, on real deployments,
-# credentials). A hub PUBLISHED BY AN OLDER center-kb still has that mirrored
+# credentials). A hub PUBLISHED BY AN OLDER strata-kb still has that mirrored
 # config.yaml sitting on it, and the new binary is supposed to say so -- this
 # is a security nudge, not a defect, so unlike KIND_WARNING its ABSENCE must
 # also fail the gate: a test that merely tolerated it would stay green even
@@ -105,7 +105,7 @@ def strip_legacy_config_mirror_warning():
     """Assert the legacy config.yaml mirror warning fired, then remove it so
     the strict 'not a single [warning]' assertions keep guarding everything
     else. Only for fixtures whose hub was genuinely published by an older
-    center-kb that still mirrored config.yaml -- its presence is asserted,
+    strata-kb that still mirrored config.yaml -- its presence is asserted,
     not merely tolerated."""
 
     def _strip(stdout: str) -> str:
@@ -253,7 +253,7 @@ def run_git():
 
 @pytest.fixture
 def stub_claude(tmp_path_factory) -> dict[str, str]:
-    """A fake `claude` on PATH, runnable on POSIX and Windows. center_kb/llm.py
+    """A fake `claude` on PATH, runnable on POSIX and Windows. strata_kb/llm.py
     probes with shutil.which("claude") — .cmd resolves via PATHEXT on Windows.
     (Deliberately duplicated from tests/cli_stub.py: tests-gate must stay
     self-contained.)"""
@@ -367,7 +367,7 @@ def published_repo(
 
 
 def _mcp_stdio_params(artifact: Artifact, kb: Path, hub: Path, repo: Path):
-    """Build StdioServerParameters for `python -m center_kb.mcp` in the
+    """Build StdioServerParameters for `python -m strata_kb.mcp` in the
     ARTIFACT venv (never the runner venv) — there is no `kb serve` command,
     this is exactly the CMD the Dockerfile runs. Factored out so
     mcp_stdio_params (Task 6, bound to published_repo) and
@@ -375,13 +375,13 @@ def _mcp_stdio_params(artifact: Artifact, kb: Path, hub: Path, repo: Path):
     invocation shape instead of drifting apart.
 
     `mcp` (client SDK) is a RUNNER dependency (requirements-gate.txt) —
-    importing it here does not violate "no importing center_kb".
+    importing it here does not violate "no importing strata_kb".
     """
     from mcp import StdioServerParameters
 
     return StdioServerParameters(
         command=str(artifact.python),
-        args=["-m", "center_kb.mcp", "--kb", str(kb), "--hub", str(hub)],
+        args=["-m", "strata_kb.mcp", "--kb", str(kb), "--hub", str(hub)],
         cwd=str(repo),
         env={**os.environ},
     )
@@ -389,7 +389,7 @@ def _mcp_stdio_params(artifact: Artifact, kb: Path, hub: Path, repo: Path):
 
 @pytest.fixture
 def mcp_stdio_params(artifact: Artifact, published_repo: dict):
-    """StdioServerParameters pointing at `python -m center_kb.mcp` in the
+    """StdioServerParameters pointing at `python -m strata_kb.mcp` in the
     ARTIFACT venv (not the runner venv) — there is no `kb serve` command, the
     server runs exactly as the Dockerfile's CMD does. Shared here (not in
     test_server.py) so that Task 9/10 can reuse it via tests-gate/conftest.py

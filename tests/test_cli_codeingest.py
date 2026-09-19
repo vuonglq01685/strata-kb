@@ -4,8 +4,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
+from strata_kb import models
+from strata_kb.cli import app
 from tests.fixtures_coderepo import build_code_repo
 
 runner = CliRunner()

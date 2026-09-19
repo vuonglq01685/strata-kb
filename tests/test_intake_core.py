@@ -15,7 +15,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from center_kb import assetstore, ghapp, gitio, intake, models
+from strata_kb import assetstore, ghapp, gitio, intake, models
 
 AUD = "https://kb.internal:8321"
 
@@ -1246,7 +1246,7 @@ def test_skipped_file_names_reach_the_log_escaped(hub_root, monkeypatch, caplog)
     call site (`_publish_in_worktree`'s "not KB artefacts" warning) with a
     hostile name coming out of `pubgate.split_allowlist`'s return value
     instead, independent of what safe_extract could or could not write."""
-    from center_kb import pubgate
+    from strata_kb import pubgate
 
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
@@ -1254,7 +1254,7 @@ def test_skipped_file_names_reach_the_log_escaped(hub_root, monkeypatch, caplog)
     monkeypatch.setattr(
         pubgate, "split_allowlist", lambda manifest, **kw: ({}, [dangerous])
     )
-    with caplog.at_level("WARNING", logger="center_kb.intake"):
+    with caplog.at_level("WARNING", logger="strata_kb.intake"):
         intake.intake_publish(
             _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [],
             _archive_with_asset(), store=assetstore.MemoryStore(),
@@ -1351,7 +1351,7 @@ def test_resolve_hub_or_503_converts_a_locked_cache_into_a_503_not_a_500(
     `undiscardable_hub_cache` fixture, which has a real POSIX mechanism, so
     the round-4 `skipif(sys.platform != "win32")` is gone and this runs on
     the three ubuntu legs of _gate.yml T1 as well. See tests/conftest.py."""
-    from center_kb import hub as hub_mod
+    from strata_kb import hub as hub_mod
 
     bare = tmp_path / "hub.git"
     run_git(tmp_path, "init", "--bare", str(bare))
@@ -1368,7 +1368,7 @@ def test_resolve_hub_or_503_converts_a_locked_cache_into_a_503_not_a_500(
     run_git(seed, "push", "-u", "origin", "HEAD")
 
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     key = hub_mod.cache_key(str(bare))
     legacy = cache_base / key
     run_git(tmp_path, "clone", str(bare), str(legacy))
@@ -1667,7 +1667,7 @@ def test_win32_devices_is_shared_not_duplicated():
     object's identity is the stronger version of this pin: it catches a
     future drift in the CHECK logic (e.g. one call site regaining its own
     inline rstrip/upper), not just in the underlying set."""
-    from center_kb import pubgate
+    from strata_kb import pubgate
 
     assert intake.is_reserved_device_name is pubgate.is_reserved_device_name
 

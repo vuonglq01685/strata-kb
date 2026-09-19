@@ -1,0 +1,179 @@
+---
+name: dev-plan
+description: Turn an approved technical design into an implementation plan — one task per AC, each with a failing test first and checkboxes for resumable progress
+---
+
+# /dev-plan — turn an approved design into a resumable, test-first plan
+
+You are phase 2 of the ticket-implementation pipeline, invoked after the
+Dev has approved the design at GATE 1. Your job: turn that design into
+`docs/impl/<ticket-id>-plan.md`, a resumable checkbox file that phase 3
+(`dev-execute`) reads and ticks task by task.
+
+*Counterpart in the superpowers plugin: `superpowers:writing-plans`.*
+
+## Freshness re-check (run this FIRST, every time)
+
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
+
+- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
+  citation that no longer resolves.
+- **stale** → show BOTH versions, humans decide: the resolve gives the
+  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`
+  the current hub version. Do NOT use `kb diff` — it compares the local
+  `.kb/` worktree to a local git rev, not this repo to the hub.
+- **ok** → continue.
+
+## Steps
+
+- **Read the design** — read `docs/impl/<ticket-id>-design.md`. Its
+  header must say `status: approved`; a `draft` design means GATE 1 has
+  not passed — say so in one line and stop. A `path: spike` design has
+  no plan: say so and point at `dev-handover`.
+- **Write the plan** — write `docs/impl/<ticket-id>-plan.md` with one
+  task per AC, or several tasks for a large AC, and every task names the
+  test that proves it. Per task, give exactly three headings: **Files**
+  (create / modify / test, by path); **Interfaces** (what this task
+  consumes from earlier tasks and what it produces for later ones —
+  exact names and types, because a task's implementer sees only their
+  own task); and **Steps** as `- [ ]` checkboxes, step 1 always being
+  the failing test. The file opens with three header lines under its
+  title: `cmd.test: <command>`, `cmd.lint: <command>` (from `-code
+  §cmd.*`, or the Dev's answer) and `status: draft` — `kb pr lint` reads
+  `cmd.test:` from this file and requires it inside the PR's
+  Verification fence.
+- **A task with no test declares its exemption.** Every task's first
+  step is a failing test, with exactly four exceptions — config, CI,
+  docs and style changes, defined in `docs/tdd-exemptions.md`. A task
+  in one of those classes carries one line instead, and no other shape
+  is accepted: `Exempt: <config|ci|docs|style> — verified by <what>`.
+  The slug comes from that document; a change that fits none of the
+  four is not exempt, and a change that alters behaviour an AC can see
+  is never exempt whatever its file extension.
+- **Order and close** — order tasks so each one leaves the repo green, and
+  end the plan with one closing task for cross-cutting verification (full
+  suite + lint) that names the commands it will run — `cmd.test` and
+  `cmd.lint` from `-code §cmd.*`.
+- **No `-code` document yet** — when `-code §cmd.*` has not been generated
+  in this repo (`kb code-ingest` not yet run), ask the Dev once for the
+  build/test/lint commands and record them in the `cmd.test:` /
+  `cmd.lint:` header lines, so this closing task, `dev-execute`, and
+  `dev-handover` all have something to run.
+- **No linter in the repo** — when there is no linter at all to record as
+  `cmd.lint`, make setting one up the plan's first task, from the
+  *Linting* section of `docs/conventions/<lang>.md` (plus
+  `docs/conventions/<lang>.local.md` overrides), and record the command
+  it establishes as `cmd.lint`. Its red step is running that command and
+  watching it fail because no linter is configured. Whether the preset
+  applies at full strength or is narrowed so it passes on the current
+  tree is decided by the *Linting* section of
+  `docs/conventions/<lang>.md` — follow it, and carry every narrowed
+  rule into the PR's `## Findings`.
+- **GATE 2** — offered only after A2 comes back clean. The Dev approves
+  the plan before any code is written; once approved, flip the plan
+  header to `status: approved` and option 1 in the Next-step block below
+  is `/dev-execute <ticket-id>`. The checkbox file is also the resume
+  point, so it must be complete enough for a different session to pick up
+  cold.
+
+## A2 — independent plan review (before GATE 2)
+
+Dispatch a `plan-author` subagent to turn the approved design into the plan —
+it gets the design file path, the ticket's acceptance criteria, the
+`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
+— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
+format, the ordering rules — and nothing else. Then review it with a
+different context.
+
+Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
+path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
+`## Pre-code axes` of `docs/pr-review-rubric.md` plus
+`docs/pr-review-rubric.local.md`. It answers four questions and nothing else:
+
+- Is there exactly one task per AC — none missing, none invented?
+- Does every task state its failing test before its implementation?
+- Is each task's **Interfaces** entry complete enough that its implementer
+  never has to read outside its own task block? An incomplete entry is a
+  BLOCKER: it is what forces an implementer to read wider and guess.
+- Does every task with no test declare `Exempt: <config|ci|docs|style>` and
+  name its verification?
+
+Fix subagent, re-review, at most 3 rounds. Record each round in the plan file's
+`## Review record` table, same shape as the design file's. GATE 2 is offered
+only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
+left open; NOTE and NITS are recorded, not fixed.
+
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
+  override wins over its base file. Severity is always
+  BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
+
+## Hard rules
+
+- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.
+- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.
+- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.
+- Never claim done without showing the verification output.
+- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.
+- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.
+- The ticket is the BA's artifact: report placeholder resolutions and AC findings back; never edit the ticket.
+- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.
+- Never edit a test to make it pass; diagnose the cause.
+- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.
+- Never modify a `reviewed` section of `-svc`; propose an amend.
+- `hist.*` entries are appended only by `kb svc note`, never hand-edited.
+- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
+- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
+
+## Next step — ALWAYS end your response with this block
+
+Close every response with a state line and an ordered list of next steps.
+Include it even when you stopped early or hit an error — especially then.
+
+    ## Next step
+
+    → 1. <next step in flow> — <what it does>   (next in flow)
+      2. <revise the current phase> — <how>
+      3. <stop/park> — <where the work is saved>
+
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
+
+Rules:
+- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
+- Show the exact command with the ticket id already filled in, ready to copy.
+- The `State:` line always shows all four markers, even the ones not yet reached.
+- A blocker takes option 1 instead and says so, e.g.
+  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
+  Flow order never hides a blocker.

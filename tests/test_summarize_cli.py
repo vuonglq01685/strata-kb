@@ -2,15 +2,15 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb import models
-from center_kb.cli import app
+from strata_kb import models
+from strata_kb.cli import app
 from tests.test_summarize import FakeRunner, make_kb
 
 runner = CliRunner()
 
 
 def _patch_detect(monkeypatch, fake):
-    import center_kb.llm as llm_mod
+    import strata_kb.llm as llm_mod
 
     # cli._run_summarize looks detect_runner up on the module at call time,
     # so patching the module attribute is enough.
@@ -285,7 +285,7 @@ def test_redo_prints_fail_lines_and_exits_1_without_aborting_other_rows(tmp_path
     assert m.sections[1].status == "summarized" and m.sections[1].summary == "kept-1"  # untouched
 
 
-from center_kb.summarize import build_section_prompt, collect_pending
+from strata_kb.summarize import build_section_prompt, collect_pending
 
 
 def test_print_prompt_emits_the_engine_prompt_verbatim(tmp_path):

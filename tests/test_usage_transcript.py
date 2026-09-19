@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from center_kb.usage import transcript
+from strata_kb.usage import transcript
 
 
 def usage_row(uuid: str, *, model: str = "claude-sonnet-5", out: int = 100, **kw):

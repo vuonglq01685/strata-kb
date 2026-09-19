@@ -3,17 +3,17 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from center_kb.cli import app
-from center_kb.initcmd import init_repo
+from strata_kb.cli import app
+from strata_kb.initcmd import init_repo
 
 runner = CliRunner()
 
-TOKEN_RE = re.compile(r"^CENTER_KB_HTTP_TOKEN=([0-9a-f]{48})$", re.MULTILINE)
+TOKEN_RE = re.compile(r"^STRATA_KB_HTTP_TOKEN=([0-9a-f]{48})$", re.MULTILINE)
 
 
 def _mock_docker(monkeypatch, ready: bool, up_rc: int = 0, pull_rc: int = 0):
     """Neutralize real Docker in CLI tests; record compose calls."""
-    from center_kb import dockersetup
+    from strata_kb import dockersetup
 
     calls: list[str] = []
     monkeypatch.setattr(dockersetup, "docker_ready", lambda: ready)
@@ -32,7 +32,7 @@ def _mock_docker(monkeypatch, ready: bool, up_rc: int = 0, pull_rc: int = 0):
 
 
 def test_run_setup_creates_env_with_token(tmp_path: Path):
-    from center_kb.dockersetup import run_setup
+    from strata_kb.dockersetup import run_setup
 
     init_repo(tmp_path, "hub")
     report = run_setup(tmp_path)
@@ -44,7 +44,7 @@ def test_run_setup_creates_env_with_token(tmp_path: Path):
 
 
 def test_run_setup_synthesizes_env_without_example(tmp_path: Path):
-    from center_kb.dockersetup import run_setup
+    from strata_kb.dockersetup import run_setup
 
     init_repo(tmp_path, "hub")
     (tmp_path / ".env.example").unlink()
@@ -55,21 +55,21 @@ def test_run_setup_synthesizes_env_without_example(tmp_path: Path):
 def test_run_setup_refuses_existing_env_without_regenerate(tmp_path: Path):
     import pytest
 
-    from center_kb.dockersetup import EnvExistsError, run_setup
+    from strata_kb.dockersetup import EnvExistsError, run_setup
 
     init_repo(tmp_path, "hub")
-    (tmp_path / ".env").write_text("CENTER_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("STRATA_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
     with pytest.raises(EnvExistsError):
         run_setup(tmp_path)
     assert "mine" in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
 def test_run_setup_regenerates_with_flag(tmp_path: Path):
-    from center_kb.dockersetup import run_setup
+    from strata_kb.dockersetup import run_setup
 
     init_repo(tmp_path, "hub")
     (tmp_path / ".env").write_text(
-        "OTHER=keep\nCENTER_KB_HTTP_TOKEN=mine\n", encoding="utf-8"
+        "OTHER=keep\nSTRATA_KB_HTTP_TOKEN=mine\n", encoding="utf-8"
     )
     report = run_setup(tmp_path, regenerate=True)
     assert not report.env_created
@@ -82,7 +82,7 @@ def test_run_setup_regenerates_with_flag(tmp_path: Path):
 def test_run_setup_refuses_child_and_kindless(tmp_path: Path):
     import pytest
 
-    from center_kb.dockersetup import DockerSetupError, run_setup
+    from strata_kb.dockersetup import DockerSetupError, run_setup
 
     child = tmp_path / "c"
     child.mkdir()
@@ -97,7 +97,7 @@ def test_run_setup_refuses_child_and_kindless(tmp_path: Path):
 
 
 def test_run_setup_adds_env_to_gitignore(tmp_path: Path):
-    from center_kb.dockersetup import run_setup
+    from strata_kb.dockersetup import run_setup
 
     init_repo(tmp_path, "hub")
     report = run_setup(tmp_path)
@@ -135,7 +135,7 @@ def test_cli_docker_setup_child_pulls_image_no_env(tmp_path: Path, monkeypatch):
 def test_cli_docker_setup_existing_env_needs_force(tmp_path: Path, monkeypatch):
     _mock_docker(monkeypatch, ready=False)
     init_repo(tmp_path, "hub")
-    (tmp_path / ".env").write_text("CENTER_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("STRATA_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
     result = runner.invoke(app, ["docker-setup", str(tmp_path)])
     assert result.exit_code == 1
     assert "--force" in result.output
@@ -146,12 +146,12 @@ def test_cli_docker_setup_existing_env_needs_force(tmp_path: Path, monkeypatch):
 
 
 def test_cli_docker_setup_tty_confirm_regenerates(tmp_path: Path, monkeypatch):
-    from center_kb import cli
+    from strata_kb import cli
 
     _mock_docker(monkeypatch, ready=False)
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     init_repo(tmp_path, "hub")
-    (tmp_path / ".env").write_text("CENTER_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("STRATA_KB_HTTP_TOKEN=mine\n", encoding="utf-8")
     result = runner.invoke(app, ["docker-setup", str(tmp_path)], input="y\n")
     assert result.exit_code == 0
     assert "mine" not in (tmp_path / ".env").read_text(encoding="utf-8")
@@ -230,7 +230,7 @@ def test_cli_docker_setup_kindless_fails(tmp_path: Path, monkeypatch):
 def test_repo_kind_reads_config(tmp_path: Path):
     import pytest
 
-    from center_kb.dockersetup import DockerSetupError, repo_kind
+    from strata_kb.dockersetup import DockerSetupError, repo_kind
 
     hub = tmp_path / "h"
     hub.mkdir()
@@ -251,7 +251,7 @@ def test_repo_kind_reads_config(tmp_path: Path):
 def test_docker_ready_false_when_cli_missing(monkeypatch):
     import subprocess
 
-    from center_kb import dockersetup
+    from strata_kb import dockersetup
 
     def boom(*args, **kwargs):
         raise FileNotFoundError("docker")
@@ -263,7 +263,7 @@ def test_docker_ready_false_when_cli_missing(monkeypatch):
 def test_docker_ready_true_on_zero_exit(monkeypatch):
     import subprocess
 
-    from center_kb import dockersetup
+    from strata_kb import dockersetup
 
     calls = []
 
@@ -283,7 +283,7 @@ def test_docker_ready_true_on_zero_exit(monkeypatch):
 def test_compose_helpers_run_in_repo_root(tmp_path: Path, monkeypatch):
     import subprocess
 
-    from center_kb import dockersetup
+    from strata_kb import dockersetup
 
     seen = []
 
@@ -302,3 +302,80 @@ def test_compose_helpers_run_in_repo_root(tmp_path: Path, monkeypatch):
         (["docker", "compose", "up", "-d"], tmp_path),
         (["docker", "compose", "pull"], tmp_path),
     ]
+
+
+def test_repo_kind_returns_ba_and_dev_instead_of_raising(tmp_path: Path):
+    from strata_kb.dockersetup import repo_kind
+
+    for kind in ("ba", "dev"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        assert repo_kind(repo) == kind
+
+
+def test_repo_kind_still_raises_when_kind_is_unset(tmp_path: Path):
+    import pytest
+
+    from strata_kb.dockersetup import DockerSetupError, repo_kind
+
+    # A bare directory: load_config returns its defaults, so kind is "".
+    # Same construction test_run_setup_refuses_child_and_kindless uses.
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    with pytest.raises(DockerSetupError, match="kb init"):
+        repo_kind(bare)
+
+
+def test_require_hub_kind_rejects_every_non_hub_kind(tmp_path: Path):
+    import pytest
+
+    from strata_kb.dockersetup import DockerSetupError, _require_hub_kind
+
+    for kind in ("child", "ba", "dev"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        with pytest.raises(DockerSetupError):
+            _require_hub_kind(repo)
+
+
+def test_set_env_line_appends_when_absent():
+    from strata_kb.dockersetup import set_env_line
+
+    assert set_env_line("", "A", "1") == "A=1\n"
+    assert set_env_line("B=2\n", "A", "1") == "B=2\nA=1\n"
+    assert set_env_line("B=2", "A", "1") == "B=2\nA=1\n"
+
+
+def test_set_env_line_replaces_in_place_and_keeps_other_lines():
+    from strata_kb.dockersetup import set_env_line
+
+    out = set_env_line("B=2\nA=old\nC=3\n", "A", "new")
+    assert out == "B=2\nA=new\nC=3\n"
+
+
+def test_set_env_line_treats_the_value_literally():
+    from strata_kb.dockersetup import set_env_line
+
+    # A backslash in the value must not be read as a regex escape.
+    assert set_env_line("A=old\n", "A", r"c:\x") == "A=c:\\x\n"
+
+
+def test_ensure_gitignored_creates_the_file_when_absent(tmp_path: Path):
+    from strata_kb.dockersetup import ensure_gitignored
+
+    assert ensure_gitignored(tmp_path) is True
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == ".env\n"
+    assert ensure_gitignored(tmp_path) is False
+
+
+def test_cli_docker_setup_rejects_ba_and_dev_by_name(tmp_path: Path):
+    for kind in ("ba", "dev"):
+        repo = tmp_path / kind
+        repo.mkdir()
+        init_repo(repo, kind)
+        result = runner.invoke(app, ["docker-setup", str(repo)])
+        assert result.exit_code == 1
+        assert f"kind: {kind}" in result.output
+        assert "hub" in result.output and "child" in result.output

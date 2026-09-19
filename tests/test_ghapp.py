@@ -8,7 +8,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from center_kb import ghapp
+from strata_kb import ghapp
 
 
 @pytest.fixture(scope="module")

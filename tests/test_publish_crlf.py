@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from center_kb.publish import publish
+from strata_kb.publish import publish
 
 
 def _seed_hub(tmp_path, run_git, gitattributes: str | None = None):
@@ -47,11 +47,11 @@ def test_second_publish_from_a_fresh_cache_is_a_no_op_under_global_autocrlf(
     git_kb, tmp_path, run_git, monkeypatch
 ):
     """I2: the original version of this test reused ONE hub cache clone for
-    both publishes (CENTER_KB_HUB_CACHE set once), so the second checkout --
+    both publishes (STRATA_KB_HUB_CACHE set once), so the second checkout --
     the only thing able to rewrite line endings -- never happened. Green
     with the clone-time core.autocrlf=false/core.eol=lf fix
     (gitio.py:136-154) deleted, and green with it inverted to
-    core.autocrlf=true/core.eol=crlf. Point CENTER_KB_HUB_CACHE at a
+    core.autocrlf=true/core.eol=crlf. Point STRATA_KB_HUB_CACHE at a
     genuinely fresh directory for the second publish (do not shutil.rmtree
     the first -- git's read-only object files raise PermissionError on
     Windows)."""
@@ -66,11 +66,11 @@ def test_second_publish_from_a_fresh_cache_is_a_no_op_under_global_autocrlf(
         if b"\r\n" in data:
             p.write_bytes(data.replace(b"\r\n", b"\n"))
 
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache1"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache1"))
     publish(git_kb["kb"], str(origin), repo_id="child", mode="direct")
     head1 = run_git(origin, "rev-parse", "HEAD")
 
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache2"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache2"))
     publish(git_kb["kb"], str(origin), repo_id="child", mode="direct")
     head2 = run_git(origin, "rev-parse", "HEAD")
 
@@ -89,7 +89,7 @@ def test_gitattributes_exempts_federation_from_normalisation_for_a_crlf_child(
     pattern) exempts the byte-for-byte mirror from normalisation."""
     gitattrs_path = (
         Path(__file__).resolve().parent.parent
-        / "src" / "center_kb" / "templates" / "init" / "gitattributes.txt"
+        / "src" / "strata_kb" / "templates" / "init" / "gitattributes.txt"
     )
     origin = _seed_hub(
         tmp_path, run_git, gitattributes=gitattrs_path.read_text(encoding="utf-8")
@@ -102,11 +102,11 @@ def test_gitattributes_exempts_federation_from_normalisation_for_a_crlf_child(
         data = p.read_bytes()
         p.write_bytes(data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
 
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache1"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache1"))
     publish(git_kb["kb"], str(origin), repo_id="child", mode="direct")
     head1 = run_git(origin, "rev-parse", "HEAD")
 
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(tmp_path / "cache2"))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache2"))
     publish(git_kb["kb"], str(origin), repo_id="child", mode="direct")
     head2 = run_git(origin, "rev-parse", "HEAD")
 

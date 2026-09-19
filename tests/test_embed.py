@@ -2,7 +2,7 @@ import pytest
 
 sqlite_vec = pytest.importorskip("sqlite_vec")
 
-from center_kb import embed
+from strata_kb import embed
 
 
 def _reset_cache():

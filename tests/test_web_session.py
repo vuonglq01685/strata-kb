@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from center_kb.web import auth
+from strata_kb.web import auth
 
 TOKEN = "s3cr3t-token-abcdefgh"
 
@@ -83,7 +83,7 @@ def test_login_sets_an_httponly_capped_cookie_that_is_not_the_token(web_client):
         "/ui/login", data={"token": TOKEN}, follow_redirects=False
     )
     cookie = resp.headers["set-cookie"]
-    assert "center_kb_session=" in cookie
+    assert "strata_kb_session=" in cookie
     assert TOKEN not in cookie
     assert "HttpOnly" in cookie
     assert "Max-Age=43200" in cookie
@@ -106,38 +106,42 @@ def test_logout_clears_the_cookie(web_client):
     resp = web_client.post("/ui/logout", follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"] == "/ui/login"
-    assert "center_kb_session=;" in resp.headers["set-cookie"].replace('""', "")
+    assert "strata_kb_session=;" in resp.headers["set-cookie"].replace('""', "")
 
 
 def test_a_raw_token_cookie_no_longer_authorises(web_client):
-    web_client.cookies.set("center_kb_session", TOKEN)
+    web_client.cookies.set("strata_kb_session", TOKEN)
     resp = web_client.get("/ui/docs", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/ui/login"
 
 
 def test_login_clears_the_pre_024_raw_token_cookie(web_client, token=TOKEN):
-    """Final review item 4: pre-0.24 set center_kb_token = the raw shared
-    secret. The session-cookie switch (M4) stopped READING that cookie but
-    never told the browser to drop it, so upgrading left an admin-equivalent
-    secret sitting in every existing user's jar. A fresh login must clear
-    it."""
+    """Login must clear cookies from prior product names (raw-token
+    center_kb_token, then center_kb_session) so an upgrade does not leave
+    an old credential in the jar."""
     resp = web_client.post(
         "/ui/login", data={"token": token}, follow_redirects=False
     )
+    cookies = resp.headers.get_list("set-cookie")
     assert any(
-        "center_kb_token=" in c and "Max-Age=0" in c
-        for c in resp.headers.get_list("set-cookie")
-    ), resp.headers.get_list("set-cookie")
+        "center_kb_token=" in c and "Max-Age=0" in c for c in cookies
+    ), cookies
+    assert any(
+        "center_kb_session=" in c and "Max-Age=0" in c for c in cookies
+    ), cookies
 
 
 def test_logout_clears_the_pre_024_raw_token_cookie(web_client):
     web_client.post("/ui/login", data={"token": TOKEN}, follow_redirects=False)
     resp = web_client.post("/ui/logout", follow_redirects=False)
+    cookies = resp.headers.get_list("set-cookie")
     assert any(
-        "center_kb_token=" in c and "Max-Age=0" in c
-        for c in resp.headers.get_list("set-cookie")
-    ), resp.headers.get_list("set-cookie")
+        "center_kb_token=" in c and "Max-Age=0" in c for c in cookies
+    ), cookies
+    assert any(
+        "center_kb_session=" in c and "Max-Age=0" in c for c in cookies
+    ), cookies
 
 
 def _proto_request(xfp: str):

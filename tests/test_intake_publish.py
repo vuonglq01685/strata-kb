@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import ghapp, intake
+from strata_kb import ghapp, intake
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -124,7 +124,7 @@ def test_intake_publish_threads_the_hub_token_into_pull_and_push(tmp_path, monke
     import hashlib
     import time
 
-    from center_kb import gitio
+    from strata_kb import gitio
 
     # Seed first, bare second (mirrors the fixture at the top of this file,
     # line 37): `clone --bare` from a seed that already has a commit on
@@ -151,7 +151,7 @@ def test_intake_publish_threads_the_hub_token_into_pull_and_push(tmp_path, monke
     fake_hub_ref = "https://x-access-token:ghs_INTAKETOKEN@example.invalid/hub.git"
     stripped = "https://example.invalid/hub.git"
     cache_base = tmp_path / "cache"
-    monkeypatch.setenv("CENTER_KB_HUB_CACHE", str(cache_base))
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
     key = hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)

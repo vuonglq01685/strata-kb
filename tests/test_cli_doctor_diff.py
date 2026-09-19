@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from center_kb.cli import app
+from strata_kb.cli import app
 
 runner = CliRunner()
 
@@ -39,7 +39,7 @@ def test_doctor_broken_kb_exits_1(git_kb, fed_hub):
 
 
 def test_doctor_context_stale_exits_2(git_kb, fed_hub, run_git, tmp_path_factory):
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     rev1 = run_git(fed_hub, "rev-parse", "--short", "HEAD")
     l2 = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "ch1.md"

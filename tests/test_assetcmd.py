@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import assetcmd, assetstore, gitio, models
-from center_kb.federation import FederationMeta
-from center_kb.hub import HubHandle
+from strata_kb import assetcmd, assetstore, gitio, models
+from strata_kb.federation import FederationMeta
+from strata_kb.hub import HubHandle
 
 DATA = b"MIGRATEME"
 SHA = hashlib.sha256(DATA).hexdigest()
@@ -287,7 +287,7 @@ def test_migrate_cli_does_not_print_a_false_all_clear_when_something_was_skipped
     CLI print/exit branch under test starts after both of those calls)."""
     from typer.testing import CliRunner
 
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_hub_or_exit", lambda hub, kb_dir: HubHandle(root=Path(".")))
     monkeypatch.setattr(
@@ -308,7 +308,7 @@ def test_migrate_cli_still_prints_a_true_all_clear_when_nothing_was_skipped(monk
     still correct for, and this fix must leave it alone."""
     from typer.testing import CliRunner
 
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_hub_or_exit", lambda hub, kb_dir: HubHandle(root=Path(".")))
     monkeypatch.setattr(

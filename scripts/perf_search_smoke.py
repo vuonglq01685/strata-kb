@@ -15,10 +15,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from center_kb import models, searchdb
-from center_kb.federation import FederationMeta
-from center_kb.hub import HubHandle
-from center_kb.query import search
+from strata_kb import models, searchdb
+from strata_kb.federation import FederationMeta
+from strata_kb.hub import HubHandle
+from strata_kb.query import search
 
 
 class HashEmbedder:

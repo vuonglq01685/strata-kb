@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from center_kb import doctor
-from center_kb.hub import HubHandle
+from strata_kb import doctor
+from strata_kb.hub import HubHandle
 from tests.conftest import make_fed_entry
 
 
@@ -21,7 +21,7 @@ def test_check_federation_publish_clean_not_published_yet(tmp_path):
 
 
 def test_check_federation_publish_digest_match_no_issue(tmp_path):
-    from center_kb import publish
+    from strata_kb import publish
 
     root = _mid(tmp_path)
     upper = tmp_path / "root-hub"
@@ -32,7 +32,7 @@ def test_check_federation_publish_digest_match_no_issue(tmp_path):
 
 
 def test_check_federation_publish_digest_drift_warns(tmp_path):
-    from center_kb import publish
+    from strata_kb import publish
 
     root = _mid(tmp_path)
     upper = tmp_path / "root-hub"
@@ -45,7 +45,7 @@ def test_check_federation_publish_digest_drift_warns(tmp_path):
 
 
 def test_check_federation_publish_meta_only_drift_warns(tmp_path):
-    from center_kb import publish
+    from strata_kb import publish
 
     root = _mid(tmp_path)
     upper = tmp_path / "root-hub"
@@ -82,7 +82,7 @@ def test_check_federation_publish_self_entry_not_a_cycle(tmp_path):
 def test_cli_doctor_hub_kind_self_hub_no_false_warnings(tmp_path, run_git):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
     from tests.test_publish_hub import _git_repo
 
     hub = tmp_path / "hub"
@@ -94,7 +94,7 @@ def test_cli_doctor_hub_kind_self_hub_no_false_warnings(tmp_path, run_git):
     fed = hub / "federation"
     make_fed_entry(fed, "repo-a", "doc-a")
     _git_repo(run_git, hub)
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     write_federation_index(fed)
     run_git(hub, "add", "-A")
@@ -109,7 +109,7 @@ def test_cli_doctor_hub_kind_self_hub_no_false_warnings(tmp_path, run_git):
 def test_cli_doctor_hub_kind_unpublished_upstream_warns(tmp_path, run_git):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
     from tests.test_publish_hub import _git_repo
 
     root_hub = tmp_path / "root-hub"
@@ -122,7 +122,7 @@ def test_cli_doctor_hub_kind_unpublished_upstream_warns(tmp_path, run_git):
     fed0.mkdir()
     (fed0 / ".gitkeep").write_text("", encoding="utf-8")
     _git_repo(run_git, root_hub)
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     write_federation_index(fed0)
     run_git(root_hub, "add", "-A")
@@ -136,7 +136,7 @@ def test_cli_doctor_hub_kind_unpublished_upstream_warns(tmp_path, run_git):
     )
     make_fed_entry(mid / "federation", "repo-a", "doc-a")
     _git_repo(run_git, mid)
-    from center_kb.federation import write_federation_index as wfi
+    from strata_kb.federation import write_federation_index as wfi
 
     wfi(mid / "federation")
     run_git(mid, "add", "-A")
@@ -150,7 +150,7 @@ def test_cli_doctor_hub_kind_unpublished_upstream_warns(tmp_path, run_git):
 def test_cli_doctor_hub_kind_outside_git_does_not_crash(tmp_path):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
 
     loose = tmp_path / "loose"
     (loose / ".kb").mkdir(parents=True)
@@ -160,7 +160,7 @@ def test_cli_doctor_hub_kind_outside_git_does_not_crash(tmp_path):
     )
     fed = loose / "federation"
     fed.mkdir()
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     write_federation_index(fed)
 

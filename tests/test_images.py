@@ -7,7 +7,7 @@ import pytest
 PIL = pytest.importorskip("PIL")
 from PIL import Image
 
-from center_kb.ingest import images
+from strata_kb.ingest import images
 
 
 def _img(w: int, h: int, color=(200, 30, 30)) -> Image.Image:
@@ -180,13 +180,13 @@ def test_legend_map_ignores_blank_meaning():
 
 
 def test_is_blank_true_for_an_all_white_crop():
-    from center_kb.ingest import images
+    from strata_kb.ingest import images
 
     assert images.is_blank(Image.new("RGB", (40, 40), (255, 255, 255)))
 
 
 def test_is_blank_false_when_ink_covers_enough_of_the_crop():
-    from center_kb.ingest import images
+    from strata_kb.ingest import images
 
     img = Image.new("RGB", (40, 40), (255, 255, 255))
     for x in range(40):
@@ -197,7 +197,7 @@ def test_is_blank_false_when_ink_covers_enough_of_the_crop():
 
 
 def test_is_blank_true_for_a_stray_speck():
-    from center_kb.ingest import images
+    from strata_kb.ingest import images
 
     img = Image.new("RGB", (100, 100), (255, 255, 255))
     img.putpixel((3, 3), (0, 0, 0))

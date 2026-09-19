@@ -3,7 +3,7 @@ unmerged publish/<rid> branch."""
 import threading
 import time
 
-from center_kb import gitio, intake
+from strata_kb import gitio, intake
 
 
 def test_the_serving_tree_never_shows_unmerged_content(

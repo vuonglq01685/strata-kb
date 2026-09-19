@@ -9,9 +9,9 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from center_kb import initcmd
-from center_kb.cli import app
-from center_kb.initcmd import expected_files, init_repo
+from strata_kb import initcmd
+from strata_kb.cli import app
+from strata_kb.initcmd import expected_files, init_repo
 from tests.cli_stub import write_cli_stub
 
 # The CI dispatch step under test is a bash script, and the workflow that
@@ -156,7 +156,7 @@ def test_init_does_not_duplicate_kind_line(tmp_path):
 
 
 def test_kb_doctor_on_fresh_skeleton_requires_hub(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("CENTER_KB_HUB", raising=False)
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
     init_repo(tmp_path, "child")
     result = runner.invoke(app, ["doctor", "--kb-dir", str(tmp_path / ".kb")])
     assert result.exit_code == 1
@@ -211,7 +211,7 @@ def test_cli_init_conflicting_kind_errors(tmp_path: Path):
 
 
 def test_cli_init_interactive_prompt(tmp_path: Path, monkeypatch):
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     result = runner.invoke(app, ["init", str(tmp_path)], input="hub\n")
@@ -224,7 +224,7 @@ def test_cli_init_interactive_prompt(tmp_path: Path, monkeypatch):
 def test_cli_init_interactive_prompt_rejects_invalid_then_accepts(
     tmp_path: Path, monkeypatch
 ):
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     result = runner.invoke(app, ["init", str(tmp_path)], input="server\nchild\n")
@@ -290,7 +290,7 @@ def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
         assert "PR" in text                               # PR-mode publish
         assert "kb diff" in text
         assert "kb status" in text
-        assert "CENTER_KB_HUB" in text
+        assert "STRATA_KB_HUB" in text
         assert "kb doctor" in text
 
 
@@ -371,8 +371,8 @@ def test_child_mcp_json_uses_env_expansion(tmp_path: Path):
     init_repo(tmp_path, "child")
     text = (tmp_path / ".mcp.json").read_text(encoding="utf-8")
     assert '"type": "http"' in text
-    assert "${CENTER_KB_HUB_URL}/mcp" in text
-    assert "Bearer ${CENTER_KB_HTTP_TOKEN}" in text
+    assert "${STRATA_KB_HUB_URL}/mcp" in text
+    assert "Bearer ${STRATA_KB_HTTP_TOKEN}" in text
 
 
 def test_quickstarts_match_kind(tmp_path: Path):
@@ -491,11 +491,11 @@ def test_init_scaffolds_cursor_mcp_per_kind(tmp_path: Path):
     init_repo(hub_repo, "hub")
     init_repo(child_repo, "child")
     hub_mcp = (hub_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8")
-    assert "center_kb.mcp" in hub_mcp                      # stdio, same as .mcp.json
+    assert "strata_kb.mcp" in hub_mcp                      # stdio, same as .mcp.json
     assert hub_mcp == (hub_repo / ".mcp.json").read_text(encoding="utf-8")
     child_mcp = (child_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8")
-    assert "${env:CENTER_KB_HUB_URL}/mcp" in child_mcp     # Cursor env syntax
-    assert "Bearer ${env:CENTER_KB_HTTP_TOKEN}" in child_mcp
+    assert "${env:STRATA_KB_HUB_URL}/mcp" in child_mcp     # Cursor env syntax
+    assert "Bearer ${env:STRATA_KB_HTTP_TOKEN}" in child_mcp
 
 
 def test_assistant_slash_command_parity(tmp_path: Path):
@@ -504,7 +504,7 @@ def test_assistant_slash_command_parity(tmp_path: Path):
     layouts = {
         "claude": lambda n: (
             Path(".claude/commands") / f"{n}.md"
-            if n in ("kb-summarize", "kb-docker-setup", "kb-approve")
+            if n in ("kb-summarize", "kb-docker-setup", "kb-approve", "kb-mcp-setup")
             else Path(".claude/skills") / n / "SKILL.md"
         ),
         "copilot": lambda n: (
@@ -515,7 +515,9 @@ def test_assistant_slash_command_parity(tmp_path: Path):
         "cursor": lambda n: Path(".cursor/commands") / f"{n}.md",
     }
     common = common + ["kb-docker-setup", "kb-approve"]
-    for kind, names in (("hub", common), ("child", common)):
+    # kb-mcp-setup is a reader-kind command: the hub serves MCP over stdio
+    # and has nothing to connect to.
+    for kind, names in (("hub", common), ("child", common + ["kb-mcp-setup"])):
         repo = tmp_path / kind
         repo.mkdir()
         init_repo(repo, kind)
@@ -564,7 +566,7 @@ def test_record_asset_store_appends_s3_block(tmp_path: Path):
     assert "asset_store:" in text and "mode: s3" in text
     assert 'bucket: ""' in text and 'prefix: "assets/"' in text
     # parses into the spec B model
-    from center_kb import config as config_mod
+    from strata_kb import config as config_mod
 
     assert config_mod.load_config(tmp_path).asset_store.mode == "s3"
 
@@ -573,7 +575,7 @@ def test_record_asset_store_appends_none_block(tmp_path: Path):
     cfg = tmp_path / "config.yaml"
     cfg.write_text("kind: hub\n", encoding="utf-8")
     assert initcmd.record_asset_store(cfg, "none") == "recorded"
-    from center_kb import config as config_mod
+    from strata_kb import config as config_mod
 
     assert config_mod.load_config(tmp_path).asset_store.mode == "none"
 
@@ -795,7 +797,12 @@ def test_init_rejects_unknown_kind_still_excludes_ba_typos(tmp_path: Path):
 
 def test_hub_child_unchanged_by_phase4(tmp_path: Path):
     assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
-    assert sorted(expected_files("child")) == sorted(_PRE_PHASE4_CHILD_FILES)
+    # child gained exactly the four kb-mcp-setup wrappers since Phase 4 —
+    # named explicitly rather than folded into the frozen list, so the
+    # freeze keeps meaning "Phase 4/5 added nothing".
+    assert sorted(expected_files("child")) == sorted(
+        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
+    )
     hub_repo = tmp_path / "h"
     child_repo = tmp_path / "c"
     hub_repo.mkdir()
@@ -851,9 +858,9 @@ def test_kb_ticket_lint_workflow_content(tmp_path: Path):
     # (Checks the literal old trigger filter, not the substring 'paths:' —
     # that substring also appears in this file's own explanatory comments.)
     assert 'paths: ["tickets/**.md", "missions/**.md"]' not in content
-    assert "pip install center-kb" in content
+    assert "pip install strata-kb" in content
     assert "kb ticket lint" in content
-    assert "vars.CENTER_KB_HUB" in content
+    assert "vars.STRATA_KB_HUB" in content
     assert "secrets.KB_HUB_TOKEN" in content
     # no hardcoded credential/URL — only GH Actions expressions
     assert "kb.internal" not in content
@@ -864,9 +871,9 @@ def test_kb_ticket_lint_workflow_content(tmp_path: Path):
 def test_quickstart_ba_content(tmp_path: Path):
     init_repo(tmp_path, "ba")
     text = (tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8")
-    assert "pip install center-kb" in text
-    assert "CENTER_KB_HUB_URL" in text
-    assert "CENTER_KB_HTTP_TOKEN" in text
+    assert "pip install strata-kb" in text
+    assert "STRATA_KB_HUB_URL" in text
+    assert "STRATA_KB_HTTP_TOKEN" in text
     assert "/ba-ticket-author" in text
     assert "tickets/" in text
     assert "DoR" in text
@@ -911,7 +918,7 @@ def test_cli_init_assets_rejected_for_ba(tmp_path: Path):
 
 
 def test_resolve_kind_interactive_accepts_ba(tmp_path: Path, monkeypatch):
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     result = runner.invoke(app, ["init", str(tmp_path)], input="ba\n")
@@ -924,7 +931,7 @@ def test_resolve_kind_interactive_accepts_ba(tmp_path: Path, monkeypatch):
 def test_resolve_kind_interactive_rejects_invalid_then_accepts_ba(
     tmp_path: Path, monkeypatch
 ):
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     result = runner.invoke(app, ["init", str(tmp_path)], input="server\nba\n")
@@ -935,7 +942,7 @@ def test_resolve_kind_interactive_rejects_invalid_then_accepts_ba(
 
 
 def test_resolve_kind_interactive_accepts_dev(tmp_path: Path, monkeypatch):
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     result = runner.invoke(app, ["init", str(tmp_path)], input="dev\n")
@@ -948,7 +955,7 @@ def test_resolve_kind_interactive_accepts_dev(tmp_path: Path, monkeypatch):
 def test_resolve_kind_interactive_rejects_invalid_then_accepts_dev(
     tmp_path: Path, monkeypatch
 ):
-    from center_kb import cli
+    from strata_kb import cli
 
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     result = runner.invoke(app, ["init", str(tmp_path)], input="server\ndev\n")
@@ -963,7 +970,7 @@ def test_resolve_kind_interactive_rejects_invalid_then_accepts_dev(
 
 
 def test_config_load_accepts_kind_ba(tmp_path: Path):
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     kb_dir = tmp_path / ".kb"
     kb_dir.mkdir()
@@ -973,7 +980,7 @@ def test_config_load_accepts_kind_ba(tmp_path: Path):
 
 
 def test_ba_kind_scaffolds_the_mission_plan_set(tmp_path):
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
 
@@ -988,7 +995,7 @@ def test_ba_kind_scaffolds_the_mission_plan_set(tmp_path):
 
 
 def test_hub_and_child_do_not_gain_mission_artifacts(tmp_path):
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     for kind in ("hub", "child"):
         target = tmp_path / kind
@@ -1006,7 +1013,7 @@ def test_hub_and_child_do_not_gain_mission_artifacts(tmp_path):
 
 
 def test_ba_kind_scaffolds_the_mission_plan_skill(tmp_path):
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
 
@@ -1023,7 +1030,7 @@ def test_every_mission_wrapper_carries_the_no_silent_skip_rule(tmp_path):
     """kb mission lint has no MCP fallback, so 'kb unavailable is not a
     PASS' must appear in all four wrappers — it is the only thing standing
     between a missing binary and a silently unlinted mission."""
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
 
@@ -1045,8 +1052,8 @@ def test_mission_wrappers_reference_the_required_headings(tmp_path):
     _byte_identical` enforces. Hard-coding the skill path here would leave
     that second copy able to drift from `REQUIRED_MISSION_HEADINGS`
     undetected."""
-    from center_kb import mission
-    from center_kb.initcmd import init_repo
+    from strata_kb import mission
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
     for rel in _MISSION_WRAPPER_PATHS:
@@ -1077,7 +1084,7 @@ def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
     of shipping four near-duplicate documents. A substring/heading check
     can pass while the bodies silently fork per host; only an exact slice
     comparison catches that drift."""
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
 
@@ -1102,7 +1109,7 @@ def test_ticket_wrappers_document_the_refs_inheritance_rule(tmp_path):
     ticket-lint back-link check), and the `tickets/<mission-id>-US<n>.md`
     filename convention (dropping it means the back-link check can't find
     the ticket at all)."""
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
 
@@ -1118,7 +1125,7 @@ def test_mission_wrappers_carry_the_never_auto_rules(tmp_path):
     'never auto-pick' (ambiguous kb_search candidates) are load-bearing
     hard rules with no lint-time enforcement — a wrapper that drops either
     one relies entirely on the agent's own restraint."""
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
 
@@ -1129,7 +1136,7 @@ def test_mission_wrappers_carry_the_never_auto_rules(tmp_path):
 
 
 def test_ci_gate_covers_both_tickets_and_missions(tmp_path):
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
     wf = (
@@ -1149,7 +1156,7 @@ def test_ci_gate_job_name_is_frozen(tmp_path):
     """Branch protection on provisioned BA repos keys on the job name.
     Renaming it leaves those repos waiting forever on a required check
     that never runs again."""
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
     wf_path = tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
@@ -1160,7 +1167,7 @@ def test_ci_gate_job_name_is_frozen(tmp_path):
 
 
 def test_ci_gate_has_no_hardcoded_credentials(tmp_path):
-    from center_kb.initcmd import init_repo
+    from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
     wf = (
@@ -1245,7 +1252,7 @@ _KB_STUB_BODY = (
     # be exercised without a real hub.
     "nonjson_markers = [m for m in os.environ.get('KB_STUB_NONJSON', '').split(os.pathsep) if m]\n"
     "if any(a in nonjson_markers for a in argv):\n"
-    "    print('hub unreachable: could not resolve center-kb-hub.example')\n"
+    "    print('hub unreachable: could not resolve strata-kb-hub.example')\n"
     "    sys.exit(1)\n"
     # Task 13 review (Important 2): the stub used to only ever exit 0/1, so
     # the dispatch step's rc==2 -> STALE branch never actually ran under
@@ -1342,7 +1349,7 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
         **os.environ,
         "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
         "BASE_REF": "main",
-        "CENTER_KB_HUB": "https://example.invalid/hub",
+        "STRATA_KB_HUB": "https://example.invalid/hub",
         "KB_STUB_LOG": str(log_path),
         "RUNNER_TEMP": str(tmp_path),
         # Real GitHub Actions always provides this; the dispatch step now
@@ -1447,7 +1454,7 @@ def test_ci_gate_step_aborts_on_failing_git_diff(tmp_path):
             **os.environ,
             "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
             "BASE_REF": "no-such-branch",
-            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "STRATA_KB_HUB": "https://example.invalid/hub",
             "KB_STUB_LOG": str(log_path),
             "RUNNER_TEMP": str(tmp_path),
         },
@@ -1500,7 +1507,7 @@ def test_ci_gate_prints_notice_and_exits_zero_when_nothing_changed(tmp_path):
         env={
             **os.environ,
             "BASE_REF": "main",
-            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "STRATA_KB_HUB": "https://example.invalid/hub",
             "RUNNER_TEMP": str(tmp_path),
             "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
         },
@@ -1551,7 +1558,7 @@ def test_ci_gate_loud_fallback_arm_fails_without_short_circuiting(tmp_path):
             **os.environ,
             "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
             "BASE_REF": "main",
-            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "STRATA_KB_HUB": "https://example.invalid/hub",
             "KB_STUB_LOG": str(log_path),
             "KB_STUB_FAIL": "",
             "RUNNER_TEMP": str(tmp_path),
@@ -1607,7 +1614,7 @@ def test_ci_gate_dispatch_loop_pins_stale_verdict(tmp_path):
             **os.environ,
             "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
             "BASE_REF": "main",
-            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "STRATA_KB_HUB": "https://example.invalid/hub",
             "KB_STUB_LOG": str(log_path),
             "KB_STUB_FAIL": "tickets/T-stale.md",
             "KB_STUB_RC": "2",
@@ -1677,7 +1684,7 @@ def test_ci_gate_dispatch_loop_survives_a_non_json_lint_exit(tmp_path):
             **os.environ,
             "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
             "BASE_REF": "main",
-            "CENTER_KB_HUB": "https://example.invalid/hub",
+            "STRATA_KB_HUB": "https://example.invalid/hub",
             "KB_STUB_LOG": str(log_path),
             "KB_STUB_NONJSON": "tickets/A-broken.md",
             "RUNNER_TEMP": str(tmp_path),
@@ -1732,9 +1739,13 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # (docs/impl/.gitignore — C1 keeps the context cache out of git) + 3
     # (batch 7: the PR template, its workflow, and the TDD exemption doc) + 1
     # (Wave G fix round 2 Minor 1: .gitattributes, the same F-D10 exemption
-    # a child repo gets) = 49.
-    assert len(expected_files("dev")) == 49
-    assert sorted(report.created) == sorted(expected_files("dev"))
+    # a child repo gets) + 4 (the kb-mcp-setup wrappers, MCP_CLIENT_TEMPLATES)
+    # + 1 (docs/pr-review-rubric.md, the dev PR review rubric)
+    # = 54.
+    assert len(expected_files("dev")) == 54
+    assert sorted(report.created) == sorted(
+        expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES)
+    )
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
         assert (tmp_path / rel).is_file(), rel
@@ -1822,13 +1833,15 @@ def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
 
 def test_phase5_adds_nothing_to_hub_child_or_ba(tmp_path: Path):
     assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
-    assert sorted(expected_files("child")) == sorted(_PRE_PHASE4_CHILD_FILES)
+    assert sorted(expected_files("child")) == sorted(
+        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
+    )
     for rel in expected_files("ba"):
         assert "dev-" not in rel, rel
 
 
 def test_config_accepts_kind_dev(tmp_path: Path):
-    from center_kb.config import load_config
+    from strata_kb.config import load_config
 
     init_repo(tmp_path, "dev")
     assert load_config(tmp_path / ".kb").kind == "dev"
@@ -1853,7 +1866,7 @@ def test_cli_init_dev_next_steps(tmp_path: Path):
 
 
 def test_kind_descriptions_lists_four_kinds():
-    from center_kb.cli import KIND_DESCRIPTIONS
+    from strata_kb.cli import KIND_DESCRIPTIONS
 
     assert "one of four kinds" in KIND_DESCRIPTIONS
     assert "dev" in KIND_DESCRIPTIONS
@@ -1870,8 +1883,8 @@ def test_quickstart_dev_content(tmp_path: Path):
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
     assert "/dev-implement-ticket" in text
-    assert "CENTER_KB_HUB_URL" in text
-    assert "CENTER_KB_HTTP_TOKEN" in text
+    assert "STRATA_KB_HUB_URL" in text
+    assert "STRATA_KB_HTTP_TOKEN" in text
     assert "federation/registry.yaml" in text
     assert "docs/impl/" in text
     # Task D2: Stage C shipped `dev-code-seed` + `kb svc note` on this
@@ -2268,7 +2281,7 @@ def test_the_shipped_pr_template_fails_the_linter(tmp_path: Path):
     # The proof that the comment-stripping rule is real. An author who
     # deletes nothing and writes nothing must get a red check, not a green
     # one — if this ever passes, the gate has become decoration.
-    from center_kb.prlint import lint_body
+    from strata_kb.prlint import lint_body
 
     init_repo(tmp_path, "dev")
     text = (tmp_path / ".github" / "pull_request_template.md").read_text(
@@ -2283,7 +2296,7 @@ def test_hub_scaffold_ignores_the_search_index(tmp_path):
     """Reviewer C F-C17: the index lives at <hub>/.kb-work/search.db and shows
     up as untracked `?? .kb-work/`. No init scaffold covered it, so a hub
     maintainer running `git add -A` commits a multi-MB binary."""
-    from center_kb import initcmd
+    from strata_kb import initcmd
 
     initcmd.init_repo(tmp_path, "hub")
     text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
@@ -2363,7 +2376,7 @@ def test_hub_non_utf8_gitignore_is_left_untouched_not_crashed(tmp_path: Path):
 
 
 def _pyproject_version() -> str:
-    # Deliberately independent of `center_kb.__version__`/importlib.metadata —
+    # Deliberately independent of `strata_kb.__version__`/importlib.metadata —
     # this must be a source _render's implementation cannot also be reading,
     # or a regression there would go undetected (mirrors
     # scripts/check_package.py's pyproject_version()).
@@ -2375,7 +2388,7 @@ def _pyproject_version() -> str:
 
 
 def test_scaffolded_workflows_pin_the_scaffolding_version(tmp_path):
-    from center_kb import initcmd
+    from strata_kb import initcmd
 
     expected_version = _pyproject_version()
     # Regression guard: `__init__.py` once hand-maintained a stale
@@ -2388,18 +2401,18 @@ def test_scaffolded_workflows_pin_the_scaffolding_version(tmp_path):
     dest.mkdir()
     initcmd.init_repo(dest, "child")
     wf = (dest / ".github" / "workflows" / "kb-publish.yml").read_text(encoding="utf-8")
-    assert f"pip install center-kb=={expected_version}" in wf
-    assert "pip install center-kb\n" not in wf
+    assert f"pip install strata-kb=={expected_version}" in wf
+    assert "pip install strata-kb\n" not in wf
     compose = (dest / "docker-compose.yml").read_text(encoding="utf-8")
     assert ":latest" not in compose
     # release.yml only ever pushes vX.Y.Z tags (docker-release retags the
     # verified sha- build to ${GITHUB_REF_NAME}, the v* tag that triggered
     # the release) plus `latest` and `sha-<commit>` — a bare
-    # `center-kb:<version>` tag has never existed on GHCR. Assert the shape
+    # `strata-kb:<version>` tag has never existed on GHCR. Assert the shape
     # that is actually published, and that the unpublished bare form isn't
     # what got rendered instead.
-    assert f"center-kb:v{expected_version}" in compose
-    assert f"center-kb:{expected_version}" not in compose
+    assert f"strata-kb:v{expected_version}" in compose
+    assert f"strata-kb:{expected_version}" not in compose
 
 
 # H2 (Wave H round 5): the version test above is a *string* check, so an edit
@@ -2445,7 +2458,7 @@ def test_scaffolded_compose_pins_the_hub_data_and_model_volumes(tmp_path):
     compose without `./:/data` boots against an EMPTY knowledge base in
     container-local scratch, and one without the model cache re-downloads
     the embedding model on every restart."""
-    from center_kb import initcmd
+    from strata_kb import initcmd
 
     dest = tmp_path / "hub"
     dest.mkdir()
@@ -2467,7 +2480,7 @@ def test_child_compose_keeps_its_volumes_and_the_root_compose_matches_the_hub_te
     the same edit, so the two are asserted together: this is the only test
     that reads a compose file as YAML, and keeping them apart is how they
     drifted."""
-    from center_kb import initcmd
+    from strata_kb import initcmd
 
     dest = tmp_path / "child"
     dest.mkdir()
@@ -2485,7 +2498,7 @@ def test_child_compose_keeps_its_volumes_and_the_root_compose_matches_the_hub_te
 
 
 def test_no_template_leaves_an_unfilled_version_placeholder(tmp_path):
-    from center_kb import initcmd
+    from strata_kb import initcmd
 
     for kind in ("hub", "child", "ba", "dev"):
         dest = tmp_path / kind
@@ -2508,12 +2521,12 @@ def test_scaffolded_workflows_pin_the_cli(tmp_path, kind, workflow):
     text = (tmp_path / ".github" / "workflows" / workflow).read_text(
         encoding="utf-8"
     )
-    assert f"pip install center-kb=={_dist_version('center-kb')}" in text
+    assert f"pip install strata-kb=={_dist_version('strata-kb')}" in text
     assert "{version}" not in text
 
 
 def test_hub_and_child_scaffolds_pin_lf_line_endings(tmp_path):
-    from center_kb import initcmd
+    from strata_kb import initcmd
 
     for kind in ("hub", "child"):
         dest = tmp_path / kind
@@ -2539,7 +2552,7 @@ def test_init_dev_lang_scaffolds_the_pack_records_it_and_reinit_reuses_it(tmp_pa
 def test_init_cli_rejects_an_unknown_lang(tmp_path: Path):
     from typer.testing import CliRunner
 
-    from center_kb.cli import app
+    from strata_kb.cli import app
 
     result = CliRunner().invoke(app, ["init", str(tmp_path), "--kind", "dev", "--lang", "cobol"])
     assert result.exit_code == 1
@@ -2569,3 +2582,70 @@ def test_init_dev_lang_notes_when_langs_already_recorded(tmp_path: Path):
     assert (tmp_path / "docs" / "conventions" / "java.md").is_file()
     assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
     assert any("hand-edit" in n and "python" in n for n in report.notes)
+
+
+_MCP_SETUP_WRAPPERS = [
+    ".claude/skills/kb-mcp-setup/SKILL.md",
+    ".claude/commands/kb-mcp-setup.md",
+    ".github/prompts/kb-mcp-setup.prompt.md",
+    ".cursor/commands/kb-mcp-setup.md",
+]
+
+
+@pytest.mark.parametrize("kind", ["child", "ba", "dev"])
+def test_mcp_setup_wrappers_exist_on_every_reader_kind(tmp_path: Path, kind):
+    init_repo(tmp_path, kind)
+    for rel in _MCP_SETUP_WRAPPERS:
+        assert (tmp_path / rel).is_file(), (kind, rel)
+
+
+def test_mcp_setup_wrappers_are_absent_on_the_hub(tmp_path: Path):
+    init_repo(tmp_path, "hub")
+    for rel in _MCP_SETUP_WRAPPERS:
+        assert not (tmp_path / rel).exists(), rel
+
+
+def test_mcp_setup_wrappers_never_take_the_token_in_chat(tmp_path: Path):
+    """The assistant runs in a non-TTY subprocess, so the hidden prompt is
+    unavailable; asking in chat would put a live credential in the
+    transcript. Every wrapper must say so and must send the user to their
+    own terminal."""
+    init_repo(tmp_path, "child")
+    for rel in _MCP_SETUP_WRAPPERS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        if rel.endswith(".claude/commands/kb-mcp-setup.md"):
+            continue  # the thin Claude command only delegates to the skill
+        assert "NEVER ask for the token" in text, rel
+        assert "their own terminal" in text, rel
+        assert "kb mcp-setup --hub-url" in text, rel
+
+
+@pytest.mark.parametrize(
+    "kind,quickstart",
+    [("child", "QUICKSTART.md"), ("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")],
+)
+def test_quickstart_points_at_mcp_setup(tmp_path: Path, kind, quickstart):
+    init_repo(tmp_path, kind)
+    text = (tmp_path / quickstart).read_text(encoding="utf-8")
+    assert "kb mcp-setup" in text, kind
+    assert "/kb-mcp-setup" in text, kind
+    # both variable names stay documented — the user may still set them by hand
+    assert "STRATA_KB_HUB_URL" in text, kind
+    assert "STRATA_KB_HTTP_TOKEN" in text, kind
+
+
+def test_init_kind_dev_scaffolds_the_review_rubric_and_its_override(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    assert (tmp_path / "docs" / "pr-review-rubric.md").is_file()
+    assert (tmp_path / "docs" / "pr-review-rubric.local.md").is_file()
+
+
+def test_the_dev_rubric_override_is_never_refreshed(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    local = tmp_path / "docs" / "pr-review-rubric.local.md"
+    local.write_text("# mine\n", encoding="utf-8")
+    report = init_repo(tmp_path, "dev")
+    assert local.read_text(encoding="utf-8") == "# mine\n"
+    assert any(
+        "local overrides — never refreshed" in entry for entry in report.skipped
+    )

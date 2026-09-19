@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import models
-from center_kb.mdutils import count_tokens, slice_section
+from strata_kb import models
+from strata_kb.mdutils import count_tokens, slice_section
 
 
 class FakeEmbedder:
@@ -64,7 +64,7 @@ def _no_real_embedder(request, monkeypatch):
     ):
         yield
         return
-    from center_kb import embed
+    from strata_kb import embed
 
     monkeypatch.setattr(embed, "default_embedder", lambda: None)
     yield
@@ -331,7 +331,7 @@ def intake_cfg(hub_with_origin, tmp_path, monkeypatch):
     keypair fixtures for exercising the authenticated /intake/publish route)
     which this one does not replace.
     """
-    from center_kb import ghapp, intake
+    from strata_kb import ghapp, intake
 
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
@@ -374,7 +374,7 @@ def make_fed_entry(
     published_at: str = "2026-07-13T00:00:00+00:00",
 ) -> Path:
     """Write one federation entry in the new format (full .kb mirror, L0→L3)."""
-    from center_kb.federation import FederationMeta
+    from strata_kb.federation import FederationMeta
 
     entry = federation_dir / repo_id
     doc_dir = entry / doc_id
@@ -423,7 +423,7 @@ def make_fed_entry(
 def fed_hub(tmp_path: Path, run_git) -> Path:
     """Hub git repo: federation/ has 2 published repos (mirror layout) + an
     aggregate index."""
-    from center_kb.federation import write_federation_index
+    from strata_kb.federation import write_federation_index
 
     hub = tmp_path / "kb-hub"
     (hub / ".kb").mkdir(parents=True)
@@ -485,8 +485,8 @@ def web_client(hub_dir: Path, token: str):
     web-lane task inherits must not silently skip it)."""
     from starlette.testclient import TestClient
 
-    from center_kb.mcp import ServerConfig
-    from center_kb.web.app import create_app
+    from strata_kb.mcp import ServerConfig
+    from strata_kb.web.app import create_app
 
     config = ServerConfig(kb_dir=hub_dir / ".kb", hub=str(hub_dir))
     with TestClient(create_app(config, token)) as c:
@@ -500,8 +500,8 @@ def web_client_https(hub_dir: Path, token: str):
     fixture name)."""
     from starlette.testclient import TestClient
 
-    from center_kb.mcp import ServerConfig
-    from center_kb.web.app import create_app
+    from strata_kb.mcp import ServerConfig
+    from strata_kb.web.app import create_app
 
     config = ServerConfig(kb_dir=hub_dir / ".kb", hub=str(hub_dir))
     with TestClient(

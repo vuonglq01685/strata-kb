@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from center_kb import assetstore, config, models
+from strata_kb import assetstore, config, models
 
 
 NAME_PNG = "a" * 64 + ".png"
@@ -120,12 +120,12 @@ def test_missing_boto3_names_the_extra(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", block)
     cfg = config.AssetStoreConfig(mode="s3", bucket="kb-assets")
     store = assetstore.S3Store(cfg)  # construction OK — import is lazy
-    with pytest.raises(assetstore.AssetStoreError, match=r"center-kb\[s3\]"):
+    with pytest.raises(assetstore.AssetStoreError, match=r"strata-kb\[s3\]"):
         store.exists(NAME_PNG)
 
 
 def test_store_for_hub_reads_hub_config(tmp_path):
-    from center_kb.hub import HubHandle
+    from strata_kb.hub import HubHandle
 
     kb = tmp_path / ".kb"
     kb.mkdir()
@@ -531,8 +531,8 @@ def test_snapshot_plain_child_publish_self_heals_an_unreadable_dest_record(
     and the self-healed-to-empty old record is rebuilt correctly from what
     divert_assets finds on disk -- nothing is lost even though the read
     that fed the merge failed."""
-    from center_kb import publish
-    from center_kb.hub import HubHandle
+    from strata_kb import publish
+    from strata_kb.hub import HubHandle
 
     kb_abs = tmp_path / "child" / ".kb"
     kb_abs.mkdir(parents=True)
@@ -648,7 +648,7 @@ def test_get_verified_passes_a_miss_through():
 
 
 def test_divert_then_synthesis_roundtrip_no_rediff(tmp_path):
-    from center_kb import hashsync
+    from strata_kb import hashsync
 
     child = _tree(tmp_path)  # child-side snapshot (assets present)
     dest = tmp_path / "dest"

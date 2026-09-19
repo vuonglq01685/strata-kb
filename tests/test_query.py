@@ -1,8 +1,8 @@
 import pytest
 
-from center_kb import models
-from center_kb.hub import HubHandle
-from center_kb.query import AmbiguousDocError, get_section, search
+from strata_kb import models
+from strata_kb.hub import HubHandle
+from strata_kb.query import AmbiguousDocError, get_section, search
 from tests.conftest import make_fed_entry
 
 
@@ -127,8 +127,8 @@ def test_get_section_prefix_picks_longest_parent(fed_hub):
 
 
 def test_get_section_nested_qualifier(tmp_path):
-    from center_kb.hub import HubHandle
-    from center_kb.query import get_section
+    from strata_kb.hub import HubHandle
+    from strata_kb.query import get_section
     from tests.conftest import make_fed_entry
 
     hub_root = tmp_path / "hub"
@@ -141,7 +141,7 @@ def test_get_section_nested_qualifier(tmp_path):
 
 
 def test_search_use_semantic_false_skips_embedder(monkeypatch):
-    import center_kb.query as query_mod
+    import strata_kb.query as query_mod
     seen = {}
 
     def spy(hub, embedder, text, tags):
@@ -157,7 +157,7 @@ def test_search_use_semantic_false_skips_embedder(monkeypatch):
 
 
 def test_search_use_semantic_default_passes_embedder(monkeypatch):
-    import center_kb.query as query_mod
+    import strata_kb.query as query_mod
     seen = {}
 
     def spy(hub, embedder, text, tags):
@@ -186,8 +186,8 @@ def test_busy_index_surfaces_a_note_instead_of_silent_stale_results(
     schema" the fallback branch is meant to serve."""
     import sqlite3
 
-    from center_kb import searchdb
-    from center_kb.query import BUSY_INDEX_NOTE, search_detailed
+    from strata_kb import searchdb
+    from strata_kb.query import BUSY_INDEX_NOTE, search_detailed
 
     lock_exc = sqlite3.OperationalError("database is locked")
     assert searchdb.is_lock_error(lock_exc)
@@ -206,7 +206,7 @@ def test_busy_index_surfaces_a_note_instead_of_silent_stale_results(
 def test_unknown_tag_lists_the_published_vocabulary(fed_hub):
     """Reviewer C battery #32: `--tags nonexistent-tag` returned 0 results with
     no hint that the tag itself was the problem."""
-    from center_kb.query import search_detailed
+    from strata_kb.query import search_detailed
 
     outcome = search_detailed(_handle(fed_hub), "runway", tags=["nonexistent-tag"])
     assert outcome.results == []
@@ -219,7 +219,7 @@ def test_doc_id_is_an_accepted_tag(fed_hub):
     """F-C14: searchdb.py:350 indexes doc.id.lower() as a synthetic tag, so
     `--tags arinc-424` works. It stays supported and must not be reported as
     unknown; it deliberately does NOT join the kb-context tag vocabulary."""
-    from center_kb.query import search_detailed
+    from strata_kb.query import search_detailed
 
     outcome = search_detailed(_handle(fed_hub), "restrictive", tags=["arinc-424"])
     assert outcome.results
@@ -231,7 +231,7 @@ def test_stale_hub_note_reports_age_when_stale_else_empty(fed_hub):
     public `query.stale_hub_note`. Pins its own branches directly -- no
     existing test (MCP or otherwise) ever exercised the `stale=True` branch
     before this move; every MCP fixture handle was fresh."""
-    from center_kb.query import stale_hub_note
+    from strata_kb.query import stale_hub_note
 
     assert stale_hub_note(HubHandle(root=fed_hub)) == ""
     assert stale_hub_note(None) == ""
@@ -251,9 +251,9 @@ def test_budget_tokens_still_include_the_snippet(fed_hub):
     even with the field merely defaulted to 0 and never populated at the
     construction site, the second assertion would fail here because
     count_tokens(r.content) is nonzero for this fixture."""
-    from center_kb import models
-    from center_kb.federation import FederationMeta
-    from center_kb.mdutils import count_tokens
+    from strata_kb import models
+    from strata_kb.federation import FederationMeta
+    from strata_kb.mdutils import count_tokens
 
     entry = fed_hub / "federation" / "arinc-kb"
     (entry / "arinc-424" / "ch1.raw.md").write_text(
@@ -280,7 +280,7 @@ def test_doc_id_tag_is_not_reported_unknown_on_the_empty_path(fed_hub):
     doc-id guard in `_unknown_tag_notes` apart from a no-op. A query that
     legitimately returns zero results with a doc-id tag must not falsely
     claim the doc id itself is unknown."""
-    from center_kb.query import search_detailed
+    from strata_kb.query import search_detailed
 
     outcome = search_detailed(_handle(fed_hub), "zzqx", tags=["arinc-424"])
     assert outcome.results == []

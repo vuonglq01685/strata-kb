@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import gitio, kbcontext, ticket, ticketlint
-from center_kb.hub import HubHandle
+from strata_kb import gitio, kbcontext, ticket, ticketlint
+from strata_kb.hub import HubHandle
 from tests.conftest import make_stale
 
 DEFAULT_TITLE = "# TAL-1580 — Show restrictive airspace details"
@@ -512,7 +512,7 @@ def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
 
 
 def test_ac_citation_warning_counts_bracketed_citations_only():
-    from center_kb.ticketlint import _check_ac_citations
+    from strata_kb.ticketlint import _check_ac_citations
 
     assert _check_ac_citations(["AC1 — stored [arinc-424 §5.129]"]) == []
     assert len(_check_ac_citations(["AC1 — stored per arinc-424 §5.129"])) == 1
@@ -573,7 +573,7 @@ def test_template_headings_match_contract():
     template_path = (
         Path(__file__).resolve().parents[1]
         / "src"
-        / "center_kb"
+        / "strata_kb"
         / "templates"
         / "init"
         / "ticket-template.md"
@@ -991,7 +991,7 @@ def test_template_carries_every_recommended_heading():
     template_path = (
         Path(__file__).resolve().parents[1]
         / "src"
-        / "center_kb"
+        / "strata_kb"
         / "templates"
         / "init"
         / "ticket-template.md"

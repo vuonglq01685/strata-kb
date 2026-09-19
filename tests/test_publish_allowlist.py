@@ -1,7 +1,7 @@
 from typer.testing import CliRunner
 
-from center_kb.cli import app
-from center_kb.publish import publish
+from strata_kb.cli import app
+from strata_kb.publish import publish
 
 runner = CliRunner()
 

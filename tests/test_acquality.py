@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from center_kb import acquality
+from strata_kb import acquality
 
 
 def test_open_re_matches_owned_marker():

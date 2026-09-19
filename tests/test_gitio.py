@@ -7,7 +7,7 @@ from pathlib import Path
 import anyio
 import pytest
 
-from center_kb import gitio
+from strata_kb import gitio
 
 
 def test_git_root_finds_repo_from_kb_dir(git_kb):
@@ -26,6 +26,28 @@ def test_head_commit_returns_short_hash(git_kb):
 def test_rev_exists(git_kb):
     assert gitio.rev_exists(git_kb["root"], git_kb["rev1"])
     assert not gitio.rev_exists(git_kb["root"], "deadbeef")
+
+
+def test_is_tracked_true_for_a_committed_file(git_kb):
+    tracked = next(git_kb["kb"].rglob("*.md"))
+    rel = tracked.resolve().relative_to(git_kb["root"]).as_posix()
+    assert gitio.is_tracked(git_kb["root"], rel) is True
+
+
+def test_is_tracked_false_for_an_untracked_file(git_kb):
+    (git_kb["root"] / "untracked.env").write_text("X=1\n", encoding="utf-8")
+    assert gitio.is_tracked(git_kb["root"], "untracked.env") is False
+
+
+def test_is_tracked_false_outside_any_git_repo(tmp_path: Path):
+    (tmp_path / ".env").write_text("X=1\n", encoding="utf-8")
+    assert gitio.is_tracked(tmp_path, ".env") is False
+
+
+def test_is_tracked_false_when_git_is_not_on_path(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PATH", "")
+    (tmp_path / ".env").write_text("X=1\n", encoding="utf-8")
+    assert gitio.is_tracked(tmp_path, ".env") is False
 
 
 def test_read_at_returns_old_content(git_kb):
@@ -61,7 +83,7 @@ def test_neutralize_line_endings_logs_on_config_failure(tmp_path, caplog):
 
     not_a_repo = tmp_path / "not-a-repo"
     not_a_repo.mkdir()
-    with caplog.at_level(logging.DEBUG, logger="center_kb.gitio"):
+    with caplog.at_level(logging.DEBUG, logger="strata_kb.gitio"):
         gitio.neutralize_line_endings(not_a_repo)  # must not raise
     assert "core.autocrlf" in caplog.text
 
@@ -178,7 +200,7 @@ def test_has_remote_and_remote_url(bare_origin, fixture_kb, run_git):
 
 
 def test_branch_helpers_roundtrip(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     root = tmp_path / "repo"
     root.mkdir()
@@ -205,7 +227,7 @@ def test_branch_helpers_roundtrip(tmp_path, run_git):
 
 
 def test_push_branch_to_local_bare_origin(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     origin = tmp_path / "origin.git"
     run_git(tmp_path, "init", "--bare", str(origin))
@@ -224,7 +246,7 @@ def test_push_branch_to_local_bare_origin(tmp_path, run_git):
 
 
 def test_worktree_add_and_remove_leave_the_main_tree_on_its_branch(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -251,7 +273,7 @@ def test_worktree_add_and_remove_leave_the_main_tree_on_its_branch(tmp_path, run
 
 
 def test_worktree_add_can_reuse_an_existing_branch(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -284,7 +306,7 @@ def test_worktree_add_can_reuse_an_existing_branch(tmp_path, run_git):
 def test_worktree_prune_forgets_a_deleted_worktree(tmp_path, run_git):
     import shutil
 
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -300,7 +322,7 @@ def test_worktree_prune_forgets_a_deleted_worktree(tmp_path, run_git):
 
 
 def test_default_branch_and_path_exists_at(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -316,7 +338,7 @@ def test_default_branch_and_path_exists_at(tmp_path, run_git):
 
 
 def test_default_branch_reads_origin_head_and_strips_the_origin_prefix(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     origin = tmp_path / "origin.git"
     run_git(tmp_path, "init", "--bare", str(origin))
@@ -336,7 +358,7 @@ def test_default_branch_reads_origin_head_and_strips_the_origin_prefix(tmp_path,
 
 
 def test_path_exists_at_normalises_windows_separators(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -351,7 +373,7 @@ def test_path_exists_at_normalises_windows_separators(tmp_path, run_git):
 
 
 def test_path_exists_at_raises_on_unresolvable_rev(tmp_path, run_git):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -643,7 +665,7 @@ import functools, sys
 from io import TextIOWrapper
 import anyio
 import anyio.to_thread
-from center_kb import gitio
+from strata_kb import gitio
 
 async def main():
     stdin = anyio.wrap_file(
@@ -734,7 +756,7 @@ import functools, sys
 from io import TextIOWrapper
 import anyio
 import anyio.to_thread
-from center_kb import gitio
+from strata_kb import gitio
 
 async def main():
     stdin = anyio.wrap_file(

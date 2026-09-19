@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from center_kb import federation
+from strata_kb import federation
 from tests.conftest import make_fed_entry
 
 
@@ -73,8 +73,8 @@ def test_hub_to_hub_publish_diverts_still_raw_assets_into_upper_store(tmp_path):
     own store, exactly like a direct child publish (_snapshot) would."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"still raw png bytes"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -118,8 +118,8 @@ def test_hub_to_hub_publish_second_run_is_noop_with_store(tmp_path):
     record file no longer existed)."""
     import hashlib
 
-    from center_kb import assetstore, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, publish
+    from strata_kb.hub import HubHandle
 
     data = b"repeat publish bytes"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -159,8 +159,8 @@ def test_hub_to_hub_publish_carries_a_record_the_source_already_diverted(tmp_pat
     inherited name must survive an unrelated republish."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     inherited_name = "a" * 64 + ".png"
     fed_src = tmp_path / "mid" / "federation"
@@ -219,8 +219,8 @@ def test_hub_to_hub_publish_store_outage_then_retry_never_commits_binaries(
     (tests/test_publish.py) for the hub-to-hub path."""
     import hashlib
 
-    from center_kb import assetstore, gitio, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, gitio, publish
+    from strata_kb.hub import HubHandle
 
     data = b"store outage raw bytes"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -274,8 +274,8 @@ def test_hub_to_hub_second_publish_keeps_name_the_hub_itself_diverted(tmp_path):
     test_hub_to_hub_publish_second_run_is_noop_with_store)."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     name_a = "a" * 64 + ".png"
     path_a = f"doc-a/assets/{name_a}"
@@ -332,8 +332,8 @@ def test_hub_to_hub_raw_dest_copy_survives_source_running_assets_migrate(tmp_pat
     mutants are killed by this one reproduction, verified independently."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"raw bytes present before this hub ever had a store"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -392,8 +392,8 @@ def test_hub_to_hub_second_publish_keeps_record_when_store_goes_away(tmp_path):
     missing_records."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"only the store will remember this one"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -436,8 +436,8 @@ def test_hub_to_hub_second_publish_does_not_truncate_record_when_store_goes_away
     differ, silently truncating it."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     name_a = "a" * 64 + ".png"
     path_a = f"doc-a/assets/{name_a}"
@@ -485,8 +485,8 @@ def test_hub_to_hub_second_publish_keeps_raw_bytes_when_source_migrates_with_no_
     very next publish, because it read as present-at-dest/absent-from-source."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"upper hub's only copy, no store anywhere"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -550,7 +550,7 @@ def test_publish_federation_public_path_diverts_via_store_for_hub(
     keeps the diverted bytes inspectable after publish_federation returns."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
+    from strata_kb import assetstore, models, publish
 
     data = b"public path raw bytes"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -640,8 +640,8 @@ def test_hub_to_hub_store_outage_restore_does_not_touch_files_outside_the_entry(
     under), neither should be touched."""
     import hashlib
 
-    from center_kb import assetstore, gitio, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, gitio, publish
+    from strata_kb.hub import HubHandle
 
     # unrelated tracked file elsewhere under federation/, committed then
     # edited (uncommitted) -- must survive
@@ -700,8 +700,8 @@ def test_hub_to_hub_store_outage_restore_reverts_a_tracked_record_not_just_untra
     modification; `git clean` cannot touch it."""
     import hashlib
 
-    from center_kb import assetstore, gitio, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, gitio, models, publish
+    from strata_kb.hub import HubHandle
 
     # real hub caches always carry core.autocrlf=false/core.eol=lf, written
     # locally by gitio.clone (gitio.py:152/361) -- hub_worktree is a plain
@@ -792,8 +792,8 @@ def test_hub_to_hub_unreadable_source_record_self_heals_instead_of_aborting(
     the unrelated unreadable record, on every one of them."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     fed_src = tmp_path / "mid" / "federation"
     entry_a = make_fed_entry(fed_src, "repo-a", "doc-a")
@@ -847,8 +847,8 @@ def test_hub_to_hub_reconcile_write_failure_outside_divert_still_restores_scoped
     at all, unlike a store outage. Reproduced by making
     models.save_yaml_model raise for exactly the dest record it is about to
     write."""
-    from center_kb import assetstore, gitio, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, gitio, models, publish
+    from strata_kb.hub import HubHandle
 
     fed_src = tmp_path / "mid" / "federation"
     entry_a = make_fed_entry(fed_src, "repo-a", "doc-a")
@@ -897,8 +897,8 @@ def test_hub_to_hub_record_survives_when_entry_stops_being_a_valid_leaf(tmp_path
     publishes with store=MemoryStore(), the shape the re-reviewer measured."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"n4 raw bytes -- entry goes half-broken after this"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -968,8 +968,8 @@ def test_hub_to_hub_unreadable_dest_record_aborts_instead_of_deleting_it(
     committed."""
     import hashlib
 
-    from center_kb import assetstore, gitio, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, gitio, models, publish
+    from strata_kb.hub import HubHandle
 
     # real hub caches always carry core.autocrlf=false/core.eol=lf (see the
     # N2 test above for why a plain `git init` worktree needs this set
@@ -1080,8 +1080,8 @@ def test_hub_to_hub_zero_byte_dest_record_aborts_instead_of_deleting_it(
     unlinked below, and was covered by no committed test until round 4."""
     import hashlib
 
-    from center_kb import assetstore, gitio, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, gitio, models, publish
+    from strata_kb.hub import HubHandle
 
     run_git(hub_worktree, "config", "core.autocrlf", "false")
     run_git(hub_worktree, "config", "core.eol", "lf")
@@ -1161,8 +1161,8 @@ def test_hub_to_hub_source_half_broken_entry_keeps_name_only_the_upper_hub_diver
     even knew about it -- is silently dropped."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data_y = b"r1 -- only the upper hub ever diverts this one"
     name_y = hashlib.sha256(data_y).hexdigest() + ".png"
@@ -1222,8 +1222,8 @@ def test_hub_to_hub_raw_asset_arriving_under_half_broken_entry_is_diverted(tmp_p
     already uses, with a brand-new raw asset Z added at p3."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"r2 first asset -- diverted while the entry is still valid"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -1299,8 +1299,8 @@ def test_hub_to_hub_raw_asset_under_entry_that_never_had_a_record_is_diverted_no
     it, exactly as measured below."""
     import hashlib
 
-    from center_kb import assetstore, federation, gitio, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, federation, gitio, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"c1 -- entry half-broken before its first ever publish"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -1381,8 +1381,8 @@ def test_hub_to_hub_unreadable_untracked_dest_record_survives_the_restore(
     with everything else; only the record's survival is asserted."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data_y = b"m2 -- only the store will ever hold this one"
     name_y = hashlib.sha256(data_y).hexdigest() + ".png"
@@ -1459,8 +1459,8 @@ def test_hub_to_hub_nested_record_dropped_from_union_and_reported_skipped(
     already sits at the destination."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data1 = b"m3 -- first asset, diverted on the normal p1 publish"
     name1 = hashlib.sha256(data1).hexdigest() + ".png"
@@ -1561,8 +1561,8 @@ def test_hub_to_hub_already_committed_raw_asset_is_diverted_by_a_publish_with_no
     must hold the bytes."""
     import hashlib
 
-    from center_kb import assetstore, gitio, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, gitio, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"c4-1 arm B -- raw bytes already committed into hub git"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -1631,8 +1631,8 @@ def test_hub_to_hub_storeless_publish_then_store_arrives_diverts_on_next_publish
     the same bytes the source does."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"c4-1 arm A -- storeless publish first, store configured later"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -1679,8 +1679,8 @@ def test_hub_to_hub_divert_that_changes_no_record_byte_still_reports_changed(
     changed the destination tree must say so."""
     import hashlib
 
-    from center_kb import assetstore, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, publish
+    from strata_kb.hub import HubHandle
 
     data = b"c4-1 companion -- recorded already, raw byte came back"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -1735,8 +1735,8 @@ def test_hub_to_hub_namespace_record_never_evicts_the_reader_visible_leaf_entry(
     a proper ANCESTOR of such a leaf is not an entry at all."""
     import hashlib
 
-    from center_kb import assetstore, federation, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, federation, models, publish
+    from strata_kb.hub import HubHandle
 
     data1 = b"c4-2(a) -- first asset, diverted by the ordinary p1 publish"
     name1 = hashlib.sha256(data1).hexdigest() + ".png"
@@ -1810,8 +1810,8 @@ def test_hub_to_hub_stray_namespace_assets_dir_does_not_evict_the_leaf_entry(
     not."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data1 = b"c4-2(b) -- first asset of the real entry"
     name1 = hashlib.sha256(data1).hexdigest() + ".png"
@@ -1885,8 +1885,8 @@ def test_restore_after_store_failure_protects_a_record_whose_path_has_glob_metac
 
     Both halves are asserted: the target survives AND the bystander whose
     name the character class accidentally matched is still swept."""
-    from center_kb import publish
-    from center_kb.hub import HubHandle
+    from strata_kb import publish
+    from strata_kb.hub import HubHandle
 
     handle = HubHandle(root=hub_worktree)
     dest = handle.federation_dir / "mid"
@@ -1917,8 +1917,8 @@ def test_restore_after_store_failure_does_not_raise_when_protect_is_outside_the_
     OSError mid-restore and break this function's documented contract
     ("best-effort ... never raises on its own"). The `checkout` half
     already carries the equivalent guard."""
-    from center_kb import publish
-    from center_kb.hub import HubHandle
+    from strata_kb import publish
+    from strata_kb.hub import HubHandle
 
     handle = HubHandle(root=hub_worktree)
     dest = handle.federation_dir / "mid"
@@ -1946,8 +1946,8 @@ def test_hub_to_hub_entry_level_assets_dir_is_diverted_not_left_raw(tmp_path):
     raw bytes committed, changed=False forever."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"m4-3 -- an assets/ directory at entry level, above doc level"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -1985,8 +1985,8 @@ def test_hub_to_hub_asset_at_the_walk_root_is_reported_not_silently_dropped(
     it dropped."""
     import hashlib
 
-    from center_kb import assetstore, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, publish
+    from strata_kb.hub import HubHandle
 
     data = b"m4-3 -- an assets/ directory at the walk root itself"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -2047,8 +2047,8 @@ def test_hub_to_hub_deeper_than_usual_asset_is_attributed_to_its_leaf_entry(
     nothing is dropped or reported at all."""
     import hashlib
 
-    from center_kb import assetstore, models, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, models, publish
+    from strata_kb.hub import HubHandle
 
     data = b"m4-1 -- an asset one level deeper than the usual layout"
     name = hashlib.sha256(data).hexdigest() + ".png"
@@ -2117,8 +2117,8 @@ def _hub_to_hub_v1(tmp_path, hub_worktree, run_git):
     door tests need in order to corrupt one thing and publish again."""
     import hashlib
 
-    from center_kb import assetstore, publish
-    from center_kb.hub import HubHandle
+    from strata_kb import assetstore, publish
+    from strata_kb.hub import HubHandle
 
     run_git(hub_worktree, "config", "core.autocrlf", "false")
     run_git(hub_worktree, "config", "core.eol", "lf")
@@ -2160,7 +2160,7 @@ def _ordinary_content_edit(entry):
 
 
 def _fed_porcelain(hub_worktree):
-    from center_kb import gitio
+    from strata_kb import gitio
 
     return gitio._run(
         hub_worktree, "status", "--porcelain", "--", "federation/mid"
@@ -2176,7 +2176,7 @@ def test_hub_to_hub_truncated_dest_record_survives_an_ordinary_publish(
     detector. Measured before this fix, on this setup: publish raised
     nothing, dest record after: False, porcelain
     "D federation/mid/repo-a/_assets.yaml"."""
-    from center_kb import publish
+    from strata_kb import publish
 
     fed_src, entry, upper, store, dest_record, name_y, data_y = _hub_to_hub_v1(
         tmp_path, hub_worktree, run_git
@@ -2209,7 +2209,7 @@ def test_hub_to_hub_newline_stripped_dest_record_survives_an_ordinary_publish(
     A fix that turns "repaired" into "deleted" for its own motivating input
     is worse than no fix, which is why this is pinned as its own test rather
     than folded into the one above."""
-    from center_kb import publish
+    from strata_kb import publish
 
     fed_src, entry, upper, store, dest_record, name_y, data_y = _hub_to_hub_v1(
         tmp_path, hub_worktree, run_git
@@ -2250,7 +2250,7 @@ def test_hub_to_hub_truncated_source_record_is_not_merged_into_the_hub_record(
     been carried up anyway -- assetstore.synthesized_asset_entries skips
     exactly these names) and warns, rather than raising: an upstream record
     must still not be able to fail this hub's publish."""
-    from center_kb import assetstore, models, publish
+    from strata_kb import assetstore, models, publish
 
     fed_src, entry, upper, store, dest_record, name_y, data_y = _hub_to_hub_v1(
         tmp_path, hub_worktree, run_git
@@ -2276,7 +2276,7 @@ def test_hub_to_hub_truncated_source_record_is_not_merged_into_the_hub_record(
     # the drop is visible: a thing the system drops must be a thing the
     # operator can see it dropped (this module's own rule)
     assert any(
-        r.name == "center_kb.publish"
+        r.name == "strata_kb.publish"
         and truncated in r.getMessage()
         and "not merged into" in r.getMessage()
         for r in caplog.records
@@ -2294,7 +2294,7 @@ def test_hub_to_hub_zero_byte_dest_record_with_nothing_to_divert_is_not_unlinked
     nothing inherited, so the merged set is empty and divert_and_record
     deletes the file outright. It was covered by no committed test; round 3's
     present-but-empty check is what closes it."""
-    from center_kb import publish
+    from strata_kb import publish
 
     fed_src, entry, upper, store, dest_record, name_y, data_y = _hub_to_hub_v1(
         tmp_path, hub_worktree, run_git
@@ -2339,7 +2339,7 @@ def test_hub_to_hub_dir_shaped_dest_record_aborts_when_the_plain_diff_is_empty(
     apply_sync back in front of the guard. An empty directory is invisible
     to both git and the manifest, so it is also the shape most likely to
     survive unnoticed on a real hub."""
-    from center_kb import assetstore, models, publish
+    from strata_kb import assetstore, models, publish
 
     fed_src, entry, upper, store, dest_record, name_y, data_y = _hub_to_hub_v1(
         tmp_path, hub_worktree, run_git
