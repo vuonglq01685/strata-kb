@@ -48,7 +48,7 @@ first — `kb svc note` validates against this repo's own committed
 here; if this repo has no `<repo_id>-svc` yet — `dev-code-seed` never run —
 say so in one line in the PR and record the history there instead); then
 assemble the PR description using the repo's
-`.github/pull_request_template.md`, whose eight sections CI checks with `kb
+`.github/pull_request_template.md`, whose sections CI checks with `kb
 pr lint`: Ticket; kb-context refs so the reviewer can `kb resolve` them; the
 AC→test map; the Placeholder resolutions list; the Verification output,
 pasted inside a fenced block together with the `cmd.test` command line
@@ -56,8 +56,8 @@ itself (e.g. `$ pytest -q`), not claimed; the `## TDD exemptions` section,
 every `Exempt:` line from the plan, or `none`; the Findings, every
 `OPEN(...)`, KB gap, ambiguity or contradiction as a concrete feedback item
 on the owning repo, or `none`; and the Usage table; and Review — A5's
-finding table and its `Blocking:` verdict line — a section left as the
-template's comment counts as empty and fails the check; run `kb usage report
+finding table and its `Blocking:` verdict line. A section left as the
+template's comment counts as empty and fails the check. Then run `kb usage report
 --ticket <id> --md` and paste the table into the PR under a `## Usage`
 heading, keeping the heading with a one-line reason when the command answers
 `no usage recorded yet` instead of a table; if the ticket changed what a
@@ -89,12 +89,15 @@ this code, on this path, is dangerous.
 
 It writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding
 (severity, file, line, why it is dangerous, proposed fix), then the verdict
-line `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise. Fix
-subagent, re-review, at most 3 rounds.
+line `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.
+BLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3
+rounds — same routing as A3: only a standing BLOCKER keeps the verdict
+`Blocking: Yes`.
 
 Copy the table and the verdict line into the PR body's `## Review` section —
 `kb pr lint` fails the PR when the verdict line is missing and when it reads
-`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback items.
+`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback
+items, recorded rather than fixed.
 
 A branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1
 becomes the fix, not the PR.
@@ -122,8 +125,9 @@ becomes the fix, not the PR.
   BLOCKER / SUGGESTED / NOTE / NITS.
 - Where the runtime cannot dispatch subagents, run the review as its own pass
   that reads ONLY the paths it was handed and reuses nothing it remembers from
-  drafting — and say so in the report: one context reviewing
-  itself is a weaker substitute, not an equivalent.
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent.
 
 ## Hard rules
 

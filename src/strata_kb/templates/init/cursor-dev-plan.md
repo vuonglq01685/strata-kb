@@ -84,8 +84,10 @@ edit above it.
 ## A2 — independent plan review (before GATE 2)
 
 Dispatch a `plan-author` subagent to turn the approved design into the plan —
-it gets the design file path, the ticket's acceptance criteria and the
-`cmd.test` / `cmd.lint` commands, and nothing else. Then review it with a
+it gets the design file path, the ticket's acceptance criteria, the
+`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
+— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
+format, the ordering rules — and nothing else. Then review it with a
 different context.
 
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
@@ -127,8 +129,9 @@ only after A2 comes back clean.
   BLOCKER / SUGGESTED / NOTE / NITS.
 - Where the runtime cannot dispatch subagents, run the review as its own pass
   that reads ONLY the paths it was handed and reuses nothing it remembers from
-  drafting — and say so in the report: one context reviewing
-  itself is a weaker substitute, not an equivalent.
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent.
 
 ## Hard rules
 

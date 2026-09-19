@@ -67,10 +67,11 @@ reinterpreting an AC is forbidden.
 ## A1 — independent design review (before GATE 1)
 
 Write the design in its own context: dispatch a `design-author` subagent with
-the resolved context cache path, the ticket's acceptance criteria and the
-conventions paths, and let it write `docs/impl/<ticket-id>-design.md` with
-`status: draft`. You orchestrate; you do not draft and then judge your own
-draft.
+the resolved context cache path, the ticket's acceptance criteria, the
+conventions paths, and this phase's own authoring rules above — what the
+design must cover, and how placeholders and standard values are cited — and
+let it write `docs/impl/<ticket-id>-design.md` with `status: draft`. You
+orchestrate; you do not draft and then judge your own draft.
 
 That design is a draft until a reviewer that never saw it being written
 says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
@@ -79,18 +80,20 @@ acceptance criteria, and the `## Pre-code axes` of the rubric. Not your
 reasoning, not this conversation.
 
 It returns pass/fail per axis plus a gap list in which every gap names the
-section it lives in, its severity, and a proposed fix. Apply Critical and
-Important gaps through a fix subagent, then re-review — at most 3 rounds.
+section it lives in, its severity, and a proposed fix. Apply BLOCKER and
+SUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.
 
 Record every round in the design file's `## Review record` table, creating it
 below the design body on round 1:
 
     | Date | Round | Verdict | Reviewer | Open gaps |
     |---|---|---|---|---|
-    | 2026-09-19 | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |
+    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |
 
-GATE 1 is offered only after A1 comes back clean. A BLOCKER surviving round 3
-goes to the Dev with the reviewer's text and yours, and the flow stops there.
+GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and
+no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed. A BLOCKER
+surviving round 3 goes to the Dev with the reviewer's text and yours, and the
+flow stops there.
 
 ## Review dispatch contract (every review in this flow)
 
@@ -115,8 +118,9 @@ goes to the Dev with the reviewer's text and yours, and the flow stops there.
   BLOCKER / SUGGESTED / NOTE / NITS.
 - Where the runtime cannot dispatch subagents, run the review as its own pass
   that reads ONLY the paths it was handed and reuses nothing it remembers from
-  drafting — and say so in the report: one context reviewing
-  itself is a weaker substitute, not an equivalent.
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent.
 
 ## Hard rules
 

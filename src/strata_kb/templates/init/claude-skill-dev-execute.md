@@ -103,9 +103,10 @@ edit above it.
   decide the ambiguity yourself, and do not push past it because the
   code is half written.
 - **Resumable** — a later run re-checks freshness, re-reads the plan,
-  and continues at the first unticked task. Once every task is ticked,
-  option 1 in the Next-step block below is `/dev-handover <ticket-id>`;
-  otherwise it is `/dev-execute <ticket-id>` to continue.
+  and continues at the first unticked task. Once every task is ticked, A4
+  runs; once A4 comes back clean, option 1 in the Next-step block below is
+  `/dev-handover <ticket-id>`; otherwise it is `/dev-execute <ticket-id>` to
+  continue.
 
 ## A4 — narrow branch review (after the last task)
 
@@ -118,7 +119,8 @@ test, nothing built that no AC asked for, and no later task quietly breaking
 an earlier one?
 
 Keep the lens narrow here; merge risk is A5's job in `dev-handover`, against a
-different rubric. Fix subagent, re-review, at most 3 rounds. Then option 1 is
+different rubric. Fix subagent, re-review, at most 3 rounds. Only once A4
+comes back clean — no BLOCKER and no SUGGESTED left — is option 1
 `/dev-handover <ticket-id>`.
 
 ## Review dispatch contract (every review in this flow)
@@ -144,8 +146,9 @@ different rubric. Fix subagent, re-review, at most 3 rounds. Then option 1 is
   BLOCKER / SUGGESTED / NOTE / NITS.
 - Where the runtime cannot dispatch subagents, run the review as its own pass
   that reads ONLY the paths it was handed and reuses nothing it remembers from
-  drafting — and say so in the report: one context reviewing
-  itself is a weaker substitute, not an equivalent.
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent.
 
 ## Hard rules
 

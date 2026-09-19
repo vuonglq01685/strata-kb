@@ -175,7 +175,7 @@ Nothing in this pipeline merges or ships without a human:
   `style`. Add **`pr-lint` to the branch's required checks** once:
   `kb init` writes the workflow but cannot turn on branch protection for
   you. Unlike `kb-ticket-lint`, this gate never self-skips — once
-  required, it blocks **every** PR without the eight sections, bot PRs
+  required, it blocks **every** PR without the required sections, bot PRs
   (a Dependabot bump, a revert) included, so make that required-check
   decision knowingly.
 - **Unreviewed knowledge cannot reach the hub** — `kb build` (run by
