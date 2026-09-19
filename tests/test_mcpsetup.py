@@ -392,6 +392,31 @@ def test_write_env_refuses_a_git_tracked_env(tmp_path: Path, run_git):
     assert env == "OTHER=keep-me\n"  # untouched -- no token was written
 
 
+def test_write_env_refuses_a_tracked_env_removed_from_the_working_tree(
+    tmp_path: Path, run_git
+):
+    """`rm .env` after tracking it leaves it in the index -- still refused.
+
+    This is the literal misreading of the remedy text ("Untrack it first
+    ... keep it on disk"): a user who instead deletes the file must not
+    slip past the guard, since `git add -A` / `git commit -a` would then
+    silently re-track a fresh .env carrying the token.
+    """
+    from strata_kb import mcpsetup
+
+    init_repo(tmp_path, "ba")
+    (tmp_path / ".env").write_text("OTHER=keep-me\n", encoding="utf-8")
+    run_git(tmp_path, "init")
+    run_git(tmp_path, "add", ".env")
+    run_git(tmp_path, "commit", "-m", "track .env")
+    (tmp_path / ".env").unlink()
+
+    with pytest.raises(mcpsetup.McpSetupError, match="tracked by git"):
+        mcpsetup.write_env(tmp_path, HUB, TOKEN)
+
+    assert not (tmp_path / ".env").exists()  # no token written to disk
+
+
 def test_write_env_allows_an_untracked_env_in_a_git_repo(tmp_path: Path, run_git):
     from strata_kb.mcpsetup import HUB_URL_VAR, write_env
 

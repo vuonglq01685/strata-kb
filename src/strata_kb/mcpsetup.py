@@ -163,12 +163,17 @@ def write_env(repo_root: Path, hub_url: str, token: str) -> EnvReport:
     # requirements repo) is the one case ensure_gitignored below can't
     # cover -- .gitignore stops FUTURE tracking, it can't untrack a file
     # already in the index. Refuse before writing, rather than reporting
-    # success while a `git commit -a` would publish the token.
-    if (repo_root / ".env").exists() and gitio.is_tracked(repo_root, ".env"):
+    # success while a `git commit -a` would publish the token. Checked by
+    # index membership alone (no `.exists()` conjunct): a `.env` that is
+    # tracked but `rm`'d from the working tree is still in the index, and
+    # writing a fresh one there would recreate the exact tracked-token
+    # file this guard exists to prevent.
+    if gitio.is_tracked(repo_root, ".env"):
         raise McpSetupError(
             ".env is already tracked by git — refusing to write a token "
-            "into it. Untrack it first (git rm --cached .env), keep it "
-            "on disk, then re-run kb mcp-setup."
+            "into it. Untrack it first (git rm --cached .env), keep the "
+            "file on disk (do not delete it — a deleted-but-tracked "
+            ".env is still tracked), then re-run kb mcp-setup."
         )
     # Ensure git ignores .env before the token ever touches it, so a failed
     # gitignore write (e.g. no permission) never leaves a bare token sitting
