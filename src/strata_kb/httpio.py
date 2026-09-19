@@ -2,10 +2,12 @@
 
 `ghapp.py` keeps its own helper on purpose: it talks to a fixed API host and
 takes an already-built `urllib.request.Request`. This module is for URLs that
-come from `--intake`, `--hub-url`, or `intake:` in `config.yaml`, where the
-scheme guard below is load-bearing — a `file://` value would otherwise make
-`urlopen` read a local path (S310). Two copies of that guard is how one copy
-drifts, so it lives here once.
+come from `kb ci-publish`'s `--intake`/its OIDC token request, or
+`--hub-url`, where the scheme guard below is load-bearing — a `file://`
+value would otherwise make `urlopen` read a local path (S310). `publish.py`'s
+own dev-machine intake flow keeps a separate copy of this guard on purpose
+(it must raise before tagging/pushing, not just return a failed status) —
+every other caller shares this one.
 """
 from __future__ import annotations
 

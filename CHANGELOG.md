@@ -88,7 +88,9 @@ names the actual kind and points at `kb mcp-setup` instead.
   secrets. Uploaded paths are capped at 110 UTF-16 code units so
   `federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH`. Its
   urllib wrapper lives in `strata_kb.httpio` with a `timeout` parameter, so the
-  `file://` scheme guard exists once rather than per caller.
+  `file://` scheme guard is shared across its callers rather than duplicated
+  per caller (the dev-machine intake flow in `publish.py` keeps its own copy
+  by design).
 - **Multi-tier federation:** a hub may publish its own `federation/` upward into
   another hub, unbounded in depth, with cycle detection. Scope a search by
   choosing which hub you query.

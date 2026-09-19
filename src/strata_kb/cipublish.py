@@ -36,7 +36,9 @@ def _default_http(method: str, url: str, headers: dict, body: bytes | None):
     # The name and signature stay put — `http = http or _default_http` below
     # binds it, and tests call it directly. The implementation, including the
     # S310 scheme guard that keeps an operator-supplied `file://` out of
-    # urlopen, now lives in httpio so it exists exactly once.
+    # urlopen, now lives in httpio instead of being duplicated per CI caller
+    # (publish.py's separate dev-machine intake flow keeps its own copy on
+    # purpose — see httpio.py's module docstring).
     return httpio.request(method, url, headers, body, timeout=60)
 
 
