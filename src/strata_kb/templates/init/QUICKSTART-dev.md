@@ -438,4 +438,6 @@ tiering change shows up in the report the next ticket generates.
 - `kb mcp-setup [--hub-url URL] [--token T] [--no-verify]` — write the hub's
   HTTP MCP credentials into `.env` and verify them. Re-run it bare to verify
   again without retyping anything.
-  (in your assistant: `/kb-mcp-setup`)
+  (in your assistant: `/kb-mcp-setup`; prefer the hidden prompt or
+  `STRATA_KB_HTTP_TOKEN` over `--token` — it puts the token in your shell
+  history)

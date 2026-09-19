@@ -51,7 +51,7 @@ the hub's `federation/`.
 ## Query (reads the hub)
 
 6. **Query** — `kb query "your question"` (hub from `.kb/config.yaml`), the
-   hub's web UI, or MCP.
+   hub's web UI, or MCP (see step 7).
 7. **Connect the shared MCP server** — run `kb mcp-setup` (in your assistant:
    `/kb-mcp-setup`). It asks for the hub's HTTP base URL and token, writes
    both into `.env`, makes sure git ignores that file, and then verifies them
@@ -98,4 +98,6 @@ the hub's `federation/`.
 - `kb mcp-setup [--hub-url URL] [--token T] [--no-verify]` — write the hub's
   HTTP MCP credentials into `.env` and verify them. Re-run it bare to verify
   again without retyping anything.
-  (in your assistant: `/kb-mcp-setup`)
+  (in your assistant: `/kb-mcp-setup`; prefer the hidden prompt or
+  `STRATA_KB_HTTP_TOKEN` over `--token` — it puts the token in your shell
+  history)

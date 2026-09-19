@@ -469,12 +469,17 @@ def mcp_setup(
             hide_input=True,
         )
         report = mcpsetup.write_env(path, url, secret)
-    except (KbError, OSError, UnicodeDecodeError) as exc:
-        # write_env can raise OSError (unwritable repo dir) or
-        # UnicodeDecodeError (a non-UTF-8 .env) -- both must produce the
-        # same one-line message as KbError, never propagate to Typer's
-        # traceback hook where the token could leak (see app=typer.Typer
-        # above).
+    except UnicodeDecodeError as exc:
+        # A non-UTF-8 .env. Unlike OSError below, str(exc) alone names no
+        # file, so name it here -- otherwise the operator sees a bare codec
+        # error with no clue it concerns .env.
+        typer.secho(f"cannot read {path / '.env'}: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except (KbError, OSError) as exc:
+        # write_env can raise OSError (unwritable repo dir), which must
+        # produce the same one-line message as KbError, never propagate to
+        # Typer's traceback hook where the token could leak (see
+        # app=typer.Typer above).
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
 

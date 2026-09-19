@@ -68,13 +68,29 @@ intake: https://kb-intake.acme.com
 
 ## 2.2 Connect your assistant
 
+`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) were scaffolded
+already wired to the hub's MCP tools, but through placeholders —
+`${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` — that nothing has set
+yet.
+
+Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`). It asks for the
+hub's HTTP base URL and token, writes both into `.env`, makes sure git
+ignores that file, and then verifies them against the hub, so a wrong URL
+and a rejected token come back as different errors:
+
 | Variable | Example |
 |---|---|
 | `STRATA_KB_HUB_URL` | `http://kb-hub.example.com:8321` |
 | `STRATA_KB_HTTP_TOKEN` | the hub's bearer token |
 
-`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) are already wired to
-these two. Nothing else to configure.
+A bare re-run verifies again without retyping the token. Prefer the hidden
+prompt or the `STRATA_KB_HTTP_TOKEN` environment variable over `--token` —
+that flag leaves the token in your shell history.
+
+`.mcp.json` and `.cursor/mcp.json` read those two variables from your
+environment, not from `.env` directly, so load `.env` into your shell
+(`set -a; source .env; set +a`, or use direnv) and restart your assistant —
+MCP reads the environment only at startup.
 
 ## 2.3 Turn on the PR gate
 
@@ -423,7 +439,7 @@ should look.
 | `dirty_tree` warning | Uncommitted changes while the manifest revision comes from HEAD | Harmless locally; CI always runs clean |
 | `pr-lint` fails on a Dependabot PR | The gate never self-skips once required | Expected. Decide whether to keep it required for bot PRs. |
 | A citation resolves `stale` mid-implementation | The hub published after the ticket was written | `kb diff`, then ask the analyst. Do not reinterpret the AC yourself. |
-| MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Check both; ask the hub maintainer for a current token |
+| MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token; ask the hub maintainer for a current token if it is rejected |
 
 ---
 
@@ -431,6 +447,7 @@ should look.
 
 | Command | Purpose | Exit |
 |---|---|---|
+| `kb mcp-setup [--hub-url URL] [--no-verify]` | Write the hub's HTTP MCP credentials into `.env` and verify them | `0` |
 | `kb code-ingest [--db p] [--scaffold-svc] [--json]` | Extract code structure into `-code` | `0` ok, `1` nothing detected or destination refused |
 | `kb svc note <svc> --ticket <id> --title "…"` | Append a row to `hist.<svc>` | `0` ok, `1` unknown service or missing document |
 | `kb build [--strict]` | Validate the store | `0` ok, `1` error |

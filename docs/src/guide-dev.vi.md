@@ -66,13 +66,28 @@ intake: https://kb-intake.acme.com
 
 ## 2.2 Nối trợ lý của bạn
 
+`.mcp.json` (Claude Code) và `.cursor/mcp.json` (Cursor) đã được scaffold sẵn,
+nối tới các công cụ MCP của hub — nhưng qua placeholder,
+`${STRATA_KB_HUB_URL}` và `${STRATA_KB_HTTP_TOKEN}`, mà chưa ai điền giá trị.
+
+Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`). Lệnh này hỏi URL HTTP cơ
+sở và token của hub, ghi cả hai vào `.env`, đảm bảo git bỏ qua file đó, rồi
+xác minh chúng với hub, để một URL sai và một token bị từ chối trả về hai lỗi
+khác nhau:
+
 | Biến | Ví dụ |
 |---|---|
 | `STRATA_KB_HUB_URL` | `http://kb-hub.example.com:8321` |
 | `STRATA_KB_HTTP_TOKEN` | bearer token của hub |
 
-`.mcp.json` (Claude Code) và `.cursor/mcp.json` (Cursor) đã nối sẵn với hai biến
-này. Không cần cấu hình gì thêm.
+Chạy lại một lần nữa (không kèm gì) sẽ xác minh lại mà không cần nhập lại
+token. Nên dùng prompt ẩn hoặc biến môi trường `STRATA_KB_HTTP_TOKEN` thay vì
+cờ `--token` — cờ đó để lại token trong lịch sử shell của bạn.
+
+`.mcp.json` và `.cursor/mcp.json` đọc hai biến đó từ môi trường tiến trình,
+không đọc trực tiếp từ `.env`, nên hãy nạp `.env` vào shell của bạn
+(`set -a; source .env; set +a`, hoặc dùng direnv) rồi khởi động lại trợ lý —
+MCP chỉ đọc môi trường lúc khởi động.
 
 ## 2.3 Bật cổng PR
 
@@ -428,7 +443,7 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | Cảnh báo `dirty_tree` | Có thay đổi chưa commit trong khi revision của manifest lấy từ HEAD | Vô hại khi chạy cục bộ; CI luôn chạy trên bản checkout sạch |
 | `pr-lint` fail trên PR của Dependabot | Cổng này không tự bỏ qua một khi đã bắt buộc | Đúng như thiết kế. Hãy cân nhắc có giữ nó bắt buộc với PR của bot hay không. |
 | Một trích dẫn báo `stale` giữa chừng | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi BA. Đừng tự diễn giải lại tiêu chí chấp nhận. |
-| Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Kiểm tra cả hai; xin token mới từ người quản trị hub |
+| Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token; nếu token bị từ chối, xin token mới từ người quản trị hub |
 
 ---
 
@@ -436,6 +451,7 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 
 | Lệnh | Mục đích | Mã thoát |
 |---|---|---|
+| `kb mcp-setup [--hub-url URL] [--no-verify]` | Ghi thông tin xác thực HTTP MCP của hub vào `.env` và xác minh chúng | `0` |
 | `kb code-ingest [--db p] [--scaffold-svc] [--json]` | Trích cấu trúc code vào `-code` | `0` ok, `1` không phát hiện gì hoặc từ chối đích đến |
 | `kb svc note <svc> --ticket <id> --title "…"` | Thêm một dòng vào `hist.<svc>` | `0` ok, `1` service không xác định hoặc thiếu tài liệu |
 | `kb build [--strict]` | Kiểm tra kho | `0` ok, `1` lỗi |

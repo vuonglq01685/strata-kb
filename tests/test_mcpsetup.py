@@ -50,6 +50,17 @@ def test_normalize_hub_url_rejects_empty():
         normalize_hub_url("   ")
 
 
+def test_normalize_hub_url_truncates_a_long_raw_value_in_the_error():
+    """A long raw value (e.g. a token pasted into --hub-url by mistake) must
+    not appear in full in the error message."""
+    from strata_kb.mcpsetup import McpSetupError, normalize_hub_url
+
+    raw = "x" * 60
+    with pytest.raises(McpSetupError) as exc_info:
+        normalize_hub_url(raw)
+    assert raw not in str(exc_info.value)
+
+
 # --- require_client_kind ---------------------------------------------------
 
 

@@ -55,16 +55,29 @@ hub: https://github.com/acme/kb-hub.git
 
 ## 2.2 Nối trợ lý của bạn với hub
 
-Hai biến môi trường nối trợ lý AI của bạn tới các công cụ tìm kiếm và trích dẫn
-của hub. Hãy xin token từ người quản trị hub.
+`.mcp.json` (Claude Code) và `.cursor/mcp.json` (Cursor) đã được scaffold sẵn,
+nối tới các công cụ tìm kiếm và trích dẫn của hub — nhưng qua hai placeholder,
+`${STRATA_KB_HUB_URL}` và `${STRATA_KB_HTTP_TOKEN}`, mà chưa ai điền giá trị.
+
+Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`). Lệnh này hỏi URL HTTP cơ
+sở và token của hub — xin token từ người quản trị hub — ghi cả hai vào `.env`,
+đảm bảo git bỏ qua file đó, rồi xác minh chúng với hub, để một URL sai và một
+token bị từ chối trả về hai lỗi khác nhau:
 
 | Biến | Ví dụ |
 |---|---|
 | `STRATA_KB_HUB_URL` | `http://kb-hub.example.com:8321` |
 | `STRATA_KB_HTTP_TOKEN` | bearer token của hub |
 
-`.mcp.json` (Claude Code) và `.cursor/mcp.json` (Cursor) đã được nối sẵn với hai
-biến đó. Không cần cấu hình gì thêm.
+Chạy lại `kb mcp-setup` một lần nữa (không kèm gì) sẽ đọc lại cả hai giá trị
+từ `.env` và xác minh lần nữa mà không cần nhập lại token. Nên dùng prompt ẩn
+hoặc biến môi trường `STRATA_KB_HTTP_TOKEN` thay vì cờ `--token` — cờ đó để
+lại token trong lịch sử shell của bạn.
+
+`.mcp.json` và `.cursor/mcp.json` đọc hai biến đó từ môi trường tiến trình,
+không đọc trực tiếp từ `.env`, nên hãy nạp `.env` vào shell của bạn
+(`set -a; source .env; set +a`, hoặc dùng direnv) rồi khởi động lại trợ lý —
+MCP chỉ đọc môi trường lúc khởi động.
 
 ## 2.3 Mở repository trong trợ lý
 
@@ -345,7 +358,7 @@ kb mission lint missions/M-checkout.md
 | Lint: "missing required heading" | Thiếu một mục bắt buộc — hoặc mục đó chỉ nằm bên trong khối code | Đưa tiêu đề thật ra ngoài khối code |
 | Lint pass cục bộ, fail trên CI | Chưa đặt `STRATA_KB_HUB` trong Actions variables, hoặc hub riêng tư mà thiếu `KB_HUB_TOKEN` | Cấu hình cả hai; xem mục 2.4 |
 | Cổng fail trên PR từ fork | Fork không đọc được secret của repository | Merge qua một nhánh trong chính repository này |
-| Trợ lý không kết nối được hub | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Kiểm tra cả hai; xin token mới từ người quản trị hub |
+| Trợ lý không kết nối được hub | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token; nếu token bị từ chối, xin token mới từ người quản trị hub |
 | `kb query` không tìm thấy gì | Tài liệu chưa được publish, hoặc tag quá hẹp | Bỏ `--tags`; hỏi chủ hub xem PR publish đã merge chưa |
 | Sau khi nâng cấp mọi thứ đều `broken` | Ticket mang khối ghim theo định dạng cũ | Ghim lại bằng `kb context new` |
 
@@ -355,6 +368,7 @@ kb mission lint missions/M-checkout.md
 
 | Lệnh | Mục đích | Mã thoát |
 |---|---|---|
+| `kb mcp-setup [--hub-url URL] [--no-verify]` | Ghi thông tin xác thực HTTP MCP của hub vào `.env` và xác minh chúng | `0` |
 | `kb query <text> [--tags t]` | Tìm trong tri thức đã publish | `0` |
 | `kb get <doc> <section>` | Lấy một section | `0` |
 | `kb tags` | Liệt kê từ vựng tag đã publish | `0` |

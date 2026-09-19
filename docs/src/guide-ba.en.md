@@ -55,16 +55,31 @@ This is what `kb ticket lint` and `kb query` resolve references against.
 
 ## 2.2 Connect your assistant to the hub
 
-Two environment variables wire your AI assistant to the hub's search and citation
-tools. Ask your hub maintainer for the token.
+`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) were scaffolded
+already wired to the hub's search and citation tools, but through two
+placeholders — `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` — that
+nothing has set yet.
+
+Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`). It asks for the hub's
+HTTP base URL and token — ask your hub maintainer for the token — writes both
+into `.env`, makes sure git ignores that file, and then verifies them against
+the hub, so a wrong URL and a rejected token come back as different errors:
 
 | Variable | Example |
 |---|---|
 | `STRATA_KB_HUB_URL` | `http://kb-hub.example.com:8321` |
 | `STRATA_KB_HTTP_TOKEN` | the hub's bearer token |
 
-`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) are already wired to
-those two variables. There is nothing else to configure.
+A bare re-run of `kb mcp-setup` reads both values back out of `.env` and
+verifies again, so checking your connection later never means retyping the
+token. Prefer the hidden prompt or the `STRATA_KB_HTTP_TOKEN` environment
+variable over the command's `--token` flag — that flag leaves the token
+sitting in your shell history.
+
+`.mcp.json` and `.cursor/mcp.json` read those two variables from your
+environment, not from `.env` directly, so load `.env` into your shell
+(`set -a; source .env; set +a`, or use direnv) and restart your assistant —
+MCP reads the environment only at startup.
 
 ## 2.3 Open the repository in your assistant
 
@@ -348,7 +363,7 @@ kb mission lint missions/M-checkout.md
 | Lint: "missing required heading" | A required section is absent — or present only inside a fenced code block | Move the real heading outside the fence |
 | Lint passes locally, fails in CI | `STRATA_KB_HUB` is unset in Actions variables, or the hub is private and `KB_HUB_TOKEN` is missing | Configure both; see §2.4 |
 | The gate fails on a fork PR | Forks cannot read repository secrets | Merge through a branch in this repository |
-| The assistant cannot reach the hub | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Check both; ask the hub maintainer for a current token |
+| The assistant cannot reach the hub | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token; ask the hub maintainer for a current token if it is rejected |
 | `kb query` finds nothing | The document is not published yet, or the tags are too narrow | Drop `--tags`; check with the hub owner that the publish PR merged |
 | Everything resolves `broken` after an upgrade | The ticket carries a pin from an older block format | Re-pin with `kb context new` |
 
@@ -358,6 +373,7 @@ kb mission lint missions/M-checkout.md
 
 | Command | Purpose | Exit |
 |---|---|---|
+| `kb mcp-setup [--hub-url URL] [--no-verify]` | Write the hub's HTTP MCP credentials into `.env` and verify them | `0` |
 | `kb query <text> [--tags t]` | Search published knowledge | `0` |
 | `kb get <doc> <section>` | Fetch one section | `0` |
 | `kb tags` | List the published tag vocabulary | `0` |

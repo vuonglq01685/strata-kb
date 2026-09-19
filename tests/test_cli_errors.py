@@ -23,6 +23,12 @@ def _assert_no_propagated_exception(result) -> None:
     assert result.exception is None or isinstance(result.exception, SystemExit)
 
 
+def test_app_disables_pretty_exceptions_locals():
+    # A traceback printed with locals would show the hub token that
+    # mcp-setup and other commands hold in local variables.
+    assert app.pretty_exceptions_show_locals is False
+
+
 def test_over_long_repo_id_is_one_line_not_a_traceback(git_kb, hub_worktree):
     result = _invoke_publish(git_kb, hub_worktree, "x" * 300)
     assert result.exit_code == 1

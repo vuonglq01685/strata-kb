@@ -1,10 +1,11 @@
 """Connect a reader repo (child | ba | dev) to the hub's HTTP MCP service.
 
-`kb init` scaffolds `.mcp.json` and `.cursor/mcp.json` with
-`${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` placeholders that both
-Claude Code and Cursor expand from the *process environment*. Nothing set
-them. This module writes both into `.env` (the file a child's docker-compose
-already reads) and then proves them against the hub.
+`kb init` scaffolds `.mcp.json` with `${STRATA_KB_HUB_URL}` and
+`${STRATA_KB_HTTP_TOKEN}` placeholders, and `.cursor/mcp.json` with Cursor's
+`${env:STRATA_KB_HUB_URL}` and `${env:STRATA_KB_HTTP_TOKEN}` — both expanded
+by the editor from the *process environment*. Nothing set them. This module
+writes both into `.env` (the file a child's docker-compose already reads)
+and then proves them against the hub.
 
 The mirror image of `dockersetup`: that one stands the service up, this one
 connects a client to it. Same shape — pure logic plus helpers the tests

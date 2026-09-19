@@ -228,7 +228,7 @@ DEV_TEMPLATES: dict[str, str] = {
 # credentials, editor cruft) must survive `kb init --force` too, not just a
 # routine re-init — `--force` exists to refresh protected *scaffold* data
 # (index.yaml, config.yaml), never to un-ignore a bearer token that
-# `kb docker setup` already wrote to `.env`.
+# `kb docker-setup` already wrote to `.env`.
 PROTECTED_FILES: frozenset[str] = frozenset(
     {".kb/index.yaml", ".kb/config.yaml", ".claude/settings.json"}
 )
@@ -240,7 +240,7 @@ def _apply_gitignore(dest: Path, template_text: str, report: InitReport) -> None
     """Merge-only, under EVERY mode — including `--force` (R18).
 
     A hub's `.gitignore` may carry secret-exclusion rules (`.env`,
-    credentials) a maintainer added after scaffolding; `kb docker setup`
+    credentials) a maintainer added after scaffolding; `kb docker-setup`
     itself appends `.env` there. `kb init --force` must never overwrite the
     whole file (that would silently un-ignore a bearer token). Mirrors
     `dockersetup.ensure_gitignored`'s append pattern: read lines, only

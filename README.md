@@ -680,10 +680,11 @@ leave unrelated PRs waiting forever. The job always starts, inspects the PR's ow
 diff, and dispatches `kb ticket lint` or `kb mission lint` by directory — exiting
 0 with a notice when neither directory changed.
 
-Scaffold with `kb init --kind ba`; the generated `QUICKSTART-BA.md` covers the
-two environment variables (`STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN`) that wire
-the assistant to the hub, and the CI variable and secret (`STRATA_KB_HUB`,
-`KB_HUB_TOKEN`) the lint workflow needs.
+Scaffold with `kb init --kind ba`; the generated `QUICKSTART-BA.md` covers
+`kb mcp-setup` (`/kb-mcp-setup`), which writes the hub's HTTP MCP credentials
+(`STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN`) into `.env` and verifies them,
+and the CI variable and secret (`STRATA_KB_HUB`, `KB_HUB_TOKEN`) the lint
+workflow needs.
 
 ---
 

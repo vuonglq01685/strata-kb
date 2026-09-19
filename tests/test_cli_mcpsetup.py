@@ -296,6 +296,28 @@ def test_mcp_setup_catches_write_env_oserror_without_a_traceback(
     assert TOKEN not in result.output
 
 
+def test_mcp_setup_catches_write_env_unicodedecodeerror_without_a_traceback(
+    tmp_path: Path, monkeypatch
+):
+    """Same as the OSError case above, but for a non-UTF-8 .env -- dropping
+    UnicodeDecodeError from the command's except tuple must not silently
+    let it propagate to Typer's traceback hook."""
+    from strata_kb import mcpsetup
+
+    init_repo(tmp_path, "child")
+
+    def boom(root, hub, token):
+        raise UnicodeDecodeError("utf-8", b"", 0, 1, "invalid")
+
+    monkeypatch.setattr(mcpsetup, "write_env", boom)
+    result = runner.invoke(
+        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
+    )
+    assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
+    assert TOKEN not in result.output
+
+
 def test_mcp_setup_probes_the_same_value_it_writes_to_env(
     tmp_path: Path, monkeypatch
 ):
