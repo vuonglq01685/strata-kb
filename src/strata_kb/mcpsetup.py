@@ -71,8 +71,11 @@ def normalize_hub_url(raw: str) -> str:
     if not url:
         raise McpSetupError("the hub URL is empty")
     if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        # Truncate: a token pasted into --hub-url by mistake must not land
+        # on the terminal in full.
+        shown = raw if len(raw) <= 16 else f"{raw[:16]}…"
         raise McpSetupError(
-            f"the hub URL must start with http:// or https:// — got '{raw}'"
+            f"the hub URL must start with http:// or https:// — got '{shown}'"
         )
     return url
 

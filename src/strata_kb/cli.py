@@ -37,6 +37,10 @@ def _invalid_yaml_exit(path: Path, exc: Exception) -> None:
 app = typer.Typer(
     help="Strata — Knowledge Base as Code for large reference documents.",
     no_args_is_help=True,
+    # Several commands (mcp-setup) handle secrets. Some typer/click versions
+    # default this to True, which prints local variables -- including the
+    # secret -- into an uncaught exception's traceback. False everywhere.
+    pretty_exceptions_show_locals=False,
 )
 
 context_app = typer.Typer(help="Operate on kb-context blocks (machine-readable citations).")
@@ -465,7 +469,12 @@ def mcp_setup(
             hide_input=True,
         )
         report = mcpsetup.write_env(path, url, secret)
-    except KbError as exc:
+    except (KbError, OSError, UnicodeDecodeError) as exc:
+        # write_env can raise OSError (unwritable repo dir) or
+        # UnicodeDecodeError (a non-UTF-8 .env) -- both must produce the
+        # same one-line message as KbError, never propagate to Typer's
+        # traceback hook where the token could leak (see app=typer.Typer
+        # above).
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
 
@@ -529,7 +538,7 @@ def _resolve_mcp_value(
             f"no value for {var} — pass the flag, set the environment "
             "variable, or run this in a terminal where it can prompt"
         )
-    return value
+    return value.strip()
 
 
 def _hub_or_exit(hub_flag: str, kb_dir: Path):

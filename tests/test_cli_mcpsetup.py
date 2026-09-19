@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from strata_kb.cli import app
 from strata_kb.initcmd import init_repo
+from tests.test_cli_errors import _assert_no_propagated_exception
 
 runner = CliRunner()
 
@@ -107,6 +108,7 @@ def test_mcp_setup_refuses_the_hub_kind(tmp_path: Path):
         app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
     )
     assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
     assert "stdio" in result.output
     assert not (tmp_path / ".env").exists()
 
@@ -117,6 +119,7 @@ def test_mcp_setup_refuses_an_uninitialized_repo(tmp_path: Path):
         app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
     )
     assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
     assert "kb init" in result.output
     assert not (tmp_path / ".env").exists()
 
@@ -141,6 +144,7 @@ def test_mcp_setup_refuses_a_non_http_url(tmp_path: Path):
          "--token", TOKEN],
     )
     assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
     assert "http://" in result.output
     assert not (tmp_path / ".env").exists()
 
@@ -166,6 +170,7 @@ def test_mcp_setup_keeps_env_written_when_the_probe_fails(
         app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
     )
     assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
     assert "cannot reach the hub" in result.output
     assert ".env is written" in result.output
     assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
@@ -220,6 +225,7 @@ def test_mcp_setup_fails_without_a_token_and_without_a_tty(
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: False)
     result = runner.invoke(app, ["mcp-setup", str(tmp_path), "--hub-url", HUB])
     assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
     assert "STRATA_KB_HTTP_TOKEN" in result.output
     assert not (tmp_path / ".env").exists()
 
@@ -239,6 +245,7 @@ def test_mcp_setup_refuses_a_whitespace_only_token(tmp_path: Path, monkeypatch):
         app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", "   "]
     )
     assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
     assert "STRATA_KB_HTTP_TOKEN" in result.output
     assert not (tmp_path / ".env").exists()
 
@@ -256,6 +263,72 @@ def test_mcp_setup_refuses_a_whitespace_only_token_and_does_not_clobber_env(
         app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", "   "]
     )
     assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
+    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
+        tmp_path / ".env"
+    ).read_text(encoding="utf-8")
+
+
+# --- Fix wave 1 -------------------------------------------------------------
+
+
+def test_mcp_setup_catches_write_env_oserror_without_a_traceback(
+    tmp_path: Path, monkeypatch
+):
+    """Important 1: write_env's OSError (e.g. an unwritable repo dir) must
+    exit 1 with a one-line message, not propagate to Typer's exception hook
+    -- where, on some typer versions, it would print local variables
+    including the token."""
+    from strata_kb import mcpsetup
+
+    init_repo(tmp_path, "child")
+
+    def boom(root, hub, token):
+        raise OSError("Read-only file system")
+
+    monkeypatch.setattr(mcpsetup, "write_env", boom)
+    result = runner.invoke(
+        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
+    )
+    assert result.exit_code == 1
+    _assert_no_propagated_exception(result)
+    assert "Read-only file system" in result.output
+    assert TOKEN not in result.output
+
+
+def test_mcp_setup_probes_the_same_value_it_writes_to_env(
+    tmp_path: Path, monkeypatch
+):
+    """Important 2: a trailing space on the pasted token must not make the
+    probe see a different value than what write_env stripped onto disk."""
+    init_repo(tmp_path, "child")
+    seen = _ok_probe(monkeypatch)
+    result = runner.invoke(
+        app,
+        ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", f" {TOKEN} "],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["token"] == TOKEN
+    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
+        tmp_path / ".env"
+    ).read_text(encoding="utf-8")
+
+
+def test_mcp_setup_hidden_prompt_never_echoes_the_token(tmp_path: Path, monkeypatch):
+    """Minor 3: the recommended path (hidden prompt, no --token) must write
+    the typed value without ever echoing it to the terminal."""
+    from strata_kb import cli
+
+    init_repo(tmp_path, "dev")
+    _ok_probe(monkeypatch)
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+    result = runner.invoke(
+        app,
+        ["mcp-setup", str(tmp_path), "--hub-url", HUB],
+        input=f"{TOKEN}\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert TOKEN not in result.output
     assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
         tmp_path / ".env"
     ).read_text(encoding="utf-8")
