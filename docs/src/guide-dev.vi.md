@@ -164,10 +164,10 @@ Năm lệnh, được dựng sẵn cho Claude Code, GitHub Copilot và Cursor.
 ```
 /dev-implement-ticket <ticket>     intake · resolve · ground · placeholders
         │
-        ├─► dev-design       ── GATE 1: bạn duyệt thiết kế
-        ├─► dev-plan         ── GATE 2: bạn duyệt kế hoạch
-        ├─► dev-execute         (lặp lại được, tiếp tục được)
-        └─► dev-handover     ── GATE 3: bạn mở PR
+        ├─► dev-design       ── A1: reviewer độc lập ── GATE 1: bạn duyệt thiết kế
+        ├─► dev-plan         ── A2: reviewer độc lập ── GATE 2: bạn duyệt kế hoạch
+        ├─► dev-execute         A3 mỗi task · A4 cuối nhánh  (lặp lại được, tiếp tục được)
+        └─► dev-handover     ── A5: merge-risk review ── GATE 3: bạn mở PR
                                 GATE 4: bạn merge
 ```
 
@@ -207,7 +207,7 @@ từ đầu trong một phiên làm việc hoàn toàn mới.
 `.gitkeep` và một `.gitignore` để cache ngữ cảnh không bao giờ lọt vào pull
 request.
 
-## 4.3 Bốn cổng
+## 4.3 Bốn cổng người, năm vòng review agent
 
 Không gì trong quy trình này merge hay ship mà không có con người.
 
@@ -217,6 +217,29 @@ Không gì trong quy trình này merge hay ship mà không có con người.
 4. **Merge** — bạn review và merge.
 
 Agent không tự làm hai việc cuối.
+
+Trước mỗi cổng trong ba cổng đầu, một agent khác đã đọc lại công việc trong một
+ngữ cảnh riêng — không bao giờ là chính agent đã làm ra nó:
+
+| | Ở đâu | Nhìn cái gì |
+|---|---|---|
+| A1 | `dev-design`, trước GATE 1 | thiết kế có khớp ticket không |
+| A2 | `dev-plan`, trước GATE 2 | kế hoạch có test-first, có chạy được không |
+| A3 | `dev-execute`, mỗi task | diff của task này có đúng spec, code có tốt không |
+| A4 | `dev-execute`, sau task cuối | nhánh hoàn chỉnh có làm tròn ticket không |
+| A5 | `dev-handover`, trước GATE 3 | merge vào nhánh chính có an toàn không |
+
+Tiêu chí nằm ở `docs/pr-review-rubric.md`, ghi đè bằng
+`docs/pr-review-rubric.local.md`. Mỗi vòng tối đa 3 lượt fix/review. Một vòng
+chỉ tính là sạch khi không còn BLOCKER và không còn SUGGESTED nào bỏ ngỏ —
+NOTE và NITS chỉ được ghi lại, không bị bắt sửa — và một BLOCKER hoặc SUGGESTED
+còn đứng sau lượt 3 sẽ dừng luồng và chuyển cho bạn.
+
+Ở nơi runtime của trợ lý không dispatch được subagent — mặc định với wrapper
+Copilot và Cursor — vòng review vẫn chạy, nhưng chỉ là một lượt đọc đúng những
+gì được giao, và đó là một **báo cáo, không phải một cổng**: pha đó dừng lại
+tại chỗ và chuyển kết quả cho bạn, thay vì tự tiến bước dựa trên lời tự nhận
+của mình.
 
 ---
 
@@ -231,6 +254,7 @@ Hãy tỉnh táo về sự khác nhau này.
 | PR mang theo bằng chứng của nó | `kb pr lint` trong `kb-pr-lint.yml` ở mọi pull request |
 | Tri thức chưa review không lên được hub | `kb build` thoát 1 khi còn section `-svc` ở trạng thái `pending` |
 | Cache ngữ cảnh do CLI sở hữu | `kb resolve --status-only --cache` từ chối cache có version, tập tham chiếu hoặc khối đã phân giải khác với ticket |
+| Merge-risk review đã chạy và không còn BLOCKER | `kb pr lint` — mục `## Review` phải có dòng `Blocking: No` |
 
 `kb pr lint` fail khi thiếu một mục bắt buộc, khi mục đó còn nguyên dòng chú
 thích mẫu, khi tuyên bố đã verify mà không dán output, khi không có khối
@@ -255,6 +279,11 @@ một loại nằm ngoài `config`, `ci`, `docs`, `style`.
   sau. Dòng `status:` ghi lại điều đó; con người mới là người duyệt.
 - **`OPEN(BA)`.** Một tiêu chí chấp nhận mơ hồ phải được đưa lên hỏi, không bao
   giờ được tự diễn giải lại.
+- **A1–A4.** Bốn vòng review agent trước GATE 3 là kỷ luật trong prompt.
+  Không có gì trong `kb` đo được rằng chúng đã chạy. Chỉ A5 có răng: `kb pr
+  lint` đọc mục `## Review` của PR. Một agent bỏ qua A1–A4 rồi viết một dòng
+  `Blocking: No` trung thực vẫn qua cổng — cổng nằm ở chỗ merge thật sự xảy
+  ra, không phải ở mọi bước trước đó.
 
 ---
 
