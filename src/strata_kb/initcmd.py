@@ -129,12 +129,14 @@ def _init_template_text(name: str) -> str:
     )
 
 
-def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
-    """Create the BA repo's `.local.md` override files once, then never
-    touch them again. The base files stay package-owned and keep being
-    refreshed, so a BA repo receives improved criteria on upgrade without
-    losing its own."""
-    for rel, resource_name in BA_LOCAL_OVERRIDES.items():
+def _scaffold_local_overrides(
+    target: Path, report: InitReport, overrides: dict[str, str]
+) -> None:
+    """Create each `.local.md` override once, then never touch it again.
+    The base file it overrides stays package-owned and keeps being
+    refreshed, so a repo receives improved criteria on upgrade without
+    losing the local overrides it wrote."""
+    for rel, resource_name in overrides.items():
         dest = target / rel
         if dest.exists():
             report.skipped.append(f"{rel} (local overrides — never refreshed)")
@@ -144,6 +146,11 @@ def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
             _init_template_text(resource_name), encoding="utf-8", newline="\n"
         )
         report.created.append(rel)
+
+
+def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
+    """Create the BA repo's `.local.md` override files."""
+    _scaffold_local_overrides(target, report, BA_LOCAL_OVERRIDES)
 
 
 # Created once, never refreshed — the dev repo's own merge-risk criteria.
@@ -156,17 +163,8 @@ DEV_LOCAL_OVERRIDES: dict[str, str] = {
 
 
 def scaffold_dev_local_overrides(target: Path, report: InitReport) -> None:
-    """Create the dev repo's `.local.md` override once, then never touch it."""
-    for rel, resource_name in DEV_LOCAL_OVERRIDES.items():
-        dest = target / rel
-        if dest.exists():
-            report.skipped.append(f"{rel} (local overrides — never refreshed)")
-            continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(
-            _init_template_text(resource_name), encoding="utf-8", newline="\n"
-        )
-        report.created.append(rel)
+    """Create the dev repo's `.local.md` override."""
+    _scaffold_local_overrides(target, report, DEV_LOCAL_OVERRIDES)
 
 
 # Kind `dev` — product code repo. It consumes the shared KB while implementing
