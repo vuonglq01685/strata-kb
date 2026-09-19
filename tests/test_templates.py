@@ -441,17 +441,26 @@ def _dev_wrapper_text(name: str) -> str:
 
 
 def _dev_wrapper_body(name: str) -> str:
-    """The wrapper's OWN prose: everything outside the three SHARED-* blocks.
+    """The wrapper's OWN prose: everything outside the three SHARED-* blocks
+    and, for the 16 wrappers that carry it, the review dispatch contract.
 
     Every wrapper carries the shared blocks by construction, so a needle those
     blocks already satisfy asserts nothing about the skill it is named for
-    unless it is matched against this body.
+    unless it is matched against this body. The review contract is the same
+    kind of trap for a review-flavoured needle ("at most 3 rounds", "BLOCKER",
+    "the Dev") — it used to slip through unstripped, so any such needle
+    passed against every one of the 16 contract-carrying wrappers regardless
+    of what that wrapper's own prose said.
     """
     text = _read_init_template(name)
     for block in SHARED_BLOCKS:
         text = text.replace(_dev_shared_block(name, block), "\n\n", 1)
     for block, (first, _last) in SHARED_BLOCKS.items():
         assert first not in text, f"{name}: {block} survived the strip"
+    contract_first = REVIEW_CONTRACT_BOUNDS[0]
+    if contract_first in text:
+        text = text.replace(_review_contract(name), "\n\n", 1)
+        assert contract_first not in text, f"{name}: REVIEW-CONTRACT survived the strip"
     return _normalised(text)
 
 
@@ -2053,30 +2062,97 @@ REVIEW_CONTRACT_SKILLS = ("dev-design", "dev-plan", "dev-execute", "dev-handover
 
 REVIEW_CONTRACT_BOUNDS = (
     "## Review dispatch contract (every review in this flow)\n",
-    "  itself is a weaker substitute, not an equivalent.\n",
+    "  context reviewing itself is a weaker substitute, not an equivalent.\n",
 )
 
+# Canon text for each of the five review blocks, extracted verbatim (via
+# repr(), same discipline as SHARED_BLOCK_TEXT above — never hand-retyped)
+# from a landed wrapper. Unlike SHARED_BLOCKS/SHARED_BLOCK_TEXT (3 blocks x
+# 20 files, every skill carries all three), these five blocks have two
+# different file counts — the contract lives in 16 wrappers (the four
+# phases that dispatch a reviewer), each A-block lives in only the 4
+# wrappers of its own skill — so they get their own dict rather than
+# joining SHARED_BLOCKS, whose own test asserts a block is present in all
+# 20 wrappers.
+REVIEW_BLOCK_BOUNDS = {
+    "REVIEW-CONTRACT": REVIEW_CONTRACT_BOUNDS,
+    "A1": (
+        "## A1 — independent design review (before GATE 1)\n",
+        "flow stops there.\n",
+    ),
+    "A2": (
+        "## A2 — independent plan review (before GATE 2)\n",
+        "only after A2 comes back clean.\n",
+    ),
+    "A4": (
+        "## A4 — narrow branch review (after the last task)\n",
+        "`/dev-handover <ticket-id>`.\n",
+    ),
+    "A5": (
+        "## A5 — merge-risk review (before GATE 3)\n",
+        "becomes the fix, not the PR.\n",
+    ),
+}
 
-def _review_contract(name: str) -> str:
-    first, last = REVIEW_CONTRACT_BOUNDS
+# Extracted the same way as SHARED_BLOCK_TEXT: repr() of each block sliced
+# out of a landed wrapper (claude-skill-dev-design.md for A1, ...-dev-plan.md
+# for A2, ...-dev-execute.md for A4, ...-dev-handover.md for A5, and
+# claude-skill-dev-design.md again for the contract), never hand-retyped.
+REVIEW_BLOCK_TEXT = {
+    "REVIEW-CONTRACT": '## Review dispatch contract (every review in this flow)\n\n- The author and the reviewer are NEVER the same subagent. A self-review\n  never satisfies a review step.\n- A reviewer starts from a fresh context and gets no conversation history —\n  hand it only the paths it must read and the constraints that bind it.\n- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the\n  draft, the diff, the report. Whatever you paste stays in your context for\n  the rest of the session.\n- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag\n  and never rates a finding\'s severity for it.\n- Name the model on every dispatch — a standard model for authors and\n  implementers, the most capable one available for reviewers. Never inherit\n  the session default silently.\n- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER still\n  standing after round 3 stops the flow and goes to the Dev.\n- A finding that contradicts the approved design or plan is never auto-fixed:\n  show the finding beside the text that mandates it and let the Dev choose.\n- Criteria come from `docs/pr-review-rubric.md`, then\n  `docs/pr-review-rubric.local.md` — the local file wins. Severity is always\n  BLOCKER / SUGGESTED / NOTE / NITS.\n- Where the runtime cannot dispatch subagents, run the review as its own pass\n  that reads ONLY the paths it was handed and reuses nothing it remembers from\n  drafting, and write up its findings the same way — then STOP and hand the\n  result to the Dev. The phase does not advance on a fallback pass: one\n  context reviewing itself is a weaker substitute, not an equivalent.\n',
+    "A1": "## A1 — independent design review (before GATE 1)\n\nWrite the design in its own context: dispatch a `design-author` subagent with\nthe resolved context cache path, the ticket's acceptance criteria, the\nconventions paths, and this phase's own authoring rules above — what the\ndesign must cover, and how placeholders and standard values are cited — and\nlet it write `docs/impl/<ticket-id>-design.md` with `status: draft`. You\norchestrate; you do not draft and then judge your own draft.\n\nThat design is a draft until a reviewer that never saw it being written\nsays otherwise. Dispatch a `design-reviewer` subagent and hand it exactly\nthree things: the path `docs/impl/<ticket-id>-design.md`, the ticket's\nacceptance criteria, and the `## Pre-code axes` of the rubric. Not your\nreasoning, not this conversation.\n\nIt returns pass/fail per axis plus a gap list in which every gap names the\nsection it lives in, its severity, and a proposed fix. Apply BLOCKER and\nSUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.\n\nRecord every round in the design file's `## Review record` table, creating it\nbelow the design body on round 1:\n\n    | Date | Round | Verdict | Reviewer | Open gaps |\n    |---|---|---|---|---|\n    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |\n\nGATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and\nno SUGGESTED gap left open; NOTE and NITS are recorded, not fixed. A BLOCKER\nsurviving round 3 goes to the Dev with the reviewer's text and yours, and the\nflow stops there.\n",
+    "A2": "## A2 — independent plan review (before GATE 2)\n\nDispatch a `plan-author` subagent to turn the approved design into the plan —\nit gets the design file path, the ticket's acceptance criteria, the\n`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above\n— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line\nformat, the ordering rules — and nothing else. Then review it with a\ndifferent context.\n\nDispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the\npath `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the\n`## Pre-code axes` of the rubric. It answers four questions and nothing else:\n\n- Is there exactly one task per AC — none missing, none invented?\n- Does every task state its failing test before its implementation?\n- Is each task's **Interfaces** entry complete enough that its implementer\n  never has to read outside its own task block? An incomplete entry is a\n  BLOCKER: it is what forces an implementer to read wider and guess.\n- Does every task with no test declare `Exempt: <config|ci|docs|style>` and\n  name its verification?\n\nFix subagent, re-review, at most 3 rounds. Record each round in the plan file's\n`## Review record` table, same shape as the design file's. GATE 2 is offered\nonly after A2 comes back clean.\n",
+    "A4": "## A4 — narrow branch review (after the last task)\n\nEvery box ticked is not the same as the ticket being done. Write the branch\ndiff to `docs/impl/<ticket-id>-review/branch.diff`\n(`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a\n`branch-reviewer` subagent with that path, the plan, and the ticket. One\nquestion only: does this branch fulfil the ticket — every AC covered by a\ntest, nothing built that no AC asked for, and no later task quietly breaking\nan earlier one?\n\nKeep the lens narrow here; merge risk is A5's job in `dev-handover`, against a\ndifferent rubric. Fix subagent, re-review, at most 3 rounds. Only once A4\ncomes back clean — no BLOCKER and no SUGGESTED left — is option 1\n`/dev-handover <ticket-id>`.\n",
+    "A5": "## A5 — merge-risk review (before GATE 3)\n\nA4 asked whether the branch does what the ticket said. A5 asks a different\nquestion, in a different context: is this safe to merge into the default\nbranch?\n\nDispatch a `merge-risk-reviewer` subagent on the most capable model available.\nGive it the persona plainly: a tech lead reviewing before a production deploy,\nassuming real traffic, concurrent requests, retries, and more than one running\ninstance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and\nthe `## Merge-risk axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`.\n\n**The diff alone is not the review.** Say so in the dispatch: the reviewer\nopens the files the change reaches — callers, siblings, migrations, permission\ndeclarations, contracts, tests — and traces the affected flow end to end before\njudging. A finding that only names a category is not a finding; it states why\nthis code, on this path, is dangerous.\n\nIt writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding\n(severity, file, line, why it is dangerous, proposed fix), then the verdict\nline `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.\nBLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3\nrounds — same routing as A3: only a standing BLOCKER keeps the verdict\n`Blocking: Yes`.\n\nCopy the table and the verdict line into the PR body's `## Review` section —\n`kb pr lint` fails the PR when the verdict line is missing and when it reads\n`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback\nitems, recorded rather than fixed.\n\nA branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1\nbecomes the fix, not the PR.\n",
+}
+
+
+def _review_block(name: str, block: str) -> str:
+    first, last = REVIEW_BLOCK_BOUNDS[block]
     text = _read_init_template(name)
-    assert text.count(first) == 1, f"{name}: contract opening line not found once"
-    assert text.count(last) == 1, f"{name}: contract closing line not found once"
+    assert text.count(first) == 1, f"{name}: {block} opening line not found once"
+    assert text.count(last) == 1, f"{name}: {block} closing line not found once"
     start = text.index(first)
     return text[start : text.index(last, start) + len(last)]
 
 
+def _review_contract(name: str) -> str:
+    return _review_block(name, "REVIEW-CONTRACT")
+
+
 def test_review_contract_is_byte_identical_across_the_four_phase_skills():
-    """1 block x 16 files. The four phases dispatch reviewers; the two
-    remaining dev wrappers (dev-implement-ticket, dev-code-seed) dispatch
-    none, so the contract deliberately does not live there."""
+    """1 block x 16 files, every copy checked against canon (not just against
+    each other — see test_dev_wrappers_carry_byte_identical_shared_blocks'
+    comment for why pairwise comparison is the hole this closes). The four
+    phases dispatch reviewers; the two remaining dev wrappers
+    (dev-implement-ticket, dev-code-seed) dispatch none, so the contract
+    deliberately does not live there."""
     names = [
         name for skill in REVIEW_CONTRACT_SKILLS for name in _dev_wrapper_names(skill)
     ]
     assert len(names) == 16
-    canon = _review_contract(names[0])
-    for name in names[1:]:
+    canon = REVIEW_BLOCK_TEXT["REVIEW-CONTRACT"]
+    assert canon.strip(), "REVIEW-CONTRACT: empty canon"
+    for name in names:
         assert _review_contract(name) == canon, name
+
+
+@pytest.mark.parametrize(
+    "block,skill",
+    [
+        ("A1", "dev-design"),
+        ("A2", "dev-plan"),
+        ("A4", "dev-execute"),
+        ("A5", "dev-handover"),
+    ],
+)
+def test_a_block_is_byte_identical_across_its_four_wrapper_forms(block, skill):
+    """4 files per A-block, every copy checked against canon, same reasoning
+    as the contract test above."""
+    canon = REVIEW_BLOCK_TEXT[block]
+    assert canon.strip(), f"{block}: empty canon"
+    for name in _dev_wrapper_names(skill):
+        assert _review_block(name, block) == canon, name
 
 
 def test_review_contract_pins_the_rules_that_make_it_independent():
@@ -2098,7 +2174,7 @@ def test_the_contract_is_absent_from_the_non_dispatching_wrappers():
 
 def test_dev_design_dispatches_an_independent_reviewer_before_gate_one():
     for name in _dev_wrapper_names("dev-design"):
-        body = _normalised(_dev_wrapper_body(name))
+        body = _dev_wrapper_body(name)
         assert "A1" in body, name
         assert "design-author" in body, name
         assert "design-reviewer" in body, name
@@ -2107,9 +2183,37 @@ def test_dev_design_dispatches_an_independent_reviewer_before_gate_one():
         assert "GATE 1 is offered only after A1 comes back clean" in body, name
 
 
+# Pin the `## Review record` table's shape, not just its heading: A2's
+# review record table below reuses the same shape, so a change that keeps
+# the heading but drops or reorders a column would still satisfy the bare
+# "## Review record" needle above and pass unnoticed.
+def test_dev_design_review_record_table_has_the_five_columns():
+    for name in _dev_wrapper_names("dev-design"):
+        body = _dev_wrapper_body(name)
+        assert "| Date | Round | Verdict | Reviewer | Open gaps |" in body, name
+
+
+# A1 must be dispatched, and its result checked, before GATE 1 is offered —
+# a wrapper that moved A1 below the GATE 1 heading would still satisfy every
+# other A1 needle. Only 3 of the 4 dev-design wrappers carry "## GATE 1" as
+# a heading: claude-command-dev-design.md compresses GATE 1 into bold prose
+# with no heading of its own, so it is not in this list.
+DEV_DESIGN_WRAPPERS_WITH_GATE_ONE_HEADING = (
+    "claude-skill-dev-design.md",
+    "copilot-dev-design.prompt.md",
+    "cursor-dev-design.md",
+)
+
+
+def test_dev_design_a1_precedes_the_gate_one_heading():
+    for name in DEV_DESIGN_WRAPPERS_WITH_GATE_ONE_HEADING:
+        text = _read_init_template(name)
+        assert text.index("## A1 —") < text.index("## GATE 1"), name
+
+
 def test_dev_plan_dispatches_an_independent_reviewer_before_gate_two():
     for name in _dev_wrapper_names("dev-plan"):
-        body = _normalised(_dev_wrapper_body(name))
+        body = _dev_wrapper_body(name)
         assert "A2" in body, name
         assert "plan-author" in body, name
         assert "plan-reviewer" in body, name
@@ -2118,12 +2222,42 @@ def test_dev_plan_dispatches_an_independent_reviewer_before_gate_two():
         assert "GATE 2 is offered only after A2 comes back clean" in body, name
 
 
+# A2's own reason for existing: an incomplete Interfaces entry is what
+# forces a task-execute subagent to read outside its own task block and
+# guess. It is currently the least-protected line in the block — nothing
+# else in this file pins it — so a rewording that softened "BLOCKER" to a
+# NOTE, or dropped the rule outright, would pass every other A2 assertion.
+def test_dev_plan_a2_treats_an_incomplete_interfaces_entry_as_a_blocker():
+    for name in _dev_wrapper_names("dev-plan"):
+        body = _dev_wrapper_body(name)
+        assert (
+            "An incomplete entry is a BLOCKER: it is what forces an "
+            "implementer to read wider and guess." in body
+        ), name
+
+
+def test_dev_plan_a2_requires_the_exempt_line_and_the_failing_test_question():
+    for name in _dev_wrapper_names("dev-plan"):
+        body = _dev_wrapper_body(name)
+        assert (
+            "Does every task with no test declare `Exempt: "
+            "<config|ci|docs|style>` and name its verification?" in body
+        ), name
+        assert (
+            "Does every task state its failing test before its "
+            "implementation?" in body
+        ), name
+
+
 def test_dev_execute_reviews_each_task_in_a_separate_context():
     for name in _dev_wrapper_names("dev-execute"):
-        body = _normalised(_dev_wrapper_body(name))
+        body = _dev_wrapper_body(name)
         assert "task-reviewer" in body, name
-        # The self-review stays, but it is no longer the gate.
         assert "review checkpoint" in body, name
+        # This is what actually proves the self-review was demoted from
+        # gate to checkpoint: "review checkpoint" alone does not — it is a
+        # substring of "self-review checkpoint", which named the step
+        # before A3 existed and would pass unchanged either way.
         assert "never satisfies A3" in body, name
         assert "docs/impl/<ticket-id>-review/task-<n>.diff" in body, name
         assert "never `HEAD~1`" in body, name
@@ -2131,10 +2265,27 @@ def test_dev_execute_reviews_each_task_in_a_separate_context():
         assert "Review: ✅ r" in body, name
 
 
+# A3 hands control back to the orchestrator before the review step runs —
+# without this sentence the review reads as nested inside the implementer's
+# own procedure, exactly the regression the change was written to prevent,
+# and every needle in the test above still passes in that state.
+def test_dev_execute_a3_runs_in_the_orchestrator_not_the_implementer():
+    # claude-command-dev-execute.md compresses this to "back in the
+    # orchestrator, write ..." rather than the full sentence the other
+    # three wrappers carry verbatim — the shared substring is the needle
+    # common to all four, since it is what proves the hand-back happens at
+    # all.
+    for name in _dev_wrapper_names("dev-execute"):
+        body = _dev_wrapper_body(name)
+        assert "back in the orchestrator" in body, name
+
+
 def test_dev_execute_closes_the_branch_with_a_narrow_review():
     for name in _dev_wrapper_names("dev-execute"):
-        body = _normalised(_dev_wrapper_body(name))
-        assert "A4" in body, name
+        body = _dev_wrapper_body(name)
+        # The bare "A4" needle is two characters any incidental mention
+        # satisfies (e.g. "A4" inside a version string); pin the heading.
+        assert "## A4 — narrow branch review (after the last task)" in body, name
         assert "branch-reviewer" in body, name
         assert "branch.diff" in body, name
         # A4's lens is ticket fulfilment; merge risk is A5's job in handover.
@@ -2143,10 +2294,27 @@ def test_dev_execute_closes_the_branch_with_a_narrow_review():
 
 def test_dev_handover_runs_a_merge_risk_review_before_gate_three():
     for name in _dev_wrapper_names("dev-handover"):
-        body = _normalised(_dev_wrapper_body(name))
+        body = _dev_wrapper_body(name)
         assert "A5" in body, name
         assert "merge-risk-reviewer" in body, name
         assert "Merge-risk axes" in body, name
         assert "The diff alone is not the review" in body, name
         assert "Blocking: No" in body, name
         assert "never reaches GATE 3" in body, name
+
+
+# The old coverage for A5's PR-assembly addition was satisfied by the
+# unrelated, pre-existing "## Review record" heading (the design/plan
+# review table), asserting nothing about A5 actually being added to the
+# PR-assembly list. Pin the clause itself, in the handover step's own
+# words.
+def test_dev_handover_pr_assembly_adds_the_review_section():
+    # claude-command-dev-handover.md drops the bold markdown around "Review"
+    # on this bullet ("...and Review — A5's..." vs "...and **Review** —
+    # A5's..." in the other three); skip the varying lead-in and pin the
+    # clause that is identical across all four wrappers.
+    for name in _dev_wrapper_names("dev-handover"):
+        body = _dev_wrapper_body(name)
+        assert (
+            "A5's finding table and its `Blocking:` verdict line." in body
+        ), name
