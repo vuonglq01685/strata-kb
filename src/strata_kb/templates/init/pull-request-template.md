@@ -62,3 +62,18 @@ Write `none` when there were none.
 ## Usage
 
 <!-- The table from `kb usage report --ticket <id> --md`. -->
+
+## Review
+
+<!--
+A5, the merge-risk review from /dev-handover: one row per finding, then the
+verdict line. `kb pr lint` fails when the verdict line is missing and when it
+reads `Blocking: Yes`. `none` does not answer this section — a clean review
+still states `Blocking: No`.
+
+| Severity | File | Line | Why it is dangerous | Fix |
+|---|---|---|---|---|
+| BLOCKER | src/orders/service.py | 118 | ... | ... |
+
+Blocking: No
+-->

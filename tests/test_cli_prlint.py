@@ -17,6 +17,8 @@ GOOD = "\n\n".join(
     if name == "Verification"
     else "## TDD exemptions\n\nNone."
     if name == "TDD exemptions"
+    else "## Review\n\nBlocking: No"
+    if name == "Review"
     else f"## {name}\n\nfilled"
     for name in REQUIRED_SECTIONS
 )
