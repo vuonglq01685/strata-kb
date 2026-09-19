@@ -82,8 +82,8 @@ nhánh.
 
 > Hãy quyết định điều này một cách có ý thức. Khác với cổng của repo BA, cổng này
 > không bao giờ tự bỏ qua. Một khi đã bắt buộc, nó chặn **mọi** pull request
-> thiếu tám mục bắt buộc — kể cả pull request của bot như nâng cấp dependency hay
-> revert.
+> thiếu các mục bắt buộc — kể cả pull request của bot như nâng cấp dependency
+> hay revert.
 
 ## 2.4 Hỏi về chính sách auto-merge của hub
 
@@ -198,14 +198,19 @@ nay có thể đã `stale`. Chỉ kiểm tra lúc handover thì quá muộn.
 | `docs/impl/<id>-design.md` | `dev-design` | bản thiết kế |
 | `docs/impl/<id>-plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]` |
 | `docs/impl/<id>-context.md` | `dev-implement-ticket` | cache ngữ cảnh đã phân giải; bị gitignore, sinh lại khi cần |
+| `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
+
+File thiết kế và kế hoạch mỗi file đều có thêm bảng `## Review record` khi các
+vòng review chạy — đây là lịch sử được commit của mọi vòng, không phải một file
+riêng.
 
 Trạng thái được suy ra từ hai file đầu, nhánh git hiện tại, và việc PR đã mở hay
 chưa — **không bao giờ từ lịch sử hội thoại**. Bất kỳ pha nào cũng tiếp tục được
 từ đầu trong một phiên làm việc hoàn toàn mới.
 
 `kb init` không bao giờ đụng tới nội dung `docs/impl/` của bạn. Nó chỉ thêm
-`.gitkeep` và một `.gitignore` để cache ngữ cảnh không bao giờ lọt vào pull
-request.
+`.gitkeep` và một `.gitignore` để cache ngữ cảnh và các artefact review không
+bao giờ lọt vào pull request.
 
 ## 4.3 Bốn cổng người, năm vòng review agent
 
@@ -456,6 +461,8 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | `kb ci-publish` bị từ chối | Repo này chưa có trong `federation/registry.yaml` của hub | Đề nghị người quản trị hub thêm vào |
 | Cảnh báo `dirty_tree` | Có thay đổi chưa commit trong khi revision của manifest lấy từ HEAD | Vô hại khi chạy cục bộ; CI luôn chạy trên bản checkout sạch |
 | `pr-lint` fail trên PR của Dependabot | Cổng này không tự bỏ qua một khi đã bắt buộc | Đúng như thiết kế. Hãy cân nhắc có giữ nó bắt buộc với PR của bot hay không. |
+| `pr-lint` fail: `no-review-verdict` | Mục `## Review` của PR không có dòng `Blocking:` | Chạy A5 (review rủi ro merge của `dev-handover`) và ghi lại kết luận — dù review sạch vẫn phải ghi `Blocking: No` |
+| `pr-lint` fail: `review-blocking` | Mục `## Review` ghi `Blocking: Yes` | Sửa các phát hiện BLOCKER rồi review lại; PR còn `Blocking: Yes` thì không bao giờ được merge |
 | Một trích dẫn báo `stale` giữa chừng | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi BA. Đừng tự diễn giải lại tiêu chí chấp nhận. |
 | Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Kiểm tra cả hai; xin token mới từ người quản trị hub |
 

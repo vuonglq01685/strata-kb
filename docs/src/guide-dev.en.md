@@ -82,7 +82,7 @@ these two. Nothing else to configure.
 protection for you. Add **`pr-lint` to the branch's required checks**.
 
 > Decide this knowingly. Unlike the BA repo's gate, this one never self-skips.
-> Once required, it blocks **every** pull request lacking the eight required
+> Once required, it blocks **every** pull request lacking the required
 > sections — including bot pull requests such as a dependency bump or a revert.
 
 ## 2.4 Ask about the hub's auto-merge policy
@@ -196,13 +196,18 @@ today. Checking only at handover would be too late.
 | `docs/impl/<id>-design.md` | `dev-design` | the design |
 | `docs/impl/<id>-plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes |
 | `docs/impl/<id>-context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
+| `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
+
+The design and plan files each grow a `## Review record` table as their
+reviews run — the committed history of every round, not a separate file.
 
 State is derived from the first two files, the current branch, and whether a PR
 is open — **never from conversation history**. Any phase resumes cold in a brand
 new session.
 
 `kb init` never touches your `docs/impl/` content. It only adds `.gitkeep` and a
-`.gitignore` so the context cache never lands in a pull request.
+`.gitignore` so the context cache and the review artefacts never land in a pull
+request.
 
 ## 4.3 Four human gates, five agent review rounds
 
@@ -451,6 +456,8 @@ should look.
 | `kb ci-publish` refused | This repo is not in the hub's `federation/registry.yaml` | Ask the hub maintainer to add it |
 | `dirty_tree` warning | Uncommitted changes while the manifest revision comes from HEAD | Harmless locally; CI always runs clean |
 | `pr-lint` fails on a Dependabot PR | The gate never self-skips once required | Expected. Decide whether to keep it required for bot PRs. |
+| `pr-lint` fails: `no-review-verdict` | The PR's `## Review` section carries no `Blocking:` line | Run A5 (`dev-handover`'s merge-risk review) and record its verdict — even a clean review states `Blocking: No` |
+| `pr-lint` fails: `review-blocking` | The `## Review` section says `Blocking: Yes` | Fix the BLOCKER findings and re-review; a PR with `Blocking: Yes` never merges |
 | A citation resolves `stale` mid-implementation | The hub published after the ticket was written | `kb diff`, then ask the analyst. Do not reinterpret the AC yourself. |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Check both; ask the hub maintainer for a current token |
 

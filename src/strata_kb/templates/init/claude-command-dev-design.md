@@ -112,8 +112,10 @@ no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.
   standing after round 3 stops the flow and goes to the Dev.
 - A finding that contradicts the approved design or plan is never auto-fixed:
   show the finding beside the text that mandates it and let the Dev choose.
-- Criteria come from `docs/pr-review-rubric.md`, then
-  `docs/pr-review-rubric.local.md` — the local file wins. Severity is always
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
+  override wins over its base file. Severity is always
   BLOCKER / SUGGESTED / NOTE / NITS.
 - Where the runtime cannot dispatch subagents, run the review as its own pass
   that reads ONLY the paths it was handed and reuses nothing it remembers from
