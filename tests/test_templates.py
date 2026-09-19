@@ -2094,3 +2094,14 @@ def test_the_contract_is_absent_from_the_non_dispatching_wrappers():
     for skill in ("dev-implement-ticket", "dev-code-seed"):
         for name in _dev_wrapper_names(skill):
             assert first not in _read_init_template(name), name
+
+
+def test_dev_handover_runs_a_merge_risk_review_before_gate_three():
+    for name in _dev_wrapper_names("dev-handover"):
+        body = _normalised(_dev_wrapper_body(name))
+        assert "A5" in body, name
+        assert "merge-risk-reviewer" in body, name
+        assert "Merge-risk axes" in body, name
+        assert "The diff alone is not the review" in body, name
+        assert "Blocking: No" in body, name
+        assert "never reaches GATE 3" in body, name
