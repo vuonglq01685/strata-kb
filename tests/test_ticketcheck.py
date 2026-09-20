@@ -177,3 +177,76 @@ def test_render_label_defaults_to_dor_and_accepts_grounding():
     r = LintReport(issues=[])
     assert r.render().endswith("DoR: PASS")
     assert r.render("Grounding").endswith("Grounding: PASS")
+
+
+# --- Task 2: ids, [NEW], Service, Open decisions ---------------------------
+
+
+def test_unknown_ids_are_errors_with_line_numbers(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(
+        rev,
+        Service="svc.nope",
+        Tables="db.ghost.col",
+        Routes="api.missing",
+        Externals="int.unknown",
+    ))
+    report = run(text, kb_dir)
+    msgs = errors(report)
+    for bad, line in (("svc.nope", 8), ("db.ghost", 11), ("api.missing", 12), ("int.unknown", 13)):
+        assert any(f"unknown id '{bad}'" in m and f"(line {line})" in m for m in msgs), (bad, msgs)
+
+
+def test_new_marker_exempts_the_line_and_emits_a_note(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: billing arrives with this ticket]"))
+    report = run(text, kb_dir)
+    assert not any("int.stripe" in e for e in errors(report))
+    assert any("new: int.stripe — billing arrives with this ticket" in n for n in notes(report))
+
+
+def test_new_marker_without_a_reason_is_a_warning(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Externals="int.stripe [NEW]")), kb_dir)
+    assert not any("int.stripe" in e for e in errors(report))
+    assert any("[NEW] without a reason" in w for w in warnings(report))
+
+
+def test_ids_inside_file_paths_are_not_scanned(code_doc):
+    # `src/api.py` must not be read as the id `api.py`.
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Files=["src/api.py [NEW: new module]"])), kb_dir)
+    assert not any("api.py" in e for e in errors(report))
+
+
+def test_missing_service_line_is_a_warning(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Service="none")), kb_dir)
+    assert any("no `svc.<name>`" in w for w in warnings(report))
+
+
+def test_open_decisions_fail_the_gate_one_error_each_plus_summary(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, **{"Open decisions": [
+        "Failure mode: what if Kafka is down during approval?",
+        "Request body of POST /airspace",
+    ]}))
+    report = run(text, kb_dir)
+    assert report.passed is False
+    msgs = errors(report)
+    assert any("open decision: Failure mode: what if Kafka is down" in m and "(line 16)" in m for m in msgs)
+    assert any("open decision: Request body of POST /airspace" in m and "(line 17)" in m for m in msgs)
+    assert "2 open decision(s) — resolve before Dev" in msgs
+
+
+def test_open_decisions_none_variants_pass(code_doc):
+    kb_dir, rev = code_doc
+    for word in ("none", "None", "N/A", "n/a"):
+        report = run(ticket(grounding(rev, **{"Open decisions": [word]})), kb_dir)
+        assert not any("open decision" in e for e in errors(report)), word
+
+
+def test_inline_open_decision_counts_too(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, **{"Open decisions": "retry policy unknown"})), kb_dir)
+    assert any("open decision: retry policy unknown" in e for e in errors(report))

@@ -169,9 +169,9 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport
     notes.append(f"{doc_id} read from {doc.source}")
 
     _check_revision(doc, doc_id, rev, line, issues)
-    # Task 2 adds:  _check_ids(section, doc, issues, notes)
-    # Task 2 adds:  _check_service_present(section, issues)
-    # Task 2 adds:  _check_open_decisions(section, issues)
+    _check_ids(section, doc, issues, notes)
+    _check_service_present(section, issues)
+    _check_open_decisions(section, issues)
     # Task 3 adds:  _check_tables_routes_commands(section, doc, issues)
     # Task 4 adds:  _check_files(section, doc, issues, notes)
     return LintReport(issues, notes)
@@ -219,3 +219,71 @@ def _check_revision(doc: LoadedDoc, doc_id: str, rev: str, line: int, issues: li
                 f"re-run /sa-ticket-ground against the current document (line {line})",
             )
         )
+
+
+def _known_ids(doc: LoadedDoc) -> set[str]:
+    return {s.id for s in doc.manifest.sections}
+
+
+def _id_lines(section: _Section):
+    """(lineno, line) for every visible line that is scanned for ids — the
+    `Grounded on:` line (a doc id, not a section id) and `Files:` lines
+    (paths such as `src/api.py` would read as `api.py`) are skipped."""
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] in ("Grounded on", "Files"):
+            continue
+        if line.strip():
+            yield section.first_line + i, line
+
+
+def _check_ids(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: list[str]) -> None:
+    known = _known_ids(doc)
+    for lineno, line in _id_lines(section):
+        new = NEW_RE.search(line)
+        for raw in ID_RE.findall(line):
+            sid = raw.rstrip(".")
+            if sid in known:
+                continue
+            # db.<table>.<column>: the table half is the section id.
+            if sid.startswith("db.") and sid.count(".") >= 2:
+                table = sid.rsplit(".", 1)[0]
+                if table in known:
+                    continue  # column verified in Task 3
+                sid = table
+            if new is not None:
+                reason = (new.group("reason") or "").strip()
+                if reason:
+                    notes.append(f"new: {sid} — {reason} (line {lineno})")
+                else:
+                    issues.append(Issue("warning", f"[NEW] without a reason for {sid} (line {lineno})"))
+                continue
+            issues.append(
+                Issue(
+                    "error",
+                    f"unknown id '{sid}' — not a section of {doc.manifest.id}; copy the "
+                    f"id from the document or mark the line [NEW: <reason>] (line {lineno})",
+                )
+            )
+
+
+def _check_service_present(section: _Section, issues: list[Issue]) -> None:
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == "Service" and any(
+            sid.startswith("svc.") for sid in ID_RE.findall(line)
+        ):
+            return
+    issues.append(Issue("warning", "no `svc.<name>` on the `Service:` line — which service does this ticket touch?"))
+
+
+def _check_open_decisions(section: _Section, issues: list[Issue]) -> None:
+    items: list[tuple[int, str]] = list(section.subitems.get("Open decisions", []))
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == "Open decisions" and not line[:1].isspace():
+            rest = FIELD_RE.match(line).group("rest").strip()
+            if rest:
+                items.insert(0, (section.first_line + i, rest))
+    open_items = [(n, t) for n, t in items if t.strip().casefold() not in _NONE_WORDS]
+    for lineno, item in open_items:
+        issues.append(Issue("error", f"open decision: {item} (line {lineno})"))
+    if open_items:
+        issues.append(Issue("error", f"{len(open_items)} open decision(s) — resolve before Dev"))
