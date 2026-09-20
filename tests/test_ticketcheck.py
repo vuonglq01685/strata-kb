@@ -278,3 +278,52 @@ def test_new_marker_on_a_column_of_a_known_table_emits_a_note(code_doc):
         for n in notes(report)
     )
     assert not any("db.restrictive_airspace.brand_new" in e for e in errors(report))
+
+
+# --- Task 3: columns, routes, commands -------------------------------------
+
+
+def test_unknown_column_is_an_error_known_column_is_fine(code_doc):
+    kb_dir, rev = code_doc
+    bad = run(ticket(grounding(rev, Tables="db.restrictive_airspace.nope")), kb_dir)
+    assert any("column 'nope'" in e and "db.restrictive_airspace" in e and "(line 11)" in e for e in errors(bad))
+    good = run(ticket(grounding(rev, Tables="db.restrictive_airspace.effective_date")), kb_dir)
+    assert not any("column" in e for e in errors(good))
+
+
+def test_route_must_be_a_row_of_the_tag_table(code_doc):
+    kb_dir, rev = code_doc
+    bad = run(ticket(grounding(rev, Routes="api.airspace — DELETE /airspace")), kb_dir)
+    assert any("route 'DELETE /airspace'" in e and "api.airspace" in e and "(line 12)" in e for e in errors(bad))
+    good = run(ticket(grounding(rev, Routes="api.airspace — POST /airspace")), kb_dir)
+    assert not any("route" in e for e in errors(good))
+
+
+def test_tag_without_a_route_pair_is_accepted(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Routes="api.airspace")), kb_dir)
+    assert not any("route" in e for e in errors(report))
+
+
+def test_command_must_be_primary_or_an_alternative_verbatim(code_doc):
+    kb_dir, rev = code_doc
+    bad = run(ticket(grounding(rev, **{"Verify with": "cmd.test — `pytest -q`"})), kb_dir)
+    assert any("command not in cmd.test" in e and "(line 14)" in e for e in errors(bad))
+    alt = run(ticket(grounding(rev, **{"Verify with": "cmd.test — `pytest`"})), kb_dir)
+    assert not any("command" in e for e in errors(alt))
+    other = run(ticket(grounding(rev, **{"Verify with": "cmd.lint — `ruff check src`"})), kb_dir)
+    assert not any("command" in e for e in errors(other))
+
+
+def test_command_line_without_a_code_span_is_a_warning(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, **{"Verify with": "cmd.test"})), kb_dir)
+    assert any("cmd.test" in w and "backticks" in w for w in warnings(report))
+
+
+def test_unreadable_group_file_degrades_to_a_warning(code_doc):
+    kb_dir, rev = code_doc
+    (kb_dir / "demo-code" / "db.md").write_bytes(b"\xff\xfe\x00\xd8")
+    report = run(ticket(grounding(rev, Tables="db.restrictive_airspace.nope")), kb_dir)
+    assert not any("column" in e for e in errors(report))
+    assert any("db.md" in w and "skipped" in w for w in warnings(report))

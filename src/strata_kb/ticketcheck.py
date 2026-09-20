@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from strata_kb import lintcore, models
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
+from strata_kb.mdutils import slice_section
 
 HEADING = "## Technical grounding"
 
@@ -172,7 +173,7 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport
     _check_ids(section, doc, issues, notes)
     _check_service_present(section, issues)
     _check_open_decisions(section, issues)
-    # Task 3 adds:  _check_tables_routes_commands(section, doc, issues)
+    _check_tables_routes_commands(section, doc, issues)
     # Task 4 adds:  _check_files(section, doc, issues, notes)
     return LintReport(issues, notes)
 
@@ -291,3 +292,86 @@ def _check_open_decisions(section: _Section, issues: list[Issue]) -> None:
         issues.append(Issue("error", f"open decision: {item} (line {lineno})"))
     if open_items:
         issues.append(Issue("error", f"{len(open_items)} open decision(s) — resolve before Dev"))
+
+
+def _l2_slice(doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue]) -> str | None:
+    """The `## <sid> …` L2 section text, or None (group file unreadable —
+    warned once per group, the sub-check is skipped)."""
+    group = next((s.file for s in doc.manifest.sections if s.id == sid), None)
+    if group is None or group in unreadable:
+        return None
+    text = doc.read_group(group)
+    if text is None:
+        unreadable.add(group)
+        issues.append(
+            Issue("warning", f"could not read {group}.md of {doc.manifest.id} — column/route/command checks for its sections skipped")
+        )
+        return None
+    return slice_section(text, sid)
+
+
+def _table_column(rows: list[list[str]], name: str) -> int | None:
+    header = [c.strip().lower() for c in rows[0]] if rows else []
+    return header.index(name) if name in header else None
+
+
+def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: list[Issue]) -> None:
+    known = _known_ids(doc)
+    unreadable: set[str] = set()
+    for lineno, line in _id_lines(section):
+        if NEW_RE.search(line):
+            continue
+        ids = [i for i in ID_RE.findall(line)]
+        for raw in ids:
+            raw = raw.rstrip(".")
+            # db.<table>.<column>
+            if raw.startswith("db.") and raw.count(".") >= 2 and raw not in known:
+                table, column = raw.rsplit(".", 1)
+                if table not in known:
+                    continue  # reported by _check_ids
+                body = _l2_slice(doc, table, unreadable, issues)
+                if body is None:
+                    continue
+                rows = lintcore.table_rows(body)
+                col = _table_column(rows, "column")
+                names = {r[col] for r in rows[1:] if col is not None and len(r) > col}
+                if column not in names:
+                    issues.append(
+                        Issue("error", f"column '{column}' is not in {table} ({', '.join(sorted(names)) or 'no columns'}) (line {lineno})")
+                    )
+            # api.<tag> — METHOD /path
+            elif raw.startswith("api.") and raw in known:
+                pairs = ROUTE_RE.findall(line)
+                if not pairs:
+                    continue
+                body = _l2_slice(doc, raw, unreadable, issues)
+                if body is None:
+                    continue
+                rows = lintcore.table_rows(body)
+                mi, pi = _table_column(rows, "method"), _table_column(rows, "path")
+                have = {(r[mi].upper(), r[pi]) for r in rows[1:] if mi is not None and pi is not None and len(r) > max(mi, pi)}
+                for method, path in pairs:
+                    if (method.upper(), path) not in have:
+                        issues.append(
+                            Issue("error", f"route '{method} {path}' is not in {raw} — copy a row of its table (line {lineno})")
+                        )
+            # cmd.<x> — `command`
+            elif raw.startswith("cmd.") and raw in known:
+                span = CODE_SPAN_RE.search(line)
+                if span is None:
+                    issues.append(Issue("warning", f"{raw}: put the command in backticks so it can be verified (line {lineno})"))
+                    continue
+                body = _l2_slice(doc, raw, unreadable, issues)
+                if body is None:
+                    continue
+                allowed: set[str] = set()
+                m = PRIMARY_RE.search(body)
+                if m:
+                    allowed.add(m.group(1))
+                rows = lintcore.table_rows(body)
+                ci = _table_column(rows, "command")
+                allowed |= {r[ci] for r in rows[1:] if ci is not None and len(r) > ci}
+                if span.group(1) not in allowed:
+                    issues.append(
+                        Issue("error", f"command not in {raw} — copy the primary or an alternative verbatim ({', '.join(sorted(allowed))}) (line {lineno})")
+                    )
