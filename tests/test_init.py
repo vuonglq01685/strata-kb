@@ -1974,6 +1974,11 @@ def test_quickstart_ba_points_at_code_knowledge(tmp_path: Path):
     # touched the new section's own load-bearing strings. Pin those.
     assert "Code knowledge on the hub" in text
     assert "%%TODO: verify against codebase%%" in text
+    assert "/sa-ticket-ground" in text
+    assert "## Technical grounding" in text
+    assert "kb ticket check" in text
+    # The BA skills no longer read the code documents themselves.
+    assert "The BA skills do not read them" in text
 
 
 def test_quickstart_dev_documents_the_redo_consequence(tmp_path: Path):

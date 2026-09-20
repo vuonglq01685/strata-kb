@@ -129,8 +129,9 @@ preserves `.kb/index.yaml` and `.kb/config.yaml` unless `--force`.
 
 Slash commands are scaffolded for **Claude Code, GitHub Copilot and Cursor**:
 `/kb-ingest`, `/kb-summarize`, `/kb-approve`, `/kb-publish`, `/kb-docker-setup`
-on hub and child repos; `/ba-ticket-author` and `/ba-mission-plan` on a `ba`
-repo; the five dev-workflow commands on a `dev` repo. MCP client wiring ships as
+on hub and child repos; `/ba-ticket-author`, `/ba-mission-plan` and
+`/sa-ticket-ground` on a `ba` repo; the five dev-workflow commands on a `dev`
+repo. MCP client wiring ships as
 `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind — stdio
 on the hub, HTTP-with-env-vars everywhere else.
 
@@ -657,6 +658,16 @@ it into the tracker).
 
 The agent never pushes to a tracker or opens a ticket on its own. Markdown out,
 human in the loop by design.
+
+**`sa-ticket-ground`** fills the one section the BA never touches:
+`## Technical grounding` — service, files, tables, routes, externals and the
+test command, each a section id that exists in the hub's `<repo>-code`
+document, or `[NEW: <reason>]`, or parked under `Open decisions`. It has no
+repository access and never infers: internal flow, failure modes and request
+bodies are not in the document, so they go to `Open decisions` for the Dev.
+With `--mission` it fills a mission plan's `## Services & order` from `svc.*`
+and `depends_on` only. The BA skills themselves no longer read `-code`/`-svc`;
+they write `%%TODO: verify against codebase%%` and hand off.
 
 **Mission plans** sit upstream, for a feature spanning several stories (small
 work goes straight to a ticket — a mission is never mandatory).

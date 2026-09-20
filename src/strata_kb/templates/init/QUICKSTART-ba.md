@@ -66,6 +66,15 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       (or `tickets/<mission-id>-US<n>.md` from step 2). You review it,
       commit it, and paste it into Jira yourself — the assistant never
       publishes for you.
+6. **Ground the technical half** — invoke `/sa-ticket-ground
+   tickets/<ticket-id>.md`. It fills the SA-owned `## Technical grounding`
+   section from the hub's `<repo>-code` document (service, files, tables,
+   routes, externals, test command — section ids only), parks what the
+   document cannot prove under `Open decisions`, and runs
+   `kb ticket check` until it reports `Grounding: PASS`. You never fill
+   that section yourself, and the SA never edits yours. For a mission
+   plan, `/sa-ticket-ground --mission missions/M-<slug>.md` fills
+   `## Services & order` the same way.
 
 ## Mission plans — for large features
 
@@ -98,19 +107,21 @@ drafted.
 
 ## Code knowledge on the hub
 
-Alongside domain documents, the hub also holds two documents per product
+Alongside domain documents, the hub holds two documents per product
 repo, published by that repo's `dev`-kind workflow: `<repo>-code`
-(generated structure — names) and `<repo>-svc` (curated responsibility —
-meaning). Both show up in `kb_search` results tagged `code`, same as any
-other hub content, so `ba-ticket-author` and `ba-mission-plan` can ground
-diagrams in them without you naming the repo specially.
+(generated structure — names: `svc.*`, `db.*`, `api.*`, `int.*`,
+`cmd.*`, `struct.tree`) and `<repo>-svc` (curated responsibility —
+meaning).
 
-Use them to fill a C4 `Container(alias, label, technology, description)`:
-`<repo>-code` section `svc.<name>` gives the alias, label, and technology
-(detected framework); `<repo>-svc` section `svc.<name>` gives the
-description — what that service is actually responsible for — and labels
-`Rel(...)` arrows between containers. Only write
-`%%TODO: verify against codebase%%` when **neither** document answers.
+The BA skills do not read them. Where a ticket or mission needs a
+service, table, route or file name, `ba-ticket-author` and
+`ba-mission-plan` write `%%TODO: verify against codebase%%` with an owned
+open question, and `/sa-ticket-ground` answers those from `<repo>-code`
+in the SA-owned section — `## Technical grounding` in a ticket,
+`## Services & order` in a mission. Every id it writes is checked against
+the document by `kb ticket check`; what the document cannot prove —
+internal flow, failure modes, request bodies — is parked under
+`Open decisions` for the Dev, who has the code.
 
 The section reference itself, spelled the way a real citation is:
 
