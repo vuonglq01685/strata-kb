@@ -68,10 +68,7 @@ to the mission layer.
 4. **Gate** — run `kb ticket check <file>` (CLI; there is no MCP
    fallback). Fix every `[error]` and re-run until it prints
    `Grounding: PASS`. A non-empty `Open decisions` is a FAIL by design:
-   report the list to the BA instead of emptying it by guessing. If the
-   installed `kb` has no `ticket check` command yet, verify every id by
-   hand against the document's `_manifest.yaml` section list and say in
-   the handover that the gate did not run.
+   report the list to the BA instead of emptying it by guessing.
 5. **Handover** — report: the ids grounded, the `[NEW]` entries, the
    open decisions (count and text), the BA placeholders answered, and any
    BA-section contradiction found. The BA decides what goes back to the

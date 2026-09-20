@@ -341,8 +341,9 @@ Parsing, in order:
     - found → ok;
     - `[NEW: …]` → note;
     - not found and the path has more than 4 segments, or the fence
-      carries the `# … N more entries omitted` marker and the path sorts
-      after the named first-dropped entry → warning
+      carries the `# … N more entries omitted` marker (the marker names a
+      bare file name, so order is not comparable — every absent path on a
+      capped tree is unverifiable) → warning
       `cannot verify '<path>': beyond struct.tree depth/line cap` (the
       SA is told to list the deepest verifiable directory instead);
     - otherwise → error `file '<path>' not in struct.tree (line N)`.
@@ -437,7 +438,8 @@ bumping is the maintainer's separate act (decided 2026-09-20).
 exit-code row (the `test_readme.py` exit-code pin lists producers of exit
 2 — this command adds none, so that assertion is unchanged). No new
 dependency; no version bump; `uv.lock` untouched. `detect_changes` before
-commit per CLAUDE.md.
+commit per CLAUDE.md. Shipped 2026-09-20 as planned in
+docs/superpowers/plans/2026-09-20-sa-grounding-pr2-ticket-check.md.
 
 **After PR 2 — measurement, not code.** Smoke the gate first on this
 repository itself: local hub (`kb init --kind hub`, no remote → direct
