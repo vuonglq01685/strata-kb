@@ -1,10 +1,6 @@
 """`kb ticket check` — the CLI wrapper over `ticketcheck.check`, both
 document sources: local --kb-dir and the hub federation mirror."""
 
-# ruff: noqa: F811  (the re-exported `code_doc` fixture is used as a same-
-# named parameter in every test below — ruff reads each one as a
-# redefinition of the import; that is the intended pytest fixture pattern.)
-
 from __future__ import annotations
 
 import json
@@ -16,7 +12,7 @@ from typer.testing import CliRunner
 from strata_kb import models
 from strata_kb.cli import app
 from strata_kb.federation import FederationMeta, write_federation_index
-from tests.test_ticketcheck import code_doc, grounding, ticket  # noqa: F401  (fixture re-export)
+from tests.test_ticketcheck import grounding, ticket
 
 runner = CliRunner()
 
@@ -116,8 +112,9 @@ def test_hub_ambiguous_holders_need_a_repo_qualifier(code_doc, fed_hub, run_git,
     assert "read from hub federation/demo-fork" in result.output
 
 
-def test_hub_not_needed_when_the_document_is_local(code_doc, tmp_path):
+def test_hub_not_needed_when_the_document_is_local(code_doc, tmp_path, monkeypatch):
     # No --hub, no config: the local branch must not call _hub_or_exit.
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
     kb_dir, rev = code_doc
     path = tmp_path / "t.md"
     path.write_text(ticket(grounding(rev)), encoding="utf-8")

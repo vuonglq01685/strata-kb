@@ -10,34 +10,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from strata_kb import models, ticketcheck
 from strata_kb.codeingest import core
 from strata_kb.lintcore import LintReport
 from tests.fixtures_coderepo import build_code_repo
 
-
-@pytest.fixture
-def code_doc(tmp_path: Path, run_git) -> tuple[Path, str]:
-    """(kb_dir, revision) for a freshly ingested `demo-code`."""
-    root = tmp_path / "repo"
-    root.mkdir()
-    build_code_repo(root)
-    run_git(root, "init")
-    run_git(root, "add", "-A")
-    run_git(root, "commit", "-m", "init")
-    kb_dir = tmp_path / "kb"
-    core.run(
-        core.CodeIngestOptions(
-            repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"
-        )
-    )
-    manifest = models.load_yaml_model(
-        kb_dir / "demo-code" / "_manifest.yaml", models.Manifest
-    )
-    return kb_dir, manifest.revision
-
+# `code_doc` ((kb_dir, revision) for a freshly ingested `demo-code`) lives in
+# tests/conftest.py -- shared with test_cli_ticket_check.py, which needs the
+# identical fixture. `models`/`core`/`build_code_repo` stay imported here for
+# test_path_after_the_line_cap_marker_is_a_warning, which builds its own
+# oversized repo directly rather than through the fixture.
 
 DEFAULTS = {
     "Grounded on": "demo:demo-code @ {rev}",

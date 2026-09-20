@@ -179,6 +179,32 @@ def run_git():
 
 
 @pytest.fixture
+def code_doc(tmp_path: Path, run_git) -> tuple[Path, str]:
+    """(kb_dir, revision) for a freshly ingested `demo-code` -- shared by
+    `test_ticketcheck.py` (the engine) and `test_cli_ticket_check.py` (the
+    CLI wrapper), which both need the same real ingested code document."""
+    from strata_kb.codeingest import core
+    from tests.fixtures_coderepo import build_code_repo
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    build_code_repo(root)
+    run_git(root, "init")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "init")
+    kb_dir = tmp_path / "kb"
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"
+        )
+    )
+    manifest = models.load_yaml_model(
+        kb_dir / "demo-code" / "_manifest.yaml", models.Manifest
+    )
+    return kb_dir, manifest.revision
+
+
+@pytest.fixture
 def git_kb(fixture_kb: Path, run_git) -> dict:
     """Git repo containing .kb/ with 2 commits — simulates an amendment.
 
