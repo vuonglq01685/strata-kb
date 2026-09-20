@@ -33,22 +33,15 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    **ALL** returned candidates with their citations — never drop one
    silently. When the ambiguity note fires (two close-scoring hits), the
    BA MUST choose — never auto-pick.
-   Search results tagged `code` come from `<repo>-code` and `<repo>-svc`
-   — present them alongside domain candidates: a `-code` section is
-   machine-extracted (trust it for names) while a `-svc` section is
-   human-reviewed (trust it for responsibility). A known extractor
-   limit: a service built from source often renders `Technology | none`
-   in `-code` — the extractor looks for a dependency manifest in a
-   directory named after the compose service, and otherwise falls back
-   to the image name — so a `-code` hit for a service's name does not
-   guarantee it also answers for `technology`; when it reads `none`,
-   the existing `%%TODO: verify against codebase%%` rule applies to
-   that one argument, not the whole container.
+   A hit tagged `code` (`<repo>-code` / `<repo>-svc`) is not a candidate for
+   you: note it in the handover and leave it to `/sa-ticket-ground`.
 4. **Draft** — fill the standard ticket template (Summary, User Story,
    Background / Business context, Acceptance Criteria, Use cases,
    Sequence diagram, Business flow, Dependencies, Non-functional
    requirements, UI / presentation spec, Out of scope, Test data &
    verification, Open questions, KB context, Definition of Ready).
+   `## Technical grounding` is SA-owned: leave it exactly as the template
+   ships it — `/sa-ticket-ground` fills it after your draft is saved.
 
    **AC quality bar** — every AC must be verifiable by someone who has
    NOT read the KB. Banned weasel words per `docs/ac-quality.md`
@@ -62,9 +55,9 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    write `N/A — <reason>`; a blank section reads as "not considered".
 
    Every claim that touches a standard cites `[doc-id §section]`, only from
-   candidates the BA confirmed in step 3. Code-level detail the KB and
-   the BA cannot supply (service names, DB tables, …) →
-   `%%TODO: verify against codebase%%` — never invented.
+   candidates the BA confirmed in step 3. Code-level detail (service
+   names, DB tables, …) → `%%TODO: verify against codebase%%` — never
+   invented, never looked up by you.
 5. **Pin** — after the BA confirms which sections apply, call the MCP
    tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly the confirmed
@@ -134,30 +127,15 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
   when the ambiguity note fires — never auto-pick.
 - Never fabricate codes, record/field names, or numeric values — the
   same verbatim-preservation rules as `kb-summarize` apply.
-- Unverifiable code-level details become `%%TODO: verify against
-  codebase%%` placeholders — never invented.
-- **Ground code detail in the hub's code knowledge before reaching for
-  a placeholder.** Two documents per product repo answer different
-  questions:
-  - `<repo>-code` **for names** — service/container names (`svc.*`),
-    table names (`db.*`), endpoints (`api.*`), and detected
-    technology.
-  - `<repo>-svc` **for meaning** — what a container is responsible for
-    (`svc.*`), and which services a business flow crosses (`flow.*`).
-
-  Together they fill all four arguments of
-  `Container(alias, label, technology, description)`: alias, label
-  and technology from `-code`, description from `-svc`. Use `-svc`
-  the same way for `Rel(...)` labels instead of leaving them empty.
-
-  Write `%%TODO: verify against codebase%%` only when
-  **neither document answers** — and then the existing rule stands:
-  an owned `## Open questions` row.
-
-  `-svc` responsibility text grounds a diagram — but it
-  **never substitutes for a domain citation** in an Acceptance
-  Criterion: standard values still come verbatim from a pinned
-  domain section.
+- Code-level details become `%%TODO: verify against codebase%%`
+  placeholders — never invented, never looked up by you.
+- **Code-level detail is not yours to ground.** Write
+  `%%TODO: verify against codebase%%` where a service, table, route or
+  file name is needed, add the owned `## Open questions` row, and hand
+  the ticket to `/sa-ticket-ground` once the business sections are
+  drafted — it fills the SA-owned `## Technical grounding` section from
+  the hub's `<repo>-code` document and `kb ticket check` verifies every
+  id. Never read `<repo>-code` or `<repo>-svc` yourself.
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - Lint must report `DoR: PASS` before handover; report remaining
   warnings to the BA — do not hand over a failing ticket silently.

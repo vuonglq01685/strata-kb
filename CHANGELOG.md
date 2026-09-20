@@ -3,6 +3,28 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### BA repos — the SA grounding layer
+
+- **`/sa-ticket-ground`** (new skill on `ba` repos; Claude Code, Copilot and
+  Cursor wrappers) fills the SA-owned `## Technical grounding` section of a
+  ticket — or, with `--mission`, `## Services & order` of a mission plan — from
+  the hub's `<repo>-code` document. Ids only: every line names a section id
+  that exists in the document, or carries `[NEW: <reason>]`, or is parked
+  under `Open decisions`. It has no repository access and never infers.
+- `docs/tickets/TEMPLATE.md` gains `## Technical grounding` (a recommended
+  section — `kb ticket lint` warns when it is missing; legacy tickets keep
+  passing); `docs/missions/TEMPLATE.md` gains `## Services & order`. Neither
+  has a `Flow` or `Failure modes` field: the code document cannot prove them.
+- `ba-ticket-author` and `ba-mission-plan` no longer read `<repo>-code` /
+  `<repo>-svc`; they write `%%TODO: verify against codebase%%` and hand off to
+  the SA skill.
+- `kb ticket check`, the machine gate for the new section, follows in a
+  separate PR; until it lands the SA skill verifies ids by hand and says so.
+
+Re-run `kb init --kind ba` to pick up the new templates and wrappers.
+
 ## 1.0.1 — 2026-09-19
 
 First release of **Strata** (`strata-kb`) — Knowledge Base as Code for large
