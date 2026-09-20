@@ -1223,6 +1223,15 @@ BA_WRAPPERS = (
     "cursor-ba-mission-plan.md",
 )
 
+SA_WRAPPERS = (
+    "claude-skill-sa-ticket-ground.md",
+    "claude-command-sa-ticket-ground.md",
+    "copilot-sa-ticket-ground.prompt.md",
+    "cursor-sa-ticket-ground.md",
+)
+# The three full-content forms; the command wrapper is a thin skill invoker.
+SA_FULL_WRAPPERS = (SA_WRAPPERS[0], SA_WRAPPERS[2], SA_WRAPPERS[3])
+
 
 # Task 11 (MEDIUM-5): every BA wrapper's maturity-review step must point at
 # both the base rubric and its create-once `.local.md` override (mirrors
@@ -1847,6 +1856,7 @@ _CITATION_TEMPLATES = (
     "ac-quality.md",
     "QUICKSTART-ba.md",
     *BA_WRAPPERS,
+    *SA_WRAPPERS,
 )
 
 
