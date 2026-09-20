@@ -51,7 +51,7 @@ Unsettled → `OPEN(<owner>)`, never blank. -->
 ## Constraints & assumptions
 <constraints and any detail that would need code knowledge — mark those
 `%%TODO: verify against codebase%%`, never invent them. Questions that
-need an answer go to Open questions below, not here.>
+need an answer go to `## Open questions`, not here.>
 
 ## US backlog
 | US ID | Title |

@@ -2363,7 +2363,9 @@ def test_ticket_template_carries_the_technical_grounding_section():
     assert "[NEW:" in body
     assert "kb ticket check" in body
     # Section order: recommended sections sit before '## Open questions'.
-    assert text.index("## Technical grounding") < text.index("## Open questions")
+    # Anchored on the heading LINE (leading '\n'), not a bare substring —
+    # a backticked '## X' mention earlier in the file would otherwise win.
+    assert text.index("\n## Technical grounding") < text.index("\n## Open questions")
 
 
 def test_ticket_template_has_no_flow_or_failure_mode_field():
@@ -2371,6 +2373,7 @@ def test_ticket_template_has_no_flow_or_failure_mode_field():
     body = lintcore.section_body(
         _read_init_template("ticket-template.md"), "## Technical grounding"
     )
+    assert body is not None
     assert "- Flow:" not in body
     assert "- Failure modes:" not in body
 
@@ -2402,7 +2405,13 @@ def test_mission_template_carries_services_and_order():
     assert "[NEW:" in body
     # Capability layer only — the comment says what must NOT go here.
     assert "no tables, no routes" in body
-    assert text.index("## Sequencing") < text.index("## Services & order") < text.index("## Open questions")
+    # Anchored on the heading LINE (leading '\n'), not a bare substring —
+    # a backticked '## X' mention earlier in the file would otherwise win.
+    assert (
+        text.index("\n## Sequencing")
+        < text.index("\n## Services & order")
+        < text.index("\n## Open questions")
+    )
 
 
 def test_mission_required_headings_are_untouched_by_services_and_order():
