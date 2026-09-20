@@ -24,6 +24,7 @@ from pydantic import ValidationError
 
 from strata_kb import lintcore, models
 from strata_kb.doctor import Issue
+from strata_kb.errors import KbError
 from strata_kb.lintcore import LintReport
 from strata_kb.mdutils import slice_section
 
@@ -51,7 +52,7 @@ TREE_DEPTH = 4  # codeingest.extractors.tree._L3_DEPTH
 _NONE_WORDS = frozenset({"none", "n/a", "-"})
 
 
-class DocLoadError(Exception):
+class DocLoadError(KbError):
     """The -code document exists but cannot be used: unreadable manifest,
     or the same doc id published by several repos with no qualifier."""
 
