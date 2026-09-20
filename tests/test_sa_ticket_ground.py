@@ -1,10 +1,7 @@
 import pytest
 from importlib import resources
 
-from strata_kb import lintcore  # noqa: F401  (drop if unused)
 from tests.test_templates import SA_FULL_WRAPPERS, SA_WRAPPERS, _normalised, _read_init_template
-
-# --- SA grounding layer (PR 1): the sa-ticket-ground wrappers ---------------
 
 
 def _after_frontmatter(text: str) -> str:

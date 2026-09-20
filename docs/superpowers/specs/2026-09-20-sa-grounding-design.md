@@ -121,9 +121,9 @@ and before `## Open questions`. Not added to
 <!-- SA-owned — filled by /sa-ticket-ground --mission from the hub's
 <repo>-code document. Capability layer only: one row per service this
 mission touches, by its svc.<name> id; "Depends on" is copied from that
-record's own `Depends on` cell. No file names, no function names, no
-tables, no routes — those belong in each ticket's ## Technical grounding.
-A service the mission will create carries [NEW: <reason>]. -->
+record's own `Depends on` cell. No file names, no function names,
+no tables, no routes — those belong in each ticket's Technical grounding
+section. A service the mission will create carries [NEW: <reason>]. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
 
 | Order | Service | Depends on | Why this order |

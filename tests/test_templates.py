@@ -1210,7 +1210,7 @@ def test_quickstart_dev_documents_the_context_cache():
     assert "docs/impl/.gitignore" in text
 
 
-# --- Phase 5 Stage D Task D1: the eight BA wrappers read code knowledge --
+# --- The eight BA wrappers hand code detail to sa-ticket-ground (spec 2026-09-20 §6) --
 
 BA_WRAPPERS = (
     "claude-skill-ba-ticket-author.md",
@@ -1251,7 +1251,7 @@ def _ba_wrapper_text(name: str) -> str:
 
     BA wrappers carry none of the three dev-workflow SHARED-* blocks, so
     `_dev_wrapper_body`'s block-stripping does not apply here — this is
-    the BA-side equivalent of `_dev_wrapper_text`. Several D1 needles are
+    the BA-side equivalent of `_dev_wrapper_text`. Several needles are
     multi-word phrases hand-wrapped across lines in eight files; matching
     them against raw text makes the phrase untouchable by a future
     reflow (see `_normalised`'s docstring above). Matching against
@@ -1287,6 +1287,8 @@ def test_ba_wrappers_no_longer_ground_code_detail_themselves():
 def test_ba_ticket_wrappers_leave_technical_grounding_to_the_sa():
     for name in BA_TICKET_WRAPPERS:
         assert "## Technical grounding" in _ba_wrapper_text(name), name
+    for name in ("claude-skill-ba-ticket-author.md", "copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md"):
+        assert "is SA-owned: leave it exactly as the template ships it" in _ba_wrapper_text(name), name
 
 
 def test_ba_mission_wrappers_leave_services_and_order_to_the_sa():
@@ -2371,6 +2373,7 @@ def test_ticket_template_has_no_flow_or_failure_mode_field():
 def test_ticket_template_dor_names_the_grounding_gate():
     text = _read_init_template("ticket-template.md")
     dor = lintcore.section_body(text, "## Definition of Ready")
+    assert dor is not None
     assert "Technical grounding filled by SA" in dor
     assert "kb ticket check PASS" in dor
 
