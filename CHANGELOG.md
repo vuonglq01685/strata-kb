@@ -20,8 +20,15 @@ All notable changes to Strata are recorded here. This project follows
 - `ba-ticket-author` and `ba-mission-plan` no longer read `<repo>-code` /
   `<repo>-svc`; they write `%%TODO: verify against codebase%%` and hand off to
   the SA skill.
-- `kb ticket check`, the machine gate for the new section, follows in a
-  separate PR; until it lands the SA skill verifies ids by hand and says so.
+- **`kb ticket check <file>`** — the machine gate for `## Technical grounding`:
+  every `svc.* / db.* / api.* / int.* / cmd.*` id must exist in the
+  `<repo>-code` document (read from `--kb-dir` when present, otherwise from
+  the hub federation), `Grounded on: <repo-id>:<doc-id> @ <revision>` must
+  match the document's manifest revision, columns / routes / commands must
+  match its own tables, `Files:` must appear in `struct.tree` (paths beyond
+  the depth or line cap degrade to a warning), and `Open decisions` must be
+  empty. Exit `0` PASS, `1` FAIL; `--json` for CI. Every error that points at
+  a ticket line names it. No MCP tool yet.
 
 Re-run `kb init --kind ba` to pick up the new templates and wrappers.
 

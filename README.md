@@ -682,10 +682,13 @@ ids derive from the mission id.
 |---|---|---|
 | `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required sections present; every `## KB context` ref resolves at its pinned commit; every inline `doc-id §section` citation is backed by a pinned ref and vice versa | `0` PASS, `1` FAIL, `2` stale |
 | `kb mission lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required structure; C4 L1 + L2 diagrams present; a well-formed backlog whose ids derive from the mission id; every citation resolving at its pinned commit | `0` PASS, `1` FAIL, `2` stale |
+| `kb ticket check <file\|-> [--kb-dir <dir>] [--hub <url>] [--json]` | SA grounding gate: every `svc.* / db.* / api.* / int.* / cmd.*` id in `## Technical grounding` exists in the `<repo>-code` document (local `--kb-dir` first, hub federation second), `Grounded on:` matches the document's revision, columns / routes / commands match its tables, `Files:` are in `struct.tree`, and `Open decisions` is empty | `0` PASS, `1` FAIL |
 
-Mission lint is deliberately **CLI-only** — its distinguishing checks need
-filesystem access to the sibling `tickets/` directory that a shared MCP server
-does not have. `kb_ticket_lint` remains the only lint tool over MCP.
+Mission lint and ticket check are deliberately **CLI-only** — mission lint's
+distinguishing checks need filesystem access to the sibling `tickets/`
+directory that a shared MCP server does not have, and ticket check's
+local-first document lookup reads `--kb-dir`. `kb_ticket_lint` remains the
+only lint tool over MCP.
 
 Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml`.
 The trigger is deliberately **not** `paths`-filtered: GitHub never synthesises a
