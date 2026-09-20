@@ -65,6 +65,25 @@ out-of-scope. List the things easily mistaken as belonging here. -->
 How to verify each hard-to-test AC. No sample data yet →
 `OPEN(<owner>)`. -->
 
+## Technical grounding
+<!-- SA-owned — filled by /sa-ticket-ground from the hub's <repo>-code
+document, never by the BA. Every line points at a section id that exists
+in that document, or carries [NEW: <reason>], or is parked under Open
+decisions. No internal flow, no failure modes — the document cannot
+prove them. Gate: `kb ticket check <this file>` must report
+`Grounding: PASS`. -->
+- Grounded on: <repo-id>:<repo-id>-code @ <revision>
+- Service: svc.<name>
+- Files:
+  - <path exactly as listed in struct.tree>
+  - <path> [NEW: <why it does not exist yet>]
+- Tables: db.<table>.<column>, … — or `none`
+- Routes: api.<tag> — <METHOD> <path>, … — or `none`
+- Externals: int.<name>, … — or `none`
+- Verify with: cmd.test — `<primary command, verbatim>`
+- Open decisions:
+  - none
+
 ## Open questions
 <!-- Every `OPEN(...)` and every `%%TODO%%` in this ticket must have a
 row here, with an owner. -->
@@ -86,6 +105,7 @@ kb-context:
 - [ ] Every AC is acceptance-testable; no weasel words remain (docs/ac-quality.md)
 - [ ] Dependencies, NFR, UI spec, Out of scope, Test data filled or "N/A — <reason>"
 - [ ] Every open question has an owner
+- [ ] Technical grounding filled by SA; kb ticket check PASS (Open decisions empty)
 
 ## Review record
 <!-- Filled by the maturity-review step (rubric: docs/review-rubric.md).

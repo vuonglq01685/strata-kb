@@ -37,6 +37,7 @@ RECOMMENDED_HEADINGS: tuple[str, ...] = (
     "## UI / presentation spec",
     "## Out of scope",
     "## Test data & verification",
+    "## Technical grounding",   # SA-owned (spec 2026-09-20-sa-grounding-design §3)
     "## Open questions",
 )
 

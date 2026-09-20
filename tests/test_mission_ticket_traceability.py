@@ -197,6 +197,18 @@ def _real_ticket_text(block: str) -> str:
             "Sample record with designation R-2905A: expect type 'R' and "
             "level 'L1' shown in the panel."
         ),
+        "## Technical grounding": (
+            "- Grounded on: demo:demo-code @ c12b24f\n"
+            "- Service: svc.airspace-service\n"
+            "- Files:\n"
+            "  - src/airspace/service.py\n"
+            "- Tables: db.restrictive_airspace.designation\n"
+            "- Routes: none\n"
+            "- Externals: none\n"
+            "- Verify with: cmd.test — `pytest -q --cov=airspace`\n"
+            "- Open decisions:\n"
+            "  - none"
+        ),
         "## Open questions": (
             "- [ ] Q1 — Confirm the polygon fill color token — "
             "owner: design-team — blocks: UI spec"

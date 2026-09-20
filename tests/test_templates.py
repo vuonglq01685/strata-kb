@@ -1210,7 +1210,7 @@ def test_quickstart_dev_documents_the_context_cache():
     assert "docs/impl/.gitignore" in text
 
 
-# --- Phase 5 Stage D Task D1: the eight BA wrappers read code knowledge --
+# --- The eight BA wrappers hand code detail to sa-ticket-ground (spec 2026-09-20 §6) --
 
 BA_WRAPPERS = (
     "claude-skill-ba-ticket-author.md",
@@ -1222,6 +1222,15 @@ BA_WRAPPERS = (
     "copilot-ba-mission-plan.prompt.md",
     "cursor-ba-mission-plan.md",
 )
+
+SA_WRAPPERS = (
+    "claude-skill-sa-ticket-ground.md",
+    "claude-command-sa-ticket-ground.md",
+    "copilot-sa-ticket-ground.prompt.md",
+    "cursor-sa-ticket-ground.md",
+)
+# The three full-content forms; the command wrapper is a thin skill invoker.
+SA_FULL_WRAPPERS = (SA_WRAPPERS[0], SA_WRAPPERS[2], SA_WRAPPERS[3])
 
 
 # Task 11 (MEDIUM-5): every BA wrapper's maturity-review step must point at
@@ -1242,7 +1251,7 @@ def _ba_wrapper_text(name: str) -> str:
 
     BA wrappers carry none of the three dev-workflow SHARED-* blocks, so
     `_dev_wrapper_body`'s block-stripping does not apply here — this is
-    the BA-side equivalent of `_dev_wrapper_text`. Several D1 needles are
+    the BA-side equivalent of `_dev_wrapper_text`. Several needles are
     multi-word phrases hand-wrapped across lines in eight files; matching
     them against raw text makes the phrase untouchable by a future
     reflow (see `_normalised`'s docstring above). Matching against
@@ -1251,58 +1260,40 @@ def _ba_wrapper_text(name: str) -> str:
     return _normalised(_read_init_template(name))
 
 
-def test_ba_wrappers_prefer_code_knowledge_for_names_and_meaning():
-    for name in BA_WRAPPERS:
-        text = _read_init_template(name)
-        assert "-code" in text, name
-        assert "-svc" in text, name
+BA_TICKET_WRAPPERS = BA_WRAPPERS[:4]
+BA_MISSION_WRAPPERS = BA_WRAPPERS[4:]
 
 
-def test_ba_wrappers_explain_the_division_of_the_two_documents():
-    for name in BA_WRAPPERS:
-        text = _ba_wrapper_text(name)
-        assert "for names" in text, name
-        assert "for meaning" in text, name
-
-
-def test_ba_wrappers_only_fall_back_to_the_placeholder_when_neither_answers():
+# Spec 2026-09-20-sa-grounding-design §6 (decision A3): the BA skills no
+# longer read <repo>-code / <repo>-svc. They write the placeholder and hand
+# the document to /sa-ticket-ground, which fills the SA-owned section.
+def test_ba_wrappers_hand_code_detail_to_the_sa_skill():
     for name in BA_WRAPPERS:
         text = _ba_wrapper_text(name)
         assert "%%TODO: verify against codebase%%" in text, name
-        assert "neither document answers" in text, name
+        assert "/sa-ticket-ground" in text, name
+        assert "Never read `<repo>-code` or `<repo>-svc` yourself" in text, name
 
 
-def test_ba_wrappers_fill_all_four_container_arguments():
-    # Task review Important 1: the spec (§13, §12) requires the
-    # Container(...)/Rel(...) instruction in all EIGHT wrappers, not only
-    # the four mission-plan forms the brief's own test covered — a gap
-    # that let claude-command-ba-ticket-author.md ship without it.
+def test_ba_wrappers_no_longer_ground_code_detail_themselves():
     for name in BA_WRAPPERS:
         text = _ba_wrapper_text(name)
-        assert "Container(alias, label, technology, description)" in text, name
-        assert "Rel(" in text, name
+        assert "Container(alias, label, technology, description)" not in text, name
+        assert "Ground code detail in the hub" not in text, name
+        assert "Technology | none" not in text, name
+        assert "trust it for names" not in text, name
 
 
-def test_ba_wrappers_keep_svc_out_of_acceptance_criteria():
-    for name in BA_WRAPPERS:
-        text = _ba_wrapper_text(name)
-        assert "never substitutes for a domain citation" in text, name
+def test_ba_ticket_wrappers_leave_technical_grounding_to_the_sa():
+    for name in BA_TICKET_WRAPPERS:
+        assert "## Technical grounding" in _ba_wrapper_text(name), name
+    for name in ("claude-skill-ba-ticket-author.md", "copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md"):
+        assert "is SA-owned: leave it exactly as the template ships it" in _ba_wrapper_text(name), name
 
 
-# Final review, Minor 3: "detected technology (`dep.*`)" mis-points --
-# the per-container `Technology` value is a row inside `-code §svc.<name>`
-# (services.py's `_technology_for()`), not `dep.<ecosystem>`, which holds
-# repo-wide framework detection instead. Seven of the eight wrappers carry
-# the literal parenthetical (the eighth, claude-command-ba-ticket-author.md,
-# compresses this whole bullet to bare prose with no per-item citations at
-# all, so it never had the mis-citation to begin with). Dropped, not
-# corrected to `(svc.*)`, since that citation already appears earlier in
-# the very same sentence for the container/service name.
-def test_ba_wrappers_do_not_mis_cite_technology_to_dep_star():
-    for name in BA_WRAPPERS:
-        text = _ba_wrapper_text(name)
-        assert "detected technology (`dep.*`)" not in text, name
-        assert "detected technology" in text, name  # still there, just uncited
+def test_ba_mission_wrappers_leave_services_and_order_to_the_sa():
+    for name in BA_MISSION_WRAPPERS:
+        assert "## Services & order" in _ba_wrapper_text(name), name
 
 
 def test_ba_wrappers_still_carry_their_pre_phase5_rules():
@@ -1847,6 +1838,7 @@ _CITATION_TEMPLATES = (
     "ac-quality.md",
     "QUICKSTART-ba.md",
     *BA_WRAPPERS,
+    *SA_WRAPPERS,
 )
 
 
@@ -2337,3 +2329,86 @@ def test_dev_handover_pr_assembly_adds_the_review_section():
         assert (
             "A5's finding table and its `Blocking:` verdict line." in body
         ), name
+
+
+# --- SA grounding layer (PR 1): the two SA-owned template sections ---------
+
+TECHNICAL_GROUNDING_FIELDS = (
+    "- Grounded on:",
+    "- Service:",
+    "- Files:",
+    "- Tables:",
+    "- Routes:",
+    "- Externals:",
+    "- Verify with:",
+    "- Open decisions:",
+)
+
+
+def test_ticket_template_carries_the_technical_grounding_section():
+    text = _read_init_template("ticket-template.md")
+    assert text.count("## Technical grounding") == 1
+    body = lintcore.section_body(text, "## Technical grounding")
+    assert body is not None
+    for field in TECHNICAL_GROUNDING_FIELDS:
+        assert field in body, field
+    assert "[NEW:" in body
+    assert "kb ticket check" in body
+    # Section order: recommended sections sit before '## Open questions'.
+    # Anchored on the heading LINE (leading '\n'), not a bare substring —
+    # a backticked '## X' mention earlier in the file would otherwise win.
+    assert text.index("\n## Technical grounding") < text.index("\n## Open questions")
+
+
+def test_ticket_template_has_no_flow_or_failure_mode_field():
+    # Spec §3: deliberately absent — the code document cannot prove them.
+    body = lintcore.section_body(
+        _read_init_template("ticket-template.md"), "## Technical grounding"
+    )
+    assert body is not None
+    assert "- Flow:" not in body
+    assert "- Failure modes:" not in body
+
+
+def test_ticket_template_dor_names_the_grounding_gate():
+    text = _read_init_template("ticket-template.md")
+    dor = lintcore.section_body(text, "## Definition of Ready")
+    assert dor is not None
+    assert "Technical grounding filled by SA" in dor
+    assert "kb ticket check PASS" in dor
+
+
+def test_technical_grounding_is_a_recommended_heading():
+    from strata_kb import ticket
+
+    assert "## Technical grounding" in ticket.RECOMMENDED_HEADINGS
+    assert "## Technical grounding" not in ticket.REQUIRED_HEADINGS
+    order = list(ticket.RECOMMENDED_HEADINGS)
+    assert order.index("## Technical grounding") == order.index("## Open questions") - 1
+
+
+def test_mission_template_carries_services_and_order():
+    text = _read_init_template("mission-template.md")
+    assert text.count("## Services & order") == 1
+    body = lintcore.section_body(text, "## Services & order")
+    assert body is not None
+    assert "- Grounded on:" in body
+    assert "| Order | Service | Depends on | Why this order |" in body
+    assert "svc.<name>" in body
+    assert "[NEW:" in body
+    # Capability layer only — the comment says what must NOT go here.
+    assert "no tables, no routes" in body
+    # Anchored on the heading LINE (leading '\n'), not a bare substring —
+    # a backticked '## X' mention earlier in the file would otherwise win.
+    assert (
+        text.index("\n## Sequencing")
+        < text.index("\n## Services & order")
+        < text.index("\n## Open questions")
+    )
+
+
+def test_mission_required_headings_are_untouched_by_services_and_order():
+    from strata_kb import mission
+
+    assert "## Services & order" not in mission.REQUIRED_MISSION_HEADINGS
+    assert "## Services & order" not in mission.RECOMMENDED_MISSION_HEADINGS

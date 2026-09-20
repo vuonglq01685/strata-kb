@@ -65,6 +65,20 @@ need an answer go to `## Open questions`, not here.>
 | US ID | Depends on | Size | Notes |
 |---|---|---|---|
 
+## Services & order
+<!-- SA-owned — filled by /sa-ticket-ground --mission from the hub's
+<repo>-code document. Capability layer only: one row per service this
+mission touches, by its svc.<name> id; "Depends on" is copied from that
+record's own `Depends on` cell. No file names, no function names,
+no tables, no routes — those belong in each ticket's Technical grounding
+section. A service the mission will create carries [NEW: <reason>]. -->
+- Grounded on: <repo-id>:<repo-id>-code @ <revision>
+
+| Order | Service | Depends on | Why this order |
+|---|---|---|---|
+| 1 | svc.<name> | <from record> | <reason, cites the dependency> |
+| 2 | svc.<new-name> [NEW: <why it does not exist yet>] | svc.<name> | <reason> |
+
 ## Open questions
 <!-- Architecture-changing questions are flagged here and must be
 closed BEFORE foundational stories start. -->
