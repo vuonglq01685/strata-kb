@@ -248,8 +248,12 @@ def _check_ids(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: li
             if sid.startswith("db.") and sid.count(".") >= 2:
                 table = sid.rsplit(".", 1)[0]
                 if table in known:
-                    continue  # column verified in Task 3
-                sid = table
+                    if new is None:
+                        continue  # column verified in Task 3
+                    # else: fall through with sid = full column id so the
+                    # [NEW] branch below can note/warn on it.
+                else:
+                    sid = table
             if new is not None:
                 reason = (new.group("reason") or "").strip()
                 if reason:
@@ -279,9 +283,9 @@ def _check_open_decisions(section: _Section, issues: list[Issue]) -> None:
     items: list[tuple[int, str]] = list(section.subitems.get("Open decisions", []))
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] == "Open decisions" and not line[:1].isspace():
-            rest = FIELD_RE.match(line).group("rest").strip()
-            if rest:
-                items.insert(0, (section.first_line + i, rest))
+            m = FIELD_RE.match(line)
+            if m is not None and m.group("rest").strip():
+                items.insert(0, (section.first_line + i, m.group("rest").strip()))
     open_items = [(n, t) for n, t in items if t.strip().casefold() not in _NONE_WORDS]
     for lineno, item in open_items:
         issues.append(Issue("error", f"open decision: {item} (line {lineno})"))

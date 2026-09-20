@@ -217,6 +217,9 @@ def test_ids_inside_file_paths_are_not_scanned(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev, Files=["src/api.py [NEW: new module]"])), kb_dir)
     assert not any("api.py" in e for e in errors(report))
+    # If `Files:` lines were id-scanned, the [NEW] branch would suppress
+    # the error but still emit a note — assert that path never fires.
+    assert not any("new: api.py" in n for n in notes(report))
 
 
 def test_missing_service_line_is_a_warning(code_doc):
@@ -250,3 +253,28 @@ def test_inline_open_decision_counts_too(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev, **{"Open decisions": "retry policy unknown"})), kb_dir)
     assert any("open decision: retry policy unknown" in e for e in errors(report))
+
+
+def test_blank_line_between_open_decisions_does_not_crash(code_doc):
+    kb_dir, rev = code_doc
+    section = grounding(rev, **{"Open decisions": ["first?", "second?"]})
+    section = section.replace("  - first?\n", "  - first?\n\n")
+    section += "\n"  # extra trailing blank line inside the section
+    report = run(ticket(section), kb_dir)
+    msgs = errors(report)
+    assert any("open decision: first?" in m for m in msgs)
+    assert any("open decision: second?" in m for m in msgs)
+
+
+def test_new_marker_on_a_column_of_a_known_table_emits_a_note(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(
+        rev,
+        Tables="db.restrictive_airspace.brand_new [NEW: column arrives with this ticket]",
+    ))
+    report = run(text, kb_dir)
+    assert any(
+        "new: db.restrictive_airspace.brand_new — column arrives with this ticket" in n
+        for n in notes(report)
+    )
+    assert not any("db.restrictive_airspace.brand_new" in e for e in errors(report))
