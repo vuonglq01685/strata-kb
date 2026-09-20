@@ -120,3 +120,19 @@ def test_hub_not_needed_when_the_document_is_local(code_doc, tmp_path, monkeypat
     path.write_text(ticket(grounding(rev)), encoding="utf-8")
     result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
     assert result.exit_code == 0, result.output
+
+
+def test_docs_name_the_check_command():
+    from importlib import resources
+    from pathlib import Path as _P
+
+    readme = (_P(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "`kb ticket check <file\\|-> [--kb-dir <dir>] [--hub <url>] [--json]`" in readme
+    quick = resources.files("strata_kb").joinpath("templates/init/QUICKSTART-ba.md").read_text(encoding="utf-8")
+    assert "- `kb ticket check <file> [--hub <url>]`" in quick
+    for name in ("claude-skill-sa-ticket-ground.md", "copilot-sa-ticket-ground.prompt.md", "cursor-sa-ticket-ground.md"):
+        text = resources.files("strata_kb").joinpath(f"templates/init/{name}").read_text(encoding="utf-8")
+        assert "has no `ticket check` command yet" not in text, name
+    changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "follows in a\n  separate PR" not in changelog
+    assert "`kb ticket check <file>`" in changelog
