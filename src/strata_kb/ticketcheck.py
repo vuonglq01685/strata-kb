@@ -88,6 +88,30 @@ def load_doc_dir(doc_dir: Path, source: str) -> LoadedDoc:
     )
 
 
+def load_from_hub(federation_dir: Path, repo: str | None, doc: str) -> LoadedDoc | None:
+    """The -code document from the hub's federation mirror. Same holder
+    rule as `resolve.resolve_refs`: with a qualifier, that repo; without,
+    exactly one repo may publish the doc id, otherwise the caller must
+    qualify it."""
+    from strata_kb.federation import load_federation
+
+    holders = [
+        r for r in load_federation(federation_dir)
+        if (repo is None or r.meta.repo_id == repo)
+        and (r.kb_dir / doc / "_manifest.yaml").exists()
+    ]
+    if not holders:
+        return None
+    if len(holders) > 1:
+        names = ", ".join(sorted(r.meta.repo_id for r in holders))
+        raise DocLoadError(
+            f"{doc} is published by several repos ({names}) — qualify it: "
+            f"`Grounded on: <repo-id>:{doc} @ <revision>`"
+        )
+    holder = holders[0]
+    return load_doc_dir(holder.kb_dir / doc, f"hub federation/{holder.meta.repo_id}")
+
+
 # ---------------------------------------------------------------------------
 # section parsing
 # ---------------------------------------------------------------------------

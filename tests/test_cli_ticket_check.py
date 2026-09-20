@@ -1,0 +1,125 @@
+"""`kb ticket check` — the CLI wrapper over `ticketcheck.check`, both
+document sources: local --kb-dir and the hub federation mirror."""
+
+# ruff: noqa: F811  (the re-exported `code_doc` fixture is used as a same-
+# named parameter in every test below — ruff reads each one as a
+# redefinition of the import; that is the intended pytest fixture pattern.)
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from strata_kb import models
+from strata_kb.cli import app
+from strata_kb.federation import FederationMeta, write_federation_index
+from tests.test_ticketcheck import code_doc, grounding, ticket  # noqa: F401  (fixture re-export)
+
+runner = CliRunner()
+
+
+def _publish_to_hub(fed_hub: Path, kb_dir: Path, repo_id: str, run_git) -> None:
+    """Mirror `demo-code` into `fed_hub/federation/<repo_id>/` the way
+    `kb publish` lays it out (full .kb mirror + _meta.yaml + index.yaml)."""
+    entry = fed_hub / "federation" / repo_id
+    shutil.copytree(kb_dir / "demo-code", entry / "demo-code")
+    models.save_yaml_model(
+        entry / "index.yaml",
+        models.KBIndex(docs=[models.IndexEntry(id="demo-code", title="demo — code knowledge", tags=["code"])]),
+    )
+    models.save_yaml_model(
+        entry / "_meta.yaml",
+        FederationMeta(repo_id=repo_id, source_commit="abc1234", published_at="2026-09-20T00:00:00+00:00"),
+    )
+    write_federation_index(fed_hub / "federation")
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", f"publish {repo_id}")
+
+
+def test_local_kb_dir_golden_exits_0(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev)), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 0, result.output
+    assert result.output.rstrip().endswith("Grounding: PASS")
+    assert "[note] demo-code read from" in result.output
+
+
+def test_bad_id_exits_1_and_names_it(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev, Service="svc.nope")), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 1
+    assert "[error] unknown id 'svc.nope'" in result.output
+    assert "(line 8)" in result.output
+    assert result.output.rstrip().endswith("Grounding: FAIL")
+
+
+def test_json_output_shape(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev, **{"Open decisions": ["retry policy?"]})), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir), "--json"])
+    assert result.exit_code == 1
+    data = json.loads(result.output)
+    assert data["pass"] is False
+    assert any("open decision: retry policy?" in e for e in data["errors"])
+    assert set(data) == {"pass", "errors", "warnings", "notes"}
+
+
+def test_reads_stdin(code_doc):
+    kb_dir, rev = code_doc
+    result = runner.invoke(app, ["ticket", "check", "-", "--kb-dir", str(kb_dir)], input=ticket(grounding(rev)))
+    assert result.exit_code == 0, result.output
+
+
+def test_non_utf8_file_is_a_red_line_not_a_traceback(code_doc, tmp_path):
+    kb_dir, _ = code_doc
+    path = tmp_path / "t.md"
+    path.write_bytes(b"\xff\xfe# bad")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 1
+    assert "not valid UTF-8" in result.output
+
+
+def test_hub_branch_resolves_the_document_from_the_federation(code_doc, fed_hub, run_git, tmp_path):
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev)), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(empty_kb), "--hub", str(fed_hub)])
+    assert result.exit_code == 0, result.output
+    assert "[note] demo-code read from hub federation/demo" in result.output
+
+
+def test_hub_ambiguous_holders_need_a_repo_qualifier(code_doc, fed_hub, run_git, tmp_path):
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _publish_to_hub(fed_hub, kb_dir, "demo-fork", run_git)
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev, **{"Grounded on": "demo-code @ {rev}"})), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(empty_kb), "--hub", str(fed_hub)])
+    assert result.exit_code == 1
+    assert "several repos" in result.output and "demo, demo-fork" in result.output
+    path.write_text(ticket(grounding(rev, **{"Grounded on": "demo-fork:demo-code @ {rev}"})), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(empty_kb), "--hub", str(fed_hub)])
+    assert result.exit_code == 0, result.output
+    assert "read from hub federation/demo-fork" in result.output
+
+
+def test_hub_not_needed_when_the_document_is_local(code_doc, tmp_path):
+    # No --hub, no config: the local branch must not call _hub_or_exit.
+    kb_dir, rev = code_doc
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev)), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 0, result.output

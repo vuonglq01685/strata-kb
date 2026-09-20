@@ -2431,6 +2431,61 @@ def ticket_lint(
     raise typer.Exit(2 if report.stale_errors == errors else 1)
 
 
+@ticket_app.command("check")
+def ticket_check(
+    source: str = typer.Argument(
+        ..., help="Ticket file (or '-' to read from stdin)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "",
+        "--hub",
+        envvar="STRATA_KB_HUB",
+        help="kb-hub URL/path (empty = config); consulted only when the "
+        "-code document is not under --kb-dir",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON instead of text"
+    ),
+) -> None:
+    """SA grounding gate: every id in '## Technical grounding' exists in the
+    -code document, columns/routes/commands/files match it, and Open
+    decisions is empty. Exit 0 PASS, 1 FAIL."""
+    from strata_kb import ticketcheck
+
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        try:
+            text = Path(source).read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            typer.secho(
+                f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        except OSError as exc:
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+    def load_doc(repo: str | None, doc: str) -> ticketcheck.LoadedDoc | None:
+        # Local first (a dev machine, or the hub's own checkout): the BA repo
+        # never has a -code document locally, so it always falls through to
+        # the hub — which is the point, the SA grounded on the hub copy.
+        local = kb_dir / doc
+        if (local / "_manifest.yaml").exists():
+            return ticketcheck.load_doc_dir(local, str(local))
+        handle = _hub_or_exit(hub, kb_dir)
+        return ticketcheck.load_from_hub(handle.federation_dir, repo, doc)
+
+    report = ticketcheck.check(text, load_doc=load_doc)
+    if json_output:
+        typer.echo(json.dumps(report.to_json()))
+    else:
+        typer.echo(report.render("Grounding"))
+    if not report.passed:
+        raise typer.Exit(1)
+
+
 @pr_app.command("lint")
 def pr_lint(
     source: str = typer.Argument(
