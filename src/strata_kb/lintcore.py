@@ -141,15 +141,17 @@ class LintReport:
             "notes": list(self.notes),
         }
 
-    def render(self) -> str:
+    def render(self, label: str = "DoR") -> str:
         """Mirror `kb doctor`'s output style: one '[error]'/'[warn]'/'[note]'
-        line per item, final line 'DoR: PASS' or 'DoR: FAIL'."""
+        line per item, final line '<label>: PASS' or '<label>: FAIL'.
+        `label` defaults to the DoR gates' wording; `kb ticket check`
+        passes "Grounding"."""
         lines = [
             f"[{'error' if i.level == 'error' else 'warn'}] {i.message}"
             for i in self.issues
         ]
         lines += [f"[note] {note}" for note in self.notes]
-        lines.append(f"DoR: {'PASS' if self.passed else 'FAIL'}")
+        lines.append(f"{label}: {'PASS' if self.passed else 'FAIL'}")
         return "\n".join(lines)
 
 

@@ -377,6 +377,9 @@ tiering change shows up in the report the next ticket generates.
   before opening a PR
 - `kb mission lint <file> [--hub <url>]` — run the mission DoR gate
   locally before opening a PR
+- `kb ticket check <file> [--hub <url>]` — run the SA grounding gate: every
+  id in `## Technical grounding` must exist in the hub's `<repo>-code`
+  document and `Open decisions` must be empty (`Grounding: PASS`)
 - `kb tags [--hub <url>]` — list every tag published on the hub, i.e. the
   tags a `kb-context` block may carry
 - `kb doctor --hub <url>` — check the hub is reachable and
