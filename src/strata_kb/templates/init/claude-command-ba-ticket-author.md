@@ -40,20 +40,11 @@ gaps and the sections that changed, never a re-read of the whole draft;
 never push to Jira — the BA publishes; never tick a Definition of Ready
 checkbox yourself — only the BA confirms DoR items.
 
-Ground code detail in the hub's code knowledge before reaching for a
-placeholder: `<repo>-code` **for names** — service/container names,
-tables, endpoints, detected technology; `<repo>-svc` **for meaning** —
-what a container is responsible for and which flows cross it.
-Together they fill all four arguments of
-`Container(alias, label, technology, description)` — alias, label,
-technology from `-code`, description from `-svc` — and `-svc` the
-same way for `Rel(...)` labels. `-code` is machine-extracted (trust
-it for names), `-svc` is human-reviewed (trust it for
-responsibility); `-code` may still show `Technology | none` for a
-service built from source (a known extractor limit) — the
-`%%TODO: verify against codebase%%` rule then covers that one
-argument alone. Write `%%TODO: verify against codebase%%` only when
-**neither document answers**, with an owned `## Open questions` row;
-`-svc` responsibility text grounds a diagram but
-**never substitutes for a domain citation** in an Acceptance
-Criterion.
+Code-level detail is not yours to ground: write
+`%%TODO: verify against codebase%%` where a service, table, route or
+file name is needed, add the owned `## Open questions` row, and hand the
+ticket to `/sa-ticket-ground` once the business sections are drafted —
+it fills the SA-owned `## Technical grounding` section from the hub's
+`<repo>-code` document and `kb ticket check` verifies every id. Never
+read `<repo>-code` or `<repo>-svc` yourself; leave `## Technical
+grounding` exactly as the template ships it.

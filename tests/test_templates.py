@@ -1260,58 +1260,38 @@ def _ba_wrapper_text(name: str) -> str:
     return _normalised(_read_init_template(name))
 
 
-def test_ba_wrappers_prefer_code_knowledge_for_names_and_meaning():
-    for name in BA_WRAPPERS:
-        text = _read_init_template(name)
-        assert "-code" in text, name
-        assert "-svc" in text, name
+BA_TICKET_WRAPPERS = BA_WRAPPERS[:4]
+BA_MISSION_WRAPPERS = BA_WRAPPERS[4:]
 
 
-def test_ba_wrappers_explain_the_division_of_the_two_documents():
-    for name in BA_WRAPPERS:
-        text = _ba_wrapper_text(name)
-        assert "for names" in text, name
-        assert "for meaning" in text, name
-
-
-def test_ba_wrappers_only_fall_back_to_the_placeholder_when_neither_answers():
+# Spec 2026-09-20-sa-grounding-design §6 (decision A3): the BA skills no
+# longer read <repo>-code / <repo>-svc. They write the placeholder and hand
+# the document to /sa-ticket-ground, which fills the SA-owned section.
+def test_ba_wrappers_hand_code_detail_to_the_sa_skill():
     for name in BA_WRAPPERS:
         text = _ba_wrapper_text(name)
         assert "%%TODO: verify against codebase%%" in text, name
-        assert "neither document answers" in text, name
+        assert "/sa-ticket-ground" in text, name
+        assert "Never read `<repo>-code` or `<repo>-svc` yourself" in text, name
 
 
-def test_ba_wrappers_fill_all_four_container_arguments():
-    # Task review Important 1: the spec (§13, §12) requires the
-    # Container(...)/Rel(...) instruction in all EIGHT wrappers, not only
-    # the four mission-plan forms the brief's own test covered — a gap
-    # that let claude-command-ba-ticket-author.md ship without it.
+def test_ba_wrappers_no_longer_ground_code_detail_themselves():
     for name in BA_WRAPPERS:
         text = _ba_wrapper_text(name)
-        assert "Container(alias, label, technology, description)" in text, name
-        assert "Rel(" in text, name
+        assert "Container(alias, label, technology, description)" not in text, name
+        assert "Ground code detail in the hub" not in text, name
+        assert "Technology | none" not in text, name
+        assert "trust it for names" not in text, name
 
 
-def test_ba_wrappers_keep_svc_out_of_acceptance_criteria():
-    for name in BA_WRAPPERS:
-        text = _ba_wrapper_text(name)
-        assert "never substitutes for a domain citation" in text, name
+def test_ba_ticket_wrappers_leave_technical_grounding_to_the_sa():
+    for name in BA_TICKET_WRAPPERS:
+        assert "## Technical grounding" in _ba_wrapper_text(name), name
 
 
-# Final review, Minor 3: "detected technology (`dep.*`)" mis-points --
-# the per-container `Technology` value is a row inside `-code §svc.<name>`
-# (services.py's `_technology_for()`), not `dep.<ecosystem>`, which holds
-# repo-wide framework detection instead. Seven of the eight wrappers carry
-# the literal parenthetical (the eighth, claude-command-ba-ticket-author.md,
-# compresses this whole bullet to bare prose with no per-item citations at
-# all, so it never had the mis-citation to begin with). Dropped, not
-# corrected to `(svc.*)`, since that citation already appears earlier in
-# the very same sentence for the container/service name.
-def test_ba_wrappers_do_not_mis_cite_technology_to_dep_star():
-    for name in BA_WRAPPERS:
-        text = _ba_wrapper_text(name)
-        assert "detected technology (`dep.*`)" not in text, name
-        assert "detected technology" in text, name  # still there, just uncited
+def test_ba_mission_wrappers_leave_services_and_order_to_the_sa():
+    for name in BA_MISSION_WRAPPERS:
+        assert "## Services & order" in _ba_wrapper_text(name), name
 
 
 def test_ba_wrappers_still_carry_their_pre_phase5_rules():
