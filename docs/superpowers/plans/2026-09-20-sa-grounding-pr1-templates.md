@@ -15,7 +15,7 @@
 - Templates and skill text in English; headings are the lint contract and are never localized.
 - `ticket.REQUIRED_HEADINGS` is a compatibility contract — do not touch it. Only `RECOMMENDED_HEADINGS` changes (+1 entry).
 - No new extractor. `src/strata_kb/mdutils.py` is frozen — never edit it.
-- No new dependency; `uv.lock` changes only because the project version is bumped.
+- **NEVER bump the version.** `pyproject.toml` (`version = "1.0.1"`) and `uv.lock` are not touched by this PR. The CHANGELOG entry goes under an `## Unreleased` heading. No new dependency.
 - The four `ba-mission-plan` wrappers must stay byte-identical from `## Workflow` to end of file (`tests/test_init.py::test_mission_wrapper_workflow_bodies_are_byte_identical`). Apply every mission-wrapper edit to all four identically.
 - No template or wrapper may carry a bare `doc-id §section` citation outside a fence (`tests/test_templates.py::test_every_citation_example_is_bracketed`). Never type `§` in the new SA text.
 - The ticket template's `## Technical grounding` has **no** `Flow` field and **no** `Failure modes` field — deliberate (spec §3).
@@ -45,7 +45,7 @@
 | `src/strata_kb/templates/init/QUICKSTART-ba.md` | new step 6; rewrite "Code knowledge on the hub" | 6 |
 | `tests/test_init.py` | `test_quickstart_ba_points_at_code_knowledge` +2 needles | 6 |
 | `README.md` | slash-command list; §12 SA paragraph | 6 |
-| `CHANGELOG.md`, `pyproject.toml`, `uv.lock` | 1.1.0 | 6 |
+| `CHANGELOG.md` | new `## Unreleased` entry (no version bump) | 6 |
 
 ---
 
@@ -858,13 +858,13 @@ git commit -F /tmp/msg.txt
 
 ---
 
-### Task 6: QUICKSTART-BA, README, CHANGELOG, version 1.1.0, full verification
+### Task 6: QUICKSTART-BA, README, CHANGELOG (Unreleased), full verification
 
 **Files:**
 - Modify: `src/strata_kb/templates/init/QUICKSTART-ba.md` (after step 5 in "Create a ticket", lines 36–68; rewrite "Code knowledge on the hub", lines 99–125)
 - Modify: `tests/test_init.py:1967-1976` (`test_quickstart_ba_points_at_code_knowledge`)
 - Modify: `README.md:132` and `README.md:658-659` (§12)
-- Modify: `CHANGELOG.md` (new top entry), `pyproject.toml:3` (`version = "1.1.0"`), `uv.lock` (regenerated)
+- Modify: `CHANGELOG.md` (new `## Unreleased` entry at the top). Do NOT touch `pyproject.toml` or `uv.lock`.
 
 **Interfaces:**
 - Consumes: everything above. No new names.
@@ -955,12 +955,12 @@ and `depends_on` only. The BA skills themselves no longer read `-code`/`-svc`;
 they write `%%TODO: verify against codebase%%` and hand off.
 ```
 
-- [ ] **Step 5: CHANGELOG + version**
+- [ ] **Step 5: CHANGELOG (no version bump)**
 
-Insert at the top of `CHANGELOG.md`, directly under the intro paragraph (before `## 1.0.1 — 2026-09-19`):
+Insert at the top of `CHANGELOG.md`, directly under the intro paragraph (before `## 1.0.1 — 2026-09-19`). The heading is `## Unreleased` — this PR never bumps `pyproject.toml` or regenerates `uv.lock`; the maintainer assigns the version at release time:
 
 ```markdown
-## 1.1.0 — 2026-09-20
+## Unreleased
 
 ### BA repos — the SA grounding layer
 
@@ -977,22 +977,14 @@ Insert at the top of `CHANGELOG.md`, directly under the intro paragraph (before 
 - `ba-ticket-author` and `ba-mission-plan` no longer read `<repo>-code` /
   `<repo>-svc`; they write `%%TODO: verify against codebase%%` and hand off to
   the SA skill.
-- `kb ticket check`, the machine gate for the new section, follows in the next
-  release; until then the SA skill verifies ids by hand and says so.
+- `kb ticket check`, the machine gate for the new section, follows in a
+  separate PR; until it lands the SA skill verifies ids by hand and says so.
 
 Re-run `kb init --kind ba` to pick up the new templates and wrappers.
 
 ```
 
-`pyproject.toml` line 3: `version = "1.1.0"`.
-
-Regenerate the lockfile (the root package's own version is recorded in it — see memory `t2-gate-uv-lock-check`):
-
-```bash
-"C:/Users/Admin/.local/bin/uv.exe" lock && "C:/Users/Admin/.local/bin/uv.exe" lock --check
-```
-
-Expected: second command exits 0 and prints nothing about drift.
+Verify nothing else moved: `git status --short` must list neither `pyproject.toml` nor `uv.lock`.
 
 - [ ] **Step 6: Full verification**
 
@@ -1008,8 +1000,8 @@ Call `mcp__gitnexus__detect_changes({scope: "all"})`. The index was 2 commits be
 - [ ] **Step 8: Commit**
 
 ```bash
-printf '%s\n' 'docs(ba): document the SA grounding step; release 1.1.0' '' 'QUICKSTART-BA step 6 + Code knowledge rewrite, README §12 paragraph, CHANGELOG 1.1.0, version bump + uv.lock.' > /tmp/msg.txt
-git add src/strata_kb/templates/init/QUICKSTART-ba.md tests/test_init.py README.md CHANGELOG.md pyproject.toml uv.lock
+printf '%s\n' 'docs(ba): document the SA grounding step' '' 'QUICKSTART-BA step 6 + Code knowledge rewrite, README §12 paragraph, CHANGELOG Unreleased entry. No version bump.' > /tmp/msg.txt
+git add src/strata_kb/templates/init/QUICKSTART-ba.md tests/test_init.py README.md CHANGELOG.md
 git commit -F /tmp/msg.txt
 ```
 
@@ -1020,4 +1012,5 @@ git commit -F /tmp/msg.txt
 - `.venv/Scripts/python.exe -m pytest -q` is green.
 - `kb init --kind ba` into an empty temp dir produces `.claude/skills/sa-ticket-ground/SKILL.md`, the three sibling wrappers, and `docs/tickets/TEMPLATE.md` containing `## Technical grounding` once; `kb init --kind dev` into another temp dir produces none of the SA wrappers.
 - `kb ticket lint` on `tests/test_ticketlint.py`'s golden ticket still reports `DoR: PASS` with no "recommended section missing" warning.
-- Branch is ready for PR: title `feat(ba): SA grounding layer — templates, sa-ticket-ground skill (1.1.0)`; body links the spec and states that `kb ticket check` is PR 2.
+- `pyproject.toml` and `uv.lock` are byte-identical to `main` (no version bump).
+- Branch is ready for PR: title `feat(ba): SA grounding layer — templates, sa-ticket-ground skill`; body links the spec and states that `kb ticket check` is PR 2.

@@ -419,16 +419,17 @@ Files: `ticket-template.md`, `mission-template.md`, four
 tests in §7.4 last two bullets, and one README paragraph in the BA
 workflow section (BA drafts → SA grounds → `kb ticket check`).
 Impact analysis before editing `BA_TEMPLATES` and `RECOMMENDED_HEADINGS`
-(both are imported by tests and `ticketlint`). Version bump: minor
-(`RECOMMENDED_HEADINGS` is documented as non-breaking, but the shipped
-template changes).
+(both are imported by tests and `ticketlint`). **No version bump — ever, in
+either PR.** `pyproject.toml`'s `version` and `uv.lock` stay untouched; the
+CHANGELOG entry goes under an `## Unreleased` heading. Releasing and
+bumping is the maintainer's separate act (decided 2026-09-20).
 
 **PR 2 — `kb ticket check`.** Files: `ticketcheck.py` (new), `cli.py`
 (one command on `ticket_app`), two test files, README command table +
 exit-code row (the `test_readme.py` exit-code pin lists producers of exit
-2 — this command adds none, so that assertion is unchanged). `uv lock`
-untouched (no new dependency). `detect_changes` before commit per
-CLAUDE.md.
+2 — this command adds none, so that assertion is unchanged). No new
+dependency; no version bump; `uv.lock` untouched. `detect_changes` before
+commit per CLAUDE.md.
 
 **After PR 2 — measurement, not code.** Smoke the gate first on this
 repository itself: local hub (`kb init --kind hub`, no remote → direct
