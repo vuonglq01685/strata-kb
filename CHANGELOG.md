@@ -27,8 +27,8 @@ All notable changes to Strata are recorded here. This project follows
   match the document's manifest revision, columns / routes / commands must
   match its own tables, `Files:` must appear in `struct.tree` (paths beyond
   the depth or line cap degrade to a warning), and `Open decisions` must be
-  empty. Exit `0` PASS, `1` FAIL; `--json` for CI. Every error names the
-  ticket line. No MCP tool yet.
+  empty. Exit `0` PASS, `1` FAIL; `--json` for CI. Every error that points at
+  a ticket line names it. No MCP tool yet.
 
 Re-run `kb init --kind ba` to pick up the new templates and wrappers.
 

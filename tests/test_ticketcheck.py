@@ -142,6 +142,7 @@ def test_long_revision_prefix_matches(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev + "0" * (40 - len(rev)))), kb_dir)
     assert not any("stale grounding" in e for e in errors(report))
+    assert errors(report) == [], report.render("Grounding")
 
 
 def test_empty_manifest_revision_is_a_warning(code_doc):
@@ -281,6 +282,12 @@ def test_route_must_be_a_row_of_the_tag_table(code_doc):
     assert not any("route" in e for e in errors(good))
 
 
+def test_backticked_route_is_accepted(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Routes="api.airspace — `GET /airspace`")), kb_dir)
+    assert not any("route" in e for e in errors(report))
+
+
 def test_tag_without_a_route_pair_is_accepted(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev, Routes="api.airspace")), kb_dir)
@@ -361,6 +368,27 @@ def test_files_present_missing_and_new(code_doc):
     assert any("file 'src/airspace/ghost.py' not in struct.tree" in m and "(line 12)" in m for m in msgs)
     assert not any("service.py" in m or "V1__create" in m for m in msgs)
     assert any("new: src/airspace/approval.py — created by this ticket" in n for n in notes(report))
+
+
+def test_inline_files_value_is_verified(code_doc):
+    # `grounding()` only ever renders `Files` as sub-bullets — an inline
+    # `- Files: <path>` value has to be built by hand.
+    kb_dir, rev = code_doc
+    bad = grounding(rev, Files=None).replace(
+        "- Tables:", "- Files: src/airspace/ghost.py\n- Tables:"
+    )
+    report = run(ticket(bad), kb_dir)
+    msgs = errors(report)
+    assert any(
+        "file 'src/airspace/ghost.py' not in struct.tree" in m and "(line 9)" in m
+        for m in msgs
+    )
+
+    good = grounding(rev, Files=None).replace(
+        "- Tables:", "- Files: src/airspace/service.py\n- Tables:"
+    )
+    report = run(ticket(good), kb_dir)
+    assert not any("file" in e for e in errors(report))
 
 
 def test_directory_entries_count_as_paths(code_doc):

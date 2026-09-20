@@ -384,7 +384,7 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                 have = {(r[mi].upper(), r[pi]) for r in rows[1:] if mi is not None and pi is not None and len(r) > max(mi, pi)}
                 valid = ", ".join(f"{m} {p}" for m, p in sorted(have)) or "no routes"
                 for method, path in pairs:
-                    path = path.rstrip(".,;:)")
+                    path = path.rstrip(".,;:)`")
                     if (method.upper(), path) not in have:
                         issues.append(
                             Issue("error", f"route '{method} {path}' is not in {raw} — copy a row of its table ({valid}) (line {lineno})")
@@ -448,7 +448,12 @@ def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:
 
 
 def _check_files(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: list[str]) -> None:
-    entries = section.subitems.get("Files", [])
+    entries = list(section.subitems.get("Files", []))
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == "Files" and not line[:1].isspace():
+            m = FIELD_RE.match(line)
+            if m is not None and m.group("rest").strip():
+                entries.insert(0, (section.first_line + i, m.group("rest").strip()))
     if not entries:
         return
     group = next((s.file for s in doc.manifest.sections if s.id == "struct.tree"), None)

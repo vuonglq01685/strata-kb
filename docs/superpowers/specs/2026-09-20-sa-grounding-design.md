@@ -326,10 +326,11 @@ Parsing, in order:
    `\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/\S*)` pair must be a
    `(Method, Path)` row of that tag's L2 table; otherwise error. Same
    unreadable-file degradation as 7.
-9. Command check: on every line holding a `cmd.<x>` id, the first
-   backticked span must equal the section's `**Primary:**` backtick
-   value or a `Command` cell of its alternatives table; otherwise error
-   `command not in cmd.<x> — copy the primary or an alternative verbatim`.
+9. Command check: on every line holding a `cmd.<x>` id, at least one of
+   the line's backticked spans must equal the section's `**Primary:**`
+   backtick value or a `Command` cell of its alternatives table; otherwise
+   error `command not in cmd.<x> — copy the primary or an alternative
+   verbatim`, quoting the spans found on the line.
    A `cmd.` line with no backticked span → warning.
 10. Files: the sub-bullets between the `- Files:` line and the next
     top-level `- <Field>:` line. Each entry's path (text before ` [NEW`)
