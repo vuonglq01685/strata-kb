@@ -361,3 +361,69 @@ def test_missing_l2_heading_is_a_warning_not_a_silent_pass(code_doc):
     report = run(ticket(grounding(rev, Tables="db.restrictive_airspace.nope")), kb_dir)
     assert not any("column" in e for e in errors(report))
     assert any("db.restrictive_airspace" in w and "skipped" in w for w in warnings(report))
+
+
+# --- Task 4: Files vs struct.tree -------------------------------------------
+
+
+def test_files_present_missing_and_new(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Files=[
+        "src/airspace/service.py",
+        "db/migration/V1__create_airspace.sql",
+        "src/airspace/ghost.py",
+        "src/airspace/approval.py [NEW: created by this ticket]",
+    ]))
+    report = run(text, kb_dir)
+    msgs = errors(report)
+    assert any("file 'src/airspace/ghost.py' not in struct.tree" in m and "(line 12)" in m for m in msgs)
+    assert not any("service.py" in m or "V1__create" in m for m in msgs)
+    assert any("new: src/airspace/approval.py — created by this ticket" in n for n in notes(report))
+
+
+def test_directory_entries_count_as_paths(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Files=["src/airspace", "db/migration/"])), kb_dir)
+    assert not any("not in struct.tree" in e for e in errors(report))
+
+
+def test_path_beyond_depth_cap_is_a_warning_not_an_error(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Files=["src/airspace/deep/deeper/x.py"])), kb_dir)
+    assert not any("not in struct.tree" in e for e in errors(report))
+    assert any("cannot verify 'src/airspace/deep/deeper/x.py'" in w and "depth" in w for w in warnings(report))
+
+
+def test_path_after_the_line_cap_marker_is_a_warning(tmp_path: Path, run_git):
+    root = tmp_path / "repo"
+    root.mkdir()
+    build_code_repo(root)
+    wide = root / "wide"
+    wide.mkdir()
+    for n in range(700):  # 700 files > _L3_MAX_LINES=600 → the tree is capped
+        (wide / f"f{n:04d}.txt").write_text("x", encoding="utf-8")
+    run_git(root, "init")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "init")
+    kb_dir = tmp_path / "kb"
+    core.run(core.CodeIngestOptions(repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"))
+    rev = models.load_yaml_model(kb_dir / "demo-code" / "_manifest.yaml", models.Manifest).revision
+    raw = (kb_dir / "demo-code" / "structure.raw.md").read_text(encoding="utf-8")
+    assert "more entries omitted" in raw  # precondition: the cap fired
+    report = run(ticket(grounding(rev, Files=["wide/f0699.txt", "wide/f0000.txt", "aaa.txt"])), kb_dir)
+    # The listing is truncated, so an absent path can never be proven absent:
+    # f0699 (past the cut) and aaa.txt (would sort before it, but the marker
+    # names a bare file name, so order is not comparable) are both warnings;
+    # f0000 is listed → ok. No false errors on a capped tree.
+    assert any("cannot verify 'wide/f0699.txt'" in w and "line cap" in w for w in warnings(report))
+    assert any("cannot verify 'aaa.txt'" in w and "line cap" in w for w in warnings(report))
+    assert not any("f0000" in e for e in errors(report))
+    assert not any("not in struct.tree" in e for e in errors(report))
+
+
+def test_missing_structure_raw_is_a_warning(code_doc):
+    kb_dir, rev = code_doc
+    (kb_dir / "demo-code" / "structure.raw.md").unlink()
+    report = run(ticket(grounding(rev)), kb_dir)
+    assert not any("struct.tree" in e for e in errors(report))
+    assert any("structure.raw.md" in w and "file checks skipped" in w for w in warnings(report))

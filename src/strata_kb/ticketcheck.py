@@ -174,7 +174,7 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport
     _check_service_present(section, issues)
     _check_open_decisions(section, issues)
     _check_tables_routes_commands(section, doc, issues)
-    # Task 4 adds:  _check_files(section, doc, issues, notes)
+    _check_files(section, doc, issues, notes)
     return LintReport(issues, notes)
 
 
@@ -386,3 +386,80 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                     issues.append(
                         Issue("error", f"command not in {raw} — copy the primary or an alternative verbatim (found: {found}; allowed: {', '.join(sorted(allowed))}) (line {lineno})")
                     )
+
+
+def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:
+    """(every path listed in struct.tree's fence, first entry dropped by the
+    line cap or None). Directory lines end with `/` and carry their full
+    relative path; a file line's directory is the nearest preceding
+    directory line with a smaller indent (root files have none)."""
+    paths: set[str] = set()
+    first_dropped: str | None = None
+    stack: list[tuple[int, str]] = []
+    in_fence = False
+    for raw in l3_text.splitlines():
+        if raw.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            continue
+        cap = TREE_CAP_RE.match(raw)
+        if cap:
+            first_dropped = cap.group("first")
+            continue
+        m = re.match(r"^( *)- (.+)$", raw)
+        if not m:
+            continue
+        indent, name = len(m.group(1)), m.group(2)
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        if name.endswith("/"):
+            d = name[:-1]
+            stack.append((indent, d))
+            paths.add(d)
+        else:
+            parent = stack[-1][1] if stack else ""
+            paths.add(f"{parent}/{name}" if parent else name)
+    return paths, first_dropped
+
+
+def _check_files(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: list[str]) -> None:
+    entries = section.subitems.get("Files", [])
+    if not entries:
+        return
+    group = next((s.file for s in doc.manifest.sections if s.id == "struct.tree"), None)
+    raw = doc.read_raw(group) if group else None
+    if raw is None:
+        issues.append(
+            Issue("warning", f"could not read {group or 'structure'}.raw.md of {doc.manifest.id} — file checks skipped")
+        )
+        return
+    paths, first_dropped = _tree_paths(raw)
+    for lineno, text in entries:
+        new = NEW_RE.search(text)
+        path = NEW_RE.sub("", text).strip().strip("`").rstrip("/")
+        if new is not None:
+            reason = (new.group("reason") or "").strip()
+            if reason:
+                notes.append(f"new: {path} — {reason} (line {lineno})")
+            else:
+                issues.append(Issue("warning", f"[NEW] without a reason for {path} (line {lineno})"))
+            continue
+        if path in paths:
+            continue
+        if path.count("/") >= TREE_DEPTH:
+            issues.append(
+                Issue("warning", f"cannot verify '{path}': beyond struct.tree's depth cap ({TREE_DEPTH}) — list the deepest directory the document shows (line {lineno})")
+            )
+        elif first_dropped is not None:
+            # ponytail: the cap marker names a bare file name, so "does this
+            # path sort after the cut" is not decidable from the document;
+            # a capped tree makes every absent path unverifiable, never an
+            # error. Upgrade path: a full-path marker in tree.py's renderer.
+            issues.append(
+                Issue("warning", f"cannot verify '{path}': struct.tree hit its line cap (listing stops at '{first_dropped}') — the document cannot prove absence (line {lineno})")
+            )
+        else:
+            issues.append(
+                Issue("error", f"file '{path}' not in struct.tree of {doc.manifest.id} — spell it as the document lists it, or mark [NEW: <reason>] (line {lineno})")
+            )
