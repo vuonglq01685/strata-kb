@@ -77,6 +77,7 @@ section. A service the mission will create carries [NEW: <reason>]. -->
 | Order | Service | Depends on | Why this order |
 |---|---|---|---|
 | 1 | svc.<name> | <from record> | <reason, cites the dependency> |
+| 2 | svc.<new-name> [NEW: <why it does not exist yet>] | svc.<name> | <reason> |
 
 ## Open questions
 <!-- Architecture-changing questions are flagged here and must be

@@ -2411,3 +2411,4 @@ def test_mission_required_headings_are_untouched_by_services_and_order():
     from strata_kb import mission
 
     assert "## Services & order" not in mission.REQUIRED_MISSION_HEADINGS
+    assert "## Services & order" not in mission.RECOMMENDED_MISSION_HEADINGS

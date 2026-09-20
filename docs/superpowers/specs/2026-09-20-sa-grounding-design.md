@@ -193,7 +193,8 @@ Workflow:
 Hard rules (verbatim in all four wrappers):
 
 ```
-- Every line in ## Technical grounding must either
+- Every line in the SA-owned section (## Technical grounding, or
+  ## Services & order with --mission) must either
     - point at a section id that exists in the <repo>-code document, OR
     - carry [NEW: <reason>] saying why it does not exist yet, OR
     - go under Open decisions.
@@ -229,6 +230,13 @@ In all four wrappers of `ba-ticket-author` and all four of
   and the `Container(alias, label, technology, description)` guidance.
 - Add one hard-rule bullet in their place:
   `Code-level detail is not yours to ground. Write %%TODO: verify against codebase%% where a service, table, route or file name is needed, add the owned Open questions row, and hand the ticket to /sa-ticket-ground once the business sections are drafted. Never read <repo>-code or <repo>-svc yourself.`
+- In the **Ground** step, add: a hit tagged `code`
+  (`<repo>-code`/`<repo>-svc`) is not a candidate for the BA — note it
+  and leave it to `/sa-ticket-ground`.
+- In the **Draft** step, make the placeholder unconditional: code-level
+  detail is always `%%TODO: verify against codebase%%` — never invented,
+  never looked up by the BA (the old "that neither the KB nor the BA can
+  supply" conditional is removed).
 - `ba-ticket-author` step 4 (**Draft**) lists `## Technical grounding` as
   a section it leaves untouched (template comment stays).
 - `ba-mission-plan` step 3 (**Draft**) lists `## Services & order` the

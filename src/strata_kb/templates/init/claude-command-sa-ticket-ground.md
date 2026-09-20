@@ -8,9 +8,10 @@ workflow exactly. Pass "$ARGUMENTS" as the file path, and `--mission`
 through when given.
 
 Pipeline: Intake → Load → Fill → Gate → Handover. Hard rules the skill
-enforces: every line of `## Technical grounding` points at a section id
-that exists in `<repo>-code`, or carries `[NEW: <reason>]`, or goes
-under `Open decisions`; no data → `Open decisions`, never inference;
+enforces: every line of the SA-owned section (`## Technical grounding`,
+or `## Services & order` with `--mission`) points at a section id that
+exists in `<repo>-code`, or carries `[NEW: <reason>]`, or goes under
+`Open decisions`; no data → `Open decisions`, never inference;
 never edit a BA-owned section — a contradiction is quoted there, not
 corrected; `Grounded on: <repo-id>:<doc-id> @ <revision>` is the first
 line, copied from the hub document's manifest revision; never write

@@ -28,8 +28,8 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
    This is a *different* value from `hub:` in `.kb/config.yaml`, which is the
    git/path federation hub used by `kb query` and the lint gates.
 4. **Open this repo** in Claude Code, GitHub Copilot Chat, or Cursor —
-   the `ba-ticket-author` skill/command/prompt is scaffolded for all
-   three.
+   the `ba-ticket-author`, `ba-mission-plan` and `sa-ticket-ground`
+   skills/commands/prompts are scaffolded for all three.
 
 ## Create a ticket
 

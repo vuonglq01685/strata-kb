@@ -37,6 +37,8 @@ for it during Intake.
    with their citations — never silently drop one. When the ambiguity
    note fires (two close-scoring hits), the BA MUST choose between
    them — never auto-pick.
+   A hit tagged `code` (`<repo>-code` / `<repo>-svc`) is not a candidate for
+   you: note it in the handover and leave it to `/sa-ticket-ground`.
 4. **Draft** — fill the standard ticket template (Summary, User Story,
    Background / Business context, Acceptance Criteria, Use cases,
    Sequence diagram, Business flow, Dependencies, Non-functional
@@ -59,9 +61,9 @@ for it during Intake.
    Every claim that touches an industry standard cites `[doc-id
    §section]` — and only from the candidates the BA confirmed in step 3,
    never a fresh, unconfirmed search hit. Where a diagram needs
-   code-level detail (service names, DB tables, …) that neither the KB
-   nor the BA can supply, mark it `%%TODO: verify against codebase%%` —
-   never invent it.
+   code-level detail (service names, DB tables, …), mark it
+   `%%TODO: verify against codebase%%` — never invent it, never look it
+   up yourself.
 5. **Pin** — once the BA confirms which sections actually apply, call
    the MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly those
@@ -134,8 +136,8 @@ for it during Intake.
   mandatory when the ambiguity note fires — never auto-pick.
 - Never fabricate codes, record/field names, or numeric values — the
   same verbatim-preservation rules as `kb-summarize` apply.
-- Unverifiable code-level details become `%%TODO: verify against
-  codebase%%` placeholders — never invented.
+- Code-level details become `%%TODO: verify against codebase%%`
+  placeholders — never invented, never looked up by you.
 - **Code-level detail is not yours to ground.** Write
   `%%TODO: verify against codebase%%` where a service, table, route or
   file name is needed, add the owned `## Open questions` row, and hand

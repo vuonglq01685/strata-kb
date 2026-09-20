@@ -19,15 +19,16 @@ for standard claims; budget `kb_search` at 500–800 tokens for broad
 discovery, call `kb_get_section` only for a section already chosen, and
 escalate to L3 only for a value that will be encoded in code or a test;
 present ALL `kb_search` candidates and let the BA
-choose — mandatory when the ambiguity note fires, never auto-pick; pin
-only BA-confirmed refs via `kb_context_new`, leaving its `tags`
+choose — mandatory when the ambiguity note fires, never auto-pick. A
+hit tagged `code` (`<repo>-code` / `<repo>-svc`) is not a candidate for
+you — leave it to `/sa-ticket-ground`. Pin only BA-confirmed refs via `kb_context_new`, leaving its `tags`
 argument unset — **Tags are NOT yours to set**: the engine derives
 them from the pinned sections' own tags, a tag passed by hand is
 validated against the hub vocabulary and an unknown one is an error,
 and the BA's intake tags are search keywords for `kb query --tags`,
 nothing more;
-unverifiable code detail becomes `%%TODO: verify against codebase%%`,
-never invented; `kb ticket lint` must report `DoR: PASS` before handover;
+code detail becomes `%%TODO: verify against codebase%%`, never
+invented, never looked up by you; `kb ticket lint` must report `DoR: PASS` before handover;
 report the authoring cost at handover with `kb usage report --ticket
 <ticket-id> --md`, reporting `no usage recorded yet` as-is rather than
 guessing a number;

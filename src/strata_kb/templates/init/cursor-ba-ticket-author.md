@@ -33,6 +33,8 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    **ALL** returned candidates with their citations — never drop one
    silently. When the ambiguity note fires (two close-scoring hits), the
    BA MUST choose — never auto-pick.
+   A hit tagged `code` (`<repo>-code` / `<repo>-svc`) is not a candidate for
+   you: note it in the handover and leave it to `/sa-ticket-ground`.
 4. **Draft** — fill the standard ticket template (Summary, User Story,
    Background / Business context, Acceptance Criteria, Use cases,
    Sequence diagram, Business flow, Dependencies, Non-functional
@@ -53,9 +55,9 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    write `N/A — <reason>`; a blank section reads as "not considered".
 
    Every claim that touches a standard cites `[doc-id §section]`, only from
-   candidates the BA confirmed in step 3. Code-level detail the KB and
-   the BA cannot supply (service names, DB tables, …) →
-   `%%TODO: verify against codebase%%` — never invented.
+   candidates the BA confirmed in step 3. Code-level detail (service
+   names, DB tables, …) → `%%TODO: verify against codebase%%` — never
+   invented, never looked up by you.
 5. **Pin** — after the BA confirms which sections apply, call the MCP
    tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly the confirmed
@@ -125,8 +127,8 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
   when the ambiguity note fires — never auto-pick.
 - Never fabricate codes, record/field names, or numeric values — the
   same verbatim-preservation rules as `kb-summarize` apply.
-- Unverifiable code-level details become `%%TODO: verify against
-  codebase%%` placeholders — never invented.
+- Code-level details become `%%TODO: verify against codebase%%`
+  placeholders — never invented, never looked up by you.
 - **Code-level detail is not yours to ground.** Write
   `%%TODO: verify against codebase%%` where a service, table, route or
   file name is needed, add the owned `## Open questions` row, and hand

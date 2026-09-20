@@ -51,8 +51,9 @@ to the mission layer.
    - `Routes:` — `api.<tag> — <METHOD> <path>` copied from the tag's
      table. `none` when the document has no `api.*` for it.
    - `Externals:` — `int.<name>` ids, or `none`.
-   - `Verify with:` — `cmd.test — \`<command>\``, the section's
-     `Primary:` value or one of its alternatives, byte for byte.
+   - `Verify with:` — `cmd.test` followed by the command in
+     backticks: the section's `Primary:` value or one of its
+     alternatives, byte for byte.
    - `Open decisions:` — every question the document cannot answer,
      quoted in the BA's own words when it comes from a placeholder:
      internal flow, failure modes, request/response bodies, a table or
@@ -78,7 +79,8 @@ to the mission layer.
 
 ## Hard rules
 
-- Every line in `## Technical grounding` must either
+- Every line in the SA-owned section (`## Technical grounding`, or
+  `## Services & order` with `--mission`) must either
   - point at a section id that exists in the `<repo>-code` document, OR
   - carry `[NEW: <reason>]` saying why it does not exist yet, OR
   - go under `Open decisions`.

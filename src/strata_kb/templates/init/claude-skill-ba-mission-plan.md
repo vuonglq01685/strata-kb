@@ -32,6 +32,8 @@ for it during Intake.
    encoded in code or a test. Present **ALL** returned candidates with their
    citations — never silently drop one. When the ambiguity note fires
    (two close-scoring hits), the BA MUST choose — never auto-pick.
+   A hit tagged `code` (`<repo>-code` / `<repo>-svc`) is not a candidate for
+   you: note it in the handover and leave it to `/sa-ticket-ground`.
 3. **Draft** — start from `docs/missions/TEMPLATE.md` in the repo (the
    file `kb init --kind ba` scaffolds) and fill it in: Summary,
    Business goal, Scope, System context (C4 L1), Containers (C4 L2),
@@ -42,10 +44,10 @@ for it during Intake.
    one owned row in `## Technology decisions` at the same moment —
    never leave a placeholder without an owner.
    Keep the template's `> Mission: M-<slug>` id line and mermaid fences —
-   do not recreate the document from scratch. Draw L1 and L2 from KB
+   do not recreate the document from scratch. Draw L1 and L2 from domain KB
    content plus what the BA states. Where a diagram needs code-level detail
-   (service names, DB tables, …) that neither the KB nor the BA can supply,
-   mark it `%%TODO: verify against codebase%%` — never invent it. Add the
+   (service names, DB tables, …), mark it `%%TODO: verify against
+   codebase%%` — never invent it, never look it up yourself. Add the
    optional `## Components (C4 L3)` section ONLY when the BA supplies real
    component detail.
    `## Services & order` is SA-owned: leave it exactly as the template
@@ -152,8 +154,9 @@ for it during Intake.
   is needed, add the owned `## Technology decisions` row, and hand the
   mission to `/sa-ticket-ground --mission` once the BA confirms the
   backlog — it fills the SA-owned `## Services & order` section from the
-  hub's `<repo>-code` document (`svc.*` and `depends_on` only). Never
-  read `<repo>-code` or `<repo>-svc` yourself.
+  hub's `<repo>-code` document (`svc.*` and its `Depends on` cell) and
+  the architecture document. Never read `<repo>-code` or `<repo>-svc`
+  yourself.
 - **`kb mission lint` failing to RUN is not a PASS.** There is no MCP
   fallback for this gate. If the `kb` command is unavailable, tell the BA
   to install `strata-kb` — never skip the lint step, and never hand over a
