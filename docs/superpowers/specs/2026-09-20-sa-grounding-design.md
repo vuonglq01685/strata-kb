@@ -430,8 +430,15 @@ exit-code row (the `test_readme.py` exit-code pin lists producers of exit
 untouched (no new dependency). `detect_changes` before commit per
 CLAUDE.md.
 
-**After PR 2 — measurement, not code.** Run `/sa-ticket-ground` on three
-real vertical-slice tickets and count `Open decisions` items per ticket.
+**After PR 2 — measurement, not code.** Smoke the gate first on this
+repository itself: local hub (`kb init --kind hub`, no remote → direct
+publish), `kb code-ingest` + `kb publish` from strata-kb, a `kind: ba`
+repo pointed at that hub, one ticket through BA → SA → `kb ticket check`.
+strata-kb has no compose file, so `svc.*` is empty there — this smoke
+proves the pipeline, not the document. Then run `/sa-ticket-ground` on
+three real vertical-slice tickets of the product repo and count
+`Open decisions` items per ticket, split into "code does not exist yet"
+(`[NEW]`) and "code exists but the document cannot see it".
 Consistently empty → the document is sufficient. Consistently ~5 →
 find which extractor lacks a field and extend *that extractor*; do not
 add an agent.
