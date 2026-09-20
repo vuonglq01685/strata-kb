@@ -20,9 +20,16 @@ import yaml
 
 
 def _clone_hub(hub: Path, dest: Path) -> Path:
-    """Clone the bare hub into a working tree so the pushed content is readable."""
+    """Clone the bare hub into a working tree so the pushed content is readable.
+
+    Same `-c` as gitio.clone: Git for Windows' default autocrlf=true would
+    rewrite LF blobs as CRLF in the working tree, so a byte-for-byte mirror
+    check against the source .kb (eol=lf via .gitattributes) goes red on
+    content that publish did not transform.
+    """
     subprocess.run(
-        ["git", "clone", "--quiet", str(hub), str(dest)],
+        ["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+         "clone", "--quiet", str(hub), str(dest)],
         check=True, capture_output=True, text=True,
     )
     return dest

@@ -1119,6 +1119,10 @@ def test_static_css_widens_main_and_defines_new_styles(fed_hub):
     # design tokens from the approved redesign mock
     assert "--accent: #1349a5" in resp.text
     assert "--r-md: 8px" in resp.text
+    # Long slug ids (Vietnamese heading slugs) must shrink; flex:none on
+    # .num squeezed the title into a 1-word column in the 248px left rail.
+    assert re.search(r"\.tree-row \.num\s*\{[^}]*max-width:", resp.text)
+    assert re.search(r"\.tree-row \.num\s*\{[^}]*text-overflow:\s*ellipsis", resp.text)
 
 
 def test_section_page_wraps_content_in_reader_container(fed_hub):
