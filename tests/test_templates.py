@@ -2337,3 +2337,55 @@ def test_dev_handover_pr_assembly_adds_the_review_section():
         assert (
             "A5's finding table and its `Blocking:` verdict line." in body
         ), name
+
+
+# --- SA grounding layer (PR 1): the two SA-owned template sections ---------
+
+TECHNICAL_GROUNDING_FIELDS = (
+    "- Grounded on:",
+    "- Service:",
+    "- Files:",
+    "- Tables:",
+    "- Routes:",
+    "- Externals:",
+    "- Verify with:",
+    "- Open decisions:",
+)
+
+
+def test_ticket_template_carries_the_technical_grounding_section():
+    text = _read_init_template("ticket-template.md")
+    assert text.count("## Technical grounding") == 1
+    body = lintcore.section_body(text, "## Technical grounding")
+    assert body is not None
+    for field in TECHNICAL_GROUNDING_FIELDS:
+        assert field in body, field
+    assert "[NEW:" in body
+    assert "kb ticket check" in body
+    # Section order: recommended sections sit before '## Open questions'.
+    assert text.index("## Technical grounding") < text.index("## Open questions")
+
+
+def test_ticket_template_has_no_flow_or_failure_mode_field():
+    # Spec §3: deliberately absent — the code document cannot prove them.
+    body = lintcore.section_body(
+        _read_init_template("ticket-template.md"), "## Technical grounding"
+    )
+    assert "- Flow:" not in body
+    assert "- Failure modes:" not in body
+
+
+def test_ticket_template_dor_names_the_grounding_gate():
+    text = _read_init_template("ticket-template.md")
+    dor = lintcore.section_body(text, "## Definition of Ready")
+    assert "Technical grounding filled by SA" in dor
+    assert "kb ticket check PASS" in dor
+
+
+def test_technical_grounding_is_a_recommended_heading():
+    from strata_kb import ticket
+
+    assert "## Technical grounding" in ticket.RECOMMENDED_HEADINGS
+    assert "## Technical grounding" not in ticket.REQUIRED_HEADINGS
+    order = list(ticket.RECOMMENDED_HEADINGS)
+    assert order.index("## Technical grounding") == order.index("## Open questions") - 1
