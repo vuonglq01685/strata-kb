@@ -3,7 +3,11 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.0.2 — 2026-09-21
+
+- Left-rail section rows truncate long slug ids so titles no longer wrap into a one-word column.
+- T4 Windows hub clone uses `core.autocrlf=false` / `core.eol=lf` (same as `gitio.clone`), so the legacy-KB publish mirror check is not poisoned by Git for Windows CRLF rewriting.
+- Golden corpus is a synthetic handbook; copyrighted ARINC/ICAO extracts are gone.
 
 ### BA repos — the SA grounding layer
 
