@@ -137,6 +137,7 @@ def test_unknown_document_is_an_error(code_doc):
     assert len(errors(report)) == 1
     assert "other-code" in errors(report)[0]
     assert "not found" in errors(report)[0]
+    assert "(line 7)" in errors(report)[0]
 
 
 def test_unreadable_manifest_is_an_error_not_a_traceback(code_doc):
@@ -152,6 +153,7 @@ def test_revision_mismatch_is_stale_grounding(code_doc):
     kb_dir, _ = code_doc
     report = run(ticket(grounding("deadbee")), kb_dir)
     assert any("stale grounding" in e and "deadbee" in e for e in errors(report))
+    assert any("stale grounding" in e and "(line 7)" in e for e in errors(report))
 
 
 def test_long_revision_prefix_matches(code_doc):

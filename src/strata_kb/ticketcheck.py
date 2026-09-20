@@ -25,7 +25,6 @@ from pydantic import ValidationError
 from strata_kb import lintcore, models
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
-from strata_kb.mdutils import slice_section
 
 HEADING = "## Technical grounding"
 
@@ -149,7 +148,7 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport
     grounded = _grounded_on(section, issues)
     if grounded is None:
         return LintReport(issues, notes)
-    repo, doc_id, rev = grounded
+    repo, doc_id, rev, line = grounded
 
     try:
         doc = load_doc(repo, doc_id)
@@ -163,13 +162,13 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport
                 "error",
                 f"{doc_id} not found under --kb-dir or on the hub ({where}) — "
                 "is the -code document published, and is the id spelled as "
-                "`<repo-id>-code`?",
+                f"`<repo-id>-code`? (line {line})",
             )
         )
         return LintReport(issues, notes)
     notes.append(f"{doc_id} read from {doc.source}")
 
-    _check_revision(doc, doc_id, rev, issues)
+    _check_revision(doc, doc_id, rev, line, issues)
     # Task 2 adds:  _check_ids(section, doc, issues, notes)
     # Task 2 adds:  _check_service_present(section, issues)
     # Task 2 adds:  _check_open_decisions(section, issues)
@@ -178,10 +177,11 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport
     return LintReport(issues, notes)
 
 
-def _grounded_on(section: _Section, issues: list[Issue]) -> tuple[str | None, str, str] | None:
+def _grounded_on(section: _Section, issues: list[Issue]) -> tuple[str | None, str, str, int] | None:
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] != "Grounded on" or line[:1].isspace():
             continue
+        lineno = section.first_line + i
         m = GROUNDED_ON_RE.match(line.strip())
         if m is None:
             issues.append(
@@ -189,11 +189,11 @@ def _grounded_on(section: _Section, issues: list[Issue]) -> tuple[str | None, st
                     "error",
                     "'Grounded on:' must read `Grounded on: <repo-id>:<doc-id> @ "
                     f"<revision>` (revision = the -code manifest's `revision`) "
-                    f"(line {section.first_line + i})",
+                    f"(line {lineno})",
                 )
             )
             return None
-        return m.group("repo"), m.group("doc"), m.group("rev").lower()
+        return m.group("repo"), m.group("doc"), m.group("rev").lower(), lineno
     issues.append(
         Issue(
             "error",
@@ -204,7 +204,7 @@ def _grounded_on(section: _Section, issues: list[Issue]) -> tuple[str | None, st
     return None
 
 
-def _check_revision(doc: LoadedDoc, doc_id: str, rev: str, issues: list[Issue]) -> None:
+def _check_revision(doc: LoadedDoc, doc_id: str, rev: str, line: int, issues: list[Issue]) -> None:
     have = (doc.manifest.revision or "").lower()
     if not have:
         issues.append(
@@ -216,6 +216,6 @@ def _check_revision(doc: LoadedDoc, doc_id: str, rev: str, issues: list[Issue]) 
             Issue(
                 "error",
                 f"stale grounding: ticket says @{rev}, {doc_id} is @{have} — "
-                "re-run /sa-ticket-ground against the current document",
+                f"re-run /sa-ticket-ground against the current document (line {line})",
             )
         )
