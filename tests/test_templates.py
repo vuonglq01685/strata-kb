@@ -2389,3 +2389,23 @@ def test_technical_grounding_is_a_recommended_heading():
     assert "## Technical grounding" not in ticket.REQUIRED_HEADINGS
     order = list(ticket.RECOMMENDED_HEADINGS)
     assert order.index("## Technical grounding") == order.index("## Open questions") - 1
+
+
+def test_mission_template_carries_services_and_order():
+    text = _read_init_template("mission-template.md")
+    assert text.count("## Services & order") == 1
+    body = lintcore.section_body(text, "## Services & order")
+    assert body is not None
+    assert "- Grounded on:" in body
+    assert "| Order | Service | Depends on | Why this order |" in body
+    assert "svc.<name>" in body
+    assert "[NEW:" in body
+    # Capability layer only — the comment says what must NOT go here.
+    assert "no tables, no routes" in body
+    assert text.index("## Sequencing") < text.index("## Services & order") < text.index("## Open questions")
+
+
+def test_mission_required_headings_are_untouched_by_services_and_order():
+    from strata_kb import mission
+
+    assert "## Services & order" not in mission.REQUIRED_MISSION_HEADINGS
