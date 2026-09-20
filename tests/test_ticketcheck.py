@@ -327,3 +327,37 @@ def test_unreadable_group_file_degrades_to_a_warning(code_doc):
     report = run(ticket(grounding(rev, Tables="db.restrictive_airspace.nope")), kb_dir)
     assert not any("column" in e for e in errors(report))
     assert any("db.md" in w and "skipped" in w for w in warnings(report))
+
+
+# --- Task 3 fix round: any code span, route punctuation, missing heading ---
+
+
+def test_command_check_accepts_any_code_span_on_the_line(code_doc):
+    kb_dir, rev = code_doc
+    good = run(ticket(grounding(rev, **{"Verify with": "`cmd.test` — `pytest`"})), kb_dir)
+    assert not any("command" in e for e in errors(good))
+    bad = run(ticket(grounding(rev, **{"Verify with": "`cmd.test` — `nope`"})), kb_dir)
+    msgs = errors(bad)
+    assert any("command not in cmd.test" in m and "found:" in m and "`nope`" in m for m in msgs)
+
+
+def test_route_trailing_punctuation_is_tolerated(code_doc):
+    kb_dir, rev = code_doc
+    good = run(ticket(grounding(rev, Routes="api.airspace — GET /airspace, POST /airspace.")), kb_dir)
+    assert not any("route" in e for e in errors(good))
+    bad = run(ticket(grounding(rev, Routes="api.airspace — DELETE /airspace")), kb_dir)
+    assert any("route 'DELETE /airspace'" in e and "GET /airspace" in e for e in errors(bad))
+
+
+def test_missing_l2_heading_is_a_warning_not_a_silent_pass(code_doc):
+    kb_dir, rev = code_doc
+    db_md = kb_dir / "demo-code" / "db.md"
+    db_md.write_text(
+        db_md.read_text(encoding="utf-8").replace(
+            "## db.restrictive_airspace", "## db.renamed"
+        ),
+        encoding="utf-8",
+    )
+    report = run(ticket(grounding(rev, Tables="db.restrictive_airspace.nope")), kb_dir)
+    assert not any("column" in e for e in errors(report))
+    assert any("db.restrictive_airspace" in w and "skipped" in w for w in warnings(report))

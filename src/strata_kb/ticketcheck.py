@@ -295,10 +295,12 @@ def _check_open_decisions(section: _Section, issues: list[Issue]) -> None:
 
 
 def _l2_slice(doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue]) -> str | None:
-    """The `## <sid> …` L2 section text, or None (group file unreadable —
-    warned once per group, the sub-check is skipped)."""
+    """The `## <sid> …` L2 section text, or None — memoised in `unreadable`
+    (by group stem for an unreadable file, by `sid` for a missing heading;
+    the two id shapes never collide) so either failure warns once, not
+    once per line that references it, and the sub-check is skipped."""
     group = next((s.file for s in doc.manifest.sections if s.id == sid), None)
-    if group is None or group in unreadable:
+    if group is None or group in unreadable or sid in unreadable:
         return None
     text = doc.read_group(group)
     if text is None:
@@ -307,7 +309,13 @@ def _l2_slice(doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue
             Issue("warning", f"could not read {group}.md of {doc.manifest.id} — column/route/command checks for its sections skipped")
         )
         return None
-    return slice_section(text, sid)
+    body = slice_section(text, sid)
+    if body is None:
+        unreadable.add(sid)
+        issues.append(
+            Issue("warning", f"section {sid} not found in {group}.md of {doc.manifest.id} — its column/route/command checks skipped")
+        )
+    return body
 
 
 def _table_column(rows: list[list[str]], name: str) -> int | None:
@@ -350,15 +358,17 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                 rows = lintcore.table_rows(body)
                 mi, pi = _table_column(rows, "method"), _table_column(rows, "path")
                 have = {(r[mi].upper(), r[pi]) for r in rows[1:] if mi is not None and pi is not None and len(r) > max(mi, pi)}
+                valid = ", ".join(f"{m} {p}" for m, p in sorted(have)) or "no routes"
                 for method, path in pairs:
+                    path = path.rstrip(".,;:)")
                     if (method.upper(), path) not in have:
                         issues.append(
-                            Issue("error", f"route '{method} {path}' is not in {raw} — copy a row of its table (line {lineno})")
+                            Issue("error", f"route '{method} {path}' is not in {raw} — copy a row of its table ({valid}) (line {lineno})")
                         )
             # cmd.<x> — `command`
             elif raw.startswith("cmd.") and raw in known:
-                span = CODE_SPAN_RE.search(line)
-                if span is None:
+                spans = CODE_SPAN_RE.findall(line)
+                if not spans:
                     issues.append(Issue("warning", f"{raw}: put the command in backticks so it can be verified (line {lineno})"))
                     continue
                 body = _l2_slice(doc, raw, unreadable, issues)
@@ -371,7 +381,8 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                 rows = lintcore.table_rows(body)
                 ci = _table_column(rows, "command")
                 allowed |= {r[ci] for r in rows[1:] if ci is not None and len(r) > ci}
-                if span.group(1) not in allowed:
+                if not any(s in allowed for s in spans):
+                    found = ", ".join(f"`{s}`" for s in spans)
                     issues.append(
-                        Issue("error", f"command not in {raw} — copy the primary or an alternative verbatim ({', '.join(sorted(allowed))}) (line {lineno})")
+                        Issue("error", f"command not in {raw} — copy the primary or an alternative verbatim (found: {found}; allowed: {', '.join(sorted(allowed))}) (line {lineno})")
                     )
