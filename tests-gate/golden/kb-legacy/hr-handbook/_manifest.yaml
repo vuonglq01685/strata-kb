@@ -1,0 +1,38 @@
+id: hr-handbook
+title: Acme Employee Handbook
+revision: 2026 edition
+ingested: '2026-07-13'
+source_sha256: ''
+sections:
+- id: '4.10'
+  title: Annual leave
+  summary: Accrual, carry-forward cap, and notice rules for annual leave.
+  status: summarized
+  file: ch4-leave
+  tokens:
+    l2: 67
+    l3: 279
+- id: '4.11'
+  title: Sick leave
+  summary: Paid sick days, certificate rule, and interaction with annual leave.
+  status: summarized
+  file: ch4-leave
+  tokens:
+    l2: 40
+    l3: 174
+- id: '4.12'
+  title: Parental leave
+  summary: Eligibility and paid/unpaid weeks for parental leave, per table.
+  status: summarized
+  file: ch4-leave
+  tokens:
+    l2: 128
+    l3: 293
+- id: '4.13'
+  title: Restrictive leave
+  summary: Unpaid restrictive leave caps, approval, and service impact.
+  status: summarized
+  file: ch4-leave
+  tokens:
+    l2: 64
+    l3: 212

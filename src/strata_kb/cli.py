@@ -619,9 +619,9 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
 @app.command()
 def ingest(
     pdf: Path = typer.Argument(..., help="Source PDF file"),
-    doc_id: str = typer.Option(..., "--id", help="Document ID, e.g. arinc-424"),
+    doc_id: str = typer.Option(..., "--id", help="Document ID, e.g. hr-handbook"),
     tags: str = typer.Option("", help="Tags, comma-separated"),
-    revision: str = typer.Option("", help="Revision, e.g. 'Supplement 22'"),
+    revision: str = typer.Option("", help="Revision, e.g. '2026 edition'"),
     sections: str = typer.Option(
         "", help="Only scaffold these chapters, e.g. '5,6' (empty = all)"
     ),
@@ -2190,7 +2190,7 @@ def verify(
 @context_app.command("new")
 def context_new(
     refs: str = typer.Option(
-        ..., "--refs", help="Comma-separated refs, e.g. 'arinc-424 §5.3,arinc-424 §5.3.2'"
+        ..., "--refs", help="Comma-separated refs, e.g. 'hr-handbook §4.12,travel-policy §2.1'"
     ),
     tags: str = typer.Option("", help="Tags, comma-separated"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),

@@ -1,6 +1,6 @@
 {
   "kb_context_new": {
-    "description": "Pin a kb-context citation block at the current KB commit, from 1+\nrefs like 'arinc-424 \u00a75.129'. Call this only after the user has\nconfirmed which section(s) \u2014 out of everything kb_search returned \u2014\nactually belong in the story; paste the returned block into the\nticket. Citing 2-3 sections for one story is normal \u2014 pass every\nconfirmed ref in one call.",
+    "description": "Pin a kb-context citation block at the current KB commit, from 1+\nrefs like 'hr-handbook \u00a74.12'. Call this only after the user has\nconfirmed which section(s) \u2014 out of everything kb_search returned \u2014\nactually belong in the story; paste the returned block into the\nticket. Citing 2-3 sections for one story is normal \u2014 pass every\nconfirmed ref in one call.",
     "inputSchema": {
       "properties": {
         "refs": {

@@ -22,8 +22,8 @@ missing ones. "none" is a valid answer for tags and revision.
    - File not found → say so, show the files that ARE present, and ask
      again. Never silently pick a different file.
 2. **Propose metadata, then ask.** Derive suggestions from the file name:
-   - `id`: short, stable, kebab-case (e.g. `ARINC424-22.pdf` → `arinc-424`)
-   - `revision`: edition/supplement hints in the name (e.g. `Supplement 22`)
+   - `id`: short, stable, kebab-case (e.g. `employee-handbook.pdf` → `hr-handbook`)
+   - `revision`: edition hints in the name (e.g. `2026 edition`)
    - `tags`: 2–4 lowercase topical keywords
    Present all three suggestions and ask the user to confirm or correct
    each one. Wait for the answer before doing anything else.

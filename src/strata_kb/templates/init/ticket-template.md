@@ -15,8 +15,8 @@ words ("appropriate", "configured", "a subset", "responsive", … — the
 full banned list is docs/ac-quality.md). An unsettled value is written
 `OPEN(<owner>)` inside the AC AND gets a row in the Open questions
 section below — never left vague. Citations are bracketed:
-`[arinc-424 §5.129]`. Prose that merely names a standard ("per ARINC
-424") is not a citation and the gate ignores it. -->
+`[hr-handbook §4.12]`. Prose that merely names a standard ("per the
+handbook") is not a citation and the gate ignores it. -->
 - [ ] AC1 … (cite `[doc-id §section]` when it touches a standard)
 - [ ] AC2 …
 

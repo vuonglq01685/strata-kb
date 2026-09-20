@@ -58,7 +58,7 @@ def parse_ref(text: str) -> KBRef:
     m = _REF_RE.match(" ".join(text.split()))
     if not m:
         raise KBContextError(
-            f"ref '{text}' has the wrong format — expected '<doc-id> §<section-id>', e.g. 'arinc-424 §5.3'"
+            f"ref '{text}' has the wrong format — expected '<doc-id> §<section-id>', e.g. 'hr-handbook §4.12'"
         )
     return KBRef(
         doc_id=m.group("doc"), section_id=m.group("sec"), repo_id=m.group("repo")
@@ -332,7 +332,7 @@ def build_context_block(
     ref_list = [parse_ref(r) for r in refs if r.strip()]
     if not ref_list:
         raise KBContextError(
-            "--refs is empty — need at least 1 ref, e.g. 'arinc-kb:arinc-424 §5.3'"
+            "--refs is empty — need at least 1 ref, e.g. 'ops:hr-handbook §4.12'"
         )
 
     repos = load_federation(hub.federation_dir)

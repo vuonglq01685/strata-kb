@@ -160,8 +160,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The legacy fixture comes from `git archive v0.7.0 .kb` — it needs the
-          # full set of tags + history.
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:

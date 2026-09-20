@@ -1,0 +1,26 @@
+--- [golden:hr-handbook §4.13 (2026 edition)] match=keyword ~64tk
+## 4.13 Restrictive leave
+
+Restrictive leave is unpaid leave when annual and sick leave do not apply. Cap is 20 working days in any rolling 12 months. More than 10 consecutive days needs director approval. It does not accrue and does not count toward parental-leave service.
+
+--- [golden:hr-handbook §4.11 (2026 edition)] match=keyword ~40tk
+## 4.11 Sick leave
+
+Up to 10 paid sick days per year at full salary. A medical certificate is required from the third consecutive day. Sick days do not reduce annual leave.
+
+--- [golden:hr-handbook §4.12 (2026 edition)] match=keyword ~128tk
+## 4.12 Parental leave
+
+An employee becomes eligible for paid parental leave after 12 months of continuous service. Entitlement is calculated per the table below. Leave may be one block or two blocks of at least two weeks, both within 12 months of birth or placement.
+
+| Service       | Paid weeks | Unpaid weeks |
+|---------------|------------|--------------|
+| 12–24 months  | 8          | 4            |
+| 24+ months    | 14         | 4            |
+
+Partners who both work at Acme may take the unpaid weeks concurrently. Paid weeks cannot be transferred.
+
+--- [golden:hr-handbook §4.10 (2026 edition)] match=keyword ~67tk
+## 4.10 Annual leave
+
+Full-time staff accrue 20 days of annual leave per year; part-time is pro rata. Up to 10 unused days carry forward; the rest is paid out in January. Requests go through the HR portal at least 10 working days ahead unless the manager agrees otherwise in writing.

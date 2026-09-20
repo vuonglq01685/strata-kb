@@ -1,1 +1,22 @@
-[removed: copyrighted standard extract]
+docs:
+- repo_id: golden
+  doc_id: hr-handbook
+  title: Acme Employee Handbook
+  revision: 2026 edition
+  tags:
+  - hr
+  - policy
+  - leave
+  summary: Leave entitlements, parental leave, and unpaid-leave caps for Acme staff.
+  source_commit: eb5a761
+  published_at: '2026-09-20T11:10:16+00:00'
+- repo_id: golden
+  doc_id: travel-policy
+  title: Acme Travel Policy
+  revision: 2026 edition
+  tags:
+  - travel
+  - expenses
+  summary: Expense classes and booking windows for staff travel.
+  source_commit: eb5a761
+  published_at: '2026-09-20T11:10:16+00:00'

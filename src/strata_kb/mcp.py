@@ -225,7 +225,7 @@ def create_server(config: ServerConfig) -> MCPServer:
     @_canonical_docstring
     async def kb_context_new(refs: list[str], tags: list[str] | None = None) -> str:
         """Pin a kb-context citation block at the current KB commit, from 1+
-        refs like 'arinc-424 §5.129'. Call this only after the user has
+        refs like 'hr-handbook §4.12'. Call this only after the user has
         confirmed which section(s) — out of everything kb_search returned —
         actually belong in the story; paste the returned block into the
         ticket. Citing 2-3 sections for one story is normal — pass every

@@ -22,7 +22,6 @@ import shutil
 import socket
 import subprocess
 import sys
-import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -400,63 +399,48 @@ def mcp_stdio_params(artifact: Artifact, published_repo: dict):
     )
 
 
-# ---- Regression fixtures (Task 8): .kb/ exactly as it existed at an old tag ----
-
-LEGACY_TAGS = ["v0.7.0", "v0.8.0", "v0.9.0"]
-
-# tests-gate/conftest.py → one level up is the repo root.
-REPO_ROOT = Path(__file__).parent.parent
+# Frozen synthetic .kb — same layout an old child repo would have committed.
+# Not taken from git tags: those tags used to carry copyrighted ARINC/ICAO
+# extracts. Schema is the pre-kind, summarized two-doc store.
+LEGACY_KB = Path(__file__).parent / "golden" / "kb-legacy"
 
 
-def _materialize_kb_at_tag(tag: str, dest_repo: Path, tmp_path: Path) -> Path:
-    """Unpack .kb/ exactly as it existed at a git tag, into an empty repo.
-
-    Requires `fetch-depth: 0` on CI for the tag to exist."""
-    archive = tmp_path / f"{tag}.tar"
-    subprocess.run(
-        ["git", "archive", "--format=tar", "-o", str(archive), tag, ".kb"],
-        cwd=REPO_ROOT, check=True, capture_output=True,
-    )
-    with tarfile.open(archive) as tf:
-        tf.extractall(dest_repo, filter="data")
+def _copy_legacy_kb(dest_repo: Path) -> Path:
     kb = dest_repo / ".kb"
-    assert (kb / "index.yaml").exists(), f"{tag} has no .kb/index.yaml"
+    shutil.copytree(LEGACY_KB, kb)
+    assert (kb / "index.yaml").exists(), f"{LEGACY_KB} has no index.yaml"
     return kb
 
 
-@pytest.fixture(params=LEGACY_TAGS, ids=LEGACY_TAGS)
-def legacy_kb(request, tmp_path: Path, run_git, bare_hub) -> dict:
-    """Materialize .kb/ as it existed at an old tag, inside a git repo pointed at
-    the hub.
+@pytest.fixture
+def legacy_kb(tmp_path: Path, run_git, bare_hub) -> dict:
+    """A pre-kind .kb inside a git repo pointed at the hub.
 
-    Reproduces exactly what a user does after `pip install -U`: they have an old
+    Reproduces what a user does after `pip install -U`: they have an old
     .kb/ in their repo, and run the NEW version against it."""
-    tag = request.param
-    repo = tmp_path / f"legacy-{tag}"
+    repo = tmp_path / "legacy-kb"
     repo.mkdir()
-    kb = _materialize_kb_at_tag(tag, repo, tmp_path)
+    kb = _copy_legacy_kb(repo)
 
     (kb / "config.yaml").write_text(
         f'hub: "{bare_hub.as_posix()}"\nrepo_id: "legacy"\n', encoding="utf-8"
     )
     run_git(repo, "init", "-b", "main")
     run_git(repo, "add", "-A")
-    run_git(repo, "commit", "-m", f"legacy kb from {tag}")
+    run_git(repo, "commit", "-m", "legacy kb")
 
-    return {"tag": tag, "repo": repo, "kb": kb, "hub": bare_hub}
+    return {"tag": "legacy-format", "repo": repo, "kb": kb, "hub": bare_hub}
 
 
-# ---- Golden baseline (Task 9): one fixed, already-published v0.9.0 baseline ----
+# ---- Golden baseline: one fixed, already-published synthetic store ----
 
 
 @pytest.fixture
 def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
-    """A v0.9.0 KB (taken from git history) published to the hub — the frozen
-    baseline for every golden. Does not use legacy_kb because that one is
-    parametrized over 3 tags; goldens need exactly ONE fixed baseline."""
+    """The frozen synthetic KB published to the hub — baseline for every golden."""
     repo = tmp_path / "golden-repo"
     repo.mkdir()
-    kb = _materialize_kb_at_tag("v0.9.0", repo, tmp_path)  # Task 8
+    kb = _copy_legacy_kb(repo)
 
     (kb / "config.yaml").write_text(
         f'hub: "{bare_hub.as_posix()}"\nrepo_id: "golden"\n', encoding="utf-8"
@@ -471,10 +455,9 @@ def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
 
 @pytest.fixture
 def published_kb_mcp_params(artifact: Artifact, published_kb: dict):
-    """StdioServerParameters bound to published_kb (Task 9's frozen v0.9.0
-    baseline) instead of published_repo — same shape as mcp_stdio_params
-    (Task 6), built via the shared _mcp_stdio_params helper so the two
-    fixtures can't silently drift apart."""
+    """StdioServerParameters bound to published_kb instead of published_repo —
+    same shape as mcp_stdio_params, built via the shared _mcp_stdio_params
+    helper so the two fixtures can't silently drift apart."""
     return _mcp_stdio_params(
         artifact, published_kb["kb"], published_kb["hub"], published_kb["repo"]
     )

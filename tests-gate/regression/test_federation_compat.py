@@ -62,7 +62,7 @@ def test_new_binary_queries_a_v090_federation(tmp_path, run_git, kb_run):
     (repo / ".kb").mkdir(parents=True)
     (repo / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
 
-    proc = kb_run("query", "airspace", "--hub", str(hub),
+    proc = kb_run("query", "leave", "--hub", str(hub),
                   "--kb-dir", str(repo / ".kb"), cwd=repo)
 
     assert "No matching section found." not in proc.stdout, (

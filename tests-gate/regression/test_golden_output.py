@@ -1,4 +1,4 @@
-"""Freeze the OUTPUT against a fixed KB (v0.9.0 from git history).
+"""Freeze the OUTPUT against a fixed synthetic KB.
 
 WHAT RED MEANS: behavior changed. Usually because a dependency or the ranking
 pipeline changed (the hybrid FTS5+RRF rework is the classic case). Investigate
@@ -112,47 +112,44 @@ async def _call_mcp(params, tool: str, args: dict) -> str:
 
 def test_golden_kb_search(published_kb_mcp_params):
     out = asyncio.run(
-        _call_mcp(published_kb_mcp_params, "kb_search", {"query": "airspace"})
+        _call_mcp(published_kb_mcp_params, "kb_search", {"query": "leave"})
     )
 
-    assert_golden("mcp_outputs/kb_search_airspace.txt", out)
+    assert_golden("mcp_outputs/kb_search_leave.txt", out)
 
 
 def test_golden_kb_search_restrictive(published_kb_mcp_params):
     out = asyncio.run(
         _call_mcp(
-            published_kb_mcp_params, "kb_search", {"query": "restrictive airspace"}
+            published_kb_mcp_params, "kb_search", {"query": "parental leave"}
         )
     )
 
-    assert_golden("mcp_outputs/kb_search_restrictive.txt", out)
+    assert_golden("mcp_outputs/kb_search_parental.txt", out)
 
 
 def test_golden_kb_get_section(published_kb_mcp_params):
     """The real kb_get_section — no BM25 score in its output, so compare EXACTLY
-    (assert_golden_exact, no normalize()). §5.129 (Restrictive Airspace
-    Designation) is a section that genuinely exists in the frozen v0.9.0 KB —
-    confirmed via the kb_search goldens above and via git show directly against
-    v0.9.0:.kb/arinc-424/ch5-navigation-data-field-definitions{,.raw}.md. Both
-    l2 (condensed) and l3 (verbatim, copyrighted) are tested, to prove the L2/L3
-    split still works end to end all the way out to the MCP surface."""
+    (assert_golden_exact, no normalize()). §4.12 (Parental leave) exists in the
+    frozen synthetic KB. Both l2 (condensed) and l3 (full) are tested, to prove
+    the L2/L3 split still works end to end all the way out to the MCP surface."""
     for level, golden_name in (
-        ("l2", "mcp_outputs/kb_get_section_5129_l2.txt"),
-        ("l3", "mcp_outputs/kb_get_section_5129_l3.txt"),
+        ("l2", "mcp_outputs/kb_get_section_412_l2.txt"),
+        ("l3", "mcp_outputs/kb_get_section_412_l3.txt"),
     ):
         out = asyncio.run(
             _call_mcp(
                 published_kb_mcp_params,
                 "kb_get_section",
-                {"doc": "arinc-424", "section": "5.129", "level": level},
+                {"doc": "hr-handbook", "section": "4.12", "level": level},
             )
         )
         assert_golden_exact(golden_name, out)
 
 
 def test_golden_cli_query(published_kb, kb_run):
-    out = kb_run("query", "airspace", "--hub", str(published_kb["hub"]),
+    out = kb_run("query", "leave", "--hub", str(published_kb["hub"]),
                  "--kb-dir", str(published_kb["kb"]),
                  cwd=published_kb["repo"]).stdout
 
-    assert_golden("cli_outputs/query_airspace.txt", out)
+    assert_golden("cli_outputs/query_leave.txt", out)

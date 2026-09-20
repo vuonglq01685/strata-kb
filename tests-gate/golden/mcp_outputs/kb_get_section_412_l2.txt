@@ -1,0 +1,11 @@
+--- [golden:hr-handbook §4.12 (2026 edition)] ~128tk
+## 4.12 Parental leave
+
+An employee becomes eligible for paid parental leave after 12 months of continuous service. Entitlement is calculated per the table below. Leave may be one block or two blocks of at least two weeks, both within 12 months of birth or placement.
+
+| Service       | Paid weeks | Unpaid weeks |
+|---------------|------------|--------------|
+| 12–24 months  | 8          | 4            |
+| 24+ months    | 14         | 4            |
+
+Partners who both work at Acme may take the unpaid weeks concurrently. Paid weeks cannot be transferred.

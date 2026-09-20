@@ -1,0 +1,22 @@
+id: travel-policy
+title: Acme Travel Policy
+revision: 2026 edition
+ingested: '2026-07-13'
+source_sha256: ''
+sections:
+- id: '2.1'
+  title: Expense classes
+  summary: Class A/B/C expense rules and Class X pre-approval.
+  status: summarized
+  file: ch2-expenses
+  tokens:
+    l2: 47
+    l3: 180
+- id: '2.2'
+  title: Booking window
+  summary: Advance-booking windows for domestic and international trips.
+  status: summarized
+  file: ch2-expenses
+  tokens:
+    l2: 46
+    l3: 169

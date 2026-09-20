@@ -2,8 +2,10 @@
 # markdown is the main deliverable, so it must be un-ignored here
 !*.md
 
-# Copyrighted source documents (ARINC, ICAO) — ABSOLUTELY never commit
+# Copyrighted source documents and local stores — ABSOLUTELY never commit
 sources/
+.kb/
+.env
 
 # Intermediate pipeline artifacts (Docling JSON, summarize jobs)
 .kb-work/

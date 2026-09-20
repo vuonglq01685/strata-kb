@@ -167,7 +167,7 @@ def test_new_binary_queries_a_legacy_kb(legacy_kb, kb_run):
            "--repo-id", "legacy", "--kb-dir", str(legacy_kb["kb"]),
            cwd=legacy_kb["repo"])
 
-    proc = kb_run("query", "airspace", "--hub", str(legacy_kb["hub"]),
+    proc = kb_run("query", "leave", "--hub", str(legacy_kb["hub"]),
                   "--kb-dir", str(legacy_kb["kb"]), cwd=legacy_kb["repo"])
 
     assert "No matching section found." not in proc.stdout, (

@@ -1,0 +1,13 @@
+--- [golden:hr-handbook §4.12 (2026 edition)] ~293tk
+## 4.12 Parental leave
+
+An employee becomes eligible for paid parental leave after 12 months of continuous service. Entitlement is calculated per the table below. The 12-month clock restarts after any break in service longer than 30 calendar days. Leave may be taken in one block or split into at most two blocks, each of at least two weeks, provided both blocks fall within 12 months of the child's birth or placement.
+
+| Service       | Paid weeks | Unpaid weeks |
+|---------------|------------|--------------|
+| 12–24 months  | 8          | 4            |
+| 24+ months    | 14         | 4            |
+
+Partners who are Acme employees may take the same unpaid weeks concurrently. Paid weeks cannot be transferred between partners. Payroll loads the paid portion in the cycle after HR confirms the dates.
+
+Notice is eight weeks before the intended start, with a birth certificate or placement letter attached. When the birth is earlier than planned, notice is as soon as practicable and the eight-week rule is waived. Keeping-in-touch days, up to ten, may be worked during the leave without ending it; they are paid at the ordinary rate and do not extend the leave. Returning employees have the right to the same role or a role of equivalent grade and pay. A request to return part-time for three months is considered in good faith and refused only with a written operational reason.
