@@ -939,6 +939,21 @@ def test_section_page_no_siblings_hides_pager(demo_doc_hub):
     assert '<div class="pager">' not in main
 
 
+def test_section_page_pager_appears_above_and_below_article(demo_doc_hub):
+    _add_section(
+        demo_doc_hub, "demo-kb", "demo-doc",
+        models.SectionEntry(id="1.2", title="Next Section", status="pending", file="ch1"),
+    )
+    main = _main(
+        _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+            "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+        )
+    )
+    assert main.count('<div class="pager">') == 2
+    assert main.index('<div class="pager">') < main.index('class="level-tabs"')
+    assert main.rindex('<div class="pager">') > main.index('class="reader-body"')
+
+
 def test_section_page_rail_shows_status_and_token_counts(demo_doc_hub):
     # Give L2/L3 distinct, non-zero token counts (make_fed_entry defaults
     # both to 0) so the assertions prove the rail is bound to the real

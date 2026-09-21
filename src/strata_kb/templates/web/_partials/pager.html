@@ -1,0 +1,14 @@
+{% macro pager(doc_id, repo, prev, next) %}
+{% if prev or next %}
+<div class="pager">
+  {% if prev %}
+  <a href="/ui/docs/{{ doc_id | urlencode }}/{{ prev.id | urlencode }}?repo={{ repo | urlencode }}">
+    <span class="dir">← previous</span><span class="label">§{{ prev.id }} {{ prev.title }}</span></a>
+  {% else %}<span></span>{% endif %}
+  {% if next %}
+  <a class="next" href="/ui/docs/{{ doc_id | urlencode }}/{{ next.id | urlencode }}?repo={{ repo | urlencode }}">
+    <span class="dir">next →</span><span class="label">§{{ next.id }} {{ next.title }}</span></a>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
