@@ -439,7 +439,7 @@ def _picture_md(
         if img is None:
             return None
         try:
-            caption = item.caption_text(doc) or ""
+            caption = _clean(item.caption_text(doc) or "")
         except Exception:  # noqa: BLE001 -- caption best-effort, image itself is still saved
             caption = ""
         page, box = _bottomleft_box(item, doc)

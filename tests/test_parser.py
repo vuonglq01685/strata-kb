@@ -843,3 +843,22 @@ def test_bottomleft_box_normalizes_inverted_topleft_provenance():
     )
     doc = _StubDoc(pages={1: _StubPage()})  # height 792
     assert parser._bottomleft_box(item, doc) == (1, (10, 692, 200, 672))
+
+
+def test_doc_to_items_whitespace_caption_falls_through_to_ocr(tmp_path, monkeypatch):
+    # docling can hand back a caption that is only whitespace; it must count
+    # as "no caption" so the OCR rung still runs instead of yielding an empty alt.
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    monkeypatch.setattr(parser.images, "ocr_image", lambda img: "OCR FOUND THIS")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                caption="   ",
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert items[0].text.startswith("![OCR FOUND THIS](assets/")
