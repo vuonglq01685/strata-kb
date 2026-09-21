@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from strata_kb.ingest import pdftext, tableimages
+from strata_kb.ingest import images, pdftext, tableimages
 from strata_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
@@ -187,11 +187,23 @@ def doc_to_items(
     # traverse_pictures: docling parents figure labels (axis titles, siting
     # distances, legend text) under their picture node and its default walk
     # skips those children entirely -- 649 text items in ICAO Doc 8896 alone.
+    # Folded into the picture's own alt text below rather than emitted as items.
     entries = [
         (item, _label_value(item))
         # some docling versions omit the kwarg; fall back rather than lose the walk
         for item, _level in _iterate(doc)
     ]
+    nested_ids: set[int] = set()
+    child_text: dict[int, str] = {}
+    if assets_dir is not None:
+        for item, label in entries:
+            if label != "picture":
+                continue
+            kids = [_resolve(c, doc) for c in (getattr(item, "children", None) or [])]
+            nested_ids.update(id(k) for k in kids)
+            child_text[id(item)] = " ".join(
+                t for t in (_clean(getattr(k, "text", "") or "") for k in kids) if t
+            )
     tables = [(item, _table_cells(item, doc)) for item, label in entries if label == "table"]
     placements, consumed, placed_boxes = _place_glyphs(entries, tables, doc, assets_dir)
     _recover_missed_glyphs(
@@ -203,6 +215,8 @@ def doc_to_items(
         page, box = _prov_box(item, doc)
         bbox = (box.left, box.top, box.right, box.bottom) if box else None
         if label in _SKIP_LABELS:
+            continue
+        if id(item) in nested_ids:
             continue
         if label in _HEADING_LABELS:
             heading_level = getattr(item, "level", 1) if label == "section_header" else 1
@@ -217,7 +231,7 @@ def doc_to_items(
         elif label == "picture":
             if assets_dir is None or id(item) in consumed:
                 continue
-            md = _picture_md(item, doc, assets_dir)
+            md = _picture_md(item, doc, assets_dir, pdf_path, child_text.get(id(item), ""))
             if md:
                 items.append(DocItem("image", md, page=page, bbox=bbox))
         elif label == "code":
@@ -240,6 +254,12 @@ def _iterate(doc):
         logger.warning("docling iterate_items has no traverse_pictures — "
                        "text drawn inside figures will be missing")
         return list(doc.iterate_items())
+
+
+def _resolve(ref, doc):
+    """docling children are RefItems; the stubs in tests hold the node itself."""
+    resolve = getattr(ref, "resolve", None)
+    return resolve(doc) if callable(resolve) else ref
 
 
 _Placements = dict[int, dict[tuple[int, int], str]]
@@ -338,8 +358,6 @@ def _render_page(pdf_path: Path, page: int):
 
 def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str | None:
     """Crop one cell out of the page raster; None when it holds no drawing."""
-    from strata_kb.ingest import images
-
     try:
         crop = raster.crop(
             (
@@ -358,11 +376,17 @@ def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str |
         return None
 
 
-def _picture_md(item, doc, assets_dir: Path) -> str | None:
+def _picture_md(
+    item, doc, assets_dir: Path, pdf_path: Path | None = None, child_text: str = ""
+) -> str | None:
     """One picture → saved asset + markdown ref, or None on any failure.
-    A lost image must never abort the ingest."""
-    from strata_kb.ingest import images
+    A lost image must never abort the ingest.
 
+    Alt text, first source that yields anything: the document's own
+    caption; the PDF text layer under the picture (correct diacritics and
+    order); the text cells docling nested under the picture (tabs and split
+    glyphs, but still searchable); OCR of the crop.
+    """
     try:
         img = item.get_image(doc)
         if img is None:
@@ -371,8 +395,14 @@ def _picture_md(item, doc, assets_dir: Path) -> str | None:
             caption = item.caption_text(doc) or ""
         except Exception:  # noqa: BLE001 -- caption best-effort, image itself is still saved
             caption = ""
-        ocr_text = "" if caption.strip() else images.ocr_image(img)
-        desc = images.resolve_description(caption, ocr_text)
+        desc = images.resolve_description(caption, "")
+        if not desc:
+            page, box = _bottomleft_box(item, doc)
+            desc = _clean(pdftext.region_text(pdf_path, page, box, mono=False) or "")
+        if not desc:
+            desc = child_text
+        if not desc:
+            desc = images.resolve_description("", images.ocr_image(img))
         filename = images.save_asset(img, assets_dir)
         return images.image_ref(desc, filename)
     except Exception as exc:  # noqa: BLE001 — skip the image, keep the text

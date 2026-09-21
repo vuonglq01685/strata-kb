@@ -346,17 +346,73 @@ def test_doc_to_items_clears_stale_assets(tmp_path):
     assert not (tmp_path / "deadbeef.png").exists()
 
 
-def test_doc_to_items_extracts_text_drawn_inside_a_picture():
-    # Docling nests figure labels (axis titles, siting distances) under the
-    # picture node; its default walk skips them, silently dropping the text.
-    nested = _StubItem(_StubLabel("text"), text="10 m minimum distance from centre line.")
+def test_doc_to_items_folds_text_drawn_inside_a_picture_into_alt(tmp_path, monkeypatch):
+    # Docling nests figure labels (axis titles, box-drawing diagrams) under
+    # the picture node. They must stay searchable (L3 alt text) but never
+    # become loose paragraphs beside the image that already shows them.
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    monkeypatch.setattr(parser.images, "ocr_image", lambda img: "")
+    nested = [
+        _StubItem(_StubLabel("text"), text="│\t\tViewer\t\t│"),
+        _StubItem(_StubLabel("code"), text="10 m minimum"),
+    ]
     doc = _StubDoc(
-        items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=[nested])]
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=9)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                children=nested,
+            ),
+            _StubItem(_StubLabel("text"), text="After the figure."),
+        ]
     )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [i.kind for i in items] == ["image", "text"]
+    assert items[0].text.startswith("![│ Viewer │ 10 m minimum](assets/")
 
-    items = parser.doc_to_items(doc)
 
-    assert [i.text for i in items] == ["10 m minimum distance from centre line."]
+def test_doc_to_items_picture_alt_prefers_pdf_text_layer(tmp_path, monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: "Nền tảng\nstreaming VOD")
+    nested = [_StubItem(_StubLabel("text"), text="N"), _StubItem(_StubLabel("text"), text="ề")]
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1, bbox=_StubBBox(l=44, t=487, r=549, b=340))],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                children=nested,
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path, pdf_path=tmp_path / "d.pdf")
+    assert len(items) == 1
+    assert items[0].text.startswith("![Nền tảng streaming VOD](assets/")
+
+
+def test_doc_to_items_picture_caption_still_wins(tmp_path, monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: "text layer")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                caption="Figure 2. Context",
+                children=[_StubItem(_StubLabel("text"), text="ignored")],
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path, pdf_path=tmp_path / "d.pdf")
+    assert items[0].text.startswith("![Figure 2. Context](assets/")
+
+
+def test_doc_to_items_without_assets_dir_keeps_picture_text_as_paragraphs():
+    # No assets dir means no image is written, so the nested text is the
+    # only trace of the figure: keep the old loose-paragraph behaviour.
+    nested = _StubItem(_StubLabel("text"), text="10 m minimum distance.")
+    doc = _StubDoc(items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=[nested])])
+    assert [i.text for i in parser.doc_to_items(doc)] == ["10 m minimum distance."]
 
 
 def test_doc_to_items_keeps_footnotes():
