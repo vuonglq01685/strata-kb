@@ -421,10 +421,18 @@ def _picture_md(
     """One picture → saved asset + markdown ref, or None on any failure.
     A lost image must never abort the ingest.
 
-    Alt text, first source that yields anything: the document's own
-    caption; the PDF text layer under the picture (correct diacritics and
-    order); the text cells docling nested under the picture (tabs and split
-    glyphs, but still searchable); OCR of the crop.
+    Alt text: the caption, when there is one, always leads -- but a caption
+    must not make the text drawn INSIDE the picture (axis titles, siting
+    distances) disappear, since nothing else in L3 carries it and
+    sectioner.uncovered() cannot see the loss. So that "inside" text is
+    folded in right after the caption instead of being discarded.
+
+    "Inside" text, first source that yields anything: the PDF text layer
+    under the picture (correct diacritics and order, floored by
+    MIN_OCR_CHARS so a stray one-character figure number cannot win); else
+    the text cells docling nested under the picture (tabs and split
+    glyphs, but still searchable). When there is neither a caption nor
+    inside text, fall back to OCR of the crop.
     """
     try:
         img = item.get_image(doc)
@@ -434,12 +442,10 @@ def _picture_md(
             caption = item.caption_text(doc) or ""
         except Exception:  # noqa: BLE001 -- caption best-effort, image itself is still saved
             caption = ""
-        desc = images.resolve_description(caption, "")
-        if not desc:
-            page, box = _bottomleft_box(item, doc)
-            desc = _clean(pdftext.region_text(pdf_path, page, box, mono=False) or "")
-        if not desc:
-            desc = child_text
+        page, box = _bottomleft_box(item, doc)
+        text_layer = _clean(pdftext.region_text(pdf_path, page, box, mono=False) or "")
+        inside = images.resolve_description("", text_layer) or child_text
+        desc = f"{caption} {inside}".strip() if inside else caption
         if not desc:
             desc = images.resolve_description("", images.ocr_image(img))
         filename = images.save_asset(img, assets_dir)

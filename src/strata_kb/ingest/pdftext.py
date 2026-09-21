@@ -88,7 +88,6 @@ def _mono_grid(textpage, box: Box) -> str:
     out: list[str] = []
     for _cy, row in rows:
         line: list[str] = []
-        col = -1
         prev_left = None
         for _cy2, l, _w, _h, ch in sorted(row, key=lambda c: c[1]):  # noqa: E741
             if prev_left is None:

@@ -99,10 +99,36 @@ def slice_subsection(md: str, section_id: str) -> str | None:
     return "\n".join(lines[start:]).strip()
 
 
+def _unfenced_lines(md: str):
+    """Yield each line of `md` that lies outside a ``` / ~~~ fence (opened
+    and closed by a run of 3+ of the same fence char). Fence marker lines
+    themselves are never yielded, and an unclosed fence swallows every
+    line after it -- shared by `_iter_headings(fence_aware=True)` and
+    `extract_tables()` so a fenced code block embedding a heading-shaped
+    or table-shaped line (a `.raw.md` quoting a source file) is never
+    mistaken for real document structure (Ruling R16)."""
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in md.splitlines():
+        stripped = line.strip()
+        m = _FENCE_RE.match(stripped)
+        if m:
+            marker = m.group(1)
+            if not in_fence:
+                in_fence, fence_char, fence_len = True, marker[0], len(marker)
+            elif marker[0] == fence_char and len(marker) >= fence_len:
+                in_fence = False
+            continue
+        if in_fence:
+            continue
+        yield line
+
+
 def extract_tables(md: str) -> list[str]:
     tables: list[str] = []
     current: list[str] = []
-    for line in md.splitlines() + [""]:
+    for line in list(_unfenced_lines(md)) + [""]:
         if line.lstrip().startswith("|"):
             current.append(line.strip())
         else:
@@ -115,27 +141,12 @@ def extract_tables(md: str) -> list[str]:
 def _iter_headings(md: str, *, fence_aware: bool):
     """Yield each real `## <id> …` heading match, in file order.
 
-    fence_aware=True tracks ``` / ~~~ fences (opened and closed by a run of
-    3+ of the same fence char) and never yields a match for a '## ' line
-    that falls inside one -- a `.raw.md` embedding a source file whose own
-    text happens to contain a Markdown heading line is not a document
-    heading (Ruling R16)."""
-    in_fence = False
-    fence_char = ""
-    fence_len = 0
-    for line in md.splitlines():
-        if fence_aware:
-            stripped = line.strip()
-            m = _FENCE_RE.match(stripped)
-            if m:
-                marker = m.group(1)
-                if not in_fence:
-                    in_fence, fence_char, fence_len = True, marker[0], len(marker)
-                elif marker[0] == fence_char and len(marker) >= fence_len:
-                    in_fence = False
-                continue
-            if in_fence:
-                continue
+    fence_aware=True tracks fences via `_unfenced_lines()` and never yields
+    a match for a '## ' line that falls inside one -- a `.raw.md` embedding
+    a source file whose own text happens to contain a Markdown heading line
+    is not a document heading (Ruling R16)."""
+    lines = _unfenced_lines(md) if fence_aware else md.splitlines()
+    for line in lines:
         m = HEADING_RE.match(line)
         if m:
             yield m

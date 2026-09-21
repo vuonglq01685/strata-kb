@@ -263,7 +263,8 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
   border: 1px solid var(--line); font: 600 10px/1.5 var(--mono); letter-spacing: .12em;
   text-transform: uppercase; color: var(--muted); }
 .reader-body td { padding: 8px 12px; border: 1px solid var(--line-soft); }
-.reader-body img { max-width: 100%; margin: 12px 0; border: 1px solid var(--line-soft);
+.reader-body img { max-width: 100%; }
+.reader-body > img { margin: 12px 0; border: 1px solid var(--line-soft);
   border-radius: 4px; }
 .reader-body h2 { font-size: 26px; margin: 32px 0 12px; }
 .reader-body h3 { font-size: 20px; margin: 22px 0 8px; }

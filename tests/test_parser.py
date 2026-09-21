@@ -404,7 +404,58 @@ def test_doc_to_items_picture_caption_still_wins(tmp_path, monkeypatch):
         ]
     )
     items = parser.doc_to_items(doc, assets_dir=tmp_path, pdf_path=tmp_path / "d.pdf")
-    assert items[0].text.startswith("![Figure 2. Context](assets/")
+    # Caption still leads the alt text, but the text drawn inside the
+    # picture (from the PDF text layer here) is folded in after it rather
+    # than discarded -- so the assertion checks the caption leads, not an
+    # exact match.
+    assert items[0].text.startswith("![Figure 2. Context ")
+
+
+def test_doc_to_items_captioned_picture_keeps_nested_text_in_alt(tmp_path):
+    # A caption alone used to win the whole alt ladder, silently discarding
+    # the text docling nested under the picture (axis labels, siting
+    # distances). L3 must not lose that text: it gets folded in after the
+    # caption instead of vanishing.
+    nested = [
+        _StubItem(_StubLabel("text"), text="10 m minimum distance from centre line."),
+        _StubItem(_StubLabel("text"), text="Threshold displaced 300 m."),
+    ]
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                caption="Figure 5-3. Runway markings",
+                children=nested,
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [i.kind for i in items] == ["image"]
+    assert items[0].text.startswith(
+        "![Figure 5-3. Runway markings 10 m minimum distance from centre line. "
+        "Threshold displaced 300 m."
+    )
+
+
+def test_doc_to_items_text_layer_alt_respects_min_chars(tmp_path, monkeypatch):
+    # A stray one-character figure number in the PDF text layer must not
+    # win over the real folded child text -- MIN_OCR_CHARS floors it.
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: "7")
+    nested = [_StubItem(_StubLabel("text"), text="Real label")]
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                children=nested,
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path, pdf_path=tmp_path / "d.pdf")
+    assert items[0].text.startswith("![Real label")
 
 
 def test_doc_to_items_picture_without_image_emits_folded_text(tmp_path):

@@ -101,7 +101,8 @@ def render(md: str, terms: set[str] | None = None) -> str:
                 code.append(lines[i])
                 i += 1
             i += 1  # closing fence, or one past the end
-            blocks.append(f"<pre><code>{html.escape(chr(10).join(code))}</code></pre>")
+            body = "\n".join(code)
+            blocks.append(f"<pre><code>{html.escape(body)}</code></pre>")
             continue
         if line.lstrip().startswith("|"):
             flush_para()
