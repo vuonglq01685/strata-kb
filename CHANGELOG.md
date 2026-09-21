@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.1.0 — 2026-09-21
 
 - Ingest keeps code blocks (fenced, line breaks and Vietnamese diacritics read back from the PDF text layer), bullet lists, and single-spaced words in L3; text drawn inside a figure becomes the image's alt text instead of loose paragraphs. Re-ingest to pick this up.
 - Hub reader renders fenced code and bullet lists, styles headings/figures/code like a markdown preview, and shows the previous/next pager above the article as well as below.
