@@ -522,3 +522,81 @@ def test_doc_to_items_carries_topleft_bbox():
     assert items[1].bbox == (10, 100, 200, 120)
     assert items[2].bbox == (10, 492, 500, 592)
     assert items[3].bbox is None
+
+
+def test_doc_to_items_collapses_tabs_between_words():
+    doc = _StubDoc(items=[_StubItem(_StubLabel("text"), text="Hệ\tthống\tkhông\tcó")])
+    items = parser.doc_to_items(doc)
+    assert items[0].text == "Hệ thống không có"
+
+
+def test_doc_to_items_code_uses_pdf_text_layer(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_region_text(pdf_path, page_no, box, mono):
+        seen.update(pdf_path=pdf_path, page_no=page_no, box=box, mono=mono)
+        return "line one\n  line two"
+
+    monkeypatch.setattr(parser.pdftext, "region_text", fake_region_text)
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("code"),
+                text="line\tone line\ttwo",
+                prov=[_StubProv(page_no=3, bbox=_StubBBox(l=10, t=100, r=200, b=50))],
+            )
+        ],
+        pages={3: _StubPage()},
+    )
+    items = parser.doc_to_items(doc, pdf_path=tmp_path / "doc.pdf")
+    assert [i.kind for i in items] == ["code"]
+    assert items[0].text == "```\nline one\n  line two\n```"
+    assert items[0].page == 3
+    assert seen == {
+        "pdf_path": tmp_path / "doc.pdf", "page_no": 3, "box": (10, 100, 200, 50), "mono": True,
+    }
+
+
+def test_doc_to_items_code_falls_back_to_docling_text(monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    doc = _StubDoc(items=[_StubItem(_StubLabel("code"), text="SELECT\t1;\tCOMMIT;")])
+    items = parser.doc_to_items(doc)
+    assert items[0].kind == "code"
+    assert items[0].text == "```\nSELECT 1; COMMIT;\n```"
+
+
+def test_doc_to_items_empty_code_is_dropped(monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    doc = _StubDoc(items=[_StubItem(_StubLabel("code"), text="  \t ")])
+    assert parser.doc_to_items(doc) == []
+
+
+def test_doc_to_items_list_item_becomes_bullet():
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("list_item"), text="•\tXác\tthực\tuser"),
+            _StubItem(_StubLabel("list_item"), text=" Kiểm tra asset"),
+            _StubItem(_StubLabel("list_item"), text="- đã có gạch"),
+        ]
+    )
+    items = parser.doc_to_items(doc)
+    assert [i.kind for i in items] == ["list", "list", "list"]
+    assert [i.text for i in items] == ["- Xác thực user", "- Kiểm tra asset", "- đã có gạch"]
+
+
+def test_bottomleft_box_flips_topleft_provenance():
+    item = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=100, r=200, b=120, coord_origin="TOPLEFT"))],
+    )
+    doc = _StubDoc(pages={1: _StubPage()})  # height 792
+    assert parser._bottomleft_box(item, doc) == (1, (10, 692, 200, 672))
+
+
+def test_bottomleft_box_passes_bottomleft_through():
+    item = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=2, bbox=_StubBBox(l=1, t=9, r=5, b=3))],
+    )
+    assert parser._bottomleft_box(item, _StubDoc()) == (2, (1, 9, 5, 3))
+    assert parser._bottomleft_box(_StubItem(_StubLabel("text")), _StubDoc()) == (None, None)

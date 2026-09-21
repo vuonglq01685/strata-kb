@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from strata_kb.ingest import tableimages
+from strata_kb.ingest import pdftext, tableimages
 from strata_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
@@ -68,6 +68,51 @@ def _prov_box(item, doc) -> tuple[int | None, tableimages.Box | None]:
         return None, None
     page = getattr(prov[0], "page_no", None)
     return page, _topleft_box(getattr(prov[0], "bbox", None), page, doc)
+
+
+def _clean(text: str) -> str:
+    """docling separates words with tabs; L3 wants single spaces."""
+    return " ".join(text.split())
+
+
+def _bottomleft_box(item, doc) -> tuple[int | None, pdftext.Box | None]:
+    """(page, bbox) in the BOTTOMLEFT frame pypdfium2 uses — docling's own
+    PDF provenance frame, so normally a pass-through."""
+    prov = getattr(item, "prov", None)
+    if not prov:
+        return None, None
+    page = getattr(prov[0], "page_no", None)
+    bbox = getattr(prov[0], "bbox", None)
+    if bbox is None:
+        return page, None
+    origin = getattr(bbox, "coord_origin", "")
+    origin = str(getattr(origin, "value", origin)).upper()
+    if "TOP" in origin:
+        height = _page_height(doc, page)
+        if height is None:
+            return page, None
+        return page, (bbox.l, height - bbox.t, bbox.r, height - bbox.b)
+    return page, (bbox.l, bbox.t, bbox.r, bbox.b)
+
+
+_BULLET_CHARS = "-•*·"
+
+
+def _code_item(item, doc, pdf_path: Path | None, page, bbox) -> DocItem | None:
+    # ponytail: a code line that starts with "## " would end the section in
+    # mdutils.slice_section; none in the corpus. Indent fence bodies if it appears.
+    raw_page, raw_box = _bottomleft_box(item, doc)
+    body = pdftext.region_text(pdf_path, raw_page, raw_box, mono=True) or _clean(item.text)
+    if not body.strip():
+        return None
+    return DocItem("code", f"```\n{body}\n```", page=page, bbox=bbox)
+
+
+def _list_item(item, page, bbox) -> DocItem | None:
+    text = _clean(item.text).lstrip(_BULLET_CHARS).strip()
+    if not text:
+        return None
+    return DocItem("list", f"- {text}", page=page, bbox=bbox)
 
 
 def _table_cells(item, doc) -> list[tableimages.Cell]:
@@ -175,8 +220,16 @@ def doc_to_items(
             md = _picture_md(item, doc, assets_dir)
             if md:
                 items.append(DocItem("image", md, page=page, bbox=bbox))
+        elif label == "code":
+            code = _code_item(item, doc, pdf_path, page, bbox)
+            if code:
+                items.append(code)
+        elif label == "list_item":
+            bullet = _list_item(item, page, bbox)
+            if bullet:
+                items.append(bullet)
         elif getattr(item, "text", "") and item.text.strip():
-            items.append(DocItem("text", item.text, page=page, bbox=bbox))
+            items.append(DocItem("text", _clean(item.text), page=page, bbox=bbox))
     return items
 
 

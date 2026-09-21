@@ -12,7 +12,7 @@ logger = logging.getLogger("strata_kb.ingest.sectioner")
 
 @dataclass
 class DocItem:
-    kind: str  # "heading" | "text" | "table" | "image"
+    kind: str  # "heading" | "text" | "table" | "image" | "code" | "list"
     text: str
     level: int = 0
     page: int | None = None
