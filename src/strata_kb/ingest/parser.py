@@ -24,6 +24,10 @@ _HEADING_LABELS = {"section_header", "title"}
 # carrying normative applicability dates, checkbox captions) and every label
 # docling adds later. Only the running page furniture is genuinely not content.
 _SKIP_LABELS = {"page_header", "page_footer"}
+# Labels a picture's children must NOT be folded into its alt text: they
+# keep their own normal emission path (nested picture/table) or are page
+# furniture that is emitted nowhere at all.
+_NON_FOLDABLE = {"picture", "table"} | _SKIP_LABELS
 
 
 def _label_value(item) -> str:
@@ -87,29 +91,38 @@ def _bottomleft_box(item, doc) -> tuple[int | None, pdftext.Box | None]:
         return page, None
     origin = getattr(bbox, "coord_origin", "")
     origin = str(getattr(origin, "value", origin)).upper()
-    if "TOP" in origin:
+    if origin.startswith("TOP"):
         height = _page_height(doc, page)
         if height is None:
             return page, None
-        return page, (bbox.l, height - bbox.t, bbox.r, height - bbox.b)
+        top, bottom = height - bbox.t, height - bbox.b
+        if top < bottom:
+            top, bottom = bottom, top
+        return page, (bbox.l, top, bbox.r, bottom)
     return page, (bbox.l, bbox.t, bbox.r, bbox.b)
 
 
-_BULLET_CHARS = "-•*·"
+# Exactly one leading marker + its trailing whitespace, or a bare marker with
+# nothing after it. lstrip(chars) would strip a whole *class* of chars, so
+# "-40 °C" (a negative number, not a bullet) or "- - nested" (real nesting)
+# would lose content past the first marker.
+_BULLET_RE = re.compile(r"^[-•*·](?:\s+|$)")
 
 
 def _code_item(item, doc, pdf_path: Path | None, page, bbox) -> DocItem | None:
     # ponytail: a code line that starts with "## " would end the section in
     # mdutils.slice_section; none in the corpus. Indent fence bodies if it appears.
     raw_page, raw_box = _bottomleft_box(item, doc)
-    body = pdftext.region_text(pdf_path, raw_page, raw_box, mono=True) or _clean(item.text)
+    text = getattr(item, "text", "") or ""
+    body = pdftext.region_text(pdf_path, raw_page, raw_box, mono=True) or _clean(text)
     if not body.strip():
         return None
     return DocItem("code", f"```\n{body}\n```", page=page, bbox=bbox)
 
 
 def _list_item(item, page, bbox) -> DocItem | None:
-    text = _clean(item.text).lstrip(_BULLET_CHARS).strip()
+    text = getattr(item, "text", "") or ""
+    text = _BULLET_RE.sub("", _clean(text)).strip()
     if not text:
         return None
     return DocItem("list", f"- {text}", page=page, bbox=bbox)
@@ -199,10 +212,18 @@ def doc_to_items(
         for item, label in entries:
             if label != "picture":
                 continue
-            kids = [_resolve(c, doc) for c in (getattr(item, "children", None) or [])]
-            nested_ids.update(id(k) for k in kids)
+            kids = [
+                k
+                for k in (_resolve(c, doc) for c in (getattr(item, "children", None) or []))
+                if k is not None
+            ]
+            # Nested pictures/tables keep their own normal emission path;
+            # page furniture is neither emitted nor folded. Only text-bearing
+            # children get folded into the picture's alt text.
+            text_kids = [k for k in kids if _label_value(k) not in _NON_FOLDABLE]
+            nested_ids.update(id(k) for k in text_kids)
             child_text[id(item)] = " ".join(
-                t for t in (_clean(getattr(k, "text", "") or "") for k in kids) if t
+                t for t in (_clean(getattr(k, "text", "") or "") for k in text_kids) if t
             )
     tables = [(item, _table_cells(item, doc)) for item, label in entries if label == "table"]
     placements, consumed, placed_boxes = _place_glyphs(entries, tables, doc, assets_dir)
@@ -229,11 +250,19 @@ def doc_to_items(
                 md = tableimages.inject(md, placements.get(id(item), {}))
                 items.append(DocItem("table", md, page=page, bbox=bbox))
         elif label == "picture":
-            if assets_dir is None or id(item) in consumed:
+            if assets_dir is None:
                 continue
-            md = _picture_md(item, doc, assets_dir, pdf_path, child_text.get(id(item), ""))
+            folded = child_text.get(id(item), "")
+            md = None if id(item) in consumed else _picture_md(
+                item, doc, assets_dir, pdf_path, folded
+            )
             if md:
                 items.append(DocItem("image", md, page=page, bbox=bbox))
+            elif folded:
+                # No image came out of this picture (consumed into a table
+                # cell, or get_image failed/returned None) but its children
+                # were folded for the alt text -- that text must not vanish.
+                items.append(DocItem("text", folded, page=page, bbox=bbox))
         elif label == "code":
             code = _code_item(item, doc, pdf_path, page, bbox)
             if code:
@@ -257,9 +286,16 @@ def _iterate(doc):
 
 
 def _resolve(ref, doc):
-    """docling children are RefItems; the stubs in tests hold the node itself."""
+    """docling children are RefItems; the stubs in tests hold the node itself.
+    None on a bad ref -- a lost figure caption must never abort ingest."""
     resolve = getattr(ref, "resolve", None)
-    return resolve(doc) if callable(resolve) else ref
+    if not callable(resolve):
+        return ref
+    try:
+        return resolve(doc)
+    except Exception as exc:  # noqa: BLE001 -- see docstring
+        logger.warning("picture child ref skipped: %s", exc)
+        return None
 
 
 _Placements = dict[int, dict[tuple[int, int], str]]

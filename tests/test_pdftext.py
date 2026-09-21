@@ -4,6 +4,10 @@ import pytest
 
 from strata_kb.ingest import pdftext
 
+# Generated once with xhtml2pdf (`docs` extra) from a `<pre>` block using
+# /System/Library/Fonts/SFNSMono.ttf copied next to the HTML (xhtml2pdf only
+# reads fonts by relative path; Courier New and Andale Mono lack precomposed
+# Vietnamese glyphs).
 FIXTURE = Path(__file__).parent / "fixtures" / "mono-diagram.pdf"
 
 
@@ -52,3 +56,8 @@ def test_unreadable_pdf_returns_none_and_warns(tmp_path, caplog):
     with caplog.at_level("WARNING", logger="strata_kb.ingest.pdftext"):
         assert pdftext.region_text(bad, 1, (0, 10, 10, 0), mono=True) is None
     assert "pdf text for page 1 skipped" in caplog.text
+    assert len(caplog.records) == 1
+
+
+def test_page_no_below_one_returns_none():
+    assert pdftext.region_text(FIXTURE, 0, (0, 10, 10, 0), mono=True) is None

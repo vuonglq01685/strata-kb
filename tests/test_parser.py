@@ -407,6 +407,91 @@ def test_doc_to_items_picture_caption_still_wins(tmp_path, monkeypatch):
     assert items[0].text.startswith("![Figure 2. Context](assets/")
 
 
+def test_doc_to_items_picture_without_image_emits_folded_text(tmp_path):
+    # get_image() -> None (no picture saved) but children were folded: that
+    # text must not vanish, it becomes a plain text item instead.
+    nested = [_StubItem(_StubLabel("text"), text="10 m minimum")]
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=nested)
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [(i.kind, i.text) for i in items] == [("text", "10 m minimum")]
+
+
+def test_doc_to_items_picture_image_failure_emits_folded_text(tmp_path):
+    class _BrokenImageItem(_StubItem):
+        def get_image(self, doc):
+            raise ValueError("boom")
+
+    nested = [_StubItem(_StubLabel("text"), text="10 m minimum")]
+    doc = _StubDoc(
+        items=[
+            _BrokenImageItem(_StubLabel("picture"), prov=[_StubProv(page_no=1)], children=nested)
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [(i.kind, i.text) for i in items] == [("text", "10 m minimum")]
+
+
+def test_doc_to_items_nested_table_and_text_under_a_picture(tmp_path):
+    # Nested tables (and pictures) keep their normal emission path -- only
+    # text-bearing labels get folded into the picture's alt text.
+    nested_table = _StubItem(_StubLabel("table"), table_md="| A |\n|---|\n| 1 |")
+    nested_text = _StubItem(_StubLabel("text"), text="Note text")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (4, 4), (0, 0, 0)),
+                children=[nested_table, nested_text],
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [i.kind for i in items] == ["image", "table"]
+    assert "Note text" in items[0].text
+    assert "| A |" in items[1].text
+
+
+def test_doc_to_items_nested_page_footer_neither_folded_nor_emitted(tmp_path):
+    nested_footer = _StubItem(_StubLabel("page_footer"), text="Page 3 of 10")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (4, 4), (0, 0, 0)),
+                caption="Figure X",
+                children=[nested_footer],
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert len(items) == 1
+    assert "Page 3 of 10" not in items[0].text
+
+
+def test_doc_to_items_picture_child_resolve_failure_is_skipped(tmp_path):
+    class _BrokenRef:
+        def resolve(self, doc):
+            raise RuntimeError("boom")
+
+    good_child = _StubItem(_StubLabel("text"), text="kept text")
+    picture = _StubItem(
+        _StubLabel("picture"),
+        prov=[_StubProv(page_no=1)],
+        image=Image.new("RGB", (4, 4), (0, 0, 0)),
+        children=[_BrokenRef(), good_child],
+    )
+    doc = _StubDoc(items=[picture])
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert len(items) == 1
+    assert "kept text" in items[0].text
+
+
 def test_doc_to_items_without_assets_dir_keeps_picture_text_as_paragraphs():
     # No assets dir means no image is written, so the nested text is the
     # only trace of the figure: keep the old loose-paragraph behaviour.
@@ -640,6 +725,22 @@ def test_doc_to_items_list_item_becomes_bullet():
     assert [i.text for i in items] == ["- Xác thực user", "- Kiểm tra asset", "- đã có gạch"]
 
 
+def test_doc_to_items_list_item_strips_only_one_leading_marker():
+    # lstrip(_BULLET_CHARS) used to strip a whole *class* of leading chars,
+    # eating the leading digit-adjacent dash of a negative number and every
+    # level of nested-bullet dashes. Only exactly one marker+space may go.
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("list_item"), text="-40 °C tối thiểu"),
+            _StubItem(_StubLabel("list_item"), text="- - mục con"),
+            _StubItem(_StubLabel("list_item"), text="•"),  # bare bullet -> dropped
+        ]
+    )
+    items = parser.doc_to_items(doc)
+    assert [i.kind for i in items] == ["list", "list"]
+    assert [i.text for i in items] == ["- -40 °C tối thiểu", "- - mục con"]
+
+
 def test_bottomleft_box_flips_topleft_provenance():
     item = _StubItem(
         _StubLabel("text"),
@@ -656,3 +757,14 @@ def test_bottomleft_box_passes_bottomleft_through():
     )
     assert parser._bottomleft_box(item, _StubDoc()) == (2, (1, 9, 5, 3))
     assert parser._bottomleft_box(_StubItem(_StubLabel("text")), _StubDoc()) == (None, None)
+
+
+def test_bottomleft_box_normalizes_inverted_topleft_provenance():
+    # t < b is the inverted case: after flipping to BOTTOMLEFT the pair must
+    # still be swapped so top >= bottom, mirroring _topleft_box's own rule.
+    item = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=120, r=200, b=100, coord_origin="TOPLEFT"))],
+    )
+    doc = _StubDoc(pages={1: _StubPage()})  # height 792
+    assert parser._bottomleft_box(item, doc) == (1, (10, 692, 200, 672))

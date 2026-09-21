@@ -27,13 +27,15 @@ def region_text(
     pdf_path: Path | None, page_no: int | None, box: Box | None, mono: bool
 ) -> str | None:
     """Text inside `box` on page `page_no` (1-based); None when unavailable."""
-    if pdf_path is None or page_no is None or box is None:
+    if pdf_path is None or page_no is None or page_no < 1 or box is None:
         return None
     try:
         import pypdfium2
 
-        # ponytail: reopens the document per region; cache the PdfDocument
-        # per ingest if a code-heavy PDF makes this measurably slow.
+        # ponytail: this re-scans every char on the page (two FFI calls
+        # each) on every call, which dominates the cost -- reopening the
+        # document is comparatively cheap. Scope the char scan to the
+        # region if a code-heavy PDF makes this measurably slow.
         pdf = pypdfium2.PdfDocument(str(pdf_path))
         try:
             textpage = pdf[page_no - 1].get_textpage()
