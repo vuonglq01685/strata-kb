@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_partials/status.html" import status %}
+{% from "_partials/pager.html" import pager %}
 {% block main %}
 <div class="reader">
   <div class="page-head">
@@ -8,6 +9,7 @@
       <span class="sep">/</span> §{{ section_id }}</p>
     <h1 style="font-size:26px">{{ result.title }}</h1>
   </div>
+  {{ pager(doc_id, repo, prev, next) }}
   <div class="level-tabs">
     <a class="{{ 'on' if level == 'l2' else '' }}"
        href="/ui/docs/{{ doc_id | urlencode }}/{{ section_id | urlencode }}?level=l2&repo={{ repo | urlencode }}">L2 · summary</a>
@@ -15,18 +17,7 @@
        href="/ui/docs/{{ doc_id | urlencode }}/{{ section_id | urlencode }}?level=l3&repo={{ repo | urlencode }}">L3 · original</a>
   </div>
   <article class="reader-body">{{ content_html | safe }}</article>
-  {% if prev or next %}
-  <div class="pager">
-    {% if prev %}
-    <a href="/ui/docs/{{ doc_id | urlencode }}/{{ prev.id | urlencode }}?repo={{ repo | urlencode }}">
-      <span class="dir">← previous</span><span class="label">§{{ prev.id }} {{ prev.title }}</span></a>
-    {% else %}<span></span>{% endif %}
-    {% if next %}
-    <a class="next" href="/ui/docs/{{ doc_id | urlencode }}/{{ next.id | urlencode }}?repo={{ repo | urlencode }}">
-      <span class="dir">next →</span><span class="label">§{{ next.id }} {{ next.title }}</span></a>
-    {% endif %}
-  </div>
-  {% endif %}
+  {{ pager(doc_id, repo, prev, next) }}
 </div>
 {% endblock %}
 {% block rail %}
