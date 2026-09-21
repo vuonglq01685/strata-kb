@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from strata_kb.ingest import tableimages
+from strata_kb.ingest import images, pdftext, tableimages
 from strata_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
@@ -24,6 +24,10 @@ _HEADING_LABELS = {"section_header", "title"}
 # carrying normative applicability dates, checkbox captions) and every label
 # docling adds later. Only the running page furniture is genuinely not content.
 _SKIP_LABELS = {"page_header", "page_footer"}
+# Labels a picture's children must NOT be folded into its alt text: they
+# keep their own normal emission path (nested picture/table) or are page
+# furniture that is emitted nowhere at all.
+_NON_FOLDABLE = {"picture", "table"} | _SKIP_LABELS
 
 
 def _label_value(item) -> str:
@@ -68,6 +72,63 @@ def _prov_box(item, doc) -> tuple[int | None, tableimages.Box | None]:
         return None, None
     page = getattr(prov[0], "page_no", None)
     return page, _topleft_box(getattr(prov[0], "bbox", None), page, doc)
+
+
+def _clean(text: str) -> str:
+    """docling separates words with tabs; L3 wants single spaces."""
+    return " ".join(text.split())
+
+
+def _bottomleft_box(item, doc) -> tuple[int | None, pdftext.Box | None]:
+    """(page, bbox) in the BOTTOMLEFT frame pypdfium2 uses — docling's own
+    PDF provenance frame, so normally a pass-through."""
+    prov = getattr(item, "prov", None)
+    if not prov:
+        return None, None
+    page = getattr(prov[0], "page_no", None)
+    bbox = getattr(prov[0], "bbox", None)
+    if bbox is None:
+        return page, None
+    origin = getattr(bbox, "coord_origin", "")
+    origin = str(getattr(origin, "value", origin)).upper()
+    if origin.startswith("TOP"):
+        height = _page_height(doc, page)
+        if height is None:
+            return page, None
+        top, bottom = height - bbox.t, height - bbox.b
+        if top < bottom:
+            top, bottom = bottom, top
+        return page, (bbox.l, top, bbox.r, bottom)
+    top, bottom = bbox.t, bbox.b
+    if top < bottom:
+        top, bottom = bottom, top
+    return page, (bbox.l, top, bbox.r, bottom)
+
+
+# Exactly one leading marker + its trailing whitespace, or a bare marker with
+# nothing after it. lstrip(chars) would strip a whole *class* of chars, so
+# "-40 °C" (a negative number, not a bullet) or "- - nested" (real nesting)
+# would lose content past the first marker.
+_BULLET_RE = re.compile(r"^[-•*·](?:\s+|$)")
+
+
+def _code_item(item, doc, pdf_path: Path | None, page, bbox) -> DocItem | None:
+    # ponytail: a code line that starts with "## " would end the section in
+    # mdutils.slice_section; none in the corpus. Indent fence bodies if it appears.
+    raw_page, raw_box = _bottomleft_box(item, doc)
+    text = getattr(item, "text", "") or ""
+    body = pdftext.region_text(pdf_path, raw_page, raw_box, mono=True) or _clean(text)
+    if not body.strip():
+        return None
+    return DocItem("code", f"```\n{body}\n```", page=page, bbox=bbox)
+
+
+def _list_item(item, page, bbox) -> DocItem | None:
+    text = getattr(item, "text", "") or ""
+    text = _BULLET_RE.sub("", _clean(text)).strip()
+    if not text:
+        return None
+    return DocItem("list", f"- {text}", page=page, bbox=bbox)
 
 
 def _table_cells(item, doc) -> list[tableimages.Cell]:
@@ -142,11 +203,31 @@ def doc_to_items(
     # traverse_pictures: docling parents figure labels (axis titles, siting
     # distances, legend text) under their picture node and its default walk
     # skips those children entirely -- 649 text items in ICAO Doc 8896 alone.
+    # Folded into the picture's own alt text below rather than emitted as items.
     entries = [
         (item, _label_value(item))
         # some docling versions omit the kwarg; fall back rather than lose the walk
         for item, _level in _iterate(doc)
     ]
+    nested_ids: set[int] = set()
+    child_text: dict[int, str] = {}
+    if assets_dir is not None:
+        for item, label in entries:
+            if label != "picture":
+                continue
+            kids = [
+                k
+                for k in (_resolve(c, doc) for c in (getattr(item, "children", None) or []))
+                if k is not None
+            ]
+            # Nested pictures/tables keep their own normal emission path;
+            # page furniture is neither emitted nor folded. Only text-bearing
+            # children get folded into the picture's alt text.
+            text_kids = [k for k in kids if _label_value(k) not in _NON_FOLDABLE]
+            nested_ids.update(id(k) for k in text_kids)
+            child_text[id(item)] = " ".join(
+                t for t in (_clean(getattr(k, "text", "") or "") for k in text_kids) if t
+            )
     tables = [(item, _table_cells(item, doc)) for item, label in entries if label == "table"]
     placements, consumed, placed_boxes = _place_glyphs(entries, tables, doc, assets_dir)
     _recover_missed_glyphs(
@@ -159,6 +240,8 @@ def doc_to_items(
         bbox = (box.left, box.top, box.right, box.bottom) if box else None
         if label in _SKIP_LABELS:
             continue
+        if id(item) in nested_ids:
+            continue
         if label in _HEADING_LABELS:
             heading_level = getattr(item, "level", 1) if label == "section_header" else 1
             items.append(
@@ -170,13 +253,29 @@ def doc_to_items(
                 md = tableimages.inject(md, placements.get(id(item), {}))
                 items.append(DocItem("table", md, page=page, bbox=bbox))
         elif label == "picture":
-            if assets_dir is None or id(item) in consumed:
+            if assets_dir is None:
                 continue
-            md = _picture_md(item, doc, assets_dir)
+            folded = child_text.get(id(item), "")
+            md = None if id(item) in consumed else _picture_md(
+                item, doc, assets_dir, pdf_path, folded
+            )
             if md:
                 items.append(DocItem("image", md, page=page, bbox=bbox))
+            elif folded:
+                # No image came out of this picture (consumed into a table
+                # cell, or get_image failed/returned None) but its children
+                # were folded for the alt text -- that text must not vanish.
+                items.append(DocItem("text", folded, page=page, bbox=bbox))
+        elif label == "code":
+            code = _code_item(item, doc, pdf_path, page, bbox)
+            if code:
+                items.append(code)
+        elif label == "list_item":
+            bullet = _list_item(item, page, bbox)
+            if bullet:
+                items.append(bullet)
         elif getattr(item, "text", "") and item.text.strip():
-            items.append(DocItem("text", item.text, page=page, bbox=bbox))
+            items.append(DocItem("text", _clean(item.text), page=page, bbox=bbox))
     return items
 
 
@@ -187,6 +286,19 @@ def _iterate(doc):
         logger.warning("docling iterate_items has no traverse_pictures — "
                        "text drawn inside figures will be missing")
         return list(doc.iterate_items())
+
+
+def _resolve(ref, doc):
+    """docling children are RefItems; the stubs in tests hold the node itself.
+    None on a bad ref -- a lost figure caption must never abort ingest."""
+    resolve = getattr(ref, "resolve", None)
+    if not callable(resolve):
+        return ref
+    try:
+        return resolve(doc)
+    except Exception as exc:  # noqa: BLE001 -- see docstring
+        logger.warning("picture child ref skipped: %s", exc)
+        return None
 
 
 _Placements = dict[int, dict[tuple[int, int], str]]
@@ -285,8 +397,6 @@ def _render_page(pdf_path: Path, page: int):
 
 def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str | None:
     """Crop one cell out of the page raster; None when it holds no drawing."""
-    from strata_kb.ingest import images
-
     try:
         crop = raster.crop(
             (
@@ -305,21 +415,39 @@ def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str |
         return None
 
 
-def _picture_md(item, doc, assets_dir: Path) -> str | None:
+def _picture_md(
+    item, doc, assets_dir: Path, pdf_path: Path | None = None, child_text: str = ""
+) -> str | None:
     """One picture → saved asset + markdown ref, or None on any failure.
-    A lost image must never abort the ingest."""
-    from strata_kb.ingest import images
+    A lost image must never abort the ingest.
 
+    Alt text: the caption, when there is one, always leads -- but a caption
+    must not make the text drawn INSIDE the picture (axis titles, siting
+    distances) disappear, since nothing else in L3 carries it and
+    sectioner.uncovered() cannot see the loss. So that "inside" text is
+    folded in right after the caption instead of being discarded.
+
+    "Inside" text, first source that yields anything: the PDF text layer
+    under the picture (correct diacritics and order, floored by
+    MIN_OCR_CHARS so a stray one-character figure number cannot win); else
+    the text cells docling nested under the picture (tabs and split
+    glyphs, but still searchable). When there is neither a caption nor
+    inside text, fall back to OCR of the crop.
+    """
     try:
         img = item.get_image(doc)
         if img is None:
             return None
         try:
-            caption = item.caption_text(doc) or ""
+            caption = _clean(item.caption_text(doc) or "")
         except Exception:  # noqa: BLE001 -- caption best-effort, image itself is still saved
             caption = ""
-        ocr_text = "" if caption.strip() else images.ocr_image(img)
-        desc = images.resolve_description(caption, ocr_text)
+        page, box = _bottomleft_box(item, doc)
+        text_layer = _clean(pdftext.region_text(pdf_path, page, box, mono=False) or "")
+        inside = images.resolve_description("", text_layer) or child_text
+        desc = f"{caption} {inside}".strip() if inside else caption
+        if not desc:
+            desc = images.resolve_description("", images.ocr_image(img))
         filename = images.save_asset(img, assets_dir)
         return images.image_ref(desc, filename)
     except Exception as exc:  # noqa: BLE001 — skip the image, keep the text

@@ -158,6 +158,21 @@ def test_extract_tables_keeps_one_line_block():
     assert extract_tables(md) == ["| only header |"]
 
 
+def test_extract_tables_skips_fenced_pipe_lines():
+    md = "```\n| a | b |\n```"
+    assert extract_tables(md) == []
+
+
+def test_extract_tables_finds_table_after_closed_fence():
+    md = "```\ncode\n```\n| a | b |\n|---|---|\n| 1 | 2 |"
+    assert extract_tables(md) == ["| a | b |\n|---|---|\n| 1 | 2 |"]
+
+
+def test_extract_tables_unclosed_fence_swallows_rest():
+    md = "```\n| a | b |\n| c | d |"
+    assert extract_tables(md) == []
+
+
 def test_heading_ids_in_order_ignores_subheadings():
     md = "## 1.1 A\n\n### 1.1.1 child\n\n## 1.2 B\n\n## 1.3\n"
     assert heading_ids(md) == ["1.1", "1.2", "1.3"]

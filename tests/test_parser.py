@@ -346,17 +346,211 @@ def test_doc_to_items_clears_stale_assets(tmp_path):
     assert not (tmp_path / "deadbeef.png").exists()
 
 
-def test_doc_to_items_extracts_text_drawn_inside_a_picture():
-    # Docling nests figure labels (axis titles, siting distances) under the
-    # picture node; its default walk skips them, silently dropping the text.
-    nested = _StubItem(_StubLabel("text"), text="10 m minimum distance from centre line.")
+def test_doc_to_items_folds_text_drawn_inside_a_picture_into_alt(tmp_path, monkeypatch):
+    # Docling nests figure labels (axis titles, box-drawing diagrams) under
+    # the picture node. They must stay searchable (L3 alt text) but never
+    # become loose paragraphs beside the image that already shows them.
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    monkeypatch.setattr(parser.images, "ocr_image", lambda img: "")
+    nested = [
+        _StubItem(_StubLabel("text"), text="│\t\tViewer\t\t│"),
+        _StubItem(_StubLabel("code"), text="10 m minimum"),
+    ]
     doc = _StubDoc(
-        items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=[nested])]
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=9)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                children=nested,
+            ),
+            _StubItem(_StubLabel("text"), text="After the figure."),
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [i.kind for i in items] == ["image", "text"]
+    assert items[0].text.startswith("![│ Viewer │ 10 m minimum](assets/")
+
+
+def test_doc_to_items_picture_alt_prefers_pdf_text_layer(tmp_path, monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: "Nền tảng\nstreaming VOD")
+    nested = [_StubItem(_StubLabel("text"), text="N"), _StubItem(_StubLabel("text"), text="ề")]
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1, bbox=_StubBBox(l=44, t=487, r=549, b=340))],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                children=nested,
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path, pdf_path=tmp_path / "d.pdf")
+    assert len(items) == 1
+    assert items[0].text.startswith("![Nền tảng streaming VOD](assets/")
+
+
+def test_doc_to_items_picture_caption_still_wins(tmp_path, monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: "text layer")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                caption="Figure 2. Context",
+                children=[_StubItem(_StubLabel("text"), text="ignored")],
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path, pdf_path=tmp_path / "d.pdf")
+    # Caption still leads the alt text, but the text drawn inside the
+    # picture (from the PDF text layer here) is folded in after it rather
+    # than discarded -- so the assertion checks the caption leads, not an
+    # exact match.
+    assert items[0].text.startswith("![Figure 2. Context ")
+
+
+def test_doc_to_items_captioned_picture_keeps_nested_text_in_alt(tmp_path):
+    # A caption alone used to win the whole alt ladder, silently discarding
+    # the text docling nested under the picture (axis labels, siting
+    # distances). L3 must not lose that text: it gets folded in after the
+    # caption instead of vanishing.
+    nested = [
+        _StubItem(_StubLabel("text"), text="10 m minimum distance from centre line."),
+        _StubItem(_StubLabel("text"), text="Threshold displaced 300 m."),
+    ]
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                caption="Figure 5-3. Runway markings",
+                children=nested,
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [i.kind for i in items] == ["image"]
+    assert items[0].text.startswith(
+        "![Figure 5-3. Runway markings 10 m minimum distance from centre line. "
+        "Threshold displaced 300 m."
     )
 
-    items = parser.doc_to_items(doc)
 
-    assert [i.text for i in items] == ["10 m minimum distance from centre line."]
+def test_doc_to_items_text_layer_alt_respects_min_chars(tmp_path, monkeypatch):
+    # A stray one-character figure number in the PDF text layer must not
+    # win over the real folded child text -- MIN_OCR_CHARS floors it.
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: "7")
+    nested = [_StubItem(_StubLabel("text"), text="Real label")]
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                children=nested,
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path, pdf_path=tmp_path / "d.pdf")
+    assert items[0].text.startswith("![Real label")
+
+
+def test_doc_to_items_picture_without_image_emits_folded_text(tmp_path):
+    # get_image() -> None (no picture saved) but children were folded: that
+    # text must not vanish, it becomes a plain text item instead.
+    nested = [_StubItem(_StubLabel("text"), text="10 m minimum")]
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=nested)
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [(i.kind, i.text) for i in items] == [("text", "10 m minimum")]
+
+
+def test_doc_to_items_picture_image_failure_emits_folded_text(tmp_path):
+    class _BrokenImageItem(_StubItem):
+        def get_image(self, doc):
+            raise ValueError("boom")
+
+    nested = [_StubItem(_StubLabel("text"), text="10 m minimum")]
+    doc = _StubDoc(
+        items=[
+            _BrokenImageItem(_StubLabel("picture"), prov=[_StubProv(page_no=1)], children=nested)
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [(i.kind, i.text) for i in items] == [("text", "10 m minimum")]
+
+
+def test_doc_to_items_nested_table_and_text_under_a_picture(tmp_path):
+    # Nested tables (and pictures) keep their normal emission path -- only
+    # text-bearing labels get folded into the picture's alt text.
+    nested_table = _StubItem(_StubLabel("table"), table_md="| A |\n|---|\n| 1 |")
+    nested_text = _StubItem(_StubLabel("text"), text="Note text")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (4, 4), (0, 0, 0)),
+                children=[nested_table, nested_text],
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert [i.kind for i in items] == ["image", "table"]
+    assert "Note text" in items[0].text
+    assert "| A |" in items[1].text
+
+
+def test_doc_to_items_nested_page_footer_neither_folded_nor_emitted(tmp_path):
+    nested_footer = _StubItem(_StubLabel("page_footer"), text="Page 3 of 10")
+    note = _StubItem(_StubLabel("text"), text="Note text")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (4, 4), (0, 0, 0)),
+                children=[nested_footer, note],
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert len(items) == 1
+    assert items[0].kind == "image"
+    assert "Note text" in items[0].text
+    assert "Page 3 of 10" not in items[0].text
+
+
+def test_doc_to_items_picture_child_resolve_failure_is_skipped(tmp_path):
+    class _BrokenRef:
+        def resolve(self, doc):
+            raise RuntimeError("boom")
+
+    good_child = _StubItem(_StubLabel("text"), text="kept text")
+    picture = _StubItem(
+        _StubLabel("picture"),
+        prov=[_StubProv(page_no=1)],
+        image=Image.new("RGB", (4, 4), (0, 0, 0)),
+        children=[_BrokenRef(), good_child],
+    )
+    doc = _StubDoc(items=[picture])
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert len(items) == 1
+    assert "kept text" in items[0].text
+
+
+def test_doc_to_items_without_assets_dir_keeps_picture_text_as_paragraphs():
+    # No assets dir means no image is written, so the nested text is the
+    # only trace of the figure: keep the old loose-paragraph behaviour.
+    nested = _StubItem(_StubLabel("text"), text="10 m minimum distance.")
+    doc = _StubDoc(items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=[nested])])
+    assert [i.text for i in parser.doc_to_items(doc)] == ["10 m minimum distance."]
 
 
 def test_doc_to_items_keeps_footnotes():
@@ -410,6 +604,21 @@ def test_doc_to_items_moves_a_glyph_into_its_table_cell(tmp_path):
     assert [i.kind for i in items] == ["table"], "the glyph must not stay a loose image"
     row = items[0].text.splitlines()[2]
     assert "![](assets/" in row and row.startswith("| 1")
+
+
+def test_doc_to_items_consumed_glyph_keeps_its_folded_text(tmp_path):
+    # The glyph is consumed into the table cell (like the test above), but it
+    # also carries folded child text -- that text must still be emitted, not
+    # dropped along with the now-suppressed loose image.
+    img = Image.new("RGB", (16, 16), (0, 0, 0))
+    doc = _signal_table_doc(img)
+    doc.items[0].children = [_StubItem(_StubLabel("text"), text="LLL")]
+
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+
+    assert [i.kind for i in items] == ["text", "table"]
+    assert "LLL" in items[0].text
+    assert "LLL" not in items[1].text
 
 
 def test_doc_to_items_keeps_a_glyph_outside_any_table_as_an_image(tmp_path):
@@ -522,3 +731,134 @@ def test_doc_to_items_carries_topleft_bbox():
     assert items[1].bbox == (10, 100, 200, 120)
     assert items[2].bbox == (10, 492, 500, 592)
     assert items[3].bbox is None
+
+
+def test_doc_to_items_collapses_tabs_between_words():
+    doc = _StubDoc(items=[_StubItem(_StubLabel("text"), text="Hệ\tthống\tkhông\tcó")])
+    items = parser.doc_to_items(doc)
+    assert items[0].text == "Hệ thống không có"
+
+
+def test_doc_to_items_code_uses_pdf_text_layer(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_region_text(pdf_path, page_no, box, mono):
+        seen.update(pdf_path=pdf_path, page_no=page_no, box=box, mono=mono)
+        return "line one\n  line two"
+
+    monkeypatch.setattr(parser.pdftext, "region_text", fake_region_text)
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("code"),
+                text="line\tone line\ttwo",
+                prov=[_StubProv(page_no=3, bbox=_StubBBox(l=10, t=100, r=200, b=50))],
+            )
+        ],
+        pages={3: _StubPage()},
+    )
+    items = parser.doc_to_items(doc, pdf_path=tmp_path / "doc.pdf")
+    assert [i.kind for i in items] == ["code"]
+    assert items[0].text == "```\nline one\n  line two\n```"
+    assert items[0].page == 3
+    assert seen == {
+        "pdf_path": tmp_path / "doc.pdf", "page_no": 3, "box": (10, 100, 200, 50), "mono": True,
+    }
+
+
+def test_doc_to_items_code_falls_back_to_docling_text(monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    doc = _StubDoc(items=[_StubItem(_StubLabel("code"), text="SELECT\t1;\tCOMMIT;")])
+    items = parser.doc_to_items(doc)
+    assert items[0].kind == "code"
+    assert items[0].text == "```\nSELECT 1; COMMIT;\n```"
+
+
+def test_doc_to_items_empty_code_is_dropped(monkeypatch):
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    doc = _StubDoc(items=[_StubItem(_StubLabel("code"), text="  \t ")])
+    assert parser.doc_to_items(doc) == []
+
+
+def test_doc_to_items_list_item_becomes_bullet():
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("list_item"), text="•\tXác\tthực\tuser"),
+            _StubItem(_StubLabel("list_item"), text=" Kiểm tra asset"),
+            _StubItem(_StubLabel("list_item"), text="- đã có gạch"),
+        ]
+    )
+    items = parser.doc_to_items(doc)
+    assert [i.kind for i in items] == ["list", "list", "list"]
+    assert [i.text for i in items] == ["- Xác thực user", "- Kiểm tra asset", "- đã có gạch"]
+
+
+def test_doc_to_items_list_item_strips_only_one_leading_marker():
+    # lstrip(_BULLET_CHARS) used to strip a whole *class* of leading chars,
+    # eating the leading digit-adjacent dash of a negative number and every
+    # level of nested-bullet dashes. Only exactly one marker+space may go.
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("list_item"), text="-40 °C tối thiểu"),
+            _StubItem(_StubLabel("list_item"), text="- - mục con"),
+            _StubItem(_StubLabel("list_item"), text="•"),  # bare bullet -> dropped
+        ]
+    )
+    items = parser.doc_to_items(doc)
+    assert [i.kind for i in items] == ["list", "list"]
+    assert [i.text for i in items] == ["- -40 °C tối thiểu", "- - mục con"]
+
+
+def test_bottomleft_box_flips_topleft_provenance():
+    item = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=100, r=200, b=120, coord_origin="TOPLEFT"))],
+    )
+    doc = _StubDoc(pages={1: _StubPage()})  # height 792
+    assert parser._bottomleft_box(item, doc) == (1, (10, 692, 200, 672))
+
+
+def test_bottomleft_box_passes_bottomleft_through():
+    item = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=2, bbox=_StubBBox(l=1, t=9, r=5, b=3))],
+    )
+    assert parser._bottomleft_box(item, _StubDoc()) == (2, (1, 9, 5, 3))
+    assert parser._bottomleft_box(_StubItem(_StubLabel("text")), _StubDoc()) == (None, None)
+    # inverted BOTTOMLEFT bbox (t < b) must also be swapped so top >= bottom,
+    # the same invariant _topleft_box enforces.
+    inverted = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=2, bbox=_StubBBox(l=1, t=3, r=5, b=9))],
+    )
+    assert parser._bottomleft_box(inverted, _StubDoc()) == (2, (1, 9, 5, 3))
+
+
+def test_bottomleft_box_normalizes_inverted_topleft_provenance():
+    # t < b is the inverted case: after flipping to BOTTOMLEFT the pair must
+    # still be swapped so top >= bottom, mirroring _topleft_box's own rule.
+    item = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=120, r=200, b=100, coord_origin="TOPLEFT"))],
+    )
+    doc = _StubDoc(pages={1: _StubPage()})  # height 792
+    assert parser._bottomleft_box(item, doc) == (1, (10, 692, 200, 672))
+
+
+def test_doc_to_items_whitespace_caption_falls_through_to_ocr(tmp_path, monkeypatch):
+    # docling can hand back a caption that is only whitespace; it must count
+    # as "no caption" so the OCR rung still runs instead of yielding an empty alt.
+    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: None)
+    monkeypatch.setattr(parser.images, "ocr_image", lambda img: "OCR FOUND THIS")
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"),
+                prov=[_StubProv(page_no=1)],
+                image=Image.new("RGB", (32, 32), (0, 0, 0)),
+                caption="   ",
+            )
+        ]
+    )
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+    assert items[0].text.startswith("![OCR FOUND THIS](assets/")

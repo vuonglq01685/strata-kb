@@ -109,3 +109,47 @@ def test_render_image_alt_is_escaped():
     sha = "c" * 64
     out = render(f'![a"b<c>](assets/{sha}.png)')
     assert 'alt="a&quot;b&lt;c&gt;"' in out
+
+
+def test_fenced_code_is_verbatim_and_escaped():
+    md = "```\n│\tViewer <A> | x\n  indented\n```"
+    out = render(md)
+    assert out == "<pre><code>│\tViewer &lt;A&gt; | x\n  indented</code></pre>"
+
+
+def test_fenced_code_language_tag_is_ignored():
+    assert render("```sql\nSELECT 1;\n```") == "<pre><code>SELECT 1;</code></pre>"
+
+
+def test_fenced_code_is_not_highlighted():
+    assert render("```\nairspace\n```", terms={"airspace"}) == "<pre><code>airspace</code></pre>"
+
+
+def test_unclosed_fence_runs_to_end():
+    assert render("```\none\ntwo") == "<pre><code>one\ntwo</code></pre>"
+
+
+def test_fence_lines_starting_with_pipe_or_hash_stay_code():
+    out = render("```\n| a | b |\n## not a heading\n```")
+    assert out == "<pre><code>| a | b |\n## not a heading</code></pre>"
+
+
+def test_list_items_merge_across_single_blank_line():
+    md = "- one\n\n- two\n* three\n\nAfter."
+    out = render(md)
+    assert out == "<ul><li>one</li><li>two</li><li>three</li></ul>\n<p>After.</p>"
+
+
+def test_list_item_is_highlighted_and_escaped():
+    out = render("- Restrictive <Airspace>", terms={"airspace"})
+    assert out == "<ul><li>Restrictive &lt;<mark>Airspace</mark>&gt;</li></ul>"
+
+
+def test_list_closes_before_heading_and_table():
+    md = "- a\n## H\n- b\n| x |"
+    out = render(md)
+    assert out == "<ul><li>a</li></ul>\n<h2>H</h2>\n<ul><li>b</li></ul>\n<table><tr><td>x</td></tr></table>"
+
+
+def test_dash_inside_paragraph_is_not_a_list():
+    assert render("value - not a list") == "<p>value - not a list</p>"

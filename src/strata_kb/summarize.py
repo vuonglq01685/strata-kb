@@ -69,8 +69,9 @@ RETRY_PAUSE_SECONDS = 1.0  # pause before the retry after a RunnerError (tests s
 def strip_tables(text: str) -> str:
     """Replace each contiguous table block with the placeholder.
 
-    A table line is any line whose lstrip() starts with '|' (same
-    convention as mdutils.extract_tables).
+    A table line is any line whose lstrip() starts with '|'. Unlike
+    mdutils.extract_tables this is not fence-aware: a pipe line inside a
+    fenced code block is also replaced, which only shortens the prompt.
     """
     out: list[str] = []
     in_table = False

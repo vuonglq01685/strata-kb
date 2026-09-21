@@ -264,6 +264,16 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
   text-transform: uppercase; color: var(--muted); }
 .reader-body td { padding: 8px 12px; border: 1px solid var(--line-soft); }
 .reader-body img { max-width: 100%; }
+.reader-body > img { margin: 12px 0; border: 1px solid var(--line-soft);
+  border-radius: 4px; }
+.reader-body h2 { font-size: 26px; margin: 32px 0 12px; }
+.reader-body h3 { font-size: 20px; margin: 22px 0 8px; }
+.reader-body pre { margin: 14px 0; padding: 14px 16px; overflow-x: auto; white-space: pre;
+  font: 400 13px/1.5 var(--mono); background: var(--surface-alt); border: 1px solid var(--line);
+  border-radius: var(--r-lg); }
+.reader-body pre code { font: inherit; }
+.reader-body ul { margin: 10px 0; padding-left: 1.4em; }
+.reader-body li + li { margin-top: 4px; }
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 16px; background: var(--surface-alt); border: 1px solid var(--line);
   border-radius: var(--r-lg); }
