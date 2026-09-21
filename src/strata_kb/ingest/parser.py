@@ -99,7 +99,10 @@ def _bottomleft_box(item, doc) -> tuple[int | None, pdftext.Box | None]:
         if top < bottom:
             top, bottom = bottom, top
         return page, (bbox.l, top, bbox.r, bottom)
-    return page, (bbox.l, bbox.t, bbox.r, bbox.b)
+    top, bottom = bbox.t, bbox.b
+    if top < bottom:
+        top, bottom = bottom, top
+    return page, (bbox.l, top, bbox.r, bottom)
 
 
 # Exactly one leading marker + its trailing whitespace, or a bare marker with

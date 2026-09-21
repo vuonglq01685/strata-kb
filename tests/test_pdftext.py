@@ -59,5 +59,8 @@ def test_unreadable_pdf_returns_none_and_warns(tmp_path, caplog):
     assert len(caplog.records) == 1
 
 
-def test_page_no_below_one_returns_none():
-    assert pdftext.region_text(FIXTURE, 0, (0, 10, 10, 0), mono=True) is None
+def test_page_no_below_one_returns_none(caplog):
+    # full-page box: without the guard, page_no=0 wraps to pdf[-1] and returns text
+    with caplog.at_level("WARNING", logger="strata_kb.ingest.pdftext"):
+        assert pdftext.region_text(FIXTURE, 0, _page_box(), mono=True) is None
+    assert caplog.records == []  # rejected up front, not "failed": no warning

@@ -458,19 +458,21 @@ def test_doc_to_items_nested_table_and_text_under_a_picture(tmp_path):
 
 def test_doc_to_items_nested_page_footer_neither_folded_nor_emitted(tmp_path):
     nested_footer = _StubItem(_StubLabel("page_footer"), text="Page 3 of 10")
+    note = _StubItem(_StubLabel("text"), text="Note text")
     doc = _StubDoc(
         items=[
             _StubItem(
                 _StubLabel("picture"),
                 prov=[_StubProv(page_no=1)],
                 image=Image.new("RGB", (4, 4), (0, 0, 0)),
-                caption="Figure X",
-                children=[nested_footer],
+                children=[nested_footer, note],
             )
         ]
     )
     items = parser.doc_to_items(doc, assets_dir=tmp_path)
     assert len(items) == 1
+    assert items[0].kind == "image"
+    assert "Note text" in items[0].text
     assert "Page 3 of 10" not in items[0].text
 
 
@@ -551,6 +553,21 @@ def test_doc_to_items_moves_a_glyph_into_its_table_cell(tmp_path):
     assert [i.kind for i in items] == ["table"], "the glyph must not stay a loose image"
     row = items[0].text.splitlines()[2]
     assert "![](assets/" in row and row.startswith("| 1")
+
+
+def test_doc_to_items_consumed_glyph_keeps_its_folded_text(tmp_path):
+    # The glyph is consumed into the table cell (like the test above), but it
+    # also carries folded child text -- that text must still be emitted, not
+    # dropped along with the now-suppressed loose image.
+    img = Image.new("RGB", (16, 16), (0, 0, 0))
+    doc = _signal_table_doc(img)
+    doc.items[0].children = [_StubItem(_StubLabel("text"), text="LLL")]
+
+    items = parser.doc_to_items(doc, assets_dir=tmp_path)
+
+    assert [i.kind for i in items] == ["text", "table"]
+    assert "LLL" in items[0].text
+    assert "LLL" not in items[1].text
 
 
 def test_doc_to_items_keeps_a_glyph_outside_any_table_as_an_image(tmp_path):
@@ -757,6 +774,13 @@ def test_bottomleft_box_passes_bottomleft_through():
     )
     assert parser._bottomleft_box(item, _StubDoc()) == (2, (1, 9, 5, 3))
     assert parser._bottomleft_box(_StubItem(_StubLabel("text")), _StubDoc()) == (None, None)
+    # inverted BOTTOMLEFT bbox (t < b) must also be swapped so top >= bottom,
+    # the same invariant _topleft_box enforces.
+    inverted = _StubItem(
+        _StubLabel("text"),
+        prov=[_StubProv(page_no=2, bbox=_StubBBox(l=1, t=3, r=5, b=9))],
+    )
+    assert parser._bottomleft_box(inverted, _StubDoc()) == (2, (1, 9, 5, 3))
 
 
 def test_bottomleft_box_normalizes_inverted_topleft_provenance():
