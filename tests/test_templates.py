@@ -2686,3 +2686,14 @@ def test_review_rubric_business_axis_caps_the_ticket_size():
         "One user story and ≤ 10 acceptance criteria; no AC is a compound "
         "of two conditions written to stay under the cap"
     ) in _normalised(body)
+
+
+def test_ba_ticket_full_wrappers_teach_the_ticket_split():
+    """The command wrapper is exempt: it has no Draft step to qualify,
+    only a prose summary of the skill's rules (see line 193's note)."""
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        assert (
+            'One AC is one testable condition and one outcome; a ticket '
+            'that needs more than 10 AC, or a second "As a …" story, is '
+            "two tickets — split it before Lint, never merge ACs to fit."
+        ) in _ba_wrapper_text(name), name

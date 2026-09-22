@@ -47,7 +47,10 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    NOT read the KB. Banned weasel words per `docs/ac-quality.md`
    ("appropriate", "configured", "a subset", "responsive", …). When a
    value is not settled, write `OPEN(<owner>)` inside the AC AND add a
-   row to `## Open questions` — never write vague and move on.
+   row to `## Open questions` — never write vague and move on. One AC is
+   one testable condition and one outcome; a ticket that needs more than
+   10 AC, or a second "As a …" story, is two tickets — split it before
+   Lint, never merge ACs to fit.
 
    **Fill every new section** — `## Dependencies`, `## Non-functional
    requirements`, `## UI / presentation spec`, `## Out of scope`,
