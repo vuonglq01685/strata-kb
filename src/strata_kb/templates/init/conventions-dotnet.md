@@ -7,39 +7,19 @@ and OVERRIDES this one where they conflict. Where either file conflicts
 with the repo's existing dominant style, the repo wins locally — record
 the conflict as a finding in the PR.
 
-## Naming
+## Conventions pack
 
-- Namespaces, classes, records, structs, enums, methods, properties:
-  `PascalCase`; interfaces prefixed `I` (`IResolver`).
-- Locals and parameters: `camelCase`; private fields `_camelCase`.
-- Constants: `PascalCase` (`MaxAltitudeFt`).
-- Async methods end in `Async`.
+Read this file first, then the pack. Each language file extends its
+`common/` counterpart; where the two disagree, the language file wins, and
+`docs/conventions/dotnet.local.md` wins over both.
 
-## Module structure
-
-- Organise by feature/domain, not by technical layer alone.
-- One top-level type per file, file named after it; extract before a
-  class grows past ~400 lines.
-- Depend on interfaces at boundaries; use the built-in DI container,
-  no service-locator calls in business logic.
-
-## Error handling
-
-- Throw specific exception types; never `catch (Exception) {}` — a
-  swallowed exception is a bug.
-- Fail fast at boundaries: validate arguments where data enters
-  (`ArgumentNullException.ThrowIfNull`, explicit checks naming the
-  offending value).
-- Catch only what the code can handle; otherwise wrap and rethrow with
-  the original as `InnerException`.
-
-## Logging
-
-- Use `Microsoft.Extensions.Logging` (`ILogger<T>`); never
-  `Console.WriteLine` for diagnostics in committed code.
-- Use structured message templates
-  (`_logger.LogError("resolve failed for {Ref}", reference)`), not
-  string interpolation.
+| Topic | C# / .NET | Shared |
+|---|---|---|
+| Coding style | [dotnet/coding-style.md](dotnet/coding-style.md) | [common/coding-style.md](common/coding-style.md) |
+| Patterns | [dotnet/patterns.md](dotnet/patterns.md) | [common/patterns.md](common/patterns.md) |
+| Security | [dotnet/security.md](dotnet/security.md) | [common/security.md](common/security.md) |
+| Testing | [dotnet/testing.md](dotnet/testing.md) | [common/testing.md](common/testing.md) |
+| Hooks | [dotnet/hooks.md](dotnet/hooks.md) | [common/hooks.md](common/hooks.md) |
 
 ## Citation comments
 
@@ -50,13 +30,6 @@ comment on the same line or the line above:
 ```csharp
 const int MaxAltitudeFt = 60_000; // per ATM-STD §5.3 @ v2.1
 ```
-
-## Testing
-
-- xUnit, AAA shape (Arrange–Act–Assert), one behaviour per test.
-- Names describe the behaviour: `RejectsExpiredToken()`, not `Test2()`.
-- Every bug fix lands together with the test that would have caught it.
-- Never edit a test to make it pass — diagnose the cause.
 
 ## Linting (preset)
 
