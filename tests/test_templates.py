@@ -2697,3 +2697,11 @@ def test_ba_ticket_full_wrappers_teach_the_ticket_split():
             'that needs more than 10 AC, or a second "As a …" story, is '
             "two tickets — split it before Lint, never merge ACs to fit."
         ) in _ba_wrapper_text(name), name
+
+
+def test_quickstart_ba_gate_list_names_the_size_gates():
+    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
+    assert (
+        "At most 10 acceptance criteria and exactly one `As a … I want … so "
+        "that …` story — a bigger scope is two tickets"
+    ) in text

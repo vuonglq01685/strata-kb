@@ -92,8 +92,9 @@ def _check_story_count(text: str) -> list[Issue]:
     ambiguous about which story accepts it, and the split the BA avoided
     lands on the dev instead.
 
-    `STORY_RE.findall` is a sound count for well-formed stories: the pattern is lazy under
-    `re.S` and ends at 'so that', so each match consumes exactly one
+    `STORY_RE.findall` is a sound count for well-formed stories: the
+    pattern is lazy under `re.S` and ends at 'so that', so each match
+    consumes exactly one
     story and the scan resumes past it. A single comma-rich story — even
     one saying 'shown as a side panel' after 'I want' — yields 1, because
     the incidental 'as a' sits inside the first match's span.
