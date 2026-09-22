@@ -1315,3 +1315,23 @@ def test_one_comma_rich_user_story_passes(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert not any("stories" in m for m in _errors(report))
+
+
+def test_a_story_inside_an_html_comment_does_not_count(
+    fed_hub: Path, golden_block: str
+):
+    """The section is counted on its visible body: an earlier draft left
+    in a comment is guidance, not a second story."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## User Story": (
+                "<!-- earlier draft: As a planner, I want the export, "
+                "so that I can attach it. -->\n"
+                "As a dispatcher, I want the restrictive airspace details, "
+                "so that I can brief the crew accurately."
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("stories" in m for m in _errors(report))

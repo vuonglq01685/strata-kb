@@ -101,7 +101,8 @@ def _check_story_count(text: str) -> list[Issue]:
     body = lintcore.section_body(text, "## User Story")
     if body is None:
         return []  # heading missing — already reported by check_headings
-    found = len(ticket.STORY_RE.findall(body))
+    # Comments carry template guidance and drafts; count only what shows.
+    found = len(ticket.STORY_RE.findall(lintcore.visible_body(body)))
     if found <= 1:
         return []
     return [
