@@ -140,8 +140,8 @@ def scaffold_conventions(
 ) -> list[str]:
     """Scaffold conventions files for every detected-or-forced language.
 
-    Also writes the language-agnostic half of the conventions pack,
-    `docs/conventions/common/<part>.md`, once per repo.
+    Also writes the conventions pack: `docs/conventions/common/<part>.md`
+    once per repo, and `docs/conventions/<lang>/<part>.md` per language.
 
     Base + pointer files are package-owned (create-or-refresh); the
     `.local.md` stub is user data — created once, then never compared,
@@ -177,6 +177,13 @@ def scaffold_conventions(
             _template_text(f"conventions-{lang}.md"),
             report,
         )
+        for part in CONVENTION_PARTS:
+            _sync(
+                target,
+                f"docs/conventions/{lang}/{part}.md",
+                _template_text(f"conventions-{lang}-{part}.md"),
+                report,
+            )
         local_rel = f"docs/conventions/{lang}.local.md"
         local = target / "docs" / "conventions" / f"{lang}.local.md"
         if local.exists():

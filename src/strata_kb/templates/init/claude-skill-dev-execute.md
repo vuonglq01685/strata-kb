@@ -57,8 +57,10 @@ edit above it.
   3. **self-review checkpoint** — pass/fail, not a score: does the test
      actually exercise that AC; is every standard-derived value verbatim
      with a citation comment; does the change follow
-     `docs/conventions/<lang>.md` plus `docs/conventions/<lang>.local.md`
-     overrides (local wins; where either conflicts with the repo's
+     `docs/conventions/<lang>.md`, the five pack files it links under
+     `docs/conventions/<lang>/` and `docs/conventions/common/`, plus
+     `docs/conventions/<lang>.local.md` overrides (local wins; where any of
+     them conflicts with the repo's
      existing dominant style, the repo wins locally — record the
      conflict as a finding for the PR body); did anything else break.
      This is the implementer checking its own work: it catches slips
@@ -80,7 +82,8 @@ edit above it.
      with a fresh context and exactly two paths — the report file and the
      diff file — plus the task block it was given and its binding
      constraints, copied verbatim from the plan, and
-     `docs/conventions/<lang>.md` plus its `.local.md` override. It
+     `docs/conventions/<lang>.md`, the five pack files it links, and its
+     `.local.md` override. It
      returns **two verdicts, both required**: spec compliance (nothing
      missing, nothing extra, against the task block) and code quality
      (against the conventions doc). A report carrying one verdict is not a
@@ -118,7 +121,8 @@ diff to `docs/impl/<ticket-id>-review/branch.diff`
 (`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
 `git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
 `branch-reviewer` subagent with that path, the plan, the ticket, and
-`docs/conventions/<lang>.md` plus its `.local.md` override. One question
+`docs/conventions/<lang>.md`, the five pack files it links, and its
+`.local.md` override. One question
 only: does this branch fulfil the ticket — every AC covered by a test,
 nothing built that no AC asked for, and no later task quietly breaking an
 earlier one?
@@ -148,9 +152,10 @@ comes back clean — no BLOCKER and no SUGGESTED left — is option 1
   show the finding beside the text that mandates it and let the Dev choose.
 - Criteria come from the source that matches the review: the rubric's
   `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
-  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`
-  override wins over its base file. Severity is always
-  BLOCKER / SUGGESTED / NOTE / NITS.
+  `docs/conventions/<lang>.md` — plus the five pack files it links under
+  `docs/conventions/<lang>/` and `docs/conventions/common/` — for A3 and A4.
+  Each one's own `.local.md` override wins over its base file. Severity is
+  always BLOCKER / SUGGESTED / NOTE / NITS.
 - Where the runtime cannot dispatch subagents, run the review as its own pass
   that reads ONLY the paths it was handed and reuses nothing it remembers from
   drafting, and write up its findings the same way — then STOP and hand the
