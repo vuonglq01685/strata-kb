@@ -49,22 +49,45 @@ def grounding(rev: str, **overrides) -> str:
     return "\n".join(out)
 
 
-def ticket(section: str | None) -> str:
-    parts = ["# T-1 — Show airspace", "", "## Summary", "Something.", ""]
+MISSION = """# Billing — mission
+> Mission: M-demo
+
+## Technology decisions
+| # | Decision | Status | Owner | Blocks |
+|---|---|---|---|---|
+| D1 | New svc.billing — charges per flight plan | DECIDED | tech-lead | M-demo-US1 |
+| D2 | New db.invoice table | OPEN | Alice | M-demo-US1 |
+"""
+
+
+def decisions_of(mission_text: str | None):
+    """A `load_decisions` over one in-memory mission; `None` = file missing."""
+    def load(mission_id: str):
+        if mission_text is None:
+            return None
+        return ticketcheck.parse_decisions(mission_text, f"missions/{mission_id}.md")
+    return load
+
+
+def ticket(section: str | None, *, parent: str | None = None, heading: str = "## Technical grounding") -> str:
+    parts = ["# T-1 — Show airspace"]
+    if parent is not None:
+        parts.append(f"> Parent mission: {parent}")
+    parts += ["", "## Summary", "Something.", ""]
     if section is not None:
-        parts += ["## Technical grounding", section, ""]
+        parts += [heading, section, ""]
     parts += ["## Open questions", "- [ ] none", ""]
     return "\n".join(parts)
 
 
-def run(text: str, kb_dir: Path) -> LintReport:
+def run(text: str, kb_dir: Path, *, heading: str = "## Technical grounding", load_decisions=None) -> LintReport:
     def load_doc(repo, doc):
         d = kb_dir / doc
         if not (d / "_manifest.yaml").exists():
             return None
         return ticketcheck.load_doc_dir(d, str(d))
 
-    return ticketcheck.check(text, load_doc=load_doc)
+    return ticketcheck.check(text, load_doc=load_doc, heading=heading, load_decisions=load_decisions)
 
 
 def errors(r: LintReport) -> list[str]:
@@ -437,3 +460,94 @@ def test_missing_structure_raw_is_a_warning(code_doc):
     report = run(ticket(grounding(rev)), kb_dir)
     assert not any("struct.tree" in e for e in errors(report))
     assert any("structure.raw.md" in w and "file checks skipped" in w for w in warnings(report))
+
+
+# --- Task 1 (greenfield): [NEW: D<n>] against the parent mission ----------
+
+
+def test_parse_decisions_reads_id_status_owner_by_header_name():
+    table = ticketcheck.parse_decisions(MISSION, "missions/M-demo.md")
+    assert table.source == "missions/M-demo.md"
+    assert table.rows["D1"] == ticketcheck.Decision("D1", "DECIDED", "tech-lead")
+    assert table.rows["D2"].status == "OPEN"
+
+
+def test_parse_decisions_survives_a_reordered_table():
+    text = (
+        "## Technology decisions\n"
+        "| Status | Owner | # | Decision |\n"
+        "|---|---|---|---|\n"
+        "| decided | Bob | D7 | whatever |\n"
+    )
+    table = ticketcheck.parse_decisions(text, "x")
+    assert table.rows == {"D7": ticketcheck.Decision("D7", "decided", "Bob")}
+
+
+def test_parse_decisions_without_the_section_is_empty():
+    assert ticketcheck.parse_decisions("# nothing here\n", "x").rows == {}
+
+
+def test_decided_reference_passes_with_a_note(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(rev, Service="svc.billing [NEW: D1]", Files=["src/billing/ [NEW: D1]"]),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert errors(report) == [], report.render("Grounding")
+    assert any("new: svc.billing — D1 (DECIDED, owner tech-lead)" in n for n in notes(report))
+    assert any("new: src/billing — D1 (DECIDED, owner tech-lead)" in n for n in notes(report))
+
+
+def test_open_decision_reference_is_an_error_naming_the_owner(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Tables="db.invoice [NEW: D2]"), parent="M-demo")
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert report.passed is False
+    assert any("decision D2 is OPEN (owner: Alice)" in e for e in errors(report))
+
+
+def test_missing_decision_row_is_an_error(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: D9]"), parent="M-demo")
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert any("decision D9 not in missions/M-demo.md's Technology decisions" in e for e in errors(report))
+
+
+def test_decision_reference_without_a_parent_mission_is_an_error(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: D1]"))
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert any("[NEW: D1] needs a parent mission" in e for e in errors(report))
+    # Externals is the 8th grounding line; the section heading sits on line 6.
+    assert "(line 13)" in [e for e in errors(report) if "D1" in e][0]
+
+
+def test_decision_reference_with_a_missing_mission_file_is_an_error(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: D1]"), parent="M-gone")
+    report = run(text, kb_dir, load_decisions=decisions_of(None))
+    assert any("parent mission 'M-gone' not found" in e for e in errors(report))
+
+
+def test_decision_reference_with_no_loader_is_treated_as_not_found(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: D1]"), parent="M-demo")
+    report = run(text, kb_dir)  # load_decisions=None: caller supplied no missions dir
+    assert any("parent mission 'M-demo' not found" in e for e in errors(report))
+
+
+def test_free_text_new_with_a_decisions_table_present_warns(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: billing arrives later]"), parent="M-demo")
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert report.passed is True
+    assert any("reference the row as [NEW: D<n>]" in w for w in warnings(report))
+
+
+def test_free_text_new_without_a_parent_mission_stays_a_plain_note(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: billing arrives later]"))
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert not any("[NEW: D<n>]" in w for w in warnings(report))
+    assert any("new: int.stripe — billing arrives later" in n for n in notes(report))
