@@ -2466,3 +2466,70 @@ def test_review_rubric_dev_axis_requires_every_placeholder_answered():
         "answered in `## Technical grounding` by an id, a `[NEW: D<n>]`, "
         "or an Open decisions entry — none is silently dropped."
     ) in _normalised(body)
+
+
+def _sa_hard_rules(name: str) -> str:
+    """One SA wrapper's `## Hard rules` block, verbatim, to end of file.
+
+    Only the three full-content wrappers carry the block; the command
+    wrapper is a thin skill invoker that summarises the rules in prose.
+    """
+    text = _read_init_template(name)
+    assert text.count("\n## Hard rules\n") == 1, name
+    return text[text.index("\n## Hard rules\n") :]
+
+
+def test_sa_hard_rules_are_byte_identical_across_the_full_wrappers():
+    canon = _sa_hard_rules(SA_FULL_WRAPPERS[0])
+    for name in SA_FULL_WRAPPERS[1:]:
+        assert _sa_hard_rules(name) == canon, name
+
+
+def test_sa_hard_rules_carry_the_two_greenfield_rules():
+    block = _normalised(_sa_hard_rules(SA_FULL_WRAPPERS[0]))
+    assert (
+        "A thing the code does not have yet is a design decision, not missing "
+        "data: propose it as a `## Technology decisions` row (status OPEN, a "
+        "human owner) and reference it as [NEW: D<n>]. Never park \"not built "
+        "yet\" under Open decisions."
+    ) in block
+    assert (
+        "You may APPEND rows to `## Technology decisions`; never edit or "
+        "delete an existing row, never change a Status — only a human flips "
+        "OPEN to DECIDED."
+    ) in block
+
+
+def test_sa_wrappers_carry_the_decision_reference_and_needs_input():
+    for name in SA_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert "[NEW: D" in text, name
+        assert "## Needs input" in text, name
+
+
+def test_sa_wrappers_name_the_gate_with_its_flags():
+    for name in SA_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert "kb ticket check <file> [--missions-dir <dir>]" in text, name
+        assert 'kb ticket check --heading "## Services & order" <file>' in text, name
+
+
+def test_sa_wrappers_react_to_the_real_engine_messages():
+    """The skill's FAIL handling quotes ticketcheck's own wording, so an SA
+    reading the gate output finds the instruction under the same words."""
+    for name in SA_FULL_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        for message in (
+            "needs a parent mission to hold the decision",
+            "parent mission '<id>' not found under missions/",
+            "decision D<n> not in <file>'s Technology decisions",
+            "decision D<n> is <status> (owner: <x>)",
+            "has Technology decisions — reference the row as [NEW: D<n>]",
+        ):
+            assert message in text, f"{name}: {message}"
+
+
+def test_sa_claude_skill_and_cursor_wrappers_are_byte_identical():
+    assert _read_init_template("claude-skill-sa-ticket-ground.md") == (
+        _read_init_template("cursor-sa-ticket-ground.md")
+    )
