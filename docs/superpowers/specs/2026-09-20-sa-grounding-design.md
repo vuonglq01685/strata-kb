@@ -459,7 +459,7 @@ add an agent.
 
 - ~~Auto-invoking SA after BA (hook or pipeline) — manual until the flow is
   stable.~~ Superseded 2026-09-22 by
-  `2026-09-22-sa-greenfield-grounding-design.md` §4 (decision G4):
+  `2026-09-22-sa-greenfield-grounding-design.md` §2 (decision G4), §4:
   `sa-ticket-ground` now runs inside `ba-ticket-author` (step 7) and
   `ba-mission-plan` (step 5).
 - A third-tier reviewer agent, or a scoring rubric for the SA section.

@@ -54,8 +54,8 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
    6. **Lint** — it runs `kb ticket lint` and fixes errors until it
       reports `DoR: PASS`.
    7. **Ground technical** — it saves the draft and invokes
-      `/sa-ticket-ground` on it as its own subagent. That fills the
-      SA-owned `## Technical grounding` section from the hub's
+      `/sa-ticket-ground` on it as a separate run (no shared context).
+      That fills the SA-owned `## Technical grounding` section from the hub's
       `<repo>-code` document (service, files, tables, routes, externals,
       test command — section ids only) and runs `kb ticket check` until
       it reports `Grounding: PASS`. You never fill that section
@@ -109,7 +109,9 @@ Per mission:
    saves `missions/M-<slug>.md`. At **Ground services** it invokes
    `/sa-ticket-ground --mission` itself: that fills the SA-owned
    `## Services & order` section and appends a `## Technology decisions`
-   row for every service the mission will create.
+   row for every service the mission will create. Its gate then reports
+   FAIL on exactly those rows until a human flips them to `DECIDED` —
+   that is the expected result, not a defect; flipping is your call.
 2. Review the C4 L1/L2 diagrams (Level 1 = System Context, Level 2 =
    Container), the scope split, and the US backlog.
 3. `kb mission lint missions/M-<slug>.md` must report `DoR: PASS`.

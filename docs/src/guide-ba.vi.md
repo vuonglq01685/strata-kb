@@ -193,7 +193,10 @@ luồng nội bộ, tình huống lỗi, thân request — mới được gác d
 
 `kb ticket check tickets/<ticket-id>.md` là cổng: PASS chỉ khi mọi id phân
 giải được, mọi `[NEW: D<n>]` trỏ tới một dòng `DECIDED`, và `Open decisions`
-rỗng. Một dòng `OPEN` làm fail cổng và nêu tên chủ sở hữu — đổi nó sang
+rỗng. Một ticket không có mission cha thì không có bảng để giữ dòng, nên SA
+viết văn bản tự do `[NEW: <reason>]` thay vào đó — gate chấp nhận nó như một
+ghi chú; một mission sẽ cho quyết định đó một chủ sở hữu. Một dòng `OPEN`
+làm fail cổng và nêu tên chủ sở hữu — đổi nó sang
 `DECIDED` là quyết định của bạn, không bao giờ của agent. Bản bàn giao mang
 theo khối `## Needs input` liệt kê đúng những dòng đó.
 
@@ -254,7 +257,9 @@ Bước 5 làm việc này thay bạn. Khi bạn đã xác nhận backlog và `#
 `## Services & order` — mỗi dòng một `svc.<name>` lấy từ tài liệu
 `<repo>-code` trên hub, cột `Depends on` chép từ chính record đó. Service mà
 mission sẽ tạo mới mang `[NEW: D<n>]`, trỏ tới một dòng SA thêm vào
-`## Technology decisions` để bạn quyết định. Chỉ ở lớp năng lực: không tên
+`## Technology decisions` để bạn quyết định. Gate sau đó báo FAIL đúng
+những dòng đó cho tới khi bạn chuyển chúng sang `DECIDED` — đó là kết quả
+mong đợi, không phải lỗi. Chỉ ở lớp năng lực: không tên
 file, không bảng, không route — những cái đó thuộc về `## Technical
 grounding` của từng ticket, điền sau ở mục 3.8.
 

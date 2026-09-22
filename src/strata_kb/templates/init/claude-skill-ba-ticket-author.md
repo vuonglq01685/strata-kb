@@ -87,9 +87,10 @@ for it during Intake.
    `## Technical grounding` section from `<repo>-code`, proposes an
    `OPEN` row in the parent mission's `## Technology decisions` for
    anything the code does not have yet (referenced as `[NEW: D<n>]`),
-   and runs `kb ticket check` until it reports `Grounding: PASS`. Keep
-   its `## Needs input` block — it goes into your handover verbatim.
-8. **Maturity review** — once step 7 reports `Grounding: PASS`, read
+   and runs `kb ticket check`; a D-row still `OPEN` is a reported
+   FAIL, not a blocker — it lands in `## Needs input` for you to
+   chase. Keep that block — it goes into your handover verbatim.
+8. **Maturity review** — once lint reports `DoR: PASS`, read
    `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
    exists — the local file overrides the base one (same for
    `docs/ac-quality.md` and `docs/ac-quality.local.md`). Dispatch TWO
@@ -111,8 +112,8 @@ for it during Intake.
    3 rounds total; stop early when both axes score ≥ 4. After every
    round that changed the draft, also run `kb ticket check`: on FAIL,
    re-invoke `sa-ticket-ground` with only the changed sections and the
-   failing lines (same discipline as `gap-verifier`); on PASS, do not
-   re-ground, with the same no-shared-context discipline as step 7.
+   failing lines (same discipline as `gap-verifier`, with the same
+   no-shared-context discipline as step 7); on PASS, do not re-ground.
 
    **Rounds 2 and 3 are not a re-read.** Dispatch ONE `gap-verifier`
    subagent, which receives only three things: the gaps still open,

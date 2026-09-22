@@ -196,7 +196,10 @@ modes, request bodies — goes under `Open decisions` for the developer.
 
 `kb ticket check tickets/<ticket-id>.md` gates it: PASS only when every id
 resolves, every `[NEW: D<n>]` names a `DECIDED` row, and `Open decisions` is
-empty. An `OPEN` row fails and names its owner — flipping it to `DECIDED` is
+empty. A ticket with no parent mission has no table to hold a row, so the SA
+writes free-text `[NEW: <reason>]` instead — the gate accepts it as a note; a
+mission would give the decision an owner. An `OPEN` row fails and names its
+owner — flipping it to `DECIDED` is
 your call, never the agent's. The handover carries a `## Needs input` block
 listing exactly those rows.
 
@@ -259,7 +262,9 @@ filled, the agent invokes `/sa-ticket-ground --mission` and it fills
 `## Services & order` — one row per `svc.<name>` from the hub's
 `<repo>-code` document, with `Depends on` copied from that record. A service
 the mission will create carries `[NEW: D<n>]`, pointing at a row the SA
-appends to `## Technology decisions` for you to decide. Capability layer
+appends to `## Technology decisions` for you to decide. The gate then
+reports FAIL on exactly those rows until you flip them to `DECIDED` —
+that is the expected result, not a defect. Capability layer
 only: no file names, no tables, no routes — those belong to each ticket's own
 `## Technical grounding`, filled later at §3.8.
 

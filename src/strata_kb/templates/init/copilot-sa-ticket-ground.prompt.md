@@ -93,7 +93,8 @@ to the mission layer.
    `kb ticket check --heading "## Services & order" <file>`.
    `--missions-dir` defaults to the ticket's sibling `missions/`
    directory — pass it when the missions live elsewhere. Fix every
-   `[error]` and re-run until it prints `Grounding: PASS`. What the
+   `[error]` and re-run until it prints `Grounding: PASS`, except a
+   D-row still `OPEN`: that FAIL is reported, not fixed. What the
    engine's own words mean:
    - `needs a parent mission to hold the decision` — no back-link. Ask
      the BA to add `> Parent mission: M-<slug>` under the title, or

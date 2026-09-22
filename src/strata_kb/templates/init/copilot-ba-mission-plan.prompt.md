@@ -80,7 +80,10 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
    draft. It fills the SA-owned `## Services & order` section from the
    hub's `<repo>-code` document and appends a `## Technology decisions`
    row (status `OPEN`, a human owner) for every service the mission will
-   create, referenced from the service table as `[NEW: D<n>]`.
+   create, referenced from the service table as `[NEW: D<n>]`. Its gate
+   then reports FAIL on exactly those rows until a human flips them to
+   `DECIDED` — that is the expected result, not a defect; flipping is
+   your call.
    `kb mission lint` already warns on an ownerless D-row — that warning
    is the BA's to close, never the SA's.
 6. **Pin** — once the BA confirms which sections actually apply, call the

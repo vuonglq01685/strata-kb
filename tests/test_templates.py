@@ -2645,3 +2645,19 @@ def test_quickstart_ba_folds_the_sa_step_into_the_pipeline():
     assert "--missions-dir" in text
     # The manual step 6 is gone — the agent invokes the SA itself.
     assert "6. **Ground the technical half**" not in text
+
+
+_NUMBERED_STEP_RE = _re.compile(r"^\d+\.\s+\*\*.*$", _re.MULTILINE)
+_GATES_ON_GROUNDING_PASS_RE = _re.compile(r"once .*? reports `Grounding: PASS`")
+
+
+def test_no_ba_wrapper_gates_a_later_step_on_grounding_pass():
+    """Fix wave 2, item 1: G2 makes an OPEN D-row a hard error the SA may
+    never flip, so `sa-ticket-ground` can never report `Grounding: PASS`
+    on a greenfield ticket. A later step whose trigger reads "once X
+    reports `Grounding: PASS`" (e.g. step 8 keyed off step 7) therefore
+    deadlocks forever — no numbered step line may read that way."""
+    for name in BA_WRAPPERS:
+        text = _read_init_template(name)
+        for line in _NUMBERED_STEP_RE.findall(text):
+            assert not _GATES_ON_GROUNDING_PASS_RE.search(line), f"{name}: {line}"

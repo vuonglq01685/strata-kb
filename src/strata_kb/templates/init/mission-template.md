@@ -39,7 +39,8 @@ exactly one row here. A placeholder without an owner means the mission
 is not ready, even when lint passes. Status is OPEN or DECIDED. The SA
 appends rows here for services, tables and routes the mission will
 create; tickets reference them as [NEW: D<n>]. Only a human flips OPEN
-to DECIDED. -->
+to DECIDED. The example rows warn as ownerless in `kb mission lint`
+until you fill them in. -->
 | # | Decision | Status | Owner | Blocks |
 |---|---|---|---|---|
 | D1 | <e.g. storage engine choice> | OPEN | <who> | <US id> |
