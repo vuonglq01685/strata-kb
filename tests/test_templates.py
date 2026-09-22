@@ -2412,3 +2412,45 @@ def test_mission_required_headings_are_untouched_by_services_and_order():
 
     assert "## Services & order" not in mission.REQUIRED_MISSION_HEADINGS
     assert "## Services & order" not in mission.RECOMMENDED_MISSION_HEADINGS
+
+
+# --- PR 2 (greenfield): the templates teach the [NEW: D<n>] form ------------
+
+
+def test_ticket_template_teaches_the_decision_reference():
+    body = lintcore.section_body(
+        _read_init_template("ticket-template.md"), "## Technical grounding"
+    )
+    assert body is not None
+    normalised = _normalised(body)
+    assert "[NEW: D<n>]" in normalised
+    assert (
+        "Code the ticket will create → [NEW: D<n>], where D<n> is a DECIDED "
+        "row of the parent mission's Technology decisions."
+    ) in normalised
+    assert "No parent mission → [NEW: <reason>]." in normalised
+
+
+def test_mission_template_teaches_the_decision_reference():
+    text = _read_init_template("mission-template.md")
+    decisions = lintcore.section_body(text, "## Technology decisions")
+    services = lintcore.section_body(text, "## Services & order")
+    assert decisions is not None and services is not None
+    decisions_n = _normalised(decisions)
+    services_n = _normalised(services)
+    assert (
+        "The SA appends rows here for services, tables and routes the mission "
+        "will create; tickets reference them as [NEW: D<n>]."
+    ) in decisions_n
+    assert "Only a human flips OPEN to DECIDED." in decisions_n
+    assert (
+        "| D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |"
+        in decisions_n
+    )
+    assert "[NEW: D<n>]" in services_n
+    # PR 1 gap: a free-text example row makes a freshly scaffolded mission
+    # emit the "reference the row as [NEW: D<n>]" nudge on its first check.
+    assert "[NEW: <why it does not exist yet>]" not in services_n
+    # The marker exempts the whole row, `Depends on` included — so the
+    # comment has to say where it goes.
+    assert "the marker goes on the new service only" in services_n

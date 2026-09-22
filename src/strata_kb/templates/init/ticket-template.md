@@ -68,15 +68,18 @@ How to verify each hard-to-test AC. No sample data yet →
 ## Technical grounding
 <!-- SA-owned — filled by /sa-ticket-ground from the hub's <repo>-code
 document, never by the BA. Every line points at a section id that exists
-in that document, or carries [NEW: <reason>], or is parked under Open
-decisions. No internal flow, no failure modes — the document cannot
-prove them. Gate: `kb ticket check <this file>` must report
-`Grounding: PASS`. -->
+in that document, or carries [NEW: D<n>], or is parked under Open
+decisions. Code the ticket will create → [NEW: D<n>], where D<n> is a
+DECIDED row of the parent mission's Technology decisions. No parent
+mission → [NEW: <reason>]. Open decisions is for code that EXISTS and
+the document cannot prove — no internal flow, no failure modes — never
+for a thing that is simply not built yet. Gate:
+`kb ticket check <this file>` must report `Grounding: PASS`. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
 - Service: svc.<name>
 - Files:
   - <path exactly as listed in struct.tree>
-  - <path> [NEW: <why it does not exist yet>]
+  - <path> [NEW: D<n>]
 - Tables: db.<table>.<column>, … — or `none`
 - Routes: api.<tag> — <METHOD> <path>, … — or `none`
 - Externals: int.<name>, … — or `none`

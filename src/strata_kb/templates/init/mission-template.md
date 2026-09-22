@@ -36,10 +36,14 @@ C4Container
 ## Technology decisions
 <!-- Every `%%TODO: verify against codebase%%` in the C4 sections has
 exactly one row here. A placeholder without an owner means the mission
-is not ready, even when lint passes. Status is OPEN or DECIDED. -->
+is not ready, even when lint passes. Status is OPEN or DECIDED. The SA
+appends rows here for services, tables and routes the mission will
+create; tickets reference them as [NEW: D<n>]. Only a human flips OPEN
+to DECIDED. -->
 | # | Decision | Status | Owner | Blocks |
 |---|---|---|---|---|
 | D1 | <e.g. storage engine choice> | OPEN | <who> | <US id> |
+| D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |
 
 ## Non-functional requirements
 <!-- At least one quantified NFR is mandatory when the mission touches
@@ -71,13 +75,17 @@ need an answer go to `## Open questions`, not here.>
 mission touches, by its svc.<name> id; "Depends on" is copied from that
 record's own `Depends on` cell. No file names, no function names,
 no tables, no routes — those belong in each ticket's Technical grounding
-section. A service the mission will create carries [NEW: <reason>]. -->
+section. A service the mission will create carries [NEW: D<n>], naming
+its row in Technology decisions above. One marker exempts every unknown
+svc.* on its row, "Depends on" included, so the marker goes on the new
+service only — keep "Depends on" to services that already exist or
+carry their own decision row. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
 
 | Order | Service | Depends on | Why this order |
 |---|---|---|---|
 | 1 | svc.<name> | <from record> | <reason, cites the dependency> |
-| 2 | svc.<new-name> [NEW: <why it does not exist yet>] | svc.<name> | <reason> |
+| 2 | svc.<new-name> [NEW: D<n>] | svc.<name> | <reason> |
 
 ## Open questions
 <!-- Architecture-changing questions are flagged here and must be
