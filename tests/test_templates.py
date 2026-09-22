@@ -6,6 +6,7 @@ import yaml
 
 from strata_kb import lintcore
 from strata_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
+from strata_kb.conventions import CONVENTION_PARTS, LANG_IDS
 
 WEB_TEMPLATES = [
     "base.html", "login.html", "overview.html", "search.html",
@@ -1514,15 +1515,30 @@ def test_ba_wrappers_do_not_let_the_gap_verifier_invent_a_score():
 
 # --- Batch 5 (D conventions pack): base conventions templates ---------------
 
+# The two sections that stay in the entry file whatever else moves: the
+# citation rule and the lint preset. `## Linting (preset)` in particular is
+# named by the dev-plan wrappers, which is pinned below in
+# test_dev_plan_refuses_a_draft_design_and_writes_the_cmd_headers.
 CONVENTIONS_SECTION_HEADINGS = (
+    "## Citation comments",
+    "## Linting (preset)",
+)
+
+# Moved into `<lang>/coding-style.md` (the first four) and
+# `<lang>/testing.md` (the last) when a language's pack lands.
+CONVENTIONS_MOVED_HEADINGS = (
     "## Naming",
     "## Module structure",
     "## Error handling",
     "## Logging",
-    "## Citation comments",
     "## Testing",
-    "## Linting (preset)",
 )
+# The two of those that every entry file carries today — e2e-playwright has
+# no `## Module structure`, `## Error handling` or `## Logging`, so only
+# these two can be asserted present on an un-reshaped file.
+CONVENTIONS_UNIVERSAL_MOVED = ("## Naming", "## Testing")
+
+CONVENTIONS_PACK_MARKER = "## Conventions pack"
 
 
 def test_conventions_python_and_ts_templates_carry_the_full_skeleton():
@@ -1608,6 +1624,57 @@ def test_conventions_local_stub_and_pointer_templates():
         assert "docs/conventions/{lang}.local.md" in text
         # raw-text needle kept to one source line — the phrase wraps
         assert "wins locally" in text
+
+
+@pytest.mark.parametrize("lang", LANG_IDS)
+def test_conventions_entry_file_links_its_pack(lang):
+    """Lenient during the per-language rollout.
+
+    A language whose entry file has not been reshaped yet must still carry
+    the headings that are about to move; a reshaped one must carry the pack
+    table and none of them. Task 12 deletes the lenient branch, so an entry
+    file that is never reshaped fails there instead of passing silently.
+    """
+    text = _read_init_template(f"conventions-{lang}.md")
+    if CONVENTIONS_PACK_MARKER not in text:
+        for heading in CONVENTIONS_UNIVERSAL_MOVED:
+            assert heading in text, f"{lang}: un-reshaped entry file lost {heading!r}"
+        return
+    for part in CONVENTION_PARTS:
+        assert f"({lang}/{part}.md)" in text, f"{lang}: no link to {lang}/{part}.md"
+        assert f"(common/{part}.md)" in text, f"{lang}: no link to common/{part}.md"
+    for heading in CONVENTIONS_MOVED_HEADINGS:
+        assert heading not in text, f"{lang}: {heading!r} should have moved into the pack"
+
+
+@pytest.mark.parametrize("lang", LANG_IDS)
+def test_language_pack_templates_exist_and_extend_their_common_file(lang):
+    """Lenient during the per-language rollout: a language with none of its
+    five pack templates yet is skipped by name. Task 12 deletes the skip."""
+    base = resources.files("strata_kb").joinpath("templates/init")
+    names = {part: f"conventions-{lang}-{part}.md" for part in CONVENTION_PARTS}
+    if not any(base.joinpath(n).is_file() for n in names.values()):
+        pytest.skip(f"{lang}: conventions pack templates not written yet")
+    for part, name in names.items():
+        assert base.joinpath(name).is_file(), name
+        text = _read_init_template(name)
+        assert text.startswith(
+            f"> This file extends [common/{part}.md](../common/{part}.md) with "
+        ), name
+        for banned in ("ECC", "everything-claude", "~/.claude", "See skill:"):
+            assert banned not in text, f"{name}: {banned!r} survived"
+
+
+def test_common_pack_templates_exist_and_carry_no_extends_line():
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for part in CONVENTION_PARTS:
+        name = f"conventions-common-{part}.md"
+        assert base.joinpath(name).is_file(), name
+        text = _read_init_template(name)
+        assert text.startswith("# "), name
+        assert "This file extends" not in text, name
+        for banned in ("ECC", "everything-claude", "~/.claude", "See skill:"):
+            assert banned not in text, f"{name}: {banned!r} survived"
 
 
 # --- Batch 5 (D conventions pack): skill-text round -------------------------

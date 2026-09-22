@@ -90,6 +90,19 @@ LANG_GLOBS: dict[str, str] = {
 }
 
 
+# The five topics of a conventions pack. One `docs/conventions/common/<part>.md`
+# per repo plus one `docs/conventions/<lang>/<part>.md` per scaffolded
+# language; the language file extends the common one, and
+# `docs/conventions/<lang>.md` is the entry file that links both.
+CONVENTION_PARTS: tuple[str, ...] = (
+    "coding-style",
+    "patterns",
+    "security",
+    "testing",
+    "hooks",
+)
+
+
 def _template_text(name: str) -> str:
     return (
         resources.files("strata_kb")
@@ -127,6 +140,9 @@ def scaffold_conventions(
 ) -> list[str]:
     """Scaffold conventions files for every detected-or-forced language.
 
+    Also writes the language-agnostic half of the conventions pack,
+    `docs/conventions/common/<part>.md`, once per repo.
+
     Base + pointer files are package-owned (create-or-refresh); the
     `.local.md` stub is user data — created once, then never compared,
     never rewritten, not even with ``--force`` (its path is dynamic, so it
@@ -144,6 +160,16 @@ def scaffold_conventions(
     stub = _template_text("conventions-local-stub.md")
     mdc = _template_text("conventions-pointer.mdc")
     instr = _template_text("conventions-pointer.instructions.md")
+    # Language-agnostic half of the pack: one copy per repo, not per
+    # language. Written after the no-language early return above, so a repo
+    # with nothing detected still gets no docs/conventions/ directory.
+    for part in CONVENTION_PARTS:
+        _sync(
+            target,
+            f"docs/conventions/common/{part}.md",
+            _template_text(f"conventions-common-{part}.md"),
+            report,
+        )
     for lang in langs:
         _sync(
             target,
@@ -183,9 +209,11 @@ CLAUDE_MARKER = "<!-- kb:conventions -->"
 _CLAUDE_BLOCK = (
     f"{CLAUDE_MARKER}\n"
     "**Coding conventions.**\n"
-    "For each language you touch, read `docs/conventions/<lang>.md`; if\n"
-    "`docs/conventions/<lang>.local.md` exists it overrides the base file.\n"
-    "Where either conflicts with the repo's existing dominant style, the\n"
+    "For each language you touch, read `docs/conventions/<lang>.md` and the\n"
+    "five pack files it links under `docs/conventions/<lang>/` and\n"
+    "`docs/conventions/common/`; if `docs/conventions/<lang>.local.md`\n"
+    "exists it overrides them all. Where any of them conflicts with the\n"
+    "repo's existing dominant style, the\n"
     "repo wins locally — record the conflict as a finding in the PR.\n"
 )
 
