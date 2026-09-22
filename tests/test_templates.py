@@ -2454,3 +2454,15 @@ def test_mission_template_teaches_the_decision_reference():
     # The marker exempts the whole row, `Depends on` included — so the
     # comment has to say where it goes.
     assert "the marker goes on the new service only" in services_n
+
+
+def test_review_rubric_dev_axis_requires_every_placeholder_answered():
+    body = lintcore.section_body(
+        _read_init_template("review-rubric.md"), "## Dev implementability"
+    )
+    assert body is not None
+    assert (
+        "Every `%%TODO: verify against codebase%%` in a BA section is "
+        "answered in `## Technical grounding` by an id, a `[NEW: D<n>]`, "
+        "or an Open decisions entry — none is silently dropped."
+    ) in _normalised(body)
