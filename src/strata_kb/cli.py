@@ -2442,17 +2442,34 @@ def ticket_check(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    missions_dir: Path | None = typer.Option(
+        None,
+        "--missions-dir",
+        help="Where mission files live, for `[NEW: D<n>]` references to the "
+        "parent mission's Technology decisions (default: the ticket file's "
+        "sibling 'missions/' directory)",
+    ),
+    heading: str = typer.Option(
+        "## Technical grounding",
+        "--heading",
+        help="Section to check: `## Technical grounding` (ticket) or "
+        "`## Services & order` (mission plan; decisions are read from the "
+        "same file)",
+    ),
 ) -> None:
     """SA grounding gate: every id in '## Technical grounding' exists in the
-    -code document, columns/routes/commands/files match it, and Open
-    decisions is empty. Exit 0 PASS, 1 FAIL."""
+    -code document, columns/routes/commands/files match it, `[NEW: D<n>]`
+    points at a DECIDED row of the parent mission's Technology decisions,
+    and Open decisions is empty. Exit 0 PASS, 1 FAIL."""
     from strata_kb import ticketcheck
 
+    path: Path | None = None
     if source == "-":
         text = sys.stdin.read()
     else:
+        path = Path(source)
         try:
-            text = Path(source).read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
@@ -2461,6 +2478,8 @@ def ticket_check(
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
+
+    resolved_missions = _resolve_missions_dir(missions_dir, path)
 
     def load_doc(repo: str | None, doc: str) -> ticketcheck.LoadedDoc | None:
         # Local first (a dev machine, or the hub's own checkout): the BA repo
@@ -2472,7 +2491,19 @@ def ticket_check(
         handle = _hub_or_exit(hub, kb_dir)
         return ticketcheck.load_from_hub(handle.federation_dir, repo, doc)
 
-    report = ticketcheck.check(text, load_doc=load_doc)
+    def load_decisions(mission_id: str) -> ticketcheck.DecisionTable | None:
+        if resolved_missions is None:
+            return None
+        mission_path = resolved_missions / f"{mission_id}.md"
+        try:
+            mission_text = mission_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+        return ticketcheck.parse_decisions(mission_text, str(mission_path))
+
+    report = ticketcheck.check(
+        text, load_doc=load_doc, heading=heading, load_decisions=load_decisions
+    )
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
