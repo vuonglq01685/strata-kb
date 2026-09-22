@@ -2661,3 +2661,47 @@ def test_no_ba_wrapper_gates_a_later_step_on_grounding_pass():
         text = _read_init_template(name)
         for line in _NUMBERED_STEP_RE.findall(text):
             assert not _GATES_ON_GROUNDING_PASS_RE.search(line), f"{name}: {line}"
+
+
+# --- PR 3 (ticket size gates): the templates teach the cap ------------------
+
+
+def test_ticket_template_dor_names_the_size_gates():
+    dor = lintcore.section_body(
+        _read_init_template("ticket-template.md"), "## Definition of Ready"
+    )
+    assert dor is not None
+    assert (
+        "One user story and at most 10 acceptance criteria — a bigger "
+        "scope is two tickets"
+    ) in _normalised(dor)
+
+
+def test_review_rubric_business_axis_caps_the_ticket_size():
+    body = lintcore.section_body(
+        _read_init_template("review-rubric.md"), "## Business coverage"
+    )
+    assert body is not None
+    assert (
+        "One user story and ≤ 10 acceptance criteria; no AC is a compound "
+        "of two conditions written to stay under the cap."
+    ) in _normalised(body)
+
+
+def test_ba_ticket_full_wrappers_teach_the_ticket_split():
+    """The command wrapper is exempt: it has no Draft step to qualify,
+    only a prose summary of the skill's rules (see line 193's note)."""
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        assert (
+            'One AC is one testable condition and one outcome; a ticket '
+            'that needs more than 10 AC, or a second "As a …" story, is '
+            "two tickets — split it before Lint, never merge ACs to fit."
+        ) in _ba_wrapper_text(name), name
+
+
+def test_quickstart_ba_gate_list_names_the_size_gates():
+    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
+    assert (
+        "At most 10 acceptance criteria and exactly one `As a … I want … so "
+        "that …` story — a bigger scope is two tickets"
+    ) in text

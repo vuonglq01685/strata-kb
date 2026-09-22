@@ -176,6 +176,9 @@ checks:
 - Required sections present (Summary, User Story, Background,
   Acceptance Criteria, Use cases, both Mermaid diagrams, KB context,
   Definition of Ready).
+- At most 10 acceptance criteria and exactly one `As a … I want … so
+  that …` story — a bigger scope is two tickets; never merge two
+  conditions into one AC to fit.
 - Every `## KB context` ref resolves at its pinned hub commit — no
   broken or malformed refs.
 - Every inline `[doc-id §section]` citation is backed by a pinned ref.

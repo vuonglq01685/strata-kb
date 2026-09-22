@@ -302,6 +302,11 @@ Chính tham chiếu section, viết đúng dạng một trích dẫn thật:
 
 - **Có đủ các mục bắt buộc**: Summary, User Story, Background, Acceptance
   Criteria, Use cases, cả hai sơ đồ Mermaid, KB context, Definition of Ready.
+- **Tối đa 10 tiêu chí chấp nhận.** Nhiều hơn mười mục `- [ ]` dưới
+  `## Acceptance Criteria` sẽ làm fail cổng. Hãy tách ticket — gộp hai điều
+  kiện vào một AC cho vừa mức trần chính là điều luật này sinh ra để chặn.
+- **Đúng một user story.** Nhiều hơn một dạng `As a … I want … so that …` dưới
+  `## User Story` sẽ làm fail cổng. Mỗi story một ticket.
 - **Mọi tham chiếu trong `## KB context` phân giải được** tại commit hub đã ghim.
   Không có tham chiếu hỏng hay sai định dạng.
 - **Mọi trích dẫn `[doc-id §section]` trong nội dung đều có một tham chiếu đã

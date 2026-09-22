@@ -307,6 +307,12 @@ The section reference itself, spelled the way a real citation is:
 
 - **Required sections present**: Summary, User Story, Background, Acceptance
   Criteria, Use cases, both Mermaid diagrams, KB context, Definition of Ready.
+- **At most 10 acceptance criteria.** More than ten `- [ ]` items under
+  `## Acceptance Criteria` fails the gate. Split the ticket — merging two
+  conditions into one AC to fit under the cap is the thing the rule exists to
+  stop.
+- **Exactly one user story.** More than one `As a … I want … so that …` shape
+  under `## User Story` fails the gate. One ticket per story.
 - **Every `## KB context` ref resolves** at its pinned hub commit. No broken or
   malformed refs.
 - **Every inline `[doc-id §section]` citation is backed by a pinned ref.**

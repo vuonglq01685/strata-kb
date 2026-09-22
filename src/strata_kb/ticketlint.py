@@ -87,13 +87,43 @@ def _check_story(text: str) -> list[Issue]:
     return issues
 
 
+def _check_story_count(text: str) -> list[Issue]:
+    """One ticket, one story. Two stories under one heading make every AC
+    ambiguous about which story accepts it, and the split the BA avoided
+    lands on the dev instead.
+
+    `STORY_RE.findall` is a sound count for well-formed stories: the
+    pattern is lazy under `re.S` and ends at 'so that', so each match
+    consumes exactly one
+    story and the scan resumes past it. A single comma-rich story — even
+    one saying 'shown as a side panel' after 'I want' — yields 1, because
+    the incidental 'as a' sits inside the first match's span.
+    """
+    body = lintcore.section_body(text, "## User Story")
+    if body is None:
+        return []  # heading missing — already reported by check_headings
+    # Comments carry template guidance and drafts; count only what shows.
+    found = len(ticket.STORY_RE.findall(lintcore.visible_body(body)))
+    if found <= 1:
+        return []
+    return [
+        Issue(
+            "error",
+            f"User Story has {found} stories — one ticket per story, "
+            "split the ticket",
+        )
+    ]
+
+
 def _check_ac_present(text: str) -> tuple[list[Issue], list[str]]:
     body = lintcore.section_body(text, "## Acceptance Criteria")
     if body is None:
         return [], []
+    # Visible items only: an AC parked in a comment is neither a real
+    # criterion (floor) nor scope (ceiling).
     items = [
         m.group(1)
-        for line in body.splitlines()
+        for line in lintcore.visible_body(body).splitlines()
         if (m := _AC_ITEM_RE.match(line.strip()))
     ]
     if len(items) < 2:
@@ -105,6 +135,31 @@ def _check_ac_present(text: str) -> tuple[list[Issue], list[str]]:
             )
         ], items
     return [], items
+
+
+# Upper bound on acceptance criteria. Deliberately NOT a config key: the
+# only real ticket measured so far carried 27 AC — six natural clusters
+# that should have been six tickets — and a threshold tuned
+# on a single sample is a guess, not a policy. Revisit when ~20 real
+# tickets exist and the p90 is known.
+MAX_AC = 10
+
+
+def _check_ac_count(ac_items: list[str]) -> list[Issue]:
+    """The ceiling that `_check_ac_present`'s 'at least 2' has no opinion
+    about. More AC than a reviewer can hold in one pass is a scope
+    problem, not a formatting one — the fix is a second ticket, never two
+    conditions merged into one AC to duck the cap."""
+    if len(ac_items) <= MAX_AC:
+        return []
+    return [
+        Issue(
+            "error",
+            f"Acceptance Criteria has {len(ac_items)} items "
+            f"(max {MAX_AC}) — split the ticket, one user story per "
+            "ticket",
+        )
+    ]
 
 
 _AC_ID_RE = re.compile(r"^(AC\d+)\b", re.I)
@@ -399,9 +454,11 @@ def lint(
     issues += lintcore.check_headings(text, ticket.REQUIRED_HEADINGS)
     issues += _check_required_filled(text)
     issues += _check_story(text)
+    issues += _check_story_count(text)
 
     ac_issues, ac_items = _check_ac_present(text)
     issues += ac_issues
+    issues += _check_ac_count(ac_items)
     issues += _check_ac_ids(ac_items)
     issues += _check_ac_substance(ac_items)
 

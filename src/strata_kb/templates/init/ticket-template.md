@@ -107,6 +107,7 @@ kb-context:
 - [ ] Every citation resolves at the pinned version (kb ticket lint PASS)
 - [ ] No stale refs
 - [ ] Every AC is acceptance-testable; no weasel words remain (docs/ac-quality.md)
+- [ ] One user story and at most 10 acceptance criteria — a bigger scope is two tickets
 - [ ] Dependencies, NFR, UI spec, Out of scope, Test data filled or "N/A — <reason>"
 - [ ] Every open question has an owner
 - [ ] Technical grounding filled by SA; kb ticket check PASS (Open decisions empty)

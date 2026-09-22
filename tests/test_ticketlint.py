@@ -1240,3 +1240,120 @@ def test_unticked_definition_of_ready_boxes_are_a_warning_only(
     ]
     assert len(unticked) == 3
     assert report.passed is True
+
+
+# --- PR 3: ticket size gates ------------------------------------------------
+
+
+def _ac_lines(n: int) -> str:
+    """`n` clean ACs: unique id, a bracketed citation, and a digit each,
+    so no OTHER rule can fire on them and a size failure is unambiguous.
+    Shape copied from `test_duplicate_ac_ids_fail`, minus the duplicate
+    id."""
+    return "\n".join(
+        f"- [ ] AC{i}: Show airspace field {i} per [arinc-kb:arinc-424 §5.3]"
+        for i in range(1, n + 1)
+    )
+
+
+def test_more_than_ten_acceptance_criteria_fail(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block, overrides={"## Acceptance Criteria": _ac_lines(11)}
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any(
+        "Acceptance Criteria has 11 items (max 10)" in m
+        for m in _errors(report)
+    )
+
+
+def test_exactly_ten_acceptance_criteria_pass(
+    fed_hub: Path, golden_block: str
+):
+    """The cap is inclusive — 10 is the maximum, not the first failure."""
+    text = _build_ticket(
+        golden_block, overrides={"## Acceptance Criteria": _ac_lines(10)}
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("(max 10)" in m for m in _errors(report))
+
+
+def test_two_user_stories_fail(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## User Story": (
+                "As a dispatcher, I want to see restrictive airspace "
+                "details, so that I can brief the crew accurately.\n\n"
+                "As a planner, I want to export the airspace list, so "
+                "that I can attach it to the flight file."
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is False
+    assert any("User Story has 2 stories" in m for m in _errors(report))
+
+
+def test_one_comma_rich_user_story_passes(fed_hub: Path, golden_block: str):
+    """`STORY_RE` is lazy under `re.S`, so `findall` consumes exactly one
+    story per match: a single story full of commas — and carrying an
+    incidental 'as a' after 'I want' — must still count as 1, not 2."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## User Story": (
+                "As a flight dispatcher, working the evening shift, I "
+                "want the restrictive airspace details, refreshed every "
+                "30 s, shown as a side panel, so that I can brief the "
+                "crew without reading the raw feed."
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("stories" in m for m in _errors(report))
+
+
+def test_a_story_inside_an_html_comment_does_not_count(
+    fed_hub: Path, golden_block: str
+):
+    """The section is counted on its visible body: an earlier draft left
+    in a comment is guidance, not a second story."""
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## User Story": (
+                "<!-- earlier draft: As a planner, I want the export, "
+                "so that I can attach it. -->\n"
+                "As a dispatcher, I want the restrictive airspace details, "
+                "so that I can brief the crew accurately."
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("stories" in m for m in _errors(report))
+
+
+def test_acceptance_criteria_inside_an_html_comment_do_not_count(
+    fed_hub: Path, golden_block: str
+):
+    """Both the floor and the ceiling read the visible body: an AC parked
+    in a comment is neither a criterion nor scope. Nine visible plus
+    three commented stays under the cap of 10."""
+    visible = _ac_lines(9)
+    hidden = (
+        "<!-- deferred to the split ticket:\n"
+        "- [ ] AC10: Show airspace field 10 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC11: Show airspace field 11 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC12: Show airspace field 12 per [arinc-kb:arinc-424 §5.3]\n"
+        "-->"
+    )
+    text = _build_ticket(
+        golden_block,
+        overrides={"## Acceptance Criteria": visible + "\n" + hidden},
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("(max 10)" in m for m in _errors(report))
