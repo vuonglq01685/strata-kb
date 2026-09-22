@@ -7,39 +7,19 @@ and OVERRIDES this one where they conflict. Where either file conflicts
 with the repo's existing dominant style, the repo wins locally — record
 the conflict as a finding in the PR.
 
-## Naming
+## Conventions pack
 
-- Packages: all-lowercase, no underscores (`com.acme.billing`).
-- Classes, interfaces, enums, records: `PascalCase`; exceptions end in
-  `Exception`.
-- Methods and fields: `camelCase`; booleans read as predicates
-  (`isReady`, `hasPending`).
-- Constants (`static final`): `UPPER_SNAKE_CASE`.
+Read this file first, then the pack. Each language file extends its
+`common/` counterpart; where the two disagree, the language file wins, and
+`docs/conventions/java.local.md` wins over both.
 
-## Module structure
-
-- Organise packages by feature/domain, not by technical layer alone.
-- One top-level type per file; keep classes focused — extract before a
-  class grows past ~400 lines.
-- Depend on interfaces at boundaries; keep constructors injectable (no
-  hidden `new` of collaborators in business logic).
-
-## Error handling
-
-- Throw specific exceptions; never `catch (Exception e) {}` — a
-  swallowed exception is a bug.
-- Fail fast at boundaries: validate arguments where data enters
-  (`Objects.requireNonNull`, explicit checks with messages naming the
-  offending value).
-- Catch only what the code can handle; otherwise wrap and rethrow with
-  the original as cause.
-
-## Logging
-
-- Use SLF4J (`LoggerFactory.getLogger(X.class)`); never
-  `System.out.println` in committed code.
-- Use parameterised messages (`log.info("user {} created", id)`), not
-  string concatenation.
+| Topic | Java | Shared |
+|---|---|---|
+| Coding style | [java/coding-style.md](java/coding-style.md) | [common/coding-style.md](common/coding-style.md) |
+| Patterns | [java/patterns.md](java/patterns.md) | [common/patterns.md](common/patterns.md) |
+| Security | [java/security.md](java/security.md) | [common/security.md](common/security.md) |
+| Testing | [java/testing.md](java/testing.md) | [common/testing.md](common/testing.md) |
+| Hooks | [java/hooks.md](java/hooks.md) | [common/hooks.md](common/hooks.md) |
 
 ## Citation comments
 
@@ -50,13 +30,6 @@ comment on the same line or the line above:
 ```java
 static final int MAX_ALTITUDE_FT = 60_000; // per ATM-STD §5.3 @ v2.1
 ```
-
-## Testing
-
-- JUnit 5, AAA shape (Arrange–Act–Assert), one behaviour per test.
-- Names describe the behaviour: `rejectsExpiredToken()`, not `test2()`.
-- Every bug fix lands together with the test that would have caught it.
-- Never edit a test to make it pass — diagnose the cause.
 
 ## Linting (preset)
 
