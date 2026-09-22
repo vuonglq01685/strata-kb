@@ -92,7 +92,7 @@ def _check_story_count(text: str) -> list[Issue]:
     ambiguous about which story accepts it, and the split the BA avoided
     lands on the dev instead.
 
-    `STORY_RE.findall` is a reliable count: the pattern is lazy under
+    `STORY_RE.findall` is a sound count for well-formed stories: the pattern is lazy under
     `re.S` and ends at 'so that', so each match consumes exactly one
     story and the scan resumes past it. A single comma-rich story — even
     one saying 'shown as a side panel' after 'I want' — yields 1, because
@@ -118,9 +118,11 @@ def _check_ac_present(text: str) -> tuple[list[Issue], list[str]]:
     body = lintcore.section_body(text, "## Acceptance Criteria")
     if body is None:
         return [], []
+    # Visible items only: an AC parked in a comment is neither a real
+    # criterion (floor) nor scope (ceiling).
     items = [
         m.group(1)
-        for line in body.splitlines()
+        for line in lintcore.visible_body(body).splitlines()
         if (m := _AC_ITEM_RE.match(line.strip()))
     ]
     if len(items) < 2:

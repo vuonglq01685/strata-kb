@@ -1335,3 +1335,25 @@ def test_a_story_inside_an_html_comment_does_not_count(
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert not any("stories" in m for m in _errors(report))
+
+
+def test_acceptance_criteria_inside_an_html_comment_do_not_count(
+    fed_hub: Path, golden_block: str
+):
+    """Both the floor and the ceiling read the visible body: an AC parked
+    in a comment is neither a criterion nor scope. Nine visible plus
+    three commented stays under the cap of 10."""
+    visible = _ac_lines(9)
+    hidden = (
+        "<!-- deferred to the split ticket:\n"
+        "- [ ] AC10: Show airspace field 10 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC11: Show airspace field 11 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC12: Show airspace field 12 per [arinc-kb:arinc-424 §5.3]\n"
+        "-->"
+    )
+    text = _build_ticket(
+        golden_block,
+        overrides={"## Acceptance Criteria": visible + "\n" + hidden},
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("(max 10)" in m for m in _errors(report))

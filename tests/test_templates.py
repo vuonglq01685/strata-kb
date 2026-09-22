@@ -2684,7 +2684,7 @@ def test_review_rubric_business_axis_caps_the_ticket_size():
     assert body is not None
     assert (
         "One user story and ≤ 10 acceptance criteria; no AC is a compound "
-        "of two conditions written to stay under the cap"
+        "of two conditions written to stay under the cap."
     ) in _normalised(body)
 
 

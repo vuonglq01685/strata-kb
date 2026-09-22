@@ -28,7 +28,7 @@ Checklist (pass/fail each item):
 - [ ] Every unknown is owned: `OPEN(<owner>)` + an `## Open questions`
       row — vagueness without an owner fails this item.
 - [ ] One user story and ≤ 10 acceptance criteria; no AC is a compound
-      of two conditions written to stay under the cap
+      of two conditions written to stay under the cap.
 
 ## Dev implementability
 
