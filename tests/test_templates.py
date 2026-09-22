@@ -2621,3 +2621,13 @@ def test_copilot_and_cursor_ba_sa_wrappers_differ_only_on_frontmatter_line_two()
         assert copilot[:1] + copilot[2:] == cursor[:1] + cursor[2:], skill
         assert copilot[1] == "mode: agent", skill
         assert cursor[1] == f"name: {skill}", skill
+
+
+def test_quickstart_ba_folds_the_sa_step_into_the_pipeline():
+    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
+    assert "Greenfield repos: what `[NEW: D<n>]` means" in text
+    assert "7. **Ground technical**" in text
+    assert "Ground services" in text
+    assert "--missions-dir" in text
+    # The manual step 6 is gone — the agent invokes the SA itself.
+    assert "6. **Ground the technical half**" not in text

@@ -53,7 +53,15 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       `kb_context_new` and embeds the returned `## KB context` block.
    6. **Lint** — it runs `kb ticket lint` and fixes errors until it
       reports `DoR: PASS`.
-   7. **Maturity review** — once lint reports `DoR: PASS`, it runs two
+   7. **Ground technical** — it saves the draft and invokes
+      `/sa-ticket-ground` on it as its own subagent. That fills the
+      SA-owned `## Technical grounding` section from the hub's
+      `<repo>-code` document (service, files, tables, routes, externals,
+      test command — section ids only) and runs `kb ticket check` until
+      it reports `Grounding: PASS`. You never fill that section
+      yourself, and the SA never edits yours. Its `## Needs input` block
+      comes back to you in the handover.
+   8. **Maturity review** — once lint reports `DoR: PASS`, it runs two
       independent reviews — as two subagents in parallel where the
       runtime supports it, otherwise two sequential passes, one role
       per pass — one scoring "Business coverage", one scoring "Dev
@@ -62,19 +70,32 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       score ≥ 4; a gap it cannot close itself becomes an owned
       `OPEN(<owner>)` open question instead of a guess. The result
       lands in the ticket's `## Review record` section.
-   8. **Review → save** — it writes the draft to `tickets/<ticket-id>.md`
+   9. **Review → save** — it writes the draft to `tickets/<ticket-id>.md`
       (or `tickets/<mission-id>-US<n>.md` from step 2). You review it,
       commit it, and paste it into Jira yourself — the assistant never
       publishes for you.
-6. **Ground the technical half** — invoke `/sa-ticket-ground
-   tickets/<ticket-id>.md`. It fills the SA-owned `## Technical grounding`
-   section from the hub's `<repo>-code` document (service, files, tables,
-   routes, externals, test command — section ids only), parks what the
-   document cannot prove under `Open decisions`, and runs
-   `kb ticket check` until it reports `Grounding: PASS`. You never fill
-   that section yourself, and the SA never edits yours. For a mission
-   plan, `/sa-ticket-ground --mission missions/M-<slug>.md` fills
-   `## Services & order` the same way.
+Run `/sa-ticket-ground tickets/<ticket-id>.md` by hand only to re-ground
+a ticket after `<repo>-code` has moved.
+
+### Greenfield repos: what `[NEW: D<n>]` means
+
+In a repo whose code is still a skeleton, most of what a ticket needs
+does not exist yet. That is **not** missing data — it is a design
+decision. The SA proposes it as a row in the parent mission's
+`## Technology decisions` (status `OPEN`, a human owner) and writes
+`[NEW: D<n>]` on the grounding line, pointing at that row.
+
+`kb ticket check` verifies the reference: the row must exist and its
+`Status` must be `DECIDED`. An `OPEN` row fails the gate and names its
+owner — **you** decide and flip it to `DECIDED`; the SA never flips a
+status. Pass `--missions-dir <dir>` when the missions do not sit in the
+ticket's sibling `missions/` directory.
+
+Only code that genuinely exists and the document cannot prove — internal
+flow, failure modes, request bodies — belongs under `Open decisions` for
+the Dev. A ticket with no parent mission has no table to point at and
+keeps a free-text `[NEW: <reason>]`: the gate accepts it, but the
+decision then has no owner.
 
 ## Mission plans — for large features
 
@@ -84,8 +105,11 @@ small work goes straight to a ticket. A mission is never mandatory.
 Per mission:
 
 1. `/ba-mission-plan` — the agent walks Intake → Ground → Draft →
-   Split → Pin → Lint → Maturity review → Review and saves
-   `missions/M-<slug>.md`.
+   Split → Ground services → Pin → Lint → Maturity review → Review and
+   saves `missions/M-<slug>.md`. At **Ground services** it invokes
+   `/sa-ticket-ground --mission` itself: that fills the SA-owned
+   `## Services & order` section and appends a `## Technology decisions`
+   row for every service the mission will create.
 2. Review the C4 L1/L2 diagrams (Level 1 = System Context, Level 2 =
    Container), the scope split, and the US backlog.
 3. `kb mission lint missions/M-<slug>.md` must report `DoR: PASS`.
@@ -377,9 +401,13 @@ tiering change shows up in the report the next ticket generates.
   before opening a PR
 - `kb mission lint <file> [--hub <url>]` — run the mission DoR gate
   locally before opening a PR
-- `kb ticket check <file> [--hub <url>]` — run the SA grounding gate: every
-  id in `## Technical grounding` must exist in the hub's `<repo>-code`
-  document and `Open decisions` must be empty (`Grounding: PASS`)
+- `kb ticket check <file> [--missions-dir <dir>] [--heading <h2>] [--hub <url>]`
+  — run the SA grounding gate: every id in `## Technical grounding` must
+  exist in the hub's `<repo>-code` document, every `[NEW: D<n>]` must name a
+  `DECIDED` row of the parent mission's `## Technology decisions`
+  (`--missions-dir`, default the sibling `missions/`), and `Open decisions`
+  must be empty (`Grounding: PASS`). `--heading "## Services & order"`
+  checks a mission plan's SA section against its own table
 - `kb tags [--hub <url>]` — list every tag published on the hub, i.e. the
   tags a `kb-context` block may carry
 - `kb doctor --hub <url>` — check the hub is reachable and
