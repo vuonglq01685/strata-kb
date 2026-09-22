@@ -173,6 +173,18 @@ Hãy đọc các câu hỏi mở. Đó là chỗ agent nói cho bạn biết nó
 Bản nháp được lưu vào `tickets/<ticket-id>.md`. Bạn đọc, commit, rồi dán vào hệ
 thống quản lý issue. Trợ lý không bao giờ làm việc đó thay bạn.
 
+## 3.8 SA ghim phần kỹ thuật
+
+Khi bản nháp đã lưu, hãy chuyển cho SA: `/sa-ticket-ground
+tickets/<ticket-id>.md`. Lệnh này điền mục `## Technical grounding` do SA sở
+hữu — service, file, bảng, route, external, lệnh test — mỗi dòng là một
+section id lấy từ tài liệu `<repo>-code` trên hub, hoặc `[NEW: <lý do>]`,
+hoặc được gác lại dưới `Open decisions` khi tài liệu không chứng minh được.
+Nó không bao giờ sửa mục của bạn; một phát biểu nghiệp vụ mâu thuẫn với sự
+thật trong code sẽ được trích lại ở đó, không bị sửa. `kb ticket check
+tickets/<ticket-id>.md` là cổng: PASS chỉ khi mọi id phân giải được và
+`Open decisions` rỗng.
+
 ---
 
 # 4. Mission plan — cho tính năng lớn
@@ -220,32 +232,39 @@ vẫn hợp lệ — chỉ là ticket không truy vết được về mission c�
 Backlog có lỗ hổng số thứ tự là chuyện bình thường. Nếu bạn bỏ một story, hãy để
 số của nó nghỉ hưu. Đánh số lại sẽ làm hỏng tên file của những ticket đã soạn.
 
+## 4.3 SA điền danh sách service
+
+Khi bạn đã xác nhận backlog, `/sa-ticket-ground --mission
+missions/M-<slug>.md` điền `## Services & order` — mỗi dòng một `svc.<name>`
+lấy từ tài liệu `<repo>-code` trên hub, cột `Depends on` chép từ chính record
+đó. Chỉ ở lớp năng lực: không tên file, không bảng, không route — những cái
+đó thuộc về `## Technical grounding` của từng ticket, điền sau ở mục 3.8.
+
 ---
 
 # 5. Dùng tri thức về code
 
 Ngoài tài liệu nghiệp vụ, hub còn giữ hai tài liệu cho mỗi repo sản phẩm, do
-chính workflow của repo đó publish:
+chính workflow của repo đó publish: `<repo>-code` (cấu trúc do máy sinh —
+`svc.*`, `db.*`, `api.*`, `int.*`, `cmd.*`, `struct.tree`) và `<repo>-svc`
+(trách nhiệm do người biên soạn — mỗi service thực sự để làm gì).
 
-| Tài liệu | Chứa gì | Dùng để |
-|---|---|---|
-| `<repo>-code` | cấu trúc do máy sinh — tên service, công nghệ, dependency, endpoint | lấy *tên* trong sơ đồ |
-| `<repo>-svc` | trách nhiệm do người biên soạn — mỗi service thực sự để làm gì | lấy *ý nghĩa* trong sơ đồ |
+Các skill `ba-ticket-author` và `ba-mission-plan` không tự đọc hai tài liệu
+này. Khi ticket hay mission cần tên service, bảng, route hay file, chúng viết
+`%%TODO: verify against codebase%%` kèm một câu hỏi mở có chủ, thay vì đoán —
+rồi `/sa-ticket-ground` (§3.8, §4.3) trả lời những câu đó từ `<repo>-code`,
+vào đúng mục do SA sở hữu — `## Technical grounding` ở ticket, `## Services &
+order` ở mission. Mọi id nó viết ra đều được `kb ticket check` đối chiếu với
+tài liệu; cái tài liệu không chứng minh được — luồng nội bộ, chế độ lỗi, nội
+dung request — được gác lại dưới `Open decisions` cho lập trình viên, người
+có code trong tay.
 
-Cả hai xuất hiện trong kết quả `kb_search` với tag `code`, giống mọi nội dung
-khác trên hub, nên agent bám được sơ đồ vào chúng mà bạn không phải nêu tên repo
-một cách đặc biệt.
-
-Ghép lại chúng điền đủ một container C4:
+Chính tham chiếu section, viết đúng dạng một trích dẫn thật:
 
 ```text
-Container(alias, label, technology, description)
-          \_______________________/  \_________/
-           <repo>-code §svc.<name>    <repo>-svc §svc.<name>
+<repo>-code §svc.<name>
+<repo>-svc §svc.<name>
 ```
-
-Chỉ viết `%%TODO: verify against codebase%%` khi **cả hai** tài liệu đều không
-trả lời được.
 
 > **Một lưu ý quan trọng.** `<repo>-svc` dùng để bám sơ đồ. Nó không bao giờ thay
 > thế được một trích dẫn nghiệp vụ trong tiêu chí chấp nhận. Một mã, định dạng,

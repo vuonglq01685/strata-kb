@@ -178,6 +178,17 @@ know.
 The draft lands in `tickets/<ticket-id>.md`. You read it, commit it, and paste it
 into the tracker. The assistant never does that for you.
 
+## 3.8 SA grounds the technical half
+
+Once your draft is saved, hand it to the SA: `/sa-ticket-ground
+tickets/<ticket-id>.md`. It fills the SA-owned `## Technical grounding`
+section — service, files, tables, routes, externals, test command — each a
+section id from the hub's `<repo>-code` document, or `[NEW: <reason>]`, or
+parked under `Open decisions` when the document cannot prove it. It never
+edits your sections; a business statement that contradicts the code facts is
+quoted there, not corrected. `kb ticket check tickets/<ticket-id>.md` gates
+it: PASS only when every id resolves and `Open decisions` is empty.
+
 ---
 
 # 4. Mission plans — for large features
@@ -227,31 +238,39 @@ valid — the ticket just becomes untraceable to its mission.
 Backlog numbering gaps are fine. If you drop a story, leave its number retired.
 Renumbering would break the filenames of tickets already drafted.
 
+## 4.3 SA grounds the service list
+
+Once you confirm the backlog, `/sa-ticket-ground --mission
+missions/M-<slug>.md` fills `## Services & order` — one row per `svc.<name>`
+from the hub's `<repo>-code` document, with `Depends on` copied from that
+record. Capability layer only: no file names, no tables, no routes — those
+belong to each ticket's own `## Technical grounding`, filled later at §3.8.
+
 ---
 
 # 5. Using code knowledge
 
 Besides domain documents, the hub holds two documents per product repository,
-published by that repository's own workflow:
+published by that repository's own workflow: `<repo>-code` (generated
+structure — `svc.*`, `db.*`, `api.*`, `int.*`, `cmd.*`, `struct.tree`) and
+`<repo>-svc` (curated responsibility — what each service is actually for).
 
-| Document | Holds | Use it for |
-|---|---|---|
-| `<repo>-code` | generated structure — service names, technologies, dependencies, endpoints | the *names* in a diagram |
-| `<repo>-svc` | curated responsibility — what each service is actually for | the *meaning* in a diagram |
+The `ba-ticket-author` and `ba-mission-plan` skills do not read either
+document themselves. Where a ticket or mission needs a service, table, route
+or file name, they write `%%TODO: verify against codebase%%` with an owned
+open question instead of guessing, and `/sa-ticket-ground` (§3.8, §4.3)
+answers those from `<repo>-code` in the SA-owned section — `##
+Technical grounding` in a ticket, `## Services & order` in a mission. Every
+id it writes is checked against the document by `kb ticket check`; what the
+document cannot prove — internal flow, failure modes, request bodies — is
+parked under `Open decisions` for the developer, who has the code.
 
-Both appear in `kb_search` results tagged `code`, like any other hub content, so
-the agent can ground diagrams in them without you naming the repository
-specially.
-
-Together they fill a C4 container:
+The section reference itself, spelled the way a real citation is:
 
 ```text
-Container(alias, label, technology, description)
-          \_______________________/  \_________/
-           <repo>-code §svc.<name>    <repo>-svc §svc.<name>
+<repo>-code §svc.<name>
+<repo>-svc §svc.<name>
 ```
-
-Write `%%TODO: verify against codebase%%` only when **neither** document answers.
 
 > **One caution.** `<repo>-svc` grounds a diagram. It is never a substitute for a
 > domain citation in an acceptance criterion. A code, format, enum or threshold
