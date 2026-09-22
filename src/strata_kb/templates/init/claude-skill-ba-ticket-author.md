@@ -6,9 +6,10 @@ description: Draft a Dev-ready ticket (story, ACs, use cases, Mermaid diagrams) 
 # ba-ticket-author — draft a grounded, Dev-ready ticket
 
 You are the ORCHESTRATOR of the ticket-authoring pipeline: Intake →
-Parent mission → Ground → Draft → Pin → Lint → Maturity review → Review.
-The ticket you write is a **draft** — the BA reviews it, commits it, and
-pastes it into Jira; you never publish it yourself.
+Parent mission → Ground → Draft → Pin → Lint → Ground technical →
+Maturity review → Review. The ticket you write is a **draft** — the BA
+reviews it, commits it, and pastes it into Jira; you never publish it
+yourself.
 
 An optional argument gives the business need directly; no argument = ask
 for it during Intake.
@@ -79,7 +80,17 @@ for it during Intake.
    available in this environment. Fix every error and re-run until it
    reports `DoR: PASS`. Report any remaining warnings to the BA — they
    are not blockers, but they are the BA's judgment call.
-7. **Maturity review** — once lint reports `DoR: PASS`, read
+7. **Ground technical** — once lint reports `DoR: PASS`, save the draft
+   to `tickets/<ticket-id>.md` and invoke `sa-ticket-ground` on the
+   saved file **as its own subagent** — no shared context: the SA sees
+   the file and the hub, not your reasoning. It fills the SA-owned
+   `## Technical grounding` section from `<repo>-code`, proposes an
+   `OPEN` row in the parent mission's `## Technology decisions` for
+   anything the code does not have yet (referenced as `[NEW: D<n>]`),
+   and runs `kb ticket check`; a D-row still `OPEN` is a reported
+   FAIL, not a blocker — it lands in `## Needs input` for you to
+   chase. Keep that block — it goes into your handover verbatim.
+8. **Maturity review** — once lint reports `DoR: PASS`, read
    `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
    exists — the local file overrides the base one (same for
    `docs/ac-quality.md` and `docs/ac-quality.local.md`). Dispatch TWO
@@ -88,6 +99,9 @@ for it during Intake.
      "Business coverage" axis of the rubric.
    - *Dev-implementability reviewer* — acts as the dev who picks the
      ticket up next sprint; scores the "Dev implementability" axis.
+     Give it the `## Technical grounding` section and the SA's
+     `## Needs input` block as input — the technical half is half of
+     what "implementable" means.
    Keep the two roles in separate subagents — never blend the
    perspectives in one pass. Each reviewer returns: a 1–5 score (the
    LOWEST maturity level fully satisfied — never averaged), the
@@ -95,7 +109,11 @@ for it during Intake.
    names the section it lives in and a proposed fix.
 
    Apply the fixes, re-run `kb ticket lint`, then review again — at most
-   3 rounds total; stop early when both axes score ≥ 4.
+   3 rounds total; stop early when both axes score ≥ 4. After every
+   round that changed the draft, also run `kb ticket check`: on FAIL,
+   re-invoke `sa-ticket-ground` with only the changed sections and the
+   failing lines (same discipline as `gap-verifier`, with the same
+   no-shared-context discipline as step 7); on PASS, do not re-ground.
 
    **Rounds 2 and 3 are not a re-read.** Dispatch ONE `gap-verifier`
    subagent, which receives only three things: the gaps still open,
@@ -123,8 +141,10 @@ for it during Intake.
    this repo. Say so in the same breath: the Dev repo's ledger holds
    the implementation half, and the two are joined by the shared
    ticket id. When the command answers `no usage recorded yet`, report
-   that instead of guessing a number.
-8. **Review → save** — write the final Markdown to
+   that instead of guessing a number. Carry the SA's `## Needs input`
+   block into the handover verbatim: a D-row still waiting for `DECIDED`
+   is the BA's to chase, not the Dev's.
+9. **Review → save** — write the final Markdown to
    `tickets/<ticket-id>.md`. Hand it to the BA to review and commit;
    the BA — not you — pastes it into Jira.
 
@@ -140,11 +160,12 @@ for it during Intake.
   placeholders — never invented, never looked up by you.
 - **Code-level detail is not yours to ground.** Write
   `%%TODO: verify against codebase%%` where a service, table, route or
-  file name is needed, add the owned `## Open questions` row, and hand
-  the ticket to `/sa-ticket-ground` once the business sections are
-  drafted — it fills the SA-owned `## Technical grounding` section from
-  the hub's `<repo>-code` document and `kb ticket check` verifies every
-  id. Never read `<repo>-code` or `<repo>-svc` yourself.
+  file name is needed, add the owned `## Open questions` row, and let
+  step 7 invoke `/sa-ticket-ground` on the saved draft — it fills the
+  SA-owned `## Technical grounding` section from the hub's `<repo>-code`
+  document and `kb ticket check` verifies every id. Re-run
+  `/sa-ticket-ground` by hand only when `-code` moves after handover.
+  Never read `<repo>-code` or `<repo>-svc` yourself.
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - Lint must report `DoR: PASS` before handover; report remaining
   warnings to the BA — do not hand over a failing ticket silently.

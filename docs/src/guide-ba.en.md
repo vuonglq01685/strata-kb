@@ -108,8 +108,8 @@ requiring the check is what does.
 
 # 3. Writing a ticket
 
-Invoke `/ba-ticket-author` and describe the business need. The agent runs an
-eight-step pipeline; your job is steps 1, 3 and 8.
+Invoke `/ba-ticket-author` and describe the business need. The agent runs a
+nine-step pipeline; your job is steps 1, 3 and 9.
 
 ```
   1 Intake            you describe the need
@@ -118,8 +118,9 @@ eight-step pipeline; your job is steps 1, 3 and 8.
   4 Draft             story, ACs, use cases, two diagrams
   5 Pin               kb_context_new embeds the pinned block
   6 Lint              kb ticket lint until DoR: PASS
-  7 Maturity review   two independent reviews, up to 3 rounds
-  8 Review → save     you read it, commit it, paste it into the tracker
+  7 Ground technical  the SA fills Technical grounding; kb ticket check
+  8 Maturity review   two independent reviews, up to 3 rounds
+  9 Review → save     you read it, commit it, paste it into the tracker
 ```
 
 ## 3.1 Intake
@@ -180,14 +181,30 @@ into the tracker. The assistant never does that for you.
 
 ## 3.8 SA grounds the technical half
 
-Once your draft is saved, hand it to the SA: `/sa-ticket-ground
-tickets/<ticket-id>.md`. It fills the SA-owned `## Technical grounding`
-section — service, files, tables, routes, externals, test command — each a
-section id from the hub's `<repo>-code` document, or `[NEW: <reason>]`, or
-parked under `Open decisions` when the document cannot prove it. It never
-edits your sections; a business statement that contradicts the code facts is
-quoted there, not corrected. `kb ticket check tickets/<ticket-id>.md` gates
-it: PASS only when every id resolves and `Open decisions` is empty.
+Step 7 runs this for you. Once lint reports `DoR: PASS`, the agent saves the
+draft and invokes `/sa-ticket-ground` on it as its own subagent. It fills the
+SA-owned `## Technical grounding` section — service, files, tables, routes,
+externals, test command — each a section id from the hub's `<repo>-code`
+document. It never edits your sections; a business statement that contradicts
+the code facts is quoted there, not corrected.
+
+Code that does not exist yet is not missing data, it is a design decision.
+The SA proposes a row in the parent mission's `## Technology decisions`
+(status `OPEN`, a human owner) and writes `[NEW: D<n>]` pointing at it. Only
+code that exists and the document cannot prove — internal flow, failure
+modes, request bodies — goes under `Open decisions` for the developer.
+
+`kb ticket check tickets/<ticket-id>.md` gates it: PASS only when every id
+resolves, every `[NEW: D<n>]` names a `DECIDED` row, and `Open decisions` is
+empty. A ticket with no parent mission has no table to hold a row, so the SA
+writes free-text `[NEW: <reason>]` instead — the gate accepts it as a note; a
+mission would give the decision an owner. An `OPEN` row fails and names its
+owner — flipping it to `DECIDED` is
+your call, never the agent's. The handover carries a `## Needs input` block
+listing exactly those rows.
+
+Run `/sa-ticket-ground` by hand only to re-ground a ticket after
+`<repo>-code` has moved.
 
 ---
 
@@ -200,8 +217,8 @@ goes straight to a ticket. A mission is never mandatory.
 /ba-mission-plan
 ```
 
-The pipeline is **Intake → Ground → Draft → Split → Pin → Lint → Maturity
-review → Review**, and it saves `missions/M-<slug>.md`.
+The pipeline is **Intake → Ground → Draft → Split → Ground services → Pin →
+Lint → Maturity review → Review**, and it saves `missions/M-<slug>.md`.
 
 A mission carries:
 
@@ -240,11 +257,16 @@ Renumbering would break the filenames of tickets already drafted.
 
 ## 4.3 SA grounds the service list
 
-Once you confirm the backlog, `/sa-ticket-ground --mission
-missions/M-<slug>.md` fills `## Services & order` — one row per `svc.<name>`
-from the hub's `<repo>-code` document, with `Depends on` copied from that
-record. Capability layer only: no file names, no tables, no routes — those
-belong to each ticket's own `## Technical grounding`, filled later at §3.8.
+Step 5 runs this for you. Once you confirm the backlog and `## Sequencing` is
+filled, the agent invokes `/sa-ticket-ground --mission` and it fills
+`## Services & order` — one row per `svc.<name>` from the hub's
+`<repo>-code` document, with `Depends on` copied from that record. A service
+the mission will create carries `[NEW: D<n>]`, pointing at a row the SA
+appends to `## Technology decisions` for you to decide. The gate then
+reports FAIL on exactly those rows until you flip them to `DECIDED` —
+that is the expected result, not a defect. Capability layer
+only: no file names, no tables, no routes — those belong to each ticket's own
+`## Technical grounding`, filled later at §3.8.
 
 ---
 

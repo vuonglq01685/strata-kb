@@ -129,7 +129,7 @@ def test_docs_name_the_check_command():
     readme = (_P(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
     assert "`kb ticket check <file\\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]`" in readme
     quick = resources.files("strata_kb").joinpath("templates/init/QUICKSTART-ba.md").read_text(encoding="utf-8")
-    assert "- `kb ticket check <file> [--hub <url>]`" in quick
+    assert "- `kb ticket check <file> [--missions-dir <dir>] [--heading <h2>] [--hub <url>]`" in quick
     for name in ("claude-skill-sa-ticket-ground.md", "copilot-sa-ticket-ground.prompt.md", "cursor-sa-ticket-ground.md"):
         text = resources.files("strata_kb").joinpath(f"templates/init/{name}").read_text(encoding="utf-8")
         assert "has no `ticket check` command yet" not in text, name

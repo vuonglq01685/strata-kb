@@ -457,8 +457,11 @@ add an agent.
 
 ## 9. Out of scope / follow-ups
 
-- Auto-invoking SA after BA (hook or pipeline) — manual until the flow is
-  stable.
+- ~~Auto-invoking SA after BA (hook or pipeline) — manual until the flow is
+  stable.~~ Superseded 2026-09-22 by
+  `2026-09-22-sa-greenfield-grounding-design.md` §2 (decision G4), §4:
+  `sa-ticket-ground` now runs inside `ba-ticket-author` (step 7) and
+  `ba-mission-plan` (step 5).
 - A third-tier reviewer agent, or a scoring rubric for the SA section.
 - `kb mission check` (engine already parameterised by heading).
 - `kb_ticket_check` MCP tool (the CLI has no fallback today, like

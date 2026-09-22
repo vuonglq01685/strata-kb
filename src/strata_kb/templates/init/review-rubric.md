@@ -44,6 +44,9 @@ Checklist (pass/fail each item):
 - [ ] Dependencies are listed ("None" counts; blank does not).
 - [ ] Sequencing is feasible — nothing depends on later work.
 - [ ] Every `OPEN(...)` and `%%TODO%%` has an owner.
+- [ ] Every `%%TODO: verify against codebase%%` in a BA section is
+      answered in `## Technical grounding` by an id, a `[NEW: D<n>]`, or
+      an Open decisions entry — none is silently dropped.
 - [ ] No weasel words anywhere in the body.
 
 ## Maturity scale

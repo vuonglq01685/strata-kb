@@ -7,8 +7,8 @@ Invoke the `ba-ticket-author` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the business need when given;
 when empty, ask for it during Intake.
 
-Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Maturity review → Review,
-saved to `tickets/<ticket-id>.md` — or `tickets/<mission-id>-US<n>.md`
+Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
+to `tickets/<ticket-id>.md` — or `tickets/<mission-id>-US<n>.md`
 when the ticket has a parent mission, so the back-link check can find it.
 When the BA names a parent mission, read it for the story title, put
 `> Parent mission: <mission-id>` on its own line directly under the
@@ -43,9 +43,13 @@ checkbox yourself — only the BA confirms DoR items.
 
 Code-level detail is not yours to ground: write
 `%%TODO: verify against codebase%%` where a service, table, route or
-file name is needed, add the owned `## Open questions` row, and hand the
-ticket to `/sa-ticket-ground` once the business sections are drafted —
-it fills the SA-owned `## Technical grounding` section from the hub's
-`<repo>-code` document and `kb ticket check` verifies every id. Never
-read `<repo>-code` or `<repo>-svc` yourself; leave `## Technical
-grounding` exactly as the template ships it.
+file name is needed, add the owned `## Open questions` row, and let
+step 7 (Ground technical) invoke `/sa-ticket-ground` on the saved
+draft — it fills the SA-owned `## Technical grounding` section from the
+hub's `<repo>-code` document, proposes an `OPEN` row in the parent
+mission's `## Technology decisions` for anything the code does not have
+yet (referenced as `[NEW: D<n>]`), and `kb ticket check` verifies every
+id. Re-run `/sa-ticket-ground` by hand only when `-code` moves after
+handover. Never read `<repo>-code` or `<repo>-svc` yourself; leave
+`## Technical grounding` exactly as the template ships it, and carry the
+SA's `## Needs input` block into your handover verbatim.

@@ -106,8 +106,8 @@ việc yêu cầu check mới chặn.
 
 # 3. Viết một ticket
 
-Gọi `/ba-ticket-author` và mô tả nhu cầu nghiệp vụ. Agent chạy một pipeline tám
-bước; phần việc của bạn là bước 1, 3 và 8.
+Gọi `/ba-ticket-author` và mô tả nhu cầu nghiệp vụ. Agent chạy một pipeline chín
+bước; phần việc của bạn là bước 1, 3 và 9.
 
 ```
   1 Intake            bạn mô tả nhu cầu
@@ -116,8 +116,9 @@ bước; phần việc của bạn là bước 1, 3 và 8.
   4 Draft             story, AC, use case, hai sơ đồ
   5 Pin               kb_context_new nhúng khối đã ghim
   6 Lint              kb ticket lint cho tới khi DoR: PASS
-  7 Maturity review   hai lượt review độc lập, tối đa 3 vòng
-  8 Review → save     bạn đọc, commit, dán vào hệ thống issue
+  7 Ground technical  SA điền Technical grounding; kb ticket check
+  8 Maturity review   hai lượt review độc lập, tối đa 3 vòng
+  9 Review → save     bạn đọc, commit, dán vào hệ thống issue
 ```
 
 ## 3.1 Intake
@@ -175,15 +176,32 @@ thống quản lý issue. Trợ lý không bao giờ làm việc đó thay bạn
 
 ## 3.8 SA ghim phần kỹ thuật
 
-Khi bản nháp đã lưu, hãy chuyển cho SA: `/sa-ticket-ground
-tickets/<ticket-id>.md`. Lệnh này điền mục `## Technical grounding` do SA sở
-hữu — service, file, bảng, route, external, lệnh test — mỗi dòng là một
-section id lấy từ tài liệu `<repo>-code` trên hub, hoặc `[NEW: <lý do>]`,
-hoặc được gác lại dưới `Open decisions` khi tài liệu không chứng minh được.
-Nó không bao giờ sửa mục của bạn; một phát biểu nghiệp vụ mâu thuẫn với sự
-thật trong code sẽ được trích lại ở đó, không bị sửa. `kb ticket check
-tickets/<ticket-id>.md` là cổng: PASS chỉ khi mọi id phân giải được và
-`Open decisions` rỗng.
+Bước 7 làm việc này thay bạn. Khi lint báo `DoR: PASS`, agent lưu bản nháp
+rồi gọi `/sa-ticket-ground` trên chính file đó như một subagent riêng. Lệnh
+này điền mục `## Technical grounding` do SA sở hữu — service, file, bảng,
+route, external, lệnh test — mỗi dòng là một section id lấy từ tài liệu
+`<repo>-code` trên hub. Nó không bao giờ sửa mục của bạn; một phát biểu
+nghiệp vụ mâu thuẫn với sự thật trong code sẽ được trích lại ở đó, không bị
+sửa.
+
+Code chưa tồn tại không phải là thiếu dữ liệu, mà là một quyết định thiết
+kế. SA đề xuất nó thành một dòng trong `## Technology decisions` của mission
+cha (trạng thái `OPEN`, chủ sở hữu là một con người) và ghi `[NEW: D<n>]` trỏ
+tới dòng đó. Chỉ những gì code đã có mà tài liệu không chứng minh được —
+luồng nội bộ, tình huống lỗi, thân request — mới được gác dưới
+`Open decisions` cho lập trình viên.
+
+`kb ticket check tickets/<ticket-id>.md` là cổng: PASS chỉ khi mọi id phân
+giải được, mọi `[NEW: D<n>]` trỏ tới một dòng `DECIDED`, và `Open decisions`
+rỗng. Một ticket không có mission cha thì không có bảng để giữ dòng, nên SA
+viết văn bản tự do `[NEW: <reason>]` thay vào đó — gate chấp nhận nó như một
+ghi chú; một mission sẽ cho quyết định đó một chủ sở hữu. Một dòng `OPEN`
+làm fail cổng và nêu tên chủ sở hữu — đổi nó sang
+`DECIDED` là quyết định của bạn, không bao giờ của agent. Bản bàn giao mang
+theo khối `## Needs input` liệt kê đúng những dòng đó.
+
+Chỉ chạy `/sa-ticket-ground` bằng tay khi cần ghim lại một ticket sau lúc
+`<repo>-code` đã thay đổi.
 
 ---
 
@@ -196,8 +214,8 @@ thì đi thẳng tới ticket. Mission không bao giờ là bắt buộc.
 /ba-mission-plan
 ```
 
-Pipeline là **Intake → Ground → Draft → Split → Pin → Lint → Maturity review →
-Review**, và lưu ra `missions/M-<slug>.md`.
+Pipeline là **Intake → Ground → Draft → Split → Ground services → Pin → Lint →
+Maturity review → Review**, và lưu ra `missions/M-<slug>.md`.
 
 Một mission mang theo:
 
@@ -234,11 +252,16 @@ số của nó nghỉ hưu. Đánh số lại sẽ làm hỏng tên file của n
 
 ## 4.3 SA điền danh sách service
 
-Khi bạn đã xác nhận backlog, `/sa-ticket-ground --mission
-missions/M-<slug>.md` điền `## Services & order` — mỗi dòng một `svc.<name>`
-lấy từ tài liệu `<repo>-code` trên hub, cột `Depends on` chép từ chính record
-đó. Chỉ ở lớp năng lực: không tên file, không bảng, không route — những cái
-đó thuộc về `## Technical grounding` của từng ticket, điền sau ở mục 3.8.
+Bước 5 làm việc này thay bạn. Khi bạn đã xác nhận backlog và `## Sequencing`
+đã điền, agent gọi `/sa-ticket-ground --mission` và nó điền
+`## Services & order` — mỗi dòng một `svc.<name>` lấy từ tài liệu
+`<repo>-code` trên hub, cột `Depends on` chép từ chính record đó. Service mà
+mission sẽ tạo mới mang `[NEW: D<n>]`, trỏ tới một dòng SA thêm vào
+`## Technology decisions` để bạn quyết định. Gate sau đó báo FAIL đúng
+những dòng đó cho tới khi bạn chuyển chúng sang `DECIDED` — đó là kết quả
+mong đợi, không phải lỗi. Chỉ ở lớp năng lực: không tên
+file, không bảng, không route — những cái đó thuộc về `## Technical
+grounding` của từng ticket, điền sau ở mục 3.8.
 
 ---
 

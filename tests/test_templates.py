@@ -24,7 +24,8 @@ BA_TICKET_AUTHOR_TEMPLATES = [
 ]
 
 BA_TICKET_AUTHOR_PIPELINE_STEPS = (
-    "Intake", "Parent mission", "Ground", "Draft", "Pin", "Lint", "Review",
+    "Intake", "Parent mission", "Ground", "Draft", "Pin", "Lint",
+    "Ground technical", "Maturity review", "Review → save",
 )
 
 
@@ -132,7 +133,7 @@ def test_ba_ticket_author_templates_exist_as_package_resources():
         assert base.joinpath(name).is_file(), name
 
 
-def test_ba_ticket_author_templates_carry_the_seven_pipeline_steps():
+def test_ba_ticket_author_templates_carry_the_nine_pipeline_steps():
     for name in BA_TICKET_AUTHOR_TEMPLATES:
         text = _read_init_template(name)
         for step in BA_TICKET_AUTHOR_PIPELINE_STEPS:
@@ -2412,3 +2413,251 @@ def test_mission_required_headings_are_untouched_by_services_and_order():
 
     assert "## Services & order" not in mission.REQUIRED_MISSION_HEADINGS
     assert "## Services & order" not in mission.RECOMMENDED_MISSION_HEADINGS
+
+
+# --- PR 2 (greenfield): the templates teach the [NEW: D<n>] form ------------
+
+
+def test_ticket_template_teaches_the_decision_reference():
+    body = lintcore.section_body(
+        _read_init_template("ticket-template.md"), "## Technical grounding"
+    )
+    assert body is not None
+    normalised = _normalised(body)
+    assert "[NEW: D<n>]" in normalised
+    assert (
+        "Code the ticket will create → [NEW: D<n>], where D<n> is a DECIDED "
+        "row of the parent mission's Technology decisions."
+    ) in normalised
+    assert "No parent mission → [NEW: <reason>]." in normalised
+    assert "[NEW: <why it does not exist yet>]" not in normalised
+
+
+def test_mission_template_teaches_the_decision_reference():
+    text = _read_init_template("mission-template.md")
+    decisions = lintcore.section_body(text, "## Technology decisions")
+    services = lintcore.section_body(text, "## Services & order")
+    assert decisions is not None and services is not None
+    decisions_n = _normalised(decisions)
+    services_n = _normalised(services)
+    assert (
+        "The SA appends rows here for services, tables and routes the mission "
+        "will create; tickets reference them as [NEW: D<n>]."
+    ) in decisions_n
+    assert "Only a human flips OPEN to DECIDED." in decisions_n
+    assert (
+        "| D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |"
+        in decisions_n
+    )
+    assert "[NEW: D<n>]" in services_n
+    # The shipped example must show the form the gate expects ([NEW: D<n>]),
+    # not the free-text form the gate nudges against ([NEW: <reason>]) —
+    # ticketcheck.check() would accept either (it returns early on a
+    # placeholder `Grounded on:` line, and a literal `D<n>` fails
+    # DECISION_REF_RE so is treated as free text anyway); this is about the
+    # example teaching the right habit, not engine behaviour.
+    assert "[NEW: <why it does not exist yet>]" not in services_n
+    # The marker exempts the whole row, `Depends on` included — so the
+    # comment has to say where it goes.
+    assert "the marker goes on the new service only" in services_n
+
+
+def test_review_rubric_dev_axis_requires_every_placeholder_answered():
+    body = lintcore.section_body(
+        _read_init_template("review-rubric.md"), "## Dev implementability"
+    )
+    assert body is not None
+    assert (
+        "Every `%%TODO: verify against codebase%%` in a BA section is "
+        "answered in `## Technical grounding` by an id, a `[NEW: D<n>]`, "
+        "or an Open decisions entry — none is silently dropped."
+    ) in _normalised(body)
+
+
+def _sa_hard_rules(name: str) -> str:
+    """One SA wrapper's `## Hard rules` block, verbatim, to end of file.
+
+    Only the three full-content wrappers carry the block; the command
+    wrapper is a thin skill invoker that summarises the rules in prose.
+    """
+    text = _read_init_template(name)
+    assert text.count("\n## Hard rules\n") == 1, name
+    return text[text.index("\n## Hard rules\n") :]
+
+
+def test_sa_hard_rules_are_byte_identical_across_the_full_wrappers():
+    canon = _sa_hard_rules(SA_FULL_WRAPPERS[0])
+    for name in SA_FULL_WRAPPERS[1:]:
+        assert _sa_hard_rules(name) == canon, name
+
+
+def test_sa_hard_rules_carry_the_two_greenfield_rules():
+    block = _normalised(_sa_hard_rules(SA_FULL_WRAPPERS[0]))
+    assert (
+        "A thing the code does not have yet is a design decision, not missing "
+        "data: propose it as a `## Technology decisions` row (status OPEN, a "
+        "human owner) and reference it as [NEW: D<n>]. Never park \"not built "
+        "yet\" under Open decisions."
+    ) in block
+    assert (
+        "You may APPEND rows to `## Technology decisions`; never edit or "
+        "delete an existing row, never change a Status — only a human flips "
+        "OPEN to DECIDED."
+    ) in block
+
+
+def test_sa_wrappers_carry_the_decision_reference_and_needs_input():
+    for name in SA_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert "[NEW: D" in text, name
+        assert "## Needs input" in text, name
+
+
+def test_sa_wrappers_name_the_gate_with_its_flags():
+    for name in SA_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert "kb ticket check <file> [--missions-dir <dir>]" in text, name
+        assert 'kb ticket check --heading "## Services & order" <file>' in text, name
+
+
+def test_sa_wrappers_react_to_the_real_engine_messages():
+    """The skill's FAIL handling quotes ticketcheck's own wording, so an SA
+    reading the gate output finds the instruction under the same words."""
+    for name in SA_FULL_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        for message in (
+            "needs a parent mission to hold the decision",
+            "parent mission '<id>' not found under missions/",
+            "decision D<n> not in <file>'s Technology decisions",
+            "decision D<n> is <status> (owner: <x>)",
+            "has Technology decisions — reference the row as [NEW: D<n>]",
+        ):
+            assert message in text, f"{name}: {message}"
+
+
+def test_sa_claude_skill_and_cursor_wrappers_are_byte_identical():
+    assert _read_init_template("claude-skill-sa-ticket-ground.md") == (
+        _read_init_template("cursor-sa-ticket-ground.md")
+    )
+
+
+def test_ba_ticket_wrappers_run_the_sa_inside_the_pipeline():
+    for name in BA_TICKET_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Ground technical" in text, name
+        assert "## Needs input" in text, name
+        # The manual hand-off is gone; the only by-hand case left is a
+        # re-ground after <repo>-code moves.
+        assert "once the business sections are drafted" not in text, name
+        assert "only when `-code` moves after handover" in text, name
+
+
+def test_ba_ticket_full_wrappers_re_ground_only_on_a_check_failure():
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        text = _ba_wrapper_text(name)
+        assert "no shared context: the SA sees the file and the hub" in text, name
+        assert "After every round that changed the draft, also run `kb ticket check`" in text, name
+        assert "on PASS, do not re-ground" in text, name
+
+
+def test_ba_ticket_claude_skill_alone_keeps_the_subagent_wording():
+    """Only the Claude skill wrapper dispatches a real subagent; Copilot and
+    Cursor have no such concept, so Task 4 reworded their step 7 into a
+    dialect-neutral "separate run" — the skill keeps its original wording."""
+    text = _ba_wrapper_text("claude-skill-ba-ticket-author.md")
+    assert "as its own subagent" in text
+
+
+def test_ba_ticket_pipeline_line_names_the_new_step():
+    for name, needle in (
+        (
+            "claude-skill-ba-ticket-author.md",
+            "Intake → Parent mission → Ground → Draft → Pin → Lint → "
+            "Ground technical → Maturity review → Review",
+        ),
+        (
+            "claude-command-ba-ticket-author.md",
+            "Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint "
+            "→ Ground technical → Maturity review → Review",
+        ),
+        (
+            "copilot-ba-ticket-author.prompt.md",
+            "Intake → Parent mission → Ground → Draft → Pin → Lint → "
+            "Ground technical → Maturity review → Review, saved to "
+            "tickets/<id>.md",
+        ),
+    ):
+        assert needle in _ba_wrapper_text(name), name
+
+
+def test_ba_mission_wrappers_run_the_sa_inside_the_pipeline():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Ground services" in text, name
+        assert "[NEW: D" in text, name
+        assert "hand the mission to `/sa-ticket-ground --mission`" not in text, name
+
+
+def test_ba_mission_reviewer_receives_the_service_order():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert (
+            "Give it `## Services & order` as input" in text
+        ), name
+
+
+def test_ba_mission_pipeline_line_names_the_new_step():
+    for name, needle in (
+        (
+            "claude-skill-ba-mission-plan.md",
+            "Intake → Ground → Draft → Split → Ground services → Pin → Lint → "
+            "Maturity review → Review",
+        ),
+        (
+            "copilot-ba-mission-plan.prompt.md",
+            "Intake → Ground → Draft → Split → Ground services → Pin → Lint → "
+            "Maturity review → Review, saved to missions/M-<slug>.md",
+        ),
+    ):
+        assert needle in _ba_wrapper_text(name), name
+
+
+NON_DEV_WRAPPER_SKILLS = ("sa-ticket-ground", "ba-ticket-author", "ba-mission-plan")
+
+
+def test_copilot_and_cursor_ba_sa_wrappers_differ_only_on_frontmatter_line_two():
+    """The dev-side guard (`test_copilot_and_cursor_wrappers_differ_only_in_
+    their_frontmatter_name`) covers DEV_WORKFLOW_SKILLS only; the BA and SA
+    wrappers had no equivalent, which is how a three-file edit could drift."""
+    for skill in NON_DEV_WRAPPER_SKILLS:
+        copilot = _read_init_template(f"copilot-{skill}.prompt.md").splitlines()
+        cursor = _read_init_template(f"cursor-{skill}.md").splitlines()
+        assert copilot[:1] + copilot[2:] == cursor[:1] + cursor[2:], skill
+        assert copilot[1] == "mode: agent", skill
+        assert cursor[1] == f"name: {skill}", skill
+
+
+def test_quickstart_ba_folds_the_sa_step_into_the_pipeline():
+    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
+    assert "Greenfield repos: what `[NEW: D<n>]` means" in text
+    assert "7. **Ground technical**" in text
+    assert "Ground services" in text
+    assert "--missions-dir" in text
+    # The manual step 6 is gone — the agent invokes the SA itself.
+    assert "6. **Ground the technical half**" not in text
+
+
+_NUMBERED_STEP_RE = _re.compile(r"^\d+\.\s+\*\*.*$", _re.MULTILINE)
+_GATES_ON_GROUNDING_PASS_RE = _re.compile(r"once .*? reports `Grounding: PASS`")
+
+
+def test_no_ba_wrapper_gates_a_later_step_on_grounding_pass():
+    """Fix wave 2, item 1: G2 makes an OPEN D-row a hard error the SA may
+    never flip, so `sa-ticket-ground` can never report `Grounding: PASS`
+    on a greenfield ticket. A later step whose trigger reads "once X
+    reports `Grounding: PASS`" (e.g. step 8 keyed off step 7) therefore
+    deadlocks forever — no numbered step line may read that way."""
+    for name in BA_WRAPPERS:
+        text = _read_init_template(name)
+        for line in _NUMBERED_STEP_RE.findall(text):
+            assert not _GATES_ON_GROUNDING_PASS_RE.search(line), f"{name}: {line}"
