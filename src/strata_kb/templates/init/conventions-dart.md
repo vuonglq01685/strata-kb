@@ -7,37 +7,19 @@ and OVERRIDES this one where they conflict. Where either file conflicts
 with the repo's existing dominant style, the repo wins locally — record
 the conflict as a finding in the PR.
 
-## Naming
+## Conventions pack
 
-- Types, enums, extensions: `PascalCase`. Variables, functions,
-  parameters: `camelCase`. Files: `snake_case.dart`.
-- Booleans read as predicates (`isReady`, `hasPending`).
-- Widgets are nouns naming what they render (`UserAvatar`, not
-  `BuildUserAvatar`).
+Read this file first, then the pack. Each language file extends its
+`common/` counterpart; where the two disagree, the language file wins, and
+`docs/conventions/dart.local.md` wins over both.
 
-## Module structure
-
-- Organise by feature/domain (`lib/<feature>/`), not by widget/model/
-  service layering across the whole app.
-- Keep widgets and classes small and cohesive; a file past ~400 lines
-  is a signal to split.
-- Prefer composition over deep widget-inheritance chains.
-
-## Error handling
-
-- Throw typed exceptions (a custom `Exception` subclass), never a bare
-  `String`; never swallow a `Future` — every one is awaited, returned,
-  or explicitly `.catchError`-handled.
-- Fail fast at boundaries: validate external data (API responses, user
-  input) before it crosses into typed models.
-- `catch` only what the code can handle; rethrow otherwise, preserving
-  the stack trace (`Error.throwWithStackTrace` or rethrow `on E`).
-
-## Logging
-
-- Use `dart:developer`'s `log()` (structured, named); never
-  `print` for diagnostics in committed code.
-- Log where the error is handled, with enough context to act on.
+| Topic | Dart / Flutter | Shared |
+|---|---|---|
+| Coding style | [dart/coding-style.md](dart/coding-style.md) | [common/coding-style.md](common/coding-style.md) |
+| Patterns | [dart/patterns.md](dart/patterns.md) | [common/patterns.md](common/patterns.md) |
+| Security | [dart/security.md](dart/security.md) | [common/security.md](common/security.md) |
+| Testing | [dart/testing.md](dart/testing.md) | [common/testing.md](common/testing.md) |
+| Hooks | [dart/hooks.md](dart/hooks.md) | [common/hooks.md](common/hooks.md) |
 
 ## Citation comments
 
@@ -48,15 +30,6 @@ comment on the same line or the line above:
 ```dart
 const maxAltitudeFt = 60000; // per ATM-STD §5.3 @ v2.1
 ```
-
-## Testing
-
-- `package:test` for pure Dart, `package:flutter_test` for widgets;
-  AAA shape, one behaviour per test.
-- Names describe the behaviour: `test("rejects expired token", ...)`,
-  not `test("token 2", ...)`.
-- Every bug fix lands together with the test that would have caught it.
-- Never edit a test to make it pass — diagnose the cause.
 
 ## Linting (preset)
 
