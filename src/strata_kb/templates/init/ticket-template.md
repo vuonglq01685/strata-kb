@@ -74,7 +74,8 @@ DECIDED row of the parent mission's Technology decisions. No parent
 mission → [NEW: <reason>]. Open decisions is for code that EXISTS and
 the document cannot prove — no internal flow, no failure modes — never
 for a thing that is simply not built yet. Gate:
-`kb ticket check <this file>` must report `Grounding: PASS`. -->
+`kb ticket check <this file>` must report `Grounding: PASS` before Dev
+starts; a D-row still OPEN is a FAIL a human resolves, not the SA. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
 - Service: svc.<name>
 - Files:
