@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: Draft an epic-level Mission Plan grounded in the KB — Intake → Ground → Draft → Split → Pin → Lint → Maturity review → Review, saved to missions/M-<slug>.md
+description: Draft an epic-level Mission Plan grounded in the KB — Intake → Ground → Draft → Split → Ground services → Pin → Lint → Maturity review → Review, saved to missions/M-<slug>.md
 ---
 
 # /ba-mission-plan — draft a grounded, epic-level mission plan
@@ -75,7 +75,15 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
    the reasoning — never just a single title row. After the BA confirms
    the backlog, fill `## Sequencing` (US ID / Depends on / Size /
    Notes) — Devs never infer ordering.
-5. **Pin** — once the BA confirms which sections actually apply, call the
+5. **Ground services** — once the BA has confirmed the backlog and
+   `## Sequencing` is filled, invoke `sa-ticket-ground --mission` on the
+   draft. It fills the SA-owned `## Services & order` section from the
+   hub's `<repo>-code` document and appends a `## Technology decisions`
+   row (status `OPEN`, a human owner) for every service the mission will
+   create, referenced from the service table as `[NEW: D<n>]`.
+   `kb mission lint` already warns on an ownerless D-row — that warning
+   is the BA's to close, never the SA's.
+6. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly those
    confirmed refs. Embed the block it returns verbatim under
@@ -85,12 +93,12 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
    validated against the hub vocabulary and an unknown one is an error.
    The tags the BA gave at intake are search keywords for
    `kb query --tags`, nothing more.
-6. **Lint** — run `kb mission lint <file>` against the draft. Fix every
+7. **Lint** — run `kb mission lint <file>` against the draft. Fix every
    error and re-run until it reports `DoR: PASS`. A coverage warning of
    `0/N US drafted` is EXPECTED at creation time — the tickets do not
    exist yet. Report remaining warnings to the BA; they are the BA's
    judgment call.
-7. **Maturity review** — once lint reports `DoR: PASS`, read
+8. **Maturity review** — once lint reports `DoR: PASS`, read
    `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
    exists — the local file overrides the base one (same for
    `docs/ac-quality.md` and `docs/ac-quality.local.md`). Run TWO
@@ -102,7 +110,8 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
      "Business coverage" axis of the rubric.
    - *Dev-implementability reviewer* — acts as the tech lead who will
      slice this mission into tickets; scores the "Dev implementability"
-     axis.
+     axis. Give it `## Services & order` as input — the service order is
+     what makes the backlog sliceable.
    Each reviewer returns: a 1–5 score (the LOWEST maturity level fully
    satisfied — never averaged), the checklist with pass/fail per item,
    and a gap list where every gap names the section it lives in and a
@@ -134,7 +143,7 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
    cell reads `gap-verifier` for rounds 2 and 3 — and list the
    still-open gaps on the `Open gaps:` line. Report both scores and the
    remaining owned gaps to the BA in the handover summary.
-8. **Review → save** — write the final Markdown to
+9. **Review → save** — write the final Markdown to
    `missions/<mission-id>.md`. Hand it to the BA to review and commit.
 
 ## Hard rules
@@ -148,12 +157,13 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
   `kb-summarize` apply. Unsure → `%%TODO: verify against codebase%%`.
 - **Code-level detail is not yours to ground.** Write
   `%%TODO: verify against codebase%%` where a service or container name
-  is needed, add the owned `## Technology decisions` row, and hand the
-  mission to `/sa-ticket-ground --mission` once the BA confirms the
-  backlog — it fills the SA-owned `## Services & order` section from the
-  hub's `<repo>-code` document (`svc.*` and its `Depends on` cell) and
-  the architecture document. Never read `<repo>-code` or `<repo>-svc`
-  yourself.
+  is needed, add the owned `## Technology decisions` row, and let step 5
+  (Ground services) invoke `/sa-ticket-ground --mission` once the BA
+  confirms the backlog — it fills the SA-owned `## Services & order`
+  section from the hub's `<repo>-code` document (`svc.*` and its
+  `Depends on` cell) and the architecture document, and appends an
+  `OPEN` decision row for every service the mission will create. Never
+  read `<repo>-code` or `<repo>-svc` yourself.
 - **`kb mission lint` failing to RUN is not a PASS.** There is no MCP
   fallback for this gate. If the `kb` command is unavailable, tell the BA
   to install `strata-kb` — never skip the lint step, and never hand over a

@@ -2574,3 +2574,50 @@ def test_ba_ticket_pipeline_line_names_the_new_step():
         ),
     ):
         assert needle in _ba_wrapper_text(name), name
+
+
+def test_ba_mission_wrappers_run_the_sa_inside_the_pipeline():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Ground services" in text, name
+        assert "[NEW: D" in text, name
+        assert "hand the mission to `/sa-ticket-ground --mission`" not in text, name
+
+
+def test_ba_mission_reviewer_receives_the_service_order():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert (
+            "Give it `## Services & order` as input" in text
+        ), name
+
+
+def test_ba_mission_pipeline_line_names_the_new_step():
+    for name, needle in (
+        (
+            "claude-skill-ba-mission-plan.md",
+            "Intake → Ground → Draft → Split → Ground services → Pin → Lint → "
+            "Maturity review → Review",
+        ),
+        (
+            "copilot-ba-mission-plan.prompt.md",
+            "Intake → Ground → Draft → Split → Ground services → Pin → Lint → "
+            "Maturity review → Review, saved to missions/M-<slug>.md",
+        ),
+    ):
+        assert needle in _ba_wrapper_text(name), name
+
+
+NON_DEV_WRAPPER_SKILLS = ("sa-ticket-ground", "ba-ticket-author", "ba-mission-plan")
+
+
+def test_copilot_and_cursor_ba_sa_wrappers_differ_only_on_frontmatter_line_two():
+    """The dev-side guard (`test_copilot_and_cursor_wrappers_differ_only_in_
+    their_frontmatter_name`) covers DEV_WORKFLOW_SKILLS only; the BA and SA
+    wrappers had no equivalent, which is how a three-file edit could drift."""
+    for skill in NON_DEV_WRAPPER_SKILLS:
+        copilot = _read_init_template(f"copilot-{skill}.prompt.md").splitlines()
+        cursor = _read_init_template(f"cursor-{skill}.md").splitlines()
+        assert copilot[:1] + copilot[2:] == cursor[:1] + cursor[2:], skill
+        assert copilot[1] == "mode: agent", skill
+        assert cursor[1] == f"name: {skill}", skill
