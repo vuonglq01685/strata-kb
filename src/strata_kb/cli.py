@@ -2335,6 +2335,29 @@ def resolve(
         raise typer.Exit(2)
 
 
+def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path | None:
+    """Where mission files live for a ticket command. An explicit
+    --missions-dir that is not a directory is a BA typo and a hard error —
+    otherwise the engine's .is_file() probing would misreport a real mission
+    as missing. The default is fail-soft: a ticket at tickets/<id>.md gets
+    its sibling missions/ when that exists, else None (the engine notes the
+    skipped checks). Gated on the parent's name so an unrelated missions/
+    next to some other file never binds."""
+    if missions_dir is not None:
+        if not missions_dir.is_dir():
+            typer.secho(
+                f"--missions-dir '{missions_dir}' does not exist or is not a directory",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        return missions_dir
+    if path is not None and path.parent.name == "tickets":
+        sibling = path.parent.parent / "missions"
+        if sibling.is_dir():
+            return sibling
+    return None
+
+
 @ticket_app.command("lint")
 def ticket_lint(
     source: str = typer.Argument(
@@ -2380,35 +2403,7 @@ def ticket_lint(
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
 
-    # An explicitly-passed --missions-dir is a deliberate BA choice, so a
-    # typo must be a hard error — otherwise check_parent_mission's
-    # .is_file() probing quietly reports "mission file not found" for a
-    # mission that actually exists, misdiagnosing a bad path as a missing
-    # mission. The sibling default below stays fail-soft: its absence
-    # degrades to the engine's note, it never becomes an error.
-    if missions_dir is not None and not missions_dir.is_dir():
-        typer.secho(
-            f"--missions-dir '{missions_dir}' does not exist or is not a "
-            "directory",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
-
-    # A ticket at tickets/<id>.md has missions/ as its sibling, so the
-    # back-link check works with no flag in the layout kb init scaffolds.
-    # Gate on the parent directory's name so the default only ever binds to
-    # the sibling of an actual tickets/ directory — not some unrelated
-    # missions/ that happens to sit next to wherever the ticket file was
-    # opened from (mirrors mission_lint's tickets-dir sibling guard).
-    resolved_missions = missions_dir
-    if (
-        resolved_missions is None
-        and path is not None
-        and path.parent.name == "tickets"
-    ):
-        sibling = path.parent.parent / "missions"
-        if sibling.is_dir():
-            resolved_missions = sibling
+    resolved_missions = _resolve_missions_dir(missions_dir, path)
 
     handle = _hub_or_exit(hub, kb_dir)
     report = lint(
