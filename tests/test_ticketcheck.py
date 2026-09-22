@@ -551,3 +551,50 @@ def test_free_text_new_without_a_parent_mission_stays_a_plain_note(code_doc):
     report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
     assert not any("[NEW: D<n>]" in w for w in warnings(report))
     assert any("new: int.stripe — billing arrives later" in n for n in notes(report))
+
+
+# --- Task 2 (greenfield): mission heading -----------------------------------
+
+
+def services_and_order(rev: str, second_row: str) -> str:
+    return (
+        f"- Grounded on: demo:demo-code @ {rev}\n"
+        "\n"
+        "| Order | Service | Depends on | Why this order |\n"
+        "|---|---|---|---|\n"
+        "| 1 | svc.airspace-service | — | base |\n"
+        f"| 2 | {second_row} | svc.airspace-service | needs airspace |\n"
+    )
+
+
+def mission_with_services(rev: str, second_row: str) -> str:
+    return MISSION + "\n## Services & order\n" + services_and_order(rev, second_row) + "\n"
+
+
+def test_mission_heading_resolves_decisions_from_the_same_file(code_doc):
+    kb_dir, rev = code_doc
+    text = mission_with_services(rev, "svc.billing [NEW: D1]")
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert errors(report) == [], report.render("Grounding")
+    assert any("new: svc.billing — D1 (DECIDED" in n for n in notes(report))
+
+
+def test_mission_heading_open_decision_fails(code_doc):
+    kb_dir, rev = code_doc
+    text = mission_with_services(rev, "svc.invoicing [NEW: D2]")
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert any("decision D2 is OPEN (owner: Alice)" in e for e in errors(report))
+
+
+def test_mission_heading_does_not_warn_about_a_service_line(code_doc):
+    kb_dir, rev = code_doc
+    text = mission_with_services(rev, "svc.airspace-service")
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert not any("Service:" in w for w in warnings(report))
+
+
+def test_mission_heading_unknown_service_is_still_an_error(code_doc):
+    kb_dir, rev = code_doc
+    text = mission_with_services(rev, "svc.nope")
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert any("unknown id 'svc.nope'" in e for e in errors(report))

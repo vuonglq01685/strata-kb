@@ -300,7 +300,7 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
 
     _check_revision(doc, doc_id, rev, line, issues)
     _check_ids(section, doc, decisions, issues, notes)
-    _check_service_present(section, issues)
+    _check_service_present(section, heading, issues)
     _check_open_decisions(section, issues)
     _check_tables_routes_commands(section, doc, issues)
     _check_files(section, doc, decisions, issues, notes)
@@ -396,7 +396,9 @@ def _check_ids(section: _Section, doc: LoadedDoc, decisions: _Decisions, issues:
             )
 
 
-def _check_service_present(section: _Section, issues: list[Issue]) -> None:
+def _check_service_present(section: _Section, heading: str, issues: list[Issue]) -> None:
+    if heading == SERVICES_HEADING:
+        return  # the mission table has no `- Service:` line by design
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] == "Service" and any(
             sid.startswith("svc.") for sid in ID_RE.findall(line)
