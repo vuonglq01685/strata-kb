@@ -2661,3 +2661,28 @@ def test_no_ba_wrapper_gates_a_later_step_on_grounding_pass():
         text = _read_init_template(name)
         for line in _NUMBERED_STEP_RE.findall(text):
             assert not _GATES_ON_GROUNDING_PASS_RE.search(line), f"{name}: {line}"
+
+
+# --- PR 3 (ticket size gates): the templates teach the cap ------------------
+
+
+def test_ticket_template_dor_names_the_size_gates():
+    dor = lintcore.section_body(
+        _read_init_template("ticket-template.md"), "## Definition of Ready"
+    )
+    assert dor is not None
+    assert (
+        "One user story and at most 10 acceptance criteria — a bigger "
+        "scope is two tickets"
+    ) in _normalised(dor)
+
+
+def test_review_rubric_business_axis_caps_the_ticket_size():
+    body = lintcore.section_body(
+        _read_init_template("review-rubric.md"), "## Business coverage"
+    )
+    assert body is not None
+    assert (
+        "One user story and ≤ 10 acceptance criteria; no AC is a compound "
+        "of two conditions written to stay under the cap"
+    ) in _normalised(body)
