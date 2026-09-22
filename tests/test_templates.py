@@ -2533,3 +2533,44 @@ def test_sa_claude_skill_and_cursor_wrappers_are_byte_identical():
     assert _read_init_template("claude-skill-sa-ticket-ground.md") == (
         _read_init_template("cursor-sa-ticket-ground.md")
     )
+
+
+def test_ba_ticket_wrappers_run_the_sa_inside_the_pipeline():
+    for name in BA_TICKET_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Ground technical" in text, name
+        assert "## Needs input" in text, name
+        # The manual hand-off is gone; the only by-hand case left is a
+        # re-ground after <repo>-code moves.
+        assert "once the business sections are drafted" not in text, name
+        assert "only when `-code` moves after handover" in text, name
+
+
+def test_ba_ticket_full_wrappers_re_ground_only_on_a_check_failure():
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        text = _ba_wrapper_text(name)
+        assert "as its own subagent" in text, name
+        assert "After every round that changed the draft, also run `kb ticket check`" in text, name
+        assert "on PASS, do not re-ground" in text, name
+
+
+def test_ba_ticket_pipeline_line_names_the_new_step():
+    for name, needle in (
+        (
+            "claude-skill-ba-ticket-author.md",
+            "Intake → Parent mission → Ground → Draft → Pin → Lint → "
+            "Ground technical → Maturity review → Review",
+        ),
+        (
+            "claude-command-ba-ticket-author.md",
+            "Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint "
+            "→ Ground technical → Maturity review → Review",
+        ),
+        (
+            "copilot-ba-ticket-author.prompt.md",
+            "Intake → Parent mission → Ground → Draft → Pin → Lint → "
+            "Ground technical → Maturity review → Review, saved to "
+            "tickets/<id>.md",
+        ),
+    ):
+        assert needle in _ba_wrapper_text(name), name
