@@ -553,6 +553,30 @@ def test_free_text_new_without_a_parent_mission_stays_a_plain_note(code_doc):
     assert any("new: int.stripe — billing arrives later" in n for n in notes(report))
 
 
+def test_two_ids_under_one_new_marker_report_the_error_once(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(rev, Tables="db.invoice, db.line_item [NEW: D2]"),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    msgs = [e for e in errors(report) if "decision D2 is OPEN" in e]
+    assert len(msgs) == 1, errors(report)
+
+
+def test_two_ids_under_one_new_marker_report_the_free_text_warning_once(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(rev, Tables="db.invoice, db.line_item [NEW: later]"),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    warns = [w for w in warnings(report) if "[NEW: D<n>]" in w]
+    assert len(warns) == 1, warnings(report)
+    new_notes = [n for n in notes(report) if n.startswith("new:")]
+    assert len(new_notes) == 2, notes(report)
+
+
 # --- Task 2 (greenfield): mission heading -----------------------------------
 
 
@@ -568,7 +592,7 @@ def services_and_order(rev: str, second_row: str) -> str:
 
 
 def mission_with_services(rev: str, second_row: str) -> str:
-    return MISSION + "\n## Services & order\n" + services_and_order(rev, second_row) + "\n"
+    return MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + services_and_order(rev, second_row) + "\n"
 
 
 def test_mission_heading_resolves_decisions_from_the_same_file(code_doc):
@@ -590,7 +614,7 @@ def test_mission_heading_does_not_warn_about_a_service_line(code_doc):
     kb_dir, rev = code_doc
     text = mission_with_services(rev, "svc.airspace-service")
     report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
-    assert not any("Service:" in w for w in warnings(report))
+    assert warnings(report) == [], report.render("Grounding")
 
 
 def test_mission_heading_unknown_service_is_still_an_error(code_doc):

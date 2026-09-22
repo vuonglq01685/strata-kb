@@ -9,7 +9,10 @@ commands must match the document's own L2 tables, `Files:` must be listed in
 
 No CLI/MCP imports here — `cli.py`'s `kb ticket check` is a thin wrapper, the
 same split `ticketlint.py` has. Where the document comes from (local
-`.kb/` or the hub federation) is the caller's `load_doc` callable.
+`.kb/` or the hub federation) is the caller's `load_doc` callable, and
+`[NEW: D<n>]` markers are verified against the parent mission's
+`## Technology decisions` through a second injected callable, `load_decisions`,
+so the engine stays free of filesystem/CLI imports.
 """
 
 from __future__ import annotations
@@ -96,10 +99,9 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
     rows = lintcore.table_rows(body) if body is not None else []
     if not rows:
         return DecisionTable(source, {})
-    header = [c.strip().lower() for c in rows[0]]
-    i_id = header.index("#") if "#" in header else None
-    i_status = header.index("status") if "status" in header else None
-    i_owner = header.index("owner") if "owner" in header else None
+    i_id = _table_column(rows, "#")
+    i_status = _table_column(rows, "status")
+    i_owner = _table_column(rows, "owner")
     if i_id is None or i_status is None:
         return DecisionTable(source, {})
     out: dict[str, Decision] = {}
@@ -221,40 +223,55 @@ def _resolve_decisions(text: str, heading: str, load_decisions: LoadDecisions | 
     return _Decisions(table, mission_id)
 
 
+def _issue_once(issues: list[Issue], issue: Issue) -> None:
+    """Append `issue` unless an identical one is already collected. A line
+    with two+ unknown ids under one shared `[NEW: …]` marker calls
+    `_judge_new` once per id, but the marker's own verdict (its error or
+    warning, which never names the id) is per-line, not per-id — only the
+    notes, which do name the id, are meant to repeat."""
+    if issue not in issues:
+        issues.append(issue)
+
+
 def _judge_new(label: str, new: re.Match, lineno: int, decisions: _Decisions,
                issues: list[Issue], notes: list[str]) -> None:
     """One `[NEW: …]` marker: free text -> note; `D<n>` -> verified against
     the decisions table. `label` is the id or path the marker exempts."""
     reason = (new.group("reason") or "").strip()
     if not reason:
-        issues.append(Issue("warning", f"[NEW] without a reason for {label} (line {lineno})"))
+        _issue_once(issues, Issue("warning", f"[NEW] without a reason for {label} (line {lineno})"))
         return
     if not DECISION_REF_RE.match(reason):
         notes.append(f"new: {label} — {reason} (line {lineno})")
         if decisions.table is not None and decisions.table.rows:
-            issues.append(
-                Issue("warning", f"{decisions.table.source} has Technology decisions — reference the row as [NEW: D<n>] (line {lineno})")
+            _issue_once(
+                issues,
+                Issue("warning", f"{decisions.table.source} has Technology decisions — reference the row as [NEW: D<n>] (line {lineno})"),
             )
         return
     if decisions.table is None:
         if decisions.mission_id is None:
-            issues.append(
-                Issue("error", f"[NEW: {reason}] needs a parent mission to hold the decision — add `> Parent mission: M-<slug>` under the title, or write [NEW: <reason>] (line {lineno})")
+            _issue_once(
+                issues,
+                Issue("error", f"[NEW: {reason}] needs a parent mission to hold the decision — add `> Parent mission: M-<slug>` under the title, or write [NEW: <reason>] (line {lineno})"),
             )
         else:
-            issues.append(
-                Issue("error", f"parent mission '{decisions.mission_id}' not found under missions/ — pass --missions-dir, or write [NEW: <reason>] (line {lineno})")
+            _issue_once(
+                issues,
+                Issue("error", f"parent mission '{decisions.mission_id}' not found under missions/ — pass --missions-dir, or write [NEW: <reason>] (line {lineno})"),
             )
         return
     row = decisions.table.rows.get(reason)
     if row is None:
-        issues.append(
-            Issue("error", f"decision {reason} not in {decisions.table.source}'s Technology decisions — append the row there first (line {lineno})")
+        _issue_once(
+            issues,
+            Issue("error", f"decision {reason} not in {decisions.table.source}'s Technology decisions — append the row there first (line {lineno})"),
         )
         return
     if row.status.upper() != "DECIDED":
-        issues.append(
-            Issue("error", f"decision {reason} is {row.status} (owner: {row.owner or 'none'}) — a human decides before Dev (line {lineno})")
+        _issue_once(
+            issues,
+            Issue("error", f"decision {reason} is {row.status} (owner: {row.owner or 'none'}) — a human decides before Dev (line {lineno})"),
         )
         return
     notes.append(f"new: {label} — {reason} (DECIDED, owner {row.owner or 'none'}) (line {lineno})")
