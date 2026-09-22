@@ -71,15 +71,15 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    `kb_ticket_lint` as a fallback. Fix every error and re-run until it
    reports `DoR: PASS`. Report any remaining warnings to the BA.
 7. **Ground technical** — once lint reports `DoR: PASS`, save the draft
-   and invoke `sa-ticket-ground` on the saved file **as its own
-   subagent** — no shared context: the SA sees the file and the hub, not
-   your reasoning. It fills the SA-owned `## Technical grounding`
-   section from `<repo>-code`, proposes an `OPEN` row in the parent
-   mission's `## Technology decisions` for anything the code does not
-   have yet (referenced as `[NEW: D<n>]`), and runs `kb ticket check`
-   until it reports `Grounding: PASS`. Keep its `## Needs input`
-   block — it goes into your handover verbatim.
-8. **Maturity review** — once lint reports `DoR: PASS`, read
+   to `tickets/<ticket-id>.md`, then run `/sa-ticket-ground` on the
+   saved file as a separate run — no shared context: the SA sees the
+   file and the hub, not your reasoning. It fills the SA-owned
+   `## Technical grounding` section from `<repo>-code`, proposes an
+   `OPEN` row in the parent mission's `## Technology decisions` for
+   anything the code does not have yet (referenced as `[NEW: D<n>]`),
+   and runs `kb ticket check` until it reports `Grounding: PASS`. Keep
+   its `## Needs input` block — it goes into your handover verbatim.
+8. **Maturity review** — once step 7 reports `Grounding: PASS`, read
    `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
    exists — the local file overrides the base one (same for
    `docs/ac-quality.md` and `docs/ac-quality.local.md`). Run TWO
@@ -102,7 +102,7 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    round that changed the draft, also run `kb ticket check`: on FAIL,
    re-invoke `sa-ticket-ground` with only the changed sections and the
    failing lines (same discipline as `gap-verifier`); on PASS, do not
-   re-ground.
+   re-ground, with the same no-shared-context discipline as step 7.
 
    **Rounds 2 and 3 are not a re-read.** Run this pass yourself,
    acting as `gap-verifier`, reading only three things: the gaps

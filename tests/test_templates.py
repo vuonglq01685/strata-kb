@@ -24,7 +24,8 @@ BA_TICKET_AUTHOR_TEMPLATES = [
 ]
 
 BA_TICKET_AUTHOR_PIPELINE_STEPS = (
-    "Intake", "Parent mission", "Ground", "Draft", "Pin", "Lint", "Review",
+    "Intake", "Parent mission", "Ground", "Draft", "Pin", "Lint",
+    "Ground technical", "Maturity review", "Review → save",
 )
 
 
@@ -132,7 +133,7 @@ def test_ba_ticket_author_templates_exist_as_package_resources():
         assert base.joinpath(name).is_file(), name
 
 
-def test_ba_ticket_author_templates_carry_the_seven_pipeline_steps():
+def test_ba_ticket_author_templates_carry_the_nine_pipeline_steps():
     for name in BA_TICKET_AUTHOR_TEMPLATES:
         text = _read_init_template(name)
         for step in BA_TICKET_AUTHOR_PIPELINE_STEPS:
@@ -2429,6 +2430,7 @@ def test_ticket_template_teaches_the_decision_reference():
         "row of the parent mission's Technology decisions."
     ) in normalised
     assert "No parent mission → [NEW: <reason>]." in normalised
+    assert "[NEW: <why it does not exist yet>]" not in normalised
 
 
 def test_mission_template_teaches_the_decision_reference():
@@ -2448,8 +2450,12 @@ def test_mission_template_teaches_the_decision_reference():
         in decisions_n
     )
     assert "[NEW: D<n>]" in services_n
-    # PR 1 gap: a free-text example row makes a freshly scaffolded mission
-    # emit the "reference the row as [NEW: D<n>]" nudge on its first check.
+    # The shipped example must show the form the gate expects ([NEW: D<n>]),
+    # not the free-text form the gate nudges against ([NEW: <reason>]) —
+    # ticketcheck.check() would accept either (it returns early on a
+    # placeholder `Grounded on:` line, and a literal `D<n>` fails
+    # DECISION_REF_RE so is treated as free text anyway); this is about the
+    # example teaching the right habit, not engine behaviour.
     assert "[NEW: <why it does not exist yet>]" not in services_n
     # The marker exempts the whole row, `Depends on` included — so the
     # comment has to say where it goes.
@@ -2549,9 +2555,17 @@ def test_ba_ticket_wrappers_run_the_sa_inside_the_pipeline():
 def test_ba_ticket_full_wrappers_re_ground_only_on_a_check_failure():
     for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
         text = _ba_wrapper_text(name)
-        assert "as its own subagent" in text, name
+        assert "no shared context: the SA sees the file and the hub" in text, name
         assert "After every round that changed the draft, also run `kb ticket check`" in text, name
         assert "on PASS, do not re-ground" in text, name
+
+
+def test_ba_ticket_claude_skill_alone_keeps_the_subagent_wording():
+    """Only the Claude skill wrapper dispatches a real subagent; Copilot and
+    Cursor have no such concept, so Task 4 reworded their step 7 into a
+    dialect-neutral "separate run" — the skill keeps its original wording."""
+    text = _ba_wrapper_text("claude-skill-ba-ticket-author.md")
+    assert "as its own subagent" in text
 
 
 def test_ba_ticket_pipeline_line_names_the_new_step():
