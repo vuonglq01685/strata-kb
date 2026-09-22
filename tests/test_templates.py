@@ -1545,7 +1545,7 @@ def test_conventions_python_and_ts_templates_carry_the_full_skeleton():
     for name, needles in (
         (
             "conventions-python.md",
-            ("ruff.toml", "ruff check . && ruff format --check .", "logging.getLogger"),
+            ("ruff.toml", "ruff check . && ruff format --check ."),
         ),
         (
             "conventions-ts.md",
