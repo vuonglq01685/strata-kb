@@ -3,6 +3,10 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- `kb ticket check` verifies `[NEW: D<n>]` markers against the parent mission's `## Technology decisions`: the row must exist and be `DECIDED` (an `OPEN` row fails, naming its owner). Greenfield tickets ground code that does not exist yet through a decided design row instead of parking it under `Open decisions`. New `--missions-dir` (default: the sibling `missions/`, as `kb ticket lint`) and `--heading "## Services & order"` to check a mission plan's SA section against its own table.
+
 ## 1.1.0 — 2026-09-21
 
 - Ingest keeps code blocks (fenced, line breaks and Vietnamese diacritics read back from the PDF text layer), bullet lists, and single-spaced words in L3; text drawn inside a figure becomes the image's alt text instead of loose paragraphs. Re-ingest to pick this up.

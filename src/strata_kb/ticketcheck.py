@@ -9,7 +9,10 @@ commands must match the document's own L2 tables, `Files:` must be listed in
 
 No CLI/MCP imports here — `cli.py`'s `kb ticket check` is a thin wrapper, the
 same split `ticketlint.py` has. Where the document comes from (local
-`.kb/` or the hub federation) is the caller's `load_doc` callable.
+`.kb/` or the hub federation) is the caller's `load_doc` callable, and
+`[NEW: D<n>]` markers are verified against the parent mission's
+`## Technology decisions` through a second injected callable, `load_decisions`,
+so the engine stays free of filesystem/CLI imports.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from strata_kb.doctor import Issue
 from strata_kb.errors import KbError
 from strata_kb.lintcore import LintReport
 from strata_kb.mdutils import slice_section
+from strata_kb import mission, ticket
 
 HEADING = "## Technical grounding"
 
@@ -49,6 +53,9 @@ PRIMARY_RE = re.compile(r"\*\*Primary:\*\*\s*`([^`]*)`")
 TREE_CAP_RE = re.compile(r"^# … \d+ more entr(?:y|ies) omitted from `(?P<first>[^`]*)` onward")
 TREE_DEPTH = 4  # codeingest.extractors.tree._L3_DEPTH
 
+SERVICES_HEADING = "## Services & order"
+DECISION_REF_RE = re.compile(r"^D\d+$")
+
 _NONE_WORDS = frozenset({"none", "n/a", "-"})
 
 
@@ -66,6 +73,44 @@ class LoadedDoc:
 
 
 LoadDoc = Callable[[str | None, str], LoadedDoc | None]
+
+
+@dataclass(frozen=True)
+class Decision:
+    id: str
+    status: str
+    owner: str
+
+
+@dataclass(frozen=True)
+class DecisionTable:
+    source: str  # human label, e.g. "missions/M-demo.md" or "this mission"
+    rows: dict[str, Decision]
+
+
+LoadDecisions = Callable[[str], DecisionTable | None]  # mission id -> table, None = file missing
+
+
+def parse_decisions(text: str, source: str) -> DecisionTable:
+    """The `## Technology decisions` table of `text` keyed by its `#` cell.
+    Columns are found by header name, so a reordered table still parses;
+    no section or no `#`/`Status` header -> empty rows."""
+    body = lintcore.section_body(text, mission.TECH_DECISIONS_HEADING)
+    rows = lintcore.table_rows(body) if body is not None else []
+    if not rows:
+        return DecisionTable(source, {})
+    i_id = _table_column(rows, "#")
+    i_status = _table_column(rows, "status")
+    i_owner = _table_column(rows, "owner")
+    if i_id is None or i_status is None:
+        return DecisionTable(source, {})
+    out: dict[str, Decision] = {}
+    for r in rows[1:]:
+        if len(r) <= max(i_id, i_status):
+            continue
+        owner = r[i_owner].strip() if i_owner is not None and len(r) > i_owner else ""
+        out[r[i_id].strip()] = Decision(r[i_id].strip(), r[i_status].strip(), owner)
+    return DecisionTable(source, out)
 
 
 def load_doc_dir(doc_dir: Path, source: str) -> LoadedDoc:
@@ -158,12 +203,87 @@ def _parse_section(text: str, heading: str) -> _Section | None:
     return _Section(first_line, lines, field_of_line, subitems)
 
 
+@dataclass(frozen=True)
+class _Decisions:
+    table: DecisionTable | None
+    mission_id: str | None  # the `> Parent mission:` id, or None
+
+
+def _resolve_decisions(text: str, heading: str, load_decisions: LoadDecisions | None) -> _Decisions:
+    """Mission heading: the table is in the checked text itself. Ticket
+    heading: via the back-link; `table is None` with a `mission_id` means
+    the mission file could not be loaded."""
+    if heading == SERVICES_HEADING:
+        return _Decisions(parse_decisions(text, "this mission"), None)
+    m = ticket.PARENT_MISSION_RE.search(text)
+    if m is None:
+        return _Decisions(None, None)
+    mission_id = m.group(1)
+    table = load_decisions(mission_id) if load_decisions is not None else None
+    return _Decisions(table, mission_id)
+
+
+def _issue_once(issues: list[Issue], issue: Issue) -> None:
+    """Append `issue` unless an identical one is already collected. A line
+    with two+ unknown ids under one shared `[NEW: …]` marker calls
+    `_judge_new` once per id, but the marker's own verdict (its error or
+    warning, which never names the id) is per-line, not per-id — only the
+    notes, which do name the id, are meant to repeat."""
+    if issue not in issues:
+        issues.append(issue)
+
+
+def _judge_new(label: str, new: re.Match, lineno: int, decisions: _Decisions,
+               issues: list[Issue], notes: list[str]) -> None:
+    """One `[NEW: …]` marker: free text -> note; `D<n>` -> verified against
+    the decisions table. `label` is the id or path the marker exempts."""
+    reason = (new.group("reason") or "").strip()
+    if not reason:
+        _issue_once(issues, Issue("warning", f"[NEW] without a reason for {label} (line {lineno})"))
+        return
+    if not DECISION_REF_RE.match(reason):
+        notes.append(f"new: {label} — {reason} (line {lineno})")
+        if decisions.table is not None and decisions.table.rows:
+            _issue_once(
+                issues,
+                Issue("warning", f"{decisions.table.source} has Technology decisions — reference the row as [NEW: D<n>] (line {lineno})"),
+            )
+        return
+    if decisions.table is None:
+        if decisions.mission_id is None:
+            _issue_once(
+                issues,
+                Issue("error", f"[NEW: {reason}] needs a parent mission to hold the decision — add `> Parent mission: M-<slug>` under the title, or write [NEW: <reason>] (line {lineno})"),
+            )
+        else:
+            _issue_once(
+                issues,
+                Issue("error", f"parent mission '{decisions.mission_id}' not found under missions/ — pass --missions-dir, or write [NEW: <reason>] (line {lineno})"),
+            )
+        return
+    row = decisions.table.rows.get(reason)
+    if row is None:
+        _issue_once(
+            issues,
+            Issue("error", f"decision {reason} not in {decisions.table.source}'s Technology decisions — append the row there first (line {lineno})"),
+        )
+        return
+    if row.status.upper() != "DECIDED":
+        _issue_once(
+            issues,
+            Issue("error", f"decision {reason} is {row.status} (owner: {row.owner or 'none'}) — a human decides before Dev (line {lineno})"),
+        )
+        return
+    notes.append(f"new: {label} — {reason} (DECIDED, owner {row.owner or 'none'}) (line {lineno})")
+
+
 # ---------------------------------------------------------------------------
 # check
 # ---------------------------------------------------------------------------
 
 
-def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport:
+def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
+          load_decisions: LoadDecisions | None = None) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
     section = _parse_section(text, heading)
@@ -193,13 +313,14 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING) -> LintReport
         )
         return LintReport(issues, notes)
     notes.append(f"{doc_id} read from {doc.source}")
+    decisions = _resolve_decisions(text, heading, load_decisions)
 
     _check_revision(doc, doc_id, rev, line, issues)
-    _check_ids(section, doc, issues, notes)
-    _check_service_present(section, issues)
+    _check_ids(section, doc, decisions, issues, notes)
+    _check_service_present(section, heading, issues)
     _check_open_decisions(section, issues)
     _check_tables_routes_commands(section, doc, issues)
-    _check_files(section, doc, issues, notes)
+    _check_files(section, doc, decisions, issues, notes)
     return LintReport(issues, notes)
 
 
@@ -262,7 +383,7 @@ def _id_lines(section: _Section):
             yield section.first_line + i, line
 
 
-def _check_ids(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: list[str]) -> None:
+def _check_ids(section: _Section, doc: LoadedDoc, decisions: _Decisions, issues: list[Issue], notes: list[str]) -> None:
     known = _known_ids(doc)
     for lineno, line in _id_lines(section):
         new = NEW_RE.search(line)
@@ -281,11 +402,7 @@ def _check_ids(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: li
                 else:
                     sid = table
             if new is not None:
-                reason = (new.group("reason") or "").strip()
-                if reason:
-                    notes.append(f"new: {sid} — {reason} (line {lineno})")
-                else:
-                    issues.append(Issue("warning", f"[NEW] without a reason for {sid} (line {lineno})"))
+                _judge_new(sid, new, lineno, decisions, issues, notes)
                 continue
             issues.append(
                 Issue(
@@ -296,7 +413,9 @@ def _check_ids(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: li
             )
 
 
-def _check_service_present(section: _Section, issues: list[Issue]) -> None:
+def _check_service_present(section: _Section, heading: str, issues: list[Issue]) -> None:
+    if heading == SERVICES_HEADING:
+        return  # the mission table has no `- Service:` line by design
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] == "Service" and any(
             sid.startswith("svc.") for sid in ID_RE.findall(line)
@@ -448,7 +567,7 @@ def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:
     return paths, first_dropped
 
 
-def _check_files(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: list[str]) -> None:
+def _check_files(section: _Section, doc: LoadedDoc, decisions: _Decisions, issues: list[Issue], notes: list[str]) -> None:
     entries = list(section.subitems.get("Files", []))
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] == "Files" and not line[:1].isspace():
@@ -469,11 +588,7 @@ def _check_files(section: _Section, doc: LoadedDoc, issues: list[Issue], notes: 
         new = NEW_RE.search(text)
         path = NEW_RE.sub("", text).strip().strip("`").rstrip("/")
         if new is not None:
-            reason = (new.group("reason") or "").strip()
-            if reason:
-                notes.append(f"new: {path} — {reason} (line {lineno})")
-            else:
-                issues.append(Issue("warning", f"[NEW] without a reason for {path} (line {lineno})"))
+            _judge_new(path, new, lineno, decisions, issues, notes)
             continue
         if path in paths:
             continue

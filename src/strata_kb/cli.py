@@ -2335,6 +2335,29 @@ def resolve(
         raise typer.Exit(2)
 
 
+def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path | None:
+    """Where mission files live for a ticket command. An explicit
+    --missions-dir that is not a directory is a BA typo and a hard error —
+    otherwise the engine's .is_file() probing would misreport a real mission
+    as missing. The default is fail-soft: a ticket at tickets/<id>.md gets
+    its sibling missions/ when that exists, else None (the engine notes the
+    skipped checks). Gated on the parent's name so an unrelated missions/
+    next to some other file never binds."""
+    if missions_dir is not None:
+        if not missions_dir.is_dir():
+            typer.secho(
+                f"--missions-dir '{missions_dir}' does not exist or is not a directory",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        return missions_dir
+    if path is not None and path.parent.name == "tickets":
+        sibling = path.parent.parent / "missions"
+        if sibling.is_dir():
+            return sibling
+    return None
+
+
 @ticket_app.command("lint")
 def ticket_lint(
     source: str = typer.Argument(
@@ -2380,35 +2403,7 @@ def ticket_lint(
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
 
-    # An explicitly-passed --missions-dir is a deliberate BA choice, so a
-    # typo must be a hard error — otherwise check_parent_mission's
-    # .is_file() probing quietly reports "mission file not found" for a
-    # mission that actually exists, misdiagnosing a bad path as a missing
-    # mission. The sibling default below stays fail-soft: its absence
-    # degrades to the engine's note, it never becomes an error.
-    if missions_dir is not None and not missions_dir.is_dir():
-        typer.secho(
-            f"--missions-dir '{missions_dir}' does not exist or is not a "
-            "directory",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
-
-    # A ticket at tickets/<id>.md has missions/ as its sibling, so the
-    # back-link check works with no flag in the layout kb init scaffolds.
-    # Gate on the parent directory's name so the default only ever binds to
-    # the sibling of an actual tickets/ directory — not some unrelated
-    # missions/ that happens to sit next to wherever the ticket file was
-    # opened from (mirrors mission_lint's tickets-dir sibling guard).
-    resolved_missions = missions_dir
-    if (
-        resolved_missions is None
-        and path is not None
-        and path.parent.name == "tickets"
-    ):
-        sibling = path.parent.parent / "missions"
-        if sibling.is_dir():
-            resolved_missions = sibling
+    resolved_missions = _resolve_missions_dir(missions_dir, path)
 
     handle = _hub_or_exit(hub, kb_dir)
     report = lint(
@@ -2447,17 +2442,34 @@ def ticket_check(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    missions_dir: Path | None = typer.Option(
+        None,
+        "--missions-dir",
+        help="Where mission files live, for `[NEW: D<n>]` references to the "
+        "parent mission's Technology decisions (default: the ticket file's "
+        "sibling 'missions/' directory)",
+    ),
+    heading: str = typer.Option(
+        "## Technical grounding",
+        "--heading",
+        help="Section to check: `## Technical grounding` (ticket) or "
+        "`## Services & order` (mission plan; decisions are read from the "
+        "same file)",
+    ),
 ) -> None:
     """SA grounding gate: every id in '## Technical grounding' exists in the
-    -code document, columns/routes/commands/files match it, and Open
-    decisions is empty. Exit 0 PASS, 1 FAIL."""
+    -code document, columns/routes/commands/files match it, `[NEW: D<n>]`
+    points at a DECIDED row of the parent mission's Technology decisions,
+    and Open decisions is empty. Exit 0 PASS, 1 FAIL."""
     from strata_kb import ticketcheck
 
+    path: Path | None = None
     if source == "-":
         text = sys.stdin.read()
     else:
+        path = Path(source)
         try:
-            text = Path(source).read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
@@ -2466,6 +2478,8 @@ def ticket_check(
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
+
+    resolved_missions = _resolve_missions_dir(missions_dir, path)
 
     def load_doc(repo: str | None, doc: str) -> ticketcheck.LoadedDoc | None:
         # Local first (a dev machine, or the hub's own checkout): the BA repo
@@ -2477,7 +2491,19 @@ def ticket_check(
         handle = _hub_or_exit(hub, kb_dir)
         return ticketcheck.load_from_hub(handle.federation_dir, repo, doc)
 
-    report = ticketcheck.check(text, load_doc=load_doc)
+    def load_decisions(mission_id: str) -> ticketcheck.DecisionTable | None:
+        if resolved_missions is None:
+            return None
+        mission_path = resolved_missions / f"{mission_id}.md"
+        try:
+            mission_text = mission_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+        return ticketcheck.parse_decisions(mission_text, str(mission_path))
+
+    report = ticketcheck.check(
+        text, load_doc=load_doc, heading=heading, load_decisions=load_decisions
+    )
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:

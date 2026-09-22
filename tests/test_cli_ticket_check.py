@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from strata_kb import models
 from strata_kb.cli import app
 from strata_kb.federation import FederationMeta, write_federation_index
-from tests.test_ticketcheck import grounding, ticket
+from tests.test_ticketcheck import MISSION, grounding, mission_with_services, ticket
 
 runner = CliRunner()
 
@@ -127,7 +127,7 @@ def test_docs_name_the_check_command():
     from pathlib import Path as _P
 
     readme = (_P(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert "`kb ticket check <file\\|-> [--kb-dir <dir>] [--hub <url>] [--json]`" in readme
+    assert "`kb ticket check <file\\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]`" in readme
     quick = resources.files("strata_kb").joinpath("templates/init/QUICKSTART-ba.md").read_text(encoding="utf-8")
     assert "- `kb ticket check <file> [--hub <url>]`" in quick
     for name in ("claude-skill-sa-ticket-ground.md", "copilot-sa-ticket-ground.prompt.md", "cursor-sa-ticket-ground.md"):
@@ -136,3 +136,75 @@ def test_docs_name_the_check_command():
     changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "follows in a\n  separate PR" not in changelog
     assert "`kb ticket check <file>`" in changelog
+
+
+def _layout(tmp_path: Path, rev: str, section_kwargs: dict, *, parent: str | None = "M-demo") -> Path:
+    """tickets/t.md next to missions/M-demo.md — the layout kb init scaffolds."""
+    (tmp_path / "tickets").mkdir()
+    (tmp_path / "missions").mkdir()
+    (tmp_path / "missions" / "M-demo.md").write_text(MISSION, encoding="utf-8")
+    path = tmp_path / "tickets" / "t.md"
+    path.write_text(ticket(grounding(rev, **section_kwargs), parent=parent), encoding="utf-8")
+    return path
+
+
+def test_sibling_missions_dir_is_the_default(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    path = _layout(tmp_path, rev, {"Service": "svc.billing [NEW: D1]"})
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 0, result.output
+    assert "[note] new: svc.billing — D1 (DECIDED, owner tech-lead)" in result.output
+
+
+def test_no_sibling_default_outside_a_tickets_directory(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    (tmp_path / "missions").mkdir()
+    (tmp_path / "missions" / "M-demo.md").write_text(MISSION, encoding="utf-8")
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev, Service="svc.billing [NEW: D1]"), parent="M-demo"), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 1
+    assert "parent mission 'M-demo' not found" in result.output
+
+
+def test_explicit_missions_dir(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    elsewhere = tmp_path / "plans"
+    elsewhere.mkdir()
+    (elsewhere / "M-demo.md").write_text(MISSION, encoding="utf-8")
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev, Service="svc.billing [NEW: D1]"), parent="M-demo"), encoding="utf-8")
+    result = runner.invoke(
+        app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir), "--missions-dir", str(elsewhere)]
+    )
+    assert result.exit_code == 0, result.output
+
+
+def test_bad_explicit_missions_dir_is_a_red_line(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev)), encoding="utf-8")
+    result = runner.invoke(
+        app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir), "--missions-dir", str(tmp_path / "nope")]
+    )
+    assert result.exit_code == 1
+    assert "does not exist or is not a directory" in result.output
+
+
+def test_open_decision_reference_exits_1(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    path = _layout(tmp_path, rev, {"Tables": "db.invoice [NEW: D2]"})
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 1
+    assert "[error] decision D2 is OPEN (owner: Alice)" in result.output
+
+
+def test_heading_services_and_order(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    path = tmp_path / "M-demo.md"
+    path.write_text(mission_with_services(rev, "svc.billing [NEW: D1]"), encoding="utf-8")
+    result = runner.invoke(
+        app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir), "--heading", "## Services & order"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.rstrip().endswith("Grounding: PASS")
