@@ -30,6 +30,7 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 - The formatter and linter are fixed by the `## Linting (preset)` section
   of `docs/conventions/dotnet.md`; that preset wins over any tool named
   here.
+- Prefer expression-bodied members only when they stay readable.
 
 ## Types and models
 

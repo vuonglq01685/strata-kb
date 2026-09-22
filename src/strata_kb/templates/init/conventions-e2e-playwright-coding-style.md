@@ -20,4 +20,4 @@ package updates, so do not hand-edit. Record repo-specific deviations in
   (`trace: "on-first-retry"`, `screenshot: "only-on-failure"`) so a
   failure is debuggable without reproducing it locally.
 - Never leave `page.pause()` or a debug-only `console.log` in committed
-  specs — that is a style rule.
+  specs.

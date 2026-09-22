@@ -6,6 +6,11 @@ Base file — owned by the strata-kb package: `kb init` refreshes it when the
 package updates, so do not hand-edit. Record repo-specific deviations in
 `docs/conventions/rust.local.md`.
 
+## Standards
+
+- The formatter and linter are fixed by the `## Linting (preset)` section of
+  `docs/conventions/rust.md`; that preset wins over any tool named here.
+
 ## Naming
 
 - Modules, functions, variables: `snake_case`. Types, traits, enums:

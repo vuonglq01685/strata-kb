@@ -9,8 +9,7 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 ## Secret management
 
 ```typescript
-// NEVER: Hardcoded secrets
-const apiKey = "sk-proj-xxxxx"
+// NEVER: const apiKey = "sk-proj-xxxxx"
 
 // ALWAYS: Environment variables
 const apiKey = process.env.API_KEY

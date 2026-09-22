@@ -121,6 +121,22 @@ function UserCard({ user, onSelect }: UserCardProps) {
 }
 ```
 
+### JavaScript files
+
+- In `.js` and `.jsx` files, use JSDoc when types improve clarity and
+  a TypeScript migration is not practical.
+- Keep JSDoc aligned with runtime behavior.
+
+```javascript
+/**
+ * @param {{ firstName: string, lastName: string }} user
+ * @returns {string}
+ */
+export function formatUser(user) {
+  return `${user.firstName} ${user.lastName}`
+}
+```
+
 ## Immutability
 
 Use the spread operator for immutable updates:

@@ -11,7 +11,8 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 Configure in `.claude/settings.json` (this repo's, committed):
 
 - **dart format**: Auto-format `.dart` files after edit
-- **dart analyze**: Run static analysis after editing Dart files and surface warnings
+- **dart analyze**: Run static analysis after editing Dart files and
+  surface warnings
 - **flutter test**: Optionally run affected tests after significant changes
 
 ## Recommended hook configuration

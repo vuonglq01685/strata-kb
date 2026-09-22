@@ -6,6 +6,30 @@ Base file — owned by the strata-kb package: `kb init` refreshes it when the
 package updates, so do not hand-edit. Record repo-specific deviations in
 `docs/conventions/java.local.md`.
 
+## Standards
+
+- Member order: constants, fields, constructors, public methods,
+  protected, private.
+- The formatter and linter are fixed by the `## Linting (preset)` section of
+  `docs/conventions/java.md`; that preset wins over any tool named here.
+
+## Naming
+
+- Packages: all-lowercase, no underscores (`com.acme.billing`).
+- Classes, interfaces, enums, records: `PascalCase`; exceptions end in
+  `Exception`.
+- Methods and fields: `camelCase`; booleans read as predicates
+  (`isReady`, `hasPending`).
+- Constants (`static final`): `UPPER_SNAKE_CASE`.
+
+## Module structure
+
+- Organise packages by feature/domain, not by technical layer alone.
+- One top-level type per file; keep classes focused — extract before a
+  class grows past ~400 lines.
+- Depend on interfaces at boundaries; keep constructors injectable (no
+  hidden `new` of collaborators in business logic).
+
 ## Immutability
 
 - Prefer `record` for value types (Java 16+)
@@ -27,23 +51,6 @@ public class Order {
     }
 }
 ```
-
-## Naming
-
-- Packages: all-lowercase, no underscores (`com.acme.billing`).
-- Classes, interfaces, enums, records: `PascalCase`; exceptions end in
-  `Exception`.
-- Methods and fields: `camelCase`; booleans read as predicates
-  (`isReady`, `hasPending`).
-- Constants (`static final`): `UPPER_SNAKE_CASE`.
-
-## Module structure
-
-- Organise packages by feature/domain, not by technical layer alone.
-- One top-level type per file; keep classes focused — extract before a
-  class grows past ~400 lines.
-- Depend on interfaces at boundaries; keep constructors injectable (no
-  hidden `new` of collaborators in business logic).
 
 ## Modern Java features
 
@@ -88,6 +95,13 @@ return repository.findById(id)
 public void process(Optional<String> name) {}
 ```
 
+## Streams
+
+- Use streams for transformations; keep pipelines short (3-4 operations max)
+- Prefer method references when readable: `.map(Order::getTotal)`
+- Avoid side effects in stream operations
+- For complex logic, prefer a loop over a convoluted stream pipeline
+
 ## Error handling
 
 - Throw specific exceptions; never `catch (Exception e) {}` — a
@@ -108,13 +122,6 @@ public class OrderNotFoundException extends RuntimeException {
     }
 }
 ```
-
-## Streams
-
-- Use streams for transformations; keep pipelines short (3-4 operations max)
-- Prefer method references when readable: `.map(Order::getTotal)`
-- Avoid side effects in stream operations
-- For complex logic, prefer a loop over a convoluted stream pipeline
 
 ## Logging
 

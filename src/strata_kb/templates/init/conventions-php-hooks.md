@@ -10,7 +10,7 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 
 Configure in `.claude/settings.json` (this repo's, committed):
 
-- **Pint / PHP-CS-Fixer**: Auto-format edited `.php` files.
+- **PHP-CS-Fixer**: Auto-format edited `.php` files.
 - **PHPStan / Psalm**: Run static analysis after PHP edits in typed
   codebases.
 - **PHPUnit / Pest**: Run targeted tests for touched files or modules

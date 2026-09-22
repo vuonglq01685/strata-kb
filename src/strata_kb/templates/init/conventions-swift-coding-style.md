@@ -18,9 +18,10 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 - Booleans read as predicates (`isReady`, `hasPending`).
 - Protocols describing a capability end in `-able`/`-ing` (`Equatable`,
   `Cancelling`); protocols describing a role are nouns (`DataSource`).
-- Follow the Swift API Design Guidelines: clarity at the point of use —
-  omit needless words — and name methods and properties for their roles,
-  not their types.
+- Follow the [Swift API Design
+  Guidelines](https://www.swift.org/documentation/api-design-guidelines/):
+  clarity at the point of use — omit needless words — and name methods
+  and properties for their roles, not their types.
 - Use `static let` for constants over global constants.
 
 ## Module structure
@@ -56,6 +57,8 @@ Enable Swift 6 strict concurrency checking. Prefer:
   caller genuinely has no use for the failure reason.
 - Fail fast at boundaries: validate external data (API responses, user
   input) before it crosses into typed code.
+
+Use typed throws (Swift 6+) and pattern matching:
 
 ```swift
 func load(id: String) throws(LoadError) -> Item {

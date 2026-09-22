@@ -128,7 +128,8 @@ class CartPage extends ConsumerWidget {
 
 ## Dependency injection
 
-Constructor injection is preferred. Use `get_it` or Riverpod providers at composition root:
+Constructor injection is preferred. Use `get_it` or Riverpod providers
+at composition root:
 
 ```dart
 // get_it registration (in a setup file)

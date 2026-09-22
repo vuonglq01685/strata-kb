@@ -17,6 +17,9 @@ package updates, so do not hand-edit. Record repo-specific deviations in
   level; prefix private members with `_`.
 - Extension names describe the type they extend (`StringExtensions`,
   not `MyHelpers`).
+- Named constructors: `camelCase` (`User.fromJson`).
+- Typedefs: `PascalCase`.
+- Library names: `snake_case`.
 
 ## Module structure
 
@@ -171,6 +174,8 @@ await fetchData();      // or properly awaited
   recoverable failures.
 - Use `Result`-style types or sealed classes for recoverable errors;
   avoid using exceptions for control flow.
+- Specify exception types in `on` clauses — never use bare
+  `catch (e)`.
 
 ```dart
 // BAD

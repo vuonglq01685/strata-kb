@@ -33,6 +33,8 @@ package updates, so do not hand-edit. Record repo-specific deviations in
   here.
 - Static analysis (PHPStan or Psalm) if the repo has one configured; the
   level is the repo's, not this file's.
+- Keep Composer scripts checked in so the same commands run locally and
+  in CI.
 
 ## Immutability
 

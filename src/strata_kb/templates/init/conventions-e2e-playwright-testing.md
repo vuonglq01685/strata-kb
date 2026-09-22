@@ -30,17 +30,17 @@ import { test, expect } from '@playwright/test';
 
 test('landing hero loads', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('h1')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 });
 ```
 
-- Avoid flaky timeout-based assertions
-- Prefer deterministic waits
+- Avoid flaky timeout-based assertions.
+- Prefer deterministic waits.
 
 ## Cross-browser
 
-- Minimum: Chrome, Firefox, Safari
-- Test scrolling, motion, and fallback behavior
+- Minimum: Chrome, Firefox, Safari.
+- Test scrolling, motion, and fallback behaviour.
 
 ## Responsive
 

@@ -18,7 +18,8 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 ## Test framework
 
 - **flutter_test** / **dart:test** — built-in test runner
-- **mockito** (with `@GenerateMocks`) or **mocktail** (no codegen) for mocking
+- **mockito** (with `@GenerateMocks`) or **mocktail** (no codegen) for
+  mocking
 - **bloc_test** for BLoC/Cubit unit tests
 - **fake_async** for controlling time in unit tests
 - **integration_test** for end-to-end device tests
@@ -181,7 +182,8 @@ testWidgets('UserCard golden test', (tester) async {
 });
 ```
 
-Run `flutter test --update-goldens` when intentional visual changes are made.
+Run `flutter test --update-goldens` when intentional visual changes
+are made.
 
 ## Test naming
 
@@ -217,6 +219,8 @@ integration_test/
 ## Coverage
 
 - Target 80%+ line coverage for business logic (domain + state managers)
-- All state transitions must have tests: loading → success, loading → error, retry
-- Run `flutter test --coverage` and inspect `lcov.info` with a coverage reporter
+- All state transitions must have tests: loading → success, loading →
+  error, retry
+- Run `flutter test --coverage` and inspect `lcov.info` with a
+  coverage reporter
 - Coverage failures should block CI when below threshold
