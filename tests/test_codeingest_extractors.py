@@ -4632,6 +4632,10 @@ class TestComposeFacts:
         "    image: web:1\n"
         "    healthcheck:\n"
         "      disable: true\n"
+        "  cache:\n"
+        "    image: cache:1\n"
+        "    healthcheck:\n"
+        "      test: [\"NONE\"]\n"
         "  transcoder:\n"
         "    image: ffmpeg:1\n"
         "    deploy:\n"
@@ -4666,6 +4670,8 @@ class TestComposeFacts:
         assert "| Healthcheck | redis-cli ping |" in secs["svc.redis"].l2_md
         assert "| Healthcheck | disabled |" in secs["svc.web"].l2_md
         assert "healthcheck: disabled\n" in secs["svc.web"].l3_md
+        assert "| Healthcheck | disabled |" in secs["svc.cache"].l2_md
+        assert "healthcheck: disabled\n" in secs["svc.cache"].l3_md
         assert "| Healthcheck | none |" in secs["svc.minio"].l2_md
         assert "healthcheck: none\n" in secs["svc.minio"].l3_md
 

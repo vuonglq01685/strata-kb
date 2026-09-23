@@ -112,8 +112,11 @@ def _named_volumes(value: object) -> list[str]:
 
 def _healthcheck_line(value: object) -> str:
     """`healthcheck.test` as one shell line: list form drops a leading
-    `CMD` / `CMD-SHELL`; string form is taken as is. `disable: true` →
-    "disabled". Missing → "". Cut at HEALTHCHECK_MAX with `…`."""
+    `CMD` / `CMD-SHELL`; string form is taken as is. `disable: true`, or
+    the Compose spec's other documented way to turn off an
+    inherited (image/`extends`) healthcheck — `test: ["NONE"]` or
+    `test: NONE` — both → "disabled". Missing → "". Cut at
+    HEALTHCHECK_MAX with `…`."""
     if not isinstance(value, dict):
         return ""
     if value.get("disable") is True:
@@ -121,10 +124,14 @@ def _healthcheck_line(value: object) -> str:
     test = value.get("test")
     if isinstance(test, list):
         parts = [str(p) for p in test]
+        if parts == ["NONE"]:
+            return _HEALTHCHECK_DISABLED
         if parts and parts[0] in ("CMD", "CMD-SHELL"):
             parts = parts[1:]
         line = " ".join(parts)
     elif isinstance(test, str):
+        if test == "NONE":
+            return _HEALTHCHECK_DISABLED
         line = test
     else:
         return ""

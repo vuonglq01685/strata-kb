@@ -32,6 +32,8 @@ def build_code_repo(root: Path) -> Path:
         encoding="utf-8",
     )
     (root / "docker-compose.yml").write_text(
+        "volumes:\n"
+        "  pgdata: {}\n"
         "services:\n"
         "  airspace-service:\n"
         "    image: airspace:1.0\n"
@@ -53,9 +55,7 @@ def build_code_repo(root: Path) -> Path:
         '    ports: ["5432:5432"]\n'
         "    volumes:\n"
         "      - pgdata:/var/lib/postgresql/data\n"
-        "      - ./init:/docker-entrypoint-initdb.d\n"
-        "volumes:\n"
-        "  pgdata: {}\n",
+        "      - ./init:/docker-entrypoint-initdb.d\n",
         encoding="utf-8",
     )
     (root / "Dockerfile").write_text(
