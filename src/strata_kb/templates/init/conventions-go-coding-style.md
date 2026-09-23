@@ -25,7 +25,6 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 - Organise packages by feature/domain; avoid catch-all `util` packages.
 - Keep packages small and cohesive; a file past ~400 lines is a signal
   to split.
-- Accept interfaces, return concrete types.
 
 ## Design principles
 

@@ -6,6 +6,11 @@ Base file — owned by the strata-kb package: `kb init` refreshes it when the
 package updates, so do not hand-edit. Record repo-specific deviations in
 `docs/conventions/ts.local.md`.
 
+## Standards
+
+- The formatter and linter are fixed by the `## Linting (preset)` section of
+  `docs/conventions/ts.md`; that preset wins over any tool named here.
+
 ## Naming
 
 - Variables and functions: `camelCase`, descriptive; booleans read as
@@ -223,14 +228,9 @@ type UserInput = z.infer<typeof userSchema>
 const validated: UserInput = userSchema.parse(input)
 ```
 
-## Console.log
-
-- No `console.log` statements in production code.
-- Use proper logging libraries instead.
-- See [hooks.md](hooks.md) for automatic detection.
-
 ## Logging
 
 - Use the repo's logging facility; never `console.log` in committed
   code (a structured logger, or nothing).
 - Log where the error is handled, with enough context to act on.
+- See [hooks.md](hooks.md) for automatic detection.

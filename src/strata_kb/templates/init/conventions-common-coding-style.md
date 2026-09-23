@@ -63,10 +63,11 @@ ALWAYS validate at system boundaries:
 
 ## Naming conventions
 
-- Variables and functions: `camelCase` with descriptive names
+- Variables and functions: descriptive names, not abbreviations
 - Booleans: prefer `is`, `has`, `should`, or `can` prefixes
-- Interfaces, types, and components: `PascalCase`
-- Constants: `UPPER_SNAKE_CASE`
+- Constants: clearly marked as such (a naming convention or the
+  language's `const`/`final`/`readonly` mechanism)
+- Casing rules live in each language's coding-style.md.
 
 ## Code smells to avoid
 

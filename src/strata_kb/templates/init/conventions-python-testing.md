@@ -14,10 +14,6 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 - Every bug fix lands together with the test that would have caught it.
 - Never edit a test to make it pass — diagnose the cause.
 
-## Framework
-
-Use **pytest** as the testing framework.
-
 ## Coverage
 
 ```bash

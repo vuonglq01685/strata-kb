@@ -6,6 +6,15 @@ Base file — owned by the strata-kb package: `kb init` refreshes it when the
 package updates, so do not hand-edit. Record repo-specific deviations in
 `docs/conventions/dart.local.md`.
 
+## Standards
+
+- Line length: 80 characters (`dart format` default).
+- Trailing commas on multi-line argument/parameter lists to improve
+  diffs and formatting.
+- The formatter and linter are fixed by the `## Linting (preset)`
+  section of `docs/conventions/dart.md`; that preset wins over any
+  tool named here.
+
 ## Naming
 
 - Types, enums, extensions: `PascalCase`. Variables, functions,
@@ -28,15 +37,6 @@ package updates, so do not hand-edit. Record repo-specific deviations in
 - Keep widgets and classes small and cohesive; a file past ~400 lines
   is a signal to split.
 - Prefer composition over deep widget-inheritance chains.
-
-## Formatting
-
-- Line length: 80 characters (`dart format` default).
-- Trailing commas on multi-line argument/parameter lists to improve
-  diffs and formatting.
-- The formatter and linter are fixed by the `## Linting (preset)`
-  section of `docs/conventions/dart.md`; that preset wins over any
-  tool named here.
 
 ## Immutability
 

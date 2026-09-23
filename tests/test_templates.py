@@ -1639,7 +1639,9 @@ def test_conventions_entry_file_links_its_pack(lang):
 @pytest.mark.parametrize("lang", LANG_IDS)
 def test_language_pack_templates_exist_and_extend_their_common_file(lang):
     """Every language in LANG_IDS has all five pack templates, each opening
-    with the extends line that names its common counterpart."""
+    with the extends line that names its common counterpart, carrying a
+    real title on line 3 and real section content — not just the T1
+    skeleton (extends line, blank, title, blank, ownership paragraph)."""
     base = resources.files("strata_kb").joinpath("templates/init")
     names = {part: f"conventions-{lang}-{part}.md" for part in CONVENTION_PARTS}
     for part, name in names.items():
@@ -1648,6 +1650,11 @@ def test_language_pack_templates_exist_and_extend_their_common_file(lang):
         assert text.startswith(
             f"> This file extends [common/{part}.md](../common/{part}.md) with "
         ), name
+        lines = text.splitlines()
+        # line 1: extends line, line 2: blank, line 3: title.
+        assert lines[2].startswith("# "), f"{name}: line 3 is not the title"
+        assert "\n## " in text, f"{name}: no section heading — content missing"
+        assert len(lines) >= 12, f"{name}: looks like unfilled T1 boilerplate"
         for banned in ("ECC", "everything-claude", "~/.claude", "See skill:"):
             assert banned not in text, f"{name}: {banned!r} survived"
 
@@ -1660,8 +1667,18 @@ def test_common_pack_templates_exist_and_carry_no_extends_line():
         text = _read_init_template(name)
         assert text.startswith("# "), name
         assert "This file extends" not in text, name
+        assert "\n## " in text, f"{name}: no section heading — content missing"
+        assert len(text.splitlines()) >= 12, f"{name}: looks like unfilled T1 boilerplate"
         for banned in ("ECC", "everything-claude", "~/.claude", "See skill:"):
             assert banned not in text, f"{name}: {banned!r} survived"
+
+
+def test_python_coding_style_pack_keeps_the_moved_logging_needle():
+    # 02dd7d8 moved `## Logging` out of the entry file into the pack; this
+    # pins the needle so a future edit can't silently drop the section's
+    # content along with the heading.
+    text = _read_init_template("conventions-python-coding-style.md")
+    assert "logging.getLogger" in text
 
 
 # --- Batch 5 (D conventions pack): skill-text round -------------------------

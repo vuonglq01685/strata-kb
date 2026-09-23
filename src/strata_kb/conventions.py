@@ -219,9 +219,9 @@ _CLAUDE_BLOCK = (
     "For each language you touch, read `docs/conventions/<lang>.md` and the\n"
     "five pack files it links under `docs/conventions/<lang>/` and\n"
     "`docs/conventions/common/`; if `docs/conventions/<lang>.local.md`\n"
-    "exists it overrides them all. Where any of them conflicts with the\n"
-    "repo's existing dominant style, the\n"
-    "repo wins locally — record the conflict as a finding in the PR.\n"
+    "exists it overrides them all. Where any of them conflicts with the repo's\n"
+    "existing dominant style, the repo wins locally — record the conflict as a\n"
+    "finding in the PR.\n"
 )
 
 

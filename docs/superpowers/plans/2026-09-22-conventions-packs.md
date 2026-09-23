@@ -1664,3 +1664,9 @@ Claude-Session: https://claude.ai/code/session_01NtdRAkmyTshnfR99NbY5Li"
   (§2.5): the preset wins, and the pack file defers to it in one bullet
   rather than naming a competing tool. Fires in all ten `coding-style.md`
   files.
+- **A8 — `## Standards` (C1) is the first section of every language
+  `coding-style.md`, except `e2e-playwright`.** `e2e-playwright`'s own
+  `hooks.md` already names the preset, and §7.11 never asked for the C1
+  bullet there. `dart`'s `## Formatting` section was renamed to
+  `## Standards` and moved first; `ts` gained the section in the final fix
+  wave, after review found it missing.

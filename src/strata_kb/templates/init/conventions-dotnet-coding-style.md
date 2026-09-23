@@ -6,6 +6,16 @@ Base file — owned by the strata-kb package: `kb init` refreshes it when the
 package updates, so do not hand-edit. Record repo-specific deviations in
 `docs/conventions/dotnet.local.md`.
 
+## Standards
+
+- Follow current .NET conventions and enable nullable reference types.
+- Prefer explicit access modifiers on public and internal APIs.
+- Keep files aligned with the primary type they define.
+- The formatter and linter are fixed by the `## Linting (preset)` section
+  of `docs/conventions/dotnet.md`; that preset wins over any tool named
+  here.
+- Prefer expression-bodied members only when they stay readable.
+
 ## Naming
 
 - Namespaces, classes, records, structs, enums, methods, properties:
@@ -21,16 +31,6 @@ package updates, so do not hand-edit. Record repo-specific deviations in
   class grows past ~400 lines.
 - Depend on interfaces at boundaries; use the built-in DI container,
   no service-locator calls in business logic.
-
-## Standards
-
-- Follow current .NET conventions and enable nullable reference types.
-- Prefer explicit access modifiers on public and internal APIs.
-- Keep files aligned with the primary type they define.
-- The formatter and linter are fixed by the `## Linting (preset)` section
-  of `docs/conventions/dotnet.md`; that preset wins over any tool named
-  here.
-- Prefer expression-bodied members only when they stay readable.
 
 ## Types and models
 

@@ -33,7 +33,7 @@ MANDATORY workflow:
 
 Prefer Arrange-Act-Assert structure for tests:
 
-```typescript
+```text
 test('calculates similarity correctly', () => {
   // Arrange
   const vector1 = [1, 0, 0]
@@ -51,7 +51,7 @@ test('calculates similarity correctly', () => {
 
 Use descriptive names that explain the behavior under test:
 
-```typescript
+```text
 test('returns empty array when no markets match query', () => {})
 test('throws error when API key is missing', () => {})
 test('falls back to substring search when Redis is unavailable', () => {})
