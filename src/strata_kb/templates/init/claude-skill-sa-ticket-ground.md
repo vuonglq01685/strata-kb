@@ -80,7 +80,7 @@ to the mission layer.
      `Volumes` row; `svc.<name> — none` when the row says `none`; a
      volume the ticket creates: `<name> [NEW: D<n>]`. Whole line `none`
      only when no touched service has a volume.
-   - `Healthchecks:` — `svc.<name> — \`<test command>\`` byte for byte
+   - `Healthchecks:` — ``svc.<name> — `<test command>` `` byte for byte
      from the `Healthcheck` row, or `svc.<name> — none` / `disabled` as
      the row says; several services `;`-separated on one line.
    - `Devices:` — `svc.<name> — <driver:caps>` from the `Devices` row,
