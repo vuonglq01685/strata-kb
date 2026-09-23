@@ -18,7 +18,14 @@ data — propose it as a `## Technology decisions` row (status OPEN, a
 human owner), never park "not built yet" under `Open decisions`; you
 may APPEND rows to that table and never edit, delete or re-status an
 existing one — only a human flips OPEN to DECIDED; code that exists and
-the document cannot prove → `Open decisions`, never inference;
+the document cannot prove → `Open decisions`, never inference; the
+section also carries `Volumes:`, `Healthchecks:` and `Devices:` lines
+read from each `svc.*` record's `Volumes`, `Healthcheck` and `Devices`
+rows, `none` (or `disabled` for a healthcheck) when the row says so; a
+value the document does not carry has exactly two homes, `[NEW: D<n>]`
+or `Open decisions` — it never goes into an AC as a description of the
+current state, and `DECIDED` is not a status of this gate: only a
+section id or a D-row closes an Open decision;
 never edit a BA-owned section — a contradiction is quoted there, not
 corrected; `Grounded on: <repo-id>:<doc-id> @ <revision>` is the first
 line, copied from the hub document's manifest revision; never write
