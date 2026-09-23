@@ -1,6 +1,6 @@
 [project]
 name = "strata-kb"
-version = "1.1.0"
+version = "1.2.0"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"

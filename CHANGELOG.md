@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.2.0 — 2026-09-22
 
 - `kb ticket check` verifies `[NEW: D<n>]` markers against the parent mission's `## Technology decisions`: the row must exist and be `DECIDED` (an `OPEN` row fails, naming its owner). Greenfield tickets ground code that does not exist yet through a decided design row instead of parking it under `Open decisions`. New `--missions-dir` (default: the sibling `missions/`, as `kb ticket lint`) and `--heading "## Services & order"` to check a mission plan's SA section against its own table.
 - BA repos: `/sa-ticket-ground` now runs **inside** the BA pipelines — `ba-ticket-author` step 7 (Ground technical, after `DoR: PASS`) and `ba-mission-plan` step 5 (Ground services, after the backlog is confirmed) — instead of being a manual follow-up, and its handover ends with a fixed `## Needs input` block naming every decision still waiting for a human. The SA proposes an `OPEN` row in the parent mission's `## Technology decisions` for anything the code does not have yet and references it as `[NEW: D<n>]`; only a human flips `OPEN` to `DECIDED`. Ticket and mission templates, the review rubric, `QUICKSTART-BA.md` and both BA guides updated to match. Re-run `kb init --kind ba` to pick up the new skill and template text.
