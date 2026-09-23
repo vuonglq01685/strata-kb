@@ -4,8 +4,8 @@ An Acceptance Criterion must be verifiable by someone who has NOT read
 the source documents. The phrases below shift all risk to Dev and QA,
 then explode at acceptance time. They are banned in ACs; `kb ticket
 lint` detects both the English and Vietnamese forms and reports each
-hit as a warning; for the last row it stays silent when the AC already
-names the means.
+hit as a warning; for the `distinguished by type` row it stays silent
+when the AC already names the means.
 
 | Banned phrase | Write instead |
 |---|---|
