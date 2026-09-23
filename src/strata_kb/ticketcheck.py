@@ -5,7 +5,8 @@ Verifies a ticket's `## Technical grounding` section (spec
 document: every `svc.* / db.* / api.* / int.* / cmd.*` id must exist in the
 document's `_manifest.yaml` (or carry `[NEW: <reason>]`), columns / routes /
 commands must match the document's own L2 tables, `Files:` must be listed in
-`struct.tree`, and `Open decisions` must be empty.
+`struct.tree`, `Volumes:` / `Healthchecks:` / `Devices:` must match the svc
+L2 rows, and `Open decisions` must be empty.
 
 No CLI/MCP imports here — `cli.py`'s `kb ticket check` is a thin wrapper, the
 same split `ticketlint.py` has. Where the document comes from (local
@@ -57,6 +58,12 @@ SERVICES_HEADING = "## Services & order"
 DECISION_REF_RE = re.compile(r"^D\d+$")
 
 _NONE_WORDS = frozenset({"none", "n/a", "-"})
+
+COMPOSE_FIELDS: tuple[str, ...] = ("Volumes", "Healthchecks", "Devices")
+# `svc.<x> — <values>` groups on one compose line, `;`-separated.
+_COMPOSE_GROUP_RE = re.compile(r"(svc\.[A-Za-z0-9_][A-Za-z0-9_.-]*)\s*[—-]\s*(?P<values>[^;]*)")
+_COMPOSE_ROW = {"Volumes": "Volumes", "Healthchecks": "Healthcheck", "Devices": "Devices"}
+_COMPOSE_NOUN = {"Volumes": "volume", "Healthchecks": "healthcheck", "Devices": "device"}
 
 
 class DocLoadError(KbError):
@@ -320,6 +327,8 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
     _check_service_present(section, heading, issues)
     _check_open_decisions(section, issues)
     _check_tables_routes_commands(section, doc, issues)
+    if heading != SERVICES_HEADING:
+        _check_compose_facts(section, doc, decisions, issues, notes)
     _check_files(section, doc, decisions, issues, notes)
     return LintReport(issues, notes)
 
@@ -379,6 +388,8 @@ def _id_lines(section: _Section):
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] in ("Grounded on", "Files"):
             continue
+        if section.field_of_line[i] == "Healthchecks":
+            line = CODE_SPAN_RE.sub("``", line)
         if line.strip():
             yield section.first_line + i, line
 
@@ -530,6 +541,110 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                     issues.append(
                         Issue("error", f"command not in {raw} — copy the primary or an alternative verbatim (found: {found}; allowed: {', '.join(sorted(allowed))}) (line {lineno})")
                     )
+
+
+def _service_ids(section: _Section) -> set[str]:
+    ids: set[str] = set()
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == "Service":
+            ids |= {s for s in ID_RE.findall(line) if s.startswith("svc.")}
+    return ids
+
+
+def _field_lines(section: _Section, name: str) -> list[tuple[int, str]]:
+    """(lineno, rest) for the `- <name>: <rest>` line plus its sub-bullets."""
+    out: list[tuple[int, str]] = []
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == name and not line[:1].isspace():
+            m = FIELD_RE.match(line)
+            if m is not None and m.group("rest").strip():
+                out.append((section.first_line + i, m.group("rest").strip()))
+    out += section.subitems.get(name, [])
+    return out
+
+
+def _property(rows: list[list[str]], name: str) -> str | None:
+    """The `Value` cell of the L2 property row named `name`, pipes unescaped."""
+    for r in rows[1:]:
+        if len(r) >= 2 and r[0].strip() == name:
+            return r[1].strip().replace("\\|", "|")
+    return None
+
+
+def _svc_facts(doc: LoadedDoc, sid: str, field: str, unreadable: set[str], issues: list[Issue]) -> set[str] | None:
+    """The svc's values for one compose field as a set: `{"pgdata"}`,
+    `{"curl -f …"}`, `set()` for `none`. None when unreadable or when the
+    document predates the rows (caller skips with a note)."""
+    body = _l2_slice(doc, sid, unreadable, issues)
+    if body is None:
+        return None
+    cell = _property(lintcore.table_rows(body), _COMPOSE_ROW[field])
+    if cell is None:
+        return None
+    if cell.casefold() == "none":
+        return set()
+    if field == "Healthchecks":
+        return {cell}
+    return {v.strip() for v in cell.split(",") if v.strip()}
+
+
+def _split_values(field: str, raw: str) -> list[str]:
+    raw = raw.strip()
+    if field == "Healthchecks":
+        spans = CODE_SPAN_RE.findall(raw)
+        return spans if spans else [raw]
+    return [v.strip().strip("`") for v in raw.split(",") if v.strip()]
+
+
+def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decisions,
+                         issues: list[Issue], notes: list[str]) -> None:
+    present = [f for f in COMPOSE_FIELDS if _field_lines(section, f)]
+    if len(present) < len(COMPOSE_FIELDS):
+        issues.append(Issue("warning", "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them"))
+    if not present:
+        return
+    services = _service_ids(section)
+    unreadable: set[str] = set()
+    skipped = False
+    for field in present:
+        for lineno, rest in _field_lines(section, field):
+            noun = _COMPOSE_NOUN[field]
+            if rest.strip().casefold() in _NONE_WORDS:
+                for sid in sorted(services):
+                    facts = _svc_facts(doc, sid, field, unreadable, issues)
+                    if facts is None:
+                        skipped = True
+                    elif facts:
+                        issues.append(Issue("warning", f"{sid} has {noun}s the grounding omits: {', '.join(sorted(facts))} (line {lineno})"))
+                continue
+            for g in _COMPOSE_GROUP_RE.finditer(rest):
+                sid = g.group(1).rstrip(".")
+                if sid not in services:
+                    issues.append(Issue("error", f"{sid} on the {field}: line is not on the Service: line (line {lineno})"))
+                    continue
+                facts = _svc_facts(doc, sid, field, unreadable, issues)
+                if facts is None:
+                    skipped = True
+                    continue
+                values_raw = g.group("values")
+                if values_raw.strip().casefold() in _NONE_WORDS:
+                    if facts:
+                        issues.append(Issue("error", f"{noun} for {sid} is '{', '.join(sorted(facts))}', not 'none' (line {lineno})"))
+                    continue
+                for value in _split_values(field, values_raw):
+                    new = NEW_RE.search(value)
+                    if new is not None:
+                        _judge_new(NEW_RE.sub("", value).strip(), new, lineno, decisions, issues, notes)
+                        continue
+                    if value in facts:
+                        continue
+                    have = ", ".join(sorted(facts)) or "none"
+                    if field == "Healthchecks":
+                        issues.append(Issue("error", f"healthcheck for {sid} is '{have}', not '{value}' (line {lineno})"))
+                    else:
+                        issues.append(Issue("error", f"{noun} '{value}' is not in {sid} (has: {have}) (line {lineno})"))
+    if skipped:
+        notes.append(f"{doc.manifest.id} has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped")
 
 
 def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:
