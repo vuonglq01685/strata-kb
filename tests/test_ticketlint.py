@@ -1357,3 +1357,50 @@ def test_acceptance_criteria_inside_an_html_comment_do_not_count(
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert not any("(max 10)" in m for m in _errors(report))
+
+
+# --- shell commands in an AC (spec 2026-09-23 §6) ---
+
+def _ac_report(fed_hub: Path, golden_block: str, ac_lines: str):
+    doc = _build_ticket(golden_block, overrides={"## Acceptance Criteria": ac_lines})
+    return ticketlint.lint(doc, _hub(fed_hub))
+
+
+def test_ac_with_a_shell_command_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `docker compose up -d --wait` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Every service reports healthy per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert report.passed is True
+    hits = [w for w in _warnings(report) if "prescribes a shell command" in w]
+    assert len(hits) == 1
+    assert hits[0].startswith("AC1 prescribes a shell command (`docker compose up -d --wait`)")
+    assert "## Test data & verification" in hits[0]
+
+
+def test_ac_with_a_pipe_between_words_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — output of `something | jq .` is valid per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_backticked_names_and_values_do_not_warn(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `nginx` publishes port `80`; `.env.example` lists `POSTGRES_DB`; encoder is `h264_nvenc` per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_owned_open_marker_suppresses_the_shell_warning(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `curl -f http://localhost/health` returns 200 OPEN(BA) per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
