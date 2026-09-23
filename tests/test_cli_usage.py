@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -16,6 +17,11 @@ def kb_dir(tmp_path: Path, kind: str = "ba") -> Path:
     d.mkdir(parents=True, exist_ok=True)
     (d / "config.yaml").write_text(
         yaml.safe_dump({"kind": kind, "repo_id": "KS-BA"}), encoding="utf-8"
+    )
+    # A price table dated today, so the staleness warning (packaged table
+    # older than 90 days) never depends on the wall clock in these tests.
+    (d / "usage-prices.yaml").write_text(
+        f'effective_date: "{date.today():%Y-%m-%d}"\n', encoding="utf-8"
     )
     return d
 
