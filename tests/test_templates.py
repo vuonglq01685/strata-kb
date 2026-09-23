@@ -2808,3 +2808,14 @@ def test_quickstarts_name_the_compose_facts():
     assert "volumes, healthcheck commands and device reservations" in ba
     assert "`Volumes:` / `Healthchecks:` / `Devices:`" in ba
     assert "named volumes, the healthcheck command and device reservations" in dev
+
+
+@pytest.mark.parametrize("name", [
+    "claude-skill-ba-ticket-author.md",
+    "copilot-ba-ticket-author.prompt.md",
+    "cursor-ba-ticket-author.md",
+])
+def test_ba_ticket_author_wrappers_carry_the_no_shell_and_no_rescore_rules(name):
+    text = _normalised(_read_init_template(name))
+    assert "An AC states an observable outcome, never a shell command" in text
+    assert "A round that only closes open questions is not a review round and never changes a score" in text

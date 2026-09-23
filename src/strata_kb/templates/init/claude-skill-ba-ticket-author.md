@@ -57,6 +57,11 @@ for it during Intake.
    10 AC, or a second "As a …" story, is two tickets — split it before
    Lint, never merge ACs to fit.
 
+   An AC states an observable outcome, never a shell command
+   (`docker compose …`, `curl …`, `grep …`); the exact command goes to
+   `## Test data & verification`, where the Dev can run it against the
+   real images — `kb ticket lint` warns on the former.
+
    **Fill every new section** — `## Dependencies`, `## Non-functional
    requirements`, `## UI / presentation spec`, `## Out of scope`,
    `## Test data & verification`, `## Open questions`. Not applicable →
@@ -128,6 +133,14 @@ for it during Intake.
    re-derive it as the LOWEST maturity level fully satisfied, using
    round 1's checklist updated with the verifier's pass/fail;
    otherwise carry the previous round's score forward unchanged.
+
+   A round that only closes open questions is not a review round and
+   never changes a score. A score rises only when a `gap-verifier`
+   (rounds 2–3) or the two reviewers (round 1) record PASS on every gap
+   of that axis. Re-deriving a score by hand is forbidden; a closed
+   question the reviewers never saw is a `DECIDED` note, not a fact, and
+   stays out of the ACs until the SA's `## Technical grounding` or a
+   D-row carries it.
 
    A gap you cannot close yourself (a missing business decision,
    missing input) is NEVER invented: write `OPEN(<owner>)` at the spot
