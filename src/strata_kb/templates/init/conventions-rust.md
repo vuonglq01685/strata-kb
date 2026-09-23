@@ -7,37 +7,19 @@ and OVERRIDES this one where they conflict. Where either file conflicts
 with the repo's existing dominant style, the repo wins locally — record
 the conflict as a finding in the PR.
 
-## Naming
+## Conventions pack
 
-- Modules, functions, variables: `snake_case`. Types, traits, enums:
-  `PascalCase`. Constants and statics: `UPPER_SNAKE_CASE`.
-- Booleans read as predicates (`is_ready`, `has_pending`).
-- Getters have no `get_` prefix (`user.name()`, not `user.get_name()`);
-  keep `get_` only for a genuinely fallible or indexed lookup.
+Read this file first, then the pack. Each language file extends its
+`common/` counterpart; where the two disagree, the language file wins, and
+`docs/conventions/rust.local.md` wins over both.
 
-## Module structure
-
-- Organise by feature/domain, not by technical layer; one crate per
-  independently-versioned/publishable unit.
-- Keep modules cohesive; a file past ~400 lines is a signal to split.
-- Accept `&dyn Trait` / generics at boundaries, return concrete types
-  from constructors.
-
-## Error handling
-
-- Library crates: define error enums with `thiserror`; never panic on
-  reachable input. Binary crates: `anyhow::Result` at the top level.
-- Wrap with context: `.context("resolving ref")`; match with pattern
-  matching, not string comparison on the message.
-- `unwrap`/`expect` only where the invariant is enforced by the type
-  system or checked immediately above; never on external input.
-
-## Logging
-
-- Use `tracing` (structured spans + fields); never `println!` for
-  diagnostics in committed code.
-- Log where the error is handled, with key-value context
-  (`tracing::error!(ref = %ref, err = %err, "resolve failed")`).
+| Topic | Rust | Shared |
+|---|---|---|
+| Coding style | [rust/coding-style.md](rust/coding-style.md) | [common/coding-style.md](common/coding-style.md) |
+| Patterns | [rust/patterns.md](rust/patterns.md) | [common/patterns.md](common/patterns.md) |
+| Security | [rust/security.md](rust/security.md) | [common/security.md](common/security.md) |
+| Testing | [rust/testing.md](rust/testing.md) | [common/testing.md](common/testing.md) |
+| Hooks | [rust/hooks.md](rust/hooks.md) | [common/hooks.md](common/hooks.md) |
 
 ## Citation comments
 
@@ -48,15 +30,6 @@ comment on the same line or the line above:
 ```rust
 const MAX_ALTITUDE_FT: u32 = 60_000; // per ATM-STD §5.3 @ v2.1
 ```
-
-## Testing
-
-- `#[cfg(test)]` module per file for units; `tests/` directory for
-  integration tests. AAA shape inside each test.
-- Names describe the behaviour: `fn rejects_expired_token()`, not
-  `fn test_token_2()`.
-- Every bug fix lands together with the test that would have caught it.
-- Never edit a test to make it pass — diagnose the cause.
 
 ## Linting (preset)
 

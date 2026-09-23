@@ -6,6 +6,7 @@ import yaml
 
 from strata_kb import lintcore
 from strata_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
+from strata_kb.conventions import CONVENTION_PARTS, LANG_IDS
 
 WEB_TEMPLATES = [
     "base.html", "login.html", "overview.html", "search.html",
@@ -1514,22 +1515,32 @@ def test_ba_wrappers_do_not_let_the_gap_verifier_invent_a_score():
 
 # --- Batch 5 (D conventions pack): base conventions templates ---------------
 
+# The two sections that stay in the entry file whatever else moves: the
+# citation rule and the lint preset. `## Linting (preset)` in particular is
+# named by the dev-plan wrappers, which is pinned below in
+# test_dev_plan_refuses_a_draft_design_and_writes_the_cmd_headers.
 CONVENTIONS_SECTION_HEADINGS = (
+    "## Citation comments",
+    "## Linting (preset)",
+)
+
+# Moved into `<lang>/coding-style.md` (the first four) and
+# `<lang>/testing.md` (the last) when a language's pack lands.
+CONVENTIONS_MOVED_HEADINGS = (
     "## Naming",
     "## Module structure",
     "## Error handling",
     "## Logging",
-    "## Citation comments",
     "## Testing",
-    "## Linting (preset)",
 )
+CONVENTIONS_PACK_MARKER = "## Conventions pack"
 
 
 def test_conventions_python_and_ts_templates_carry_the_full_skeleton():
     for name, needles in (
         (
             "conventions-python.md",
-            ("ruff.toml", "ruff check . && ruff format --check .", "logging.getLogger"),
+            ("ruff.toml", "ruff check . && ruff format --check ."),
         ),
         (
             "conventions-ts.md",
@@ -1608,6 +1619,66 @@ def test_conventions_local_stub_and_pointer_templates():
         assert "docs/conventions/{lang}.local.md" in text
         # raw-text needle kept to one source line — the phrase wraps
         assert "wins locally" in text
+
+
+@pytest.mark.parametrize("lang", LANG_IDS)
+def test_conventions_entry_file_links_its_pack(lang):
+    """Every entry file is an index: it links its five language pack files
+    and the five shared ones, and none of the moved headings survives in
+    it. Naming / Module structure / Error handling / Logging now live in
+    `<lang>/coding-style.md`, Testing in `<lang>/testing.md`."""
+    text = _read_init_template(f"conventions-{lang}.md")
+    assert CONVENTIONS_PACK_MARKER in text, f"{lang}: entry file has no pack table"
+    for part in CONVENTION_PARTS:
+        assert f"({lang}/{part}.md)" in text, f"{lang}: no link to {lang}/{part}.md"
+        assert f"(common/{part}.md)" in text, f"{lang}: no link to common/{part}.md"
+    for heading in CONVENTIONS_MOVED_HEADINGS:
+        assert heading not in text, f"{lang}: {heading!r} should have moved into the pack"
+
+
+@pytest.mark.parametrize("lang", LANG_IDS)
+def test_language_pack_templates_exist_and_extend_their_common_file(lang):
+    """Every language in LANG_IDS has all five pack templates, each opening
+    with the extends line that names its common counterpart, carrying a
+    real title on line 3 and real section content — not just the T1
+    skeleton (extends line, blank, title, blank, ownership paragraph)."""
+    base = resources.files("strata_kb").joinpath("templates/init")
+    names = {part: f"conventions-{lang}-{part}.md" for part in CONVENTION_PARTS}
+    for part, name in names.items():
+        assert base.joinpath(name).is_file(), name
+        text = _read_init_template(name)
+        assert text.startswith(
+            f"> This file extends [common/{part}.md](../common/{part}.md) with "
+        ), name
+        lines = text.splitlines()
+        # line 1: extends line, line 2: blank, line 3: title.
+        assert lines[2].startswith("# "), f"{name}: line 3 is not the title"
+        assert "\n## " in text, f"{name}: no section heading — content missing"
+        assert len(lines) >= 12, f"{name}: looks like unfilled T1 boilerplate"
+        for banned in ("ECC", "everything-claude", "~/.claude", "See skill:"):
+            assert banned not in text, f"{name}: {banned!r} survived"
+
+
+def test_common_pack_templates_exist_and_carry_no_extends_line():
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for part in CONVENTION_PARTS:
+        name = f"conventions-common-{part}.md"
+        assert base.joinpath(name).is_file(), name
+        text = _read_init_template(name)
+        assert text.startswith("# "), name
+        assert "This file extends" not in text, name
+        assert "\n## " in text, f"{name}: no section heading — content missing"
+        assert len(text.splitlines()) >= 12, f"{name}: looks like unfilled T1 boilerplate"
+        for banned in ("ECC", "everything-claude", "~/.claude", "See skill:"):
+            assert banned not in text, f"{name}: {banned!r} survived"
+
+
+def test_python_coding_style_pack_keeps_the_moved_logging_needle():
+    # 02dd7d8 moved `## Logging` out of the entry file into the pack; this
+    # pins the needle so a future edit can't silently drop the section's
+    # content along with the heading.
+    text = _read_init_template("conventions-python-coding-style.md")
+    assert "logging.getLogger" in text
 
 
 # --- Batch 5 (D conventions pack): skill-text round -------------------------
@@ -2092,10 +2163,10 @@ REVIEW_BLOCK_BOUNDS = {
 # for A2, ...-dev-execute.md for A4, ...-dev-handover.md for A5, and
 # claude-skill-dev-design.md again for the contract), never hand-retyped.
 REVIEW_BLOCK_TEXT = {
-    "REVIEW-CONTRACT": "## Review dispatch contract (every review in this flow)\n\n- The author and the reviewer are NEVER the same subagent. A self-review\n  never satisfies a review step.\n- A reviewer starts from a fresh context and gets no conversation history —\n  hand it only the paths it must read and the constraints that bind it.\n- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the\n  draft, the diff, the report. Whatever you paste stays in your context for\n  the rest of the session.\n- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag\n  and never rates a finding's severity for it.\n- Name the model on every dispatch — a standard model for authors and\n  implementers, the most capable one available for reviewers. Never inherit\n  the session default silently.\n- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still\n  standing after round 3 stops the flow and goes to the Dev.\n- A finding that contradicts the approved design or plan is never auto-fixed:\n  show the finding beside the text that mandates it and let the Dev choose.\n- Criteria come from the source that matches the review: the rubric's\n  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and\n  `docs/conventions/<lang>.md` for A3 and A4 — each one's own `.local.md`\n  override wins over its base file. Severity is always\n  BLOCKER / SUGGESTED / NOTE / NITS.\n- Where the runtime cannot dispatch subagents, run the review as its own pass\n  that reads ONLY the paths it was handed and reuses nothing it remembers from\n  drafting, and write up its findings the same way — then STOP and hand the\n  result to the Dev. The phase does not advance on a fallback pass: one\n  context reviewing itself is a weaker substitute, not an equivalent — only\n  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.\n  `Review: ✅ r<n> (fallback, Dev-approved)`.\n",
+    "REVIEW-CONTRACT": "## Review dispatch contract (every review in this flow)\n\n- The author and the reviewer are NEVER the same subagent. A self-review\n  never satisfies a review step.\n- A reviewer starts from a fresh context and gets no conversation history —\n  hand it only the paths it must read and the constraints that bind it.\n- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the\n  draft, the diff, the report. Whatever you paste stays in your context for\n  the rest of the session.\n- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag\n  and never rates a finding's severity for it.\n- Name the model on every dispatch — a standard model for authors and\n  implementers, the most capable one available for reviewers. Never inherit\n  the session default silently.\n- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still\n  standing after round 3 stops the flow and goes to the Dev.\n- A finding that contradicts the approved design or plan is never auto-fixed:\n  show the finding beside the text that mandates it and let the Dev choose.\n- Criteria come from the source that matches the review: the rubric's\n  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and\n  `docs/conventions/<lang>.md` — plus the five pack files it links under\n  `docs/conventions/<lang>/` and `docs/conventions/common/` — for A3 and A4.\n  Each one's own `.local.md` override wins over its base file. Severity is\n  always BLOCKER / SUGGESTED / NOTE / NITS.\n- Where the runtime cannot dispatch subagents, run the review as its own pass\n  that reads ONLY the paths it was handed and reuses nothing it remembers from\n  drafting, and write up its findings the same way — then STOP and hand the\n  result to the Dev. The phase does not advance on a fallback pass: one\n  context reviewing itself is a weaker substitute, not an equivalent — only\n  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.\n  `Review: ✅ r<n> (fallback, Dev-approved)`.\n",
     "A1": "## A1 — independent design review (before GATE 1)\n\nWrite the design in its own context: dispatch a `design-author` subagent with\nthe resolved context cache path, the ticket's acceptance criteria, the\nconventions paths, and this phase's own authoring rules above — what the\ndesign must cover, and how placeholders and standard values are cited — and\nlet it write `docs/impl/<ticket-id>-design.md` with `status: draft`. You\norchestrate; you do not draft and then judge your own draft.\n\nThat design is a draft until a reviewer that never saw it being written\nsays otherwise. Dispatch a `design-reviewer` subagent and hand it exactly\nthese things: the path `docs/impl/<ticket-id>-design.md`, the ticket's\nacceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`\nplus `docs/pr-review-rubric.local.md`. Not your reasoning, not this\nconversation.\n\nIt returns pass/fail per axis plus a gap list in which every gap names the\nsection it lives in, its severity, and a proposed fix. Apply BLOCKER and\nSUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.\n\nRecord every round in the design file's `## Review record` table, creating it\nbelow the design body on round 1:\n\n    | Date | Round | Verdict | Reviewer | Open gaps |\n    |---|---|---|---|---|\n    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |\n\nGATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and\nno SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.\n",
     "A2": "## A2 — independent plan review (before GATE 2)\n\nDispatch a `plan-author` subagent to turn the approved design into the plan —\nit gets the design file path, the ticket's acceptance criteria, the\n`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above\n— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line\nformat, the ordering rules — and nothing else. Then review it with a\ndifferent context.\n\nDispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the\npath `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the\n`## Pre-code axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`. It answers four questions and nothing else:\n\n- Is there exactly one task per AC — none missing, none invented?\n- Does every task state its failing test before its implementation?\n- Is each task's **Interfaces** entry complete enough that its implementer\n  never has to read outside its own task block? An incomplete entry is a\n  BLOCKER: it is what forces an implementer to read wider and guess.\n- Does every task with no test declare `Exempt: <config|ci|docs|style>` and\n  name its verification?\n\nFix subagent, re-review, at most 3 rounds. Record each round in the plan file's\n`## Review record` table, same shape as the design file's. GATE 2 is offered\nonly after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap\nleft open; NOTE and NITS are recorded, not fixed.\n",
-    "A4": "## A4 — narrow branch review (after the last task)\n\nEvery box ticked is not the same as the ticket being done. Write the branch\ndiff to `docs/impl/<ticket-id>-review/branch.diff`\n(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then\n`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a\n`branch-reviewer` subagent with that path, the plan, the ticket, and\n`docs/conventions/<lang>.md` plus its `.local.md` override. One question\nonly: does this branch fulfil the ticket — every AC covered by a test,\nnothing built that no AC asked for, and no later task quietly breaking an\nearlier one?\n\nKeep the lens narrow here; merge risk is A5's job in `dev-handover`, against a\ndifferent rubric. Fix subagent, re-review, at most 3 rounds. Only once A4\ncomes back clean — no BLOCKER and no SUGGESTED left — is option 1\n`/dev-handover <ticket-id>`.\n",
+    "A4": "## A4 — narrow branch review (after the last task)\n\nEvery box ticked is not the same as the ticket being done. Write the branch\ndiff to `docs/impl/<ticket-id>-review/branch.diff`\n(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then\n`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a\n`branch-reviewer` subagent with that path, the plan, the ticket, and\n`docs/conventions/<lang>.md`, the five pack files it links, and its\n`.local.md` override. One question\nonly: does this branch fulfil the ticket — every AC covered by a test,\nnothing built that no AC asked for, and no later task quietly breaking an\nearlier one?\n\nKeep the lens narrow here; merge risk is A5's job in `dev-handover`, against a\ndifferent rubric. Fix subagent, re-review, at most 3 rounds. Only once A4\ncomes back clean — no BLOCKER and no SUGGESTED left — is option 1\n`/dev-handover <ticket-id>`.\n",
     "A5": "## A5 — merge-risk review (before GATE 3)\n\nA4 asked whether the branch does what the ticket said. A5 asks a different\nquestion, in a different context: is this safe to merge into the default\nbranch?\n\nIf `docs/impl/<ticket-id>-review/branch.diff` does not exist yet — a cold\nhandover session, a fresh clone or worktree, or hand-implemented code that\nnever ran `dev-execute` — build it yourself first, with the same command A4\nuses: `mkdir -p docs/impl/<ticket-id>-review && git diff $(git merge-base\n<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>-review/branch.diff`.\n\nDispatch a `merge-risk-reviewer` subagent on the most capable model available.\nGive it the persona plainly: a tech lead reviewing before a production deploy,\nassuming real traffic, concurrent requests, retries, and more than one running\ninstance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and\nthe `## Merge-risk axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`.\n\n**The diff alone is not the review.** Say so in the dispatch: the reviewer\nopens the files the change reaches — callers, siblings, migrations, permission\ndeclarations, contracts, tests — and traces the affected flow end to end before\njudging. A finding that only names a category is not a finding; it states why\nthis code, on this path, is dangerous.\n\nIt writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding\n(severity, file, line, why it is dangerous, proposed fix), then the verdict\nline `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.\nBLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3\nrounds — same routing as A3: only a standing BLOCKER keeps the verdict\n`Blocking: Yes`.\n\nCopy the table and the verdict line into the PR body's `## Review` section —\n`kb pr lint` fails the PR when the verdict line is missing and when it reads\n`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback\nitems, recorded rather than fixed.\n\nA branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1\nbecomes the fix, not the PR.\n",
 }
 

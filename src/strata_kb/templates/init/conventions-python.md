@@ -7,41 +7,19 @@ and OVERRIDES this one where they conflict. Where either file conflicts
 with the repo's existing dominant style, the repo wins locally — record
 the conflict as a finding in the PR.
 
-## Naming
+## Conventions pack
 
-- Modules and packages: `snake_case`, short, no hyphens.
-- Functions, methods, variables: `snake_case`, descriptive; booleans read
-  as predicates (`is_ready`, `has_pending`, `should_retry`).
-- Classes and exceptions: `PascalCase`; exception names end in `Error`.
-- Constants: `UPPER_SNAKE_CASE` at module level.
-- No abbreviations the codebase does not already use.
+Read this file first, then the pack. Each language file extends its
+`common/` counterpart; where the two disagree, the language file wins, and
+`docs/conventions/python.local.md` wins over both.
 
-## Module structure
-
-- Organise by feature/domain, not by technical layer.
-- One clear responsibility per module; ~200–400 lines typical, 800 max —
-  extract helpers before crossing it.
-- Public surface first: module docstring, constants, then the functions
-  and classes callers import; `_`-prefixed helpers below them.
-- Imports at the top, grouped stdlib → third-party → local; no wildcard
-  imports.
-
-## Error handling
-
-- Raise specific exceptions; never bare `except:` and never
-  `except Exception: pass` — a silently swallowed error is a bug.
-- Fail fast at boundaries: validate input where data enters the system
-  and raise with a message naming the offending value.
-- Catch only what the code can actually handle; otherwise re-raise with
-  context: `raise NewError(...) from err`.
-
-## Logging
-
-- Use the `logging` module; never `print()` in committed code.
-- One logger per module: `logger = logging.getLogger(__name__)`.
-- Log where the error is handled, with enough context to act on. DEBUG
-  for flow detail, INFO for state changes, WARNING for recoverable
-  oddities, ERROR for failures.
+| Topic | Python | Shared |
+|---|---|---|
+| Coding style | [python/coding-style.md](python/coding-style.md) | [common/coding-style.md](common/coding-style.md) |
+| Patterns | [python/patterns.md](python/patterns.md) | [common/patterns.md](common/patterns.md) |
+| Security | [python/security.md](python/security.md) | [common/security.md](common/security.md) |
+| Testing | [python/testing.md](python/testing.md) | [common/testing.md](common/testing.md) |
+| Hooks | [python/hooks.md](python/hooks.md) | [common/hooks.md](common/hooks.md) |
 
 ## Citation comments
 
@@ -52,14 +30,6 @@ comment on the same line or the line above:
 ```python
 MAX_ALTITUDE_FT = 60_000  # per ATM-STD §5.3 @ v2.1
 ```
-
-## Testing
-
-- pytest, AAA shape (Arrange–Act–Assert), one behaviour per test.
-- Names describe the behaviour: `test_rejects_expired_token`, not
-  `test_token_2`.
-- Every bug fix lands together with the test that would have caught it.
-- Never edit a test to make it pass — diagnose the cause.
 
 ## Linting (preset)
 

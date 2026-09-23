@@ -7,38 +7,19 @@ and OVERRIDES this one where they conflict. Where either file conflicts
 with the repo's existing dominant style, the repo wins locally — record
 the conflict as a finding in the PR.
 
-## Naming
+## Conventions pack
 
-- Packages: short, all-lowercase, no underscores; the package name is
-  part of the caller's vocabulary (`bytes.Buffer`, not
-  `bytesutil.BytesBuffer`).
-- Exported identifiers: `PascalCase`; unexported: `camelCase`.
-- No `Get` prefix on getters (`user.Name()`, not `user.GetName()`).
-- Interfaces with one method end in `-er` (`Reader`, `Resolver`).
+Read this file first, then the pack. Each language file extends its
+`common/` counterpart; where the two disagree, the language file wins, and
+`docs/conventions/go.local.md` wins over both.
 
-## Module structure
-
-- Organise packages by feature/domain; avoid catch-all `util` packages.
-- Keep packages small and cohesive; a file past ~400 lines is a signal
-  to split.
-- Accept interfaces, return concrete types.
-
-## Error handling
-
-- Errors are values: return `error` as the last result, check it at
-  every call site; never `_ =` an error away.
-- Wrap with context: `fmt.Errorf("resolving ref: %w", err)`; match with
-  `errors.Is` / `errors.As`, not string comparison.
-- Fail fast at boundaries: validate input where data enters and return
-  an error naming the offending value. `panic` only for programmer
-  errors.
-
-## Logging
-
-- Use `log/slog` (structured); never `fmt.Println` for diagnostics in
-  committed code.
-- Log where the error is handled, with key-value context
-  (`slog.Error("resolve failed", "ref", ref, "err", err)`).
+| Topic | Go | Shared |
+|---|---|---|
+| Coding style | [go/coding-style.md](go/coding-style.md) | [common/coding-style.md](common/coding-style.md) |
+| Patterns | [go/patterns.md](go/patterns.md) | [common/patterns.md](common/patterns.md) |
+| Security | [go/security.md](go/security.md) | [common/security.md](common/security.md) |
+| Testing | [go/testing.md](go/testing.md) | [common/testing.md](common/testing.md) |
+| Hooks | [go/hooks.md](go/hooks.md) | [common/hooks.md](common/hooks.md) |
 
 ## Citation comments
 
@@ -49,15 +30,6 @@ comment on the same line or the line above:
 ```go
 const MaxAltitudeFt = 60000 // per ATM-STD §5.3 @ v2.1
 ```
-
-## Testing
-
-- Standard `testing` package; table-driven tests for behaviour families;
-  AAA shape inside each case.
-- Names describe the behaviour: `TestRejectsExpiredToken`, subtests via
-  `t.Run("expired token", ...)`.
-- Every bug fix lands together with the test that would have caught it.
-- Never edit a test to make it pass — diagnose the cause.
 
 ## Linting (preset)
 

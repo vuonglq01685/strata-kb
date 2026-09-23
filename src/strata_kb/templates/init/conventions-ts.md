@@ -7,39 +7,19 @@ and OVERRIDES this one where they conflict. Where either file conflicts
 with the repo's existing dominant style, the repo wins locally — record
 the conflict as a finding in the PR.
 
-## Naming
+## Conventions pack
 
-- Variables and functions: `camelCase`, descriptive; booleans read as
-  predicates (`isReady`, `hasPending`, `shouldRetry`).
-- Types, interfaces, classes, enums, React components: `PascalCase`.
-- Constants: `UPPER_SNAKE_CASE` for true module-level constants.
-- Files: follow the repo's dominant style; when there is none,
-  `kebab-case.ts` for modules, `PascalCase.tsx` for components.
+Read this file first, then the pack. Each language file extends its
+`common/` counterpart; where the two disagree, the language file wins, and
+`docs/conventions/ts.local.md` wins over both.
 
-## Module structure
-
-- Organise by feature/domain, not by technical layer.
-- One clear responsibility per file; ~200–400 lines typical, 800 max —
-  extract before crossing it.
-- Prefer named exports; a default export only for the file's single main
-  artifact (e.g. a component).
-- No deep relative import chains (`../../../`) — use the repo's path
-  aliases when it has them.
-
-## Error handling
-
-- Throw `Error` subclasses, never strings; never swallow a rejection —
-  every promise is awaited, returned, or explicitly `.catch`-handled.
-- Fail fast at boundaries: validate external data (API responses, user
-  input, file content) before it crosses into typed code.
-- `catch` only what the code can handle; rethrow with cause otherwise:
-  `throw new AppError("...", { cause: err })`.
-
-## Logging
-
-- Use the repo's logging facility; never `console.log` in committed
-  code (a structured logger, or nothing).
-- Log where the error is handled, with enough context to act on.
+| Topic | TypeScript / JavaScript | Shared |
+|---|---|---|
+| Coding style | [ts/coding-style.md](ts/coding-style.md) | [common/coding-style.md](common/coding-style.md) |
+| Patterns | [ts/patterns.md](ts/patterns.md) | [common/patterns.md](common/patterns.md) |
+| Security | [ts/security.md](ts/security.md) | [common/security.md](common/security.md) |
+| Testing | [ts/testing.md](ts/testing.md) | [common/testing.md](common/testing.md) |
+| Hooks | [ts/hooks.md](ts/hooks.md) | [common/hooks.md](common/hooks.md) |
 
 ## Citation comments
 
@@ -50,15 +30,6 @@ comment on the same line or the line above:
 ```ts
 const MAX_ALTITUDE_FT = 60_000; // per ATM-STD §5.3 @ v2.1
 ```
-
-## Testing
-
-- The repo's test runner (vitest/jest), AAA shape, one behaviour per
-  test.
-- Names describe the behaviour: `test("rejects expired token")`, not
-  `test("token 2")`.
-- Every bug fix lands together with the test that would have caught it.
-- Never edit a test to make it pass — diagnose the cause.
 
 ## Linting (preset)
 

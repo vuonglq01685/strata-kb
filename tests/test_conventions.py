@@ -6,6 +6,7 @@ import pytest
 
 from strata_kb.conventions import (
     CLAUDE_MARKER,
+    CONVENTION_PARTS,
     LANG_GLOBS,
     detect_langs,
     ensure_claude_block,
@@ -163,6 +164,49 @@ def test_scaffold_creates_base_local_and_pointers_for_detected_lang(tmp_path: Pa
     assert ".github/instructions/coding-python.instructions.md" in report.created
     # only the detected language
     assert not (tmp_path / "docs" / "conventions" / "ts.md").exists()
+
+
+def test_scaffold_writes_the_shared_common_pack_once(tmp_path: Path):
+    _touch(tmp_path, "pyproject.toml")
+    report = _scaffold(tmp_path)
+    for part in CONVENTION_PARTS:
+        dest = tmp_path / "docs" / "conventions" / "common" / f"{part}.md"
+        assert dest.is_file(), part
+        assert f"docs/conventions/common/{part}.md" in report.created
+        assert "~/.claude" not in dest.read_text(encoding="utf-8"), part
+
+
+def test_scaffold_writes_the_language_pack_and_the_entry_file_links_it(
+    tmp_path: Path,
+):
+    report = InitReport()
+    assert scaffold_conventions(tmp_path, report, forced=["python"]) == ["python"]
+    entry = (tmp_path / "docs" / "conventions" / "python.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## Conventions pack" in entry
+    for part in CONVENTION_PARTS:
+        dest = tmp_path / "docs" / "conventions" / "python" / f"{part}.md"
+        assert dest.is_file(), part
+        assert f"docs/conventions/python/{part}.md" in report.created
+        text = dest.read_text(encoding="utf-8")
+        assert text.startswith(
+            f"> This file extends [common/{part}.md](../common/{part}.md) with "
+        ), part
+        assert f"(python/{part}.md)" in entry, part
+    # the entry file handed its movable sections to the pack
+    for heading in ("## Naming", "## Module structure", "## Error handling",
+                    "## Logging", "## Testing"):
+        assert heading not in entry, heading
+    assert "## Citation comments" in entry and "## Linting (preset)" in entry
+
+
+def test_scaffold_writes_common_once_for_a_multi_language_repo(tmp_path: Path):
+    _touch(tmp_path, "pyproject.toml")
+    _touch(tmp_path, "web/package.json")
+    report = _scaffold(tmp_path)
+    created = [r for r in report.created if r.startswith("docs/conventions/common/")]
+    assert len(created) == len(CONVENTION_PARTS), created
 
 
 def test_scaffold_returns_detected_langs_and_covers_multi_lang(tmp_path: Path):
