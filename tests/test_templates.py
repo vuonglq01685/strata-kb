@@ -2795,3 +2795,16 @@ def test_ac_quality_doc_bans_shell_commands_in_an_ac():
     text = _read_init_template("ac-quality.md")
     assert "a shell command in the AC" in text
     assert "`## Test data & verification`" in text
+
+
+def test_review_rubric_dev_axis_checks_compose_literals_against_grounding():
+    text = _read_init_template("review-rubric.md")
+    assert "matches the value on the corresponding `## Technical grounding` line, or carries `[NEW: D<n>]`" in text
+
+
+def test_quickstarts_name_the_compose_facts():
+    ba = _read_init_template("QUICKSTART-ba.md")
+    dev = _read_init_template("QUICKSTART-dev.md")
+    assert "volumes, healthcheck commands and device reservations" in ba
+    assert "`Volumes:` / `Healthchecks:` / `Devices:`" in ba
+    assert "named volumes, the healthcheck command and device reservations" in dev

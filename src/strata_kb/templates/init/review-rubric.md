@@ -49,6 +49,10 @@ Checklist (pass/fail each item):
 - [ ] Every `%%TODO: verify against codebase%%` in a BA section is
       answered in `## Technical grounding` by an id, a `[NEW: D<n>]`, or
       an Open decisions entry — none is silently dropped.
+- [ ] Every compose-level literal in an AC — volume name, published
+      port and bind address, image tag, healthcheck command, device
+      reservation — matches the value on the corresponding `## Technical grounding` line, or carries `[NEW: D<n>]`.
+      A mismatch is a gap owned by the BA.
 - [ ] No weasel words anywhere in the body.
 
 ## Maturity scale

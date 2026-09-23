@@ -57,11 +57,16 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       `/sa-ticket-ground` on it as a separate run (no shared context).
       That fills the SA-owned `## Technical grounding` section from the hub's
       `<repo>-code` document (service, files, tables, routes, externals,
-      test command — section ids only) and runs `kb ticket check`; a
+      volumes, healthcheck commands and device reservations, test command —
+      section ids and copied values only) and runs `kb ticket check`; a
       D-row still `OPEN` is a reported FAIL that comes back to you, not a
       blocker. You never fill that section yourself, and the SA never
       edits yours. Its `## Needs input` block comes back to you in the
       handover.
+      The `Volumes:` / `Healthchecks:` / `Devices:` lines are copied from the
+      `<repo>-code` svc records and checked by `kb ticket check`; a value the
+      document does not carry is `[NEW: D<n>]` or an Open decision — never a
+      `DECIDED` note folded into an AC.
    8. **Maturity review** — once lint reports `DoR: PASS`, it runs two
       independent reviews — as two subagents in parallel where the
       runtime supports it, otherwise two sequential passes, one role
