@@ -2776,3 +2776,22 @@ def test_quickstart_ba_gate_list_names_the_size_gates():
         "At most 10 acceptance criteria and exactly one `As a … I want … so "
         "that …` story — a bigger scope is two tickets"
     ) in text
+
+
+# --- compose facts grounding (spec 2026-09-23) ---
+
+def test_ticket_template_carries_the_compose_grounding_lines():
+    text = _read_init_template("ticket-template.md")
+    for needle in (
+        "- Volumes: svc.<name> — <volume>, … — or `none`",
+        "- Healthchecks: svc.<name> — `<test command>`; svc.<name> — none — or `none`",
+        "- Devices: svc.<name> — <driver:caps> — or `none`",
+        "no value in an AC rests on a `DECIDED` note instead of a section id or a D-row",
+    ):
+        assert needle in text, needle
+
+
+def test_ac_quality_doc_bans_shell_commands_in_an_ac():
+    text = _read_init_template("ac-quality.md")
+    assert "a shell command in the AC" in text
+    assert "`## Test data & verification`" in text

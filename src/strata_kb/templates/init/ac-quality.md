@@ -17,6 +17,7 @@ names the means.
 | "where applicable", "if needed", "nếu cần" | the concrete trigger condition |
 | "full support for", "hỗ trợ đầy đủ" | the supported scope AND the unsupported scope |
 | "distinguished by type" without the means, "phân biệt theo loại" | the means: label, color, shape, grouping |
+| a shell command in the AC (`docker compose ps …`, `curl …`, `grep …`) | the observable outcome (`every service reports healthy`, `no secret value is committed`); the exact command goes to `## Test data & verification`, or the Dev writes it in the plan where it can be run |
 
 **Exception:** a banned phrase is allowed only when the same line
 carries `OPEN(<owner>)` AND the ticket has a matching row in
