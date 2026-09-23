@@ -40,9 +40,22 @@ def build_code_repo(root: Path) -> Path:
         "    environment:\n"
         "      AIRSPACE_DB_URL: postgres://db/airspace\n"
         "      KAFKA_BROKER_URL: kafka:9092\n"
+        "    healthcheck:\n"
+        '      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]\n'
+        "    deploy:\n"
+        "      resources:\n"
+        "        reservations:\n"
+        "          devices:\n"
+        "            - driver: nvidia\n"
+        "              capabilities: [gpu]\n"
         "  postgres:\n"
         "    image: postgres:16\n"
-        '    ports: ["5432:5432"]\n',
+        '    ports: ["5432:5432"]\n'
+        "    volumes:\n"
+        "      - pgdata:/var/lib/postgresql/data\n"
+        "      - ./init:/docker-entrypoint-initdb.d\n"
+        "volumes:\n"
+        "  pgdata: {}\n",
         encoding="utf-8",
     )
     (root / "Dockerfile").write_text(
