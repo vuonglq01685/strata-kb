@@ -1397,6 +1397,26 @@ def test_backticked_names_and_values_do_not_warn(fed_hub: Path, golden_block: st
     assert not any("prescribes a shell command" in w for w in _warnings(report))
 
 
+def test_backticked_enum_union_does_not_warn(fed_hub: Path, golden_block: str):
+    """A spaced `|` between two ordinary words is a value union, not a
+    pipe — the operator branch needs command evidence on top of it."""
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — Status field shows `active | inactive` per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_backticked_type_union_does_not_warn(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — Field type is `string | null` per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
 def test_owned_open_marker_suppresses_the_shell_warning(fed_hub: Path, golden_block: str):
     report = _ac_report(
         fed_hub, golden_block,
@@ -1404,3 +1424,35 @@ def test_owned_open_marker_suppresses_the_shell_warning(fed_hub: Path, golden_bl
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
     assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_open_marker_with_tbd_note_does_not_suppress_the_shell_warning(
+    fed_hub: Path, golden_block: str
+):
+    """OPEN(TBD: <note>) names no real owner — a note after the colon
+    does not change that (acquality._marker_is_owned)."""
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `curl -f http://localhost/health` returns 200 "
+        "OPEN(TBD: Dev to confirm) per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_kb_ticket_lint_command_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `kb ticket lint` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_sudo_prefixed_command_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `sudo docker compose up -d` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))

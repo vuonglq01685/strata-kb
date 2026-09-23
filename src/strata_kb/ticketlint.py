@@ -24,16 +24,29 @@ if TYPE_CHECKING:
 _AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 
 # An AC is an observable outcome, never a shell command (docs/ac-quality.md,
-# spec 2026-09-23 §6). A backticked span whose first word is one of these,
-# or that chains two words with a shell operator, is the command a Dev
-# would run — it belongs in `## Test data & verification` or the plan.
+# spec 2026-09-23 §6). A backticked span whose first word — after skipping
+# a leading `sudo`, a `$` prompt marker, or a `VAR=value` assignment — is
+# one of these, or that chains two command-like words with a shell
+# operator, is the command a Dev would run — it belongs in
+# `## Test data & verification` or the plan. An operator alone is not
+# enough: `` `active | inactive` `` is a value union, not a pipe.
 SHELL_COMMANDS: frozenset[str] = frozenset({
     "docker", "docker-compose", "curl", "wget", "grep", "psql", "redis-cli",
     "ffmpeg", "ffprobe", "mc", "kubectl", "npm", "pnpm", "npx", "prisma",
     "ls", "cat", "find", "nvidia-smi", "sh", "bash",
+    "git", "kb", "uv", "make", "python", "pytest", "jq", "ssh", "sed", "echo",
 })
 _CODE_SPAN_RE = re.compile(r"`([^`]+)`")
 _SHELL_OPERATOR_RE = re.compile(r"\S\s+(\|\||\||&&|;)\s+\S")
+# A flag (`-x`, `--xyz`) or path (`./x`, `/x/y`) token — the second signal
+# that lets the operator branch fire on a real command line rather than a
+# value union (`` `active | inactive` ``) or a type union (`` `string |
+# null` ``).
+_SHELL_EVIDENCE_RE = re.compile(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*|\.{1,2}/\S+|/\S+)")
+# A leading `sudo`, a `$` shell-prompt marker, or a `VAR=value`
+# assignment — none names the command being run, so each is skipped
+# before a span's first word is judged.
+_LEADING_PREFIX_RE = re.compile(r"^(?:sudo|\$|[A-Za-z_]\w*=\S*)\s+")
 
 # Required sections whose body is checked by a stronger, section-specific
 # check — a second "is it filled" error would only duplicate it.
@@ -240,19 +253,44 @@ def _check_ac_weasel(ac_items: list[str]) -> list[Issue]:
     ]
 
 
+def _leading_word(text: str) -> str:
+    """The first shell-relevant word in `text`, skipping a leading
+    `sudo`, `$` prompt marker, or `VAR=value` assignment token."""
+    remaining = text.strip()
+    while True:
+        m = _LEADING_PREFIX_RE.match(remaining)
+        if m is None:
+            return remaining.split(maxsplit=1)[0] if remaining else ""
+        remaining = remaining[m.end() :]
+
+
 def _is_shell_span(span: str) -> bool:
-    first = span.strip().split(maxsplit=1)[0] if span.strip() else ""
-    return first in SHELL_COMMANDS or _SHELL_OPERATOR_RE.search(span) is not None
+    if _leading_word(span) in SHELL_COMMANDS:
+        return True
+    m = _SHELL_OPERATOR_RE.search(span)
+    if m is None:
+        return False
+    sides = (span[: m.start(1)], span[m.end(1) :])
+    if any(_leading_word(side) in SHELL_COMMANDS for side in sides):
+        return True
+    return _SHELL_EVIDENCE_RE.search(span) is not None
 
 
 def _check_ac_shell(ac_items: list[str]) -> list[Issue]:
     """An AC that prescribes a shell command shifts the guess about the
     real image/tool/path onto the BA, who cannot run it. Warning per AC
-    (first offending span); an owned OPEN(<owner>) on the line suppresses
-    it, as for weasel words."""
+    (first offending span). An `OPEN(<owner>)` anywhere on the line
+    suppresses the WHOLE line — line-level, unlike acquality.weasel_hits,
+    which mutes only the text inside an owned marker's own parentheses —
+    but only when the owner is real: this reuses
+    acquality._marker_is_owned's before-the-colon ownership split, so
+    `OPEN(TBD)` and `OPEN(TBD: Dev to confirm)` both still warn."""
     issues: list[Issue] = []
     for item in ac_items:
-        if acquality.owned_open_markers(item):
+        if any(
+            acquality._marker_is_owned(m.group(1))
+            for m in acquality.OPEN_OWNER_RE.finditer(item)
+        ):
             continue
         span = next(
             (s for s in _CODE_SPAN_RE.findall(item) if _is_shell_span(s)), None
