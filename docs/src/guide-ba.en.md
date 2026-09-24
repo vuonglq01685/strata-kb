@@ -269,6 +269,36 @@ that is the expected result, not a defect. Capability layer
 only: no file names, no tables, no routes — those belong to each ticket's own
 `## Technical grounding`, filled later at §3.8.
 
+In a skeleton repo every row the SA appends cites the architecture document
+in its Decision cell (`[<arch-doc> §<section>]`), and the agent stops at step
+5b — **Decide** — to show you the whole table once. Flip the cited rows you
+confirm to `DECIDED`; leave an uncited row `OPEN` with a named owner. You
+decide here, once, not ticket by ticket. The first story of such a mission is
+the **foundation slice**: what the architecture document says must exist
+before any feature story, with every other story depending on it in
+`## Sequencing`.
+
+## 4.4 Which ticket next
+
+```bash
+kb mission next
+```
+
+Every backlog story across `missions/` comes back as `done` (its id is in a
+`hist.*` row of the hub's `<repo>-svc`, which `kb svc note` writes at the
+developer's handover and CI publishes on merge), `drafted` (the ticket file
+exists), `ready` (no ticket, every `Depends on` story done, every D-row that
+`Blocks` it `DECIDED`) or `blocked` (with its reasons named). The report ends
+with `Next: <us-id> — <title>`; `/ba-ticket-author` with no argument runs it
+first and proposes that story. A dependency that is only `drafted` still
+blocks: done means merged. Cross-mission order is a `Depends on` cell naming
+another mission's story (`M-<other>-US<n>`).
+
+The command is read-only and exits 0 after its report. A hub that is not
+configured or reachable, a `-svc` not yet published, or a mission without a
+`Grounded on:` line becomes a `note:` line, never a failure — nothing is
+marked `done` until the hub can answer.
+
 ---
 
 # 5. Using code knowledge

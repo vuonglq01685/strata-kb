@@ -2973,3 +2973,24 @@ def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
         body = _dev_wrapper_body(name)
         assert "`kb svc note` is what makes `kb mission next` on the BA side see this story as done" in body, name
         assert "stays `drafted` forever" in body, name
+
+
+def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():
+    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
+    assert "## Which ticket next" in text
+    assert "`kb mission next`" in text
+    assert "### Greenfield: decide the D-rows once" in text
+    assert "- `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`" in text
+    for word in ("`done`", "`drafted`", "`ready`", "`blocked`", "Next:"):
+        assert word in text, word
+
+
+def test_changelog_names_the_ba_side_of_mission_next():
+    from pathlib import Path as _P
+
+    changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog[changelog.index("## Unreleased"):changelog.index("## 1.3.0")]
+    assert "BA repos:" in unreleased
+    assert "step 5b" in unreleased
+    assert "foundation slice" in unreleased
+    assert "Re-run `kb init --kind ba`" in unreleased
