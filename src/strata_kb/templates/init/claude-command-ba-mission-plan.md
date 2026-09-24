@@ -81,7 +81,7 @@ spans several User Stories — small work goes straight to
    comes back with no existing `svc.*` (revisit the split then), the
    first story is the **foundation slice** — what the architecture
    document says must exist before any feature story (services,
-   database, API skeleton), cited `[<arch-doc> §x]`, outcome-level ACs,
+   database, API skeleton), cited `[<arch-doc> §<section>]`, outcome-level ACs,
    still at most 10; every other story `Depends on` it in `## Sequencing`.
    The story-size heuristic applies: the foundation may be two stories.
    `Depends on` may name a story of another mission (`M-<other>-US<n>`)
@@ -94,7 +94,7 @@ spans several User Stories — small work goes straight to
    create, referenced from the service table as `[NEW: D<n>]`. Its gate
    then reports FAIL on exactly those rows until a human flips them to
    `DECIDED` — that is the expected result, not a defect; flipping is
-   your call.
+   the BA's call, in step 5b.
    `kb mission lint` already warns on an ownerless D-row — that warning
    is the BA's to close, never the SA's.
 5b. **Decide** — present the whole `## Technology decisions` table to
