@@ -656,7 +656,8 @@ def test_render_table_and_next_line():
     assert lines[1] == "|---|---|---|---|"
     assert "| M-platform-US1 | M-platform | done |  |" in lines
     assert "| M-platform-US2 | M-platform | blocked | D2 OPEN (owner: Alice) |" in lines
-    assert "| M-catalog-US2 | M-catalog | blocked | US M-platform-US2 not done |" in lines
+    # two open dependencies, joined with "; " in Depends-on cell order
+    assert "| M-catalog-US2 | M-catalog | blocked | US M-catalog-US1 not done; US M-platform-US2 not done |" in lines
     # M-platform-US3 has no dependency and no D-row, so it is the first ready
     # story in output order (before any M-catalog story).
     assert lines[-1] == "Next: M-platform-US3 — Backups"
