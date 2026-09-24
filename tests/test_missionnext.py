@@ -86,10 +86,17 @@ def test_parse_mission_without_id_or_backlog():
     assert stories == []
 
 
-def test_grounded_repo_id():
-    assert missionnext.grounded_repo_id(PLATFORM) == "myflix"
-    assert missionnext.grounded_repo_id(CATALOG) is None
-    assert missionnext.grounded_repo_id("- Grounded on: demo-code @ abc1234\n") is None
+def test_grounded_doc_returns_repo_and_doc():
+    assert missionnext.grounded_doc(PLATFORM) == ("myflix", "myflix-code")
+    assert missionnext.grounded_doc(CATALOG) is None
+    assert missionnext.grounded_doc("- Grounded on: demo-code @ abc1234\n") == (None, "demo-code")
+    assert missionnext.grounded_doc("- Grounded on: mid/repo-x:repo-x-code @ abc1234\n") == ("mid/repo-x", "repo-x-code")
+
+
+def test_svc_doc_id_swaps_the_code_suffix():
+    assert missionnext.svc_doc_id("myflix-code") == "myflix-svc"
+    assert missionnext.svc_doc_id("repo-x-code") == "repo-x-svc"
+    assert missionnext.svc_doc_id("odd") == "odd-svc"
 
 
 HISTORY = """# myflix-svc
