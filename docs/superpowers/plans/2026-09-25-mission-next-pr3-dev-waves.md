@@ -326,16 +326,18 @@ def check(tasks: list[Task]) -> tuple[list[str], list[list[int]]]:
     if cycle:
         errors.append("dependency cycle: " + " → ".join(str(n) for n in cycle))
 
-    reach = {n: _reachable(n, deps) for n in deps} if not cycle else {}
+    # `_reachable` tolerates a cycle (its `seen` set stops the walk), so the
+    # shared-path check runs even when a cycle was reported — a plan with
+    # both defects reports both.
+    reach = {n: _reachable(n, deps) for n in deps}
     by_number = {t.number: t for t in tasks}
     numbers = sorted(by_number)
-    if not cycle:
-        for i, a in enumerate(numbers):
-            for b in numbers[i + 1:]:
-                shared = sorted(set(by_number[a].paths) & set(by_number[b].paths))
-                if shared and b not in reach[a] and a not in reach[b]:
-                    for p in shared:
-                        errors.append(f"tasks {a} and {b} share {p} but neither depends on the other")
+    for i, a in enumerate(numbers):
+        for b in numbers[i + 1:]:
+            shared = sorted(set(by_number[a].paths) & set(by_number[b].paths))
+            if shared and b not in reach[a] and a not in reach[b]:
+                for p in shared:
+                    errors.append(f"tasks {a} and {b} share {p} but neither depends on the other")
 
     if errors:
         return errors, []
