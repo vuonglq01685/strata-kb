@@ -108,11 +108,14 @@ HISTORY = """# myflix-svc
 |:---|:---:|---:|
 | M-catalog-US1 | Browse titles | |
 | M-platform-US1 | Foundation slice | arch §3 |
+| M-catalog-US2 | approve A\\|B corridor | |
 """
 
 
 def test_done_ids_from_history_reads_every_hist_section():
-    assert missionnext.done_ids_from_history(HISTORY) == {"M-platform-US1", "M-catalog-US1"}
+    assert missionnext.done_ids_from_history(HISTORY) == {
+        "M-platform-US1", "M-catalog-US1", "M-catalog-US2",
+    }
 
 
 def test_done_ids_from_history_handles_missing_text():

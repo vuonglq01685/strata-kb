@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 
 from strata_kb import lintcore, mission
 from strata_kb.mdutils import _SEP_ROW_RE
-from strata_kb.svcnote import ROW_RE
+from strata_kb.svcnote import ROW_RE, _ESCAPED_PIPE_SENTINEL
 from strata_kb.ticketcheck import (
     GROUNDED_ON_RE,
     US_ID_IN_CELL_RE,
@@ -121,16 +121,21 @@ def done_ids_from_history(history_l2: str | None) -> set[str]:
     """Ticket ids of every `| Ticket | Title | Domain refs |` row across all
     `hist.*` sections of a `<repo>-svc` history.md (L2). Header and
     separator rows are skipped the way `svcnote._parse_existing_rows`
-    skips them."""
+    skips them. An escaped pipe (`\\|`, written by `escape_cell` when a
+    title contains a literal `|`) is swapped for `_ESCAPED_PIPE_SENTINEL`
+    before matching, the same way `svcnote._parse_existing_rows` does, so
+    `ROW_RE`'s `[^|]` groups don't mistake it for a column delimiter and
+    refuse to match the whole row — a merged story with an escaped `|` in
+    its title would otherwise silently read as not done."""
     out: set[str] = set()
     for raw in (history_l2 or "").splitlines():
         line = raw.strip()
         if not line.startswith("|") or _SEP_ROW_RE.match(line):
             continue
-        m = ROW_RE.match(line)
+        m = ROW_RE.match(line.replace("\\|", _ESCAPED_PIPE_SENTINEL))
         if m is None:
             continue
-        ticket = m.group("ticket").strip()
+        ticket = m.group("ticket").strip().replace(_ESCAPED_PIPE_SENTINEL, "|")
         if ticket and ticket != "Ticket":
             out.add(ticket)
     return out
