@@ -68,12 +68,22 @@ kb mission next [--missions-dir DIR] [--tickets-dir DIR] [--repo-id ID]
   <repo-id>:<repo-id>-code @ <rev>` line found in the missions'
   `## Services & order` (`ticketcheck.GROUNDED_ON_RE`). None found and no
   flag → note `done: unknown (no repo id — pass --repo-id)`.
-- Hub via `_hub_or_exit` exactly as `kb ticket check`; the `-svc` document
-  via `ticketcheck.load_from_hub(federation_dir, repo_id, f"{repo_id}-svc")`.
+- Local first: `<kb-dir>/<repo-id>-svc` when its manifest exists (a dev
+  machine), else the hub — Hub via `_hub_or_exit` exactly as `kb ticket
+  check`; the `-svc` document via
+  `ticketcheck.load_from_hub(federation_dir, repo_id, f"{repo_id}-svc")`.
   Not on the hub → note `done: unknown (<repo-id>-svc not published — the
-  Dev repo has not run dev-code-seed, or CI has not published yet)`.
-- Exit code 0 always. Read errors on a mission file are reported as a note
-  naming the file and the mission is skipped, never a crash.
+  Dev repo has not run dev-code-seed, or CI has not published yet)`. A hub
+  that is not configured or not reachable is not an error for this
+  command: `_hub_or_reason` returns the reason and the report carries
+  `done: unknown (<reason>)` — `_hub_or_exit` (used by the gates) wraps it
+  and keeps exiting 1.
+- A mission file without a `> Mission:` line is skipped with the note
+  `skipped <path>: no '> Mission:' line`.
+- Exit code 0 after a report; exit 1 with a red line only when
+  `--missions-dir` (default `missions/`) or an explicit `--tickets-dir` is
+  not a directory, as `kb ticket check` does. A mission file that cannot be
+  read is reported as a note naming the file and skipped, never a crash.
 
 ### 3.2 Module `src/strata_kb/missionnext.py`
 
@@ -106,10 +116,10 @@ def to_json(statuses, notes) -> dict
 Parsing, all by reuse:
 
 - Mission id: `mission.MISSION_LINE_RE`.
-- Backlog ids and titles: the row loop of `missionlint.check_backlog` is
-  extracted into `missionlint.parse_backlog(text) -> list[tuple[str, str]]`
-  (id, title); `check_backlog` calls it. Existing tests pin the behaviour.
-  Impact analysis on `check_backlog` first.
+- Backlog ids and titles: `lintcore.table_rows(lintcore.section_body(text,
+  "## US backlog"))[1:]` — cells 0 and 1. `check_backlog` is HIGH impact
+  (`mission_lint` and `ticket_lint` route through it) and is not touched;
+  the DoR gate keeps validating the table, this query only reads it.
 - `## Sequencing`: `lintcore.section_body` + `lintcore.table_rows`; columns
   by header name via `ticketcheck._table_column` (moved to `lintcore` if
   importing it from `ticketcheck` reads wrong — one helper, one home).
@@ -356,7 +366,7 @@ lanes. README command table: `kb plan waves` row.
 ## 7. Rollout — three PRs, no version bump
 
 - **PR 1 — BA engine.** `missionnext.py`, `cli.py` (`mission next`),
-  `missionlint.parse_backlog`, `ticketcheck.Decision.blocks`, README row,
+  `lintcore.table_column`, `ticketcheck.Decision.blocks`, README row,
   the four test files above. `impact` on `check_backlog`, `parse_decisions`,
   `_table_column` before editing; `detect_changes` before commit.
 - **PR 2 — BA skills, templates, docs.** Four wrappers each of
