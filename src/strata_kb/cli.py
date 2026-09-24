@@ -2783,25 +2783,19 @@ def mission_next(
         doc_id = f"{rid}-svc"
         local = kb_dir / doc_id
         doc = None
-        hub_reason = ""
-        handle = None
         try:
             if (local / "_manifest.yaml").exists():
                 doc = ticketcheck.load_doc_dir(local, str(local))
             else:
-                handle, hub_reason = _hub_or_reason(hub, kb_dir)
-                if handle is not None:
-                    doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
+                handle = _hub_or_exit(hub, kb_dir)
+                doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
         except ticketcheck.DocLoadError as exc:
             notes.append(f"done: unknown ({exc})")
-        else:
-            if handle is None and doc is None:
-                notes.append(f"done: unknown ({hub_reason or 'hub unavailable'})")
-            elif doc is None:
-                notes.append(
-                    f"done: unknown ({doc_id} not published — the Dev repo has not run "
-                    "dev-code-seed, or CI has not published yet)"
-                )
+        if doc is None and not any(n.startswith("done: unknown") for n in notes):
+            notes.append(
+                f"done: unknown ({doc_id} not published — the Dev repo has not run "
+                "dev-code-seed, or CI has not published yet)"
+            )
         if doc is not None:
             done = missionnext.done_ids_from_history(doc.read_group("history"))
 

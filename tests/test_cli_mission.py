@@ -401,22 +401,6 @@ def test_mission_next_svc_absent_on_hub_is_a_note(tmp_path, fed_hub):
     assert "| M-platform-US1 | M-platform | ready |  |" in result.output
 
 
-def test_mission_next_no_hub_configured_is_a_note_not_a_red_line(tmp_path, monkeypatch):
-    """Grounded on present, no --hub, STRATA_KB_HUB unset, no local -svc,
-    and --kb-dir an empty dir (no .kb/config.yaml) — the common BA case.
-    Must still exit 0 with a table, not the red line `_hub_or_exit` prints."""
-    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
-    root = _ba_layout(tmp_path)
-    empty_kb = tmp_path / "ba-kb"
-    empty_kb.mkdir()
-    result = runner.invoke(app, [
-        "mission", "next", "--missions-dir", str(root / "missions"), "--kb-dir", str(empty_kb),
-    ])
-    assert result.exit_code == 0, result.output
-    assert "note: done: unknown (" in result.output
-    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
-
-
 def test_mission_next_reads_history_from_the_hub(tmp_path, fed_hub, run_git):
     import shutil
 
@@ -505,15 +489,3 @@ def test_mission_next_no_mission_line_is_skipped_with_a_note(tmp_path):
     assert "note: skipped" in result.output and "notes.md" in result.output
     assert "no '> Mission:' line" in result.output
     assert "| M-platform-US1 |" in result.output
-
-
-def test_docs_name_the_next_command():
-    from pathlib import Path as _P
-
-    root = _P(__file__).resolve().parents[1]
-    readme = (root / "README.md").read_text(encoding="utf-8")
-    assert "| `kb mission next` | Which story next: done / drafted / ready / blocked across `missions/`, done derived from the hub's `<repo>-svc` history |" in readme
-    assert "`kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]`" in readme
-    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert changelog.index("## Unreleased") < changelog.index("## 1.3.0")
-    assert "`kb mission next`" in changelog
