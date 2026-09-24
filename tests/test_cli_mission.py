@@ -517,7 +517,7 @@ def test_docs_name_the_next_command():
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert changelog.index("## Unreleased") < changelog.index("## 1.3.0")
     assert "`kb mission next`" in changelog
-    assert "`--kb-dir` is read first when it holds `<repo-id>-svc` (a dev machine), the hub second" in readme
+    assert "`--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second" in readme
     assert "derived from the grounded `-code` document" in changelog
 
 
