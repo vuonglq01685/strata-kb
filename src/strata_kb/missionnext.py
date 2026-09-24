@@ -102,14 +102,24 @@ def parse_mission(text: str) -> ParsedMission:
     return mission_id, stories, parse_decisions(text, mission_id or "mission")
 
 
-def grounded_repo_id(text: str) -> str | None:
-    """Repo qualifier of the first `- Grounded on: <repo>:<doc> @ <rev>` line
-    (the SA writes it in `## Services & order`), or None."""
+def grounded_doc(text: str) -> tuple[str | None, str] | None:
+    """(repo qualifier, doc id) of the first `- Grounded on: [<repo>:]<doc>
+    @ <rev>` line (the SA writes it in `## Services & order`), or None.
+    The qualifier is None on an unqualified line; `load_from_hub` then
+    resolves the doc by its unique holder."""
     for line in text.splitlines():
         m = GROUNDED_ON_RE.match(line.strip())
         if m is not None:
-            return m.group("repo")
+            return m.group("repo"), m.group("doc")
     return None
+
+
+def svc_doc_id(doc: str) -> str:
+    """The curated `-svc` document paired with a grounded `-code` document:
+    `myflix-code` → `myflix-svc`. Derived from the doc, not the repo id —
+    a nested federation id (`mid/repo-x`) is a path, not a doc prefix."""
+    stem = doc[: -len("-code")] if doc.endswith("-code") else doc
+    return f"{stem}-svc"
 
 
 def done_ids_from_history(history_l2: str | None) -> set[str]:
