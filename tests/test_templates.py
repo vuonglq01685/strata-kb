@@ -1298,6 +1298,15 @@ def test_ba_mission_wrappers_leave_services_and_order_to_the_sa():
         assert "## Services & order" in _ba_wrapper_text(name), name
 
 
+def test_ba_mission_wrappers_pin_the_cited_decision_rows():
+    for name in BA_MISSION_WRAPPERS:
+        assert (
+            "Include every architecture section a `## Technology decisions` row or the "
+            "foundation-slice story cites — a bracketed citation the block does not pin "
+            "is a lint error."
+        ) in _ba_wrapper_text(name), name
+
+
 def test_ba_wrappers_still_carry_their_pre_phase5_rules():
     """Stage D adds; it must not remove anything Phase 4/4.1 established."""
     for name in ("claude-skill-ba-ticket-author.md", "claude-skill-ba-mission-plan.md"):
