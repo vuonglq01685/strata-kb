@@ -2851,3 +2851,20 @@ def test_mission_template_sequencing_allows_cross_mission_dependencies():
 def test_mission_template_dor_names_the_decided_rows_gate():
     dor = _normalised(lintcore.section_body(_read_init_template("mission-template.md"), "## Definition of Ready"))
     assert "- [ ] Every D-row blocking a story with no dependency is DECIDED (kb mission next shows it ready)" in dor
+
+
+def test_sa_full_wrappers_cite_the_architecture_document_for_greenfield_rows():
+    for name in SA_FULL_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert (
+            "In a greenfield repo (`<repo>-code` has no `svc.*`) every service, "
+            "table or route the mission needs comes from the architecture "
+            "document on the hub: cite it in the Decision cell"
+        ) in text, name
+        assert "| D2 | New svc.api — REST gateway [myflix-arch §3.2] | OPEN | <SA / tech lead> | M-x-US1 |" in text, name
+        assert "that absence is the BA's signal to keep the row `OPEN`" in text, name
+
+
+def test_every_sa_wrapper_says_the_proposal_cites_the_architecture_document():
+    for name in SA_WRAPPERS:
+        assert "cites the architecture document" in _normalised(_read_init_template(name)), name

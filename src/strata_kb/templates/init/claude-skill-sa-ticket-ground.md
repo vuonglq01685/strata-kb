@@ -48,6 +48,14 @@ to the mission layer.
      matching row → append one first, then write the marker:
      `| D<n> | <concrete proposal: svc/table/route name and one line why> | OPEN | <human SA / tech lead> | <US id> |`
      The proposal is specific — a name the ticket can use — never "TBD".
+     In a greenfield repo (`<repo>-code` has no `svc.*`) every service,
+     table or route the mission needs comes from the architecture
+     document on the hub: cite it in the Decision cell —
+     `| D2 | New svc.api — REST gateway [myflix-arch §3.2] | OPEN | <SA / tech lead> | M-x-US1 |`.
+     A proposal the architecture document does not support stays
+     concrete and carries no citation; that absence is the BA's signal
+     to keep the row `OPEN`. That citation is how the proposal cites
+     the architecture document.
      Without a parent mission this degrades to `[NEW: <reason>]`, and
      the handover says a mission would give the decision an owner;
    - `Open decisions` — only for code that EXISTS and the document

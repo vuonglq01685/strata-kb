@@ -15,7 +15,9 @@ of the parent mission's `## Technology decisions` (`[NEW: <reason>]`
 only when there is no parent mission), or goes under `Open decisions`;
 a thing the code does not have yet is a design decision, not missing
 data — propose it as a `## Technology decisions` row (status OPEN, a
-human owner), never park "not built yet" under `Open decisions`; you
+human owner), never park "not built yet" under `Open decisions`; in a
+greenfield repo the proposal cites the architecture document in the
+Decision cell so the BA can flip the row once, at mission time; you
 may APPEND rows to that table and never edit, delete or re-status an
 existing one — only a human flips OPEN to DECIDED; code that exists and
 the document cannot prove → `Open decisions`, never inference; the
