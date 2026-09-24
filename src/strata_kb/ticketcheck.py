@@ -60,8 +60,13 @@ DECISION_REF_RE = re.compile(r"^D\d+$")
 _NONE_WORDS = frozenset({"none", "n/a", "-"})
 
 COMPOSE_FIELDS: tuple[str, ...] = ("Volumes", "Healthchecks", "Devices")
-# `svc.<x> — <values>` groups on one compose line, `;`-separated.
-_COMPOSE_GROUP_RE = re.compile(r"(svc\.[A-Za-z0-9_][A-Za-z0-9_.-]*)\s*[—-]\s*(?P<values>[^;]*)")
+# `svc.<x> — <values>` groups on one compose line, `;`-separated. A
+# backtick span is matched whole so a `;` inside it (a `CMD-SHELL`
+# healthcheck like `` `sh -c 'pg_isready; exit 0'` ``) doesn't end the
+# group early.
+_COMPOSE_GROUP_RE = re.compile(
+    r"(svc\.[A-Za-z0-9_][A-Za-z0-9_.-]*)\s*[—-]\s*(?P<values>(?:`[^`]*`|[^;])*)"
+)
 _COMPOSE_ROW = {"Volumes": "Volumes", "Healthchecks": "Healthcheck", "Devices": "Devices"}
 _COMPOSE_NOUN = {"Volumes": "volume", "Healthchecks": "healthcheck", "Devices": "device"}
 
@@ -384,12 +389,16 @@ def _known_ids(doc: LoadedDoc) -> set[str]:
 def _id_lines(section: _Section):
     """(lineno, line) for every visible line that is scanned for ids — the
     `Grounded on:` line (a doc id, not a section id) and `Files:` lines
-    (paths such as `src/api.py` would read as `api.py`) are skipped."""
+    (paths such as `src/api.py` would read as `api.py`) are skipped. On a
+    `Healthchecks` line, every `svc.<x> — <value>` value is blanked —
+    backticked or bare, matching both forms `_split_values` accepts — so a
+    URL or command inside it (`curl -f http://api.internal/health`) is never
+    read as a section id; the `svc.<x>` id itself stays visible."""
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] in ("Grounded on", "Files"):
             continue
         if section.field_of_line[i] == "Healthchecks":
-            line = CODE_SPAN_RE.sub("``", line)
+            line = _COMPOSE_GROUP_RE.sub(lambda m: m.string[m.start():m.start("values")], line)
         if line.strip():
             yield section.first_line + i, line
 
@@ -571,15 +580,22 @@ def _property(rows: list[list[str]], name: str) -> str | None:
     return None
 
 
-def _svc_facts(doc: LoadedDoc, sid: str, field: str, unreadable: set[str], issues: list[Issue]) -> set[str] | None:
+def _svc_facts(doc: LoadedDoc, sid: str, field: str, unreadable: set[str],
+               issues: list[Issue], row_absent: set[str]) -> set[str] | None:
     """The svc's values for one compose field as a set: `{"pgdata"}`,
-    `{"curl -f …"}`, `set()` for `none`. None when unreadable or when the
-    document predates the rows (caller skips with a note)."""
+    `{"curl -f …"}`, `set()` for `none`. None when the section is unreadable
+    or missing (`_l2_slice` already warned about that) or when its L2
+    section has no `field` property row at all — the pre-1.3.0 code-ingest
+    case, recorded into `row_absent` so the caller notes it once, scoped to
+    the sids it actually affects. Callers must not call this for a `sid`
+    outside the document's manifest — that's a different failure (an
+    unresolved or `[NEW]` id), already reported by `_check_ids`."""
     body = _l2_slice(doc, sid, unreadable, issues)
     if body is None:
         return None
     cell = _property(lintcore.table_rows(body), _COMPOSE_ROW[field])
     if cell is None:
+        row_absent.add(sid)
         return None
     if cell.casefold() == "none":
         return set()
@@ -604,35 +620,45 @@ def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decision
     if not present:
         return
     services = _service_ids(section)
+    known = _known_ids(doc)
     unreadable: set[str] = set()
-    skipped = False
+    row_absent: set[str] = set()
     for field in present:
         for lineno, rest in _field_lines(section, field):
             noun = _COMPOSE_NOUN[field]
             if rest.strip().casefold() in _NONE_WORDS:
                 for sid in sorted(services):
-                    facts = _svc_facts(doc, sid, field, unreadable, issues)
-                    if facts is None:
-                        skipped = True
-                    elif facts:
+                    if sid not in known:
+                        continue  # not in this document (e.g. a [NEW] service) — _check_ids already reported it
+                    facts = _svc_facts(doc, sid, field, unreadable, issues, row_absent)
+                    if facts:
                         issues.append(Issue("warning", f"{sid} has {noun}s the grounding omits: {', '.join(sorted(facts))} (line {lineno})"))
                 continue
-            for g in _COMPOSE_GROUP_RE.finditer(rest):
+            matches = list(_COMPOSE_GROUP_RE.finditer(rest))
+            if not matches:
+                issues.append(Issue("warning", f"{rest}: expected `svc.<name> — <values>` (line {lineno})"))
+                continue
+            for g in matches:
                 sid = g.group(1).rstrip(".")
                 if sid not in services:
                     issues.append(Issue("error", f"{sid} on the {field}: line is not on the Service: line (line {lineno})"))
                     continue
-                facts = _svc_facts(doc, sid, field, unreadable, issues)
+                if sid not in known:
+                    continue  # not in this document (e.g. a [NEW] service) — _check_ids already reported it
+                facts = _svc_facts(doc, sid, field, unreadable, issues, row_absent)
                 if facts is None:
-                    skipped = True
                     continue
                 values_raw = g.group("values")
                 if values_raw.strip().casefold() in _NONE_WORDS:
                     if facts:
                         issues.append(Issue("error", f"{noun} for {sid} is '{', '.join(sorted(facts))}', not 'none' (line {lineno})"))
                     continue
+                # A Healthchecks `[NEW: …]` marker sits outside the backtick
+                # span, so `_split_values` never returns it as part of
+                # `value` — search the whole group's raw text for it too.
+                raw_new = NEW_RE.search(values_raw) if field == "Healthchecks" else None
                 for value in _split_values(field, values_raw):
-                    new = NEW_RE.search(value)
+                    new = NEW_RE.search(value) or raw_new
                     if new is not None:
                         _judge_new(NEW_RE.sub("", value).strip(), new, lineno, decisions, issues, notes)
                         continue
@@ -643,7 +669,7 @@ def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decision
                         issues.append(Issue("error", f"healthcheck for {sid} is '{have}', not '{value}' (line {lineno})"))
                     else:
                         issues.append(Issue("error", f"{noun} '{value}' is not in {sid} (has: {have}) (line {lineno})"))
-    if skipped:
+    if row_absent:
         notes.append(f"{doc.manifest.id} has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped")
 
 

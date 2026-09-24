@@ -714,3 +714,93 @@ def test_old_code_doc_without_the_rows_skips_with_a_note(code_doc, tmp_path):
     report = run(ticket(grounding(rev, Volumes="svc.airspace-service — ghost")), kb_dir)
     assert not any("volume" in e for e in errors(report))
     assert any(n == "demo-code has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped" for n in notes(report))
+
+
+def test_new_service_compose_line_does_not_trigger_the_pre_1_3_0_note(code_doc):
+    """A greenfield [NEW] service isn't in the -code manifest at all — that
+    is a different situation from an old document missing the compose rows,
+    and must not be reported as one (review finding #1)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service="svc.airspace-service, svc.billing [NEW: D1]",
+            Volumes="svc.billing — data [NEW: D1]",
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert not any("compose-fact checks skipped" in n for n in notes(report))
+    assert not any("volume" in e for e in errors(report))
+    assert any("new: svc.billing — D1 (DECIDED" in n for n in notes(report))
+
+
+def test_real_error_and_new_service_on_one_line_do_not_add_a_contradicting_skip_note(code_doc):
+    """A real error for a known service and a [NEW] service must not be
+    collapsed into one contradictory "checks skipped" note (review finding
+    #1)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service=f"{TWO_SVC}, svc.billing [NEW: D1]",
+            Volumes="svc.postgres — ghost; svc.billing — data [NEW: D1]",
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert any("volume 'ghost' is not in svc.postgres" in e for e in errors(report))
+    assert not any("compose-fact checks skipped" in n for n in notes(report))
+
+
+def test_healthcheck_semicolon_in_a_shell_command_is_not_truncated(code_doc):
+    """A `;` inside a backticked healthcheck command must not cut the value
+    short, nor leak a stray backtick into the error (review finding #2)."""
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Healthchecks="svc.airspace-service — `sh -c 'pg_isready; exit 0'`"))
+    report = run(text, kb_dir)
+    msgs = [e for e in errors(report) if e.startswith("healthcheck for svc.airspace-service")]
+    assert len(msgs) == 1, errors(report)
+    assert "sh -c 'pg_isready; exit 0'" in msgs[0]
+    assert "`" not in msgs[0]
+
+
+def test_unparseable_compose_line_warns_instead_of_passing_silently(code_doc):
+    """A compose line that doesn't parse into any `svc.<x> — <values>` group
+    (the `svc.` prefix forgotten) must warn, not pass the gate clean (review
+    finding #3)."""
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Volumes="pgdata"))
+    report = run(text, kb_dir)
+    assert errors(report) == []
+    assert any("pgdata" in w and "expected" in w for w in warnings(report))
+
+
+def test_new_marker_exempts_a_healthcheck_value(code_doc):
+    """`[NEW: D<n>]` written after a backticked healthcheck value (the
+    natural place for it) must exempt that value, same as it does for
+    Volumes/Devices (review finding #4)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service=TWO_SVC,
+            Healthchecks=(
+                "svc.airspace-service — `curl -f http://localhost:8080/health`; "
+                "svc.postgres — `pg_isready` [NEW: D1]"
+            ),
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert not any("healthcheck" in e for e in errors(report))
+    assert any("new: pg_isready — D1 (DECIDED" in n for n in notes(report))
+
+
+def test_healthcheck_bare_url_is_never_read_as_a_section_id(code_doc):
+    """`_split_values` already accepts an un-backticked healthcheck value —
+    the id scan must reject it the same way it rejects the backticked form
+    (review finding #5)."""
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — curl -f http://api.internal/health")), kb_dir)
+    assert not any("unknown id 'api.internal" in e for e in errors(report))
