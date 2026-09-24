@@ -273,6 +273,7 @@ that follows it.
 | `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
 | `kb mission next` | Which story next: done / drafted / ready / blocked across `missions/`, done derived from the hub's `<repo>-svc` history |
 | `kb pr lint` | Check a pull-request description carries its evidence |
+| `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, or a missing `Depends on:` line |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
 

@@ -75,6 +75,9 @@ pr_app = typer.Typer(
 )
 app.add_typer(pr_app, name="pr")
 
+plan_app = typer.Typer(help="Dev plan tools: dependency waves of docs/impl/<ticket-id>-plan.md.")
+app.add_typer(plan_app, name="plan")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -2568,6 +2571,44 @@ def pr_lint(
     else:
         typer.echo(report.render())
     if not report.passed:
+        raise typer.Exit(1)
+
+
+@plan_app.command("waves")
+def plan_waves(
+    source: str = typer.Argument(..., help="Plan file (or '-' to read from stdin)"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit {\"errors\": [...], \"waves\": [[...]]} instead of text"
+    ),
+) -> None:
+    """Dependency waves of a dev plan: wave n = tasks whose every `Depends on:`
+    task sits in an earlier wave. Exit 1 on a shared file without a
+    dependency path, a cycle, an unknown task, or a missing `Depends on:`
+    line — those plans have no safe parallel order."""
+    from strata_kb import planwaves
+
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        path = Path(source)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            typer.secho(f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        except OSError as exc:
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    if json_output:
+        typer.echo(json.dumps(planwaves.to_json(errors, waves)))
+    else:
+        for e in errors:
+            typer.echo(f"error: {e}")
+        if not errors:
+            typer.echo(planwaves.render(waves))
+    if errors:
         raise typer.Exit(1)
 
 

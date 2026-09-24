@@ -5,7 +5,7 @@ All notable changes to Strata are recorded here. This project follows
 
 ## Unreleased
 
-- `kb mission next`: read-only report of every backlog story across `missions/` as `done` / `drafted` / `ready` / `blocked`, ending with `Next: <us-id> — <title>`. `done` is derived from the hub's `<repo-id>-svc` history tables (the rows `kb svc note` writes at dev-handover and CI publishes on merge) — never from a status column; `ready` needs every `Depends on` story done and every `## Technology decisions` row that `Blocks` the story `DECIDED`; `Depends on` may name a story of another mission. `Decision` rows now carry their `Blocks` ids; `lintcore.table_column` is the shared header-name column lookup. Exit 0 after a report (1 only for a bad directory flag) — it is a query, not a gate. A hub that is not configured or unreachable, or a `<repo-id>-svc` that is not published, is reported as a `done: unknown (…)` note, never a red line.
+- `kb plan waves` `<plan-file>`: the dependency waves of a `docs/impl/<ticket-id>-plan.md` — wave n holds the tasks whose every `Depends on:` task sits in an earlier wave — and an exit-1 error for a file shared by two tasks with no dependency path, a cycle, an unknown task, or a task with no `Depends on:` line. Deterministic; `dev-execute` runs it before parallelising.
 
 ## 1.3.0 — 2026-09-24
 
