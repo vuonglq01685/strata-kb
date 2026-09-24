@@ -269,8 +269,8 @@ that is the expected result, not a defect. Capability layer
 only: no file names, no tables, no routes — those belong to each ticket's own
 `## Technical grounding`, filled later at §3.8.
 
-In a skeleton repo every row the SA appends cites the architecture document
-in its Decision cell (`[<arch-doc> §<section>]`), and the agent stops at step
+In a skeleton repo every row the architecture document supports cites it
+in the Decision cell (`[<arch-doc> §<section>]`), and the agent stops at step
 5b — **Decide** — to show you the whole table once. Flip the cited rows you
 confirm to `DECIDED`; leave an uncited row `OPEN` with a named owner. You
 decide here, once, not ticket by ticket. The first story of such a mission is
@@ -295,7 +295,7 @@ blocks: done means merged. Cross-mission order is a `Depends on` cell naming
 another mission's story (`M-<other>-US<n>`).
 
 The command is read-only and exits 0 after its report. A hub that is not
-configured or reachable, a `-svc` not yet published, or a mission without a
+configured or reachable, a `-svc` not yet published, or no mission with a
 `Grounded on:` line becomes a `note:` line, never a failure — nothing is
 marked `done` until the hub can answer.
 

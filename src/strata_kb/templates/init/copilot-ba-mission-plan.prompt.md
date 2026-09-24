@@ -109,7 +109,10 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
 6. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly those
-   confirmed refs. Embed the block it returns verbatim under
+   confirmed refs. Include every architecture section a
+   `## Technology decisions` row or the foundation-slice story cites — a
+   bracketed citation the block does not pin is a lint error. Embed the
+   block it returns verbatim under
    `## KB context`. **Tags are NOT yours to set:** the engine derives
    them from the pinned sections' own tags. Leave the tool's `tags`
    argument unset and the CLI's `--tags` off — a tag passed by hand is

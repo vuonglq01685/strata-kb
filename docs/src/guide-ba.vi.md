@@ -263,8 +263,8 @@ mong đợi, không phải lỗi. Chỉ ở lớp năng lực: không tên
 file, không bảng, không route — những cái đó thuộc về `## Technical
 grounding` của từng ticket, điền sau ở mục 3.8.
 
-Ở repo skeleton, mỗi dòng SA thêm vào đều trích dẫn tài liệu architecture
-ngay trong ô Decision (`[<arch-doc> §<section>]`), và agent dừng ở bước 5b —
+Ở repo skeleton, mỗi dòng mà tài liệu architecture chứng minh được đều trích
+dẫn nó ngay trong ô Decision (`[<arch-doc> §<section>]`), và agent dừng ở bước 5b —
 **Decide** — để trình cả bảng cho bạn một lần. Bạn chuyển những dòng có trích
 dẫn mà bạn xác nhận sang `DECIDED`; dòng không có trích dẫn giữ `OPEN` kèm
 chủ sở hữu. Bạn quyết định ở đây, một lần, không phải từng ticket. Story đầu
@@ -289,9 +289,9 @@ chặn: done nghĩa là đã merge. Thứ tự giữa các mission được ghi 
 `Depends on` bằng story của mission khác (`M-<other>-US<n>`).
 
 Lệnh chỉ đọc và thoát 0 sau khi in báo cáo. Hub chưa cấu hình hoặc không
-kết nối được, `-svc` chưa publish, hay mission không có dòng `Grounded on:`
-đều thành một dòng `note:`, không bao giờ là lỗi — không story nào được đánh
-`done` chừng nào hub chưa trả lời được.
+kết nối được, `-svc` chưa publish, hay không mission nào có dòng
+`Grounded on:` đều thành một dòng `note:`, không bao giờ là lỗi — không
+story nào được đánh `done` chừng nào hub chưa trả lời được.
 
 ---
 

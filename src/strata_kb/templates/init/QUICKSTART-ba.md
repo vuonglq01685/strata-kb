@@ -105,9 +105,9 @@ decision then has no owner.
 
 ### Greenfield: decide the D-rows once
 
-In a skeleton repo the SA proposes every D-row from the architecture
-document on the hub and cites it in the Decision cell
-(`[<arch-doc> §<section>]`). `/ba-mission-plan` then stops at step 5b
+In a skeleton repo the SA proposes the D-rows from the architecture
+document on the hub and cites it in the Decision cell of every row the
+document supports (`[<arch-doc> §<section>]`). `/ba-mission-plan` then stops at step 5b
 (**Decide**) and shows you the whole `## Technology decisions` table once:
 flip to `DECIDED` the rows whose citation you confirm; leave a row with no
 citation `OPEN` with a named owner. That is the only time you decide —
@@ -162,14 +162,14 @@ is reported as one of four states, and the report ends with
 
 | State | Means |
 |---|---|
-| `done` | the ticket id is in a `hist.*` row of the hub's `<repo-id>-svc` — the Dev ran `kb svc note` at handover and CI published it on merge |
+| `done` | the ticket id is in a `hist.*` row of the hub's `-svc` document — the Dev ran `kb svc note` at handover and CI published it on merge |
 | `drafted` | `tickets/<us-id>.md` exists but the story is not merged yet |
 | `ready` | no ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED` |
 | `blocked` | the reasons are named: `US <id> not done`, `US <id> unknown`, `D<n> OPEN (owner: <x>)` |
 
 `/ba-ticket-author` with no argument runs it first and proposes the first
 `ready` story. A story whose dependency is only `drafted` stays `blocked`:
-`done` means merged, because only merged code reaches `<repo>-code`.
+`done` means merged, because only merged code reaches `<repo>-svc`.
 Cross-mission order is written in `## Sequencing` by naming another
 mission's story (`M-<other>-US<n>`) in `Depends on`.
 
