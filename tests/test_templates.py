@@ -2784,7 +2784,7 @@ def test_ticket_template_carries_the_compose_grounding_lines():
     text = _read_init_template("ticket-template.md")
     for needle in (
         "- Volumes: svc.<name> — <volume>, … — or `none`",
-        "- Healthchecks: svc.<name> — `<test command>`; svc.<name> — none — or `none`",
+        "- Healthchecks: svc.<name> — `<test command>`; svc.<name> — none; svc.<name> — disabled — or `none`",
         "- Devices: svc.<name> — <driver:caps> — or `none`",
         "no value in an AC rests on a `DECIDED` note instead of a section id or a D-row",
     ):
