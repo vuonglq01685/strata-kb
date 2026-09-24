@@ -189,6 +189,11 @@ checks:
 - Every inline `[doc-id §section]` citation is backed by a pinned ref.
 - Citations are written `[doc-id §section]`. A citation in the old bare
   form still counts, with a warning telling you to bracket it.
+- An acceptance criterion that prescribes a shell command (a
+  `docker compose …`, `curl …`, `grep …` span, or one that chains
+  commands with `&&`) gets a warning, not a failure — state the
+  observable outcome instead and keep the command in
+  `## Test data & verification` or the plan.
 
 (See "Mission plans" above for what the mission gate checks.)
 

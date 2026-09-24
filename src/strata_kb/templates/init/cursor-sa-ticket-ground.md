@@ -79,12 +79,13 @@ to the mission layer.
    - `Volumes:` — `svc.<name> — <volume>, …` copied from the record's
      `Volumes` row; `svc.<name> — none` when the row says `none`; a
      volume the ticket creates: `<name> [NEW: D<n>]`. Whole line `none`
-     only when no touched service has a volume.
+     only when no touched service has a volume; several services
+     `;`-separated on one line.
    - `Healthchecks:` — ``svc.<name> — `<test command>` `` byte for byte
      from the `Healthcheck` row, or `svc.<name> — none` / `disabled` as
      the row says; several services `;`-separated on one line.
    - `Devices:` — `svc.<name> — <driver:caps>` from the `Devices` row,
-     or `none`.
+     or `none`; several services `;`-separated on one line.
    - `Verify with:` — `cmd.test` followed by the command in
      backticks: the section's `Primary:` value or one of its
      alternatives, byte for byte.

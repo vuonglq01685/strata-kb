@@ -87,9 +87,9 @@ records' own rows; a volume or device the ticket creates carries
 - Tables: db.<table>.<column>, … — or `none`
 - Routes: api.<tag> — <METHOD> <path>, … — or `none`
 - Externals: int.<name>, … — or `none`
-- Volumes: svc.<name> — <volume>, … — or `none`
+- Volumes: svc.<name> — <volume>, …; svc.<name> — none — or `none`
 - Healthchecks: svc.<name> — `<test command>`; svc.<name> — none; svc.<name> — disabled — or `none`
-- Devices: svc.<name> — <driver:caps> — or `none`
+- Devices: svc.<name> — <driver:caps>; svc.<name> — none — or `none`
 - Verify with: cmd.test — `<primary command, verbatim>`
 - Open decisions:
   - none

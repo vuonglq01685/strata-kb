@@ -179,10 +179,10 @@ thống quản lý issue. Trợ lý không bao giờ làm việc đó thay bạn
 Bước 7 làm việc này thay bạn. Khi lint báo `DoR: PASS`, agent lưu bản nháp
 rồi gọi `/sa-ticket-ground` trên chính file đó như một subagent riêng. Lệnh
 này điền mục `## Technical grounding` do SA sở hữu — service, file, bảng,
-route, external, lệnh test — mỗi dòng là một section id lấy từ tài liệu
-`<repo>-code` trên hub. Nó không bao giờ sửa mục của bạn; một phát biểu
-nghiệp vụ mâu thuẫn với sự thật trong code sẽ được trích lại ở đó, không bị
-sửa.
+route, external, volumes, lệnh healthcheck và device reservations, lệnh
+test — mỗi dòng là một section id lấy từ tài liệu `<repo>-code` trên hub.
+Nó không bao giờ sửa mục của bạn; một phát biểu nghiệp vụ mâu thuẫn với sự
+thật trong code sẽ được trích lại ở đó, không bị sửa.
 
 Code chưa tồn tại không phải là thiếu dữ liệu, mà là một quyết định thiết
 kế. SA đề xuất nó thành một dòng trong `## Technology decisions` của mission
@@ -324,6 +324,7 @@ vào ngoặc vuông.
 | `## Review record` thiếu, rỗng, hoặc còn nguyên chỗ trống mẫu | Lint thấy được mục đó, không thấy được review có thực chất hay không |
 | Tham chiếu đã cũ | Section được trích đã bị sửa đổi phía trên. Vẫn phân giải được nên không hỏng — nhưng bạn nên xem lại. |
 | Một tham chiếu đã ghim mà nội dung không trích dẫn | Đó có thể là phần nền mà ticket không cần dẫn lại |
+| Một tiêu chí chấp nhận ra lệnh một shell command (`docker compose …`, `curl …`, `grep …`, hoặc hai lệnh nối bằng `&&`) | Công cụ chỉ gắn cờ hình dạng đó; AC có nên đổi sang mô tả kết quả quan sát được hay không là phán đoán của bạn — bản thân câu lệnh thuộc về `## Test data & verification` hoặc kế hoạch |
 
 ## 6.3 Bắt cổng fail khi trích dẫn cũ
 

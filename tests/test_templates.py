@@ -2783,9 +2783,9 @@ def test_quickstart_ba_gate_list_names_the_size_gates():
 def test_ticket_template_carries_the_compose_grounding_lines():
     text = _read_init_template("ticket-template.md")
     for needle in (
-        "- Volumes: svc.<name> — <volume>, … — or `none`",
+        "- Volumes: svc.<name> — <volume>, …; svc.<name> — none — or `none`",
         "- Healthchecks: svc.<name> — `<test command>`; svc.<name> — none; svc.<name> — disabled — or `none`",
-        "- Devices: svc.<name> — <driver:caps> — or `none`",
+        "- Devices: svc.<name> — <driver:caps>; svc.<name> — none — or `none`",
         "no value in an AC rests on a `DECIDED` note instead of a section id or a D-row",
     ):
         assert needle in text, needle
