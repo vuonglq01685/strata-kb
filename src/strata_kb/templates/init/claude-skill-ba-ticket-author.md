@@ -20,6 +20,12 @@ for it during Intake.
    role, and why it matters. Ask for target tags (e.g. `#arinc424
    #airspace`) or an explicit doc-id if the BA already has one. Ask,
    don't guess — a vague need gets a clarifying question, not a search.
+   With no business need given and a `missions/` directory present, run
+   `kb mission next` first and show its table: propose the first `ready`
+   story; the BA may pick another. A `drafted` story points at its
+   existing file. A `blocked` story may be drafted only with its reasons
+   acknowledged by the BA — carry those reasons into the handover
+   verbatim.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog
    row, and put `> Parent mission: <mission-id>` on its own line directly

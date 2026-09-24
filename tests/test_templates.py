@@ -2903,3 +2903,16 @@ def test_ba_mission_wrappers_carry_the_recorded_decision_hard_rule():
             "5b, not ticket by ticket. A proposal without a citation stays `OPEN` "
             "with a human owner."
         ) in text, name
+
+
+def test_ba_ticket_wrappers_run_kb_mission_next_at_intake():
+    for name in BA_TICKET_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "run `kb mission next` first" in text, name
+        assert "propose the first `ready` story" in text, name
+        assert "A `blocked` story may be drafted only with its reasons acknowledged by the BA" in text, name
+
+
+def test_ba_ticket_full_wrappers_point_a_drafted_story_at_its_file():
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        assert "A `drafted` story points at its existing file." in _ba_wrapper_text(name), name
