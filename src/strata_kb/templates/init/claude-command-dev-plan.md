@@ -48,8 +48,9 @@ checkboxes, step 1 always being the failing test. Every task heading is
 `### Task <n>: <title>`, and the line directly under it is `Depends on:
 none` or `Depends on: task 2, task 5` — derived, never chosen: task B
 depends on task A when B consumes an Interface A produces, or B and A
-share a path under Files, so two tasks with no dependency path are
-file-disjoint and `dev-execute` can run them in parallel lanes. The
+share a path under Files, the later task depending on the earlier, so two
+tasks with no dependency path are file-disjoint and `dev-execute` can run
+them in parallel lanes. The
 closing verification task depends on every other task, and `kb plan
 waves docs/impl/<ticket-id>-plan.md` runs before offering GATE 2 — it
 prints the waves and fails on a shared path without a dependency, a

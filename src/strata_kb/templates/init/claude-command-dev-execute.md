@@ -36,14 +36,21 @@ edit above it.
 
 Steps the skill enforces: **Isolate** the work onto a dedicated branch and,
 where the environment supports it, a git worktree named from the ticket id.
-Never work directly on the default branch. Then run `kb plan waves
-docs/impl/<ticket-id>-plan.md`; an error returns the plan to `dev-plan`, a
-plan without `Depends on:` lines runs sequentially as today, a wave of one
+Never work directly on the default branch; `.worktrees/` must be
+gitignored — add it to the repo's `.gitignore` once, in this step, since
+Dev repos ship no root `.gitignore` template. Then run `kb plan waves
+docs/impl/<ticket-id>-plan.md`; an error returns the plan to `dev-plan` —
+except when `kb plan waves` reports only `has no Depends on: line` errors,
+one per task: the plan predates waves and runs sequentially as today, say
+so in the Next-step block; any other error still returns the plan to
+`dev-plan` — a wave of one
 task runs the per-task flow unchanged, and a wave of two or more tasks —
 when the runtime can dispatch subagents — runs each task in its own lane:
 `git worktree add .worktrees/<ticket-id>-task-<n> -b
-<ticket-id>-task-<n> HEAD` from the ticket branch. Record the ticket
-branch's HEAD at that moment as `<lane-base>`. A runtime-provided
+<ticket-id>-task-<n> HEAD` from the ticket branch. `<lane-base>` is the
+ticket branch's HEAD when the lane was cut — after the `--no-ff` merge it
+is the merge commit's first parent, so it is always derivable: A3 diffs
+`<merge-commit>^1..<lane-branch>`. A runtime-provided
 worktree is acceptable only if its base contains the ticket branch's HEAD,
 checked with `git merge-base --is-ancestor`; at most **3 lanes at a
 time**, each implementer handed its lane path and the sentence "Never use
@@ -53,11 +60,14 @@ the orchestrator ticks after A3 — so lanes never conflict on the plan
 file. Scoped tests inside the lane, lanes merged back in task-number order
 with `git merge --no-ff
 <ticket-id>-task-<n>` — a conflict is a plan defect, returned to
-`dev-plan` naming the two tasks — the full `cmd.test` / `cmd.lint` run
-once after the wave, A3 per task from `git diff <lane-base>..<lane-branch>`,
-the lane removed after A3 is clean; A3 fix commits land on the ticket
-branch after the merge, with the wave's `cmd.test` / `cmd.lint` re-run
-when a fix landed. Then, per unticked task, in its
+`dev-plan` naming the two tasks — otherwise its report is copied out of
+the lane if it did not land in the merge and its worktree removed, then
+the full `cmd.test` / `cmd.lint` run once after the wave, A3 per task from
+the lane branch (`git diff <merge-commit>^1..<lane-branch>`), the lane
+branch deleted after A3 is clean; A3 fix commits land on the ticket
+branch after the merge, a re-review after a fix diffing
+`<merge-commit>^1..HEAD` limited to the task's paths, with the wave's
+`cmd.test` / `cmd.lint` re-run when a fix landed. Then, per unticked task, in its
 own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**
 entry, and the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the
@@ -104,7 +114,9 @@ implementable as written, stop that task, return to `dev-design`, and record
 because the code is half written. The skill is resumable: a later run
 re-checks freshness, re-reads the plan, and continues at the first unticked
 task — that is, the first wave with an unticked task, ticked siblings
-skipped. Once every task is ticked, A4 runs; once A4 comes back clean, option 1
+skipped; a lane branch already merged into the ticket branch (`git
+merge-base --is-ancestor <lane-branch> HEAD`) is not re-cut — it skips to
+A3. Once every task is ticked, A4 runs; once A4 comes back clean, option 1
 in the Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
 `/dev-execute <ticket-id>` to continue.
 

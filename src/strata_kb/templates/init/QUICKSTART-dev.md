@@ -168,7 +168,8 @@ checks it. `kb plan waves docs/impl/<ticket-id>-plan.md` turns those lines
 into waves (wave n = tasks whose dependencies all sit in earlier waves) and
 fails when two tasks share a file without a dependency between them, when
 there is a cycle, or when a line is missing — a plan like that has no safe
-parallel order. `dev-execute` runs it after isolating the branch: a wave of
+parallel order; a plan where every task lacks the line predates waves and
+runs sequentially. `dev-execute` runs it after isolating the branch: a wave of
 one task runs as before; a wave of several runs each task in its own git
 worktree lane cut from the ticket branch, at most 3 lanes at a time, merged
 back in task order with `--no-ff`, the full suite run once per wave. A merge

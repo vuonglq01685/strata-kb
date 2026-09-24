@@ -34,16 +34,26 @@ class Task:
 
 def _path_of(rest: str) -> str | None:
     """The path on a `- Create: \\`src/x.py:10-20\\`` line: the first backtick
-    span (else the first token), with a trailing `:<line>[-<line>]` dropped."""
+    span (else the first token), with a trailing `:<line>[-<line>]` dropped
+    and a leading `./` stripped so `./x.py` and `x.py` collide as one path."""
     m = CODE_SPAN_RE.search(rest)
     token = m.group(1).strip() if m else (rest.split() or [""])[0]
     token = LINE_SUFFIX_RE.sub("", token).strip()
+    if token.startswith("./"):
+        token = token[2:]
     return token or None
 
 
-def _deps_of(rest: str) -> tuple[int, ...]:
-    if rest.strip().lower() in _NONE_WORDS:
+def _deps_of(rest: str) -> tuple[int, ...] | None:
+    """Dependency numbers parsed from a `Depends on:` remainder, or `None`
+    when it is neither a none-word nor names any digit (`Depends on: TBD`)
+    -- `parse_plan` leaves such a line unbound so `check` reports it the
+    same as a missing line, instead of silently reading it as `none`."""
+    stripped = rest.strip().lower()
+    if stripped in _NONE_WORDS:
         return ()
+    if not any(c.isdigit() for c in rest):
+        return None
     return tuple(dict.fromkeys(int(n) for n in re.findall(r"\d+", rest)))
 
 
@@ -62,6 +72,7 @@ def parse_plan(text: str) -> list[Task]:
     task heading. A fenced code block (``` or ~~~, closed by the same
     marker) is skipped whole -- a plan quoting another plan or a test
     fixture as an example must not spawn phantom tasks."""
+    text = text.lstrip("﻿")
     tasks: list[Task] = []
     number: int | None = None
     depends: tuple[int, ...] | None = None
@@ -108,6 +119,23 @@ def parse_plan(text: str) -> list[Task]:
     return tasks
 
 
+def unclosed_fence(text: str) -> bool:
+    """True when `text` ends with a fenced code block (``` or ~~~) that was
+    never closed -- `parse_plan` skips everything inside a fence, so an
+    unclosed one may have silently swallowed the rest of the plan."""
+    text = text.lstrip("﻿")
+    in_fence = ""
+    for raw in text.splitlines():
+        marker = _fence_marker(raw.rstrip())
+        if in_fence:
+            if marker == in_fence:
+                in_fence = ""
+            continue
+        if marker:
+            in_fence = marker
+    return bool(in_fence)
+
+
 def _reachable(start: int, deps: dict[int, tuple[int, ...]]) -> set[int]:
     """Every task `start` depends on, transitively."""
     seen: set[int] = set()
@@ -150,12 +178,18 @@ def _find_cycle(deps: dict[int, tuple[int, ...]]) -> list[int] | None:
     return None
 
 
-def check(tasks: list[Task]) -> tuple[list[str], list[list[int]]]:
+def check(
+    tasks: list[Task], unclosed: bool = False
+) -> tuple[list[str], list[list[int]]]:
     """(errors, waves). Waves are empty whenever an error is reported —
-    a plan with a cycle or an undeclared shared file has no safe order."""
+    a plan with a cycle or an undeclared shared file has no safe order.
+    `unclosed` (from `unclosed_fence`) reports a fence the parser never
+    saw close, which may have silently dropped the plan's tail."""
     if not tasks:
         return ["no `### Task <n>` headings found"], []
     errors: list[str] = []
+    if unclosed:
+        errors.append("unclosed code fence")
     seen: set[int] = {t.number for t in tasks}
     counts = Counter(t.number for t in tasks)
     for n in sorted(counts):
@@ -171,6 +205,9 @@ def check(tasks: list[Task]) -> tuple[list[str], list[list[int]]]:
         for d in t.depends_on:
             if d not in seen:
                 errors.append(f"task {t.number} depends on task {d} — no such task")
+    for t in tasks:
+        if not t.paths:
+            errors.append(f"task {t.number} lists no paths under **Files**")
 
     cycle = _find_cycle(deps)
     if cycle:

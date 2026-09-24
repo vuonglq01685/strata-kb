@@ -47,7 +47,8 @@ edit above it.
   Every task heading is `### Task <n>: <title>`, and the line directly
   under it is `Depends on: none` or `Depends on: task 2, task 5` —
   derived, never chosen: task B depends on task A when B consumes an
-  Interface A produces, **or** B and A share a path under **Files**. Two
+  Interface A produces, **or** B and A share a path under **Files**, the
+  later task depending on the earlier. Two
   tasks with no dependency path are therefore file-disjoint, which is
   what lets `dev-execute` run them in parallel lanes. The closing
   verification task depends on every other task. Run

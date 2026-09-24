@@ -2600,7 +2600,9 @@ def plan_waves(
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1)
 
-    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    errors, waves = planwaves.check(
+        planwaves.parse_plan(text), unclosed=planwaves.unclosed_fence(text)
+    )
     if json_output:
         typer.echo(json.dumps(planwaves.to_json(errors, waves)))
     else:

@@ -128,6 +128,57 @@ def test_check_empty_plan_is_an_error():
     assert waves == []
 
 
+def test_parse_plan_strips_leading_bom():
+    # A file starting directly with a task heading (no title line first) is
+    # where a leading BOM actually breaks TASK_RE's `^#{2,4}` anchor -- the
+    # golden PLAN's own first line is a title, not a heading, so it can't
+    # exercise this.
+    text = (
+        "### Task 1: a\nDepends on: none\n**Files:**\n- Create: `x.py`\n\n"
+        "### Task 2: b\nDepends on: task 1\n**Files:**\n- Create: `y.py`\n"
+    )
+    tasks = planwaves.parse_plan("﻿" + text)
+    assert [t.number for t in tasks] == [1, 2]
+
+
+def test_path_of_strips_leading_dot_slash():
+    text = (
+        "### Task 1: a\nDepends on: none\n**Files:**\n- Create: `./x.py`\n\n"
+        "### Task 2: b\nDepends on: none\n**Files:**\n- Modify: `x.py`\n"
+    )
+    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    assert "tasks 1 and 2 share x.py but neither depends on the other" in errors
+    assert waves == []
+
+
+def test_check_treats_an_unparseable_depends_line_as_missing():
+    text = "### Task 1: a\nDepends on: TBD\n**Files:**\n- Create: `x.py`\n"
+    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    assert "task 1 has no Depends on: line" in errors
+    assert waves == []
+
+
+def test_check_reports_a_task_with_no_paths_under_files():
+    # `#### Files` (a heading, not `**Files:**` bold text) never sets
+    # `in_files`, so a task written this way parses with zero paths --
+    # exactly the kind of format drift the gate must not wave through.
+    text = "### Task 1: a\nDepends on: none\n\n#### Files\n- Create: `x.py`\n"
+    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    assert "task 1 lists no paths under **Files**" in errors
+    assert waves == []
+
+
+def test_check_reports_an_unclosed_code_fence():
+    text = (
+        "### Task 1: a\nDepends on: none\n**Files:**\n- Create: `x.py`\n\n"
+        "```text\nnever closed\n"
+    )
+    tasks = planwaves.parse_plan(text)
+    errors, waves = planwaves.check(tasks, unclosed=planwaves.unclosed_fence(text))
+    assert "unclosed code fence" in errors
+    assert waves == []
+
+
 def test_render_and_json():
     waves = [[1, 3], [2], [4]]
     assert planwaves.render(waves) == "wave 1: task 1, task 3\nwave 2: task 2\nwave 3: task 4"
