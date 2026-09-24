@@ -48,9 +48,11 @@ task runs the per-task flow unchanged, and a wave of two or more tasks —
 when the runtime can dispatch subagents — runs each task in its own lane:
 `git worktree add .worktrees/<ticket-id>-task-<n> -b
 <ticket-id>-task-<n> HEAD` from the ticket branch. `<lane-base>` is the
-ticket branch's HEAD when the lane was cut — after the `--no-ff` merge it
-is the merge commit's first parent, so it is always derivable: A3 diffs
-`<merge-commit>^1..<lane-branch>`. A runtime-provided
+ticket branch's HEAD when the lane was cut — after the `--no-ff` merge,
+the lane's cut point is the merge base of the merge commit's first parent
+and the lane branch, so it is always derivable — the three-dot diff `git
+diff <merge-commit>^1...<lane-branch>` shows exactly the lane's own
+commits, for every lane in the wave. A runtime-provided
 worktree is acceptable only if its base contains the ticket branch's HEAD,
 checked with `git merge-base --is-ancestor`; at most **3 lanes at a
 time**, each implementer handed its lane path and the sentence "Never use
@@ -63,10 +65,10 @@ with `git merge --no-ff
 `dev-plan` naming the two tasks — otherwise its report is copied out of
 the lane if it did not land in the merge and its worktree removed, then
 the full `cmd.test` / `cmd.lint` run once after the wave, A3 per task from
-the lane branch (`git diff <merge-commit>^1..<lane-branch>`), the lane
+the lane branch (`git diff <merge-commit>^1...<lane-branch>`), the lane
 branch deleted after A3 is clean; A3 fix commits land on the ticket
 branch after the merge, a re-review after a fix diffing
-`<merge-commit>^1..HEAD` limited to the task's paths, with the wave's
+`<merge-commit>^1...HEAD` limited to the task's paths, with the wave's
 `cmd.test` / `cmd.lint` re-run when a fix landed. Then, per unticked task, in its
 own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**

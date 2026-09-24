@@ -2854,8 +2854,8 @@ def test_dev_execute_runs_plan_waves_and_lanes():
         assert "Never use `run_in_background`; run every test in the foreground and let the call block." in body, name
         assert "git merge --no-ff <ticket-id>-task-<n>" in body, name
         assert "a conflict is a plan defect" in body, name
-        assert "git diff <merge-commit>^1..<lane-branch>" in body, name
-        assert "it is the merge commit's first parent" in body, name
+        assert "git diff <merge-commit>^1...<lane-branch>" in body, name
+        assert "shows exactly the lane's own commits, for every lane in the wave" in body, name
         assert "A lane implementer never edits `docs/impl/<ticket-id>-plan.md`" in body, name
         assert "the first wave with an unticked task" in body, name
         assert "skips to A3" in body, name

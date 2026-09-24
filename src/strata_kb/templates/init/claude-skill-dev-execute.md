@@ -55,12 +55,14 @@ edit above it.
   own **lane**:
   - `git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD`
     from the ticket branch. `<lane-base>` is the ticket branch's HEAD
-    when the lane was cut — after the `--no-ff` merge it is the merge
-    commit's first parent, so it is always derivable: A3 diffs
-    `<merge-commit>^1..<lane-branch>`. A worktree the runtime provides
-    is acceptable only if its base contains the ticket branch's HEAD —
-    check with `git merge-base --is-ancestor`; otherwise create the lane
-    by hand.
+    when the lane was cut — after the `--no-ff` merge, the lane's cut
+    point is the merge base of the merge commit's first parent and the
+    lane branch, so it is always derivable — the three-dot diff
+    `git diff <merge-commit>^1...<lane-branch>` shows exactly the
+    lane's own commits, for every lane in the wave. A worktree the
+    runtime provides is acceptable only if its base contains the
+    ticket branch's HEAD — check with `git merge-base --is-ancestor`;
+    otherwise create the lane by hand.
   - Dispatch one implementer per lane, at most **3 lanes at a time** —
     a larger wave runs in batches of 3 (`ponytail:` fixed cap; raise it
     once a measured wave shows the machine and the suite can take
@@ -81,11 +83,11 @@ edit above it.
   - Verify the wave: run `cmd.test` and `cmd.lint` once after the last
     merge of the wave and show the output.
   - A3 per task as below, from the lane **branch**, with the diff
-    written from `git diff <merge-commit>^1..<lane-branch>`; tick only
+    written from `git diff <merge-commit>^1...<lane-branch>`; tick only
     after A3 is clean, then delete the lane branch. A3 fix commits land
     on the ticket branch after the merge (the lane is done); when any
     fix landed, re-run the wave's `cmd.test` / `cmd.lint` before
-    ticking. A3 re-review after a fix diffs `<merge-commit>^1..HEAD`
+    ticking. A3 re-review after a fix diffs `<merge-commit>^1...HEAD`
     limited to the task's paths.
   Without subagents: sequential in wave order, today's fallback.
 - **Per unticked task**, in its own subagent where the runtime supports

@@ -122,6 +122,30 @@ def test_check_duplicate_task_number_and_self_dependency():
     assert "dependency cycle: 1 → 1" in errors
 
 
+def test_check_legacy_plan_reports_only_missing_depends_lines():
+    text = (
+        "### Task 1: a\n**Files:**\n- Modify: `CHANGELOG.md`\n\n"
+        "### Task 2: b\n**Files:**\n- Modify: `CHANGELOG.md`\n"
+    )
+    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    assert errors == [
+        "task 1 has no Depends on: line",
+        "task 2 has no Depends on: line",
+    ]
+    assert waves == []
+
+
+def test_check_mixed_plan_still_runs_shared_path_check():
+    text = (
+        "### Task 1: a\nDepends on: none\n**Files:**\n- Create: `x.py`\n\n"
+        "### Task 2: b\n**Files:**\n- Modify: `x.py`\n"
+    )
+    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    assert "task 2 has no Depends on: line" in errors
+    assert "tasks 1 and 2 share x.py but neither depends on the other" in errors
+    assert waves == []
+
+
 def test_check_empty_plan_is_an_error():
     errors, waves = planwaves.check(planwaves.parse_plan("no tasks here"))
     assert errors == ["no `### Task <n>` headings found"]
