@@ -41,7 +41,7 @@ ticket (`M-platform-operations-US1`):
 | # | Decision | Rejected alternative |
 |---|---|---|
 | N1 | A story's `done` state is **derived from the hub**: its ticket id appears in a `hist.*` row of `<repo>-svc`. No status column, no `--done` flag. | `--done US1,US2` by hand (rots; add only if a repo never seeds `-svc`). A `> Status:` line in the ticket (the Dev never edits the ticket). |
-| N2 | `kb mission next` is a **read-only query**, exit 0 after a report; 1 only for a bad directory flag. It is not a gate. | A lint that fails on a blocked story (a backlog is allowed to be blocked). |
+| N2 | `kb mission next` is a **read-only query**, exit 0 always. It is not a gate. | A lint that fails on a blocked story (a backlog is allowed to be blocked). |
 | N3 | Cross-mission order is expressed in `## Sequencing` → `Depends on` by naming another mission's US id. No roadmap file. | `missions/ROADMAP.md` (a second place for the same edge). |
 | N4 | In a greenfield mission the SA proposes every D-row **with a citation** to the architecture document on the hub, and the BA flips them **once, at mission time** (new step 5b). The SA still never writes `DECIDED` (G3 stands). | Auto-flip a cited row to `DECIDED` (spec 09-22 §8 keeps a human decision a human act). `<repo>-arch` as a second SA grounding source (G1 rejected it; the decision table already exists). |
 | N5 | `dev-plan` records a `Depends on:` line per task; two tasks with no dependency path between them are **file-disjoint by construction**. `kb plan waves` computes the waves deterministically and errors on a shared path, a cycle, or an unknown id. | Let the orchestrator compute waves and the A2 reviewer eyeball file overlap (the exact class of error reviews have been missing). |
@@ -68,22 +68,12 @@ kb mission next [--missions-dir DIR] [--tickets-dir DIR] [--repo-id ID]
   <repo-id>:<repo-id>-code @ <rev>` line found in the missions'
   `## Services & order` (`ticketcheck.GROUNDED_ON_RE`). None found and no
   flag → note `done: unknown (no repo id — pass --repo-id)`.
-- Local first: `<kb-dir>/<repo-id>-svc` when its manifest exists (a dev
-  machine), else the hub via `_hub_or_reason` (the hub resolution `kb
-  ticket check` uses, without the exit); the `-svc` document via
-  `ticketcheck.load_from_hub(federation_dir, repo_id, f"{repo_id}-svc")`.
+- Hub via `_hub_or_exit` exactly as `kb ticket check`; the `-svc` document
+  via `ticketcheck.load_from_hub(federation_dir, repo_id, f"{repo_id}-svc")`.
   Not on the hub → note `done: unknown (<repo-id>-svc not published — the
-  Dev repo has not run dev-code-seed, or CI has not published yet)`. A hub
-  that is not configured or not reachable is not an error for this
-  command: `_hub_or_reason` returns the reason and the report carries
-  `done: unknown (<reason>)` — `_hub_or_exit` (used by the gates) wraps it
-  and keeps exiting 1.
-- A mission file without a `> Mission:` line is skipped with the note
-  `skipped <path>: no '> Mission:' line`.
-- Exit code 0 after a report; exit 1 with a red line only when
-  `--missions-dir` (default `missions/`) or an explicit `--tickets-dir` is
-  not a directory, as `kb ticket check` does. A mission file that cannot be
-  read is reported as a note naming the file and skipped, never a crash.
+  Dev repo has not run dev-code-seed, or CI has not published yet)`.
+- Exit code 0 always. Read errors on a mission file are reported as a note
+  naming the file and the mission is skipped, never a crash.
 
 ### 3.2 Module `src/strata_kb/missionnext.py`
 
@@ -107,7 +97,7 @@ class StoryStatus:
     reasons: tuple[str, ...]      # blocked only
 
 def parse_mission(text: str) -> tuple[str | None, list[Story], DecisionTable]
-def statuses(missions: list[ParsedMission], drafted: set[str], done: set[str] | None) -> list[StoryStatus]
+def statuses(stories, decisions_by_mission, drafted: set[str], done: set[str] | None) -> list[StoryStatus]
 def done_ids_from_history(history_l2: str) -> set[str]
 def render(statuses, notes) -> str
 def to_json(statuses, notes) -> dict
@@ -116,13 +106,13 @@ def to_json(statuses, notes) -> dict
 Parsing, all by reuse:
 
 - Mission id: `mission.MISSION_LINE_RE`.
-- Backlog ids and titles: `lintcore.table_rows(lintcore.section_body(text,
-  "## US backlog"))[1:]` — cells 0 and 1. `check_backlog` is HIGH impact
-  (`mission_lint` and `ticket_lint` route through it) and is not touched;
-  the DoR gate keeps validating the table, this query only reads it.
+- Backlog ids and titles: the row loop of `missionlint.check_backlog` is
+  extracted into `missionlint.parse_backlog(text) -> list[tuple[str, str]]`
+  (id, title); `check_backlog` calls it. Existing tests pin the behaviour.
+  Impact analysis on `check_backlog` first.
 - `## Sequencing`: `lintcore.section_body` + `lintcore.table_rows`; columns
-  by header name via `lintcore.table_column` (moved there from
-  `ticketcheck`, which keeps a `_table_column` alias).
+  by header name via `ticketcheck._table_column` (moved to `lintcore` if
+  importing it from `ticketcheck` reads wrong — one helper, one home).
 - `Depends on` cell: every match of `M-[a-z0-9]+(?:-[a-z0-9]+)*-US[1-9]\d*`
   as-is; every bare `US[1-9]\d*` prefixed with the mission's own id;
   `none`, `-`, empty → no dependencies. Anything else in the cell is
@@ -343,7 +333,8 @@ lanes. README command table: `kb plan waves` row.
   `Grounded on:`; `-svc` absent on the hub → note, exit 0; `hist.*` read
   through a fake federation directory (the fixture layout of
   `tests/test_cli_ticket_check.py`).
-- `tests/test_missionlint.py` — unchanged; `check_backlog` is untouched.
+- `tests/test_missionlint.py` — `parse_backlog` extracted; existing
+  `check_backlog` tests are the pin.
 - `tests/test_ticketcheck.py` — `Decision.blocks` parsed, several ids, empty
   cell; existing tests unchanged.
 - `tests/test_planwaves.py` — a three-task plan text: waves; each error
@@ -365,8 +356,8 @@ lanes. README command table: `kb plan waves` row.
 ## 7. Rollout — three PRs, no version bump
 
 - **PR 1 — BA engine.** `missionnext.py`, `cli.py` (`mission next`),
-  `lintcore.table_column`, `ticketcheck.Decision.blocks`, README row,
-  the three test files above. `impact` on `parse_decisions`,
+  `missionlint.parse_backlog`, `ticketcheck.Decision.blocks`, README row,
+  the four test files above. `impact` on `check_backlog`, `parse_decisions`,
   `_table_column` before editing; `detect_changes` before commit.
 - **PR 2 — BA skills, templates, docs.** Four wrappers each of
   `ba-mission-plan`, `sa-ticket-ground`, `ba-ticket-author`, `dev-handover`;
