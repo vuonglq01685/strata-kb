@@ -186,6 +186,26 @@ def test_decision_with_empty_status_and_owner_prints_placeholders():
     assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: ?)",)
 
 
+def test_bare_us_id_in_blocks_cell_blocks_its_story():
+    text = PLATFORM.replace(
+        "| D2 | New svc.metrics | OPEN | Alice | M-platform-US2 |",
+        "| D2 | New svc.metrics | OPEN | Alice | US2 |",
+    )
+    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], set(), {"M-platform-US1"})}
+    assert by["M-platform-US2"].status == "blocked"
+    assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: Alice)",)
+
+
+def test_lowercase_decided_status_still_counts_as_decided():
+    text = PLATFORM.replace(
+        "| D1 | New svc.api [arch §3.2] | DECIDED | lead | M-platform-US1 |",
+        "| D1 | New svc.api [arch §3.2] | decided | lead | M-platform-US1 |",
+    )
+    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], set(), set())}
+    assert by["M-platform-US1"].status == "ready"
+    assert by["M-platform-US1"].reasons == ()
+
+
 def test_render_table_and_next_line():
     parsed = [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)]
     results = missionnext.statuses(parsed, {"M-platform-US1"}, {"M-platform-US1"})
