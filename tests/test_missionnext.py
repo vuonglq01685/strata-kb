@@ -181,3 +181,45 @@ def test_decision_with_empty_status_and_owner_prints_placeholders():
     text = PLATFORM.replace("| D2 | New svc.metrics | OPEN | Alice |", "| D2 | New svc.metrics |  |  |")
     by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], set(), {"M-platform-US1"})}
     assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: ?)",)
+
+
+def test_render_table_and_next_line():
+    parsed = [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)]
+    results = missionnext.statuses(parsed, {"M-platform-US1"}, {"M-platform-US1"})
+    text = missionnext.render(results, [])
+    lines = text.splitlines()
+    assert lines[0] == "| US | Mission | Status | Reason |"
+    assert lines[1] == "|---|---|---|---|"
+    assert "| M-platform-US1 | M-platform | done |  |" in lines
+    assert "| M-platform-US2 | M-platform | blocked | D2 OPEN (owner: Alice) |" in lines
+    assert "| M-catalog-US2 | M-catalog | blocked | US M-catalog-US1 not done; US M-platform-US2 not done |" in lines
+    # M-platform-US3 has no dependency and no D-row, so it is the first ready
+    # story in output order (before any M-catalog story).
+    assert lines[-1] == "Next: M-platform-US3 — Backups"
+    assert lines[-2] == ""
+
+
+def test_render_notes_come_first_and_none_ready_counts():
+    parsed = [missionnext.parse_mission(CATALOG)]
+    results = missionnext.statuses(parsed, {"M-catalog-US1"}, None)
+    text = missionnext.render(results, ["done: unknown (no repo id — pass --repo-id)"])
+    lines = text.splitlines()
+    assert lines[0] == "note: done: unknown (no repo id — pass --repo-id)"
+    assert lines[1] == ""
+    assert lines[2] == "| US | Mission | Status | Reason |"
+    assert lines[-1] == "Next: none ready — 1 blocked, 1 drafted, 0 done"
+
+
+def test_to_json_shape():
+    parsed = [missionnext.parse_mission(PLATFORM)]
+    results = missionnext.statuses(parsed, set(), set())
+    data = missionnext.to_json(results, ["n1"])
+    assert set(data) == {"notes", "stories", "next"}
+    assert data["notes"] == ["n1"]
+    assert data["next"] == "M-platform-US1"
+    assert data["stories"][0] == {
+        "us_id": "M-platform-US1", "mission_id": "M-platform", "title": "Foundation slice",
+        "status": "ready", "reasons": [],
+    }
+    assert data["stories"][1]["reasons"] == ["US M-platform-US1 not done", "D2 OPEN (owner: Alice)"]
+    assert missionnext.to_json([], [])["next"] is None
