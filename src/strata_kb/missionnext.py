@@ -12,13 +12,13 @@ and `missionlint.py` keep.
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass
 
 from strata_kb import lintcore, mission
 from strata_kb.mdutils import _SEP_ROW_RE
 from strata_kb.svcnote import ROW_RE, _ESCAPED_PIPE_SENTINEL
 from strata_kb.ticketcheck import (
+    BARE_US_RE,
     GROUNDED_ON_RE,
     US_ID_IN_CELL_RE,
     DecisionTable,
@@ -26,11 +26,6 @@ from strata_kb.ticketcheck import (
 )
 
 BACKLOG_HEADING = "## US backlog"
-
-# A bare `US<n>` in a `Depends on` cell — not preceded by a word character
-# or '-', so the tail of a full `M-x-US2` never re-matches once the full
-# ids are blanked out first (see `dep_ids`).
-BARE_US_RE = re.compile(r"(?<![\w-])US[1-9]\d*\b")
 
 _NONE_WORDS = frozenset({"", "none", "-", "n/a"})
 
@@ -161,7 +156,14 @@ def statuses(
     known = {s.us_id for _m, stories, _d in missions for s in stories}
     done_set = done or set()
     out: list[StoryStatus] = []
-    for _mission_id, stories, decisions in missions:
+    for mission_id, stories, decisions in missions:
+        # A `Blocks` cell may hold a bare `US<n>` (spec §3.2: same id rule as
+        # `Depends on`); resolve it against this mission's id once, not once
+        # per story.
+        blocking = [
+            (d, set(dep_ids(" ".join(d.blocks), mission_id or "")))
+            for d in decisions.rows.values()
+        ]
         for s in _mission_order(stories):
             if s.us_id in done_set:
                 out.append(StoryStatus(s.us_id, s.mission_id, s.title, "done", ()))
@@ -174,8 +176,8 @@ def statuses(
                 if dep in done_set:
                     continue
                 reasons.append(f"US {dep} not done" if dep in known else f"US {dep} unknown")
-            for d in decisions.rows.values():
-                if s.us_id in d.blocks and d.status.strip().upper() != DECIDED:
+            for d, blocks in blocking:
+                if s.us_id in blocks and d.status.strip().upper() != DECIDED:
                     reasons.append(f"{d.id} {d.status.strip() or 'OPEN'} (owner: {d.owner or '?'})")
             status = "blocked" if reasons else "ready"
             out.append(StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons)))

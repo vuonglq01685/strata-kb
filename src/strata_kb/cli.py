@@ -625,8 +625,8 @@ def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
 def _hub_or_exit(hub_flag: str, kb_dir: Path) -> HubHandle:
     """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
     handle, reason = _hub_or_reason(hub_flag, kb_dir)
-    if reason:
-        typer.secho(reason, fg=typer.colors.RED)
+    if handle is None:
+        typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
         raise typer.Exit(1)
     return handle
 
@@ -2784,6 +2784,7 @@ def mission_next(
         local = kb_dir / doc_id
         doc = None
         hub_reason = ""
+        handle = None
         try:
             if (local / "_manifest.yaml").exists():
                 doc = ticketcheck.load_doc_dir(local, str(local))
@@ -2794,8 +2795,8 @@ def mission_next(
         except ticketcheck.DocLoadError as exc:
             notes.append(f"done: unknown ({exc})")
         else:
-            if hub_reason:
-                notes.append(f"done: unknown ({hub_reason})")
+            if handle is None and doc is None:
+                notes.append(f"done: unknown ({hub_reason or 'hub unavailable'})")
             elif doc is None:
                 notes.append(
                     f"done: unknown ({doc_id} not published — the Dev repo has not run "
