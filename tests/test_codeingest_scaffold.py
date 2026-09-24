@@ -55,7 +55,15 @@ def test_scaffold_l3_holds_deterministic_code_evidence(tmp_path):
     l3 = (root / ".kb" / "demo-svc" / "services.raw.md").read_text(encoding="utf-8")
     assert "image: airspace:1.0" in l3
     assert "src/airspace/service.py" in l3
-    assert "|" not in l3
+    # Critical 1 regression fixture (fixtures_coderepo.py): svc.gpuworker's
+    # healthcheck legitimately carries a mid-value `|` (a CMD-SHELL `... |
+    # grep -q ok`) -- `yaml.safe_dump` does not quote a `|` that isn't the
+    # first character of a scalar, so it is expected here, once, inside
+    # that one healthcheck line.
+    without_gpuworker_healthcheck = l3.replace(
+        "curl -s http://localhost/health | grep -q ok", ""
+    )
+    assert "|" not in without_gpuworker_healthcheck
 
 
 def test_scaffold_l3_tables_label_is_relabelled_as_a_name_match_heuristic(tmp_path):

@@ -75,7 +75,10 @@ mission → [NEW: <reason>]. Open decisions is for code that EXISTS and
 the document cannot prove — no internal flow, no failure modes — never
 for a thing that is simply not built yet. Gate:
 `kb ticket check <this file>` must report `Grounding: PASS` before Dev
-starts; a D-row still OPEN is a FAIL a human resolves, not the SA. -->
+starts; a D-row still OPEN is a FAIL a human resolves, not the SA.
+`Volumes:` / `Healthchecks:` / `Devices:` are copied from the svc
+records' own rows; a volume or device the ticket creates carries
+`[NEW: D<n>]`. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
 - Service: svc.<name>
 - Files:
@@ -84,6 +87,9 @@ starts; a D-row still OPEN is a FAIL a human resolves, not the SA. -->
 - Tables: db.<table>.<column>, … — or `none`
 - Routes: api.<tag> — <METHOD> <path>, … — or `none`
 - Externals: int.<name>, … — or `none`
+- Volumes: svc.<name> — <volume>, …; svc.<name> — none — or `none`
+- Healthchecks: svc.<name> — `<test command>`; svc.<name> — none; svc.<name> — disabled — or `none`
+- Devices: svc.<name> — <driver:caps>; svc.<name> — none — or `none`
 - Verify with: cmd.test — `<primary command, verbatim>`
 - Open decisions:
   - none
@@ -110,7 +116,7 @@ kb-context:
 - [ ] One user story and at most 10 acceptance criteria — a bigger scope is two tickets
 - [ ] Dependencies, NFR, UI spec, Out of scope, Test data filled or "N/A — <reason>"
 - [ ] Every open question has an owner
-- [ ] Technical grounding filled by SA; kb ticket check PASS (Open decisions empty)
+- [ ] Technical grounding filled by SA; kb ticket check PASS; Open decisions empty; no value in an AC rests on a `DECIDED` note instead of a section id or a D-row
 
 ## Review record
 <!-- Filled by the maturity-review step (rubric: docs/review-rubric.md).

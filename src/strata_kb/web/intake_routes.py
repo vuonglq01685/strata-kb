@@ -128,8 +128,10 @@ async def _parse_capped_form(request: Request, max_body_bytes: int) -> Request:
 
     `python_multipart`'s `FormParserError` (base of `MultipartParseError`,
     e.g. an oversized part header such as a 100 KiB `filename`) is NOT
-    intercepted by Starlette either way and is caught directly below --
-    without this it surfaced as an uncaught 500.
+    intercepted by Starlette <1.7 either way and is caught directly below --
+    without this it surfaced as an uncaught 500. Starlette >=1.7 wraps it
+    as `MultiPartException("Invalid multipart data.")`, so it arrives via
+    the `HTTPException` branch instead.
 
     All three are translated to `IntakeError(...)` here so they render
     through `_err()` instead of Starlette's plain-text 400 or an uncaught

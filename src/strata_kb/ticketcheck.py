@@ -5,7 +5,8 @@ Verifies a ticket's `## Technical grounding` section (spec
 document: every `svc.* / db.* / api.* / int.* / cmd.*` id must exist in the
 document's `_manifest.yaml` (or carry `[NEW: <reason>]`), columns / routes /
 commands must match the document's own L2 tables, `Files:` must be listed in
-`struct.tree`, and `Open decisions` must be empty.
+`struct.tree`, `Volumes:` / `Healthchecks:` / `Devices:` must match the svc
+L2 rows, and `Open decisions` must be empty.
 
 No CLI/MCP imports here — `cli.py`'s `kb ticket check` is a thin wrapper, the
 same split `ticketlint.py` has. Where the document comes from (local
@@ -57,6 +58,17 @@ SERVICES_HEADING = "## Services & order"
 DECISION_REF_RE = re.compile(r"^D\d+$")
 
 _NONE_WORDS = frozenset({"none", "n/a", "-"})
+
+COMPOSE_FIELDS: tuple[str, ...] = ("Volumes", "Healthchecks", "Devices")
+# `svc.<x> — <values>` groups on one compose line, `;`-separated. A
+# backtick span is matched whole so a `;` inside it (a `CMD-SHELL`
+# healthcheck like `` `sh -c 'pg_isready; exit 0'` ``) doesn't end the
+# group early.
+_COMPOSE_GROUP_RE = re.compile(
+    r"(svc\.[A-Za-z0-9_][A-Za-z0-9_.-]*)\s*[—-]\s*(?P<values>(?:`[^`]*`|[^;])*)"
+)
+_COMPOSE_ROW = {"Volumes": "Volumes", "Healthchecks": "Healthcheck", "Devices": "Devices"}
+_COMPOSE_NOUN = {"Volumes": "volume", "Healthchecks": "healthcheck", "Devices": "device"}
 
 
 class DocLoadError(KbError):
@@ -320,6 +332,8 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
     _check_service_present(section, heading, issues)
     _check_open_decisions(section, issues)
     _check_tables_routes_commands(section, doc, issues)
+    if heading != SERVICES_HEADING:
+        _check_compose_facts(section, doc, decisions, issues, notes)
     _check_files(section, doc, decisions, issues, notes)
     return LintReport(issues, notes)
 
@@ -375,10 +389,22 @@ def _known_ids(doc: LoadedDoc) -> set[str]:
 def _id_lines(section: _Section):
     """(lineno, line) for every visible line that is scanned for ids — the
     `Grounded on:` line (a doc id, not a section id) and `Files:` lines
-    (paths such as `src/api.py` would read as `api.py`) are skipped."""
+    (paths such as `src/api.py` would read as `api.py`) are skipped. On a
+    `Healthchecks` line, every `svc.<x> — <value>` value is blanked —
+    backticked or bare, matching both forms `_split_values` accepts — so a
+    URL or command inside it (`curl -f http://api.internal/health`) is never
+    read as a section id; the `svc.<x>` id itself stays visible, and any
+    `[NEW: …]` marker in the value survives the blanking so `_check_ids`
+    still sees it."""
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] in ("Grounded on", "Files"):
             continue
+        if section.field_of_line[i] == "Healthchecks":
+            line = _COMPOSE_GROUP_RE.sub(
+                lambda m: m.string[m.start():m.start("values")]
+                + " ".join(n.group(0) for n in NEW_RE.finditer(m.group("values"))),
+                line,
+            )
         if line.strip():
             yield section.first_line + i, line
 
@@ -530,6 +556,162 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                     issues.append(
                         Issue("error", f"command not in {raw} — copy the primary or an alternative verbatim (found: {found}; allowed: {', '.join(sorted(allowed))}) (line {lineno})")
                     )
+
+
+def _service_ids(section: _Section) -> set[str]:
+    ids: set[str] = set()
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == "Service":
+            ids |= {s for s in ID_RE.findall(line) if s.startswith("svc.")}
+    return ids
+
+
+def _field_lines(section: _Section, name: str) -> list[tuple[int, str]]:
+    """(lineno, rest) for the `- <name>: <rest>` line plus its sub-bullets."""
+    out: list[tuple[int, str]] = []
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == name and not line[:1].isspace():
+            m = FIELD_RE.match(line)
+            if m is not None and m.group("rest").strip():
+                out.append((section.first_line + i, m.group("rest").strip()))
+    out += section.subitems.get(name, [])
+    return out
+
+
+# A `|` not preceded by `\` — the escape-aware twin of `lintcore.table_rows`'
+# plain `.split("|")`, needed only here (see `_property`).
+_ESCAPED_CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
+
+
+def _property(body: str, name: str) -> str | None:
+    """The `Value` cell of the L2 property row named `name`, pipes unescaped.
+
+    Re-splits each raw `| Property | Value |` line itself, on
+    escape-aware `|` boundaries, instead of taking `lintcore.table_rows()`'
+    output: that helper's `line[1:-1].split("|")` is not escape-aware and
+    also splits on a `escape_cell`-escaped `\\|` *inside* the Value cell
+    (services.py's `escape_cell` backslash-escapes a literal `|` — e.g. a
+    `CMD-SHELL "... | ..."` healthcheck) — silently truncating the cell
+    before this function's own `.replace("\\|", "|")` ever runs on it.
+    `lintcore.table_rows` has 8 other call sites in `src/` (plus 1 in
+    `tests/test_lintcore.py`) and stays as is; this re-split is local to
+    the one caller here that needs escape-awareness.
+    """
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("|") or not line.endswith("|"):
+            continue
+        cells = [c.strip() for c in _ESCAPED_CELL_SPLIT_RE.split(line[1:-1])]
+        if len(cells) >= 2 and cells[0] == name:
+            return cells[1].replace("\\|", "|")
+    return None
+
+
+def _svc_facts(doc: LoadedDoc, sid: str, field: str, unreadable: set[str],
+               issues: list[Issue], row_absent: set[str]) -> set[str] | None:
+    """The svc's values for one compose field as a set: `{"pgdata"}`,
+    `{"curl -f …"}`, `set()` for `none`. None when the section is unreadable
+    or missing (`_l2_slice` already warned about that) or when its L2
+    section has no `field` property row at all — the pre-1.3.0 code-ingest
+    case, which adds `sid` to `row_absent` to trigger the caller's one
+    document-scoped note (its text is not per-sid; do not read it as one).
+    Callers must not call this for a `sid` outside the document's manifest —
+    that's a different failure (an unresolved or `[NEW]` id), already
+    reported by `_check_ids`."""
+    body = _l2_slice(doc, sid, unreadable, issues)
+    if body is None:
+        return None
+    cell = _property(body, _COMPOSE_ROW[field])
+    if cell is None:
+        row_absent.add(sid)
+        return None
+    if cell.casefold() == "none":
+        return set()
+    if field == "Healthchecks":
+        return {cell}
+    return {v.strip() for v in cell.split(",") if v.strip()}
+
+
+def _split_values(field: str, raw: str) -> list[str]:
+    raw = raw.strip()
+    if field == "Healthchecks":
+        spans = CODE_SPAN_RE.findall(raw)
+        return spans if spans else [raw]
+    return [v.strip().strip("`") for v in raw.split(",") if v.strip()]
+
+
+def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decisions,
+                         issues: list[Issue], notes: list[str]) -> None:
+    present = [f for f in COMPOSE_FIELDS if _field_lines(section, f)]
+    if len(present) < len(COMPOSE_FIELDS):
+        issues.append(Issue("warning", "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them"))
+    if not present:
+        return
+    services = _service_ids(section)
+    known = _known_ids(doc)
+    unreadable: set[str] = set()
+    row_absent: set[str] = set()
+    for field in present:
+        for lineno, rest in _field_lines(section, field):
+            noun = _COMPOSE_NOUN[field]
+            if rest.strip().casefold() in _NONE_WORDS:
+                for sid in sorted(services):
+                    if sid not in known:
+                        continue  # not in this document (e.g. a [NEW] service) — _check_ids already reported it
+                    facts = _svc_facts(doc, sid, field, unreadable, issues, row_absent)
+                    if facts:
+                        issues.append(Issue("warning", f"{sid} has {noun}s the grounding omits: {', '.join(sorted(facts))} (line {lineno})"))
+                continue
+            matches = list(_COMPOSE_GROUP_RE.finditer(rest))
+            if not matches:
+                issues.append(Issue(
+                    "warning",
+                    f"{field}: line does not parse — expected `svc.<name> — <values>` (got: {rest}) (line {lineno})",
+                ))
+                continue
+            for g in matches:
+                sid = g.group(1).rstrip(".")
+                if sid not in services:
+                    issues.append(Issue("error", f"{sid} on the {field}: line is not on the Service: line (line {lineno})"))
+                    continue
+                if sid not in known:
+                    continue  # not in this document (e.g. a [NEW] service) — _check_ids already reported it
+                facts = _svc_facts(doc, sid, field, unreadable, issues, row_absent)
+                if facts is None:
+                    continue
+                values_raw = g.group("values")
+                if values_raw.strip().casefold() in _NONE_WORDS:
+                    if facts:
+                        issues.append(Issue("error", f"{noun} for {sid} is '{', '.join(sorted(facts))}', not 'none' (line {lineno})"))
+                    continue
+                # A Healthchecks `[NEW: …]` marker sits outside the backtick
+                # span, so `_split_values` never returns it as part of
+                # `value` — search the whole group's raw text for it too.
+                # Only fall back to it for a single-value group: with two+
+                # values on one line (`` `x`, `y` [NEW: D1]``) the marker
+                # sits on one of them, not on both, and `_split_values` has
+                # no way to say which — spreading it to every value would
+                # exempt values the marker was never written for.
+                split_values = _split_values(field, values_raw)
+                raw_new = (
+                    NEW_RE.search(values_raw)
+                    if field == "Healthchecks" and len(split_values) == 1
+                    else None
+                )
+                for value in split_values:
+                    new = NEW_RE.search(value) or raw_new
+                    if new is not None:
+                        _judge_new(NEW_RE.sub("", value).strip(), new, lineno, decisions, issues, notes)
+                        continue
+                    if value in facts:
+                        continue
+                    have = ", ".join(sorted(facts)) or "none"
+                    if field == "Healthchecks":
+                        issues.append(Issue("error", f"healthcheck for {sid} is '{have}', not '{value}' (line {lineno})"))
+                    else:
+                        issues.append(Issue("error", f"{noun} '{value}' is not in {sid} (has: {have}) (line {lineno})"))
+    if row_absent:
+        notes.append(f"{doc.manifest.id} has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped")
 
 
 def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:

@@ -1220,6 +1220,22 @@ class TestServicesExtractor:
 
     def test_l3_has_no_pipe_table(self, repo):
         for s in svc_ext.ServicesExtractor().extract(repo, _opts(repo)).sections:
+            if s.id == "svc.gpuworker":
+                # Critical 1 regression fixture (fixtures_coderepo.py): this
+                # service's healthcheck legitimately carries a mid-value `|`
+                # (a CMD-SHELL `... | grep -q ok`). L2's table cell needs
+                # `escape_cell` because `|` is that table's column
+                # delimiter; L3 is a `yaml.safe_dump` block, where a `|`
+                # that isn't the first character of a scalar has no special
+                # meaning, so it is correctly left unescaped/unquoted here.
+                # Strip just that known substring rather than skipping the
+                # section outright, so a pipe table leaking into the rest
+                # of this section's L3 is still caught (see the sibling
+                # assertion in test_codeingest_scaffold.py).
+                assert "|" not in s.l3_md.replace(
+                    "curl -s http://localhost/health | grep -q ok", ""
+                ), s.id
+                continue
             assert "|" not in s.l3_md, s.id
 
     def test_malformed_compose_warns_and_does_not_crash(self, tmp_path):
@@ -4599,3 +4615,120 @@ class TestApiExtractor:
         # sanitisation asymmetry Minor 4 closed, one field short. A
         # newline in `summary` reaches `_manifest.yaml` via core.run().
         assert "\n" not in result.sections[0].summary
+
+
+class TestComposeFacts:
+    """Spec 2026-09-23-compose-facts-grounding §4: volumes / healthcheck /
+    devices read from compose only, deterministic, rendered in L2 and L3."""
+
+    COMPOSE = (
+        "services:\n"
+        "  postgres:\n"
+        "    image: postgres:16\n"
+        "    volumes:\n"
+        "      - pgdata:/var/lib/postgresql/data\n"
+        "      - ./init:/docker-entrypoint-initdb.d\n"
+        "      - /host/abs:/abs\n"
+        "      - ~/home:/home\n"
+        "      - ${DATA_DIR}:/data\n"
+        "      - type: volume\n"
+        "        source: pgwal\n"
+        "        target: /wal\n"
+        "    healthcheck:\n"
+        "      test: [\"CMD\", \"pg_isready\", \"-U\", \"app\"]\n"
+        "  nginx:\n"
+        "    image: nginx:1.27-alpine\n"
+        "    healthcheck:\n"
+        "      test: [\"CMD-SHELL\", \"wget -qO- http://localhost/nginx-health || exit 1\"]\n"
+        "  redis:\n"
+        "    image: redis:7\n"
+        "    healthcheck:\n"
+        "      test: redis-cli ping\n"
+        "  web:\n"
+        "    image: web:1\n"
+        "    healthcheck:\n"
+        "      disable: true\n"
+        "  cache:\n"
+        "    image: cache:1\n"
+        "    healthcheck:\n"
+        "      test: [\"NONE\"]\n"
+        "  transcoder:\n"
+        "    image: ffmpeg:1\n"
+        "    deploy:\n"
+        "      resources:\n"
+        "        reservations:\n"
+        "          devices:\n"
+        "            - driver: nvidia\n"
+        "              capabilities: [video, gpu]\n"
+        "            - capabilities: [tpu]\n"
+        "  minio:\n"
+        "    image: minio/minio:latest\n"
+    )
+
+    def _sections(self, tmp_path):
+        root = tmp_path / "compose-facts"
+        root.mkdir()
+        (root / "docker-compose.yml").write_text(self.COMPOSE, encoding="utf-8")
+        return _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))
+
+    def test_named_volumes_only_sorted(self, tmp_path):
+        s = self._sections(tmp_path)["svc.postgres"]
+        assert "| Volumes | pgdata, pgwal |" in s.l2_md
+        assert "volumes:\n- pgdata\n- pgwal\n" in s.l3_md
+        for dropped in ("./init", "/host/abs", "~/home", "DATA_DIR"):
+            assert dropped not in s.l3_md
+
+    def test_healthcheck_forms(self, tmp_path):
+        secs = self._sections(tmp_path)
+        assert "| Healthcheck | pg_isready -U app |" in secs["svc.postgres"].l2_md
+        assert "healthcheck: pg_isready -U app\n" in secs["svc.postgres"].l3_md
+        assert "| Healthcheck | wget -qO- http://localhost/nginx-health \\|\\| exit 1 |" in secs["svc.nginx"].l2_md
+        assert "| Healthcheck | redis-cli ping |" in secs["svc.redis"].l2_md
+        assert "| Healthcheck | disabled |" in secs["svc.web"].l2_md
+        assert "healthcheck: disabled\n" in secs["svc.web"].l3_md
+        assert "| Healthcheck | disabled |" in secs["svc.cache"].l2_md
+        assert "healthcheck: disabled\n" in secs["svc.cache"].l3_md
+        assert "| Healthcheck | none |" in secs["svc.minio"].l2_md
+        assert "healthcheck: none\n" in secs["svc.minio"].l3_md
+
+    def test_healthcheck_is_truncated_at_200(self, tmp_path):
+        root = tmp_path / "compose-long-hc"
+        root.mkdir()
+        long_cmd = "node -e " + "x" * 300
+        (root / "docker-compose.yml").write_text(
+            "services:\n  api:\n    image: api:1\n    healthcheck:\n"
+            f"      test: {long_cmd}\n",
+            encoding="utf-8",
+        )
+        s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.api"]
+        value = s.l2_md.split("| Healthcheck | ", 1)[1].split(" |", 1)[0]
+        assert value == long_cmd[:200] + "…"
+
+    def test_devices_render_driver_and_capabilities(self, tmp_path):
+        secs = self._sections(tmp_path)
+        assert "| Devices | nvidia:gpu,video, unknown:tpu |" in secs["svc.transcoder"].l2_md
+        assert "devices:\n- nvidia:gpu,video\n- unknown:tpu\n" in secs["svc.transcoder"].l3_md
+        assert "| Devices | none |" in secs["svc.minio"].l2_md
+        assert "devices: []\n" in secs["svc.minio"].l3_md
+
+    def test_yaml_key_order_after_env_keys(self, tmp_path):
+        s = self._sections(tmp_path)["svc.postgres"]
+        yaml_text = s.l3_md.split("```yaml\n", 1)[1].split("```", 1)[0]
+        keys = [line.split(":", 1)[0] for line in yaml_text.splitlines() if line and not line.startswith(("-", " "))]
+        assert keys[:8] == ["name", "image", "ports", "depends_on", "env_keys", "volumes", "healthcheck", "devices"]
+
+    def test_dockerfile_fallback_leaves_facts_empty(self, tmp_path):
+        root = tmp_path / "dockerfile-only"
+        root.mkdir()
+        (root / "Dockerfile").write_text("FROM python:3.12-slim\nEXPOSE 8080\n", encoding="utf-8")
+        result = svc_ext.ServicesExtractor().extract(root, _opts(root))
+        s = next(iter(_by_id(result).values()))
+        assert "| Volumes | none |" in s.l2_md
+        assert "| Healthcheck | none |" in s.l2_md
+        assert "| Devices | none |" in s.l2_md
+
+    def test_two_runs_are_byte_identical(self, tmp_path):
+        a = self._sections(tmp_path)["svc.transcoder"]
+        root = tmp_path / "compose-facts"
+        b = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.transcoder"]
+        assert (a.l2_md, a.l3_md) == (b.l2_md, b.l3_md)

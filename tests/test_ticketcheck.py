@@ -30,6 +30,9 @@ DEFAULTS = {
     "Externals": "int.kafka",
     "Verify with": "cmd.test — `pytest -q --cov=airspace`",
     "Open decisions": ["none"],
+    "Volumes": "svc.airspace-service — none",
+    "Healthchecks": "svc.airspace-service — `curl -f http://localhost:8080/health`",
+    "Devices": "svc.airspace-service — nvidia:gpu",
 }
 
 
@@ -490,7 +493,10 @@ def test_parse_decisions_without_the_section_is_empty():
 def test_decided_reference_passes_with_a_note(code_doc):
     kb_dir, rev = code_doc
     text = ticket(
-        grounding(rev, Service="svc.billing [NEW: D1]", Files=["src/billing/ [NEW: D1]"]),
+        grounding(
+            rev, Service="svc.billing [NEW: D1]", Files=["src/billing/ [NEW: D1]"],
+            Volumes=None, Healthchecks=None, Devices=None,
+        ),
         parent="M-demo",
     )
     report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
@@ -622,3 +628,281 @@ def test_mission_heading_unknown_service_is_still_an_error(code_doc):
     text = mission_with_services(rev, "svc.nope")
     report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
     assert any("unknown id 'svc.nope'" in e for e in errors(report))
+
+
+# --- compose facts: Volumes / Healthchecks / Devices (spec 2026-09-23) ----
+
+TWO_SVC = "svc.airspace-service, svc.postgres"
+
+
+def test_golden_compose_facts_pass(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev)), kb_dir)
+    assert errors(report) == [], report.render("Grounding")
+    assert not any("Volumes:/Healthchecks:/Devices:" in w for w in warnings(report))
+
+
+def test_volume_not_on_the_service_is_an_error(code_doc):
+    kb_dir, rev = code_doc
+    bad = run(ticket(grounding(rev, Service=TWO_SVC, Volumes="svc.postgres — myflix-postgres-data")), kb_dir)
+    assert any(e == "volume 'myflix-postgres-data' is not in svc.postgres (has: pgdata) (line 17)" for e in errors(bad))
+    good = run(ticket(grounding(rev, Service=TWO_SVC, Volumes="svc.postgres — pgdata")), kb_dir)
+    assert not any("volume" in e for e in errors(good))
+
+
+def test_healthcheck_must_match_verbatim(code_doc):
+    kb_dir, rev = code_doc
+    bad = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/api/health`")), kb_dir)
+    assert any(
+        e == "healthcheck for svc.airspace-service is 'curl -f http://localhost:8080/health', not 'curl -f http://localhost:8080/api/health' (line 18)"
+        for e in errors(bad)
+    )
+    none_bad = run(ticket(grounding(rev, Service=TWO_SVC, Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/health`; svc.postgres — `pg_isready`")), kb_dir)
+    assert any("healthcheck for svc.postgres is 'none'" in e for e in errors(none_bad))
+    none_good = run(ticket(grounding(rev, Service=TWO_SVC, Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/health`; svc.postgres — none")), kb_dir)
+    assert not any("healthcheck" in e for e in errors(none_good))
+
+
+def test_healthcheck_url_is_never_read_as_a_section_id(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — `curl -f http://api.internal/health`")), kb_dir)
+    assert not any("unknown id 'api.internal" in e for e in errors(report))
+
+
+def test_device_not_on_the_service_is_an_error(code_doc):
+    kb_dir, rev = code_doc
+    bad = run(ticket(grounding(rev, Service=TWO_SVC, Devices="svc.postgres — nvidia:gpu")), kb_dir)
+    assert any(e == "device 'nvidia:gpu' is not in svc.postgres (has: none) (line 19)" for e in errors(bad))
+
+
+def test_new_marker_exempts_a_compose_value(code_doc):
+    kb_dir, rev = code_doc
+    report = run(
+        ticket(grounding(rev, Service=TWO_SVC, Volumes="svc.postgres — pgdata, myflix-minio-data [NEW: D1]"), parent="M-demo"),
+        kb_dir, load_decisions=decisions_of(MISSION),
+    )
+    assert not any("volume" in e for e in errors(report))
+    assert any("new: myflix-minio-data — D1 (DECIDED" in n for n in notes(report))
+
+
+def test_svc_on_a_compose_line_must_be_on_the_service_line(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Volumes="svc.postgres — pgdata")), kb_dir)
+    assert any(e == "svc.postgres on the Volumes: line is not on the Service: line (line 17)" for e in errors(report))
+
+
+def test_whole_line_none_while_the_service_has_volumes_warns(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Service=TWO_SVC, Volumes="none")), kb_dir)
+    assert errors(report) == []
+    assert any(w == "svc.postgres has volumes the grounding omits: pgdata (line 17)" for w in warnings(report))
+
+
+def test_missing_compose_lines_are_a_warning_not_an_error(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Volumes=None, Healthchecks=None, Devices=None)), kb_dir)
+    assert errors(report) == []
+    assert any(w == "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them" for w in warnings(report))
+
+
+def test_old_code_doc_without_the_rows_skips_with_a_note(code_doc, tmp_path):
+    kb_dir, rev = code_doc
+    services_md = kb_dir / "demo-code" / "services.md"
+    text = services_md.read_text(encoding="utf-8")
+    text = "\n".join(ln for ln in text.splitlines() if not ln.startswith(("| Volumes |", "| Healthcheck |", "| Devices |")))
+    services_md.write_text(text + "\n", encoding="utf-8")
+    report = run(ticket(grounding(rev, Volumes="svc.airspace-service — ghost")), kb_dir)
+    assert not any("volume" in e for e in errors(report))
+    assert any(n == "demo-code has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped" for n in notes(report))
+
+
+def test_new_service_compose_line_does_not_trigger_the_pre_1_3_0_note(code_doc):
+    """A greenfield [NEW] service isn't in the -code manifest at all — that
+    is a different situation from an old document missing the compose rows,
+    and must not be reported as one (review finding #1)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service="svc.airspace-service, svc.billing [NEW: D1]",
+            Volumes="svc.billing — data [NEW: D1]",
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert not any("compose-fact checks skipped" in n for n in notes(report))
+    assert not any("volume" in e for e in errors(report))
+    assert any("new: svc.billing — D1 (DECIDED" in n for n in notes(report))
+
+
+def test_real_error_and_new_service_on_one_line_do_not_add_a_contradicting_skip_note(code_doc):
+    """A real error for a known service and a [NEW] service must not be
+    collapsed into one contradictory "checks skipped" note (review finding
+    #1)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service=f"{TWO_SVC}, svc.billing [NEW: D1]",
+            Volumes="svc.postgres — ghost; svc.billing — data [NEW: D1]",
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert any("volume 'ghost' is not in svc.postgres" in e for e in errors(report))
+    assert not any("compose-fact checks skipped" in n for n in notes(report))
+
+
+def test_healthcheck_semicolon_in_a_shell_command_is_not_truncated(code_doc):
+    """A `;` inside a backticked healthcheck command must not cut the value
+    short, nor leak a stray backtick into the error (review finding #2)."""
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Healthchecks="svc.airspace-service — `sh -c 'pg_isready; exit 0'`"))
+    report = run(text, kb_dir)
+    msgs = [e for e in errors(report) if e.startswith("healthcheck for svc.airspace-service")]
+    assert len(msgs) == 1, errors(report)
+    assert "sh -c 'pg_isready; exit 0'" in msgs[0]
+    assert "`" not in msgs[0]
+
+
+def test_unparseable_compose_line_warns_instead_of_passing_silently(code_doc):
+    """A compose line that doesn't parse into any `svc.<x> — <values>` group
+    (the `svc.` prefix forgotten) must warn, not pass the gate clean (review
+    finding #3)."""
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Volumes="pgdata"))
+    report = run(text, kb_dir)
+    assert errors(report) == []
+    assert any(
+        w == "Volumes: line does not parse — expected `svc.<name> — <values>` (got: pgdata) (line 17)"
+        for w in warnings(report)
+    )
+
+
+def test_new_marker_exempts_a_healthcheck_value(code_doc):
+    """`[NEW: D<n>]` written after a backticked healthcheck value (the
+    natural place for it) must exempt that value, same as it does for
+    Volumes/Devices (review finding #4)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service=TWO_SVC,
+            Healthchecks=(
+                "svc.airspace-service — `curl -f http://localhost:8080/health`; "
+                "svc.postgres — `pg_isready` [NEW: D1]"
+            ),
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert not any("healthcheck" in e for e in errors(report))
+    assert any("new: pg_isready — D1 (DECIDED" in n for n in notes(report))
+
+
+def test_healthcheck_bare_url_is_never_read_as_a_section_id(code_doc):
+    """`_split_values` already accepts an un-backticked healthcheck value —
+    the id scan must reject it the same way it rejects the backticked form
+    (review finding #5)."""
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — curl -f http://api.internal/health")), kb_dir)
+    assert not any("unknown id 'api.internal" in e for e in errors(report))
+
+
+def test_new_service_healthchecks_line_does_not_report_unknown_id(code_doc):
+    """The Healthchecks twin of `test_new_service_compose_line_does_not_
+    trigger_the_pre_1_3_0_note`: a greenfield `[NEW]` service named on a
+    `Healthchecks:` line must keep its exemption. `_id_lines` blanks a
+    Healthchecks value so a bare URL/command isn't read as a section id
+    (review finding #5) — that blanking must not also delete the `[NEW: …]`
+    marker the id scan relies on to exempt the id (Critical regression)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service="svc.airspace-service, svc.billing [NEW: D1]",
+            Healthchecks="svc.billing — `pg_isready` [NEW: D1]",
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert not any("unknown id 'svc.billing'" in e for e in errors(report))
+
+
+def test_new_marker_on_a_multi_value_healthchecks_group_is_ignored(code_doc):
+    """`[NEW: …]` after a multi-value Healthchecks group (two backticked
+    spans on one `svc.<x> — ` group) is ignored outright: it exempts
+    NEITHER value, `extra-check` still errors, and no `[NEW: …]` note is
+    emitted (final review, Minor 1 — this test used to be misnamed
+    "...exempts_only_its_value", which claims the opposite of what its own
+    body proves).
+
+    Known gap, not fixed here: the brief's rule for the single-value case
+    ("the marker exempts only the value it sits next to") is never
+    extended to the multi-value case — `_check_compose_facts`'s
+    `raw_new` fallback is gated on `len(split_values) == 1`, so a marker
+    after a multi-value group has no effect at all rather than exempting
+    just the value it's adjacent to."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Healthchecks=(
+                "svc.airspace-service — `curl -f http://localhost:8080/health`, "
+                "`extra-check` [NEW: D1]"
+            ),
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert any(
+        "healthcheck for svc.airspace-service" in e and "extra-check" in e
+        for e in errors(report)
+    )
+    assert not any("new:" in n and "curl" in n for n in notes(report))
+
+
+# --- compose facts: escape-aware Healthcheck cell read-back (final review,
+# Critical 1) --------------------------------------------------------------
+
+THREE_SVC = "svc.airspace-service, svc.postgres, svc.gpuworker"
+GPUWORKER_HEALTHCHECK = "curl -s http://localhost/health | grep -q ok"
+
+
+def test_healthcheck_containing_a_pipe_grounds_clean(code_doc):
+    """`escape_cell` (services.py) backslash-escapes a literal `|` in the
+    Healthcheck L2 cell so a `CMD-SHELL "... | ..."` healthcheck — the most
+    common non-trivial healthcheck form — round-trips through the L2 table
+    at all. `_property` used to read that cell back through
+    `lintcore.table_rows()`, whose `line[1:-1].split("|")` is NOT
+    escape-aware and also split on the backslash-escaped pipe, truncating
+    the cell before `_property`'s own `.replace("\\|", "|")` ever ran —
+    so no value an SA could write for `svc.gpuworker` (fixture: a
+    `test: ["CMD-SHELL", "curl -s http://localhost/health | grep -q ok"]`
+    healthcheck) ever grounded clean. Reproduced end to end, before the
+    fix: `[error] healthcheck for svc.gpuworker is 'curl -s
+    http://localhost/health \\', not 'curl -s http://localhost/health \\|
+    grep -q ok'` — the error even named the truncated fragment as the
+    document's real value. After the fix, the exact compose command
+    grounds with zero errors."""
+    kb_dir, rev = code_doc
+
+    # Extractor side: the L2 cell really is escaped in the real document.
+    services_md = (kb_dir / "demo-code" / "services.md").read_text(encoding="utf-8")
+    assert "| Healthcheck | curl -s http://localhost/health \\| grep -q ok |" in services_md
+
+    text = ticket(
+        grounding(
+            rev,
+            Service=THREE_SVC,
+            Volumes="svc.airspace-service — none; svc.postgres — pgdata; svc.gpuworker — none",
+            Healthchecks=(
+                "svc.airspace-service — `curl -f http://localhost:8080/health`; "
+                "svc.postgres — none; "
+                f"svc.gpuworker — `{GPUWORKER_HEALTHCHECK}`"
+            ),
+            Devices="svc.airspace-service — nvidia:gpu; svc.postgres — none; svc.gpuworker — none",
+        )
+    )
+    report = run(text, kb_dir)
+    assert errors(report) == [], report.render("Grounding")

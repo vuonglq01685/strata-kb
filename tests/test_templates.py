@@ -2776,3 +2776,46 @@ def test_quickstart_ba_gate_list_names_the_size_gates():
         "At most 10 acceptance criteria and exactly one `As a … I want … so "
         "that …` story — a bigger scope is two tickets"
     ) in text
+
+
+# --- compose facts grounding (spec 2026-09-23) ---
+
+def test_ticket_template_carries_the_compose_grounding_lines():
+    text = _read_init_template("ticket-template.md")
+    for needle in (
+        "- Volumes: svc.<name> — <volume>, …; svc.<name> — none — or `none`",
+        "- Healthchecks: svc.<name> — `<test command>`; svc.<name> — none; svc.<name> — disabled — or `none`",
+        "- Devices: svc.<name> — <driver:caps>; svc.<name> — none — or `none`",
+        "no value in an AC rests on a `DECIDED` note instead of a section id or a D-row",
+    ):
+        assert needle in text, needle
+
+
+def test_ac_quality_doc_bans_shell_commands_in_an_ac():
+    text = _read_init_template("ac-quality.md")
+    assert "a shell command in the AC" in text
+    assert "`## Test data & verification`" in text
+
+
+def test_review_rubric_dev_axis_checks_compose_literals_against_grounding():
+    text = _read_init_template("review-rubric.md")
+    assert "matches the value on the corresponding `## Technical grounding` line, or carries `[NEW: D<n>]`" in text
+
+
+def test_quickstarts_name_the_compose_facts():
+    ba = _read_init_template("QUICKSTART-ba.md")
+    dev = _read_init_template("QUICKSTART-dev.md")
+    assert "volumes, healthcheck commands and device reservations" in ba
+    assert "`Volumes:` / `Healthchecks:` / `Devices:`" in ba
+    assert "named volumes, the healthcheck command and device reservations" in dev
+
+
+@pytest.mark.parametrize("name", [
+    "claude-skill-ba-ticket-author.md",
+    "copilot-ba-ticket-author.prompt.md",
+    "cursor-ba-ticket-author.md",
+])
+def test_ba_ticket_author_wrappers_carry_the_no_shell_and_no_rescore_rules(name):
+    text = _normalised(_read_init_template(name))
+    assert "An AC states an observable outcome, never a shell command" in text
+    assert "A round that only closes open questions is not a review round and never changes a score" in text

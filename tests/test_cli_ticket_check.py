@@ -150,7 +150,10 @@ def _layout(tmp_path: Path, rev: str, section_kwargs: dict, *, parent: str | Non
 
 def test_sibling_missions_dir_is_the_default(code_doc, tmp_path):
     kb_dir, rev = code_doc
-    path = _layout(tmp_path, rev, {"Service": "svc.billing [NEW: D1]"})
+    path = _layout(tmp_path, rev, {
+        "Service": "svc.billing [NEW: D1]",
+        "Volumes": None, "Healthchecks": None, "Devices": None,
+    })
     result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
     assert result.exit_code == 0, result.output
     assert "[note] new: svc.billing — D1 (DECIDED, owner tech-lead)" in result.output
@@ -173,7 +176,10 @@ def test_explicit_missions_dir(code_doc, tmp_path):
     elsewhere.mkdir()
     (elsewhere / "M-demo.md").write_text(MISSION, encoding="utf-8")
     path = tmp_path / "t.md"
-    path.write_text(ticket(grounding(rev, Service="svc.billing [NEW: D1]"), parent="M-demo"), encoding="utf-8")
+    path.write_text(
+        ticket(grounding(rev, Service="svc.billing [NEW: D1]", Volumes=None, Healthchecks=None, Devices=None), parent="M-demo"),
+        encoding="utf-8",
+    )
     result = runner.invoke(
         app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir), "--missions-dir", str(elsewhere)]
     )

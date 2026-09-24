@@ -32,7 +32,9 @@ to the mission layer.
    discovering ids with `kb_search` (fallback: `kb query`) restricted to
    that document. For a ticket: `struct.tree` (L3 for the file list),
    every `svc.*`, `cmd.test`, and the `db.*` / `api.*` / `int.*` sections
-   whose names match the ticket's nouns. For a mission (`--mission`):
+   whose names match the ticket's nouns. From each `svc.*` also read its
+   `Volumes`, `Healthcheck` and `Devices` rows — the compose facts the
+   ticket's ACs are most often wrong about. For a mission (`--mission`):
    `svc.*`, `dep.*`, `struct.tree` and the architecture document on the
    hub — do **not** load `db.*` or `api.*`; they pull the plan down to the
    wrong layer. Note the document's revision: `kb get` prints it in the
@@ -74,6 +76,16 @@ to the mission layer.
    - `Routes:` — `api.<tag> — <METHOD> <path>` copied from the tag's
      table. `none` when the document has no `api.*` for it.
    - `Externals:` — `int.<name>` ids, or `none`.
+   - `Volumes:` — `svc.<name> — <volume>, …` copied from the record's
+     `Volumes` row; `svc.<name> — none` when the row says `none`; a
+     volume the ticket creates: `<name> [NEW: D<n>]`. Whole line `none`
+     only when no touched service has a volume; several services
+     `;`-separated on one line.
+   - `Healthchecks:` — ``svc.<name> — `<test command>` `` byte for byte
+     from the `Healthcheck` row, or `svc.<name> — none` / `disabled` as
+     the row says; several services `;`-separated on one line.
+   - `Devices:` — `svc.<name> — <driver:caps>` from the `Devices` row,
+     or `none`; several services `;`-separated on one line.
    - `Verify with:` — `cmd.test` followed by the command in
      backticks: the section's `Primary:` value or one of its
      alternatives, byte for byte.
@@ -154,3 +166,9 @@ to the mission layer.
 - You may APPEND rows to `## Technology decisions`; never edit or delete
   an existing row, never change a Status — only a human flips OPEN to
   DECIDED.
+- A value for a field the document does not carry has exactly two
+  homes: `[NEW: D<n>]` when the ticket intends to create or change it,
+  or `Open decisions` when the document simply cannot prove it. It
+  never goes into an AC as a description of the current state.
+  `DECIDED` is not a status of this gate — closing an Open decision
+  requires a section id or a D-row, nothing else.

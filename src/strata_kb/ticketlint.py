@@ -23,6 +23,38 @@ if TYPE_CHECKING:
 # A '- [ ]' / '- [x]' checkbox list item.
 _AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 
+# An AC is an observable outcome, never a shell command (docs/ac-quality.md,
+# spec 2026-09-23 §6). A backticked span whose first word — after skipping
+# a leading `sudo`, a `$` prompt marker, or a `VAR=value` assignment — is
+# one of these, or that chains two command-like words with `&&`, is the
+# command a Dev would run — it belongs in `## Test data & verification` or
+# the plan. `git`, `make`, `python`, `sed` and `echo` are deliberately
+# absent: they collide too often with ordinary AC nouns (`` `git SHA` ``,
+# `` `python 3.13` ``, `` `make build` ``, `` `echo cancellation` ``) for a
+# BA-facing lint to warn on the bare word.
+SHELL_COMMANDS: frozenset[str] = frozenset({
+    "docker", "docker-compose", "curl", "wget", "grep", "psql", "redis-cli",
+    "ffmpeg", "ffprobe", "mc", "kubectl", "npm", "pnpm", "npx", "prisma",
+    "ls", "cat", "find", "nvidia-smi", "sh", "bash",
+    "kb", "uv", "pytest", "jq", "ssh",
+})
+_CODE_SPAN_RE = re.compile(r"`([^`]+)`")
+# `&&` alone is a command chain — nobody backticks `` `active && inactive` ``
+# — so it fires unqualified. `|`, `||` and `;` collide with a value union
+# (`` `active | inactive` ``), a type union (`` `string | null` ``), or a
+# semicolon-separated value list, so each of those three still needs
+# command evidence on top of the operator.
+_UNGATED_OPERATOR_RE = re.compile(r"\S\s+(&&)\s+\S")
+_GATED_OPERATOR_RE = re.compile(r"\S\s+(\|\||\||;)\s+\S")
+# A flag (`-x`, `--xyz`) or path (`./x`, `/x/y`) token — the second signal
+# that lets a gated operator fire on a real command line rather than a
+# value union or type union.
+_SHELL_EVIDENCE_RE = re.compile(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*|\.{1,2}/\S+|/\S+)")
+# A leading `sudo`, a `$` shell-prompt marker, or a `VAR=value`
+# assignment — none names the command being run, so each is skipped
+# before a span's first word is judged.
+_LEADING_PREFIX_RE = re.compile(r"^(?:sudo|\$|[A-Za-z_]\w*=\S*)\s+")
+
 # Required sections whose body is checked by a stronger, section-specific
 # check — a second "is it filled" error would only duplicate it.
 _FILL_EXEMPT: frozenset[str] = frozenset(
@@ -226,6 +258,63 @@ def _check_ac_weasel(ac_items: list[str]) -> list[Issue]:
         for item in ac_items
         for phrase in acquality.weasel_hits(item)
     ]
+
+
+def _leading_word(text: str) -> str:
+    """The first shell-relevant word in `text`, skipping a leading
+    `sudo`, `$` prompt marker, or `VAR=value` assignment token."""
+    remaining = text.strip()
+    while True:
+        m = _LEADING_PREFIX_RE.match(remaining)
+        if m is None:
+            return remaining.split(maxsplit=1)[0] if remaining else ""
+        remaining = remaining[m.end() :]
+
+
+def _is_shell_span(span: str) -> bool:
+    if _leading_word(span) in SHELL_COMMANDS:
+        return True
+    if _UNGATED_OPERATOR_RE.search(span) is not None:
+        return True
+    m = _GATED_OPERATOR_RE.search(span)
+    if m is None:
+        return False
+    sides = (span[: m.start(1)], span[m.end(1) :])
+    if any(_leading_word(side) in SHELL_COMMANDS for side in sides):
+        return True
+    return _SHELL_EVIDENCE_RE.search(span) is not None
+
+
+def _check_ac_shell(ac_items: list[str]) -> list[Issue]:
+    """An AC that prescribes a shell command shifts the guess about the
+    real image/tool/path onto the BA, who cannot run it. Warning per AC
+    (first offending span). An `OPEN(<owner>)` anywhere on the line
+    suppresses the WHOLE line — line-level, unlike acquality.weasel_hits,
+    which mutes only the text inside an owned marker's own parentheses —
+    but only when the owner is real: this reuses
+    acquality._marker_is_owned's before-the-colon ownership split, so
+    `OPEN(TBD)` and `OPEN(TBD: Dev to confirm)` both still warn."""
+    issues: list[Issue] = []
+    for item in ac_items:
+        if any(
+            acquality._marker_is_owned(m.group(1))
+            for m in acquality.OPEN_OWNER_RE.finditer(item)
+        ):
+            continue
+        span = next(
+            (s for s in _CODE_SPAN_RE.findall(item) if _is_shell_span(s)), None
+        )
+        if span is None:
+            continue
+        m = _AC_ID_RE.match(item.strip())
+        label = m.group(1) if m else "AC"
+        issues.append(Issue(
+            "warning",
+            f"{label} prescribes a shell command (`{span}`) — state the observable "
+            "outcome here; the command belongs in ## Test data & verification or "
+            "the Dev's plan — see docs/ac-quality.md",
+        ))
+    return issues
 
 
 def _unknown_count(text: str) -> int:
@@ -475,6 +564,7 @@ def lint(
     issues += _check_ac_citations(ac_items)
 
     issues += _check_ac_weasel(ac_items)
+    issues += _check_ac_shell(ac_items)
     issues += lintcore.check_recommended_sections(
         text, ticket.RECOMMENDED_HEADINGS
     )

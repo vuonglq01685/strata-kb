@@ -1357,3 +1357,171 @@ def test_acceptance_criteria_inside_an_html_comment_do_not_count(
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert not any("(max 10)" in m for m in _errors(report))
+
+
+# --- shell commands in an AC (spec 2026-09-23 §6) ---
+
+def _ac_report(fed_hub: Path, golden_block: str, ac_lines: str):
+    doc = _build_ticket(golden_block, overrides={"## Acceptance Criteria": ac_lines})
+    return ticketlint.lint(doc, _hub(fed_hub))
+
+
+def test_ac_with_a_shell_command_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `docker compose up -d --wait` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Every service reports healthy per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert report.passed is True
+    hits = [w for w in _warnings(report) if "prescribes a shell command" in w]
+    assert len(hits) == 1
+    assert hits[0].startswith("AC1 prescribes a shell command (`docker compose up -d --wait`)")
+    assert "## Test data & verification" in hits[0]
+
+
+def test_ac_with_a_pipe_between_words_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — output of `something | jq .` is valid per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_backticked_names_and_values_do_not_warn(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `nginx` publishes port `80`; `.env.example` lists `POSTGRES_DB`; encoder is `h264_nvenc` per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_backticked_enum_union_does_not_warn(fed_hub: Path, golden_block: str):
+    """A spaced `|` between two ordinary words is a value union, not a
+    pipe — the operator branch needs command evidence on top of it."""
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — Status field shows `active | inactive` per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_backticked_type_union_does_not_warn(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — Field type is `string | null` per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_owned_open_marker_suppresses_the_shell_warning(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `curl -f http://localhost/health` returns 200 OPEN(BA) per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert not any("prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_open_marker_with_tbd_note_does_not_suppress_the_shell_warning(
+    fed_hub: Path, golden_block: str
+):
+    """OPEN(TBD: <note>) names no real owner — a note after the colon
+    does not change that (acquality._marker_is_owned)."""
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `curl -f http://localhost/health` returns 200 "
+        "OPEN(TBD: Dev to confirm) per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_kb_ticket_lint_command_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `kb ticket lint` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))
+
+
+def test_sudo_prefixed_command_warns(fed_hub: Path, golden_block: str):
+    report = _ac_report(
+        fed_hub, golden_block,
+        "- [ ] AC1 — `sudo docker compose up -d` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
+        "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
+    )
+    assert any("AC1 prescribes a shell command" in w for w in _warnings(report))
+
+
+# --- Task 3 tuning pass: trimmed SHELL_COMMANDS, `&&`-only ungating ---
+# Unit-level against `_check_ac_shell` directly (no `fed_hub`/`lint()`,
+# same pattern as `test_ac_citation_warning_counts_bracketed_citations_only`
+# above) — this check has no hub/citation dependency of its own.
+
+
+@pytest.mark.parametrize("word", ["kb", "uv", "pytest", "jq", "ssh"])
+def test_surviving_widened_word_warns_as_a_bare_span(word: str):
+    """`kb`, `uv`, `pytest`, `jq` and `ssh` stayed in SHELL_COMMANDS —
+    a bare one-word backticked span still warns, same as any other
+    listed command (`docker`, `curl`, ...)."""
+    issues = ticketlint._check_ac_shell([f"AC1 — tool is `{word}` per [x §1]"])
+    assert len(issues) == 1
+
+
+@pytest.mark.parametrize(
+    "word,span",
+    [
+        ("git", "`git SHA`"),
+        ("python", "`python 3.13`"),
+        ("make", "`make build`"),
+        ("sed", "`sed`"),
+        ("echo", "`echo`"),
+    ],
+)
+def test_removed_word_as_an_ordinary_noun_does_not_warn(word: str, span: str):
+    """`git`, `python`, `make`, `sed` and `echo` collided with ordinary AC
+    nouns once widened (`git SHA`, `python 3.13`, `make build`, `echo
+    cancellation`) — removed from SHELL_COMMANDS. Accepted cost: `` `git
+    status` ``, `` `make build` ``, `` `python -m x` `` and `` `echo hi` ``
+    no longer warn either; that is the same removal, not a separate bug."""
+    issues = ticketlint._check_ac_shell([f"AC1 — value is {span} per [x §1]"])
+    assert issues == []
+
+
+def test_double_ampersand_chain_warns_with_no_listed_command_either_side():
+    """`&&` is ungated: `mkdir foo && cd bar` has no SHELL_COMMANDS word
+    and no flag/path token, but two words joined by `&&` is a command
+    chain regardless — nobody backticks `active && inactive`."""
+    issues = ticketlint._check_ac_shell(
+        ["AC1 — `mkdir foo && cd bar` per [x §1]"]
+    )
+    assert len(issues) == 1
+
+
+def test_semicolon_chain_with_no_command_evidence_still_does_not_warn():
+    """`;` stays gated (unlike `&&`): a `;`-separated value list is
+    plausible in an AC, so `terraform apply; terraform destroy` — no
+    listed binary, no flag/path token — does not warn."""
+    issues = ticketlint._check_ac_shell(
+        ["AC1 — `terraform apply; terraform destroy` per [x §1]"]
+    )
+    assert issues == []
+
+
+def test_pipe_and_union_boundary_still_holds():
+    """Fix 2 only changes `&&`; `|` keeps its evidence gate exactly as
+    before — a listed command on either side still warns, a plain value
+    union still does not."""
+    warns = ticketlint._check_ac_shell(
+        ["AC1 — output of `something | jq .` is valid per [x §1]"]
+    )
+    no_warns = ticketlint._check_ac_shell(
+        ["AC1 — Status field shows `active | inactive` per [x §1]"]
+    )
+    assert len(warns) == 1
+    assert no_warns == []

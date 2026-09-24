@@ -184,9 +184,10 @@ into the tracker. The assistant never does that for you.
 Step 7 runs this for you. Once lint reports `DoR: PASS`, the agent saves the
 draft and invokes `/sa-ticket-ground` on it as its own subagent. It fills the
 SA-owned `## Technical grounding` section — service, files, tables, routes,
-externals, test command — each a section id from the hub's `<repo>-code`
-document. It never edits your sections; a business statement that contradicts
-the code facts is quoted there, not corrected.
+externals, volumes, healthcheck commands and device reservations, test
+command — each a section id from the hub's `<repo>-code` document. It never
+edits your sections; a business statement that contradicts the code facts is
+quoted there, not corrected.
 
 Code that does not exist yet is not missing data, it is a design decision.
 The SA proposes a row in the parent mission's `## Technology decisions`
@@ -329,6 +330,7 @@ to bracket it.
 | `## Review record` missing, empty, or still a placeholder | Lint can see the section, not whether the review was meaningful |
 | A stale ref | The cited section was amended upstream. Still resolves, so not broken — but you should look. |
 | A pinned ref the body never cites | The pin may be background the ticket did not need to quote |
+| An acceptance criterion prescribes a shell command (`docker compose …`, `curl …`, `grep …`, or two commands chained with `&&`) | The tool flags the shape; whether the AC should instead state the observable outcome is your call — the command itself belongs in `## Test data & verification` or the plan |
 
 ## 6.3 Making staleness fail
 

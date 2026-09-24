@@ -78,6 +78,91 @@ class ServiceRecord:
     command: str = ""                   # Dockerfile CMD/ENTRYPOINT as one shell line (Task 11)
     env_files: list[str] = field(default_factory=list)  # compose env_file *names*, never opened
     base_image: str = ""                # FROM of a built service (Task 11); feeds technology
+    volumes: list[str] = field(default_factory=list)   # compose named volumes, sorted (spec 2026-09-23 §4)
+    healthcheck: str = ""                              # one-line `healthcheck.test`; "" = none; "disabled"
+    devices: list[str] = field(default_factory=list)   # "<driver>:<caps>" from deploy.resources.reservations.devices
+
+
+HEALTHCHECK_MAX = 200
+_HEALTHCHECK_DISABLED = "disabled"
+
+
+def _named_volumes(value: object) -> list[str]:
+    """Sources of a compose `volumes:` list that are named volumes: not a
+    bind mount (`./`, `/`, `~`), not env-templated (`$`), no `/` at all.
+    Long-form mappings contribute `source` when `type` is absent or
+    `volume`. Sorted, de-duplicated — never the parse order."""
+    if not isinstance(value, list):
+        return []
+    names: set[str] = set()
+    for entry in value:
+        if isinstance(entry, str):
+            src = entry.split(":", 1)[0].strip()
+        elif isinstance(entry, dict):
+            if entry.get("type", "volume") != "volume":
+                continue
+            src = str(entry.get("source", "")).strip()
+        else:
+            continue
+        if not src or src[0] in "./~$" or "/" in src:
+            continue
+        names.add(src)
+    return sorted(names)
+
+
+def _healthcheck_line(value: object) -> str:
+    """`healthcheck.test` as one shell line: list form drops a leading
+    `CMD` / `CMD-SHELL`; string form is taken as is. `disable: true`, or
+    the Compose spec's other documented way to turn off an
+    inherited (image/`extends`) healthcheck — `test: ["NONE"]` or
+    `test: NONE` — both → "disabled". Missing → "". Cut at
+    HEALTHCHECK_MAX with `…`."""
+    if not isinstance(value, dict):
+        return ""
+    if value.get("disable") is True:
+        return _HEALTHCHECK_DISABLED
+    test = value.get("test")
+    if isinstance(test, list):
+        parts = [str(p) for p in test]
+        if parts == ["NONE"]:
+            return _HEALTHCHECK_DISABLED
+        if parts and parts[0] in ("CMD", "CMD-SHELL"):
+            parts = parts[1:]
+        line = " ".join(parts)
+    elif isinstance(test, str):
+        if test == "NONE":
+            return _HEALTHCHECK_DISABLED
+        line = test
+    else:
+        return ""
+    line = " ".join(redact_userinfo(line).split())
+    if len(line) > HEALTHCHECK_MAX:
+        line = line[:HEALTHCHECK_MAX] + "…"
+    return line
+
+
+def _devices(spec: dict) -> list[str]:
+    """`deploy.resources.reservations.devices[]` as `<driver>:<caps>`;
+    a device with no driver reads `unknown`; capabilities sorted and
+    comma-joined. Sorted result."""
+    deploy = spec.get("deploy")
+    if not isinstance(deploy, dict):
+        return []
+    devices = (
+        deploy.get("resources", {}).get("reservations", {}).get("devices", [])
+        if isinstance(deploy.get("resources"), dict)
+        and isinstance(deploy["resources"].get("reservations"), dict)
+        else []
+    )
+    out: list[str] = []
+    for dev in devices if isinstance(devices, list) else []:
+        if not isinstance(dev, dict):
+            continue
+        driver = str(dev.get("driver") or "unknown")
+        caps = dev.get("capabilities", [])
+        caps_str = ",".join(sorted(str(c) for c in caps)) if isinstance(caps, list) else str(caps)
+        out.append(f"{driver}:{caps_str}" if caps_str else driver)
+    return sorted(out)
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +374,9 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                 command=command,
                 env_files=_stringify_list(spec.get("env_file", [])),
                 base_image=base_image,
+                volumes=_named_volumes(spec.get("volumes")),
+                healthcheck=_healthcheck_line(spec.get("healthcheck")),
+                devices=_devices(spec),
             ))
 
     return records, warnings
@@ -958,6 +1046,9 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
         f"| Technology | {escape_cell(technology)} |",
         f"| Env keys | {escape_cell(env_str) or 'none'} |",
         *([f"| Env file | {escape_cell(redact_userinfo(', '.join(record.env_files)))} |"] if record.env_files else []),
+        f"| Volumes | {escape_cell(', '.join(record.volumes)) or 'none'} |",
+        f"| Healthcheck | {escape_cell(record.healthcheck) or 'none'} |",
+        f"| Devices | {escape_cell(', '.join(record.devices)) or 'none'} |",
         f"| Source | {escape_cell(record.source)} |",
     ]
     l2_md = "\n".join(l2_lines) + "\n"
@@ -968,6 +1059,9 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
         "ports": record.ports,
         "depends_on": record.depends_on,
         "env_keys": record.env_keys,
+        "volumes": record.volumes,
+        "healthcheck": record.healthcheck or "none",
+        "devices": record.devices,
     }
     for key, value in (
         ("command", redact_userinfo(record.command)),

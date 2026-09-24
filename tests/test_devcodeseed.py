@@ -107,7 +107,7 @@ def test_summarize_then_approve_reaches_reviewed_and_builds_clean(tmp_path):
     manifest_path = kb / "demo-svc" / "_manifest.yaml"
     sections = models.load_yaml_model(manifest_path, models.Manifest).sections
     # Minor 4: guard against `all(...)` passing vacuously over an empty list.
-    assert len(sections) >= 2  # svc.airspace-service + svc.postgres
+    assert len(sections) >= 3  # svc.airspace-service + svc.postgres + svc.gpuworker
     assert all(s.status == "summarized" and s.summary for s in sections)
 
     # Minor 5 / Important 3 at the summarize_kb level: prove the runner was
@@ -119,12 +119,14 @@ def test_summarize_then_approve_reaches_reviewed_and_builds_clean(tmp_path):
         c for c in runner.calls
         if c.startswith("You are filling in summaries for a knowledge-base section.")
     ]
-    assert len(section_calls) == 2
+    assert len(section_calls) == 3
     for call in section_calls:
         if "svc.airspace-service" in call:
             assert "src/airspace/service.py" in call
         elif "svc.postgres" in call:
             assert "image: postgres:16" in call
+        elif "svc.gpuworker" in call:
+            assert "image: gpuworker:1.0" in call
         else:
             pytest.fail(f"unexpected section prompt: {call[:120]!r}")
 
@@ -145,7 +147,7 @@ def test_summarize_then_approve_reaches_reviewed_and_builds_clean(tmp_path):
 
     review.approve_sections(kb, "demo-svc", by="sme <sme@x>")
     sections = models.load_yaml_model(manifest_path, models.Manifest).sections
-    assert len(sections) >= 2
+    assert len(sections) >= 3
     assert all(s.status == "reviewed" for s in sections)
     assert build_kb(kb).ok
 
@@ -211,7 +213,9 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
 
     # 1. scaffold already happened via _seed(): svc.* pending, no hist.*.
     pending = summarize.collect_pending(kb, "demo-svc")
-    assert {p.section_id for p in pending} == {"svc.airspace-service", "svc.postgres"}
+    assert {p.section_id for p in pending} == {
+        "svc.airspace-service", "svc.postgres", "svc.gpuworker",
+    }
 
     # 2. summarize (stub runner): every svc.* section drafted, AND the
     #    document's own L0 summary drafted (Important 2's load-bearing text).
@@ -223,10 +227,12 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
 
     # 3. approve: every svc.* section flips summarized -> reviewed.
     approve_report = review.approve_sections(kb, "demo-svc", by="sme <sme@x>")
-    assert set(approve_report.flipped) == {"svc.airspace-service", "svc.postgres"}
+    assert set(approve_report.flipped) == {
+        "svc.airspace-service", "svc.postgres", "svc.gpuworker",
+    }
     sections = models.load_yaml_model(manifest_path, models.Manifest).sections
     svc_sections = [s for s in sections if s.id.startswith("svc.")]
-    assert len(svc_sections) == 2
+    assert len(svc_sections) == 3
     assert all(s.status == "reviewed" for s in svc_sections)
 
     # 4. kb svc note: a ticket touching airspace-service appends hist.*.
@@ -260,7 +266,7 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
 
     sections_after = models.load_yaml_model(manifest_path, models.Manifest).sections
     svc_after = {s.id: s for s in sections_after if s.id.startswith("svc.")}
-    assert set(svc_after) == {"svc.airspace-service", "svc.postgres"}
+    assert set(svc_after) == {"svc.airspace-service", "svc.postgres", "svc.gpuworker"}
     assert all(s.status == "reviewed" for s in svc_after.values())
 
     hist_entry = next(s for s in sections_after if s.id == "hist.airspace-service")

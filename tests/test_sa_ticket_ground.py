@@ -69,6 +69,11 @@ SA_HARD_RULE_NEEDLES = (
     "BA-owned section",
     "is not a PASS",
     "Definition of Ready",
+    "`Volumes:`",
+    "`Healthchecks:`",
+    "`Devices:`",
+    "`DECIDED` is not a status of this gate",
+    "never goes into an AC as a description of the current state",
 )
 
 

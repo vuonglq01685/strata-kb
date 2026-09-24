@@ -250,6 +250,10 @@ neither needs new per-ticket discipline from you:
 - **`<repo_id>-code`** needs nothing from you. `kb-code.yml` re-runs
   `kb code-ingest` → `kb build` → `kb ci-publish` on every push to the
   default branch, so it always reflects the current commit's structure.
+  Since 1.3.0 each `svc.*` record also carries its
+  named volumes, the healthcheck command and device reservations
+  from compose, so the SA grounds those instead of deciding them —
+  run CI once (any merge) after upgrading before the BA re-grounds.
 - **`<repo_id>-svc`** accrues automatically at handover: `dev-handover`
   runs `kb svc note <service> --ticket <id> --title "<title>" --refs
   "<refs>"` for every service a ticket touched, appending one row to

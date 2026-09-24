@@ -3,6 +3,13 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.3.0 — 2026-09-24
+
+- `kb code-ingest`: every compose `svc.*` record now carries `volumes` (named volumes only, sorted), `healthcheck` (the `test` command as one line, `none`, or `disabled`, cut at 200 characters) and `devices` (`<driver>:<caps>` from `deploy.resources.reservations.devices`), in the L2 property table and the L3 YAML block. Dockerfile/k8s records leave them empty. The document changes on the next CI run — that new revision is what the SA re-grounds on.
+- `kb ticket check` verifies three new `## Technical grounding` lines — `Volumes:`, `Healthchecks:`, `Devices:` — against those rows, as it already verifies routes and columns: a value the service does not have is an error, `[NEW: D<n>]` exempts a value the ticket creates, a whole-line `none` while the service has volumes is a warning. Tickets written before 1.3.0 (no such lines) get one warning, never an error; a `-code` document generated before 1.3.0 makes the three checks skip with a note.
+- `kb ticket lint` warns when an acceptance criterion prescribes a shell command (`docker compose …`, `curl …`, `grep …`, or chains commands with `&&`). An AC states the observable outcome; the command belongs in `## Test data & verification` or the Dev's plan. Suppressed on a line with an owned `OPEN(<owner>)`. `docs/ac-quality.md` gains the row.
+- BA repos: `sa-ticket-ground` copies the three new lines and may no longer fold a value the document lacks into an AC — `[NEW: D<n>]` or `Open decisions`, nothing else; `ba-ticket-author` writes outcome-level ACs and never changes a maturity score in a round with no reviewer; the review rubric's Dev axis checks every compose literal in an AC against the grounding; the ticket template's Definition of Ready says the same. Re-run `kb init --kind ba` to pick up the new template text.
+
 ## 1.2.0 — 2026-09-22
 
 - `kb ticket check` verifies `[NEW: D<n>]` markers against the parent mission's `## Technology decisions`: the row must exist and be `DECIDED` (an `OPEN` row fails, naming its owner). Greenfield tickets ground code that does not exist yet through a decided design row instead of parking it under `Open decisions`. New `--missions-dir` (default: the sibling `missions/`, as `kb ticket lint`) and `--heading "## Services & order"` to check a mission plan's SA section against its own table.
