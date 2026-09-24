@@ -26,22 +26,29 @@ _AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 # An AC is an observable outcome, never a shell command (docs/ac-quality.md,
 # spec 2026-09-23 §6). A backticked span whose first word — after skipping
 # a leading `sudo`, a `$` prompt marker, or a `VAR=value` assignment — is
-# one of these, or that chains two command-like words with a shell
-# operator, is the command a Dev would run — it belongs in
-# `## Test data & verification` or the plan. An operator alone is not
-# enough: `` `active | inactive` `` is a value union, not a pipe.
+# one of these, or that chains two command-like words with `&&`, is the
+# command a Dev would run — it belongs in `## Test data & verification` or
+# the plan. `git`, `make`, `python` and `sed` are deliberately absent: they
+# collide too often with ordinary AC nouns (`` `git SHA` ``, `` `python
+# 3.13` ``, `` `make build` ``) for a BA-facing lint to warn on the bare
+# word.
 SHELL_COMMANDS: frozenset[str] = frozenset({
     "docker", "docker-compose", "curl", "wget", "grep", "psql", "redis-cli",
     "ffmpeg", "ffprobe", "mc", "kubectl", "npm", "pnpm", "npx", "prisma",
     "ls", "cat", "find", "nvidia-smi", "sh", "bash",
-    "git", "kb", "uv", "make", "python", "pytest", "jq", "ssh", "sed", "echo",
+    "kb", "uv", "pytest", "jq", "ssh",
 })
 _CODE_SPAN_RE = re.compile(r"`([^`]+)`")
-_SHELL_OPERATOR_RE = re.compile(r"\S\s+(\|\||\||&&|;)\s+\S")
+# `&&` alone is a command chain — nobody backticks `` `active && inactive` ``
+# — so it fires unqualified. `|`, `||` and `;` collide with a value union
+# (`` `active | inactive` ``), a type union (`` `string | null` ``), or a
+# semicolon-separated value list, so each of those three still needs
+# command evidence on top of the operator.
+_UNGATED_OPERATOR_RE = re.compile(r"\S\s+(&&)\s+\S")
+_GATED_OPERATOR_RE = re.compile(r"\S\s+(\|\||\||;)\s+\S")
 # A flag (`-x`, `--xyz`) or path (`./x`, `/x/y`) token — the second signal
-# that lets the operator branch fire on a real command line rather than a
-# value union (`` `active | inactive` ``) or a type union (`` `string |
-# null` ``).
+# that lets a gated operator fire on a real command line rather than a
+# value union or type union.
 _SHELL_EVIDENCE_RE = re.compile(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*|\.{1,2}/\S+|/\S+)")
 # A leading `sudo`, a `$` shell-prompt marker, or a `VAR=value`
 # assignment — none names the command being run, so each is skipped
@@ -267,7 +274,9 @@ def _leading_word(text: str) -> str:
 def _is_shell_span(span: str) -> bool:
     if _leading_word(span) in SHELL_COMMANDS:
         return True
-    m = _SHELL_OPERATOR_RE.search(span)
+    if _UNGATED_OPERATOR_RE.search(span) is not None:
+        return True
+    m = _GATED_OPERATOR_RE.search(span)
     if m is None:
         return False
     sides = (span[: m.start(1)], span[m.end(1) :])

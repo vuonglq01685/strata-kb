@@ -272,7 +272,8 @@ def parse_review_row(cells: list[str]) -> "ReviewRow | str":
 
 def _marker_is_owned(group1: str) -> bool:
     """Whether an ``OPEN(...)``'s captured content names a real owner,
-    for ``weasel_hits``'s muting decision specifically.
+    for ``weasel_hits``'s muting decision and, since Task 3,
+    ``ticketlint._check_ac_shell``'s line-level shell-command suppression.
 
     A marker may carry a free-text note after the owner —
     ``OPEN(<owner>: <note>)`` — and the note does not change who owns
@@ -280,9 +281,9 @@ def _marker_is_owned(group1: str) -> bool:
     against ``_UNOWNED``: ``OPEN(TBD: alice will decide)`` is still
     unowned. This differs from ``owned_open_markers``, which checks the
     WHOLE captured string and is exercised only against bare markers
-    (``OPEN(alice)``, ``OPEN(TBD)``) in its own tests; ``weasel_hits`` is
-    the one place a marker routinely carries a note explaining the
-    vagueness, so its ownership check needs the split.
+    (``OPEN(alice)``, ``OPEN(TBD)``) in its own tests; both of these
+    callers routinely see a marker carrying a note explaining the
+    vagueness, so each needs the split.
     """
     owner = group1.split(":", 1)[0].strip().lower()
     return owner not in _UNOWNED
