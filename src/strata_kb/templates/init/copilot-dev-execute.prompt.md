@@ -42,6 +42,38 @@ edit above it.
   dedicated branch, and a git worktree where the environment supports
   it, named from the ticket id.
   **Never work directly on the default branch.**
+- **Waves** — run `kb plan waves docs/impl/<ticket-id>-plan.md`; an
+  error returns the plan to `dev-plan` (the same route an incomplete
+  task block takes). A plan whose tasks carry no `Depends on:` lines
+  runs sequentially as today — say so in the Next-step block. A wave of
+  one task runs the per-task flow below unchanged. A wave of two or more
+  tasks, when the runtime can dispatch subagents, runs each task in its
+  own **lane**:
+  - `git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD`
+    from the ticket branch. A worktree the runtime provides is
+    acceptable only if its base contains the ticket branch's HEAD —
+    check with `git merge-base --is-ancestor`; otherwise create the lane
+    by hand.
+  - Dispatch one implementer per lane, at most **3 lanes at a time** —
+    a larger wave runs in batches of 3 (`ponytail:` fixed cap; raise it
+    once a measured wave shows the machine and the suite can take
+    more). The implementer gets the same three things as below plus its
+    lane path and this sentence: "Never use `run_in_background`; run
+    every test in the foreground and let the call block." Scoped tests
+    inside the lane; the implementer commits on its lane branch and
+    writes `docs/impl/<ticket-id>-review/task-<n>-report.md` inside the
+    lane.
+  - Merge back in task-number order: `git merge --no-ff
+    <ticket-id>-task-<n>` into the ticket branch; copy the report out
+    of the lane if it did not land in the merge — a conflict is a plan
+    defect: stop, do not resolve, return to `dev-plan` naming the two
+    tasks.
+  - Verify the wave: run `cmd.test` and `cmd.lint` once after the last
+    merge of the wave and show the output.
+  - A3 per task as below, with the diff written from
+    `git diff <merge-base>..<lane-branch>`; tick only after A3 is clean,
+    then `git worktree remove` the lane and delete its branch.
+  Without subagents: sequential in wave order, today's fallback.
 - **Per unticked task**, in its own subagent where the runtime supports
   it (sequential passes otherwise). Hand that subagent exactly three
   things: its own task block from the plan, the **Interfaces** entry of
@@ -109,7 +141,9 @@ edit above it.
   decide the ambiguity yourself, and do not push past it because the
   code is half written.
 - **Resumable** — a later run re-checks freshness, re-reads the plan,
-  and continues at the first unticked task. Once every task is ticked, A4
+  and continues at the first unticked task — that is, the first wave
+  with an unticked task; ticked siblings are skipped, and the remaining
+  tasks of that wave run under the same rules. Once every task is ticked, A4
   runs; once A4 comes back clean, option 1 in the Next-step block below is
   `/dev-handover <ticket-id>`; otherwise it is `/dev-execute <ticket-id>` to
   continue.

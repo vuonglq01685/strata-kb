@@ -36,7 +36,22 @@ edit above it.
 
 Steps the skill enforces: **Isolate** the work onto a dedicated branch and,
 where the environment supports it, a git worktree named from the ticket id.
-Never work directly on the default branch. Then, per unticked task, in its
+Never work directly on the default branch. Then run `kb plan waves
+docs/impl/<ticket-id>-plan.md`; an error returns the plan to `dev-plan`, a
+plan without `Depends on:` lines runs sequentially as today, a wave of one
+task runs the per-task flow unchanged, and a wave of two or more tasks —
+when the runtime can dispatch subagents — runs each task in its own lane:
+`git worktree add .worktrees/<ticket-id>-task-<n> -b
+<ticket-id>-task-<n> HEAD` from the ticket branch (a runtime-provided
+worktree only if its base contains the ticket branch's HEAD, checked with
+`git merge-base --is-ancestor`), at most **3 lanes at a time**, each
+implementer handed its lane path and the sentence "Never use
+`run_in_background`; run every test in the foreground and let the call
+block.", scoped tests inside the lane, lanes merged back in task-number
+order with `git merge --no-ff <ticket-id>-task-<n>` — a conflict is a plan
+defect, returned to `dev-plan` naming the two tasks — the full `cmd.test` /
+`cmd.lint` run once after the wave, A3 per task from `git diff
+<merge-base>..<lane-branch>`, the lane removed after A3 is clean. Then, per unticked task, in its
 own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**
 entry, and the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the
@@ -82,7 +97,8 @@ implementable as written, stop that task, return to `dev-design`, and record
 `OPEN(BA)` — never decide the ambiguity yourself, and never push past it
 because the code is half written. The skill is resumable: a later run
 re-checks freshness, re-reads the plan, and continues at the first unticked
-task. Once every task is ticked, A4 runs; once A4 comes back clean, option 1
+task — that is, the first wave with an unticked task, ticked siblings
+skipped. Once every task is ticked, A4 runs; once A4 comes back clean, option 1
 in the Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
 `/dev-execute <ticket-id>` to continue.
 

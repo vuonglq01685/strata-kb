@@ -2840,3 +2840,19 @@ def test_dev_plan_a2_asks_the_fifth_question_and_runs_plan_waves():
         body = _dev_wrapper_body(name)
         assert "Is every `Depends on:` line consistent with Files and Interfaces" in body, name
         assert "The reviewer also runs `kb plan waves` and quotes its output; an error there is a BLOCKER on its own" in body, name
+
+
+def test_dev_execute_runs_plan_waves_and_lanes():
+    for name in _dev_wrapper_names("dev-execute"):
+        body = _dev_wrapper_body(name)
+        assert "run `kb plan waves docs/impl/<ticket-id>-plan.md`" in body, name
+        assert "an error returns the plan to `dev-plan`" in body, name
+        assert "runs sequentially as today" in body, name
+        assert "git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD" in body, name
+        assert "git merge-base --is-ancestor" in body, name
+        assert "at most **3 lanes at a time**" in body, name
+        assert "Never use `run_in_background`; run every test in the foreground and let the call block." in body, name
+        assert "git merge --no-ff <ticket-id>-task-<n>" in body, name
+        assert "a conflict is a plan defect" in body, name
+        assert "git diff <merge-base>..<lane-branch>" in body, name
+        assert "the first wave with an unticked task" in body, name
