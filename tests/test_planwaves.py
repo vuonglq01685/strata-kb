@@ -22,6 +22,14 @@ Depends on: none
 **Steps:**
 - [ ] step
 
+```text
+### Task 9: phantom
+Depends on: task 1
+
+**Files:**
+- Create: `ghost.py`
+```
+
 ### Task 2: api
 Depends on: task 1
 
@@ -104,9 +112,20 @@ def test_check_shared_path_is_fine_when_a_dependency_path_exists():
 
 
 def test_check_duplicate_task_number_and_self_dependency():
-    text = "### Task 1: a\nDepends on: none\n\n### Task 1: b\nDepends on: task 1\n"
+    text = (
+        "### Task 1: a\nDepends on: none\n\n"
+        "### Task 1: b\nDepends on: task 1\n\n"
+        "### Task 1: c\nDepends on: task 1\n"
+    )
     errors, _ = planwaves.check(planwaves.parse_plan(text))
-    assert "task 1 is defined twice" in errors
+    assert errors.count("task 1 is defined twice") == 1
+    assert "dependency cycle: 1 → 1" in errors
+
+
+def test_check_empty_plan_is_an_error():
+    errors, waves = planwaves.check(planwaves.parse_plan("no tasks here"))
+    assert errors == ["no `### Task <n>` headings found"]
+    assert waves == []
 
 
 def test_render_and_json():

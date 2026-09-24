@@ -52,6 +52,14 @@ def test_plan_waves_non_utf8_is_a_red_line(tmp_path):
     assert "not valid UTF-8" in result.output
 
 
+def test_plan_waves_no_tasks_is_an_error(tmp_path):
+    path = tmp_path / "empty.md"
+    path.write_text("no tasks here", encoding="utf-8")
+    result = runner.invoke(app, ["plan", "waves", str(path)])
+    assert result.exit_code == 1
+    assert "error: no `### Task <n>` headings found" in result.output
+
+
 def test_docs_name_the_plan_waves_command():
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")

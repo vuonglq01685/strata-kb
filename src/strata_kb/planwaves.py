@@ -12,6 +12,7 @@ out; no filesystem, CLI or MCP imports.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 TASK_RE = re.compile(r"^#{2,4}\s+Task\s+(?P<n>\d+)\b")
@@ -46,15 +47,27 @@ def _deps_of(rest: str) -> tuple[int, ...]:
     return tuple(dict.fromkeys(int(n) for n in re.findall(r"\d+", rest)))
 
 
+def _fence_marker(line: str) -> str:
+    """The fence marker opening/closing on this line, or '' if none."""
+    stripped = line.lstrip()
+    for marker in ("```", "~~~"):
+        if stripped.startswith(marker):
+            return marker
+    return ""
+
+
 def parse_plan(text: str) -> list[Task]:
     """Tasks in file order. A `Depends on:` line binds to the task heading
     above it; `**Files:**` lines are read until the next bold section or
-    task heading."""
+    task heading. A fenced code block (``` or ~~~, closed by the same
+    marker) is skipped whole -- a plan quoting another plan or a test
+    fixture as an example must not spawn phantom tasks."""
     tasks: list[Task] = []
     number: int | None = None
     depends: tuple[int, ...] | None = None
     paths: list[str] = []
     in_files = False
+    in_fence = ""
 
     def flush() -> None:
         if number is not None:
@@ -62,6 +75,14 @@ def parse_plan(text: str) -> list[Task]:
 
     for raw in text.splitlines():
         line = raw.rstrip()
+        marker = _fence_marker(line)
+        if in_fence:
+            if marker == in_fence:
+                in_fence = ""
+            continue
+        if marker:
+            in_fence = marker
+            continue
         m = TASK_RE.match(line)
         if m:
             flush()
@@ -101,6 +122,7 @@ def _reachable(start: int, deps: dict[int, tuple[int, ...]]) -> set[int]:
 
 
 def _find_cycle(deps: dict[int, tuple[int, ...]]) -> list[int] | None:
+    # ponytail: recursive DFS, fine below ~1000 tasks; iterative if plans ever get that big
     state: dict[int, int] = {}
     path: list[int] = []
 
@@ -131,12 +153,14 @@ def _find_cycle(deps: dict[int, tuple[int, ...]]) -> list[int] | None:
 def check(tasks: list[Task]) -> tuple[list[str], list[list[int]]]:
     """(errors, waves). Waves are empty whenever an error is reported —
     a plan with a cycle or an undeclared shared file has no safe order."""
+    if not tasks:
+        return ["no `### Task <n>` headings found"], []
     errors: list[str] = []
-    seen: set[int] = set()
-    for t in tasks:
-        if t.number in seen:
-            errors.append(f"task {t.number} is defined twice")
-        seen.add(t.number)
+    seen: set[int] = {t.number for t in tasks}
+    counts = Counter(t.number for t in tasks)
+    for n in sorted(counts):
+        if counts[n] > 1:
+            errors.append(f"task {n} is defined twice")
     deps: dict[int, tuple[int, ...]] = {}
     for t in tasks:
         if t.depends_on is None:
