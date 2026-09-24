@@ -198,8 +198,9 @@ def check(
     if all(t.depends_on is None for t in tasks):
         # Plan predates waves (no task carries a `Depends on:` line) -- report
         # only the missing-line defect, not the shared-path/cycle noise that
-        # a legacy plan trips on every task pair.
-        return [f"task {t.number} has no Depends on: line" for t in tasks], []
+        # a legacy plan trips on every task pair. Errors already collected
+        # (unclosed fence, duplicate task numbers) are kept, not dropped.
+        return errors + [f"task {t.number} has no Depends on: line" for t in tasks], []
     deps: dict[int, tuple[int, ...]] = {}
     for t in tasks:
         if t.depends_on is None:

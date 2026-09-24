@@ -135,6 +135,20 @@ def test_check_legacy_plan_reports_only_missing_depends_lines():
     assert waves == []
 
 
+def test_check_legacy_plan_keeps_unclosed_fence_error():
+    text = (
+        "### Task 1: a\n**Files:**\n- Modify: `CHANGELOG.md`\n\n"
+        "### Task 2: b\n**Files:**\n- Modify: `CHANGELOG.md`\n"
+    )
+    errors, waves = planwaves.check(planwaves.parse_plan(text), unclosed=True)
+    assert errors == [
+        "unclosed code fence",
+        "task 1 has no Depends on: line",
+        "task 2 has no Depends on: line",
+    ]
+    assert waves == []
+
+
 def test_check_mixed_plan_still_runs_shared_path_check():
     text = (
         "### Task 1: a\nDepends on: none\n**Files:**\n- Create: `x.py`\n\n"
