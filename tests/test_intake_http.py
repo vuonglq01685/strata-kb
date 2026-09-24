@@ -1399,9 +1399,14 @@ def test_oversized_filename_header_renders_json_400_not_500(
         content=body,
     )
     assert resp.status_code == 400, resp.text
-    assert resp.json() == {
-        "error": "intake_rejected",
-        "detail": "Maximum header size exceeded",
+    body = resp.json()
+    assert body["error"] == "intake_rejected"
+    # Starlette >=1.7 catches FormParserError itself and re-raises it as
+    # "Invalid multipart data."; older Starlette lets python_multipart's own
+    # message through to our catch.
+    assert body["detail"] in {
+        "Maximum header size exceeded",
+        "Invalid multipart data.",
     }
 
 
