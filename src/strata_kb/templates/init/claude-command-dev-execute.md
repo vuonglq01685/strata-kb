@@ -42,16 +42,22 @@ plan without `Depends on:` lines runs sequentially as today, a wave of one
 task runs the per-task flow unchanged, and a wave of two or more tasks —
 when the runtime can dispatch subagents — runs each task in its own lane:
 `git worktree add .worktrees/<ticket-id>-task-<n> -b
-<ticket-id>-task-<n> HEAD` from the ticket branch (a runtime-provided
-worktree only if its base contains the ticket branch's HEAD, checked with
-`git merge-base --is-ancestor`), at most **3 lanes at a time**, each
-implementer handed its lane path and the sentence "Never use
+<ticket-id>-task-<n> HEAD` from the ticket branch. Record the ticket
+branch's HEAD at that moment as `<lane-base>`. A runtime-provided
+worktree is acceptable only if its base contains the ticket branch's HEAD,
+checked with `git merge-base --is-ancestor`; at most **3 lanes at a
+time**, each implementer handed its lane path and the sentence "Never use
 `run_in_background`; run every test in the foreground and let the call
-block.", scoped tests inside the lane, lanes merged back in task-number
-order with `git merge --no-ff <ticket-id>-task-<n>` — a conflict is a plan
-defect, returned to `dev-plan` naming the two tasks — the full `cmd.test` /
-`cmd.lint` run once after the wave, A3 per task from `git diff
-<merge-base>..<lane-branch>`, the lane removed after A3 is clean. Then, per unticked task, in its
+block." A lane implementer never edits `docs/impl/<ticket-id>-plan.md` —
+the orchestrator ticks after A3 — so lanes never conflict on the plan
+file. Scoped tests inside the lane, lanes merged back in task-number order
+with `git merge --no-ff
+<ticket-id>-task-<n>` — a conflict is a plan defect, returned to
+`dev-plan` naming the two tasks — the full `cmd.test` / `cmd.lint` run
+once after the wave, A3 per task from `git diff <lane-base>..<lane-branch>`,
+the lane removed after A3 is clean; A3 fix commits land on the ticket
+branch after the merge, with the wave's `cmd.test` / `cmd.lint` re-run
+when a fix landed. Then, per unticked task, in its
 own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**
 entry, and the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the

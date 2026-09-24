@@ -50,7 +50,8 @@ edit above it.
   tasks, when the runtime can dispatch subagents, runs each task in its
   own **lane**:
   - `git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD`
-    from the ticket branch. A worktree the runtime provides is
+    from the ticket branch. Record the ticket branch's HEAD at that
+    moment as `<lane-base>`. A worktree the runtime provides is
     acceptable only if its base contains the ticket branch's HEAD —
     check with `git merge-base --is-ancestor`; otherwise create the lane
     by hand.
@@ -62,17 +63,22 @@ edit above it.
     every test in the foreground and let the call block." Scoped tests
     inside the lane; the implementer commits on its lane branch and
     writes `docs/impl/<ticket-id>-review/task-<n>-report.md` inside the
-    lane.
+    lane. A lane implementer never edits `docs/impl/<ticket-id>-plan.md`
+    — the orchestrator ticks after A3, exactly as in the per-task flow —
+    so lanes never conflict on the plan file.
   - Merge back in task-number order: `git merge --no-ff
-    <ticket-id>-task-<n>` into the ticket branch; copy the report out
-    of the lane if it did not land in the merge — a conflict is a plan
+    <ticket-id>-task-<n>` into the ticket branch — a conflict is a plan
     defect: stop, do not resolve, return to `dev-plan` naming the two
-    tasks.
+    tasks; then copy the report out of the lane if it did not land in
+    the merge.
   - Verify the wave: run `cmd.test` and `cmd.lint` once after the last
     merge of the wave and show the output.
   - A3 per task as below, with the diff written from
-    `git diff <merge-base>..<lane-branch>`; tick only after A3 is clean,
-    then `git worktree remove` the lane and delete its branch.
+    `git diff <lane-base>..<lane-branch>`; tick only after A3 is clean,
+    then `git worktree remove` the lane and delete its branch. A3 fix
+    commits land on the ticket branch after the merge (the lane is
+    done); when any fix landed, re-run the wave's `cmd.test` /
+    `cmd.lint` before ticking.
   Without subagents: sequential in wave order, today's fallback.
 - **Per unticked task**, in its own subagent where the runtime supports
   it (sequential passes otherwise). Hand that subagent exactly three
