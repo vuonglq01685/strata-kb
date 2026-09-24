@@ -829,12 +829,20 @@ def test_new_service_healthchecks_line_does_not_report_unknown_id(code_doc):
     assert not any("unknown id 'svc.billing'" in e for e in errors(report))
 
 
-def test_new_marker_on_a_multi_value_healthchecks_group_exempts_only_its_value(code_doc):
+def test_new_marker_on_a_multi_value_healthchecks_group_is_ignored(code_doc):
     """`[NEW: …]` after a multi-value Healthchecks group (two backticked
-    spans on one `svc.<x> — ` group) must exempt only the value the marker
-    actually sits next to, not every value in the group — the brief's own
-    rule for the single-value case ("the marker exempts only the value it
-    sits on") applies here too (Minor 2)."""
+    spans on one `svc.<x> — ` group) is ignored outright: it exempts
+    NEITHER value, `extra-check` still errors, and no `[NEW: …]` note is
+    emitted (final review, Minor 1 — this test used to be misnamed
+    "...exempts_only_its_value", which claims the opposite of what its own
+    body proves).
+
+    Known gap, not fixed here: the brief's rule for the single-value case
+    ("the marker exempts only the value it sits next to") is never
+    extended to the multi-value case — `_check_compose_facts`'s
+    `raw_new` fallback is gated on `len(split_values) == 1`, so a marker
+    after a multi-value group has no effect at all rather than exempting
+    just the value it's adjacent to."""
     kb_dir, rev = code_doc
     text = ticket(
         grounding(
@@ -852,3 +860,49 @@ def test_new_marker_on_a_multi_value_healthchecks_group_exempts_only_its_value(c
         for e in errors(report)
     )
     assert not any("new:" in n and "curl" in n for n in notes(report))
+
+
+# --- compose facts: escape-aware Healthcheck cell read-back (final review,
+# Critical 1) --------------------------------------------------------------
+
+THREE_SVC = "svc.airspace-service, svc.postgres, svc.gpuworker"
+GPUWORKER_HEALTHCHECK = "curl -s http://localhost/health | grep -q ok"
+
+
+def test_healthcheck_containing_a_pipe_grounds_clean(code_doc):
+    """`escape_cell` (services.py) backslash-escapes a literal `|` in the
+    Healthcheck L2 cell so a `CMD-SHELL "... | ..."` healthcheck — the most
+    common non-trivial healthcheck form — round-trips through the L2 table
+    at all. `_property` used to read that cell back through
+    `lintcore.table_rows()`, whose `line[1:-1].split("|")` is NOT
+    escape-aware and also split on the backslash-escaped pipe, truncating
+    the cell before `_property`'s own `.replace("\\|", "|")` ever ran —
+    so no value an SA could write for `svc.gpuworker` (fixture: a
+    `test: ["CMD-SHELL", "curl -s http://localhost/health | grep -q ok"]`
+    healthcheck) ever grounded clean. Reproduced end to end, before the
+    fix: `[error] healthcheck for svc.gpuworker is 'curl -s
+    http://localhost/health \\', not 'curl -s http://localhost/health \\|
+    grep -q ok'` — the error even named the truncated fragment as the
+    document's real value. After the fix, the exact compose command
+    grounds with zero errors."""
+    kb_dir, rev = code_doc
+
+    # Extractor side: the L2 cell really is escaped in the real document.
+    services_md = (kb_dir / "demo-code" / "services.md").read_text(encoding="utf-8")
+    assert "| Healthcheck | curl -s http://localhost/health \\| grep -q ok |" in services_md
+
+    text = ticket(
+        grounding(
+            rev,
+            Service=THREE_SVC,
+            Volumes="svc.airspace-service — none; svc.postgres — pgdata; svc.gpuworker — none",
+            Healthchecks=(
+                "svc.airspace-service — `curl -f http://localhost:8080/health`; "
+                "svc.postgres — none; "
+                f"svc.gpuworker — `{GPUWORKER_HEALTHCHECK}`"
+            ),
+            Devices="svc.airspace-service — nvidia:gpu; svc.postgres — none; svc.gpuworker — none",
+        )
+    )
+    report = run(text, kb_dir)
+    assert errors(report) == [], report.render("Grounding")

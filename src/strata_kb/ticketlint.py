@@ -28,10 +28,10 @@ _AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 # a leading `sudo`, a `$` prompt marker, or a `VAR=value` assignment — is
 # one of these, or that chains two command-like words with `&&`, is the
 # command a Dev would run — it belongs in `## Test data & verification` or
-# the plan. `git`, `make`, `python` and `sed` are deliberately absent: they
-# collide too often with ordinary AC nouns (`` `git SHA` ``, `` `python
-# 3.13` ``, `` `make build` ``) for a BA-facing lint to warn on the bare
-# word.
+# the plan. `git`, `make`, `python`, `sed` and `echo` are deliberately
+# absent: they collide too often with ordinary AC nouns (`` `git SHA` ``,
+# `` `python 3.13` ``, `` `make build` ``, `` `echo cancellation` ``) for a
+# BA-facing lint to warn on the bare word.
 SHELL_COMMANDS: frozenset[str] = frozenset({
     "docker", "docker-compose", "curl", "wget", "grep", "psql", "redis-cli",
     "ffmpeg", "ffprobe", "mc", "kubectl", "npm", "pnpm", "npx", "prisma",

@@ -1484,11 +1484,11 @@ def test_surviving_widened_word_warns_as_a_bare_span(word: str):
     ],
 )
 def test_removed_word_as_an_ordinary_noun_does_not_warn(word: str, span: str):
-    """`git`, `python`, `make` and `sed` collided with ordinary AC nouns
-    once widened (`git SHA`, `python 3.13`, `make build`) — removed from
-    SHELL_COMMANDS. Accepted cost: `` `git status` ``, `` `make build` ``
-    and `` `python -m x` `` no longer warn either; that is the same
-    removal, not a separate bug."""
+    """`git`, `python`, `make`, `sed` and `echo` collided with ordinary AC
+    nouns once widened (`git SHA`, `python 3.13`, `make build`, `echo
+    cancellation`) — removed from SHELL_COMMANDS. Accepted cost: `` `git
+    status` ``, `` `make build` ``, `` `python -m x` `` and `` `echo hi` ``
+    no longer warn either; that is the same removal, not a separate bug."""
     issues = ticketlint._check_ac_shell([f"AC1 — value is {span} per [x §1]"])
     assert issues == []
 

@@ -578,11 +578,31 @@ def _field_lines(section: _Section, name: str) -> list[tuple[int, str]]:
     return out
 
 
-def _property(rows: list[list[str]], name: str) -> str | None:
-    """The `Value` cell of the L2 property row named `name`, pipes unescaped."""
-    for r in rows[1:]:
-        if len(r) >= 2 and r[0].strip() == name:
-            return r[1].strip().replace("\\|", "|")
+# A `|` not preceded by `\` — the escape-aware twin of `lintcore.table_rows`'
+# plain `.split("|")`, needed only here (see `_property`).
+_ESCAPED_CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
+
+
+def _property(body: str, name: str) -> str | None:
+    """The `Value` cell of the L2 property row named `name`, pipes unescaped.
+
+    Re-splits each raw `| Property | Value |` line itself, on
+    escape-aware `|` boundaries, instead of taking `lintcore.table_rows()`'
+    output: that helper's `line[1:-1].split("|")` is not escape-aware and
+    also splits on a `escape_cell`-escaped `\\|` *inside* the Value cell
+    (services.py's `escape_cell` backslash-escapes a literal `|` — e.g. a
+    `CMD-SHELL "... | ..."` healthcheck) — silently truncating the cell
+    before this function's own `.replace("\\|", "|")` ever runs on it.
+    `lintcore.table_rows` has 9+ other call sites and stays as is; this
+    re-split is local to the one caller here that needs escape-awareness.
+    """
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("|") or not line.endswith("|"):
+            continue
+        cells = [c.strip() for c in _ESCAPED_CELL_SPLIT_RE.split(line[1:-1])]
+        if len(cells) >= 2 and cells[0] == name:
+            return cells[1].replace("\\|", "|")
     return None
 
 
@@ -600,7 +620,7 @@ def _svc_facts(doc: LoadedDoc, sid: str, field: str, unreadable: set[str],
     body = _l2_slice(doc, sid, unreadable, issues)
     if body is None:
         return None
-    cell = _property(lintcore.table_rows(body), _COMPOSE_ROW[field])
+    cell = _property(body, _COMPOSE_ROW[field])
     if cell is None:
         row_absent.add(sid)
         return None

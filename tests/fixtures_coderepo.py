@@ -55,7 +55,11 @@ def build_code_repo(root: Path) -> Path:
         '    ports: ["5432:5432"]\n'
         "    volumes:\n"
         "      - pgdata:/var/lib/postgresql/data\n"
-        "      - ./init:/docker-entrypoint-initdb.d\n",
+        "      - ./init:/docker-entrypoint-initdb.d\n"
+        "  gpuworker:\n"
+        "    image: gpuworker:1.0\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "curl -s http://localhost/health | grep -q ok"]\n',
         encoding="utf-8",
     )
     (root / "Dockerfile").write_text(
