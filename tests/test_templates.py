@@ -2918,3 +2918,38 @@ def test_sa_full_wrappers_cite_the_architecture_document_for_greenfield_rows():
 def test_every_sa_wrapper_says_the_proposal_cites_the_architecture_document():
     for name in SA_WRAPPERS:
         assert "cites the architecture document" in _normalised(_read_init_template(name)), name
+
+
+def test_ba_mission_wrappers_ask_for_the_architecture_document_at_intake():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Ask also for the doc-id of the architecture document on the hub" in text, name
+        assert "Never ask whether the repo is greenfield" in text, name
+
+
+def test_ba_mission_wrappers_teach_the_foundation_slice():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "the first story is the **foundation slice**" in text, name
+        assert "every other story `Depends on` it in `## Sequencing`" in text, name
+        assert "`Depends on` may name a story of another mission (`M-<other>-US<n>`)" in text, name
+
+
+def test_ba_mission_wrappers_carry_step_5b_decide():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "5b. **Decide**" in text, name
+        assert "present the whole `## Technology decisions` table to the BA once" in text, name
+        assert "You never flip a status." in text, name
+        assert "what `kb mission next` reports as `ready`" in text, name
+
+
+def test_ba_mission_wrappers_carry_the_recorded_decision_hard_rule():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert (
+            "A `[NEW: D<n>]` proposal that cites an architecture section on the "
+            "hub is a recorded decision: the BA flips it at mission time, in step "
+            "5b, not ticket by ticket. A proposal without a citation stays `OPEN` "
+            "with a human owner."
+        ) in text, name
