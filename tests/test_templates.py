@@ -2869,3 +2869,35 @@ def test_quickstart_dev_documents_plan_waves_and_lanes():
     assert "`kb plan waves docs/impl/<ticket-id>-plan.md`" in text
     assert "at most 3 lanes at a time" in text
     assert "- `kb plan waves <plan-file> [--json]`" in text
+
+
+# --- mission next (spec 2026-09-24 §4.5): templates ---------------------------
+
+
+def test_mission_template_teaches_the_cited_decision_row():
+    text = _read_init_template("mission-template.md")
+    decisions = _normalised(lintcore.section_body(text, "## Technology decisions"))
+    assert (
+        "In a greenfield repo the SA cites the architecture document in the "
+        "Decision cell ([<arch-doc> §<section>]); a cited row is a recorded "
+        "decision the BA flips once, at mission time (step 5b), not ticket by ticket."
+    ) in decisions
+    assert (
+        "| D3 | New svc.<name> — <one line> [<arch-doc> §<section>] | OPEN | <SA / tech lead> | <US id> |"
+        in decisions
+    )
+    # D2 stays exactly as the earlier pin expects
+    assert "| D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |" in decisions
+
+
+def test_mission_template_sequencing_allows_cross_mission_dependencies():
+    text = _read_init_template("mission-template.md")
+    seq = _normalised(lintcore.section_body(text, "## Sequencing"))
+    assert "`Depends on` may name a story of another mission (`M-<other>-US<n>`)" in seq
+    assert "write `none` for a story that starts first" in seq
+    assert "`kb mission next` reads this table" in seq
+
+
+def test_mission_template_dor_names_the_decided_rows_gate():
+    dor = _normalised(lintcore.section_body(_read_init_template("mission-template.md"), "## Definition of Ready"))
+    assert "- [ ] Every D-row blocking a story with no dependency is DECIDED (kb mission next shows it ready)" in dor
