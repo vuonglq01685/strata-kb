@@ -127,10 +127,10 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    A round that only closes open questions is not a review round and
    never changes a score. A score rises only when a `gap-verifier`
    (rounds 2–3) or the two reviewers (round 1) record PASS on every gap
-   of that axis. Re-deriving a score by hand is forbidden; a closed
-   question the reviewers never saw is a `DECIDED` note, not a fact, and
-   stays out of the ACs until the SA's `## Technical grounding` or a
-   D-row carries it.
+   of that axis. Re-deriving a score from the draft by hand, without a
+   recorded PASS, is forbidden; a closed question the reviewers never
+   saw is a `DECIDED` note, not a fact, and stays out of the ACs until
+   the SA's `## Technical grounding` or a D-row carries it.
 
    A gap you cannot close yourself (a missing business decision,
    missing input) is NEVER invented: write `OPEN(<owner>)` at the spot
