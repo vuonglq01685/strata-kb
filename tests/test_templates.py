@@ -2966,3 +2966,10 @@ def test_ba_ticket_wrappers_run_kb_mission_next_at_intake():
 def test_ba_ticket_full_wrappers_point_a_drafted_story_at_its_file():
     for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
         assert "A `drafted` story points at its existing file." in _ba_wrapper_text(name), name
+
+
+def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
+    for name in _dev_wrapper_names("dev-handover"):
+        body = _dev_wrapper_body(name)
+        assert "`kb svc note` is what makes `kb mission next` on the BA side see this story as done" in body, name
+        assert "stays `drafted` forever" in body, name
