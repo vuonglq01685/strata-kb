@@ -59,11 +59,6 @@ DECISION_REF_RE = re.compile(r"^D\d+$")
 # A full US id inside a table cell (`Blocks`, `Depends on`): the mission
 # slug is lowercase kebab-case (mission.MISSION_ID_RE), n >= 1.
 US_ID_IN_CELL_RE = re.compile(r"\bM-[a-z0-9]+(?:-[a-z0-9]+)*-US[1-9]\d*\b")
-# A bare `US<n>` in a `Depends on` or `Blocks` cell — not preceded by a word
-# character or '-', so the tail of a full `M-x-US2` never re-matches once
-# the full ids are blanked out first (see missionnext.dep_ids, parse_decisions
-# below).
-BARE_US_RE = re.compile(r"(?<![\w-])US[1-9]\d*\b")
 
 _NONE_WORDS = frozenset({"none", "n/a", "-"})
 
@@ -115,11 +110,8 @@ LoadDecisions = Callable[[str], DecisionTable | None]  # mission id -> table, No
 def parse_decisions(text: str, source: str) -> DecisionTable:
     """The `## Technology decisions` table of `text` keyed by its `#` cell.
     Columns are found by header name, so a reordered table still parses;
-    no section or no `#`/`Status` header -> empty rows. `blocks` carries the
-    US ids of the `Blocks` cell — full ids as written, then bare `US<n>`
-    tokens as written (this function has no mission id to prefix them with;
-    `missionnext.statuses` resolves them via `dep_ids`) — empty when the
-    column is absent."""
+    no section or no `#`/`Status` header -> empty rows. `blocks` carries
+    the full US ids of the `Blocks` cell (empty when the column is absent)."""
     body = lintcore.section_body(text, mission.TECH_DECISIONS_HEADING)
     rows = lintcore.table_rows(body) if body is not None else []
     if not rows:
@@ -136,9 +128,7 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
             continue
         owner = r[i_owner].strip() if i_owner is not None and len(r) > i_owner else ""
         blocks_cell = r[i_blocks] if i_blocks is not None and len(r) > i_blocks else ""
-        full_blocks = US_ID_IN_CELL_RE.findall(blocks_cell)
-        bare_blocks = BARE_US_RE.findall(US_ID_IN_CELL_RE.sub(" ", blocks_cell))
-        blocks = tuple(dict.fromkeys(full_blocks + bare_blocks))
+        blocks = tuple(dict.fromkeys(US_ID_IN_CELL_RE.findall(blocks_cell)))
         out[r[i_id].strip()] = Decision(r[i_id].strip(), r[i_status].strip(), owner, blocks)
     return DecisionTable(source, out)
 

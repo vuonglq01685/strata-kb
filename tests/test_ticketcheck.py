@@ -929,15 +929,11 @@ def test_parse_decisions_reads_blocks_column():
         "| D1 | one | DECIDED | a | M-demo-US1, M-demo-US3 |\n"
         "| D2 | two | OPEN | b | M-other-US2 |\n"
         "| D3 | three | OPEN | c |  |\n"
-        "| D4 | four | OPEN | d | US4, M-demo-US1 |\n"
     )
     table = ticketcheck.parse_decisions(text, "m")
     assert table.rows["D1"].blocks == ("M-demo-US1", "M-demo-US3")
     assert table.rows["D2"].blocks == ("M-other-US2",)
     assert table.rows["D3"].blocks == ()
-    # A bare `US<n>` stays as written — parse_decisions has no mission id to
-    # prefix it with; full ids come first, same order as dep_ids.
-    assert table.rows["D4"].blocks == ("M-demo-US1", "US4")
 
 
 def test_parse_decisions_without_blocks_column_keeps_empty_tuple():
