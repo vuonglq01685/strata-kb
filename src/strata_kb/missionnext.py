@@ -134,3 +134,44 @@ def done_ids_from_history(history_l2: str | None) -> set[str]:
         if ticket and ticket != "Ticket":
             out.add(ticket)
     return out
+
+
+def _mission_order(stories: list[Story]) -> list[Story]:
+    """Sequencing row order first, then stories the table omits, in
+    backlog order (stable sort on the 'absent' flag)."""
+    return sorted(
+        stories,
+        key=lambda s: (s.seq_index is None, s.seq_index if s.seq_index is not None else 0),
+    )
+
+
+def statuses(
+    missions: list[ParsedMission], drafted: set[str], done: set[str] | None
+) -> list[StoryStatus]:
+    """One `StoryStatus` per backlog story, first rule that matches:
+    done (id in `done`) → drafted (ticket file exists) → ready (no file,
+    every dependency done, every D-row blocking it DECIDED) → blocked,
+    with one reason per cause. `done=None` means the hub could not answer:
+    nothing is done, and the caller says why in a note."""
+    known = {s.us_id for _m, stories, _d in missions for s in stories}
+    done_set = done or set()
+    out: list[StoryStatus] = []
+    for _mission_id, stories, decisions in missions:
+        for s in _mission_order(stories):
+            if s.us_id in done_set:
+                out.append(StoryStatus(s.us_id, s.mission_id, s.title, "done", ()))
+                continue
+            if s.us_id in drafted:
+                out.append(StoryStatus(s.us_id, s.mission_id, s.title, "drafted", ()))
+                continue
+            reasons: list[str] = []
+            for dep in s.depends_on:
+                if dep in done_set:
+                    continue
+                reasons.append(f"US {dep} not done" if dep in known else f"US {dep} unknown")
+            for d in decisions.rows.values():
+                if s.us_id in d.blocks and d.status.strip().upper() != DECIDED:
+                    reasons.append(f"{d.id} {d.status.strip() or 'OPEN'} (owner: {d.owner or '?'})")
+            status = "blocked" if reasons else "ready"
+            out.append(StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons)))
+    return out

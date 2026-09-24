@@ -118,3 +118,66 @@ def test_done_ids_from_history_reads_every_hist_section():
 def test_done_ids_from_history_handles_missing_text():
     assert missionnext.done_ids_from_history(None) == set()
     assert missionnext.done_ids_from_history("") == set()
+
+
+def _run(drafted=(), done=None):
+    parsed = [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)]
+    return {
+        s.us_id: s
+        for s in missionnext.statuses(parsed, set(drafted), None if done is None else set(done))
+    }
+
+
+def test_first_story_with_decided_row_is_ready():
+    s = _run()["M-platform-US1"]
+    assert s.status == "ready" and s.reasons == ()
+
+
+def test_dependency_not_done_blocks_even_when_drafted():
+    by = _run(drafted=["M-platform-US1"])
+    assert by["M-platform-US1"].status == "drafted"
+    assert by["M-platform-US2"].status == "blocked"
+    assert by["M-platform-US2"].reasons == (
+        "US M-platform-US1 not done",
+        "D2 OPEN (owner: Alice)",
+    )
+
+
+def test_done_dependency_and_decided_rows_make_ready():
+    by = _run(drafted=["M-platform-US1"], done=["M-platform-US1"])
+    assert by["M-platform-US1"].status == "done"
+    assert by["M-catalog-US1"].status == "ready"
+    assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: Alice)",)
+
+
+def test_cross_mission_dependency_and_order():
+    order = [s.us_id for s in missionnext.statuses(
+        [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)], set(), set()
+    )]
+    assert order == [
+        "M-platform-US1", "M-platform-US2", "M-platform-US3",   # US3 absent from Sequencing → last
+        "M-catalog-US2", "M-catalog-US1",                       # Sequencing row order, not backlog
+    ]
+    by = _run(done=["M-platform-US1", "M-catalog-US1"])
+    assert by["M-catalog-US2"].status == "blocked"
+    assert by["M-catalog-US2"].reasons == ("US M-platform-US2 not done",)
+
+
+def test_unknown_dependency_is_named():
+    text = CATALOG.replace("M-platform-US1", "M-ghost-US9")
+    parsed = [missionnext.parse_mission(text)]
+    by = {s.us_id: s for s in missionnext.statuses(parsed, set(), set())}
+    assert by["M-catalog-US1"].reasons == ("US M-ghost-US9 unknown",)
+
+
+def test_no_done_information_never_marks_done():
+    by = _run(drafted=["M-platform-US1"], done=None)
+    assert by["M-platform-US1"].status == "drafted"
+    assert by["M-catalog-US1"].status == "blocked"
+    assert by["M-catalog-US1"].reasons == ("US M-platform-US1 not done",)
+
+
+def test_decision_with_empty_status_and_owner_prints_placeholders():
+    text = PLATFORM.replace("| D2 | New svc.metrics | OPEN | Alice |", "| D2 | New svc.metrics |  |  |")
+    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], set(), {"M-platform-US1"})}
+    assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: ?)",)
