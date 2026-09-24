@@ -5,7 +5,7 @@ All notable changes to Strata are recorded here. This project follows
 
 ## Unreleased
 
-- `kb plan waves` `<plan-file>`: the dependency waves of a `docs/impl/<ticket-id>-plan.md` — wave n holds the tasks whose every `Depends on:` task sits in an earlier wave — and an exit-1 error for a file shared by two tasks with no dependency path, a cycle, an unknown task, or a task with no `Depends on:` line. Deterministic; `dev-execute` runs it before parallelising.
+- `kb plan waves` `<plan-file>`: the dependency waves of a `docs/impl/<ticket-id>-plan.md` — wave n holds the tasks whose every `Depends on:` task sits in an earlier wave — and an exit-1 error for a file shared by two tasks with no dependency path, a cycle, an unknown task, or a task with no `Depends on:` line. Deterministic; `dev-execute` runs it before parallelising. Dev repos: `dev-plan` writes a `Depends on:` line per task (derived from Interfaces and shared files) and its A2 review asks a fifth question and runs `kb plan waves`; `dev-execute` runs a wave of independent tasks in git worktree lanes (at most 3 at a time, merged back with `--no-ff`, a conflict returned to `dev-plan`). `QUICKSTART-dev.md` gains *Waves and lanes*. Re-run `kb init --kind dev` to pick up the new text.
 
 ## 1.3.0 — 2026-09-24
 

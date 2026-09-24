@@ -159,6 +159,21 @@ resume cold in a brand-new session. `kb init` never touches your
 directory exists before your first ticket does) and `docs/impl/.gitignore`
 (so the context cache never lands in a PR).
 
+### Waves and lanes
+
+Every task in `docs/impl/<ticket-id>-plan.md` carries a `Depends on:` line
+under its `### Task <n>:` heading — `none`, or the tasks whose Interfaces it
+consumes or whose files it shares. `dev-plan` derives it; the A2 reviewer
+checks it. `kb plan waves docs/impl/<ticket-id>-plan.md` turns those lines
+into waves (wave n = tasks whose dependencies all sit in earlier waves) and
+fails when two tasks share a file without a dependency between them, when
+there is a cycle, or when a line is missing — a plan like that has no safe
+parallel order. `dev-execute` runs it after isolating the branch: a wave of
+one task runs as before; a wave of several runs each task in its own git
+worktree lane cut from the ticket branch, at most 3 lanes at a time, merged
+back in task order with `--no-ff`, the full suite run once per wave. A merge
+conflict means the plan was wrong and goes back to `dev-plan`.
+
 ## The four gates, five agent review rounds
 
 Nothing in this pipeline merges or ships without a human:
@@ -463,6 +478,9 @@ tiering change shows up in the report the next ticket generates.
 - `kb svc note <service> --ticket <id> --title "<title>" [--refs "..."]`
   — append this ticket to `<repo_id>-svc §hist.<service>` (run by
   `dev-handover`; idempotent per ticket)
+- `kb plan waves <plan-file> [--json]` — dependency waves of a dev plan;
+  exit 1 on a shared file without a dependency, a cycle, or a missing
+  `Depends on:` line
 - `kb doctor --hub <url>` — check the hub is reachable and
   `.kb/config.yaml` is valid
 - `kb usage report [--ticket <id>] [--md]` — token and cost totals for this

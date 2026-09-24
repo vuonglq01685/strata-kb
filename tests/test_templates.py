@@ -2858,3 +2858,12 @@ def test_dev_execute_runs_plan_waves_and_lanes():
         assert "Record the ticket branch's HEAD at that moment as `<lane-base>`." in body, name
         assert "A lane implementer never edits `docs/impl/<ticket-id>-plan.md`" in body, name
         assert "the first wave with an unticked task" in body, name
+
+
+def test_quickstart_dev_documents_plan_waves_and_lanes():
+    text = _normalised(_read_init_template("QUICKSTART-dev.md"))
+    assert "### Waves and lanes" in text
+    assert "`Depends on:` line" in text
+    assert "`kb plan waves docs/impl/<ticket-id>-plan.md`" in text
+    assert "at most 3 lanes at a time" in text
+    assert "- `kb plan waves <plan-file> [--json]`" in text
