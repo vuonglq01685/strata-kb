@@ -25,6 +25,10 @@ for it during Intake.
    mission id with the BA: `M-<slug>`, where `<slug>` is lowercase
    kebab-case. The filename stem must equal the id. Ask for target tags
    (e.g. `#arinc424 #airspace`) or an explicit doc-id. Ask, don't guess.
+   Ask also for the doc-id of the architecture document on the hub, when
+   one exists — the SA cites it for every service the mission will
+   create. Never ask whether the repo is greenfield; the SA sees that in
+   `-code`.
 2. **Ground** — use the MCP tool `kb_search` when it is available;
    otherwise fall back to `kb query "<text>" --tags <tags>` (CLI).
    **Budget the search:** 500–800 tokens for broad discovery — enough
@@ -79,6 +83,16 @@ for it during Intake.
    the reasoning — never just a single title row. After the BA confirms
    the backlog, fill `## Sequencing` (US ID / Depends on / Size /
    Notes) — Devs never infer ordering.
+
+   **Greenfield:** when the BA says the repo is a skeleton, or step 5
+   comes back with no existing `svc.*` (revisit the split then), the
+   first story is the **foundation slice** — what the architecture
+   document says must exist before any feature story (services,
+   database, API skeleton), cited `[<arch-doc> §x]`, outcome-level ACs,
+   still at most 10; every other story `Depends on` it in `## Sequencing`.
+   The story-size heuristic applies: the foundation may be two stories.
+   `Depends on` may name a story of another mission (`M-<other>-US<n>`)
+   — that is how cross-mission order is written.
 5. **Ground services** — once the BA has confirmed the backlog and
    `## Sequencing` is filled, invoke `sa-ticket-ground --mission` on the
    draft. It fills the SA-owned `## Services & order` section from the
@@ -90,6 +104,12 @@ for it during Intake.
    your call.
    `kb mission lint` already warns on an ownerless D-row — that warning
    is the BA's to close, never the SA's.
+5b. **Decide** — present the whole `## Technology decisions` table to
+   the BA once. The BA flips to `DECIDED` the rows whose citation they
+   confirm; a row with no citation keeps `OPEN` and a named owner. You
+   never flip a status. A story whose blocking rows are all `DECIDED`
+   and whose dependencies are done is what `kb mission next` reports as
+   `ready` — the Definition of Ready's decided-rows item is this step.
 6. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly those
@@ -204,3 +224,7 @@ for it during Intake.
   it closes gaps with facts already confirmed by the BA or the KB, and
   everything else becomes an owned `OPEN(...)`. Scores below 4 after
   3 rounds are reported, not hidden.
+- A `[NEW: D<n>]` proposal that cites an architecture section on the
+  hub is a recorded decision: the BA flips it at mission time, in step
+  5b, not ticket by ticket. A proposal without a citation stays `OPEN`
+  with a human owner.
