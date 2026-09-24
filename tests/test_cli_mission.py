@@ -505,3 +505,15 @@ def test_mission_next_no_mission_line_is_skipped_with_a_note(tmp_path):
     assert "note: skipped" in result.output and "notes.md" in result.output
     assert "no '> Mission:' line" in result.output
     assert "| M-platform-US1 |" in result.output
+
+
+def test_docs_name_the_next_command():
+    from pathlib import Path as _P
+
+    root = _P(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert "| `kb mission next` | Which story next: done / drafted / ready / blocked across `missions/`, done derived from the hub's `<repo>-svc` history |" in readme
+    assert "`kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]`" in readme
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert changelog.index("## Unreleased") < changelog.index("## 1.3.0")
+    assert "`kb mission next`" in changelog
