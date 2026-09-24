@@ -625,8 +625,8 @@ def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
 def _hub_or_exit(hub_flag: str, kb_dir: Path) -> HubHandle:
     """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
     handle, reason = _hub_or_reason(hub_flag, kb_dir)
-    if handle is None:
-        typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
+    if reason:
+        typer.secho(reason, fg=typer.colors.RED)
         raise typer.Exit(1)
     return handle
 
@@ -2783,19 +2783,24 @@ def mission_next(
         doc_id = f"{rid}-svc"
         local = kb_dir / doc_id
         doc = None
+        hub_reason = ""
         try:
             if (local / "_manifest.yaml").exists():
                 doc = ticketcheck.load_doc_dir(local, str(local))
             else:
-                handle = _hub_or_exit(hub, kb_dir)
-                doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
+                handle, hub_reason = _hub_or_reason(hub, kb_dir)
+                if handle is not None:
+                    doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
         except ticketcheck.DocLoadError as exc:
             notes.append(f"done: unknown ({exc})")
-        if doc is None and not any(n.startswith("done: unknown") for n in notes):
-            notes.append(
-                f"done: unknown ({doc_id} not published — the Dev repo has not run "
-                "dev-code-seed, or CI has not published yet)"
-            )
+        else:
+            if hub_reason:
+                notes.append(f"done: unknown ({hub_reason})")
+            elif doc is None:
+                notes.append(
+                    f"done: unknown ({doc_id} not published — the Dev repo has not run "
+                    "dev-code-seed, or CI has not published yet)"
+                )
         if doc is not None:
             done = missionnext.done_ids_from_history(doc.read_group("history"))
 

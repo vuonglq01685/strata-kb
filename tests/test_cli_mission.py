@@ -401,6 +401,22 @@ def test_mission_next_svc_absent_on_hub_is_a_note(tmp_path, fed_hub):
     assert "| M-platform-US1 | M-platform | ready |  |" in result.output
 
 
+def test_mission_next_no_hub_configured_is_a_note_not_a_red_line(tmp_path, monkeypatch):
+    """Grounded on present, no --hub, STRATA_KB_HUB unset, no local -svc,
+    and --kb-dir an empty dir (no .kb/config.yaml) — the common BA case.
+    Must still exit 0 with a table, not the red line `_hub_or_exit` prints."""
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path)
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"), "--kb-dir", str(empty_kb),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "note: done: unknown (" in result.output
+    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
+
+
 def test_mission_next_reads_history_from_the_hub(tmp_path, fed_hub, run_git):
     import shutil
 
