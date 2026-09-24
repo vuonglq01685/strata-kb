@@ -5,7 +5,10 @@ argument-hint: "[business need]"
 
 Invoke the `ba-ticket-author` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the business need when given;
-when empty, ask for it during Intake.
+when empty, ask for it during Intake — and, with a `missions/` directory
+present, run `kb mission next` first and propose the first `ready` story.
+A `blocked` story may be drafted only with its reasons acknowledged by
+the BA and carried into the handover.
 
 Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
 to `tickets/<ticket-id>.md` — or `tickets/<mission-id>-US<n>.md`
