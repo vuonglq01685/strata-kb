@@ -109,6 +109,14 @@ def _l3_safe(text: str) -> str:
     Minor 6): `_render_l3_rows` wraps every ticket's stanza in a ```text
     fence, and an un-neutralised triple backtick in a title would close
     that fence early, corrupting every stanza rendered after it.
+
+    Ruling R5's "absent, not merely escaped" invariant is scoped to
+    author-supplied text that actually flows through this function (ticket
+    titles, refs); it does not bind machine-extracted command values a
+    different reader inlines straight into a service's L3 (e.g. a compose
+    healthcheck's `CMD-SHELL` string) — rewriting those would corrupt the
+    evidence the SA grounds on. `test_l3_has_no_pipe_table` carves that
+    case out explicitly rather than routing it through `_l3_safe`.
     """
     text = " ".join(text.split())
     return text.replace("|", "/").replace("`", "'")

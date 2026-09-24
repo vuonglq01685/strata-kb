@@ -1228,6 +1228,13 @@ class TestServicesExtractor:
                 # delimiter; L3 is a `yaml.safe_dump` block, where a `|`
                 # that isn't the first character of a scalar has no special
                 # meaning, so it is correctly left unescaped/unquoted here.
+                # Strip just that known substring rather than skipping the
+                # section outright, so a pipe table leaking into the rest
+                # of this section's L3 is still caught (see the sibling
+                # assertion in test_codeingest_scaffold.py).
+                assert "|" not in s.l3_md.replace(
+                    "curl -s http://localhost/health | grep -q ok", ""
+                ), s.id
                 continue
             assert "|" not in s.l3_md, s.id
 

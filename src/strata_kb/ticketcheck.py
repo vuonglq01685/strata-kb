@@ -593,8 +593,9 @@ def _property(body: str, name: str) -> str | None:
     (services.py's `escape_cell` backslash-escapes a literal `|` — e.g. a
     `CMD-SHELL "... | ..."` healthcheck) — silently truncating the cell
     before this function's own `.replace("\\|", "|")` ever runs on it.
-    `lintcore.table_rows` has 9+ other call sites and stays as is; this
-    re-split is local to the one caller here that needs escape-awareness.
+    `lintcore.table_rows` has 8 other call sites in `src/` (plus 1 in
+    `tests/test_lintcore.py`) and stays as is; this re-split is local to
+    the one caller here that needs escape-awareness.
     """
     for raw_line in body.splitlines():
         line = raw_line.strip()
