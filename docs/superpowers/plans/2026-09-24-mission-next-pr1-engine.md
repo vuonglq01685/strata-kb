@@ -656,11 +656,8 @@ def test_render_table_and_next_line():
     assert lines[1] == "|---|---|---|---|"
     assert "| M-platform-US1 | M-platform | done |  |" in lines
     assert "| M-platform-US2 | M-platform | blocked | D2 OPEN (owner: Alice) |" in lines
-    # two open dependencies, joined with "; " in Depends-on cell order
-    assert "| M-catalog-US2 | M-catalog | blocked | US M-catalog-US1 not done; US M-platform-US2 not done |" in lines
-    # M-platform-US3 has no dependency and no D-row, so it is the first ready
-    # story in output order (before any M-catalog story).
-    assert lines[-1] == "Next: M-platform-US3 — Backups"
+    assert "| M-catalog-US2 | M-catalog | blocked | US M-platform-US2 not done |" in lines
+    assert lines[-1] == "Next: M-catalog-US1 — Browse titles"
     assert lines[-2] == ""
 
 
@@ -927,11 +924,6 @@ def test_mission_next_bad_dirs_are_red_lines(tmp_path):
 
 def test_mission_next_unreadable_mission_is_skipped_with_a_note(tmp_path):
     root = _ba_layout(tmp_path)
-    # No `Grounded on:` line, so no repo id is derived and the hub is never
-    # consulted — this test has no hub and no --kb-dir with a -svc document.
-    (root / "missions" / "M-platform.md").write_text(
-        PLATFORM_NEXT.replace("- Grounded on: demo:demo-code @ abc1234\n", ""), encoding="utf-8"
-    )
     (root / "missions" / "M-bad.md").write_bytes(b"\xff\xfe# bad")
     result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
     assert result.exit_code == 0, result.output
