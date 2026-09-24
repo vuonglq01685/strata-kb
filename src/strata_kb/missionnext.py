@@ -13,7 +13,7 @@ and `missionlint.py` keep.
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass  # noqa: F401 -- asdict used by Task 4
+from dataclasses import asdict, dataclass
 
 from strata_kb import lintcore, mission
 from strata_kb.mdutils import _SEP_ROW_RE
@@ -175,3 +175,38 @@ def statuses(
             status = "blocked" if reasons else "ready"
             out.append(StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons)))
     return out
+
+
+def next_story(results: list[StoryStatus]) -> StoryStatus | None:
+    return next((r for r in results if r.status == "ready"), None)
+
+
+def _next_line(results: list[StoryStatus]) -> str:
+    nxt = next_story(results)
+    if nxt is not None:
+        return f"Next: {nxt.us_id} — {nxt.title}"
+    count = {k: sum(1 for r in results if r.status == k) for k in ("blocked", "drafted", "done")}
+    return (
+        f"Next: none ready — {count['blocked']} blocked, "
+        f"{count['drafted']} drafted, {count['done']} done"
+    )
+
+
+def render(results: list[StoryStatus], notes: list[str]) -> str:
+    lines = [f"note: {n}" for n in notes]
+    if lines:
+        lines.append("")
+    lines += ["| US | Mission | Status | Reason |", "|---|---|---|---|"]
+    for r in results:
+        lines.append(f"| {r.us_id} | {r.mission_id} | {r.status} | {'; '.join(r.reasons)} |")
+    lines += ["", _next_line(results)]
+    return "\n".join(lines)
+
+
+def to_json(results: list[StoryStatus], notes: list[str]) -> dict:
+    nxt = next_story(results)
+    return {
+        "notes": list(notes),
+        "stories": [{**asdict(r), "reasons": list(r.reasons)} for r in results],
+        "next": nxt.us_id if nxt is not None else None,
+    }
