@@ -773,7 +773,10 @@ def test_unparseable_compose_line_warns_instead_of_passing_silently(code_doc):
     text = ticket(grounding(rev, Volumes="pgdata"))
     report = run(text, kb_dir)
     assert errors(report) == []
-    assert any("pgdata" in w and "expected" in w for w in warnings(report))
+    assert any(
+        w == "Volumes: line does not parse — expected `svc.<name> — <values>` (got: pgdata) (line 17)"
+        for w in warnings(report)
+    )
 
 
 def test_new_marker_exempts_a_healthcheck_value(code_doc):
@@ -804,3 +807,48 @@ def test_healthcheck_bare_url_is_never_read_as_a_section_id(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — curl -f http://api.internal/health")), kb_dir)
     assert not any("unknown id 'api.internal" in e for e in errors(report))
+
+
+def test_new_service_healthchecks_line_does_not_report_unknown_id(code_doc):
+    """The Healthchecks twin of `test_new_service_compose_line_does_not_
+    trigger_the_pre_1_3_0_note`: a greenfield `[NEW]` service named on a
+    `Healthchecks:` line must keep its exemption. `_id_lines` blanks a
+    Healthchecks value so a bare URL/command isn't read as a section id
+    (review finding #5) — that blanking must not also delete the `[NEW: …]`
+    marker the id scan relies on to exempt the id (Critical regression)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Service="svc.airspace-service, svc.billing [NEW: D1]",
+            Healthchecks="svc.billing — `pg_isready` [NEW: D1]",
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert not any("unknown id 'svc.billing'" in e for e in errors(report))
+
+
+def test_new_marker_on_a_multi_value_healthchecks_group_exempts_only_its_value(code_doc):
+    """`[NEW: …]` after a multi-value Healthchecks group (two backticked
+    spans on one `svc.<x> — ` group) must exempt only the value the marker
+    actually sits next to, not every value in the group — the brief's own
+    rule for the single-value case ("the marker exempts only the value it
+    sits on") applies here too (Minor 2)."""
+    kb_dir, rev = code_doc
+    text = ticket(
+        grounding(
+            rev,
+            Healthchecks=(
+                "svc.airspace-service — `curl -f http://localhost:8080/health`, "
+                "`extra-check` [NEW: D1]"
+            ),
+        ),
+        parent="M-demo",
+    )
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert any(
+        "healthcheck for svc.airspace-service" in e and "extra-check" in e
+        for e in errors(report)
+    )
+    assert not any("new:" in n and "curl" in n for n in notes(report))

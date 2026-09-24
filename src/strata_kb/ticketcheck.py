@@ -393,12 +393,18 @@ def _id_lines(section: _Section):
     `Healthchecks` line, every `svc.<x> — <value>` value is blanked —
     backticked or bare, matching both forms `_split_values` accepts — so a
     URL or command inside it (`curl -f http://api.internal/health`) is never
-    read as a section id; the `svc.<x>` id itself stays visible."""
+    read as a section id; the `svc.<x>` id itself stays visible, and any
+    `[NEW: …]` marker in the value survives the blanking so `_check_ids`
+    still sees it."""
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] in ("Grounded on", "Files"):
             continue
         if section.field_of_line[i] == "Healthchecks":
-            line = _COMPOSE_GROUP_RE.sub(lambda m: m.string[m.start():m.start("values")], line)
+            line = _COMPOSE_GROUP_RE.sub(
+                lambda m: m.string[m.start():m.start("values")]
+                + " ".join(n.group(0) for n in NEW_RE.finditer(m.group("values"))),
+                line,
+            )
         if line.strip():
             yield section.first_line + i, line
 
@@ -586,10 +592,11 @@ def _svc_facts(doc: LoadedDoc, sid: str, field: str, unreadable: set[str],
     `{"curl -f …"}`, `set()` for `none`. None when the section is unreadable
     or missing (`_l2_slice` already warned about that) or when its L2
     section has no `field` property row at all — the pre-1.3.0 code-ingest
-    case, recorded into `row_absent` so the caller notes it once, scoped to
-    the sids it actually affects. Callers must not call this for a `sid`
-    outside the document's manifest — that's a different failure (an
-    unresolved or `[NEW]` id), already reported by `_check_ids`."""
+    case, which adds `sid` to `row_absent` to trigger the caller's one
+    document-scoped note (its text is not per-sid; do not read it as one).
+    Callers must not call this for a `sid` outside the document's manifest —
+    that's a different failure (an unresolved or `[NEW]` id), already
+    reported by `_check_ids`."""
     body = _l2_slice(doc, sid, unreadable, issues)
     if body is None:
         return None
@@ -636,7 +643,10 @@ def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decision
                 continue
             matches = list(_COMPOSE_GROUP_RE.finditer(rest))
             if not matches:
-                issues.append(Issue("warning", f"{rest}: expected `svc.<name> — <values>` (line {lineno})"))
+                issues.append(Issue(
+                    "warning",
+                    f"{field}: line does not parse — expected `svc.<name> — <values>` (got: {rest}) (line {lineno})",
+                ))
                 continue
             for g in matches:
                 sid = g.group(1).rstrip(".")
@@ -656,8 +666,18 @@ def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decision
                 # A Healthchecks `[NEW: …]` marker sits outside the backtick
                 # span, so `_split_values` never returns it as part of
                 # `value` — search the whole group's raw text for it too.
-                raw_new = NEW_RE.search(values_raw) if field == "Healthchecks" else None
-                for value in _split_values(field, values_raw):
+                # Only fall back to it for a single-value group: with two+
+                # values on one line (`` `x`, `y` [NEW: D1]``) the marker
+                # sits on one of them, not on both, and `_split_values` has
+                # no way to say which — spreading it to every value would
+                # exempt values the marker was never written for.
+                split_values = _split_values(field, values_raw)
+                raw_new = (
+                    NEW_RE.search(values_raw)
+                    if field == "Healthchecks" and len(split_values) == 1
+                    else None
+                )
+                for value in split_values:
                     new = NEW_RE.search(value) or raw_new
                     if new is not None:
                         _judge_new(NEW_RE.sub("", value).strip(), new, lineno, decisions, issues, notes)
