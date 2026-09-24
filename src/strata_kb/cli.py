@@ -7,6 +7,7 @@ import sys
 import unicodedata
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 import yaml
@@ -14,6 +15,9 @@ from pydantic import ValidationError
 
 from strata_kb import models
 from strata_kb.utf8io import force_utf8_streams
+
+if TYPE_CHECKING:
+    from strata_kb.hub import HubHandle
 
 force_utf8_streams()
 
@@ -568,8 +572,12 @@ def _resolve_mcp_value(
     return value.strip()
 
 
-def _hub_or_exit(hub_flag: str, kb_dir: Path):
-    """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
+def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
+    """Same resolution as `_hub_or_exit`, but a failure is a returned reason
+    string instead of a red line + exit — for a caller (`mission next`) that
+    treats "no hub" as a fact to report, not a fatal error. A malformed
+    operator .kb/config.yaml is still a hard exit via `_invalid_yaml_exit`
+    (H1): that is an authoring error, not a "no hub configured" fact."""
     from strata_kb import gitio
     from strata_kb.config import HubConfigError, require_hub
     from strata_kb.hub import resolve_hub
@@ -577,8 +585,7 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     try:
         hub_ref = require_hub(hub_flag, kb_dir)
     except HubConfigError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        return None, str(exc)
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         # require_hub -> load_config -> models.load_yaml_model raises
         # ValidationError / yaml.YAMLError for an operator-edited
@@ -592,28 +599,32 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     # (`doctor` included, the CHANGELOG's 0.21.0 no-traceback claim for it)
     # is exactly the kind of process that would be holding it open. Same
     # shape as mcp._hub (Wave G fix round 3) and web/api.hub_handle
-    # (e869320) -- but this is a CLI path, not one that degrades to a
-    # cache-less handle: it must exit 1 naming the way forward, not return
-    # None. _discard_cache's own GitError message already names the cache,
-    # says it is disposable, and tells the operator to delete it -- let
-    # that through unwrapped rather than replacing it.
+    # (e869320) -- the message already names the cache, says it is
+    # disposable, and tells the operator to delete it -- let it through
+    # unwrapped rather than replacing it.
     try:
         handle = resolve_hub(hub_ref)
     except gitio.GitError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        return None, str(exc)
     if handle is None:
-        typer.secho(
+        return None, (
             f"could not reach hub '{gitio.redact_url(hub_ref)}' and no cache exists — "
-            "check the network or the hub path",
-            fg=typer.colors.RED,
+            "check the network or the hub path"
         )
-        raise typer.Exit(1)
     if handle.stale:
         age = f"~{handle.age_seconds:.0f}s" if handle.age_seconds else "unknown age"
         typer.secho(
             f"[warn] hub cache is stale ({age})", fg=typer.colors.YELLOW, err=True
         )
+    return handle, ""
+
+
+def _hub_or_exit(hub_flag: str, kb_dir: Path) -> HubHandle:
+    """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
+    handle, reason = _hub_or_reason(hub_flag, kb_dir)
+    if reason:
+        typer.secho(reason, fg=typer.colors.RED)
+        raise typer.Exit(1)
     return handle
 
 
@@ -2729,19 +2740,24 @@ def mission_next(
         doc_id = f"{rid}-svc"
         local = kb_dir / doc_id
         doc = None
+        hub_reason = ""
         try:
             if (local / "_manifest.yaml").exists():
                 doc = ticketcheck.load_doc_dir(local, str(local))
             else:
-                handle = _hub_or_exit(hub, kb_dir)
-                doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
+                handle, hub_reason = _hub_or_reason(hub, kb_dir)
+                if handle is not None:
+                    doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
         except ticketcheck.DocLoadError as exc:
             notes.append(f"done: unknown ({exc})")
-        if doc is None and not any(n.startswith("done: unknown") for n in notes):
-            notes.append(
-                f"done: unknown ({doc_id} not published — the Dev repo has not run "
-                "dev-code-seed, or CI has not published yet)"
-            )
+        else:
+            if hub_reason:
+                notes.append(f"done: unknown ({hub_reason})")
+            elif doc is None:
+                notes.append(
+                    f"done: unknown ({doc_id} not published — the Dev repo has not run "
+                    "dev-code-seed, or CI has not published yet)"
+                )
         if doc is not None:
             done = missionnext.done_ids_from_history(doc.read_group("history"))
 
