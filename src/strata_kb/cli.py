@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import os
 import sys
+import unicodedata
 from enum import Enum
 from pathlib import Path
 
@@ -2654,6 +2655,101 @@ def mission_lint(
     # content moved", which a caller may want to treat differently from a
     # mission that is simply not ready.
     raise typer.Exit(2 if report.stale_errors == errors else 1)
+
+
+@mission_app.command("next")
+def mission_next(
+    missions_dir: Path = typer.Option(
+        Path("missions"), "--missions-dir", help="Where mission files live"
+    ),
+    tickets_dir: Path | None = typer.Option(
+        None,
+        "--tickets-dir",
+        help="Where ticket files live (default: the missions dir's sibling 'tickets/')",
+    ),
+    repo_id: str = typer.Option(
+        "",
+        "--repo-id",
+        help="Product repo id whose <repo-id>-svc history marks stories done "
+        "(default: the repo in the missions' 'Grounded on:' line)",
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "",
+        "--hub",
+        envvar="STRATA_KB_HUB",
+        help="kb-hub URL/path (empty = config); consulted only when the "
+        "-svc document is not under --kb-dir",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON instead of text"
+    ),
+) -> None:
+    """Which story next: every backlog story across missions/ as done /
+    drafted / ready / blocked. Done is derived from the hub's <repo>-svc
+    history (kb svc note rows). Read-only; exit 0 after a report."""
+    from strata_kb import missionnext, ticketcheck
+
+    for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
+        if d is not None and not d.is_dir():
+            typer.secho(
+                f"{label} '{d}' does not exist or is not a directory", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+
+    notes: list[str] = []
+    parsed: list[missionnext.ParsedMission] = []
+    texts: list[str] = []
+    for path in sorted(missions_dir.glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            notes.append(f"skipped {path}: {exc}")
+            continue
+        text = unicodedata.normalize("NFC", text)
+        parsed_mission = missionnext.parse_mission(text)
+        if parsed_mission[0] is None:
+            notes.append(f"skipped {path}: no '> Mission:' line")
+            continue
+        texts.append(text)
+        parsed.append(parsed_mission)
+
+    resolved_tickets = tickets_dir if tickets_dir is not None else missions_dir.parent / "tickets"
+    drafted: set[str] = set()
+    if resolved_tickets.is_dir():
+        drafted = {p.stem for p in resolved_tickets.glob("*.md")}
+    else:
+        notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as drafted")
+
+    rid = repo_id or next((r for r in map(missionnext.grounded_repo_id, texts) if r), None)
+    done: set[str] | None = None
+    if not rid:
+        notes.append("done: unknown (no repo id — pass --repo-id)")
+    else:
+        doc_id = f"{rid}-svc"
+        local = kb_dir / doc_id
+        doc = None
+        try:
+            if (local / "_manifest.yaml").exists():
+                doc = ticketcheck.load_doc_dir(local, str(local))
+            else:
+                handle = _hub_or_exit(hub, kb_dir)
+                doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
+        except ticketcheck.DocLoadError as exc:
+            notes.append(f"done: unknown ({exc})")
+        if doc is None and not any(n.startswith("done: unknown") for n in notes):
+            notes.append(
+                f"done: unknown ({doc_id} not published — the Dev repo has not run "
+                "dev-code-seed, or CI has not published yet)"
+            )
+        if doc is not None:
+            done = missionnext.done_ids_from_history(doc.read_group("history"))
+
+    results = missionnext.statuses(parsed, drafted, done)
+    if json_output:
+        typer.echo(json.dumps(missionnext.to_json(results, notes)))
+    else:
+        typer.echo(missionnext.render(results, notes))
 
 
 @app.command()

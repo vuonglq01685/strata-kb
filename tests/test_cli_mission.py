@@ -302,3 +302,190 @@ def test_mission_lint_exits_0_on_a_stale_ref_without_the_flag(fed_hub, tmp_path)
         app, ["mission", "lint", str(path), "--hub", str(fed_hub)]
     )
     assert result.exit_code == 0
+
+
+# --- kb mission next -------------------------------------------------------
+
+PLATFORM_NEXT = """# Platform operations
+> Mission: M-platform
+
+## US backlog
+| US ID | Title |
+|---|---|
+| M-platform-US1 | Foundation slice |
+| M-platform-US2 | Observability |
+
+## Sequencing
+| US ID | Depends on | Size | Notes |
+|---|---|---|---|
+| M-platform-US1 | none | L | first |
+| M-platform-US2 | US1 | M | |
+
+## Technology decisions
+| # | Decision | Status | Owner | Blocks |
+|---|---|---|---|---|
+| D1 | New svc.airspace-service | DECIDED | lead | M-platform-US1 |
+
+## Services & order
+- Grounded on: demo:demo-code @ abc1234
+"""
+
+
+def _ba_layout(tmp_path: Path, *, drafted: tuple[str, ...] = ()) -> Path:
+    root = tmp_path / "ba"
+    (root / "missions").mkdir(parents=True)
+    (root / "tickets").mkdir()
+    (root / "missions" / "M-platform.md").write_text(PLATFORM_NEXT, encoding="utf-8")
+    for us in drafted:
+        (root / "tickets" / f"{us}.md").write_text(f"# {us}\n", encoding="utf-8")
+    return root
+
+
+def _svc_kb(tmp_path: Path) -> Path:
+    """A dev-side .kb with demo-code AND demo-svc whose history records
+    M-platform-US1 — what CI publishes to the hub after dev-handover."""
+    from strata_kb import svcnote
+    from strata_kb.codeingest import core
+    from tests.fixtures_coderepo import build_code_repo
+
+    repo = tmp_path / "dev"
+    repo.mkdir()
+    build_code_repo(repo)
+    kb_dir = tmp_path / "devkb"
+    core.run(core.CodeIngestOptions(
+        repo_root=repo, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo", scaffold_svc=True,
+    ))
+    svcnote.add_note(
+        kb_dir, "demo", "airspace-service",
+        svcnote.Note(ticket="M-platform-US1", title="Foundation slice", refs=()),
+    )
+    return kb_dir
+
+
+def test_mission_next_local_svc_marks_done_and_names_next(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    kb_dir = _svc_kb(tmp_path)
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"), "--kb-dir", str(kb_dir),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | done |  |" in result.output
+    assert "| M-platform-US2 | M-platform | ready |  |" in result.output
+    assert result.output.rstrip().endswith("Next: M-platform-US2 — Observability")
+
+
+def test_mission_next_without_repo_id_reports_unknown_done(tmp_path):
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    (root / "missions" / "M-platform.md").write_text(
+        PLATFORM_NEXT.replace("- Grounded on: demo:demo-code @ abc1234\n", ""), encoding="utf-8"
+    )
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "note: done: unknown (no repo id — pass --repo-id)" in result.output
+    assert "| M-platform-US1 | M-platform | drafted |  |" in result.output
+    assert "| M-platform-US2 | M-platform | blocked | US M-platform-US1 not done |" in result.output
+    assert "Next: none ready — 1 blocked, 1 drafted, 0 done" in result.output
+
+
+def test_mission_next_svc_absent_on_hub_is_a_note(tmp_path, fed_hub):
+    root = _ba_layout(tmp_path)
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"),
+        "--kb-dir", str(empty_kb), "--hub", str(fed_hub),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "note: done: unknown (demo-svc not published" in result.output
+    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
+
+
+def test_mission_next_reads_history_from_the_hub(tmp_path, fed_hub, run_git):
+    import shutil
+
+    from strata_kb import models
+    from strata_kb.federation import FederationMeta, write_federation_index
+
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    kb_dir = _svc_kb(tmp_path)
+    entry = fed_hub / "federation" / "demo"
+    shutil.copytree(kb_dir / "demo-svc", entry / "demo-svc")
+    models.save_yaml_model(
+        entry / "index.yaml",
+        models.KBIndex(docs=[models.IndexEntry(id="demo-svc", title="demo — services", tags=["code"])]),
+    )
+    models.save_yaml_model(
+        entry / "_meta.yaml",
+        FederationMeta(repo_id="demo", source_commit="abc1234", published_at="2026-09-24T00:00:00+00:00"),
+    )
+    write_federation_index(fed_hub / "federation")
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish demo")
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"),
+        "--kb-dir", str(empty_kb), "--hub", str(fed_hub), "--json",
+    ])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["next"] == "M-platform-US2"
+    assert [s["status"] for s in data["stories"]] == ["done", "ready"]
+    assert data["notes"] == []
+
+
+def test_mission_next_explicit_repo_id_and_tickets_dir(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path)
+    elsewhere = tmp_path / "drafts"
+    elsewhere.mkdir()
+    (elsewhere / "M-platform-US1.md").write_text("# x\n", encoding="utf-8")
+    kb_dir = _svc_kb(tmp_path)
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"), "--tickets-dir", str(elsewhere),
+        "--repo-id", "demo", "--kb-dir", str(kb_dir),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | done |  |" in result.output
+
+
+def test_mission_next_bad_dirs_are_red_lines(tmp_path):
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(tmp_path / "nope")])
+    assert result.exit_code == 1
+    assert "does not exist or is not a directory" in result.output
+    root = _ba_layout(tmp_path)
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"), "--tickets-dir", str(tmp_path / "nope"),
+    ])
+    assert result.exit_code == 1
+    assert "does not exist or is not a directory" in result.output
+
+
+def test_mission_next_unreadable_mission_is_skipped_with_a_note(tmp_path):
+    root = _ba_layout(tmp_path)
+    # No `Grounded on:` line, so no repo id is derived and the hub is never
+    # consulted — this test has no hub and no --kb-dir with a -svc document.
+    (root / "missions" / "M-platform.md").write_text(
+        PLATFORM_NEXT.replace("- Grounded on: demo:demo-code @ abc1234\n", ""), encoding="utf-8"
+    )
+    (root / "missions" / "M-bad.md").write_bytes(b"\xff\xfe# bad")
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "note: skipped" in result.output and "M-bad.md" in result.output
+    assert "| M-platform-US1 |" in result.output
+
+
+def test_mission_next_no_mission_line_is_skipped_with_a_note(tmp_path):
+    root = _ba_layout(tmp_path)
+    # No `Grounded on:` line, so no repo id is derived and the hub is never
+    # consulted — this test has no hub and no --kb-dir with a -svc document.
+    (root / "missions" / "M-platform.md").write_text(
+        PLATFORM_NEXT.replace("- Grounded on: demo:demo-code @ abc1234\n", ""), encoding="utf-8"
+    )
+    (root / "missions" / "notes.md").write_text("# Notes\n\nfree text\n", encoding="utf-8")
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "note: skipped" in result.output and "notes.md" in result.output
+    assert "no '> Mission:' line" in result.output
+    assert "| M-platform-US1 |" in result.output
