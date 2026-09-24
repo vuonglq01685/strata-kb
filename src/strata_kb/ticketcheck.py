@@ -56,6 +56,9 @@ TREE_DEPTH = 4  # codeingest.extractors.tree._L3_DEPTH
 
 SERVICES_HEADING = "## Services & order"
 DECISION_REF_RE = re.compile(r"^D\d+$")
+# A full US id inside a table cell (`Blocks`, `Depends on`): the mission
+# slug is lowercase kebab-case (mission.MISSION_ID_RE), n >= 1.
+US_ID_IN_CELL_RE = re.compile(r"\bM-[a-z0-9]+(?:-[a-z0-9]+)*-US[1-9]\d*\b")
 
 _NONE_WORDS = frozenset({"none", "n/a", "-"})
 
@@ -92,6 +95,7 @@ class Decision:
     id: str
     status: str
     owner: str
+    blocks: tuple[str, ...] = ()   # US ids in the `Blocks` cell, as written
 
 
 @dataclass(frozen=True)
@@ -106,7 +110,8 @@ LoadDecisions = Callable[[str], DecisionTable | None]  # mission id -> table, No
 def parse_decisions(text: str, source: str) -> DecisionTable:
     """The `## Technology decisions` table of `text` keyed by its `#` cell.
     Columns are found by header name, so a reordered table still parses;
-    no section or no `#`/`Status` header -> empty rows."""
+    no section or no `#`/`Status` header -> empty rows. `blocks` carries
+    the full US ids of the `Blocks` cell (empty when the column is absent)."""
     body = lintcore.section_body(text, mission.TECH_DECISIONS_HEADING)
     rows = lintcore.table_rows(body) if body is not None else []
     if not rows:
@@ -114,6 +119,7 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
     i_id = _table_column(rows, "#")
     i_status = _table_column(rows, "status")
     i_owner = _table_column(rows, "owner")
+    i_blocks = _table_column(rows, "blocks")
     if i_id is None or i_status is None:
         return DecisionTable(source, {})
     out: dict[str, Decision] = {}
@@ -121,7 +127,9 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
         if len(r) <= max(i_id, i_status):
             continue
         owner = r[i_owner].strip() if i_owner is not None and len(r) > i_owner else ""
-        out[r[i_id].strip()] = Decision(r[i_id].strip(), r[i_status].strip(), owner)
+        blocks_cell = r[i_blocks] if i_blocks is not None and len(r) > i_blocks else ""
+        blocks = tuple(dict.fromkeys(US_ID_IN_CELL_RE.findall(blocks_cell)))
+        out[r[i_id].strip()] = Decision(r[i_id].strip(), r[i_status].strip(), owner, blocks)
     return DecisionTable(source, out)
 
 
@@ -488,9 +496,7 @@ def _l2_slice(doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue
     return body
 
 
-def _table_column(rows: list[list[str]], name: str) -> int | None:
-    header = [c.strip().lower() for c in rows[0]] if rows else []
-    return header.index(name) if name in header else None
+_table_column = lintcore.table_column
 
 
 def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: list[Issue]) -> None:

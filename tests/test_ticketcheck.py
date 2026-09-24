@@ -471,7 +471,7 @@ def test_missing_structure_raw_is_a_warning(code_doc):
 def test_parse_decisions_reads_id_status_owner_by_header_name():
     table = ticketcheck.parse_decisions(MISSION, "missions/M-demo.md")
     assert table.source == "missions/M-demo.md"
-    assert table.rows["D1"] == ticketcheck.Decision("D1", "DECIDED", "tech-lead")
+    assert table.rows["D1"] == ticketcheck.Decision("D1", "DECIDED", "tech-lead", ("M-demo-US1",))
     assert table.rows["D2"].status == "OPEN"
 
 
@@ -906,3 +906,41 @@ def test_healthcheck_containing_a_pipe_grounds_clean(code_doc):
     )
     report = run(text, kb_dir)
     assert errors(report) == [], report.render("Grounding")
+
+
+# --- Task 1 (mission next PR 1): Decision.blocks, lintcore.table_column ----
+
+
+def test_table_column_is_shared_from_lintcore():
+    from strata_kb import lintcore
+
+    rows = [["#", "Decision", "Status", "Owner", "Blocks"], ["D1", "x", "OPEN", "a", "M-demo-US1"]]
+    assert lintcore.table_column(rows, "status") == 2
+    assert lintcore.table_column(rows, "Blocks") == 4
+    assert lintcore.table_column(rows, "nope") is None
+    assert lintcore.table_column([], "status") is None
+    assert ticketcheck._table_column is lintcore.table_column
+
+
+def test_parse_decisions_reads_blocks_column():
+    text = (
+        "# M\n> Mission: M-demo\n\n## Technology decisions\n"
+        "| # | Decision | Status | Owner | Blocks |\n|---|---|---|---|---|\n"
+        "| D1 | one | DECIDED | a | M-demo-US1, M-demo-US3 |\n"
+        "| D2 | two | OPEN | b | M-other-US2 |\n"
+        "| D3 | three | OPEN | c |  |\n"
+    )
+    table = ticketcheck.parse_decisions(text, "m")
+    assert table.rows["D1"].blocks == ("M-demo-US1", "M-demo-US3")
+    assert table.rows["D2"].blocks == ("M-other-US2",)
+    assert table.rows["D3"].blocks == ()
+
+
+def test_parse_decisions_without_blocks_column_keeps_empty_tuple():
+    text = (
+        "# M\n> Mission: M-demo\n\n## Technology decisions\n"
+        "| # | Decision | Status | Owner |\n|---|---|---|---|\n"
+        "| D1 | one | DECIDED | a |\n"
+    )
+    table = ticketcheck.parse_decisions(text, "m")
+    assert table.rows["D1"] == ticketcheck.Decision("D1", "DECIDED", "a", ())
