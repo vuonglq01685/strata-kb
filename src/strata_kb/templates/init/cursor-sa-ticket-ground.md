@@ -50,12 +50,12 @@ to the mission layer.
      The proposal is specific — a name the ticket can use — never "TBD".
      In a greenfield repo (`<repo>-code` has no `svc.*`) every service,
      table or route the mission needs comes from the architecture
-     document on the hub: cite it in the Decision cell —
+     document on the hub: cite it in the Decision cell (the proposal
+     cites the architecture document) —
      `| D2 | New svc.api — REST gateway [myflix-arch §3.2] | OPEN | <SA / tech lead> | M-x-US1 |`.
      A proposal the architecture document does not support stays
      concrete and carries no citation; that absence is the BA's signal
-     to keep the row `OPEN`. That citation is how the proposal cites
-     the architecture document.
+     to keep the row `OPEN`.
      Without a parent mission this degrades to `[NEW: <reason>]`, and
      the handover says a mission would give the decision an owner;
    - `Open decisions` — only for code that EXISTS and the document
