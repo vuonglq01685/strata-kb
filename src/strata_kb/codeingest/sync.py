@@ -6,9 +6,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
+from pydantic import ValidationError
+
 from strata_kb import config as config_mod
+from strata_kb import models
 from strata_kb.codeingest import core
 
 KB_CODE_WORKFLOW = Path(".github") / "workflows" / "kb-code.yml"
@@ -63,3 +68,74 @@ def options_from_config(
         tags=tuple(tags) if tags else tuple(cfg.tags),
         scaffold_svc=scaffold_svc,
     )
+
+
+@dataclass
+class FreshResult:
+    regenerated: bool
+    reason: str = ""
+    report: core.CodeIngestReport | None = None
+    notes: list[str] = field(default_factory=list)
+
+
+def has_code_doc(kb_dir: Path, repo_id: str) -> bool:
+    """This repo already has a `-code` document: its directory, or its
+    `index.yaml` entry (a fresh clone of a migrated repo has only that)."""
+    doc_id = f"{repo_id}-code"
+    if (kb_dir / doc_id).is_dir():
+        return True
+    try:
+        index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
+    except (OSError, yaml.YAMLError, ValidationError, UnicodeDecodeError):
+        return False
+    return any(d.id == doc_id for d in index.docs)
+
+
+def _stale_reason(repo_root: Path, kb_dir: Path, doc_id: str) -> str:
+    """Why `-code` must be regenerated, or "" when it matches the tree."""
+    manifest_path = kb_dir / doc_id / "_manifest.yaml"
+    if not manifest_path.exists():
+        return "missing"
+    head = core._head_commit(repo_root)
+    if not head:
+        return "no git"
+    try:
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    except (OSError, yaml.YAMLError, ValidationError, UnicodeDecodeError):
+        return "unreadable manifest"
+    if manifest.revision != head[:7]:
+        return "revision"
+    # Tracked changes only (an untracked file is invisible to the tree
+    # extractor's `git ls-files`), and never under .kb/: edits there do not
+    # change -code, and a still-tracked -code in an unmigrated repo would
+    # otherwise re-trigger itself on every call.
+    args = ["status", "--porcelain", "--untracked-files=no", "--", "."]
+    try:
+        args.append(f":(exclude){kb_dir.relative_to(repo_root).as_posix()}")
+    except ValueError:
+        pass  # .kb outside the repo: nothing to exclude
+    proc = core._git(repo_root, *args)
+    if proc.returncode != 0 or proc.stdout.strip():
+        return "dirty"
+    return ""
+
+
+def ensure_code_fresh(
+    kb_dir: Path, repo_id: str, repo_root: Path | None = None
+) -> FreshResult:
+    """Regenerate `<repo_id>-code` when it is missing, older than HEAD, or
+    the tracked tree has changes outside .kb/ (spec 2026-09-25 §4.1).
+    Never scaffolds -svc. Raises core.CodeIngestError when the ingest
+    refuses; callers print it."""
+    kb_abs = kb_dir.resolve()
+    root = (repo_root or kb_abs.parent).resolve()
+    opts = options_from_config(root, kb_abs, repo_id)
+    reason = _stale_reason(root, kb_abs, opts.doc_id)
+    if not reason:
+        return FreshResult(regenerated=False)
+    report = core.run(opts)
+    notes = [f"refreshed {opts.doc_id} from the working tree ({reason})"]
+    pin_note = version_note(root)
+    if pin_note:
+        notes.append(pin_note)
+    return FreshResult(regenerated=True, reason=reason, report=report, notes=notes)

@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 import strata_kb
 from strata_kb.codeingest import sync
 from strata_kb.config import load_config
+from tests.fixtures_coderepo import build_code_repo
 
 
 def _pin(root: Path, version: str) -> None:
@@ -59,3 +62,62 @@ def test_flags_replace_the_config_lists(tmp_path):
     )
     assert opts.db_paths == ((tmp_path / "other.sqlite").resolve(),)
     assert opts.tags == ("x",)
+
+
+@pytest.fixture
+def repo(tmp_path, run_git):
+    root = tmp_path / "repo"
+    root.mkdir()
+    build_code_repo(root)
+    _config(root)
+    (root / ".gitignore").write_text(".kb/*-code/\n", encoding="utf-8")
+    run_git(root, "init")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "init")
+    return root
+
+
+def test_regenerates_when_missing_then_is_a_no_op(repo):
+    first = sync.ensure_code_fresh(repo / ".kb", "demo")
+    assert first.regenerated and first.reason == "missing"
+    assert (repo / ".kb" / "demo-code" / "_manifest.yaml").is_file()
+    assert not sync.ensure_code_fresh(repo / ".kb", "demo").regenerated
+
+
+def test_regenerates_after_a_new_commit(repo, run_git):
+    sync.ensure_code_fresh(repo / ".kb", "demo")
+    (repo / "NOTES.txt").write_text("x\n", encoding="utf-8")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "two")
+    assert sync.ensure_code_fresh(repo / ".kb", "demo").reason == "revision"
+
+
+def test_regenerates_on_a_tracked_change(repo):
+    sync.ensure_code_fresh(repo / ".kb", "demo")
+    (repo / "docker-compose.yml").write_text(
+        (repo / "docker-compose.yml").read_text(encoding="utf-8") + "\n", encoding="utf-8"
+    )
+    assert sync.ensure_code_fresh(repo / ".kb", "demo").reason == "dirty"
+
+
+def test_an_untracked_file_or_a_kb_edit_does_not_trigger(repo):
+    sync.ensure_code_fresh(repo / ".kb", "demo")
+    (repo / "scratch.txt").write_text("x\n", encoding="utf-8")
+    cfg = repo / ".kb" / "config.yaml"
+    cfg.write_text(cfg.read_text(encoding="utf-8") + "# edited\n", encoding="utf-8")
+    assert not sync.ensure_code_fresh(repo / ".kb", "demo").regenerated
+
+
+def test_a_non_git_directory_always_regenerates(tmp_path):
+    root = tmp_path / "plain"
+    root.mkdir()
+    build_code_repo(root)
+    _config(root)
+    sync.ensure_code_fresh(root / ".kb", "demo")
+    assert sync.ensure_code_fresh(root / ".kb", "demo").reason == "no git"
+
+
+def test_has_code_doc(repo):
+    assert not sync.has_code_doc(repo / ".kb", "demo")
+    sync.ensure_code_fresh(repo / ".kb", "demo")
+    assert sync.has_code_doc(repo / ".kb", "demo")
