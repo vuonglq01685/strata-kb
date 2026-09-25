@@ -258,6 +258,24 @@ def find_cycle_segment(
     return None
 
 
+def _with_manifest_revisions(index: models.KBIndex, entry_dir: Path) -> models.KBIndex:
+    """An index entry with no `revision` takes its document's manifest
+    revision. code-ingest leaves `-code`'s index revision empty so a dev
+    repo's committed `index.yaml` never churns (spec 2026-09-25 §4.1);
+    every reader of `IndexEntry.revision` goes through here."""
+    for doc in index.docs:
+        if doc.revision:
+            continue
+        try:
+            manifest = models.load_yaml_model(
+                entry_dir / doc.id / "_manifest.yaml", models.Manifest
+            )
+        except (OSError, yaml.YAMLError, ValidationError, UnicodeDecodeError):
+            continue
+        doc.revision = manifest.revision
+    return index
+
+
 def load_federation(federation_dir: Path) -> list[FederatedRepo]:
     """Đọc mọi entry (phẳng lẫn lồng) trong layout mirror.
 
@@ -280,7 +298,7 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
         repos.append(
             FederatedRepo(
                 meta=meta.model_copy(update={"repo_id": path_id}),
-                index=index,
+                index=_with_manifest_revisions(index, child),
                 kb_dir=child,
             )
         )
