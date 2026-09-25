@@ -2061,7 +2061,7 @@ def ci_publish(
         )
         raise typer.Exit(1)
     try:
-        cipublish.run(
+        pr_url = cipublish.run(
             kb_dir, url, effective_repo_id(repo_id, kb_dir), require_reviewed=require_reviewed
         )
     except (
@@ -2083,8 +2083,12 @@ def ci_publish(
         gitio.GitError, OSError,
         *_CONFIG_READ_ERRORS,
     ) as exc:
+        cipublish.write_step_summary(f"error — {exc}")
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
+    cipublish.write_step_summary(
+        f"hub PR: {pr_url}" if pr_url else "no content change on the hub"
+    )
 
 
 @app.command()
