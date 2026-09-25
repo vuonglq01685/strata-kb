@@ -3197,9 +3197,11 @@ def doctor(
         hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id, code_doc=dev_code)
         issues += hub_issues
         if cfg_kind == "dev":
-            from strata_kb.doctor import check_dev_sync
+            from strata_kb.doctor import check_dev_sync, check_hub_lag
 
-            issues += check_dev_sync(kb_dir, kb_dir.resolve().parent, repo_id)
+            repo_root = kb_dir.resolve().parent
+            issues += check_dev_sync(kb_dir, repo_root, repo_id)
+            issues += check_hub_lag(kb_dir, repo_root, handle, repo_id)
     has_stale = False
     if context is not None:
         text = sys.stdin.read() if context == "-" else Path(context).read_text(

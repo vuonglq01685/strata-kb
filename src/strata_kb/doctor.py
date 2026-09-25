@@ -1090,3 +1090,31 @@ def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[I
                     "does not untrack files)",
                 ))
     return issues
+
+
+def check_hub_lag(
+    kb_dir: Path, repo_root: Path, handle: "HubHandle | None", repo_id: str | None
+) -> list[Issue]:
+    """Dev repo: is the hub's -code what the default branch would publish?"""
+    if handle is None or not repo_id:
+        return []
+    from strata_kb.codeingest import hublag
+
+    report = hublag.check(repo_root, kb_dir, handle.federation_dir, repo_id)
+    if report.state == "in-sync":
+        return []
+    if report.state == "unknown":
+        return [Issue("warning", f"hub lag not judged — {report.reason}")]
+    parts = []
+    if report.only_on_main:
+        parts.append("only on main: " + ", ".join(report.only_on_main))
+    if report.only_on_hub:
+        parts.append("only on the hub: " + ", ".join(report.only_on_hub))
+    if report.changed:
+        parts.append("changed: " + ", ".join(report.changed))
+    return [Issue(
+        "warning",
+        f"hub {repo_id}-code lags {report.ref} (as of {report.ref_date}) — "
+        f"{'; '.join(parts)} — check for a pending -code PR on the hub, or the "
+        "latest kb-code.yml run",
+    )]

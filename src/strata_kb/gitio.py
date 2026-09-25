@@ -340,6 +340,15 @@ def worktree_add(
         raise GitError(f"worktree add '{branch}' failed: {proc.stderr.strip()}")
 
 
+def worktree_add_detached(root: Path, path: Path, rev: str) -> None:
+    """Check `rev` out, detached, into its own working tree at `path` —
+    read-only use; no branch is created or moved."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    proc = _run(root, "worktree", "add", "--detach", str(path), rev)
+    if proc.returncode != 0:
+        raise GitError(f"git worktree add --detach {rev} failed: {proc.stderr.strip()}")
+
+
 def worktree_remove(root: Path, path: Path) -> None:
     """Remove a worktree; best-effort, so a cleanup failure never masks the
     real error a caller is already unwinding from."""
