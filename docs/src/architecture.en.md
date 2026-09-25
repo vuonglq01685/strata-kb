@@ -365,13 +365,16 @@ separate.
 
 | Document | Origin | Regenerated | Needs review | Tagged |
 |---|---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest`, deterministic, no model | every merge | no | `code, generated` |
+| `<repo_id>-code` | `kb code-ingest`, deterministic, no model | on demand from the working tree; CI publishes on every merge | no | `code, generated` |
 | `<repo_id>-svc` | drafted by a model from that evidence, corrected by a human | never | yes | `code, curated` |
 
 They cannot share one document for three independent reasons: `-code` is
 overwritten wholesale while `-svc` accumulates; `-svc` carries `pending` sections
 during a seed while `-code` must always build clean; and `-code` may be
 auto-merged by hub policy while `-svc` always needs human review.
+
+`-code` is never committed: its revision lives in its manifest, not in
+`index.yaml`, so a dev repo's committed index does not change when code does.
 
 They are joined by **section id**: `svc.<name>` exists in both. `-code` supplies a
 service's alias, label and technology; `-svc` supplies its responsibility. Together

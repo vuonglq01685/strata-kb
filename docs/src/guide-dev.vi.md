@@ -30,7 +30,7 @@ CI của bạn publish liên tục trở nên an toàn.
 
 | Tài liệu | Nguồn gốc | Sinh lại | Cần review |
 |---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest` — tất định, không model | mỗi lần push lên nhánh mặc định | không |
+| `<repo_id>-code` | `kb code-ingest` — tất định, không model | khi cần, từ working tree — không bao giờ commit; CI publish ở mỗi lần push lên nhánh mặc định | không |
 | `<repo_id>-svc` | model soạn từ bằng chứng đó, bạn sửa lại | không bao giờ | luôn luôn |
 
 `-code` là sự thật máy móc: tên service, công nghệ, dependency, lệnh, endpoint,
@@ -63,6 +63,16 @@ intake: https://kb-intake.acme.com
 - **`intake`** là cách CI publish. Hãy đề nghị người quản trị hub thêm repository
   này vào mục `repos:` trong `federation/registry.yaml` của hub — publish sẽ bị
   từ chối cho tới khi họ làm việc đó.
+
+Nếu KB cần mang schema SQLite, hoặc tag index bổ sung, hãy khai báo ở đây —
+không phải trong `kb-code.yml` — để mọi lượt refresh cục bộ và CI ingest theo
+cùng một cách:
+
+```yaml
+code_ingest:
+  db: [data/app.sqlite]   # phải tường minh
+  tags: [payments]
+```
 
 ## 2.2 Nối trợ lý của bạn
 
@@ -116,6 +126,10 @@ tuyệt đối không. Hãy hỏi người quản trị hub cấu hình ra sao, 
 > quy tắc kích hoạt theo kiểu "đây là lượt publish `-code` của repo dev" sẽ âm
 > thầm vô hiệu hoá chính cổng review `-svc` mà việc tách hai tài liệu sinh ra để
 > bảo vệ.
+
+Quy tắc auto-merge này cũng là thứ giữ cho hub không bị tụt lại so với main:
+thiếu nó, mỗi lần push sẽ dồn vào một PR hub đang chờ mà ai đó phải merge tay.
+`kb doctor` báo khi `-code` trên hub bị tụt lại.
 
 ---
 
@@ -406,6 +420,10 @@ hệ điều hành, nên đảm bảo này là theo từng nền tảng (CI luô
 trong khi cây làm việc của bạn có thể đang có thay đổi chưa commit.
 `kb code-ingest` phát hiện điều đó và in cảnh báo `dirty_tree`.
 
+`-code` cục bộ là thứ CI sẽ sinh ra nếu các file đang được track của bạn được
+commit ngay bây giờ; `kb doctor` cảnh báo khi strata-kb đã cài trên máy bạn
+khác với phiên bản mà `kb-code.yml` ghim.
+
 ---
 
 # 8. Giữ tri thức luôn mới
@@ -414,16 +432,28 @@ Không tài liệu nào đòi hỏi kỷ luật tài liệu hoá mới theo từ
 
 ## 8.1 `-code` không cần bạn làm gì
 
-`kb-code.yml` chạy lại `kb code-ingest` → `kb build` → `kb ci-publish` ở mỗi lần
-push lên nhánh mặc định, nên nó luôn phản ánh commit hiện tại.
+`-code` không bao giờ được commit. `.gitignore` có dòng `.kb/*-code/`, và
+tài liệu được sinh lại từ working tree mỗi khi một lệnh cần đến nó:
+`kb svc note`, `kb build` và `kb publish` làm mới nó trước khi chạy nếu nó
+chưa có, cũ hơn `HEAD`, hoặc các file đang được git track có thay đổi. File
+mới chỉ được tính sau khi `git add`. `kb ticket check` đọc bản trên hub
+trước — đó là bản SA đã dùng để ground ticket.
 
-| Kích hoạt | Các bước | Có publish |
+`kb-code.yml` chạy lại `kb code-ingest` → `kb build` → `kb ci-publish` ở mỗi
+lần push lên nhánh mặc định, nên hub phản ánh commit hiện tại ngay khi PR của
+nó được merge.
+
+| Kích hoạt | Các bước | Publish |
 |---|---|---|
 | push lên nhánh mặc định, hoặc chạy tay | code-ingest → build → ci-publish | có |
-| pull request | chỉ build | **không bao giờ** |
+| pull request | build (sinh lại `-code` từ merge ref) | **không bao giờ** |
 
-`--scaffold-svc` cố tình không bao giờ được truyền trong CI. CI không được phép
-tạo nội dung `pending`, vì như vậy sẽ làm fail chính bước build của nó.
+`-code` chỉ có một nguồn sinh là `kb code-ingest`: `kb summarize` từ chối nó.
+Bản trên hub từng được summarize trước 1.4.0 sẽ trở về L1/L2 deterministic ở
+lần CI publish kế tiếp — diff một lần, không mất thông tin; L3 không đổi.
+
+`--scaffold-svc` cố ý không bao giờ được truyền trong CI. CI không được tạo
+nội dung `pending`, vì như vậy chính bước build của nó sẽ fail.
 
 ## 8.2 `-svc` tích luỹ ở bước handover
 
@@ -471,7 +501,11 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | `kb code-ingest` thoát 1: không phát hiện gì | Chỉ có `tree` tìm được thứ gì đó | Kiểm tra xem file compose, manifest hay CI workflow có nằm đúng chỗ extractor tìm không; nêu `--db` nếu schema là thứ bạn cần |
 | `kb code-ingest` thoát 1: từ chối đích đến | Có một tài liệu do người soạn đang nằm ở doc id đó | Chuyển nó đi, hoặc dùng `--doc-id` |
 | `kb build` fail trên CI ở một section `-svc` | Một section `pending` đã bị commit | Hoàn tất bước seed: summarize, review, `kb approve` |
-| `kb svc note`: "unknown service" | Không có `svc.<name>` tương ứng trong `-code` | Đối chiếu chính tả với output của `kb get <repo>-code`; một lỗi gõ không được phép bịa ra service |
+| `kb svc note`: "unknown service" | Do gõ nhầm, hoặc file của service mới chưa được track | Copy id từ `services.md`; `git add` các file mới rồi thử lại |
+| `kb doctor`: "hub `<repo>`-code lags origin/main" | Lượt publish `-code` gần nhất chưa merge trên hub, hoặc lần chạy `kb-code.yml` gần nhất fail | Mở PR trên hub được nêu tên trong job summary của Actions; merge nó hoặc sửa lượt chạy |
+| `kb doctor`: "kb-code.yml passes --db" | Cấu hình ingest đang nằm trong workflow | Chuyển các đường dẫn sang `code_ingest.db` trong `.kb/config.yaml`, rồi chạy lại `kb init --kind dev` |
+| `kb doctor`: "`.kb/<repo>-code` is tracked by git" | Repo có từ trước 1.4.0 | `git rm -r --cached .kb/<repo>-code` rồi commit, trong cùng một PR |
+| `kb doctor`: "hub lag not judged — origin/HEAD is not set" | `origin/HEAD` chưa bao giờ được đặt (vừa `git remote add` + `push -u`, chưa ai chạy `git remote set-head`) | `git remote set-head origin --auto` |
 | `kb publish` treo rồi fail và nhắc xem Actions | Dùng `kb publish` thường trên repo mà CI không có trigger theo tag | Dùng `kb publish --pr` |
 | `kb ci-publish` bị từ chối | Repo này chưa có trong `federation/registry.yaml` của hub | Đề nghị người quản trị hub thêm vào |
 | Cảnh báo `dirty_tree` | Có thay đổi chưa commit trong khi revision của manifest lấy từ HEAD | Vô hại khi chạy cục bộ; CI luôn chạy trên bản checkout sạch |
@@ -489,9 +523,9 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | Lệnh | Mục đích | Mã thoát |
 |---|---|---|
 | `kb mcp-setup [--hub-url URL] [--no-verify]` | Ghi thông tin xác thực HTTP MCP của hub vào `.env` và xác minh chúng | `0` ok, `1` thiếu giá trị hoặc kiểm tra kết nối thất bại |
-| `kb code-ingest [--db p] [--scaffold-svc] [--json]` | Trích cấu trúc code vào `-code` | `0` ok, `1` không phát hiện gì hoặc từ chối đích đến |
-| `kb svc note <svc> --ticket <id> --title "…"` | Thêm một dòng vào `hist.<svc>` | `0` ok, `1` service không xác định hoặc thiếu tài liệu |
-| `kb build [--strict]` | Kiểm tra kho | `0` ok, `1` lỗi |
+| `kb code-ingest [--db p] [--tags t] [--scaffold-svc] [--json]` | Trích cấu trúc code vào `-code` (`--db`/`--tags` thay thế `code_ingest:` cho lượt chạy đó) | `0` ok, `1` không phát hiện gì hoặc từ chối đích đến |
+| `kb svc note <svc> --ticket <id> --title "…" [--no-refresh]` | Thêm một dòng vào `hist.<svc>` | `0` ok, `1` service không xác định hoặc thiếu tài liệu |
+| `kb build [--strict] [--no-refresh]` | Kiểm tra kho | `0` ok, `1` lỗi |
 | `kb approve <doc> [--section <id>]` | Chuyển các section đã sửa sang `reviewed` | `0` ok |
 | `kb publish --pr` | Mở PR trên hub (lượt publish đầu của bước seed) | `0` ok |
 | `kb resolve <file>` | Kiểm tra trích dẫn của ticket | `0` ok, `1` hỏng, `2` cũ |
