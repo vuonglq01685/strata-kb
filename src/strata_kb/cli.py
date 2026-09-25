@@ -1125,8 +1125,14 @@ def code_ingest(
     ),
     repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config, then folder name)"),
     doc_id: str = typer.Option("", "--doc-id", help="Document ID (default: <repo_id>-code)"),
-    db: list[Path] = typer.Option([], "--db", help="SQLite file to read (repeatable, explicit only)"),
-    tags: str = typer.Option("", "--tags", help="Extra index tags, comma-separated"),
+    db: list[Path] = typer.Option(
+        [], "--db",
+        help="SQLite file to read (repeatable, explicit only; replaces code_ingest.db for this run)",
+    ),
+    tags: str = typer.Option(
+        "", "--tags",
+        help="Extra index tags, comma-separated (replaces code_ingest.tags for this run)",
+    ),
     scaffold_svc: bool = typer.Option(
         False, "--scaffold-svc",
         help="Also upsert the curated <repo_id>-svc scaffold (pending sections)",
@@ -1137,7 +1143,7 @@ def code_ingest(
     import dataclasses
 
     from strata_kb import config
-    from strata_kb.codeingest import core
+    from strata_kb.codeingest import core, sync
 
     resolved_root = repo_root.resolve()
     # Relative --kb-dir is cwd-relative, like every other kb command (G-11).
@@ -1148,16 +1154,14 @@ def code_ingest(
     # name fallback, so supply it here rather than writing a "None-code" doc.
     rid = config.effective_repo_id(repo_id, resolved_kb_dir) or resolved_root.name
     did = doc_id or f"{rid}-code"
-    tag_list = tuple(t.strip() for t in tags.split(",") if t.strip())
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
-    opts = core.CodeIngestOptions(
-        repo_root=resolved_root,
-        kb_dir=resolved_kb_dir,
-        doc_id=did,
-        repo_id=rid,
-        db_paths=tuple(db),
-        tags=tag_list,
-        scaffold_svc=scaffold_svc,
+    # Spec 2026-09-25 §4.2: `code_ingest:` in .kb/config.yaml is the one
+    # configuration local runs and CI share; a flag replaces its list for
+    # this run only, and says so below.
+    opts = sync.options_from_config(
+        resolved_root, resolved_kb_dir, rid, doc_id=did,
+        db=list(db), tags=tag_list, scaffold_svc=scaffold_svc,
     )
 
     try:
@@ -1193,6 +1197,18 @@ def code_ingest(
                 )
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+
+    notes: list[str] = []
+    if db or tag_list:
+        notes.append(
+            "--db/--tags replace code_ingest: in .kb/config.yaml for this run — "
+            "output will differ from what CI publishes"
+        )
+    pin_note = sync.version_note(resolved_root)
+    if pin_note:
+        notes.append(pin_note)
+    for note in notes:
+        typer.secho(f"[note] {note}", fg=typer.colors.YELLOW, err=True)
 
     if json_out:
         typer.echo(json.dumps(dataclasses.asdict(report), indent=2))

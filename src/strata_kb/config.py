@@ -33,6 +33,15 @@ class AssetStoreConfig(BaseModel):
     prefix: str = "assets/"
 
 
+class CodeIngestConfig(BaseModel):
+    """`code_ingest:` — the one ingest configuration local runs and CI share
+    (spec 2026-09-25 §4.2). `db` stays explicit-only, exactly like `--db`:
+    a stray test fixture must never become published knowledge."""
+
+    db: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
 class KBConfig(BaseModel):
     hub: str = ""
     repo_id: str = ""
@@ -40,6 +49,7 @@ class KBConfig(BaseModel):
     intake: str = ""  # intake service base URL — child publishes via OIDC CI
     asset_store: AssetStoreConfig = Field(default_factory=AssetStoreConfig)
     langs: list[str] = Field(default_factory=list)
+    code_ingest: CodeIngestConfig = Field(default_factory=CodeIngestConfig)
 
 
 def load_config(kb_dir: Path) -> KBConfig:
