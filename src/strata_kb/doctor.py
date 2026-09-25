@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -333,7 +334,11 @@ def check_context(
     return issues, results
 
 
-def _kb_tree_digest(root: Path, synthesized: dict[str, str] | None = None) -> str:
+def _kb_tree_digest(
+    root: Path,
+    synthesized: dict[str, str] | None = None,
+    exclude_docs: frozenset[str] = frozenset(),
+) -> str:
     """Deterministic digest of a .kb tree, over exactly what a publish mirrors.
 
     `root` is the root the two sides are compared AT -- the local `.kb/`
@@ -427,6 +432,8 @@ def _kb_tree_digest(root: Path, synthesized: dict[str, str] | None = None) -> st
         if not path.is_file() or path.name == "_meta.yaml":
             continue
         rel = path.relative_to(root).as_posix()
+        if exclude_docs and rel.split("/", 1)[0] in exclude_docs:
+            continue  # a dev repo's -code is branch-local (spec 2026-09-25 §4.3)
         if not pubgate.is_kb_artifact(rel):
             continue
         # Legacy self-heal: a hub cache cloned before F-D10 (which now forces
@@ -472,6 +479,7 @@ def check_hub(
     repo_id: str | None = None,
     *,
     warn_untracked_index: bool = False,
+    code_doc: str | None = None,
 ) -> tuple[list[Issue], bool]:
     """Hub-first health. Returns (issues, hub_stale).
 
@@ -479,6 +487,10 @@ def check_hub(
     hub maintainer's own checkout can act on "add it to the hub's
     .gitignore", so child/dev/ba callers (who reach a hub or its cache clone
     read-only) must leave it off.
+
+    ``code_doc`` (a dev repo's ``<repo_id>-code``) is left out of the
+    published-snapshot digest: it is regenerated per branch and CI publishes
+    it.
     """
     from strata_kb.federation import build_federation_index, load_federation
 
@@ -851,12 +863,20 @@ def check_hub(
                 active_store = None
             if active_store is not None:
                 synthesized = assetstore.synthesized_asset_entries(entry)
-            if _kb_tree_digest(kb_dir.resolve()) != _kb_tree_digest(entry, synthesized):
+            skip = frozenset({code_doc}) if code_doc else frozenset()
+            if _kb_tree_digest(kb_dir.resolve(), exclude_docs=skip) != _kb_tree_digest(
+                entry, synthesized, exclude_docs=skip
+            ):
+                advice = (
+                    "merge to the default branch; CI publishes it"
+                    if code_doc
+                    else "run `kb publish`"
+                )
                 issues.append(
                     Issue(
                         "warning",
                         f"local .kb differs from the published snapshot "
-                        f"federation/{repo_id} — run `kb publish`",
+                        f"federation/{repo_id} — {advice}",
                     )
                 )
 
@@ -1026,4 +1046,47 @@ def check_federation_publish(
                     f"federation/{repo_id} on the upstream hub — run `kb publish`",
                 )
             )
+    return issues
+
+
+_DB_FLAG_RE = re.compile(r"kb code-ingest[^\n]*--db")
+
+
+def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[Issue]:
+    """Dev repo: what makes local `-code` differ from CI's (spec 2026-09-25
+    §4.2) and the one migration step a gitignore line cannot do (§5)."""
+    from strata_kb.codeingest import sync
+
+    issues: list[Issue] = []
+    try:
+        workflow = (repo_root / sync.KB_CODE_WORKFLOW).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        workflow = ""
+    if _DB_FLAG_RE.search(workflow):
+        issues.append(Issue(
+            "warning",
+            "kb-code.yml passes --db to kb code-ingest — move the paths to "
+            "`code_ingest.db` in .kb/config.yaml before re-running "
+            "`kb init --kind dev`, which overwrites the workflow",
+        ))
+    pin_note = sync.version_note(repo_root)
+    if pin_note:
+        issues.append(Issue("warning", pin_note))
+    if repo_id:
+        try:
+            rel = (kb_dir.resolve() / f"{repo_id}-code").relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            rel = ""
+        if rel:
+            proc = subprocess.run(
+                ["git", "ls-files", "--", rel], cwd=repo_root, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                issues.append(Issue(
+                    "warning",
+                    f"{rel} is tracked by git but is derived on demand — run "
+                    f"`git rm -r --cached {rel}` and commit (a .gitignore line "
+                    "does not untrack files)",
+                ))
     return issues

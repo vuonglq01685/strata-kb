@@ -3193,8 +3193,13 @@ def doctor(
                     upstream = handle
             issues += check_federation_publish(source_root, upstream, repo_id)
     else:
-        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id)
+        dev_code = f"{repo_id}-code" if cfg_kind == "dev" and repo_id else None
+        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id, code_doc=dev_code)
         issues += hub_issues
+        if cfg_kind == "dev":
+            from strata_kb.doctor import check_dev_sync
+
+            issues += check_dev_sync(kb_dir, kb_dir.resolve().parent, repo_id)
     has_stale = False
     if context is not None:
         text = sys.stdin.read() if context == "-" else Path(context).read_text(
