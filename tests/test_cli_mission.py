@@ -517,3 +517,38 @@ def test_docs_name_the_next_command():
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert changelog.index("## Unreleased") < changelog.index("## 1.3.0")
     assert "`kb mission next`" in changelog
+    assert "`--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second" in readme
+    assert "derived from the grounded `-code` document" in changelog
+
+
+def test_mission_next_nested_repo_id_derives_the_svc_doc_from_the_code_doc(tmp_path, fed_hub):
+    root = _ba_layout(tmp_path)
+    (root / "missions" / "M-platform.md").write_text(
+        PLATFORM_NEXT.replace("demo:demo-code @ abc1234", "mid/repo-x:repo-x-code @ abc1234"),
+        encoding="utf-8",
+    )
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"),
+        "--kb-dir", str(empty_kb), "--hub", str(fed_hub),
+    ])
+    assert result.exit_code == 0, result.output
+    # the doc id is repo-x-svc, never mid/repo-x-svc
+    assert "note: done: unknown (repo-x-svc not published" in result.output
+    assert "mid/repo-x-svc" not in result.output
+
+
+def test_mission_next_unqualified_grounded_on_resolves_locally(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    (root / "missions" / "M-platform.md").write_text(
+        PLATFORM_NEXT.replace("demo:demo-code @ abc1234", "demo-code @ abc1234"), encoding="utf-8"
+    )
+    kb_dir = _svc_kb(tmp_path)
+    result = runner.invoke(app, [
+        "mission", "next", "--missions-dir", str(root / "missions"), "--kb-dir", str(kb_dir),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | done |  |" in result.output
+    assert "done: unknown" not in result.output

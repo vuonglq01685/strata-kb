@@ -263,6 +263,36 @@ mong đợi, không phải lỗi. Chỉ ở lớp năng lực: không tên
 file, không bảng, không route — những cái đó thuộc về `## Technical
 grounding` của từng ticket, điền sau ở mục 3.8.
 
+Ở repo skeleton, mỗi dòng mà tài liệu architecture chứng minh được đều trích
+dẫn nó ngay trong ô Decision (`[<arch-doc> §<section>]`), và agent dừng ở bước 5b —
+**Decide** — để trình cả bảng cho bạn một lần. Bạn chuyển những dòng có trích
+dẫn mà bạn xác nhận sang `DECIDED`; dòng không có trích dẫn giữ `OPEN` kèm
+chủ sở hữu. Bạn quyết định ở đây, một lần, không phải từng ticket. Story đầu
+tiên của mission như vậy là **foundation slice**: những gì tài liệu
+architecture nói phải có trước mọi story tính năng, và mọi story khác phụ
+thuộc vào nó trong `## Sequencing`.
+
+## 4.4 Ticket kế tiếp
+
+```bash
+kb mission next
+```
+
+Mọi story trong backlog của toàn bộ `missions/` được báo là `done` (id của nó
+nằm trong một dòng `hist.*` của `<repo>-svc` trên hub — thứ `kb svc note` ghi
+lúc lập trình viên bàn giao và CI publish khi merge), `drafted` (đã có file
+ticket), `ready` (chưa có ticket, mọi story trong `Depends on` đã done, mọi
+dòng D chặn nó đã `DECIDED`) hoặc `blocked` (nêu rõ lý do). Báo cáo kết thúc
+bằng `Next: <us-id> — <title>`; `/ba-ticket-author` không kèm tham số sẽ chạy
+lệnh này trước và đề xuất đúng story đó. Một phụ thuộc mới chỉ `drafted` vẫn
+chặn: done nghĩa là đã merge. Thứ tự giữa các mission được ghi trong ô
+`Depends on` bằng story của mission khác (`M-<other>-US<n>`).
+
+Lệnh chỉ đọc và thoát 0 sau khi in báo cáo. Hub chưa cấu hình hoặc không
+kết nối được, `-svc` chưa publish, hay không mission nào có dòng
+`Grounded on:` đều thành một dòng `note:`, không bao giờ là lỗi — không
+story nào được đánh `done` chừng nào hub chưa trả lời được.
+
 ---
 
 # 5. Dùng tri thức về code

@@ -1298,6 +1298,15 @@ def test_ba_mission_wrappers_leave_services_and_order_to_the_sa():
         assert "## Services & order" in _ba_wrapper_text(name), name
 
 
+def test_ba_mission_wrappers_pin_the_cited_decision_rows():
+    for name in BA_MISSION_WRAPPERS:
+        assert (
+            "Include every architecture section a `## Technology decisions` row or the "
+            "foundation-slice story cites — a bracketed citation the block does not pin "
+            "is a lint error."
+        ) in _ba_wrapper_text(name), name
+
+
 def test_ba_wrappers_still_carry_their_pre_phase5_rules():
     """Stage D adds; it must not remove anything Phase 4/4.1 established."""
     for name in ("claude-skill-ba-ticket-author.md", "claude-skill-ba-mission-plan.md"):
@@ -2869,3 +2878,128 @@ def test_quickstart_dev_documents_plan_waves_and_lanes():
     assert "`kb plan waves docs/impl/<ticket-id>-plan.md`" in text
     assert "at most 3 lanes at a time" in text
     assert "- `kb plan waves <plan-file> [--json]`" in text
+
+
+# --- mission next (spec 2026-09-24 §4.5): templates ---------------------------
+
+
+def test_mission_template_teaches_the_cited_decision_row():
+    text = _read_init_template("mission-template.md")
+    decisions = _normalised(lintcore.section_body(text, "## Technology decisions"))
+    assert (
+        "In a greenfield repo the SA cites the architecture document in the "
+        "Decision cell ([<arch-doc> §<section>]); a cited row is a recorded "
+        "decision the BA flips once, at mission time (step 5b), not ticket by ticket."
+    ) in decisions
+    assert (
+        "| D3 | New svc.<name> — <one line> [<arch-doc> §<section>] | OPEN | <SA / tech lead> | <US id> |"
+        in decisions
+    )
+    # D2 stays exactly as the earlier pin expects
+    assert "| D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |" in decisions
+
+
+def test_mission_template_sequencing_allows_cross_mission_dependencies():
+    text = _read_init_template("mission-template.md")
+    seq = _normalised(lintcore.section_body(text, "## Sequencing"))
+    assert "`Depends on` may name a story of another mission (`M-<other>-US<n>`)" in seq
+    assert "write `none` for a story that starts first" in seq
+    assert "`kb mission next` reads this table" in seq
+
+
+def test_mission_template_dor_names_the_decided_rows_gate():
+    dor = _normalised(lintcore.section_body(_read_init_template("mission-template.md"), "## Definition of Ready"))
+    assert "- [ ] Every D-row blocking a story with no dependency is DECIDED (kb mission next shows it ready)" in dor
+
+
+def test_sa_full_wrappers_cite_the_architecture_document_for_greenfield_rows():
+    for name in SA_FULL_WRAPPERS:
+        text = _normalised(_read_init_template(name))
+        assert (
+            "In a greenfield repo (`<repo>-code` has no `svc.*`) every service, "
+            "table or route the mission needs comes from the architecture "
+            "document on the hub: cite it in the Decision cell"
+        ) in text, name
+        assert "| D2 | New svc.api — REST gateway [myflix-arch §3.2] | OPEN | <SA / tech lead> | M-x-US1 |" in text, name
+        assert "that absence is the BA's signal to keep the row `OPEN`" in text, name
+
+
+def test_every_sa_wrapper_says_the_proposal_cites_the_architecture_document():
+    for name in SA_WRAPPERS:
+        assert "cites the architecture document" in _normalised(_read_init_template(name)), name
+
+
+def test_ba_mission_wrappers_ask_for_the_architecture_document_at_intake():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "Ask also for the doc-id of the architecture document on the hub" in text, name
+        assert "Never ask whether the repo is greenfield" in text, name
+
+
+def test_ba_mission_wrappers_teach_the_foundation_slice():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "the first story is the **foundation slice**" in text, name
+        assert "every other story `Depends on` it in `## Sequencing`" in text, name
+        assert "`Depends on` may name a story of another mission (`M-<other>-US<n>`)" in text, name
+
+
+def test_ba_mission_wrappers_carry_step_5b_decide():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "5b. **Decide**" in text, name
+        assert "present the whole `## Technology decisions` table to the BA once" in text, name
+        assert "You never flip a status." in text, name
+        assert "what `kb mission next` reports as `ready`" in text, name
+
+
+def test_ba_mission_wrappers_carry_the_recorded_decision_hard_rule():
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert (
+            "A `[NEW: D<n>]` proposal that cites an architecture section on the "
+            "hub is a recorded decision: the BA flips it at mission time, in step "
+            "5b, not ticket by ticket. A proposal without a citation stays `OPEN` "
+            "with a human owner."
+        ) in text, name
+
+
+def test_ba_ticket_wrappers_run_kb_mission_next_at_intake():
+    for name in BA_TICKET_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "run `kb mission next` first" in text, name
+        assert "propose the first `ready` story" in text, name
+        assert "A `blocked` story may be drafted only with its reasons acknowledged by the BA" in text, name
+
+
+def test_ba_ticket_full_wrappers_point_a_drafted_story_at_its_file():
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        assert "A `drafted` story points at its existing file." in _ba_wrapper_text(name), name
+
+
+def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
+    for name in _dev_wrapper_names("dev-handover"):
+        body = _dev_wrapper_body(name)
+        assert "`kb svc note` is what makes `kb mission next` on the BA side see this story as done" in body, name
+        assert "stays `drafted` forever" in body, name
+
+
+def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():
+    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
+    assert "## Which ticket next" in text
+    assert "`kb mission next`" in text
+    assert "### Greenfield: decide the D-rows once" in text
+    assert "- `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`" in text
+    for word in ("`done`", "`drafted`", "`ready`", "`blocked`", "Next:"):
+        assert word in text, word
+
+
+def test_changelog_names_the_ba_side_of_mission_next():
+    from pathlib import Path as _P
+
+    changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog[changelog.index("## Unreleased"):changelog.index("## 1.3.0")]
+    assert "BA repos:" in unreleased
+    assert "step 5b" in unreleased
+    assert "foundation slice" in unreleased
+    assert "Re-run `kb init --kind ba`" in unreleased

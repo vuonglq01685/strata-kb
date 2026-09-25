@@ -39,12 +39,18 @@ exactly one row here. A placeholder without an owner means the mission
 is not ready, even when lint passes. Status is OPEN or DECIDED. The SA
 appends rows here for services, tables and routes the mission will
 create; tickets reference them as [NEW: D<n>]. Only a human flips OPEN
-to DECIDED. The example rows warn as ownerless in `kb mission lint`
+to DECIDED.
+In a greenfield repo the SA cites the architecture document in the
+Decision cell ([<arch-doc> §<section>]); a cited row is a recorded
+decision the BA flips once, at mission time (step 5b), not ticket by
+ticket.
+The example rows warn as ownerless in `kb mission lint`
 until you fill them in. -->
 | # | Decision | Status | Owner | Blocks |
 |---|---|---|---|---|
 | D1 | <e.g. storage engine choice> | OPEN | <who> | <US id> |
 | D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |
+| D3 | New svc.<name> — <one line> [<arch-doc> §<section>] | OPEN | <SA / tech lead> | <US id> |
 
 ## Non-functional requirements
 <!-- At least one quantified NFR is mandatory when the mission touches
@@ -66,7 +72,10 @@ need an answer go to `## Open questions`, not here.>
 
 ## Sequencing
 <!-- Separate section on purpose: the `## US backlog` header row
-'| US ID | Title |' is matched verbatim by lint — never add columns. -->
+'| US ID | Title |' is matched verbatim by lint — never add columns.
+`Depends on` may name a story of another mission (`M-<other>-US<n>`) —
+that is how cross-mission order is written; write `none` for a story
+that starts first. `kb mission next` reads this table. -->
 | US ID | Depends on | Size | Notes |
 |---|---|---|---|
 
@@ -108,6 +117,7 @@ kb-context:
 - [ ] Backlog reviewed with the team; no known missing slice
 - [ ] Every `%%TODO%%` has an owned row in Technology decisions
 - [ ] Sequencing covers the whole backlog
+- [ ] Every D-row blocking a story with no dependency is DECIDED (kb mission next shows it ready)
 - [ ] Architecture-impacting open questions closed
 
 ## Review record

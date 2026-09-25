@@ -56,6 +56,8 @@ edit above it.
   writes back here. If this repo has no `<repo_id>-svc` yet
   (`dev-code-seed` never run), say so in one line in the PR and
   record the history there instead.
+  `kb svc note` is what makes `kb mission next` on the BA side see this
+  story as done; a ticket that skips it stays `drafted` forever.
 - **Assemble the PR description** using the repo's
   `.github/pull_request_template.md`, whose sections CI
   checks with `kb pr lint`: **Ticket**; **kb-context** refs so

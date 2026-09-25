@@ -103,6 +103,19 @@ the Dev. A ticket with no parent mission has no table to point at and
 keeps a free-text `[NEW: <reason>]`: the gate accepts it, but the
 decision then has no owner.
 
+### Greenfield: decide the D-rows once
+
+In a skeleton repo the SA proposes the D-rows from the architecture
+document on the hub and cites it in the Decision cell of every row the
+document supports (`[<arch-doc> §<section>]`). `/ba-mission-plan` then stops at step 5b
+(**Decide**) and shows you the whole `## Technology decisions` table once:
+flip to `DECIDED` the rows whose citation you confirm; leave a row with no
+citation `OPEN` with a named owner. That is the only time you decide —
+tickets reference the rows as `[NEW: D<n>]` and `kb ticket check` passes on
+them straight away. The first story of such a mission is the **foundation
+slice**: what the architecture document says must exist before any feature
+story, with every other story depending on it in `## Sequencing`.
+
 ## Mission plans — for large features
 
 A feature that spans several User Stories gets a **mission plan** first;
@@ -136,6 +149,35 @@ judgment: whether the backlog is complete.
 Backlog numbering gaps are fine. If you drop a story, leave its number
 retired — renumbering would break the filenames of tickets already
 drafted.
+
+## Which ticket next
+
+```bash
+kb mission next
+```
+
+`kb mission next` is read-only. Every backlog story across `missions/*.md`
+is reported as one of four states, and the report ends with
+`Next: <us-id> — <title>`:
+
+| State | Means |
+|---|---|
+| `done` | the ticket id is in a `hist.*` row of the hub's `-svc` document — the Dev ran `kb svc note` at handover and CI published it on merge |
+| `drafted` | `tickets/<us-id>.md` exists but the story is not merged yet |
+| `ready` | no ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED` |
+| `blocked` | the reasons are named: `US <id> not done`, `US <id> unknown`, `D<n> OPEN (owner: <x>)` |
+
+`/ba-ticket-author` with no argument runs it first and proposes the first
+`ready` story. A story whose dependency is only `drafted` stays `blocked`:
+`done` means merged, because only merged code reaches `<repo>-svc`.
+Cross-mission order is written in `## Sequencing` by naming another
+mission's story (`M-<other>-US<n>`) in `Depends on`.
+
+The `-svc` document is found from the missions' `Grounded on:` line
+(`<x>-code` → `<x>-svc`, `--repo-id` overrides). A hub that is not
+configured or reachable, a `-svc` that is not published yet, or no
+`Grounded on:` line at all is a `note:` line above the table — the report
+still prints, with nothing marked `done`.
 
 ## Code knowledge on the hub
 
@@ -424,6 +466,9 @@ tiering change shows up in the report the next ticket generates.
   (`--missions-dir`, default the sibling `missions/`), and `Open decisions`
   must be empty (`Grounding: PASS`). `--heading "## Services & order"`
   checks a mission plan's SA section against its own table
+- `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`
+  — which story is `done` / `drafted` / `ready` / `blocked` across
+  `missions/`, ending with `Next: <us-id> — <title>`; read-only, exit 0
 - `kb tags [--hub <url>]` — list every tag published on the hub, i.e. the
   tags a `kb-context` block may carry
 - `kb doctor --hub <url>` — check the hub is reachable and

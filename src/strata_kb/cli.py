@@ -2725,7 +2725,7 @@ def mission_next(
         "",
         "--repo-id",
         help="Product repo id whose <repo-id>-svc history marks stories done "
-        "(default: the repo in the missions' 'Grounded on:' line)",
+        "(default: derived from the missions' 'Grounded on:' line — <x>-code → <x>-svc)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
@@ -2775,12 +2775,19 @@ def mission_next(
     else:
         notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as drafted")
 
-    rid = repo_id or next((r for r in map(missionnext.grounded_repo_id, texts) if r), None)
+    grounded = next((g for g in map(missionnext.grounded_doc, texts) if g), None)
+    rid: str | None
+    doc_id: str | None
+    if repo_id:
+        rid, doc_id = repo_id, f"{repo_id}-svc"
+    elif grounded is not None:
+        rid, doc_id = grounded[0], missionnext.svc_doc_id(grounded[1])
+    else:
+        rid = doc_id = None
     done: set[str] | None = None
-    if not rid:
+    if doc_id is None:
         notes.append("done: unknown (no repo id — pass --repo-id)")
     else:
-        doc_id = f"{rid}-svc"
         local = kb_dir / doc_id
         doc = None
         hub_reason = ""
