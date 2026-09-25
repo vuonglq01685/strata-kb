@@ -43,7 +43,19 @@ edit above it.
   consumes from earlier tasks and what it produces for later ones —
   exact names and types, because a task's implementer sees only their
   own task); and **Steps** as `- [ ]` checkboxes, step 1 always being
-  the failing test. The file opens with three header lines under its
+  the failing test.
+  Every task heading is `### Task <n>: <title>`, and the line directly
+  under it is `Depends on: none` or `Depends on: task 2, task 5` —
+  derived, never chosen: task B depends on task A when B consumes an
+  Interface A produces, **or** B and A share a path under **Files**, the
+  later task depending on the earlier. Two
+  tasks with no dependency path are therefore file-disjoint, which is
+  what lets `dev-execute` run them in parallel lanes. The closing
+  verification task depends on every other task. Run
+  `kb plan waves docs/impl/<ticket-id>-plan.md` before offering GATE 2:
+  it prints the waves and fails on a shared path without a dependency,
+  a cycle, an unknown task, or a missing line.
+  The file opens with three header lines under its
   title: `cmd.test: <command>`, `cmd.lint: <command>` (from `-code
   §cmd.*`, or the Dev's answer) and `status: draft` — `kb pr lint` reads
   `cmd.test:` from this file and requires it inside the PR's
@@ -94,7 +106,7 @@ different context.
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
 path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
 `## Pre-code axes` of `docs/pr-review-rubric.md` plus
-`docs/pr-review-rubric.local.md`. It answers four questions and nothing else:
+`docs/pr-review-rubric.local.md`. It answers five questions and nothing else:
 
 - Is there exactly one task per AC — none missing, none invented?
 - Does every task state its failing test before its implementation?
@@ -103,6 +115,11 @@ path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
   BLOCKER: it is what forces an implementer to read wider and guess.
 - Does every task with no test declare `Exempt: <config|ci|docs|style>` and
   name its verification?
+- Is every `Depends on:` line consistent with Files and Interfaces — no
+  two tasks without a dependency path share a path, every consumed
+  interface names its producer, no cycle? A miss is a BLOCKER. The
+  reviewer also runs `kb plan waves` and quotes its output; an error
+  there is a BLOCKER on its own.
 
 Fix subagent, re-review, at most 3 rounds. Record each round in the plan file's
 `## Review record` table, same shape as the design file's. GATE 2 is offered

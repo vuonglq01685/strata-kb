@@ -41,7 +41,55 @@ edit above it.
 - **Isolate** — ensure an isolated workspace before touching code: a
   dedicated branch, and a git worktree where the environment supports
   it, named from the ticket id.
-  **Never work directly on the default branch.**
+  **Never work directly on the default branch.** `.worktrees/` must be
+  gitignored — add it to the repo's `.gitignore` once, in this step:
+  Dev repos ship no root `.gitignore` template.
+- **Waves** — run `kb plan waves docs/impl/<ticket-id>-plan.md`; an
+  error returns the plan to `dev-plan` (the same route an incomplete
+  task block takes). When `kb plan waves` reports only `has no Depends
+  on: line` errors, one per task, the plan predates waves and runs
+  sequentially as today — say so in the Next-step block. Any other
+  error returns the plan to `dev-plan`. A wave of
+  one task runs the per-task flow below unchanged. A wave of two or more
+  tasks, when the runtime can dispatch subagents, runs each task in its
+  own **lane**:
+  - `git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD`
+    from the ticket branch. `<lane-base>` is the ticket branch's HEAD
+    when the lane was cut — after the `--no-ff` merge, the lane's cut
+    point is the merge base of the merge commit's first parent and the
+    lane branch, so it is always derivable — the three-dot diff
+    `git diff <merge-commit>^1...<lane-branch>` shows exactly the
+    lane's own commits, for every lane in the wave. A worktree the
+    runtime provides is acceptable only if its base contains the
+    ticket branch's HEAD — check with `git merge-base --is-ancestor`;
+    otherwise create the lane by hand.
+  - Dispatch one implementer per lane, at most **3 lanes at a time** —
+    a larger wave runs in batches of 3 (`ponytail:` fixed cap; raise it
+    once a measured wave shows the machine and the suite can take
+    more). The implementer gets the same three things as below plus its
+    lane path and this sentence: "Never use `run_in_background`; run
+    every test in the foreground and let the call block." Scoped tests
+    inside the lane; the implementer commits on its lane branch and
+    writes `docs/impl/<ticket-id>-review/task-<n>-report.md` inside the
+    lane. A lane implementer never edits `docs/impl/<ticket-id>-plan.md`
+    — the orchestrator ticks after A3, exactly as in the per-task flow —
+    so lanes never conflict on the plan file.
+  - Merge back in task-number order: `git merge --no-ff
+    <ticket-id>-task-<n>` into the ticket branch — a conflict is a plan
+    defect: stop, do not resolve, return to `dev-plan` naming the two
+    tasks. Otherwise copy the report out of the lane if it did not land
+    in the merge (`docs/impl/<ticket-id>-review/` is gitignored, so it
+    never lands in the merge), then `git worktree remove` the lane.
+  - Verify the wave: run `cmd.test` and `cmd.lint` once after the last
+    merge of the wave and show the output.
+  - A3 per task as below, from the lane **branch**, with the diff
+    written from `git diff <merge-commit>^1...<lane-branch>`; tick only
+    after A3 is clean, then delete the lane branch. A3 fix commits land
+    on the ticket branch after the merge (the lane is done); when any
+    fix landed, re-run the wave's `cmd.test` / `cmd.lint` before
+    ticking. A3 re-review after a fix diffs `<merge-commit>^1...HEAD`
+    limited to the task's paths.
+  Without subagents: sequential in wave order, today's fallback.
 - **Per unticked task**, in its own subagent where the runtime supports
   it (sequential passes otherwise). Hand that subagent exactly three
   things: its own task block from the plan, the **Interfaces** entry of
@@ -109,7 +157,11 @@ edit above it.
   decide the ambiguity yourself, and do not push past it because the
   code is half written.
 - **Resumable** — a later run re-checks freshness, re-reads the plan,
-  and continues at the first unticked task. Once every task is ticked, A4
+  and continues at the first unticked task — that is, the first wave
+  with an unticked task; ticked siblings are skipped, and the remaining
+  tasks of that wave run under the same rules. A lane branch already
+  merged into the ticket branch (`git merge-base --is-ancestor
+  <lane-branch> HEAD`) is not re-cut — it skips to A3. Once every task is ticked, A4
   runs; once A4 comes back clean, option 1 in the Next-step block below is
   `/dev-handover <ticket-id>`; otherwise it is `/dev-execute <ticket-id>` to
   continue.
