@@ -271,6 +271,7 @@ that follows it.
 | `kb svc note` | Record which tickets touched which service in `<repo_id>-svc` |
 | `kb ticket lint` | Definition-of-Ready gate for a BA ticket |
 | `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
+| `kb mission next` | Which story next: done / drafted / ready / blocked across `missions/`, done derived from the hub's `<repo>-svc` history |
 | `kb pr lint` | Check a pull-request description carries its evidence |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
@@ -683,6 +684,7 @@ ids derive from the mission id.
 | `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required sections present; every `## KB context` ref resolves at its pinned commit; every inline `doc-id §section` citation is backed by a pinned ref and vice versa | `0` PASS, `1` FAIL, `2` stale |
 | `kb mission lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required structure; C4 L1 + L2 diagrams present; a well-formed backlog whose ids derive from the mission id; every citation resolving at its pinned commit | `0` PASS, `1` FAIL, `2` stale |
 | `kb ticket check <file\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]` | SA grounding gate: every `svc.* / db.* / api.* / int.* / cmd.*` id in `## Technical grounding` exists in the `<repo>-code` document (local `--kb-dir` first, hub federation second), `Grounded on:` matches the document's revision, columns / routes / commands match its tables, `Files:` are in `struct.tree`, every `[NEW: D<n>]` names a `DECIDED` row of the parent mission's `## Technology decisions` (`--missions-dir`, default the sibling `missions/`), and `Open decisions` is empty. `--heading "## Services & order"` checks a mission plan's SA section against its own decisions table | `0` PASS, `1` FAIL |
+| `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]` | Read-only: every backlog story across `missions/` as `done` (its id is in a `hist.*` row of the hub's `<repo-id>-svc`), `drafted` (`tickets/<us-id>.md` exists), `ready` (no ticket, every `Depends on` done, every D-row that `Blocks` it `DECIDED`) or `blocked` (reasons named); ends with `Next: <us-id> — <title>`. `--repo-id` defaults to the repo in the missions' `Grounded on:` line; without one, or when `-svc` is not on the hub, a note says done is unknown | `0` after a report; `1` for a bad directory flag or a malformed `.kb/config.yaml` |
 
 Mission lint and ticket check are deliberately **CLI-only** — mission lint's
 distinguishing checks need filesystem access to the sibling `tickets/`

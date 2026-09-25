@@ -4,8 +4,10 @@ import importlib.metadata
 import json
 import os
 import sys
+import unicodedata
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 import yaml
@@ -13,6 +15,9 @@ from pydantic import ValidationError
 
 from strata_kb import models
 from strata_kb.utf8io import force_utf8_streams
+
+if TYPE_CHECKING:
+    from strata_kb.hub import HubHandle
 
 force_utf8_streams()
 
@@ -567,8 +572,12 @@ def _resolve_mcp_value(
     return value.strip()
 
 
-def _hub_or_exit(hub_flag: str, kb_dir: Path):
-    """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
+def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
+    """Same resolution as `_hub_or_exit`, but a failure is a returned reason
+    string instead of a red line + exit — for a caller (`mission next`) that
+    treats "no hub" as a fact to report, not a fatal error. A malformed
+    operator .kb/config.yaml is still a hard exit via `_invalid_yaml_exit`
+    (H1): that is an authoring error, not a "no hub configured" fact."""
     from strata_kb import gitio
     from strata_kb.config import HubConfigError, require_hub
     from strata_kb.hub import resolve_hub
@@ -576,8 +585,7 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     try:
         hub_ref = require_hub(hub_flag, kb_dir)
     except HubConfigError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        return None, str(exc)
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         # require_hub -> load_config -> models.load_yaml_model raises
         # ValidationError / yaml.YAMLError for an operator-edited
@@ -591,28 +599,32 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path):
     # (`doctor` included, the CHANGELOG's 0.21.0 no-traceback claim for it)
     # is exactly the kind of process that would be holding it open. Same
     # shape as mcp._hub (Wave G fix round 3) and web/api.hub_handle
-    # (e869320) -- but this is a CLI path, not one that degrades to a
-    # cache-less handle: it must exit 1 naming the way forward, not return
-    # None. _discard_cache's own GitError message already names the cache,
-    # says it is disposable, and tells the operator to delete it -- let
-    # that through unwrapped rather than replacing it.
+    # (e869320) -- the message already names the cache, says it is
+    # disposable, and tells the operator to delete it -- let it through
+    # unwrapped rather than replacing it.
     try:
         handle = resolve_hub(hub_ref)
     except gitio.GitError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        return None, str(exc)
     if handle is None:
-        typer.secho(
+        return None, (
             f"could not reach hub '{gitio.redact_url(hub_ref)}' and no cache exists — "
-            "check the network or the hub path",
-            fg=typer.colors.RED,
+            "check the network or the hub path"
         )
-        raise typer.Exit(1)
     if handle.stale:
         age = f"~{handle.age_seconds:.0f}s" if handle.age_seconds else "unknown age"
         typer.secho(
             f"[warn] hub cache is stale ({age})", fg=typer.colors.YELLOW, err=True
         )
+    return handle, ""
+
+
+def _hub_or_exit(hub_flag: str, kb_dir: Path) -> HubHandle:
+    """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
+    handle, reason = _hub_or_reason(hub_flag, kb_dir)
+    if handle is None:
+        typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
+        raise typer.Exit(1)
     return handle
 
 
@@ -2654,6 +2666,107 @@ def mission_lint(
     # content moved", which a caller may want to treat differently from a
     # mission that is simply not ready.
     raise typer.Exit(2 if report.stale_errors == errors else 1)
+
+
+@mission_app.command("next")
+def mission_next(
+    missions_dir: Path = typer.Option(
+        Path("missions"), "--missions-dir", help="Where mission files live"
+    ),
+    tickets_dir: Path | None = typer.Option(
+        None,
+        "--tickets-dir",
+        help="Where ticket files live (default: the missions dir's sibling 'tickets/')",
+    ),
+    repo_id: str = typer.Option(
+        "",
+        "--repo-id",
+        help="Product repo id whose <repo-id>-svc history marks stories done "
+        "(default: the repo in the missions' 'Grounded on:' line)",
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "",
+        "--hub",
+        envvar="STRATA_KB_HUB",
+        help="kb-hub URL/path (empty = config); consulted only when the "
+        "-svc document is not under --kb-dir",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON instead of text"
+    ),
+) -> None:
+    """Which story next: every backlog story across missions/ as done /
+    drafted / ready / blocked. Done is derived from the hub's <repo>-svc
+    history (kb svc note rows). Read-only; exit 0 after a report."""
+    from strata_kb import missionnext, ticketcheck
+
+    for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
+        if d is not None and not d.is_dir():
+            typer.secho(
+                f"{label} '{d}' does not exist or is not a directory", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+
+    notes: list[str] = []
+    parsed: list[missionnext.ParsedMission] = []
+    texts: list[str] = []
+    for path in sorted(missions_dir.glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            notes.append(f"skipped {path}: {exc}")
+            continue
+        text = unicodedata.normalize("NFC", text)
+        parsed_mission = missionnext.parse_mission(text)
+        if parsed_mission[0] is None:
+            notes.append(f"skipped {path}: no '> Mission:' line")
+            continue
+        texts.append(text)
+        parsed.append(parsed_mission)
+
+    resolved_tickets = tickets_dir if tickets_dir is not None else missions_dir.parent / "tickets"
+    drafted: set[str] = set()
+    if resolved_tickets.is_dir():
+        drafted = {p.stem for p in resolved_tickets.glob("*.md")}
+    else:
+        notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as drafted")
+
+    rid = repo_id or next((r for r in map(missionnext.grounded_repo_id, texts) if r), None)
+    done: set[str] | None = None
+    if not rid:
+        notes.append("done: unknown (no repo id — pass --repo-id)")
+    else:
+        doc_id = f"{rid}-svc"
+        local = kb_dir / doc_id
+        doc = None
+        hub_reason = ""
+        handle = None
+        try:
+            if (local / "_manifest.yaml").exists():
+                doc = ticketcheck.load_doc_dir(local, str(local))
+            else:
+                handle, hub_reason = _hub_or_reason(hub, kb_dir)
+                if handle is not None:
+                    doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
+        except ticketcheck.DocLoadError as exc:
+            notes.append(f"done: unknown ({exc})")
+        else:
+            if handle is None and doc is None:
+                notes.append(f"done: unknown ({hub_reason or 'hub unavailable'})")
+            elif doc is None:
+                notes.append(
+                    f"done: unknown ({doc_id} not published — the Dev repo has not run "
+                    "dev-code-seed, or CI has not published yet)"
+                )
+        if doc is not None:
+            done = missionnext.done_ids_from_history(doc.read_group("history"))
+
+    results = missionnext.statuses(parsed, drafted, done)
+    if json_output:
+        typer.echo(json.dumps(missionnext.to_json(results, notes)))
+    else:
+        typer.echo(missionnext.render(results, notes))
 
 
 @app.command()

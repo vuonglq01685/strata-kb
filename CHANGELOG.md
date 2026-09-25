@@ -3,6 +3,10 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- `kb mission next`: read-only report of every backlog story across `missions/` as `done` / `drafted` / `ready` / `blocked`, ending with `Next: <us-id> — <title>`. `done` is derived from the hub's `<repo-id>-svc` history tables (the rows `kb svc note` writes at dev-handover and CI publishes on merge) — never from a status column; `ready` needs every `Depends on` story done and every `## Technology decisions` row that `Blocks` the story `DECIDED`; `Depends on` may name a story of another mission. `Decision` rows now carry their `Blocks` ids; `lintcore.table_column` is the shared header-name column lookup. Exit 0 after a report (1 only for a bad directory flag) — it is a query, not a gate. A hub that is not configured or unreachable, or a `<repo-id>-svc` that is not published, is reported as a `done: unknown (…)` note, never a red line.
+
 ## 1.3.0 — 2026-09-24
 
 - `kb code-ingest`: every compose `svc.*` record now carries `volumes` (named volumes only, sorted), `healthcheck` (the `test` command as one line, `none`, or `disabled`, cut at 200 characters) and `devices` (`<driver>:<caps>` from `deploy.resources.reservations.devices`), in the L2 property table and the L3 YAML block. Dockerfile/k8s records leave them empty. The document changes on the next CI run — that new revision is what the SA re-grounds on.

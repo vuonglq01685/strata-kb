@@ -621,6 +621,15 @@ def table_rows(body: str) -> list[list[str]]:
     return rows
 
 
+def table_column(rows: list[list[str]], name: str) -> int | None:
+    """Index of the header cell equal to `name` (case-insensitive,
+    stripped) in a `table_rows` result, `None` when absent. Columns are
+    found by name, never position, so a reordered table still parses."""
+    header = [c.strip().lower() for c in rows[0]] if rows else []
+    key = name.strip().lower()
+    return header.index(key) if key in header else None
+
+
 def strip_bare_kb_context(text: str) -> str:
     """Drop a 'kb-context:' block that isn't wrapped in a ``` fence."""
     lines = text.splitlines()
