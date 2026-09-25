@@ -76,5 +76,5 @@ def test_docs_name_the_plan_waves_command():
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert "| `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, or a missing `Depends on:` line |" in readme
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert changelog.index("## Unreleased") < changelog.index("## 1.3.0")
+    assert changelog.index("## 1.4.0") < changelog.index("## 1.3.0")
     assert "`kb plan waves`" in changelog

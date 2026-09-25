@@ -515,7 +515,7 @@ def test_docs_name_the_next_command():
     assert "| `kb mission next` | Which story next: done / drafted / ready / blocked across `missions/`, done derived from the hub's `<repo>-svc` history |" in readme
     assert "`kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]`" in readme
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert changelog.index("## Unreleased") < changelog.index("## 1.3.0")
+    assert changelog.index("## 1.4.0") < changelog.index("## 1.3.0")
     assert "`kb mission next`" in changelog
     assert "`--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second" in readme
     assert "derived from the grounded `-code` document" in changelog
