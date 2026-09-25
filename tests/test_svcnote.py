@@ -114,7 +114,7 @@ def test_unknown_service_error_names_kb_code_ingest_as_the_stale_code_fix(seeded
         svcnote.add_note(seeded / ".kb", "demo", "brand-new-service", _note())
     msg = str(exc.value)
     assert "brand-new-service" in msg  # existing rule: name the service
-    assert "kb code-ingest" in msg
+    assert "git add" in msg
     # The pre-existing typo guidance must still be present, not replaced.
     assert "hash-character" in msg or "hex-character" in msg
     assert "verbatim" in msg
@@ -157,7 +157,7 @@ def test_cli_svc_note_json_output(seeded):
     assert result.exit_code == 0, result.output
     import json
 
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)  # --json stdout stays pure (refresh notes go to stderr)
     assert payload["section_id"] == "hist.airspace-service"
     assert payload["action"] == "created"
 

@@ -631,6 +631,38 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path) -> HubHandle:
     return handle
 
 
+def _refresh_code_or_exit(kb_dir: Path, repo_id: str) -> None:
+    """Bring `<repo_id>-code` up to the working tree before a command reads
+    it (spec 2026-09-25 §4.1). Notes go to stderr so --json stays pure."""
+    from strata_kb.codeingest import core, sync
+
+    try:
+        result = sync.ensure_code_fresh(kb_dir, repo_id)
+    except core.CodeIngestError as exc:
+        typer.secho(
+            f"could not refresh {repo_id}-code: {exc}", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1)
+    for note in result.notes:
+        typer.secho(f"[note] {note}", fg=typer.colors.YELLOW, err=True)
+
+
+def _refresh_dev_code(kb_dir: Path) -> None:
+    """`kb build` / `kb publish` in a dev repo: refresh `-code` first — but
+    only once the repo has one, so a repo before /dev-code-seed builds and
+    publishes exactly as before. Any other kind: no-op."""
+    from strata_kb.codeingest import sync
+    from strata_kb.config import load_config
+
+    try:
+        cfg = load_config(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError):
+        return  # the command's own config read reports a broken file
+    if cfg.kind != "dev" or not cfg.repo_id or not sync.has_code_doc(kb_dir, cfg.repo_id):
+        return
+    _refresh_code_or_exit(kb_dir, cfg.repo_id)
+
+
 @app.command()
 def ingest(
     pdf: Path = typer.Argument(..., help="Source PDF file"),
@@ -1095,9 +1127,18 @@ def build(
     strict: bool = typer.Option(
         False, "--strict", help="Treat quality findings (C2 rules) as errors"
     ),
+    no_refresh: bool = typer.Option(
+        False, "--no-refresh",
+        help="Dev repo: validate <repo_id>-code as it is; skip regenerating it first",
+    ),
 ) -> None:
     """Validate KB: no TODOs left, table integrity, C2 quality rules, updated token counts."""
     from strata_kb.build import build_kb
+
+    # Dev repo (spec 2026-09-25 §4.1): validate what the merge would
+    # publish — on a PR checkout -code is absent until this regenerates it.
+    if not no_refresh:
+        _refresh_dev_code(kb_dir)
 
     try:
         report = build_kb(kb_dir, allow_pending=allow_pending, strict=strict)
@@ -1253,6 +1294,10 @@ def svc_note(
     refs: str = typer.Option("", "--refs", help="Domain refs, comma-separated"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config)"),
+    no_refresh: bool = typer.Option(
+        False, "--no-refresh",
+        help="Read <repo_id>-code as it is; skip regenerating it from the working tree",
+    ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
 ) -> None:
     """Append a ticket to <repo_id>-svc §hist.<service>. Idempotent per ticket."""
@@ -1272,6 +1317,9 @@ def svc_note(
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
+
+    if not no_refresh:
+        _refresh_code_or_exit(kb_dir, rid)
 
     ref_list = tuple(r.strip() for r in refs.split(",") if r.strip())
     note = svcnote.Note(ticket=ticket, title=title, refs=ref_list)
@@ -1788,6 +1836,11 @@ def publish(
         )
         raise typer.Exit(1)
     mode = "pr" if pr else "direct" if direct else "auto"
+    # Spec 2026-09-25 §4.4: a hand publish sends the -code CI would send for
+    # this commit — never a stale or summarized copy. No --no-refresh here:
+    # skipping it is exactly the divergence this prevents.
+    if cfg.kind == "dev":
+        _refresh_dev_code(kb_dir)
     is_self = False  # only ever True for cfg.kind == "hub" self-publish fall-through
     if cfg.kind == "hub":
         try:

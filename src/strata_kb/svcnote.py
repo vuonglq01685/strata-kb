@@ -323,19 +323,11 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
     known_ids = {s.id for s in code_manifest.sections}
     svc_section_id = f"svc.{service}"
     if svc_section_id not in known_ids:
-        # Final review, Important 1(b): two honest, independent causes,
-        # not one misdiagnosis swapped for another. (1) A typo — the
-        # original guidance: copy the real id verbatim, mind the opaque
-        # hash suffix on a name over 40 characters. (2) The ticket added
-        # or renamed a service, and this repo's *committed* `-code` is
-        # simply stale: `kb-code.yml` regenerates and publishes `-code`
-        # on the hub on every push to the default branch, with no
-        # commit-back step to this repo's own working tree, so the
-        # committed copy is a seed-time (or last-checkout-time) snapshot
-        # — nothing here ever refreshes it. Cause (2) is the far more
-        # likely one whenever the service name is real but new, so it is
-        # named explicitly rather than left for the typo guidance to
-        # imply on its own.
+        # Spec 2026-09-25 §4.1: `kb svc note` regenerates -code from the
+        # working tree first, so a stale snapshot is no longer a cause. Two
+        # remain: a typo (mind the opaque hash suffix on a name over 40
+        # characters, Ruling R1), or a new service whose files git does not
+        # track yet — the tree extractor lists files with `git ls-files`.
         raise SvcNoteError(
             f"unknown service '{service}' — no svc.{service} section in "
             f"{code_doc_id} (list the real ids in "
@@ -343,11 +335,8 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
             "verbatim — a service name longer than 40 characters carries "
             "an opaque 6-hex-character hash suffix, e.g. "
             "'-a1b2c3', that must be copied exactly, never retyped. "
-            "If the ticket added or renamed a service, this is likely "
-            f"not a typo: this repo's committed {code_doc_id} is a "
-            "snapshot that CI regenerates and publishes on the hub on "
-            "every push but never writes back here — run `kb "
-            "code-ingest` to refresh it locally, then retry)"
+            "If the service is new, `git add` its files first: "
+            f"{code_doc_id} only sees files git tracks)"
         )
 
     # Fix round 1, Minor 3(b): guarded load, not a raw `models.
