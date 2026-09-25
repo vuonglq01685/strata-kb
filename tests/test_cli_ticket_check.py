@@ -7,6 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from strata_kb import models
@@ -15,6 +16,15 @@ from strata_kb.federation import FederationMeta, write_federation_index
 from tests.test_ticketcheck import MISSION, grounding, mission_with_services, ticket
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _no_stray_hub_env(monkeypatch):
+    """`ticket check` now resolves the hub on every run (hub-first, Task 7):
+    without this, a developer's real `STRATA_KB_HUB` would leak into every
+    test in this module and make "no hub" / "unreachable hub" cases contact
+    an actual hub instead of exercising the local fallback."""
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
 
 
 def _publish_to_hub(fed_hub: Path, kb_dir: Path, repo_id: str, run_git) -> None:
@@ -113,9 +123,8 @@ def test_hub_ambiguous_holders_need_a_repo_qualifier(code_doc, fed_hub, run_git,
     assert "read from hub federation/demo-fork" in result.output
 
 
-def test_hub_not_needed_when_the_document_is_local(code_doc, tmp_path, monkeypatch):
+def test_hub_not_needed_when_the_document_is_local(code_doc, tmp_path):
     # No --hub, no config: the local branch must not call _hub_or_exit.
-    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
     kb_dir, rev = code_doc
     path = tmp_path / "t.md"
     path.write_text(ticket(grounding(rev)), encoding="utf-8")
@@ -234,11 +243,25 @@ def test_hub_copy_wins_over_a_local_copy(code_doc, fed_hub, run_git, tmp_path):
     assert "[note] demo-code read from hub federation/demo" in result.output
 
 
-def test_local_copy_is_the_fallback_when_no_hub_is_reachable(code_doc, tmp_path, monkeypatch):
-    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+def test_local_copy_is_the_fallback_when_no_hub_is_reachable(code_doc, tmp_path):
+    # A --hub path that resolves to nothing: no local path with a `.kb/`,
+    # no cache, no clone target -- genuinely unreachable, not just
+    # "unconfigured" (that's the module-level `_no_stray_hub_env` case).
     kb_dir, rev = code_doc
     path = tmp_path / "t.md"
     path.write_text(ticket(grounding(rev)), encoding="utf-8")
-    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir),
+                                 "--hub", str(tmp_path / "nope")])
     assert result.exit_code == 0, result.output
-    assert "(local fallback" in result.output
+    assert "(local fallback — could not reach hub" in result.output
+
+
+def test_local_copy_is_the_fallback_when_the_hub_lacks_the_doc(code_doc, fed_hub, tmp_path):
+    # fed_hub is a reachable hub, but it never published demo-code.
+    kb_dir, rev = code_doc
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev)), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir),
+                                 "--hub", str(fed_hub)])
+    assert result.exit_code == 0, result.output
+    assert "(local fallback — not on the hub)" in result.output
