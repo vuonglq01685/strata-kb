@@ -49,11 +49,10 @@ edit above it.
   completion claim without it is not accepted.
 - **Record service history** — for each service touched, run
   `kb svc note <service> --ticket <id> --title "<title>" --refs
-  "<refs>"` so the entries land in this same PR. If the ticket
-  added or renamed a service, run `kb code-ingest` first — `kb svc
-  note` validates the service against this repo's own committed
-  `<repo_id>-code`, which CI regenerates on the hub but never
-  writes back here. If this repo has no `<repo_id>-svc` yet
+  "<refs>"` so the entries land in this same PR. `kb svc note`
+  regenerates `<repo_id>-code` from the working tree first, so a
+  service the ticket added is found once its files are tracked
+  (`git add`). If this repo has no `<repo_id>-svc` yet
   (`dev-code-seed` never run), say so in one line in the PR and
   record the history there instead.
   `kb svc note` is what makes `kb mission next` on the BA side see this

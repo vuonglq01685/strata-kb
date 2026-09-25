@@ -47,12 +47,13 @@ chosen and escalating to L3 only for a value that will be encoded in code
 or tests, then searches within a 500–800 token budget for broad discovery
 — `<repo_id>-code` and `<repo_id>-svc` for structure and responsibility
 before reading the actual code, skipping whichever document is missing and
-reading the code directly for that half — a document missing from the hub
-means either not yet generated (`kb code-ingest` for `<repo_id>-code`,
-`dev-code-seed` for `<repo_id>-svc`) or generated and not yet published,
-checked via `.kb/<repo_id>-code/` and `.kb/<repo_id>-svc/` locally
-(present → say "generated, unpublished: run `kb publish`"; absent → "not
-generated"), reads staying hub-only either way and never reported as a KB
+reading the code directly for that half — a `<repo_id>-code` missing from
+the hub is not yet published (CI publishes it on merge to the default
+branch; `kb doctor` says whether the hub lags), and a `<repo_id>-svc`
+missing from the hub is either not yet seeded (`dev-code-seed`) or seeded
+and not yet published, checked via `.kb/<repo_id>-svc/` locally (present →
+say "seeded, unpublished: run `kb publish --pr`"; absent → "not seeded"),
+reads staying hub-only either way and never reported as a KB
 gap; **Placeholders** verifies every
 `%%TODO: verify against codebase%%` against the codebase, reports the list
 to the BA, **never edits the ticket**, and records the map in the cache

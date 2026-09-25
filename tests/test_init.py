@@ -1744,11 +1744,34 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # = 54.
     assert len(expected_files("dev")) == 54
     assert sorted(report.created) == sorted(
-        expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES)
+        expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]
     )
     assert report.skipped == []
     for rel in _DEV_STAGE_A_PATHS:
         assert (tmp_path / rel).is_file(), rel
+
+
+def test_init_dev_gitignores_the_code_document(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    lines = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert ".kb/*-code/" in lines
+
+
+def test_init_dev_appends_to_an_existing_gitignore_once(tmp_path: Path):
+    (tmp_path / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    init_repo(tmp_path, "dev")
+    init_repo(tmp_path, "dev")
+    lines = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "node_modules/"
+    assert lines.count(".kb/*-code/") == 1
+
+
+def test_kb_code_workflow_points_db_flags_to_the_config():
+    from importlib import resources
+
+    text = resources.files("strata_kb").joinpath("templates/init/kb-code.yml").read_text(encoding="utf-8")
+    assert "code_ingest" in text
+    assert "--db <path>" not in text
 
 
 def test_init_kind_dev_scaffolds_the_child_gitattributes_exemption(tmp_path: Path):

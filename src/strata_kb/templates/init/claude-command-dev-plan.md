@@ -64,10 +64,11 @@ not exempt, and a change that alters behaviour an AC can see is never
 exempt whatever its file extension. Tasks are ordered so each one
 leaves the repo green, and the plan closes with one cross-cutting
 verification task (full suite + lint) that names the commands it will
-run — `cmd.test` and `cmd.lint` from `-code §cmd.*`; when that document
-has not been generated yet in this repo (`kb code-ingest` not yet run),
-the skill asks the Dev once for the build/test/lint commands and
-records them in the `cmd.test:` / `cmd.lint:` header lines, so this
+run — `cmd.test` and `cmd.lint` from `-code §cmd.*`; when that entry is
+missing (this repo has not run `/dev-code-seed` yet, or code-ingest
+found no such command), the skill asks the Dev once for the
+build/test/lint commands and records them in the `cmd.test:` /
+`cmd.lint:` header lines, so this
 closing task, `dev-execute`, and `dev-handover` all have something to
 run; and when the repo has no linter at all to record as `cmd.lint`,
 the plan's first task sets one up from the *Linting* section of
