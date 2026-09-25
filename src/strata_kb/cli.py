@@ -2520,8 +2520,8 @@ def ticket_check(
         "",
         "--hub",
         envvar="STRATA_KB_HUB",
-        help="kb-hub URL/path (empty = config); consulted only when the "
-        "-code document is not under --kb-dir",
+        help="kb-hub URL/path (empty = config); read first — the -code "
+        "document under --kb-dir is the fallback",
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
@@ -2566,14 +2566,24 @@ def ticket_check(
     resolved_missions = _resolve_missions_dir(missions_dir, path)
 
     def load_doc(repo: str | None, doc: str) -> ticketcheck.LoadedDoc | None:
-        # Local first (a dev machine, or the hub's own checkout): the BA repo
-        # never has a -code document locally, so it always falls through to
-        # the hub — which is the point, the SA grounded on the hub copy.
+        # Hub first (spec 2026-09-25 §4.1): the SA grounded on the hub copy,
+        # and a dev repo's local -code is regenerated from its working tree,
+        # so its revision is the branch's, never the grounding's. The local
+        # copy is the fallback when no hub is reachable or the hub does not
+        # hold the doc (the hub's own checkout, a doc not published yet).
+        handle, reason = _hub_or_reason(hub, kb_dir)
+        if handle is not None:
+            found = ticketcheck.load_from_hub(handle.federation_dir, repo, doc)
+            if found is not None:
+                return found
+            reason = "not on the hub"
         local = kb_dir / doc
         if (local / "_manifest.yaml").exists():
-            return ticketcheck.load_doc_dir(local, str(local))
-        handle = _hub_or_exit(hub, kb_dir)
-        return ticketcheck.load_from_hub(handle.federation_dir, repo, doc)
+            return ticketcheck.load_doc_dir(local, f"{local} (local fallback — {reason})")
+        if handle is None:
+            typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        return None
 
     def load_decisions(mission_id: str) -> ticketcheck.DecisionTable | None:
         if resolved_missions is None:

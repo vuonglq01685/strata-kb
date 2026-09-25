@@ -43,6 +43,7 @@ def test_local_kb_dir_golden_exits_0(code_doc, tmp_path):
     assert result.exit_code == 0, result.output
     assert result.output.rstrip().endswith("Grounding: PASS")
     assert "[note] demo-code read from" in result.output
+    assert "(local fallback" in result.output
 
 
 def test_bad_id_exits_1_and_names_it(code_doc, tmp_path):
@@ -214,3 +215,30 @@ def test_heading_services_and_order(code_doc, tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert result.output.rstrip().endswith("Grounding: PASS")
+
+
+def test_hub_copy_wins_over_a_local_copy(code_doc, fed_hub, run_git, tmp_path):
+    # Spec 2026-09-25 §4.1: a dev repo's local -code is regenerated from its
+    # branch, so its revision is never the one the SA grounded on.
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    manifest_path = kb_dir / "demo-code" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.revision = "0000000"
+    models.save_yaml_model(manifest_path, manifest)
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev)), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir),
+                                 "--hub", str(fed_hub)])
+    assert result.exit_code == 0, result.output
+    assert "[note] demo-code read from hub federation/demo" in result.output
+
+
+def test_local_copy_is_the_fallback_when_no_hub_is_reachable(code_doc, tmp_path, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    kb_dir, rev = code_doc
+    path = tmp_path / "t.md"
+    path.write_text(ticket(grounding(rev)), encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert result.exit_code == 0, result.output
+    assert "(local fallback" in result.output
