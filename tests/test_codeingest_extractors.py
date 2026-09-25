@@ -3079,6 +3079,34 @@ class TestCommandsExtractor:
         s = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))["cmd.test"]
         assert s.l2_md.splitlines()[0] == "**Primary:** `npx playwright test`"
 
+    def test_ci_reader_skips_workflows_kb_init_scaffolds(self, tmp_path):
+        # MyFlix field report 2026-09-25: kb-code.yml's `kb build` became
+        # cmd.build and kb-pr-lint.yml's `kb pr lint` became cmd.lint, so
+        # /dev-plan copied strata's own commands into ticket plans.
+        root = tmp_path / "scaffolded"
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "kb-code.yml").write_text(
+            "on: [push]\njobs:\n  publish:\n    steps:\n      - run: kb build\n",
+            encoding="utf-8",
+        )
+        (wf / "kb-pr-lint.yml").write_text(
+            "on: [pull_request]\njobs:\n  pr-lint:\n    steps:\n"
+            '      - run: kb pr lint "$RUNNER_TEMP/body.md"\n',
+            encoding="utf-8",
+        )
+        (wf / "ci.yml").write_text(
+            "on: [push]\njobs:\n  ci:\n    steps:\n"
+            "      - run: pnpm -r build\n      - run: pnpm -r lint\n",
+            encoding="utf-8",
+        )
+        sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
+        assert "pnpm -r build" in sections["cmd.build"].l2_md.splitlines()[0]
+        assert "pnpm -r lint" in sections["cmd.lint"].l2_md.splitlines()[0]
+        blob = "".join(s.l2_md + s.l3_md for s in sections.values())
+        assert "kb build" not in blob
+        assert "kb pr lint" not in blob
+
 
 import sqlite3
 

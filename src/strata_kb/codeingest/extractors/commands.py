@@ -479,7 +479,8 @@ def _classify(text: str) -> str | None:
 
 
 def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
-    """Every `run:` step across every workflow file, in file order (via
+    """Every `run:` step across every workflow file except those `kb init`
+    scaffolds (`initcmd.SCAFFOLDED_WORKFLOW_NAMES`), in file order (via
     `walk_tree`, Ruling R7) then job order (`sorted` job names, matching
     `services.py`'s convention of sorting a parsed mapping's keys) then
     step order (a step list's position is meaningful — the file's own
@@ -495,6 +496,10 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
     leading `cd <dir>` in its block (`_step_dir_label`), else the job's
     `defaults.run.working-directory`, else the workflow's
     (`_defaults_working_directory`, checked at both scopes)."""
+    # Lazy import: `initcmd` pulls in template machinery the extractor
+    # module must not load at import time.
+    from strata_kb.initcmd import SCAFFOLDED_WORKFLOW_NAMES
+
     candidates: list[Candidate] = []
     warnings: list[str] = []
 
@@ -504,6 +509,8 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
         for name in filenames:
             if not fnmatch.fnmatch(name, "*.y*ml"):
                 continue
+            if name in SCAFFOLDED_WORKFLOW_NAMES:
+                continue  # strata's own workflow — its commands are not the repo's
             path = root / reldir / name
             rel = relposix(root, path)
             try:

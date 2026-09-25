@@ -240,6 +240,20 @@ DEV_TEMPLATES: dict[str, str] = {
     ".cursor/commands/kb-publish.md": "cursor-kb-publish.md",
 }
 
+# Workflow files `kb init` scaffolds, by file name, across every kind. Their
+# `run:` steps are strata's own (`kb build`, `kb pr lint …`), never the
+# repo's build/lint/test, so `kb code-ingest`'s CI command reader skips them.
+# Derived from the template maps so a new scaffolded workflow is covered
+# the moment it is added to one.
+SCAFFOLDED_WORKFLOW_NAMES: frozenset[str] = frozenset(
+    rel.removeprefix(".github/workflows/")
+    for templates in (
+        COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES, BA_TEMPLATES, DEV_TEMPLATES,
+    )
+    for rel in templates
+    if rel.startswith(".github/workflows/")
+)
+
 # User data — never refreshed by default; only overwritten with --force.
 # `.claude/settings.json` joins the set because a dev's own hooks, permissions
 # and model settings live there: initcmd overwrites anything outside this set

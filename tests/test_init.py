@@ -2654,3 +2654,11 @@ def test_the_dev_rubric_override_is_never_refreshed(tmp_path: Path):
     assert any(
         "local overrides — never refreshed" in entry for entry in report.skipped
     )
+
+
+def test_scaffolded_workflow_names_cover_every_kind():
+    from strata_kb.initcmd import SCAFFOLDED_WORKFLOW_NAMES
+
+    assert SCAFFOLDED_WORKFLOW_NAMES == {
+        "kb-publish.yml", "kb-ticket-lint.yml", "kb-code.yml", "kb-pr-lint.yml",
+    }
