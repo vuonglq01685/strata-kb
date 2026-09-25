@@ -65,6 +65,17 @@ Reply with ONLY a JSON object:
 PROMPT_SHA = hashlib.sha256(SECTION_PROMPT.encode("utf-8")).hexdigest()[:12]
 RETRY_PAUSE_SECONDS = 1.0  # pause before the retry after a RunnerError (tests set 0)
 
+# code-ingest tags every `-code` document `generated`. Its L1/L2 are
+# deterministic; an LLM summary would make the published text depend on
+# who published last (spec 2026-09-25 §4.4), so summarize never touches it.
+GENERATED_TAG = "generated"
+
+
+def generated_doc_ids(kb_dir: Path) -> set[str]:
+    """Documents `kb code-ingest` owns — never summarized, never redone."""
+    index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
+    return {e.id for e in index.docs if GENERATED_TAG in e.tags}
+
 
 def strip_tables(text: str) -> str:
     """Replace each contiguous table block with the placeholder.
@@ -128,6 +139,8 @@ def collect_pending(
     out: list[PendingSection] = []
     for entry in index.docs:
         if doc_id and entry.id != doc_id:
+            continue
+        if GENERATED_TAG in entry.tags:
             continue
         manifest_path = kb_dir / entry.id / "_manifest.yaml"
         if not manifest_path.exists():
@@ -506,6 +519,8 @@ def plan_redo(
     seen: set[str] = set()
     for entry in index.docs:
         if doc_id and entry.id != doc_id:
+            continue
+        if GENERATED_TAG in entry.tags:
             continue
         manifest_path = kb_dir / entry.id / "_manifest.yaml"
         if not manifest_path.exists():
