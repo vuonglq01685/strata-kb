@@ -2048,17 +2048,17 @@ def ci_publish(
     try:
         url = intake or load_config(kb_dir).intake
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
-        typer.secho(
+        msg = (
             f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
-            "or pass --intake to skip reading it",
-            fg=typer.colors.RED,
+            "or pass --intake to skip reading it"
         )
+        cipublish.write_step_summary(f"error — {msg}")
+        typer.secho(msg, fg=typer.colors.RED)
         raise typer.Exit(1)
     if not url:
-        typer.secho(
-            "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake",
-            fg=typer.colors.RED,
-        )
+        msg = "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake"
+        cipublish.write_step_summary(f"error — {msg}")
+        typer.secho(msg, fg=typer.colors.RED)
         raise typer.Exit(1)
     try:
         pr_url = cipublish.run(

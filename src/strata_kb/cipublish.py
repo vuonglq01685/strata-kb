@@ -33,6 +33,7 @@ def write_step_summary(line: str) -> None:
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
+    line = " ".join(line.split())  # the summary is one line; collapse any newlines/whitespace
     try:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(f"kb ci-publish: {line}\n")
