@@ -373,6 +373,27 @@ def default_branch(root: Path) -> str:
     return current_branch(root)
 
 
+def origin_head_ref(root: Path) -> str:
+    """`origin/<branch>` resolved from `refs/remotes/origin/HEAD` only --
+    never falling back to the checked-out branch the way `default_branch`
+    does (that fallback exists for callers with no remote at all, and stays
+    unchanged for them). `git remote add` + `push -u` does not itself set
+    `origin/HEAD` -- only `git remote set-head origin --auto` (or an
+    explicit branch) does -- so a caller that must compare against the
+    repo's real default branch, not whatever happens to be checked out
+    right now, needs this narrower behaviour and raises instead of
+    silently guessing.
+    """
+    proc = _run(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+    prefix = "refs/remotes/"
+    ref = proc.stdout.strip()
+    if proc.returncode != 0 or not ref.startswith(prefix):
+        raise GitError(
+            "origin/HEAD is not set — run `git remote set-head origin --auto`"
+        )
+    return ref[len(prefix):]
+
+
 def path_exists_at(root: Path, rev: str, relpath: str) -> bool:
     """Does `relpath` exist in the tree at `rev`?
 

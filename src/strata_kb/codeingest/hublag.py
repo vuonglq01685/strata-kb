@@ -9,6 +9,7 @@ without anything having lagged.
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +54,37 @@ def l3_sections(doc_dir: Path) -> dict[str, str]:
     return out
 
 
+def _worktree_db_paths(
+    repo_root: Path, work: Path, db_paths: tuple[Path, ...]
+) -> tuple[Path, ...]:
+    """Copy each `--db` path that lives under `repo_root` to the same
+    relative path inside `work` (the detached worktree) and return the
+    worktree-side paths; a path outside `repo_root` is returned unchanged.
+
+    `core.run(repo_root=work, ...)` otherwise hands the schema extractor an
+    ABSOLUTE path into the real checkout, which `schema._path_label` cannot
+    relativize against `work` -- it falls back to `--db:<basename>` in L3,
+    while CI (whose `repo_root` IS the checkout) writes the familiar
+    `data/app.sqlite` label, so every schema section compares as "changed"
+    even when nothing did. The database's CONTENT still comes from the real
+    checkout, never from the worktree's git tree (spec §4.3a step 2: a `--db`
+    path is data, not code, and `origin/main`'s commit never carries it) --
+    only the path handed to code-ingest is relocated, so the label matches.
+    """
+    out: list[Path] = []
+    for db_path in db_paths:
+        try:
+            rel = db_path.relative_to(repo_root)
+        except ValueError:
+            out.append(db_path)
+            continue
+        dest = work / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(db_path, dest)
+        out.append(dest)
+    return tuple(out)
+
+
 def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> LagReport:
     doc_id = f"{repo_id}-code"
     pin_note = sync.version_note(repo_root)
@@ -63,7 +95,15 @@ def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> 
         return LagReport("unknown", reason=f"the hub has no {doc_id} yet")
     if not gitio.has_remote(repo_root):
         return LagReport("unknown", reason="no git remote — nothing to compare the hub with")
-    ref = f"origin/{gitio.default_branch(repo_root)}"
+    try:
+        # origin/HEAD only -- never the branch that happens to be checked
+        # out (controller ruling: gitio.default_branch's fallback would
+        # otherwise let a feature branch stand in for "main" right after
+        # `git remote add` + `push -u`, before anyone runs `git remote
+        # set-head origin --auto`).
+        ref = gitio.origin_head_ref(repo_root)
+    except gitio.GitError as exc:
+        return LagReport("unknown", reason=str(exc))
     if not gitio.rev_exists(repo_root, ref):
         return LagReport("unknown", reason=f"no local ref {ref} — run `git fetch`", ref=ref)
     ref_date = core._git(repo_root, "show", "-s", "--format=%cs", ref).stdout.strip()
@@ -75,16 +115,26 @@ def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> 
         except gitio.GitError as exc:
             return LagReport("unknown", reason=str(exc), ref=ref, ref_date=ref_date)
         try:
+            work_db_paths = _worktree_db_paths(repo_root, work, base.db_paths)
             # kb_dir inside the worktree, so the tree extractor prunes the
             # worktree's own .kb/ exactly as a real checkout's is pruned.
             core.run(core.CodeIngestOptions(
                 repo_root=work, kb_dir=work / ".kb", doc_id=doc_id, repo_id=repo_id,
-                db_paths=base.db_paths, tags=base.tags,
+                db_paths=work_db_paths, tags=base.tags,
             ))
             main = l3_sections(work / ".kb" / doc_id)
         except core.CodeIngestError as exc:
             return LagReport(
                 "unknown", reason=f"code-ingest failed at {ref}: {exc}",
+                ref=ref, ref_date=ref_date,
+            )
+        except OSError as exc:
+            # A `kb doctor` check must never abort the whole command --
+            # "cannot judge" (unknown) beats a traceback, same reasoning as
+            # the CodeIngestError branch just above (e.g. a --db path that
+            # vanished between `options_from_config` and the copy above).
+            return LagReport(
+                "unknown", reason=f"could not prepare {ref} for comparison: {exc}",
                 ref=ref, ref_date=ref_date,
             )
         finally:

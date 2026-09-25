@@ -1,4 +1,5 @@
 import shutil
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,7 @@ from typer.testing import CliRunner
 
 import strata_kb
 from strata_kb.cli import app
-from strata_kb.codeingest import core, hublag
+from strata_kb.codeingest import core, hublag, sync
 from tests.fixtures_coderepo import build_code_repo
 
 
@@ -70,6 +71,58 @@ def test_lags_when_main_moved_past_the_hub(clone, tmp_path, run_git):
     assert report.state == "lags"
     assert any("billing" in s for s in report.only_on_main)
     assert report.ref == "origin/main"
+
+
+def test_in_sync_with_a_configured_db_path(clone, tmp_path):
+    """Fix round 1, Important 1: a `--db` path resolved from
+    `code_ingest.db` is an ABSOLUTE path into the real checkout, and
+    `core.run` inside `check()` is called with `repo_root=work` (the
+    detached worktree) -- without relocating the file alongside the
+    worktree, `schema._path_label` cannot relativize it against `work` and
+    falls back to `--db:<basename>` in L3, which never matches the label
+    CI wrote (`data/app.sqlite`) and reports a false "lags" verdict on an
+    otherwise identical repo."""
+    (clone / ".kb" / "config.yaml").write_text(
+        'kind: dev\nrepo_id: "demo"\ncode_ingest:\n  db: ["data/app.sqlite"]\n',
+        encoding="utf-8",
+    )
+    (clone / "data").mkdir()
+    # Untracked, the way a real repo gitignores its local database (the
+    # same reasoning `.kb/*-code/` is gitignored): a --db path is data code
+    # -ingest reads straight off the working tree, never a file `origin/
+    # main`'s commit could carry (spec §4.3a step 2) -- which is exactly
+    # why `check()` must relocate it into the worktree itself rather than
+    # relying on the checkout to already have it.
+    con = sqlite3.connect(str(clone / "data" / "app.sqlite"))
+    con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+    con.commit()
+    con.close()
+
+    fed = tmp_path / "hub" / "federation"
+    # Published the way CI would: `sync.options_from_config` reads the
+    # same `code_ingest.db` config this test just wrote.
+    opts = sync.options_from_config(clone, clone / ".kb", "demo")
+    core.run(opts)
+    dest = fed / "demo" / "demo-code"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(clone / ".kb" / "demo-code", dest)
+
+    report = hublag.check(clone, clone / ".kb", fed, "demo")
+    assert report.state == "in-sync", report
+
+
+def test_unknown_when_origin_head_is_not_set(clone, tmp_path, run_git):
+    """Fix round 1, Important 2: `gitio.default_branch` falls back to the
+    checked-out branch when `refs/remotes/origin/HEAD` is unset -- common
+    right after `git remote add` + `push -u`, before anyone runs `git
+    remote set-head origin --auto` -- which would silently compare the hub
+    against a feature branch. hublag must refuse to guess instead."""
+    fed = tmp_path / "hub" / "federation"
+    _publish(clone, fed)
+    run_git(clone, "remote", "set-head", "origin", "--delete")
+    report = hublag.check(clone, clone / ".kb", fed, "demo")
+    assert report.state == "unknown"
+    assert "set-head" in report.reason
 
 
 def test_worktree_is_removed_afterwards(clone, tmp_path, run_git):
