@@ -1309,9 +1309,16 @@ def test_summarize_redo_with_no_doc_id_does_not_lock_code_ingest_out_of_itself(
     before = models.load_yaml_model(manifest_path, models.Manifest)
     assert all(s.status == "summarized" for s in before.sections)
 
-    redo_reset(root / ".kb", plan_redo(root / ".kb", None))  # --all: every doc, including demo-code
+    # spec 2026-09-25 §4.4: `-code` has one producer, `kb code-ingest` —
+    # `plan_redo` now skips a generated document entirely, so `--all` never
+    # resets demo-code's rows to "pending" in the first place (the older
+    # self-lockout regression this test guards is now structurally
+    # impossible, not just handled gracefully).
+    plan = plan_redo(root / ".kb", None)  # --all: every non-generated doc
+    assert not any(item.doc_id == "demo-code" for item in plan.items)
+    redo_reset(root / ".kb", plan)
     after_redo = models.load_yaml_model(manifest_path, models.Manifest)
-    assert all(s.status == "pending" for s in after_redo.sections)
+    assert all(s.status == "summarized" for s in after_redo.sections)
 
     # Must NOT raise CodeIngestError — this is demo-code re-ingesting
     # itself, not a foreign document landing on a curated destination.
