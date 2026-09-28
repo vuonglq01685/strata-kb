@@ -1348,7 +1348,17 @@ def svc_note(
         )
         raise typer.Exit(1)
 
-    if not no_refresh:
+    # Guarded the same way build/publish are (_refresh_dev_code): a repo
+    # that has not run /dev-code-seed has neither -code nor -svc yet, and
+    # svcnote.add_note below is always going to refuse it as "-svc does not
+    # exist" — refreshing first used to create a -code document and an
+    # index.yaml entry as a side effect of a command that was never going
+    # to succeed (Important 2).
+    from strata_kb.codeingest import sync
+
+    if not no_refresh and (
+        sync.has_code_doc(kb_dir, rid) or (kb_dir / f"{rid}-svc").is_dir()
+    ):
         _refresh_code_or_exit(kb_dir, rid)
 
     ref_list = tuple(r.strip() for r in refs.split(",") if r.strip())
@@ -3088,6 +3098,10 @@ def doctor(
     hub: str = typer.Option(
         "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
+    no_refresh: bool = typer.Option(
+        False, "--no-refresh",
+        help="Dev repo: check <repo_id>-code as it is; skip regenerating it first",
+    ),
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
     from strata_kb.config import effective_repo_id
@@ -3110,6 +3124,15 @@ def doctor(
         for issue in kind_issues:
             typer.secho(f"[{issue.level}] {issue.message}", fg=typer.colors.RED)
         raise typer.Exit(1)
+    # Spec 2026-09-25 §4.1: every local reader sees a derived -code. A dev
+    # repo whose index.yaml still lists <repo_id>-code but whose directory
+    # is absent (fresh clone, or a teammate's pull of the migration's `git
+    # rm --cached` commit) must get it back before check_kb runs below --
+    # otherwise check_kb reports a permanent "missing _manifest.yaml" that
+    # kb doctor itself could have fixed. _refresh_dev_code is already a
+    # no-op for any other kind and for a repo without a -code document.
+    if not no_refresh:
+        _refresh_dev_code(kb_dir)
     handle = _hub_or_exit(hub, kb_dir)
     issues = kind_issues + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
 

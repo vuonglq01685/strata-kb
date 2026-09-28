@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -5,11 +6,26 @@ from typer.testing import CliRunner
 from strata_kb import cli
 from strata_kb.cli import app
 from strata_kb.codeingest import core
+from strata_kb.federation import write_federation_index
 from tests.fixtures_coderepo import build_code_repo
 
 runner = CliRunner()
 
 _BILLING = "services:\n  billing-service:\n    image: billing:1\n"
+
+
+def _hub_dir(tmp_path: Path) -> Path:
+    """A local hub target `resolve_hub` accepts directly (a directory with
+    `.kb/`), with an empty federation so `check_hub`/`check_federation_publish`
+    have nothing to complain about — the point of these tests is the -code
+    refresh ordering in `kb doctor`, not hub content."""
+    hub = tmp_path / "hub"
+    (hub / ".kb").mkdir(parents=True)
+    (hub / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    fed = hub / "federation"
+    fed.mkdir()
+    write_federation_index(fed)
+    return hub
 
 
 def _dev_repo(tmp_path: Path, run_git) -> Path:
@@ -78,6 +94,68 @@ def test_build_before_the_seed_does_not_ingest(tmp_path):
     assert result.exit_code == 0, result.output
     assert "refreshed" not in result.stderr
     assert not (kb / "demo-code").exists()
+
+
+def test_build_regenerates_code_when_only_the_index_lists_it(tmp_path, run_git):
+    """`has_code_doc`'s index-only branch (a fresh clone of a migrated dev
+    repo: index.yaml lists <repo_id>-code but the gitignored directory was
+    never checked out) -- currently untested at the `kb build` layer."""
+    root = _dev_repo(tmp_path, run_git)
+    shutil.rmtree(root / ".kb" / "demo-code")
+    result = runner.invoke(app, ["build", "--kb-dir", str(root / ".kb"), "--allow-pending"])
+    assert result.exit_code == 0, result.output
+    assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
+
+
+def test_doctor_refreshes_a_migrated_dev_repos_missing_code_dir(tmp_path, run_git):
+    """Important 1: after migration, .kb/index.yaml still lists
+    <repo_id>-code but the directory is absent on a fresh clone (or a
+    teammate's pull of the `git rm --cached` commit) — `check_kb` used to
+    report "missing _manifest.yaml" and `kb doctor` never refreshed."""
+    root = _dev_repo(tmp_path, run_git)
+    shutil.rmtree(root / ".kb" / "demo-code")
+    hub = _hub_dir(tmp_path)
+
+    result = runner.invoke(
+        app, ["doctor", "--kb-dir", str(root / ".kb"), "--hub", str(hub)]
+    )
+
+    assert "missing _manifest.yaml" not in result.output, result.output
+    assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
+
+
+def test_doctor_no_refresh_still_reports_the_missing_code_dir(tmp_path, run_git):
+    root = _dev_repo(tmp_path, run_git)
+    shutil.rmtree(root / ".kb" / "demo-code")
+    hub = _hub_dir(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--kb-dir", str(root / ".kb"), "--hub", str(hub), "--no-refresh"],
+    )
+
+    assert "demo-code' is in the index but missing _manifest.yaml" in result.output
+    assert not (root / ".kb" / "demo-code").exists()
+
+
+def test_svc_note_before_the_seed_does_not_create_code(tmp_path):
+    """Important 2: svc_note used to refresh before svcnote.add_note ever
+    checks that <repo_id>-svc exists, so a repo that has not run
+    `/dev-code-seed` got a -code document and an index.yaml entry as a
+    side effect of a command that was always going to fail anyway."""
+    kb = tmp_path / ".kb"
+    kb.mkdir()
+    (kb / "config.yaml").write_text('kind: dev\nrepo_id: "demo"\n', encoding="utf-8")
+    (kb / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    result = runner.invoke(app, [
+        "svc", "note", "billing-service", "--ticket", "T-1", "--title", "Billing",
+        "--kb-dir", str(kb),
+    ])
+    assert result.exit_code == 1
+    assert "demo-svc does not exist" in result.output
+    assert "refreshed" not in result.stderr
+    assert not (kb / "demo-code").exists()
+    assert (kb / "index.yaml").read_text(encoding="utf-8") == "docs: []\n"
 
 
 def test_publish_refreshes_before_anything_else(tmp_path, monkeypatch):
