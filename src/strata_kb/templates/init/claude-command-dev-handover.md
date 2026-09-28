@@ -42,11 +42,11 @@ PR; run the full suite and linters (`cmd.test` and `cmd.lint` from `-code
 real output, since a completion claim without it is not accepted; record
 service history by running `kb svc note <service> --ticket <id> --title
 "<title>" --refs "<refs>"` for each service touched so the entries land in
-this same PR (if the ticket added or renamed a service, run `kb code-ingest`
-first — `kb svc note` validates against this repo's own committed
-`<repo_id>-code`, which CI regenerates on the hub but never writes back
-here; if this repo has no `<repo_id>-svc` yet — `dev-code-seed` never run —
-say so in one line in the PR and record the history there instead);
+this same PR (`kb svc note` regenerates `<repo_id>-code` from the working
+tree first, so a service the ticket added is found once its files are
+tracked (`git add`); if this repo has no `<repo_id>-svc` yet —
+`dev-code-seed` never run — say so in one line in the PR and record the
+history there instead);
 `kb svc note` is what makes `kb mission next` on the BA side see this
 story as done, and a ticket that skips it stays `drafted` forever; then
 assemble the PR description using the repo's

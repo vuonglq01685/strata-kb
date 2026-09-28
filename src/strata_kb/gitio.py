@@ -340,6 +340,15 @@ def worktree_add(
         raise GitError(f"worktree add '{branch}' failed: {proc.stderr.strip()}")
 
 
+def worktree_add_detached(root: Path, path: Path, rev: str) -> None:
+    """Check `rev` out, detached, into its own working tree at `path` —
+    read-only use; no branch is created or moved."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    proc = _run(root, "worktree", "add", "--detach", str(path), rev)
+    if proc.returncode != 0:
+        raise GitError(f"git worktree add --detach {rev} failed: {proc.stderr.strip()}")
+
+
 def worktree_remove(root: Path, path: Path) -> None:
     """Remove a worktree; best-effort, so a cleanup failure never masks the
     real error a caller is already unwinding from."""
@@ -362,6 +371,27 @@ def default_branch(root: Path) -> str:
     if proc.returncode == 0 and proc.stdout.strip():
         return proc.stdout.strip().split("/", 1)[-1]
     return current_branch(root)
+
+
+def origin_head_ref(root: Path) -> str:
+    """`origin/<branch>` resolved from `refs/remotes/origin/HEAD` only --
+    never falling back to the checked-out branch the way `default_branch`
+    does (that fallback exists for callers with no remote at all, and stays
+    unchanged for them). `git remote add` + `push -u` does not itself set
+    `origin/HEAD` -- only `git remote set-head origin --auto` (or an
+    explicit branch) does -- so a caller that must compare against the
+    repo's real default branch, not whatever happens to be checked out
+    right now, needs this narrower behaviour and raises instead of
+    silently guessing.
+    """
+    proc = _run(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+    prefix = "refs/remotes/"
+    ref = proc.stdout.strip()
+    if proc.returncode != 0 or not ref.startswith(prefix):
+        raise GitError(
+            "origin/HEAD is not set — run `git remote set-head origin --auto`"
+        )
+    return ref[len(prefix):]
 
 
 def path_exists_at(root: Path, rev: str, relpath: str) -> bool:

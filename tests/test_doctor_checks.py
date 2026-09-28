@@ -1,12 +1,16 @@
 """The doctor checks added by the reviewer-H batch (H1, M13, M9)."""
+import shutil
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
+import strata_kb
 from strata_kb import models
 from strata_kb.cli import app
+from strata_kb.federation import FederationMeta, write_federation_index
+from strata_kb.hub import HubHandle
 
 runner = CliRunner()
 
@@ -509,3 +513,88 @@ def test_fed_tree_digest_folds_in_string_sorted_order_not_path_order(tmp_path):
         expected.update(b"\0")
 
     assert doctor._fed_tree_digest(tmp_path) == expected.hexdigest()
+
+
+def _workflow(root, body):
+    wf = root / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "kb-code.yml").write_text(body, encoding="utf-8")
+
+
+def test_dev_sync_warns_on_db_flags_in_the_workflow(tmp_path):
+    from strata_kb import doctor
+
+    kb = _minimal_kb(tmp_path, kind="dev")
+    _workflow(tmp_path, "      - run: kb code-ingest --db data/app.sqlite\n")
+    msgs = [i.message for i in doctor.check_dev_sync(kb, tmp_path, "child")]
+    assert any("code_ingest.db" in m for m in msgs)
+
+
+def test_dev_sync_warns_on_a_version_pin_mismatch(tmp_path, monkeypatch):
+    from strata_kb import doctor
+
+    kb = _minimal_kb(tmp_path, kind="dev")
+    _workflow(tmp_path, "      - run: pip install strata-kb==0.0.1\n")
+    monkeypatch.setattr(strata_kb, "__version__", "1.4.0")
+    msgs = [i.message for i in doctor.check_dev_sync(kb, tmp_path, "child")]
+    assert any("pins 0.0.1" in m for m in msgs)
+
+
+def test_dev_sync_warns_on_a_tracked_code_document(tmp_path, run_git):
+    from strata_kb import doctor
+
+    kb = _minimal_kb(tmp_path, kind="dev")
+    (kb / "child-code").mkdir()
+    (kb / "child-code" / "services.md").write_text("# x\n", encoding="utf-8")
+    run_git(tmp_path, "init")
+    run_git(tmp_path, "add", "-A")
+    run_git(tmp_path, "commit", "-m", "init")
+    msgs = [i.message for i in doctor.check_dev_sync(kb, tmp_path, "child")]
+    assert any("git rm -r --cached .kb/child-code" in m for m in msgs)
+
+
+def test_dev_sync_is_quiet_on_a_clean_repo(tmp_path, run_git):
+    from strata_kb import doctor
+
+    kb = _minimal_kb(tmp_path, kind="dev")
+    run_git(tmp_path, "init")
+    run_git(tmp_path, "add", "-A")
+    run_git(tmp_path, "commit", "-m", "init")
+    assert doctor.check_dev_sync(kb, tmp_path, "child") == []
+
+
+def test_digest_can_exclude_the_code_document(tmp_path):
+    from strata_kb import doctor
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    for root in (a, b):
+        (root / "child-svc").mkdir(parents=True)
+        (root / "child-svc" / "services.md").write_text("# same\n", encoding="utf-8")
+        (root / "child-code").mkdir()
+    (a / "child-code" / "services.md").write_text("# branch A\n", encoding="utf-8")
+    (b / "child-code" / "services.md").write_text("# branch B\n", encoding="utf-8")
+    assert doctor._kb_tree_digest(a) != doctor._kb_tree_digest(b)
+    skip = frozenset({"child-code"})
+    assert doctor._kb_tree_digest(a, exclude_docs=skip) == doctor._kb_tree_digest(b, exclude_docs=skip)
+
+
+def test_check_hub_ignores_the_code_document_for_a_dev_repo(tmp_path):
+    from strata_kb import doctor
+
+    kb = _minimal_kb(tmp_path, kind="dev")
+    hub = tmp_path / "hub"
+    (hub / ".kb").mkdir(parents=True)
+    (hub / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    entry = hub / "federation" / "child"
+    shutil.copytree(kb, entry)
+    models.save_yaml_model(entry / "_meta.yaml", FederationMeta(
+        repo_id="child", source_commit="abc1234", published_at="2026-09-25T00:00:00+00:00",
+    ))
+    write_federation_index(hub / "federation")  # from strata_kb.federation
+    (kb / "child-code").mkdir()
+    (kb / "child-code" / "services.md").write_text("# local branch\n", encoding="utf-8")
+    handle = HubHandle(root=hub)
+    dev_issues, _ = doctor.check_hub(kb, handle, repo_id="child", code_doc="child-code")
+    assert not any("differs from the published snapshot" in i.message for i in dev_issues)
+    issues, _ = doctor.check_hub(kb, handle, repo_id="child")
+    assert any("differs from the published snapshot" in i.message for i in issues)

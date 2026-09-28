@@ -56,12 +56,13 @@ edit above it.
   structure and `<repo_id>-svc` for responsibility — (or the `kb_search`
   MCP tool when available) and then read the actual code. State the rule:
   *knowledge orients, code decides* — skip whichever document is missing
-  and read the code directly for that half. A document missing from the
-  hub means either not yet generated (`kb code-ingest` for
-  `<repo_id>-code`, `dev-code-seed` for `<repo_id>-svc`) or generated and
-  not yet published — check `.kb/<repo_id>-code/` and
-  `.kb/<repo_id>-svc/` locally: present → say "generated, unpublished:
-  run `kb publish`" in one line; absent → "not generated". Reads stay
+  and read the code directly for that half.
+  A `<repo_id>-code` missing from the hub is not yet published — CI
+  publishes it on merge to the default branch; `kb doctor` says whether
+  the hub lags. A `<repo_id>-svc` missing from the hub is either not yet
+  seeded (`dev-code-seed`) or seeded and not yet published — check
+  `.kb/<repo_id>-svc/` locally: present → say "seeded, unpublished: run
+  `kb publish --pr`" in one line; absent → "not seeded". Reads stay
   hub-only either way; never report it as a KB gap.
 - **Placeholders** — for each `%%TODO: verify against codebase%%`, verify
   the real name against the codebase and record `placeholder → verified

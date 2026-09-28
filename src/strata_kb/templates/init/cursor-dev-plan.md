@@ -72,9 +72,10 @@ edit above it.
   end the plan with one closing task for cross-cutting verification (full
   suite + lint) that names the commands it will run — `cmd.test` and
   `cmd.lint` from `-code §cmd.*`.
-- **No `-code` document yet** — when `-code §cmd.*` has not been generated
-  in this repo (`kb code-ingest` not yet run), ask the Dev once for the
-  build/test/lint commands and record them in the `cmd.test:` /
+- **No `-code` document yet** — when `-code §cmd.*` has no entry (this
+  repo has not run `/dev-code-seed` yet, or code-ingest found no such
+  command), ask the Dev once for the build/test/lint commands and record
+  them in the `cmd.test:` /
   `cmd.lint:` header lines, so this closing task, `dev-execute`, and
   `dev-handover` all have something to run.
 - **No linter in the repo** — when there is no linter at all to record as

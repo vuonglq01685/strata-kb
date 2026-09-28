@@ -44,6 +44,7 @@ from pathlib import Path
 import yaml
 
 from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult
+from strata_kb.codeingest.extractors._composeyaml import load_compose
 from strata_kb.codeingest.extractors._envkeys import env_keys_from, redact_userinfo
 from strata_kb.codeingest.extractors._lines import join_continuations
 from strata_kb.codeingest.extractors._mdcells import escape_cell
@@ -278,7 +279,7 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
             warnings.append(f"could not parse {rel}: {exc}")
             continue
         try:
-            data = yaml.safe_load(text)
+            data = load_compose(text)
         except yaml.YAMLError as exc:
             warnings.append(f"could not parse {rel}: {exc}")
             continue
@@ -505,6 +506,11 @@ def _read_k8s(root: Path, kb_dir: Path | None) -> tuple[list[ServiceRecord], lis
     for _depth, reldir, filenames in walk_tree(root, kb_dir):
         for name in filenames:
             if not fnmatch.fnmatch(name, "*.y*ml"):
+                continue
+            # A compose file is never a k8s manifest -- `_read_compose`
+            # already owns it (and understands its `!reset`/`!override`
+            # tags, which this reader's plain `yaml.safe_load_all` doesn't).
+            if any(fnmatch.fnmatch(name, pat) for pat in _COMPOSE_GLOBS):
                 continue
             path = root / reldir / name
             rel = relposix(root, path)

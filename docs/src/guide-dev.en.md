@@ -30,7 +30,7 @@ what makes it safe for your CI to publish continuously.
 
 | Document | Origin | Regenerated | Needs review |
 |---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest` — deterministic, no model | every push to the default branch | no |
+| `<repo_id>-code` | `kb code-ingest` — deterministic, no model | on demand, from the working tree — never committed; CI publishes it on every push to the default branch | no |
 | `<repo_id>-svc` | drafted by a model from that evidence, corrected by you | never | always |
 
 `-code` is machine fact: service names, technologies, dependencies, commands,
@@ -65,6 +65,15 @@ intake: https://kb-intake.acme.com
 - **`intake`** is how CI publishes. Ask the hub maintainer to add this repository
   under `repos:` in the hub's `federation/registry.yaml` — publishing is refused
   until they do.
+
+If the KB should carry SQLite schema, or extra index tags, say so here —
+not in `kb-code.yml` — so every local refresh and CI ingest the same way:
+
+```yaml
+code_ingest:
+  db: [data/app.sqlite]   # explicit only
+  tags: [payments]
+```
 
 ## 2.2 Connect your assistant
 
@@ -116,6 +125,10 @@ thing:
 > `.kb/<repo_id>-code/**`**, never a whole-PR or whole-repo rule. A rule that
 > fires on "this is a dev repo's `-code` publish" silently defeats the `-svc`
 > review gate the two-document split exists to protect.
+
+This auto-merge rule is also what keeps the hub from lagging main: without it,
+every push adds to one pending hub PR that someone has to merge. `kb doctor`
+reports when the hub's `-code` lags.
 
 ---
 
@@ -402,6 +415,10 @@ and the manifest's revision derives from the **HEAD commit** while your working
 tree may hold uncommitted changes. `kb code-ingest` detects that and prints a
 `dirty_tree` warning.
 
+Local `-code` is what CI would produce if your tracked files were committed
+now; `kb doctor` warns when your installed strata-kb differs from the version
+`kb-code.yml` pins.
+
 ---
 
 # 8. Keeping knowledge current
@@ -410,13 +427,30 @@ Neither document needs new per-ticket discipline from you.
 
 ## 8.1 `-code` needs nothing
 
+`-code` is never committed. `.gitignore` carries `.kb/*-code/`, and the
+document is regenerated from your working tree whenever a command needs it:
+`kb svc note`, `kb build`, `kb doctor` and `kb publish` refresh it first when
+it is missing, older than `HEAD`, or your tracked files have changes. A new
+file counts once it is tracked (`git add`). `kb ticket check` reads the hub
+copy first — that is what the SA grounded on.
+
+`kb doctor`'s published-snapshot comparison leaves `-code` out entirely (dev
+repos never match the hub on it); `kb publish` is what actually refreshes it
+and sends it to the hub.
+
 `kb-code.yml` re-runs `kb code-ingest` → `kb build` → `kb ci-publish` on every
-push to the default branch, so it always reflects the current commit.
+push to the default branch, so the hub reflects the current commit once its
+PR merges.
 
 | Trigger | Steps | Publishes |
 |---|---|---|
 | push to default branch, or manual dispatch | code-ingest → build → ci-publish | yes |
-| pull request | build only | **never** |
+| pull request | build (which regenerates `-code` from the merge ref) | **never** |
+
+`-code` has one producer, `kb code-ingest`: `kb summarize` refuses it. A hub
+copy that was summarized before 1.4.0 returns to the deterministic L1/L2 on
+the next CI publish — a one-time diff, not lost information; L3 is
+unchanged.
 
 `--scaffold-svc` is deliberately never passed in CI. CI must never create
 `pending` content, since that would fail its own build step.
@@ -467,7 +501,11 @@ should look.
 | `kb code-ingest` exits 1: nothing detected | Only `tree` found anything | Check that your compose file, manifests or CI workflows are where the extractors look; name a `--db` if schema is the point |
 | `kb code-ingest` exits 1: destination refused | A hand-curated document sits at that doc id | Move it, or use `--doc-id` |
 | `kb build` fails in CI on a `-svc` section | A `pending` section was committed | Finish the seed: summarize, review, `kb approve` |
-| `kb svc note`: "unknown service" | No matching `svc.<name>` in `-code` | Check the spelling against `kb get <repo>-code` output; a typo must not invent a service |
+| `kb svc note`: "unknown service" | A typo, or the new service's files are not tracked yet | Copy the id from `services.md`; `git add` the new files and retry |
+| `kb doctor`: "hub `<repo>`-code lags origin/main" | The last `-code` publish has not merged on the hub, or the last `kb-code.yml` run failed | Open the hub PR named in the Actions job summary; merge it or fix the run |
+| `kb doctor`: "kb-code.yml passes --db" | Ingest configuration lives in the workflow | Move the paths to `code_ingest.db` in `.kb/config.yaml`, then re-run `kb init --kind dev` |
+| `kb doctor`: "`.kb/<repo>-code` is tracked by git" | A repo from before 1.4.0 | `git rm -r --cached .kb/<repo>-code` and commit, in one PR |
+| `kb doctor`: "hub lag not judged — origin/HEAD is not set" | `origin/HEAD` was never set (a fresh `git remote add` + `push -u`, before anyone ran `git remote set-head`) | `git remote set-head origin --auto` |
 | `kb publish` hangs, then fails citing the Actions run | Plain `kb publish` on a repo whose CI has no tag trigger | Use `kb publish --pr` |
 | `kb ci-publish` refused | This repo is not in the hub's `federation/registry.yaml` | Ask the hub maintainer to add it |
 | `dirty_tree` warning | Uncommitted changes while the manifest revision comes from HEAD | Harmless locally; CI always runs clean |
@@ -478,6 +516,12 @@ should look.
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
 | `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |
 
+The hub-lag check itself runs a full `code-ingest` in a temporary worktree on
+every `kb doctor` — expect it to add real time to the command. On Windows,
+the same per-platform glob-casing difference noted in §7.4 can make an
+otherwise-unchanged repo compare as `lags`; a lag verdict that disappears on
+Linux (CI) is that caveat, not real drift.
+
 ---
 
 # 10. Command summary
@@ -485,9 +529,10 @@ should look.
 | Command | Purpose | Exit |
 |---|---|---|
 | `kb mcp-setup [--hub-url URL] [--no-verify]` | Write the hub's HTTP MCP credentials into `.env` and verify them | `0` ok, `1` no value/probe failed |
-| `kb code-ingest [--db p] [--scaffold-svc] [--json]` | Extract code structure into `-code` | `0` ok, `1` nothing detected or destination refused |
-| `kb svc note <svc> --ticket <id> --title "…"` | Append a row to `hist.<svc>` | `0` ok, `1` unknown service or missing document |
-| `kb build [--strict]` | Validate the store | `0` ok, `1` error |
+| `kb code-ingest [--db p] [--tags t] [--scaffold-svc] [--json]` | Extract code structure into `-code` (`--db`/`--tags` replace `code_ingest:` for that run) | `0` ok, `1` nothing detected or destination refused |
+| `kb svc note <svc> --ticket <id> --title "…" [--no-refresh]` | Append a row to `hist.<svc>` | `0` ok, `1` unknown service or missing document |
+| `kb build [--strict] [--no-refresh]` | Validate the store | `0` ok, `1` error |
+| `kb doctor [--no-refresh]` | Check KB health (dev repos: refresh `-code` first) | `0` ok, `1` error, `2` stale citation |
 | `kb approve <doc> [--section <id>]` | Flip corrected sections to `reviewed` | `0` ok |
 | `kb publish --pr` | Open a hub PR (the seed's first publish) | `0` ok |
 | `kb resolve <file>` | Check a ticket's citations | `0` ok, `1` broken, `2` stale |

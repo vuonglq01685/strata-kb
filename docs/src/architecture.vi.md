@@ -364,13 +364,17 @@ chủ đích.
 
 | Tài liệu | Nguồn gốc | Sinh lại | Cần review | Tag |
 |---|---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest`, tất định, không model | mỗi lần merge | không | `code, generated` |
+| `<repo_id>-code` | `kb code-ingest`, tất định, không model | sinh lại khi cần từ working tree; CI publish ở mỗi lần merge | không | `code, generated` |
 | `<repo_id>-svc` | model soạn từ bằng chứng đó, người sửa lại | không bao giờ | có | `code, curated` |
 
 Chúng không thể dùng chung một tài liệu vì ba lý do độc lập: `-code` bị ghi đè
 toàn bộ trong khi `-svc` tích luỹ dần; `-svc` mang section `pending` trong lúc
 seed còn `-code` thì luôn phải build sạch; và `-code` có thể được hub tự động
 merge còn `-svc` thì luôn cần người review.
+
+`-code` không bao giờ được commit: revision của nó nằm trong manifest, không
+nằm trong `index.yaml`, nên index đã commit của repo dev không đổi khi code
+đổi.
 
 Chúng nối với nhau bằng **id section**: `svc.<name>` tồn tại ở cả hai. `-code`
 cung cấp alias, nhãn và công nghệ của một service; `-svc` cung cấp trách nhiệm của

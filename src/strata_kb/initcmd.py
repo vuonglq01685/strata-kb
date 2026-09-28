@@ -240,6 +240,20 @@ DEV_TEMPLATES: dict[str, str] = {
     ".cursor/commands/kb-publish.md": "cursor-kb-publish.md",
 }
 
+# Workflow files `kb init` scaffolds, by file name, across every kind. Their
+# `run:` steps are strata's own (`kb build`, `kb pr lint …`), never the
+# repo's build/lint/test, so `kb code-ingest`'s CI command reader skips them.
+# Derived from the template maps so a new scaffolded workflow is covered
+# the moment it is added to one.
+SCAFFOLDED_WORKFLOW_NAMES: frozenset[str] = frozenset(
+    rel.removeprefix(".github/workflows/")
+    for templates in (
+        COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES, BA_TEMPLATES, DEV_TEMPLATES,
+    )
+    for rel in templates
+    if rel.startswith(".github/workflows/")
+)
+
 # User data — never refreshed by default; only overwritten with --force.
 # `.claude/settings.json` joins the set because a dev's own hooks, permissions
 # and model settings live there: initcmd overwrites anything outside this set
@@ -297,6 +311,34 @@ def _apply_gitignore(dest: Path, template_text: str, report: InitReport) -> None
     lines.append(_KB_WORK_LINE)
     dest.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     report.updated.append(".gitignore")
+
+
+_CODE_DOC_LINE = ".kb/*-code/"
+
+
+def _ensure_code_doc_ignored(target: Path, report: InitReport) -> None:
+    """Dev repos: `-code` is derived on demand and never committed (spec
+    2026-09-25 §4.1). A glob, because repo_id is often unset at init time
+    and `-code` is a reserved suffix. Append-only, like `_apply_gitignore`."""
+    dest = target / ".gitignore"
+    if not dest.exists():
+        dest.write_text(_CODE_DOC_LINE + "\n", encoding="utf-8", newline="\n")
+        report.created.append(".gitignore")
+        return
+    try:
+        lines = dest.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        report.notes.append(
+            ".gitignore is not readable as UTF-8; left untouched. "
+            f"Add `{_CODE_DOC_LINE}` to it by hand."
+        )
+        return
+    if any(line.strip() == _CODE_DOC_LINE for line in lines):
+        return
+    lines.append(_CODE_DOC_LINE)
+    dest.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    report.updated.append(".gitignore")
+
 
 _KIND_LINE = re.compile(r"^kind:", re.MULTILINE)
 _LANGS_LINE = re.compile(r"^langs:", re.MULTILINE)
@@ -492,6 +534,7 @@ def init_repo(
     if kind == KIND_BA:
         scaffold_ba_local_overrides(target, report)
     if kind == KIND_DEV:
+        _ensure_code_doc_ignored(target, report)
         scaffold_dev_local_overrides(target, report)
         cfg_path = target / ".kb" / "config.yaml"
         recorded = _recorded_langs(cfg_path, report)

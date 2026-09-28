@@ -26,6 +26,21 @@ class CIPublishError(KbError):
     """ci-publish failed — the Actions job should go red."""
 
 
+def write_step_summary(line: str) -> None:
+    """Append one line to the GitHub Actions job summary; a no-op outside
+    Actions. The same hub PR URL repeating run after run is how a pending
+    hub PR becomes visible (spec 2026-09-25 §4.3b)."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    line = " ".join(line.split())  # the summary is one line; collapse any newlines/whitespace
+    try:
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(f"kb ci-publish: {line}\n")
+    except OSError:
+        pass  # a summary is a courtesy; never fail the publish over it
+
+
 def _decode(raw) -> str:
     if isinstance(raw, bytes):
         return raw.decode("utf-8", errors="replace")

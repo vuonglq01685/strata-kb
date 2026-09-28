@@ -399,6 +399,51 @@ def test_sync_fingerprint_skip_reparses_nothing(fed_hub, monkeypatch):
     assert manifest_loads == []  # 0 manifest parse (spec §3.4)
 
 
+def test_sync_drops_a_repo_that_goes_broken(fed_hub):
+    """Fix round 1, Task 13: `_sync_conn` now fingerprints from
+    `iter_entry_dirs` (a directory listing) before deciding whether to load
+    an entry at all -- but `iter_entry_dirs` only checks that
+    `_meta.yaml`/`index.yaml` EXIST, not that they parse. A repo whose
+    `index.yaml` goes corrupt after a previous successful sync must still
+    lose its old searchable rows, exactly as it would if `load_federation`
+    (what `kb get`/`kb resolve`/`kb query` read through) had simply excluded
+    it from the start."""
+    hub = HubHandle(root=fed_hub)
+    searchdb.sync(hub, None)
+
+    conn = searchdb.open_db(hub)
+    try:
+        before = conn.execute(
+            "SELECT COUNT(*) FROM sections WHERE repo_id = 'icao-kb'"
+        ).fetchone()[0]
+        assert before > 0  # sanity: the fixture's icao-kb repo synced fine
+    finally:
+        conn.close()
+
+    (fed_hub / "federation" / "icao-kb" / "index.yaml").write_text(
+        "not: [valid, yaml", encoding="utf-8"
+    )
+
+    report = searchdb.sync(hub, None)
+    assert report.sections_deleted > 0
+
+    conn = searchdb.open_db(hub)
+    try:
+        after = conn.execute(
+            "SELECT COUNT(*) FROM sections WHERE repo_id = 'icao-kb'"
+        ).fetchone()[0]
+        assert after == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM repos WHERE repo_id = 'icao-kb'"
+        ).fetchone()[0] == 0
+        # the other repo is untouched
+        assert conn.execute(
+            "SELECT COUNT(*) FROM sections WHERE repo_id = 'arinc-kb'"
+        ).fetchone()[0] > 0
+    finally:
+        conn.close()
+
+
 def test_sync_updates_only_changed_section(fed_hub):
     hub = HubHandle(root=fed_hub)
     searchdb.sync(hub, None)

@@ -18,7 +18,7 @@ from strata_kb.embed import (
     Embedder,
     _serialize,
 )
-from strata_kb.federation import load_federation
+from strata_kb.federation import _load_entry, iter_entry_dirs
 from strata_kb.mdutils import slice_section
 
 if TYPE_CHECKING:
@@ -649,18 +649,43 @@ def _sync_conn(
     vectors_strict: bool = True,
 ) -> SyncReport:
     report = SyncReport()
-    repos = load_federation(hub.federation_dir)
-    live_ids = {r.meta.repo_id for r in repos}
+    # (path_id, dir) only — no content read yet. `load_federation` would
+    # also fill in each doc's manifest-derived revision
+    # (federation._with_manifest_revisions, spec 2026-09-25 §4.1), which
+    # means a manifest parse per `-code` doc even for a repo the fingerprint
+    # check below is about to skip untouched — defeating the "0 manifest
+    # parses on an unchanged repo" guarantee (spec §3.4). Fingerprint first
+    # from the cheap listing, and only load (and revision-fill) a repo once
+    # its fingerprint says it actually changed.
+    entries = iter_entry_dirs(hub.federation_dir)
+    live_ids = {path_id for path_id, _ in entries}
     stored_fp = dict(conn.execute("SELECT repo_id, fingerprint FROM repos"))
     for rid in sorted(set(stored_fp) - live_ids):
         report.sections_deleted += _drop_repo(conn, rid)
         conn.execute("DELETE FROM repos WHERE repo_id = ?", (rid,))
     if conn.in_transaction:
         conn.commit()
-    for repo in repos:
-        fp = _repo_fingerprint(repo.kb_dir)
-        if stored_fp.get(repo.meta.repo_id) == fp:
+    for path_id, child in entries:
+        fp = _repo_fingerprint(child)
+        if stored_fp.get(path_id) == fp:
             continue  # repo unchanged — 0 manifest parses
+        repo = _load_entry(path_id, child)
+        if repo is None:
+            # `iter_entry_dirs` only checks that `_meta.yaml`/`index.yaml`
+            # EXIST, not that they parse -- so a broken entry is still in
+            # `live_ids` above and never reaches the stale-repo drop loop,
+            # even though `load_federation` (what `kb get`/`resolve`/`query`
+            # read through) silently excludes it. A repo that goes from
+            # valid to broken must not keep its old rows searchable forever
+            # just because nothing else in this function's control flow
+            # ever revisits it once its fingerprint stops matching what was
+            # stored — drop it here the same way the stale-repo loop above
+            # does, whenever it actually has stored rows to drop.
+            if path_id in stored_fp:
+                report.sections_deleted += _drop_repo(conn, path_id)
+                conn.execute("DELETE FROM repos WHERE repo_id = ?", (path_id,))
+                conn.commit()
+            continue  # broken entry — already logged by _load_entry
         # F-C2: `stored_fp` was read outside any lock, so two cold processes
         # both got here and the loser broke UNIQUE. Take the write lock FIRST,
         # then re-read this repo's fingerprint inside it: the loser now sees

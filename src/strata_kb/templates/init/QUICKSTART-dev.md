@@ -5,7 +5,9 @@ while implementing BA tickets, and it publishes two knowledge documents
 about its OWN source code back to the hub. Generated structure
 (`<repo_id>-code`) is automatic — `.github/workflows/kb-code.yml` runs
 `kb code-ingest` → `kb build` → `kb ci-publish` on every push to `main` or
-`master`. Curated responsibility knowledge (`<repo_id>-svc`) is bootstrapped
+`master`; locally, `kb svc note`, `kb build` and `kb publish` regenerate it
+from your working tree — it is never committed (`.gitignore`:
+`.kb/*-code/`). Curated responsibility knowledge (`<repo_id>-svc`) is bootstrapped
 once via `/dev-code-seed` (see "Onboarding an existing project (once)"
 below) and then accrues automatically per ticket via `kb svc note` (see
 "Keeping it current" below). This repo never ingests documents from
@@ -265,7 +267,9 @@ neither needs new per-ticket discipline from you:
 
 - **`<repo_id>-code`** needs nothing from you. `kb-code.yml` re-runs
   `kb code-ingest` → `kb build` → `kb ci-publish` on every push to the
-  default branch, so it always reflects the current commit's structure.
+  default branch, so it always reflects the current commit's structure;
+  locally, `kb svc note`, `kb build` and `kb publish` regenerate it from
+  your working tree — it is never committed (`.gitignore`: `.kb/*-code/`).
   Since 1.3.0 each `svc.*` record also carries its
   named volumes, the healthcheck command and device reservations
   from compose, so the SA grounds those instead of deciding them —
@@ -349,8 +353,9 @@ differs from the new template; `.kb/config.yaml`, `.kb/index.yaml`, and
 `.claude/settings.json` (hooks, permissions and model included), none of it
 merged. Anything you authored under `docs/impl/` is not scaffolding:
 `kb init` never reads, writes, or overwrites it.
-**If you hand-edited a wrapper, `kb-code.yml` (including any `--db` flags
-you added), or QUICKSTART-DEV.md, back it up first: your edits are lost.**
+**If you hand-edited a wrapper, `kb-code.yml`, or QUICKSTART-DEV.md, back it
+up first: your edits are lost** — ingest configuration belongs in
+`code_ingest:` in `.kb/config.yaml`, which `kb init` never overwrites.
 
 ## Token and cost measurement
 

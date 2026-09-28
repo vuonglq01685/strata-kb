@@ -498,8 +498,11 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             report=report,
         ) from exc
 
+    # Spec 2026-09-25 §4.1: `-code` is gitignored, `index.yaml` is not — a
+    # revision here would churn the committed index on every local ingest.
+    # The manifest carries the revision; federation.load_federation reads it.
     _upsert_index_entry(
-        opts.kb_dir, opts.doc_id, manifest.title, manifest.revision,
+        opts.kb_dir, opts.doc_id, manifest.title, "",
         f"Generated code knowledge for the {opts.repo_id} repository.",
         ["code", "generated"], opts.tags, report,
     )

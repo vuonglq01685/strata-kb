@@ -788,8 +788,11 @@ def test_dev_handover_records_service_history_and_amend_findings():
 def test_dev_handover_tells_the_dev_to_refresh_code_for_a_new_service():
     for name in _dev_wrapper_names("dev-handover"):
         text = _dev_wrapper_body(name)
-        assert "run `kb code-ingest` first" in text, name
-        assert "never writes back here" in text, name
+        assert (
+            "`kb svc note` regenerates `<repo_id>-code` from the working "
+            "tree first, so a service the ticket added is found once its "
+            "files are tracked (`git add`)"
+        ) in text, name
 
 
 def test_dev_handover_leaves_pr_and_merge_to_the_human():
@@ -857,7 +860,7 @@ def test_dev_implement_ticket_caveats_the_svc_document_by_repo_state():
     # a KB gap.
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert (
-            "generated, unpublished: run `kb publish`"
+            '"seeded, unpublished: run `kb publish --pr`"'
             in _dev_wrapper_body(name)
         ), name
 
@@ -872,11 +875,20 @@ def test_dev_plan_and_dev_implement_ticket_caveat_the_code_document_by_repo_stat
     # actually shared, verbatim, by that skill's own four wrapper forms —
     # the two skills phrase it differently from each other, so one
     # needle does not cover both.
+    #
+    # Task 9 (spec 2026-09-25 §4.1): dev repos no longer commit `-code`, so
+    # neither needle can point at a local generation step any more —
+    # `dev-plan`'s gap is now "no entry yet" (seeded or code-ingest found
+    # nothing), and `dev-implement-ticket`'s is "not yet published" (CI
+    # publishes it on merge; `kb doctor` reports lag).
     for name in _dev_wrapper_names("dev-plan"):
-        assert "`kb code-ingest` not yet run" in _dev_wrapper_body(name), name
+        assert (
+            "this repo has not run `/dev-code-seed` yet, or code-ingest "
+            "found no such command"
+        ) in _dev_wrapper_body(name), name
     for name in _dev_wrapper_names("dev-implement-ticket"):
         assert (
-            "`kb code-ingest` for `<repo_id>-code`"
+            "`<repo_id>-code` missing from the hub is not yet published"
             in _dev_wrapper_body(name)
         ), name
 
@@ -2079,8 +2091,9 @@ def test_quickstart_dev_separates_machine_enforced_from_prompt_only():
 def test_dev_implement_ticket_ground_step_tells_generated_from_published():
     for name in _dev_wrapper_names("dev-implement-ticket"):
         body = _dev_wrapper_body(name)
-        assert ".kb/<repo_id>-code/" in body, name
-        assert "generated, unpublished: run `kb publish`" in body, name
+        assert ".kb/<repo_id>-svc/" in body, name
+        assert "kb doctor" in body, name
+        assert '"seeded, unpublished: run `kb publish --pr`"' in body, name
         assert "is missing whenever" not in body, name
 
 
@@ -2998,7 +3011,7 @@ def test_changelog_names_the_ba_side_of_mission_next():
     from pathlib import Path as _P
 
     changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog[changelog.index("## Unreleased"):changelog.index("## 1.3.0")]
+    unreleased = changelog[changelog.index("## 1.4.0"):changelog.index("## 1.3.0")]
     assert "BA repos:" in unreleased
     assert "step 5b" in unreleased
     assert "foundation slice" in unreleased

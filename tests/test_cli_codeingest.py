@@ -358,3 +358,56 @@ def test_stale_risk_and_orphan_ids_are_named_on_the_terminal_not_just_counted(tm
     assert second.exit_code == 0, second.output
     assert "svc.airspace-service" in second.output
     assert "svc.postgres" in second.output
+
+
+# ---------------------------------------------------------------------------
+# Task 3 -- `code_ingest:` in .kb/config.yaml is the one ingest configuration
+# local runs and CI share; a --db/--tags flag replaces its lists for this
+# run only and says so on stderr; a CI version-pin mismatch is noted too.
+# ---------------------------------------------------------------------------
+
+
+def _code_entry(root):
+    index = models.load_yaml_model(root / ".kb" / "index.yaml", models.KBIndex)
+    return next(d for d in index.docs if d.id == "demo-code")
+
+
+def test_code_ingest_reads_tags_from_the_config_block(tmp_path):
+    root = build_code_repo(tmp_path)
+    _init_config(root)
+    with (root / ".kb" / "config.yaml").open("a", encoding="utf-8") as fh:
+        fh.write("code_ingest:\n  tags: [payments]\n")
+    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
+                                "--kb-dir", str(root / ".kb")])
+    assert result.exit_code == 0, result.output
+    assert "payments" in _code_entry(root).tags
+    assert "replace code_ingest" not in result.stderr
+
+
+def test_code_ingest_flag_replaces_the_config_block_and_says_so(tmp_path):
+    root = build_code_repo(tmp_path)
+    _init_config(root)
+    with (root / ".kb" / "config.yaml").open("a", encoding="utf-8") as fh:
+        fh.write("code_ingest:\n  tags: [payments]\n")
+    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
+                                "--kb-dir", str(root / ".kb"), "--tags", "other"])
+    assert result.exit_code == 0, result.output
+    tags = _code_entry(root).tags
+    assert "other" in tags and "payments" not in tags
+    assert "replace code_ingest" in result.stderr
+
+
+def test_code_ingest_notes_a_version_pin_mismatch(tmp_path, monkeypatch):
+    import strata_kb
+
+    root = build_code_repo(tmp_path)
+    _init_config(root)
+    wf = root / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "kb-code.yml").write_text("- run: pip install strata-kb==0.0.1\n", encoding="utf-8")
+    monkeypatch.setattr(strata_kb, "__version__", "1.4.0")
+    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
+                                "--kb-dir", str(root / ".kb"), "--json"])
+    assert result.exit_code == 0, result.output
+    assert "kb-code.yml pins 0.0.1" in result.stderr
+    json.loads(result.stdout)  # --json stdout stays pure

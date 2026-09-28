@@ -15,9 +15,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # PR: validate only. Never publishes. This job is what catches a malformed
-  # -svc edit or a `pending` section committed before review — before merge,
-  # not after.
+  # PR: validate only. Never publishes. `kb build` regenerates -code from
+  # the merge ref first (it is never committed), so this validates what the
+  # merge would publish — and catches a malformed -svc edit or a `pending`
+  # section committed before review, before merge, not after.
   validate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -43,11 +44,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install strata-kb=={version}
-      # Add --db <path> flags here if this repo has SQLite databases whose
-      # schema belongs in the KB. Deliberately explicit: a stray test fixture
-      # must never become published company knowledge. `kb init --kind dev`
-      # overwrites this file on every re-run, so re-add any --db flags here
-      # after upgrading.
+      # Ingest configuration (SQLite paths, extra tags) lives in
+      # .kb/config.yaml under `code_ingest:` — shared with every local
+      # refresh, and safe from `kb init --kind dev`, which overwrites this
+      # file on every re-run. Never add --db flags here.
       # NOTE: the flag that scaffolds a placeholder -svc document is
       # deliberately never passed here. CI must not create `pending` content
       # — it would fail its own `kb build` step. Seeding and amending the
