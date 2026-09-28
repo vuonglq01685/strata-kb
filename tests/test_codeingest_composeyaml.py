@@ -38,8 +38,15 @@ def test_reset_yields_the_empty_value_of_its_node_kind():
 def test_override_yields_the_plain_value():
     data = load_compose(
         "ports: !override\n  - '8080:80'\nenv: !override\n  K: v\nn: !override 3\n"
+        'q: !override "3"\nver: !override "1.10"\n'
     )
-    assert data == {"ports": ["8080:80"], "env": {"K": "v"}, "n": 3}
+    # A quoted scalar under !override must stay a string (`yaml.safe_load`'s
+    # own behaviour for `"3"` / `"1.10"`) -- unlike the unquoted `!override 3`
+    # above, which resolves to the int 3.
+    assert data == {
+        "ports": ["8080:80"], "env": {"K": "v"}, "n": 3,
+        "q": "3", "ver": "1.10",
+    }
 
 
 def test_other_tags_still_fail_like_safe_load():

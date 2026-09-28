@@ -32,7 +32,14 @@ def _override(loader: _ComposeLoader, node: yaml.Node) -> object:
         return loader.construct_sequence(node, deep=True)
     if isinstance(node, yaml.MappingNode):
         return loader.construct_mapping(node, deep=True)
-    tag = loader.resolve(yaml.ScalarNode, node.value, (True, False))
+    # A plain (unquoted) scalar resolves implicitly, same as `!override 3` ->
+    # int 3 under `yaml.safe_load`; a quoted scalar (`node.style` set) must
+    # not -- `resolve`'s hard-coded (True, False) used to force even a quoted
+    # `"3"` / `"1.10"` through the implicit-tag resolver, turning them into
+    # int 3 / float 1.1 instead of staying strings like `yaml.safe_load`
+    # itself leaves them.
+    implicit = (node.style is None, node.style is not None)
+    tag = loader.resolve(yaml.ScalarNode, node.value, implicit)
     return loader.yaml_constructors[tag](loader, node)
 
 
