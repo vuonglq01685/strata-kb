@@ -121,3 +121,18 @@ def test_has_code_doc(repo):
     assert not sync.has_code_doc(repo / ".kb", "demo")
     sync.ensure_code_fresh(repo / ".kb", "demo")
     assert sync.has_code_doc(repo / ".kb", "demo")
+
+
+def test_extractor_warnings_are_appended_to_the_notes(repo):
+    """Important 3: `ensure_code_fresh` is now the main local producer of
+    `-code` -- an extractor warning (e.g. an unparseable compose file) must
+    reach the operator the same way `kb code-ingest` prints it, not be
+    silently discarded because this caller only read `result.notes`."""
+    (repo / "compose.broken.yml").write_text("services: [unterminated\n", encoding="utf-8")
+    result = sync.ensure_code_fresh(repo / ".kb", "demo")
+    assert result.regenerated
+    assert result.report is not None and result.report.warnings
+    assert result.notes[0].startswith("refreshed demo-code")
+    assert any(
+        n == f"[warn] {w}" for n in result.notes for w in result.report.warnings
+    )

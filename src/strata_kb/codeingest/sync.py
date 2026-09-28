@@ -135,6 +135,11 @@ def ensure_code_fresh(
         return FreshResult(regenerated=False)
     report = core.run(opts)
     notes = [f"refreshed {opts.doc_id} from the working tree ({reason})"]
+    # This refresh is now the main local producer of `-code` (spec
+    # 2026-09-25 §4.1) -- an extractor warning (e.g. "could not parse …")
+    # must reach the caller the same way `kb code-ingest` prints it, not be
+    # discarded because callers here only read `.notes`.
+    notes.extend(f"[warn] {warning}" for warning in report.warnings)
     pin_note = version_note(root)
     if pin_note:
         notes.append(pin_note)
