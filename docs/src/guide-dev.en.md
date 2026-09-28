@@ -429,10 +429,14 @@ Neither document needs new per-ticket discipline from you.
 
 `-code` is never committed. `.gitignore` carries `.kb/*-code/`, and the
 document is regenerated from your working tree whenever a command needs it:
-`kb svc note`, `kb build` and `kb publish` refresh it first when it is
-missing, older than `HEAD`, or your tracked files have changes. A new file
-counts once it is tracked (`git add`). `kb ticket check` reads the hub copy
-first — that is what the SA grounded on.
+`kb svc note`, `kb build`, `kb doctor` and `kb publish` refresh it first when
+it is missing, older than `HEAD`, or your tracked files have changes. A new
+file counts once it is tracked (`git add`). `kb ticket check` reads the hub
+copy first — that is what the SA grounded on.
+
+`kb doctor`'s published-snapshot comparison leaves `-code` out entirely (dev
+repos never match the hub on it); `kb publish` is what actually refreshes it
+and sends it to the hub.
 
 `kb-code.yml` re-runs `kb code-ingest` → `kb build` → `kb ci-publish` on every
 push to the default branch, so the hub reflects the current commit once its
@@ -512,6 +516,12 @@ should look.
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
 | `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |
 
+The hub-lag check itself runs a full `code-ingest` in a temporary worktree on
+every `kb doctor` — expect it to add real time to the command. On Windows,
+the same per-platform glob-casing difference noted in §7.4 can make an
+otherwise-unchanged repo compare as `lags`; a lag verdict that disappears on
+Linux (CI) is that caveat, not real drift.
+
 ---
 
 # 10. Command summary
@@ -522,6 +532,7 @@ should look.
 | `kb code-ingest [--db p] [--tags t] [--scaffold-svc] [--json]` | Extract code structure into `-code` (`--db`/`--tags` replace `code_ingest:` for that run) | `0` ok, `1` nothing detected or destination refused |
 | `kb svc note <svc> --ticket <id> --title "…" [--no-refresh]` | Append a row to `hist.<svc>` | `0` ok, `1` unknown service or missing document |
 | `kb build [--strict] [--no-refresh]` | Validate the store | `0` ok, `1` error |
+| `kb doctor [--no-refresh]` | Check KB health (dev repos: refresh `-code` first) | `0` ok, `1` error, `2` stale citation |
 | `kb approve <doc> [--section <id>]` | Flip corrected sections to `reviewed` | `0` ok |
 | `kb publish --pr` | Open a hub PR (the seed's first publish) | `0` ok |
 | `kb resolve <file>` | Check a ticket's citations | `0` ok, `1` broken, `2` stale |

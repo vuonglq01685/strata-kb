@@ -434,10 +434,14 @@ Không tài liệu nào đòi hỏi kỷ luật tài liệu hoá mới theo từ
 
 `-code` không bao giờ được commit. `.gitignore` có dòng `.kb/*-code/`, và
 tài liệu được sinh lại từ working tree mỗi khi một lệnh cần đến nó:
-`kb svc note`, `kb build` và `kb publish` làm mới nó trước khi chạy nếu nó
-chưa có, cũ hơn `HEAD`, hoặc các file đang được git track có thay đổi. File
-mới chỉ được tính sau khi `git add`. `kb ticket check` đọc bản trên hub
-trước — đó là bản SA đã dùng để ground ticket.
+`kb svc note`, `kb build`, `kb doctor` và `kb publish` làm mới nó trước khi
+chạy nếu nó chưa có, cũ hơn `HEAD`, hoặc các file đang được git track có
+thay đổi. File mới chỉ được tính sau khi `git add`. `kb ticket check` đọc
+bản trên hub trước — đó là bản SA đã dùng để ground ticket.
+
+So sánh với snapshot đã publish của `kb doctor` bỏ hẳn `-code` ra ngoài (repo
+dev không bao giờ khớp hub ở tài liệu này); `kb publish` mới là lệnh thực sự
+làm mới nó và gửi lên hub.
 
 `kb-code.yml` chạy lại `kb code-ingest` → `kb build` → `kb ci-publish` ở mỗi
 lần push lên nhánh mặc định, nên hub phản ánh commit hiện tại ngay khi PR của
@@ -516,6 +520,13 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
 | `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |
 
+Bản thân bước kiểm tra hub-lag chạy trọn một lượt `code-ingest` trong một
+worktree tạm ở mỗi lần `kb doctor` — hãy tính thêm thời gian này vào lệnh.
+Trên Windows, cùng một khác biệt case của glob theo hệ điều hành đã nêu ở
+§7.4 có thể khiến một repo không hề đổi gì báo thành `lags`; một kết luận
+lag biến mất khi chạy trên Linux (CI) chính là do lưu ý đó, không phải drift
+thật.
+
 ---
 
 # 10. Tóm tắt lệnh
@@ -526,6 +537,7 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | `kb code-ingest [--db p] [--tags t] [--scaffold-svc] [--json]` | Trích cấu trúc code vào `-code` (`--db`/`--tags` thay thế `code_ingest:` cho lượt chạy đó) | `0` ok, `1` không phát hiện gì hoặc từ chối đích đến |
 | `kb svc note <svc> --ticket <id> --title "…" [--no-refresh]` | Thêm một dòng vào `hist.<svc>` | `0` ok, `1` service không xác định hoặc thiếu tài liệu |
 | `kb build [--strict] [--no-refresh]` | Kiểm tra kho | `0` ok, `1` lỗi |
+| `kb doctor [--no-refresh]` | Kiểm tra sức khoẻ KB (repo dev: làm mới `-code` trước) | `0` ok, `1` lỗi, `2` trích dẫn cũ |
 | `kb approve <doc> [--section <id>]` | Chuyển các section đã sửa sang `reviewed` | `0` ok |
 | `kb publish --pr` | Mở PR trên hub (lượt publish đầu của bước seed) | `0` ok |
 | `kb resolve <file>` | Kiểm tra trích dẫn của ticket | `0` ok, `1` hỏng, `2` cũ |
