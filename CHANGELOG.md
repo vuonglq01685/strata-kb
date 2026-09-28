@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.4.0 — 2026-09-25
+## 1.4.0 — 2026-09-28
 
 - `<repo_id>-code` is derived on demand and never committed. `kb init --kind dev` adds `.kb/*-code/` to `.gitignore`; `kb svc note`, `kb build` and `kb publish` (dev repos) regenerate it from the working tree first when it is missing, older than `HEAD`, or tracked files changed (`--no-refresh` on `svc note` and `build`). The PR job's `kb build` therefore validates what the merge would publish. `-code`'s revision moves from `index.yaml` to its manifest only, so the committed index no longer churns; the hub reads the manifest.
 - Recommended on the hub and on every reader machine: an older reader still indexes `-code` with an empty revision, so `kb query` / `kb_search` citations drop the `(<rev>)` suffix (grounding itself is unaffected — it reads the manifest, not the citation).
