@@ -35,7 +35,7 @@ def write_step_summary(line: str) -> None:
         return
     line = " ".join(line.split())  # the summary is one line; collapse any newlines/whitespace
     try:
-        with open(path, "a", encoding="utf-8") as fh:
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"kb ci-publish: {line}\n")
     except OSError:
         pass  # a summary is a courtesy; never fail the publish over it
