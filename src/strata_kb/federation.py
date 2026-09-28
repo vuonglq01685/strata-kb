@@ -276,32 +276,45 @@ def _with_manifest_revisions(index: models.KBIndex, entry_dir: Path) -> models.K
     return index
 
 
-def load_federation(federation_dir: Path) -> list[FederatedRepo]:
-    """Đọc mọi entry (phẳng lẫn lồng) trong layout mirror.
+def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
+    """One leaf entry → FederatedRepo, or None if its `_meta.yaml`/
+    `index.yaml` is broken (logged, not raised — a caller looping over many
+    entries must not have one bad entry abort the rest).
 
     meta.repo_id được đè bằng path-id tương đối (vd 'mid/repo-x') — file
     _meta.yaml mirror từ tầng dưới chỉ biết tên cụt của chính nó.
+
+    Factored out of `load_federation` (spec 2026-09-25 §3.4/§4.1) so a
+    caller that already has a cheap reason to skip an entry — searchdb's
+    stat-only repo fingerprint, e.g. — can avoid paying for
+    `_with_manifest_revisions`'s manifest reads on an entry it is not going
+    to use.
     """
+    try:
+        meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
+        index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
+    except (yaml.YAMLError, ValidationError, UnicodeDecodeError) as exc:
+        # UnicodeDecodeError is a ValueError, not a yaml.YAMLError/
+        # ValidationError -- a non-UTF-8 _meta.yaml/index.yaml must skip
+        # like any other broken entry, not escape as a raw traceback out
+        # of build_federation_index/write_federation_index (reindex,
+        # publish's own aggregate-index rebuild).
+        logger.warning("federation/%s is broken — skipping: %s", path_id, exc)
+        return None
+    return FederatedRepo(
+        meta=meta.model_copy(update={"repo_id": path_id}),
+        index=_with_manifest_revisions(index, child),
+        kb_dir=child,
+    )
+
+
+def load_federation(federation_dir: Path) -> list[FederatedRepo]:
+    """Đọc mọi entry (phẳng lẫn lồng) trong layout mirror."""
     repos: list[FederatedRepo] = []
     for path_id, child in iter_entry_dirs(federation_dir):
-        try:
-            meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
-            index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
-        except (yaml.YAMLError, ValidationError, UnicodeDecodeError) as exc:
-            # UnicodeDecodeError is a ValueError, not a yaml.YAMLError/
-            # ValidationError -- a non-UTF-8 _meta.yaml/index.yaml must skip
-            # like any other broken entry, not escape as a raw traceback out
-            # of build_federation_index/write_federation_index (reindex,
-            # publish's own aggregate-index rebuild).
-            logger.warning("federation/%s is broken — skipping: %s", path_id, exc)
-            continue
-        repos.append(
-            FederatedRepo(
-                meta=meta.model_copy(update={"repo_id": path_id}),
-                index=_with_manifest_revisions(index, child),
-                kb_dir=child,
-            )
-        )
+        repo = _load_entry(path_id, child)
+        if repo is not None:
+            repos.append(repo)
     return repos
 
 
