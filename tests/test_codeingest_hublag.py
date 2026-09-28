@@ -111,6 +111,25 @@ def test_in_sync_with_a_configured_db_path(clone, tmp_path):
     assert report.state == "in-sync", report
 
 
+def test_a_missing_configured_db_path_does_not_report_unknown(clone, tmp_path):
+    """Important 5: `_worktree_db_paths` used to `shutil.copyfile` a
+    configured `code_ingest.db` path straight off `repo_root` -- when the
+    path does not exist there, `copyfile` raises `FileNotFoundError`, which
+    `check()`'s `except OSError` turns into an "unknown" verdict for the
+    whole check. Real code-ingest itself only warns "--db path not found"
+    and continues (schema.py); the worktree copy must let that happen too,
+    instead of failing earlier and louder than a real CI run would."""
+    (clone / ".kb" / "config.yaml").write_text(
+        'kind: dev\nrepo_id: "demo"\ncode_ingest:\n  db: ["data/app.sqlite"]\n',
+        encoding="utf-8",
+    )
+    fed = tmp_path / "hub" / "federation"
+    _publish(clone, fed)
+
+    report = hublag.check(clone, clone / ".kb", fed, "demo")
+    assert report.state != "unknown", report
+
+
 def test_unknown_when_origin_head_is_not_set(clone, tmp_path, run_git):
     """Fix round 1, Important 2: `gitio.default_branch` falls back to the
     checked-out branch when `refs/remotes/origin/HEAD` is unset -- common

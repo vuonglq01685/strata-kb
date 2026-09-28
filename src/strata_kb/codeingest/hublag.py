@@ -78,6 +78,15 @@ def _worktree_db_paths(
         except ValueError:
             out.append(db_path)
             continue
+        if not db_path.is_file():
+            # Configured but absent locally (though CI's checkout has it) --
+            # schema.py's own db reader only warns "--db path not found" and
+            # continues for exactly this case; passing the path through
+            # unchanged lets that same warning fire here instead of
+            # `shutil.copyfile` raising and turning the whole check
+            # "unknown" (Important 5).
+            out.append(db_path)
+            continue
         dest = work / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(db_path, dest)
