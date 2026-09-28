@@ -671,6 +671,20 @@ def _sync_conn(
             continue  # repo unchanged — 0 manifest parses
         repo = _load_entry(path_id, child)
         if repo is None:
+            # `iter_entry_dirs` only checks that `_meta.yaml`/`index.yaml`
+            # EXIST, not that they parse -- so a broken entry is still in
+            # `live_ids` above and never reaches the stale-repo drop loop,
+            # even though `load_federation` (what `kb get`/`resolve`/`query`
+            # read through) silently excludes it. A repo that goes from
+            # valid to broken must not keep its old rows searchable forever
+            # just because nothing else in this function's control flow
+            # ever revisits it once its fingerprint stops matching what was
+            # stored — drop it here the same way the stale-repo loop above
+            # does, whenever it actually has stored rows to drop.
+            if path_id in stored_fp:
+                report.sections_deleted += _drop_repo(conn, path_id)
+                conn.execute("DELETE FROM repos WHERE repo_id = ?", (path_id,))
+                conn.commit()
             continue  # broken entry — already logged by _load_entry
         # F-C2: `stored_fp` was read outside any lock, so two cold processes
         # both got here and the loser broke UNIQUE. Take the write lock FIRST,
