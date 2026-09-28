@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -1078,11 +1077,11 @@ def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[I
         except ValueError:
             rel = ""
         if rel:
-            proc = subprocess.run(
-                ["git", "ls-files", "--", rel], cwd=repo_root, capture_output=True,
-                text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
-            )
-            if proc.returncode == 0 and proc.stdout.strip():
+            try:
+                proc = gitio._run(repo_root, "ls-files", "--", rel)
+            except FileNotFoundError:
+                proc = None
+            if proc is not None and proc.returncode == 0 and proc.stdout.strip():
                 issues.append(Issue(
                     "warning",
                     f"{rel} is tracked by git but is derived on demand — run "
