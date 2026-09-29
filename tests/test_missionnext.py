@@ -93,6 +93,15 @@ def test_grounded_doc_returns_repo_and_doc():
     assert missionnext.grounded_doc("- Grounded on: mid/repo-x:repo-x-code @ abc1234\n") == ("mid/repo-x", "repo-x-code")
 
 
+def test_grounded_doc_reads_a_comma_separated_list_and_prefers_code():
+    two = "- Grounded on: myflix:myflix-svc @ 2946696, myflix:myflix-code @ 2946696\n"
+    assert missionnext.grounded_doc(two) == ("myflix", "myflix-code")
+    no_code = "- Grounded on: myflix:myflix-svc @ 2946696, myflix:arch @ 2946696\n"
+    assert missionnext.grounded_doc(no_code) == ("myflix", "myflix-svc")
+    malformed = "- Grounded on: myflix:myflix-code (rev 2946696), myflix:myflix-svc @ 2946696\n"
+    assert missionnext.grounded_doc(malformed) is None
+
+
 def test_svc_doc_id_swaps_the_code_suffix():
     assert missionnext.svc_doc_id("myflix-code") == "myflix-svc"
     assert missionnext.svc_doc_id("repo-x-code") == "repo-x-svc"

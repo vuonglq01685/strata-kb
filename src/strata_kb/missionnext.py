@@ -19,9 +19,9 @@ from strata_kb.mdutils import _SEP_ROW_RE
 from strata_kb.svcnote import ROW_RE, _ESCAPED_PIPE_SENTINEL
 from strata_kb.ticketcheck import (
     BARE_US_RE,
-    GROUNDED_ON_RE,
     US_ID_IN_CELL_RE,
     DecisionTable,
+    grounded_entries,
     parse_decisions,
 )
 
@@ -103,14 +103,18 @@ def parse_mission(text: str) -> ParsedMission:
 
 
 def grounded_doc(text: str) -> tuple[str | None, str] | None:
-    """(repo qualifier, doc id) of the first `- Grounded on: [<repo>:]<doc>
-    @ <rev>` line (the SA writes it in `## Services & order`), or None.
-    The qualifier is None on an unqualified line; `load_from_hub` then
-    resolves the doc by its unique holder."""
+    """(repo qualifier, doc id) from the first parseable `- Grounded on:`
+    line (the SA writes it in `## Services & order`), or None. The line may
+    list several `<repo>:<doc> @ <rev>` entries separated by commas; the
+    `-code` entry wins, else the first. The qualifier is None on an
+    unqualified entry; `load_from_hub` then resolves the doc by its unique
+    holder."""
     for line in text.splitlines():
-        m = GROUNDED_ON_RE.match(line.strip())
-        if m is not None:
-            return m.group("repo"), m.group("doc")
+        entries = grounded_entries(line)
+        if not entries:
+            continue
+        code = next((e for e in entries if e[1].endswith("-code")), entries[0])
+        return code[0], code[1]
     return None
 
 

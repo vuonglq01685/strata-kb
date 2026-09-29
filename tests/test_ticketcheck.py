@@ -948,3 +948,14 @@ def test_parse_decisions_without_blocks_column_keeps_empty_tuple():
     )
     table = ticketcheck.parse_decisions(text, "m")
     assert table.rows["D1"] == ticketcheck.Decision("D1", "DECIDED", "a", ())
+
+
+def test_grounded_entries_splits_a_list_and_rejects_a_bad_entry():
+    from strata_kb.ticketcheck import grounded_entries
+
+    assert grounded_entries("- Grounded on: demo:demo-code @ ABC1234") == [("demo", "demo-code", "abc1234")]
+    assert grounded_entries("- Grounded on: a:a-code @ 1234567, a:a-svc @ 1234567") == [
+        ("a", "a-code", "1234567"), ("a", "a-svc", "1234567"),
+    ]
+    assert grounded_entries("- Grounded on: a:a-code @ 1234567, junk") == []
+    assert grounded_entries("- Files: x.py") == []
