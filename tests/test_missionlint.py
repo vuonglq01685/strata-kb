@@ -1173,3 +1173,31 @@ def test_a_filled_mission_reports_no_placeholder_errors(
 ):
     report = missionlint.lint(_build_mission(golden_block), _hub(fed_hub))
     assert not [m for m in _errors(report) if "only placeholder" in m]
+
+
+# --- check 13: Grounded on parseable ---
+
+
+def test_grounded_on_list_is_parseable_and_silent():
+    from strata_kb import missionlint
+
+    text = "## Services & order\n- Grounded on: a:a-code @ 1234567, a:a-svc @ 1234567\n"
+    assert missionlint.check_grounded_on(text) == []
+
+
+def test_grounded_on_unparseable_is_a_warning_naming_mission_next():
+    from strata_kb import missionlint
+
+    text = "## Services & order\n- Grounded on: a-code (rev 1234567)\n"
+    (issue,) = missionlint.check_grounded_on(text)
+    assert issue.level == "warning"
+    assert issue.message == (
+        "no parseable 'Grounded on: <repo>:<doc> @ <rev>' line in "
+        "'## Services & order' — kb mission next cannot derive done"
+    )
+
+
+def test_grounded_on_absent_section_is_silent():
+    from strata_kb import missionlint
+
+    assert missionlint.check_grounded_on("## US backlog\n| US ID | Title |\n") == []

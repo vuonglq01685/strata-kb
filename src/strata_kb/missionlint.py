@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from strata_kb import acquality, lintcore, mission
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
+from strata_kb.ticketcheck import SERVICES_HEADING, grounded_entries
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
@@ -325,6 +326,25 @@ def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
     ]
 
 
+def check_grounded_on(text: str) -> list[Issue]:
+    """Check 13. `kb mission next` derives `done` from the `-code` doc named
+    on the `Grounded on:` line. A line it cannot parse is a silent
+    `done: unknown` there, so name it here. Warning, not error: a mission is
+    authored before the SA grounds it."""
+    body = lintcore.section_body(text, SERVICES_HEADING)
+    if body is None:
+        return []
+    if any(grounded_entries(line) for line in body.splitlines()):
+        return []
+    return [
+        Issue(
+            "warning",
+            "no parseable 'Grounded on: <repo>:<doc> @ <rev>' line in "
+            f"'{SERVICES_HEADING}' — kb mission next cannot derive done",
+        )
+    ]
+
+
 def lint(
     text: str,
     hub: "HubHandle | None",
@@ -410,6 +430,7 @@ def lint(
         text, mission.RECOMMENDED_MISSION_HEADINGS
     )
     issues += check_technology_decisions(text)
+    issues += check_grounded_on(text)
     if not backlog_issues:
         issues += check_sequencing(text, us_ids)
     issues += lintcore.check_open_question_owners(
