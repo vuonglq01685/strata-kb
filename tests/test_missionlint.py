@@ -1201,3 +1201,18 @@ def test_grounded_on_absent_section_is_silent():
     from strata_kb import missionlint
 
     assert missionlint.check_grounded_on("## US backlog\n| US ID | Title |\n") == []
+
+
+def test_coverage_finds_a_ticket_in_its_mission_folder(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    tickets = tmp_path / "tickets"
+    (tickets / MISSION_ID).mkdir(parents=True)
+    (tickets / MISSION_ID / f"{MISSION_ID}-US1.md").write_text("x", encoding="utf-8")
+    (tickets / f"{MISSION_ID}-US2.md").write_text("x", encoding="utf-8")
+
+    report = missionlint.lint(
+        _build_mission(golden_block), _hub(fed_hub), tickets_dir=tickets
+    )
+
+    assert not any("US drafted" in msg for msg in _warnings(report))

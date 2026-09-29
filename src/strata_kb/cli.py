@@ -2467,10 +2467,11 @@ def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path 
     """Where mission files live for a ticket command. An explicit
     --missions-dir that is not a directory is a BA typo and a hard error —
     otherwise the engine's .is_file() probing would misreport a real mission
-    as missing. The default is fail-soft: a ticket at tickets/<id>.md gets
-    its sibling missions/ when that exists, else None (the engine notes the
-    skipped checks). Gated on the parent's name so an unrelated missions/
-    next to some other file never binds."""
+    as missing. The default is fail-soft: a ticket under tickets/ (flat or
+    tickets/<mission-id>/) gets the missions/ next to that tickets/
+    directory when that exists, else None (the engine notes the skipped
+    checks). Gated on the parent's name so an unrelated missions/ next to
+    some other file never binds."""
     if missions_dir is not None:
         if not missions_dir.is_dir():
             typer.secho(
@@ -2479,10 +2480,11 @@ def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path 
             )
             raise typer.Exit(1)
         return missions_dir
-    if path is not None and path.parent.name == "tickets":
-        sibling = path.parent.parent / "missions"
-        if sibling.is_dir():
-            return sibling
+    if path is not None:
+        for ancestor in (path.parent, *path.parent.parents):
+            if ancestor.name == "tickets":
+                sibling = ancestor.parent / "missions"
+                return sibling if sibling.is_dir() else None
     return None
 
 

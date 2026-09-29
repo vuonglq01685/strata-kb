@@ -583,3 +583,16 @@ def test_mission_next_unqualified_grounded_on_resolves_locally(tmp_path, monkeyp
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
     assert "done: unknown" not in result.output
+
+
+def test_resolve_missions_dir_from_a_nested_ticket(tmp_path):
+    from strata_kb.cli import _resolve_missions_dir
+
+    (tmp_path / "missions").mkdir()
+    nested = tmp_path / "tickets" / "M-platform" / "M-platform-US1.md"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("# t\n", encoding="utf-8")
+    assert _resolve_missions_dir(None, nested) == tmp_path / "missions"
+    flat = tmp_path / "tickets" / "M-platform-US1.md"
+    assert _resolve_missions_dir(None, flat) == tmp_path / "missions"
+    assert _resolve_missions_dir(None, tmp_path / "elsewhere" / "x.md") is None

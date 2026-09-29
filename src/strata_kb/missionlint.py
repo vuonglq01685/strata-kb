@@ -10,6 +10,7 @@ specific to the mission contract.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -301,6 +302,18 @@ def check_sequencing(text: str, us_ids: list[str]) -> list[Issue]:
     ]
 
 
+_US_SUFFIX_RE = re.compile(r"-US\d+$")
+
+
+def _ticket_file_exists(tickets_dir: Path, us_id: str) -> bool:
+    """`tickets/<mission-id>/<us>.md` (1.6.0 layout) or `tickets/<us>.md`
+    (flat, pre-1.6.0). The mission id is the story id minus `-US<n>`."""
+    mission_id = _US_SUFFIX_RE.sub("", us_id)
+    return (tickets_dir / mission_id / f"{us_id}.md").is_file() or (
+        tickets_dir / f"{us_id}.md"
+    ).is_file()
+
+
 def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
     """Check 12. Coverage is DERIVED from the filesystem, never recorded in
     the backlog table — a hand-maintained status column rots the moment a
@@ -309,11 +322,7 @@ def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
     Always a warning: a mission is authored before its tickets exist, so
     0/N at creation time is the normal case, not a failure.
     """
-    missing = [
-        us_id
-        for us_id in us_ids
-        if not (tickets_dir / f"{us_id}.md").is_file()
-    ]
+    missing = [us_id for us_id in us_ids if not _ticket_file_exists(tickets_dir, us_id)]
     if not missing:
         return []
     drafted = len(us_ids) - len(missing)
