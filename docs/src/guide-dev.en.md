@@ -223,7 +223,7 @@ today. Checking only at handover would be too late.
 | File | Written by | Purpose |
 |---|---|---|
 | `docs/impl/<id>-design.md` | `dev-design` | the design |
-| `docs/impl/<id>-plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes |
+| `docs/impl/<id>-plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes, a `Depends on:` line per task |
 | `docs/impl/<id>-context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
 | `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
 
@@ -237,6 +237,21 @@ new session.
 `kb init` never touches your `docs/impl/` content. It only adds `.gitkeep` and a
 `.gitignore` so the context cache and the review artefacts never land in a pull
 request.
+
+**Waves and lanes.** Every task in the plan carries a `Depends on:` line under
+its `### Task <n>:` heading — `none`, or the tasks whose Interfaces it consumes
+or whose files it shares. `dev-plan` derives it; the A2 reviewer checks it.
+`kb plan waves docs/impl/<id>-plan.md` turns those lines into waves (wave n =
+tasks whose dependencies all sit in earlier waves) and fails when two tasks
+share a file without a dependency between them, when there is a cycle, or when
+a line is missing — a plan like that has no safe parallel order. A plan where
+every task lacks the line predates waves and runs sequentially.
+
+`dev-execute` runs it after isolating the branch. A wave of one task runs as
+before; a wave of several runs each task in its own git worktree lane cut from
+the ticket branch, at most 3 lanes at a time, merged back in task order with
+`--no-ff`, the full suite run once per wave. A merge conflict means the plan
+was wrong and goes back to `dev-plan`.
 
 ## 4.3 Four human gates, five agent review rounds
 
@@ -538,6 +553,7 @@ Linux (CI) is that caveat, not real drift.
 | `kb resolve <file>` | Check a ticket's citations | `0` ok, `1` broken, `2` stale |
 | `kb diff <doc> --against <rev>` | What an amendment changed | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Search and fetch | `0` |
+| `kb plan waves <plan-file> [--json]` | Dependency waves of a `docs/impl/<id>-plan.md` | `0` ok, `1` shared file without a dependency, cycle, unknown task, or missing `Depends on:` |
 | `kb pr lint <file>` | PR evidence gate | `0` PASS, `1` FAIL |
 
 **Slash commands:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,

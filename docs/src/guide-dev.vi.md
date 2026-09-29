@@ -225,7 +225,7 @@ nay có thể đã `stale`. Chỉ kiểm tra lúc handover thì quá muộn.
 | File | Do ai ghi | Mục đích |
 |---|---|---|
 | `docs/impl/<id>-design.md` | `dev-design` | bản thiết kế |
-| `docs/impl/<id>-plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]` |
+| `docs/impl/<id>-plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]`, mỗi task một dòng `Depends on:` |
 | `docs/impl/<id>-context.md` | `dev-implement-ticket` | cache ngữ cảnh đã phân giải; bị gitignore, sinh lại khi cần |
 | `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
 
@@ -240,6 +240,21 @@ từ đầu trong một phiên làm việc hoàn toàn mới.
 `kb init` không bao giờ đụng tới nội dung `docs/impl/` của bạn. Nó chỉ thêm
 `.gitkeep` và một `.gitignore` để cache ngữ cảnh và các artefact review không
 bao giờ lọt vào pull request.
+
+**Wave và lane.** Mỗi task trong kế hoạch có một dòng `Depends on:` ngay dưới
+tiêu đề `### Task <n>:` — `none`, hoặc các task mà nó dùng Interface hay dùng
+chung file. `dev-plan` suy ra dòng này; reviewer A2 kiểm tra nó.
+`kb plan waves docs/impl/<id>-plan.md` biến các dòng đó thành các wave (wave n
+= các task có mọi dependency nằm ở wave trước) và fail khi hai task dùng chung
+một file mà không có dependency giữa chúng, khi có vòng lặp, hoặc khi thiếu
+dòng — kế hoạch như vậy không có thứ tự song song an toàn. Kế hoạch mà không
+task nào có dòng này là kế hoạch có từ trước khi có wave, và chạy tuần tự.
+
+`dev-execute` chạy lệnh này sau khi tách nhánh. Wave chỉ có một task chạy như
+cũ; wave có nhiều task thì mỗi task chạy trong một lane git worktree riêng cắt
+từ nhánh ticket, tối đa 3 lane cùng lúc, merge lại theo thứ tự task bằng
+`--no-ff`, toàn bộ test suite chạy một lần mỗi wave. Merge conflict nghĩa là kế
+hoạch sai, và được trả về `dev-plan`.
 
 ## 4.3 Bốn cổng người, năm vòng review agent
 
@@ -543,6 +558,7 @@ thật.
 | `kb resolve <file>` | Kiểm tra trích dẫn của ticket | `0` ok, `1` hỏng, `2` cũ |
 | `kb diff <doc> --against <rev>` | Sửa đổi đã thay đổi những gì | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Tìm và lấy nội dung | `0` |
+| `kb plan waves <plan-file> [--json]` | Các wave dependency của một `docs/impl/<id>-plan.md` | `0` ok, `1` file dùng chung không có dependency, vòng lặp, task không xác định, hoặc thiếu `Depends on:` |
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
