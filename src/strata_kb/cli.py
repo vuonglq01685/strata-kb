@@ -2596,6 +2596,57 @@ def ticket_export(
     typer.echo(f"wrote {out}")
 
 
+@ticket_app.command("tidy")
+def ticket_tidy(
+    files: list[Path] = typer.Argument(
+        None, help="With --into: the flat ticket files to move into that folder"
+    ),
+    tickets_dir: Path = typer.Option(
+        Path("tickets"), "--tickets-dir", help="Where ticket files live"
+    ),
+    into: str | None = typer.Option(
+        None, "--into", help="Folder under tickets/ for FILES that have no parent mission (an epic or feature slug)"
+    ),
+) -> None:
+    """Move flat tickets/*.md into tickets/<mission-id>/ by their
+    '> Parent mission:' line; list the rest as 'unsorted'. With --into,
+    move the named FILES into tickets/<folder>/ instead. Idempotent, never
+    overwrites, no git — commit the renames yourself. Exit 0 after a report."""
+    from strata_kb import tickettidy
+
+    if not tickets_dir.is_dir():
+        typer.secho(
+            f"--tickets-dir '{tickets_dir}' does not exist or is not a directory", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+    if into is not None:
+        if not tickettidy.FOLDER_RE.match(into):
+            typer.secho(
+                f"--into '{into}' is not a folder name — letters, digits, '.', '_' and '-' only",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        if not files:
+            typer.secho("--into needs at least one FILE", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        moves = tickettidy.into_moves(tickets_dir, into, list(files))
+        unsorted: list[Path] = []
+        notes: list[str] = []
+    else:
+        moves, unsorted, notes = tickettidy.plan_moves(tickets_dir)
+    done, conflicts = tickettidy.apply_moves(moves)
+    for n in notes:
+        typer.echo(f"note: {n}")
+    for src, dst in done:
+        typer.echo(f"moved: {src} → {dst}")
+    for c in conflicts:
+        typer.echo(c)
+    for p in unsorted:
+        typer.echo(f"unsorted: {p} — pass --into <folder>")
+    if not (done or conflicts or unsorted or notes):
+        typer.echo("nothing to tidy")
+
+
 @ticket_app.command("check")
 def ticket_check(
     source: str = typer.Argument(
