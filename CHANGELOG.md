@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.6.0 — 2026-09-29
+
+- `kb mission next` reports five states: `done` (hub `hist.*` row), `ready` (ticket file with every `## Definition of Ready` box ticked), `draft` (ticket file with an unticked box — reason `DoR n/m ticked` — or no DoR section), `to-draft` (no ticket, dependencies done, D-rows DECIDED) and `blocked`. `Next:` names the first `to-draft` story. **Breaking** for scripts reading the JSON `status`: `drafted` is gone, `ready` changed meaning, `draft` and `to-draft` are new.
+- `kb mission next` reads a comma-separated `Grounded on:` line (`<x>-code @ <rev>, <x>-svc @ <rev>`, as `sa-ticket-ground` writes it) and derives the `-svc` document from the `-code` entry — a mission grounded that way used to read `done: unknown (no repo id)` and every merged story as `drafted`. `kb mission lint` warns when no `Grounded on:` line parses.
+- Tickets live at `tickets/<mission-id>/<ticket-id>.md`. New `kb ticket tidy` moves a flat `tickets/` into that layout by each file's `> Parent mission:` line (`--into <folder>` for the rest); `kb mission next`, `kb mission lint` coverage, `kb ticket lint` and the usage ledger read both layouts.
+- `kb ticket lint`: an NFR `Target` of `N/A — <reason>` passes — the KB holds no number for that concern; a bare `N/A` or a mood still fails.
+- BA repos: `ba-ticket-author` runs `kb ticket tidy` at Intake, prints every `note:` line of `kb mission next` verbatim, proposes the first `to-draft` story and saves into the mission folder (or a BA-named one). `QUICKSTART-ba.md` updated. Re-run `kb init --kind ba` to pick up the new text.
+
 ## 1.5.0 — 2026-09-29
 
 - Ticket template split into **core** and **extended** sections. Core: Summary, User Story, Background, Acceptance Criteria, Use cases, Business flow, Dependencies, Out of scope, Technical grounding, Open questions, KB context. Extended — kept only when the story needs them, deleted otherwise: Sequence diagram, Non-functional requirements, UI / presentation spec, Test data & verification. `## Sequence diagram` leaves `REQUIRED_HEADINGS` (a relaxation: every older ticket still passes); a code-level sequence is the Dev's to draw at `dev-design`. `kb ticket lint` warns when the story's own words (load, a screen, records, an integration — EN and VI) call for an extended section that is missing, when one is present but empty, and when `## Sequence diagram` is a placeholder; a filled one still gets the mermaid gate.

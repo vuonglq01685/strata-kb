@@ -2980,14 +2980,32 @@ def test_ba_mission_wrappers_carry_the_recorded_decision_hard_rule():
 def test_ba_ticket_wrappers_run_kb_mission_next_at_intake():
     for name in BA_TICKET_WRAPPERS:
         text = _ba_wrapper_text(name)
-        assert "run `kb mission next` first" in text, name
-        assert "propose the first `ready` story" in text, name
+        assert "run `kb ticket tidy` first" in text, name
+        assert "then `kb mission next`" in text, name
+        assert "propose the first `to-draft` story" in text, name
+        assert "Print every `note:` line of `kb mission next` to the BA verbatim, before the table" in text, name
         assert "A `blocked` story may be drafted only with its reasons acknowledged by the BA" in text, name
 
 
-def test_ba_ticket_full_wrappers_point_a_drafted_story_at_its_file():
+def test_ba_ticket_full_wrappers_point_a_draft_or_ready_story_at_its_file():
     for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
-        assert "A `drafted` story points at its existing file." in _ba_wrapper_text(name), name
+        text = _ba_wrapper_text(name)
+        assert "A `draft` or `ready` story points at its existing file." in text, name
+        assert "A `done: unknown` note means a `draft` or `ready` row may be a merged story — say so." in text, name
+
+
+def test_ba_ticket_wrappers_save_into_a_mission_or_ba_named_folder():
+    for name in BA_TICKET_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "`tickets/<mission-id>/<mission-id>-US<n>.md`" in text, name
+        assert "ask the BA for a kebab-case folder name (an epic or feature, e.g. `epic-billing`)" in text, name
+        assert "never invent the folder name" in text, name
+        assert "for every `unsorted:` line ask the BA for its folder and run `kb ticket tidy --into <folder> <file>`" in text, name
+
+
+def test_mission_template_allows_a_grounded_on_list():
+    text = _read_init_template("mission-template.md")
+    assert "A comma-separated list is allowed; the `-code` entry is the one `kb mission next` reads." in text
 
 
 def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
@@ -3003,8 +3021,9 @@ def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():
     assert "`kb mission next`" in text
     assert "### Greenfield: decide the D-rows once" in text
     assert "- `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`" in text
-    for word in ("`done`", "`drafted`", "`ready`", "`blocked`", "Next:"):
+    for word in ("`done`", "`ready`", "`draft`", "`to-draft`", "`blocked`", "Next:", "`kb ticket tidy`"):
         assert word in text, word
+    assert "`drafted`" not in text
 
 
 def test_changelog_names_the_ba_side_of_mission_next():

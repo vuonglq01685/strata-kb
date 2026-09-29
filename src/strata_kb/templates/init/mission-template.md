@@ -91,6 +91,7 @@ svc.* on its row, "Depends on" included, so the marker goes on the new
 service only — keep "Depends on" to services that already exist or
 carry their own decision row. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
+<!-- A comma-separated list is allowed; the `-code` entry is the one `kb mission next` reads. -->
 
 | Order | Service | Depends on | Why this order |
 |---|---|---|---|

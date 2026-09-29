@@ -1106,9 +1106,10 @@ def test_ticket_wrappers_document_the_refs_inheritance_rule(tmp_path):
     'starting candidates only' phrase (dropping it would draft with the
     mission's full kb-context copied wholesale instead of pinning fresh
     refs), the `> Parent mission:` back-link line (dropping it breaks the
-    ticket-lint back-link check), and the `tickets/<mission-id>-US<n>.md`
-    filename convention (dropping it means the back-link check can't find
-    the ticket at all)."""
+    ticket-lint back-link check), and the
+    `tickets/<mission-id>/<mission-id>-US<n>.md` filename convention
+    (dropping it means the back-link check can't find the ticket at
+    all)."""
     from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
@@ -1117,7 +1118,7 @@ def test_ticket_wrappers_document_the_refs_inheritance_rule(tmp_path):
         text = (tmp_path / rel).read_text(encoding="utf-8")
         assert "starting candidates" in text.lower(), rel
         assert "> Parent mission: <mission-id>" in text, rel
-        assert "tickets/<mission-id>-US<n>.md" in text, rel
+        assert "tickets/<mission-id>/<mission-id>-US<n>.md" in text, rel
 
 
 def test_mission_wrappers_carry_the_never_auto_rules(tmp_path):
