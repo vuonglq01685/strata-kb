@@ -4,8 +4,14 @@ Used by the maturity-review step of `ba-mission-plan` and
 `ba-ticket-author`. Round 1 is the two-reviewer scoring pass: two
 reviewers score the document independently, one axis each. Rounds 2
 and 3 are a single `gap-verifier` pass instead — it returns pass/fail
-per gap and does not score. Edit this file to tune the criteria for
-your domain; the skills read it at review time.
+per gap and does not score. For a **ticket**, round 1 is the default
+and the whole review: the agent applies the fixes, re-lints, records
+the row, and hands the remaining gaps over as owned `OPEN(<owner>)`
+questions. Rounds 2–3 run only when the BA asks for them or the ticket
+carries more than 6 acceptance criteria. A **mission** always gets the
+full three-round loop — it is the document every ticket rests on. Edit
+this file to tune the criteria for your domain; the skills read it at
+review time.
 
 ## Business coverage
 
@@ -72,7 +78,9 @@ Score each axis 1–5:
 
 The score is the LOWEST level whose criteria are ALL satisfied.
 Never average across checklist items. Threshold to stop the review
-loop: both axes ≥ 4. Results are appended to the document's
+loop (when rounds 2–3 run at all — see the top of this file): both
+axes ≥ 4. A ticket that stops after round 1 below 4 is reported below
+4, never rounded up. Results are appended to the document's
 `## Review record` section, one row per round.
 
 An axis's score rises only when every gap of that axis passes the

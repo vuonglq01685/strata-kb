@@ -154,10 +154,11 @@ def _real_ticket_text(block: str) -> str:
             "level."
         ),
         "## Acceptance Criteria": (
-            "- [ ] AC1: Show airspace type and level per "
+            "- [ ] AC1: Given a restrictive airspace polygon, when the "
+            "dispatcher clicks it, then its type and level are shown per "
             "[arinc-kb:arinc-424 §5.3]\n"
-            "- [ ] AC2: Show ICAO designation per "
-            "[icao-kb:icao-annex-2 §1.1]"
+            "- [ ] AC2: Given the same polygon, when the panel opens, then "
+            "the ICAO designation is shown per [icao-kb:icao-annex-2 §1.1]"
         ),
         "## Use cases": (
             "### Main flow\n"
@@ -232,7 +233,9 @@ def _real_ticket_text(block: str) -> str:
     # '## KB context' — same order as ticket-template.md.
     order = list(ticket.REQUIRED_HEADINGS)
     kb_index = order.index("## KB context")
-    order[kb_index:kb_index] = list(ticket.RECOMMENDED_HEADINGS)
+    order[kb_index:kb_index] = list(
+        ticket.RECOMMENDED_HEADINGS + ticket.EXTENDED_HEADINGS
+    )
     for heading in order:
         parts += [heading, sections[heading], ""]
     parts += ["## Review record", REVIEW_RECORD_BODY, ""]

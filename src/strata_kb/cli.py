@@ -2554,6 +2554,46 @@ def ticket_lint(
     raise typer.Exit(2 if report.stale_errors == errors else 1)
 
 
+@ticket_app.command("export")
+def ticket_export(
+    source: str = typer.Argument(
+        ..., help="Ticket file (or '-' to read from stdin)"
+    ),
+    out: Path | None = typer.Option(
+        None, "--out", help="Write here instead of stdout"
+    ),
+) -> None:
+    """Tracker-ready body: the ticket without its guidance comments and
+    without the BA-internal '## Definition of Ready' and '## Review record'
+    sections. '## KB context', '## Dependencies' and '## Technical
+    grounding' stay — the Dev reads those. Paste the output into Jira."""
+    from strata_kb.ticket import export_body
+
+    if source == "-":
+        text = sys.stdin.read()
+    else:
+        try:
+            text = Path(source).read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            typer.secho(
+                f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        except OSError as exc:
+            typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    body = export_body(text)
+    if out is None:
+        typer.echo(body, nl=False)
+        return
+    try:
+        out.write_text(body, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        typer.secho(f"could not write '{out}': {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"wrote {out}")
+
+
 @ticket_app.command("check")
 def ticket_check(
     source: str = typer.Argument(

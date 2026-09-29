@@ -1,4 +1,21 @@
-# AC quality — banned weasel words
+# AC quality — shape and banned weasel words
+
+## Shape: one Given/When/Then per AC
+
+An AC is one starting state, one action, one observable outcome:
+
+```
+- [ ] AC3 — Given a route crossing R-2905A, when the dispatcher opens the
+      briefing, then the panel lists type `R` and level `L1` [arinc-424 §5.3]
+```
+
+Vietnamese works the same (`Giả sử … khi … thì …`). `kb ticket lint`
+reports, as one warning, every AC that is not in this shape. An AC with
+two `when`s or two `then`s is two ACs. The error-level floor stays what it
+was — a measurable value or an owned `OPEN(<owner>)` — so an older ticket
+still passes with that one warning.
+
+## Banned weasel words
 
 An Acceptance Criterion must be verifiable by someone who has NOT read
 the source documents. The phrases below shift all risk to Dev and QA,

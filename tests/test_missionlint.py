@@ -142,15 +142,15 @@ def test_parent_mission_line_rejects_capitalized_mission():
 
 def test_required_ticket_headings_are_unchanged():
     """REQUIRED_HEADINGS is a compatibility contract across the BA's local
-    install, the shared MCP server, and CI — Phase 4.1 must not touch it,
-    or every provisioned BA repo needs a migration."""
+    install, the shared MCP server, and CI — a change is a minor release
+    with a changelog entry. 1.5.0 dropped '## Sequence diagram' (now an
+    EXTENDED heading): a relaxation, so every older ticket still passes."""
     assert ticket.REQUIRED_HEADINGS == (
         "## Summary",
         "## User Story",
         "## Background / Business context",
         "## Acceptance Criteria",
         "## Use cases",
-        "## Sequence diagram",
         "## Business flow",
         "## KB context",
         "## Definition of Ready",

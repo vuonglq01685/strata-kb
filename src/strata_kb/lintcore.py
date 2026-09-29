@@ -286,6 +286,29 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     ]
 
 
+def check_duplicate_headings(text: str) -> list[Issue]:
+    """Error per '## ' heading that appears twice outside fences and
+    comments. `section_body` reads the FIRST occurrence, so a second
+    `## Technical grounding` an SA appended instead of replacing is
+    invisible to every other check — the gate passed on the stale copy
+    while the Dev read the new one. One error names the heading; the fix
+    is to merge the two."""
+    seen: dict[str, int] = {}
+    for line in _visible_text(text).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            seen[stripped] = seen.get(stripped, 0) + 1
+    return [
+        Issue(
+            "error",
+            f"heading '{heading}' appears {count} times — merge them into "
+            "one section",
+        )
+        for heading, count in seen.items()
+        if count > 1
+    ]
+
+
 # A relationship in any diagram dialect the two gates accept: mermaid
 # arrows/links (flowchart, sequence) and C4's Rel()/BiRel() calls. A
 # diagram with nodes and no relationships is a list drawn in a box.

@@ -46,9 +46,13 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       so that check can find it.
    3. **Ground** — it calls `kb_search`; review ALL candidates it shows
       you and pick the ones that actually apply.
-   4. **Draft** — it fills the ticket template (story, ACs, use cases,
-      sequence + business-flow diagrams), citing `[doc-id §section]` for
-      every claim that touches a standard.
+   4. **Draft** — it fills the template's core sections (story,
+      Given/When/Then ACs, use cases, business-flow diagram, dependencies,
+      out of scope, open questions), citing `[doc-id §section]` for every
+      claim that touches a standard. The extended sections — sequence
+      diagram, NFR, UI spec, test data — are kept only when the story
+      needs them and deleted otherwise; lint warns when the story's own
+      words call for one that is missing.
    5. **Pin** — once you confirm which sections apply, it calls
       `kb_context_new` and embeds the returned `## KB context` block.
    6. **Lint** — it runs `kb ticket lint` and fixes errors until it
@@ -72,14 +76,18 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       runtime supports it, otherwise two sequential passes, one role
       per pass — one scoring "Business coverage", one scoring "Dev
       implementability" — against `docs/review-rubric.md`. It applies
-      the fixes and reviews again, up to 3 rounds or until both axes
-      score ≥ 4; a gap it cannot close itself becomes an owned
+      the fixes, re-lints and records the round — one round is the
+      whole review by default; rounds 2–3 run only when you ask or the
+      ticket has more than 6 ACs, until both axes score ≥ 4 or 3 rounds
+      are spent; a gap it cannot close itself becomes an owned
       `OPEN(<owner>)` open question instead of a guess. The result
       lands in the ticket's `## Review record` section.
    9. **Review → save** — it writes the draft to `tickets/<ticket-id>.md`
       (or `tickets/<mission-id>-US<n>.md` from step 2). You review it,
-      commit it, and paste it into Jira yourself — the assistant never
-      publishes for you.
+      commit it, and paste `kb ticket export tickets/<ticket-id>.md`
+      into Jira yourself — the guidance comments and the BA-internal
+      `## Definition of Ready` / `## Review record` are left out; the
+      assistant never publishes for you.
 Run `/sa-ticket-ground tickets/<ticket-id>.md` by hand only to re-ground
 a ticket after `<repo>-code` has moved.
 
@@ -221,8 +229,9 @@ directory exits cleanly with a notice — nothing to lint. For a ticket it
 checks:
 
 - Required sections present (Summary, User Story, Background,
-  Acceptance Criteria, Use cases, both Mermaid diagrams, KB context,
-  Definition of Ready).
+  Acceptance Criteria, Use cases, Business flow, KB context,
+  Definition of Ready), and no heading twice — a second
+  `## Technical grounding` fails.
 - At most 10 acceptance criteria and exactly one `As a … I want … so
   that …` story — a bigger scope is two tickets; never merge two
   conditions into one AC to fit.
@@ -236,6 +245,9 @@ checks:
   commands with `&&`) gets a warning, not a failure — state the
   observable outcome instead and keep the command in
   `## Test data & verification` or the plan.
+- ACs that are not Given/When/Then get one warning naming them; an
+  extended section the story's words call for but that is missing, or
+  one that is present but empty, gets a warning too.
 
 (See "Mission plans" above for what the mission gate checks.)
 

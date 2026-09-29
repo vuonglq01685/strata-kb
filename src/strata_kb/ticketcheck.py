@@ -316,6 +316,11 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
           load_decisions: LoadDecisions | None = None) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
+    # An SA that appends a second copy of the section instead of replacing
+    # it leaves this gate reading the stale first copy — fail before that.
+    duplicates = lintcore.check_duplicate_headings(text)
+    if duplicates:
+        return LintReport(duplicates, notes)
     section = _parse_section(text, heading)
     if section is None:
         issues.append(Issue("error", f"missing '{heading}' — run /sa-ticket-ground"))
