@@ -495,6 +495,10 @@ tiering change shows up in the report the next ticket generates.
 - `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`
   — which story is `done` / `ready` / `draft` / `to-draft` / `blocked` across
   `missions/`, ending with `Next: <us-id> — <title>`; read-only, exit 0
+- `kb ticket tidy [--tickets-dir <dir>] [--into <folder> <file>...]`
+  — move flat `tickets/*.md` into `tickets/<mission-id>/` by their
+  `> Parent mission:` line; `--into <folder>` for tickets with no parent
+  mission (an epic or feature slug). Idempotent, never overwrites
 - `kb tags [--hub <url>]` — list every tag published on the hub, i.e. the
   tags a `kb-context` block may carry
 - `kb doctor --hub <url>` — check the hub is reachable and

@@ -19,8 +19,10 @@ citation block — saved to `tickets/<folder>/<ticket-id>.md`. The output is a
    `kb ticket tidy` first — it moves any flat `tickets/*.md` into
    `tickets/<mission-id>/`; for every `unsorted:` line ask the BA for its
    folder and run `kb ticket tidy --into <folder> <file>` — then
-   `kb mission next`. Print every `note:` line of `kb mission next` to
-   the BA verbatim, before the table; never summarise it away. A
+   `kb mission next`. Print every `conflict:` and `note:` line of
+   `kb ticket tidy` to the BA as well. Print every `note:` line of
+   `kb mission next` to the BA verbatim, before the table; never
+   summarise it away. A
    `done: unknown` note means a `draft` or `ready` row may be a merged
    story — say so. Then show the table: propose the first `to-draft`
    story; the BA may pick another. A `draft` or `ready` story points at

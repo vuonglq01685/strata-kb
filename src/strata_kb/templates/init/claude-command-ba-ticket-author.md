@@ -7,7 +7,8 @@ Invoke the `ba-ticket-author` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the business need when given;
 when empty, ask for it during Intake — and, with a `missions/` directory
 present, run `kb ticket tidy` first (then `kb mission next`).
-Print every `note:` line of `kb mission next` to the BA verbatim, before
+Print every `conflict:` and `note:` line of `kb ticket tidy` to the BA
+as well. Print every `note:` line of `kb mission next` to the BA verbatim, before
 the table, and propose the first `to-draft` story; for every `unsorted:`
 line ask the BA for its folder and run
 `kb ticket tidy --into <folder> <file>`. A `blocked` story may be drafted
