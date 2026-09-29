@@ -2903,8 +2903,10 @@ def mission_next(
     ),
 ) -> None:
     """Which story next: every backlog story across missions/ as done /
-    drafted / ready / blocked. Done is derived from the hub's <repo>-svc
-    history (kb svc note rows). Read-only; exit 0 after a report."""
+    ready / draft / to-draft / blocked. Done is derived from the hub's
+    <repo>-svc history (kb svc note rows); ready and draft from the
+    ticket's Definition of Ready checklist. Read-only; exit 0 after a
+    report."""
     from strata_kb import missionnext, ticketcheck
 
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
@@ -2932,11 +2934,20 @@ def mission_next(
         parsed.append(parsed_mission)
 
     resolved_tickets = tickets_dir if tickets_dir is not None else missions_dir.parent / "tickets"
-    drafted: set[str] = set()
+    # Ticket id → (ticked, total) DoR boxes. `rglob`: tickets live at
+    # tickets/<mission-id>/<id>.md since 1.6.0 and flat before it; both read.
+    drafted: dict[str, tuple[int, int]] = {}
     if resolved_tickets.is_dir():
-        drafted = {p.stem for p in resolved_tickets.glob("*.md")}
+        for p in sorted(resolved_tickets.rglob("*.md")):
+            try:
+                ticket_text = unicodedata.normalize("NFC", p.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError) as exc:
+                notes.append(f"skipped ticket {p}: {exc} — read as draft")
+                drafted[p.stem] = (0, 0)
+                continue
+            drafted[p.stem] = missionnext.dor_counts(ticket_text)
     else:
-        notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as drafted")
+        notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as draft or ready")
 
     grounded = next((g for g in map(missionnext.grounded_doc, texts) if g), None)
     rid: str | None

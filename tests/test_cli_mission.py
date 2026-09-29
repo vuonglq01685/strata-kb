@@ -331,13 +331,21 @@ PLATFORM_NEXT = """# Platform operations
 """
 
 
-def _ba_layout(tmp_path: Path, *, drafted: tuple[str, ...] = ()) -> Path:
+DOR_FULL = "## Definition of Ready\n- [x] a\n- [x] b\n"
+DOR_PART = "## Definition of Ready\n- [x] a\n- [ ] b\n"
+
+
+def _ba_layout(
+    tmp_path: Path, *, drafted: tuple[str, ...] = (), dor: str = DOR_FULL, nested: bool = False
+) -> Path:
     root = tmp_path / "ba"
     (root / "missions").mkdir(parents=True)
     (root / "tickets").mkdir()
     (root / "missions" / "M-platform.md").write_text(PLATFORM_NEXT, encoding="utf-8")
     for us in drafted:
-        (root / "tickets" / f"{us}.md").write_text(f"# {us}\n", encoding="utf-8")
+        folder = root / "tickets" / "M-platform" if nested else root / "tickets"
+        folder.mkdir(exist_ok=True)
+        (folder / f"{us}.md").write_text(f"# {us}\n\n{dor}", encoding="utf-8")
     return root
 
 
@@ -371,7 +379,7 @@ def test_mission_next_local_svc_marks_done_and_names_next(tmp_path, monkeypatch)
     ])
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
-    assert "| M-platform-US2 | M-platform | ready |  |" in result.output
+    assert "| M-platform-US2 | M-platform | to-draft |  |" in result.output
     assert result.output.rstrip().endswith("Next: M-platform-US2 — Observability")
 
 
@@ -383,9 +391,9 @@ def test_mission_next_without_repo_id_reports_unknown_done(tmp_path):
     result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
     assert result.exit_code == 0, result.output
     assert "note: done: unknown (no repo id — pass --repo-id)" in result.output
-    assert "| M-platform-US1 | M-platform | drafted |  |" in result.output
+    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
     assert "| M-platform-US2 | M-platform | blocked | US M-platform-US1 not done |" in result.output
-    assert "Next: none ready — 1 blocked, 1 drafted, 0 done" in result.output
+    assert "Next: none to draft — 1 blocked, 0 draft, 1 ready, 0 done" in result.output
 
 
 def test_mission_next_svc_absent_on_hub_is_a_note(tmp_path, fed_hub):
@@ -398,7 +406,7 @@ def test_mission_next_svc_absent_on_hub_is_a_note(tmp_path, fed_hub):
     ])
     assert result.exit_code == 0, result.output
     assert "note: done: unknown (demo-svc not published" in result.output
-    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
+    assert "| M-platform-US1 | M-platform | to-draft |  |" in result.output
 
 
 def test_mission_next_no_hub_configured_is_a_note_not_a_red_line(tmp_path, monkeypatch):
@@ -414,7 +422,7 @@ def test_mission_next_no_hub_configured_is_a_note_not_a_red_line(tmp_path, monke
     ])
     assert result.exit_code == 0, result.output
     assert "note: done: unknown (" in result.output
-    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
+    assert "| M-platform-US1 | M-platform | to-draft |  |" in result.output
 
 
 def test_mission_next_reads_history_from_the_hub(tmp_path, fed_hub, run_git):
@@ -447,7 +455,7 @@ def test_mission_next_reads_history_from_the_hub(tmp_path, fed_hub, run_git):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["next"] == "M-platform-US2"
-    assert [s["status"] for s in data["stories"]] == ["done", "ready"]
+    assert [s["status"] for s in data["stories"]] == ["done", "to-draft"]
     assert data["notes"] == []
 
 
@@ -464,6 +472,29 @@ def test_mission_next_explicit_repo_id_and_tickets_dir(tmp_path, monkeypatch):
     ])
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
+
+
+def test_mission_next_reads_tickets_in_mission_folders(tmp_path):
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",), dor=DOR_PART, nested=True)
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | draft | DoR 1/2 ticked |" in result.output
+
+
+def test_mission_next_ticket_without_dor_section_is_draft(tmp_path):
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",), dor="")
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | draft | no Definition of Ready section |" in result.output
+
+
+def test_mission_next_unreadable_ticket_is_a_note_and_a_draft(tmp_path):
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    (root / "tickets" / "M-platform-US1.md").write_bytes(b"\xff\xfe# bad\n")
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "note: skipped ticket" in result.output
+    assert "| M-platform-US1 | M-platform | draft | no Definition of Ready section |" in result.output
 
 
 def test_mission_next_bad_dirs_are_red_lines(tmp_path):
