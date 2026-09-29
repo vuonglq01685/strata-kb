@@ -630,6 +630,30 @@ def test_mission_heading_unknown_service_is_still_an_error(code_doc):
     assert any("unknown id 'svc.nope'" in e for e in errors(report))
 
 
+def test_mission_heading_grounded_on_list_grounds_on_the_code_entry(code_doc):
+    kb_dir, rev = code_doc
+    text = MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + (
+        f"- Grounded on: demo:demo-code @ {rev}, demo:demo-svc @ {rev}\n"
+        "\n"
+        "| Order | Service | Depends on | Why this order |\n"
+        "|---|---|---|---|\n"
+        "| 1 | svc.airspace-service | — | base |\n"
+    ) + "\n"
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert errors(report) == [], report.render("Grounding")
+    assert any("demo-code read from" in n for n in notes(report))
+
+
+def test_ticket_heading_grounded_on_list_is_still_rejected(code_doc):
+    kb_dir, rev = code_doc
+    report = run(
+        ticket(grounding(rev, **{"Grounded on": "demo:demo-code @ {rev}, demo:demo-svc @ {rev}"})),
+        kb_dir,
+    )
+    assert len(errors(report)) == 1
+    assert "Grounded on:" in errors(report)[0]
+
+
 # --- compose facts: Volumes / Healthchecks / Devices (spec 2026-09-23) ----
 
 TWO_SVC = "svc.airspace-service, svc.postgres"

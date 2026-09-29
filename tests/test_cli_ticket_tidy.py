@@ -91,6 +91,13 @@ def test_cli_tidy_missing_dir_is_a_red_line(tmp_path):
     assert result.exit_code == 1
 
 
+def test_cli_tidy_files_without_into_is_a_red_line(tmp_path):
+    d = _tickets(tmp_path)
+    result = runner.invoke(app, ["ticket", "tidy", "--tickets-dir", str(d), str(d / "legacy-login.md")])
+    assert result.exit_code == 1
+    assert "--into" in result.output
+
+
 def test_cli_tidy_into_skips_a_missing_file_and_still_reports_the_rest(tmp_path):
     d = _tickets(tmp_path)
     result = runner.invoke(app, [

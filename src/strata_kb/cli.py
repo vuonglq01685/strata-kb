@@ -2470,8 +2470,8 @@ def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path 
     as missing. The default is fail-soft: a ticket under tickets/ (flat or
     tickets/<mission-id>/) gets the missions/ next to that tickets/
     directory when that exists, else None (the engine notes the skipped
-    checks). Gated on the parent's name so an unrelated missions/ next to
-    some other file never binds."""
+    checks). Gated on the nearest ancestor named tickets so an unrelated
+    missions/ next to some other file never binds."""
     if missions_dir is not None:
         if not missions_dir.is_dir():
             typer.secho(
@@ -2618,6 +2618,9 @@ def ticket_tidy(
         typer.secho(
             f"--tickets-dir '{tickets_dir}' does not exist or is not a directory", fg=typer.colors.RED
         )
+        raise typer.Exit(1)
+    if files and into is None:
+        typer.secho("FILES need --into <folder>", fg=typer.colors.RED)
         raise typer.Exit(1)
     if into is not None:
         if not tickettidy.FOLDER_RE.match(into):
@@ -2996,9 +2999,18 @@ def mission_next(
     resolved_tickets = tickets_dir if tickets_dir is not None else missions_dir.parent / "tickets"
     # Ticket id → (ticked, total) DoR boxes. `rglob`: tickets live at
     # tickets/<mission-id>/<id>.md since 1.6.0 and flat before it; both read.
+    # A stem present under both: sorted() visits the nested copy first
+    # (a strict prefix of the flat path's second part sorts before it) —
+    # that first copy wins; a repeated stem is noted and skipped rather
+    # than silently overwriting it.
     drafted: dict[str, tuple[int, int]] = {}
+    ticket_paths: dict[str, Path] = {}
     if resolved_tickets.is_dir():
         for p in sorted(resolved_tickets.rglob("*.md")):
+            if p.stem in ticket_paths:
+                notes.append(f"duplicate ticket {p.stem}: read {ticket_paths[p.stem]}, ignored {p}")
+                continue
+            ticket_paths[p.stem] = p
             try:
                 ticket_text = unicodedata.normalize("NFC", p.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError) as exc:

@@ -1175,7 +1175,19 @@ def test_a_filled_mission_reports_no_placeholder_errors(
     assert not [m for m in _errors(report) if "only placeholder" in m]
 
 
-# --- check 13: Grounded on parseable ---
+# --- check 14: Grounded on parseable ---
+
+
+def test_lint_wires_the_grounded_on_check_as_a_warning(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        extra={"## Services & order": "- Grounded on: a-code (rev 1234567)\n"},
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert (
+        "no parseable 'Grounded on: <repo>:<doc> @ <rev>' line in "
+        "'## Services & order' — kb mission next cannot derive done"
+    ) in _warnings(report)
 
 
 def test_grounded_on_list_is_parseable_and_silent():

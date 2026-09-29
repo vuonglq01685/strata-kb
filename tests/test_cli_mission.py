@@ -488,6 +488,22 @@ def test_mission_next_ticket_without_dor_section_is_draft(tmp_path):
     assert "| M-platform-US1 | M-platform | draft | no Definition of Ready section |" in result.output
 
 
+def test_mission_next_duplicate_ticket_stem_nested_wins_with_a_note(tmp_path):
+    # A flat tickets/<id>.md and a nested tickets/<mission>/<id>.md with the
+    # same stem: the nested copy (read first) wins; the flat one is noted
+    # and skipped, never silently overwriting it.
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",), dor=DOR_PART, nested=True)
+    nested_path = root / "tickets" / "M-platform" / "M-platform-US1.md"
+    flat_path = root / "tickets" / "M-platform-US1.md"
+    flat_path.write_text(f"# M-platform-US1\n\n{DOR_FULL}", encoding="utf-8")
+
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | draft | DoR 1/2 ticked |" in result.output
+    assert f"note: duplicate ticket M-platform-US1: read {nested_path}, ignored {flat_path}" in result.output
+
+
 def test_mission_next_unreadable_ticket_is_a_note_and_a_draft(tmp_path):
     root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
     (root / "tickets" / "M-platform-US1.md").write_bytes(b"\xff\xfe# bad\n")

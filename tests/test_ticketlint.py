@@ -1344,6 +1344,7 @@ def test_an_unquantified_nfr_row_fails(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert any("no measurable Target" in m for m in _errors(report))
+    assert any("give a number from the KB, OPEN(<owner>), or 'N/A — <reason>'" in m for m in _errors(report))
 
 
 def test_a_definition_of_ready_with_no_rows_fails(

@@ -1,10 +1,11 @@
 """`kb mission next` engine — which story is done, ready, draft, to-draft or blocked.
 
 Read-only query over every mission plan in a BA repo (spec
-2026-09-24-mission-next-greenfield-design §3). Inputs are text and sets;
-`cli.py`'s `kb mission next` reads the files and the hub. `done` is derived
-from the hub's `<repo>-svc` history tables (`kb svc note` rows), never from a
-status column — a hand-maintained status rots the moment a ticket merges.
+2026-09-24-mission-next-greenfield-design §3). Inputs are text, a dict of
+DoR counts and a set; `cli.py`'s `kb mission next` reads the files and the
+hub. `done` is derived from the hub's `<repo>-svc` history tables (`kb svc
+note` rows), never from a status column — a hand-maintained status rots the
+moment a ticket merges.
 
 No filesystem, CLI or MCP imports here — the same split `ticketcheck.py`
 and `missionlint.py` keep.
@@ -47,7 +48,7 @@ class StoryStatus:
     mission_id: str
     title: str
     status: str                   # done | ready | draft | to-draft | blocked
-    reasons: tuple[str, ...]      # blocked only
+    reasons: tuple[str, ...]      # blocked / draft
 
 
 ParsedMission = tuple[str | None, list[Story], DecisionTable]

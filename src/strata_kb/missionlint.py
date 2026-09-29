@@ -336,7 +336,7 @@ def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
 
 
 def check_grounded_on(text: str) -> list[Issue]:
-    """Check 13. `kb mission next` derives `done` from the `-code` doc named
+    """Check 14. `kb mission next` derives `done` from the `-code` doc named
     on the `Grounded on:` line. A line it cannot parse is a silent
     `done: unknown` there, so name it here. Warning, not error: a mission is
     authored before the SA grounds it."""

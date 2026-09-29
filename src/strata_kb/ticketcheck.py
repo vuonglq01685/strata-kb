@@ -348,7 +348,7 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
         issues.append(Issue("error", f"missing '{heading}' — run /sa-ticket-ground"))
         return LintReport(issues, notes)
 
-    grounded = _grounded_on(section, issues)
+    grounded = _grounded_on(section, heading, issues)
     if grounded is None:
         return LintReport(issues, notes)
     repo, doc_id, rev, line = grounded
@@ -383,11 +383,28 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
     return LintReport(issues, notes)
 
 
-def _grounded_on(section: _Section, issues: list[Issue]) -> tuple[str | None, str, str, int] | None:
+def _grounded_on(section: _Section, heading: str, issues: list[Issue]) -> tuple[str | None, str, str, int] | None:
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] != "Grounded on" or line[:1].isspace():
             continue
         lineno = section.first_line + i
+        if heading == SERVICES_HEADING:
+            # Mission section: the SA may list several `<repo>:<doc> @ <rev>`
+            # entries on one line (the -code and -svc docs); ground on the
+            # -code entry, else the first — same rule as missionnext.grounded_doc.
+            entries = grounded_entries(line)
+            if not entries:
+                issues.append(
+                    Issue(
+                        "error",
+                        "'Grounded on:' must read `Grounded on: <repo-id>:<doc-id> @ "
+                        f"<revision>` (revision = the -code manifest's `revision`) "
+                        f"(line {lineno})",
+                    )
+                )
+                return None
+            repo, doc, rev = next((e for e in entries if e[1].endswith("-code")), entries[0])
+            return repo, doc, rev, lineno
         m = GROUNDED_ON_RE.match(line.strip())
         if m is None:
             issues.append(
