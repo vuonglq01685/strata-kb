@@ -2629,9 +2629,16 @@ def ticket_tidy(
         if not files:
             typer.secho("--into needs at least one FILE", fg=typer.colors.RED)
             raise typer.Exit(1)
-        moves = tickettidy.into_moves(tickets_dir, into, list(files))
-        unsorted: list[Path] = []
+        resolved_dir = tickets_dir.resolve()
         notes: list[str] = []
+        flat_files: list[Path] = []
+        for f in files:
+            if f.is_file() and f.resolve().parent == resolved_dir:
+                flat_files.append(f)
+            else:
+                notes.append(f"skipped {f}: not a flat file directly under {tickets_dir}")
+        moves = tickettidy.into_moves(tickets_dir, into, flat_files)
+        unsorted: list[Path] = []
     else:
         moves, unsorted, notes = tickettidy.plan_moves(tickets_dir)
     done, conflicts = tickettidy.apply_moves(moves)

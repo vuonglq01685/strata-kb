@@ -43,14 +43,21 @@ def into_moves(tickets_dir: Path, folder: str, files: list[Path]) -> list[tuple[
 
 def apply_moves(moves: list[tuple[Path, Path]]) -> tuple[list[tuple[Path, Path]], list[str]]:
     """Rename each (src, dst), creating dst's folder. Returns (done,
-    conflicts); an existing dst leaves src where it is."""
+    conflicts); an existing dst leaves src where it is. An `OSError` while
+    creating dst's folder or renaming (missing src, dst's parent already a
+    file, cross-device, permissions, …) is also a conflict, not a crash —
+    `rename` is atomic, so a raised error means src never moved."""
     done: list[tuple[Path, Path]] = []
     conflicts: list[str] = []
     for src, dst in moves:
         if dst.exists():
             conflicts.append(f"conflict: {dst} already exists — left {src} in place")
             continue
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        src.rename(dst)
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+        except OSError as exc:
+            conflicts.append(f"conflict: {src} → {dst} failed: {exc} — left {src} in place")
+            continue
         done.append((src, dst))
     return done, conflicts

@@ -89,3 +89,45 @@ def test_cli_tidy_into_rejects_a_bad_folder_name(tmp_path):
 def test_cli_tidy_missing_dir_is_a_red_line(tmp_path):
     result = runner.invoke(app, ["ticket", "tidy", "--tickets-dir", str(tmp_path / "nope")])
     assert result.exit_code == 1
+
+
+def test_cli_tidy_into_skips_a_missing_file_and_still_reports_the_rest(tmp_path):
+    d = _tickets(tmp_path)
+    result = runner.invoke(app, [
+        "ticket", "tidy", "--tickets-dir", str(d), "--into", "epic-login",
+        str(d / "legacy-login.md"), str(d / "nope.md"),
+    ])
+    assert result.exit_code == 0, result.output
+    assert f"moved: {d / 'legacy-login.md'} → {d / 'epic-login' / 'legacy-login.md'}" in result.output
+    assert (d / "epic-login" / "legacy-login.md").is_file()
+    assert "note: skipped" in result.output
+    assert "nope.md" in result.output
+
+
+def test_cli_tidy_into_refuses_a_directory_and_a_filed_ticket(tmp_path):
+    d = _tickets(tmp_path)
+    (d / "M-platform").mkdir()
+    (d / "M-platform" / "M-platform-US3.md").write_text(PARENTED, encoding="utf-8")
+    result = runner.invoke(app, [
+        "ticket", "tidy", "--tickets-dir", str(d), "--into", "epic",
+        str(d / "M-platform"), str(d / "M-platform" / "M-platform-US3.md"),
+    ])
+    assert result.exit_code == 0, result.output
+    assert (d / "M-platform").is_dir()
+    assert (d / "M-platform" / "M-platform-US3.md").is_file()
+    assert result.output.count("note: skipped") == 2
+    assert "moved:" not in result.output
+
+
+def test_apply_moves_reports_an_os_error_and_continues(tmp_path):
+    d = _tickets(tmp_path)
+    (d / "M-platform").write_text("blocking file, not a directory", encoding="utf-8")
+    moves, _u, _n = tickettidy.plan_moves(d)
+    done, conflicts = tickettidy.apply_moves(moves)
+    assert done == []
+    assert len(conflicts) == 2
+    for c in conflicts:
+        assert c.startswith("conflict:")
+        assert "failed:" in c
+    assert (d / "M-platform-US1.md").exists()
+    assert (d / "M-platform-US2.md").exists()
