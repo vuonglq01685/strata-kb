@@ -1,4 +1,4 @@
-"""`kb mission next` engine — which story is done, drafted, ready or blocked.
+"""`kb mission next` engine — which story is done, ready, draft, to-draft or blocked.
 
 Read-only query over every mission plan in a BA repo (spec
 2026-09-24-mission-next-greenfield-design §3). Inputs are text and sets;
@@ -46,7 +46,7 @@ class StoryStatus:
     us_id: str
     mission_id: str
     title: str
-    status: str                   # done | drafted | ready | blocked
+    status: str                   # done | ready | draft | to-draft | blocked
     reasons: tuple[str, ...]      # blocked only
 
 
@@ -150,6 +150,25 @@ def done_ids_from_history(history_l2: str | None) -> set[str]:
     return out
 
 
+DOR_HEADING = "## Definition of Ready"
+
+
+def dor_counts(text: str) -> tuple[int, int]:
+    """(ticked, total) checkboxes under `## Definition of Ready` of one
+    ticket; (0, 0) when the section is absent. Ticking is the BA's act at
+    review time, so a fully ticked list is the BA saying "ready for Dev" —
+    `statuses` trusts it and does not re-run lint."""
+    body = lintcore.section_body(text, DOR_HEADING)
+    if body is None:
+        return (0, 0)
+    marks = [
+        m.group("mark")
+        for line in body.splitlines()
+        if (m := lintcore.CHECKBOX_STATE_RE.match(line.strip()))
+    ]
+    return (sum(1 for k in marks if k != " "), len(marks))
+
+
 def _mission_order(stories: list[Story]) -> list[Story]:
     """Sequencing row order first, then stories the table omits, in
     backlog order (stable sort on the 'absent' flag)."""
@@ -160,13 +179,15 @@ def _mission_order(stories: list[Story]) -> list[Story]:
 
 
 def statuses(
-    missions: list[ParsedMission], drafted: set[str], done: set[str] | None
+    missions: list[ParsedMission], drafted: dict[str, tuple[int, int]], done: set[str] | None
 ) -> list[StoryStatus]:
     """One `StoryStatus` per backlog story, first rule that matches:
-    done (id in `done`) → drafted (ticket file exists) → ready (no file,
-    every dependency done, every D-row blocking it DECIDED) → blocked,
-    with one reason per cause. `done=None` means the hub could not answer:
-    nothing is done, and the caller says why in a note."""
+    done (id in `done`) → ready (ticket file, every DoR box ticked) → draft
+    (ticket file, some box unticked, or no DoR section) → to-draft (no
+    file, every dependency done, every D-row blocking it DECIDED) →
+    blocked, with one reason per cause. `drafted` maps a ticket id to its
+    `dor_counts`. `done=None` means the hub could not answer: nothing is
+    done, and the caller says why in a note."""
     known = {s.us_id for _m, stories, _d in missions for s in stories}
     done_set = done or set()
     out: list[StoryStatus] = []
@@ -183,7 +204,12 @@ def statuses(
                 out.append(StoryStatus(s.us_id, s.mission_id, s.title, "done", ()))
                 continue
             if s.us_id in drafted:
-                out.append(StoryStatus(s.us_id, s.mission_id, s.title, "drafted", ()))
+                ticked, total = drafted[s.us_id]
+                if total and ticked == total:
+                    out.append(StoryStatus(s.us_id, s.mission_id, s.title, "ready", ()))
+                    continue
+                why = f"DoR {ticked}/{total} ticked" if total else "no Definition of Ready section"
+                out.append(StoryStatus(s.us_id, s.mission_id, s.title, "draft", (why,)))
                 continue
             reasons: list[str] = []
             for dep in s.depends_on:
@@ -193,23 +219,23 @@ def statuses(
             for d, blocks in blocking:
                 if s.us_id in blocks and d.status.strip().upper() != DECIDED:
                     reasons.append(f"{d.id} {d.status.strip() or 'OPEN'} (owner: {d.owner or '?'})")
-            status = "blocked" if reasons else "ready"
+            status = "blocked" if reasons else "to-draft"
             out.append(StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons)))
     return out
 
 
 def next_story(results: list[StoryStatus]) -> StoryStatus | None:
-    return next((r for r in results if r.status == "ready"), None)
+    return next((r for r in results if r.status == "to-draft"), None)
 
 
 def _next_line(results: list[StoryStatus]) -> str:
     nxt = next_story(results)
     if nxt is not None:
         return f"Next: {nxt.us_id} — {nxt.title}"
-    count = {k: sum(1 for r in results if r.status == k) for k in ("blocked", "drafted", "done")}
+    count = {k: sum(1 for r in results if r.status == k) for k in ("blocked", "draft", "ready", "done")}
     return (
-        f"Next: none ready — {count['blocked']} blocked, "
-        f"{count['drafted']} drafted, {count['done']} done"
+        f"Next: none to draft — {count['blocked']} blocked, {count['draft']} draft, "
+        f"{count['ready']} ready, {count['done']} done"
     )
 
 
