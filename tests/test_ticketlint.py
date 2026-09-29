@@ -72,9 +72,11 @@ def _default_sections(block: str) -> dict[str, str]:
             "level."
         ),
         "## Acceptance Criteria": (
-            "- [ ] AC1: Show airspace type and level per "
+            "- [ ] AC1: Given a restrictive airspace polygon, when the "
+            "dispatcher clicks it, then its type and level are shown per "
             "[arinc-kb:arinc-424 §5.3]\n"
-            "- [ ] AC2: Show ICAO designation per [icao-kb:icao-annex-2 §1.1]"
+            "- [ ] AC2: Given the same polygon, when the panel opens, then "
+            "the ICAO designation is shown per [icao-kb:icao-annex-2 §1.1]"
         ),
         "## Use cases": (
             "### Main flow\n"
@@ -314,8 +316,134 @@ def test_zero_ac_items_errors(fed_hub: Path, golden_block: str):
 # --- check 4: mermaid diagrams ---
 
 
-def test_sequence_diagram_missing_fence_errors(fed_hub: Path, golden_block: str):
+def test_sequence_diagram_placeholder_warns(fed_hub: Path, golden_block: str):
+    """Optional since 1.5.0: a placeholder is a warning, not a failure."""
     text = _build_ticket(golden_block, overrides={"## Sequence diagram": "TBD."})
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    assert any("Sequence diagram' is a placeholder" in w for w in _warnings(report))
+
+
+def test_sequence_diagram_absent_passes_clean(fed_hub: Path, golden_block: str):
+    report = ticketlint.lint(
+        _build_ticket(golden_block, skip="## Sequence diagram"), _hub(fed_hub)
+    )
+    assert report.passed is True
+    assert not any("Sequence diagram" in w for w in _warnings(report))
+
+
+def test_sequence_diagram_na_with_reason_passes_clean(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block, overrides={"## Sequence diagram": "N/A — single actor, no integration."}
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    assert not any("Sequence diagram" in w for w in _warnings(report))
+
+
+def test_sequence_diagram_absent_but_story_names_an_integration_warns(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block,
+        skip="## Sequence diagram",
+        overrides={"## Summary": "Dispatchers need the NOTAM integration to push airspace details."},
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    assert any(
+        "mentions 'integrat' but has no '## Sequence diagram'" in w
+        for w in _warnings(report)
+    )
+
+
+def test_extended_section_absent_without_trigger_is_silent(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block,
+        skip="## Non-functional requirements",
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("Non-functional requirements" in w for w in _warnings(report))
+
+
+def test_extended_section_absent_with_trigger_warns(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block,
+        skip="## Non-functional requirements",
+        overrides={"## Summary": "Bulk import of 50k airspace records nightly."},
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any(
+        "mentions 'Bulk' but has no '## Non-functional requirements'" in w
+        for w in _warnings(report)
+    )
+
+
+def test_extended_section_present_but_empty_warns(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(golden_block, overrides={"## UI / presentation spec": ""})
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    assert any("UI / presentation spec' is empty" in w for w in _warnings(report))
+
+
+def test_non_gwt_acceptance_criteria_warn_once(fed_hub: Path, golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={
+            "## Acceptance Criteria": (
+                "- [ ] AC1: Show airspace type and level per [arinc-kb:arinc-424 §5.3]\n"
+                "- [ ] AC2: Given a polygon, when clicked, then the ICAO designation "
+                "is shown per [icao-kb:icao-annex-2 §1.1]"
+            )
+        },
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert report.passed is True
+    hits = [w for w in _warnings(report) if "are not Given/When/Then" in w]
+    assert len(hits) == 1
+    assert "1 of 2" in hits[0] and "(AC1)" in hits[0]
+
+
+def test_duplicate_heading_errors(fed_hub: Path, golden_block: str):
+    text = _build_ticket(golden_block) + (
+        "\n## Technical grounding\n- Grounded on: demo:demo-code @ ffffff\n"
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any(
+        "heading '## Technical grounding' appears 2 times" in e
+        for e in _errors(report)
+    )
+
+
+def test_export_body_drops_internal_sections_and_comments(golden_block: str):
+    text = _build_ticket(
+        golden_block,
+        overrides={"## Summary": "<!-- guidance -->\nDispatchers need details."},
+    )
+    out = ticket.export_body(text)
+    assert "## Definition of Ready" not in out
+    assert "## Review record" not in out
+    assert "guidance" not in out
+    for heading in ("## KB context", "## Dependencies", "## Technical grounding"):
+        assert heading in out
+    assert out.startswith(DEFAULT_TITLE)
+
+
+def test_sequence_diagram_missing_fence_errors_when_filled_with_prose(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(
+        golden_block,
+        overrides={"## Sequence diagram": "Dispatcher asks, system answers."},
+    )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is False
     assert any("Sequence diagram" in msg for msg in _errors(report))
@@ -499,10 +627,10 @@ def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
         golden_block,
         overrides={
             "## Acceptance Criteria": (
-                "- [ ] AC1: Show airspace type per "
-                "[arinc-kb:arinc-424 §5.3].\n"
-                "- [ ] AC2: Show ICAO designation per "
-                "[icao-kb:icao-annex-2 §1.1]"
+                "- [ ] AC1: Given a polygon, when clicked, then its type "
+                "is shown per [arinc-kb:arinc-424 §5.3].\n"
+                "- [ ] AC2: Given a polygon, when clicked, then the ICAO "
+                "designation is shown per [icao-kb:icao-annex-2 §1.1]"
             )
         },
     )
@@ -977,8 +1105,8 @@ def test_missing_recommended_section_warns_but_passes(
 def test_legacy_nine_section_ticket_still_passes(
     fed_hub: Path, golden_block: str
 ):
-    """A pre-upgrade ticket (only the 9 required sections) keeps DoR: PASS
-    — the new checks are warnings, REQUIRED_HEADINGS is untouched."""
+    """A pre-upgrade ticket (only the required sections) keeps DoR: PASS
+    — the new checks are warnings."""
     sections = _default_sections(golden_block)
     parts = [DEFAULT_TITLE, ""]
     for heading in ticket.REQUIRED_HEADINGS:
@@ -990,8 +1118,10 @@ def test_legacy_nine_section_ticket_still_passes(
     # RECOMMENDED_HEADINGS warnings + 1 missing-Review-record warning + 3
     # unticked-DoR-box warnings (the default '## Definition of Ready' body
     # from _default_sections ships 3 unticked rows, same as the golden
-    # ticket — see test_unticked_definition_of_ready_boxes_are_a_warning_only).
-    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS) + 1 + 3
+    # ticket — see test_unticked_definition_of_ready_boxes_are_a_warning_only)
+    # + 1 extended-section trigger: the ACs say 'shown' and there is no
+    # '## UI / presentation spec'.
+    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS) + 1 + 3 + 1
 
 
 def test_recommended_headings_constant_is_not_in_required():
@@ -1010,7 +1140,7 @@ def test_template_carries_every_recommended_heading():
         / "ticket-template.md"
     )
     content = template_path.read_text(encoding="utf-8")
-    for heading in ticket.RECOMMENDED_HEADINGS:
+    for heading in ticket.RECOMMENDED_HEADINGS + ticket.EXTENDED_HEADINGS:
         assert content.count(heading) == 1, heading
     assert "docs/ac-quality.md" in content
 

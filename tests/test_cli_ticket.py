@@ -319,3 +319,23 @@ def test_lint_exits_1_when_the_only_failure_is_a_broken_ref_not_stale(
     )
     assert result.exit_code == 1, result.output
     assert "DoR: FAIL" in result.output
+
+
+def test_export_writes_tracker_body(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    ticket_path = tmp_path / "tal.md"
+    ticket_path.write_text(_build_ticket(block), encoding="utf-8")
+
+    result = runner.invoke(app, ["ticket", "export", str(ticket_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "## KB context" in result.output
+    assert "## Definition of Ready" not in result.output
+    assert "## Review record" not in result.output
+
+    out = tmp_path / "jira.md"
+    result = runner.invoke(
+        app, ["ticket", "export", str(ticket_path), "--out", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    assert out.read_text(encoding="utf-8").startswith("# TAL-1580")

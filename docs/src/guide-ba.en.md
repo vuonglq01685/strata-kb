@@ -115,11 +115,11 @@ nine-step pipeline; your job is steps 1, 3 and 9.
   1 Intake            you describe the need
   2 Parent mission    optional — name the mission this story belongs to
   3 Ground            kb_search; YOU pick which sections apply
-  4 Draft             story, ACs, use cases, two diagrams
+  4 Draft             story, Given/When/Then ACs, use cases, business flow
   5 Pin               kb_context_new embeds the pinned block
   6 Lint              kb ticket lint until DoR: PASS
   7 Ground technical  the SA fills Technical grounding; kb ticket check
-  8 Maturity review   two independent reviews, up to 3 rounds
+  8 Maturity review   two independent reviews, one round by default
   9 Review → save     you read it, commit it, paste it into the tracker
 ```
 
@@ -142,10 +142,20 @@ implementation — rests on this choice.
 
 ## 3.3 Drafting
 
-The agent fills the ticket template: summary, user story, background, acceptance
-criteria, use cases, and two Mermaid diagrams (a sequence diagram and a business
-flow). Every claim that touches a standard carries a `[doc-id §section]`
-citation.
+The agent fills the template's **core** sections: summary, user story,
+background, acceptance criteria, use cases, a business-flow diagram,
+dependencies, out of scope, open questions. Every acceptance criterion is one
+Given/When/Then — a starting state, one action, one observable outcome — and
+every claim that touches a standard carries a `[doc-id §section]` citation.
+
+The **extended** sections are opt-in and the agent keeps one only when the
+story needs it: a sequence diagram when the interaction spans more than one
+system (an integration, a callback), non-functional requirements when the story
+touches load or timing, a UI spec when there is a screen, test data when records
+or files are processed. Anything else is deleted. Lint warns when the story's
+own words call for a section that is missing; you answer with the section or
+`N/A — <reason>`. The code-level sequence — services, tables, messages — is
+the developer's to draw at design time, not the BA's to guess.
 
 ## 3.4 Pinning
 
@@ -164,8 +174,11 @@ check."
 
 Once lint passes, the agent runs two independent reviews against
 `docs/review-rubric.md` — one scoring **Business coverage**, one scoring **Dev
-implementability**. It applies fixes and reviews again, up to three rounds or
-until both axes reach 4 or higher.
+implementability**. It applies the fixes, re-lints, and records the round. For
+a ticket that is the whole review by default: what is still open is handed to
+you as owned questions, and a score below 4 is reported, not chased. Ask for
+more rounds when you want them; a ticket with more than six acceptance criteria
+gets them automatically, up to three rounds or until both axes reach 4.
 
 A gap it cannot close itself becomes an owned open question, written
 `OPEN(<owner>)`, rather than a guess. The outcome lands in the ticket's
@@ -177,7 +190,11 @@ know.
 ## 3.7 Your review
 
 The draft lands in `tickets/<ticket-id>.md`. You read it, commit it, and paste it
-into the tracker. The assistant never does that for you.
+into the tracker. The assistant never does that for you. What you paste is
+`kb ticket export tickets/<ticket-id>.md`: the same ticket without the template's
+guidance comments and without the two BA-internal sections, `## Definition of
+Ready` and `## Review record`. `## KB context`, `## Dependencies` and
+`## Technical grounding` stay — the developer reads them.
 
 ## 3.8 SA grounds the technical half
 
@@ -337,7 +354,10 @@ The section reference itself, spelled the way a real citation is:
 ## 6.1 Errors (the gate fails)
 
 - **Required sections present**: Summary, User Story, Background, Acceptance
-  Criteria, Use cases, both Mermaid diagrams, KB context, Definition of Ready.
+  Criteria, Use cases, Business flow, KB context, Definition of Ready.
+- **No heading appears twice.** A second `## Technical grounding` — an SA
+  appending instead of replacing — fails the gate; the tool reads only the
+  first copy, so a duplicate would otherwise pass a stale section.
 - **At most 10 acceptance criteria.** More than ten `- [ ]` items under
   `## Acceptance Criteria` fails the gate. Split the ticket — merging two
   conditions into one AC to fit under the cap is the thing the rule exists to
@@ -361,6 +381,9 @@ to bracket it.
 | A stale ref | The cited section was amended upstream. Still resolves, so not broken — but you should look. |
 | A pinned ref the body never cites | The pin may be background the ticket did not need to quote |
 | An acceptance criterion prescribes a shell command (`docker compose …`, `curl …`, `grep …`, or two commands chained with `&&`) | The tool flags the shape; whether the AC should instead state the observable outcome is your call — the command itself belongs in `## Test data & verification` or the plan |
+| Acceptance criteria that are not Given/When/Then (one line naming them) | The shape is the standard; the error-level floor is still a measurable value or an owned `OPEN(<owner>)`, so an older ticket passes with this one line |
+| The story mentions load, a screen, records, or an integration and the matching extended section is missing | A keyword hit; answer with the section or `N/A — <reason>` |
+| An extended section is present but empty, or `## Sequence diagram` is a placeholder | Delete it, fill it, or write `N/A — <reason>` |
 
 ## 6.3 Making staleness fail
 

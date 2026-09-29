@@ -60,11 +60,102 @@ _LEADING_PREFIX_RE = re.compile(r"^(?:sudo|\$|[A-Za-z_]\w*=\S*)\s+")
 _FILL_EXEMPT: frozenset[str] = frozenset(
     {
         "## KB context",          # parsed by check_context_block
-        "## Sequence diagram",    # check_diagram
         "## Business flow",       # check_diagram
         "## Definition of Ready", # _check_dor_checklist, below
     }
 )
+
+# 'N/A — <reason>' at the head of a section body: the BA looked and
+# decided the section does not apply. Bare 'N/A' is `acquality.is_unfilled`
+# instead — a verdict without a reason is a placeholder.
+_NA_RE = re.compile(r"^\s*n/?a\b", re.I)
+
+_SEQUENCE_HEADING = "## Sequence diagram"
+_TRIGGER_SCAN_HEADINGS: tuple[str, ...] = (
+    "## Summary",
+    "## User Story",
+    "## Acceptance Criteria",
+    "## Use cases",
+)
+
+
+def _check_sequence_diagram(text: str) -> list[Issue]:
+    """Optional since 1.5.0. Absent: nothing. Present and 'N/A — <reason>':
+    nothing. Present but a placeholder: warning. Present with content: the
+    same mermaid gate as '## Business flow' (error)."""
+    body = lintcore.section_body(text, _SEQUENCE_HEADING)
+    if body is None:
+        return []
+    visible = lintcore.visible_body(body)
+    if _NA_RE.match(visible) and not acquality.is_unfilled(visible):
+        return []
+    if acquality.is_unfilled(visible):
+        return [
+            Issue(
+                "warning",
+                f"'{_SEQUENCE_HEADING}' is a placeholder — draw it, write "
+                "'N/A — <reason>', or delete the section (the Dev draws one "
+                "at dev-design when the interaction spans systems)",
+            )
+        ]
+    return lintcore.check_diagram(text, _SEQUENCE_HEADING, ("sequenceDiagram",))
+
+
+def _check_extended_sections(text: str) -> list[Issue]:
+    """Extended sections are opt-in: absent is fine unless the BA's own
+    words (Summary, Story, ACs, Use cases) call for one — then a warning
+    names the trigger. Present but empty is a warning, as for RECOMMENDED."""
+    present = {line.strip() for line in lintcore._visible_text(text).splitlines()}
+    scan = " ".join(
+        lintcore.visible_body(body)
+        for h in _TRIGGER_SCAN_HEADINGS
+        if (body := lintcore.section_body(text, h)) is not None
+    )
+    issues: list[Issue] = []
+    for heading in ticket.EXTENDED_HEADINGS:
+        if heading in present:
+            body = lintcore.section_body(text, heading)
+            if body is not None and not lintcore.visible_body(body):
+                issues.append(
+                    Issue(
+                        "warning",
+                        f"'{heading}' is empty — fill it, write "
+                        "'N/A — <reason>', or delete the section",
+                    )
+                )
+            continue
+        m = ticket.EXTENDED_TRIGGERS[heading].search(scan)
+        if m is not None:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"the story mentions '{m.group(0)}' but has no "
+                    f"'{heading}' — add it, or 'N/A — <reason>'",
+                )
+            )
+    return issues
+
+
+def _check_ac_gwt(ac_items: list[str]) -> list[Issue]:
+    """One warning naming the ACs that are not Given/When/Then. The shape
+    is the AC standard since 1.5.0 (docs/ac-quality.md); `ac_substance`
+    still accepts a measurable value or an owned OPEN as the error-level
+    floor, so a legacy ticket passes with this one extra line."""
+    plain = [
+        (m.group(1) if (m := _AC_ID_RE.match(item.strip())) else item.strip()[:24])
+        for item in ac_items
+        if not acquality.GWT_RE.search(acquality._AC_ID_RE.sub("", item, count=1))
+    ]
+    if not plain:
+        return []
+    return [
+        Issue(
+            "warning",
+            f"{len(plain)} of {len(ac_items)} acceptance criteria are not "
+            f"Given/When/Then ({', '.join(plain)}) — write 'Given <state>, "
+            "when <action>, then <observable outcome>' — see docs/ac-quality.md",
+        )
+    ]
 
 
 def _check_required_filled(text: str) -> list[Issue]:
@@ -541,6 +632,7 @@ def lint(
     notes: list[str] = []
     issues += lintcore.check_title(text)
     issues += lintcore.check_headings(text, ticket.REQUIRED_HEADINGS)
+    issues += lintcore.check_duplicate_headings(text)
     issues += _check_required_filled(text)
     issues += _check_story(text)
     issues += _check_story_count(text)
@@ -551,9 +643,7 @@ def lint(
     issues += _check_ac_ids(ac_items)
     issues += _check_ac_substance(ac_items)
 
-    issues += lintcore.check_diagram(
-        text, "## Sequence diagram", ("sequenceDiagram",)
-    )
+    issues += _check_sequence_diagram(text)
     issues += lintcore.check_diagram(text, "## Business flow", ("flowchart",))
 
     ctx_issues, _ctx = lintcore.check_context_block(
@@ -565,9 +655,11 @@ def lint(
 
     issues += _check_ac_weasel(ac_items)
     issues += _check_ac_shell(ac_items)
+    issues += _check_ac_gwt(ac_items)
     issues += lintcore.check_recommended_sections(
         text, ticket.RECOMMENDED_HEADINGS
     )
+    issues += _check_extended_sections(text)
     issues += _check_owned_unknowns(text)
     issues += _check_nfr_targets(text)
     issues += _check_dor_checklist(text)

@@ -353,6 +353,7 @@ def lint(
     notes += id_notes
 
     issues += lintcore.check_headings(text, mission.REQUIRED_MISSION_HEADINGS)
+    issues += lintcore.check_duplicate_headings(text)
     issues += _check_required_filled(text)
 
     issues += lintcore.check_diagram(

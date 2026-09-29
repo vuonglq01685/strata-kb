@@ -113,11 +113,11 @@ bước; phần việc của bạn là bước 1, 3 và 9.
   1 Intake            bạn mô tả nhu cầu
   2 Parent mission    tuỳ chọn — nêu mission mà story này thuộc về
   3 Ground            kb_search; CHÍNH BẠN chọn section nào áp dụng
-  4 Draft             story, AC, use case, hai sơ đồ
+  4 Draft             story, AC dạng Given/When/Then, use case, business flow
   5 Pin               kb_context_new nhúng khối đã ghim
   6 Lint              kb ticket lint cho tới khi DoR: PASS
   7 Ground technical  SA điền Technical grounding; kb ticket check
-  8 Maturity review   hai lượt review độc lập, tối đa 3 vòng
+  8 Maturity review   hai lượt review độc lập, mặc định một vòng
   9 Review → save     bạn đọc, commit, dán vào hệ thống issue
 ```
 
@@ -140,9 +140,19 @@ hiện thực của lập trình viên — đều đứng trên lựa chọn nà
 
 ## 3.3 Soạn nháp
 
-Agent điền vào template ticket: tóm tắt, user story, bối cảnh, tiêu chí chấp
-nhận, use case, và hai sơ đồ Mermaid (một sequence diagram và một business flow).
-Mọi khẳng định chạm tới một tiêu chuẩn đều mang trích dẫn `[doc-id §section]`.
+Agent điền các mục **cốt lõi** của template: tóm tắt, user story, bối cảnh,
+tiêu chí chấp nhận, use case, một sơ đồ business flow, dependencies, out of
+scope, open questions. Mỗi tiêu chí chấp nhận là một Given/When/Then — một trạng
+thái ban đầu, một hành động, một kết quả quan sát được — và mọi khẳng định chạm
+tới một tiêu chuẩn đều mang trích dẫn `[doc-id §section]`.
+
+Các mục **mở rộng** chỉ có khi story cần: sequence diagram khi tương tác trải
+qua nhiều hơn một hệ thống (tích hợp, callback), non-functional requirements khi
+story chạm tới tải hay thời gian, UI spec khi có màn hình, test data khi xử lý
+bản ghi hay tập tin. Còn lại thì xoá. Lint cảnh báo khi chính lời story gọi tên
+một mục đang thiếu; bạn trả lời bằng mục đó hoặc `N/A — <lý do>`. Sequence ở mức
+code — service, bảng, message — là việc lập trình viên vẽ lúc thiết kế, không
+phải việc BA đoán.
 
 ## 3.4 Ghim
 
@@ -160,8 +170,11 @@ ngày viết ticket này, và đây là cách kiểm chứng".
 
 Khi lint đã pass, agent chạy hai lượt review độc lập dựa trên
 `docs/review-rubric.md` — một lượt chấm **Business coverage**, một lượt chấm
-**Dev implementability**. Nó áp dụng sửa đổi rồi review lại, tối đa ba vòng hoặc
-tới khi cả hai trục đạt từ 4 trở lên.
+**Dev implementability**. Nó áp dụng sửa đổi, lint lại, và ghi vòng đó. Với một
+ticket, mặc định đó là toàn bộ phần review: những gì còn mở được bàn giao cho
+bạn dưới dạng câu hỏi có người phụ trách, điểm dưới 4 được báo, không bị đuổi
+theo. Muốn thêm vòng thì yêu cầu; ticket có hơn sáu tiêu chí chấp nhận tự động
+được thêm, tối đa ba vòng hoặc tới khi cả hai trục đạt 4.
 
 Khoảng trống nào nó không tự khép được sẽ trở thành một câu hỏi mở có người phụ
 trách, viết là `OPEN(<owner>)`, thay vì một phỏng đoán. Kết quả nằm ở mục
@@ -172,7 +185,11 @@ Hãy đọc các câu hỏi mở. Đó là chỗ agent nói cho bạn biết nó
 ## 3.7 Bạn review
 
 Bản nháp được lưu vào `tickets/<ticket-id>.md`. Bạn đọc, commit, rồi dán vào hệ
-thống quản lý issue. Trợ lý không bao giờ làm việc đó thay bạn.
+thống quản lý issue. Trợ lý không bao giờ làm việc đó thay bạn. Thứ bạn dán là
+`kb ticket export tickets/<ticket-id>.md`: cùng ticket đó nhưng không còn các
+chú thích hướng dẫn của template và hai mục nội bộ của BA, `## Definition of
+Ready` và `## Review record`. `## KB context`, `## Dependencies` và
+`## Technical grounding` được giữ — lập trình viên đọc chúng.
 
 ## 3.8 SA ghim phần kỹ thuật
 
@@ -331,7 +348,10 @@ Chính tham chiếu section, viết đúng dạng một trích dẫn thật:
 ## 6.1 Lỗi (cổng fail)
 
 - **Có đủ các mục bắt buộc**: Summary, User Story, Background, Acceptance
-  Criteria, Use cases, cả hai sơ đồ Mermaid, KB context, Definition of Ready.
+  Criteria, Use cases, Business flow, KB context, Definition of Ready.
+- **Không heading nào xuất hiện hai lần.** Một `## Technical grounding` thứ hai
+  — SA viết thêm thay vì thay thế — làm fail cổng; công cụ chỉ đọc bản đầu
+  tiên, nên bản trùng lặp sẽ cho qua một mục đã cũ.
 - **Tối đa 10 tiêu chí chấp nhận.** Nhiều hơn mười mục `- [ ]` dưới
   `## Acceptance Criteria` sẽ làm fail cổng. Hãy tách ticket — gộp hai điều
   kiện vào một AC cho vừa mức trần chính là điều luật này sinh ra để chặn.
@@ -355,6 +375,9 @@ vào ngoặc vuông.
 | Tham chiếu đã cũ | Section được trích đã bị sửa đổi phía trên. Vẫn phân giải được nên không hỏng — nhưng bạn nên xem lại. |
 | Một tham chiếu đã ghim mà nội dung không trích dẫn | Đó có thể là phần nền mà ticket không cần dẫn lại |
 | Một tiêu chí chấp nhận ra lệnh một shell command (`docker compose …`, `curl …`, `grep …`, hoặc hai lệnh nối bằng `&&`) | Công cụ chỉ gắn cờ hình dạng đó; AC có nên đổi sang mô tả kết quả quan sát được hay không là phán đoán của bạn — bản thân câu lệnh thuộc về `## Test data & verification` hoặc kế hoạch |
+| Tiêu chí chấp nhận không ở dạng Given/When/Then (một dòng nêu tên chúng) | Dạng đó là chuẩn; ngưỡng lỗi vẫn là một giá trị đo được hoặc `OPEN(<owner>)` có chủ, nên ticket cũ vẫn pass với một dòng này |
+| Story nhắc tới tải, màn hình, bản ghi hay tích hợp mà mục mở rộng tương ứng đang thiếu | Chỉ là từ khoá trùng; trả lời bằng mục đó hoặc `N/A — <lý do>` |
+| Một mục mở rộng có mặt nhưng rỗng, hoặc `## Sequence diagram` còn là chỗ trống mẫu | Xoá, điền, hoặc viết `N/A — <lý do>` |
 
 ## 6.3 Bắt cổng fail khi trích dẫn cũ
 
