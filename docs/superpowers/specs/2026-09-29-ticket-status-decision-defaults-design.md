@@ -62,7 +62,10 @@ Field evidence from the MyFlix BA repo (`myflix-ba`, 7 missions, 3 tickets,
   parent mission the BA names the folder. `kb ticket tidy` moves a flat
   layout; the skill runs it at Intake. Every reader accepts both layouts.
 - **D6** Two PRs: PR1 engine (D1, D2, lint change for D4, D5); PR2 policy
-  prose (D3, D4 wording) with template tests.
+  prose (D3, D4 wording, D7) with template tests.
+- **D7** `design-author`, `plan-author`, their fix subagents and every
+  reviewer run on the most capable model available (Opus-class); code
+  implementers and code fix subagents stay on a standard model.
 
 ## 3. Status model (`kb mission next`)
 
@@ -184,7 +187,22 @@ ticket after upgrade tidies a pre-existing repo.
 `kb ticket lint` never errors on a flat file — layout belongs to tidy,
 not to DoR.
 
-## 8. Tests
+## 8. Model per dispatch (dev flow)
+
+The shared "Review dispatch contract" block (dev-design, dev-plan,
+dev-execute, dev-handover; claude skill + command, cursor, copilot)
+replaces its model bullet with:
+
+> Name the model on every dispatch. The most capable model available
+> (Opus-class) for `design-author`, `plan-author`, their fix subagents,
+> and every reviewer — a design or plan error multiplies into every task
+> built on it. A standard model for code implementers and code fix
+> subagents. Never inherit the session default silently.
+
+`tests/test_templates.py` `REVIEW-CONTRACT` is updated to the same text.
+Part of PR2.
+
+## 9. Tests
 
 PR1:
 - `test_missionnext.py`: five statuses; first-match order; `ready` vs
@@ -209,16 +227,18 @@ PR2:
   NFR-cites-KB item; ac-quality carries the `DECIDED(default: …)` section
   and the routine/non-routine lists; the skill carries the veto list and
   the replaced hard rule; the ticket template's NFR comment names
-  `N/A — no NFR source in KB`.
+  `N/A — no NFR source in KB`; the `REVIEW-CONTRACT` block names
+  `design-author` and `plan-author` on the most capable model in all 12
+  dev wrappers.
 
-## 9. Out of scope
+## 10. Out of scope
 
 - An `in-progress` status from Dev branches or Jira.
 - Re-running `kb ticket lint` inside `kb mission next`.
 - A lint error for `DECIDED(default)` shape or for flat ticket files.
 - Migrating `.kb/usage/*.jsonl` (keyed by ticket id, unaffected).
 
-## 10. Risks
+## 11. Risks
 
 - Status rename breaks scripts parsing JSON `status`. Mitigation:
   CHANGELOG breaking note, minor bump.
