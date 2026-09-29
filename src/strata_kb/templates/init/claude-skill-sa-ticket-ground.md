@@ -108,7 +108,16 @@ to the mission layer.
    Each BA placeholder is answered by an id here or parked here; the
    placeholder itself stays in the BA section untouched — the Dev reads
    the answer from this section.
-4. **Gate** — run `kb ticket check <file> [--missions-dir <dir>]` (CLI;
+4. **Verify the write** — after saving, run `grep -n '^## ' <file>` and
+   read the list: every heading appears exactly once, in the template's
+   order. A second `## Technical grounding` (or `## Services & order`)
+   means you appended a new copy instead of replacing the section the
+   template shipped — merge the two into one before the gate, then
+   re-run the grep. `kb ticket check` and `kb ticket lint` both fail on
+   a duplicated heading, but the grep is yours to run first: the gate
+   reads the FIRST copy, so a duplicate can pass a stale section while
+   the Dev reads the new one.
+5. **Gate** — run `kb ticket check <file> [--missions-dir <dir>]` (CLI;
    there is no MCP fallback); for a mission,
    `kb ticket check --heading "## Services & order" <file>`.
    `--missions-dir` defaults to the ticket's sibling `missions/`
@@ -129,7 +138,7 @@ to the mission layer.
      [NEW: D<n>]` — you used free text where a D-row belongs.
    A non-empty `Open decisions` is a FAIL by design: report the list to
    the BA instead of emptying it by guessing.
-5. **Handover** — report: the ids grounded, the `[NEW: D<n>]` entries,
+6. **Handover** — report: the ids grounded, the `[NEW: D<n>]` entries,
    the open decisions (count and text), the BA placeholders answered,
    and any BA-section contradiction found. The BA decides what goes back
    to the business side and what goes to the Dev. End the report with

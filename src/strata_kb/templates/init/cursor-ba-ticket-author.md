@@ -41,16 +41,30 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    BA MUST choose — never auto-pick.
    A hit tagged `code` (`<repo>-code` / `<repo>-svc`) is not a candidate for
    you: note it in the handover and leave it to `/sa-ticket-ground`.
-4. **Draft** — fill the standard ticket template (Summary, User Story,
-   Background / Business context, Acceptance Criteria, Use cases,
-   Sequence diagram, Business flow, Dependencies, Non-functional
-   requirements, UI / presentation spec, Out of scope, Test data &
-   verification, Open questions, KB context, Definition of Ready).
+4. **Draft** — fill the ticket template's CORE sections (Summary, User
+   Story, Background / Business context, Acceptance Criteria, Use cases,
+   Business flow, Dependencies, Out of scope, Open questions, KB context,
+   Definition of Ready). The EXTENDED sections are opt-in — keep one only
+   when the story needs it, otherwise delete it:
+   - `## Sequence diagram` — only when the interaction spans more than one
+     actor or system (an integration, a callback, a third party). One
+     actor and one system is the Business flow drawn twice. The Dev draws
+     the code-level sequence at dev-design; never invent participants.
+   - `## Non-functional requirements` — only for load, bulk, concurrency,
+     latency or timing; every row quantified.
+   - `## UI / presentation spec` — only when there is a screen.
+   - `## Test data & verification` — only when records, files or formats
+     are processed.
+   `kb ticket lint` warns when the story's own words call for an extended
+   section that is missing — answer with the section or `N/A — <reason>`.
    `## Technical grounding` is SA-owned: leave it exactly as the template
    ships it — `/sa-ticket-ground` fills it after your draft is saved.
 
-   **AC quality bar** — every AC must be verifiable by someone who has
-   NOT read the KB. Banned weasel words per `docs/ac-quality.md`
+   **AC quality bar** — every AC is one Given/When/Then: a starting
+   state, one action, one observable outcome with concrete values
+   (`Giả sử … khi … thì …` in Vietnamese). Two `when`s or two `then`s
+   is two ACs. Every AC must be verifiable by someone who has NOT read
+   the KB. Banned weasel words per `docs/ac-quality.md`
    ("appropriate", "configured", "a subset", "responsive", …). When a
    value is not settled, write `OPEN(<owner>)` inside the AC AND add a
    row to `## Open questions` — never write vague and move on. One AC is
@@ -63,10 +77,10 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    `## Test data & verification`, where the Dev can run it against the
    real images — `kb ticket lint` warns on the former.
 
-   **Fill every new section** — `## Dependencies`, `## Non-functional
-   requirements`, `## UI / presentation spec`, `## Out of scope`,
-   `## Test data & verification`, `## Open questions`. Not applicable →
-   write `N/A — <reason>`; a blank section reads as "not considered".
+   **Fill every core section you keep** — `## Dependencies`,
+   `## Out of scope`, `## Open questions`, and each extended section you
+   kept. Not applicable → write `N/A — <reason>` or delete the extended
+   section; a blank section reads as "not considered".
 
    Every claim that touches a standard cites `[doc-id §section]`, only from
    candidates the BA confirmed in step 3. Code-level detail (service
@@ -112,9 +126,13 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    and a gap list where every gap names the section it lives in and a
    proposed fix.
 
-   Apply the fixes, re-run `kb ticket lint`, then review again — at most
-   3 rounds total; stop early when both axes score ≥ 4. After every
-   round that changed the draft, also run `kb ticket check`: on FAIL,
+   Apply the fixes, re-run `kb ticket lint`, and record the row. **Round
+   1 is the whole review by default**: what is still open after the
+   fixes is handed over as owned `OPEN(<owner>)` questions, and a score
+   below 4 is reported, not chased. Rounds 2 and 3 run only when the BA
+   asks for them or the ticket carries more than 6 ACs; then stop early
+   when both axes score ≥ 4. After every round that changed the draft,
+   also run `kb ticket check`: on FAIL,
    re-invoke `sa-ticket-ground` with only the changed sections and the
    failing lines (same discipline as `gap-verifier`, with the same
    no-shared-context discipline as step 7); on PASS, do not re-ground.
@@ -158,7 +176,11 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
    is the BA's to chase, not the Dev's.
 9. **Review → save** — write the final Markdown to
    `tickets/<ticket-id>.md`; the BA reviews it, commits it, and pastes it
-   into Jira.
+   into Jira. What goes into Jira is
+   `kb ticket export tickets/<ticket-id>.md`: the same ticket without the
+   guidance comments and without the BA-internal `## Definition of
+   Ready` and `## Review record`; `## KB context`, `## Dependencies` and
+   `## Technical grounding` stay — the Dev reads them.
 
 ## Hard rules
 
@@ -181,6 +203,9 @@ citation block — saved to `tickets/<ticket-id>.md`. The output is a
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - Lint must report `DoR: PASS` before handover; report remaining
   warnings to the BA — do not hand over a failing ticket silently.
+- Never write a `## Sequence diagram` the story does not need, and
+  never fill one with `%%TODO%%` participants — delete the section; the
+  Dev draws the code-level sequence at dev-design.
 - Never tick a Definition of Ready checkbox yourself — only the BA
   confirms DoR items. Fixing a lint error is not the same as confirming
   DoR; leave every `## Definition of Ready` checkbox unchecked for the

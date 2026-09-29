@@ -1,5 +1,12 @@
 # <Title — one line, imperative, with identifier>
 
+<!-- CORE sections (Summary … Out of scope, then Technical grounding,
+Open questions, KB context) are every ticket's. EXTENDED sections
+(Sequence diagram, Non-functional requirements, UI / presentation spec,
+Test data & verification) are opt-in: keep one only when the story needs
+it, otherwise delete it or write `N/A — <reason>`. `kb ticket lint` warns
+when the story's own words call for one that is missing. -->
+
 ## Summary
 <1–2 lines business summary>
 
@@ -10,25 +17,20 @@ As a <role>, I want <capability>, so that <value>.
 <context; every industry-standard claim cites `[doc-id §section]`>
 
 ## Acceptance Criteria
-<!-- One observable outcome per AC, with concrete values. No weasel
-words ("appropriate", "configured", "a subset", "responsive", … — the
-full banned list is docs/ac-quality.md). An unsettled value is written
-`OPEN(<owner>)` inside the AC AND gets a row in the Open questions
-section below — never left vague. Citations are bracketed:
-`[hr-handbook §4.12]`. Prose that merely names a standard ("per the
-handbook") is not a citation and the gate ignores it. -->
-- [ ] AC1 … (cite `[doc-id §section]` when it touches a standard)
-- [ ] AC2 …
+<!-- One AC = one Given/When/Then: a starting state, one action, one
+observable outcome with concrete values. No weasel words ("appropriate",
+"configured", "a subset", "responsive", … — the full banned list is
+docs/ac-quality.md). An unsettled value is written `OPEN(<owner>)` inside
+the AC AND gets a row in the Open questions section below — never left
+vague. Citations are bracketed: `[hr-handbook §4.12]`. Prose that merely
+names a standard ("per the handbook") is not a citation and the gate
+ignores it. -->
+- [ ] AC1 — Given <state>, when <action>, then <observable outcome> (cite `[doc-id §section]` when it touches a standard)
+- [ ] AC2 — Given …, when …, then …
 
 ## Use cases
 ### Main flow
 ### Alternate / exception flows
-
-## Sequence diagram
-```mermaid
-sequenceDiagram
-  …
-```
 
 ## Business flow
 ```mermaid
@@ -42,28 +44,43 @@ flowchart TD
 - Blocked by: <us-id or external item> — <why>
 - Blocks: <us-id>
 
-## Non-functional requirements
-<!-- Every row needs a number or a threshold, or `OPEN(<owner>)`.
-Never "fast", "stable", "handles load". A pure data/backoffice ticket
-with no NFR writes "N/A — <reason>". -->
-| Concern | Target | How to measure | Source |
-|---|---|---|---|
-
-## UI / presentation spec
-<!-- What the user sees: layout, labels, empty state, error state,
-visual-distinction rules between types (say BY WHAT MEANS — label,
-color, shape, grouping), display order, or a mockup link.
-No design input yet → `OPEN(<owner>)`. No UI in this ticket → "N/A".
-Never stop at "distinguished by type" without naming the means. -->
-
 ## Out of scope
 <!-- This ticket's own boundary — distinct from the mission's
 out-of-scope. List the things easily mistaken as belonging here. -->
 
+<!-- ===== EXTENDED sections — keep only what this story needs ===== -->
+
+## Sequence diagram
+<!-- Optional. Keep it only when the interaction spans more than one
+actor or system (an integration, a callback, a third party). A single
+actor talking to one system is the Business flow above, drawn twice.
+Code-level participants (service names, tables) are the Dev's to draw at
+dev-design — never invent them here. -->
+```mermaid
+sequenceDiagram
+  …
+```
+
+## Non-functional requirements
+<!-- Only when the story touches load, bulk processing, concurrency,
+latency or timing. Every row needs a number or a threshold, or
+`OPEN(<owner>)`. Never "fast", "stable", "handles load". -->
+| Concern | Target | How to measure | Source |
+|---|---|---|---|
+
+## UI / presentation spec
+<!-- Only when the story has a screen. What the user sees: layout,
+labels, empty state, error state, visual-distinction rules between types
+(say BY WHAT MEANS — label, color, shape, grouping), display order, or a
+mockup link. No design input yet → `OPEN(<owner>)`. Never stop at
+"distinguished by type" without naming the means. -->
+
 ## Test data & verification
-<!-- Sample records + expected values. Tolerances for numeric checks.
-How to verify each hard-to-test AC. No sample data yet →
-`OPEN(<owner>)`. -->
+<!-- Only when the story processes records, files or formats. Sample
+records + expected values. Tolerances for numeric checks. How to verify
+each hard-to-test AC. No sample data yet → `OPEN(<owner>)`. -->
+
+<!-- ===== end of EXTENDED sections ===== -->
 
 ## Technical grounding
 <!-- SA-owned — filled by /sa-ticket-ground from the hub's <repo>-code
@@ -108,13 +125,17 @@ kb-context:
   tags: [ … ]
 ```
 
+<!-- The two sections below are BA-internal. `kb ticket export <file>`
+prints the ticket without them (and without these comments) — that is
+what goes into Jira. -->
+
 ## Definition of Ready
-- [ ] Story, ACs, use cases, both diagrams present
+- [ ] Story, ACs, use cases, business flow present
 - [ ] Every citation resolves at the pinned version (kb ticket lint PASS)
 - [ ] No stale refs
-- [ ] Every AC is acceptance-testable; no weasel words remain (docs/ac-quality.md)
+- [ ] Every AC is Given/When/Then and acceptance-testable; no weasel words remain (docs/ac-quality.md)
 - [ ] One user story and at most 10 acceptance criteria — a bigger scope is two tickets
-- [ ] Dependencies, NFR, UI spec, Out of scope, Test data filled or "N/A — <reason>"
+- [ ] Dependencies and Out of scope filled or "N/A — <reason>"; every extended section kept is filled, the rest deleted
 - [ ] Every open question has an owner
 - [ ] Technical grounding filled by SA; kb ticket check PASS; Open decisions empty; no value in an AC rests on a `DECIDED` note instead of a section id or a D-row
 

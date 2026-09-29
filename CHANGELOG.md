@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.5.0 — 2026-09-29
+
+- Ticket template split into **core** and **extended** sections. Core: Summary, User Story, Background, Acceptance Criteria, Use cases, Business flow, Dependencies, Out of scope, Technical grounding, Open questions, KB context. Extended — kept only when the story needs them, deleted otherwise: Sequence diagram, Non-functional requirements, UI / presentation spec, Test data & verification. `## Sequence diagram` leaves `REQUIRED_HEADINGS` (a relaxation: every older ticket still passes); a code-level sequence is the Dev's to draw at `dev-design`. `kb ticket lint` warns when the story's own words (load, a screen, records, an integration — EN and VI) call for an extended section that is missing, when one is present but empty, and when `## Sequence diagram` is a placeholder; a filled one still gets the mermaid gate.
+- Acceptance criteria are Given/When/Then (`Giả sử … khi … thì …`): `kb ticket lint` reports, as one warning, every AC that is not; the error-level floor (a measurable value or an owned `OPEN(<owner>)`) is unchanged. `docs/ac-quality.md` gains the shape section.
+- `kb ticket export <file> [--out <path>]`: the ticket for the tracker — guidance comments and the BA-internal `## Definition of Ready` / `## Review record` dropped; `## KB context`, `## Dependencies`, `## Technical grounding` kept.
+- `kb ticket lint`, `kb mission lint` and `kb ticket check` fail on a `## ` heading that appears twice — an SA appending a second `## Technical grounding` instead of replacing it used to pass the gate on the stale first copy. `sa-ticket-ground` gains a mandatory step 4, **Verify the write** (`grep -n '^## ' <file>`), before the gate.
+- BA repos: `ba-ticket-author` drafts core sections, keeps an extended one only on need, writes Given/When/Then ACs, runs **one** maturity round by default (rounds 2–3 on request or above 6 ACs), and names `kb ticket export` as what goes into Jira; the review rubric and the ticket template say the same. `QUICKSTART-ba.md` and both BA guides updated. Re-run `kb init --kind ba` to pick up the new text.
+
 ## 1.4.0 — 2026-09-28
 
 - `<repo_id>-code` is derived on demand and never committed. `kb init --kind dev` adds `.kb/*-code/` to `.gitignore`; `kb svc note`, `kb build` and `kb publish` (dev repos) regenerate it from the working tree first when it is missing, older than `HEAD`, or tracked files changed (`--no-refresh` on `svc note` and `build`). The PR job's `kb build` therefore validates what the merge would publish. `-code`'s revision moves from `index.yaml` to its manifest only, so the committed index no longer churns; the hub reads the manifest.
