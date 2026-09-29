@@ -630,6 +630,44 @@ def test_mission_heading_unknown_service_is_still_an_error(code_doc):
     assert any("unknown id 'svc.nope'" in e for e in errors(report))
 
 
+def test_mission_heading_grounded_on_list_grounds_on_the_code_entry(code_doc):
+    kb_dir, rev = code_doc
+    text = MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + (
+        f"- Grounded on: demo:demo-code @ {rev}, demo:demo-svc @ {rev}\n"
+        "\n"
+        "| Order | Service | Depends on | Why this order |\n"
+        "|---|---|---|---|\n"
+        "| 1 | svc.airspace-service | — | base |\n"
+    ) + "\n"
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert errors(report) == [], report.render("Grounding")
+    assert any("demo-code read from" in n for n in notes(report))
+
+
+def test_mission_heading_grounded_on_list_picks_the_code_entry_wherever_it_is(code_doc):
+    kb_dir, rev = code_doc
+    text = MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + (
+        f"- Grounded on: demo:demo-svc @ {rev}, demo:demo-code @ {rev}\n"
+        "\n"
+        "| Order | Service | Depends on | Why this order |\n"
+        "|---|---|---|---|\n"
+        "| 1 | svc.airspace-service | — | base |\n"
+    ) + "\n"
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert errors(report) == [], report.render("Grounding")
+    assert any("demo-code read from" in n for n in notes(report))
+
+
+def test_ticket_heading_grounded_on_list_is_still_rejected(code_doc):
+    kb_dir, rev = code_doc
+    report = run(
+        ticket(grounding(rev, **{"Grounded on": "demo:demo-code @ {rev}, demo:demo-svc @ {rev}"})),
+        kb_dir,
+    )
+    assert len(errors(report)) == 1
+    assert "Grounded on:" in errors(report)[0]
+
+
 # --- compose facts: Volumes / Healthchecks / Devices (spec 2026-09-23) ----
 
 TWO_SVC = "svc.airspace-service, svc.postgres"
@@ -948,3 +986,14 @@ def test_parse_decisions_without_blocks_column_keeps_empty_tuple():
     )
     table = ticketcheck.parse_decisions(text, "m")
     assert table.rows["D1"] == ticketcheck.Decision("D1", "DECIDED", "a", ())
+
+
+def test_grounded_entries_splits_a_list_and_rejects_a_bad_entry():
+    from strata_kb.ticketcheck import grounded_entries
+
+    assert grounded_entries("- Grounded on: demo:demo-code @ ABC1234") == [("demo", "demo-code", "abc1234")]
+    assert grounded_entries("- Grounded on: a:a-code @ 1234567, a:a-svc @ 1234567") == [
+        ("a", "a-code", "1234567"), ("a", "a-svc", "1234567"),
+    ]
+    assert grounded_entries("- Grounded on: a:a-code @ 1234567, junk") == []
+    assert grounded_entries("- Files: x.py") == []

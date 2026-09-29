@@ -1173,3 +1173,58 @@ def test_a_filled_mission_reports_no_placeholder_errors(
 ):
     report = missionlint.lint(_build_mission(golden_block), _hub(fed_hub))
     assert not [m for m in _errors(report) if "only placeholder" in m]
+
+
+# --- check 14: Grounded on parseable ---
+
+
+def test_lint_wires_the_grounded_on_check_as_a_warning(fed_hub: Path, golden_block: str):
+    text = _build_mission(
+        golden_block,
+        extra={"## Services & order": "- Grounded on: a-code (rev 1234567)\n"},
+    )
+    report = missionlint.lint(text, _hub(fed_hub))
+    assert (
+        "no parseable 'Grounded on: <repo>:<doc> @ <rev>' line in "
+        "'## Services & order' — kb mission next cannot derive done"
+    ) in _warnings(report)
+
+
+def test_grounded_on_list_is_parseable_and_silent():
+    from strata_kb import missionlint
+
+    text = "## Services & order\n- Grounded on: a:a-code @ 1234567, a:a-svc @ 1234567\n"
+    assert missionlint.check_grounded_on(text) == []
+
+
+def test_grounded_on_unparseable_is_a_warning_naming_mission_next():
+    from strata_kb import missionlint
+
+    text = "## Services & order\n- Grounded on: a-code (rev 1234567)\n"
+    (issue,) = missionlint.check_grounded_on(text)
+    assert issue.level == "warning"
+    assert issue.message == (
+        "no parseable 'Grounded on: <repo>:<doc> @ <rev>' line in "
+        "'## Services & order' — kb mission next cannot derive done"
+    )
+
+
+def test_grounded_on_absent_section_is_silent():
+    from strata_kb import missionlint
+
+    assert missionlint.check_grounded_on("## US backlog\n| US ID | Title |\n") == []
+
+
+def test_coverage_finds_a_ticket_in_its_mission_folder(
+    fed_hub: Path, golden_block: str, tmp_path: Path
+):
+    tickets = tmp_path / "tickets"
+    (tickets / MISSION_ID).mkdir(parents=True)
+    (tickets / MISSION_ID / f"{MISSION_ID}-US1.md").write_text("x", encoding="utf-8")
+    (tickets / f"{MISSION_ID}-US2.md").write_text("x", encoding="utf-8")
+
+    report = missionlint.lint(
+        _build_mission(golden_block), _hub(fed_hub), tickets_dir=tickets
+    )
+
+    assert not any("US drafted" in msg for msg in _warnings(report))

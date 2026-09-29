@@ -6,13 +6,20 @@ argument-hint: "[business need]"
 Invoke the `ba-ticket-author` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the business need when given;
 when empty, ask for it during Intake — and, with a `missions/` directory
-present, run `kb mission next` first and propose the first `ready` story.
-A `blocked` story may be drafted only with its reasons acknowledged by
-the BA and carried into the handover.
+present, run `kb ticket tidy` first (then `kb mission next`).
+Print every `conflict:` and `note:` line of `kb ticket tidy` to the BA
+as well. Print every `note:` line of `kb mission next` to the BA verbatim, before
+the table, and propose the first `to-draft` story; for every `unsorted:`
+line ask the BA for its folder and run
+`kb ticket tidy --into <folder> <file>`. A `blocked` story may be drafted
+only with its reasons acknowledged by the BA and carried into the
+handover.
 
 Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
-to `tickets/<ticket-id>.md` — or `tickets/<mission-id>-US<n>.md`
-when the ticket has a parent mission, so the back-link check can find it.
+to `tickets/<mission-id>/<mission-id>-US<n>.md` under a parent mission, so
+the back-link check can find it; otherwise ask the BA for a kebab-case
+folder name (an epic or feature, e.g. `epic-billing`) and never invent
+the folder name.
 When the BA names a parent mission, read it for the story title, put
 `> Parent mission: <mission-id>` on its own line directly under the
 ticket's H1 title, and inherit its pinned refs as STARTING CANDIDATES

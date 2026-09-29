@@ -10,6 +10,7 @@ specific to the mission contract.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING
 from strata_kb import acquality, lintcore, mission
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
+from strata_kb.ticketcheck import SERVICES_HEADING, grounded_entries
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
@@ -300,6 +302,18 @@ def check_sequencing(text: str, us_ids: list[str]) -> list[Issue]:
     ]
 
 
+_US_SUFFIX_RE = re.compile(r"-US\d+$")
+
+
+def _ticket_file_exists(tickets_dir: Path, us_id: str) -> bool:
+    """`tickets/<mission-id>/<us>.md` (1.6.0 layout) or `tickets/<us>.md`
+    (flat, pre-1.6.0). The mission id is the story id minus `-US<n>`."""
+    mission_id = _US_SUFFIX_RE.sub("", us_id)
+    return (tickets_dir / mission_id / f"{us_id}.md").is_file() or (
+        tickets_dir / f"{us_id}.md"
+    ).is_file()
+
+
 def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
     """Check 12. Coverage is DERIVED from the filesystem, never recorded in
     the backlog table — a hand-maintained status column rots the moment a
@@ -308,11 +322,7 @@ def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
     Always a warning: a mission is authored before its tickets exist, so
     0/N at creation time is the normal case, not a failure.
     """
-    missing = [
-        us_id
-        for us_id in us_ids
-        if not (tickets_dir / f"{us_id}.md").is_file()
-    ]
+    missing = [us_id for us_id in us_ids if not _ticket_file_exists(tickets_dir, us_id)]
     if not missing:
         return []
     drafted = len(us_ids) - len(missing)
@@ -321,6 +331,25 @@ def check_coverage(us_ids: list[str], tickets_dir: Path) -> list[Issue]:
             "warning",
             f"{drafted}/{len(us_ids)} US drafted — no ticket file yet for: "
             + ", ".join(missing),
+        )
+    ]
+
+
+def check_grounded_on(text: str) -> list[Issue]:
+    """Check 14. `kb mission next` derives `done` from the `-code` doc named
+    on the `Grounded on:` line. A line it cannot parse is a silent
+    `done: unknown` there, so name it here. Warning, not error: a mission is
+    authored before the SA grounds it."""
+    body = lintcore.section_body(text, SERVICES_HEADING)
+    if body is None:
+        return []
+    if any(grounded_entries(line) for line in body.splitlines()):
+        return []
+    return [
+        Issue(
+            "warning",
+            "no parseable 'Grounded on: <repo>:<doc> @ <rev>' line in "
+            f"'{SERVICES_HEADING}' — kb mission next cannot derive done",
         )
     ]
 
@@ -410,6 +439,7 @@ def lint(
         text, mission.RECOMMENDED_MISSION_HEADINGS
     )
     issues += check_technology_decisions(text)
+    issues += check_grounded_on(text)
     if not backlog_issues:
         issues += check_sequencing(text, us_ids)
     issues += lintcore.check_open_question_owners(

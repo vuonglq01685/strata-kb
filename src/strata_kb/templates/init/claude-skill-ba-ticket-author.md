@@ -21,16 +21,27 @@ for it during Intake.
    #airspace`) or an explicit doc-id if the BA already has one. Ask,
    don't guess — a vague need gets a clarifying question, not a search.
    With no business need given and a `missions/` directory present, run
-   `kb mission next` first and show its table: propose the first `ready`
-   story; the BA may pick another. A `drafted` story points at its
-   existing file. A `blocked` story may be drafted only with its reasons
-   acknowledged by the BA — carry those reasons into the handover
+   `kb ticket tidy` first — it moves any flat `tickets/*.md` into
+   `tickets/<mission-id>/`; for every `unsorted:` line ask the BA for its
+   folder and run `kb ticket tidy --into <folder> <file>` — then
+   `kb mission next`. Print every `conflict:` and `note:` line of
+   `kb ticket tidy` to the BA as well. Print every `note:` line of
+   `kb mission next` to the BA verbatim, before the table; never
+   summarise it away. A
+   `done: unknown` note means a `draft` or `ready` row may be a merged
+   story — say so. Then show the table: propose the first `to-draft`
+   story; the BA may pick another. A `draft` or `ready` story points at
+   its existing file. A `blocked` story may be drafted only with its
+   reasons acknowledged by the BA — carry those reasons into the handover
    verbatim.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog
    row, and put `> Parent mission: <mission-id>` on its own line directly
    under the ticket's H1 title. Save the ticket as
-   `tickets/<mission-id>-US<n>.md` so the back-link check can find it.
+   `tickets/<mission-id>/<mission-id>-US<n>.md` so the back-link check can
+   find it. With no parent mission, ask the BA for a kebab-case folder
+   name (an epic or feature, e.g. `epic-billing`) and save
+   `tickets/<folder>/<ticket-id>.md` — never invent the folder name.
    Use the mission's pinned refs as STARTING CANDIDATES ONLY — do not copy
    its `kb-context` into the ticket. A mission is broad and a ticket is
    narrow; a wholesale copy drags in refs the ticket never cites. Confirm
@@ -109,7 +120,7 @@ for it during Intake.
    reports `DoR: PASS`. Report any remaining warnings to the BA — they
    are not blockers, but they are the BA's judgment call.
 7. **Ground technical** — once lint reports `DoR: PASS`, save the draft
-   to `tickets/<ticket-id>.md` and invoke `sa-ticket-ground` on the
+   to `tickets/<folder>/<ticket-id>.md` and invoke `sa-ticket-ground` on the
    saved file **as its own subagent** — no shared context: the SA sees
    the file and the hub, not your reasoning. It fills the SA-owned
    `## Technical grounding` section from `<repo>-code`, proposes an
@@ -185,9 +196,9 @@ for it during Intake.
    block into the handover verbatim: a D-row still waiting for `DECIDED`
    is the BA's to chase, not the Dev's.
 9. **Review → save** — write the final Markdown to
-   `tickets/<ticket-id>.md`. Hand it to the BA to review and commit;
+   `tickets/<folder>/<ticket-id>.md`. Hand it to the BA to review and commit;
    the BA — not you — pastes it into Jira. What goes into Jira is
-   `kb ticket export tickets/<ticket-id>.md`: the same ticket without the
+   `kb ticket export tickets/<folder>/<ticket-id>.md`: the same ticket without the
    guidance comments and without the BA-internal `## Definition of
    Ready` and `## Review record`; `## KB context`, `## Dependencies` and
    `## Technical grounding` stay — the Dev reads them.

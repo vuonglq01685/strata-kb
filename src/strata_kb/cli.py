@@ -2467,10 +2467,11 @@ def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path 
     """Where mission files live for a ticket command. An explicit
     --missions-dir that is not a directory is a BA typo and a hard error —
     otherwise the engine's .is_file() probing would misreport a real mission
-    as missing. The default is fail-soft: a ticket at tickets/<id>.md gets
-    its sibling missions/ when that exists, else None (the engine notes the
-    skipped checks). Gated on the parent's name so an unrelated missions/
-    next to some other file never binds."""
+    as missing. The default is fail-soft: a ticket under tickets/ (flat or
+    tickets/<mission-id>/) gets the missions/ next to that tickets/
+    directory when that exists, else None (the engine notes the skipped
+    checks). Gated on the nearest ancestor named tickets so an unrelated
+    missions/ next to some other file never binds."""
     if missions_dir is not None:
         if not missions_dir.is_dir():
             typer.secho(
@@ -2479,10 +2480,11 @@ def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path 
             )
             raise typer.Exit(1)
         return missions_dir
-    if path is not None and path.parent.name == "tickets":
-        sibling = path.parent.parent / "missions"
-        if sibling.is_dir():
-            return sibling
+    if path is not None:
+        for ancestor in (path.parent, *path.parent.parents):
+            if ancestor.name == "tickets":
+                sibling = ancestor.parent / "missions"
+                return sibling if sibling.is_dir() else None
     return None
 
 
@@ -2592,6 +2594,67 @@ def ticket_export(
         typer.secho(f"could not write '{out}': {exc}", fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.echo(f"wrote {out}")
+
+
+@ticket_app.command("tidy")
+def ticket_tidy(
+    files: list[Path] = typer.Argument(
+        None, help="With --into: the flat ticket files to move into that folder"
+    ),
+    tickets_dir: Path = typer.Option(
+        Path("tickets"), "--tickets-dir", help="Where ticket files live"
+    ),
+    into: str | None = typer.Option(
+        None, "--into", help="Folder under tickets/ for FILES that have no parent mission (an epic or feature slug)"
+    ),
+) -> None:
+    """Move flat tickets/*.md into tickets/<mission-id>/ by their
+    '> Parent mission:' line; list the rest as 'unsorted'. With --into,
+    move the named FILES into tickets/<folder>/ instead. Idempotent, never
+    overwrites, no git — commit the renames yourself. Exit 0 after a report."""
+    from strata_kb import tickettidy
+
+    if not tickets_dir.is_dir():
+        typer.secho(
+            f"--tickets-dir '{tickets_dir}' does not exist or is not a directory", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+    if files and into is None:
+        typer.secho("FILES need --into <folder>", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if into is not None:
+        if not tickettidy.FOLDER_RE.match(into):
+            typer.secho(
+                f"--into '{into}' is not a folder name — letters, digits, '.', '_' and '-' only",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        if not files:
+            typer.secho("--into needs at least one FILE", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        resolved_dir = tickets_dir.resolve()
+        notes: list[str] = []
+        flat_files: list[Path] = []
+        for f in files:
+            if f.is_file() and f.resolve().parent == resolved_dir:
+                flat_files.append(f)
+            else:
+                notes.append(f"skipped {f}: not a flat file directly under {tickets_dir}")
+        moves = tickettidy.into_moves(tickets_dir, into, flat_files)
+        unsorted: list[Path] = []
+    else:
+        moves, unsorted, notes = tickettidy.plan_moves(tickets_dir)
+    done, conflicts = tickettidy.apply_moves(moves)
+    for n in notes:
+        typer.echo(f"note: {n}")
+    for src, dst in done:
+        typer.echo(f"moved: {src} → {dst}")
+    for c in conflicts:
+        typer.echo(c)
+    for p in unsorted:
+        typer.echo(f"unsorted: {p} — pass --into <folder>")
+    if not (done or conflicts or unsorted or notes):
+        typer.echo("nothing to tidy")
 
 
 @ticket_app.command("check")
@@ -2903,8 +2966,10 @@ def mission_next(
     ),
 ) -> None:
     """Which story next: every backlog story across missions/ as done /
-    drafted / ready / blocked. Done is derived from the hub's <repo>-svc
-    history (kb svc note rows). Read-only; exit 0 after a report."""
+    ready / draft / to-draft / blocked. Done is derived from the hub's
+    <repo>-svc history (kb svc note rows); ready and draft from the
+    ticket's Definition of Ready checklist. Read-only; exit 0 after a
+    report."""
     from strata_kb import missionnext, ticketcheck
 
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
@@ -2932,11 +2997,29 @@ def mission_next(
         parsed.append(parsed_mission)
 
     resolved_tickets = tickets_dir if tickets_dir is not None else missions_dir.parent / "tickets"
-    drafted: set[str] = set()
+    # Ticket id → (ticked, total) DoR boxes. `rglob`: tickets live at
+    # tickets/<mission-id>/<id>.md since 1.6.0 and flat before it; both read.
+    # A stem present under both: sorted() visits the nested copy first
+    # (a strict prefix of the flat path's second part sorts before it) —
+    # that first copy wins; a repeated stem is noted and skipped rather
+    # than silently overwriting it.
+    drafted: dict[str, tuple[int, int]] = {}
+    ticket_paths: dict[str, Path] = {}
     if resolved_tickets.is_dir():
-        drafted = {p.stem for p in resolved_tickets.glob("*.md")}
+        for p in sorted(resolved_tickets.rglob("*.md")):
+            if p.stem in ticket_paths:
+                notes.append(f"duplicate ticket {p.stem}: read {ticket_paths[p.stem]}, ignored {p}")
+                continue
+            ticket_paths[p.stem] = p
+            try:
+                ticket_text = unicodedata.normalize("NFC", p.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError) as exc:
+                notes.append(f"skipped ticket {p}: {exc} — read as draft")
+                drafted[p.stem] = (0, 0)
+                continue
+            drafted[p.stem] = missionnext.dor_counts(ticket_text)
     else:
-        notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as drafted")
+        notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as draft or ready")
 
     grounded = next((g for g in map(missionnext.grounded_doc, texts) if g), None)
     rid: str | None

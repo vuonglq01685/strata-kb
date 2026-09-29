@@ -331,13 +331,21 @@ PLATFORM_NEXT = """# Platform operations
 """
 
 
-def _ba_layout(tmp_path: Path, *, drafted: tuple[str, ...] = ()) -> Path:
+DOR_FULL = "## Definition of Ready\n- [x] a\n- [x] b\n"
+DOR_PART = "## Definition of Ready\n- [x] a\n- [ ] b\n"
+
+
+def _ba_layout(
+    tmp_path: Path, *, drafted: tuple[str, ...] = (), dor: str = DOR_FULL, nested: bool = False
+) -> Path:
     root = tmp_path / "ba"
     (root / "missions").mkdir(parents=True)
     (root / "tickets").mkdir()
     (root / "missions" / "M-platform.md").write_text(PLATFORM_NEXT, encoding="utf-8")
     for us in drafted:
-        (root / "tickets" / f"{us}.md").write_text(f"# {us}\n", encoding="utf-8")
+        folder = root / "tickets" / "M-platform" if nested else root / "tickets"
+        folder.mkdir(exist_ok=True)
+        (folder / f"{us}.md").write_text(f"# {us}\n\n{dor}", encoding="utf-8")
     return root
 
 
@@ -371,7 +379,7 @@ def test_mission_next_local_svc_marks_done_and_names_next(tmp_path, monkeypatch)
     ])
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
-    assert "| M-platform-US2 | M-platform | ready |  |" in result.output
+    assert "| M-platform-US2 | M-platform | to-draft |  |" in result.output
     assert result.output.rstrip().endswith("Next: M-platform-US2 — Observability")
 
 
@@ -383,9 +391,9 @@ def test_mission_next_without_repo_id_reports_unknown_done(tmp_path):
     result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
     assert result.exit_code == 0, result.output
     assert "note: done: unknown (no repo id — pass --repo-id)" in result.output
-    assert "| M-platform-US1 | M-platform | drafted |  |" in result.output
+    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
     assert "| M-platform-US2 | M-platform | blocked | US M-platform-US1 not done |" in result.output
-    assert "Next: none ready — 1 blocked, 1 drafted, 0 done" in result.output
+    assert "Next: none to draft — 1 blocked, 0 draft, 1 ready, 0 done" in result.output
 
 
 def test_mission_next_svc_absent_on_hub_is_a_note(tmp_path, fed_hub):
@@ -398,7 +406,7 @@ def test_mission_next_svc_absent_on_hub_is_a_note(tmp_path, fed_hub):
     ])
     assert result.exit_code == 0, result.output
     assert "note: done: unknown (demo-svc not published" in result.output
-    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
+    assert "| M-platform-US1 | M-platform | to-draft |  |" in result.output
 
 
 def test_mission_next_no_hub_configured_is_a_note_not_a_red_line(tmp_path, monkeypatch):
@@ -414,7 +422,7 @@ def test_mission_next_no_hub_configured_is_a_note_not_a_red_line(tmp_path, monke
     ])
     assert result.exit_code == 0, result.output
     assert "note: done: unknown (" in result.output
-    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
+    assert "| M-platform-US1 | M-platform | to-draft |  |" in result.output
 
 
 def test_mission_next_reads_history_from_the_hub(tmp_path, fed_hub, run_git):
@@ -447,7 +455,7 @@ def test_mission_next_reads_history_from_the_hub(tmp_path, fed_hub, run_git):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["next"] == "M-platform-US2"
-    assert [s["status"] for s in data["stories"]] == ["done", "ready"]
+    assert [s["status"] for s in data["stories"]] == ["done", "to-draft"]
     assert data["notes"] == []
 
 
@@ -464,6 +472,45 @@ def test_mission_next_explicit_repo_id_and_tickets_dir(tmp_path, monkeypatch):
     ])
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
+
+
+def test_mission_next_reads_tickets_in_mission_folders(tmp_path):
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",), dor=DOR_PART, nested=True)
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | draft | DoR 1/2 ticked |" in result.output
+
+
+def test_mission_next_ticket_without_dor_section_is_draft(tmp_path):
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",), dor="")
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | draft | no Definition of Ready section |" in result.output
+
+
+def test_mission_next_duplicate_ticket_stem_nested_wins_with_a_note(tmp_path):
+    # A flat tickets/<id>.md and a nested tickets/<mission>/<id>.md with the
+    # same stem: the nested copy (read first) wins; the flat one is noted
+    # and skipped, never silently overwriting it.
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",), dor=DOR_PART, nested=True)
+    nested_path = root / "tickets" / "M-platform" / "M-platform-US1.md"
+    flat_path = root / "tickets" / "M-platform-US1.md"
+    flat_path.write_text(f"# M-platform-US1\n\n{DOR_FULL}", encoding="utf-8")
+
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | draft | DoR 1/2 ticked |" in result.output
+    assert f"note: duplicate ticket M-platform-US1: read {nested_path}, ignored {flat_path}" in result.output
+
+
+def test_mission_next_unreadable_ticket_is_a_note_and_a_draft(tmp_path):
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    (root / "tickets" / "M-platform-US1.md").write_bytes(b"\xff\xfe# bad\n")
+    result = runner.invoke(app, ["mission", "next", "--missions-dir", str(root / "missions")])
+    assert result.exit_code == 0, result.output
+    assert "note: skipped ticket" in result.output
+    assert "| M-platform-US1 | M-platform | draft | no Definition of Ready section |" in result.output
 
 
 def test_mission_next_bad_dirs_are_red_lines(tmp_path):
@@ -512,11 +559,13 @@ def test_docs_name_the_next_command():
 
     root = _P(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
-    assert "| `kb mission next` | Which story next: done / drafted / ready / blocked across `missions/`, done derived from the hub's `<repo>-svc` history |" in readme
+    assert "| `kb mission next` | Which story next: done / ready / draft / to-draft / blocked across `missions/`, done derived from the hub's `<repo>-svc` history, ready and draft from the ticket's Definition of Ready checklist |" in readme
     assert "`kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]`" in readme
+    assert "| `kb ticket tidy [--tickets-dir <dir>] [--into <folder> <file>...]` |" in readme
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert changelog.index("## 1.4.0") < changelog.index("## 1.3.0")
+    assert changelog.index("## 1.6.0") < changelog.index("## 1.5.0")
     assert "`kb mission next`" in changelog
+    assert "**Breaking** for scripts reading the JSON `status`" in changelog
     assert "`--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second" in readme
     assert "derived from the grounded `-code` document" in changelog
 
@@ -552,3 +601,16 @@ def test_mission_next_unqualified_grounded_on_resolves_locally(tmp_path, monkeyp
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
     assert "done: unknown" not in result.output
+
+
+def test_resolve_missions_dir_from_a_nested_ticket(tmp_path):
+    from strata_kb.cli import _resolve_missions_dir
+
+    (tmp_path / "missions").mkdir()
+    nested = tmp_path / "tickets" / "M-platform" / "M-platform-US1.md"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("# t\n", encoding="utf-8")
+    assert _resolve_missions_dir(None, nested) == tmp_path / "missions"
+    flat = tmp_path / "tickets" / "M-platform-US1.md"
+    assert _resolve_missions_dir(None, flat) == tmp_path / "missions"
+    assert _resolve_missions_dir(None, tmp_path / "elsewhere" / "x.md") is None

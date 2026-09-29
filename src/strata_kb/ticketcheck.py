@@ -42,6 +42,28 @@ GROUNDED_ON_RE = re.compile(
     r"(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
     r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(?P<rev>[0-9a-fA-F]{7,40})\s*$"
 )
+
+_GROUNDED_PREFIX_RE = re.compile(r"^-\s*Grounded on:\s*(?P<rest>.*)$")
+
+
+def grounded_entries(line: str) -> list[tuple[str | None, str, str]]:
+    """`(repo, doc, rev)` per comma-separated entry of a `- Grounded on:`
+    line. The mission template shows one entry; the SA writes the `-code`
+    and `-svc` docs on one line, so the list is accepted here. Any entry
+    that is not `[<repo>:]<doc> @ <rev>` makes the whole line unparseable
+    (`[]`) — a half-read line would silently ground on the wrong doc."""
+    m = _GROUNDED_PREFIX_RE.match(line.strip())
+    if m is None:
+        return []
+    out: list[tuple[str | None, str, str]] = []
+    for part in m.group("rest").split(","):
+        em = GROUNDED_ON_RE.match(f"- Grounded on: {part.strip()}")
+        if em is None:
+            return []
+        out.append((em.group("repo"), em.group("doc"), em.group("rev").lower()))
+    return out
+
+
 ID_RE = re.compile(r"\b(?:svc|db|api|int|cmd|dep|struct)\.[A-Za-z0-9_][A-Za-z0-9_.-]*")
 NEW_RE = re.compile(r"\[NEW(?::\s*(?P<reason>[^\]]*))?\]")
 ROUTE_RE = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/\S*)")
@@ -326,7 +348,7 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
         issues.append(Issue("error", f"missing '{heading}' — run /sa-ticket-ground"))
         return LintReport(issues, notes)
 
-    grounded = _grounded_on(section, issues)
+    grounded = _grounded_on(section, heading, issues)
     if grounded is None:
         return LintReport(issues, notes)
     repo, doc_id, rev, line = grounded
@@ -361,11 +383,28 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
     return LintReport(issues, notes)
 
 
-def _grounded_on(section: _Section, issues: list[Issue]) -> tuple[str | None, str, str, int] | None:
+def _grounded_on(section: _Section, heading: str, issues: list[Issue]) -> tuple[str | None, str, str, int] | None:
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] != "Grounded on" or line[:1].isspace():
             continue
         lineno = section.first_line + i
+        if heading == SERVICES_HEADING:
+            # Mission section: the SA may list several `<repo>:<doc> @ <rev>`
+            # entries on one line (the -code and -svc docs); ground on the
+            # -code entry, else the first — same rule as missionnext.grounded_doc.
+            entries = grounded_entries(line)
+            if not entries:
+                issues.append(
+                    Issue(
+                        "error",
+                        "'Grounded on:' must read `Grounded on: <repo-id>:<doc-id> @ "
+                        f"<revision>` (revision = the -code manifest's `revision`) "
+                        f"(line {lineno})",
+                    )
+                )
+                return None
+            repo, doc, rev = next((e for e in entries if e[1].endswith("-code")), entries[0])
+            return repo, doc, rev, lineno
         m = GROUNDED_ON_RE.match(line.strip())
         if m is None:
             issues.append(

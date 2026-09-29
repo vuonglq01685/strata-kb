@@ -445,9 +445,10 @@ _NFR_HEADING = "## Non-functional requirements"
 
 
 def _check_nfr_targets(text: str) -> list[Issue]:
-    """Every NFR row needs a number or an owned unknown in Target. The
-    section itself is RECOMMENDED — its absence stays a warning from
-    check_recommended_sections; a table of moods is an error."""
+    """Every NFR row needs a number from the KB, an owned unknown, or an
+    N/A with a reason in Target. The section itself is RECOMMENDED — its
+    absence stays a warning from check_recommended_sections; a table of
+    moods is an error."""
     body = lintcore.section_body(text, _NFR_HEADING)
     if body is None:
         return []
@@ -466,7 +467,8 @@ def _check_nfr_targets(text: str) -> list[Issue]:
                 Issue(
                     "error",
                     f"NFR row '{concern}' has no measurable Target "
-                    f"('{cells[target]}') — give a number or OPEN(<owner>)",
+                    f"('{cells[target]}') — give a number from the KB, "
+                    "OPEN(<owner>), or 'N/A — <reason>'",
                 )
             )
     return issues

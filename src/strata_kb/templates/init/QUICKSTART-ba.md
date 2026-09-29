@@ -42,8 +42,11 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       backlog row, and writes `> Parent mission: <mission-id>` on its own
       line directly under the ticket's title — the input the back-link
       check (see below) reads. The ticket is then saved as
-      `tickets/<mission-id>-US<n>.md` instead of `tickets/<ticket-id>.md`,
-      so that check can find it.
+      `tickets/<mission-id>/<mission-id>-US<n>.md` instead of
+      `tickets/<folder>/<ticket-id>.md`, so that check can find it. With
+      no parent mission, it asks you for a kebab-case folder name (an
+      epic or feature, e.g. `epic-billing`) and saves there instead —
+      never invented.
    3. **Ground** — it calls `kb_search`; review ALL candidates it shows
       you and pick the ones that actually apply.
    4. **Draft** — it fills the template's core sections (story,
@@ -82,14 +85,16 @@ KB content — that happens in `child` repos, reviewed on the `hub`.
       are spent; a gap it cannot close itself becomes an owned
       `OPEN(<owner>)` open question instead of a guess. The result
       lands in the ticket's `## Review record` section.
-   9. **Review → save** — it writes the draft to `tickets/<ticket-id>.md`
-      (or `tickets/<mission-id>-US<n>.md` from step 2). You review it,
-      commit it, and paste `kb ticket export tickets/<ticket-id>.md`
+   9. **Review → save** — it writes the draft to
+      `tickets/<folder>/<ticket-id>.md`
+      (or `tickets/<mission-id>/<mission-id>-US<n>.md` from step 2). You
+      review it, commit it, and paste
+      `kb ticket export tickets/<folder>/<ticket-id>.md`
       into Jira yourself — the guidance comments and the BA-internal
       `## Definition of Ready` / `## Review record` are left out; the
       assistant never publishes for you.
-Run `/sa-ticket-ground tickets/<ticket-id>.md` by hand only to re-ground
-a ticket after `<repo>-code` has moved.
+Run `/sa-ticket-ground tickets/<folder>/<ticket-id>.md` by hand only to
+re-ground a ticket after `<repo>-code` has moved.
 
 ### Greenfield repos: what `[NEW: D<n>]` means
 
@@ -146,7 +151,7 @@ Per mission:
    exist yet.
 4. Commit the mission, then draft each story with `/ba-ticket-author`,
    naming the parent mission. Tickets are saved as
-   `tickets/M-<slug>-US<n>.md` and carry a
+   `tickets/M-<slug>/M-<slug>-US<n>.md` and carry a
    `> Parent mission: M-<slug>` line.
 
 What the mission gate enforces: required structure, an L1 and an L2
@@ -165,18 +170,20 @@ kb mission next
 ```
 
 `kb mission next` is read-only. Every backlog story across `missions/*.md`
-is reported as one of four states, and the report ends with
+is reported as one of five states, and the report ends with
 `Next: <us-id> — <title>`:
 
 | State | Means |
 |---|---|
 | `done` | the ticket id is in a `hist.*` row of the hub's `-svc` document — the Dev ran `kb svc note` at handover and CI published it on merge |
-| `drafted` | `tickets/<us-id>.md` exists but the story is not merged yet |
-| `ready` | no ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED` |
+| `ready` | the ticket file exists and every `## Definition of Ready` box is ticked — waiting for a Dev |
+| `draft` | the ticket file exists and a DoR box is still unticked (`DoR 5/8 ticked`), or it has no DoR section |
+| `to-draft` | no ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED` |
 | `blocked` | the reasons are named: `US <id> not done`, `US <id> unknown`, `D<n> OPEN (owner: <x>)` |
 
-`/ba-ticket-author` with no argument runs it first and proposes the first
-`ready` story. A story whose dependency is only `drafted` stays `blocked`:
+`/ba-ticket-author` with no argument runs `kb ticket tidy`, then this, and
+proposes the first `to-draft` story. A story whose dependency is only
+`draft` or `ready` stays `blocked`:
 `done` means merged, because only merged code reaches `<repo>-svc`.
 Cross-mission order is written in `## Sequencing` by naming another
 mission's story (`M-<other>-US<n>`) in `Depends on`.
@@ -186,6 +193,13 @@ The `-svc` document is found from the missions' `Grounded on:` line
 configured or reachable, a `-svc` that is not published yet, or no
 `Grounded on:` line at all is a `note:` line above the table — the report
 still prints, with nothing marked `done`.
+
+Tickets live at `tickets/<mission-id>/<ticket-id>.md`; a ticket with no
+parent mission goes under a folder you name (an epic or feature slug).
+`kb ticket tidy` moves a flat `tickets/` into that layout by each file's
+`> Parent mission:` line and lists the rest as `unsorted:` — move those
+with `kb ticket tidy --into <folder> <file>`. Every command reads both
+layouts.
 
 ## Code knowledge on the hub
 
@@ -479,8 +493,12 @@ tiering change shows up in the report the next ticket generates.
   must be empty (`Grounding: PASS`). `--heading "## Services & order"`
   checks a mission plan's SA section against its own table
 - `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`
-  — which story is `done` / `drafted` / `ready` / `blocked` across
+  — which story is `done` / `ready` / `draft` / `to-draft` / `blocked` across
   `missions/`, ending with `Next: <us-id> — <title>`; read-only, exit 0
+- `kb ticket tidy [--tickets-dir <dir>] [--into <folder> <file>...]`
+  — move flat `tickets/*.md` into `tickets/<mission-id>/` by their
+  `> Parent mission:` line; `--into <folder>` for tickets with no parent
+  mission (an epic or feature slug). Idempotent, never overwrites
 - `kb tags [--hub <url>]` — list every tag published on the hub, i.e. the
   tags a `kb-context` block may carry
 - `kb doctor --hub <url>` — check the hub is reachable and

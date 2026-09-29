@@ -133,6 +133,28 @@ def test_the_ticket_cursor_is_set_by_a_tickets_path(tmp_path: Path):
     assert row.ticket == "open-new-flight"
 
 
+def test_the_ticket_cursor_reads_a_ticket_inside_a_mission_folder(tmp_path: Path):
+    path = write_transcript(
+        tmp_path,
+        [user_row("please read tickets/M-platform/M-platform-US1.md"), usage_row("a1")],
+    )
+
+    (row,) = transcript.rows_from_transcript(path, actor="ba")
+
+    assert row.ticket == "M-platform-US1"
+
+
+def test_prose_after_a_bare_tickets_slash_does_not_set_the_cursor(tmp_path: Path):
+    path = write_transcript(
+        tmp_path,
+        [user_row("see tickets/ and src/README.md"), usage_row("a1")],
+    )
+
+    (row,) = transcript.rows_from_transcript(path, actor="ba")
+
+    assert row.ticket is None
+
+
 def test_the_ticket_cursor_reads_a_windows_path_too(tmp_path: Path):
     # Inside the JSONL a Windows path is backslash-escaped: docs\\impl\\x-plan.md
     path = write_transcript(

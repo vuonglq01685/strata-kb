@@ -229,6 +229,10 @@ def test_nfr_target_ok():
     # An unowned marker is the same placeholder-in-owner's-clothing as
     # everywhere else in this module — not a target.
     assert acquality.nfr_target_ok("OPEN(TBD)") is False
+    assert acquality.nfr_target_ok("N/A — no NFR source in KB") is True
+    assert acquality.nfr_target_ok("N/A - no NFR source in KB") is True
+    assert acquality.nfr_target_ok("N/A") is False
+    assert acquality.nfr_target_ok("N/A —") is False
 
 
 def test_open_marker_still_mutes_a_phrase_inside_it():

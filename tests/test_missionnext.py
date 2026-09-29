@@ -93,6 +93,15 @@ def test_grounded_doc_returns_repo_and_doc():
     assert missionnext.grounded_doc("- Grounded on: mid/repo-x:repo-x-code @ abc1234\n") == ("mid/repo-x", "repo-x-code")
 
 
+def test_grounded_doc_reads_a_comma_separated_list_and_prefers_code():
+    two = "- Grounded on: myflix:myflix-svc @ 2946696, myflix:myflix-code @ 2946696\n"
+    assert missionnext.grounded_doc(two) == ("myflix", "myflix-code")
+    no_code = "- Grounded on: myflix:myflix-svc @ 2946696, myflix:arch @ 2946696\n"
+    assert missionnext.grounded_doc(no_code) == ("myflix", "myflix-svc")
+    malformed = "- Grounded on: myflix:myflix-code (rev 2946696), myflix:myflix-svc @ 2946696\n"
+    assert missionnext.grounded_doc(malformed) is None
+
+
 def test_svc_doc_id_swaps_the_code_suffix():
     assert missionnext.svc_doc_id("myflix-code") == "myflix-svc"
     assert missionnext.svc_doc_id("repo-x-code") == "repo-x-svc"
@@ -130,22 +139,47 @@ def test_done_ids_from_history_handles_missing_text():
     assert missionnext.done_ids_from_history("") == set()
 
 
-def _run(drafted=(), done=None):
+FULL = (8, 8)
+PART = (5, 8)
+
+
+def _run(drafted=None, done=None):
     parsed = [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)]
     return {
         s.us_id: s
-        for s in missionnext.statuses(parsed, set(drafted), None if done is None else set(done))
+        for s in missionnext.statuses(parsed, dict(drafted or {}), None if done is None else set(done))
     }
 
 
-def test_first_story_with_decided_row_is_ready():
+def test_dor_counts_reads_the_checklist():
+    text = "## Definition of Ready\n- [x] a\n- [ ] b\n- [X] c\n\n## Review record\n- [ ] not counted\n"
+    assert missionnext.dor_counts(text) == (2, 3)
+    assert missionnext.dor_counts("# T\n## Summary\nx\n") == (0, 0)
+
+
+def test_first_story_with_decided_row_is_to_draft():
     s = _run()["M-platform-US1"]
+    assert s.status == "to-draft" and s.reasons == ()
+
+
+def test_ticket_file_with_every_dor_box_ticked_is_ready():
+    s = _run(drafted={"M-platform-US1": FULL})["M-platform-US1"]
     assert s.status == "ready" and s.reasons == ()
 
 
-def test_dependency_not_done_blocks_even_when_drafted():
-    by = _run(drafted=["M-platform-US1"])
-    assert by["M-platform-US1"].status == "drafted"
+def test_ticket_file_with_unticked_dor_is_draft_with_the_count():
+    s = _run(drafted={"M-platform-US1": PART})["M-platform-US1"]
+    assert s.status == "draft" and s.reasons == ("DoR 5/8 ticked",)
+
+
+def test_ticket_file_without_dor_section_is_draft():
+    s = _run(drafted={"M-platform-US1": (0, 0)})["M-platform-US1"]
+    assert s.status == "draft" and s.reasons == ("no Definition of Ready section",)
+
+
+def test_dependency_not_done_blocks_even_when_ready():
+    by = _run(drafted={"M-platform-US1": FULL})
+    assert by["M-platform-US1"].status == "ready"
     assert by["M-platform-US2"].status == "blocked"
     assert by["M-platform-US2"].reasons == (
         "US M-platform-US1 not done",
@@ -153,16 +187,16 @@ def test_dependency_not_done_blocks_even_when_drafted():
     )
 
 
-def test_done_dependency_and_decided_rows_make_ready():
-    by = _run(drafted=["M-platform-US1"], done=["M-platform-US1"])
+def test_done_wins_over_a_ticket_file():
+    by = _run(drafted={"M-platform-US1": PART}, done=["M-platform-US1"])
     assert by["M-platform-US1"].status == "done"
-    assert by["M-catalog-US1"].status == "ready"
+    assert by["M-catalog-US1"].status == "to-draft"
     assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: Alice)",)
 
 
 def test_cross_mission_dependency_and_order():
     order = [s.us_id for s in missionnext.statuses(
-        [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)], set(), set()
+        [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)], {}, set()
     )]
     assert order == [
         "M-platform-US1", "M-platform-US2", "M-platform-US3",   # US3 absent from Sequencing → last
@@ -176,20 +210,20 @@ def test_cross_mission_dependency_and_order():
 def test_unknown_dependency_is_named():
     text = CATALOG.replace("M-platform-US1", "M-ghost-US9")
     parsed = [missionnext.parse_mission(text)]
-    by = {s.us_id: s for s in missionnext.statuses(parsed, set(), set())}
+    by = {s.us_id: s for s in missionnext.statuses(parsed, {}, set())}
     assert by["M-catalog-US1"].reasons == ("US M-ghost-US9 unknown",)
 
 
 def test_no_done_information_never_marks_done():
-    by = _run(drafted=["M-platform-US1"], done=None)
-    assert by["M-platform-US1"].status == "drafted"
+    by = _run(drafted={"M-platform-US1": FULL}, done=None)
+    assert by["M-platform-US1"].status == "ready"
     assert by["M-catalog-US1"].status == "blocked"
     assert by["M-catalog-US1"].reasons == ("US M-platform-US1 not done",)
 
 
 def test_decision_with_empty_status_and_owner_prints_placeholders():
     text = PLATFORM.replace("| D2 | New svc.metrics | OPEN | Alice |", "| D2 | New svc.metrics |  |  |")
-    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], set(), {"M-platform-US1"})}
+    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], {}, {"M-platform-US1"})}
     assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: ?)",)
 
 
@@ -198,7 +232,7 @@ def test_bare_us_id_in_blocks_cell_blocks_its_story():
         "| D2 | New svc.metrics | OPEN | Alice | M-platform-US2 |",
         "| D2 | New svc.metrics | OPEN | Alice | US2 |",
     )
-    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], set(), {"M-platform-US1"})}
+    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], {}, {"M-platform-US1"})}
     assert by["M-platform-US2"].status == "blocked"
     assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: Alice)",)
 
@@ -208,14 +242,14 @@ def test_lowercase_decided_status_still_counts_as_decided():
         "| D1 | New svc.api [arch §3.2] | DECIDED | lead | M-platform-US1 |",
         "| D1 | New svc.api [arch §3.2] | decided | lead | M-platform-US1 |",
     )
-    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], set(), set())}
-    assert by["M-platform-US1"].status == "ready"
+    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], {}, set())}
+    assert by["M-platform-US1"].status == "to-draft"
     assert by["M-platform-US1"].reasons == ()
 
 
 def test_render_table_and_next_line():
     parsed = [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)]
-    results = missionnext.statuses(parsed, {"M-platform-US1"}, {"M-platform-US1"})
+    results = missionnext.statuses(parsed, {"M-platform-US1": FULL}, {"M-platform-US1"})
     text = missionnext.render(results, [])
     lines = text.splitlines()
     assert lines[0] == "| US | Mission | Status | Reason |"
@@ -223,33 +257,34 @@ def test_render_table_and_next_line():
     assert "| M-platform-US1 | M-platform | done |  |" in lines
     assert "| M-platform-US2 | M-platform | blocked | D2 OPEN (owner: Alice) |" in lines
     assert "| M-catalog-US2 | M-catalog | blocked | US M-catalog-US1 not done; US M-platform-US2 not done |" in lines
-    # M-platform-US3 has no dependency and no D-row, so it is the first ready
-    # story in output order (before any M-catalog story).
+    # M-platform-US3 has no dependency and no D-row, so it is the first
+    # to-draft story in output order (before any M-catalog story).
     assert lines[-1] == "Next: M-platform-US3 — Backups"
     assert lines[-2] == ""
 
 
-def test_render_notes_come_first_and_none_ready_counts():
+def test_render_notes_come_first_and_none_to_draft_counts():
     parsed = [missionnext.parse_mission(CATALOG)]
-    results = missionnext.statuses(parsed, {"M-catalog-US1"}, None)
+    results = missionnext.statuses(parsed, {"M-catalog-US1": PART}, None)
     text = missionnext.render(results, ["done: unknown (no repo id — pass --repo-id)"])
     lines = text.splitlines()
     assert lines[0] == "note: done: unknown (no repo id — pass --repo-id)"
     assert lines[1] == ""
     assert lines[2] == "| US | Mission | Status | Reason |"
-    assert lines[-1] == "Next: none ready — 1 blocked, 1 drafted, 0 done"
+    assert "| M-catalog-US1 | M-catalog | draft | DoR 5/8 ticked |" in lines
+    assert lines[-1] == "Next: none to draft — 1 blocked, 1 draft, 0 ready, 0 done"
 
 
 def test_to_json_shape():
     parsed = [missionnext.parse_mission(PLATFORM)]
-    results = missionnext.statuses(parsed, set(), set())
+    results = missionnext.statuses(parsed, {}, set())
     data = missionnext.to_json(results, ["n1"])
     assert set(data) == {"notes", "stories", "next"}
     assert data["notes"] == ["n1"]
     assert data["next"] == "M-platform-US1"
     assert data["stories"][0] == {
         "us_id": "M-platform-US1", "mission_id": "M-platform", "title": "Foundation slice",
-        "status": "ready", "reasons": [],
+        "status": "to-draft", "reasons": [],
     }
     assert data["stories"][1]["reasons"] == ["US M-platform-US1 not done", "D2 OPEN (owner: Alice)"]
     assert missionnext.to_json([], [])["next"] is None
