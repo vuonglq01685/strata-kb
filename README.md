@@ -648,7 +648,7 @@ Dev-ready tickets grounded in it.
 need — capability, role, value) → **Parent mission** (optional; reads
 `missions/<mission-id>.md`, takes the story title from the backlog row, writes a
 `> Parent mission: <mission-id>` line under the title and saves as
-`tickets/<mission-id>-US<n>.md`) → **Ground** (`kb_search` surfaces candidates,
+`tickets/<mission-id>/<mission-id>-US<n>.md`) → **Ground** (`kb_search` surfaces candidates,
 the BA picks) → **Draft** (story, acceptance criteria, use cases, sequence and
 business-flow Mermaid diagrams, citing `doc-id §section` for every claim touching
 a standard) → **Pin** (`kb_context_new` embeds the `## KB context` block) →

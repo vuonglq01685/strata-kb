@@ -2677,7 +2677,7 @@ def test_ba_ticket_pipeline_line_names_the_new_step():
             "copilot-ba-ticket-author.prompt.md",
             "Intake → Parent mission → Ground → Draft → Pin → Lint → "
             "Ground technical → Maturity review → Review, saved to "
-            "tickets/<id>.md",
+            "tickets/<folder>/<ticket-id>.md",
         ),
     ):
         assert needle in _ba_wrapper_text(name), name
@@ -3012,7 +3012,7 @@ def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
     for name in _dev_wrapper_names("dev-handover"):
         body = _dev_wrapper_body(name)
         assert "`kb svc note` is what makes `kb mission next` on the BA side see this story as done" in body, name
-        assert "stays `drafted` forever" in body, name
+        assert "stays `draft` or `ready` forever" in body, name
 
 
 def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():

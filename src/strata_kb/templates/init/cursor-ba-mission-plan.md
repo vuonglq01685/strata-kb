@@ -61,10 +61,11 @@ goes straight to `/ba-ticket-author`; a mission is not mandatory.
    zero-padded (`-US01` fails lint's id pattern). The BA edits and
    confirms the split. Numbering gaps are fine if a story is dropped —
    never renumber, as ticket filenames may already use those ids. Each
-   story's eventual ticket is saved as `tickets/<us-id>.md` (e.g.
-   `tickets/<mission-id>-US1.md`) — that exact filename is what the
-   coverage check (and `kb ticket lint`'s back-link check) looks for; a
-   differently-named file will never show as drafted.
+   story's eventual ticket is saved as `tickets/<mission-id>/<us-id>.md`
+   (e.g. `tickets/<mission-id>/<mission-id>-US1.md`) — that exact path
+   is what the coverage check (and `kb ticket lint`'s back-link check)
+   looks for; coverage also reads the flat `tickets/<us-id>.md`, but a
+   differently-named file will never show as draft or ready.
 
    **Story-size heuristic** — a story must be split further if it hits
    ANY of these:

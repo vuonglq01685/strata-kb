@@ -15,8 +15,10 @@ only with its reasons acknowledged by the BA and carried into the
 handover.
 
 Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
-to `tickets/<folder>/<ticket-id>.md` — `tickets/<mission-id>/<mission-id>-US<n>.md` under a parent mission; otherwise ask the BA for a kebab-case folder name (an epic or feature, e.g. `epic-billing`) and never invent the folder name
-when the ticket has a parent mission, so the back-link check can find it.
+to `tickets/<mission-id>/<mission-id>-US<n>.md` under a parent mission, so
+the back-link check can find it; otherwise ask the BA for a kebab-case
+folder name (an epic or feature, e.g. `epic-billing`) and never invent
+the folder name.
 When the BA names a parent mission, read it for the story title, put
 `> Parent mission: <mission-id>` on its own line directly under the
 ticket's H1 title, and inherit its pinned refs as STARTING CANDIDATES

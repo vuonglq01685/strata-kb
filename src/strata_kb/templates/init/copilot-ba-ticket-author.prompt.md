@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: Draft a Dev-ready ticket grounded in the KB — Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review, saved to tickets/<id>.md
+description: Draft a Dev-ready ticket grounded in the KB — Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review, saved to tickets/<folder>/<ticket-id>.md
 ---
 
 # /ba-ticket-author — draft a grounded, Dev-ready ticket
