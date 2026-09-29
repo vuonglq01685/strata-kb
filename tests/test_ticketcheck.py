@@ -644,6 +644,20 @@ def test_mission_heading_grounded_on_list_grounds_on_the_code_entry(code_doc):
     assert any("demo-code read from" in n for n in notes(report))
 
 
+def test_mission_heading_grounded_on_list_picks_the_code_entry_wherever_it_is(code_doc):
+    kb_dir, rev = code_doc
+    text = MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + (
+        f"- Grounded on: demo:demo-svc @ {rev}, demo:demo-code @ {rev}\n"
+        "\n"
+        "| Order | Service | Depends on | Why this order |\n"
+        "|---|---|---|---|\n"
+        "| 1 | svc.airspace-service | — | base |\n"
+    ) + "\n"
+    report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
+    assert errors(report) == [], report.render("Grounding")
+    assert any("demo-code read from" in n for n in notes(report))
+
+
 def test_ticket_heading_grounded_on_list_is_still_rejected(code_doc):
     kb_dir, rev = code_doc
     report = run(
