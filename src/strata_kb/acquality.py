@@ -228,9 +228,19 @@ def ac_substance(item: str) -> str | None:
     )
 
 
+_NFR_NA_RE = re.compile(r"^N/A\s*[—-]\s*\S", re.IGNORECASE)
+
+
 def nfr_target_ok(cell: str) -> bool:
-    """An NFR Target must be a number or an owned unknown — never a mood."""
-    return bool(re.search(r"\d", cell)) or bool(owned_open_markers(cell))
+    """An NFR Target is a number, an owned unknown, or `N/A — <reason>`
+    (the KB holds no number for this concern) — never a mood, and never a
+    bare `N/A`: the reason is what tells the Dev nothing was forgotten."""
+    text = cell.strip()
+    return (
+        bool(re.search(r"\d", text))
+        or bool(owned_open_markers(text))
+        or _NFR_NA_RE.match(text) is not None
+    )
 
 
 @dataclass(frozen=True)
