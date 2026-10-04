@@ -19,29 +19,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-REQUIRED_SECTIONS: tuple[str, ...] = (
-    "Ticket",
-    "kb-context",
-    "AC→test map",
-    "Placeholder resolutions",
-    "Verification",
-    "TDD exemptions",
-    "Findings",
-    "Usage",
-    "Review",
-)
-
-# The two sections that legitimately have nothing to report. `none` there is
-# an explicit answer; everywhere else it is ordinary content.
-SENTINEL_SECTIONS: frozenset[str] = frozenset({"TDD exemptions", "Findings"})
-
-# `AC→test map` carries the vocabulary's only non-ASCII character, and a
-# hand-typed body will spell it with an ASCII arrow. Accept both; the
-# template ships the real arrow.
-_HEADING_ALIASES: dict[str, str] = {"AC->test map": "AC→test map"}
+# Kept short on purpose: what the ticket asked, what the PR changed, how it
+# was tested. Everything else (kb-context, placeholder map, TDD exemptions,
+# usage, A5's finding table) already lives on the branch. An optional
+# `## Notes` section is ignored like any other extra heading.
+REQUIRED_SECTIONS: tuple[str, ...] = ("Ticket", "Changes", "Testing")
 
 # Level 1 and 2 headings both end a section; `###` and deeper are content, so
-# a sub-heading inside `## Verification` cannot truncate it. An `# Ticket` h1
+# a sub-heading inside `## Testing` cannot truncate it. An `# Ticket` h1
 # therefore satisfies the requirement too — the content is present and
 # visible to a reviewer either way — but the error message below always
 # names the `##` form, because that is what the shipped template uses.
@@ -52,26 +37,7 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 # nobody reviewing the PR can actually see.
 _UNTERMINATED_COMMENT = re.compile(r"<!--.*\Z", re.DOTALL)
 
-# The `none` matcher below (`_NONE`) exists only for the exemption-class
-# check on `## TDD exemptions`; emptiness still handles the rest — `none` is
-# ordinary non-empty text there too, so the emptiness check alone accepts it
-# in `## Findings`, and `## Verification` still needs a fence whatever it
-# says. SENTINEL_SECTIONS exists to word the error message, not to branch
-# that part of the logic.
-
-# The four exemption classes of `docs/tdd-exemptions.md`, mirrored here so
-# `## TDD exemptions` cannot pass on `Exempt: deadline` (reviewer F, H1).
-EXEMPTION_SLUGS: frozenset[str] = frozenset({"config", "ci", "docs", "style"})
-
-# One exemption per line, in either the plan's shape
-# (`Exempt: config — verified by …`) or a bullet (`- config: …`). The slug
-# may be back-ticked; the separator is `:`, `—`, `–` or `-`.
-_EXEMPTION_LINE = re.compile(
-    r"^(?:-\s*)?(?:Exempt:\s*)?`?(?P<slug>[a-z]+)`?\s*(?::|—|–|-)\s*\S"
-)
-_NONE = re.compile(r"^none\.?$", re.IGNORECASE)
-
-# The merge-risk review's verdict line (A5). Anchored at line start so a
+# The merge-risk review's verdict line (A5), the last line of `## Testing`. Anchored at line start so a
 # sentence mentioning the word cannot pass for a verdict.
 _BLOCKING = re.compile(
     r"^Blocking:[ \t]*(?P<verdict>Yes|No)\b", re.IGNORECASE | re.MULTILINE
@@ -226,7 +192,7 @@ def _split_sections(body: str) -> list[tuple[str, str]]:
         match = _HEADING.match(masked)
         if match:
             name = match.group("name").strip()
-            sections.append((_HEADING_ALIASES.get(name, name), []))
+            sections.append((name, []))
             continue
         if sections:
             sections[-1][1].append(masked)
@@ -284,7 +250,7 @@ def _fenced_blocks(text: str) -> list[str]:
 def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding]:
     """The cmd.test check, or the one warning saying why it did not run."""
     if plan_dir is None:
-        return [Finding("Verification", "plan-dir-unset",
+        return [Finding("Testing", "plan-dir-unset",
                         "no plan directory given — the cmd.test check did not run",
                         level="warning")]
     ticket_id = ticket_id_of(_visible(first.get("Ticket", "")))
@@ -295,27 +261,27 @@ def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding
                         level="warning")]
     plan_path = plan_dir / f"{ticket_id}-plan.md"
     if not plan_path.is_file():
-        return [Finding("Verification", "plan-missing",
+        return [Finding("Testing", "plan-missing",
                         f"{plan_path} not found — the cmd.test check did not run "
                         "(spike or no plan yet)",
                         level="warning")]
     try:
         plan_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return [Finding("Verification", "plan-missing",
+        return [Finding("Testing", "plan-missing",
                         f"{plan_path} could not be read — the cmd.test check did "
                         "not run (spike or no plan yet)",
                         level="warning")]
     cmd = plan_cmd_test(plan_dir, ticket_id)
     if cmd is None:
-        return [Finding("Verification", "cmd-test-unset",
+        return [Finding("Testing", "cmd-test-unset",
                         f"{plan_path} has no `cmd.test:` header line — the "
                         "cmd.test check did not run",
                         level="warning")]
-    fences = _fenced_blocks(_visible(first.get("Verification", "")))
+    fences = _fenced_blocks(_visible(first.get("Testing", "")))
     if any(cmd in block for block in fences):
         return []
-    return [Finding("Verification", "verification-missing-cmd",
+    return [Finding("Testing", "verification-missing-cmd",
                     f"no fenced block contains the plan's cmd.test `{cmd}` "
                     f"(from {plan_path}) — paste that command's real run")]
 
@@ -323,33 +289,6 @@ def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding
 def _has_fenced_output(text: str) -> bool:
     """True when a fenced block holds at least one non-blank line."""
     return any(block.strip() for block in _fenced_blocks(text))
-
-
-def _exemption_finding(visible: str) -> Finding | None:
-    """`none`, or every non-blank line names one of EXEMPTION_SLUGS.
-
-    `_NONE` is checked against the text with markdown emphasis markers
-    stripped (`` ` ``, `_`, `*`) so the two sentinel sections keep accepting
-    the same "none" spellings (`` `None` ``, `_none_`) the emptiness check
-    already tolerated pre-Task-1 (test_none_is_a_valid_answer_...).
-    """
-    if _NONE.match(visible.strip().strip("`_*")):
-        return None
-    for line in visible.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        m = _EXEMPTION_LINE.match(stripped)
-        if m is None or m["slug"] not in EXEMPTION_SLUGS:
-            return Finding(
-                "TDD exemptions",
-                "unknown-exemption-class",
-                f"line {stripped[:60]!r} names no exemption class — each line "
-                "is `Exempt: <slug> — verified by <what>` (or `- <slug>: …`) "
-                f"with <slug> one of {', '.join(sorted(EXEMPTION_SLUGS))}, or "
-                "the whole section reads `none`",
-            )
-    return None
 
 
 def _check_review(visible: str) -> Finding | None:
@@ -362,14 +301,14 @@ def _check_review(visible: str) -> Finding | None:
     matches = list(_BLOCKING.finditer(visible))
     if not matches:
         return Finding(
-            "Review",
+            "Testing",
             "no-review-verdict",
             "no `Blocking: Yes|No` line — the merge-risk review's verdict was "
             "never recorded; a clean review still states `Blocking: No`",
         )
     if any(m.group("verdict").lower() == "yes" for m in matches):
         return Finding(
-            "Review",
+            "Testing",
             "review-blocking",
             "the merge-risk review still reports blocking findings — fix them "
             "and re-review; `Blocking: Yes` never merges",
@@ -407,33 +346,25 @@ def lint_body(body: str, *, plan_dir: Path | None = None) -> PRLintReport:
             )
         visible = _visible(first[section])
         if not visible:
-            hint = (
-                " ('none' is a valid answer here)"
-                if section in SENTINEL_SECTIONS
-                else ""
-            )
             findings.append(
                 Finding(
                     section,
                     "empty-section",
-                    "empty once HTML comments are stripped — fill it in" + hint,
+                    "empty once HTML comments are stripped — fill it in",
                 )
             )
             continue
-        if section == "Verification" and not _has_fenced_output(visible):
-            findings.append(
-                Finding(
-                    section,
-                    "no-verification-output",
-                    "no fenced block holding real output — paste the cmd.test "
-                    "and cmd.lint output; a claim is not evidence",
+        if section == "Testing":
+            if not _has_fenced_output(visible):
+                findings.append(
+                    Finding(
+                        section,
+                        "no-verification-output",
+                        "no fenced block holding real output — paste the "
+                        "cmd.test command and its summary lines; a claim is "
+                        "not evidence",
+                    )
                 )
-            )
-        if section == "TDD exemptions":
-            bad = _exemption_finding(visible)
-            if bad is not None:
-                findings.append(bad)
-        if section == "Review":
             finding = _check_review(visible)
             if finding is not None:
                 findings.append(finding)
