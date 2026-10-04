@@ -38,7 +38,7 @@ first task of a dev plan creates the `.editorconfig` below (format AND
 analyzer severities live there), enables analyzers in the project file,
 and records the command as `cmd.lint`. Where `cmd.lint` fails on the
 untouched tree, narrow `select` / rules / warning caps to what passes,
-and list each narrowed rule under `## Findings` in the PR body as a
+and list each narrowed rule under `## Notes` in the PR body as a
 tightening still owed.
 
 `.editorconfig`:

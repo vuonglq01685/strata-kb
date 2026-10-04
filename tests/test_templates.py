@@ -755,16 +755,12 @@ def test_dev_handover_lists_the_pr_contents():
     # OPEN(BA) in all 20 wrappers, so whole-text needles for those two would
     # pass even with no PR-contents list in the file at all.
     #
-    # Batch 7 (E2) note: "ticket id" and "placeholder-resolution" were the
-    # pre-canon wording of the "Assemble the PR description" bullet. That
-    # bullet now names the eight `REQUIRED_SECTIONS` in canon spelling
-    # ("Ticket", "Placeholder resolutions") to match `pull-request-template.md`
-    # and `test_every_required_section_is_named_in_the_dev_handover_wrappers`
-    # below — updated here rather than left pinning retired wording.
+    # The "Assemble the PR description" bullet names the three
+    # `REQUIRED_SECTIONS` plus the optional Notes, where OPEN(...) and KB-gap
+    # findings go.
     for name in _dev_wrapper_names("dev-handover"):
         text = _dev_wrapper_body(name)
-        for item in ("Ticket", "kb-context", "AC→test map",
-                     "Placeholder resolutions", "OPEN(", "KB gap"):
+        for item in ("Ticket", "Changes", "Testing", "Notes", "OPEN(", "KB gap"):
             assert item in text, f"{name} missing PR item {item}"
 
 
@@ -1435,13 +1431,12 @@ def test_search_budget_names_what_the_budget_buys():
 # spelling the names a second time.
 
 
-def test_dev_handover_reports_usage_in_the_pr():
+def test_dev_handover_keeps_usage_out_of_the_pr():
+    # The short PR body (2026-10-04) leaves the usage table to the ledger.
     for name in _dev_wrapper_names("dev-handover"):
         text = _dev_wrapper_body(name)
-        assert "kb usage report" in text, name
-        assert "## Usage" in text, name
-        # An empty ledger is a finding, not a reason to drop the section.
-        assert "no usage recorded yet" in text, name
+        assert "## Usage" not in text, name
+        assert "the usage table" in text, name
 
 
 def test_ba_ticket_author_reports_usage_at_handover():
@@ -1749,9 +1744,31 @@ def _pr_template_headings() -> list[str]:
     ]
 
 
+_RETIRED_PR_SECTIONS = _re.compile(
+    r"## Findings|## Usage|## TDD exemptions|## Verification|Verification fence"
+    r"|## Review(?! record| dispatch)|AC→test map|for a PR body"
+)
+
+
+def test_no_shipped_template_points_at_a_retired_pr_section():
+    # The short PR body (2026-10-04): every shipped template must send PR
+    # content to Ticket / Changes / Testing / Notes, never to a section the
+    # linter no longer has — an agent told to write `## Findings` writes it.
+    base = resources.files("strata_kb").joinpath("templates/init")
+    hits = [
+        f"{entry.name}:{i}: {line.strip()}"
+        for entry in base.iterdir()
+        if entry.is_file()
+        for i, line in enumerate(entry.read_text(encoding="utf-8").splitlines(), 1)
+        if _RETIRED_PR_SECTIONS.search(line)
+    ]
+    assert hits == []
+
+
 def test_pr_template_headings_are_the_canon_in_order():
-    # Canon pin, place 1 of 3: the shipped template against the module.
-    assert tuple(_pr_template_headings()) == REQUIRED_SECTIONS
+    # Canon pin, place 1 of 3: the shipped template against the module,
+    # plus the optional Notes the linter never inspects.
+    assert tuple(_pr_template_headings()) == REQUIRED_SECTIONS + ("Notes",)
 
 
 def test_every_required_section_is_named_in_the_dev_handover_wrappers():
@@ -1813,17 +1830,6 @@ def test_tdd_exemptions_doc_carries_the_four_slugs_and_the_boundary():
     assert "Exempt: <config|ci|docs|style> — verified by <what>" in text
 
 
-def test_tdd_exemptions_doc_names_every_slug_prlint_recognizes():
-    # Ties the doc to prlint.EXEMPTION_SLUGS itself, not the hand-copied
-    # tuple above — a slug added in code with no matching doc update fails
-    # this test (final-review finding 4).
-    from strata_kb.prlint import EXEMPTION_SLUGS as PRLINT_EXEMPTION_SLUGS
-
-    text = _read_init_template("tdd-exemptions.md")
-    for slug in PRLINT_EXEMPTION_SLUGS:
-        assert f"`{slug}`" in text, slug
-
-
 DEV_PLAN_TEMPLATES = _dev_wrapper_names("dev-plan")
 DEV_EXECUTE_TEMPLATES = _dev_wrapper_names("dev-execute")
 
@@ -1845,11 +1851,11 @@ def test_dev_execute_honours_a_declared_exemption_and_refuses_an_undeclared_one(
         assert _normalised("return the task to `dev-plan`") in body, name
 
 
-def test_dev_handover_reports_the_exemptions_or_none():
+def test_dev_handover_leaves_exemptions_in_the_plan():
     for name in DEV_HANDOVER_TEMPLATES:
         body = _dev_wrapper_body(name)
-        assert _normalised("## TDD exemptions") in body, name
-        assert _normalised("`none`") in body, name
+        assert "## TDD exemptions" not in body, name
+        assert _normalised("TDD exemptions (the plan)") in body, name
 
 
 def test_quickstart_dev_names_the_pr_gate_and_the_required_check():
@@ -2029,7 +2035,7 @@ def test_every_conventions_preset_carries_the_one_tightening_rule():
     for lang in ("python", "ts", "java", "go", "dotnet", "php"):
         text = _normalised(_read_init_template(f"conventions-{lang}.md"))
         assert TIGHTENING_RULE in text, lang
-        assert "narrow" in text and "## Findings" in text, lang
+        assert "narrow" in text and "## Notes" in text, lang
         assert "exactly as shown" not in text, lang
 
 
@@ -2189,7 +2195,7 @@ REVIEW_BLOCK_TEXT = {
     "A1": "## A1 — independent design review (before GATE 1)\n\nWrite the design in its own context: dispatch a `design-author` subagent with\nthe resolved context cache path, the ticket's acceptance criteria, the\nconventions paths, and this phase's own authoring rules above — what the\ndesign must cover, and how placeholders and standard values are cited — and\nlet it write `docs/impl/<ticket-id>-design.md` with `status: draft`. You\norchestrate; you do not draft and then judge your own draft.\n\nThat design is a draft until a reviewer that never saw it being written\nsays otherwise. Dispatch a `design-reviewer` subagent and hand it exactly\nthese things: the path `docs/impl/<ticket-id>-design.md`, the ticket's\nacceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`\nplus `docs/pr-review-rubric.local.md`. Not your reasoning, not this\nconversation.\n\nIt returns pass/fail per axis plus a gap list in which every gap names the\nsection it lives in, its severity, and a proposed fix. Apply BLOCKER and\nSUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.\n\nRecord every round in the design file's `## Review record` table, creating it\nbelow the design body on round 1:\n\n    | Date | Round | Verdict | Reviewer | Open gaps |\n    |---|---|---|---|---|\n    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |\n\nGATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and\nno SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.\n",
     "A2": "## A2 — independent plan review (before GATE 2)\n\nDispatch a `plan-author` subagent to turn the approved design into the plan —\nit gets the design file path, the ticket's acceptance criteria, the\n`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above\n— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line\nformat, the ordering rules — and nothing else. Then review it with a\ndifferent context.\n\nDispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the\npath `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the\n`## Pre-code axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`. It answers five questions and nothing else:\n\n- Is there exactly one task per AC — none missing, none invented?\n- Does every task state its failing test before its implementation?\n- Is each task's **Interfaces** entry complete enough that its implementer\n  never has to read outside its own task block? An incomplete entry is a\n  BLOCKER: it is what forces an implementer to read wider and guess.\n- Does every task with no test declare `Exempt: <config|ci|docs|style>` and\n  name its verification?\n- Is every `Depends on:` line consistent with Files and Interfaces — no\n  two tasks without a dependency path share a path, every consumed\n  interface names its producer, no cycle? A miss is a BLOCKER. The\n  reviewer also runs `kb plan waves` and quotes its output; an error\n  there is a BLOCKER on its own.\n\nFix subagent, re-review, at most 3 rounds. Record each round in the plan file's\n`## Review record` table, same shape as the design file's. GATE 2 is offered\nonly after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap\nleft open; NOTE and NITS are recorded, not fixed.\n",
     "A4": "## A4 — narrow branch review (after the last task)\n\nEvery box ticked is not the same as the ticket being done. Write the branch\ndiff to `docs/impl/<ticket-id>-review/branch.diff`\n(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then\n`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a\n`branch-reviewer` subagent with that path, the plan, the ticket, and\n`docs/conventions/<lang>.md`, the five pack files it links, and its\n`.local.md` override. One question\nonly: does this branch fulfil the ticket — every AC covered by a test,\nnothing built that no AC asked for, and no later task quietly breaking an\nearlier one?\n\nKeep the lens narrow here; merge risk is A5's job in `dev-handover`, against a\ndifferent rubric. Fix subagent, re-review, at most 3 rounds. Only once A4\ncomes back clean — no BLOCKER and no SUGGESTED left — is option 1\n`/dev-handover <ticket-id>`.\n",
-    "A5": "## A5 — merge-risk review (before GATE 3)\n\nA4 asked whether the branch does what the ticket said. A5 asks a different\nquestion, in a different context: is this safe to merge into the default\nbranch?\n\nIf `docs/impl/<ticket-id>-review/branch.diff` does not exist yet — a cold\nhandover session, a fresh clone or worktree, or hand-implemented code that\nnever ran `dev-execute` — build it yourself first, with the same command A4\nuses: `mkdir -p docs/impl/<ticket-id>-review && git diff $(git merge-base\n<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>-review/branch.diff`.\n\nDispatch a `merge-risk-reviewer` subagent on the most capable model available.\nGive it the persona plainly: a tech lead reviewing before a production deploy,\nassuming real traffic, concurrent requests, retries, and more than one running\ninstance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and\nthe `## Merge-risk axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`.\n\n**The diff alone is not the review.** Say so in the dispatch: the reviewer\nopens the files the change reaches — callers, siblings, migrations, permission\ndeclarations, contracts, tests — and traces the affected flow end to end before\njudging. A finding that only names a category is not a finding; it states why\nthis code, on this path, is dangerous.\n\nIt writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding\n(severity, file, line, why it is dangerous, proposed fix), then the verdict\nline `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.\nBLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3\nrounds — same routing as A3: only a standing BLOCKER keeps the verdict\n`Blocking: Yes`.\n\nCopy the table and the verdict line into the PR body's `## Review` section —\n`kb pr lint` fails the PR when the verdict line is missing and when it reads\n`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback\nitems, recorded rather than fixed.\n\nA branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1\nbecomes the fix, not the PR.\n",
+    "A5": "## A5 — merge-risk review (before GATE 3)\n\nA4 asked whether the branch does what the ticket said. A5 asks a different\nquestion, in a different context: is this safe to merge into the default\nbranch?\n\nIf `docs/impl/<ticket-id>-review/branch.diff` does not exist yet — a cold\nhandover session, a fresh clone or worktree, or hand-implemented code that\nnever ran `dev-execute` — build it yourself first, with the same command A4\nuses: `mkdir -p docs/impl/<ticket-id>-review && git diff $(git merge-base\n<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>-review/branch.diff`.\n\nDispatch a `merge-risk-reviewer` subagent on the most capable model available.\nGive it the persona plainly: a tech lead reviewing before a production deploy,\nassuming real traffic, concurrent requests, retries, and more than one running\ninstance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and\nthe `## Merge-risk axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`.\n\n**The diff alone is not the review.** Say so in the dispatch: the reviewer\nopens the files the change reaches — callers, siblings, migrations, permission\ndeclarations, contracts, tests — and traces the affected flow end to end before\njudging. A finding that only names a category is not a finding; it states why\nthis code, on this path, is dangerous.\n\nIt writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding\n(severity, file, line, why it is dangerous, proposed fix), then the verdict\nline `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.\nBLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3\nrounds — same routing as A3: only a standing BLOCKER keeps the verdict\n`Blocking: Yes`.\n\nCopy only the verdict line into the PR body, as the last line of\n`## Testing` — `kb pr lint` fails the PR when it is missing and when it\nreads `Blocking: Yes`. The table stays in `merge-risk.md`. NOTE and NITS\nfindings a reviewer should see go to `## Notes`, recorded rather than\nfixed.\n\nA branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1\nbecomes the fix, not the PR.\n",
 }
 
 
@@ -2413,15 +2419,11 @@ def test_dev_handover_runs_a_merge_risk_review_before_gate_three():
 # review table), asserting nothing about A5 actually being added to the
 # PR-assembly list. Pin the clause itself, in the handover step's own
 # words.
-def test_dev_handover_pr_assembly_adds_the_review_section():
-    # claude-command-dev-handover.md drops the bold markdown around "Review"
-    # on this bullet ("...and Review — A5's..." vs "...and **Review** —
-    # A5's..." in the other three); skip the varying lead-in and pin the
-    # clause that is identical across all four wrappers.
+def test_dev_handover_pr_assembly_ends_testing_with_the_verdict():
     for name in _dev_wrapper_names("dev-handover"):
         body = _dev_wrapper_body(name)
         assert (
-            "A5's finding table and its `Blocking:` verdict line." in body
+            "`Blocking: No`, A5's verdict line, as the last line" in body
         ), name
 
 

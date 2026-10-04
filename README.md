@@ -576,6 +576,12 @@ A hub is **mandatory** — resolved from `--hub`, `STRATA_KB_HUB`, or
 server's own working `.kb/`. In the UI, tags render as clickable chips and can be
 used alone to browse matching documents.
 
+The HTTP server keeps the hub fresh by itself: every
+`STRATA_KB_HUB_PULL_INTERVAL` seconds (default `300`, `0` = off) it runs
+`git pull --ff-only` on the hub checkout and re-syncs the search index when
+HEAD moved, so a merged hub PR is searchable without a restart. A diverged or
+hand-edited checkout is never touched; the pull fails with a logged warning.
+
 ### The five MCP tools
 
 | Tool | Purpose | Main params |
@@ -978,6 +984,7 @@ second PR *there*, and merging that one is what makes it live.
 | `STRATA_KB_HTTP_TOKEN` | Bearer token for the HTTP MCP server, REST API and Web UI |
 | `STRATA_KB_HUB_CACHE` | Local hub clone directory (default `~/.strata-kb/hub/`) |
 | `STRATA_KB_HUB_TTL` | How long the local hub clone is considered fresh |
+| `STRATA_KB_HUB_PULL_INTERVAL` | HTTP server only: seconds between automatic hub pulls (default `300`, `0` = off) |
 | `STRATA_KB_INTAKE` | Intake service URL (http(s) only) |
 | `STRATA_KB_INTAKE_AUDIENCE` | OIDC audience the intake expects |
 | `STRATA_KB_TRUSTED_PROXIES` | Number of trusted reverse proxies (default `0`) — see [§10](#10-mcp-server-and-web-ui) |

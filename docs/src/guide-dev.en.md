@@ -300,12 +300,15 @@ Be clear-eyed about the difference.
 | The PR carries its evidence | `kb pr lint` in `kb-pr-lint.yml` on every pull request |
 | Unreviewed knowledge cannot reach the hub | `kb build` exits 1 while any `-svc` section is `pending` |
 | The context cache is CLI-owned | `kb resolve --status-only --cache` refuses a cache whose version, ref set or resolved block differs from the ticket's |
-| The merge-risk review has run and no BLOCKER remains | `kb pr lint` — the `## Review` section must carry a `Blocking: No` line |
+| The merge-risk review has run and no BLOCKER remains | `kb pr lint` — the `## Testing` section must carry a `Blocking: No` line |
 
-`kb pr lint` fails when a required section is missing, still holds the template's
-comment, claims verification with no pasted output, has no Verification fence
-containing the plan's test command, or when `## TDD exemptions` names a class
-outside `config`, `ci`, `docs`, `style`.
+The PR body is short: `## Ticket` (what was asked), `## Changes` (what this PR
+did), `## Testing` (AC→test line, the pasted test command with its summary
+lines, A5's `Blocking: No`), and an optional `## Notes` (out of scope, not
+handled, findings). `kb pr lint` fails when Ticket, Changes or Testing is
+missing or still holds the template's comment, when Testing has no pasted output
+or no fence containing the plan's test command, or when its `Blocking:` line is
+missing or reads `Yes`.
 
 ## 5.2 Prompt-only — stated in every wrapper, measured by nothing
 
@@ -327,9 +330,9 @@ only check is the human at the gate — which means you.
   reinterpreted.
 - **A1–A4.** The four agent reviews before GATE 3 are prompt discipline.
   Nothing in `kb` measures whether they ran. Only A5 has teeth: `kb pr lint`
-  reads the PR's `## Review` section. An agent that skips A1–A4 and writes an
-  honest `Blocking: No` still passes — the gate sits where the merge actually
-  happens, not at every step before it.
+  reads the `Blocking:` line in the PR's `## Testing` section. An agent that
+  skips A1–A4 and writes an honest `Blocking: No` still passes — the gate sits
+  where the merge actually happens, not at every step before it.
 
 ---
 
@@ -525,8 +528,8 @@ should look.
 | `kb ci-publish` refused | This repo is not in the hub's `federation/registry.yaml` | Ask the hub maintainer to add it |
 | `dirty_tree` warning | Uncommitted changes while the manifest revision comes from HEAD | Harmless locally; CI always runs clean |
 | `pr-lint` fails on a Dependabot PR | The gate never self-skips once required | Expected. Decide whether to keep it required for bot PRs. |
-| `pr-lint` fails: `no-review-verdict` | The PR's `## Review` section carries no `Blocking:` line | Run A5 (`dev-handover`'s merge-risk review) and record its verdict — even a clean review states `Blocking: No` |
-| `pr-lint` fails: `review-blocking` | The `## Review` section says `Blocking: Yes` | Fix the BLOCKER findings and re-review; a PR with `Blocking: Yes` never merges |
+| `pr-lint` fails: `no-review-verdict` | The PR's `## Testing` section carries no `Blocking:` line | Run A5 (`dev-handover`'s merge-risk review) and record its verdict — even a clean review states `Blocking: No` |
+| `pr-lint` fails: `review-blocking` | The `## Testing` section says `Blocking: Yes` | Fix the BLOCKER findings and re-review; a PR with `Blocking: Yes` never merges |
 | A citation resolves `stale` mid-implementation | The hub published after the ticket was written | `kb diff`, then ask the analyst. Do not reinterpret the AC yourself. |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
 | `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |

@@ -2765,7 +2765,7 @@ def pr_lint(
         Path("docs/impl"),
         "--plan-dir",
         help="Where docs/impl/<ticket-id>-plan.md lives; its `cmd.test:` line "
-        "must appear inside a Verification fence. Absent plan = warning.",
+        "must appear inside a fence in ## Testing. Absent plan = warning.",
     ),
 ) -> None:
     """Gate: every required PR section is present and actually filled in.

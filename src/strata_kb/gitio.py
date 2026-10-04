@@ -82,7 +82,8 @@ def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _run_env(
-    root: Path | None, env_extra: dict[str, str], *args: str
+    root: Path | None, env_extra: dict[str, str], *args: str,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     import os
 
@@ -91,6 +92,7 @@ def _run_env(
     return subprocess.run(
         ["git", *args], cwd=root, capture_output=True, text=True,
         encoding="utf-8", errors="replace", env=env, stdin=subprocess.DEVNULL,
+        timeout=timeout,
     )
 
 
@@ -194,14 +196,27 @@ def clone(url: str, dest: Path) -> None:
     neutralize_line_endings(dest)
 
 
-def pull(root: Path, url: str | None = None, token: str | None = None) -> None:
+def pull(
+    root: Path, url: str | None = None, token: str | None = None,
+    *, timeout: float | None = None,
+) -> None:
     """`token` is an explicit credential (e.g. HubHandle.token) to use when
     `url` is omitted -- remote_url(root) is the clone's own origin, which is
     already stripped of any credential (strip_remote_credentials), so a
     caller with no credential-bearing `url` handy must pass `token`
-    separately or authentication silently has nothing to offer git."""
+    separately or authentication silently has nothing to offer git.
+
+    `timeout` is for unattended callers (the hub auto-pull thread): it also
+    turns off git's tty / credential-manager prompts, which stdin=DEVNULL
+    alone does not, so a missing credential fails instead of hanging."""
     stripped, embedded = split_credentials(url or remote_url(root))
-    proc = _run_env(root, credential_env(stripped, token or embedded), "pull", "--ff-only")
+    env = credential_env(stripped, token or embedded)
+    if timeout is not None:
+        env = {**env, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    try:
+        proc = _run_env(root, env, "pull", "--ff-only", timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise GitError(f"pull timed out after {timeout}s") from exc
     if proc.returncode != 0:
         raise GitError(redact_url(f"pull failed: {proc.stderr.strip()}"))
 

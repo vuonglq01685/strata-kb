@@ -3,6 +3,11 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.7.0 — 2026-10-04
+
+- The HTTP hub server (`python -m strata_kb.mcp --transport http`) pulls its hub checkout every 5 minutes (`git pull --ff-only`) and re-syncs the search index when HEAD moved — a merged hub PR used to stay invisible until the next intake publish or a manual pull. `STRATA_KB_HUB_PULL_INTERVAL` sets the period in seconds; `0` turns it off. A diverged or hand-edited checkout is left untouched and logged as a warning. Stdio MCP and the CLI are unchanged (they keep `STRATA_KB_HUB_TTL`).
+- **Breaking for dev repos on re-init.** The PR body `dev-handover` writes, and `kb pr lint` requires, is now `## Ticket` / `## Changes` / `## Testing`, plus an optional `## Notes` (out of scope, not handled, findings). Testing carries the AC→test line, a fence with the `cmd.test` command and its summary lines, and A5's `Blocking: No`. kb-context, placeholder resolutions, TDD exemptions, the usage table and A5's finding table leave the PR — the branch already carries them (ticket, context cache, plan, ledger, `merge-risk.md`). `kb-pr-lint.yml` pins the strata-kb version, so a dev repo keeps the old nine-section lint until `kb init --kind dev` re-scaffolds the template, the wrappers and the pin together; an open PR written against the old template must be rewritten.
+
 ## 1.6.0 — 2026-09-29
 
 - `kb mission next` reports five states: `done` (hub `hist.*` row), `ready` (ticket file with every `## Definition of Ready` box ticked), `draft` (ticket file with an unticked box — reason `DoR n/m ticked` — or no DoR section), `to-draft` (no ticket, dependencies done, D-rows DECIDED) and `blocked`. `Next:` names the first `to-draft` story. **Breaking** for scripts reading the JSON `status`: `drafted` is gone, `ready` changed meaning, `draft` and `to-draft` are new.

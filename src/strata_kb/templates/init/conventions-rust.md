@@ -38,7 +38,7 @@ first task of a dev plan creates these files and records the command as
 `cmd.lint`. `cargo fmt --check` and `cargo clippy` together cover both
 formatting and lint. Where `cmd.lint` fails on the untouched tree, narrow
 `select` / rules / warning caps to what passes, and list each narrowed
-rule under `## Findings` in the PR body as a tightening still owed.
+rule under `## Notes` in the PR body as a tightening still owed.
 
 `.rustfmt.toml`:
 

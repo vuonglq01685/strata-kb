@@ -2,47 +2,33 @@
 
 from __future__ import annotations
 
-from strata_kb.prlint import (
-    REQUIRED_SECTIONS,
-    SENTINEL_SECTIONS,
-    lint_body,
-)
+from strata_kb.prlint import REQUIRED_SECTIONS, lint_body
+
+_FENCE = "```\n12 passed in 0.4s\n```"
 
 
 def _body(**overrides: str) -> str:
     """A passing description; override one section to make it fail."""
     filled = {
         "Ticket": "open-new-flight — add the new-flight endpoint",
-        "kb-context": "arinc-kb:arinc-424 §5.3 @ 4f2a91c",
-        "AC→test map": "AC1 → tests/test_flight.py::test_rejects_bad_icao",
-        "Placeholder resolutions": "<max-alt> → 45000 per ATM-STD §5.3",
-        "Verification": "```\n12 passed in 0.4s\n```",
-        "TDD exemptions": "none",
-        "Findings": "none",
-        "Usage": "| phase | cost |\n|---|---|\n| dev-execute | $1.20 |",
-        "Review": "| Severity | File | Line | Why | Fix |\n|---|---|---|---|---|\n\nBlocking: No",
+        "Changes": "- flights/api.py: POST /flights",
+        "Testing": f"AC1 → test_rejects_bad_icao\n\n{_FENCE}\n\nBlocking: No",
     }
     filled.update(overrides)
     return "\n\n".join(f"## {name}\n\n{filled[name]}" for name in REQUIRED_SECTIONS)
+
+
+def _testing(fence: str) -> str:
+    """A Testing section with a valid verdict, so only the fence is under test."""
+    return f"{fence}\n\nBlocking: No"
 
 
 def _codes(body: str) -> set[tuple[str, str]]:
     return {(f.section, f.code) for f in lint_body(body).findings}
 
 
-def test_canon_is_the_nine_sections_in_order():
-    assert REQUIRED_SECTIONS == (
-        "Ticket",
-        "kb-context",
-        "AC→test map",
-        "Placeholder resolutions",
-        "Verification",
-        "TDD exemptions",
-        "Findings",
-        "Usage",
-        "Review",
-    )
-    assert SENTINEL_SECTIONS == frozenset({"TDD exemptions", "Findings"})
+def test_canon_is_ticket_changes_testing():
+    assert REQUIRED_SECTIONS == ("Ticket", "Changes", "Testing")
 
 
 def test_a_fully_filled_description_passes():
@@ -54,20 +40,36 @@ def test_a_fully_filled_description_passes():
     assert report.errors == ()
 
 
+def test_notes_is_optional_and_never_inspected():
+    assert lint_body(_body()).passed
+    assert lint_body(_body() + "\n\n## Notes\n\n<!-- nothing -->\n").passed
+    assert lint_body(_body() + "\n\n## Notes\n\nOut of scope: refunds\n").passed
+
+
+def test_an_old_nine_section_body_fails_on_the_new_canon():
+    old = (
+        "## Ticket\n\nATM-7\n\n## Verification\n\n```\nok\n```\n\n"
+        "## Review\n\nBlocking: No"
+    )
+    codes = _codes(old)
+    assert ("Changes", "missing-section") in codes
+    assert ("Testing", "missing-section") in codes
+
+
 def test_an_empty_body_reports_every_section_missing():
     report = lint_body("")
     assert not report.passed
     # Exact set: no plan_dir given, so a plan-dir-unset warning rides along
-    # (see test_no_plan_dir_is_a_warning_not_a_failure) alongside the eight
+    # (see test_no_plan_dir_is_a_warning_not_a_failure) alongside the
     # missing-section errors this test pins — nothing else.
     assert _codes("") == {
         (name, "missing-section") for name in REQUIRED_SECTIONS
-    } | {("Verification", "plan-dir-unset")}
+    } | {("Testing", "plan-dir-unset")}
 
 
 def test_a_missing_heading_is_reported_by_name():
-    body = _body().replace("## Usage", "## Notes")
-    assert ("Usage", "missing-section") in _codes(body)
+    body = _body().replace("## Changes", "## Notes")
+    assert ("Changes", "missing-section") in _codes(body)
 
 
 def test_a_section_holding_only_an_html_comment_is_empty():
@@ -88,39 +90,30 @@ def test_an_unterminated_html_comment_fails_closed():
     assert ("Ticket", "empty-section") in _codes(body)
 
 
-def test_none_is_a_valid_answer_in_the_two_sentinel_sections():
-    for section in SENTINEL_SECTIONS:
-        assert lint_body(_body(**{section: "none"})).passed
-        assert lint_body(_body(**{section: "`None`"})).passed
-        assert lint_body(_body(**{section: "_none_"})).passed
-
-
-def test_none_elsewhere_is_ordinary_content_not_an_error():
+def test_none_is_ordinary_content_outside_testing():
     # Nonsense, but not this linter's business: presence and non-emptiness
-    # are all it checks outside `## Verification`.
-    assert lint_body(_body(Ticket="none")).passed
+    # are all it checks outside `## Testing`.
+    assert lint_body(_body(Ticket="none", Changes="none")).passed
 
 
-def test_verification_prose_without_a_fence_is_rejected():
-    body = _body(Verification="All tests pass and the linter is clean.")
-    assert ("Verification", "no-verification-output") in _codes(body)
+def test_testing_prose_without_a_fence_is_rejected():
+    body = _body(Testing=_testing("All tests pass and the linter is clean."))
+    assert ("Testing", "no-verification-output") in _codes(body)
 
 
-def test_verification_with_an_empty_fence_is_rejected():
-    body = _body(Verification="```\n\n```")
-    assert ("Verification", "no-verification-output") in _codes(body)
+def test_testing_with_an_empty_fence_is_rejected():
+    body = _body(Testing=_testing("```\n\n```"))
+    assert ("Testing", "no-verification-output") in _codes(body)
 
 
-def test_verification_accepts_a_tilde_fence_and_an_info_string():
-    body = _body(Verification="~~~text\n12 passed in 0.4s\n~~~")
-    assert lint_body(body).passed
-    body = _body(Verification="```console\n12 passed in 0.4s\n```")
-    assert lint_body(body).passed
+def test_testing_accepts_a_tilde_fence_and_an_info_string():
+    assert lint_body(_body(Testing=_testing("~~~text\n12 passed in 0.4s\n~~~"))).passed
+    assert lint_body(_body(Testing=_testing("```console\n12 passed in 0.4s\n```"))).passed
 
 
 def test_output_hidden_inside_a_comment_does_not_count_as_evidence():
-    body = _body(Verification="<!-- ```\n12 passed\n``` -->")
-    assert ("Verification", "empty-section") in _codes(body)
+    body = _body(Testing="<!-- ```\n12 passed\n```\n\nBlocking: No -->")
+    assert ("Testing", "empty-section") in _codes(body)
 
 
 def test_output_hidden_by_a_comment_opened_on_the_heading_line_does_not_count_as_evidence():
@@ -131,11 +124,10 @@ def test_output_hidden_by_a_comment_opened_on_the_heading_line_does_not_count_as
     # heading had matched, so a fence and its output that only ever existed
     # inside the still-open comment were captured as real content and read
     # as visible evidence.
-    body = _body().replace(
-        "## Verification\n\n```\n12 passed in 0.4s\n```",
-        "## Verification <!--\n\n```\n12 passed in 0.4s\n```\n\n-->",
-    )
-    assert ("Verification", "empty-section") in _codes(body)
+    body = _body(Testing=_testing(_FENCE)).replace(
+        "## Testing\n\n```", "## Testing <!--\n\n```"
+    ) + "\n\n-->"
+    assert ("Testing", "empty-section") in _codes(body)
 
 
 def test_a_heading_hidden_inside_a_balanced_comment_is_missing():
@@ -145,9 +137,10 @@ def test_a_heading_hidden_inside_a_balanced_comment_is_missing():
     # heading inside the comment must not open a section — the section
     # reads as missing, not as present and filled.
     body = _body().replace(
-        "## TDD exemptions\n\nnone", "<!--\n## TDD exemptions\n\nnone\n-->"
+        "## Changes\n\n- flights/api.py: POST /flights",
+        "<!--\n## Changes\n\n- flights/api.py: POST /flights\n-->",
     )
-    assert ("TDD exemptions", "missing-section") in _codes(body)
+    assert ("Changes", "missing-section") in _codes(body)
 
 
 def test_an_unterminated_comment_swallows_every_later_heading():
@@ -159,18 +152,18 @@ def test_an_unterminated_comment_swallows_every_later_heading():
     # confirmed-heading branch, so it can't catch a reset being restored
     # there.
     body = _body(Ticket="<!-- the ticket id goes here")
-    assert ("Usage", "missing-section") in _codes(body)
+    assert ("Testing", "missing-section") in _codes(body)
 
 
 def test_a_comment_opened_on_a_heading_line_swallows_the_rest():
     # Pins the "no reset on heading" rule itself: a heading line can also
-    # open an unterminated comment (`## Verification <!-- note`), so the
-    # line still matches `_HEADING` *and* leaves the comment open. That is
-    # the only shape where a reset on the confirmed-heading branch would
-    # fire — without this pin, such a reset could be silently restored and
-    # every other test would stay green.
-    body = _body().replace("## Verification", "## Verification <!-- note")
-    assert ("Usage", "missing-section") in _codes(body)
+    # open an unterminated comment (`## Changes <!-- note`), so the line
+    # still matches `_HEADING` *and* leaves the comment open. That is the
+    # only shape where a reset on the confirmed-heading branch would fire —
+    # without this pin, such a reset could be silently restored and every
+    # other test would stay green.
+    body = _body().replace("## Changes", "## Changes <!-- note")
+    assert ("Testing", "missing-section") in _codes(body)
 
 
 def test_a_balanced_comment_inside_a_fence_is_a_no_op():
@@ -178,7 +171,7 @@ def test_a_balanced_comment_inside_a_fence_is_a_no_op():
     # legitimately contain a balanced HTML comment (e.g. an aside next to
     # pasted output). That must parse as ordinary fence content and leave
     # the fence's own boundaries alone.
-    body = _body(Verification="```\n<!-- oops -->\n12 passed\n```")
+    body = _body(Testing=_testing("```\n<!-- oops -->\n12 passed\n```"))
     assert lint_body(body).passed
 
 
@@ -186,31 +179,29 @@ def test_an_unbalanced_comment_inside_a_fence_fails_closed():
     # Same rule from the other direction: an unclosed `<!--` started inside
     # a fence never lets that fence close either, so it swallows the rest of
     # the body exactly as an unbalanced fence does on its own.
-    body = _body(Verification="```\n<!-- oops\n12 passed\n```")
+    body = _body(Testing=_testing("```\n<!-- oops\n12 passed\n```")) + "\n\n## Notes\n\nx"
     assert not lint_body(body).passed
-    assert ("Usage", "missing-section") in _codes(body)
 
 
 def test_a_duplicate_heading_is_reported():
-    body = _body() + "\n\n## Usage\n\nagain\n"
-    assert ("Usage", "duplicate-section") in _codes(body)
+    body = _body() + "\n\n## Changes\n\nagain\n"
+    assert ("Changes", "duplicate-section") in _codes(body)
 
 
 def test_a_heading_inside_a_fence_is_content_not_a_section():
-    # A PR that pastes markdown into its verification block must not have
-    # that paste read as a second `## Usage` section.
-    body = _body(Verification="```\n## Usage\n12 passed in 0.4s\n```")
+    # A PR that pastes markdown into its test block must not have that paste
+    # read as a second `## Changes` section.
+    body = _body(Testing=_testing("```\n## Changes\n12 passed in 0.4s\n```"))
     assert lint_body(body).passed
 
 
 def test_an_unbalanced_fence_fails_closed_not_open():
-    # A stray opening fence swallows the rest of the body, so the sections
-    # after it read as missing. That is the safe direction — CI goes red and
-    # the author fixes the fence; it can never let an unfilled description
-    # through.
-    body = _body(Verification="```\n12 passed in 0.4s")
+    # A stray opening fence swallows the rest of the body, so what follows it
+    # is never read. That is the safe direction — CI goes red and the author
+    # fixes the fence; it can never let an unfilled description through.
+    body = _body(Changes="```\n- flights/api.py")
     assert not lint_body(body).passed
-    assert ("Usage", "missing-section") in _codes(body)
+    assert ("Testing", "missing-section") in _codes(body)
 
 
 def test_crlf_input_is_handled():
@@ -221,7 +212,7 @@ def test_a_leading_utf8_bom_does_not_hide_the_ticket_heading():
     # `read_text(encoding="utf-8")` leaves a UTF-8 BOM as a leading U+FEFF,
     # which otherwise stops `_HEADING` matching the very first line and
     # reports the misleading "no '## Ticket' heading".
-    assert lint_body("\ufeff" + _body()).passed
+    assert lint_body("﻿" + _body()).passed
 
 
 def test_trailing_whitespace_after_a_heading_is_tolerated():
@@ -229,12 +220,7 @@ def test_trailing_whitespace_after_a_heading_is_tolerated():
 
 
 def test_a_deeper_heading_does_not_end_a_section():
-    body = _body(Verification="### Suite\n\n```\n12 passed\n```")
-    assert lint_body(body).passed
-
-
-def test_the_ascii_arrow_spelling_is_accepted():
-    body = _body().replace("## AC→test map", "## AC->test map")
+    body = _body(Testing=_testing("### Suite\n\n```\n12 passed\n```"))
     assert lint_body(body).passed
 
 
@@ -255,40 +241,7 @@ def test_render_names_the_failing_sections_and_to_json_round_trips():
     assert all(f["level"] == "warning" for f in filled_payload["findings"])
 
 
-from strata_kb.prlint import EXEMPTION_SLUGS, Finding, PRLintReport
-
-
-def test_the_four_exemption_slugs_are_the_canon():
-    assert EXEMPTION_SLUGS == frozenset({"config", "ci", "docs", "style"})
-
-
-def test_exemption_lines_naming_a_known_slug_pass():
-    body = _body(**{"TDD exemptions": (
-        "- config: ruff.toml — verified by running `ruff check .`\n"
-        "- docs — README only, rendered locally\n"
-        "Exempt: ci — verified by the workflow's own run on this PR\n"
-        "- `style`: renames, suite green before and after"
-    )})
-    assert lint_body(body).passed
-
-
-def test_none_still_passes_the_exemption_section():
-    assert lint_body(_body(**{"TDD exemptions": "None."})).passed
-
-
-def test_an_unknown_exemption_class_is_an_error():
-    report = lint_body(_body(**{"TDD exemptions": "Exempt: deadline"}))
-    assert not report.passed
-    (f,) = [f for f in report.findings if f.section == "TDD exemptions"]
-    assert f.code == "unknown-exemption-class"
-    assert f.level == "error"
-    for slug in ("config", "ci", "docs", "style"):
-        assert slug in f.message
-
-
-def test_prose_in_the_exemption_section_is_an_error():
-    body = _body(**{"TDD exemptions": "we skipped tests because it was late"})
-    assert ("TDD exemptions", "unknown-exemption-class") in _codes(body)
+from strata_kb.prlint import Finding, PRLintReport
 
 
 def test_a_warning_level_finding_does_not_fail_the_report():
@@ -335,26 +288,27 @@ def test_plan_cmd_test_reads_the_header_line_and_strips_backticks(tmp_path: Path
     assert plan_cmd_test(d, "ATM-8") is None
 
 
-def test_verification_fence_holding_cmd_test_passes(tmp_path: Path):
+def test_testing_fence_holding_cmd_test_passes(tmp_path: Path):
     d = _plan(tmp_path)
-    body = _ticket_body(Verification="```\n$ pytest -q\n12 passed in 0.4s\n```")
+    body = _ticket_body(Testing=_testing("```\n$ pytest -q\n12 passed in 0.4s\n```"))
     report = lint_body(body, plan_dir=d)
     assert report.passed, report.render()
     assert report.warnings == ()
 
 
-def test_verification_fence_without_cmd_test_is_an_error(tmp_path: Path):
+def test_testing_fence_without_cmd_test_is_an_error(tmp_path: Path):
     d = _plan(tmp_path)
-    body = _ticket_body(Verification="```\n12 passed in 0.4s\n```")
+    body = _ticket_body(Testing=_testing("```\n12 passed in 0.4s\n```"))
     report = lint_body(body, plan_dir=d)
     assert not report.passed
     (f,) = [f for f in report.errors if f.code == "verification-missing-cmd"]
+    assert f.section == "Testing"
     assert "pytest -q" in f.message and "ATM-7-plan.md" in f.message
 
 
 def test_cmd_test_in_prose_outside_the_fence_does_not_count(tmp_path: Path):
     d = _plan(tmp_path)
-    body = _ticket_body(Verification="ran pytest -q\n\n```\n12 passed\n```")
+    body = _ticket_body(Testing=_testing("ran pytest -q\n\n```\n12 passed\n```"))
     assert not lint_body(body, plan_dir=d).passed
 
 
@@ -394,48 +348,54 @@ def test_a_non_utf8_plan_file_is_a_warning_not_a_crash(tmp_path: Path):
     assert [f.code for f in report.warnings] == ["plan-missing"]
 
 
+def _verdict(text: str) -> str:
+    """A Testing section with a valid fence, so only the verdict is under test."""
+    return f"{_FENCE}\n\n{text}"
+
+
 def test_a_clean_review_passes():
     assert lint_body(_body()).passed
 
 
-def test_review_without_a_verdict_line_fails():
-    body = _body(Review="Looks fine to me.")
-    assert ("Review", "no-review-verdict") in _codes(body)
+def test_testing_without_a_verdict_line_fails():
+    body = _body(Testing=_verdict("Looks fine to me."))
+    assert ("Testing", "no-review-verdict") in _codes(body)
 
 
-def test_none_does_not_satisfy_the_review_section():
-    # Review is deliberately NOT a sentinel section: a clean review still
-    # states its verdict.
-    assert "Review" not in SENTINEL_SECTIONS
-    assert ("Review", "no-review-verdict") in _codes(_body(Review="none"))
+def test_none_does_not_satisfy_the_verdict():
+    # A clean review still states its verdict.
+    assert ("Testing", "no-review-verdict") in _codes(_body(Testing=_verdict("none")))
 
 
 def test_a_blocking_review_fails_the_pr():
-    body = _body(Review="| BLOCKER | a.py | 1 | leaks | fix |\n\nBlocking: Yes")
-    assert ("Review", "review-blocking") in _codes(body)
+    body = _body(Testing=_verdict("Blocking: Yes"))
+    assert ("Testing", "review-blocking") in _codes(body)
     assert not lint_body(body).passed
 
 
 def test_the_verdict_line_is_case_insensitive():
-    assert lint_body(_body(Review="blocking: no")).passed
+    assert lint_body(_body(Testing=_verdict("blocking: no"))).passed
 
 
 def test_a_second_blocking_yes_fails_even_after_a_leading_blocking_no():
     # Fail-closed: leftover template boilerplate (`Blocking: No`) above the
     # author's own verdict must not shadow a real `Blocking: Yes` below it.
-    body = _body(
-        Review=(
-            "| Severity | File | Line | Why | Fix |\n|---|---|---|---|---|\n\n"
-            "Blocking: No\n\n"
-            "| BLOCKER | a.py | 1 | leaks | fix |\n\nBlocking: Yes"
-        )
-    )
-    assert ("Review", "review-blocking") in _codes(body)
+    body = _body(Testing=_verdict("Blocking: No\n\nBlocking: Yes"))
+    assert ("Testing", "review-blocking") in _codes(body)
     assert not lint_body(body).passed
 
 
 def test_the_word_blocking_in_a_sentence_is_not_a_verdict_line():
     # The verdict pattern is anchored at line start so a sentence merely
     # mentioning the word cannot pass for a recorded verdict.
-    body = _body(Review="Nothing here is blocking: no big deal")
-    assert ("Review", "no-review-verdict") in _codes(body)
+    body = _body(Testing=_verdict("Nothing here is blocking: no big deal"))
+    assert ("Testing", "no-review-verdict") in _codes(body)
+
+
+def test_an_unclosed_fence_in_testing_fails_even_with_nothing_after_it():
+    # Testing is the last required section, so a stray fence there swallows
+    # only the optional Notes — the gate must still go red, not pass on a
+    # body whose fence never closed.
+    body = _body(Testing="```\n12 passed\n\nBlocking: No")
+    assert ("Testing", "unclosed-fence") in _codes(body)
+    assert not lint_body(body + "\n\n## Notes\n\nx").passed

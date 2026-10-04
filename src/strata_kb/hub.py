@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,8 @@ from strata_kb import gitio
 logger = logging.getLogger("strata_kb.hub")
 
 DEFAULT_TTL_SECONDS = 900  # 15 minutes — override with env STRATA_KB_HUB_TTL
+DEFAULT_PULL_INTERVAL_SECONDS = 300  # hub service auto-pull — env STRATA_KB_HUB_PULL_INTERVAL, 0 = off
+PULL_TIMEOUT_SECONDS = 300  # a stalled fetch must not park the auto-pull thread forever
 
 
 @dataclass
@@ -211,3 +214,60 @@ def resolve_hub(hub: str) -> HubHandle | None:
             exc,
         )
         return HubHandle(root=cache, stale=True, age_seconds=age, token=token)
+
+
+def pull_interval() -> int:
+    """Seconds between hub-service auto-pulls; 0 (or negative) = off."""
+    try:
+        return max(0, int(os.environ.get("STRATA_KB_HUB_PULL_INTERVAL", DEFAULT_PULL_INTERVAL_SECONDS)))
+    except ValueError:
+        return DEFAULT_PULL_INTERVAL_SECONDS
+
+
+def pull_once(hub: str) -> bool:
+    """Fast-forward the served hub checkout from its origin. True = HEAD moved.
+
+    A hub served from its own checkout (`--hub .`) never pulls in
+    resolve_hub -- without this, a merged hub PR stayed invisible until the
+    next intake publish happened to pull. `--ff-only` (gitio.pull): a
+    hand-edited or diverged checkout raises GitError and is left untouched.
+    """
+    handle = resolve_hub(hub)
+    if handle is None or not gitio.has_remote(handle.root):
+        return False
+    before = gitio.head_commit(handle.root)
+    gitio.pull(handle.root, token=handle.token, timeout=PULL_TIMEOUT_SECONDS)
+    after = gitio.head_commit(handle.root)
+    if after == before:
+        return False
+    logger.info("hub refreshed %s..%s", before, after)
+    from strata_kb import embed, searchdb
+
+    # Sync the search index now rather than on the next query, so the first
+    # caller after a merge does not pay the embed cost.
+    searchdb.open_fresh(handle, embed.default_embedder()).close()
+    return True
+
+
+def _auto_pull_tick(hub: str) -> None:
+    try:
+        pull_once(hub)
+    except Exception as exc:  # noqa: BLE001 -- a dead daemon thread would stop refreshing silently
+        logger.warning("hub auto-pull failed -- serving the current checkout: %s", exc)
+
+
+def start_auto_pull(hub: str) -> threading.Thread | None:
+    """Daemon thread running pull_once every pull_interval() seconds; None when off."""
+    interval = pull_interval()
+    if interval <= 0:
+        return None
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval)
+            _auto_pull_tick(hub)
+
+    thread = threading.Thread(target=_loop, name="hub-auto-pull", daemon=True)
+    thread.start()
+    logger.info("hub auto-pull every %ss (STRATA_KB_HUB_PULL_INTERVAL)", interval)
+    return thread

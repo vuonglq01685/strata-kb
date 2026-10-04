@@ -193,8 +193,8 @@ DEV_TEMPLATES: dict[str, str] = {
     ".github/workflows/kb-code.yml": "kb-code.yml",
     # Batch 7 (E1 + E2): the PR evidence gate. The template is the section
     # list dev-handover already assembles; the workflow makes it a required
-    # check; the document names the four TDD exemption categories the
-    # `## TDD exemptions` section reports.
+    # check; the document names the four TDD exemption categories a plan's
+    # `Exempt:` lines may use.
     ".github/pull_request_template.md": "pull-request-template.md",
     ".github/workflows/kb-pr-lint.yml": "kb-pr-lint.yml",
     "docs/tdd-exemptions.md": "tdd-exemptions.md",

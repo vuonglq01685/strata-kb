@@ -141,7 +141,8 @@ edit above it.
      and append `Review: ✅ r<n>` under the task. A ticked box means
      reviewed, so a later session — or a session after compaction — resumes
      at the first unticked task and never re-runs finished work. NOTE and
-     NITS findings go to the PR's `## Findings` instead of a fix round.
+     NITS findings a reviewer should see go to the PR's `## Notes`
+     instead of a fix round.
 
   A task block carrying an `Exempt:` line skips step 1 and runs the
   verification that line names instead, showing its output like any other.

@@ -40,8 +40,6 @@ docs — a documentation change still owes a test, and is not exempt. The
 question is always *"is there a test that can observe this?"*, never *"what is
 this file's extension?"*.
 
-Every exemption taken during a ticket is reported in the PR description under
-`## TDD exemptions`, one line each, copied from the plan. The CI gate
-(`kb pr lint`) requires that section to read `none`, or hold one line per
-exemption naming one of `config`, `ci`, `docs`, `style`; write `none` when
-every task was test-first.
+Every exemption taken during a ticket is declared in the plan as an `Exempt:`
+line and reviewed there before GATE 2 (A2). It is not repeated in the PR
+description.

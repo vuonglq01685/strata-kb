@@ -38,7 +38,7 @@ first task of a dev plan creates these files and records the command as
 `cmd.lint`. SwiftLint and swift-format together cover lint and
 formatting. Where `cmd.lint` fails on the untouched tree, narrow
 `disabled_rules` / warning caps to what passes, and list each narrowed
-rule under `## Findings` in the PR body as a tightening still owed.
+rule under `## Notes` in the PR body as a tightening still owed.
 
 `.swiftlint.yml`:
 

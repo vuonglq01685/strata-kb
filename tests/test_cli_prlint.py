@@ -8,19 +8,13 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from strata_kb.cli import app
-from strata_kb.prlint import REQUIRED_SECTIONS
 
 runner = CliRunner()
 
-GOOD = "\n\n".join(
-    "## Verification\n\n```\n12 passed in 0.4s\n```"
-    if name == "Verification"
-    else "## TDD exemptions\n\nNone."
-    if name == "TDD exemptions"
-    else "## Review\n\nBlocking: No"
-    if name == "Review"
-    else f"## {name}\n\nfilled"
-    for name in REQUIRED_SECTIONS
+GOOD = (
+    "## Ticket\n\nfilled\n\n"
+    "## Changes\n\n- a.py: b\n\n"
+    "## Testing\n\n```\n12 passed in 0.4s\n```\n\nBlocking: No"
 )
 
 
@@ -34,10 +28,10 @@ def test_a_filled_description_exits_zero(tmp_path: Path):
 
 def test_a_missing_section_exits_one_and_names_it(tmp_path: Path):
     body = tmp_path / "body.md"
-    body.write_text(GOOD.replace("## Usage", "## Notes"), encoding="utf-8")
+    body.write_text(GOOD.replace("## Changes", "## Notes"), encoding="utf-8")
     result = runner.invoke(app, ["pr", "lint", str(body)])
     assert result.exit_code == 1
-    assert "Usage" in result.output
+    assert "Changes" in result.output
     assert "missing-section" in result.output
 
 

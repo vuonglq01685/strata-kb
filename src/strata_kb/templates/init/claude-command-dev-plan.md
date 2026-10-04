@@ -38,7 +38,7 @@ one line and stop, and a `path: spike` design has no plan — point at
 opening with three header lines under its title — `cmd.test:
 <command>`, `cmd.lint: <command>` (from `-code §cmd.*`, or the Dev's
 answer) and `status: draft`, since `kb pr lint` reads `cmd.test:` from
-this file and requires it inside the PR's Verification fence — with one
+this file and requires it inside a `## Testing` fence of the PR — with one
 task per AC, or several tasks for a large AC; every task names the test
 that proves it and carries three headings — **Files**
 (create/modify/test), **Interfaces** (what it consumes from earlier
@@ -78,7 +78,7 @@ red step is running that command and watching it fail because no
 linter is configured. Whether the preset applies at full strength or
 is narrowed so it passes on the current tree is decided by the
 *Linting* section of `docs/conventions/<lang>.md` — follow it, and
-carry every narrowed rule into the PR's `## Findings`. Ends at **GATE
+carry every narrowed rule into the PR's `## Notes`. Ends at **GATE
 2**, offered only after A2 comes back clean: the Dev approves the plan
 before any code is written, and once
 approved, flip the plan header to `status: approved` and option 1 in

@@ -52,7 +52,7 @@ header lines under its title: `path: <spike|bounded|architectural>` and
 `status: draft`. A spike's body is the question, what was tried, the
 recommendation, and the sentence "anything built for this is throwaway";
 it ends there — no plan, no execute — with `dev-handover` as its next
-step, putting the recommendation under `## Findings`. When the Dev
+step, putting the recommendation under `## Notes`. When the Dev
 approves, flip the header to `status: approved` before anything else —
 `dev-plan` refuses a `draft` design; a file's existence is not approval,
 its `status:` line is. A spike's design is flipped to `status: approved`

@@ -58,8 +58,8 @@ edit above it.
   The file opens with three header lines under its
   title: `cmd.test: <command>`, `cmd.lint: <command>` (from `-code
   §cmd.*`, or the Dev's answer) and `status: draft` — `kb pr lint` reads
-  `cmd.test:` from this file and requires it inside the PR's
-  Verification fence.
+  `cmd.test:` from this file and requires it inside a `##
+  Testing` fence of the PR.
 - **A task with no test declares its exemption.** Every task's first
   step is a failing test, with exactly four exceptions — config, CI,
   docs and style changes, defined in `docs/tdd-exemptions.md`. A task
@@ -87,7 +87,7 @@ edit above it.
   applies at full strength or is narrowed so it passes on the current
   tree is decided by the *Linting* section of
   `docs/conventions/<lang>.md` — follow it, and carry every narrowed
-  rule into the PR's `## Findings`.
+  rule into the PR's `## Notes`.
 - **GATE 2** — offered only after A2 comes back clean. The Dev approves
   the plan before any code is written; once approved, flip the plan
   header to `status: approved` and option 1 in the Next-step block below

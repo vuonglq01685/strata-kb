@@ -290,7 +290,7 @@ _AC_ID_RE = re.compile(r"^(AC\d+)\b", re.I)
 
 def _check_ac_ids(ac_items: list[str]) -> list[Issue]:
     """Two ACs sharing an id make every downstream reference ambiguous —
-    the AC→test map in the PR template names ids."""
+    the AC→test line in the PR's `## Testing` names ids."""
     seen: set[str] = set()
     issues: list[Issue] = []
     for item in ac_items:
