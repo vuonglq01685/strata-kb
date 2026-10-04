@@ -327,6 +327,12 @@ STRATA_KB_HTTP_TOKEN=<secret> \
 Hub là bắt buộc; server từ chối khởi động nếu không có, và chỉ tìm trong
 `federation/` — không bao giờ tìm trong `.kb/` làm việc của chính nó.
 
+**Tự pull.** Server HTTP chạy `git pull --ff-only` trên checkout của hub mỗi
+5 phút, nên một hub PR vừa merge sẽ tìm được ngay ở lần pull kế tiếp, không
+cần restart. Đổi chu kỳ bằng `STRATA_KB_HUB_PULL_INTERVAL` (giây; `0` = tắt).
+Checkout bị sửa tay hoặc lệch nhánh thì không bị đụng tới: pull thất bại, log
+cảnh báo, và server vẫn phục vụ bản đang có.
+
 ## 10.1 Docker
 
 ```bash

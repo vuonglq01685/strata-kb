@@ -214,6 +214,85 @@ def test_discard_cache_failure_names_the_cache_and_the_fix(
         assert "delete" in message
 
 
+def _serving_clone(tmp_path: Path, hub_with_origin: Path, run_git) -> Path:
+    """A hub service's own checkout (`--hub .`), cloned from the hub origin."""
+    serving = tmp_path / "serving"
+    run_git(tmp_path, "clone", str(tmp_path / "hub-origin.git"), str(serving))
+    return serving
+
+
+def _push_new_commit(hub_with_origin: Path, run_git) -> None:
+    (hub_with_origin / "new.txt").write_text("x", encoding="utf-8")
+    run_git(hub_with_origin, "add", "-A")
+    run_git(hub_with_origin, "commit", "-m", "merged hub PR")
+    run_git(hub_with_origin, "push", "origin", "HEAD")
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, 300), ("60", 60), ("0", 0), ("-5", 0), ("abc", 300)],
+)
+def test_pull_interval_reads_env(monkeypatch, raw, expected):
+    if raw is None:
+        monkeypatch.delenv("STRATA_KB_HUB_PULL_INTERVAL", raising=False)
+    else:
+        monkeypatch.setenv("STRATA_KB_HUB_PULL_INTERVAL", raw)
+    assert hub.pull_interval() == expected
+
+
+def test_pull_once_fast_forwards_the_served_checkout(tmp_path, hub_with_origin, run_git):
+    serving = _serving_clone(tmp_path, hub_with_origin, run_git)
+    _push_new_commit(hub_with_origin, run_git)
+
+    assert hub.pull_once(str(serving)) is True
+    assert (serving / "new.txt").exists()
+    assert hub.pull_once(str(serving)) is False  # already up to date
+
+
+def test_pull_once_never_prompts_and_times_out_as_git_error(
+    tmp_path, hub_with_origin, run_git, monkeypatch
+):
+    """A tty credential prompt or a stalled fetch must not park the auto-pull
+    thread forever -- it has no one to answer and nothing would log it."""
+    serving = _serving_clone(tmp_path, hub_with_origin, run_git)
+    seen: dict = {}
+
+    def hung(root, env_extra, *args, timeout=None):
+        seen.update(env=env_extra, timeout=timeout)
+        raise subprocess.TimeoutExpired(["git", *args], timeout)
+
+    monkeypatch.setattr(gitio, "_run_env", hung)
+    with pytest.raises(gitio.GitError, match="timed out"):
+        hub.pull_once(str(serving))
+    assert seen["timeout"] == hub.PULL_TIMEOUT_SECONDS
+    assert seen["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_pull_once_without_remote_is_a_noop(hub_worktree):
+    assert hub.pull_once(str(hub_worktree)) is False
+
+
+def test_tick_logs_and_survives_a_diverged_checkout(
+    tmp_path, hub_with_origin, run_git, caplog
+):
+    serving = _serving_clone(tmp_path, hub_with_origin, run_git)
+    (serving / "local.txt").write_text("y", encoding="utf-8")
+    run_git(serving, "add", "-A")
+    run_git(serving, "commit", "-m", "hand edit on the hub")
+    _push_new_commit(hub_with_origin, run_git)
+
+    hub._auto_pull_tick(str(serving))  # must not raise -- the loop keeps going
+
+    assert "auto-pull failed" in caplog.text
+    assert not (serving / "new.txt").exists()
+    assert (serving / "local.txt").exists()
+
+
+def test_start_auto_pull_disabled_at_zero(monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_PULL_INTERVAL", "0")
+    assert hub.start_auto_pull(".") is None
+
+
 def test_discard_cache_passes_the_rmtree_callback_kwarg_this_python_accepts(
     monkeypatch, tmp_path
 ):

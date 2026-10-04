@@ -3,6 +3,10 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- The HTTP hub server (`python -m strata_kb.mcp --transport http`) pulls its hub checkout every 5 minutes (`git pull --ff-only`) and re-syncs the search index when HEAD moved — a merged hub PR used to stay invisible until the next intake publish or a manual pull. `STRATA_KB_HUB_PULL_INTERVAL` sets the period in seconds; `0` turns it off. A diverged or hand-edited checkout is left untouched and logged as a warning. Stdio MCP and the CLI are unchanged (they keep `STRATA_KB_HUB_TTL`).
+
 ## 1.6.0 — 2026-09-29
 
 - `kb mission next` reports five states: `done` (hub `hist.*` row), `ready` (ticket file with every `## Definition of Ready` box ticked), `draft` (ticket file with an unticked box — reason `DoR n/m ticked` — or no DoR section), `to-draft` (no ticket, dependencies done, D-rows DECIDED) and `blocked`. `Next:` names the first `to-draft` story. **Breaking** for scripts reading the JSON `status`: `drafted` is gone, `ready` changed meaning, `draft` and `to-draft` are new.

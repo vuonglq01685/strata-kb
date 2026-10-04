@@ -351,6 +351,9 @@ def main(argv: list[str] | None = None) -> None:
             )
         import uvicorn
 
+        from strata_kb.hub import start_auto_pull
+
+        start_auto_pull(config.hub)
         uvicorn.run(
             create_http_app(config, token),
             host=config.host,

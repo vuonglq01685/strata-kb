@@ -331,6 +331,12 @@ STRATA_KB_HTTP_TOKEN=<secret> \
 A hub is mandatory; the server refuses to start without one and searches only
 `federation/` — never its own working `.kb/`.
 
+**Auto-pull.** The HTTP server runs `git pull --ff-only` on the hub checkout
+every 5 minutes, so a merged hub PR becomes searchable on the next pull without
+a restart. Change the period with `STRATA_KB_HUB_PULL_INTERVAL` (seconds; `0`
+turns it off). A hand-edited or diverged checkout is left alone: the pull fails,
+a warning is logged, and the server keeps serving what it has.
+
 ## 10.1 Docker
 
 ```bash

@@ -12,7 +12,9 @@ into it; merging their PRs here is the review gate.
    deployments. Manual fallback: `cp .env.example .env`, edit the token,
    then `docker compose up -d`. Without Docker:
    `python -m strata_kb.mcp --hub . --transport http`
-   (requires the `STRATA_KB_HTTP_TOKEN` env var).
+   (requires the `STRATA_KB_HTTP_TOKEN` env var). The server pulls the hub
+   checkout every 5 minutes, so merged hub PRs go live without a restart —
+   set `STRATA_KB_HUB_PULL_INTERVAL` (seconds, `0` = off) to change it.
 2. **Ingest this repo's own documents (optional)** — the hub may keep its own
    `.kb/`: put the PDF in `source/`, then
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
