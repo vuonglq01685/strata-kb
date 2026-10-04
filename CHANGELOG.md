@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.7.0 — 2026-10-04
 
 - The HTTP hub server (`python -m strata_kb.mcp --transport http`) pulls its hub checkout every 5 minutes (`git pull --ff-only`) and re-syncs the search index when HEAD moved — a merged hub PR used to stay invisible until the next intake publish or a manual pull. `STRATA_KB_HUB_PULL_INTERVAL` sets the period in seconds; `0` turns it off. A diverged or hand-edited checkout is left untouched and logged as a warning. Stdio MCP and the CLI are unchanged (they keep `STRATA_KB_HUB_TTL`).
 - **Breaking for dev repos on re-init.** The PR body `dev-handover` writes, and `kb pr lint` requires, is now `## Ticket` / `## Changes` / `## Testing`, plus an optional `## Notes` (out of scope, not handled, findings). Testing carries the AC→test line, a fence with the `cmd.test` command and its summary lines, and A5's `Blocking: No`. kb-context, placeholder resolutions, TDD exemptions, the usage table and A5's finding table leave the PR — the branch already carries them (ticket, context cache, plan, ledger, `merge-risk.md`). `kb-pr-lint.yml` pins the strata-kb version, so a dev repo keeps the old nine-section lint until `kb init --kind dev` re-scaffolds the template, the wrappers and the pin together; an open PR written against the old template must be rewritten.
