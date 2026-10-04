@@ -218,13 +218,12 @@ advancing on its own say-so.
 
 - **The PR carries its evidence** — `.github/workflows/kb-pr-lint.yml`
   checks out the branch read-only and runs `kb pr lint` on every pull
-  request. It fails when a required section is missing, still holds the
-  template's comment, claims verification with no pasted output, when no
-  Verification fence contains the plan's `cmd.test:` command, or when
-  `## TDD exemptions` names a class outside `config`, `ci`, `docs`,
-  `style`. Add **`pr-lint` to the branch's required checks** once:
-  `kb init` writes the workflow but cannot turn on branch protection for
-  you. Unlike `kb-ticket-lint`, this gate never self-skips — once
+  request. It fails when Ticket, Changes or Testing is missing or still
+  holds the template's comment, when Testing has no fenced output, when
+  no fence holds the plan's `cmd.test:` command, or when Testing carries
+  no `Blocking: No` line. Add **`pr-lint` to the branch's
+  required checks** once: `kb init` writes the workflow but cannot turn
+  on branch protection for you. Unlike `kb-ticket-lint`, this gate never self-skips — once
   required, it blocks **every** PR without the required sections, bot PRs
   (a Dependabot bump, a revert) included, so make that required-check
   decision knowingly.
@@ -235,7 +234,7 @@ advancing on its own say-so.
   refuses a cache whose version, ref set or resolved block differs from
   the ticket's.
 - **The merge-risk review has run and no BLOCKER remains** — `kb pr lint`
-  requires the PR's `## Review` section to carry a `Blocking: No` line.
+  requires the PR's `## Testing` section to carry a `Blocking: No` line.
 
 ### Prompt-only — stated in every wrapper, measured by nothing
 
@@ -256,8 +255,8 @@ measures compliance with it. The only check is the human at the gate.
 - **`OPEN(BA)`** — an ambiguous AC is escalated, never reinterpreted.
 - **A1–A4** — the four agent reviews before GATE 3 are prompt discipline;
   nothing in `kb` measures whether they ran. Only A5 has teeth: `kb pr
-  lint` reads the PR's `## Review` section. An agent that skips A1–A4 and
-  writes an honest `Blocking: No` still passes — the gate sits where the
+  lint` reads the `Blocking:` line in the PR's `## Testing` section. An
+  agent that skips A1–A4 and writes an honest `Blocking: No` still passes — the gate sits where the
   merge actually happens, not at every step before it.
 
 ## Keeping it current
@@ -372,7 +371,7 @@ transcript itself is ~60ms). That is the price of the data.
 
 - `kb usage report` — writes `.kb/usage/report.html`; open it in a browser. Per
   ticket, per phase, per model, plus a `_unattributed` bucket.
-- `kb usage report --ticket <id> --md` — a Markdown table for a PR body.
+- `kb usage report --ticket <id> --md` — a Markdown table.
 - `kb usage ingest-transcript <path>` — backfill. Every transcript under
   `~/.claude/projects/<this-repo>/` can be ingested now; re-ingesting is safe,
   rows are de-duplicated by the transcript's own row ids.
@@ -452,8 +451,8 @@ running both on the same model pays the judgment price for the mechanical half.
 
 | Tier | Steps |
 | --- | --- |
-| Strong | `dev-design`, `dev-plan`, the review subagents (A1–A5, including the `task-reviewer`), and assembling the PR body (it now carries A5's finding table) |
-| Cheap | the lint/format fix loop, re-running the suite until green, ticking plan checkboxes, the self-review checkpoint inside each `dev-execute` task (it never satisfies A3), `kb usage report --ticket <id> --md`, and the `kb svc note` calls at handover |
+| Strong | `dev-design`, `dev-plan`, the review subagents (A1–A5, including the `task-reviewer`), and assembling the PR body |
+| Cheap | the lint/format fix loop, re-running the suite until green, ticking plan checkboxes, the self-review checkpoint inside each `dev-execute` task (it never satisfies A3), and the `kb svc note` calls at handover |
 
 Which model belongs to which tier follows the price table in force —
 `usage-prices.yaml` shipped with the package, overridable per model at

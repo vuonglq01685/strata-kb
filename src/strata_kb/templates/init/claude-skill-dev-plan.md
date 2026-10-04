@@ -87,7 +87,7 @@ edit above it.
   applies at full strength or is narrowed so it passes on the current
   tree is decided by the *Linting* section of
   `docs/conventions/<lang>.md` — follow it, and carry every narrowed
-  rule into the PR's `## Findings`.
+  rule into the PR's `## Notes`.
 - **GATE 2** — offered only after A2 comes back clean. The Dev approves
   the plan before any code is written; once approved, flip the plan
   header to `status: approved` and option 1 in the Next-step block below

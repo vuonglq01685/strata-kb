@@ -1,6 +1,6 @@
-# CI evidence gate: every pull request must carry a description with the
-# sections `dev-handover` assembles — ticket, refs, AC→test map, placeholder
-# resolutions, pasted verification output, TDD exemptions, findings, usage.
+# CI evidence gate: every pull request must carry the short description
+# `dev-handover` assembles — Ticket, Changes, Testing (a pasted test run plus
+# A5's `Blocking: No`).
 #
 # The workflow file name and the job name are deliberately FROZEN as
 # 'kb-pr-lint' / 'pr-lint': branch protection on already-provisioned dev

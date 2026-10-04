@@ -78,7 +78,7 @@ red step is running that command and watching it fail because no
 linter is configured. Whether the preset applies at full strength or
 is narrowed so it passes on the current tree is decided by the
 *Linting* section of `docs/conventions/<lang>.md` — follow it, and
-carry every narrowed rule into the PR's `## Findings`. Ends at **GATE
+carry every narrowed rule into the PR's `## Notes`. Ends at **GATE
 2**, offered only after A2 comes back clean: the Dev approves the plan
 before any code is written, and once
 approved, flip the plan header to `status: approved` and option 1 in

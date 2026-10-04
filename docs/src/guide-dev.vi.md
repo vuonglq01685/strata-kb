@@ -303,12 +303,15 @@ Hãy tỉnh táo về sự khác nhau này.
 | PR mang theo bằng chứng của nó | `kb pr lint` trong `kb-pr-lint.yml` ở mọi pull request |
 | Tri thức chưa review không lên được hub | `kb build` thoát 1 khi còn section `-svc` ở trạng thái `pending` |
 | Cache ngữ cảnh do CLI sở hữu | `kb resolve --status-only --cache` từ chối cache có version, tập tham chiếu hoặc khối đã phân giải khác với ticket |
-| Merge-risk review đã chạy và không còn BLOCKER | `kb pr lint` — mục `## Review` phải có dòng `Blocking: No` |
+| Merge-risk review đã chạy và không còn BLOCKER | `kb pr lint` — mục `## Testing` phải có dòng `Blocking: No` |
 
-`kb pr lint` fail khi thiếu một mục bắt buộc, khi mục đó còn nguyên dòng chú
-thích mẫu, khi tuyên bố đã verify mà không dán output, khi không có khối
-Verification nào chứa lệnh test của kế hoạch, hoặc khi `## TDD exemptions` nêu
-một loại nằm ngoài `config`, `ci`, `docs`, `style`.
+Mô tả PR ngắn gọn: `## Ticket` (ticket yêu cầu gì), `## Changes` (PR đã làm
+gì), `## Testing` (dòng AC→test, lệnh test đã dán kèm các dòng tổng kết, và
+`Blocking: No` của A5), cộng `## Notes` tùy chọn (ngoài phạm vi, chưa xử lý,
+phát hiện). `kb pr lint` fail khi thiếu Ticket, Changes hoặc Testing, hoặc mục
+đó còn nguyên dòng chú thích mẫu, khi Testing không có output đã dán hay không
+có khối nào chứa lệnh test của kế hoạch, hoặc khi dòng `Blocking:` thiếu hay
+ghi `Yes`.
 
 ## 5.2 Chỉ là lời nhắc trong prompt — không có gì đo lường
 
@@ -330,7 +333,7 @@ một loại nằm ngoài `config`, `ci`, `docs`, `style`.
   giờ được tự diễn giải lại.
 - **A1–A4.** Bốn vòng review agent trước GATE 3 là kỷ luật trong prompt.
   Không có gì trong `kb` đo được rằng chúng đã chạy. Chỉ A5 có răng: `kb pr
-  lint` đọc mục `## Review` của PR. Một agent bỏ qua A1–A4 rồi viết một dòng
+  lint` đọc dòng `Blocking:` trong mục `## Testing` của PR. Một agent bỏ qua A1–A4 rồi viết một dòng
   `Blocking: No` trung thực vẫn qua cổng — cổng nằm ở chỗ merge thật sự xảy
   ra, không phải ở mọi bước trước đó.
 
@@ -529,8 +532,8 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | `kb ci-publish` bị từ chối | Repo này chưa có trong `federation/registry.yaml` của hub | Đề nghị người quản trị hub thêm vào |
 | Cảnh báo `dirty_tree` | Có thay đổi chưa commit trong khi revision của manifest lấy từ HEAD | Vô hại khi chạy cục bộ; CI luôn chạy trên bản checkout sạch |
 | `pr-lint` fail trên PR của Dependabot | Cổng này không tự bỏ qua một khi đã bắt buộc | Đúng như thiết kế. Hãy cân nhắc có giữ nó bắt buộc với PR của bot hay không. |
-| `pr-lint` fail: `no-review-verdict` | Mục `## Review` của PR không có dòng `Blocking:` | Chạy A5 (review rủi ro merge của `dev-handover`) và ghi lại kết luận — dù review sạch vẫn phải ghi `Blocking: No` |
-| `pr-lint` fail: `review-blocking` | Mục `## Review` ghi `Blocking: Yes` | Sửa các phát hiện BLOCKER rồi review lại; PR còn `Blocking: Yes` thì không bao giờ được merge |
+| `pr-lint` fail: `no-review-verdict` | Mục `## Testing` của PR không có dòng `Blocking:` | Chạy A5 (review rủi ro merge của `dev-handover`) và ghi lại kết luận — dù review sạch vẫn phải ghi `Blocking: No` |
+| `pr-lint` fail: `review-blocking` | Mục `## Testing` ghi `Blocking: Yes` | Sửa các phát hiện BLOCKER rồi review lại; PR còn `Blocking: Yes` thì không bao giờ được merge |
 | Một trích dẫn báo `stale` giữa chừng | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi BA. Đừng tự diễn giải lại tiêu chí chấp nhận. |
 | Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
 | `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |
