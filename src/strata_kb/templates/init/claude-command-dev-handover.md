@@ -32,39 +32,41 @@ edit above it.
 - **ok** → continue.
 
 Steps the skill enforces: for a `path: spike` design there is no plan and
-usually no code — put the recommendation under `## Findings` in the PR body,
+usually no code — put the recommendation under `## Notes` in the PR body,
 or as a ticket comment when there is no PR, and mark the ticket's plan state
 `n/a (spike)`; otherwise, re-check freshness one final time — a hub publish
-mid-implementation must surface here, not in review; paste the freshness
-output (the `--status-only` output when the cache path was taken) into the
-PR; run the full suite and linters (`cmd.test` and `cmd.lint` from `-code
-§cmd.*`, or the commands recorded at the top of the plan file) and paste the
-real output, since a completion claim without it is not accepted; record
-service history by running `kb svc note <service> --ticket <id> --title
+mid-implementation must surface here, not in review; report it under
+`## Notes` only when it is not `ok` (the `--status-only` output when the
+cache path was taken); run the full suite and linters (`cmd.test` and
+`cmd.lint` from `-code §cmd.*`, or the commands recorded at the top of the
+plan file) and paste the real output, since a completion claim without it is
+not accepted — into the PR goes only the command line and its summary lines;
+record service history by running `kb svc note <service> --ticket <id> --title
 "<title>" --refs "<refs>"` for each service touched so the entries land in
 this same PR (`kb svc note` regenerates `<repo_id>-code` from the working
 tree first, so a service the ticket added is found once its files are
 tracked (`git add`); if this repo has no `<repo_id>-svc` yet —
-`dev-code-seed` never run — say so in one line in the PR and record the
-history there instead);
+`dev-code-seed` never run — say so in one line under `## Notes` and record
+the history there instead);
 `kb svc note` is what makes `kb mission next` on the BA side see this
 story as done, and a ticket that skips it stays `draft` or `ready` forever; then
 assemble the PR description using the repo's
-`.github/pull_request_template.md`, whose sections CI checks with `kb
-pr lint`: Ticket; kb-context refs so the reviewer can `kb resolve` them; the
-AC→test map; the Placeholder resolutions list; the Verification output,
-pasted inside a fenced block together with the `cmd.test` command line
-itself (e.g. `$ pytest -q`), not claimed; the `## TDD exemptions` section,
-every `Exempt:` line from the plan, or `none`; the Findings, every
+`.github/pull_request_template.md`, whose sections CI checks with `kb pr
+lint`. Keep it short: Ticket — the ticket id and what it asked for, one or
+two lines; Changes — one bullet per change a reviewer should know about;
+Testing — one line mapping each AC to its test, then a fenced block holding
+the `cmd.test` command line itself (e.g. `$ pytest -q`) and only its summary
+lines, never the full log, and `Blocking: No`, A5's verdict line, as the last
+line; Notes — only when there is something: out of scope, not handled, every
 `OPEN(...)`, KB gap, ambiguity or contradiction as a concrete feedback item
-on the owning repo, or `none`; and the Usage table; and Review — A5's
-finding table and its `Blocking:` verdict line. A section left as the
-template's comment counts as empty and fails the check. Then run `kb usage report
---ticket <id> --md` and paste the table into the PR under a `## Usage`
-heading, keeping the heading with a one-line reason when the command answers
-`no usage recorded yet` instead of a table; if the ticket changed what a
-service is responsible for, report `amend needed: <repo_id>-svc §svc.<name>`
-as a PR finding. Never edit a `reviewed` section. **GATE 3** — offered only after A5 comes
+on the owning repo. Leave out what the branch already carries: kb-context
+(the ticket), placeholder resolutions (`docs/impl/<ticket-id>-context.md`),
+TDD exemptions (the plan), the usage table (`kb usage report`), and A5's
+finding table (`docs/impl/<ticket-id>-review/merge-risk.md`). A section left
+as the template's comment counts as empty and fails the check. If the ticket
+changed what a service is responsible for, report `amend needed:
+<repo_id>-svc §svc.<name>` under `## Notes`. Never edit a `reviewed`
+section. **GATE 3** — offered only after A5 comes
 back clean — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
 does neither.** Option 1 in the Next-step block below is always "Open the PR
 yourself" with the branch name already filled in — this is the terminal
@@ -103,10 +105,11 @@ BLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3
 rounds — same routing as A3: only a standing BLOCKER keeps the verdict
 `Blocking: Yes`.
 
-Copy the table and the verdict line into the PR body's `## Review` section —
-`kb pr lint` fails the PR when the verdict line is missing and when it reads
-`Blocking: Yes`. NOTE and NITS findings go to `## Findings` as feedback
-items, recorded rather than fixed.
+Copy only the verdict line into the PR body, as the last line of
+`## Testing` — `kb pr lint` fails the PR when it is missing and when it
+reads `Blocking: Yes`. The table stays in `merge-risk.md`. NOTE and NITS
+findings a reviewer should see go to `## Notes`, recorded rather than
+fixed.
 
 A branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1
 becomes the fix, not the PR.
