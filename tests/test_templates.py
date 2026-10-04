@@ -1744,6 +1744,27 @@ def _pr_template_headings() -> list[str]:
     ]
 
 
+_RETIRED_PR_SECTIONS = _re.compile(
+    r"## Findings|## Usage|## TDD exemptions|## Verification|Verification fence"
+    r"|## Review(?! record| dispatch)|AC→test map|for a PR body"
+)
+
+
+def test_no_shipped_template_points_at_a_retired_pr_section():
+    # The short PR body (2026-10-04): every shipped template must send PR
+    # content to Ticket / Changes / Testing / Notes, never to a section the
+    # linter no longer has — an agent told to write `## Findings` writes it.
+    base = resources.files("strata_kb").joinpath("templates/init")
+    hits = [
+        f"{entry.name}:{i}: {line.strip()}"
+        for entry in base.iterdir()
+        if entry.is_file()
+        for i, line in enumerate(entry.read_text(encoding="utf-8").splitlines(), 1)
+        if _RETIRED_PR_SECTIONS.search(line)
+    ]
+    assert hits == []
+
+
 def test_pr_template_headings_are_the_canon_in_order():
     # Canon pin, place 1 of 3: the shipped template against the module,
     # plus the optional Notes the linter never inspects.
@@ -2014,7 +2035,7 @@ def test_every_conventions_preset_carries_the_one_tightening_rule():
     for lang in ("python", "ts", "java", "go", "dotnet", "php"):
         text = _normalised(_read_init_template(f"conventions-{lang}.md"))
         assert TIGHTENING_RULE in text, lang
-        assert "narrow" in text and "## Findings" in text, lang
+        assert "narrow" in text and "## Notes" in text, lang
         assert "exactly as shown" not in text, lang
 
 

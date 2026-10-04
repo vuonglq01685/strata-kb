@@ -38,7 +38,7 @@ one line and stop, and a `path: spike` design has no plan — point at
 opening with three header lines under its title — `cmd.test:
 <command>`, `cmd.lint: <command>` (from `-code §cmd.*`, or the Dev's
 answer) and `status: draft`, since `kb pr lint` reads `cmd.test:` from
-this file and requires it inside the PR's Verification fence — with one
+this file and requires it inside a `## Testing` fence of the PR — with one
 task per AC, or several tasks for a large AC; every task names the test
 that proves it and carries three headings — **Files**
 (create/modify/test), **Interfaces** (what it consumes from earlier

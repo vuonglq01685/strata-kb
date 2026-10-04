@@ -58,8 +58,8 @@ edit above it.
   The file opens with three header lines under its
   title: `cmd.test: <command>`, `cmd.lint: <command>` (from `-code
   §cmd.*`, or the Dev's answer) and `status: draft` — `kb pr lint` reads
-  `cmd.test:` from this file and requires it inside the PR's
-  Verification fence.
+  `cmd.test:` from this file and requires it inside a `##
+  Testing` fence of the PR.
 - **A task with no test declares its exemption.** Every task's first
   step is a failing test, with exactly four exceptions — config, CI,
   docs and style changes, defined in `docs/tdd-exemptions.md`. A task

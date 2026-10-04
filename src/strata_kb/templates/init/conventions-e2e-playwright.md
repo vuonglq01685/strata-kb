@@ -42,7 +42,7 @@ The preset below is the target strength. When this repo has no
 Playwright-aware lint config, the first task of a dev plan creates
 these files and records the command as `cmd.lint`. Where `cmd.lint`
 fails on the untouched tree, narrow `rules` to what passes, and list
-each narrowed rule under `## Findings` in the PR body as a tightening
+each narrowed rule under `## Notes` in the PR body as a tightening
 still owed.
 
 `eslint.config.mjs` (added alongside the repo's existing config):

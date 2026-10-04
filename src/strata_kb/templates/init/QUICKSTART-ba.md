@@ -381,7 +381,7 @@ transcript itself is ~60ms). That is the price of the data.
 
 - `kb usage report` — writes `.kb/usage/report.html`; open it in a browser. Per
   ticket, per phase, per model, plus a `_unattributed` bucket.
-- `kb usage report --ticket <id> --md` — a Markdown table for a PR body.
+- `kb usage report --ticket <id> --md` — a Markdown table for a report. 
 - `kb usage ingest-transcript <path>` — backfill. Every transcript under
   `~/.claude/projects/<this-repo>/` can be ingested now; re-ingesting is safe,
   rows are de-duplicated by the transcript's own row ids.

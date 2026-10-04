@@ -390,3 +390,12 @@ def test_the_word_blocking_in_a_sentence_is_not_a_verdict_line():
     # mentioning the word cannot pass for a recorded verdict.
     body = _body(Testing=_verdict("Nothing here is blocking: no big deal"))
     assert ("Testing", "no-review-verdict") in _codes(body)
+
+
+def test_an_unclosed_fence_in_testing_fails_even_with_nothing_after_it():
+    # Testing is the last required section, so a stray fence there swallows
+    # only the optional Notes — the gate must still go red, not pass on a
+    # body whose fence never closed.
+    body = _body(Testing="```\n12 passed\n\nBlocking: No")
+    assert ("Testing", "unclosed-fence") in _codes(body)
+    assert not lint_body(body + "\n\n## Notes\n\nx").passed

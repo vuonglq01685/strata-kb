@@ -56,7 +56,7 @@ reads. The file opens with two header lines under its title:
 body is the question, what was tried, the recommendation, and the
 sentence "anything built for this is throwaway"; a spike ends here — no
 plan, no execute — and its next step is `dev-handover`, which puts the
-recommendation under `## Findings`.
+recommendation under `## Notes`.
 
 ## Design content
 

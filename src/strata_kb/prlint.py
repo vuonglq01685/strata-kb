@@ -37,8 +37,9 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 # nobody reviewing the PR can actually see.
 _UNTERMINATED_COMMENT = re.compile(r"<!--.*\Z", re.DOTALL)
 
-# The merge-risk review's verdict line (A5), the last line of `## Testing`. Anchored at line start so a
-# sentence mentioning the word cannot pass for a verdict.
+# The merge-risk review's verdict line (A5), anywhere in `## Testing` (the
+# template puts it last). Anchored at line start so a sentence mentioning
+# the word cannot pass for a verdict.
 _BLOCKING = re.compile(
     r"^Blocking:[ \t]*(?P<verdict>Yes|No)\b", re.IGNORECASE | re.MULTILINE
 )
@@ -152,13 +153,15 @@ def _split_sections(body: str) -> list[tuple[str, str]]:
     """Every heading in the body, paired with the text under it.
 
     Fenced regions are skipped when looking for headings: a PR that pastes
-    markdown into its verification block must not have that paste read as a
+    markdown into its `## Testing` fence must not have that paste read as a
     second copy of a required section.
 
     An unbalanced fence therefore swallows everything after it, and those
     sections report as missing. That is the safe direction: the check goes
     red and the author fixes the fence. It can never turn an unfilled
-    description into a passing one.
+    description into a passing one. A fence left open in `## Testing`, the
+    last required section, swallows only the optional Notes, so `lint_body`
+    reports it as `unclosed-fence` instead.
 
     Both fence and heading detection run on one comment-masked view of each
     line (`_mask_comment_spans`): a fence or a `##` heading hidden inside an
@@ -286,6 +289,18 @@ def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding
                     f"(from {plan_path}) — paste that command's real run")]
 
 
+def _has_unclosed_fence(text: str) -> bool:
+    """True when a fence opened in `text` never closes."""
+    open_fence = ""
+    for line in text.split("\n"):
+        marker = _is_fence(line)
+        if not open_fence:
+            open_fence = marker
+        elif marker == open_fence:
+            open_fence = ""
+    return bool(open_fence)
+
+
 def _has_fenced_output(text: str) -> bool:
     """True when a fenced block holds at least one non-blank line."""
     return any(block.strip() for block in _fenced_blocks(text))
@@ -355,6 +370,17 @@ def lint_body(body: str, *, plan_dir: Path | None = None) -> PRLintReport:
             )
             continue
         if section == "Testing":
+            # Testing is the last required section, so a fence left open
+            # here swallows only the optional Notes and nothing else would
+            # go red -- fail it explicitly.
+            if _has_unclosed_fence(visible):
+                findings.append(
+                    Finding(
+                        section,
+                        "unclosed-fence",
+                        "a fence opened here never closes — close it",
+                    )
+                )
             if not _has_fenced_output(visible):
                 findings.append(
                     Finding(

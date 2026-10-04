@@ -38,7 +38,7 @@ first task of a dev plan creates these files and records the command as
 `cmd.lint`. `dart format --set-exit-if-changed` and `dart analyze`
 together cover formatting and lint. Where `cmd.lint` fails on the
 untouched tree, narrow the enabled lint set to what passes, and list
-each narrowed rule under `## Findings` in the PR body as a tightening
+each narrowed rule under `## Notes` in the PR body as a tightening
 still owed.
 
 `analysis_options.yaml`:

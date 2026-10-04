@@ -330,9 +330,9 @@ only check is the human at the gate — which means you.
   reinterpreted.
 - **A1–A4.** The four agent reviews before GATE 3 are prompt discipline.
   Nothing in `kb` measures whether they ran. Only A5 has teeth: `kb pr lint`
-  reads the `Blocking:` line in the PR's `## Testing` section. An agent that skips A1–A4 and writes an
-  honest `Blocking: No` still passes — the gate sits where the merge actually
-  happens, not at every step before it.
+  reads the `Blocking:` line in the PR's `## Testing` section. An agent that
+  skips A1–A4 and writes an honest `Blocking: No` still passes — the gate sits
+  where the merge actually happens, not at every step before it.
 
 ---
 

@@ -86,7 +86,12 @@ findings for the BA/KB, amend needed, stale citation, no -svc yet>
 - `dev-plan` skill + wrappers, `tdd-exemptions.md`, `QUICKSTART-dev.md`,
   `initcmd.py` — wherever they say an item is copied into the PR's TDD
   exemptions / Usage / Review sections.
-- `kb-pr-lint.yml` — header comment only. Workflow file name and job name
+- `dev-design` wrappers (spike recommendation → `## Notes`) and the
+  `conventions-*.md` packs (narrowed lint rules → `## Notes`).
+- A guard test fails on any shipped template that still names a retired PR
+  section; `kb pr lint` reports `unclosed-fence` for a fence left open in
+  `## Testing`, since nothing required follows it to go missing.
+- `kb-pr-lint.yml` — comments only. Workflow file name and job name
   stay frozen (branch protection keys on them).
 - Docs: `docs/src/guide-dev.{en,vi}.md`, README §13, CHANGELOG Unreleased.
 

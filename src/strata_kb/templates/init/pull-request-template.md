@@ -22,8 +22,8 @@ hand-edit here does not survive re-init.
 <!--
 One line mapping each AC to its test. Then a fenced block with the cmd.test
 command line itself and its summary lines only (e.g. `$ pytest -q` then
-`212 passed in 8.1s`), plus the lint result — not the full log. Last line:
-A5's verdict, `Blocking: No`.
+`212 passed in 8.1s`) — not the full log. Last line: A5's verdict,
+`Blocking: No`.
 -->
 
 ## Notes

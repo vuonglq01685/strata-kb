@@ -333,9 +333,9 @@ ghi `Yes`.
   giờ được tự diễn giải lại.
 - **A1–A4.** Bốn vòng review agent trước GATE 3 là kỷ luật trong prompt.
   Không có gì trong `kb` đo được rằng chúng đã chạy. Chỉ A5 có răng: `kb pr
-  lint` đọc dòng `Blocking:` trong mục `## Testing` của PR. Một agent bỏ qua A1–A4 rồi viết một dòng
-  `Blocking: No` trung thực vẫn qua cổng — cổng nằm ở chỗ merge thật sự xảy
-  ra, không phải ở mọi bước trước đó.
+  lint` đọc dòng `Blocking:` trong mục `## Testing` của PR. Một agent bỏ qua
+  A1–A4 rồi viết một dòng `Blocking: No` trung thực vẫn qua cổng — cổng nằm ở
+  chỗ merge thật sự xảy ra, không phải ở mọi bước trước đó.
 
 ---
 

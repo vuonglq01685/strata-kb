@@ -37,7 +37,7 @@ The preset below is the target strength. When this repo has no linter,
 the first task of a dev plan wires the preset below into the repo's
 build tool and records the command as `cmd.lint`. Where `cmd.lint` fails
 on the untouched tree, narrow `select` / rules / warning caps to what
-passes, and list each narrowed rule under `## Findings` in the PR body
+passes, and list each narrowed rule under `## Notes` in the PR body
 as a tightening still owed. Format = spotless (google-java-format),
 wired for both build tools. Lint = checkstyle with the built-in Google
 ruleset, wired for Gradle below; the Maven variant covers formatting
@@ -73,7 +73,7 @@ checkstyle {
 Set `maxWarnings = 0` once the tree is clean — with `google_checks.xml`
 at severity `warning`, a pre-existing repo fails on day one otherwise.
 Until then checkstyle reports but cannot fail — list it under
-`## Findings` as a tightening still owed.
+`## Notes` as a tightening still owed.
 
 `build.gradle.kts` is also a detected manifest, but the block above is
 Groovy DSL. The Kotlin DSL needs different syntax for `configurations
