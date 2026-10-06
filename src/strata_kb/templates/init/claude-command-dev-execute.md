@@ -19,7 +19,7 @@ and `requesting-code-review` folded in.*
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -39,7 +39,7 @@ where the environment supports it, a git worktree named from the ticket id.
 Never work directly on the default branch; `.worktrees/` must be
 gitignored — add it to the repo's `.gitignore` once, in this step, since
 Dev repos ship no root `.gitignore` template. Then run `kb plan waves
-docs/impl/<ticket-id>-plan.md`; an error returns the plan to `dev-plan` —
+docs/impl/<ticket-id>/plan.md`; an error returns the plan to `dev-plan` —
 except when `kb plan waves` reports only `has no Depends on: line` errors,
 one per task: the plan predates waves and runs sequentially as today, say
 so in the Next-step block; any other error still returns the plan to
@@ -57,7 +57,7 @@ worktree is acceptable only if its base contains the ticket branch's HEAD,
 checked with `git merge-base --is-ancestor`; at most **3 lanes at a
 time**, each implementer handed its lane path and the sentence "Never use
 `run_in_background`; run every test in the foreground and let the call
-block." A lane implementer never edits `docs/impl/<ticket-id>-plan.md` —
+block." A lane implementer never edits `docs/impl/<ticket-id>/plan.md` —
 the orchestrator ticks after A3 — so lanes never conflict on the plan
 file. Scoped tests inside the lane, lanes merged back in task-number order
 with `git merge --no-ff
@@ -89,11 +89,11 @@ dominant style, the repo wins locally — the conflict is recorded as a
 finding for the PR body), and nothing else broke; then **verify** by running
 `cmd.test` and `cmd.lint` (the commands it was handed) and show the output;
 then commit the task's changes and write the full report to
-`docs/impl/<ticket-id>-review/task-<n>-report.md`. The self-review **never
+`docs/impl/<ticket-id>/review/task-<n>-report.md`. The self-review **never
 satisfies A3**: back in the orchestrator, write `git diff <BASE>..HEAD` —
 `<BASE>` recorded before the dispatch, never `HEAD~1` — to
-`docs/impl/<ticket-id>-review/task-<n>.diff` (creating
-`docs/impl/<ticket-id>-review/` first if it does not exist yet) and dispatch
+`docs/impl/<ticket-id>/review/task-<n>.diff` (creating
+`docs/impl/<ticket-id>/review/` first if it does not exist yet) and dispatch
 a `task-reviewer` subagent with a fresh context and exactly two paths (report
 file, diff file) plus the task block it was given and its binding
 constraints copied verbatim from the plan, and `docs/conventions/<lang>.md`,
@@ -125,8 +125,8 @@ in the Next-step block below is `/dev-handover <ticket-id>`; otherwise it is
 ## A4 — narrow branch review (after the last task)
 
 Every box ticked is not the same as the ticket being done. Write the branch
-diff to `docs/impl/<ticket-id>-review/branch.diff`
-(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
+diff to `docs/impl/<ticket-id>/review/branch.diff`
+(`mkdir -p docs/impl/<ticket-id>/review` if it does not exist yet, then
 `git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
 `branch-reviewer` subagent with that path, the plan, the ticket, and
 `docs/conventions/<lang>.md`, the five pack files it links, and its

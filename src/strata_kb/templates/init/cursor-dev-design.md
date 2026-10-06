@@ -17,7 +17,7 @@ is installed it is the newer source for the three-path method.*
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -49,7 +49,7 @@ paths, **take the heavier one**. The ratchet is **one-way**: hidden
 complexity found later upgrades the path, and you say so; nothing
 downgrades mid-ticket.
 
-Every path writes `docs/impl/<ticket-id>-design.md` — one paragraph on
+Every path writes `docs/impl/<ticket-id>/design.md` — one paragraph on
 the bounded path is not ceremony, it is the resume point the orchestrator
 reads. The file opens with two header lines under its title:
 `path: <spike|bounded|architectural>` and `status: draft`. A spike's
@@ -73,12 +73,12 @@ Write the design in its own context: dispatch a `design-author` subagent with
 the resolved context cache path, the ticket's acceptance criteria, the
 conventions paths, and this phase's own authoring rules above — what the
 design must cover, and how placeholders and standard values are cited — and
-let it write `docs/impl/<ticket-id>-design.md` with `status: draft`. You
+let it write `docs/impl/<ticket-id>/design.md` with `status: draft`. You
 orchestrate; you do not draft and then judge your own draft.
 
 That design is a draft until a reviewer that never saw it being written
 says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
-these things: the path `docs/impl/<ticket-id>-design.md`, the ticket's
+these things: the path `docs/impl/<ticket-id>/design.md`, the ticket's
 acceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`
 plus `docs/pr-review-rubric.local.md`. Not your reasoning, not this
 conversation.

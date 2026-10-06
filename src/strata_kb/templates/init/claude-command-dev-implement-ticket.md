@@ -19,7 +19,7 @@ and subagent-driven-development.*
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -34,12 +34,14 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
-Steps the skill enforces: **Intake** reads the ticket's `## Dependencies`
+Steps the skill enforces: **Intake** runs `kb impl tidy` first (it moves an
+old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/`; no CLI → move
+them by hand), then reads the ticket's `## Dependencies`
 (`Blocked by:` / `Blocks:`) and, when a `> Parent mission:` line is
 present, that mission's `## Sequencing` row, and stops if there is no
 `kb-context` block to resolve; **Resolve** triages exactly as in the
 Freshness re-check above; the full resolve is `kb resolve --write-cache
-docs/impl/<ticket-id>-context.md <ticket-file>`, which writes the header
+docs/impl/<ticket-id>/context.md <ticket-file>`, which writes the header
 and the resolved sections — you never edit above the
 `<!-- kb:placeholder-map -->` marker; **Ground**
 reads resolved L2, calling `kb_get_section` only for a section already
@@ -62,7 +64,7 @@ file's `## Placeholder map` table below the marker
 anything unverifiable becomes `OPEN(BA)`; **Run the phases** invokes the
 `dev-design`, `dev-plan`, `dev-execute`, then `dev-handover` skills in
 order, deriving re-entry state — never stored — from
-`docs/impl/<ticket-id>-design.md` and `-plan.md` by their own `status:`
+`docs/impl/<ticket-id>/design.md` and `plan.md` by their own `status:`
 header and `## Review record` table: `status: draft` with no clean round
 recorded runs that phase's review first (A1 for design, A2 for plan);
 `status: draft` with a clean round recorded offers the matching gate;

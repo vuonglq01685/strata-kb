@@ -397,7 +397,7 @@ transcript itself is ~60ms). That is the price of the data.
 
 A row is attributed to whichever ticket file the session mentioned most
 recently (`tickets/<id>.md`, `missions/<id>.md`,
-`docs/impl/<id>-{design,plan}.md`). Work done before any ticket file is
+`docs/impl/<id>/{design,plan}.md`). Work done before any ticket file is
 mentioned lands in `_unattributed.jsonl` — a large bucket there means
 attribution is missing work, not that the work was free.
 

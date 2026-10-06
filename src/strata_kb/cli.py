@@ -2432,7 +2432,8 @@ def resolve(
     if write_cache is not None:
         from datetime import date
 
-        stem = write_cache.stem.removesuffix("-context")
+        stem = (write_cache.parent.name if write_cache.name == "context.md"
+                else write_cache.stem.removesuffix("-context"))
         try:
             previous = (
                 write_cache.read_text(encoding="utf-8") if write_cache.exists() else None

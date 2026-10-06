@@ -7,7 +7,7 @@ description: Turn an approved technical design into an implementation plan — o
 
 You are phase 2 of the ticket-implementation pipeline, invoked after the
 Dev has approved the design at GATE 1. Your job: turn that design into
-`docs/impl/<ticket-id>-plan.md`, a resumable checkbox file that phase 3
+`docs/impl/<ticket-id>/plan.md`, a resumable checkbox file that phase 3
 (`dev-execute`) reads and ticks task by task.
 
 *Counterpart in the superpowers plugin: `superpowers:writing-plans`.*
@@ -15,7 +15,7 @@ Dev has approved the design at GATE 1. Your job: turn that design into
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -32,11 +32,11 @@ edit above it.
 
 ## Steps
 
-- **Read the design** — read `docs/impl/<ticket-id>-design.md`. Its
+- **Read the design** — read `docs/impl/<ticket-id>/design.md`. Its
   header must say `status: approved`; a `draft` design means GATE 1 has
   not passed — say so in one line and stop. A `path: spike` design has
   no plan: say so and point at `dev-handover`.
-- **Write the plan** — write `docs/impl/<ticket-id>-plan.md` with one
+- **Write the plan** — write `docs/impl/<ticket-id>/plan.md` with one
   task per AC, or several tasks for a large AC, and every task names the
   test that proves it. Per task, give exactly three headings: **Files**
   (create / modify / test, by path); **Interfaces** (what this task
@@ -52,7 +52,7 @@ edit above it.
   tasks with no dependency path are therefore file-disjoint, which is
   what lets `dev-execute` run them in parallel lanes. The closing
   verification task depends on every other task. Run
-  `kb plan waves docs/impl/<ticket-id>-plan.md` before offering GATE 2:
+  `kb plan waves docs/impl/<ticket-id>/plan.md` before offering GATE 2:
   it prints the waves and fails on a shared path without a dependency,
   a cycle, an unknown task, or a missing line.
   The file opens with three header lines under its
@@ -105,7 +105,7 @@ format, the ordering rules — and nothing else. Then review it with a
 different context.
 
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
-path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
+path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
 `## Pre-code axes` of `docs/pr-review-rubric.md` plus
 `docs/pr-review-rubric.local.md`. It answers five questions and nothing else:
 

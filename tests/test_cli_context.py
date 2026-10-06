@@ -183,7 +183,7 @@ def _resolve(args, fixture_kb, fed_hub, block):
 
 
 def test_write_cache_writes_the_file_and_leaves_stdout_unchanged(fed_hub, fixture_kb, run_git, tmp_path):
-    cache = tmp_path / "docs" / "impl" / "T-7-context.md"
+    cache = tmp_path / "docs" / "impl" / "T-7" / "context.md"
     block = _block(fed_hub, run_git)
     plain = _resolve([], fixture_kb, fed_hub, block)
     result = _resolve(["--write-cache", str(cache)], fixture_kb, fed_hub, block)
