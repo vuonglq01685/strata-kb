@@ -748,8 +748,8 @@ sidecar file.
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
 | Just checking a citation | `kb resolve <file>` |
 
-Work lives in `docs/impl/<ticket-id>-design.md` (architectural tickets only) and
-`docs/impl/<ticket-id>-plan.md` (one task per acceptance criterion, `- [ ]`
+Work lives in `docs/impl/<ticket-id>/design.md` (architectural tickets only) and
+`docs/impl/<ticket-id>/plan.md` (one task per acceptance criterion, `- [ ]`
 checkboxes ticked one commit at a time). Those two files, the ticked-checkbox
 ratio, the branch, and whether a PR exists are the complete state.
 

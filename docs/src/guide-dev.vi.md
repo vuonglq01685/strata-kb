@@ -224,10 +224,13 @@ nay có thể đã `stale`. Chỉ kiểm tra lúc handover thì quá muộn.
 
 | File | Do ai ghi | Mục đích |
 |---|---|---|
-| `docs/impl/<id>-design.md` | `dev-design` | bản thiết kế |
-| `docs/impl/<id>-plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]`, mỗi task một dòng `Depends on:` |
-| `docs/impl/<id>-context.md` | `dev-implement-ticket` | cache ngữ cảnh đã phân giải; bị gitignore, sinh lại khi cần |
-| `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
+| `docs/impl/<id>/design.md` | `dev-design` | bản thiết kế |
+| `docs/impl/<id>/plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]`, mỗi task một dòng `Depends on:` |
+| `docs/impl/<id>/context.md` | `dev-implement-ticket` | cache ngữ cảnh đã phân giải; bị gitignore, sinh lại khi cần |
+| `docs/impl/<id>/review/` | `dev-execute`, `dev-handover` | diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
+
+`kb init --kind dev` và `kb impl tidy` tự dời layout phẳng cũ
+(`docs/impl/<id>-plan.md`, …) vào các folder này.
 
 File thiết kế và kế hoạch mỗi file đều có thêm bảng `## Review record` khi các
 vòng review chạy — đây là lịch sử được commit của mọi vòng, không phải một file
@@ -244,7 +247,7 @@ bao giờ lọt vào pull request.
 **Wave và lane.** Mỗi task trong kế hoạch có một dòng `Depends on:` ngay dưới
 tiêu đề `### Task <n>:` — `none`, hoặc các task mà nó dùng Interface hay dùng
 chung file. `dev-plan` suy ra dòng này; reviewer A2 kiểm tra nó.
-`kb plan waves docs/impl/<id>-plan.md` biến các dòng đó thành các wave (wave n
+`kb plan waves docs/impl/<id>/plan.md` biến các dòng đó thành các wave (wave n
 = các task có mọi dependency nằm ở wave trước) và fail khi hai task dùng chung
 một file mà không có dependency giữa chúng, khi có vòng lặp, hoặc khi thiếu
 dòng — kế hoạch như vậy không có thứ tự song song an toàn. Kế hoạch mà không
@@ -561,7 +564,8 @@ thật.
 | `kb resolve <file>` | Kiểm tra trích dẫn của ticket | `0` ok, `1` hỏng, `2` cũ |
 | `kb diff <doc> --against <rev>` | Sửa đổi đã thay đổi những gì | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Tìm và lấy nội dung | `0` |
-| `kb plan waves <plan-file> [--json]` | Các wave dependency của một `docs/impl/<id>-plan.md` | `0` ok, `1` file dùng chung không có dependency, vòng lặp, task không xác định, hoặc thiếu `Depends on:` |
+| `kb plan waves <plan-file> [--json]` | Các wave dependency của một `docs/impl/<id>/plan.md` | `0` ok, `1` file dùng chung không có dependency, vòng lặp, task không xác định, hoặc thiếu `Depends on:` |
+| `kb impl tidy [--impl-dir]` | Dời layout phẳng cũ `docs/impl/<id>-*` vào `docs/impl/<id>/`; chạy lại không đổi gì, không bao giờ ghi đè | `0` sau khi in báo cáo, `1` khi thư mục không tồn tại |
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,

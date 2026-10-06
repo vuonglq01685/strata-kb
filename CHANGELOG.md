@@ -3,6 +3,11 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Dev repos: each ticket's work lives in one folder — `docs/impl/<ticket-id>/{design.md, plan.md, context.md, review/}` instead of flat `docs/impl/<ticket-id>-*`. New `kb impl tidy` moves a flat layout (idempotent, never overwrites, no git); `kb init --kind dev` runs it, and `dev-implement-ticket` runs it at Intake. `kb pr lint` reads `docs/impl/<id>/plan.md` and, on a flat plan, says to run `kb impl tidy`; `kb resolve --write-cache` titles a `<id>/context.md` cache by its folder; the usage ledger follows the new paths.
+- Migration for an existing dev repo: re-run `kb init --kind dev`, then commit the renames. A PR opened before the move gets a `plan-missing` warning (not a failure) until its branch is tidied.
+
 ## 1.7.0 — 2026-10-04
 
 - The HTTP hub server (`python -m strata_kb.mcp --transport http`) pulls its hub checkout every 5 minutes (`git pull --ff-only`) and re-syncs the search index when HEAD moved — a merged hub PR used to stay invisible until the next intake publish or a manual pull. `STRATA_KB_HUB_PULL_INTERVAL` sets the period in seconds; `0` turns it off. A diverged or hand-edited checkout is left untouched and logged as a warning. Stdio MCP and the CLI are unchanged (they keep `STRATA_KB_HUB_TTL`).

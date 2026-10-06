@@ -222,10 +222,13 @@ today. Checking only at handover would be too late.
 
 | File | Written by | Purpose |
 |---|---|---|
-| `docs/impl/<id>-design.md` | `dev-design` | the design |
-| `docs/impl/<id>-plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes, a `Depends on:` line per task |
-| `docs/impl/<id>-context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
-| `docs/impl/<id>-review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
+| `docs/impl/<id>/design.md` | `dev-design` | the design |
+| `docs/impl/<id>/plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes, a `Depends on:` line per task |
+| `docs/impl/<id>/context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
+| `docs/impl/<id>/review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
+
+`kb init --kind dev` and `kb impl tidy` move an old flat layout
+(`docs/impl/<id>-plan.md`, …) into these folders.
 
 The design and plan files each grow a `## Review record` table as their
 reviews run — the committed history of every round, not a separate file.
@@ -241,7 +244,7 @@ request.
 **Waves and lanes.** Every task in the plan carries a `Depends on:` line under
 its `### Task <n>:` heading — `none`, or the tasks whose Interfaces it consumes
 or whose files it shares. `dev-plan` derives it; the A2 reviewer checks it.
-`kb plan waves docs/impl/<id>-plan.md` turns those lines into waves (wave n =
+`kb plan waves docs/impl/<id>/plan.md` turns those lines into waves (wave n =
 tasks whose dependencies all sit in earlier waves) and fails when two tasks
 share a file without a dependency between them, when there is a cycle, or when
 a line is missing — a plan like that has no safe parallel order. A plan where
@@ -556,7 +559,8 @@ Linux (CI) is that caveat, not real drift.
 | `kb resolve <file>` | Check a ticket's citations | `0` ok, `1` broken, `2` stale |
 | `kb diff <doc> --against <rev>` | What an amendment changed | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Search and fetch | `0` |
-| `kb plan waves <plan-file> [--json]` | Dependency waves of a `docs/impl/<id>-plan.md` | `0` ok, `1` shared file without a dependency, cycle, unknown task, or missing `Depends on:` |
+| `kb plan waves <plan-file> [--json]` | Dependency waves of a `docs/impl/<id>/plan.md` | `0` ok, `1` shared file without a dependency, cycle, unknown task, or missing `Depends on:` |
+| `kb impl tidy [--impl-dir]` | Move an old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/`; idempotent, never overwrites | `0` after a report, `1` when the dir is missing |
 | `kb pr lint <file>` | PR evidence gate | `0` PASS, `1` FAIL |
 
 **Slash commands:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
