@@ -2391,7 +2391,7 @@ def resolve(
     write_cache: Path | None = typer.Option(
         None,
         "--write-cache",
-        help="Also write docs/impl/<ticket-id>-context.md: header (version, "
+        help="Also write docs/impl/<ticket-id>/context.md: header (version, "
         "refs, sha256) + the resolved sections; everything below the "
         "`<!-- kb:placeholder-map -->` marker is kept from the existing file.",
     ),
@@ -2767,7 +2767,7 @@ def pr_lint(
     plan_dir: Path = typer.Option(
         Path("docs/impl"),
         "--plan-dir",
-        help="Where docs/impl/<ticket-id>-plan.md lives; its `cmd.test:` line "
+        help="Where docs/impl/<ticket-id>/plan.md lives; its `cmd.test:` line "
         "must appear inside a fence in ## Testing. Absent plan = warning.",
     ),
 ) -> None:

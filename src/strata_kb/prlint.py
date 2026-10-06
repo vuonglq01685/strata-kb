@@ -2,7 +2,7 @@
 
 Pure text plus a local plan-file read: no hub access, no git, no network,
 standard library only — so the CI job that runs it needs only a read-only
-checkout (for `docs/impl/<ticket-id>-plan.md`), no token, and works on fork
+checkout (for `docs/impl/<ticket-id>/plan.md`), no token, and works on fork
 PRs.
 
 `REQUIRED_SECTIONS` below is the single source of truth for the section list.
@@ -223,7 +223,7 @@ def plan_cmd_test(plan_dir: Path, ticket_id: str) -> str | None:
     """The plan's `cmd.test:` header value, back-ticks stripped; None when the
     plan or the line is absent (an unreadable plan reads as absent)."""
     try:
-        text = (plan_dir / f"{ticket_id}-plan.md").read_text(encoding="utf-8")
+        text = (plan_dir / ticket_id / "plan.md").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
     m = _CMD_TEST.search(text)
@@ -262,11 +262,13 @@ def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding
                         "no ABC-12-shaped ticket id found, so the plan's cmd.test "
                         "could not be checked — start the section with the id",
                         level="warning")]
-    plan_path = plan_dir / f"{ticket_id}-plan.md"
+    plan_path = plan_dir / ticket_id / "plan.md"
     if not plan_path.is_file():
+        flat = plan_dir / f"{ticket_id}-plan.md"
+        hint = (f" — flat layout {flat} found: run kb impl tidy" if flat.is_file()
+                else " (spike or no plan yet)")
         return [Finding("Testing", "plan-missing",
-                        f"{plan_path} not found — the cmd.test check did not run "
-                        "(spike or no plan yet)",
+                        f"{plan_path} not found — the cmd.test check did not run{hint}",
                         level="warning")]
     try:
         plan_path.read_text(encoding="utf-8")

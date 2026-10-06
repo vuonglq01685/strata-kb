@@ -78,8 +78,8 @@ def test_plan_dir_defaults_to_docs_impl_and_warns_when_absent(tmp_path: Path, mo
 
 def test_plan_dir_flag_enforces_cmd_test(tmp_path: Path):
     plans = tmp_path / "plans"
-    plans.mkdir()
-    (plans / "ATM-7-plan.md").write_text("# p\n\ncmd.test: pytest -q\n", encoding="utf-8")
+    (plans / "ATM-7").mkdir(parents=True)
+    (plans / "ATM-7" / "plan.md").write_text("# p\n\ncmd.test: pytest -q\n", encoding="utf-8")
     body = tmp_path / "body.md"
     body.write_text(GOOD.replace("## Ticket\n\nfilled", "## Ticket\n\nATM-7 x"), encoding="utf-8")
     result = runner.invoke(app, ["pr", "lint", str(body), "--plan-dir", str(plans)])
