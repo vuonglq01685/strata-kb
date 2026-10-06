@@ -2148,6 +2148,7 @@ def test_pr_review_rubric_is_wired_into_dev_kind_only():
 def test_impl_gitignore_excludes_the_review_artefacts():
     text = _read_init_template("impl-gitignore.txt")
     assert "*-review/" in text
+    assert "*/review/" in text
 
 
 REVIEW_CONTRACT_SKILLS = ("dev-design", "dev-plan", "dev-execute", "dev-handover")

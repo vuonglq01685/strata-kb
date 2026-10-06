@@ -75,8 +75,11 @@ pr_app = typer.Typer(
 )
 app.add_typer(pr_app, name="pr")
 
-plan_app = typer.Typer(help="Dev plan tools: dependency waves of docs/impl/<ticket-id>-plan.md.")
+plan_app = typer.Typer(help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md.")
 app.add_typer(plan_app, name="plan")
+
+impl_app = typer.Typer(help="Dev work folders: docs/impl/<ticket-id>/.")
+app.add_typer(impl_app, name="impl")
 
 
 def _version_callback(value: bool) -> None:
@@ -2838,6 +2841,31 @@ def plan_waves(
             typer.echo(planwaves.render(waves))
     if errors:
         raise typer.Exit(1)
+
+
+@impl_app.command("tidy")
+def impl_tidy(
+    impl_dir: Path = typer.Option(
+        Path("docs/impl"), "--impl-dir", help="Where ticket work folders live"
+    ),
+) -> None:
+    """Move flat docs/impl/<id>-{design,plan,context}.md and <id>-review/
+    into docs/impl/<id>/. Idempotent, never overwrites, no git — commit the
+    renames yourself. Exit 0 after a report."""
+    from strata_kb import impltidy
+
+    if not impl_dir.is_dir():
+        typer.secho(
+            f"--impl-dir '{impl_dir}' does not exist or is not a directory", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+    done, conflicts = impltidy.tidy(impl_dir)
+    for src, dst in done:
+        typer.echo(f"moved: {src} → {dst}")
+    for c in conflicts:
+        typer.echo(c)
+    if not (done or conflicts):
+        typer.echo("nothing to tidy")
 
 
 @mission_app.command("lint")

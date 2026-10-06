@@ -1801,6 +1801,27 @@ def test_init_kind_dev_gitignores_the_context_cache(tmp_path: Path):
     init_repo(tmp_path, "dev")
     gi = (tmp_path / "docs" / "impl" / ".gitignore").read_text(encoding="utf-8")
     assert "*-context.md" in gi
+    assert "*/context.md" in gi
+    assert "*/review/" in gi
+
+
+def test_init_kind_dev_tidies_a_flat_docs_impl(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "ABC-12-plan.md").write_text("p", encoding="utf-8")
+    (d / "ABC-12-review").mkdir()
+    report = init_repo(tmp_path, "dev")
+    assert (d / "ABC-12" / "plan.md").read_text(encoding="utf-8") == "p"
+    assert (d / "ABC-12" / "review").is_dir()
+    assert any(n.startswith("moved ") for n in report.notes)
+
+
+def test_init_kind_ba_leaves_docs_impl_alone(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "ABC-12-plan.md").write_text("p", encoding="utf-8")
+    init_repo(tmp_path, "ba")
+    assert (d / "ABC-12-plan.md").is_file()
 
 
 def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):

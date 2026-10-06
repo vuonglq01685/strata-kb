@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
-from strata_kb import conventions
+from strata_kb import conventions, impltidy
 
 KIND_HUB = "hub"
 KIND_CHILD = "child"
@@ -536,6 +536,9 @@ def init_repo(
     if kind == KIND_DEV:
         _ensure_code_doc_ignored(target, report)
         scaffold_dev_local_overrides(target, report)
+        done, conflicts = impltidy.tidy(target / "docs" / "impl")
+        report.notes.extend(f"moved  {s} → {d}" for s, d in done)
+        report.notes.extend(conflicts)
         cfg_path = target / ".kb" / "config.yaml"
         recorded = _recorded_langs(cfg_path, report)
         forced = sorted(set(langs) | set(recorded))
