@@ -156,10 +156,10 @@ def test_prose_after_a_bare_tickets_slash_does_not_set_the_cursor(tmp_path: Path
 
 
 def test_the_ticket_cursor_reads_a_windows_path_too(tmp_path: Path):
-    # Inside the JSONL a Windows path is backslash-escaped: docs\\impl\\x-plan.md
+    # Inside the JSONL a Windows path is backslash-escaped: docs\\impl\\x\\plan.md
     path = write_transcript(
         tmp_path,
-        [user_row("see docs\\impl\\ATM-7-plan.md"), usage_row("a1")],
+        [user_row("see docs\\impl\\ATM-7\\plan.md"), usage_row("a1")],
     )
 
     (row,) = transcript.rows_from_transcript(path, actor="dev")
@@ -173,7 +173,7 @@ def test_the_ticket_cursor_follows_missions_and_docs_impl(tmp_path: Path):
         [
             user_row("open missions/M-stock.md"),
             usage_row("a1"),
-            user_row("now docs/impl/M-stock-US2-design.md"),
+            user_row("now docs/impl/M-stock-US2/design.md"),
             usage_row("a2"),
         ],
     )
@@ -181,6 +181,16 @@ def test_the_ticket_cursor_follows_missions_and_docs_impl(tmp_path: Path):
     rows = transcript.rows_from_transcript(path, actor="dev")
 
     assert [r.ticket for r in rows] == ["M-stock", "M-stock-US2"]
+
+
+def test_the_flat_impl_layout_no_longer_sets_the_cursor(tmp_path: Path):
+    path = write_transcript(
+        tmp_path, [user_row("see docs/impl/ATM-7-plan.md"), usage_row("a1")]
+    )
+
+    (row,) = transcript.rows_from_transcript(path, actor="dev")
+
+    assert row.ticket is None
 
 
 def test_rows_before_any_ticket_mention_have_no_ticket(tmp_path: Path):
