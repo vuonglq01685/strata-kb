@@ -209,12 +209,13 @@ def _visible(content: str) -> str:
     return text.strip()
 
 
-_TICKET_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
+# A mission user story (`M-<slug>-US<n>`, mission.us_id_re) or an `ABC-12` id.
+_TICKET_ID = re.compile(r"\bM-[a-z0-9]+(?:-[a-z0-9]+)*-US[1-9]\d*\b|\b[A-Z][A-Z0-9]*-\d+\b")
 _CMD_TEST = re.compile(r"^cmd\.test:\s*(?P<cmd>\S.*?)\s*$", re.MULTILINE)
 
 
 def ticket_id_of(visible_ticket_section: str) -> str | None:
-    """First `ABC-12`-shaped token in the visible `## Ticket` text."""
+    """First `M-<slug>-US<n>` or `ABC-12` token in the visible `## Ticket` text."""
     m = _TICKET_ID.search(visible_ticket_section)
     return m.group(0) if m else None
 
@@ -259,7 +260,7 @@ def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding
     ticket_id = ticket_id_of(_visible(first.get("Ticket", "")))
     if ticket_id is None:
         return [Finding("Ticket", "ticket-id-unparsed",
-                        "no ABC-12-shaped ticket id found, so the plan's cmd.test "
+                        "no M-<slug>-US<n> or ABC-12 ticket id found, so the plan's cmd.test "
                         "could not be checked — start the section with the id",
                         level="warning")]
     plan_path = plan_dir / ticket_id / "plan.md"

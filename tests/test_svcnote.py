@@ -56,6 +56,17 @@ def test_hist_section_is_summarized_so_build_stays_clean(seeded):
     assert build_kb(seeded / ".kb", allow_pending=True).ok
 
 
+def test_strict_build_skips_quality_rules_on_tool_written_content(seeded):
+    # -code (kb code-ingest) and hist.* (kb svc note) are written by the tool,
+    # never by an LLM summary, so the C2 summary rules cannot apply to them.
+    for n in range(1, 5):
+        svcnote.add_note(
+            seeded / ".kb", "demo", "airspace-service", _note(ticket=f"M-airspace-US{n}")
+        )
+    report = build_kb(seeded / ".kb", allow_pending=True, strict=True, write_tokens=False)
+    assert [e for e in report.errors if e.startswith("demo-code") or "hist." in e] == []
+
+
 def test_second_note_for_a_different_ticket_appends(seeded):
     svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
     report = svcnote.add_note(
