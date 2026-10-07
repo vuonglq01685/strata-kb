@@ -16,7 +16,7 @@ pipeline, invoked once every task in the plan is ticked.
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -60,9 +60,9 @@ lines, never the full log, and `Blocking: No`, A5's verdict line, as the last
 line; Notes — only when there is something: out of scope, not handled, every
 `OPEN(...)`, KB gap, ambiguity or contradiction as a concrete feedback item
 on the owning repo. Leave out what the branch already carries: kb-context
-(the ticket), placeholder resolutions (`docs/impl/<ticket-id>-context.md`),
+(the ticket), placeholder resolutions (`docs/impl/<ticket-id>/context.md`),
 TDD exemptions (the plan), the usage table (`kb usage report`), and A5's
-finding table (`docs/impl/<ticket-id>-review/merge-risk.md`). A section left
+finding table (`docs/impl/<ticket-id>/review/merge-risk.md`). A section left
 as the template's comment counts as empty and fails the check. If the ticket
 changed what a service is responsible for, report `amend needed:
 <repo_id>-svc §svc.<name>` under `## Notes`. Never edit a `reviewed`
@@ -79,16 +79,16 @@ A4 asked whether the branch does what the ticket said. A5 asks a different
 question, in a different context: is this safe to merge into the default
 branch?
 
-If `docs/impl/<ticket-id>-review/branch.diff` does not exist yet — a cold
+If `docs/impl/<ticket-id>/review/branch.diff` does not exist yet — a cold
 handover session, a fresh clone or worktree, or hand-implemented code that
 never ran `dev-execute` — build it yourself first, with the same command A4
-uses: `mkdir -p docs/impl/<ticket-id>-review && git diff $(git merge-base
-<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>-review/branch.diff`.
+uses: `mkdir -p docs/impl/<ticket-id>/review && git diff $(git merge-base
+<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>/review/branch.diff`.
 
 Dispatch a `merge-risk-reviewer` subagent on the most capable model available.
 Give it the persona plainly: a tech lead reviewing before a production deploy,
 assuming real traffic, concurrent requests, retries, and more than one running
-instance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and
+instance. Hand it `docs/impl/<ticket-id>/review/branch.diff`, the ticket, and
 the `## Merge-risk axes` of `docs/pr-review-rubric.md` plus
 `docs/pr-review-rubric.local.md`.
 
@@ -98,7 +98,7 @@ declarations, contracts, tests — and traces the affected flow end to end befor
 judging. A finding that only names a category is not a finding; it states why
 this code, on this path, is dangerous.
 
-It writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding
+It writes `docs/impl/<ticket-id>/review/merge-risk.md`: one row per finding
 (severity, file, line, why it is dangerous, proposed fix), then the verdict
 line `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.
 BLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3

@@ -18,7 +18,7 @@ and subagent-driven-development.*
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -35,7 +35,9 @@ edit above it.
 
 ## Steps
 
-- **Intake** — accept a pasted ticket body or a path; confirm ticket/US id
+- **Intake** — run `kb impl tidy` first (it moves an old flat
+  `docs/impl/<id>-*` layout into `docs/impl/<id>/` — commit the renames on
+  their own before the first task; no CLI → move them by hand); accept a pasted ticket body or a path; confirm ticket/US id
   and branch; read the ticket's `## Dependencies` (`Blocked by:` /
   `Blocks:`) and, when a `> Parent mission:` line is present, that
   mission's `## Sequencing` row; if this story is blocked by something
@@ -44,7 +46,7 @@ edit above it.
 - **Resolve** — triage exactly as in the Freshness re-check above:
   `broken` → stop and report to the BA; `stale` → show both versions and
   let the Dev decide; `ok` → continue. A full resolve is
-  `kb resolve --write-cache docs/impl/<ticket-id>-context.md <ticket-file>`:
+  `kb resolve --write-cache docs/impl/<ticket-id>/context.md <ticket-file>`:
   the command writes the header and the resolved sections; you never
   edit above the `<!-- kb:placeholder-map -->` marker.
 - **Ground** — read resolved L2; escalate to L3 via `kb_get_section … l3`
@@ -72,7 +74,7 @@ edit above it.
   approves it — the `dev-plan` skill, then the `dev-execute` skill, then
   the `dev-handover` skill.
   On re-entry, derive the state — never store it — and name the case:
-  - `docs/impl/<ticket-id>-design.md` with `status: draft` and no clean
+  - `docs/impl/<ticket-id>/design.md` with `status: draft` and no clean
     round recorded in its `## Review record` table → run `dev-design`'s
     A1 review first; a clean round recorded → `design 📝 draft`, offer
     GATE 1. `status: approved` → `design ✅`.

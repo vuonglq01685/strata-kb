@@ -6,7 +6,7 @@ description: Execute an approved implementation plan task-by-task under mandator
 # /dev-execute — execute the approved plan, task by task, under TDD
 
 You are phase 3 of the ticket-implementation pipeline: given an approved
-plan at `docs/impl/<ticket-id>-plan.md`, you implement it task by task
+plan at `docs/impl/<ticket-id>/plan.md`, you implement it task by task
 under mandatory TDD inside an isolated workspace, verifying and
 committing each task as it lands. You are also the **safe re-entry
 point** for this phase — called again on a plan that already has ticked
@@ -21,7 +21,7 @@ and `requesting-code-review` folded in.*
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -44,7 +44,7 @@ edit above it.
   **Never work directly on the default branch.** `.worktrees/` must be
   gitignored — add it to the repo's `.gitignore` once, in this step:
   Dev repos ship no root `.gitignore` template.
-- **Waves** — run `kb plan waves docs/impl/<ticket-id>-plan.md`; an
+- **Waves** — run `kb plan waves docs/impl/<ticket-id>/plan.md`; an
   error returns the plan to `dev-plan` (the same route an incomplete
   task block takes). When `kb plan waves` reports only `has no Depends
   on: line` errors, one per task, the plan predates waves and runs
@@ -70,15 +70,15 @@ edit above it.
     lane path and this sentence: "Never use `run_in_background`; run
     every test in the foreground and let the call block." Scoped tests
     inside the lane; the implementer commits on its lane branch and
-    writes `docs/impl/<ticket-id>-review/task-<n>-report.md` inside the
-    lane. A lane implementer never edits `docs/impl/<ticket-id>-plan.md`
+    writes `docs/impl/<ticket-id>/review/task-<n>-report.md` inside the
+    lane. A lane implementer never edits `docs/impl/<ticket-id>/plan.md`
     — the orchestrator ticks after A3, exactly as in the per-task flow —
     so lanes never conflict on the plan file.
   - Merge back in task-number order: `git merge --no-ff
     <ticket-id>-task-<n>` into the ticket branch — a conflict is a plan
     defect: stop, do not resolve, return to `dev-plan` naming the two
     tasks. Otherwise copy the report out of the lane if it did not land
-    in the merge (`docs/impl/<ticket-id>-review/` is gitignored, so it
+    in the merge (`docs/impl/<ticket-id>/review/` is gitignored, so it
     never lands in the merge), then `git worktree remove` the lane.
   - Verify the wave: run `cmd.test` and `cmd.lint` once after the last
     merge of the wave and show the output.
@@ -116,14 +116,14 @@ edit above it.
   4. **verify** — run `cmd.test` and `cmd.lint` (the commands you were
      handed) and **show the output**.
   5. **commit the task's changes**, then write the full report to
-     `docs/impl/<ticket-id>-review/task-<n>-report.md` and return only
+     `docs/impl/<ticket-id>/review/task-<n>-report.md` and return only
      status, commits, a one-line test summary, and concerns.
 
   Then, back in the orchestrator — never inside the implementer:
 
   6. **A3 — independent task review.** Write the diff to a file:
-     `mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
-     `git diff <BASE>..HEAD > docs/impl/<ticket-id>-review/task-<n>.diff`,
+     `mkdir -p docs/impl/<ticket-id>/review` if it does not exist yet, then
+     `git diff <BASE>..HEAD > docs/impl/<ticket-id>/review/task-<n>.diff`,
      where `<BASE>` is the commit you recorded **before** dispatching the
      implementer — never `HEAD~1`, which silently drops every commit of a
      multi-commit task but the last. Dispatch a `task-reviewer` subagent
@@ -170,8 +170,8 @@ edit above it.
 ## A4 — narrow branch review (after the last task)
 
 Every box ticked is not the same as the ticket being done. Write the branch
-diff to `docs/impl/<ticket-id>-review/branch.diff`
-(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then
+diff to `docs/impl/<ticket-id>/review/branch.diff`
+(`mkdir -p docs/impl/<ticket-id>/review` if it does not exist yet, then
 `git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a
 `branch-reviewer` subagent with that path, the plan, the ticket, and
 `docs/conventions/<lang>.md`, the five pack files it links, and its

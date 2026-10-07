@@ -15,7 +15,7 @@ Dev has approved the design at GATE 1.
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
-docs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
 check the cache `version:` yourself). Exit 0 → use the cache, do NOT
 re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
 --write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
@@ -31,10 +31,10 @@ edit above it.
 - **ok** → continue.
 
 Steps the skill enforces: read the design —
-`docs/impl/<ticket-id>-design.md`. Its header must say `status:
+`docs/impl/<ticket-id>/design.md`. Its header must say `status:
 approved`; a `draft` design means GATE 1 has not passed, so say so in
 one line and stop, and a `path: spike` design has no plan — point at
-`dev-handover` instead. Then write `docs/impl/<ticket-id>-plan.md`,
+`dev-handover` instead. Then write `docs/impl/<ticket-id>/plan.md`,
 opening with three header lines under its title — `cmd.test:
 <command>`, `cmd.lint: <command>` (from `-code §cmd.*`, or the Dev's
 answer) and `status: draft`, since `kb pr lint` reads `cmd.test:` from
@@ -52,7 +52,7 @@ share a path under Files, the later task depending on the earlier, so two
 tasks with no dependency path are file-disjoint and `dev-execute` can run
 them in parallel lanes. The
 closing verification task depends on every other task, and `kb plan
-waves docs/impl/<ticket-id>-plan.md` runs before offering GATE 2 — it
+waves docs/impl/<ticket-id>/plan.md` runs before offering GATE 2 — it
 prints the waves and fails on a shared path without a dependency, a
 cycle, an unknown task, or a missing line. A task with no test
 declares its exemption instead, with exactly four exception classes —
@@ -96,7 +96,7 @@ format, the ordering rules — and nothing else. Then review it with a
 different context.
 
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
-path `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the
+path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
 `## Pre-code axes` of `docs/pr-review-rubric.md` plus
 `docs/pr-review-rubric.local.md`. It answers five questions and nothing else:
 

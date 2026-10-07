@@ -273,6 +273,7 @@ that follows it.
 | `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
 | `kb mission next` | Which story next: done / ready / draft / to-draft / blocked across `missions/`, done derived from the hub's `<repo>-svc` history, ready and draft from the ticket's Definition of Ready checklist |
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent mission; `--into <folder>` for the rest |
+| `kb impl tidy` | Move flat `docs/impl/<id>-{design,plan,context}.md` and `<id>-review/` into `docs/impl/<id>/`; never overwrites |
 | `kb pr lint` | Check a pull-request description carries its evidence |
 | `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, or a missing `Depends on:` line |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
@@ -748,8 +749,8 @@ sidecar file.
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
 | Just checking a citation | `kb resolve <file>` |
 
-Work lives in `docs/impl/<ticket-id>-design.md` (architectural tickets only) and
-`docs/impl/<ticket-id>-plan.md` (one task per acceptance criterion, `- [ ]`
+Work lives in `docs/impl/<ticket-id>/design.md` (architectural tickets only) and
+`docs/impl/<ticket-id>/plan.md` (one task per acceptance criterion, `- [ ]`
 checkboxes ticked one commit at a time). Those two files, the ticked-checkbox
 ratio, the branch, and whether a PR exists are the complete state.
 

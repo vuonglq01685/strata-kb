@@ -31,7 +31,7 @@ from strata_kb.usage.ledger import UsageRow, is_safe_stem
 
 # A ticket file mention. The separator class allows one or more of `/` and `\`
 # because a Windows path inside the JSONL is backslash-escaped
-# (`docs\\impl\\x-plan.md`), so a single-character class would match the first
+# (`docs\\impl\\x\\plan.md`), so a single-character class would match the first
 # backslash and then fail on the second.
 _SEP = r"[/\\]+"
 # `tickets/<stem>.md` or `tickets/<folder>/<stem>.md` (one folder, the
@@ -39,7 +39,7 @@ _SEP = r"[/\\]+"
 # whitespace so prose like `tickets/ and docs/x.md` cannot set the cursor.
 TICKET_PATH_RE = re.compile(
     rf"(?:tickets{_SEP}(?:[^/\\\"\s]+?{_SEP})?|missions{_SEP})(?P<stem>[^/\\\"]+?)\.md"
-    rf"|docs{_SEP}impl{_SEP}(?P<impl>[^/\\\"]+?)-(?:design|plan)\.md"
+    rf"|docs{_SEP}impl{_SEP}(?P<impl>[^/\\\"\s]+?){_SEP}(?:design|plan)\.md"
 )
 
 # The only two phase signals. A slash command's marker is injected into the

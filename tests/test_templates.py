@@ -392,7 +392,7 @@ SHARED_BLOCKS = {
 # deletes or rewords a hard rule now fails here, where the pairwise-only
 # version did not.
 SHARED_BLOCK_TEXT = {
-    'SHARED-FRESHNESS': '## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>-context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n',
+    'SHARED-FRESHNESS': '## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n',
     'SHARED-HARD-RULES': '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
     'SHARED-NEXT-STEP': '## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n',
 }
@@ -600,7 +600,7 @@ def test_dev_design_writes_the_design_file_on_every_path():
     # for the full new contract, asserted against the body.
     for name in _dev_wrapper_names("dev-design"):
         text = _dev_wrapper_text(name)
-        assert "docs/impl/<ticket-id>-design.md" in text, name
+        assert "docs/impl/<ticket-id>/design.md" in text, name
 
 
 def test_dev_design_carries_gate_one_and_the_ac_rule():
@@ -656,7 +656,7 @@ def test_dev_plan_requires_one_task_per_ac_with_a_test():
 def test_dev_plan_pins_the_plan_file_and_checkbox_shape():
     for name in _dev_wrapper_names("dev-plan"):
         text = _dev_wrapper_text(name)
-        assert "docs/impl/<ticket-id>-plan.md" in text, name
+        assert "docs/impl/<ticket-id>/plan.md" in text, name
         assert "- [ ]" in text, name
         for heading in ("Files", "Interfaces", "Steps"):
             assert f"**{heading}**" in text, f"{name} missing {heading}"
@@ -1216,7 +1216,7 @@ def test_config_dev_yaml_no_longer_carries_the_stage_a_interim_fallback():
 
 def test_quickstart_dev_documents_the_context_cache():
     text = _read_init_template("QUICKSTART-dev.md")
-    assert "<ticket-id>-context.md" in text
+    assert "<ticket-id>/context.md" in text
     assert "docs/impl/.gitignore" in text
 
 
@@ -1345,7 +1345,7 @@ def test_shared_freshness_keeps_the_kb_diff_trap_and_the_three_verdicts():
 
 def test_shared_freshness_prefers_the_cache_and_status_only():
     block = _normalised(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"])
-    for needle in ("--status-only --cache", "-context.md", "--write-cache",
+    for needle in ("--status-only --cache", "/context.md", "--write-cache",
                    "below the marker", "never edit above it", "`cache-*`"):
         assert needle in block, needle
 
@@ -1353,7 +1353,7 @@ def test_shared_freshness_prefers_the_cache_and_status_only():
 def test_dev_implement_ticket_writes_the_context_cache():
     for name in _dev_wrapper_names("dev-implement-ticket"):
         text = _dev_wrapper_body(name)
-        assert "docs/impl/<ticket-id>-context.md" in text, name
+        assert "docs/impl/<ticket-id>/context.md" in text, name
         assert "Placeholder map" in text, name
 
 
@@ -2052,7 +2052,7 @@ def test_presets_lint_the_rules_their_prose_states():
 def test_dev_design_writes_a_file_on_every_path_with_a_status_header():
     for name in _dev_wrapper_names("dev-design"):
         body = _dev_wrapper_body(name)
-        assert "Every path writes `docs/impl/<ticket-id>-design.md`" in body, name
+        assert "Every path writes `docs/impl/<ticket-id>/design.md`" in body, name
         assert "`path: <spike|bounded|architectural>`" in body, name
         assert "`status: draft`" in body, name
         assert "`status: approved`" in body, name
@@ -2148,6 +2148,7 @@ def test_pr_review_rubric_is_wired_into_dev_kind_only():
 def test_impl_gitignore_excludes_the_review_artefacts():
     text = _read_init_template("impl-gitignore.txt")
     assert "*-review/" in text
+    assert "*/review/" in text
 
 
 REVIEW_CONTRACT_SKILLS = ("dev-design", "dev-plan", "dev-execute", "dev-handover")
@@ -2192,10 +2193,10 @@ REVIEW_BLOCK_BOUNDS = {
 # claude-skill-dev-design.md again for the contract), never hand-retyped.
 REVIEW_BLOCK_TEXT = {
     "REVIEW-CONTRACT": "## Review dispatch contract (every review in this flow)\n\n- The author and the reviewer are NEVER the same subagent. A self-review\n  never satisfies a review step.\n- A reviewer starts from a fresh context and gets no conversation history —\n  hand it only the paths it must read and the constraints that bind it.\n- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the\n  draft, the diff, the report. Whatever you paste stays in your context for\n  the rest of the session.\n- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag\n  and never rates a finding's severity for it.\n- Name the model on every dispatch — a standard model for authors and\n  implementers, the most capable one available for reviewers. Never inherit\n  the session default silently.\n- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still\n  standing after round 3 stops the flow and goes to the Dev.\n- A finding that contradicts the approved design or plan is never auto-fixed:\n  show the finding beside the text that mandates it and let the Dev choose.\n- Criteria come from the source that matches the review: the rubric's\n  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and\n  `docs/conventions/<lang>.md` — plus the five pack files it links under\n  `docs/conventions/<lang>/` and `docs/conventions/common/` — for A3 and A4.\n  Each one's own `.local.md` override wins over its base file. Severity is\n  always BLOCKER / SUGGESTED / NOTE / NITS.\n- Where the runtime cannot dispatch subagents, run the review as its own pass\n  that reads ONLY the paths it was handed and reuses nothing it remembers from\n  drafting, and write up its findings the same way — then STOP and hand the\n  result to the Dev. The phase does not advance on a fallback pass: one\n  context reviewing itself is a weaker substitute, not an equivalent — only\n  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.\n  `Review: ✅ r<n> (fallback, Dev-approved)`.\n",
-    "A1": "## A1 — independent design review (before GATE 1)\n\nWrite the design in its own context: dispatch a `design-author` subagent with\nthe resolved context cache path, the ticket's acceptance criteria, the\nconventions paths, and this phase's own authoring rules above — what the\ndesign must cover, and how placeholders and standard values are cited — and\nlet it write `docs/impl/<ticket-id>-design.md` with `status: draft`. You\norchestrate; you do not draft and then judge your own draft.\n\nThat design is a draft until a reviewer that never saw it being written\nsays otherwise. Dispatch a `design-reviewer` subagent and hand it exactly\nthese things: the path `docs/impl/<ticket-id>-design.md`, the ticket's\nacceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`\nplus `docs/pr-review-rubric.local.md`. Not your reasoning, not this\nconversation.\n\nIt returns pass/fail per axis plus a gap list in which every gap names the\nsection it lives in, its severity, and a proposed fix. Apply BLOCKER and\nSUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.\n\nRecord every round in the design file's `## Review record` table, creating it\nbelow the design body on round 1:\n\n    | Date | Round | Verdict | Reviewer | Open gaps |\n    |---|---|---|---|---|\n    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |\n\nGATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and\nno SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.\n",
-    "A2": "## A2 — independent plan review (before GATE 2)\n\nDispatch a `plan-author` subagent to turn the approved design into the plan —\nit gets the design file path, the ticket's acceptance criteria, the\n`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above\n— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line\nformat, the ordering rules — and nothing else. Then review it with a\ndifferent context.\n\nDispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the\npath `docs/impl/<ticket-id>-plan.md`, the ticket's acceptance criteria, and the\n`## Pre-code axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`. It answers five questions and nothing else:\n\n- Is there exactly one task per AC — none missing, none invented?\n- Does every task state its failing test before its implementation?\n- Is each task's **Interfaces** entry complete enough that its implementer\n  never has to read outside its own task block? An incomplete entry is a\n  BLOCKER: it is what forces an implementer to read wider and guess.\n- Does every task with no test declare `Exempt: <config|ci|docs|style>` and\n  name its verification?\n- Is every `Depends on:` line consistent with Files and Interfaces — no\n  two tasks without a dependency path share a path, every consumed\n  interface names its producer, no cycle? A miss is a BLOCKER. The\n  reviewer also runs `kb plan waves` and quotes its output; an error\n  there is a BLOCKER on its own.\n\nFix subagent, re-review, at most 3 rounds. Record each round in the plan file's\n`## Review record` table, same shape as the design file's. GATE 2 is offered\nonly after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap\nleft open; NOTE and NITS are recorded, not fixed.\n",
-    "A4": "## A4 — narrow branch review (after the last task)\n\nEvery box ticked is not the same as the ticket being done. Write the branch\ndiff to `docs/impl/<ticket-id>-review/branch.diff`\n(`mkdir -p docs/impl/<ticket-id>-review` if it does not exist yet, then\n`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a\n`branch-reviewer` subagent with that path, the plan, the ticket, and\n`docs/conventions/<lang>.md`, the five pack files it links, and its\n`.local.md` override. One question\nonly: does this branch fulfil the ticket — every AC covered by a test,\nnothing built that no AC asked for, and no later task quietly breaking an\nearlier one?\n\nKeep the lens narrow here; merge risk is A5's job in `dev-handover`, against a\ndifferent rubric. Fix subagent, re-review, at most 3 rounds. Only once A4\ncomes back clean — no BLOCKER and no SUGGESTED left — is option 1\n`/dev-handover <ticket-id>`.\n",
-    "A5": "## A5 — merge-risk review (before GATE 3)\n\nA4 asked whether the branch does what the ticket said. A5 asks a different\nquestion, in a different context: is this safe to merge into the default\nbranch?\n\nIf `docs/impl/<ticket-id>-review/branch.diff` does not exist yet — a cold\nhandover session, a fresh clone or worktree, or hand-implemented code that\nnever ran `dev-execute` — build it yourself first, with the same command A4\nuses: `mkdir -p docs/impl/<ticket-id>-review && git diff $(git merge-base\n<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>-review/branch.diff`.\n\nDispatch a `merge-risk-reviewer` subagent on the most capable model available.\nGive it the persona plainly: a tech lead reviewing before a production deploy,\nassuming real traffic, concurrent requests, retries, and more than one running\ninstance. Hand it `docs/impl/<ticket-id>-review/branch.diff`, the ticket, and\nthe `## Merge-risk axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`.\n\n**The diff alone is not the review.** Say so in the dispatch: the reviewer\nopens the files the change reaches — callers, siblings, migrations, permission\ndeclarations, contracts, tests — and traces the affected flow end to end before\njudging. A finding that only names a category is not a finding; it states why\nthis code, on this path, is dangerous.\n\nIt writes `docs/impl/<ticket-id>-review/merge-risk.md`: one row per finding\n(severity, file, line, why it is dangerous, proposed fix), then the verdict\nline `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.\nBLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3\nrounds — same routing as A3: only a standing BLOCKER keeps the verdict\n`Blocking: Yes`.\n\nCopy only the verdict line into the PR body, as the last line of\n`## Testing` — `kb pr lint` fails the PR when it is missing and when it\nreads `Blocking: Yes`. The table stays in `merge-risk.md`. NOTE and NITS\nfindings a reviewer should see go to `## Notes`, recorded rather than\nfixed.\n\nA branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1\nbecomes the fix, not the PR.\n",
+    "A1": "## A1 — independent design review (before GATE 1)\n\nWrite the design in its own context: dispatch a `design-author` subagent with\nthe resolved context cache path, the ticket's acceptance criteria, the\nconventions paths, and this phase's own authoring rules above — what the\ndesign must cover, and how placeholders and standard values are cited — and\nlet it write `docs/impl/<ticket-id>/design.md` with `status: draft`. You\norchestrate; you do not draft and then judge your own draft.\n\nThat design is a draft until a reviewer that never saw it being written\nsays otherwise. Dispatch a `design-reviewer` subagent and hand it exactly\nthese things: the path `docs/impl/<ticket-id>/design.md`, the ticket's\nacceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`\nplus `docs/pr-review-rubric.local.md`. Not your reasoning, not this\nconversation.\n\nIt returns pass/fail per axis plus a gap list in which every gap names the\nsection it lives in, its severity, and a proposed fix. Apply BLOCKER and\nSUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.\n\nRecord every round in the design file's `## Review record` table, creating it\nbelow the design body on round 1:\n\n    | Date | Round | Verdict | Reviewer | Open gaps |\n    |---|---|---|---|---|\n    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |\n\nGATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and\nno SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.\n",
+    "A2": "## A2 — independent plan review (before GATE 2)\n\nDispatch a `plan-author` subagent to turn the approved design into the plan —\nit gets the design file path, the ticket's acceptance criteria, the\n`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above\n— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line\nformat, the ordering rules — and nothing else. Then review it with a\ndifferent context.\n\nDispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the\npath `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the\n`## Pre-code axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`. It answers five questions and nothing else:\n\n- Is there exactly one task per AC — none missing, none invented?\n- Does every task state its failing test before its implementation?\n- Is each task's **Interfaces** entry complete enough that its implementer\n  never has to read outside its own task block? An incomplete entry is a\n  BLOCKER: it is what forces an implementer to read wider and guess.\n- Does every task with no test declare `Exempt: <config|ci|docs|style>` and\n  name its verification?\n- Is every `Depends on:` line consistent with Files and Interfaces — no\n  two tasks without a dependency path share a path, every consumed\n  interface names its producer, no cycle? A miss is a BLOCKER. The\n  reviewer also runs `kb plan waves` and quotes its output; an error\n  there is a BLOCKER on its own.\n\nFix subagent, re-review, at most 3 rounds. Record each round in the plan file's\n`## Review record` table, same shape as the design file's. GATE 2 is offered\nonly after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap\nleft open; NOTE and NITS are recorded, not fixed.\n",
+    "A4": "## A4 — narrow branch review (after the last task)\n\nEvery box ticked is not the same as the ticket being done. Write the branch\ndiff to `docs/impl/<ticket-id>/review/branch.diff`\n(`mkdir -p docs/impl/<ticket-id>/review` if it does not exist yet, then\n`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a\n`branch-reviewer` subagent with that path, the plan, the ticket, and\n`docs/conventions/<lang>.md`, the five pack files it links, and its\n`.local.md` override. One question\nonly: does this branch fulfil the ticket — every AC covered by a test,\nnothing built that no AC asked for, and no later task quietly breaking an\nearlier one?\n\nKeep the lens narrow here; merge risk is A5's job in `dev-handover`, against a\ndifferent rubric. Fix subagent, re-review, at most 3 rounds. Only once A4\ncomes back clean — no BLOCKER and no SUGGESTED left — is option 1\n`/dev-handover <ticket-id>`.\n",
+    "A5": "## A5 — merge-risk review (before GATE 3)\n\nA4 asked whether the branch does what the ticket said. A5 asks a different\nquestion, in a different context: is this safe to merge into the default\nbranch?\n\nIf `docs/impl/<ticket-id>/review/branch.diff` does not exist yet — a cold\nhandover session, a fresh clone or worktree, or hand-implemented code that\nnever ran `dev-execute` — build it yourself first, with the same command A4\nuses: `mkdir -p docs/impl/<ticket-id>/review && git diff $(git merge-base\n<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>/review/branch.diff`.\n\nDispatch a `merge-risk-reviewer` subagent on the most capable model available.\nGive it the persona plainly: a tech lead reviewing before a production deploy,\nassuming real traffic, concurrent requests, retries, and more than one running\ninstance. Hand it `docs/impl/<ticket-id>/review/branch.diff`, the ticket, and\nthe `## Merge-risk axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`.\n\n**The diff alone is not the review.** Say so in the dispatch: the reviewer\nopens the files the change reaches — callers, siblings, migrations, permission\ndeclarations, contracts, tests — and traces the affected flow end to end before\njudging. A finding that only names a category is not a finding; it states why\nthis code, on this path, is dangerous.\n\nIt writes `docs/impl/<ticket-id>/review/merge-risk.md`: one row per finding\n(severity, file, line, why it is dangerous, proposed fix), then the verdict\nline `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.\nBLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3\nrounds — same routing as A3: only a standing BLOCKER keeps the verdict\n`Blocking: Yes`.\n\nCopy only the verdict line into the PR body, as the last line of\n`## Testing` — `kb pr lint` fails the PR when it is missing and when it\nreads `Blocking: Yes`. The table stays in `merge-risk.md`. NOTE and NITS\nfindings a reviewer should see go to `## Notes`, recorded rather than\nfixed.\n\nA branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1\nbecomes the fix, not the PR.\n",
 }
 
 
@@ -2370,7 +2371,7 @@ def test_dev_execute_reviews_each_task_in_a_separate_context():
         # substring of "self-review checkpoint", which named the step
         # before A3 existed and would pass unchanged either way.
         assert "never satisfies A3" in body, name
-        assert "docs/impl/<ticket-id>-review/task-<n>.diff" in body, name
+        assert "docs/impl/<ticket-id>/review/task-<n>.diff" in body, name
         assert "never `HEAD~1`" in body, name
         assert "two verdicts" in body, name
         assert "Review: ✅ r" in body, name
@@ -2856,7 +2857,7 @@ def test_dev_plan_records_a_depends_on_line_per_task():
         assert "derived, never chosen" in body, name
         assert "file-disjoint" in body, name
         assert "The closing verification task depends on every other task" in body, name
-        assert "kb plan waves docs/impl/<ticket-id>-plan.md" in body, name
+        assert "kb plan waves docs/impl/<ticket-id>/plan.md" in body, name
 
 
 def test_dev_plan_a2_asks_the_fifth_question_and_runs_plan_waves():
@@ -2869,7 +2870,7 @@ def test_dev_plan_a2_asks_the_fifth_question_and_runs_plan_waves():
 def test_dev_execute_runs_plan_waves_and_lanes():
     for name in _dev_wrapper_names("dev-execute"):
         body = _dev_wrapper_body(name)
-        assert "run `kb plan waves docs/impl/<ticket-id>-plan.md`" in body, name
+        assert "run `kb plan waves docs/impl/<ticket-id>/plan.md`" in body, name
         assert "an error returns the plan to `dev-plan`" in body, name
         assert "runs sequentially as today" in body, name
         assert "git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD" in body, name
@@ -2880,7 +2881,7 @@ def test_dev_execute_runs_plan_waves_and_lanes():
         assert "a conflict is a plan defect" in body, name
         assert "git diff <merge-commit>^1...<lane-branch>" in body, name
         assert "shows exactly the lane's own commits, for every lane in the wave" in body, name
-        assert "A lane implementer never edits `docs/impl/<ticket-id>-plan.md`" in body, name
+        assert "A lane implementer never edits `docs/impl/<ticket-id>/plan.md`" in body, name
         assert "the first wave with an unticked task" in body, name
         assert "skips to A3" in body, name
         assert "must be gitignored" in body, name
@@ -2890,7 +2891,7 @@ def test_quickstart_dev_documents_plan_waves_and_lanes():
     text = _normalised(_read_init_template("QUICKSTART-dev.md"))
     assert "### Waves and lanes" in text
     assert "`Depends on:` line" in text
-    assert "`kb plan waves docs/impl/<ticket-id>-plan.md`" in text
+    assert "`kb plan waves docs/impl/<ticket-id>/plan.md`" in text
     assert "at most 3 lanes at a time" in text
     assert "- `kb plan waves <plan-file> [--json]`" in text
 
@@ -3037,3 +3038,17 @@ def test_changelog_names_the_ba_side_of_mission_next():
     assert "step 5b" in unreleased
     assert "foundation slice" in unreleased
     assert "Re-run `kb init --kind ba`" in unreleased
+
+
+def test_dev_implement_ticket_runs_impl_tidy_at_intake():
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        body = _dev_wrapper_body(name)
+        assert "kb impl tidy" in body, name
+        assert "commit the renames on their own before the first task" in _normalised(body), name
+
+
+def test_no_template_names_the_flat_impl_layout():
+    flat = _re.compile(r"docs/impl/<(ticket-id|id)>-(design|plan|context|review)")
+    for f in resources.files("strata_kb").joinpath("templates/init").iterdir():
+        if f.is_file():
+            assert not flat.search(f.read_text(encoding="utf-8")), f.name

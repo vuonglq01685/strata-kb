@@ -264,8 +264,8 @@ from strata_kb.prlint import plan_cmd_test, ticket_id_of
 
 def _plan(tmp_path: Path, ticket: str = "ATM-7", cmd: str = "pytest -q") -> Path:
     d = tmp_path / "docs" / "impl"
-    d.mkdir(parents=True)
-    (d / f"{ticket}-plan.md").write_text(
+    (d / ticket).mkdir(parents=True)
+    (d / ticket / "plan.md").write_text(
         f"# {ticket} plan\n\ncmd.test: `{cmd}`\ncmd.lint: ruff check .\nstatus: approved\n",
         encoding="utf-8",
     )
@@ -303,7 +303,7 @@ def test_testing_fence_without_cmd_test_is_an_error(tmp_path: Path):
     assert not report.passed
     (f,) = [f for f in report.errors if f.code == "verification-missing-cmd"]
     assert f.section == "Testing"
-    assert "pytest -q" in f.message and "ATM-7-plan.md" in f.message
+    assert "pytest -q" in f.message and "plan.md" in f.message and "ATM-7" in f.message
 
 
 def test_cmd_test_in_prose_outside_the_fence_does_not_count(tmp_path: Path):
@@ -332,8 +332,8 @@ def test_missing_plan_file_is_a_warning(tmp_path: Path):
 
 def test_plan_without_a_cmd_test_line_is_a_warning(tmp_path: Path):
     d = tmp_path / "docs" / "impl"
-    d.mkdir(parents=True)
-    (d / "ATM-7-plan.md").write_text("# plan\n\nstatus: draft\n", encoding="utf-8")
+    (d / "ATM-7").mkdir(parents=True)
+    (d / "ATM-7" / "plan.md").write_text("# plan\n\nstatus: draft\n", encoding="utf-8")
     report = lint_body(_ticket_body(), plan_dir=d)
     assert report.passed
     assert [f.code for f in report.warnings] == ["cmd-test-unset"]
@@ -341,11 +341,22 @@ def test_plan_without_a_cmd_test_line_is_a_warning(tmp_path: Path):
 
 def test_a_non_utf8_plan_file_is_a_warning_not_a_crash(tmp_path: Path):
     d = tmp_path / "docs" / "impl"
-    d.mkdir(parents=True)
-    (d / "ATM-7-plan.md").write_bytes(b"# plan\n\ncmd.test: \xff\xfe pytest -q\n")
+    (d / "ATM-7").mkdir(parents=True)
+    (d / "ATM-7" / "plan.md").write_bytes(b"# plan\n\ncmd.test: \xff\xfe pytest -q\n")
     report = lint_body(_ticket_body(), plan_dir=d)
     assert report.passed
     assert [f.code for f in report.warnings] == ["plan-missing"]
+
+
+def test_flat_plan_is_plan_missing_with_a_tidy_hint(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "ATM-7-plan.md").write_text("cmd.test: `pytest -q`\n", encoding="utf-8")
+    report = lint_body(_ticket_body(), plan_dir=d)
+    assert report.passed
+    (f,) = report.warnings
+    assert f.code == "plan-missing"
+    assert "kb impl tidy" in f.message
 
 
 def _verdict(text: str) -> str:

@@ -216,7 +216,7 @@ def render_resolved(
     return "\n".join(parts).strip()
 
 
-# --- Context cache (docs/impl/<ticket-id>-context.md), reviewer F H3 --------
+# --- Context cache (docs/impl/<ticket-id>/context.md), reviewer F H3 --------
 # The CLI owns everything above CACHE_MARKER (header + resolved sections);
 # the agent owns the `## Placeholder map` below it. The sha256 covers the
 # bytes between the "## Resolved sections" heading line and the marker line,
