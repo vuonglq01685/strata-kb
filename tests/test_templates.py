@@ -3042,11 +3042,13 @@ def test_changelog_names_the_ba_side_of_mission_next():
 
 def test_dev_implement_ticket_runs_impl_tidy_at_intake():
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        assert "kb impl tidy" in _dev_wrapper_body(name), name
+        body = _dev_wrapper_body(name)
+        assert "kb impl tidy" in body, name
+        assert "commit the renames on their own before the first task" in _normalised(body), name
 
 
 def test_no_template_names_the_flat_impl_layout():
     flat = _re.compile(r"docs/impl/<(ticket-id|id)>-(design|plan|context|review)")
     for f in resources.files("strata_kb").joinpath("templates/init").iterdir():
-        if f.name.endswith(".md"):
+        if f.is_file():
             assert not flat.search(f.read_text(encoding="utf-8")), f.name

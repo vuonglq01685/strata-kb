@@ -17,7 +17,7 @@
 # leaves any PR outside the filter waiting forever.
 #
 # Read-only checkout, no hub URL, no token: `kb pr lint` reads the PR body
-# plus `docs/impl/<ticket-id>-plan.md` from the branch (its `cmd.test:` must
+# plus `docs/impl/<ticket-id>/plan.md` from the branch (its `cmd.test:` must
 # appear inside a `## Testing` fence). `persist-credentials: false` keeps
 # the job green and inert on pull requests from forks.
 name: kb-pr-lint

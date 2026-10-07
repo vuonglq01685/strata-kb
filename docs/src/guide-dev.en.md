@@ -237,9 +237,10 @@ State is derived from the first two files, the current branch, and whether a PR
 is open — **never from conversation history**. Any phase resumes cold in a brand
 new session.
 
-`kb init` never touches your `docs/impl/` content. It only adds `.gitkeep` and a
+`kb init` never edits your `docs/impl/` content: it adds `.gitkeep` and a
 `.gitignore` so the context cache and the review artefacts never land in a pull
-request.
+request, and moves an old flat layout into `<id>/` — never overwriting. Commit
+the renames.
 
 **Waves and lanes.** Every task in the plan carries a `Depends on:` line under
 its `### Task <n>:` heading — `none`, or the tasks whose Interfaces it consumes

@@ -36,8 +36,8 @@ edit above it.
 ## Steps
 
 - **Intake** — run `kb impl tidy` first (it moves an old flat
-  `docs/impl/<id>-*` layout into `docs/impl/<id>/`; no CLI → move them
-  by hand); accept a pasted ticket body or a path; confirm ticket/US id
+  `docs/impl/<id>-*` layout into `docs/impl/<id>/` — commit the renames on
+  their own before the first task; no CLI → move them by hand); accept a pasted ticket body or a path; confirm ticket/US id
   and branch; read the ticket's `## Dependencies` (`Blocked by:` /
   `Blocks:`) and, when a `> Parent mission:` line is present, that
   mission's `## Sequencing` row; if this story is blocked by something

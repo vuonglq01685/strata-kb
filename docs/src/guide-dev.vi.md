@@ -240,9 +240,10 @@ Trạng thái được suy ra từ hai file đầu, nhánh git hiện tại, và
 chưa — **không bao giờ từ lịch sử hội thoại**. Bất kỳ pha nào cũng tiếp tục được
 từ đầu trong một phiên làm việc hoàn toàn mới.
 
-`kb init` không bao giờ đụng tới nội dung `docs/impl/` của bạn. Nó chỉ thêm
-`.gitkeep` và một `.gitignore` để cache ngữ cảnh và các artefact review không
-bao giờ lọt vào pull request.
+`kb init` không bao giờ sửa nội dung `docs/impl/` của bạn: nó thêm `.gitkeep`
+và một `.gitignore` để cache ngữ cảnh và các artefact review không bao giờ lọt
+vào pull request, và dời layout phẳng cũ vào `<id>/` — không bao giờ ghi đè.
+Hãy commit các lần đổi tên.
 
 **Wave và lane.** Mỗi task trong kế hoạch có một dòng `Depends on:` ngay dưới
 tiêu đề `### Task <n>:` — `none`, hoặc các task mà nó dùng Interface hay dùng

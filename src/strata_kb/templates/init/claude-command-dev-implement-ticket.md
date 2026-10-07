@@ -35,8 +35,9 @@ edit above it.
 - **ok** → continue.
 
 Steps the skill enforces: **Intake** runs `kb impl tidy` first (it moves an
-old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/`; no CLI → move
-them by hand), then reads the ticket's `## Dependencies`
+old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/` — commit the
+renames on their own before the first task; no CLI → move them by hand),
+then reads the ticket's `## Dependencies`
 (`Blocked by:` / `Blocks:`) and, when a `> Parent mission:` line is
 present, that mission's `## Sequencing` row, and stops if there is no
 `kb-context` block to resolve; **Resolve** triages exactly as in the
