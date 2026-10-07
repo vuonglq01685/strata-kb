@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.8.0 — 2026-10-07
 
 - Dev repos: each ticket's work lives in one folder — `docs/impl/<ticket-id>/{design.md, plan.md, context.md, review/}` instead of flat `docs/impl/<ticket-id>-*`. New `kb impl tidy` moves a flat layout (idempotent, never overwrites, skips a name whose id is not a plain folder name such as `..-plan.md`, no git); `kb init --kind dev` runs it, and `dev-implement-ticket` runs it at Intake. `kb pr lint` reads `docs/impl/<id>/plan.md` and, on a flat plan, says to run `kb impl tidy`; `kb resolve --write-cache` titles a `<id>/context.md` cache by its folder; the usage ledger follows the new paths.
 - Migration for an existing dev repo: re-run `kb init --kind dev`, then commit the renames. A PR opened before the move gets a `plan-missing` warning (not a failure) until its branch is tidied.
