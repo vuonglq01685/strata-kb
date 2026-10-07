@@ -537,7 +537,7 @@ def init_repo(
         _ensure_code_doc_ignored(target, report)
         scaffold_dev_local_overrides(target, report)
         done, conflicts = impltidy.tidy(target / "docs" / "impl")
-        report.notes.extend(f"moved  {s} → {d}" for s, d in done)
+        report.notes.extend(f"moved: {s} → {d}" for s, d in done)
         report.notes.extend(conflicts)
         cfg_path = target / ".kb" / "config.yaml"
         recorded = _recorded_langs(cfg_path, report)

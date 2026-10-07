@@ -58,5 +58,26 @@ def test_unrelated_entries_are_left_alone(tmp_path: Path):
     assert impltidy.plan_moves(d) == []
 
 
+def test_an_id_that_is_not_a_folder_name_stays_in_place(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "..-plan.md").write_text("p", encoding="utf-8")
+    (d / ".-design.md").write_text("d", encoding="utf-8")
+    (d / "..-review").mkdir()
+    assert impltidy.tidy(d) == ([], [])
+    assert (d / "..-plan.md").is_file()
+    assert (d / ".-design.md").is_file()
+    assert (d / "..-review").is_dir()
+    assert not (tmp_path / "docs" / "plan.md").exists()
+
+
+def test_type_guards_leave_a_file_review_and_a_dir_plan_alone(tmp_path: Path):
+    d = tmp_path / "docs" / "impl"
+    d.mkdir(parents=True)
+    (d / "ABC-12-review").write_text("x", encoding="utf-8")
+    (d / "ABC-12-plan.md").mkdir()
+    assert impltidy.plan_moves(d) == []
+
+
 def test_missing_impl_dir_is_nothing_to_do(tmp_path: Path):
     assert impltidy.tidy(tmp_path / "nowhere") == ([], [])

@@ -12,20 +12,26 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from strata_kb.tickettidy import apply_moves
+from strata_kb.tickettidy import FOLDER_RE, apply_moves
 
 _FILE_RE = re.compile(r"^(?P<id>.+)-(?P<kind>design|plan|context)\.md$")
 _REVIEW_RE = re.compile(r"^(?P<id>.+)-review$")
 
 
 def plan_moves(impl_dir: Path) -> list[tuple[Path, Path]]:
-    """(src, dst) for every flat ticket entry directly under `impl_dir`."""
+    """(src, dst) for every flat ticket entry directly under `impl_dir`.
+    An id that is not a plain folder name (`..`, `.x`) is skipped, so a move
+    never leaves `impl_dir`."""
     moves: list[tuple[Path, Path]] = []
     for path in sorted(impl_dir.iterdir()):
         if path.is_file() and (m := _FILE_RE.match(path.name)):
-            moves.append((path, impl_dir / m["id"] / f"{m['kind']}.md"))
+            dst = impl_dir / m["id"] / f"{m['kind']}.md"
         elif path.is_dir() and (m := _REVIEW_RE.match(path.name)):
-            moves.append((path, impl_dir / m["id"] / "review"))
+            dst = impl_dir / m["id"] / "review"
+        else:
+            continue
+        if FOLDER_RE.match(m["id"]):
+            moves.append((path, dst))
     return moves
 
 
