@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.8.1 — 2026-10-07
 
 - `kb build --strict` and `kb approve` no longer apply the summary quality rules (brief verbatim, fixed L1 label, invented codes, L2 budget, empty L2) to content the tool writes itself: every section of a `generated` document (`kb code-ingest`) and every `hist.*` section (`kb svc note`). Table and hash checks still run. A `-code` document can be approved again.
 - `kb pr lint` reads a mission user-story id (`M-<slug>-US<n>`) in `## Ticket`, so the plan's `cmd.test` check runs for mission tickets too.
