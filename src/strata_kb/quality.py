@@ -27,6 +27,12 @@ TABLE_PLACEHOLDER = "[table omitted]"
 TABLE_ONLY_LABEL = "Table-only section: {title}."
 BRIEF_LABEL = "Brief section: {title}."
 
+# Tool-written content the summary rules below never apply to: `kb
+# code-ingest` tags its documents GENERATED_TAG, and `kb svc note` owns every
+# hist.* section (Hard rule 12: never hand-edited).
+GENERATED_TAG = "generated"
+MACHINE_SECTION_PREFIX = "hist."
+
 _IMAGE_LINE_RE = re.compile(r"^!\[[^\]]*\]\([^)]*\)\s*$")
 
 

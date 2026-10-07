@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,11 +36,19 @@ def gh_available() -> bool:
 
 
 def pr_url_for_branch(root: Path, branch: str) -> str:
-    """URL of the open PR for `branch`; '' if there is none yet."""
-    proc = _run_gh(root, "pr", "view", branch, "--json", "url", "--jq", ".url")
+    """URL of the open PR for `branch`; '' if there is none yet.
+
+    `gh pr view <branch>` falls back to the branch's last merged or closed PR,
+    and publish/<rid> is reused after every merge -- so check the state.
+    """
+    proc = _run_gh(root, "pr", "view", branch, "--json", "url,state")
     if proc.returncode != 0:
         return ""
-    return proc.stdout.strip()
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return ""
+    return data.get("url", "") if data.get("state") == "OPEN" else ""
 
 
 def can_open_pr(root: Path) -> bool:

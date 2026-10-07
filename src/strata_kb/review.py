@@ -9,11 +9,10 @@ from strata_kb.build import build_kb
 from strata_kb.diff import diff_doc
 from strata_kb.mdutils import heading_occurrences, slice_section
 
-
-# `hist.*` rows are written by `kb svc note` (Hard rule 12: never hand-
-# edited), so a whole-document approve has nothing to sign off there;
-# naming one explicitly still works (reviewer F L7).
-MACHINE_SECTION_PREFIX = "hist."
+# `hist.*` rows (MACHINE_SECTION_PREFIX) are written by `kb svc note`, so a
+# whole-document approve has nothing to sign off there; naming one
+# explicitly still works (reviewer F L7).
+from strata_kb.quality import MACHINE_SECTION_PREFIX
 
 
 @dataclass

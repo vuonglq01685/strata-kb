@@ -3,6 +3,12 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- `kb build --strict` and `kb approve` no longer apply the summary quality rules (brief verbatim, fixed L1 label, invented codes, L2 budget, empty L2) to content the tool writes itself: every section of a `generated` document (`kb code-ingest`) and every `hist.*` section (`kb svc note`). Table and hash checks still run. A `-code` document can be approved again.
+- `kb pr lint` reads a mission user-story id (`M-<slug>-US<n>`) in `## Ticket`, so the plan's `cmd.test` check runs for mission tickets too.
+- `kb publish --pr` opens a new PR when the last PR on `publish/<repo-id>` was already merged or closed, instead of returning that old PR's link.
+
 ## 1.8.0 — 2026-10-07
 
 - Dev repos: each ticket's work lives in one folder — `docs/impl/<ticket-id>/{design.md, plan.md, context.md, review/}` instead of flat `docs/impl/<ticket-id>-*`. New `kb impl tidy` moves a flat layout (idempotent, never overwrites, skips a name whose id is not a plain folder name such as `..-plan.md`, no git); `kb init --kind dev` runs it, and `dev-implement-ticket` runs it at Intake. `kb pr lint` reads `docs/impl/<id>/plan.md` and, on a flat plan, says to run `kb impl tidy`; `kb resolve --write-cache` titles a `<id>/context.md` cache by its folder; the usage ledger follows the new paths.

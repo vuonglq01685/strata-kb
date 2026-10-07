@@ -17,6 +17,7 @@ from strata_kb.llm import RunnerError
 from strata_kb.mdutils import HEADING_RE, heading_occurrences, slice_section
 from strata_kb.quality import (
     BRIEF_LABEL,
+    GENERATED_TAG,
     TABLE_ONLY_LABEL,
     TABLE_PLACEHOLDER,  # re-exported for callers/tests
 )
@@ -68,7 +69,6 @@ RETRY_PAUSE_SECONDS = 1.0  # pause before the retry after a RunnerError (tests s
 # code-ingest tags every `-code` document `generated`. Its L1/L2 are
 # deterministic; an LLM summary would make the published text depend on
 # who published last (spec 2026-09-25 §4.4), so summarize never touches it.
-GENERATED_TAG = "generated"
 
 
 def generated_doc_ids(kb_dir: Path) -> set[str]:

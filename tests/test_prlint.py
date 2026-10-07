@@ -282,6 +282,11 @@ def test_ticket_id_is_the_first_upper_dash_number_token():
     assert ticket_id_of("open-new-flight — no id here") is None
 
 
+def test_ticket_id_reads_a_mission_user_story_id():
+    assert ticket_id_of("M-myflix-search-US2 — search by title") == "M-myflix-search-US2"
+    assert ticket_id_of("M-x1-US10") == "M-x1-US10"
+
+
 def test_plan_cmd_test_reads_the_header_line_and_strips_backticks(tmp_path: Path):
     d = _plan(tmp_path)
     assert plan_cmd_test(d, "ATM-7") == "pytest -q"

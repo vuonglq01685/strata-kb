@@ -67,6 +67,8 @@ def _build_doc(
     _add_findings(report, quality.check_doc(entry), strict)
     file_cache: dict[str, str] = {}
     _check_orphan_headings(report, kb_dir, entry.id, manifest, file_cache)
+    # The C2 rules judge an LLM summary; tool-written L1/L2 has none to judge.
+    generated = quality.GENERATED_TAG in entry.tags
     occurrences = heading_occurrences(manifest.sections)
     tokens: dict[int, models.SectionTokens] = {}
     for row, sec in enumerate(manifest.sections):
@@ -85,7 +87,7 @@ def _build_doc(
             (report.warnings if allow_pending else report.errors).append(msg)
         _check_tables(report.errors, ref, l2_slice, l3_slice)
         _check_hashes(report.errors, ref, sec, l2_slice, l3_slice)
-        if not is_pending:
+        if not (is_pending or generated or sec.id.startswith(quality.MACHINE_SECTION_PREFIX)):
             _add_findings(report, quality.check_section(ref, sec, l2_slice, l3_slice), strict)
         tokens[row] = models.SectionTokens(
             l2=count_tokens(l2_slice), l3=count_tokens(l3_slice)
