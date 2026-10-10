@@ -257,6 +257,8 @@ def test_unattributed_share_falls_back_to_tokens_when_nothing_is_priced(tmp_path
                   row("u2", ticket="ATM-7", model="claude-nonexistent-9", tokens_out=30,
                       tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0)], tmp_path)
     assert agg.unattributed_pct == pytest.approx(25.0)
+    assert "Unattributed: 25.0 % of tokens" in report.render_markdown(agg)
+    assert "Unattributed: 25.0 % of tokens" in report.render_html(agg)
 
 
 def test_fast_mode_rows_make_the_total_a_lower_bound(tmp_path: Path):

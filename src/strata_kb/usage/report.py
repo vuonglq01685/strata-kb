@@ -56,6 +56,8 @@ class Aggregate(BaseModel):
     lower_bound_rows: int = 0
     unknown_modifier_rows: int = 0
     unattributed_pct: float = 0.0
+    # "cost", or "tokens" when nothing is priced and the share falls back.
+    unattributed_basis: str = "cost"
     effective_date: str = ""
     currency: str = "USD"
     stale_days: int = 0
@@ -153,6 +155,7 @@ def aggregate(
         def _tok(b: Bucket) -> int:
             return b.tokens_in + b.tokens_out + b.cache_read + b.cache_write
         total = _tok(agg.total)
+        agg.unattributed_basis = "tokens"
         agg.unattributed_pct = 100 * _tok(agg.unattributed) / total if total else 0.0
     return agg
 
@@ -218,7 +221,9 @@ def render_markdown(agg: Aggregate) -> str:
         lines.append(_md_row(Bucket(**{**bucket.model_dump(), "key": f"assistant: {bucket.key}"}), agg.currency))
     lines.append("")
     if agg.total.rows:
-        lines.append(f"Unattributed: {agg.unattributed_pct:.1f} % of cost.")
+        lines.append(
+            f"Unattributed: {agg.unattributed_pct:.1f} % of {agg.unattributed_basis}."
+        )
     if agg.lower_bound_rows:
         lines.append(f"{agg.lower_bound_rows} call(s) in fast mode priced at the standard "
                      "rate — the total is a lower bound.")

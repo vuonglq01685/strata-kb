@@ -72,7 +72,7 @@ cost is not, and is not treated as zero.</p>
 {{ rows([agg.total], "scope", agg.currency) }}
 
 {% if agg.total.rows %}
-<p class="meta">Unattributed: {{ "%.1f" | format(agg.unattributed_pct) }} % of cost.</p>
+<p class="meta">Unattributed: {{ "%.1f" | format(agg.unattributed_pct) }} % of {{ agg.unattributed_basis }}.</p>
 {% endif %}
 
 {% if agg.lower_bound_rows %}
