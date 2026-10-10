@@ -638,11 +638,6 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
     # kbcontext subclasses that used to ride the transitive exemption are
     # named explicitly instead.
     ALLOWLIST: dict[str, str] = {
-        "strata_kb.gitio.GitError": (
-            "ruling: handling is deliberately site-specific -- swallowed in "
-            "hub.resolve_hub/publish._publish_direct, re-wrapped in "
-            "cli.reindex"
-        ),
         "strata_kb.federation.RegistryError": (
             "ruling: not CLI-reachable -- converted to a message/response at "
             "both callers, fail-closed by design"
@@ -664,22 +659,8 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
             "to a 503 JSON body or the error-page shell; never reaches "
             "cli.py, same shape as intake.IntakeError above"
         ),
-        "strata_kb.searchdb.IndexBusyError": (
-            "ruling: transient and deliberately swallowed in "
-            "publish._publish_direct -- joining would invite a guard to "
-            "turn a retryable condition into a terminal refusal"
-        ),
-        "strata_kb.codeingest.core.CodeIngestError": (
-            "not a RuntimeError (Exception) -- outside KbError's inheritance shape"
-        ),
-        "strata_kb.llm.RunnerError": (
-            "not a RuntimeError (Exception) -- outside KbError's inheritance shape"
-        ),
         "strata_kb.query.AmbiguousDocError": (
             "not a RuntimeError (LookupError) -- outside KbError's inheritance shape"
-        ),
-        "strata_kb.svcnote.SvcNoteError": (
-            "not a RuntimeError (Exception) -- outside KbError's inheritance shape"
         ),
         "strata_kb.kbcontext.KBContextError": (
             "not a RuntimeError (ValueError) -- doctor.check_context and "

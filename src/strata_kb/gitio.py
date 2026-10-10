@@ -5,6 +5,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from strata_kb.errors import KbError
+
 logger = logging.getLogger("strata_kb.gitio")
 
 # `user:pass@` / `x-access-token:<token>@` in any URL — CI templates pass
@@ -14,14 +16,13 @@ _URL_CRED_RE = re.compile(r"(\w+://)[^@/\s]+@")
 _URL_CRED_SPLIT_RE = re.compile(r"^(?P<scheme>\w+://)(?P<cred>[^@/\s]+)@(?P<rest>.*)$")
 
 
-class GitError(RuntimeError):
+class GitError(KbError):
     """Error calling git: not a repo, rev doesn't exist, path outside the repo.
 
-    Deliberately stays out of the KbError family (Wave G fix round 2, item
-    7): its handling is site-specific by design -- swallowed in
-    hub.resolve_hub and publish._publish_direct, re-wrapped into a different
-    message in cli.reindex -- so a blanket "catch KbError, print str(exc)"
-    guard would be wrong at some of its call sites.
+    Sites with their own handling (swallowed in hub.resolve_hub and
+    publish._publish_direct, re-worded in cli.reindex) catch it before it
+    leaves them; one that escapes a CLI command reaches the root guard as a
+    one-line error instead of a traceback (1.15.0).
     """
 
 

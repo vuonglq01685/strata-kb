@@ -3,6 +3,12 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.15.0 — 2026-10-10
+
+- A git, search-index, code-ingest, `kb svc note` or LLM-runner error that a command did not handle now ends that command with one red line and exit 1, like every other operational error, instead of a Python traceback. `GitError`, `IndexBusyError`, `CodeIngestError`, `SvcNoteError` and `RunnerError` joined the `KbError` family, and the root `kb` command catches that family once.
+- Internal: the route `kb publish` takes (hub-to-hub, intake, or a snapshot of `.kb/`) is decided by `publish.plan()`, and the `kb doctor` checks run in `doctor.run()`. Both are library calls now, tested directly. Messages and exit codes are unchanged.
+- `.git-blame-ignore-revs` lists the 1.14.1 reformat. `git config blame.ignoreRevsFile .git-blame-ignore-revs` makes local `git blame` skip it; GitHub does so on its own.
+
 ## 1.14.1 — 2026-10-10
 
 - The search index's embedding backfill refuses an embedder that returns fewer vectors than it was given texts. Before, the unmatched sections were silently left without a vector while the index still recorded full coverage, so they were never embedded on later syncs either.

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
+from strata_kb.errors import KbError
 from strata_kb.models import LLMConfig
 
 # `claude -p` has no public effort flag; a thinking budget is the closest
@@ -22,7 +23,7 @@ def thinking_budget(prompt: str) -> int:
     return max(MIN_THINKING_TOKENS, min(MAX_THINKING_TOKENS, len(prompt) // 2))
 
 
-class RunnerError(Exception):
+class RunnerError(KbError):
     """LLM CLI call failed: non-zero exit, timeout, or unusable output."""
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import importlib.metadata
 import json
 import os
@@ -14,6 +13,7 @@ from typing import TYPE_CHECKING
 import typer
 import yaml
 from pydantic import ValidationError
+from typer.core import TyperGroup
 
 from strata_kb import models
 from strata_kb.utf8io import force_utf8_streams
@@ -42,7 +42,23 @@ def _invalid_yaml_exit(path: Path, exc: Exception) -> None:
     raise typer.Exit(1)
 
 
+class _GuardedGroup(TyperGroup):
+    """The root `kb` group. A KbError that escapes any command, sub-apps
+    included, becomes one red line and exit 1 instead of a traceback, so a
+    command catches a KbError only when it has something to add to it."""
+
+    def invoke(self, ctx):  # click's Context; typer may vendor its own click
+        from strata_kb.errors import KbError
+
+        try:
+            return super().invoke(ctx)
+        except KbError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+
+
 app = typer.Typer(
+    cls=_GuardedGroup,
     help="Strata — Knowledge Base as Code for large reference documents.",
     no_args_is_help=True,
     # Several commands (mcp-setup) handle secrets. Some typer/click versions
@@ -346,11 +362,7 @@ def docker_setup(
     """Prepare this repo for Docker — hub: .env + token + start the service; child: pull the ingest image."""
     from strata_kb import dockersetup
 
-    try:
-        kind = dockersetup.repo_kind(path)
-    except dockersetup.DockerSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    kind = dockersetup.repo_kind(path)
     if kind == "hub":
         _docker_setup_hub(path, force, no_docker)
     elif kind == "child":
@@ -369,18 +381,14 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
     from strata_kb import dockersetup
 
     try:
-        try:
-            report = dockersetup.run_setup(path, regenerate=force)
-        except dockersetup.EnvExistsError:
-            if _stdin_isatty() and typer.confirm(
-                f"Found existing .env — regenerate {dockersetup.TOKEN_VAR}?"
-            ):
-                report = dockersetup.run_setup(path, regenerate=True)
-            else:
-                raise
-    except dockersetup.DockerSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+        report = dockersetup.run_setup(path, regenerate=force)
+    except dockersetup.EnvExistsError:
+        if _stdin_isatty() and typer.confirm(
+            f"Found existing .env — regenerate {dockersetup.TOKEN_VAR}?"
+        ):
+            report = dockersetup.run_setup(path, regenerate=True)
+        else:
+            raise
     action = "created" if report.env_created else "updated"
     typer.echo(
         f".env {action} — {dockersetup.TOKEN_VAR} written (token not shown; see .env)."
@@ -470,7 +478,6 @@ def mcp_setup(
 ) -> None:
     """Connect this repo to the hub's HTTP MCP — write .env, then verify."""
     from strata_kb import mcpsetup
-    from strata_kb.errors import KbError
 
     try:
         mcpsetup.require_client_kind(path)
@@ -510,11 +517,11 @@ def mcp_setup(
         # error with no clue it concerns .env.
         typer.secho(f"cannot read {path / '.env'}: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
-    except (KbError, OSError) as exc:
+    except OSError as exc:
         # write_env can raise OSError (unwritable repo dir), which must
-        # produce the same one-line message as KbError, never propagate to
-        # Typer's traceback hook where the token could leak (see
-        # app=typer.Typer above).
+        # produce the same one-line message the root guard gives a KbError,
+        # never propagate to Typer's traceback hook where the token could
+        # leak (see app=typer.Typer above).
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
 
@@ -1436,11 +1443,7 @@ def svc_note(
     ref_list = tuple(r.strip() for r in refs.split(",") if r.strip())
     note = svcnote.Note(ticket=ticket, title=title, refs=ref_list)
 
-    try:
-        report = svcnote.add_note(kb_dir, rid, service, note)
-    except svcnote.SvcNoteError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = svcnote.add_note(kb_dir, rid, service, note)
 
     if json_out:
         typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
@@ -1724,11 +1727,7 @@ def usage_note(
         assistant=assistant,
         est=est,
     )
-    try:
-        report = ledger.append_rows(kb_dir, [row])
-    except ledger.LedgerError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = ledger.append_rows(kb_dir, [row])
     typer.echo(f"recorded -> {', '.join(report.files)}")
 
 
@@ -1752,7 +1751,7 @@ def usage_report(
 
     try:
         rows = ledger.read_rows(kb_dir)
-    except (ledger.LedgerError, ValidationError) as exc:
+    except ValidationError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     if ticket:
@@ -1828,9 +1827,6 @@ def query(
         outcome = search_detailed(
             handle, text, tags=tag_list, budget=budget, semantic=semantic
         )
-    except searchdb.IndexBusyError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
@@ -1976,130 +1972,49 @@ def publish(
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
-    from strata_kb import ghio, gitio, hashsync
     from strata_kb import publish as publish_mod
-    from strata_kb.config import (
-        HubConfigError,
-        effective_repo_id,
-        load_config,
-        require_hub,
-    )
+    from strata_kb.config import effective_repo_id, require_hub
     from strata_kb.errors import KbError
 
-    # module-level _CONFIG_READ_ERRORS (see its definition for why exactly
-    # these three classes) covers every corrupt-YAML/schema-invalid/non-UTF-8
-    # .kb file this command can meet (F-D9 finding 2): reused at every point
-    # this function reads a .kb/*.yaml or federation/*.yaml file outside a
-    # call that already wraps its own read.
-
-    if pr and direct:
-        typer.secho("--pr and --direct are mutually exclusive", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    try:
-        cfg = load_config(kb_dir)
-    except (*_CONFIG_READ_ERRORS, OSError) as exc:
-        typer.secho(
-            f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
-            "or remove it to fall back to defaults",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1) from None
-    mode = "pr" if pr else "direct" if direct else "auto"
+    # Every refusal (both --pr and --direct, an unreadable config.yaml, a
+    # root hub with no `hub:`, intake on a hub-to-hub publish) is a
+    # PublishError, which the root guard prints as one line.
+    plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
     # Spec 2026-09-25 §4.4: a hand publish sends the -code CI would send for
     # this commit — never a stale or summarized copy. No --no-refresh here:
     # skipping it is exactly the divergence this prevents.
-    if cfg.kind == "dev":
+    if plan.refresh_code:
         _refresh_dev_code(kb_dir)
-    is_self = False  # only ever True for cfg.kind == "hub" self-publish fall-through
-    if cfg.kind == "hub":
-        try:
-            hub_ref = require_hub(hub, kb_dir)
-        except HubConfigError:
-            typer.secho(
-                "this is a root hub (kind: hub, no `hub:` configured) — nothing "
-                "to publish upstream; add `hub: <url|path>` to .kb/config.yaml "
-                "to chain it to a higher hub",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(1) from None
-        # A relative `hub:` (e.g. the `hub: .` that `kb init --kind hub`
-        # ships) must anchor to the repo root, not the process cwd — the
-        # same config would otherwise route differently depending on where
-        # `kb publish` happens to be invoked from, and could even mirror
-        # into an unrelated sibling repo that also has a `.kb/`.
-        source_root = None
-        with contextlib.suppress(gitio.GitError):
-            source_root = gitio.git_root(kb_dir.resolve())
-        hub_path = Path(hub_ref)
-        if source_root is not None and not hub_path.is_absolute():
-            hub_path = source_root / hub_ref
-        is_self = False
-        if source_root is not None and hub_path.is_dir():
-            is_self = hub_path.resolve() == source_root
-        if is_self:
-            # fall-through below must not re-resolve hub_ref cwd-relatively
-            hub_ref = str(source_root)
-        if not is_self:
-            if cfg.intake and not pr and not direct:
-                typer.secho(
-                    "intake publish is not supported for hub-to-hub publish — "
-                    "remove `intake:` from .kb/config.yaml or pass --direct/--pr",
-                    fg=typer.colors.RED,
-                )
-                raise typer.Exit(1)
-            try:
-                report = publish_mod.publish_federation(
-                    kb_dir,
-                    hub_ref,
-                    repo_id=effective_repo_id(repo_id, kb_dir),
-                    mode=mode,
-                )
-            except (
-                # KbError: PublishError (publish_federation's own YAML reads --
-                # registry.yaml, the upstream hub's config.yaml for the cycle
-                # guard -- are already caught internally and re-raised as
-                # PublishError) and GateError, plus assetstore.AssetStoreError --
-                # _snapshot_federation (this call's snapshot_fn) resolves this
-                # hub's own store and diverts still-raw bytes into it
-                # (_reconcile_asset_records, F-D11/Task 21), so a store outage
-                # is reachable on this branch too, not only on plain-publish's.
-                # Catching the base once means a future KbError sibling, or a
-                # new call site for an existing one, is covered without a
-                # fourth name added here.
-                KbError,
-                gitio.GitError,
-                ghio.GHError,
-                OSError,
-                # hashsync.HashSyncError: _snapshot_federation's apply_sync
-                # guards every write against escaping federation/<rid> on the
-                # upper hub -- reachable here (fed->fed).
-                hashsync.HashSyncError,
-            ) as exc:
-                typer.secho(str(exc), fg=typer.colors.RED)
-                raise typer.Exit(1) from None
-            _echo_publish_report(report)
-            return
-        # is_self: fall through — a hub pointing at itself publishes its own
-        # .kb/ into its own federation/<repo-id>/ (self-publish, spec #7)
 
-    # Gate applies only to paths that actually publish .kb/ (self-publish
-    # fall-through, intake, plain publish) — the hub-to-hub `not is_self`
-    # federation branch above already returned without reaching here, since
-    # publish_federation() pushes federation/ only; the hub's own .kb/ there
-    # is a drafting desk, not what gets published. Still strictly above
+    # KbError (PublishError, GateError, AssetStoreError, GitError, GHError,
+    # HashSyncError, HubConfigError) reaches the root guard. What is caught
+    # below is what is not a KbError: OSError, and the YAML/schema/JSON
+    # errors of reads no call wraps.
+    if plan.route == "federation":
+        assert plan.hub_ref is not None  # noqa: S101 -- plan() sets it on this route
+        try:
+            report = publish_mod.publish_federation(
+                kb_dir,
+                plan.hub_ref,
+                repo_id=effective_repo_id(repo_id, kb_dir),
+                mode=plan.mode,
+            )
+        except OSError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+        _echo_publish_report(report)
+        return
+
+    # The gate applies only to routes that publish .kb/ (self-publish,
+    # intake, plain publish): a hub-to-hub publish pushes federation/ only,
+    # and the hub's own .kb/ there is a drafting desk. Still strictly above
     # require_hub()/resolve_hub()/any write below.
     try:
         _apply_unreviewed_gate(publish_mod.unreviewed_gate(kb_dir, require_reviewed))
     except (*_CONFIG_READ_ERRORS, OSError, KbError) as exc:
-        # KbError: unreviewed_gate -> unreviewed_sections reads every doc's
-        # _manifest.yaml via publish._load_manifest_or_raise, which converts
-        # a corrupt/schema-invalid/non-UTF-8 file into PublishError (a
-        # KbError) rather than letting the raw yaml/pydantic exception
-        # through -- so this guard must catch the wrapper, not just the
-        # classes _load_manifest_or_raise wraps (this was the round-1
-        # regression: the wrap shipped, this arm did not follow it, and the
-        # message right below stopped being reachable).
+        # unreviewed_sections reads every _manifest.yaml through
+        # publish._load_manifest_or_raise, which wraps a corrupt file in
+        # PublishError: caught here, not at the guard, to name the fix.
         typer.secho(
             f"a _manifest.yaml under {kb_dir} is unreadable ({exc}) -- fix or "
             "re-ingest that document",
@@ -2107,15 +2022,12 @@ def publish(
         )
         raise typer.Exit(1) from None
 
-    if cfg.intake and not pr and not direct:
+    if plan.route == "intake":
         try:
             pr_url = publish_mod.publish_via_intake(
-                kb_dir, cfg.intake, effective_repo_id(repo_id, kb_dir)
+                kb_dir, plan.intake_url, effective_repo_id(repo_id, kb_dir)
             )
         except (
-            # KbError: PublishError, GateError.
-            KbError,
-            gitio.GitError,
             OSError,
             # ValueError: publish_via_intake polls the intake server's /intake/
             # status endpoint and parses its JSON body unwrapped
@@ -2133,39 +2045,18 @@ def publish(
         return
 
     try:
-        # A hub-kind self-publish already resolved+anchored hub_ref above
-        # (git-root-anchored, not cwd-relative) — re-deriving it here via
-        # require_hub() would re-resolve a relative `hub: .` against the
-        # process cwd and undo that anchoring.
-        if not is_self:
-            hub_ref = require_hub(hub, kb_dir)
+        # A self-publish already has its root-anchored hub_ref; re-deriving
+        # it via require_hub() would re-resolve `hub: .` against the cwd.
+        hub_ref = plan.hub_ref if plan.self_publish else require_hub(hub, kb_dir)
+        assert hub_ref is not None  # noqa: S101 -- set for self-publish, else require_hub returned it
         report = publish_mod.publish(
             kb_dir,
             hub_ref,
             repo_id=effective_repo_id(repo_id, kb_dir),
-            mode=mode,
-            self_publish=is_self,
+            mode=plan.mode,
+            self_publish=plan.self_publish,
         )
-    except (
-        # KbError: PublishError, GateError, and assetstore.AssetStoreError --
-        # _snapshot (the .kb/ -> federation/<rid> path this call takes) can
-        # raise all three: PublishError from its own index.yaml/hub-config
-        # reads (wrapped, same shape as finding 2's measured repro),
-        # AssetStoreError from divert_and_record on a store outage. Catching
-        # the base once, instead of naming each class, means this tuple
-        # cannot go stale the way it did before: AssetStoreError used to be
-        # listed explicitly here and the hub-to-hub tuple above did not list
-        # it at all, even after _snapshot_federation (that branch's own
-        # snapshot_fn) started touching the asset store too (3845ee5/
-        # 01cbd0a) -- both branches now catch the same base.
-        HubConfigError,
-        KbError,
-        gitio.GitError,
-        ghio.GHError,
-        OSError,
-        *_CONFIG_READ_ERRORS,
-        hashsync.HashSyncError,
-    ) as exc:
+    except (OSError, *_CONFIG_READ_ERRORS) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     _echo_publish_report(report)
@@ -2306,9 +2197,6 @@ def reindex(
             "reindex: rebuild federation/index.yaml",
             ["federation/index.yaml"],
         )
-    except gitio.GitError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
     except _CONFIG_READ_ERRORS as exc:
         # write_federation_index -> build_federation_index -> load_federation
         # already skips (warns, does not raise) any entry whose _meta.yaml/
@@ -2344,9 +2232,6 @@ def reindex(
             searchdb.delete_db(handle)
             typer.echo("kb reindex: search index dropped — rebuilding from scratch")
         sreport = searchdb.sync(handle, default_embedder())
-    except searchdb.IndexBusyError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
@@ -2402,14 +2287,10 @@ def migrate(
     ),
 ) -> None:
     """Move in-git federation assets to the configured object store (none → s3)."""
-    from strata_kb import assetcmd, assetstore
+    from strata_kb import assetcmd
 
     handle = _hub_or_exit(hub, kb_dir)
-    try:
-        report = assetcmd.migrate_assets(handle)
-    except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = assetcmd.migrate_assets(handle)
     for rid, n in sorted(report.per_rid.items()):
         typer.echo(f"  {rid}: {n} asset(s) migrated")
     if report.skipped:
@@ -2445,14 +2326,10 @@ def verify(
     ),
 ) -> None:
     """Check asset coverage: records vs store, markdown refs, orphans."""
-    from strata_kb import assetcmd, assetstore
+    from strata_kb import assetcmd
 
     handle = _hub_or_exit(hub, kb_dir)
-    try:
-        report = assetcmd.verify_assets(handle)
-    except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = assetcmd.verify_assets(handle)
     for label in report.missing_records:
         typer.secho(
             f"[missing] recorded but not in store: {label}", fg=typer.colors.RED
@@ -2490,7 +2367,7 @@ def context_new(
     ),
 ) -> None:
     """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
-    from strata_kb import gitio, kbcontext
+    from strata_kb import kbcontext
 
     handle = _hub_or_exit(hub, kb_dir)
     ref_strs = [r for r in refs.split(",") if r.strip()]
@@ -2499,7 +2376,7 @@ def context_new(
         block, stale_warning = kbcontext.build_context_block(
             handle, ref_strs, tags=tag_list
         )
-    except (kbcontext.KBContextError, gitio.GitError) as exc:
+    except kbcontext.KBContextError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     if stale_warning:
@@ -2564,7 +2441,7 @@ def resolve(
     ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
-    from strata_kb import gitio, kbcontext
+    from strata_kb import kbcontext
     from strata_kb.resolve import (
         cache_problem,
         render_cache,
@@ -2593,7 +2470,7 @@ def resolve(
     try:
         ctx = kbcontext.parse(text)
         results = resolve_refs(handle, ctx)
-    except (kbcontext.KBContextError, gitio.GitError) as exc:
+    except kbcontext.KBContextError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     typer.echo(render_resolved(results, include_content=not status_only))
@@ -3293,12 +3170,11 @@ def diff(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Diff added/removed/changed sections between the worktree and a git rev."""
-    from strata_kb import gitio
     from strata_kb.diff import diff_doc, render_diff
 
     try:
         report = diff_doc(kb_dir, doc_id, against=against)
-    except (ValueError, gitio.GitError) as exc:
+    except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     typer.echo(render_diff(report))
@@ -3327,7 +3203,7 @@ def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -
                 "kb approve: not approvable — fix the errors above", fg=typer.colors.RED
             )
             raise typer.Exit(1)
-    except (ValueError, gitio.GitError) as exc:
+    except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     return reviewer
@@ -3357,7 +3233,6 @@ def approve(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Mark sections as reviewed (status: summarized → reviewed)."""
-    from strata_kb import gitio
     from strata_kb.review import approve_all_changed, approve_sections
 
     if all_changed != bool(against):
@@ -3389,7 +3264,7 @@ def approve(
             reports = [
                 approve_sections(kb_dir, doc_id, list(section) or None, by=reviewer)
             ]
-    except (ValueError, gitio.GitError) as exc:
+    except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
 
@@ -3460,20 +3335,8 @@ def doctor(
     ),
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
-    from strata_kb.config import effective_repo_id
-    from strata_kb.doctor import (
-        Issue,
-        _flatten,
-        check_asset_store,
-        check_config_credentials,
-        check_context,
-        check_hub,
-        check_kb,
-        check_kind,
-        check_source_dirs,
-        check_usage_hooks,
-        check_usage_log,
-    )
+    from strata_kb import doctor as doctor_mod
+    from strata_kb.doctor import check_kind
 
     # check_kind first: it is the only check that can report a broken
     # config.yaml, and _hub_or_exit reads that same file to find the hub —
@@ -3493,129 +3356,21 @@ def doctor(
     if not no_refresh:
         _refresh_dev_code(kb_dir)
     handle = _hub_or_exit(hub, kb_dir)
-    issues = kind_issues + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
-    try:
-        from strata_kb import gitio as _gitio0
-
-        repo_root = _gitio0.git_root(kb_dir.resolve())
-    except _gitio0.GitError:
-        repo_root = None  # not a git repo: nothing can be tracked
-    if repo_root is not None:
-        issues += check_source_dirs(repo_root)
-        issues += check_config_credentials(kb_dir, repo_root)
-
-    cfg_kind = ""
-    try:
-        from strata_kb.config import load_config as _load_config
-
-        cfg_kind = _load_config(kb_dir).kind
-    except (*_CONFIG_READ_ERRORS, OSError) as exc:
-        # check_kind (doctor.py) now catches this exact class set on this
-        # exact file first and exits above -- this read can only still fire
-        # on a TOCTOU race between the two reads (config.yaml changes or
-        # vanishes between check_kind's read and this one). Kept as a
-        # backstop for that race rather than removed, so a hit here still
-        # reports instead of continuing with an empty kind and silently
-        # skipping the kind-specific checks below.
-        issues.append(
-            Issue("error", f"could not read .kb/config.yaml: {_flatten(exc)}")
-        )
-
-    repo_id = effective_repo_id("", kb_dir)
-    if not repo_id:
-        from strata_kb import gitio as _gitio
-
-        try:
-            repo_id = _gitio.git_root(kb_dir.resolve()).name
-        except _gitio.GitError as exc:
-            # A reader .kb (any kind other than "hub") never consumes
-            # repo_id below — see the "hub"-only uses further down — so an
-            # undeterminable repo_id there is not this KB's problem to
-            # report. Only a hub's own checks (check_hub, federation
-            # publish) actually need it.
-            if cfg_kind == "hub":
-                issues.append(
-                    Issue(
-                        "error",
-                        f"could not determine the repo id — .kb is not inside a "
-                        f"git repo and repo_id is unset in config.yaml: "
-                        f"{_flatten(exc)}",
-                    )
-                )
-            repo_id = None
-
-    if cfg_kind in ("ba", "dev"):
-        issues += check_usage_log(kb_dir)
-        issues += check_usage_hooks(kb_dir.resolve().parent)
-    if cfg_kind == "hub":
-        from strata_kb import gitio as _gitio2
-        from strata_kb.config import load_config as _load_config2
-        from strata_kb.doctor import check_federation_publish
-
-        hub_issues, hub_stale = check_hub(
-            kb_dir, handle, repo_id=repo_id, warn_untracked_index=True
-        )
-        issues += hub_issues
-        try:
-            source_root = _gitio2.git_root(kb_dir.resolve())
-        except _gitio2.GitError as exc:
-            issues.append(
-                Issue(
-                    "warning",
-                    f"multi-tier checks skipped — .kb is not inside a git repo: {exc}",
-                )
-            )
-        else:
-            upstream = None
-            if handle is not None and handle.root.resolve() != source_root.resolve():
-                # A URL-configured hub resolves to a cache clone — compare
-                # identities, not just paths: a cached clone of *this* repo
-                # (same repo_id in its config) is still "self".
-                try:
-                    dest_rid = _load_config2(handle.kb_dir).repo_id
-                except (*_CONFIG_READ_ERRORS, OSError) as exc:
-                    # publish.py:1291 fails closed on this exact read
-                    # ("a corrupt upstream config must not silently blind
-                    # the cycle guard"). One condition, one policy.
-                    issues.append(
-                        Issue(
-                            "error",
-                            "could not read the upstream hub's .kb/config.yaml: "
-                            f"{_flatten(exc)}",
-                        )
-                    )
-                    dest_rid = ""
-                if not (repo_id and dest_rid and dest_rid == repo_id):
-                    upstream = handle
-            issues += check_federation_publish(source_root, upstream, repo_id)
-    else:
-        dev_code = f"{repo_id}-code" if cfg_kind == "dev" and repo_id else None
-        hub_issues, hub_stale = check_hub(
-            kb_dir, handle, repo_id=repo_id, code_doc=dev_code
-        )
-        issues += hub_issues
-        if cfg_kind == "dev":
-            from strata_kb.doctor import check_dev_sync, check_hub_lag
-
-            repo_root = kb_dir.resolve().parent
-            issues += check_dev_sync(kb_dir, repo_root, repo_id)
-            issues += check_hub_lag(kb_dir, repo_root, handle, repo_id)
-    has_stale = False
+    context_text = None
     if context is not None:
-        text = (
+        context_text = (
             sys.stdin.read()
             if context == "-"
             else Path(context).read_text(encoding="utf-8")
         )
-        ctx_issues, results = check_context(text, handle)
-        issues += ctx_issues
-        has_stale = any(r.status == "stale" for r in results)
+    result = doctor_mod.run(kb_dir, handle, context_text=context_text)
+    issues = kind_issues + result.issues
 
     for issue in issues:
         color = typer.colors.RED if issue.level == "error" else typer.colors.YELLOW
         typer.secho(f"[{issue.level}] {issue.message}", fg=color)
     if any(i.level == "error" for i in issues):
         raise typer.Exit(1)
-    if has_stale or hub_stale:
+    if result.stale:
         raise typer.Exit(2)
     typer.echo("kb doctor: OK")

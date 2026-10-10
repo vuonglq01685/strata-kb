@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -1198,6 +1199,99 @@ def _existing_entry_names(handle: hub_mod.HubHandle) -> list[str]:
     return sorted(
         p.name for p in fed.iterdir() if p.is_dir() and p.name not in _FED_TOP_EXCLUDE
     )
+
+
+@dataclass(frozen=True)
+class PublishPlan:
+    """Where `kb publish` sends this `.kb/`, decided before anything is
+    written.
+
+    - `route`: "federation" (a hub publishing its federation/ to a higher
+      hub), "intake" (upload to the hub's intake server), or "snapshot"
+      (mirror .kb/ into federation/<repo-id>/: a child, or a hub publishing
+      into itself).
+    - `hub_ref`: set when the route already resolved it (federation, and a
+      hub's self-publish, anchored to the repo root rather than the cwd);
+      None means "resolve it when publishing", so a missing `hub:` is still
+      reported after the unreviewed gate, as before.
+    - `refresh_code`: a dev repo sends the `-code` this commit would send.
+    """
+
+    route: str
+    mode: str
+    hub_ref: str | None = None
+    self_publish: bool = False
+    intake_url: str = ""
+    refresh_code: bool = False
+
+
+def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
+    """Decide the publish route from the flags and `.kb/config.yaml`.
+
+    Raises PublishError, worded for the CLI, for every refusal: both --pr
+    and --direct, an unreadable config.yaml, a root hub with no `hub:`, and
+    `intake:` on a hub-to-hub publish.
+    """
+    from strata_kb.config import HubConfigError, load_config, require_hub
+
+    if pr and direct:
+        raise PublishError("--pr and --direct are mutually exclusive")
+    try:
+        cfg = load_config(kb_dir)
+    except (yaml.YAMLError, ValidationError, ValueError, OSError) as exc:
+        raise PublishError(
+            f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
+            "or remove it to fall back to defaults"
+        ) from exc
+    mode = "pr" if pr else "direct" if direct else "auto"
+    wants_intake = bool(cfg.intake) and not pr and not direct
+    if cfg.kind != "hub":
+        return PublishPlan(
+            route="intake" if wants_intake else "snapshot",
+            mode=mode,
+            intake_url=cfg.intake or "",
+            refresh_code=cfg.kind == "dev",
+        )
+    try:
+        hub_ref = require_hub(hub_flag, kb_dir)
+    except HubConfigError:
+        raise PublishError(
+            "this is a root hub (kind: hub, no `hub:` configured) — nothing "
+            "to publish upstream; add `hub: <url|path>` to .kb/config.yaml "
+            "to chain it to a higher hub"
+        ) from None
+    # A relative `hub:` (e.g. the `hub: .` that `kb init --kind hub` ships)
+    # must anchor to the repo root, not the process cwd — the same config
+    # would otherwise route differently depending on where `kb publish` is
+    # invoked from, and could even mirror into an unrelated sibling repo
+    # that also has a `.kb/`.
+    source_root = None
+    with contextlib.suppress(gitio.GitError):
+        source_root = gitio.git_root(kb_dir.resolve())
+    hub_path = Path(hub_ref)
+    if source_root is not None and not hub_path.is_absolute():
+        hub_path = source_root / hub_ref
+    if (
+        source_root is not None
+        and hub_path.is_dir()
+        and (hub_path.resolve() == source_root)
+    ):
+        # A hub pointing at itself publishes its own .kb/ into its own
+        # federation/<repo-id>/ (self-publish). hub_ref is the root, so the
+        # publish below never re-resolves `hub: .` against the cwd.
+        return PublishPlan(
+            route="intake" if wants_intake else "snapshot",
+            mode=mode,
+            hub_ref=str(source_root),
+            self_publish=True,
+            intake_url=cfg.intake or "",
+        )
+    if wants_intake:
+        raise PublishError(
+            "intake publish is not supported for hub-to-hub publish — "
+            "remove `intake:` from .kb/config.yaml or pass --direct/--pr"
+        )
+    return PublishPlan(route="federation", mode=mode, hub_ref=hub_ref)
 
 
 def _can_pr(explicit: str, has_remote: bool, root: Path) -> bool:
