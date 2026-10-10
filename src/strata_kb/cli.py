@@ -1443,13 +1443,17 @@ def usage_ingest_transcript(
     path: Path | None = typer.Argument(
         None,
         help="Claude Code transcript JSONL: a main transcript (its subagents "
-        "are included) or a subagents/agent-*.jsonl file (omit with --hook-stdin)",
+        "are included) or a subagents/agent-*.jsonl file. Nothing is held "
+        "back, so run it only after the session has ended "
+        "(omit with --hook-stdin)",
     ),
     hook_stdin: bool = typer.Option(
         False, "--hook-stdin", help="Read the hook payload (JSON) from stdin"
     ),
     ticket: str = typer.Option(
-        "", "--ticket", help="Force this ticket id for every row in the file"
+        "",
+        "--ticket",
+        help="Force this ticket id for every row ingested (subagents included)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
@@ -1457,7 +1461,11 @@ def usage_ingest_transcript(
     """Append this transcript's API calls to the usage ledger.
 
     PATH is a main transcript (its subagents are included) or a
-    `subagents/agent-*.jsonl` file. In hook mode the payload decides: a
+    `subagents/agent-*.jsonl` file. Manual mode holds nothing back, so run it
+    only after the session has ended: a call still streaming would be stored
+    with a partial output count, and a stored row never changes (I1).
+
+    In hook mode the payload decides: a
     `SubagentStop` payload carries `agent_transcript_path` and ingests that
     one finished subagent in full; a `Stop` payload ingests the main
     transcript and sweeps its subagents, holding back each one's last call

@@ -504,3 +504,11 @@ def test_report_counts_hook_errors_even_with_no_ledger(tmp_path: Path):
 
     result = runner.invoke(app, ["usage", "report", "--md", "--kb-dir", str(d)])
     assert "2 hook ingest error(s) logged" in result.output
+
+
+def test_ingest_help_says_when_to_run_it_and_what_it_covers():
+    result = runner.invoke(app, ["usage", "ingest-transcript", "--help"])
+    text = " ".join(result.output.replace("│", " ").split())
+    assert "its subagents are included" in text
+    assert "only after the session has ended" in text
+    assert "every row ingested (subagents included)" in text
