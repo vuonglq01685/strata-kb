@@ -143,7 +143,7 @@ def test_hub_locked_cache_returns_503_not_a_crash(
 
 
 def test_sweep_drops_expired_keys(monkeypatch):
-    from strata_kb.web import ratelimit
+    from strata_kb.serving import ratelimit
 
     monkeypatch.setattr(ratelimit, "_SWEEP_THRESHOLD", 2)
     clock = [1000.0]

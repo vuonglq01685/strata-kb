@@ -20,23 +20,23 @@ from starlette.routing import Route
 from strata_kb import assetstore, searchdb
 from strata_kb import hub as hub_mod
 from strata_kb.federation import load_federation
-from strata_kb.mcp import ServerConfig
 from strata_kb.query import AmbiguousDocError, get_section, search, tokenize
-from strata_kb.web import api, bodycap, templating, uidata
-from strata_kb.web.auth import (
+from strata_kb.serving.auth import (
     COOKIE_NAME,
     SESSION_MAX_AGE,
     cookie_is_secure,
     make_session,
 )
-from strata_kb.web.mdrender import render as md_render
-from strata_kb.web.ratelimit import (
+from strata_kb.serving.config import ServerConfig
+from strata_kb.serving.ratelimit import (
     LOGIN_MAX_ATTEMPTS,
     LOGIN_WINDOW_SECONDS,
     SlidingWindowLimiter,
     client_key,
     trusted_proxies_from_env,
 )
+from strata_kb.web import api, bodycap, templating, uidata
+from strata_kb.web.mdrender import render as md_render
 
 logger = logging.getLogger("strata_kb.web.ui")
 

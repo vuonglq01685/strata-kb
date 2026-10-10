@@ -13,14 +13,14 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from strata_kb import federation, ghapp, gitio, intake
-from strata_kb.web import bodycap
-from strata_kb.web.ratelimit import (
+from strata_kb.serving.ratelimit import (
     INTAKE_MAX_ATTEMPTS,
     INTAKE_READ_MAX_ATTEMPTS,
     INTAKE_WINDOW_SECONDS,
     SlidingWindowLimiter,
     client_key,
 )
+from strata_kb.web import bodycap
 
 logger = logging.getLogger("strata_kb.web.intake")
 

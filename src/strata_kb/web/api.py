@@ -9,7 +9,6 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from strata_kb import gitio, models, searchdb
-from strata_kb.mcp import ServerConfig
 from strata_kb.query import (
     AmbiguousDocError,
     InvalidLevelError,
@@ -19,6 +18,7 @@ from strata_kb.query import (
     search,
     stale_hub_note,
 )
+from strata_kb.serving.config import ServerConfig
 
 logger = logging.getLogger("strata_kb.web.api")
 

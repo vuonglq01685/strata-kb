@@ -7,7 +7,7 @@ from __future__ import annotations
 import anyio
 import pytest
 
-from strata_kb.web.ratelimit import LOGIN_MAX_ATTEMPTS
+from strata_kb.serving.ratelimit import LOGIN_MAX_ATTEMPTS
 from strata_kb.web.ui import LOGIN_MAX_BODY
 
 

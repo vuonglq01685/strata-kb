@@ -18,7 +18,7 @@ from typing import IO, cast
 from strata_kb import assetstore, federation, ghapp, gitio, hashsync, models
 from strata_kb import hub as hub_mod
 from strata_kb.pubgate import REPO_ID_MAX, is_reserved_device_name
-from strata_kb.web import ratelimit
+from strata_kb.serving import ratelimit
 
 logger = logging.getLogger("strata_kb.intake")
 

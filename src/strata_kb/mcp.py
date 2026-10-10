@@ -5,7 +5,6 @@ import inspect
 import logging
 import os
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 
 import anyio.to_thread
@@ -18,10 +17,11 @@ from mcp.server.fastmcp import FastMCP as MCPServer
 from strata_kb import gitio, kbcontext
 from strata_kb.query import get_section, search_detailed, stale_hub_note
 from strata_kb.resolve import render_resolved, resolve_refs
-from strata_kb.ticketlint import lint as lint_ticket
-from strata_kb.web.auth import (
+from strata_kb.serving.auth import (
     TokenAuthMiddleware as BearerAuthMiddleware,  # noqa: F401 — re-export
 )
+from strata_kb.serving.config import ServerConfig
+from strata_kb.ticketlint import lint as lint_ticket
 
 logger = logging.getLogger("strata_kb.mcp")
 
@@ -48,15 +48,6 @@ def _ambiguity_note(results) -> str:
         "score closely — both may be relevant to your question; "
         "review each before citing.\n\n"
     )
-
-
-@dataclass
-class ServerConfig:
-    kb_dir: Path
-    hub: str
-    transport: str = "stdio"
-    host: str = "127.0.0.1"
-    port: int = 8321
 
 
 def _known_docs(hub) -> str:
@@ -410,7 +401,7 @@ def main(argv: list[str] | None = None) -> None:
             # BELOW Starlette and would rewrite scope["client"] from
             # X-Forwarded-For using its own trust model (forwarded_allow_ips),
             # independent of STRATA_KB_TRUSTED_PROXIES and
-            # web.ratelimit.client_key. Two independent, differently-trusted
+            # serving.ratelimit.client_key. Two independent, differently-trusted
             # XFF implementations is the hazard -- client_key must stay the
             # single authority on X-Forwarded-For. Do not re-enable this.
             proxy_headers=False,
