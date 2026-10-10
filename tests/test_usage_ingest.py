@@ -110,3 +110,15 @@ def test_a_sweep_logs_an_unreadable_parent_once(tmp_path, monkeypatch):
     result = ingest.ingest_main(d, main, actor="dev", hold_back_subagents=False)
     assert len(result.notes) == 1 and "parent transcript unreadable" in result.notes[0]
     assert result.report.written == 4
+
+
+def test_a_manual_subagent_path_without_its_parent_says_so(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    folder = tmp_path / "sess-9" / "subagents"
+    folder.mkdir(parents=True)
+    sub = write_transcript(folder, [usage_row("s1")], name="agent-a.jsonl")
+    result = ingest.ingest_path(d, sub, actor="dev")
+    assert result.report.written == 1
+    assert len(result.notes) == 1
+    assert "no parent transcript, own cursor only" in result.notes[0]
+    assert "sess-9.jsonl" in result.notes[0]

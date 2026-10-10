@@ -2130,6 +2130,9 @@ def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
             commands = [hook["command"] for group in settings["hooks"][event]
                         for hook in group["hooks"]]
             assert commands == ["kb usage ingest-transcript --hook-stdin"], (kind, event)
+        # Same command, timeout and status message: the two events differ
+        # only in which payload they send.
+        assert settings["hooks"]["SubagentStop"] == settings["hooks"]["Stop"], kind
 
 
 def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):

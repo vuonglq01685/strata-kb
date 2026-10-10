@@ -18,6 +18,7 @@ from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
+    from strata_kb.usage.ingest import IngestResult
 
 force_utf8_streams()
 
@@ -1419,23 +1420,29 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
         pass
 
 
-def _usage_ingest(kb_dir: Path, source: Path, *, ticket: str):
+def _usage_ingest(
+    kb_dir: Path, source: Path, *, ticket: str, result: IngestResult
+) -> None:
     """The manual (non-hook) ingest: one path, a main transcript or a
-    subagent's, via `usage.ingest.ingest_path`.
+    subagent's, via `usage.ingest.ingest_path`, filling `result` in place.
 
     Its notes (a parent transcript that could not be read, say) are not
-    failures — every call was still stored — but they cost attribution, so
-    they go to `ingest-errors.log` like the hook's, where `kb usage report`
-    counts them. The caller also shows them to the human running this.
+    failures — every call read was still stored — but they cost attribution,
+    so they go to `ingest-errors.log` like the hook's, where `kb usage report`
+    counts them. Logged in `finally`, so a sweep that collects a note and
+    then hits a ledger failure still leaves the note behind. The caller also
+    shows them to the human running this.
     """
     from strata_kb.usage import ingest as _ingest
 
-    result = _ingest.ingest_path(
-        kb_dir, source, actor=_usage_actor(kb_dir), ticket=ticket or None
-    )
-    for note in result.notes:
-        _usage_log_error(kb_dir, note)
-    return result
+    try:
+        _ingest.ingest_path(
+            kb_dir, source, actor=_usage_actor(kb_dir), ticket=ticket or None,
+            result=result,
+        )
+    finally:
+        for note in result.notes:
+            _usage_log_error(kb_dir, note)
 
 
 @usage_app.command("ingest-transcript")
@@ -1493,45 +1500,30 @@ def usage_ingest_transcript(
                 "working directory for this session?)",
             )
             return
-        # ALWAYS exit 0 here, unconditionally: a Stop hook exiting non-zero
-        # blocks Claude from ending its turn, so NOTHING in this branch may
-        # propagate — a malformed payload, an invalid `kind:`, a corrupt
-        # ledger, a missing transcript, anything. `except Exception`, not a
-        # narrow tuple, is deliberate: the failure modes this must absorb
-        # come from several modules this command does not own, and a list of
-        # "the exceptions we thought of" is exactly the list a new one falls
-        # through.
+        # ALWAYS exit 0 here, unconditionally: a `Stop` or `SubagentStop`
+        # hook exiting non-zero blocks Claude (or the subagent) from ending
+        # its turn, so NOTHING in this branch may propagate — a malformed
+        # payload, an invalid `kind:`, a corrupt ledger, a missing
+        # transcript, anything. `except Exception`, not a narrow tuple, is
+        # deliberate: the failure modes this must absorb come from several
+        # modules this command does not own, and a list of "the exceptions
+        # we thought of" is exactly the list a new one falls through. Which
+        # files a payload means is `usage.ingest.ingest_hook_payload`'s
+        # business; this branch only parses, swallows, and logs.
         raw = sys.stdin.read()
         # Created before the `try` so notes collected before a failure (a
         # missing parent, then a missing subagent file) are still logged.
         result = _ingest.IngestResult()
         try:
             payload = json.loads(raw)
-            session = str(payload.get("session_id") or "")
             if path is not None:
                 _usage_log_error(
                     kb_dir, "both a path and --hook-stdin were given; used the payload"
                 )
-            actor = _usage_actor(kb_dir)
-            agent = payload.get("agent_transcript_path")
-            if agent is not None:
-                # SubagentStop: one finished subagent, in full. `Path(agent)`
-                # on a non-string raises TypeError, logged below like any
-                # other bad payload. A missing or unreadable parent is a note,
-                # not a failure: the subagent's calls are stored regardless.
-                parent = payload.get("transcript_path")
-                _ingest.ingest_subagent(
-                    kb_dir, Path(agent), parent=Path(parent) if parent else None,
-                    actor=actor, session=session, ticket=ticket or None,
-                    result=result)
-            else:
-                # Stop: the main transcript, plus a sweep of its subagents
-                # that leaves each one's possibly in-flight last call for
-                # SubagentStop.
-                _ingest.ingest_main(
-                    kb_dir, Path(payload["transcript_path"]), actor=actor,
-                    session=session, ticket=ticket or None,
-                    hold_back_subagents=True, result=result)
+            _ingest.ingest_hook_payload(
+                kb_dir, payload, actor=_usage_actor(kb_dir),
+                ticket=ticket or None, result=result,
+            )
         except Exception as exc:  # noqa: BLE001 -- deliberate: see comment above, must absorb every failure mode
             # The exception's class name is part of the message, not just
             # str(exc): "Expecting value: line 1 column 1" alone does not say
@@ -1563,9 +1555,12 @@ def usage_ingest_transcript(
         )
         raise typer.Exit(1)
 
+    result = _ingest.IngestResult()
     try:
-        result = _usage_ingest(kb_dir, path, ticket=ticket)
+        _usage_ingest(kb_dir, path, ticket=ticket, result=result)
     except (OSError, ledger.LedgerError) as exc:
+        for note in result.notes:
+            typer.secho(note, fg=typer.colors.YELLOW)
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
     report = result.report

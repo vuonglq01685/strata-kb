@@ -512,3 +512,37 @@ def test_ingest_help_says_when_to_run_it_and_what_it_covers():
     assert "its subagents are included" in text
     assert "only after the session has ended" in text
     assert "every row ingested (subagents included)" in text
+
+
+@pytest.mark.parametrize("parent", [None, "", 7, "/tmp/a\u0000b.jsonl"])
+def test_subagent_stop_with_an_unusable_parent_still_ingests_and_notes_it(
+    tmp_path: Path, parent
+):
+    # transcript_path missing, empty, not a string, or not a usable path
+    # costs attribution only: the subagent is stored on its own cursor.
+    d = kb_dir(tmp_path)
+    sub = write_transcript(tmp_path, [usage_row("s1")], name="agent-a.jsonl")
+    body = {"agent_transcript_path": str(sub)}
+    if parent is not None:
+        body["transcript_path"] = parent
+    result = runner.invoke(
+        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        input=json.dumps(body))
+    assert (result.exit_code, result.output) == (0, "")
+    [row] = ledger.read_rows(d)
+    assert (row.uuid, row.sidechain, row.ticket) == ("s1", True, None)
+    log = (d / "usage" / "ingest-errors.log").read_text(encoding="utf-8")
+    assert "own cursor only" in log and "failed" not in log
+
+
+def test_manual_mode_logs_notes_collected_before_a_ledger_failure(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    main = write_transcript(tmp_path, [usage_row("m1")], name="sess-1.jsonl")
+    (tmp_path / "sess-1" / "subagents" / "agent-0.jsonl").mkdir(parents=True)
+    (d / "usage").mkdir()
+    (d / "usage" / "_unattributed.jsonl").write_text('{"uuid": "broke\n', encoding="utf-8")
+    result = runner.invoke(app, ["usage", "ingest-transcript", str(main), "--kb-dir", str(d)])
+    assert result.exit_code == 1
+    log = (d / "usage" / "ingest-errors.log").read_text(encoding="utf-8")
+    assert "agent-0.jsonl" in log
+    assert "agent-0.jsonl" in result.output  # shown to the human as well

@@ -51,9 +51,11 @@ def _parent(parent: Path | None, result: IngestResult) -> transcript.ParentCurso
         return None
     try:
         return transcript.parent_cursor(parent)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         # `parent_cursor` reads the file with errors="replace" and skips any
-        # line that is not JSON, so reading it is the only way it can fail.
+        # line that is not JSON, so reading it is the only way it can fail:
+        # `OSError` for a missing or unreadable file, `ValueError` for a path
+        # the OS cannot even name (an embedded NUL from a hook payload).
         # No call is dropped for want of attribution: the subagent's own
         # cursor still applies, and the miss is reported.
         result.notes.append(f"parent transcript unreadable, own cursor only: {parent}: {exc}")
@@ -131,16 +133,68 @@ def ingest_main(kb_dir: Path, main: Path, *, actor: str, session: str = "",
 
 
 def ingest_path(kb_dir: Path, path: Path, *, actor: str,
-                ticket: str | None = None) -> IngestResult:
+                ticket: str | None = None,
+                result: IngestResult | None = None) -> IngestResult:
     """The manual entry point: whatever transcript a human names.
 
     A `subagents/agent-*.jsonl` path is ingested as a subagent, attributed
-    from its session's main transcript when that file is still there; any
-    other path is a main transcript, its subagents included. Nothing is held
-    back — a backfill runs after the session is over.
+    from its session's main transcript when that file is still there (a note
+    says so when it is not); any other path is a main transcript, its
+    subagents included. Nothing is held back — a backfill runs after the
+    session is over. `result` as in `ingest_subagent`.
     """
+    result = result if result is not None else IngestResult()
     if transcript.is_subagent_transcript(path):
         parent = transcript.parent_of(path)
+        if not parent.is_file():
+            result.notes.append(f"no parent transcript, own cursor only: {parent}")
         return ingest_subagent(kb_dir, path, parent=parent if parent.is_file() else None,
-                               actor=actor, ticket=ticket)
-    return ingest_main(kb_dir, path, actor=actor, ticket=ticket, hold_back_subagents=False)
+                               actor=actor, ticket=ticket, result=result)
+    return ingest_main(kb_dir, path, actor=actor, ticket=ticket, hold_back_subagents=False,
+                       result=result)
+
+
+def _payload_path(payload: dict, key: str) -> Path:
+    """A path the hook payload must carry, or a `ValueError` naming the key."""
+    value = payload.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"hook payload has no usable {key}: {value!r}")
+    return Path(value)
+
+
+def ingest_hook_payload(kb_dir: Path, payload: object, *, actor: str,
+                        ticket: str | None = None,
+                        result: IngestResult | None = None) -> IngestResult:
+    """Dispatch one `Stop` or `SubagentStop` hook payload (parsed JSON).
+
+    A `SubagentStop` payload carries `agent_transcript_path`: that one
+    finished subagent is ingested in full. Its `transcript_path` (the main
+    transcript) only lends attribution, so a missing, empty, non-string or
+    unreadable one is a note, never a failure — the subagent is stored on its
+    own cursor. A `Stop` payload ingests its `transcript_path` and sweeps the
+    subagents, holding back each one's possibly in-flight last call for
+    `SubagentStop`.
+
+    Raises on a payload that names nothing to ingest; the caller, which must
+    exit 0 whatever happens, logs it. Pass `result` to keep notes collected
+    before a failure.
+    """
+    result = result if result is not None else IngestResult()
+    if not isinstance(payload, dict):
+        raise ValueError(f"hook payload is not a JSON object: {type(payload).__name__}")
+    session = str(payload.get("session_id") or "")
+    if payload.get("agent_transcript_path") is not None:
+        agent = _payload_path(payload, "agent_transcript_path")
+        raw_parent = payload.get("transcript_path")
+        parent: Path | None = None
+        if isinstance(raw_parent, str) and raw_parent:
+            parent = Path(raw_parent)
+        else:
+            result.notes.append(
+                f"hook payload has no usable transcript_path ({raw_parent!r}), "
+                f"own cursor only: {agent}")
+        return ingest_subagent(kb_dir, agent, parent=parent, actor=actor,
+                               session=session, ticket=ticket, result=result)
+    return ingest_main(kb_dir, _payload_path(payload, "transcript_path"), actor=actor,
+                       session=session, ticket=ticket, hold_back_subagents=True,
+                       result=result)
