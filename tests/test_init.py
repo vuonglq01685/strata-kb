@@ -2124,12 +2124,12 @@ def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
         target = tmp_path / kind
         init_repo(target, kind)
         settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
-        commands = [
-            hook["command"]
-            for group in settings["hooks"]["Stop"]
-            for hook in group["hooks"]
-        ]
-        assert commands == ["kb usage ingest-transcript --hook-stdin"], kind
+        # Stop ingests the main transcript (and sweeps subagents, holding
+        # back each one's last call); SubagentStop stores that last call.
+        for event in ("Stop", "SubagentStop"):
+            commands = [hook["command"] for group in settings["hooks"][event]
+                        for hook in group["hooks"]]
+            assert commands == ["kb usage ingest-transcript --hook-stdin"], (kind, event)
 
 
 def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):
