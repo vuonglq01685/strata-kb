@@ -699,3 +699,87 @@ def test_a_dropped_duplicate_still_advances_the_cursor(tmp_path: Path):
         ("a1", None),
         ("a3", "open-new-flight"),
     ]
+
+
+def _streamed(uuid: str, request: str, out: int, **kw):
+    return usage_row(uuid, out=out, requestId=request, **kw)
+
+
+def test_a_streamed_call_keeps_its_largest_output_and_its_first_uuid(tmp_path: Path):
+    # Measured 2026-10-10: the first row of a streamed call (a thinking
+    # block) reported output 5; the last reported 329.
+    path = write_transcript(
+        tmp_path, [_streamed("a1", "req-1", 5), _streamed("a2", "req-1", 329)]
+    )
+
+    rows = transcript.rows_from_transcript(path, actor="dev")
+
+    assert [(r.uuid, r.tokens_out) for r in rows] == [("a1", 329)]
+
+
+def test_the_other_counts_come_from_the_same_row_as_the_max(tmp_path: Path):
+    first = _streamed("a1", "req-1", 5)
+    last = _streamed("a2", "req-1", 329)
+    last["message"]["usage"]["cache_read_input_tokens"] = 4242
+
+    rows = transcript.rows_from_transcript(
+        write_transcript(tmp_path, [first, last]), actor="dev"
+    )
+
+    assert rows[0].cache_read == 4242
+
+
+def test_calls_are_emitted_in_first_seen_order(tmp_path: Path):
+    path = write_transcript(
+        tmp_path,
+        [
+            _streamed("a1", "req-1", 5),
+            _streamed("b1", "req-2", 9),
+            _streamed("a2", "req-1", 50),
+        ],
+    )
+
+    assert [r.uuid for r in transcript.rows_from_transcript(path, actor="dev")] == [
+        "a1",
+        "b1",
+    ]
+
+
+def test_hold_back_last_drops_only_the_final_call(tmp_path: Path):
+    path = write_transcript(
+        tmp_path, [_streamed("a1", "req-1", 5), _streamed("b1", "req-2", 9)]
+    )
+
+    rows = transcript.rows_from_transcript(path, actor="dev", hold_back_last=True)
+
+    assert [r.uuid for r in rows] == ["a1"]
+
+
+def test_top_level_cache_creation_is_read_as_5m_when_the_split_is_absent(tmp_path: Path):
+    r = usage_row("a1")
+    del r["message"]["usage"]["cache_creation"]
+
+    rows = transcript.rows_from_transcript(write_transcript(tmp_path, [r]), actor="dev")
+
+    assert (rows[0].cache_write_5m, rows[0].cache_write_1h) == (300, 0)
+
+
+def test_modifiers_are_copied_from_the_usage_block(tmp_path: Path):
+    r = usage_row("a1")
+    r["message"]["usage"].update(
+        {
+            "inference_geo": "us",
+            "speed": "fast",
+            "service_tier": "standard",
+            "server_tool_use": {"web_search_requests": 2},
+        }
+    )
+
+    row = transcript.rows_from_transcript(write_transcript(tmp_path, [r]), actor="dev")[0]
+
+    assert (row.inference_geo, row.speed, row.service_tier, row.web_searches) == (
+        "us",
+        "fast",
+        "standard",
+        2,
+    )
