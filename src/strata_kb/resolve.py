@@ -67,11 +67,15 @@ def _worktree_section(kb_dir: Path, ref: KBRef) -> tuple[str | None, str]:
     return body, ""
 
 
-def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
+def _resolve_one(
+    kb_dir: Path, root: Path, rev: str, ref: KBRef,
+    reader: gitio.BatchReader | None = None,
+) -> ResolvedRef:
+    read_at = reader.read_at if reader is not None else (
+        lambda r, path: gitio.read_at(root, r, path)
+    )
     try:
-        manifest_text = gitio.read_at(
-            root, rev, kb_dir / ref.doc_id / "_manifest.yaml"
-        )
+        manifest_text = read_at(rev, kb_dir / ref.doc_id / "_manifest.yaml")
     except gitio.GitError as exc:
         return _broken(ref, str(exc), pinned_rev=rev)
     if manifest_text is None:
@@ -93,7 +97,7 @@ def _resolve_one(kb_dir: Path, root: Path, rev: str, ref: KBRef) -> ResolvedRef:
             f"§{ref.section_id} is not in manifest '{ref.doc_id}' at rev {rev}",
             pinned_rev=rev,
         )
-    l2_text = gitio.read_at(root, rev, kb_dir / ref.doc_id / f"{sec.file}.md")
+    l2_text = read_at(rev, kb_dir / ref.doc_id / f"{sec.file}.md")
     if l2_text is None:
         return _broken(
             ref, f"L2 file '{sec.file}.md' does not exist at rev {rev}", pinned_rev=rev
@@ -173,27 +177,31 @@ def resolve_refs(hub: "HubHandle", ctx: KBContext) -> list[ResolvedRef]:
 
     repos = load_federation(hub.federation_dir)
     out: list[ResolvedRef] = []
-    for ref in ctx.refs:
-        if ref.repo_id is None:
-            holders = [
-                r.meta.repo_id
-                for r in repos
-                if (r.kb_dir / ref.doc_id / "_manifest.yaml").exists()
-            ]
-            if len(holders) != 1:
-                out.append(
-                    _broken(
-                        ref,
-                        "ref has no repo id and cannot be disambiguated in the "
-                        "current federation — re-pin with kb_context_new",
-                    )
-                )
-                continue
-            ref.repo_id = holders[0]
-        out.append(
-            _resolve_one(hub.federation_dir / ref.repo_id, root, ctx.version, ref)
-        )
+    with gitio.BatchReader(root) as reader:
+        reader.mark_rev_exists(ctx.version)  # checked above
+        for ref in ctx.refs:
+            out.append(_resolve_ref(hub, root, ctx.version, ref, repos, reader))
     return out
+
+
+def _resolve_ref(
+    hub: "HubHandle", root: Path, version: str, ref: KBRef, repos,
+    reader: gitio.BatchReader,
+) -> ResolvedRef:
+    if ref.repo_id is None:
+        holders = [
+            r.meta.repo_id
+            for r in repos
+            if (r.kb_dir / ref.doc_id / "_manifest.yaml").exists()
+        ]
+        if len(holders) != 1:
+            return _broken(
+                ref,
+                "ref has no repo id and cannot be disambiguated in the "
+                "current federation — re-pin with kb_context_new",
+            )
+        ref.repo_id = holders[0]
+    return _resolve_one(hub.federation_dir / ref.repo_id, root, version, ref, reader)
 
 
 def render_resolved(

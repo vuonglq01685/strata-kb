@@ -307,6 +307,10 @@ def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
     raise RunnerError(str(last))
 
 
+# Sections summarized between two writes of their L2 file and manifest.
+FLUSH_EVERY = 25
+
+
 def summarize_kb(
     kb_dir: Path,
     runner,
@@ -334,10 +338,18 @@ def summarize_kb(
                     say(f"[fail] {key}: {exc}")
                 else:
                     say(f"[ok] {key}")
+                # Write as we go, still on this (main) thread: a crash in an
+                # hours-long run used to lose every paid-for call, because
+                # nothing was written until all of them finished (2026-10-10
+                # review §6.2 F12). Each flush re-reads the manifest, so the
+                # L2 markers still pending are counted afresh.
+                if len(results) >= FLUSH_EVERY:
+                    _apply_results(kb_dir, results, sections, runner, report)
+                    results = {}
 
         _apply_results(kb_dir, results, sections, runner, report)
     touched = {s.doc_id for s in pending}
-    _fill_doc_summaries(kb_dir, runner, doc_id, touched, say, report)
+    _fill_doc_summaries(kb_dir, runner, doc_id, touched, say, report, max_workers)
     report.summarized.sort()
     report.failed.sort()
     return report
@@ -649,12 +661,15 @@ def _fill_doc_summaries(
     touched: set[str],
     say: Callable[[str], None],
     report: SummarizeReport,
+    max_workers: int = 5,
 ) -> None:
     """Write the L0 sentence for every in-scope doc that has no pending
-    section and either was touched in this run or has an empty summary."""
+    section and either was touched in this run or has an empty summary.
+    The LLM calls run in parallel, like the sections'; the index is written
+    once, on this thread."""
     index_path = kb_dir / "index.yaml"
     index = models.load_yaml_model(index_path, models.KBIndex)
-    changed = False
+    todo: list[tuple[models.IndexEntry, str]] = []
     for entry in index.docs:
         if doc_id and entry.id != doc_id:
             continue
@@ -668,14 +683,24 @@ def _fill_doc_summaries(
             continue  # doc not complete yet
         if not any(s.summary.strip() for s in manifest.sections):
             continue  # no section summary to draw on — never fabricate one
-        prompt = build_doc_prompt(entry.title, [s.summary for s in manifest.sections])
-        try:
-            reply = parse_json_reply(runner.run(prompt), ("summary",))
-        except (RunnerError, ValueError) as exc:
-            report.failed.append(f"{entry.id}/<doc-summary>")
-            say(f"[fail] {entry.id}/<doc-summary>: {exc}")
-            continue
-        entry.summary = reply["summary"]
-        changed = True
+        todo.append((entry, build_doc_prompt(entry.title, [s.summary for s in manifest.sections])))
+    if not todo:
+        return
+
+    def _one(prompt: str) -> str:
+        return parse_json_reply(runner.run(prompt), ("summary",))["summary"]
+
+    changed = False
+    with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
+        futures = {pool.submit(_one, prompt): entry for entry, prompt in todo}
+        for fut in as_completed(futures):
+            entry = futures[fut]
+            try:
+                entry.summary = fut.result()
+            except (RunnerError, ValueError) as exc:
+                report.failed.append(f"{entry.id}/<doc-summary>")
+                say(f"[fail] {entry.id}/<doc-summary>: {exc}")
+                continue
+            changed = True
     if changed:
         models.save_yaml_model(index_path, index)

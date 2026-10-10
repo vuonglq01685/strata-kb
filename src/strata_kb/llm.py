@@ -8,9 +8,18 @@ from dataclasses import dataclass
 
 from strata_kb.models import LLMConfig
 
-# `claude -p` has no public effort flag; a large thinking budget is the
-# closest supported knob for effort=high (spec §6 — best-effort).
+# `claude -p` has no public effort flag; a thinking budget is the closest
+# supported knob for effort=high (spec §6 — best-effort). It scales with the
+# prompt: a fixed 31,999 per section paid the same for a two-line section as
+# for a 60,000-character one (2026-10-10 review §6.2 F12). Half the prompt's
+# characters (about twice its tokens), clamped.
 HIGH_EFFORT_THINKING_TOKENS = "31999"
+MIN_THINKING_TOKENS = 4000
+MAX_THINKING_TOKENS = int(HIGH_EFFORT_THINKING_TOKENS)
+
+
+def thinking_budget(prompt: str) -> int:
+    return max(MIN_THINKING_TOKENS, min(MAX_THINKING_TOKENS, len(prompt) // 2))
 
 
 class RunnerError(Exception):
@@ -51,7 +60,7 @@ class Runner:
             raise RunnerError("prompt must travel on stdin, not argv")
         env = None
         if self.name == "claude" and self.effort == "high":
-            env = os.environ | {"MAX_THINKING_TOKENS": HIGH_EFFORT_THINKING_TOKENS}
+            env = os.environ | {"MAX_THINKING_TOKENS": str(thinking_budget(prompt))}
         try:
             proc = subprocess.run(
                 cmd, input=prompt, capture_output=True, text=True,

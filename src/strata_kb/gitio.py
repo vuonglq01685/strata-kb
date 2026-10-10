@@ -187,6 +187,90 @@ def read_at(root: Path, rev: str, path: Path) -> str | None:
     return proc.stdout
 
 
+class BatchReader:
+    """`read_at` for many (rev, path) pairs through ONE `git cat-file --batch`
+    process, memoised. `kb resolve` used to start four git processes per
+    ref (`rev-parse` twice, `show` twice): 22 for five refs (2026-10-10
+    review §6.2 F8).
+
+    Same contract as `read_at` for files: the text (newlines normalised as
+    text-mode `git show` did), None when the path is absent at that rev,
+    GitError when the rev does not exist. A directory reads as None (`git
+    show` would print a tree listing; no caller reads one). Use as a context manager; `close()` ends the
+    process.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._proc: subprocess.Popen[bytes] | None = None
+        self._revs: dict[str, bool] = {}
+        self._blobs: dict[tuple[str, str], str | None] = {}
+
+    def __enter__(self) -> BatchReader:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._proc is not None:
+            try:
+                if self._proc.stdin:
+                    self._proc.stdin.close()
+                self._proc.wait(timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                self._proc.kill()
+            self._proc = None
+
+    def _cat(self, spec: str) -> bytes | None:
+        if self._proc is None:
+            self._proc = subprocess.Popen(
+                ["git", "cat-file", "--batch"], cwd=self.root,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            )
+        stdin, stdout = self._proc.stdin, self._proc.stdout
+        if stdin is None or stdout is None:  # pragma: no cover - PIPE always sets both
+            raise GitError("git cat-file --batch has no pipes")
+        if "\n" in spec:
+            return None  # cat-file reads one spec per line; git paths never hold one
+        stdin.write(spec.encode("utf-8") + b"\n")
+        stdin.flush()
+        header = stdout.readline()
+        if not header:
+            raise GitError(f"git cat-file --batch ended reading '{spec}'")
+        parts = header.split()
+        if len(parts) != 3:  # "<spec> missing" / "ambiguous"
+            return None
+        size = int(parts[2])
+        data = stdout.read(size)
+        stdout.read(1)  # the LF after the content
+        return data if parts[1] == b"blob" else None
+
+    def mark_rev_exists(self, rev: str) -> None:
+        """A caller that already ran `rev_exists(rev)` spares the repeat."""
+        self._revs[rev] = True
+
+    def rev_exists(self, rev: str) -> bool:
+        if rev not in self._revs:
+            self._revs[rev] = rev_exists(self.root, rev)
+        return self._revs[rev]
+
+    def read_at(self, rev: str, path: Path) -> str | None:
+        rel = _relpath(self.root, path)
+        key = (rev, rel)
+        if key not in self._blobs:
+            if not self.rev_exists(rev):
+                raise GitError(
+                    f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)"
+                )
+            data = self._cat(f"{rev}:{rel}")
+            self._blobs[key] = (
+                None if data is None
+                else data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+            )
+        return self._blobs[key]
+
+
 def is_dirty(root: Path, subpath: Path) -> bool:
     rel = _relpath(root, subpath)
     proc = _run(root, "status", "--porcelain", "--", rel)
