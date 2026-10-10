@@ -38,7 +38,7 @@ cost is not, and is not treated as zero.</p>
 {% endif %}
 
 {% if agg.priced_as %}
-<p class="meta">Priced as a family rate:
+<p class="meta">Priced via alias:
 {% for raw, key in agg.priced_as.items() %}{{ raw }} priced as {{ key }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
 {% endif %}
 
@@ -70,6 +70,19 @@ cost is not, and is not treated as zero.</p>
 
 <h2>Total</h2>
 {{ rows([agg.total], "scope", agg.currency) }}
+
+{% if agg.total.rows %}
+<p class="meta">Unattributed: {{ "%.1f" | format(agg.unattributed_pct) }} % of cost.</p>
+{% endif %}
+
+{% if agg.lower_bound_rows %}
+<p class="warn">{{ agg.lower_bound_rows }} call(s) in fast mode priced at the
+standard rate — the total is a lower bound.</p>
+{% endif %}
+
+{% if agg.unknown_modifier_rows %}
+<p class="warn">{{ agg.unknown_modifier_rows }} call(s) with an unrecognised modifier.</p>
+{% endif %}
 
 <h2>By ticket</h2>
 {{ rows(agg.by_ticket, "ticket", agg.currency) }}

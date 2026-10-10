@@ -224,6 +224,8 @@ def test_priced_as_lists_only_alias_matches(tmp_path: Path):
     assert agg.priced_as == {"opus": "claude-opus-5-5"}
     assert agg.unpriced_models == ["claude-opus-5-6"]
     assert "opus priced as claude-opus-5-5" in report.render_markdown(agg)
+    html = report.render_html(agg)
+    assert "Priced via alias:" in html and "family rate" not in html
 
 
 def test_markdown_warns_when_the_price_table_is_old(tmp_path: Path):
@@ -237,3 +239,43 @@ def test_markdown_and_html_mention_hook_errors_when_present(tmp_path: Path):
     agg.hook_errors = 3
     assert "3 hook ingest error(s) logged" in report.render_markdown(agg)
     assert "3 hook ingest error(s)" in report.render_html(agg)
+
+
+def test_unattributed_share_is_a_headline_figure(tmp_path: Path):
+    agg = agg_of([row("u1", ticket=None, model="claude-opus-5", tokens_out=1_000_000,
+                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0),
+                  row("u2", ticket="ATM-7", model="claude-opus-5", tokens_out=3_000_000,
+                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0)], tmp_path)
+    assert agg.unattributed_pct == pytest.approx(25.0)
+    assert "Unattributed: 25.0 % of cost" in report.render_markdown(agg)
+    assert "Unattributed: 25.0 % of cost" in report.render_html(agg)
+
+
+def test_unattributed_share_falls_back_to_tokens_when_nothing_is_priced(tmp_path: Path):
+    agg = agg_of([row("u1", ticket=None, model="claude-nonexistent-9", tokens_out=10,
+                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0),
+                  row("u2", ticket="ATM-7", model="claude-nonexistent-9", tokens_out=30,
+                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0)], tmp_path)
+    assert agg.unattributed_pct == pytest.approx(25.0)
+
+
+def test_fast_mode_rows_make_the_total_a_lower_bound(tmp_path: Path):
+    agg = agg_of([row("u1", speed="fast")], tmp_path)
+    assert agg.lower_bound_rows == 1
+    assert "1 call(s) in fast mode" in report.render_markdown(agg)
+    assert "lower bound" in report.render_html(agg)
+
+
+def test_unknown_modifiers_are_counted(tmp_path: Path):
+    agg = agg_of([row("u1", inference_geo="mars")], tmp_path)
+    assert agg.unknown_modifier_rows == 1
+    assert "1 call(s) with an unrecognised modifier" in report.render_markdown(agg)
+    assert "1 call(s) with an unrecognised modifier" in report.render_html(agg)
+
+
+def test_no_modifier_lines_when_there_is_nothing_to_say(tmp_path: Path):
+    agg = agg_of([row("u1")], tmp_path)
+    md = report.render_markdown(agg)
+    assert "fast mode" not in md and "unrecognised modifier" not in md
+    html = report.render_html(agg)
+    assert "lower bound" not in html and "unrecognised modifier" not in html

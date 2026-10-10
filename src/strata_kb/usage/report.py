@@ -16,7 +16,14 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from pydantic import BaseModel
 
 from strata_kb.usage.ledger import UsageRow
-from strata_kb.usage.prices import PriceTable, cost_of, resolve_model, stale_days
+from strata_kb.usage.prices import (
+    PriceTable,
+    cost_of,
+    has_unknown_modifier,
+    is_lower_bound,
+    resolve_model,
+    stale_days,
+)
 
 STALE_AFTER_DAYS = 90
 
@@ -46,6 +53,9 @@ class Aggregate(BaseModel):
     unpriced_models: list[str] = []
     priced_as: dict[str, str] = {}
     hook_errors: int = 0
+    lower_bound_rows: int = 0
+    unknown_modifier_rows: int = 0
+    unattributed_pct: float = 0.0
     effective_date: str = ""
     currency: str = "USD"
     stale_days: int = 0
@@ -116,6 +126,8 @@ def aggregate(
             unpriced.add(row.model)
         elif key != row.model:
             priced_as[row.model] = key
+        agg.lower_bound_rows += is_lower_bound(row)
+        agg.unknown_modifier_rows += has_unknown_modifier(row)
         _add(agg.total, row, cost)
         _add(agg.sidechain if row.sidechain else agg.main, row, cost)
         if row.ticket is None:
@@ -134,6 +146,14 @@ def aggregate(
     agg.by_assistant = _ranked(assistants)
     agg.unpriced_models = sorted(unpriced)
     agg.priced_as = dict(sorted(priced_as.items()))
+    if agg.total.cost > 0:
+        agg.unattributed_pct = 100 * agg.unattributed.cost / agg.total.cost
+    else:
+        # Nothing priced: fall back to tokens, so the share is still shown.
+        def _tok(b: Bucket) -> int:
+            return b.tokens_in + b.tokens_out + b.cache_read + b.cache_write
+        total = _tok(agg.total)
+        agg.unattributed_pct = 100 * _tok(agg.unattributed) / total if total else 0.0
     return agg
 
 
@@ -197,6 +217,13 @@ def render_markdown(agg: Aggregate) -> str:
     for bucket in agg.by_assistant:
         lines.append(_md_row(Bucket(**{**bucket.model_dump(), "key": f"assistant: {bucket.key}"}), agg.currency))
     lines.append("")
+    if agg.total.rows:
+        lines.append(f"Unattributed: {agg.unattributed_pct:.1f} % of cost.")
+    if agg.lower_bound_rows:
+        lines.append(f"{agg.lower_bound_rows} call(s) in fast mode priced at the standard "
+                     "rate — the total is a lower bound.")
+    if agg.unknown_modifier_rows:
+        lines.append(f"{agg.unknown_modifier_rows} call(s) with an unrecognised modifier.")
     if agg.priced_as:
         lines.append("Priced as: " + "; ".join(f"{raw} priced as {key}" for raw, key in agg.priced_as.items()) + ".")
     if agg.hook_errors:

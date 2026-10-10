@@ -456,6 +456,24 @@ def test_report_ticket_filter_keeps_only_that_ticket(tmp_path: Path):
     assert [b["key"] for b in data["by_ticket"]] == ["ATM-7"]
 
 
+def test_report_json_carries_the_share_and_modifier_counts(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    fast = usage_row("a2")
+    fast["message"]["usage"]["speed"] = "fast"
+    t = write_transcript(
+        tmp_path, [usage_row("a1"), user_row("tickets/ATM-7.md"), fast]
+    )
+    runner.invoke(app, ["usage", "ingest-transcript", str(t), "--kb-dir", str(d)])
+
+    result = runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["lower_bound_rows"] == 1
+    assert data["unknown_modifier_rows"] == 0
+    assert 0 < data["unattributed_pct"] < 100
+
+
 def test_report_on_an_empty_ledger_says_so_and_exits_zero(tmp_path: Path):
     d = kb_dir(tmp_path)
 
