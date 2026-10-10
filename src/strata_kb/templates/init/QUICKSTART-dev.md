@@ -390,6 +390,9 @@ transcript itself is ~60ms). That is the price of the data.
 - Subagent cost is recorded too, as `sidechain`. A `SubagentStop` hook ingests
   each subagent when it finishes, and the `Stop` hook sweeps any it missed.
   The report's "Main thread vs subagents" table shows where the tokens went.
+  Claude Code writes a subagent's output count from the start of each
+  streamed reply, never the final one, so subagent output tokens are a lower
+  bound; input and cache tokens, most of the cost, are complete.
 - `kb usage note --ticket <id> --phase <p> --model <m> --tokens-in N --tokens-out N --assistant <name>`
   — record a row by hand. Rows entered this way are estimates unless
   `--measured` is given. It always **appends** a new row, so it is never
