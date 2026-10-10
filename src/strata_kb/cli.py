@@ -1419,28 +1419,31 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
         pass
 
 
-def _usage_ingest(kb_dir: Path, source: Path, *, session: str, ticket: str):
-    """Turn one transcript into ledger rows and append them.
+def _usage_ingest(kb_dir: Path, source: Path, *, ticket: str):
+    """The manual (non-hook) ingest: one path, a main transcript or a
+    subagent's, via `usage.ingest.ingest_path`.
 
-    Shared by both `ingest-transcript` branches so hook and non-hook mode
-    agree on exactly what "ingest" means; only how a failure is reported
-    differs between them.
+    Its notes (a parent transcript that could not be read, say) are not
+    failures — every call was still stored — but they cost attribution, so
+    they go to `ingest-errors.log` like the hook's, where `kb usage report`
+    counts them. The caller also shows them to the human running this.
     """
-    from strata_kb.usage import ledger, transcript
+    from strata_kb.usage import ingest as _ingest
 
-    rows = transcript.rows_from_transcript(
-        source,
-        actor=_usage_actor(kb_dir),
-        session_fallback=session,
-        forced_ticket=ticket or None,
+    result = _ingest.ingest_path(
+        kb_dir, source, actor=_usage_actor(kb_dir), ticket=ticket or None
     )
-    return ledger.append_rows(kb_dir, rows)
+    for note in result.notes:
+        _usage_log_error(kb_dir, note)
+    return result
 
 
 @usage_app.command("ingest-transcript")
 def usage_ingest_transcript(
     path: Path | None = typer.Argument(
-        None, help="Claude Code transcript JSONL (omit with --hook-stdin)"
+        None,
+        help="Claude Code transcript JSONL: a main transcript (its subagents "
+        "are included) or a subagents/agent-*.jsonl file (omit with --hook-stdin)",
     ),
     hook_stdin: bool = typer.Option(
         False, "--hook-stdin", help="Read the hook payload (JSON) from stdin"
@@ -1453,9 +1456,17 @@ def usage_ingest_transcript(
 ) -> None:
     """Append this transcript's API calls to the usage ledger.
 
+    PATH is a main transcript (its subagents are included) or a
+    `subagents/agent-*.jsonl` file. In hook mode the payload decides: a
+    `SubagentStop` payload carries `agent_transcript_path` and ingests that
+    one finished subagent in full; a `Stop` payload ingests the main
+    transcript and sweeps its subagents, holding back each one's last call
+    (it may still be streaming) for `SubagentStop` to store.
+
     Safe to repeat: rows are de-duplicated by the transcript row's uuid, which
     is what lets the `Stop` hook re-ingest the same growing file every turn.
     """
+    from strata_kb.usage import ingest as _ingest
     from strata_kb.usage import ledger
 
     if hook_stdin:
@@ -1483,15 +1494,36 @@ def usage_ingest_transcript(
         # "the exceptions we thought of" is exactly the list a new one falls
         # through.
         raw = sys.stdin.read()
+        # Created before the `try` so notes collected before a failure (a
+        # missing parent, then a missing subagent file) are still logged.
+        result = _ingest.IngestResult()
         try:
             payload = json.loads(raw)
-            source = Path(payload["transcript_path"])
             session = str(payload.get("session_id") or "")
             if path is not None:
                 _usage_log_error(
                     kb_dir, "both a path and --hook-stdin were given; used the payload"
                 )
-            _usage_ingest(kb_dir, source, session=session, ticket=ticket)
+            actor = _usage_actor(kb_dir)
+            agent = payload.get("agent_transcript_path")
+            if agent is not None:
+                # SubagentStop: one finished subagent, in full. `Path(agent)`
+                # on a non-string raises TypeError, logged below like any
+                # other bad payload. A missing or unreadable parent is a note,
+                # not a failure: the subagent's calls are stored regardless.
+                parent = payload.get("transcript_path")
+                _ingest.ingest_subagent(
+                    kb_dir, Path(agent), parent=Path(parent) if parent else None,
+                    actor=actor, session=session, ticket=ticket or None,
+                    result=result)
+            else:
+                # Stop: the main transcript, plus a sweep of its subagents
+                # that leaves each one's possibly in-flight last call for
+                # SubagentStop.
+                _ingest.ingest_main(
+                    kb_dir, Path(payload["transcript_path"]), actor=actor,
+                    session=session, ticket=ticket or None,
+                    hold_back_subagents=True, result=result)
         except Exception as exc:  # noqa: BLE001 -- deliberate: see comment above, must absorb every failure mode
             # The exception's class name is part of the message, not just
             # str(exc): "Expecting value: line 1 column 1" alone does not say
@@ -1508,6 +1540,8 @@ def usage_ingest_transcript(
                 f"ingest-transcript (hook) failed: {type(exc).__name__}: {exc}: "
                 f"{raw[:200]}",
             )
+        for note in result.notes:
+            _usage_log_error(kb_dir, note)
         return  # silent either way: the hook's stdout would land in the session
 
     if path is None:
@@ -1522,10 +1556,11 @@ def usage_ingest_transcript(
         raise typer.Exit(1)
 
     try:
-        report = _usage_ingest(kb_dir, path, session="", ticket=ticket)
+        result = _usage_ingest(kb_dir, path, ticket=ticket)
     except (OSError, ledger.LedgerError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
+    report = result.report
 
     if json_out:
         typer.echo(
@@ -1542,6 +1577,11 @@ def usage_ingest_transcript(
             f"{report.written} new row(s), {report.duplicates} already recorded"
             + (f" -> {', '.join(report.files)}" if report.files else "")
         )
+        for note in result.notes:
+            # Already in ingest-errors.log; shown here too because a human
+            # running a backfill is looking at this output, not at the log.
+            # Not in --json mode: that output is one machine-readable object.
+            typer.secho(note, fg=typer.colors.YELLOW)
         if ticket and report.written == 0 and report.duplicates > 0:
             # Global uuid dedup (invariant I2) + forced_ticket compose into a
             # dead escape hatch: once a transcript has already been ingested

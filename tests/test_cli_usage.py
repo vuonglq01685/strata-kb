@@ -2,6 +2,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -182,6 +183,63 @@ def test_hook_mode_reads_the_transcript_path_from_stdin(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert result.output == ""  # the hook's stdout would land in the session
     assert len(ledger.read_rows(d)) == 1
+
+
+def test_hook_mode_with_an_agent_transcript_ingests_the_subagent(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    main = write_transcript(tmp_path, [user_row("tickets/ATM-7.md")], name="sess-1.jsonl")
+    folder = tmp_path / "sess-1" / "subagents"
+    folder.mkdir(parents=True)
+    sub = write_transcript(folder, [usage_row("s1")], name="agent-a.jsonl")
+    payload = json.dumps({"session_id": "sess-1", "transcript_path": str(main),
+                          "agent_id": "a", "agent_transcript_path": str(sub)})
+    result = runner.invoke(
+        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+    assert (result.exit_code, result.output) == (0, "")
+    [row] = ledger.read_rows(d)
+    assert (row.uuid, row.sidechain, row.ticket) == ("s1", True, "ATM-7")
+
+
+@pytest.mark.parametrize("payload", [
+    '{"agent_transcript_path": 7, "transcript_path": "x"}',
+    '{"agent_transcript_path": "/nope/agent-a.jsonl"}',
+    '{"agent_transcript_path": "/nope/agent-a.jsonl", "transcript_path": "/nope/p.jsonl"}',
+])
+def test_hook_mode_never_fails_on_a_bad_subagent_payload(tmp_path: Path, payload: str):
+    d = kb_dir(tmp_path)
+    result = runner.invoke(
+        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+    assert (result.exit_code, result.output) == (0, "")
+    assert (d / "usage" / "ingest-errors.log").exists()
+
+
+def test_hook_mode_with_a_missing_parent_still_ingests_and_logs_a_note(tmp_path: Path):
+    # A parent that cannot be read costs attribution, never the subagent's
+    # calls: the row is stored and the miss is logged, exit 0, stdout silent.
+    d = kb_dir(tmp_path)
+    sub = write_transcript(tmp_path, [usage_row("s1")], name="agent-a.jsonl")
+    payload = json.dumps({"agent_transcript_path": str(sub),
+                          "transcript_path": str(tmp_path / "gone.jsonl")})
+    result = runner.invoke(
+        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+    assert (result.exit_code, result.output) == (0, "")
+    assert [r.uuid for r in ledger.read_rows(d)] == ["s1"]
+    log = (d / "usage" / "ingest-errors.log").read_text(encoding="utf-8")
+    assert "parent transcript unreadable" in log and "gone.jsonl" in log
+    assert "failed" not in log
+
+
+def test_hook_mode_keeps_the_parent_note_when_the_subagent_also_fails(tmp_path: Path):
+    # Both files missing: the subagent failure is logged, and so is the
+    # parent note collected before it — a failure does not swallow it.
+    d = kb_dir(tmp_path)
+    payload = json.dumps({"agent_transcript_path": str(tmp_path / "agent-a.jsonl"),
+                          "transcript_path": str(tmp_path / "gone.jsonl")})
+    result = runner.invoke(
+        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+    assert (result.exit_code, result.output) == (0, "")
+    log = (d / "usage" / "ingest-errors.log").read_text(encoding="utf-8")
+    assert "parent transcript unreadable" in log and "FileNotFoundError" in log
 
 
 def test_hook_mode_exits_zero_on_garbage_stdin_and_logs_it(tmp_path: Path):
