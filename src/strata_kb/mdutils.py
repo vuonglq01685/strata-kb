@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import functools
+import logging
+import os
 import re
 import unicodedata
-
-import tiktoken
+from pathlib import Path
 
 from strata_kb import models
 
+logger = logging.getLogger("strata_kb.mdutils")
+
 _ENCODER = None
+_ENCODER_FAILED = False
 
 HEADING_RE = re.compile(r"^## (?P<sid>\S+)(?:[ \t]+(?P<title>.*?))?\s*$")
 _HEADING_RE = HEADING_RE  # back-compat alias — callers import this private name directly
@@ -30,11 +35,75 @@ def slugify_id(text: str) -> str:
     return slug[:40].rstrip("-")
 
 
+def tiktoken_cache_dir() -> Path:
+    """Where the cl100k_base BPE file is cached: `~/.strata-kb/tiktoken`.
+    tiktoken's own default is under the system temp dir, which a reboot or
+    a fresh container empties -- and the next load needs the Internet."""
+    return Path.home() / ".strata-kb" / "tiktoken"
+
+
+def _load_encoder():
+    """cl100k_base, or None when it cannot be loaded (offline, a proxy
+    refusing the download). Imported lazily: commands that never count
+    tokens skip tiktoken entirely (2026-10-10 review §6.2 F4/F5)."""
+    import tiktoken
+
+    if "TIKTOKEN_CACHE_DIR" not in os.environ and "DATA_GYM_CACHE_DIR" not in os.environ:
+        os.environ["TIKTOKEN_CACHE_DIR"] = str(tiktoken_cache_dir())
+        try:
+            return tiktoken.get_encoding("cl100k_base")
+        except Exception:  # noqa: BLE001 -- retried below from tiktoken's own default cache
+            # A machine that already cached the file under tiktoken's
+            # default temp dir (before this release) can still load offline.
+            del os.environ["TIKTOKEN_CACHE_DIR"]
+    return tiktoken.get_encoding("cl100k_base")
+
+
 def count_tokens(text: str) -> int:
-    global _ENCODER
+    """cl100k_base token count. When the encoding cannot be loaded, an
+    estimate (~4 characters per token) and ONE warning, never a traceback:
+    counts feed the `~Ntk` display, budgets and `kb stats`, never content."""
+    global _ENCODER, _ENCODER_FAILED
+    if _ENCODER is None and not _ENCODER_FAILED:
+        try:
+            _ENCODER = _load_encoder()
+        except Exception as exc:  # noqa: BLE001 -- network, proxy, disk: any failure means "estimate"
+            _ENCODER_FAILED = True
+            logger.warning(
+                "tiktoken could not load cl100k_base (%s) — token counts are "
+                "estimates (~4 characters per token). Connect once to the "
+                "Internet to cache it in %s, or set TIKTOKEN_CACHE_DIR to a "
+                "folder that holds it.",
+                " ".join(str(exc).split())[:200], tiktoken_cache_dir(),
+            )
     if _ENCODER is None:
-        _ENCODER = tiktoken.get_encoding("cl100k_base")
+        return (len(text) + 3) // 4
     return len(_ENCODER.encode(text))
+
+
+@functools.lru_cache(maxsize=16)
+def section_map(md: str) -> dict[str, tuple[str, ...]]:
+    """Every '## <id> ...' unit of `md`, split in ONE pass: id -> its slices
+    in file order (ids may repeat within a file). A slice runs from its
+    heading to the next line starting with '## ', stripped.
+
+    `slice_section` used to re-split the whole file for each section, so a
+    caller walking a file's sections paid O(sections × bytes): 20 s to index
+    2,000 sections at 500 per file (2026-10-10 review §6.2 F2). Memoised on
+    the text itself -- the same string object hits without re-hashing --
+    so callers keep calling `slice_section` per section. Treat the result
+    as read-only.
+    """
+    lines = md.splitlines()
+    bounds = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    out: dict[str, list[str]] = {}
+    for k, i in enumerate(bounds):
+        m = HEADING_RE.match(lines[i])
+        if m is None:
+            continue
+        end = bounds[k + 1] if k + 1 < len(bounds) else len(lines)
+        out.setdefault(m.group("sid"), []).append("\n".join(lines[i:end]).strip())
+    return {sid: tuple(bodies) for sid, bodies in out.items()}
 
 
 def slice_section(md: str, section_id: str, occurrence: int = 0) -> str | None:
@@ -42,22 +111,8 @@ def slice_section(md: str, section_id: str, occurrence: int = 0) -> str | None:
     body. Manifest section ids are not required to be unique within a file
     (spec allows repeated numbering); `occurrence=0` (default) keeps the
     original first-match behavior byte-for-byte."""
-    lines = md.splitlines()
-    seen = -1
-    start = None
-    for i, line in enumerate(lines):
-        m = HEADING_RE.match(line)
-        if m and m.group("sid") == section_id:
-            seen += 1
-            if seen == occurrence:
-                start = i
-                break
-    if start is None:
-        return None
-    for j in range(start + 1, len(lines)):
-        if lines[j].startswith("## "):
-            return "\n".join(lines[start:j]).strip()
-    return "\n".join(lines[start:]).strip()
+    bodies = section_map(md).get(section_id, ())
+    return bodies[occurrence] if 0 <= occurrence < len(bodies) else None
 
 
 def heading_occurrences(sections: list[models.SectionEntry]) -> list[int]:
