@@ -63,3 +63,50 @@ def test_one_unreadable_subagent_file_does_not_stop_the_sweep(tmp_path: Path):
     result = ingest.ingest_main(d, main, actor="dev", hold_back_subagents=False)
     assert sorted(r.uuid for r in ledger.read_rows(d)) == ["m1", "s1", "s2"]
     assert len(result.notes) == 1 and "agent-0.jsonl" in result.notes[0]
+
+
+def test_a_sweep_reads_the_parent_once_and_appends_once(tmp_path, monkeypatch):
+    # Every subagent starts from the same parent file, so one sweep walks it
+    # once, however many subagents there are; and the whole session goes to
+    # the ledger in one locked append, not one per file.
+    from strata_kb.usage import transcript
+
+    d = kb_dir(tmp_path)
+    main = _session(tmp_path)
+    write_transcript(tmp_path / "sess-1" / "subagents", [usage_row("b1", requestId="rb")],
+                     name="agent-b.jsonl")
+    calls = {"parent": 0, "append": 0}
+    real_parent, real_append = transcript.parent_cursor, ledger.append_rows
+
+    def counting_parent(path):
+        calls["parent"] += 1
+        return real_parent(path)
+
+    def counting_append(kb, rows):
+        calls["append"] += 1
+        return real_append(kb, rows)
+
+    monkeypatch.setattr(transcript, "parent_cursor", counting_parent)
+    monkeypatch.setattr(ledger, "append_rows", counting_append)
+    result = ingest.ingest_main(d, main, actor="dev", hold_back_subagents=False)
+    assert calls == {"parent": 1, "append": 1}
+    assert result.report.written == 4
+    assert {r.uuid: r.ticket for r in ledger.read_rows(d)} == {
+        "m1": "ATM-7", "s1": "ATM-7", "s2": "ATM-7", "b1": "ATM-7"}
+
+
+def test_a_sweep_logs_an_unreadable_parent_once(tmp_path, monkeypatch):
+    from strata_kb.usage import transcript
+
+    d = kb_dir(tmp_path)
+    main = _session(tmp_path)
+    write_transcript(tmp_path / "sess-1" / "subagents", [usage_row("b1", requestId="rb")],
+                     name="agent-b.jsonl")
+
+    def unreadable(path):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(transcript, "parent_cursor", unreadable)
+    result = ingest.ingest_main(d, main, actor="dev", hold_back_subagents=False)
+    assert len(result.notes) == 1 and "parent transcript unreadable" in result.notes[0]
+    assert result.report.written == 4

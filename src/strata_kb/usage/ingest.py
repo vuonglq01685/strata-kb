@@ -60,33 +60,35 @@ def _parent(parent: Path | None, result: IngestResult) -> transcript.ParentCurso
         return None
 
 
+def _subagent_rows(path: Path, *, cursor: transcript.ParentCursor | None, actor: str,
+                   session: str, ticket: str | None,
+                   hold_back_last: bool) -> list[UsageRow]:
+    """Read one subagent transcript, every row sidechain, starting from the
+    parent's `cursor` at the subagent's first timestamp.
+
+    Reading is the only step of a subagent ingest that can raise `OSError`
+    for that one file, which is why it is kept apart from the ledger write:
+    the main sweep absorbs exactly this failure and nothing else.
+    """
+    return transcript.rows_from_transcript(
+        path, actor=actor, session_fallback=session, forced_ticket=ticket,
+        subagent=True, parent=cursor, hold_back_last=hold_back_last)
+
+
 def ingest_subagent(kb_dir: Path, path: Path, *, parent: Path | None, actor: str,
                     session: str = "", ticket: str | None = None,
                     hold_back_last: bool = False,
                     result: IngestResult | None = None) -> IngestResult:
-    """One subagent transcript, every row sidechain, starting from `parent`'s
-    cursor at the subagent's first timestamp.
+    """One subagent transcript, attributed from `parent`'s cursor.
 
     `result`, when given, is filled in place and returned: a caller that must
-    report notes even if this raises (hook mode) passes its own, and the main
-    sweep passes one so a whole session adds up to one report.
+    report notes even if this raises (hook mode) passes its own.
     """
     result = result if result is not None else IngestResult()
-    rows = _subagent_rows(path, parent=parent, actor=actor, session=session,
-                          ticket=ticket, hold_back_last=hold_back_last, result=result)
+    rows = _subagent_rows(path, cursor=_parent(parent, result), actor=actor,
+                          session=session, ticket=ticket, hold_back_last=hold_back_last)
     result.add(ledger.append_rows(kb_dir, rows))
     return result
-
-
-def _subagent_rows(path: Path, *, parent: Path | None, actor: str, session: str,
-                   ticket: str | None, hold_back_last: bool,
-                   result: IngestResult) -> list[UsageRow]:
-    """Read one subagent transcript — the only step of a subagent ingest that
-    can raise `OSError` for that file alone, kept apart from the ledger write
-    so the main sweep can absorb exactly this failure and nothing else."""
-    return transcript.rows_from_transcript(
-        path, actor=actor, session_fallback=session, forced_ticket=ticket,
-        subagent=True, parent=_parent(parent, result), hold_back_last=hold_back_last)
 
 
 def ingest_main(kb_dir: Path, main: Path, *, actor: str, session: str = "",
@@ -100,28 +102,31 @@ def ingest_main(kb_dir: Path, main: Path, *, actor: str, session: str = "",
     `hold_back_subagents=True`; a manual backfill, the session being over,
     passes False. A subagent file that cannot be read becomes a note and the
     sweep moves on to the next one; the main transcript itself still raises.
+
+    The parent cursor is walked once per sweep, not once per subagent, and
+    the whole session is stored in ONE `append_rows` call: one ledger scan
+    and one lock per `Stop`, whatever the number of subagents.
     """
     result = result if result is not None else IngestResult()
     rows = transcript.rows_from_transcript(
         main, actor=actor, session_fallback=session, forced_ticket=ticket)
-    result.add(ledger.append_rows(kb_dir, rows))
-    for sub in transcript.subagent_transcripts(main):
+    subs = transcript.subagent_transcripts(main)
+    cursor = _parent(main, result) if subs else None
+    for sub in subs:
         try:
-            rows = _subagent_rows(sub, parent=main, actor=actor, session=session,
-                                  ticket=ticket, hold_back_last=hold_back_subagents,
-                                  result=result)
+            rows += _subagent_rows(sub, cursor=cursor, actor=actor, session=session,
+                                   ticket=ticket, hold_back_last=hold_back_subagents)
         except OSError as exc:
             # One subagent file that cannot be read (deleted between the glob
             # and the read, a directory that matches the pattern, no
-            # permission) costs that file only: the main rows are already
-            # stored, the other subagents still are, and the next `Stop` (or
-            # that subagent's own `SubagentStop`) retries it. Only the READ
-            # is absorbed — a ledger failure (`LedgerError`, or an `OSError`
-            # writing the ledger) still propagates, since every later file
-            # would hit it too.
+            # permission) costs that file only: the main rows and the other
+            # subagents are still stored, and the next `Stop` (or that
+            # subagent's own `SubagentStop`) retries it. Only the READ is
+            # absorbed — a ledger failure (`LedgerError`, or an `OSError`
+            # writing the ledger) happens below, outside this `try`, and
+            # still propagates.
             result.notes.append(f"subagent transcript unreadable, skipped: {sub}: {exc}")
-            continue
-        result.add(ledger.append_rows(kb_dir, rows))
+    result.add(ledger.append_rows(kb_dir, rows))
     return result
 
 
