@@ -6,9 +6,11 @@ subagent's last call because that call may still be streaming. A
 `SubagentStop` hook ingests one finished subagent file in full. A manual
 backfill ingests whatever path it is given, the session being over.
 
-The two hooks overlap on purpose and global uuid dedup (I2) makes that safe:
-whichever of them stores a call first stores it, and the other counts it as
-a duplicate. The held-back last call is the one thing only `SubagentStop`
+The two hooks overlap on purpose, and can run at the same moment (a
+background subagent finishing while the main turn ends). That is safe
+because `ledger.append_rows` runs its global uuid dedup (I2) and its append
+under one lock: whichever ingest takes the lock first stores a call, and the
+other counts it as a duplicate. The held-back last call is the one thing only `SubagentStop`
 (or a later manual backfill) can store, because only it knows the subagent
 has finished.
 
