@@ -3308,6 +3308,7 @@ def doctor(
         check_hub,
         check_kb,
         check_kind,
+        check_usage_hooks,
         check_usage_log,
     )
 
@@ -3373,6 +3374,7 @@ def doctor(
 
     if cfg_kind in ("ba", "dev"):
         issues += check_usage_log(kb_dir)
+        issues += check_usage_hooks(kb_dir.resolve().parent)
     if cfg_kind == "hub":
         from strata_kb import gitio as _gitio2
         from strata_kb.config import load_config as _load_config2

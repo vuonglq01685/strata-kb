@@ -1,7 +1,12 @@
+import json
 from pathlib import Path
 
+import pytest
+from typer.testing import CliRunner
+
 from strata_kb import doctor, gitio, kbcontext, models
-from strata_kb.doctor import check_context, check_kb
+from strata_kb.cli import app
+from strata_kb.doctor import check_context, check_kb, check_usage_hooks
 from strata_kb.hub import HubHandle
 
 
@@ -223,3 +228,50 @@ def test_check_usage_log_is_silent_without_a_log(tmp_path: Path):
     (tmp_path / "usage").mkdir()
     (tmp_path / "usage" / "ingest-errors.log").write_text("", encoding="utf-8")
     assert doctor.check_usage_log(tmp_path) == []
+
+
+_HOOK = {"hooks": [{"type": "command", "command": "kb usage ingest-transcript --hook-stdin"}]}
+
+
+def _settings(root: Path, events: dict) -> None:
+    (root / ".claude").mkdir(parents=True, exist_ok=True)
+    (root / ".claude" / "settings.json").write_text(json.dumps({"hooks": events}), encoding="utf-8")
+
+
+def test_doctor_warns_when_only_the_stop_usage_hook_is_present(tmp_path: Path):
+    _settings(tmp_path, {"Stop": [_HOOK]})
+    [issue] = check_usage_hooks(tmp_path)
+    assert issue.level == "warning" and "SubagentStop" in issue.message
+
+
+@pytest.mark.parametrize("events", [{"Stop": [_HOOK], "SubagentStop": [_HOOK]}, {}])
+def test_doctor_is_silent_with_both_hooks_or_neither(tmp_path: Path, events: dict):
+    _settings(tmp_path, events)
+    assert check_usage_hooks(tmp_path) == []
+
+
+def test_doctor_ignores_settings_it_cannot_read(tmp_path: Path):
+    assert check_usage_hooks(tmp_path) == []  # no .claude/settings.json at all
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text("{not json", encoding="utf-8")
+    assert check_usage_hooks(tmp_path) == []
+    (tmp_path / ".claude" / "settings.json").write_text('["a list"]', encoding="utf-8")
+    assert check_usage_hooks(tmp_path) == []
+
+
+def test_kb_doctor_on_a_ba_repo_reports_the_missing_subagent_hook(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    kb = tmp_path / ".kb"
+    kb.mkdir()
+    (kb / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (kb / "config.yaml").write_text(
+        f"hub: {tmp_path / 'hub'}\nrepo_id: KS-BA\nkind: ba\n", encoding="utf-8"
+    )
+    (tmp_path / "hub" / ".kb").mkdir(parents=True)
+    _settings(tmp_path, {"Stop": [_HOOK]})
+
+    result = CliRunner().invoke(app, ["doctor", "--kb-dir", str(kb)])
+
+    assert "[warning]" in result.output and "SubagentStop" in result.output
