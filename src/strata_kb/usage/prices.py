@@ -33,6 +33,9 @@ US_ONLY_GEO = frozenset({"us"})
 KNOWN_GEO = frozenset({"", "global"}) | US_ONLY_GEO
 FAST_SPEED = "fast"
 KNOWN_SPEED = frozenset({"", "standard", FAST_SPEED})
+# "priority" and "batch" are priced differently from standard; Claude Code
+# sends neither today, so they are flagged rather than given a rate.
+KNOWN_TIER = frozenset({"", "standard"})
 US_ONLY_FACTOR = 1.1  # "1.1x multiplier on all token pricing categories"
 
 # extra="forbid" is new to this module rather than a repo-wide convention
@@ -173,10 +176,14 @@ def is_lower_bound(row: UsageRow) -> bool:
 
 
 def has_unknown_modifier(row: UsageRow) -> bool:
-    """A geo or speed value this table does not know. Such a row is priced
-    as global/standard and flagged: the token counts are still right, and a
-    new API value must not turn a known model into `unpriced`."""
-    return row.inference_geo not in KNOWN_GEO or row.speed not in KNOWN_SPEED
+    """A geo, speed or service tier value this table does not price. Such a
+    row is priced as global/standard and flagged: the token counts are still
+    right, and a new API value must not turn a known model into `unpriced`."""
+    return (
+        row.inference_geo not in KNOWN_GEO
+        or row.speed not in KNOWN_SPEED
+        or row.service_tier not in KNOWN_TIER
+    )
 
 
 def stale_days(table: PriceTable, today: date) -> int:

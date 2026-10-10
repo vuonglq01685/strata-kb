@@ -317,3 +317,9 @@ def test_an_unrecognised_modifier_is_flagged_and_priced_as_global(tmp_path: Path
     r = _plain(inference_geo="mars")
     assert prices.cost_of(r, table) == pytest.approx(25.0)
     assert prices.has_unknown_modifier(r)
+
+
+@pytest.mark.parametrize("tier", ["batch", "priority"])
+def test_a_non_standard_service_tier_is_flagged(tmp_path: Path, tier: str):
+    assert prices.has_unknown_modifier(_plain(service_tier=tier))
+    assert not prices.has_unknown_modifier(_plain(service_tier="standard"))
