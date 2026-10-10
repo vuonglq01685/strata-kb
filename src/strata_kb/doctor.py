@@ -287,6 +287,59 @@ def check_usage_hooks(repo_root: Path) -> list[Issue]:
     return []
 
 
+SOURCE_DIRS = ("source", "sources")
+
+
+def check_source_dirs(repo_root: Path) -> list[Issue]:
+    """Copyrighted source documents must never be in git (2026-10-10 review
+    H13). `kb init` ignores every file in both folders; a file tracked
+    before that -- or force-added -- is still published with every push."""
+    issues: list[Issue] = []
+    for folder in SOURCE_DIRS:
+        files = [
+            f for f in gitio.tracked_files(repo_root, folder)
+            if f != f"{folder}/.gitignore"
+        ]
+        if not files:
+            continue
+        shown = ", ".join(files[:5]) + (f" (+{len(files) - 5} more)" if len(files) > 5 else "")
+        issues.append(Issue(
+            "warning",
+            f"{folder}/ holds {len(files)} file(s) tracked by git: {shown} — source "
+            "documents are often copyrighted; untrack them with "
+            f"`git rm --cached <file>` and commit (`kb init` writes {folder}/.gitignore "
+            "to keep them out)",
+        ))
+    return issues
+
+
+def check_config_credentials(kb_dir: Path, repo_root: Path) -> list[Issue]:
+    """A committed `.kb/config.yaml` whose `hub:` or `intake:` URL carries a
+    token puts that token in every clone's history (2026-10-10 review §5.2
+    #8). The value is never printed."""
+    config_path = kb_dir.resolve() / "config.yaml"
+    try:
+        relpath = config_path.relative_to(repo_root.resolve()).as_posix()
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return []
+    if not isinstance(raw, dict) or not gitio.is_tracked(repo_root, relpath):
+        return []
+    keys = [
+        key for key in ("hub", "intake")
+        if isinstance(raw.get(key), str) and gitio.split_credentials(raw[key])[1]
+    ]
+    if not keys:
+        return []
+    return [Issue(
+        "warning",
+        f"{relpath} is tracked by git and its {' and '.join(f'`{k}:`' for k in keys)} "
+        "URL carries a credential — rewrite it without one, pass the credentialed URL "
+        "in the STRATA_KB_HUB environment variable instead, commit, and rotate the "
+        "token: it is in this repo's history",
+    )]
+
+
 ASSET_SIZE_WARN_BYTES = 100 * 1024 * 1024
 
 

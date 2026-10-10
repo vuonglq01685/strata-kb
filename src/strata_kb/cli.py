@@ -3304,10 +3304,12 @@ def doctor(
         Issue,
         _flatten,
         check_asset_store,
+        check_config_credentials,
         check_context,
         check_hub,
         check_kb,
         check_kind,
+        check_source_dirs,
         check_usage_hooks,
         check_usage_log,
     )
@@ -3331,6 +3333,15 @@ def doctor(
         _refresh_dev_code(kb_dir)
     handle = _hub_or_exit(hub, kb_dir)
     issues = kind_issues + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
+    try:
+        from strata_kb import gitio as _gitio0
+
+        repo_root = _gitio0.git_root(kb_dir.resolve())
+    except _gitio0.GitError:
+        repo_root = None  # not a git repo: nothing can be tracked
+    if repo_root is not None:
+        issues += check_source_dirs(repo_root)
+        issues += check_config_credentials(kb_dir, repo_root)
 
     cfg_kind = ""
     try:

@@ -3,6 +3,13 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.11.0 — 2026-10-10
+
+- `kb init` (hub, child) writes `source/.gitignore` **and** `sources/.gitignore`, each ignoring every file in its folder (`*`, `!.gitignore`). Before, only `source/` was covered, and only for `*.pdf`, while README's quickstart put documents in `sources/` — whoever followed it had no ignore rule. Re-run `kb init` to pick it up; README now says `source/` throughout.
+- `kb doctor` warns, on every kind, about files git tracks under `source/` or `sources/` (naming up to five, with `git rm --cached`), and about a tracked `.kb/config.yaml` whose `hub:` or `intake:` URL carries a credential (never printing it; move it to `STRATA_KB_HUB`, commit, rotate the token). The config templates say so next to `hub:`.
+- README matches the code: `ba-ticket-author` is nine steps with one maturity round by default and agent-reported scores; `kb ticket check` reads the hub's `-code` first; §13 separates machine-enforced checks from prompt-only rules (TDD is prompt-only); every ticket writes `design.md`; the `kb stats` example sits inside the 35 % L2 budget and the unmeasured ">90 %" claim is gone; `kb ticket check`, `kb ticket export` and the `kb usage` subcommands are in the command reference with the flags that were missing. `tests/test_readme.py` pins each of these, plus "every top-level command is in the §6 table".
+- Recorded as not shipped: relationship sections (`rel.<name>`) and an AST extractor, planned in Architecture v0.4 §14.1. `kb code-ingest` reads build, deploy and contract files, never source syntax.
+
 ## 1.10.0 — 2026-10-10
 
 - `kb_get_section`, `kb get`, `/api/docs/<doc>` and `/ui/docs/<doc>` refuse a doc id outside the doc grammar (`[A-Za-z0-9][A-Za-z0-9._-]*`) or one that resolves outside its repo (a symlink). `kb_get_section(doc="../../.kb/<doc>")` used to read the hub's own unpublished `.kb/` and cite it as another repo's. An invalid id reads as not found.

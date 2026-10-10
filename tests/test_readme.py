@@ -9,6 +9,7 @@ same way `tests/test_init.py`'s QUICKSTART pins already do: distinctive
 multi-word phrases, matched against whitespace-normalised text so a future
 re-wrap of the prose does not itself break this test.
 """
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -137,3 +138,98 @@ def test_readme_says_usage_counts_subagents_and_never_guesses_a_price():
     assert "subagents included (`Stop` + `SubagentStop` hooks" in text
     assert "a model with no row is reported `unpriced`, never guessed" in text
     assert "a total that contains them is a lower bound" in text
+
+
+# --- 2026-10-10 review batch 1c: README matches the code -------------------
+
+
+def _section(text: str, heading: str) -> str:
+    start = text.index(heading)
+    nxt = text.find("\n## ", start + len(heading))
+    return text[start: nxt if nxt != -1 else len(text)]
+
+
+def test_readme_stats_example_sits_inside_the_l2_budget():
+    """B17: the old example showed L2 = 89 % of L3 -- a store that fails the
+    product's own `kb build --strict`."""
+    block = re.search(r"\$ kb stats\n(.*?)```", _readme_text(), re.S).group(1)
+    rows = [
+        line.split() for line in block.splitlines()
+        if line and not line.startswith(("L0", "doc"))
+    ]
+    assert rows
+    for _doc, _n, _l1, l2, l3, saving in rows:
+        ratio = int(l2) / int(l3)
+        assert ratio <= 0.35, (l2, l3)
+        assert abs(float(saving.rstrip("%")) - (1 - ratio) * 100) <= 0.1
+
+
+def test_readme_claims_no_unmeasured_saving():
+    assert ">90%" not in _readme_text()
+    assert "11.1%" not in _readme_text()
+
+
+def test_readme_uses_one_source_folder_name():
+    text = _readme_text()
+    assert "kb ingest sources/" not in text
+    assert "under `sources/`" not in text
+
+
+def _ba_author_steps() -> int:
+    skill = (
+        REPO_ROOT / "src/strata_kb/templates/init/claude-skill-ba-ticket-author.md"
+    ).read_text(encoding="utf-8")
+    workflow = _section(skill, "## Workflow")
+    return len(re.findall(r"^\d+\. \*\*", workflow, re.M))
+
+
+def test_readme_ba_section_matches_the_skill():
+    """F1 / F2 / F8: README said 8 steps, up to 3 rounds, local-first."""
+    numbers = {9: "nine-step"}
+    ba = _normalised(_section(_readme_text(), "## 12. BA repos"))
+    assert _ba_author_steps() in numbers
+    assert numbers[_ba_author_steps()] in ba
+    assert "**Ground technical**" in ba
+    assert "one round by default" in ba
+    assert "agent-reported" in ba
+    assert "hub's `<repo>-code` first" in ba
+    assert "local `--kb-dir` first" not in ba
+    assert "up to 3 rounds or until" not in ba
+
+
+def test_readme_dev_section_separates_machine_and_prompt_rules():
+    """G3 / G4: TDD was "Enforced throughout"; the design "stays in chat"."""
+    dev = _normalised(_section(_readme_text(), "## 13. Dev repos"))
+    assert "Enforced throughout" not in dev
+    assert "Machine-enforced" in dev
+    assert "Prompt-only" in dev
+    assert "the design stays in chat" not in dev
+    assert "(architectural tickets only)" not in dev
+    assert "`rel.<name>`" in dev and "not shipped" in dev.lower()
+
+
+def test_readme_command_table_lists_every_top_level_command():
+    from strata_kb.cli import app
+
+    names = {
+        c.name or c.callback.__name__.replace("_", "-")
+        for c in app.registered_commands
+        if not c.hidden
+    } | {g.name for g in app.registered_groups if not g.hidden}
+    table = _section(_readme_text(), "## 6. Command reference")
+    missing = sorted(n for n in names if f"`kb {n}" not in table)
+    assert not missing, missing
+
+
+def test_readme_documents_the_usage_and_ticket_subcommands():
+    table = _normalised(_section(_readme_text(), "## 6. Command reference"))
+    for sub in ("kb ticket check", "kb ticket export", "kb usage ingest-transcript",
+                "kb usage note", "kb usage report"):
+        assert f"`{sub}" in table, sub
+
+
+def test_readme_never_tells_users_to_commit_a_hub_credential():
+    """§5.2 #8: config.yaml is committed; a token in `hub:` is in history."""
+    text = _normalised(_readme_text())
+    assert "never put a token in `hub:`" in text
+    assert "whose `.kb/config.yaml` `hub:` URL carries a credential" not in text

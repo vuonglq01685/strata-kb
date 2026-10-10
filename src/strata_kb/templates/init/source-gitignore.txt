@@ -1,2 +1,3 @@
-# Copyrighted source documents — never commit them.
-*.pdf
+# Copyrighted source documents — never commit anything in this folder.
+*
+!.gitignore

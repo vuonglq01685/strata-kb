@@ -681,6 +681,7 @@ _PRE_PHASE4_HUB_FILES = [
     "docker-compose.yml",
     "federation/README.md",
     "source/.gitignore",
+    "sources/.gitignore",
 ]
 
 _PRE_PHASE4_CHILD_FILES = [
@@ -716,6 +717,7 @@ _PRE_PHASE4_CHILD_FILES = [
     "QUICKSTART.md",
     "docker-compose.yml",
     "source/.gitignore",
+    "sources/.gitignore",
 ]
 
 
@@ -2736,3 +2738,37 @@ def test_scaffolded_workflow_names_cover_every_kind():
     assert SCAFFOLDED_WORKFLOW_NAMES == {
         "kb-publish.yml", "kb-ticket-lint.yml", "kb-code.yml", "kb-pr-lint.yml",
     }
+
+
+@pytest.mark.parametrize("kind", ["hub", "child"])
+def test_both_source_folders_ignore_every_file_in_a_real_repo(tmp_path, kind):
+    """2026-10-10 review H13: README said `sources/`, the scaffold wrote only
+    `source/.gitignore` with `*.pdf` -- whoever followed the README had no
+    ignore rule, and a .docx in `source/` was never covered."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    init_repo(tmp_path, kind)
+    for folder in ("source", "sources"):
+        for name in ("spec.pdf", "spec.docx", "notes.txt"):
+            (tmp_path / folder / name).write_text("x", encoding="utf-8")
+    probe = subprocess.run(
+        ["git", "check-ignore", "--no-index",
+         "source/spec.pdf", "source/spec.docx", "source/notes.txt",
+         "sources/spec.pdf", "sources/spec.docx", "sources/notes.txt"],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert len(probe.stdout.split()) == 6, probe.stdout
+    # the rule file itself stays committable, so the folder exists on clone
+    keep = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", "sources/.gitignore"], cwd=tmp_path,
+    )
+    assert keep.returncode == 1
+
+
+def test_an_old_pdf_only_source_gitignore_is_refreshed_on_re_init(tmp_path):
+    init_repo(tmp_path, "child")
+    old = "# Copyrighted source documents — never commit them.\n*.pdf\n"
+    (tmp_path / "source" / ".gitignore").write_text(old, encoding="utf-8")
+    report = init_repo(tmp_path, "child")
+    assert "source/.gitignore" in report.updated
+    text = (tmp_path / "source" / ".gitignore").read_text(encoding="utf-8")
+    assert text.splitlines()[1:] == ["*", "!.gitignore"]

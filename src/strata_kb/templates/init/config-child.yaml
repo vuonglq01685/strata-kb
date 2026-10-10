@@ -6,6 +6,9 @@ kind: child
 #      kb query / MCP / Web UI. FILL THIS IN before publishing.
 #      Local .kb/ content only reaches readers after `kb publish` and the PR
 #      is merged on the hub.
+#      This file is committed: never put a token in `hub:`. A URL that
+#      needs one goes in the STRATA_KB_HUB environment variable, which
+#      overrides this line (`kb doctor` warns on a committed credential).
 hub: ""
 # repo_id: repo name on the federation (pre-filled from the folder name)
 repo_id: "{repo_id}"

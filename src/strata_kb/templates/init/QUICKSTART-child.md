@@ -8,7 +8,10 @@ the hub's `federation/`.
 
 1. **Point at the main hub** — fill `hub:` in `.kb/config.yaml` (a git URL
    or a kb-hub path) and commit it. New content appears in search only after
-   `kb publish` and the PR is merged on the hub.
+   `kb publish` and the PR is merged on the hub. Never put a token in `hub:`
+   — the file is committed. A URL that needs a credential goes in the
+   `STRATA_KB_HUB` environment variable, which overrides it; `kb doctor`
+   warns on a committed credential.
    Optionally also fill `intake:` (the hub's intake service URL) to publish
    from CI via OIDC instead — zero secrets on this repo (see step 5).
    **Warning:** `repo_id:` in this file must exactly match the id this repo
