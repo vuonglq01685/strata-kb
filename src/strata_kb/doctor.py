@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -250,6 +251,40 @@ def check_usage_log(kb_dir: Path) -> list[Issue]:
             f"— last: {last}; truncate the file once handled",
         )
     ]
+
+
+_USAGE_HOOK = "kb usage ingest-transcript"
+
+
+def _has_usage_hook(settings: dict, event: str) -> bool:
+    hooks = settings.get("hooks")
+    groups = (hooks if isinstance(hooks, dict) else {}).get(event) or []
+    if not isinstance(groups, list):
+        return False
+    return any(_USAGE_HOOK in str(h.get("command", ""))
+               for g in groups if isinstance(g, dict)
+               for h in (g.get("hooks") if isinstance(g.get("hooks"), list) else [])
+               if isinstance(h, dict))
+
+
+def check_usage_hooks(repo_root: Path) -> list[Issue]:
+    """`kb init` never rewrites an existing .claude/settings.json, so a repo
+    set up before 1.9.0 has the Stop hook and not SubagentStop. The Stop
+    sweep still records its subagents, minus each one's in-flight last call."""
+    path = repo_root / ".claude" / "settings.json"
+    try:
+        # utf-8-sig: Notepad saves JSON with a BOM, which json.loads rejects.
+        settings = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(settings, dict):
+        return []
+    if _has_usage_hook(settings, "Stop") and not _has_usage_hook(settings, "SubagentStop"):
+        return [Issue("warning",
+                      f"{path} records usage on Stop but not on SubagentStop — add a "
+                      '"SubagentStop" entry with the same command '
+                      f"(`{_USAGE_HOOK} --hook-stdin`) so every subagent call is counted")]
+    return []
 
 
 ASSET_SIZE_WARN_BYTES = 100 * 1024 * 1024

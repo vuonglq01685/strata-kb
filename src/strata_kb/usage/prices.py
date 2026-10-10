@@ -7,11 +7,12 @@ half-filled one.
 
 An unknown model is `unpriced`, never $0: a dashboard that quietly values an
 unrecognised model at nothing is worse than no dashboard, because the number it
-shows looks complete.
+shows looks complete. "Unknown" means no row for that exact id or alias: a
+point release is never priced at its family's rate, which is a wrong number
+that looks right.
 """
 from __future__ import annotations
 
-import re
 from datetime import date, datetime
 from importlib import resources
 from pathlib import Path
@@ -24,17 +25,30 @@ from strata_kb.usage.ledger import UsageRow
 PRICES_FILE = "usage-prices.yaml"
 _MTOK = 1_000_000
 
+# Values of the API `usage` block, verified 2026-10-10 against
+# platform.claude.com/docs/en/manage-claude/data-residency (`inference_geo`:
+# "us" | "global") and .../build-with-claude/fast-mode (`speed`: "fast" |
+# "standard"). "" is a row that did not report the field.
+US_ONLY_GEO = frozenset({"us"})
+KNOWN_GEO = frozenset({"", "global"}) | US_ONLY_GEO
+FAST_SPEED = "fast"
+KNOWN_SPEED = frozenset({"", "standard", FAST_SPEED})
+# "priority" and "batch" are priced differently from standard; Claude Code
+# sends neither today, so they are flagged rather than given a rate.
+KNOWN_TIER = frozenset({"", "standard"})
+US_ONLY_FACTOR = 1.1  # "1.1x multiplier on all token pricing categories"
+
 # extra="forbid" is new to this module rather than a repo-wide convention
 # (nothing else under src/strata_kb sets model_config): UsageRow parses
 # machine-written JSONL, where an unexpected key would mean a code bug and
 # extra fields are harmless. PriceTable and ModelRates parse a file this
 # feature expects a human to hand-edit, where a misspelled key (`modelz`,
-# `cache_write_1hr`) must raise instead of being silently dropped — a
-# dropped typo leaves the default price in place while looking like the
-# override applied.
+# `cache_write_1hr`, `treshold`) must raise instead of being silently
+# dropped — a dropped typo leaves the default price in place while looking
+# like the override applied. The subclasses below inherit model_config.
 
 
-class ModelRates(BaseModel):
+class Rates(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     input: float
@@ -42,6 +56,18 @@ class ModelRates(BaseModel):
     cache_read: float
     cache_write_5m: float
     cache_write_1h: float
+
+
+class LongContextRates(Rates):
+    """Rates for a call whose prompt exceeds `threshold` tokens. The whole
+    call moves tier, not just the tokens past the line ("each request is
+    priced on its own", pricing page)."""
+
+    threshold: int
+
+
+class ModelRates(Rates):
+    long_context: LongContextRates | None = None
 
 
 class PriceTable(BaseModel):
@@ -52,6 +78,9 @@ class PriceTable(BaseModel):
     unit: str = "per_mtok"
     models: dict[str, ModelRates] = {}
     aliases: dict[str, str] = {}
+    # USD per 1,000 web searches, charged on top of tokens. One table-wide
+    # rate: the pricing page lists it per tool, not per model.
+    web_search_per_1k: float = 10.0
 
     @field_validator("effective_date", mode="before")
     @classmethod
@@ -102,24 +131,15 @@ def load_prices(kb_dir: Path) -> PriceTable:
     return PriceTable.model_validate(data)
 
 
-_POINT_RELEASE = re.compile(r"-\d+$")
-
-
 def resolve_model(table: PriceTable, model: str) -> str | None:
-    """The table row that prices `model`: exact id, then an alias, then the
-    family row after stripping trailing `-<digits>` segments one at a time
-    (`claude-fable-5-1` → `claude-fable-5`). None when nothing matches."""
-    candidate = model
-    while True:
-        if candidate in table.models:
-            return candidate
-        alias = table.aliases.get(candidate)
-        if alias in table.models:
-            return alias
-        stripped = _POINT_RELEASE.sub("", candidate)
-        if stripped == candidate:
-            return None
-        candidate = stripped
+    """The table row that prices `model`: its exact id, else an alias, else
+    None. No family fallback: a point release may be priced differently
+    from its family (the 5.5 generation is), so an id without a row is
+    `unpriced` until someone adds one — invariant I5 extended to ids."""
+    if model in table.models:
+        return model
+    alias = table.aliases.get(model)
+    return alias if alias in table.models else None
 
 
 def cost_of(row: UsageRow, table: PriceTable) -> float | None:
@@ -127,14 +147,43 @@ def cost_of(row: UsageRow, table: PriceTable) -> float | None:
     key = resolve_model(table, row.model)
     if key is None:
         return None
-    rates = table.models[key]
-    return (
+    model_rates = table.models[key]
+    rates: Rates = model_rates
+    # Prompt length is everything the model read, cached or not: a cache hit
+    # is still context, so cache reads and writes count toward the threshold.
+    prompt = row.tokens_in + row.cache_read + row.cache_write_5m + row.cache_write_1h
+    if model_rates.long_context is not None and prompt > model_rates.long_context.threshold:
+        rates = model_rates.long_context
+    tokens = (
         row.tokens_in * rates.input
         + row.tokens_out * rates.output
         + row.cache_read * rates.cache_read
         + row.cache_write_5m * rates.cache_write_5m
         + row.cache_write_1h * rates.cache_write_1h
     ) / _MTOK
+    # The geo multiplier applies on top of whichever tier was picked (the
+    # pricing page says so for Haiku 5.5's long-context prices), and to
+    # tokens only: a web search is a flat per-search charge.
+    if row.inference_geo in US_ONLY_GEO:
+        tokens *= US_ONLY_FACTOR
+    return tokens + row.web_searches * table.web_search_per_1k / 1000
+
+
+def is_lower_bound(row: UsageRow) -> bool:
+    """Fast mode has no published cache rates, so its cost is reported at
+    the standard rate and flagged rather than guessed."""
+    return row.speed == FAST_SPEED
+
+
+def has_unknown_modifier(row: UsageRow) -> bool:
+    """A geo, speed or service tier value this table does not price. Such a
+    row is priced as global/standard and flagged: the token counts are still
+    right, and a new API value must not turn a known model into `unpriced`."""
+    return (
+        row.inference_geo not in KNOWN_GEO
+        or row.speed not in KNOWN_SPEED
+        or row.service_tier not in KNOWN_TIER
+    )
 
 
 def stale_days(table: PriceTable, today: date) -> int:

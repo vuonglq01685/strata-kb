@@ -1,14 +1,16 @@
 """transcript — turn a Claude Code transcript into ledger rows.
 
-A transcript lives at `~/.claude/projects/<slug>/<session-id>.jsonl`. Every row
-whose `message` carries a `usage` block is one API call, and that block is the
-assistant's own accounting — not an estimate — so the numbers here are copied,
-never computed (invariant I3).
+A transcript lives at `~/.claude/projects/<slug>/<session-id>.jsonl`. A row
+whose `message` carries a `usage` block belongs to one API call (a call can
+span several rows), and that block is the assistant's own accounting — not an
+estimate — so the numbers here are copied, never computed (invariant I3).
 
 Attribution is two cursors walked in file order. Both depend only on rows
 BEFORE the current one, which is what makes re-ingestion of a growing
 transcript stable: the `Stop` hook re-reads the same file every turn, and rows
-already stored must never change (invariant I1). Both cursors are read from
+already stored must never change (invariant I1). A call's COUNTS, unlike its
+attribution, can depend on its later rows (`rows_from_transcript`), which is
+what `hold_back_last` is for. Both cursors are read from
 the current row before that row is itself attributed, so a row that both
 carries a `usage` block and triggers a switch (a `Skill` call, a command
 marker, a ticket `file_path`) is attributed to what it switches to, not to
@@ -20,11 +22,17 @@ A cursor advances on what the session did or said, never on what it merely
 read: a `tool_result` block is file content, a directory listing, or command
 output echoed back verbatim, and scanning it would let any file the session
 reads plant a ticket or reset a phase it never actually touched.
+
+A subagent writes its own transcript (`subagent_transcripts`). It starts from
+the parent's cursors at the subagent's first timestamp (`parent_cursor`, the
+same rules walked over the main transcript) and then walks its own file
+exactly as above.
 """
 from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from strata_kb.usage.ledger import UsageRow, is_safe_stem
@@ -193,32 +201,14 @@ def _int(usage: dict, key: str) -> int:
     return int(value) if isinstance(value, (int, float)) else 0
 
 
-def rows_from_transcript(
-    path: Path,
-    *,
-    actor: str,
-    session_fallback: str = "",
-    forced_ticket: str | None = None,
-) -> list[UsageRow]:
-    """Every API call in this transcript, attributed.
+def _str(usage: dict, key: str) -> str:
+    value = usage.get(key)
+    return value if isinstance(value, str) else ""
 
-    One API CALL yields one row, not one transcript row: Claude Code splits an
-    assistant message across several rows (text, then each tool_use) and repeats
-    the identical `usage` block on every one of them, so a row is finer than a
-    call. Measured across six live transcripts: 516 usage rows for 239 real
-    calls, every multi-row group carrying byte-identical usage (179 of 179), so
-    keying on the row would overstate cost by 55.8%.
 
-    The later copies are dropped from the OUTPUT, never from the scan — a ticket
-    path named inside a dropped row still has to attribute every later call.
-
-    `forced_ticket` overrides the cursor entirely — the escape hatch for a
-    session the cursor read wrongly.
-    """
-    rows: list[UsageRow] = []
-    seen_calls: set[str] = set()
-    ticket: str | None = None
-    phase = UNKNOWN_PHASE
+def _rows(path: Path) -> list[dict]:
+    """Every parseable JSON object in the transcript, in file order."""
+    rows: list[dict] = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.strip():
             continue
@@ -228,8 +218,205 @@ def rows_from_transcript(
             # One truncated line (a transcript being written while we read it)
             # must not cost the rest of the file.
             continue
-        if not isinstance(row, dict):
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+SUBAGENTS_DIR = "subagents"
+
+
+def subagent_transcripts(main: Path) -> list[Path]:
+    """Every subagent transcript of the session whose main transcript is `main`.
+
+    Claude Code writes each subagent to `<session-id>/subagents/agent-<id>.jsonl`
+    beside `<session-id>.jsonl`. The format is documented as internal and
+    version-dependent; this module is the one place that knows the layout. A
+    hook payload's `agent_transcript_path` is used whenever there is one.
+    """
+    return sorted((main.with_suffix("") / SUBAGENTS_DIR).glob("agent-*.jsonl"))
+
+
+def is_subagent_transcript(path: Path) -> bool:
+    return path.parent.name == SUBAGENTS_DIR and path.name.startswith("agent-")
+
+
+def parent_of(subagent: Path) -> Path:
+    """The main transcript a subagent transcript belongs to."""
+    return subagent.parent.parent.with_suffix(".jsonl")
+
+
+@dataclass(frozen=True)
+class ParentCursor:
+    """The parent session's (ticket, phase) at each change, in file order.
+
+    `at` does not assume file order is timestamp order: it scans every point
+    and keeps the last one (in file order) at or before the asked time.
+    Timestamps compare as strings: Claude Code writes every one in the same
+    ISO-8601 `YYYY-MM-DDTHH:MM:SS.mmmZ` form, so lexical order is time order.
+    """
+
+    points: tuple[tuple[str, str | None, str], ...] = ()
+
+    def at(self, ts: str) -> tuple[str | None, str]:
+        """The parent's (ticket, phase) as of `ts`, a change AT `ts` included."""
+        ticket: str | None = None
+        phase = UNKNOWN_PHASE
+        for point_ts, point_ticket, point_phase in self.points:
+            if point_ts <= ts:
+                ticket, phase = point_ticket, point_phase
+        return ticket, phase
+
+
+def parent_cursor(path: Path) -> ParentCursor:
+    """Walk a main transcript with the same cursor rules as
+    `rows_from_transcript` (`_ticket_in(_ticket_blob(row))`, `_phase_in(row)`)
+    and keep each change point.
+
+    A change on a row without a timestamp has no point of its own: the state
+    accumulates, so it is carried by the next timestamped change point, if any.
+    """
+    points: list[tuple[str, str | None, str]] = []
+    ticket: str | None = None
+    phase = UNKNOWN_PHASE
+    for row in _rows(path):
+        found = _ticket_in(_ticket_blob(row))
+        switched = _phase_in(row)
+        if found is None and switched is None:
             continue
+        ticket = found if found is not None else ticket
+        phase = switched if switched is not None else phase
+        ts = row.get("timestamp")
+        if isinstance(ts, str) and ts:
+            points.append((ts, ticket, phase))
+    return ParentCursor(tuple(points))
+
+
+@dataclass
+class _Call:
+    """One API call while the scan is still collecting its rows."""
+
+    first: dict  # the call's first transcript row: uuid, ts, session, branch, model
+    usage: dict  # the usage block of the row with the largest output_tokens
+    ticket: str | None  # the ticket cursor at the first row
+    phase: str  # the phase cursor at the first row
+
+
+def _usage_counts(usage: dict) -> dict:
+    """The numbers of ONE usage block, copied (I3) — never mixed across rows."""
+    creation = usage.get("cache_creation")
+    if isinstance(creation, dict):
+        w5 = _int(creation, "ephemeral_5m_input_tokens")
+        w1 = _int(creation, "ephemeral_1h_input_tokens")
+    else:
+        # An older or foreign producer writes only the total; the cheaper
+        # 5m rate is the conservative reading.
+        w5, w1 = _int(usage, "cache_creation_input_tokens"), 0
+    server = usage.get("server_tool_use")
+    return dict(
+        tokens_in=_int(usage, "input_tokens"),
+        tokens_out=_int(usage, "output_tokens"),
+        cache_read=_int(usage, "cache_read_input_tokens"),
+        cache_write_5m=w5,
+        cache_write_1h=w1,
+        inference_geo=_str(usage, "inference_geo"),
+        speed=_str(usage, "speed"),
+        service_tier=_str(usage, "service_tier"),
+        web_searches=_int(server, "web_search_requests") if isinstance(server, dict) else 0,
+    )
+
+
+def _to_row(
+    call: _Call,
+    request: str,
+    *,
+    actor: str,
+    session_fallback: str,
+    forced_ticket: str | None,
+    subagent: bool,
+) -> UsageRow:
+    first = call.first
+    branch = first.get("gitBranch")
+    return UsageRow(
+        uuid=first["uuid"],
+        request=request,
+        ts=str(first.get("timestamp") or ""),
+        session=str(first.get("sessionId") or session_fallback),
+        actor=actor,
+        phase=call.phase,
+        ticket=forced_ticket if forced_ticket is not None else call.ticket,
+        model=str(first["message"].get("model") or ""),
+        # The file's location, not the row flag, makes a subagent's row
+        # sidechain.
+        sidechain=subagent or bool(first.get("isSidechain")),
+        # 'HEAD' is what a non-git directory reports for every row; it is not
+        # a branch, so it is not recorded as one.
+        branch=branch if isinstance(branch, str) and branch != "HEAD" else None,
+        assistant="claude-code",
+        est=False,
+        **_usage_counts(call.usage),
+    )
+
+
+def rows_from_transcript(
+    path: Path,
+    *,
+    actor: str,
+    session_fallback: str = "",
+    forced_ticket: str | None = None,
+    subagent: bool = False,
+    parent: ParentCursor | None = None,
+    hold_back_last: bool = False,
+) -> list[UsageRow]:
+    """Every API call in this transcript, attributed.
+
+    One API CALL yields one row, not one transcript row: Claude Code splits an
+    assistant message across several rows (text, then each tool_use) and repeats
+    the `usage` block on every one of them, so a row is finer than a call.
+    Measured across six live transcripts: 516 usage rows for 239 real calls, so
+    keying on the row would overstate cost by 55.8%.
+
+    The copies are not always identical: a streamed call writes a row per
+    content block, and the first one (a thinking block, say) can carry a
+    partial output count — 5 against the last row's 329, measured 2026-10-10.
+    So every call is collected over the whole scan and emitted at the end, in
+    first-seen order. The emitted row keeps the FIRST row's identity (uuid,
+    timestamp, session, branch, model) and attribution; every count, modifiers
+    included, comes from the single row with the largest `output_tokens` —
+    one usage block copied whole, never a mix of rows (I3). The later copies
+    refine the call's output count; they are never emitted.
+
+    They are still part of the SCAN — a ticket path named inside a later copy
+    has to attribute every later call.
+
+    `hold_back_last` leaves out the last call in first-seen order: the caller
+    knows it may still be streaming, and a stored row never changes (I1).
+
+    `subagent` marks a subagent's own transcript: every row is sidechain,
+    whatever its `isSidechain` flag says — the file's location decides. With
+    `parent` (the main transcript's `parent_cursor`), a subagent starts from
+    the parent's (ticket, phase) at the subagent's first timestamp; its own
+    cursors then move as usual, and its own ticket wins once it has named one.
+
+    `forced_ticket` overrides every cursor, inherited ones included — the
+    escape hatch for a session the cursor read wrongly.
+    """
+    rows = _rows(path)
+    inherited_ticket: str | None = None
+    phase = UNKNOWN_PHASE
+    if parent is not None:
+        first_ts = next(
+            (
+                ts
+                for ts in (row.get("timestamp") for row in rows)
+                if isinstance(ts, str) and ts
+            ),
+            "",
+        )
+        inherited_ticket, phase = parent.at(first_ts)
+    calls: dict[str, _Call] = {}
+    ticket: str | None = None
+    for row in rows:
         found = _ticket_in(_ticket_blob(row))
         if found is not None:
             ticket = found
@@ -250,34 +437,36 @@ def rows_from_transcript(
         # uuid only as a last resort — without either id there is nothing finer
         # than the row, so two rows are two calls, as before this fix.
         request = str(row.get("requestId") or message.get("id") or uuid)
-        if request in seen_calls:
-            # A later copy of a call already recorded. The cursors above have
-            # already consumed this row, which is the point.
-            continue
-        seen_calls.add(request)
-        creation = usage.get("cache_creation") or {}
-        branch = row.get("gitBranch")
-        rows.append(
-            UsageRow(
-                uuid=uuid,
-                request=request,
-                ts=str(row.get("timestamp") or ""),
-                session=str(row.get("sessionId") or session_fallback),
-                actor=actor,
+        call = calls.get(request)
+        if call is None:
+            calls[request] = _Call(
+                first=row,
+                usage=usage,
+                ticket=ticket if ticket is not None else inherited_ticket,
                 phase=phase,
-                ticket=forced_ticket if forced_ticket is not None else ticket,
-                model=str(model),
-                tokens_in=_int(usage, "input_tokens"),
-                tokens_out=_int(usage, "output_tokens"),
-                cache_read=_int(usage, "cache_read_input_tokens"),
-                cache_write_5m=_int(creation, "ephemeral_5m_input_tokens"),
-                cache_write_1h=_int(creation, "ephemeral_1h_input_tokens"),
-                sidechain=bool(row.get("isSidechain")),
-                # 'HEAD' is what a non-git directory reports for every row; it
-                # is not a branch, so it is not recorded as one.
-                branch=branch if isinstance(branch, str) and branch != "HEAD" else None,
-                assistant="claude-code",
-                est=False,
             )
+        elif _int(usage, "output_tokens") > _int(call.usage, "output_tokens"):
+            # A streamed call writes a row per content block; the first one
+            # can carry a partial output count (5 vs 329 measured). Keep the
+            # whole usage block of the largest, never a mix of rows. Either
+            # way the cursors above have already consumed this row, which is
+            # the point.
+            call.usage = usage
+
+    keys = list(calls)  # dict order = first-seen order
+    if hold_back_last and keys:
+        # The last call may still be streaming (a Stop hook can fire while a
+        # background subagent is mid-call). A stored row never changes (I1),
+        # so storing it now would freeze a partial output count forever.
+        keys = keys[:-1]
+    return [
+        _to_row(
+            calls[k],
+            k,
+            actor=actor,
+            session_fallback=session_fallback,
+            forced_ticket=forced_ticket,
+            subagent=subagent,
         )
-    return rows
+        for k in keys
+    ]

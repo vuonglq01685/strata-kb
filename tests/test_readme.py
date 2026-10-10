@@ -127,3 +127,13 @@ def test_readme_pins_the_exit_code_contract():
     )
     assert "kb ba lint" not in text
     assert "--fail-on-stale` only" not in text
+
+
+def test_readme_says_usage_counts_subagents_and_never_guesses_a_price():
+    """1.9.0: the Stop hook alone saw a third of a session's cost; subagents
+    come from `SubagentStop` and the `Stop` sweep. A model with no price row
+    is `unpriced`, never priced as its family."""
+    text = _normalised(_readme_text())
+    assert "subagents included (`Stop` + `SubagentStop` hooks" in text
+    assert "a model with no row is reported `unpriced`, never guessed" in text
+    assert "a total that contains them is a lower bound" in text

@@ -13,7 +13,11 @@ repeat forever.
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -81,6 +85,16 @@ class UsageRow(BaseModel):
     # build that could not tell one call from one row" — those files were
     # inflated and need re-ingesting, which `kb usage report` cannot infer.
     request: str = ""
+    # Price modifiers, copied verbatim from the call's `usage` block (I3):
+    # `inference_geo`, `speed`, `service_tier`, and
+    # `server_tool_use.web_search_requests`. Defaulted for the same reason as
+    # `request`; an empty string means "not reported", which is every row
+    # written before 1.9.0. Recorded even where not priced (`service_tier`),
+    # so a later pricing rule can apply to rows already in git (I1).
+    inference_geo: str = ""
+    speed: str = ""
+    service_tier: str = ""
+    web_searches: int = 0
 
 
 @dataclass
@@ -140,33 +154,127 @@ def _existing_uuids(path: Path) -> set[str]:
     return found
 
 
+LOCK_NAME = ".lock"
+
+
+def _ensure_lock_ignored(directory: Path) -> None:
+    """Keep the lock file out of git: `.kb/usage/` is committed, `.lock` is not.
+
+    A `.gitignore` inside the usage directory, not the repo root's, so it
+    works for every repo `kb init` scaffolded before the lock existed and
+    never touches a file the user owns. An existing one is appended to, never
+    replaced. Best effort: failing to write it must not cost the usage rows,
+    so an `OSError` here is swallowed — the worst case is an untracked
+    `.lock` showing in `git status`.
+    """
+    ignore = directory / ".gitignore"
+    try:
+        lines = (
+            ignore.read_text(encoding="utf-8", errors="replace").splitlines()
+            if ignore.exists()
+            else []
+        )
+        if any(line.strip() in (LOCK_NAME, f"/{LOCK_NAME}") for line in lines):
+            return
+        lines.append(LOCK_NAME)
+        ignore.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    except OSError:
+        pass
+
+
+# Below the hooks' 30 s timeout, with room for the ingest itself.
+_WINDOWS_LOCK_DEADLINE_S = 25.0
+
+
+@contextmanager
+def _append_lock(directory: Path) -> Iterator[None]:
+    """Hold an exclusive advisory lock on `<usage>/.lock` for the block.
+
+    A `Stop` sweep and a background subagent's `SubagentStop` can append the
+    same calls at the same moment, and dedup is scan-then-append: without
+    the lock both scans see the uuid missing and both append it, counting
+    the call twice (I2). Blocking is fine — every holder is one short ingest,
+    and an OS lock is released when its process dies, so it cannot go stale.
+    Windows' `msvcrt.locking(LK_LOCK)` gives up after about ten seconds, so
+    it is retried until `_WINDOWS_LOCK_DEADLINE_S` — under the hooks' 30 s
+    timeout — before the `OSError` reaches the hook's log: a subagent fan-out
+    finishing at once can queue longer than ten seconds behind a large
+    ledger scan, and a `SubagentStop` that gives up loses that subagent's
+    held-back last call.
+
+    The `.gitignore` is written under the lock: two first appends racing on
+    it could otherwise truncate a user's existing lines.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / LOCK_NAME).open("a+b") as fh:
+        if os.name == "nt":
+            import msvcrt
+
+            deadline = time.monotonic() + _WINDOWS_LOCK_DEADLINE_S
+            while True:
+                fh.seek(0)
+                try:
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise
+            try:
+                _ensure_lock_ignored(directory)
+                yield
+            finally:
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                _ensure_lock_ignored(directory)
+                yield
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
 def append_rows(kb_dir: Path, rows: list[UsageRow]) -> AppendReport:
     """Append rows to their tickets' ledgers, skipping any uuid already stored.
 
     De-duplication is global, not per file: a row that moved from
     `_unattributed` to a real ticket on a later ingest would otherwise be
-    counted twice (invariant I2).
+    counted twice (invariant I2). The scan and the append run under one
+    lock (`_append_lock`), so two concurrent ingests cannot both decide a
+    uuid is new.
     """
     report = AppendReport()
-    seen: set[str] = set()
+    if not rows:
+        # Nothing to store, so nothing to lock: an empty ingest must not
+        # create `.kb/usage/` just to take the lock in it.
+        return report
     directory = usage_dir(kb_dir)
-    if directory.exists():
+    with _append_lock(directory):
+        seen: set[str] = set()
         for path in sorted(directory.glob("*.jsonl")):
             seen |= _existing_uuids(path)
-    buckets: dict[Path, list[UsageRow]] = {}
-    for row in rows:
-        if row.uuid in seen:
-            report.duplicates += 1
-            continue
-        seen.add(row.uuid)
-        buckets.setdefault(ledger_path(kb_dir, row.ticket), []).append(row)
-    for path, bucket in buckets.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8", newline="\n") as fh:
-            for row in bucket:
-                fh.write(json.dumps(row.model_dump(mode="json"), ensure_ascii=False) + "\n")
-        report.written += len(bucket)
-        report.files.append(path.name)
+        buckets: dict[Path, list[UsageRow]] = {}
+        for row in rows:
+            if row.uuid in seen:
+                report.duplicates += 1
+                continue
+            seen.add(row.uuid)
+            buckets.setdefault(ledger_path(kb_dir, row.ticket), []).append(row)
+        for path, bucket in buckets.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # One write() per file: the lock already orders our own writers,
+            # and one call keeps a reader that takes no lock (`kb usage
+            # report`, git) from seeing half a batch more often than it must.
+            text = "".join(
+                json.dumps(row.model_dump(mode="json"), ensure_ascii=False) + "\n"
+                for row in bucket
+            )
+            with path.open("a", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+            report.written += len(bucket)
+            report.files.append(path.name)
     return report
 
 

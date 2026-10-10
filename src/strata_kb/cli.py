@@ -18,6 +18,7 @@ from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
+    from strata_kb.usage.ingest import IngestResult
 
 force_utf8_streams()
 
@@ -1419,43 +1420,68 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
         pass
 
 
-def _usage_ingest(kb_dir: Path, source: Path, *, session: str, ticket: str):
-    """Turn one transcript into ledger rows and append them.
+def _usage_ingest(
+    kb_dir: Path, source: Path, *, ticket: str, result: IngestResult
+) -> None:
+    """The manual (non-hook) ingest: one path, a main transcript or a
+    subagent's, via `usage.ingest.ingest_path`, filling `result` in place.
 
-    Shared by both `ingest-transcript` branches so hook and non-hook mode
-    agree on exactly what "ingest" means; only how a failure is reported
-    differs between them.
+    Its notes (a parent transcript that could not be read, say) are not
+    failures — every call read was still stored — but they cost attribution,
+    so they go to `ingest-errors.log` like the hook's, where `kb usage report`
+    counts them. Logged in `finally`, so a sweep that collects a note and
+    then hits a ledger failure still leaves the note behind. The caller also
+    shows them to the human running this.
     """
-    from strata_kb.usage import ledger, transcript
+    from strata_kb.usage import ingest as _ingest
 
-    rows = transcript.rows_from_transcript(
-        source,
-        actor=_usage_actor(kb_dir),
-        session_fallback=session,
-        forced_ticket=ticket or None,
-    )
-    return ledger.append_rows(kb_dir, rows)
+    try:
+        _ingest.ingest_path(
+            kb_dir, source, actor=_usage_actor(kb_dir), ticket=ticket or None,
+            result=result,
+        )
+    finally:
+        for note in result.notes:
+            _usage_log_error(kb_dir, note)
 
 
 @usage_app.command("ingest-transcript")
 def usage_ingest_transcript(
     path: Path | None = typer.Argument(
-        None, help="Claude Code transcript JSONL (omit with --hook-stdin)"
+        None,
+        help="Claude Code transcript JSONL: a main transcript (its subagents "
+        "are included) or a subagents/agent-*.jsonl file. Nothing is held "
+        "back, so run it only after the session has ended "
+        "(omit with --hook-stdin)",
     ),
     hook_stdin: bool = typer.Option(
         False, "--hook-stdin", help="Read the hook payload (JSON) from stdin"
     ),
     ticket: str = typer.Option(
-        "", "--ticket", help="Force this ticket id for every row in the file"
+        "",
+        "--ticket",
+        help="Force this ticket id for every row ingested (subagents included)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
 ) -> None:
     """Append this transcript's API calls to the usage ledger.
 
+    PATH is a main transcript (its subagents are included) or a
+    `subagents/agent-*.jsonl` file. Manual mode holds nothing back, so run it
+    only after the session has ended: a call still streaming would be stored
+    with a partial output count, and a stored row never changes (I1).
+
+    In hook mode the payload decides: a
+    `SubagentStop` payload carries `agent_transcript_path` and ingests that
+    one finished subagent in full; a `Stop` payload ingests the main
+    transcript and sweeps its subagents, holding back each one's last call
+    (it may still be streaming) for `SubagentStop` to store.
+
     Safe to repeat: rows are de-duplicated by the transcript row's uuid, which
     is what lets the `Stop` hook re-ingest the same growing file every turn.
     """
+    from strata_kb.usage import ingest as _ingest
     from strata_kb.usage import ledger
 
     if hook_stdin:
@@ -1474,24 +1500,30 @@ def usage_ingest_transcript(
                 "working directory for this session?)",
             )
             return
-        # ALWAYS exit 0 here, unconditionally: a Stop hook exiting non-zero
-        # blocks Claude from ending its turn, so NOTHING in this branch may
-        # propagate — a malformed payload, an invalid `kind:`, a corrupt
-        # ledger, a missing transcript, anything. `except Exception`, not a
-        # narrow tuple, is deliberate: the failure modes this must absorb
-        # come from several modules this command does not own, and a list of
-        # "the exceptions we thought of" is exactly the list a new one falls
-        # through.
+        # ALWAYS exit 0 here, unconditionally: a `Stop` or `SubagentStop`
+        # hook exiting non-zero blocks Claude (or the subagent) from ending
+        # its turn, so NOTHING in this branch may propagate — a malformed
+        # payload, an invalid `kind:`, a corrupt ledger, a missing
+        # transcript, anything. `except Exception`, not a narrow tuple, is
+        # deliberate: the failure modes this must absorb come from several
+        # modules this command does not own, and a list of "the exceptions
+        # we thought of" is exactly the list a new one falls through. Which
+        # files a payload means is `usage.ingest.ingest_hook_payload`'s
+        # business; this branch only parses, swallows, and logs.
         raw = sys.stdin.read()
+        # Created before the `try` so notes collected before a failure (a
+        # missing parent, then a missing subagent file) are still logged.
+        result = _ingest.IngestResult()
         try:
             payload = json.loads(raw)
-            source = Path(payload["transcript_path"])
-            session = str(payload.get("session_id") or "")
             if path is not None:
                 _usage_log_error(
                     kb_dir, "both a path and --hook-stdin were given; used the payload"
                 )
-            _usage_ingest(kb_dir, source, session=session, ticket=ticket)
+            _ingest.ingest_hook_payload(
+                kb_dir, payload, actor=_usage_actor(kb_dir),
+                ticket=ticket or None, result=result,
+            )
         except Exception as exc:  # noqa: BLE001 -- deliberate: see comment above, must absorb every failure mode
             # The exception's class name is part of the message, not just
             # str(exc): "Expecting value: line 1 column 1" alone does not say
@@ -1508,6 +1540,8 @@ def usage_ingest_transcript(
                 f"ingest-transcript (hook) failed: {type(exc).__name__}: {exc}: "
                 f"{raw[:200]}",
             )
+        for note in result.notes:
+            _usage_log_error(kb_dir, note)
         return  # silent either way: the hook's stdout would land in the session
 
     if path is None:
@@ -1521,11 +1555,15 @@ def usage_ingest_transcript(
         )
         raise typer.Exit(1)
 
+    result = _ingest.IngestResult()
     try:
-        report = _usage_ingest(kb_dir, path, session="", ticket=ticket)
+        _usage_ingest(kb_dir, path, ticket=ticket, result=result)
     except (OSError, ledger.LedgerError) as exc:
+        for note in result.notes:
+            typer.secho(note, fg=typer.colors.YELLOW)
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
+    report = result.report
 
     if json_out:
         typer.echo(
@@ -1542,6 +1580,11 @@ def usage_ingest_transcript(
             f"{report.written} new row(s), {report.duplicates} already recorded"
             + (f" -> {', '.join(report.files)}" if report.files else "")
         )
+        for note in result.notes:
+            # Already in ingest-errors.log; shown here too because a human
+            # running a backfill is looking at this output, not at the log.
+            # Not in --json mode: that output is one machine-readable object.
+            typer.secho(note, fg=typer.colors.YELLOW)
         if ticket and report.written == 0 and report.duplicates > 0:
             # Global uuid dedup (invariant I2) + forced_ticket compose into a
             # dead escape hatch: once a transcript has already been ingested
@@ -3265,6 +3308,7 @@ def doctor(
         check_hub,
         check_kb,
         check_kind,
+        check_usage_hooks,
         check_usage_log,
     )
 
@@ -3330,6 +3374,7 @@ def doctor(
 
     if cfg_kind in ("ba", "dev"):
         issues += check_usage_log(kb_dir)
+        issues += check_usage_hooks(kb_dir.resolve().parent)
     if cfg_kind == "hub":
         from strata_kb import gitio as _gitio2
         from strata_kb.config import load_config as _load_config2

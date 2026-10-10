@@ -279,6 +279,13 @@ that follows it.
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
 
+`kb usage` records what each ticket cost from Claude Code's own transcripts,
+subagents included (`Stop` + `SubagentStop` hooks, scaffolded by
+`kb init --kind ba|dev`). Prices come from a packaged list-price table that a
+repo can override per model in `.kb/usage-prices.yaml`; a model with no row
+is reported `unpriced`, never guessed. Fast-mode calls are priced at the
+standard rate and flagged, so a total that contains them is a lower bound.
+
 ---
 
 ## 7. Authoring a document

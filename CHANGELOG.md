@@ -3,6 +3,18 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.9.0 — 2026-10-10
+
+- `kb usage` counts subagents. Claude Code writes each subagent's transcript to `<session-id>/subagents/`, which the `Stop` hook never read: on the session measured for the 2026-10-10 review, the hook had seen 33 % of the cost. A new `SubagentStop` hook ingests each finished subagent, and `Stop` sweeps the folder, holding back each subagent's possibly in-flight last call. Rows are tagged `sidechain`; the HTML report's "Main thread vs subagents" table splits the cost. `kb init --kind ba|dev` scaffolds both hooks. Existing repos: add the `SubagentStop` hook to `.claude/settings.json` — `kb doctor` warns when `Stop` is there and `SubagentStop` is not; until then the `Stop` sweep still records subagents, minus each one's last call. An older `kb` reads a `SubagentStop` payload as another `Stop` and records no subagent call.
+- Known limitation: Claude Code's subagent transcripts carry each call's output count from the start of the stream (2–21 tokens measured), never the final one, so subagent **output** tokens are a lower bound. Input and cache tokens, the bulk of the cost, are complete.
+- `kb usage ingest-transcript <main.jsonl>` includes that session's subagents, and a `subagents/agent-*.jsonl` path finds its parent for attribution. A manual ingest holds nothing back, so run it only after the session has ended.
+- The ledger append holds a lock on `.kb/usage/.lock`, so a `Stop` and a `SubagentStop` finishing at the same moment cannot both store a call. `.kb/usage/.gitignore` (written next to it) keeps the lock out of git; commit that file.
+- Price table re-verified 2026-10-10: `claude-sonnet-5` is 2/10 (the 3/15 increase did not happen); new rows for `claude-fable-5-1` (cache read 0.25), `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` (with its over-100k-token tier). Reports on existing ledgers change on the next `kb usage report`.
+- A model id with no price row is now `unpriced`; it no longer inherits its family's price. Add a row to `.kb/usage-prices.yaml`. Bare `opus`/`sonnet`/`haiku` aliases point at the 5.5 generation.
+- A streamed call is recorded with its largest `output_tokens`, not the first row's partial count. Rows already in a ledger keep their old count; delete the ledger file and re-ingest to correct it.
+- Ledger rows record `inference_geo`, `speed`, `service_tier` and web searches. US-only inference (×1.1) and web search (10 USD / 1,000) are priced; a fast-mode call is priced at the standard rate and flagged, so a total containing one is a lower bound. Any other geo, speed or service tier (`batch`, `priority`) is priced as standard and flagged as an unrecognised modifier.
+- `kb usage report` states the unattributed share of cost, or of tokens when nothing is priced.
+
 ## 1.8.1 — 2026-10-07
 
 - `kb build --strict` and `kb approve` no longer apply the summary quality rules (brief verbatim, fixed L1 label, invented codes, L2 budget, empty L2) to content the tool writes itself: every section of a `generated` document (`kb code-ingest`) and every `hist.*` section (`kb svc note`). Table and hash checks still run. A `-code` document can be approved again.

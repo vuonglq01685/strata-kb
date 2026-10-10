@@ -365,8 +365,9 @@ up first: your edits are lost** — ingest configuration belongs in
 
 ## Token and cost measurement
 
-`kb init` wrote `.claude/settings.json` with one `Stop` hook that calls
-`kb usage ingest-transcript --hook-stdin` after each turn. It reads Claude
+`kb init` wrote `.claude/settings.json` with two hooks, `Stop` and
+`SubagentStop`, that both call `kb usage ingest-transcript --hook-stdin` —
+after each turn and after each subagent. It reads Claude
 Code's own transcript — the numbers are the assistant's real usage, not an
 estimate — and appends them to `.kb/usage/<ticket>.jsonl`, which is committed,
 so a ticket's cost travels with the ticket. `.claude/settings.json` itself is
@@ -374,16 +375,25 @@ committed too — a teammate who pulls the repo without `kb` on their `PATH`
 otherwise sees this hook fail on every turn.
 
 It **adds about 0.6s per turn** (the cost of starting the `kb` CLI; parsing the
-transcript itself is ~60ms). That is the price of the data.
+transcript itself is ~60ms), and the same again each time a subagent
+finishes. That is the price of the data.
 
 - `kb usage report` — writes `.kb/usage/report.html`; open it in a browser. Per
   ticket, per phase, per model, plus a `_unattributed` bucket.
 - `kb usage report --ticket <id> --md` — a Markdown table.
 - `kb usage ingest-transcript <path>` — backfill. Every transcript under
   `~/.claude/projects/<this-repo>/` can be ingested now; re-ingesting is safe,
-  rows are de-duplicated by the transcript's own row ids.
-- Subagent cost is recorded separately (`sidechain`), so a `dev-execute` run
-  that fans work out to subagents shows where the tokens actually went.
+  rows are de-duplicated by the transcript's own row ids. A main transcript
+  brings its subagents with it; a `subagents/agent-*.jsonl` path finds its
+  parent for attribution. A backfill holds nothing back, so run it only on a
+  session that has ended — a call still streaming would be stored with a
+  partial output count, and a stored row never changes.
+- Subagent cost is recorded too, as `sidechain`. A `SubagentStop` hook ingests
+  each subagent when it finishes, and the `Stop` hook sweeps any it missed.
+  The report's "Main thread vs subagents" table shows where the tokens went.
+  Claude Code writes a subagent's output count from the start of each
+  streamed reply, never the final one, so subagent output tokens are a lower
+  bound; input and cache tokens, most of the cost, are complete.
 - `kb usage note --ticket <id> --phase <p> --model <m> --tokens-in N --tokens-out N --assistant <name>`
   — record a row by hand. Rows entered this way are estimates unless
   `--measured` is given. It always **appends** a new row, so it is never
@@ -410,11 +420,14 @@ missing transcript, a corrupt ledger line — is ever visible.
 turn from ending instead of failing quietly. Nothing reaches
 `ingest-errors.log` either, because the failure happens before `kb usage` runs
 at all. Run `kb --version` if a session starts refusing to finish, and upgrade
-rather than deleting the hook.
+rather than deleting the hook. Subagent cost needs 1.9.0: an older `kb` reads a
+`SubagentStop` payload as another `Stop` and records no subagent call.
 
 **Re-ingesting is always safe**, because a call already in the ledger is
 recognised and skipped. So if you ever have reason to distrust a ledger file,
-the repair is to delete it and re-ingest the transcripts:
+the repair is to delete it and re-ingest the transcripts. Ingesting a main
+transcript also ingests its subagents (`<session-id>/subagents/`), so the loop
+below needs no second glob:
 
 ```bash
 rm .kb/usage/<ticket>.jsonl
@@ -424,20 +437,34 @@ done
 ```
 
 If this repo already had a `.claude/settings.json`, `kb init` left it alone.
-Merge the hook in by hand:
+Merge the hooks in by hand:
 
 ```json
-{"hooks": {"Stop": [{"hooks": [
-  {
-    "type": "command",
-    "command": "kb usage ingest-transcript --hook-stdin",
-    "timeout": 30,
-    "statusMessage": "Recording token usage..."
-  }
-]}]}}
+{"hooks": {
+  "Stop": [{"hooks": [
+    {
+      "type": "command",
+      "command": "kb usage ingest-transcript --hook-stdin",
+      "timeout": 30,
+      "statusMessage": "Recording token usage..."
+    }
+  ]}],
+  "SubagentStop": [{"hooks": [
+    {
+      "type": "command",
+      "command": "kb usage ingest-transcript --hook-stdin",
+      "timeout": 30,
+      "statusMessage": "Recording token usage..."
+    }
+  ]}]
+}}
 ```
 
-`--force` does not merge this hook in for you: it replaces the whole file
+`kb doctor` warns when `Stop` is there and `SubagentStop` is not. Until you add
+it, the `Stop` sweep still records subagents, minus each one's last call (it
+may still be streaming when `Stop` runs).
+
+`--force` does not merge these hooks in for you: it replaces the whole file
 with the scaffolded one, so a repo with its own `.claude/settings.json`
 still needs the hand-merge above.
 
@@ -445,10 +472,23 @@ still needs the hand-merge above.
 ledgers are. Regenerate it whenever you want with `kb usage report`; commit it
 only if you want it browsable on GitHub.
 
+Each append holds a lock on `.kb/usage/.lock`, so two hooks finishing at the
+same moment cannot both store a call. The `.kb/usage/.gitignore` written next
+to it keeps the lock out of git; commit that `.gitignore`.
+
 Prices come from a table shipped with the package; override it per model in
 `.kb/usage-prices.yaml`. The report prints the table's `effective_date` and
 warns when it is over 90 days old. A model with no rates is reported as
-`unpriced` with its token counts — never as free.
+`unpriced` with its token counts — never as free. That includes a model id
+with no row of its own: add a row to `.kb/usage-prices.yaml`; it is never
+priced as its family.
+
+The report states the unattributed share of cost (of tokens when nothing is
+priced). US-only inference (`inference_geo: us`, ×1.1) and web searches are
+priced. A fast-mode call is priced at the standard rate and flagged: a total
+that contains one is a lower bound. Any other geo, speed or service tier
+(`batch`, `priority`) is priced as standard and flagged as an unrecognised
+modifier.
 
 ## Model tiering
 
@@ -498,7 +538,7 @@ tiering change shows up in the report the next ticket generates.
 - `kb usage report [--ticket <id>] [--md]` — token and cost totals for this
   repo's tickets
 - `kb usage ingest-transcript <path>` — backfill usage from a Claude Code
-  transcript
+  transcript, its subagents included
 - `kb mcp-setup [--hub-url URL] [--token T] [--no-verify]` — write the hub's
   HTTP MCP credentials into `.env` and verify them. Re-run it bare to verify
   again without retyping anything.

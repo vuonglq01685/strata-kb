@@ -2124,12 +2124,15 @@ def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
         target = tmp_path / kind
         init_repo(target, kind)
         settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
-        commands = [
-            hook["command"]
-            for group in settings["hooks"]["Stop"]
-            for hook in group["hooks"]
-        ]
-        assert commands == ["kb usage ingest-transcript --hook-stdin"], kind
+        # Stop ingests the main transcript (and sweeps subagents, holding
+        # back each one's last call); SubagentStop stores that last call.
+        for event in ("Stop", "SubagentStop"):
+            commands = [hook["command"] for group in settings["hooks"][event]
+                        for hook in group["hooks"]]
+            assert commands == ["kb usage ingest-transcript --hook-stdin"], (kind, event)
+        # Same command, timeout and status message: the two events differ
+        # only in which payload they send.
+        assert settings["hooks"]["SubagentStop"] == settings["hooks"]["Stop"], kind
 
 
 def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):
@@ -2203,6 +2206,21 @@ def test_quickstarts_state_the_hooks_version_floor(tmp_path: Path):
         text = " ".join((target / name).read_text(encoding="utf-8").split())
         assert "must be 0.19.0 or newer" in text, kind
         assert "blocks the turn from ending" in text, kind
+
+
+def test_quickstarts_document_subagent_usage(tmp_path: Path):
+    # 1.9.0: a repo set up earlier has Stop and not SubagentStop, and its
+    # hand-merge snippet is the only place it learns the second hook exists.
+    for kind, name in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
+        target = tmp_path / kind
+        init_repo(target, kind)
+        text = " ".join((target / name).read_text(encoding="utf-8").split())
+        assert '"SubagentStop": [{"hooks": [' in text, kind
+        assert "`kb doctor` warns when `Stop` is there and `SubagentStop` is not" in text, kind
+        assert "Subagent cost needs 1.9.0" in text, kind
+        assert "also ingests its subagents" in text, kind
+        assert "run it only on a session that has ended" in text, kind
+        assert "it is never priced as its family" in text, kind
 
 
 def test_quickstarts_document_the_reingest_repair(tmp_path: Path):

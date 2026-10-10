@@ -8,6 +8,26 @@ from pydantic import ValidationError
 from strata_kb.usage import prices
 from tests.test_usage_ledger import row
 
+# Verified against platform.claude.com/docs/en/about-claude/pricing on
+# 2026-10-10: (input, output, cache_read, cache_write_5m, cache_write_1h).
+LIST_PRICES = {
+    "claude-fable-5-1": (10.0, 50.0, 0.25, 12.5, 20.0),
+    "claude-fable-5": (10.0, 50.0, 1.0, 12.5, 20.0),
+    "claude-opus-5-5": (4.0, 20.0, 0.20, 5.0, 8.0),
+    "claude-opus-5": (5.0, 25.0, 0.50, 6.25, 10.0),
+    "claude-sonnet-5-5": (2.0, 10.0, 0.10, 2.5, 4.0),
+    "claude-sonnet-5": (2.0, 10.0, 0.20, 2.5, 4.0),
+    "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125, 0.20),
+    "claude-haiku-4-5": (1.0, 5.0, 0.10, 1.25, 2.0),
+}
+
+# The ids Claude Code writes today. Each must have its OWN row: a
+# family or alias match is exactly how the 5.5 generation was mispriced.
+CURRENT_MODEL_IDS = (
+    "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5",
+    "claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5",
+)
+
 
 def test_the_packaged_table_prices_the_models_we_actually_run(tmp_path: Path):
     table = prices.load_prices(tmp_path)
@@ -30,15 +50,24 @@ def test_the_packaged_table_has_five_rates_per_model(tmp_path: Path):
     )
 
 
-def test_the_packaged_sonnet_5_row_is_the_standard_rate_not_the_promo(tmp_path: Path):
-    # Claude Sonnet 5 carries an introductory 2.0/10.0 that expires
-    # 2026-08-31; the shipped table must carry the standard 3.0/15.0. Pin
-    # this explicitly: test_a_repo_override_replaces_only_the_models_it_names
-    # below uses 2.0/10.0 as its override value, so those promo numbers
-    # already sit in this file looking like a plausible correct value.
-    rates = prices.load_prices(tmp_path).models["claude-sonnet-5"]
+@pytest.mark.parametrize("model", sorted(LIST_PRICES))
+def test_the_packaged_row_is_the_list_price(tmp_path: Path, model: str):
+    r = prices.load_prices(tmp_path).models[model]
+    assert (r.input, r.output, r.cache_read, r.cache_write_5m, r.cache_write_1h) == (
+        pytest.approx(LIST_PRICES[model])
+    )
 
-    assert (rates.input, rates.output) == (3.0, 15.0)
+
+def test_the_packaged_sonnet_5_row_is_the_standard_rate_not_the_promo(tmp_path: Path):
+    # 2/10 was announced as introductory and then made standard; the
+    # scheduled 3/15 increase "will not occur" (pricing page, 2026-10-10).
+    rates = prices.load_prices(tmp_path).models["claude-sonnet-5"]
+    assert (rates.input, rates.output) == (2.0, 10.0)
+
+
+@pytest.mark.parametrize("model", CURRENT_MODEL_IDS)
+def test_every_current_model_id_has_its_own_row(tmp_path: Path, model: str):
+    assert prices.resolve_model(prices.load_prices(tmp_path), model) == model
 
 
 def test_a_repo_override_replaces_only_the_models_it_names(tmp_path: Path):
@@ -186,20 +215,21 @@ def test_an_override_unit_other_than_per_mtok_is_rejected(tmp_path: Path):
         prices.load_prices(tmp_path)
 
 
-def test_a_point_release_id_falls_back_to_its_family_row(tmp_path: Path):
+def test_a_point_release_id_with_no_row_is_unpriced(tmp_path: Path):
     table = prices.load_prices(tmp_path)
-    assert prices.resolve_model(table, "claude-fable-5-1") == "claude-fable-5"
-    assert prices.resolve_model(table, "claude-opus-5-2-1") == "claude-opus-5"
-    assert prices.cost_of(row("u1", model="claude-fable-5-1", tokens_out=1_000_000,
-                              tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0),
-                          table) == 50.0
+    assert prices.resolve_model(table, "claude-opus-5-6") is None
+    assert prices.cost_of(row("u1", model="claude-opus-5-6"), table) is None
 
 
-def test_the_packaged_aliases_price_the_bare_family_names(tmp_path: Path):
+def test_the_packaged_aliases_point_at_the_current_generation(tmp_path: Path):
     table = prices.load_prices(tmp_path)
-    assert table.aliases == {"opus": "claude-opus-5", "sonnet": "claude-sonnet-5",
-                             "haiku": "claude-haiku-4-5"}
-    assert prices.resolve_model(table, "opus") == "claude-opus-5"
+    assert table.aliases == {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5",
+                             "haiku": "claude-haiku-5-5"}
+    assert prices.resolve_model(table, "opus") == "claude-opus-5-5"
+
+
+def test_the_packaged_table_is_dated_when_it_was_verified(tmp_path: Path):
+    assert prices.load_prices(tmp_path).effective_date == "2026-10-10"
 
 
 def test_a_genuinely_unknown_model_still_resolves_to_none(tmp_path: Path):
@@ -214,4 +244,82 @@ def test_an_override_merges_aliases_per_key(tmp_path: Path):
     )
     table = prices.load_prices(tmp_path)
     assert table.aliases["opus"] == "claude-opus-4-8"
-    assert table.aliases["sonnet"] == "claude-sonnet-5"
+    assert table.aliases["sonnet"] == "claude-sonnet-5-5"
+
+
+def _prompt_row(prompt_in: int, cache_read: int = 0):
+    return row("u1", model="claude-haiku-5-5", tokens_in=prompt_in, tokens_out=1_000_000,
+               cache_read=cache_read, cache_write_5m=0, cache_write_1h=0)
+
+
+def test_haiku_5_5_at_the_threshold_is_the_base_tier(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    # 100,000 prompt tokens is "up to 100,000": base tier.
+    assert prices.cost_of(_prompt_row(100_000), table) == pytest.approx(
+        (100_000 * 0.10 + 1_000_000 * 0.50) / 1_000_000)
+
+
+def test_haiku_5_5_over_the_threshold_prices_the_whole_call_long(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    # Cache reads count toward prompt length: 1 + 100,000 > 100,000.
+    assert prices.cost_of(_prompt_row(1, cache_read=100_000), table) == pytest.approx(
+        (1 * 0.50 + 100_000 * 0.05 + 1_000_000 * 2.50) / 1_000_000)
+
+
+def test_an_override_can_add_a_long_context_tier(tmp_path: Path):
+    (tmp_path / "usage-prices.yaml").write_text(yaml.safe_dump({"models": {"claude-x": {
+        "input": 1.0, "output": 1.0, "cache_read": 0.1, "cache_write_5m": 1.25,
+        "cache_write_1h": 2.0,
+        "long_context": {"threshold": 10, "input": 2.0, "output": 2.0, "cache_read": 0.2,
+                         "cache_write_5m": 2.5, "cache_write_1h": 4.0}}}}), encoding="utf-8")
+    table = prices.load_prices(tmp_path)
+    r = row("u1", model="claude-x", tokens_in=11, tokens_out=0, cache_read=0,
+            cache_write_5m=0, cache_write_1h=0)
+    assert prices.cost_of(r, table) == pytest.approx(22 / 1_000_000)
+
+
+def test_a_misspelled_long_context_key_raises(tmp_path: Path):
+    (tmp_path / "usage-prices.yaml").write_text(yaml.safe_dump({"models": {"claude-x": {
+        "input": 1.0, "output": 1.0, "cache_read": 0.1, "cache_write_5m": 1.25,
+        "cache_write_1h": 2.0, "long_context": {"treshold": 10, "input": 2.0, "output": 2.0,
+        "cache_read": 0.2, "cache_write_5m": 2.5, "cache_write_1h": 4.0}}}}), encoding="utf-8")
+    with pytest.raises(ValidationError):
+        prices.load_prices(tmp_path)
+
+
+def _plain(**kw):
+    base = dict(model="claude-opus-5", tokens_in=0, tokens_out=1_000_000, cache_read=0,
+                cache_write_5m=0, cache_write_1h=0)
+    base.update(kw)
+    return row("u1", **base)
+
+
+def test_us_only_inference_multiplies_token_cost(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    assert prices.cost_of(_plain(inference_geo="us"), table) == pytest.approx(25.0 * 1.1)
+    assert prices.cost_of(_plain(inference_geo="global"), table) == pytest.approx(25.0)
+
+
+def test_web_searches_add_their_per_search_price(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    assert prices.cost_of(_plain(web_searches=3), table) == pytest.approx(25.0 + 0.03)
+
+
+def test_fast_mode_is_priced_at_standard_and_flagged_lower_bound(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    r = _plain(speed="fast")
+    assert prices.cost_of(r, table) == pytest.approx(25.0)
+    assert prices.is_lower_bound(r) and not prices.has_unknown_modifier(r)
+
+
+def test_an_unrecognised_modifier_is_flagged_and_priced_as_global(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    r = _plain(inference_geo="mars")
+    assert prices.cost_of(r, table) == pytest.approx(25.0)
+    assert prices.has_unknown_modifier(r)
+
+
+@pytest.mark.parametrize("tier", ["batch", "priority"])
+def test_a_non_standard_service_tier_is_flagged(tmp_path: Path, tier: str):
+    assert prices.has_unknown_modifier(_plain(service_tier=tier))
+    assert not prices.has_unknown_modifier(_plain(service_tier="standard"))

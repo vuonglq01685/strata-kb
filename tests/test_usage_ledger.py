@@ -186,3 +186,66 @@ def test_hook_errors_survives_a_non_utf8_log(tmp_path: Path):
 
     assert count == 2
     assert "bang" in last
+
+
+def test_a_ledger_line_written_before_modifiers_existed_still_loads():
+    old = row("u1").model_dump(mode="json")
+    for key in ("inference_geo", "speed", "service_tier", "web_searches"):
+        old.pop(key)
+    loaded = ledger.UsageRow.model_validate(old)
+    assert (loaded.inference_geo, loaded.speed, loaded.web_searches) == ("", "", 0)
+
+
+def test_concurrent_appends_of_the_same_rows_store_each_uuid_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # A Stop sweep and a background subagent's SubagentStop can append the
+    # same calls at the same moment. The barrier holds each thread inside
+    # its dedup scan until the other has scanned too: without a lock both
+    # pass it together, see no stored uuid, and both append. With the lock
+    # the second thread cannot start scanning, so the first gives up waiting
+    # (timeout) and finishes alone, and the second then sees its rows.
+    import threading
+
+    ledger.append_rows(tmp_path, [row("z0")])  # so the scan reads a file
+    barrier = threading.Barrier(2)
+    scan = ledger._existing_uuids
+
+    def scan_in_step(path: Path) -> set[str]:
+        try:
+            barrier.wait(timeout=0.5)
+        except threading.BrokenBarrierError:
+            pass
+        return scan(path)
+
+    monkeypatch.setattr(ledger, "_existing_uuids", scan_in_step)
+    errors: list[BaseException] = []
+
+    def append() -> None:
+        try:
+            ledger.append_rows(tmp_path, [row("s1"), row("s2")])
+        except BaseException as exc:  # noqa: BLE001 -- surfaced by the assert below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=append) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert not errors
+    assert sorted(r.uuid for r in ledger.read_rows(tmp_path)) == ["s1", "s2", "z0"]
+
+
+def test_the_append_lock_file_is_git_ignored(tmp_path: Path):
+    ledger.append_rows(tmp_path, [row("u1")])
+    ignore = (tmp_path / "usage" / ".gitignore").read_text(encoding="utf-8")
+    assert ".lock" in ignore.splitlines()
+
+
+def test_an_existing_usage_gitignore_is_appended_to_not_replaced(tmp_path: Path):
+    (tmp_path / "usage").mkdir()
+    (tmp_path / "usage" / ".gitignore").write_text("report.html\n", encoding="utf-8")
+    ledger.append_rows(tmp_path, [row("u1")])
+    ledger.append_rows(tmp_path, [row("u2")])
+    lines = (tmp_path / "usage" / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert lines == ["report.html", ".lock"]
