@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import importlib.metadata
 import json
 import os
@@ -1973,130 +1972,49 @@ def publish(
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
-    from strata_kb import ghio, gitio, hashsync
     from strata_kb import publish as publish_mod
-    from strata_kb.config import (
-        HubConfigError,
-        effective_repo_id,
-        load_config,
-        require_hub,
-    )
+    from strata_kb.config import effective_repo_id, require_hub
     from strata_kb.errors import KbError
 
-    # module-level _CONFIG_READ_ERRORS (see its definition for why exactly
-    # these three classes) covers every corrupt-YAML/schema-invalid/non-UTF-8
-    # .kb file this command can meet (F-D9 finding 2): reused at every point
-    # this function reads a .kb/*.yaml or federation/*.yaml file outside a
-    # call that already wraps its own read.
-
-    if pr and direct:
-        typer.secho("--pr and --direct are mutually exclusive", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    try:
-        cfg = load_config(kb_dir)
-    except (*_CONFIG_READ_ERRORS, OSError) as exc:
-        typer.secho(
-            f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
-            "or remove it to fall back to defaults",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1) from None
-    mode = "pr" if pr else "direct" if direct else "auto"
+    # Every refusal (both --pr and --direct, an unreadable config.yaml, a
+    # root hub with no `hub:`, intake on a hub-to-hub publish) is a
+    # PublishError, which the root guard prints as one line.
+    plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
     # Spec 2026-09-25 §4.4: a hand publish sends the -code CI would send for
     # this commit — never a stale or summarized copy. No --no-refresh here:
     # skipping it is exactly the divergence this prevents.
-    if cfg.kind == "dev":
+    if plan.refresh_code:
         _refresh_dev_code(kb_dir)
-    is_self = False  # only ever True for cfg.kind == "hub" self-publish fall-through
-    if cfg.kind == "hub":
-        try:
-            hub_ref = require_hub(hub, kb_dir)
-        except HubConfigError:
-            typer.secho(
-                "this is a root hub (kind: hub, no `hub:` configured) — nothing "
-                "to publish upstream; add `hub: <url|path>` to .kb/config.yaml "
-                "to chain it to a higher hub",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(1) from None
-        # A relative `hub:` (e.g. the `hub: .` that `kb init --kind hub`
-        # ships) must anchor to the repo root, not the process cwd — the
-        # same config would otherwise route differently depending on where
-        # `kb publish` happens to be invoked from, and could even mirror
-        # into an unrelated sibling repo that also has a `.kb/`.
-        source_root = None
-        with contextlib.suppress(gitio.GitError):
-            source_root = gitio.git_root(kb_dir.resolve())
-        hub_path = Path(hub_ref)
-        if source_root is not None and not hub_path.is_absolute():
-            hub_path = source_root / hub_ref
-        is_self = False
-        if source_root is not None and hub_path.is_dir():
-            is_self = hub_path.resolve() == source_root
-        if is_self:
-            # fall-through below must not re-resolve hub_ref cwd-relatively
-            hub_ref = str(source_root)
-        if not is_self:
-            if cfg.intake and not pr and not direct:
-                typer.secho(
-                    "intake publish is not supported for hub-to-hub publish — "
-                    "remove `intake:` from .kb/config.yaml or pass --direct/--pr",
-                    fg=typer.colors.RED,
-                )
-                raise typer.Exit(1)
-            try:
-                report = publish_mod.publish_federation(
-                    kb_dir,
-                    hub_ref,
-                    repo_id=effective_repo_id(repo_id, kb_dir),
-                    mode=mode,
-                )
-            except (
-                # KbError: PublishError (publish_federation's own YAML reads --
-                # registry.yaml, the upstream hub's config.yaml for the cycle
-                # guard -- are already caught internally and re-raised as
-                # PublishError) and GateError, plus assetstore.AssetStoreError --
-                # _snapshot_federation (this call's snapshot_fn) resolves this
-                # hub's own store and diverts still-raw bytes into it
-                # (_reconcile_asset_records, F-D11/Task 21), so a store outage
-                # is reachable on this branch too, not only on plain-publish's.
-                # Catching the base once means a future KbError sibling, or a
-                # new call site for an existing one, is covered without a
-                # fourth name added here.
-                KbError,
-                gitio.GitError,
-                ghio.GHError,
-                OSError,
-                # hashsync.HashSyncError: _snapshot_federation's apply_sync
-                # guards every write against escaping federation/<rid> on the
-                # upper hub -- reachable here (fed->fed).
-                hashsync.HashSyncError,
-            ) as exc:
-                typer.secho(str(exc), fg=typer.colors.RED)
-                raise typer.Exit(1) from None
-            _echo_publish_report(report)
-            return
-        # is_self: fall through — a hub pointing at itself publishes its own
-        # .kb/ into its own federation/<repo-id>/ (self-publish, spec #7)
 
-    # Gate applies only to paths that actually publish .kb/ (self-publish
-    # fall-through, intake, plain publish) — the hub-to-hub `not is_self`
-    # federation branch above already returned without reaching here, since
-    # publish_federation() pushes federation/ only; the hub's own .kb/ there
-    # is a drafting desk, not what gets published. Still strictly above
+    # KbError (PublishError, GateError, AssetStoreError, GitError, GHError,
+    # HashSyncError, HubConfigError) reaches the root guard. What is caught
+    # below is what is not a KbError: OSError, and the YAML/schema/JSON
+    # errors of reads no call wraps.
+    if plan.route == "federation":
+        assert plan.hub_ref is not None  # noqa: S101 -- plan() sets it on this route
+        try:
+            report = publish_mod.publish_federation(
+                kb_dir,
+                plan.hub_ref,
+                repo_id=effective_repo_id(repo_id, kb_dir),
+                mode=plan.mode,
+            )
+        except OSError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+        _echo_publish_report(report)
+        return
+
+    # The gate applies only to routes that publish .kb/ (self-publish,
+    # intake, plain publish): a hub-to-hub publish pushes federation/ only,
+    # and the hub's own .kb/ there is a drafting desk. Still strictly above
     # require_hub()/resolve_hub()/any write below.
     try:
         _apply_unreviewed_gate(publish_mod.unreviewed_gate(kb_dir, require_reviewed))
     except (*_CONFIG_READ_ERRORS, OSError, KbError) as exc:
-        # KbError: unreviewed_gate -> unreviewed_sections reads every doc's
-        # _manifest.yaml via publish._load_manifest_or_raise, which converts
-        # a corrupt/schema-invalid/non-UTF-8 file into PublishError (a
-        # KbError) rather than letting the raw yaml/pydantic exception
-        # through -- so this guard must catch the wrapper, not just the
-        # classes _load_manifest_or_raise wraps (this was the round-1
-        # regression: the wrap shipped, this arm did not follow it, and the
-        # message right below stopped being reachable).
+        # unreviewed_sections reads every _manifest.yaml through
+        # publish._load_manifest_or_raise, which wraps a corrupt file in
+        # PublishError: caught here, not at the guard, to name the fix.
         typer.secho(
             f"a _manifest.yaml under {kb_dir} is unreadable ({exc}) -- fix or "
             "re-ingest that document",
@@ -2104,15 +2022,12 @@ def publish(
         )
         raise typer.Exit(1) from None
 
-    if cfg.intake and not pr and not direct:
+    if plan.route == "intake":
         try:
             pr_url = publish_mod.publish_via_intake(
-                kb_dir, cfg.intake, effective_repo_id(repo_id, kb_dir)
+                kb_dir, plan.intake_url, effective_repo_id(repo_id, kb_dir)
             )
         except (
-            # KbError: PublishError, GateError.
-            KbError,
-            gitio.GitError,
             OSError,
             # ValueError: publish_via_intake polls the intake server's /intake/
             # status endpoint and parses its JSON body unwrapped
@@ -2130,39 +2045,18 @@ def publish(
         return
 
     try:
-        # A hub-kind self-publish already resolved+anchored hub_ref above
-        # (git-root-anchored, not cwd-relative) — re-deriving it here via
-        # require_hub() would re-resolve a relative `hub: .` against the
-        # process cwd and undo that anchoring.
-        if not is_self:
-            hub_ref = require_hub(hub, kb_dir)
+        # A self-publish already has its root-anchored hub_ref; re-deriving
+        # it via require_hub() would re-resolve `hub: .` against the cwd.
+        hub_ref = plan.hub_ref if plan.self_publish else require_hub(hub, kb_dir)
+        assert hub_ref is not None  # noqa: S101 -- set for self-publish, else require_hub returned it
         report = publish_mod.publish(
             kb_dir,
             hub_ref,
             repo_id=effective_repo_id(repo_id, kb_dir),
-            mode=mode,
-            self_publish=is_self,
+            mode=plan.mode,
+            self_publish=plan.self_publish,
         )
-    except (
-        # KbError: PublishError, GateError, and assetstore.AssetStoreError --
-        # _snapshot (the .kb/ -> federation/<rid> path this call takes) can
-        # raise all three: PublishError from its own index.yaml/hub-config
-        # reads (wrapped, same shape as finding 2's measured repro),
-        # AssetStoreError from divert_and_record on a store outage. Catching
-        # the base once, instead of naming each class, means this tuple
-        # cannot go stale the way it did before: AssetStoreError used to be
-        # listed explicitly here and the hub-to-hub tuple above did not list
-        # it at all, even after _snapshot_federation (that branch's own
-        # snapshot_fn) started touching the asset store too (3845ee5/
-        # 01cbd0a) -- both branches now catch the same base.
-        HubConfigError,
-        KbError,
-        gitio.GitError,
-        ghio.GHError,
-        OSError,
-        *_CONFIG_READ_ERRORS,
-        hashsync.HashSyncError,
-    ) as exc:
+    except (OSError, *_CONFIG_READ_ERRORS) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     _echo_publish_report(report)
