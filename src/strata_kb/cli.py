@@ -3335,20 +3335,8 @@ def doctor(
     ),
 ) -> None:
     """Check KB health; pass --context to check citation staleness."""
-    from strata_kb.config import effective_repo_id
-    from strata_kb.doctor import (
-        Issue,
-        _flatten,
-        check_asset_store,
-        check_config_credentials,
-        check_context,
-        check_hub,
-        check_kb,
-        check_kind,
-        check_source_dirs,
-        check_usage_hooks,
-        check_usage_log,
-    )
+    from strata_kb import doctor as doctor_mod
+    from strata_kb.doctor import check_kind
 
     # check_kind first: it is the only check that can report a broken
     # config.yaml, and _hub_or_exit reads that same file to find the hub —
@@ -3368,129 +3356,21 @@ def doctor(
     if not no_refresh:
         _refresh_dev_code(kb_dir)
     handle = _hub_or_exit(hub, kb_dir)
-    issues = kind_issues + check_kb(kb_dir) + check_asset_store(kb_dir, handle)
-    try:
-        from strata_kb import gitio as _gitio0
-
-        repo_root = _gitio0.git_root(kb_dir.resolve())
-    except _gitio0.GitError:
-        repo_root = None  # not a git repo: nothing can be tracked
-    if repo_root is not None:
-        issues += check_source_dirs(repo_root)
-        issues += check_config_credentials(kb_dir, repo_root)
-
-    cfg_kind = ""
-    try:
-        from strata_kb.config import load_config as _load_config
-
-        cfg_kind = _load_config(kb_dir).kind
-    except (*_CONFIG_READ_ERRORS, OSError) as exc:
-        # check_kind (doctor.py) now catches this exact class set on this
-        # exact file first and exits above -- this read can only still fire
-        # on a TOCTOU race between the two reads (config.yaml changes or
-        # vanishes between check_kind's read and this one). Kept as a
-        # backstop for that race rather than removed, so a hit here still
-        # reports instead of continuing with an empty kind and silently
-        # skipping the kind-specific checks below.
-        issues.append(
-            Issue("error", f"could not read .kb/config.yaml: {_flatten(exc)}")
-        )
-
-    repo_id = effective_repo_id("", kb_dir)
-    if not repo_id:
-        from strata_kb import gitio as _gitio
-
-        try:
-            repo_id = _gitio.git_root(kb_dir.resolve()).name
-        except _gitio.GitError as exc:
-            # A reader .kb (any kind other than "hub") never consumes
-            # repo_id below — see the "hub"-only uses further down — so an
-            # undeterminable repo_id there is not this KB's problem to
-            # report. Only a hub's own checks (check_hub, federation
-            # publish) actually need it.
-            if cfg_kind == "hub":
-                issues.append(
-                    Issue(
-                        "error",
-                        f"could not determine the repo id — .kb is not inside a "
-                        f"git repo and repo_id is unset in config.yaml: "
-                        f"{_flatten(exc)}",
-                    )
-                )
-            repo_id = None
-
-    if cfg_kind in ("ba", "dev"):
-        issues += check_usage_log(kb_dir)
-        issues += check_usage_hooks(kb_dir.resolve().parent)
-    if cfg_kind == "hub":
-        from strata_kb import gitio as _gitio2
-        from strata_kb.config import load_config as _load_config2
-        from strata_kb.doctor import check_federation_publish
-
-        hub_issues, hub_stale = check_hub(
-            kb_dir, handle, repo_id=repo_id, warn_untracked_index=True
-        )
-        issues += hub_issues
-        try:
-            source_root = _gitio2.git_root(kb_dir.resolve())
-        except _gitio2.GitError as exc:
-            issues.append(
-                Issue(
-                    "warning",
-                    f"multi-tier checks skipped — .kb is not inside a git repo: {exc}",
-                )
-            )
-        else:
-            upstream = None
-            if handle is not None and handle.root.resolve() != source_root.resolve():
-                # A URL-configured hub resolves to a cache clone — compare
-                # identities, not just paths: a cached clone of *this* repo
-                # (same repo_id in its config) is still "self".
-                try:
-                    dest_rid = _load_config2(handle.kb_dir).repo_id
-                except (*_CONFIG_READ_ERRORS, OSError) as exc:
-                    # publish.py:1291 fails closed on this exact read
-                    # ("a corrupt upstream config must not silently blind
-                    # the cycle guard"). One condition, one policy.
-                    issues.append(
-                        Issue(
-                            "error",
-                            "could not read the upstream hub's .kb/config.yaml: "
-                            f"{_flatten(exc)}",
-                        )
-                    )
-                    dest_rid = ""
-                if not (repo_id and dest_rid and dest_rid == repo_id):
-                    upstream = handle
-            issues += check_federation_publish(source_root, upstream, repo_id)
-    else:
-        dev_code = f"{repo_id}-code" if cfg_kind == "dev" and repo_id else None
-        hub_issues, hub_stale = check_hub(
-            kb_dir, handle, repo_id=repo_id, code_doc=dev_code
-        )
-        issues += hub_issues
-        if cfg_kind == "dev":
-            from strata_kb.doctor import check_dev_sync, check_hub_lag
-
-            repo_root = kb_dir.resolve().parent
-            issues += check_dev_sync(kb_dir, repo_root, repo_id)
-            issues += check_hub_lag(kb_dir, repo_root, handle, repo_id)
-    has_stale = False
+    context_text = None
     if context is not None:
-        text = (
+        context_text = (
             sys.stdin.read()
             if context == "-"
             else Path(context).read_text(encoding="utf-8")
         )
-        ctx_issues, results = check_context(text, handle)
-        issues += ctx_issues
-        has_stale = any(r.status == "stale" for r in results)
+    result = doctor_mod.run(kb_dir, handle, context_text=context_text)
+    issues = kind_issues + result.issues
 
     for issue in issues:
         color = typer.colors.RED if issue.level == "error" else typer.colors.YELLOW
         typer.secho(f"[{issue.level}] {issue.message}", fg=color)
     if any(i.level == "error" for i in issues):
         raise typer.Exit(1)
-    if has_stale or hub_stale:
+    if result.stale:
         raise typer.Exit(2)
     typer.echo("kb doctor: OK")
