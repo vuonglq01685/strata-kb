@@ -147,7 +147,9 @@ def _table_cells(item, doc) -> list[tableimages.Cell]:
 
 def load_or_parse(pdf_path: Path, work_dir: Path):
     try:
-        from docling_core.types.doc import DoclingDocument
+        from docling_core.types.doc import (  # pyright: ignore[reportMissingImports]
+            DoclingDocument,
+        )
     except ImportError as exc:
         raise RuntimeError(
             "Docling is not installed. Run: pip install \"strata-kb[ingest]\""
@@ -157,9 +159,17 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
     if cache.exists():
         return DoclingDocument.model_validate_json(cache.read_text(encoding="utf-8"))
 
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
-    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.base_models import (  # pyright: ignore[reportMissingImports]
+        InputFormat,
+    )
+    from docling.datamodel.pipeline_options import (  # pyright: ignore[reportMissingImports]
+        PdfPipelineOptions,
+        RapidOcrOptions,
+    )
+    from docling.document_converter import (  # pyright: ignore[reportMissingImports]
+        DocumentConverter,
+        PdfFormatOption,
+    )
 
     # backend="torch" matches docling's own OCR auto-selection in this
     # install (onnxruntime/easyocr/nemotron are not installed, torch is) —
@@ -386,7 +396,7 @@ _RENDER_SCALE = 4  # ≈288 dpi: small glyphs stay legible after cropping
 
 
 def _render_page(pdf_path: Path, page: int):
-    import pypdfium2
+    import pypdfium2  # pyright: ignore[reportMissingImports]
 
     pdf = pypdfium2.PdfDocument(str(pdf_path))
     try:

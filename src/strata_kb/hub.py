@@ -121,13 +121,11 @@ def _discard_cache(cache: Path) -> None:
     callback shapes ignore their third argument, so `_clear_readonly_and_retry`
     works unchanged as either.
     """
-    kwargs = (
-        {"onexc": _clear_readonly_and_retry}
-        if sys.version_info >= (3, 12)
-        else {"onerror": _clear_readonly_and_retry}
-    )
     try:
-        shutil.rmtree(cache, **kwargs)
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(cache, onexc=_clear_readonly_and_retry)
+        else:
+            shutil.rmtree(cache, onerror=_clear_readonly_and_retry)
     except OSError as exc:
         raise gitio.GitError(
             f"could not remove the stale hub cache at '{cache}': {exc} -- it "

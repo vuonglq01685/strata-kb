@@ -91,7 +91,7 @@ class S3Store:
     def _c(self):
         if self._client is None:
             try:
-                import boto3
+                import boto3  # pyright: ignore[reportMissingImports]
             except ImportError as exc:
                 raise AssetStoreError(
                     'S3 asset store needs boto3 — run: pip install "strata-kb[s3]"'

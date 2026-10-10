@@ -266,10 +266,14 @@ def _has_usage_hook(settings: dict, event: str) -> bool:
     groups = (hooks if isinstance(hooks, dict) else {}).get(event) or []
     if not isinstance(groups, list):
         return False
-    return any(_USAGE_HOOK in str(h.get("command", ""))
-               for g in groups if isinstance(g, dict)
-               for h in (g.get("hooks") if isinstance(g.get("hooks"), list) else [])
-               if isinstance(h, dict))
+    for g in groups:
+        hooks_in_group = g.get("hooks") if isinstance(g, dict) else None
+        if not isinstance(hooks_in_group, list):
+            continue
+        for h in hooks_in_group:
+            if isinstance(h, dict) and _USAGE_HOOK in str(h.get("command", "")):
+                return True
+    return False
 
 
 def check_usage_hooks(repo_root: Path) -> list[Issue]:
@@ -382,6 +386,8 @@ def check_asset_store(kb_dir: Path, handle, store=None) -> list[Issue]:
             store = assetstore.from_config(cfg)
         except assetstore.AssetStoreError as exc:
             return [Issue("error", f"asset_store: {_flatten(exc)}")]
+        if store is None:  # mode "none" returned above; from_config agrees
+            return []
     try:
         store.exists(assetstore.PROBE_NAME)
     except assetstore.AssetStoreError as exc:

@@ -15,6 +15,7 @@ import io
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("strata_kb.ingest.images")
 
@@ -84,7 +85,7 @@ def _engine_params() -> dict[str, object]:
     RapidOCR() raises "onnxruntime is not installed". The version/model_type
     pins mirror docling's torch mapping, so this resolves the same weights
     the Dockerfile already pre-fetched."""
-    from rapidocr import EngineType
+    from rapidocr import EngineType  # pyright: ignore[reportMissingImports]
 
     params: dict[str, object] = {
         "Det.engine_type": EngineType.TORCH,
@@ -92,7 +93,12 @@ def _engine_params() -> dict[str, object]:
         "Rec.engine_type": EngineType.TORCH,
     }
     try:  # older rapidocr has no typings module — keep the engine pin only
-        from rapidocr.utils.typings import LangDet, LangRec, ModelType, OCRVersion
+        from rapidocr.utils.typings import (  # pyright: ignore[reportMissingImports]
+            LangDet,
+            LangRec,
+            ModelType,
+            OCRVersion,
+        )
     except ImportError:
         return params
     params["Det.lang_type"] = LangDet.EN
@@ -121,7 +127,7 @@ def ocr_image(img) -> str:
     global _OCR_ENGINE
     try:
         import numpy as np
-        from rapidocr import RapidOCR
+        from rapidocr import RapidOCR  # pyright: ignore[reportMissingImports]
     except ImportError:
         logger.warning("rapidocr unavailable — OCR description source disabled")
         return ""
@@ -148,7 +154,8 @@ class LegendMap:
     """Icon↔meaning map parsed from the document's own legend table.
     Matching is perceptual-hash only — deterministic, no model."""
 
-    entries: list[tuple[object, str]] = field(default_factory=list)
+    # (imagehash.ImageHash, meaning); imagehash is imported lazily.
+    entries: list[tuple[Any, str]] = field(default_factory=list)
 
     def add(self, img, meaning: str) -> None:
         text = " ".join((meaning or "").split())

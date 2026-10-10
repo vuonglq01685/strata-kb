@@ -715,8 +715,10 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
 
             for invocation, line in _tox_commands(text):
                 purpose = _classify(line)
+                if purpose is None:
+                    continue
                 candidate = (purpose, invocation, rel)
-                if purpose is not None and candidate not in candidates:
+                if candidate not in candidates:
                     candidates.append(candidate)
 
     pyproject = root / "pyproject.toml"

@@ -305,7 +305,10 @@ def build_intake_routes(
             capped = await _parse_capped_form(request, max_body_bytes)
             form = await capped.form()
             try:
-                meta = json.loads(form["meta"])
+                meta_field = form["meta"]
+                if not isinstance(meta_field, str):
+                    raise TypeError("'meta' was sent as a file, not a form field")
+                meta = json.loads(meta_field)
                 source_commit = str(meta["source_commit"])
                 deletes = [str(d) for d in meta.get("deletes", [])]
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:

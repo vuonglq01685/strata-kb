@@ -425,7 +425,9 @@ def rows_from_transcript(
             phase = switched
 
         message = row.get("message")
-        usage = message.get("usage") if isinstance(message, dict) else None
+        if not isinstance(message, dict):
+            continue
+        usage = message.get("usage")
         if not isinstance(usage, dict):
             continue
         model = message.get("model") or ""

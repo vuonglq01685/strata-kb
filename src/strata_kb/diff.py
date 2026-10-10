@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypedDict
 
 import yaml
 
@@ -41,7 +42,12 @@ def _raw_section(text: str | None, section_id: str) -> str | None:
     return slice_section(text, section_id)
 
 
-def _reviewed_fields(sec: models.SectionEntry) -> dict[str, str]:
+class _ReviewedFields(TypedDict, total=False):
+    reviewed_by: str
+    reviewed_at: str
+
+
+def _reviewed_fields(sec: models.SectionEntry) -> _ReviewedFields:
     """Reviewer sign-off of the worktree's version of `sec`, for display."""
     if sec.reviewed is None:
         return {}

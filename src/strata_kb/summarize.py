@@ -238,9 +238,10 @@ def parse_json_reply(text: str, required: tuple[str, ...]) -> dict[str, str]:
         if not isinstance(data, dict):
             continue
         saw_object = True
-        out = {k: data.get(k) for k in required}
-        if all(isinstance(v, str) and v.strip() for v in out.values()):
-            return {k: v.strip() for k, v in out.items()}
+        values = [data.get(k) for k in required]
+        stripped = [v.strip() for v in values if isinstance(v, str) and v.strip()]
+        if len(stripped) == len(required):
+            return dict(zip(required, stripped, strict=True))
     if saw_object:
         raise ValueError(f"missing or empty key among: {', '.join(required)}")
     raise ValueError("no JSON object in reply")
@@ -417,7 +418,9 @@ def _apply_results(
             key = f"{doc}/{sec.id}"
             if sec.file not in l2_cache:
                 l2_cache[sec.file] = (kb_dir / doc / f"{sec.file}.md").read_text(encoding="utf-8")
-            occurrence = marker_index[row] - consumed.get((sec.file, sec.id), 0)
+            index = marker_index[row]
+            assert index is not None  # noqa: S101 -- rows holds only rows pending in the snapshot, which all have an index
+            occurrence = index - consumed.get((sec.file, sec.id), 0)
             try:
                 l2_cache[sec.file] = replace_marker(
                     l2_cache[sec.file], sec.id, pair["l2_summary"], occurrence=occurrence

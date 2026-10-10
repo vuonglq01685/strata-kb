@@ -347,7 +347,11 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                         f"service {name!r} in {rel}: build context {context or '.'!r} "
                         "is outside the repository; not read"
                     )
-                elif dockerfile_rel is not None and normalised.is_file():
+                elif (
+                    normalised is not None
+                    and dockerfile_rel is not None
+                    and normalised.is_file()
+                ):
                     try:
                         base_image, exposed, command = _parse_dockerfile(
                             normalised.read_text(encoding="utf-8")

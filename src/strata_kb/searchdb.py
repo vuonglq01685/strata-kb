@@ -125,12 +125,13 @@ def warm_vec() -> bool:
 
 
 def _load_vec(conn: sqlite3.Connection) -> bool:
-    if not warm_vec():
+    vec_module = _VEC_MODULE if warm_vec() else None
+    if vec_module is None:
         return False
     try:
         conn.enable_load_extension(True)
         try:
-            _VEC_MODULE.load(conn)
+            vec_module.load(conn)
         finally:
             conn.enable_load_extension(False)
     except (AttributeError, sqlite3.OperationalError) as exc:

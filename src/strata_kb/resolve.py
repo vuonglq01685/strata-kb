@@ -135,6 +135,7 @@ def _resolve_one(
             ref=ref, status="broken", citation=citation, content=pinned,
             tokens=count_tokens(pinned), reason=reasons[problem], pinned_rev=rev,
         )
+    assert now is not None  # noqa: S101 -- _worktree_section returns the text whenever problem is empty
     if now.strip() != pinned.strip():
         status: Status = "stale"
         reason = "L2 content has changed since the pinned version (amendment after the BA wrote it)"
@@ -188,7 +189,8 @@ def _resolve_ref(
     hub: HubHandle, root: Path, version: str, ref: KBRef, repos,
     reader: gitio.BatchReader,
 ) -> ResolvedRef:
-    if ref.repo_id is None:
+    repo_id = ref.repo_id
+    if repo_id is None:
         holders = [
             r.meta.repo_id
             for r in repos
@@ -200,8 +202,8 @@ def _resolve_ref(
                 "ref has no repo id and cannot be disambiguated in the "
                 "current federation — re-pin with kb_context_new",
             )
-        ref.repo_id = holders[0]
-    return _resolve_one(hub.federation_dir / ref.repo_id, root, version, ref, reader)
+        repo_id = ref.repo_id = holders[0]
+    return _resolve_one(hub.federation_dir / repo_id, root, version, ref, reader)
 
 
 def render_resolved(

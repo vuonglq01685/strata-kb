@@ -9,9 +9,11 @@ import tarfile
 import tempfile
 import threading
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import IO, cast
 
 from strata_kb import assetstore, federation, ghapp, gitio, hashsync, models
 from strata_kb import hub as hub_mod
@@ -1054,7 +1056,9 @@ def safe_extract(
     gz = gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb")
     bounded = _BoundedTarStream(gz, max_bytes)
     try:
-        tf = tarfile.open(fileobj=bounded, mode="r:")  # noqa: SIM115 -- closed by `with tf:` below; opened outside it so open errors map to 400
+        # typeshed's fileobj protocol asks for write() even in mode "r:";
+        # tarfile only reads, seeks and tells here.
+        tf = tarfile.open(fileobj=cast("IO[bytes]", bounded), mode="r:")  # noqa: SIM115 -- closed by `with tf:` below; opened outside it so open errors map to 400
     except (tarfile.TarError, OSError, EOFError, RecursionError) as exc:
         # OSError/EOFError: opening tarfile no longer routes through
         # tarfile's own gzopen(), which used to translate a GzipFile
@@ -1370,7 +1374,7 @@ class IntakeConfig:
     http: object = None  # test seam -- None = real urllib
     push_via_token_url: bool = True  # False in tests: push plain origin, no token URL
     trusted_proxies: int = 0  # X-Forwarded-For hops to trust; 0 = ignore the header
-    pr_hook: object = None  # test seam -- None = ghapp.create_or_get_pr
+    pr_hook: Callable[..., str] | None = None  # test seam -- None = ghapp.create_or_get_pr
 
 
 def intake_config_from_env(hub_ref: str) -> IntakeConfig | None:

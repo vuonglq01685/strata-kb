@@ -1133,6 +1133,7 @@ def scaffold_svc(opts, sections, report) -> None:
             # above, no orphaned heading for it either — nothing to lose).
             # L2 is exactly the TODO marker; L3 is fresh evidence;
             # status/summary start empty.
+            assert current is not None  # noqa: S101 -- all_ids is the union of current_by_id and existing_entries
             title = current.title
             l2_md = f"<!-- TODO:summarize {sid} -->"
             l3_md = _service_evidence(opts.repo_root, tree_entries, current, db_sections)

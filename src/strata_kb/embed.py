@@ -26,7 +26,7 @@ class _FastEmbedder:
     name = "BAAI/bge-small-en-v1.5"
 
     def __init__(self) -> None:
-        from fastembed import TextEmbedding
+        from fastembed import TextEmbedding  # pyright: ignore[reportMissingImports]
 
         self._model = TextEmbedding(model_name=self.name)
 

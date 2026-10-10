@@ -38,6 +38,7 @@ def _override(loader: _ComposeLoader, node: yaml.Node) -> object:
     # `"3"` / `"1.10"` through the implicit-tag resolver, turning them into
     # int 3 / float 1.1 instead of staying strings like `yaml.safe_load`
     # itself leaves them.
+    assert isinstance(node, yaml.ScalarNode)  # noqa: S101 -- YAML has three node kinds; the other two returned above
     implicit = (node.style is None, node.style is not None)
     tag = loader.resolve(yaml.ScalarNode, node.value, implicit)
     return loader.yaml_constructors[tag](loader, node)

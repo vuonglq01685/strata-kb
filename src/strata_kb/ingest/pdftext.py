@@ -30,7 +30,7 @@ def region_text(
     if pdf_path is None or page_no is None or page_no < 1 or box is None:
         return None
     try:
-        import pypdfium2
+        import pypdfium2  # pyright: ignore[reportMissingImports]
 
         # ponytail: this re-scans every char on the page (two FFI calls
         # each) on every call, which dominates the cost -- reopening the

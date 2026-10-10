@@ -13,7 +13,6 @@ def force_utf8_streams() -> None:
     """
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         encoding = getattr(stream, "encoding", None) or ""
-        if encoding.lower().replace("-", "") != "utf8" and hasattr(
-            stream, "reconfigure"
-        ):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure = getattr(stream, "reconfigure", None)
+        if encoding.lower().replace("-", "") != "utf8" and reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
