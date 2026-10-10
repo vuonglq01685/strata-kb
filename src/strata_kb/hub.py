@@ -159,11 +159,24 @@ def _touch_marker(marker: Path) -> None:
     marker.write_text(str(time.time()), encoding="utf-8")
 
 
+_cache_locks: dict[str, threading.Lock] = {}
+_cache_locks_guard = threading.Lock()
+
+
+def _cache_lock(cache: Path) -> threading.Lock:
+    with _cache_locks_guard:
+        return _cache_locks.setdefault(str(cache), threading.Lock())
+
+
 def resolve_hub(hub: str) -> HubHandle | None:
     """Local path with a .kb/ → use it directly; otherwise clone/pull into the cache per TTL.
 
     None = the hub is unreachable and there is no cache yet — since the
     2026-07-13 hub-first change, that is not "continue with the local KB".
+
+    The clone/pull branch holds a per-cache lock: MCP tools and the web
+    routes run on worker threads, and two of them finding the TTL expired
+    at once would run two `git pull`s in one checkout.
     """
     direct = Path(hub)
     if direct.is_dir() and (direct / ".kb").is_dir():
@@ -171,6 +184,11 @@ def resolve_hub(hub: str) -> HubHandle | None:
 
     _, token = gitio.split_credentials(hub)
     cache = ensure_cache_base() / cache_key(hub)
+    with _cache_lock(cache):
+        return _resolve_cached(hub, cache, token)
+
+
+def _resolve_cached(hub: str, cache: Path, token: str | None) -> HubHandle | None:
     # Marker lives outside the clone directory: `commit_all` (publish, Task 4)
     # runs `git add -A` on the hub — if the marker were inside the clone it
     # would get added by mistake.

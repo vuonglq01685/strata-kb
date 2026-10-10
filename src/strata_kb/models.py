@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
 import re
+import threading
+import time
+from collections import OrderedDict
 from datetime import date
 from pathlib import Path
 from typing import Literal, TypeVar
@@ -241,9 +245,58 @@ class AssetsRecord(BaseModel):
     assets: list[str] = Field(default_factory=list)
 
 
+try:
+    from yaml import CSafeLoader as _YamlLoader
+except ImportError:  # PyYAML built without libyaml
+    from yaml import SafeLoader as _YamlLoader  # type: ignore[assignment]
+
+# A file modified less than this long ago is parsed every time, never
+# cached: file timestamps tick at ~4 ms on Linux (coarse clock), so a
+# same-size rewrite inside one tick could keep its stat key. Git's "racy
+# entry" rule. A hub checkout's files are older than this on every request
+# after the first (2026-10-10 review §6.2 F1).
+RACY_WINDOW_NS = 2_000_000_000
+_YAML_CACHE_MAX = 2048
+_yaml_cache: OrderedDict[str, tuple[tuple[int, int, int, int], object]] = OrderedDict()
+_yaml_cache_lock = threading.Lock()
+
+
+def clear_yaml_cache() -> None:
+    with _yaml_cache_lock:
+        _yaml_cache.clear()
+
+
+def load_yaml_data(path: Path) -> object:
+    """Parsed YAML of `path` — libyaml when available, cached by stat.
+
+    The review measured a 500-section manifest at 439 ms with the
+    pure-Python loader and 49 ms with libyaml, and `load_federation` plus
+    the web pages parsed every manifest several times per request. Callers
+    get the shared parsed object: validate it into a model (as
+    `load_yaml_model` does), never mutate it.
+    """
+    st = os.stat(path)
+    key = (st.st_mtime_ns, st.st_size, st.st_ctime_ns, st.st_ino)
+    name = os.path.abspath(path)
+    with _yaml_cache_lock:
+        hit = _yaml_cache.get(name)
+        if hit is not None and hit[0] == key:
+            _yaml_cache.move_to_end(name)
+            return hit[1]
+    data = yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_YamlLoader)
+    if time.time_ns() - st.st_mtime_ns > RACY_WINDOW_NS:
+        with _yaml_cache_lock:
+            _yaml_cache[name] = (key, data)
+            _yaml_cache.move_to_end(name)
+            while len(_yaml_cache) > _YAML_CACHE_MAX:
+                _yaml_cache.popitem(last=False)
+    return data
+
+
 def load_yaml_model(path: Path, model: type[T]) -> T:
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return model.model_validate(data)
+    """A fresh model every call (pydantic builds new containers), so a
+    caller may mutate it without touching the cached parse."""
+    return model.model_validate(load_yaml_data(path) or {})
 
 
 def save_yaml_model(path: Path, obj: BaseModel) -> None:

@@ -333,3 +333,44 @@ def test_discard_cache_passes_the_rmtree_callback_kwarg_this_python_accepts(
     assert seen["path"] == cache
     assert list(seen["kwargs"]) == [expected]
     assert seen["kwargs"][expected] is hub._clear_readonly_and_retry
+
+
+def test_concurrent_resolves_never_pull_one_cache_twice_at_once(
+    monkeypatch, tmp_path, hub_worktree, run_git
+):
+    """2026-10-10 review §6.2 F3: web routes now run on worker threads, like
+    MCP tools already did -- two of them finding the TTL expired at once
+    must not run two `git pull`s in one checkout."""
+    import threading
+    import time as _time
+
+    _use_cache(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRATA_KB_HUB_TTL", "0")
+    bare = tmp_path / "hub.git"
+    bare.mkdir()
+    run_git(bare, "init", "--bare")
+    run_git(hub_worktree, "remote", "add", "origin", str(bare))
+    run_git(hub_worktree, "push", "origin", "HEAD")
+    assert hub.resolve_hub(str(bare)) is not None  # clone
+
+    active, overlaps, pulls = [0], [0], [0]
+    guard = threading.Lock()
+
+    def fake_pull(root, url=None, token=None, **_kw):
+        with guard:
+            active[0] += 1
+            pulls[0] += 1
+            if active[0] > 1:
+                overlaps[0] += 1
+        _time.sleep(0.05)
+        with guard:
+            active[0] -= 1
+
+    monkeypatch.setattr(hub.gitio, "pull", fake_pull)
+    threads = [threading.Thread(target=hub.resolve_hub, args=(str(bare),)) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert pulls[0] == 6
+    assert overlaps[0] == 0
