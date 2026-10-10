@@ -17,7 +17,10 @@ KINDS = (KIND_HUB, KIND_CHILD, KIND_BA, KIND_DEV)
 # target relative path -> template resource name under templates/init/
 COMMON_TEMPLATES: dict[str, str] = {
     ".kb/index.yaml": "index.yaml",
+    # Both spellings: README once said `sources/`, the scaffold `source/`, and
+    # whoever followed the README had no ignore rule (2026-10-10 review H13).
     "source/.gitignore": "source-gitignore.txt",
+    "sources/.gitignore": "source-gitignore.txt",
     ".claude/skills/kb-summarize/SKILL.md": "claude-skill-kb-summarize.md",
     ".claude/commands/kb-summarize.md": "claude-command-kb-summarize.md",
     ".github/instructions/kb-summarize.instructions.md": "copilot-kb-summarize.instructions.md",

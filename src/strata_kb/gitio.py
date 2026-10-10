@@ -150,6 +150,21 @@ def is_tracked(root: Path, relpath: str) -> bool:
     return proc.returncode == 0
 
 
+def tracked_files(root: Path, relpath: str) -> list[str]:
+    """Paths git tracks under `relpath` (POSIX, relative to `root`).
+
+    [] -- never raised -- when `root` isn't a git repo or git isn't on PATH,
+    like `is_tracked`: doctor uses this to warn, and "can't tell" is silence.
+    """
+    try:
+        proc = _run(root, "ls-files", "-z", "--", relpath)
+    except FileNotFoundError:
+        return []
+    if proc.returncode != 0:
+        return []
+    return [f for f in proc.stdout.split("\0") if f]
+
+
 def _relpath(root: Path, path: Path) -> str:
     try:
         return path.resolve().relative_to(root).as_posix()
