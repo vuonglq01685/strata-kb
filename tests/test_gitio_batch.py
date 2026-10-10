@@ -1,6 +1,7 @@
 """2026-10-10 review §6.2 F8: `kb resolve` started four git processes per
 ref. `gitio.BatchReader` serves every (rev, path) read of one resolve from
 one `git cat-file --batch` process, with `read_at`'s exact contract."""
+
 from __future__ import annotations
 
 import subprocess
@@ -45,7 +46,10 @@ def test_a_directory_reads_as_absent(repo):
 
 def test_an_unknown_rev_raises_like_read_at(repo):
     root, _ = repo
-    with gitio.BatchReader(root) as reader, pytest.raises(gitio.GitError, match="does not exist"):
+    with (
+        gitio.BatchReader(root) as reader,
+        pytest.raises(gitio.GitError, match="does not exist"),
+    ):
         reader.read_at("0" * 40, root / "a.md")
 
 
@@ -71,8 +75,8 @@ def test_one_process_serves_every_read(repo, monkeypatch):
 
 def test_resolve_runs_a_constant_number_of_git_processes(fed_hub, monkeypatch):
     """5 refs used to cost 22 git processes."""
-    from strata_kb.hub import HubHandle
     from strata_kb import kbcontext
+    from strata_kb.hub import HubHandle
     from strata_kb.kbcontext import build_context_block
     from strata_kb.resolve import resolve_refs
 
@@ -84,7 +88,9 @@ def test_resolve_runs_a_constant_number_of_git_processes(fed_hub, monkeypatch):
     real_run, real_popen = gitio._run, subprocess.Popen
     monkeypatch.setattr(gitio, "_run", lambda *a: runs.append(a[1:]) or real_run(*a))
     monkeypatch.setattr(
-        gitio.subprocess, "Popen", lambda *a, **k: popens.append(a[0]) or real_popen(*a, **k)
+        gitio.subprocess,
+        "Popen",
+        lambda *a, **k: popens.append(a[0]) or real_popen(*a, **k),
     )
     results = resolve_refs(hub, ctx)
     assert {r.status for r in results} == {"ok"}

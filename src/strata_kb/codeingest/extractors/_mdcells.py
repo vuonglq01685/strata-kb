@@ -28,6 +28,7 @@ Every one of the six modules above imports `escape_cell` from here rather
 than keeping its own copy, for the same "fix it once" reason
 `_envkeys.py` is the one place `sanitize_env_key`/`redact_userinfo` live.
 """
+
 from __future__ import annotations
 
 

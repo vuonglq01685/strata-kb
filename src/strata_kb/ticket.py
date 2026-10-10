@@ -32,7 +32,7 @@ REQUIRED_HEADINGS: tuple[str, ...] = (
 RECOMMENDED_HEADINGS: tuple[str, ...] = (
     "## Dependencies",
     "## Out of scope",
-    "## Technical grounding",   # SA-owned (spec 2026-09-20-sa-grounding-design §3)
+    "## Technical grounding",  # SA-owned (spec 2026-09-20-sa-grounding-design §3)
     "## Open questions",
 )
 
@@ -125,7 +125,7 @@ def export_body(text: str) -> str:
     scan += [""] * (len(lines) - len(scan))
     kept: list[str] = []
     dropping = False
-    for line, probe in zip(lines, scan):
+    for line, probe in zip(lines, scan, strict=True):
         if probe.startswith("## ") or probe.startswith("# "):
             dropping = probe.strip() in INTERNAL_HEADINGS
         if not dropping:

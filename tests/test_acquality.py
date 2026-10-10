@@ -23,12 +23,8 @@ def test_weasel_hits_finds_english_phrases():
 
 
 def test_weasel_hits_finds_vietnamese_phrases():
-    assert acquality.weasel_hits("Giá trị đã cấu hình cho hệ thống") == [
-        "đã cấu hình"
-    ]
-    assert acquality.weasel_hits("Hiển thị một tập con các trường") == [
-        "một tập con"
-    ]
+    assert acquality.weasel_hits("Giá trị đã cấu hình cho hệ thống") == ["đã cấu hình"]
+    assert acquality.weasel_hits("Hiển thị một tập con các trường") == ["một tập con"]
 
 
 def test_weasel_hits_is_case_insensitive():
@@ -50,9 +46,7 @@ def test_open_marker_mutes_only_its_own_parentheses():
 
 def test_clean_line_has_no_hits():
     assert (
-        acquality.weasel_hits(
-            "AC1: Show airspace type and level per arinc-424 §5.3"
-        )
+        acquality.weasel_hits("AC1: Show airspace type and level per arinc-424 §5.3")
         == []
     )
 
@@ -63,9 +57,9 @@ def test_word_boundaries_avoid_substring_false_positives():
 
 
 def test_distinguished_by_type_is_detected():
-    assert acquality.weasel_hits(
-        "Types are distinguished by type on the map"
-    ) == ["distinguished by type"]
+    assert acquality.weasel_hits("Types are distinguished by type on the map") == [
+        "distinguished by type"
+    ]
 
 
 def test_distinguished_by_type_with_means_is_suppressed():
@@ -77,10 +71,7 @@ def test_distinguished_by_type_with_means_is_suppressed():
 
 
 def test_phan_biet_theo_loai_with_means_is_suppressed():
-    assert (
-        acquality.weasel_hits("Phân biệt theo loại bằng màu và hình dạng")
-        == []
-    )
+    assert acquality.weasel_hits("Phân biệt theo loại bằng màu và hình dạng") == []
 
 
 def test_distinguished_by_type_without_means_still_fires():
@@ -101,14 +92,26 @@ def test_means_word_inside_owned_marker_does_not_suppress_outside_phrase():
 
 @pytest.mark.parametrize(
     "body",
-    ["", "TBD", "  tbd  ", "TODO", "N/A", "...", "…", "<...>", "-", "xxx",
-     "chưa rõ", "đang cập nhật",
-     # I3: the shipped templates' own angle-bracket placeholders — a body
-     # that reduces to nothing but '<...>' spans (plus punctuation) once
-     # they are removed is unfilled, whatever prose sits inside the
-     # brackets.
-     "<role>",
-     "<context; every industry-standard claim cites `[doc-id §section]`>"],
+    [
+        "",
+        "TBD",
+        "  tbd  ",
+        "TODO",
+        "N/A",
+        "...",
+        "…",
+        "<...>",
+        "-",
+        "xxx",
+        "chưa rõ",
+        "đang cập nhật",
+        # I3: the shipped templates' own angle-bracket placeholders — a body
+        # that reduces to nothing but '<...>' spans (plus punctuation) once
+        # they are removed is unfilled, whatever prose sits inside the
+        # brackets.
+        "<role>",
+        "<context; every industry-standard claim cites `[doc-id §section]`>",
+    ],
 )
 def test_is_unfilled_true_for_placeholders(body):
     assert acquality.is_unfilled(body) is True
@@ -116,11 +119,16 @@ def test_is_unfilled_true_for_placeholders(body):
 
 @pytest.mark.parametrize(
     "body",
-    ["The importer stores the designator.", "Bộ nhập lưu mã định danh.",
-     "5 seconds", "None", "N/A - no retention policy applies",
-     # I3: a real '<' with no closing '>' anywhere (a comparison, not a
-     # placeholder) must not be mistaken for one.
-     "latency < 200 ms p95"],
+    [
+        "The importer stores the designator.",
+        "Bộ nhập lưu mã định danh.",
+        "5 seconds",
+        "None",
+        "N/A - no retention policy applies",
+        # I3: a real '<' with no closing '>' anywhere (a comparison, not a
+        # placeholder) must not be mistaken for one.
+        "latency < 200 ms p95",
+    ],
 )
 def test_is_unfilled_false_for_real_content(body):
     assert acquality.is_unfilled(body) is False
@@ -183,8 +191,7 @@ def test_measurable_re_does_not_mistake_e_g_for_a_dotted_identifier():
 
 def test_ac_substance_rejects_despite_e_g_dotted_look_alike():
     assert (
-        acquality.ac_substance("AC1 — The system is fast, e.g. responsive")
-        is not None
+        acquality.ac_substance("AC1 — The system is fast, e.g. responsive") is not None
     )
 
 
@@ -243,18 +250,12 @@ def test_open_marker_with_unowned_owner_does_not_mute():
     """An unowned OPEN(...) (TBD, ?, ...) is a placeholder wearing the
     costume of an owner: it must not license anything inside its own
     parentheses either, so a weasel phrase there still reports."""
-    assert acquality.weasel_hits(
-        "threshold OPEN(TBD: appropriate)"
-    ) == ["appropriate"]
-    assert acquality.weasel_hits(
-        "threshold OPEN(?: appropriate)"
-    ) == ["appropriate"]
+    assert acquality.weasel_hits("threshold OPEN(TBD: appropriate)") == ["appropriate"]
+    assert acquality.weasel_hits("threshold OPEN(?: appropriate)") == ["appropriate"]
 
 
 def test_parse_review_row_accepts_a_well_formed_row():
-    row = acquality.parse_review_row(
-        ["2026-09-08", "1", "4", "5", "business-reviewer"]
-    )
+    row = acquality.parse_review_row(["2026-09-08", "1", "4", "5", "business-reviewer"])
     assert isinstance(row, acquality.ReviewRow)
     assert (row.round, row.business, row.dev) == (1, 4, 5)
 
@@ -262,12 +263,12 @@ def test_parse_review_row_accepts_a_well_formed_row():
 @pytest.mark.parametrize(
     "cells",
     [
-        ["2026-09-08", "1", "5", "5", ""],          # empty reviewer
-        ["2026-09-08", "one", "5", "5", "me"],      # round not an int
-        ["2026-09-08", "0", "5", "5", "me"],        # round < 1
-        ["2026-09-08", "1", "nine", "5", "me"],     # score not an int
-        ["2026-09-08", "1", "9", "5", "me"],        # score out of range
-        ["2026-09-08", "1", "5", "5"],              # four cells
+        ["2026-09-08", "1", "5", "5", ""],  # empty reviewer
+        ["2026-09-08", "one", "5", "5", "me"],  # round not an int
+        ["2026-09-08", "0", "5", "5", "me"],  # round < 1
+        ["2026-09-08", "1", "nine", "5", "me"],  # score not an int
+        ["2026-09-08", "1", "9", "5", "me"],  # score out of range
+        ["2026-09-08", "1", "5", "5"],  # four cells
     ],
 )
 def test_parse_review_row_rejects(cells):

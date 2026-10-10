@@ -19,7 +19,9 @@ from strata_kb import gitio, kbcontext
 from strata_kb.query import get_section, search_detailed, stale_hub_note
 from strata_kb.resolve import render_resolved, resolve_refs
 from strata_kb.ticketlint import lint as lint_ticket
-from strata_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
+from strata_kb.web.auth import (
+    TokenAuthMiddleware as BearerAuthMiddleware,  # noqa: F401 — re-export
+)
 
 logger = logging.getLogger("strata_kb.mcp")
 
@@ -303,7 +305,8 @@ def create_http_app(config: ServerConfig, token: str):
     from strata_kb.web.app import create_app
 
     return create_app(
-        config, token,
+        config,
+        token,
         mcp_server=create_server(config),
         intake_cfg=intake_config_from_env(config.hub),
     )
@@ -313,26 +316,40 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
     ap = argparse.ArgumentParser(
         prog="python -m strata_kb.mcp", description="Strata MCP server"
     )
-    ap.add_argument("--kb", type=Path, default=Path(".kb"),
-                    help="KB directory (only to find .kb/config.yaml)")
-    ap.add_argument("--hub", default=None,
-                    help="kb-hub URL/path (default: env STRATA_KB_HUB, then .kb/config.yaml)")
-    ap.add_argument("--transport", choices=("stdio", "http"), default="stdio",
-                    help="stdio (default) or http (requires STRATA_KB_HTTP_TOKEN)")
-    ap.add_argument("--host", default="127.0.0.1", help="Host to bind when --transport http")
+    ap.add_argument(
+        "--kb",
+        type=Path,
+        default=Path(".kb"),
+        help="KB directory (only to find .kb/config.yaml)",
+    )
+    ap.add_argument(
+        "--hub",
+        default=None,
+        help="kb-hub URL/path (default: env STRATA_KB_HUB, then .kb/config.yaml)",
+    )
+    ap.add_argument(
+        "--transport",
+        choices=("stdio", "http"),
+        default="stdio",
+        help="stdio (default) or http (requires STRATA_KB_HTTP_TOKEN)",
+    )
+    ap.add_argument(
+        "--host", default="127.0.0.1", help="Host to bind when --transport http"
+    )
     ap.add_argument("--port", type=int, default=8321, help="Port when --transport http")
     args = ap.parse_args(argv)
     from strata_kb.config import HubConfigError, require_hub
 
     try:
-        hub = require_hub(
-            args.hub or os.environ.get("STRATA_KB_HUB", ""), args.kb
-        )
+        hub = require_hub(args.hub or os.environ.get("STRATA_KB_HUB", ""), args.kb)
     except HubConfigError as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from None
     return ServerConfig(
-        kb_dir=args.kb, hub=hub, transport=args.transport,
-        host=args.host, port=args.port,
+        kb_dir=args.kb,
+        hub=hub,
+        transport=args.transport,
+        host=args.host,
+        port=args.port,
     )
 
 
@@ -354,9 +371,7 @@ def check_http_token(token: str) -> None:
         '`python -c "import secrets; print(secrets.token_hex(24))"`'
     )
     if token in _PLACEHOLDER_TOKENS:
-        raise SystemExit(
-            f"STRATA_KB_HTTP_TOKEN is the placeholder '{token}' — {how}"
-        )
+        raise SystemExit(f"STRATA_KB_HTTP_TOKEN is the placeholder '{token}' — {how}")
     if len(token) < HTTP_TOKEN_MIN_LENGTH:
         raise SystemExit(
             f"STRATA_KB_HTTP_TOKEN is {len(token)} characters; at least "
@@ -364,8 +379,7 @@ def check_http_token(token: str) -> None:
         )
     if not (token.isascii() and token.isprintable()) or " " in token:
         raise SystemExit(
-            "STRATA_KB_HTTP_TOKEN must be printable ASCII with no spaces — "
-            f"{how}"
+            f"STRATA_KB_HTTP_TOKEN must be printable ASCII with no spaces — {how}"
         )
 
 

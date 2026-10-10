@@ -1,3 +1,4 @@
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -74,9 +75,11 @@ def test_ledger_path_accepts_the_real_ticket_names(tmp_path: Path):
 def test_append_writes_one_json_line_per_row(tmp_path: Path):
     report = ledger.append_rows(tmp_path, [row("u1"), row("u2")])
 
-    lines = (tmp_path / "usage" / "open-new-flight.jsonl").read_text(
-        encoding="utf-8"
-    ).splitlines()
+    lines = (
+        (tmp_path / "usage" / "open-new-flight.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     assert report.written == 2
     assert report.duplicates == 0
     assert len(lines) == 2
@@ -212,10 +215,8 @@ def test_concurrent_appends_of_the_same_rows_store_each_uuid_once(
     scan = ledger._existing_uuids
 
     def scan_in_step(path: Path) -> set[str]:
-        try:
+        with contextlib.suppress(threading.BrokenBarrierError):
             barrier.wait(timeout=0.5)
-        except threading.BrokenBarrierError:
-            pass
         return scan(path)
 
     monkeypatch.setattr(ledger, "_existing_uuids", scan_in_step)

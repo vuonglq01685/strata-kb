@@ -26,7 +26,7 @@ __all__ = [
 # never a path — no separators, no leading dot.
 _DOC_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
-_TARGET_MIN_TOKENS = 300   # phase-1 spec §4.4-3: a measured target, not a rule
+_TARGET_MIN_TOKENS = 300  # phase-1 spec §4.4-3: a measured target, not a rule
 _TARGET_MAX_TOKENS = 5000
 _WHITESPACE_RE = re.compile(r"\s")
 _PATH_SEP_RE = re.compile(r"[/\\]")
@@ -282,7 +282,9 @@ def scaffold_doc(
         stems = _resolve_stems(chapters, previous.sections, units)  # may raise
     resolved_old_stems = set(stems.values())
     if previous is not None:
-        _check_no_id_clash(units, previous.sections, resolved_old_stems)  # may raise: id clash
+        _check_no_id_clash(
+            units, previous.sections, resolved_old_stems
+        )  # may raise: id clash
     # Both checks above run before anything is deleted or written, so a
     # refused run leaves every L2/L3 file and the manifest untouched.
 

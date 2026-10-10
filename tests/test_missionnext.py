@@ -61,7 +61,11 @@ def test_dep_ids_full_bare_and_none():
 def test_parse_mission_reads_backlog_sequencing_and_decisions():
     mission_id, stories, decisions = missionnext.parse_mission(PLATFORM)
     assert mission_id == "M-platform"
-    assert [s.us_id for s in stories] == ["M-platform-US1", "M-platform-US2", "M-platform-US3"]
+    assert [s.us_id for s in stories] == [
+        "M-platform-US1",
+        "M-platform-US2",
+        "M-platform-US3",
+    ]
     assert stories[0].title == "Foundation slice"
     assert stories[0].depends_on == ()
     assert stories[0].seq_index == 0
@@ -89,8 +93,13 @@ def test_parse_mission_without_id_or_backlog():
 def test_grounded_doc_returns_repo_and_doc():
     assert missionnext.grounded_doc(PLATFORM) == ("myflix", "myflix-code")
     assert missionnext.grounded_doc(CATALOG) is None
-    assert missionnext.grounded_doc("- Grounded on: demo-code @ abc1234\n") == (None, "demo-code")
-    assert missionnext.grounded_doc("- Grounded on: mid/repo-x:repo-x-code @ abc1234\n") == ("mid/repo-x", "repo-x-code")
+    assert missionnext.grounded_doc("- Grounded on: demo-code @ abc1234\n") == (
+        None,
+        "demo-code",
+    )
+    assert missionnext.grounded_doc(
+        "- Grounded on: mid/repo-x:repo-x-code @ abc1234\n"
+    ) == ("mid/repo-x", "repo-x-code")
 
 
 def test_grounded_doc_reads_a_comma_separated_list_and_prefers_code():
@@ -98,7 +107,9 @@ def test_grounded_doc_reads_a_comma_separated_list_and_prefers_code():
     assert missionnext.grounded_doc(two) == ("myflix", "myflix-code")
     no_code = "- Grounded on: myflix:myflix-svc @ 2946696, myflix:arch @ 2946696\n"
     assert missionnext.grounded_doc(no_code) == ("myflix", "myflix-svc")
-    malformed = "- Grounded on: myflix:myflix-code (rev 2946696), myflix:myflix-svc @ 2946696\n"
+    malformed = (
+        "- Grounded on: myflix:myflix-code (rev 2946696), myflix:myflix-svc @ 2946696\n"
+    )
     assert missionnext.grounded_doc(malformed) is None
 
 
@@ -130,7 +141,9 @@ HISTORY = """# myflix-svc
 
 def test_done_ids_from_history_reads_every_hist_section():
     assert missionnext.done_ids_from_history(HISTORY) == {
-        "M-platform-US1", "M-catalog-US1", "M-catalog-US2",
+        "M-platform-US1",
+        "M-catalog-US1",
+        "M-catalog-US2",
     }
 
 
@@ -147,7 +160,9 @@ def _run(drafted=None, done=None):
     parsed = [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)]
     return {
         s.us_id: s
-        for s in missionnext.statuses(parsed, dict(drafted or {}), None if done is None else set(done))
+        for s in missionnext.statuses(
+            parsed, dict(drafted or {}), None if done is None else set(done)
+        )
     }
 
 
@@ -195,12 +210,20 @@ def test_done_wins_over_a_ticket_file():
 
 
 def test_cross_mission_dependency_and_order():
-    order = [s.us_id for s in missionnext.statuses(
-        [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)], {}, set()
-    )]
+    order = [
+        s.us_id
+        for s in missionnext.statuses(
+            [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)],
+            {},
+            set(),
+        )
+    ]
     assert order == [
-        "M-platform-US1", "M-platform-US2", "M-platform-US3",   # US3 absent from Sequencing → last
-        "M-catalog-US2", "M-catalog-US1",                       # Sequencing row order, not backlog
+        "M-platform-US1",
+        "M-platform-US2",
+        "M-platform-US3",  # US3 absent from Sequencing → last
+        "M-catalog-US2",
+        "M-catalog-US1",  # Sequencing row order, not backlog
     ]
     by = _run(done=["M-platform-US1", "M-catalog-US1"])
     assert by["M-catalog-US2"].status == "blocked"
@@ -222,8 +245,15 @@ def test_no_done_information_never_marks_done():
 
 
 def test_decision_with_empty_status_and_owner_prints_placeholders():
-    text = PLATFORM.replace("| D2 | New svc.metrics | OPEN | Alice |", "| D2 | New svc.metrics |  |  |")
-    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], {}, {"M-platform-US1"})}
+    text = PLATFORM.replace(
+        "| D2 | New svc.metrics | OPEN | Alice |", "| D2 | New svc.metrics |  |  |"
+    )
+    by = {
+        s.us_id: s
+        for s in missionnext.statuses(
+            [missionnext.parse_mission(text)], {}, {"M-platform-US1"}
+        )
+    }
     assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: ?)",)
 
 
@@ -232,7 +262,12 @@ def test_bare_us_id_in_blocks_cell_blocks_its_story():
         "| D2 | New svc.metrics | OPEN | Alice | M-platform-US2 |",
         "| D2 | New svc.metrics | OPEN | Alice | US2 |",
     )
-    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], {}, {"M-platform-US1"})}
+    by = {
+        s.us_id: s
+        for s in missionnext.statuses(
+            [missionnext.parse_mission(text)], {}, {"M-platform-US1"}
+        )
+    }
     assert by["M-platform-US2"].status == "blocked"
     assert by["M-platform-US2"].reasons == ("D2 OPEN (owner: Alice)",)
 
@@ -242,7 +277,10 @@ def test_lowercase_decided_status_still_counts_as_decided():
         "| D1 | New svc.api [arch §3.2] | DECIDED | lead | M-platform-US1 |",
         "| D1 | New svc.api [arch §3.2] | decided | lead | M-platform-US1 |",
     )
-    by = {s.us_id: s for s in missionnext.statuses([missionnext.parse_mission(text)], {}, set())}
+    by = {
+        s.us_id: s
+        for s in missionnext.statuses([missionnext.parse_mission(text)], {}, set())
+    }
     assert by["M-platform-US1"].status == "to-draft"
     assert by["M-platform-US1"].reasons == ()
 
@@ -256,7 +294,10 @@ def test_render_table_and_next_line():
     assert lines[1] == "|---|---|---|---|"
     assert "| M-platform-US1 | M-platform | done |  |" in lines
     assert "| M-platform-US2 | M-platform | blocked | D2 OPEN (owner: Alice) |" in lines
-    assert "| M-catalog-US2 | M-catalog | blocked | US M-catalog-US1 not done; US M-platform-US2 not done |" in lines
+    assert (
+        "| M-catalog-US2 | M-catalog | blocked | US M-catalog-US1 not done; US M-platform-US2 not done |"
+        in lines
+    )
     # M-platform-US3 has no dependency and no D-row, so it is the first
     # to-draft story in output order (before any M-catalog story).
     assert lines[-1] == "Next: M-platform-US3 — Backups"
@@ -283,8 +324,14 @@ def test_to_json_shape():
     assert data["notes"] == ["n1"]
     assert data["next"] == "M-platform-US1"
     assert data["stories"][0] == {
-        "us_id": "M-platform-US1", "mission_id": "M-platform", "title": "Foundation slice",
-        "status": "to-draft", "reasons": [],
+        "us_id": "M-platform-US1",
+        "mission_id": "M-platform",
+        "title": "Foundation slice",
+        "status": "to-draft",
+        "reasons": [],
     }
-    assert data["stories"][1]["reasons"] == ["US M-platform-US1 not done", "D2 OPEN (owner: Alice)"]
+    assert data["stories"][1]["reasons"] == [
+        "US M-platform-US1 not done",
+        "D2 OPEN (owner: Alice)",
+    ]
     assert missionnext.to_json([], [])["next"] is None

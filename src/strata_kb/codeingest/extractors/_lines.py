@@ -5,6 +5,7 @@ Dockerfile all use `\\` line continuation; splitting such text per line
 shipped fragments like `--tag ghcr.io/x:latest \\` as commands (reviewer
 G-2). Joining lives here, once, rather than per reader.
 """
+
 from __future__ import annotations
 
 

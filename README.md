@@ -1133,7 +1133,7 @@ ubuntu × 3.11/3.12/3.13 plus windows-latest.
 
 | Tier | What it does |
 |---|---|
-| **T0** | `ruff check .` |
+| **T0** | `ruff check .`, `ruff format --check .`, and `pyright` (basic mode, `src/`) |
 | **T1** | `pytest` against the source tree |
 | **T2** | Build wheel + sdist, `uv lock --check`, `twine check`, install the wheel into a clean venv, verify `kb --version` matches `pyproject.toml` (and the tag when releasing), and confirm `tests/`, `.kb/` and `sources/` never enter the package |
 | **T2b** | Install the built sdist into a separate clean venv, run `kb --version`, and load a packaged template through `importlib.resources` |

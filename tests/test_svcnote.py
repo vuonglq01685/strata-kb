@@ -17,8 +17,11 @@ def seeded(tmp_path: Path) -> Path:
     root = build_code_repo(tmp_path)
     core.run(
         core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-code",
-            repo_id="demo", scaffold_svc=True,
+            repo_root=root,
+            kb_dir=root / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
+            scaffold_svc=True,
         )
     )
     (root / ".kb" / "config.yaml").write_text(
@@ -27,8 +30,11 @@ def seeded(tmp_path: Path) -> Path:
     return root
 
 
-def _note(ticket="M-airspace-US4", title="Approve time-bound airspace",
-          refs=("ATM-STD §5.3", "ATM-STD §5.7")) -> svcnote.Note:
+def _note(
+    ticket="M-airspace-US4",
+    title="Approve time-bound airspace",
+    refs=("ATM-STD §5.3", "ATM-STD §5.7"),
+) -> svcnote.Note:
     return svcnote.Note(ticket=ticket, title=title, refs=refs)
 
 
@@ -61,16 +67,23 @@ def test_strict_build_skips_quality_rules_on_tool_written_content(seeded):
     # never by an LLM summary, so the C2 summary rules cannot apply to them.
     for n in range(1, 5):
         svcnote.add_note(
-            seeded / ".kb", "demo", "airspace-service", _note(ticket=f"M-airspace-US{n}")
+            seeded / ".kb",
+            "demo",
+            "airspace-service",
+            _note(ticket=f"M-airspace-US{n}"),
         )
-    report = build_kb(seeded / ".kb", allow_pending=True, strict=True, write_tokens=False)
+    report = build_kb(
+        seeded / ".kb", allow_pending=True, strict=True, write_tokens=False
+    )
     assert [e for e in report.errors if e.startswith("demo-code") or "hist." in e] == []
 
 
 def test_second_note_for_a_different_ticket_appends(seeded):
     svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
     report = svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(ticket="M-notify-US2", title="Notify on change", refs=("ATM-STD §9.1",)),
     )
     assert report.action == "added"
@@ -82,7 +95,9 @@ def test_second_note_for_a_different_ticket_appends(seeded):
 def test_rerunning_the_same_ticket_updates_instead_of_duplicating(seeded):
     svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
     report = svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(title="Approve time-bound airspace (revised)"),
     )
     assert report.action == "updated"
@@ -94,7 +109,9 @@ def test_rerunning_the_same_ticket_updates_instead_of_duplicating(seeded):
 
 def test_rows_are_sorted_by_ticket_id(seeded):
     for ticket in ("M-zulu-US1", "M-alpha-US1", "M-mike-US1"):
-        svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note(ticket=ticket))
+        svcnote.add_note(
+            seeded / ".kb", "demo", "airspace-service", _note(ticket=ticket)
+        )
     l2 = (seeded / ".kb" / "demo-svc" / "history.md").read_text(encoding="utf-8")
     assert l2.index("M-alpha-US1") < l2.index("M-mike-US1") < l2.index("M-zulu-US1")
 
@@ -147,38 +164,71 @@ def test_two_identical_runs_are_byte_identical(seeded):
 
 
 def test_cli_svc_note_happy_path(seeded):
-    result = runner.invoke(app, [
-        "svc", "note", "airspace-service",
-        "--kb-dir", str(seeded / ".kb"),
-        "--ticket", "M-airspace-US4",
-        "--title", "Approve time-bound airspace",
-        "--refs", "ATM-STD §5.3, ATM-STD §5.7",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "svc",
+            "note",
+            "airspace-service",
+            "--kb-dir",
+            str(seeded / ".kb"),
+            "--ticket",
+            "M-airspace-US4",
+            "--title",
+            "Approve time-bound airspace",
+            "--refs",
+            "ATM-STD §5.3, ATM-STD §5.7",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert "hist.airspace-service" in result.output
 
 
 def test_cli_svc_note_json_output(seeded):
-    result = runner.invoke(app, [
-        "svc", "note", "airspace-service",
-        "--kb-dir", str(seeded / ".kb"),
-        "--ticket", "M-airspace-US4", "--title", "T", "--refs", "D §1",
-        "--json",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "svc",
+            "note",
+            "airspace-service",
+            "--kb-dir",
+            str(seeded / ".kb"),
+            "--ticket",
+            "M-airspace-US4",
+            "--title",
+            "T",
+            "--refs",
+            "D §1",
+            "--json",
+        ],
+    )
     assert result.exit_code == 0, result.output
     import json
 
-    payload = json.loads(result.stdout)  # --json stdout stays pure (refresh notes go to stderr)
+    payload = json.loads(
+        result.stdout
+    )  # --json stdout stays pure (refresh notes go to stderr)
     assert payload["section_id"] == "hist.airspace-service"
     assert payload["action"] == "created"
 
 
 def test_cli_svc_note_unknown_service_exits_1(seeded):
-    result = runner.invoke(app, [
-        "svc", "note", "nope",
-        "--kb-dir", str(seeded / ".kb"),
-        "--ticket", "T-1", "--title", "T", "--refs", "D §1",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "svc",
+            "note",
+            "nope",
+            "--kb-dir",
+            str(seeded / ".kb"),
+            "--ticket",
+            "T-1",
+            "--title",
+            "T",
+            "--refs",
+            "D §1",
+        ],
+    )
     assert result.exit_code == 1
     assert "nope" in result.output
 
@@ -193,7 +243,9 @@ def test_cli_svc_note_unknown_service_exits_1(seeded):
 
 def test_pipe_in_title_is_escaped_in_l2_and_absent_in_l3(seeded):
     svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(title="Approve A|B corridor"),
     )
     l2 = (seeded / ".kb" / "demo-svc" / "history.md").read_text(encoding="utf-8")
@@ -210,7 +262,9 @@ def test_pipe_in_title_is_escaped_in_l2_and_absent_in_l3(seeded):
 def test_notes_for_two_services_coexist_in_shared_history_files(seeded):
     svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
     report = svcnote.add_note(
-        seeded / ".kb", "demo", "postgres",
+        seeded / ".kb",
+        "demo",
+        "postgres",
         _note(ticket="M-db-US1", title="Add index", refs=("ATM-STD §2",)),
     )
     assert report.section_id == "hist.postgres"
@@ -243,11 +297,15 @@ def test_notes_for_two_services_coexist_in_shared_history_files(seeded):
 
 def test_pipe_titled_row_survives_a_second_note(seeded):
     svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(title="Approve A|B corridor"),
     )
     report = svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(ticket="M-notify-US2", title="Notify on change", refs=("ATM-STD §9.1",)),
     )
     assert report.action == "added"
@@ -260,11 +318,15 @@ def test_pipe_titled_row_survives_a_second_note(seeded):
 
 def test_whitespace_padded_ticket_id_is_normalized_and_idempotent(seeded):
     svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(ticket="M-airspace-US4 "),  # trailing space -- a pasted/shell-quoted id
     )
     report = svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(ticket=" M-airspace-US4", title="Approve time-bound airspace (revised)"),
     )
     assert report.action == "updated"
@@ -282,10 +344,14 @@ def test_whitespace_padded_ticket_id_is_normalized_and_idempotent(seeded):
 def test_manifest_file_desync_on_target_section_is_rejected(seeded):
     svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
     hist = seeded / ".kb" / "demo-svc" / "history.md"
-    hist.write_text("# demo-svc\n\n> banner\n\nno hist heading here\n", encoding="utf-8")
+    hist.write_text(
+        "# demo-svc\n\n> banner\n\nno hist heading here\n", encoding="utf-8"
+    )
     with pytest.raises(svcnote.SvcNoteError) as exc:
         svcnote.add_note(
-            seeded / ".kb", "demo", "airspace-service",
+            seeded / ".kb",
+            "demo",
+            "airspace-service",
             _note(ticket="M-second-US1"),
         )
     assert "hist.airspace-service" in str(exc.value)
@@ -294,10 +360,14 @@ def test_manifest_file_desync_on_target_section_is_rejected(seeded):
 def test_manifest_file_desync_on_sibling_section_is_rejected(seeded):
     svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
     hist = seeded / ".kb" / "demo-svc" / "history.md"
-    hist.write_text("# demo-svc\n\n> banner\n\nno hist heading here\n", encoding="utf-8")
+    hist.write_text(
+        "# demo-svc\n\n> banner\n\nno hist heading here\n", encoding="utf-8"
+    )
     with pytest.raises(svcnote.SvcNoteError) as exc:
         svcnote.add_note(
-            seeded / ".kb", "demo", "postgres",
+            seeded / ".kb",
+            "demo",
+            "postgres",
             _note(ticket="M-db-US1", title="Add index", refs=("ATM-STD §2",)),
         )
     assert "hist.airspace-service" in str(exc.value)
@@ -316,7 +386,9 @@ def test_alignment_style_separator_row_is_not_treated_as_data(seeded):
     )
     hist.write_text(text, encoding="utf-8")
     report = svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(ticket="M-notify-US2", title="Notify on change", refs=("ATM-STD §9.1",)),
     )
     assert report.notes == 2  # NOT 3 -- the separator row must not become data
@@ -348,7 +420,8 @@ def test_missing_svc_manifest_raises_svcnoteerror(seeded):
 
 def test_malformed_svc_manifest_raises_svcnoteerror(seeded):
     (seeded / ".kb" / "demo-svc" / "_manifest.yaml").write_text(
-        "sections:\n\t- id: x\n", encoding="utf-8"  # tab indent -- invalid YAML
+        "sections:\n\t- id: x\n",
+        encoding="utf-8",  # tab indent -- invalid YAML
     )
     with pytest.raises(svcnote.SvcNoteError):
         svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
@@ -356,7 +429,8 @@ def test_malformed_svc_manifest_raises_svcnoteerror(seeded):
 
 def test_malformed_code_manifest_raises_svcnoteerror(seeded):
     (seeded / ".kb" / "demo-code" / "_manifest.yaml").write_text(
-        "sections:\n\t- id: x\n", encoding="utf-8"  # tab indent -- invalid YAML
+        "sections:\n\t- id: x\n",
+        encoding="utf-8",  # tab indent -- invalid YAML
     )
     with pytest.raises(svcnote.SvcNoteError):
         svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note())
@@ -368,7 +442,9 @@ def test_malformed_code_manifest_raises_svcnoteerror(seeded):
 
 def test_backtick_in_title_does_not_break_the_l3_fence(seeded):
     svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(title="Use ```rm -rf``` carefully"),
     )
     l3 = (seeded / ".kb" / "demo-svc" / "history.raw.md").read_text(encoding="utf-8")
@@ -393,7 +469,9 @@ def test_backtick_in_title_does_not_break_the_l3_fence(seeded):
 
 def test_embedded_nul_byte_is_stripped_not_written_or_misread_as_pipe(seeded):
     svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(title="a\x00b"),
     )
     l2 = (seeded / ".kb" / "demo-svc" / "history.md").read_text(encoding="utf-8")
@@ -407,7 +485,9 @@ def test_embedded_nul_byte_is_stripped_not_written_or_misread_as_pipe(seeded):
     # NUL had survived into the file, this call's sentinel swap/restore
     # would misread it as a literal "|" -- prove it does not.
     svcnote.add_note(
-        seeded / ".kb", "demo", "airspace-service",
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
         _note(ticket="M-notify-US2", title="Notify on change", refs=("ATM-STD §9.1",)),
     )
     l2_after = (seeded / ".kb" / "demo-svc" / "history.md").read_text(encoding="utf-8")
@@ -424,9 +504,7 @@ def test_embedded_nul_byte_is_stripped_not_written_or_misread_as_pipe(seeded):
 
 def test_empty_ticket_is_rejected(seeded):
     with pytest.raises(svcnote.SvcNoteError) as exc:
-        svcnote.add_note(
-            seeded / ".kb", "demo", "airspace-service", _note(ticket="")
-        )
+        svcnote.add_note(seeded / ".kb", "demo", "airspace-service", _note(ticket=""))
     assert "ticket" in str(exc.value).lower()
 
 

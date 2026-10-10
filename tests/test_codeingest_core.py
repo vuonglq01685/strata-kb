@@ -20,19 +20,27 @@ class _StubExtractor:
         return core.ExtractResult(
             sections=[
                 core.CodeSection(
-                    id="svc.beta", title="beta", summary="Service beta.",
-                    group="services", l2_md="Beta service.\n",
+                    id="svc.beta",
+                    title="beta",
+                    summary="Service beta.",
+                    group="services",
+                    l2_md="Beta service.\n",
                     l3_md="```yaml\nimage: beta:1\n```\n",
                 ),
                 core.CodeSection(
-                    id="svc.alpha", title="alpha", summary="Service alpha.",
-                    group="services", l2_md="Alpha service.\n",
+                    id="svc.alpha",
+                    title="alpha",
+                    summary="Service alpha.",
+                    group="services",
+                    l2_md="Alpha service.\n",
                     l3_md="```yaml\nimage: alpha:1\n```\n",
                 ),
                 core.CodeSection(
-                    id="dep.python", title="Python dependencies",
+                    id="dep.python",
+                    title="Python dependencies",
                     summary="3 direct Python dependencies.",
-                    group="deps", l2_md="typer, pydantic, pyyaml\n",
+                    group="deps",
+                    l2_md="typer, pydantic, pyyaml\n",
                     l3_md="```\ntyper>=0.12\n```\n",
                 ),
             ]
@@ -41,8 +49,11 @@ class _StubExtractor:
 
 def _opts(tmp_path: Path, **kw):
     return core.CodeIngestOptions(
-        repo_root=tmp_path, kb_dir=tmp_path / ".kb",
-        doc_id="demo-code", repo_id="demo", **kw
+        repo_root=tmp_path,
+        kb_dir=tmp_path / ".kb",
+        doc_id="demo-code",
+        repo_id="demo",
+        **kw,
     )
 
 
@@ -65,7 +76,9 @@ def test_one_md_and_raw_md_pair_per_group(tmp_path, monkeypatch):
     )
 
 
-def test_manifest_records_commit_and_commit_date_not_wall_clock(tmp_path, monkeypatch, run_git):
+def test_manifest_records_commit_and_commit_date_not_wall_clock(
+    tmp_path, monkeypatch, run_git
+):
     (tmp_path / "f.txt").write_text("x", encoding="utf-8")
     run_git(tmp_path, "init")
     run_git(tmp_path, "add", "-A")
@@ -82,7 +95,7 @@ def test_manifest_records_commit_and_commit_date_not_wall_clock(tmp_path, monkey
     )
     head = run_git(tmp_path, "rev-parse", "HEAD")
     assert m.revision == head[:7]
-    assert m.source_sha256 == ""   # G-15: the field is a content hash, not a git SHA
+    assert m.source_sha256 == ""  # G-15: the field is a content hash, not a git SHA
     assert m.ingested.isoformat() == "2020-01-02"
     assert all(s.status == "summarized" and s.summary for s in m.sections)
 
@@ -112,12 +125,16 @@ def test_rerun_preserves_per_section_tokens_written_by_build(tmp_path, monkeypat
     core.run(_opts(tmp_path))
     assert build_kb(tmp_path / ".kb").ok
     path = tmp_path / ".kb" / "demo-code" / "_manifest.yaml"
-    before = {s.id: s.tokens.l2 for s in
-              models.load_yaml_model(path, models.Manifest).sections}
+    before = {
+        s.id: s.tokens.l2
+        for s in models.load_yaml_model(path, models.Manifest).sections
+    }
     assert all(v > 0 for v in before.values())
     core.run(_opts(tmp_path))
-    after = {s.id: s.tokens.l2 for s in
-             models.load_yaml_model(path, models.Manifest).sections}
+    after = {
+        s.id: s.tokens.l2
+        for s in models.load_yaml_model(path, models.Manifest).sections
+    }
     assert after == before
 
 
@@ -154,11 +171,18 @@ def test_zero_detection_beyond_tree_raises(tmp_path, monkeypatch):
             return True
 
         def extract(self, root, opts):
-            return core.ExtractResult(sections=[
-                core.CodeSection(id="struct.tree", title="Repository tree",
-                                 summary="Folder layout.", group="structure",
-                                 l2_md="- src/\n", l3_md="```\nsrc/\n```\n")
-            ])
+            return core.ExtractResult(
+                sections=[
+                    core.CodeSection(
+                        id="struct.tree",
+                        title="Repository tree",
+                        summary="Folder layout.",
+                        group="structure",
+                        l2_md="- src/\n",
+                        l3_md="```\nsrc/\n```\n",
+                    )
+                ]
+            )
 
     class _Silent:
         name = "deps"
@@ -191,11 +215,18 @@ def test_zero_detection_raises_even_when_a_non_tree_extractor_detects_but_contri
             return True
 
         def extract(self, root, opts):
-            return core.ExtractResult(sections=[
-                core.CodeSection(id="struct.tree", title="Repository tree",
-                                 summary="Folder layout.", group="structure",
-                                 l2_md="- src/\n", l3_md="```\nsrc/\n```\n")
-            ])
+            return core.ExtractResult(
+                sections=[
+                    core.CodeSection(
+                        id="struct.tree",
+                        title="Repository tree",
+                        summary="Folder layout.",
+                        group="structure",
+                        l2_md="- src/\n",
+                        l3_md="```\nsrc/\n```\n",
+                    )
+                ]
+            )
 
     class _DetectsButContributesNothing:
         name = "deps"
@@ -245,10 +276,18 @@ def test_duplicate_section_id_across_extractors_raises(tmp_path, monkeypatch):
             return True
 
         def extract(self, root, opts):
-            return core.ExtractResult(sections=[
-                core.CodeSection(id="svc.x", title="x", summary="s.",
-                                 group="services", l2_md="a\n", l3_md="```\na\n```\n")
-            ])
+            return core.ExtractResult(
+                sections=[
+                    core.CodeSection(
+                        id="svc.x",
+                        title="x",
+                        summary="s.",
+                        group="services",
+                        l2_md="a\n",
+                        l3_md="```\na\n```\n",
+                    )
+                ]
+            )
 
     class _B:
         name = "b"
@@ -257,10 +296,18 @@ def test_duplicate_section_id_across_extractors_raises(tmp_path, monkeypatch):
             return True
 
         def extract(self, root, opts):
-            return core.ExtractResult(sections=[
-                core.CodeSection(id="svc.x", title="x2", summary="s2.",
-                                 group="services", l2_md="b\n", l3_md="```\nb\n```\n")
-            ])
+            return core.ExtractResult(
+                sections=[
+                    core.CodeSection(
+                        id="svc.x",
+                        title="x2",
+                        summary="s2.",
+                        group="services",
+                        l2_md="b\n",
+                        l3_md="```\nb\n```\n",
+                    )
+                ]
+            )
 
     monkeypatch.setattr(core, "ALL_EXTRACTORS", [_A(), _B()])
     with pytest.raises(core.CodeIngestError):
@@ -275,19 +322,26 @@ def test_stale_group_files_are_pruned_when_a_group_disappears(tmp_path, monkeypa
             return True
 
         def extract(self, root, opts):
-            return core.ExtractResult(sections=[
-                core.CodeSection(
-                    id="svc.alpha", title="alpha", summary="Service alpha.",
-                    group="services", l2_md="Alpha service.\n",
-                    l3_md="```yaml\nimage: alpha:1\n```\n",
-                ),
-                core.CodeSection(
-                    id="dep.python", title="Python dependencies",
-                    summary="3 direct Python dependencies.",
-                    group="deps", l2_md="typer, pydantic, pyyaml\n",
-                    l3_md="```\ntyper>=0.12\n```\n",
-                ),
-            ])
+            return core.ExtractResult(
+                sections=[
+                    core.CodeSection(
+                        id="svc.alpha",
+                        title="alpha",
+                        summary="Service alpha.",
+                        group="services",
+                        l2_md="Alpha service.\n",
+                        l3_md="```yaml\nimage: alpha:1\n```\n",
+                    ),
+                    core.CodeSection(
+                        id="dep.python",
+                        title="Python dependencies",
+                        summary="3 direct Python dependencies.",
+                        group="deps",
+                        l2_md="typer, pydantic, pyyaml\n",
+                        l3_md="```\ntyper>=0.12\n```\n",
+                    ),
+                ]
+            )
 
     class _OneGroup:
         name = "stub"
@@ -296,13 +350,18 @@ def test_stale_group_files_are_pruned_when_a_group_disappears(tmp_path, monkeypa
             return True
 
         def extract(self, root, opts):
-            return core.ExtractResult(sections=[
-                core.CodeSection(
-                    id="svc.alpha", title="alpha", summary="Service alpha.",
-                    group="services", l2_md="Alpha service.\n",
-                    l3_md="```yaml\nimage: alpha:1\n```\n",
-                ),
-            ])
+            return core.ExtractResult(
+                sections=[
+                    core.CodeSection(
+                        id="svc.alpha",
+                        title="alpha",
+                        summary="Service alpha.",
+                        group="services",
+                        l2_md="Alpha service.\n",
+                        l3_md="```yaml\nimage: alpha:1\n```\n",
+                    ),
+                ]
+            )
 
     monkeypatch.setattr(core, "ALL_EXTRACTORS", [_TwoGroups()])
     core.run(_opts(tmp_path))
@@ -332,12 +391,21 @@ def test_full_extractor_set_on_the_fixture_repo_builds_clean(tmp_path):
     con.close()
     report = core.run(
         core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-code", repo_id="demo",
+            repo_root=root,
+            kb_dir=root / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
             db_paths=(db,),
         )
     )
     all_extractor_names = {
-        "services", "deps", "commands", "tree", "schema", "integrations", "api"
+        "services",
+        "deps",
+        "commands",
+        "tree",
+        "schema",
+        "integrations",
+        "api",
     }
     assert set(report.detected) >= all_extractor_names
     # Test gap (task review): the assertion above only checks what
@@ -385,9 +453,14 @@ def test_ingest_calls_git_ls_files_a_small_bounded_number_of_times(
 
     monkeypatch.setattr(tree_ext, "_git_ls_files_uncached", _counting)
 
-    core.run(core.CodeIngestOptions(
-        repo_root=root, kb_dir=root / ".kb", doc_id="demo-code", repo_id="demo",
-    ))
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root,
+            kb_dir=root / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
+        )
+    )
 
     # A small named bound, not "== 1": this pins that memoisation is
     # actually collapsing the many `walk_tree()` calls every extractor
@@ -424,7 +497,10 @@ def test_generated_document_is_searchable_through_the_hub(
     con.close()
     core.run(
         core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-code", repo_id="demo",
+            repo_root=root,
+            kb_dir=root / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
             db_paths=(db,),
         )
     )
@@ -502,23 +578,37 @@ def test_every_subprocess_run_call_in_codeingest_core_has_a_verifiably_safe_stdi
 # ---------------------------------------------------------------------------
 
 
-def _write_human_doc(doc_dir: Path, title: str = "Poly hand-written domain doc") -> None:
+def _write_human_doc(
+    doc_dir: Path, title: str = "Poly hand-written domain doc"
+) -> None:
     doc_dir.mkdir(parents=True)
-    (doc_dir / "body.md").write_text("## ch1 Chapter one\n\nHuman prose.\n", encoding="utf-8")
-    (doc_dir / "body.raw.md").write_text("## ch1 Chapter one\n\nRaw prose.\n", encoding="utf-8")
+    (doc_dir / "body.md").write_text(
+        "## ch1 Chapter one\n\nHuman prose.\n", encoding="utf-8"
+    )
+    (doc_dir / "body.raw.md").write_text(
+        "## ch1 Chapter one\n\nRaw prose.\n", encoding="utf-8"
+    )
     models.save_yaml_model(
         doc_dir / "_manifest.yaml",
         models.Manifest(
-            id="demo-code", title=title,
-            sections=[models.SectionEntry(
-                id="ch1", title="Chapter one", summary="A curated chapter.",
-                status="reviewed", file="body",
-            )],
+            id="demo-code",
+            title=title,
+            sections=[
+                models.SectionEntry(
+                    id="ch1",
+                    title="Chapter one",
+                    summary="A curated chapter.",
+                    status="reviewed",
+                    file="body",
+                )
+            ],
         ),
     )
 
 
-def test_human_document_at_the_code_slot_is_refused_and_left_intact(tmp_path, monkeypatch):
+def test_human_document_at_the_code_slot_is_refused_and_left_intact(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
     doc_dir = tmp_path / ".kb" / "demo-code"
     _write_human_doc(doc_dir)
@@ -536,7 +626,9 @@ def test_human_document_at_the_code_slot_is_refused_and_left_intact(tmp_path, mo
 def test_document_with_a_foreign_section_id_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
     doc_dir = tmp_path / ".kb" / "demo-code"
-    _write_human_doc(doc_dir, title="demo — code knowledge")   # title passes, id does not
+    _write_human_doc(
+        doc_dir, title="demo — code knowledge"
+    )  # title passes, id does not
     with pytest.raises(core.CodeIngestError) as excinfo:
         core.run(_opts(tmp_path))
     assert "ch1" in str(excinfo.value)

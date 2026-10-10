@@ -6,6 +6,7 @@ Usage:  python docs/src/build_pdf.py [name ...]
 Fonts come from macOS's Supplemental directory because they carry the full
 Vietnamese diacritic set; ReportLab's built-in Helvetica does not.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -24,12 +25,21 @@ FONT_DIR = Path("/System/Library/Fonts/Supplemental")
 TITLES = {
     "architecture.en": ("Strata — Architecture", "Knowledge Base as Code"),
     "architecture.vi": ("Strata — Kiến trúc hệ thống", "Knowledge Base as Code"),
-    "guide-hub-child.en": ("Strata — Hub & Child Guide", "For knowledge owners and authors"),
-    "guide-hub-child.vi": ("Strata — Hướng dẫn Hub & Child", "Dành cho người quản trị và biên soạn tri thức"),
+    "guide-hub-child.en": (
+        "Strata — Hub & Child Guide",
+        "For knowledge owners and authors",
+    ),
+    "guide-hub-child.vi": (
+        "Strata — Hướng dẫn Hub & Child",
+        "Dành cho người quản trị và biên soạn tri thức",
+    ),
     "guide-ba.en": ("Strata — BA Guide", "For business analysts"),
     "guide-ba.vi": ("Strata — Hướng dẫn BA", "Dành cho Business Analyst"),
     "guide-dev.en": ("Strata — Developer Guide", "For engineers implementing tickets"),
-    "guide-dev.vi": ("Strata — Hướng dẫn Developer", "Dành cho kỹ sư triển khai ticket"),
+    "guide-dev.vi": (
+        "Strata — Hướng dẫn Developer",
+        "Dành cho kỹ sư triển khai ticket",
+    ),
 }
 
 CSS = """
@@ -149,8 +159,12 @@ def render(name: str, version: str, stamp: str, css: str) -> Path:
         md, extensions=["tables", "fenced_code", "sane_lists", "attr_list"]
     )
     html = PAGE.format(
-        title=title, subtitle=subtitle, css=css, body=body,
-        version=version, stamp=stamp,
+        title=title,
+        subtitle=subtitle,
+        css=css,
+        body=body,
+        version=version,
+        stamp=stamp,
     )
     dest = OUT / f"strata-{name.replace('.', '.')}.pdf"
     with dest.open("wb") as fh:

@@ -12,7 +12,9 @@ from strata_kb.ingest import tableimages as ti
 
 
 def _cell(row: int, col: int, left: float, top: float, right: float, bottom: float):
-    return ti.Cell(row=row, col=col, box=ti.Box(left=left, top=top, right=right, bottom=bottom))
+    return ti.Cell(
+        row=row, col=col, box=ti.Box(left=left, top=top, right=right, bottom=bottom)
+    )
 
 
 # Geometry taken from ICAO Annex 12 p.24 table (docling TOPLEFT coordinates).
@@ -64,7 +66,9 @@ TABLE_MD = "\n".join(
 
 
 def test_inject_puts_the_image_in_the_addressed_body_cell():
-    out = ti.inject(TABLE_MD, {(1, 2): "![](assets/a.png)", (2, 2): "![](assets/b.png)"})
+    out = ti.inject(
+        TABLE_MD, {(1, 2): "![](assets/a.png)", (2, 2): "![](assets/b.png)"}
+    )
 
     lines = out.splitlines()
     assert "![](assets/a.png)" in lines[2] and "Require assistance" in lines[2]
@@ -116,13 +120,13 @@ def test_empty_glyph_cells_lists_rows_the_detector_missed():
 def test_empty_glyph_cell_spans_the_whole_row_not_the_text_line():
     # A row's text bbox is one line tall; the glyph is drawn taller than that,
     # so cropping the text band alone returns a sliver of the stroke.
-    (_, _, box), = ti.empty_glyph_cells(GRID, placed={(1, 1): GLYPH}, table=TABLE_BOX)
+    ((_, _, box),) = ti.empty_glyph_cells(GRID, placed={(1, 1): GLYPH}, table=TABLE_BOX)
 
     assert (box.top, box.bottom) == (180.0, 220.0)  # midpoint of the gap -> table edge
 
 
 def test_empty_glyph_cell_takes_its_width_from_the_glyphs_already_found():
-    (_, _, box), = ti.empty_glyph_cells(GRID, placed={(1, 1): GLYPH}, table=TABLE_BOX)
+    ((_, _, box),) = ti.empty_glyph_cells(GRID, placed={(1, 1): GLYPH}, table=TABLE_BOX)
 
     assert (box.left, box.right) == (245.0 - ti.GLYPH_PADDING, 285.0 + ti.GLYPH_PADDING)
 

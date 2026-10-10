@@ -7,6 +7,7 @@ the same way on every run:
 
     services, deps, commands, tree, schema, integrations, api
 """
+
 from __future__ import annotations
 
 from strata_kb.codeingest.extractors.api import ApiExtractor
@@ -18,6 +19,11 @@ from strata_kb.codeingest.extractors.services import ServicesExtractor
 from strata_kb.codeingest.extractors.tree import TreeExtractor
 
 ALL_EXTRACTORS: list = [
-    ServicesExtractor(), DepsExtractor(), CommandsExtractor(), TreeExtractor(),
-    SchemaExtractor(), IntegrationsExtractor(), ApiExtractor(),
+    ServicesExtractor(),
+    DepsExtractor(),
+    CommandsExtractor(),
+    TreeExtractor(),
+    SchemaExtractor(),
+    IntegrationsExtractor(),
+    ApiExtractor(),
 ]

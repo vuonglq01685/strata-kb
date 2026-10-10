@@ -2,6 +2,7 @@
 call had returned -- a crash in an hours-long run lost every paid-for call.
 Results are now written every FLUSH_EVERY sections, with the same final
 files as one write at the end."""
+
 from __future__ import annotations
 
 import json
@@ -26,15 +27,31 @@ def _kb(tmp_path: Path, n: int) -> Path:
     ids = [("R" if i % 4 == 0 else f"{i}") for i in range(n)]
     body = "Prose that is long enough to need a model call. " * 6
     (doc / "ch1.raw.md").write_text(
-        "".join(f"## {sid} T{i}\n\n{body}{i}\n\n" for i, sid in enumerate(ids)), encoding="utf-8")
+        "".join(f"## {sid} T{i}\n\n{body}{i}\n\n" for i, sid in enumerate(ids)),
+        encoding="utf-8",
+    )
     (doc / "ch1.md").write_text(
-        "".join(f"## {sid} T{i}\n\n<!-- TODO:summarize {sid} -->\n\n" for i, sid in enumerate(ids)),
-        encoding="utf-8")
-    models.save_yaml_model(doc / "_manifest.yaml", models.Manifest(
-        id="d1", title="Doc", sections=[
-            models.SectionEntry(id=sid, title=f"T{i}", file="ch1") for i, sid in enumerate(ids)
-        ]))
-    models.save_yaml_model(kb / "index.yaml", models.KBIndex(docs=[models.IndexEntry(id="d1", title="Doc")]))
+        "".join(
+            f"## {sid} T{i}\n\n<!-- TODO:summarize {sid} -->\n\n"
+            for i, sid in enumerate(ids)
+        ),
+        encoding="utf-8",
+    )
+    models.save_yaml_model(
+        doc / "_manifest.yaml",
+        models.Manifest(
+            id="d1",
+            title="Doc",
+            sections=[
+                models.SectionEntry(id=sid, title=f"T{i}", file="ch1")
+                for i, sid in enumerate(ids)
+            ],
+        ),
+    )
+    models.save_yaml_model(
+        kb / "index.yaml",
+        models.KBIndex(docs=[models.IndexEntry(id="d1", title="Doc")]),
+    )
     return kb
 
 
@@ -58,9 +75,9 @@ class Runner:
 def _state(kb: Path):
     return (
         (kb / "d1" / "ch1.md").read_text(encoding="utf-8"),
-        models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest).model_dump(
-            exclude={"sections": {"__all__": {"provenance"}}}
-        ),
+        models.load_yaml_model(
+            kb / "d1" / "_manifest.yaml", models.Manifest
+        ).model_dump(exclude={"sections": {"__all__": {"provenance"}}}),
     )
 
 

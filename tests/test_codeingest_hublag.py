@@ -17,7 +17,9 @@ def clone(tmp_path, run_git):
     src.mkdir()
     build_code_repo(src)
     (src / ".kb").mkdir(exist_ok=True)
-    (src / ".kb" / "config.yaml").write_text('kind: dev\nrepo_id: "demo"\n', encoding="utf-8")
+    (src / ".kb" / "config.yaml").write_text(
+        'kind: dev\nrepo_id: "demo"\n', encoding="utf-8"
+    )
     (src / ".gitignore").write_text(".kb/*-code/\n", encoding="utf-8")
     run_git(src, "init", "-b", "main")
     run_git(src, "add", "-A")
@@ -31,9 +33,14 @@ def clone(tmp_path, run_git):
 
 def _publish(clone: Path, fed: Path) -> None:
     """The hub copy CI would publish for the clone's current commit."""
-    core.run(core.CodeIngestOptions(
-        repo_root=clone, kb_dir=clone / ".kb", doc_id="demo-code", repo_id="demo",
-    ))
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=clone,
+            kb_dir=clone / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
+        )
+    )
     dest = fed / "demo" / "demo-code"
     if dest.exists():
         shutil.rmtree(dest)
@@ -156,7 +163,9 @@ def test_unknown_on_a_version_pin_mismatch(clone, tmp_path, monkeypatch):
     _publish(clone, fed)
     wf = clone / ".github" / "workflows"
     wf.mkdir(parents=True, exist_ok=True)
-    (wf / "kb-code.yml").write_text("- run: pip install strata-kb==0.0.1\n", encoding="utf-8")
+    (wf / "kb-code.yml").write_text(
+        "- run: pip install strata-kb==0.0.1\n", encoding="utf-8"
+    )
     monkeypatch.setattr(strata_kb, "__version__", "1.4.0")
     report = hublag.check(clone, clone / ".kb", fed, "demo")
     assert report.state == "unknown" and "pins 0.0.1" in report.reason
@@ -171,12 +180,16 @@ def test_unknown_without_a_remote(tmp_path, run_git):
     run_git(root, "commit", "-m", "init")
     fed = tmp_path / "hub" / "federation"
     (fed / "demo" / "demo-code").mkdir(parents=True)
-    (fed / "demo" / "demo-code" / "_manifest.yaml").write_text("id: demo-code\ntitle: t\n", encoding="utf-8")
+    (fed / "demo" / "demo-code" / "_manifest.yaml").write_text(
+        "id: demo-code\ntitle: t\n", encoding="utf-8"
+    )
     report = hublag.check(root, root / ".kb", fed, "demo")
     assert report.state == "unknown" and "remote" in report.reason
 
 
-def test_worktree_is_removed_when_code_ingest_fails(clone, tmp_path, run_git, monkeypatch):
+def test_worktree_is_removed_when_code_ingest_fails(
+    clone, tmp_path, run_git, monkeypatch
+):
     """Controller ruling: spec §6 requires the worktree to be removed on
     failure too, not only on the happy path (test_worktree_is_removed_
     afterwards above only exercises the happy path)."""

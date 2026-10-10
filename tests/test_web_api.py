@@ -31,17 +31,17 @@ def test_health_is_always_minimal(client_factory, fed_hub):
     /ui and `kb doctor`."""
     client = client_factory(hub=str(fed_hub))
     assert client.get("/api/health").json() == {"status": "ok"}
-    assert (
-        client.get("/api/health", headers={"Authorization": "Bearer wrong"}).json()
-        == {"status": "ok"}
-    )
+    assert client.get(
+        "/api/health", headers={"Authorization": "Bearer wrong"}
+    ).json() == {"status": "ok"}
 
 
 def test_docs_lists_federation_with_repo(client_factory, fed_hub):
     client = client_factory(hub=str(fed_hub))
     docs = client.get("/api/docs").json()["docs"]
     assert {(d["repo"], d["id"]) for d in docs} == {
-        ("arinc-kb", "arinc-424"), ("icao-kb", "icao-annex-2"),
+        ("arinc-kb", "arinc-424"),
+        ("icao-kb", "icao-annex-2"),
     }
 
 
@@ -80,7 +80,9 @@ def test_hub_unreachable_returns_503(client_factory, tmp_path, monkeypatch):
 # --- adapted regression coverage (hub-unreachable, doc/section shapes) -----
 
 
-def test_health_stays_minimal_when_hub_unreachable(client_factory, tmp_path, monkeypatch):
+def test_health_stays_minimal_when_hub_unreachable(
+    client_factory, tmp_path, monkeypatch
+):
     monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache2"))
     resp = client_factory(hub=str(tmp_path / "missing-hub-2")).get("/api/health")
     assert resp.status_code == 200
@@ -88,9 +90,11 @@ def test_health_stays_minimal_when_hub_unreachable(client_factory, tmp_path, mon
 
 
 def test_doc_detail_returns_manifest_sections(client_factory, fed_hub):
-    data = client_factory(hub=str(fed_hub)).get(
-        "/api/docs/arinc-424", params={"repo": "arinc-kb"}
-    ).json()
+    data = (
+        client_factory(hub=str(fed_hub))
+        .get("/api/docs/arinc-424", params={"repo": "arinc-kb"})
+        .json()
+    )
     assert data["id"] == "arinc-424"
     assert data["repo"] == "arinc-kb"
     ids = [s["id"] for s in data["sections"]]
@@ -214,7 +218,10 @@ def test_api_search_tokens_describe_the_returned_text(client_factory, fed_hub):
     # already does -- so this test does not silently go vacuous if the recipe
     # ever stops firing.
     fixture_result = search(HubHandle(root=fed_hub), "GRYPHON42")[0]
-    assert fixture_result.snippet and fixture_result.tokens != fixture_result.content_tokens
+    assert (
+        fixture_result.snippet
+        and fixture_result.tokens != fixture_result.content_tokens
+    )
 
     client = client_factory(hub=str(fed_hub))
     body = client.get("/api/search", params={"q": "GRYPHON42"}).json()
@@ -235,7 +242,8 @@ def test_api_search_reports_stale_hub_note(client_factory, fed_hub, monkeypatch)
     from strata_kb.hub import HubHandle
 
     monkeypatch.setattr(
-        hub_mod, "resolve_hub",
+        hub_mod,
+        "resolve_hub",
         lambda hub_ref: HubHandle(root=fed_hub, stale=True, age_seconds=42.0),
     )
     client = client_factory(hub=str(fed_hub))
@@ -247,9 +255,11 @@ def test_api_search_reports_stale_hub_note(client_factory, fed_hub, monkeypatch)
 
 
 def test_api_search_omits_notes_key_when_hub_is_fresh(client_factory, fed_hub):
-    body = client_factory(hub=str(fed_hub)).get(
-        "/api/search", params={"q": "restrictive airspace"}
-    ).json()
+    body = (
+        client_factory(hub=str(fed_hub))
+        .get("/api/search", params={"q": "restrictive airspace"})
+        .json()
+    )
     assert body["results"]
     assert "notes" not in body
 

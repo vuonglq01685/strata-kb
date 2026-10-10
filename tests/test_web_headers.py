@@ -11,19 +11,19 @@ REQUIRED = {
 
 def test_headers_on_an_authorised_page(web_client_logged_in):
     resp = web_client_logged_in.get("/ui")
-    assert REQUIRED <= set(resp.headers)
+    assert set(resp.headers) >= REQUIRED
 
 
 def test_headers_on_the_login_redirect(web_client):
     resp = web_client.get("/ui", follow_redirects=False)
     assert resp.status_code == 302
-    assert REQUIRED <= set(resp.headers)
+    assert set(resp.headers) >= REQUIRED
 
 
 def test_headers_on_a_401(web_client):
     resp = web_client.get("/api/docs")
     assert resp.status_code == 401
-    assert REQUIRED <= set(resp.headers)
+    assert set(resp.headers) >= REQUIRED
 
 
 def test_csp_allows_the_one_external_script_and_inline_styles(web_client_logged_in):
@@ -36,12 +36,14 @@ def test_csp_allows_the_one_external_script_and_inline_styles(web_client_logged_
 
 
 def test_hsts_only_over_https(web_client, web_client_https):
-    assert "strict-transport-security" not in web_client.get(
-        "/ui", follow_redirects=False
-    ).headers
-    assert "strict-transport-security" in web_client_https.get(
-        "/ui", follow_redirects=False
-    ).headers
+    assert (
+        "strict-transport-security"
+        not in web_client.get("/ui", follow_redirects=False).headers
+    )
+    assert (
+        "strict-transport-security"
+        in web_client_https.get("/ui", follow_redirects=False).headers
+    )
 
 
 def test_a_header_the_wrapped_app_already_set_is_not_duplicated():

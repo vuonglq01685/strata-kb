@@ -52,7 +52,14 @@ class Runner:
         `--model` as the prompt and ignore stdin entirely (controller
         ruling R7)."""
         if self.name == "claude":
-            cmd = [self.executable, "-p", "--model", self.model, "--output-format", "json"]
+            cmd = [
+                self.executable,
+                "-p",
+                "--model",
+                self.model,
+                "--output-format",
+                "json",
+            ]
         else:
             # copilot: prompt arrives on stdin only; -s drops metadata
             cmd = [self.executable, "--model", self.model, "-s"]
@@ -63,13 +70,21 @@ class Runner:
             env = os.environ | {"MAX_THINKING_TOKENS": str(thinking_budget(prompt))}
         try:
             proc = subprocess.run(
-                cmd, input=prompt, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=self.timeout, env=env,
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.timeout,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise RunnerError(f"{self.name}: timed out after {self.timeout}s") from exc
         if proc.returncode != 0:
-            raise RunnerError(f"{self.name}: exit {proc.returncode}: {proc.stderr.strip()[:500]}")
+            raise RunnerError(
+                f"{self.name}: exit {proc.returncode}: {proc.stderr.strip()[:500]}"
+            )
         return _extract_reply(self.name, proc.stdout)
 
 
@@ -105,6 +120,11 @@ def detect_runner(cli_choice: str | None, config: LLMConfig) -> Runner | None:
     for name in candidates:
         path = shutil.which(name)
         if path:
-            return Runner(name=name, executable=path, model=config.model,
-                          effort=config.effort, timeout=config.timeout)
+            return Runner(
+                name=name,
+                executable=path,
+                model=config.model,
+                effort=config.effort,
+                timeout=config.timeout,
+            )
     return None

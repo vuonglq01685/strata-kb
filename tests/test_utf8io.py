@@ -1,5 +1,6 @@
 """Windows pipes/redirects default to cp1252 — force UTF-8 at the entrypoints
 (spec 2026-07-14-windows-support R2/R3)."""
+
 import os
 import subprocess
 import sys
@@ -9,22 +10,24 @@ def _run_py(code: str, input_bytes: bytes = b"") -> subprocess.CompletedProcess[
     # PYTHONIOENCODING=cp1252 simulates a Windows pipe on any OS.
     env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
     return subprocess.run(
-        [sys.executable, "-c", code], input=input_bytes,
-        capture_output=True, env=env,
+        [sys.executable, "-c", code],
+        input=input_bytes,
+        capture_output=True,
+        env=env,
     )
 
 
 def test_cli_import_forces_utf8_stdout():
     proc = _run_py("from strata_kb import cli\nprint('§ tiếng Việt')")
     assert proc.returncode == 0, proc.stderr
-    assert "§ tiếng Việt".encode("utf-8") in proc.stdout
+    assert "§ tiếng Việt".encode() in proc.stdout
 
 
 def test_cli_import_forces_utf8_stdin():
     # Without the fix, UTF-8 bytes on stdin decode as cp1252 → mojibake.
     proc = _run_py(
         "from strata_kb import cli\nimport sys\nsys.stdout.write(sys.stdin.read())",
-        input_bytes="§ tiếng Việt".encode("utf-8"),
+        input_bytes="§ tiếng Việt".encode(),
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.decode("utf-8") == "§ tiếng Việt"

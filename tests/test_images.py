@@ -54,9 +54,12 @@ def test_image_ref_sanitizes_alt():
 
 
 def test_resolve_description_priority():
-    assert images.resolve_description("Figure 5-1. Holding", "ocr junk") == "Figure 5-1. Holding"
+    assert (
+        images.resolve_description("Figure 5-1. Holding", "ocr junk")
+        == "Figure 5-1. Holding"
+    )
     assert images.resolve_description("  ", "VOR DME") == "VOR DME"
-    assert images.resolve_description("", "ab") == ""      # below MIN_OCR_CHARS
+    assert images.resolve_description("", "ab") == ""  # below MIN_OCR_CHARS
     assert images.resolve_description("", "") == ""
     assert images.resolve_description("a  b\n c", "") == "a b c"  # whitespace collapsed
 
@@ -146,7 +149,9 @@ def _triangle(size=48, jitter=0) -> Image.Image:
 
     img = Image.new("RGB", (size, size), (255, 255, 255))
     d = ImageDraw.Draw(img)
-    d.polygon([(size // 2, 4 + jitter), (4, size - 4), (size - 4, size - 4)], fill=(0, 0, 0))
+    d.polygon(
+        [(size // 2, 4 + jitter), (4, size - 4), (size - 4, size - 4)], fill=(0, 0, 0)
+    )
     return img
 
 

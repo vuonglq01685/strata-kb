@@ -18,8 +18,7 @@ def repo(tmp_path: Path) -> Path:
 
 def _opts(root: Path, **kw):
     return core.CodeIngestOptions(
-        repo_root=root, kb_dir=root / ".kb",
-        doc_id="demo-code", repo_id="demo", **kw
+        repo_root=root, kb_dir=root / ".kb", doc_id="demo-code", repo_id="demo", **kw
     )
 
 
@@ -103,7 +102,9 @@ class TestTreeExtractor:
         assert body.index("- Dockerfile") < body.index("- docker-compose.yml")
         assert body.index("__init__.py") < body.index("service.py")
         top_level_dirs = [
-            ln for ln in s.l2_md.splitlines() if ln.startswith("- ") and ln.endswith("/")
+            ln
+            for ln in s.l2_md.splitlines()
+            if ln.startswith("- ") and ln.endswith("/")
         ]
         assert top_level_dirs == ["- .github/", "- db/", "- src/", "- web/"]
 
@@ -134,15 +135,19 @@ class TestTreeExtractor:
             "stub\n", encoding="utf-8"
         )
         opts = core.CodeIngestOptions(
-            repo_root=repo, kb_dir=Path("docs") / "kb",
-            doc_id="demo-code", repo_id="demo",
+            repo_root=repo,
+            kb_dir=Path("docs") / "kb",
+            doc_id="demo-code",
+            repo_id="demo",
         )
         s = _by_id(tree_ext.TreeExtractor().extract(repo, opts))["struct.tree"]
         body = s.l2_md + s.l3_md
         assert "docs/kb" not in body
         assert "structure.md" not in body
 
-    def test_git_ignored_directories_are_absent_when_root_is_a_repo(self, repo, run_git):
+    def test_git_ignored_directories_are_absent_when_root_is_a_repo(
+        self, repo, run_git
+    ):
         # Reviewer G-3: an unfiltered os.walk shipped .venv-artifact/,
         # .worktrees/ and a previous run's own output as "tracked files".
         (repo / ".gitignore").write_text(".venv-x/\nkb1/\n", encoding="utf-8")
@@ -181,14 +186,18 @@ class TestTreeExtractor:
         run_git(repo, "init")
         run_git(repo, "add", "-A")
         run_git(repo, "commit", "-m", "c1")
-        before = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        before = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))[
+            "struct.tree"
+        ]
         assert "new_file.py" not in before.l3_md
 
         (repo / "new_file.py").write_text("", encoding="utf-8")
         run_git(repo, "add", "new_file.py")
         run_git(repo, "commit", "-m", "c2")
 
-        after = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
+        after = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))[
+            "struct.tree"
+        ]
         assert "new_file.py" in after.l3_md
 
     def test_ls_files_cache_size_does_not_grow_across_many_index_states_of_one_root(
@@ -223,11 +232,13 @@ class TestTreeExtractor:
         assert any("not a git repository" in w for w in result.warnings)
         assert "src/airspace" in s.l3_md
 
-    def test_repo_with_nothing_tracked_falls_back_to_the_unfiltered_walk(self, repo, run_git):
+    def test_repo_with_nothing_tracked_falls_back_to_the_unfiltered_walk(
+        self, repo, run_git
+    ):
         # User-approved correction (reviewer G-3a wording split): a repo
         # with nothing tracked is a real repository, so "not a git
         # repository" would be false here -- it gets its own message.
-        run_git(repo, "init")   # no add, no commit: `git ls-files` lists nothing
+        run_git(repo, "init")  # no add, no commit: `git ls-files` lists nothing
         result = tree_ext.TreeExtractor().extract(repo, _opts(repo))
         s = _by_id(result)["struct.tree"]
         assert "src/airspace" in s.l3_md
@@ -255,8 +266,14 @@ class TestTreeExtractor:
         # preorder, alphabetical, root first at depth 0; every ancestor of a
         # kept file is present, pruned directories are not
         assert [e[1].as_posix() for e in entries] == [
-            ".", ".github", ".github/workflows", "db", "db/migration",
-            "src", "src/airspace", "web",
+            ".",
+            ".github",
+            ".github/workflows",
+            "db",
+            "db/migration",
+            "src",
+            "src/airspace",
+            "web",
         ]
         assert entries[0][0] == 0
 
@@ -284,9 +301,20 @@ class TestTreeExtractor:
         # A failing `git merge` is the expected outcome here -- run_git's
         # check=True would raise on this exit code, so invoke it directly.
         merge = subprocess.run(
-            ["git", "-c", "user.name=test", "-c", "user.email=test@test.local",
-             "-c", "core.excludesFile=", "merge", "ours"],
-            cwd=repo, capture_output=True, text=True,
+            [
+                "git",
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test.local",
+                "-c",
+                "core.excludesFile=",
+                "merge",
+                "ours",
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
         )
         assert merge.returncode != 0
         assert "<<<<<<<" in (repo / "conflict.txt").read_text(encoding="utf-8")
@@ -295,7 +323,10 @@ class TestTreeExtractor:
         # entry the fix targets, so the test can't silently rot into a
         # no-op if git's ls-files behavior ever changes.
         raw = subprocess.run(
-            ["git", "ls-files", "-z"], cwd=repo, capture_output=True, text=True,
+            ["git", "ls-files", "-z"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
         ).stdout
         raw_paths = [p for p in raw.split("\0") if p]
         assert raw_paths.count("conflict.txt") == 3
@@ -311,7 +342,8 @@ class TestTreeExtractor:
         # tracked_files()'s own pruning logic -- so a duplicate would be
         # caught whether it inflated the summary, the listing, or both.
         file_lines = [
-            ln for ln in s.l3_md.splitlines()
+            ln
+            for ln in s.l3_md.splitlines()
             if ln.strip().startswith("- ") and not ln.strip().endswith("/")
         ]
         n_files = int(re.search(r"(\d+) tracked files", s.summary).group(1))
@@ -326,7 +358,7 @@ class TestTreeExtractor:
             (root / f"f{i:04d}.txt").write_text("", encoding="utf-8")
         s = _by_id(tree_ext.TreeExtractor().extract(root, _opts(root)))["struct.tree"]
         lines = s.l3_md.splitlines()
-        assert len(lines) <= tree_ext._L3_MAX_LINES + 4   # fences + two markers
+        assert len(lines) <= tree_ext._L3_MAX_LINES + 4  # fences + two markers
         # Reviewer G-3b follow-up: the marker must name *where* it cut, not
         # just how much it cut -- alphabetical order means one wide,
         # unignored directory can consume the whole cap and hide everything
@@ -336,7 +368,7 @@ class TestTreeExtractor:
             "# … 100 more entries omitted from `f0600.txt` onward "
             "(capped at 600 lines)" in s.l3_md
         )
-        assert "700 files" in s.summary   # the summary still counts the whole tree
+        assert "700 files" in s.summary  # the summary still counts the whole tree
 
     def test_small_tree_has_no_omitted_marker(self, repo):
         s = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))["struct.tree"]
@@ -361,9 +393,13 @@ class TestTreeExtractor:
         # alone can't distinguish "nothing was cut" from "everything from
         # the 600th entry on was silently cut with no marker at all".
         assert "- f0599.txt" in s.l3_md
-        assert len(s.l3_md.splitlines()) <= tree_ext._L3_MAX_LINES + 3  # fences + depth marker
+        assert (
+            len(s.l3_md.splitlines()) <= tree_ext._L3_MAX_LINES + 3
+        )  # fences + depth marker
 
-    def test_l3_one_over_the_cap_pluralizes_singular_and_names_the_entry(self, tmp_path):
+    def test_l3_one_over_the_cap_pluralizes_singular_and_names_the_entry(
+        self, tmp_path
+    ):
         # Findings 1+2: exactly one entry dropped must still read as
         # singular ("1 more entry", not "1 more entries") and must still
         # name that one entry.
@@ -378,7 +414,9 @@ class TestTreeExtractor:
         )
         assert "more entries omitted" not in s.l3_md
 
-    def test_malformed_pyproject_toml_degrades_the_tree_section_without_raising(self, repo):
+    def test_malformed_pyproject_toml_degrades_the_tree_section_without_raising(
+        self, repo
+    ):
         # ⚠️ raised in review: _detect_entry_points widened its except
         # clause to OSError and added isinstance guards, but nothing pinned
         # that a malformed pyproject.toml still lets struct.tree render.
@@ -408,7 +446,10 @@ class TestTreeExtractor:
             "Console scripts (pyproject [project.scripts]):\n\n- airspace = airspace.cli:app\n"
             in s.l2_md
         )
-        assert "entry points: src/airspace/main.py; console scripts: airspace." in s.summary
+        assert (
+            "entry points: src/airspace/main.py; console scripts: airspace."
+            in s.summary
+        )
 
     @pytest.mark.parametrize("rel", ["main.rs", "main.dart", "main.swift"])
     def test_detects_entry_points_for_new_languages(self, repo, rel):
@@ -524,9 +565,7 @@ class TestDepsExtractor:
         # unsplit as the "name", so the same library got recognised as a
         # framework via pom.xml but not via build.gradle.
         (repo / "build.gradle").write_text(
-            "dependencies {\n"
-            "    implementation 'io.quarkus:quarkus-core:3.5.0'\n"
-            "}\n",
+            "dependencies {\n    implementation 'io.quarkus:quarkus-core:3.5.0'\n}\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.java"]
@@ -544,7 +583,9 @@ class TestDepsExtractor:
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.php"]
         row = next(ln for ln in s.l2_md.splitlines() if "symfony" in ln)
         assert "\\|" in row
-        assert row.count("|") == 4  # 2 column delimiters + 2 real cells, no extra column
+        assert (
+            row.count("|") == 4
+        )  # 2 column delimiters + 2 real cells, no extra column
 
     def test_dotnet_deps_come_from_csproj(self, repo):
         # Review Finding 6: dotnet had zero test coverage.
@@ -605,11 +646,11 @@ class TestDepsExtractor:
 
     def test_rust_deps_come_from_cargo_toml(self, repo):
         (repo / "Cargo.toml").write_text(
-            '[dependencies]\n'
+            "[dependencies]\n"
             'serde = "1.0"\n'
             'tokio = { version = "1.35", features = ["full"] }\n'
             'actix-web = "4.4"\n\n'
-            '[dev-dependencies]\n'
+            "[dev-dependencies]\n"
             'proptest = "1.4"\n',
             encoding="utf-8",
         )
@@ -638,19 +679,21 @@ class TestDepsExtractor:
         # already pins for Node.
         vendored = repo / "vendor" / "serde-1.0.200" / "Cargo.toml"
         vendored.parent.mkdir(parents=True)
-        vendored.write_text('[dependencies]\nshould-not-appear = "9.9.9"\n', encoding="utf-8")
+        vendored.write_text(
+            '[dependencies]\nshould-not-appear = "9.9.9"\n', encoding="utf-8"
+        )
         sections = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))
         assert "dep.rust" not in sections
 
     def test_swift_deps_come_from_package_swift(self, repo):
         (repo / "Package.swift").write_text(
-            'let package = Package(\n'
+            "let package = Package(\n"
             '    name: "MyApp",\n'
-            '    dependencies: [\n'
+            "    dependencies: [\n"
             '        .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),\n'
             '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
-            '    ]\n'
-            ')\n',
+            "    ]\n"
+            ")\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
@@ -684,9 +727,7 @@ class TestDepsExtractor:
         member = repo / "crates" / "api" / "Cargo.toml"
         member.parent.mkdir(parents=True)
         member.write_text(
-            "[dependencies]\n"
-            "serde = { workspace = true }\n"
-            "tokio.workspace = true\n",
+            "[dependencies]\nserde = { workspace = true }\ntokio.workspace = true\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.rust"]
@@ -715,11 +756,11 @@ class TestDepsExtractor:
         manifest = repo / "Modules" / "Core" / "Package.swift"
         manifest.parent.mkdir(parents=True)
         manifest.write_text(
-            'let package = Package(\n'
-            '    dependencies: [\n'
+            "let package = Package(\n"
+            "    dependencies: [\n"
             '        .package(url: "https://github.com/apple/swift-nio.git", from: "2.62.0"),\n'
-            '    ]\n'
-            ')\n',
+            "    ]\n"
+            ")\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
@@ -735,7 +776,9 @@ class TestDepsExtractor:
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.dart"]
         assert "http^1.2.0" in s.l3_md
 
-    def test_deps_extractor_detects_a_subdirectory_swift_or_dart_manifest(self, tmp_path):
+    def test_deps_extractor_detects_a_subdirectory_swift_or_dart_manifest(
+        self, tmp_path
+    ):
         root = tmp_path / "nested"
         (root / "Modules" / "Core").mkdir(parents=True)
         (root / "Modules" / "Core" / "Package.swift").write_text("", encoding="utf-8")
@@ -750,7 +793,7 @@ class TestDepsExtractor:
             manifest = repo / rel / "Package.swift"
             manifest.parent.mkdir(parents=True)
             manifest.write_text(
-                'let package = Package(dependencies: [.package(url: '
+                "let package = Package(dependencies: [.package(url: "
                 '"https://github.com/x/should-not-appear.git", from: "1.0.0")])\n',
                 encoding="utf-8",
             )
@@ -769,11 +812,11 @@ class TestDepsExtractor:
 
     def test_swift_path_dependency_with_no_version_is_recorded_by_name(self, repo):
         (repo / "Package.swift").write_text(
-            'let package = Package(\n'
-            '    dependencies: [\n'
+            "let package = Package(\n"
+            "    dependencies: [\n"
             '        .package(path: "../LocalLib"),\n'
-            '    ]\n'
-            ')\n',
+            "    ]\n"
+            ")\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
@@ -811,9 +854,7 @@ class TestDepsExtractor:
         )
         other = repo / "packages" / "app" / "pubspec.yaml"
         other.parent.mkdir(parents=True)
-        other.write_text(
-            "name: app\ndependencies:\n  http: ^1.2.0\n", encoding="utf-8"
-        )
+        other.write_text("name: app\ndependencies:\n  http: ^1.2.0\n", encoding="utf-8")
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.dart"]
         assert "http^1.2.0" in s.l3_md
 
@@ -838,9 +879,7 @@ class TestDepsExtractor:
         )
         other = repo / "packages" / "app" / "pubspec.yaml"
         other.parent.mkdir(parents=True)
-        other.write_text(
-            "name: app\ndependencies:\n  dio: ^5.4.0\n", encoding="utf-8"
-        )
+        other.write_text("name: app\ndependencies:\n  dio: ^5.4.0\n", encoding="utf-8")
         result = deps_ext.DepsExtractor().extract(repo, _opts(repo))
         assert any("pubspec.yaml" in w for w in result.warnings)
         assert "dio^5.4.0" in _by_id(result)["dep.dart"].l3_md
@@ -853,13 +892,13 @@ class TestDepsExtractor:
         # own `https://` proves the comment stripping is string-aware --
         # a naive `//` strip would eat every dependency URL instead.
         (repo / "Package.swift").write_text(
-            'let package = Package(\n'
-            '    dependencies: [\n'
+            "let package = Package(\n"
+            "    dependencies: [\n"
             '        // .package(url: "https://github.com/old/removed.git", from: "0.1.0"),\n'
             '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
             '        /* .package(url: "https://github.com/old/alsogone.git", from: "0.2.0") */\n'
-            '    ]\n'
-            ')\n',
+            "    ]\n"
+            ")\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
@@ -872,13 +911,13 @@ class TestDepsExtractor:
         # counts parens instead of matching a flat regex, and nothing
         # exercised it.
         (repo / "Package.swift").write_text(
-            'let package = Package(\n'
-            '    dependencies: [\n'
+            "let package = Package(\n"
+            "    dependencies: [\n"
             '        .package(url: "https://github.com/apple/swift-nio.git", '
             '.upToNextMajor(from: "2.62.0")),\n'
             '        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3"),\n'
-            '    ]\n'
-            ')\n',
+            "    ]\n"
+            ")\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
@@ -887,9 +926,9 @@ class TestDepsExtractor:
 
     def test_swift_exact_version_pin_is_recorded(self, repo):
         (repo / "Package.swift").write_text(
-            'let package = Package(dependencies: [\n'
+            "let package = Package(dependencies: [\n"
             '    .package(url: "https://github.com/apple/swift-crypto.git", exact: "3.2.0"),\n'
-            '])\n',
+            "])\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
@@ -899,9 +938,9 @@ class TestDepsExtractor:
         # The `name:`-without-`url:` branch: a local module named
         # differently from its directory keeps the declared name.
         (repo / "Package.swift").write_text(
-            'let package = Package(dependencies: [\n'
+            "let package = Package(dependencies: [\n"
             '    .package(name: "FeatureKit", path: "../modules/feature-kit"),\n'
-            '])\n',
+            "])\n",
             encoding="utf-8",
         )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.swift"]
@@ -998,7 +1037,7 @@ class TestDepsExtractor:
         assert "| Group | Packages |" in s.l2_md
         assert "| extra:dev | pytest, ruff |" in s.l2_md
         assert "| extra:ingest | docling, Pillow |" in s.l2_md
-        assert ">=0.15,<0.16" not in s.l2_md            # constraints live in L3
+        assert ">=0.15,<0.16" not in s.l2_md  # constraints live in L3
         assert "# extra:dev\npytest>=8.0\nruff>=0.15,<0.16" in s.l3_md
         assert s.summary == (
             "2 direct Python dependencies; 4 more in 2 groups (extra:dev, extra:ingest); "
@@ -1009,7 +1048,9 @@ class TestDepsExtractor:
         # Reviewer G-5: requirements-gate.txt merged into `direct` duplicated
         # mcp/pyyaml and hid that pytest was a runner-venv dependency.
         (repo / "requirements.txt").write_text("fastapi>=0.110\n", encoding="utf-8")
-        (repo / "requirements-gate.txt").write_text("pytest>=8.0\nfastapi>=0.100\n", encoding="utf-8")
+        (repo / "requirements-gate.txt").write_text(
+            "pytest>=8.0\nfastapi>=0.100\n", encoding="utf-8"
+        )
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.python"]
         assert s.l2_md.count("| fastapi |") == 1
         assert "| requirements-gate.txt | fastapi, pytest |" in s.l2_md
@@ -1026,9 +1067,14 @@ class TestDepsExtractor:
         s = _by_id(deps_ext.DepsExtractor().extract(repo, _opts(repo)))["dep.node"]
         assert "| dev | eslint |" in s.l2_md
         assert "# dev\neslint^9.0.0" in s.l3_md
-        assert s.summary == "1 direct Node dependencies; 1 more in 1 group (dev); frameworks: React."
+        assert (
+            s.summary
+            == "1 direct Node dependencies; 1 more in 1 group (dev); frameworks: React."
+        )
 
-    def test_optional_dependency_extra_that_is_not_a_list_warns_and_continues(self, repo):
+    def test_optional_dependency_extra_that_is_not_a_list_warns_and_continues(
+        self, repo
+    ):
         # Fix wave (G-5 follow-up): an extra whose value isn't a list must
         # degrade like every other wrong-shaped manifest here — one warning
         # naming the file, no raise, and the rest of the extraction (this
@@ -1046,7 +1092,9 @@ class TestDepsExtractor:
         assert "react" in sections["dep.node"].l2_md
         assert any("pyproject.toml" in w for w in result.warnings)
 
-    def test_optional_dependencies_table_that_is_not_a_table_warns_and_continues(self, repo):
+    def test_optional_dependencies_table_that_is_not_a_table_warns_and_continues(
+        self, repo
+    ):
         # Fix wave (G-5 follow-up): `[project.optional-dependencies]` itself
         # being the wrong shape (here, a list instead of a table) must also
         # degrade rather than raise.
@@ -1134,25 +1182,33 @@ class TestServicesExtractor:
             assert " " not in s.id and "\t" not in s.id
 
     def test_records_image_ports_and_depends_on(self, repo):
-        s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))["svc.airspace-service"]
+        s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))[
+            "svc.airspace-service"
+        ]
         body = s.l2_md + s.l3_md
         assert "airspace:1.0" in body
         assert "8080" in body
         assert "postgres" in body
 
     def test_environment_keys_only_never_values(self, repo):
-        s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))["svc.airspace-service"]
+        s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))[
+            "svc.airspace-service"
+        ]
         body = s.l2_md + s.l3_md
         assert "KAFKA_BROKER_URL" in body
         assert "kafka:9092" not in body
         assert "postgres://db/airspace" not in body
 
-    def test_dockerfile_only_repo_yields_one_service_named_after_the_repo(self, tmp_path):
+    def test_dockerfile_only_repo_yields_one_service_named_after_the_repo(
+        self, tmp_path
+    ):
         root = tmp_path / "solo"
         root.mkdir()
-        (root / "Dockerfile").write_text("FROM node:20\nEXPOSE 3000\n", encoding="utf-8")
+        (root / "Dockerfile").write_text(
+            "FROM node:20\nEXPOSE 3000\n", encoding="utf-8"
+        )
         sections = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))
-        assert "svc.demo" in sections          # opts.repo_id == "demo"
+        assert "svc.demo" in sections  # opts.repo_id == "demo"
         assert "3000" in sections["svc.demo"].l2_md
 
     def test_k8s_deployment_is_picked_up(self, tmp_path):
@@ -1171,7 +1227,10 @@ class TestServicesExtractor:
         assert "notify:2.1" in sections["svc.notify-service"].l3_md
 
     def test_services_are_sorted_by_name(self, repo):
-        ids = [s.id for s in svc_ext.ServicesExtractor().extract(repo, _opts(repo)).sections]
+        ids = [
+            s.id
+            for s in svc_ext.ServicesExtractor().extract(repo, _opts(repo)).sections
+        ]
         assert ids == sorted(ids)
 
     def test_services_are_sorted_regardless_of_source_order(self, tmp_path):
@@ -1189,7 +1248,10 @@ class TestServicesExtractor:
             "  aaa-service:\n    image: aaa:1.0\n",
             encoding="utf-8",
         )
-        ids = [s.id for s in svc_ext.ServicesExtractor().extract(root, _opts(root)).sections]
+        ids = [
+            s.id
+            for s in svc_ext.ServicesExtractor().extract(root, _opts(root)).sections
+        ]
         assert ids == ["svc.aaa-service", "svc.zzz-service"]
 
     def test_services_are_sorted_across_readers(self, tmp_path):
@@ -1215,7 +1277,10 @@ class TestServicesExtractor:
             "        - name: aaa\n          image: aaa:1.0\n",
             encoding="utf-8",
         )
-        ids = [s.id for s in svc_ext.ServicesExtractor().extract(root, _opts(root)).sections]
+        ids = [
+            s.id
+            for s in svc_ext.ServicesExtractor().extract(root, _opts(root)).sections
+        ]
         assert ids == ["svc.aaa-service", "svc.zzz-service"]
 
     def test_l3_has_no_pipe_table(self, repo):
@@ -1326,8 +1391,7 @@ class TestServicesExtractor:
         root = tmp_path / "unicode"
         root.mkdir()
         (root / "docker-compose.yml").write_text(
-            "services:\n  認証サービス:\n"
-            "    image: auth:1.0\n",
+            "services:\n  認証サービス:\n    image: auth:1.0\n",
             encoding="utf-8",
         )
         sections = svc_ext.ServicesExtractor().extract(root, _opts(root)).sections
@@ -1355,7 +1419,9 @@ class TestServicesExtractor:
         assert " " not in sections[0].id
         assert sections[0].id == "svc.my-service"
 
-    def test_title_and_description_and_summary_use_the_real_name_not_the_slug(self, tmp_path):
+    def test_title_and_description_and_summary_use_the_real_name_not_the_slug(
+        self, tmp_path
+    ):
         # Important Finding 4: only the id needs mdutils._HEADING_RE's
         # no-whitespace token -- the title half of that heading line
         # accepts whitespace freely. Slugifying title/description/summary
@@ -1399,10 +1465,15 @@ class TestServicesExtractor:
             "EndProject\n",
             encoding="utf-8",
         )
-        ids = [s.id for s in svc_ext.ServicesExtractor().extract(root, _opts(root)).sections]
+        ids = [
+            s.id
+            for s in svc_ext.ServicesExtractor().extract(root, _opts(root)).sections
+        ]
         assert ids == ["svc.airspace-api"]
 
-    def test_dedupe_prefers_compose_and_warns_only_on_image_disagreement(self, tmp_path):
+    def test_dedupe_prefers_compose_and_warns_only_on_image_disagreement(
+        self, tmp_path
+    ):
         # Important Finding 5 (part 1): _dedupe had zero test coverage for
         # either the brief's compose-preference rule or its
         # warn-only-on-disagreement rule.
@@ -1445,7 +1516,9 @@ class TestServicesExtractor:
         result = svc_ext.ServicesExtractor().extract(root, _opts(root))
         assert result.warnings == []
 
-    def test_dedupe_prefers_a_record_with_a_real_image_over_an_earlier_empty_one(self, tmp_path):
+    def test_dedupe_prefers_a_record_with_a_real_image_over_an_earlier_empty_one(
+        self, tmp_path
+    ):
         # Important Finding 5 (part 3): reproduced a `01-service.yaml` /
         # `02-deployment.yaml` layout -- a bare k8s `Service` (no
         # containers, so image="") listed before its `Deployment` (the
@@ -1485,7 +1558,9 @@ class TestServicesExtractor:
         sections = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))
         assert "svc.web" in sections
 
-    def test_detect_ignores_a_directory_named_like_a_compose_or_sln_file(self, tmp_path):
+    def test_detect_ignores_a_directory_named_like_a_compose_or_sln_file(
+        self, tmp_path
+    ):
         # Minor Finding: detect() used a bare any(root.glob(...)) with no
         # is_file() filter, so a directory (not a file) named like a
         # compose/sln file made detect() True while extract() -- which
@@ -1609,7 +1684,9 @@ class TestServicesExtractor:
         assert any("8001" in b for b in bodies)
         assert any("8002" in b for b in bodies)
 
-    def test_truncation_collision_id_is_stable_when_a_sibling_is_removed(self, tmp_path):
+    def test_truncation_collision_id_is_stable_when_a_sibling_is_removed(
+        self, tmp_path
+    ):
         # Ruling R30 part 3: the disambiguation suffix must come only from
         # the service's own full normalized name, never from sibling
         # order or an index -- so removing an unrelated colliding sibling
@@ -1638,11 +1715,15 @@ class TestServicesExtractor:
 
         both_ids = {
             s.title: s.id
-            for s in svc_ext.ServicesExtractor().extract(both_root, _opts(both_root)).sections
+            for s in svc_ext.ServicesExtractor()
+            .extract(both_root, _opts(both_root))
+            .sections
         }
         one_ids = {
             s.title: s.id
-            for s in svc_ext.ServicesExtractor().extract(one_root, _opts(one_root)).sections
+            for s in svc_ext.ServicesExtractor()
+            .extract(one_root, _opts(one_root))
+            .sections
         }
         a_name = "airspace-production-notification-worker-a"
         assert both_ids[a_name] == one_ids[a_name]
@@ -1718,7 +1799,9 @@ class TestServicesExtractor:
         l3_rendered = core._render_group([section], "l3", "banner", "demo-code")
         assert mdutils.slice_section(l3_rendered, section.id) is not None
 
-    def test_whitespace_only_service_name_gets_a_titled_parseable_heading(self, tmp_path):
+    def test_whitespace_only_service_name_gets_a_titled_parseable_heading(
+        self, tmp_path
+    ):
         # Same defect class as the empty-key case above, via a different
         # input: a name that is non-empty as a raw string but entirely
         # whitespace. `_safe_slug()`/`_dedupe_key()` treat this the same
@@ -1777,7 +1860,9 @@ class TestServicesExtractor:
         assert "DB_PASSWORD" in body
         assert "API_TOKEN" in body
 
-    def test_env_key_enumeration_top_level_mapping_round2_repro_moved_here(self, tmp_path):
+    def test_env_key_enumeration_top_level_mapping_round2_repro_moved_here(
+        self, tmp_path
+    ):
         # Same top-level mapping branch, using round 2's exact repro
         # strings moved from the list form to the mapping form -- the
         # reviewer's second, byte-identical-leak reproduction for this
@@ -1787,7 +1872,7 @@ class TestServicesExtractor:
         (root / "docker-compose.yml").write_text(
             "services:\n  api:\n    image: api:1.0\n"
             "    environment:\n"
-            '      CREDENTIALS=user:pass, note: internal\n'
+            "      CREDENTIALS=user:pass, note: internal\n"
             "      LOG_FORMAT=json: pretty\n"
             "      DB_PASSWORD=hunter2: extra\n",
             encoding="utf-8",
@@ -1850,7 +1935,7 @@ class TestServicesExtractor:
         root = tmp_path / "hashcollision"
         root.mkdir()
         (root / "docker-compose.yml").write_text(
-            'services:\n'
+            "services:\n"
             '  "+++":\n    image: a:1.0\n'
             "  unnamed-29f5099b:\n    image: b:1.0\n",
             encoding="utf-8",
@@ -1912,8 +1997,13 @@ class TestServicesExtractor:
             encoding="utf-8",
         )
         s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.search"]
-        for key in ("ES_JAVA_OPTS", "cluster.name", "discovery.type",
-                    "xpack.security.enabled", "MY-APP_TOKEN"):
+        for key in (
+            "ES_JAVA_OPTS",
+            "cluster.name",
+            "discovery.type",
+            "xpack.security.enabled",
+            "MY-APP_TOKEN",
+        ):
             assert key in s.l2_md, key
         assert "| Env keys | none |" not in s.l2_md
 
@@ -1926,7 +2016,8 @@ class TestServicesExtractor:
             encoding="utf-8",
         )
         (root / "packages" / "api" / "package.json").write_text(
-            '{"name": "@mono/api", "dependencies": {"express": "^4.19.0"}}\n', encoding="utf-8"
+            '{"name": "@mono/api", "dependencies": {"express": "^4.19.0"}}\n',
+            encoding="utf-8",
         )
         (root / "packages" / "web" / "package.json").write_text(
             '{"name": "web", "dependencies": {"react": "^18.2.0"}}\n', encoding="utf-8"
@@ -1946,20 +2037,28 @@ class TestServicesExtractor:
         assert "| Technology | Express |" in by_title["@mono/api"].l2_md
         assert "| Technology | React |" in by_title["web"].l2_md
         assert "| Source | packages/web/package.json |" in by_title["web"].l2_md
-        assert "Workspace package `web` in `packages/web` — no container image." in by_title["web"].l2_md
+        assert (
+            "Workspace package `web` in `packages/web` — no container image."
+            in by_title["web"].l2_md
+        )
 
-    def test_workspaces_object_form_and_missing_package_json_are_handled(self, tmp_path):
+    def test_workspaces_object_form_and_missing_package_json_are_handled(
+        self, tmp_path
+    ):
         root = self._mono(tmp_path)
         (root / "package.json").write_text(
-            '{"workspaces": {"packages": ["packages/*", "tools/*"]}}\n', encoding="utf-8"
+            '{"workspaces": {"packages": ["packages/*", "tools/*"]}}\n',
+            encoding="utf-8",
         )
-        (root / "tools" / "empty").mkdir(parents=True)       # no package.json: not a service
+        (root / "tools" / "empty").mkdir(parents=True)  # no package.json: not a service
         result = svc_ext.ServicesExtractor().extract(root, _opts(root))
         assert sorted(s.title for s in result.sections) == ["@mono/api", "web"]
 
     def test_malformed_workspaces_value_warns_and_continues(self, tmp_path):
         root = self._mono(tmp_path)
-        (root / "package.json").write_text('{"workspaces": "packages/*"}\n', encoding="utf-8")
+        (root / "package.json").write_text(
+            '{"workspaces": "packages/*"}\n', encoding="utf-8"
+        )
         (root / "docker-compose.yml").write_text(
             "services:\n  db:\n    image: postgres:16\n", encoding="utf-8"
         )
@@ -2032,17 +2131,24 @@ class TestServicesExtractor:
         assert "../repo" not in (self_record.l2_md + self_record.l3_md)
         assert "repo" not in (self_record.l2_md + self_record.l3_md)
 
-    def test_compose_service_with_the_same_name_as_a_workspace_keeps_compose_evidence(self, tmp_path):
+    def test_compose_service_with_the_same_name_as_a_workspace_keeps_compose_evidence(
+        self, tmp_path
+    ):
         root = self._mono(tmp_path)
         (root / "docker-compose.yml").write_text(
-            "services:\n  web:\n    image: web:1.0\n    ports: ['3000:3000']\n", encoding="utf-8"
+            "services:\n  web:\n    image: web:1.0\n    ports: ['3000:3000']\n",
+            encoding="utf-8",
         )
         result = svc_ext.ServicesExtractor().extract(root, _opts(root))
         web = {s.title: s for s in result.sections}["web"]
         assert "| Image | web:1.0 |" in web.l2_md
-        assert "| Technology | React |" in web.l2_md      # directory filled from the workspace record
+        assert (
+            "| Technology | React |" in web.l2_md
+        )  # directory filled from the workspace record
 
-    def test_compose_build_reads_the_dockerfile_for_image_ports_and_command(self, tmp_path):
+    def test_compose_build_reads_the_dockerfile_for_image_ports_and_command(
+        self, tmp_path
+    ):
         # Reviewer G-8: aero's svc.hub rendered ``image ` ` `` because
         # compose says `build: .` and the Dockerfile reader ran only when
         # there was no compose file at all.
@@ -2060,7 +2166,10 @@ class TestServicesExtractor:
         (root / ".env").write_text("SECRET=hunter2\n", encoding="utf-8")
         result = svc_ext.ServicesExtractor().extract(root, _opts(root))
         s = _by_id(result)["svc.hub"]
-        assert "Container `hub` — built from `Dockerfile` (base `python:3.12-slim`)." in s.l2_md
+        assert (
+            "Container `hub` — built from `Dockerfile` (base `python:3.12-slim`)."
+            in s.l2_md
+        )
         assert "| Image | build: Dockerfile (FROM python:3.12-slim) |" in s.l2_md
         assert "| Ports | 8321 |" in s.l2_md
         assert "| Command | python -m strata_kb.mcp --transport http |" in s.l2_md
@@ -2082,8 +2191,10 @@ class TestServicesExtractor:
             "FROM node:20\nEXPOSE 3000\n", encoding="utf-8"
         )
         s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.api"]
-        assert "| Image | build: services/api/Dockerfile.prod (FROM node:20) |" in s.l2_md
-        assert "| Ports | 9000:9000 |" in s.l2_md        # compose ports win over EXPOSE
+        assert (
+            "| Image | build: services/api/Dockerfile.prod (FROM node:20) |" in s.l2_md
+        )
+        assert "| Ports | 9000:9000 |" in s.l2_md  # compose ports win over EXPOSE
         assert "| Technology | Node.js |" in s.l2_md
 
     def test_compose_build_without_a_dockerfile_warns(self, tmp_path):
@@ -2098,14 +2209,18 @@ class TestServicesExtractor:
         assert any("worker" in w and "no Dockerfile" in w for w in result.warnings)
 
     def test_infrastructure_images_get_a_technology_label(self, repo):
-        s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))["svc.postgres"]
+        s = _by_id(svc_ext.ServicesExtractor().extract(repo, _opts(repo)))[
+            "svc.postgres"
+        ]
         assert "| Technology | PostgreSQL |" in s.l2_md
 
     @pytest.mark.parametrize(
         "image,technology",
         [("rust:1.75", "Rust"), ("swift:5.9", "Swift"), ("dart:stable", "Dart")],
     )
-    def test_new_language_base_images_get_a_technology_label(self, tmp_path, image, technology):
+    def test_new_language_base_images_get_a_technology_label(
+        self, tmp_path, image, technology
+    ):
         root = tmp_path / "svc"
         root.mkdir()
         (root / "docker-compose.yml").write_text(
@@ -2153,10 +2268,10 @@ class TestServicesExtractor:
         s = _by_id(result)["svc.api"]
         body = s.l2_md + s.l3_md
         assert "user:pass@" not in body
-        assert "https://***@registry.example.com/base:1.0" in body    # base_image
-        assert "https://***@entry.example.com/y" in body              # ENTRYPOINT half
-        assert "https://***@evil.example.com/x" in body               # CMD half
-        assert "https://***@example.com/secrets.env" in body          # env_files
+        assert "https://***@registry.example.com/base:1.0" in body  # base_image
+        assert "https://***@entry.example.com/y" in body  # ENTRYPOINT half
+        assert "https://***@evil.example.com/x" in body  # CMD half
+        assert "https://***@example.com/secrets.env" in body  # env_files
         assert (
             "curl https://***@entry.example.com/y https://***@evil.example.com/x"
             in body
@@ -2169,23 +2284,37 @@ class TestServicesExtractor:
         # repeats), and either form missing leaves the other unchanged.
         # Covers exec-array and shell form on each side.
         cases = {
-            "both_exec": ('ENTRYPOINT ["/app"]\nCMD ["--flag", "x"]\n', "/app --flag x"),
+            "both_exec": (
+                'ENTRYPOINT ["/app"]\nCMD ["--flag", "x"]\n',
+                "/app --flag x",
+            ),
             "both_shell": ("ENTRYPOINT /app\nCMD --flag x\n", "/app --flag x"),
-            "entry_exec_cmd_shell": ('ENTRYPOINT ["/app"]\nCMD --flag x\n', "/app --flag x"),
-            "entry_shell_cmd_exec": ("ENTRYPOINT /app\nCMD [\"--flag\", \"x\"]\n", "/app --flag x"),
+            "entry_exec_cmd_shell": (
+                'ENTRYPOINT ["/app"]\nCMD --flag x\n',
+                "/app --flag x",
+            ),
+            "entry_shell_cmd_exec": (
+                'ENTRYPOINT /app\nCMD ["--flag", "x"]\n',
+                "/app --flag x",
+            ),
             "repeated_cmd_last_wins": ('CMD ["one"]\nCMD ["two"]\n', "two"),
             "repeated_entrypoint_last_wins": (
-                'ENTRYPOINT ["one"]\nENTRYPOINT ["two"]\n', "two",
+                'ENTRYPOINT ["one"]\nENTRYPOINT ["two"]\n',
+                "two",
             ),
         }
         for label, (body, expected) in cases.items():
             root = tmp_path / label
             root.mkdir()
             (root / "Dockerfile").write_text(f"FROM alpine:3\n{body}", encoding="utf-8")
-            s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.demo"]
+            s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))[
+                "svc.demo"
+            ]
             assert f"| Command | {expected} |" in s.l2_md, (label, s.l2_md)
 
-    def test_compose_build_context_outside_repo_root_is_declined_not_read(self, tmp_path):
+    def test_compose_build_context_outside_repo_root_is_declined_not_read(
+        self, tmp_path
+    ):
         # Finding 1 (fix wave, user-ruled): a build context that escapes the
         # repo root must never render this machine's absolute path — that
         # breaks the plan's Determinism constraint (the same repo on two
@@ -2211,7 +2340,8 @@ class TestServicesExtractor:
         assert "| Image | build: ../outside (outside the repository) |" in s.l2_md
         assert "| Source | docker-compose.yml |" in s.l2_md
         assert any(
-            "hub" in w and "outside the repository; not read" in w for w in result.warnings
+            "hub" in w and "outside the repository; not read" in w
+            for w in result.warnings
         )
         # Weaker additional guard: the machine's tmp path must not leak.
         assert str(tmp_path) not in (s.l2_md + s.l3_md + " ".join(result.warnings))
@@ -2251,7 +2381,9 @@ class TestServicesExtractor:
             root = tmp_path / label
             root.mkdir()
             (root / "Dockerfile").write_text(dockerfile, encoding="utf-8")
-            s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.demo"]
+            s = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))[
+                "svc.demo"
+            ]
             assert f"| Command | {expected} |" in s.l2_md, (label, s.l2_md)
 
     def test_dockerfile_symlink_segment_is_not_read_outside_the_repo(self, tmp_path):
@@ -2322,8 +2454,12 @@ class TestCommandsExtractor:
         empty.mkdir()
         assert cmd_ext.CommandsExtractor().detect(empty) is False
 
-    @pytest.mark.parametrize("manifest", ["Cargo.toml", "Package.swift", "pubspec.yaml"])
-    def test_detects_a_repo_whose_only_command_source_is_its_manifest(self, tmp_path, manifest):
+    @pytest.mark.parametrize(
+        "manifest", ["Cargo.toml", "Package.swift", "pubspec.yaml"]
+    )
+    def test_detects_a_repo_whose_only_command_source_is_its_manifest(
+        self, tmp_path, manifest
+    ):
         # `core.run()` does `if not detected: continue` -- an extractor
         # whose detect() says False never has extract() called at all.
         # Rust/Swift's presence-based defaults and Dart's pubspec reader
@@ -2347,7 +2483,7 @@ class TestCommandsExtractor:
         # CI runs pytest; web/package.json runs vitest. CI is the source of truth.
         assert "pytest -q --cov=airspace" in s.l2_md
         assert "CI" in s.l2_md
-        assert "vitest run" in s.l3_md          # kept as an alternative
+        assert "vitest run" in s.l3_md  # kept as an alternative
 
     def test_ci_command_is_specifically_the_primary_not_just_present(self, repo):
         # Strengthens test_ci_run_steps_win_over_local_scripts above: that
@@ -2391,7 +2527,9 @@ class TestCommandsExtractor:
     def test_no_section_when_a_purpose_has_no_command(self, tmp_path):
         root = tmp_path / "only-build"
         root.mkdir()
-        (root / "package.json").write_text('{"scripts": {"build": "tsc"}}\n', encoding="utf-8")
+        (root / "package.json").write_text(
+            '{"scripts": {"build": "tsc"}}\n', encoding="utf-8"
+        )
         sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
         assert "cmd.build" in sections
         assert "cmd.test" not in sections
@@ -2498,7 +2636,9 @@ class TestCommandsExtractor:
         result = cmd_ext.CommandsExtractor().extract(root, _opts(root))
         assert result.warnings == []
 
-    def test_reader_crash_warns_with_a_human_label_not_a_function_name(self, repo, monkeypatch):
+    def test_reader_crash_warns_with_a_human_label_not_a_function_name(
+        self, repo, monkeypatch
+    ):
         # Finding 2: the blanket per-reader exception handler used to
         # render `could not read via _read_make: ...` -- a private
         # function name leaking into a user-visible KB warning, and (per
@@ -2587,7 +2727,9 @@ class TestCommandsExtractor:
         assert "(in web/)" in s.l2_md
         assert "wrong-wf-dir" not in s.l2_md
 
-    def test_ci_step_working_directory_wins_over_job_and_workflow_defaults(self, tmp_path):
+    def test_ci_step_working_directory_wins_over_job_and_workflow_defaults(
+        self, tmp_path
+    ):
         # R34(b) precedence, part 2: a step's own working-directory beats
         # BOTH a job default and a workflow default set to something else.
         root = tmp_path / "stepbeatsall"
@@ -2693,7 +2835,10 @@ class TestCommandsExtractor:
         [
             # Reviewer G-2's seven lines: substring matching classified all
             # but the last two wrongly (`/dev/null` ⊃ dev, `:latest` ⊃ test).
-            ('code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)', None),
+            (
+                'code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)',
+                None,
+            ),
             ('pip install "ruff>=0.15,<0.16"', None),
             ("-e STRATA_KB_HTTP_TOKEN=smoke-test-token", None),
             ("--tag ghcr.io/vuonglq01685/strata-kb:latest", None),
@@ -2741,7 +2886,10 @@ class TestCommandsExtractor:
             ("npm install && npm run build", "build"),
             ("pip install -e .[dev] && pytest -q", "test"),
             ('[ "$OK" = 1 ] && make build', "build"),
-            ("cd web && npm run build", "build"),  # regression (already worked; still must)
+            (
+                "cd web && npm run build",
+                "build",
+            ),  # regression (already worked; still must)
             # R3-1 (re-review round 3): R2-3's own fix picked the
             # *leftmost* classifying segment as the line's purpose --
             # wrong, because position in a chained line is not evidence
@@ -2893,7 +3041,9 @@ class TestCommandsExtractor:
             encoding="utf-8",
         )
         sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
-        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `ruff check .`"
+        assert (
+            sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `ruff check .`"
+        )
         assert "cmd.build" not in sections
 
     def test_continued_run_block_is_one_command_not_fragments(self, tmp_path):
@@ -2945,7 +3095,9 @@ class TestCommandsExtractor:
         )
         sections = _by_id(cmd_ext.CommandsExtractor().extract(root, _opts(root)))
         assert sections["cmd.test"].l2_md.splitlines()[0] == "**Primary:** `tox`"
-        assert sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `tox -e style`"
+        assert (
+            sections["cmd.lint"].l2_md.splitlines()[0] == "**Primary:** `tox -e style`"
+        )
         # one candidate per (purpose, invocation), even though two lines matched
         assert sections["cmd.lint"].l3_md.count("tox -e style") == 1
 
@@ -2967,17 +3119,22 @@ class TestCommandsExtractor:
             assert "bash scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
             assert "scripts/gate.sh" in sections[f"cmd.{purpose}"].l2_md
         assert "bash run.sh" in sections["cmd.run"].l2_md
-        assert "deep/ignored.sh" not in sections["cmd.test"].l2_md + sections["cmd.test"].l3_md
+        assert (
+            "deep/ignored.sh"
+            not in sections["cmd.test"].l2_md + sections["cmd.test"].l3_md
+        )
 
     def test_shell_script_is_an_alternative_when_ci_exists(self, repo):
         (repo / "scripts").mkdir()
         (repo / "scripts" / "gate.sh").write_text("pytest -q\n", encoding="utf-8")
         s = _by_id(cmd_ext.CommandsExtractor().extract(repo, _opts(repo)))["cmd.test"]
-        assert "pytest -q --cov=airspace" in s.l2_md.splitlines()[0]   # CI still primary
+        assert "pytest -q --cov=airspace" in s.l2_md.splitlines()[0]  # CI still primary
         assert "bash scripts/gate.sh" in s.l3_md
 
     def test_presence_reader_gives_rust_build_and_test_defaults(self, tmp_path):
-        (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
+        (tmp_path / "Cargo.toml").write_text(
+            '[package]\nname = "x"\n', encoding="utf-8"
+        )
         candidates, warnings = cmd_ext._read_presence(tmp_path, _opts(tmp_path))
         assert ("build", "cargo build", "Cargo.toml") in candidates
         assert ("test", "cargo test", "Cargo.toml") in candidates
@@ -3022,7 +3179,9 @@ class TestCommandsExtractor:
         assert ("test", "dart test", "pubspec.yaml") in candidates
         assert ("lint", "dart analyze", "pubspec.yaml") in candidates
 
-    def test_pubspec_reader_treats_a_top_level_flutter_key_as_a_flutter_app(self, tmp_path):
+    def test_pubspec_reader_treats_a_top_level_flutter_key_as_a_flutter_app(
+        self, tmp_path
+    ):
         # A Flutter app that declares assets/fonts but pins the SDK only
         # through `environment:` still has a top-level `flutter:` block.
         (tmp_path / "pubspec.yaml").write_text(
@@ -3147,16 +3306,22 @@ class TestSchemaExtractor:
         assert sections["db.restrictive_airspace"].group == "db"
 
     def test_alter_table_add_column_accumulates(self, repo):
-        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))[
+            "db.restrictive_airspace"
+        ]
         assert "designation" in s.l2_md
-        assert "effective_date" in s.l2_md      # added by V2, applied in filename order
+        assert "effective_date" in s.l2_md  # added by V2, applied in filename order
 
     def test_column_order_is_preserved_not_sorted(self, repo):
-        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))[
+            "db.restrictive_airspace"
+        ]
         assert s.l2_md.index("designation") < s.l2_md.index("airspace_type")
 
     def test_primary_key_is_recorded(self, repo):
-        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))[
+            "db.restrictive_airspace"
+        ]
         assert "PRIMARY KEY" in s.l3_md or "PK" in s.l2_md
 
     def test_primary_key_marks_the_correct_column_not_just_the_header(self, repo):
@@ -3167,9 +3332,13 @@ class TestSchemaExtractor:
         # stronger, falsifiable check: the *summary* names the detected PK
         # column by name, and only the "id" row (not "designation") is
         # actually marked in the PK column.
-        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))[
+            "db.restrictive_airspace"
+        ]
         assert "PK id" in s.summary
-        id_row = next(ln for ln in s.l2_md.splitlines() if ln.strip().startswith("| id "))
+        id_row = next(
+            ln for ln in s.l2_md.splitlines() if ln.strip().startswith("| id ")
+        )
         designation_row = next(
             ln for ln in s.l2_md.splitlines() if ln.strip().startswith("| designation ")
         )
@@ -3177,7 +3346,9 @@ class TestSchemaExtractor:
         assert "yes" not in designation_row
 
     def test_l3_ddl_is_in_a_sql_fence_with_no_pipe_table(self, repo):
-        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))[
+            "db.restrictive_airspace"
+        ]
         assert "```sql" in s.l3_md
         assert "|" not in s.l3_md
 
@@ -3185,7 +3356,8 @@ class TestSchemaExtractor:
         root = tmp_path / "prisma-repo"
         (root / "prisma").mkdir(parents=True)
         (root / "prisma" / "schema.prisma").write_text(
-            "model Airspace {\n  id Int @id\n  designation String\n}\n", encoding="utf-8"
+            "model Airspace {\n  id Int @id\n  designation String\n}\n",
+            encoding="utf-8",
         )
         sections = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))
         assert "db.Airspace" in sections
@@ -3198,9 +3370,7 @@ class TestSchemaExtractor:
         con.execute("CREATE TABLE roster (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
         con.commit()
         con.close()
-        result = schema_ext.SchemaExtractor().extract(
-            root, _opts(root, db_paths=(db,))
-        )
+        result = schema_ext.SchemaExtractor().extract(root, _opts(root, db_paths=(db,)))
         sections = _by_id(result)
         assert "db.roster" in sections
         assert "name" in sections["db.roster"].l2_md
@@ -3253,9 +3423,13 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE zulu (id INT);\nCREATE TABLE alpha (id INT);\n", encoding="utf-8"
+            "CREATE TABLE zulu (id INT);\nCREATE TABLE alpha (id INT);\n",
+            encoding="utf-8",
         )
-        ids = [s.id for s in schema_ext.SchemaExtractor().extract(root, _opts(root)).sections]
+        ids = [
+            s.id
+            for s in schema_ext.SchemaExtractor().extract(root, _opts(root)).sections
+        ]
         assert ids == sorted(ids)
 
     # -- task review round 1 fixes -----------------------------------------
@@ -3280,12 +3454,17 @@ class TestSchemaExtractor:
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
         assert "6 columns" in s.summary
         for name in (
-            "unique_code", "check_digit", "constraint_name",
-            "primary_email", "foreign_key_ref",
+            "unique_code",
+            "check_digit",
+            "constraint_name",
+            "primary_email",
+            "foreign_key_ref",
         ):
             assert name in s.l2_md
 
-    def test_primary_key_with_extra_internal_whitespace_is_not_a_fabricated_column(self, tmp_path):
+    def test_primary_key_with_extra_internal_whitespace_is_not_a_fabricated_column(
+        self, tmp_path
+    ):
         # Minor 8 (folded into Important 1's fix): "PRIMARY  KEY" (two
         # spaces) must still be recognised as the constraint, not parsed
         # as a bogus column named "PRIMARY".
@@ -3297,11 +3476,13 @@ class TestSchemaExtractor:
             encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
-        assert "2 columns" in s.summary          # not 3 -- "PRIMARY" is not a fabricated column
-        assert "PK a, b" in s.summary   # the PK constraint was still captured
+        assert "2 columns" in s.summary  # not 3 -- "PRIMARY" is not a fabricated column
+        assert "PK a, b" in s.summary  # the PK constraint was still captured
         assert "| PRIMARY |" not in s.l2_md
 
-    def test_line_comment_inside_create_table_does_not_fabricate_or_destroy_columns(self, tmp_path):
+    def test_line_comment_inside_create_table_does_not_fabricate_or_destroy_columns(
+        self, tmp_path
+    ):
         # Important 2: an SQL line comment between two columns must not
         # fabricate a bogus "--" column, nor (via a keyword the comment's
         # own text happens to contain) swallow the real next column.
@@ -3309,10 +3490,7 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t (\n"
-            "  id INT, -- the id, unique\n"
-            "  name TEXT\n"
-            ");\n",
+            "CREATE TABLE t (\n  id INT, -- the id, unique\n  name TEXT\n);\n",
             encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
@@ -3320,20 +3498,21 @@ class TestSchemaExtractor:
         column_names = [
             ln.split("|")[1].strip()
             for ln in s.l2_md.splitlines()
-            if ln.startswith("| ") and not ln.startswith("| ---") and not ln.startswith("| Column")
+            if ln.startswith("| ")
+            and not ln.startswith("| ---")
+            and not ln.startswith("| Column")
         ]
         assert column_names == ["id", "name"]
 
-    def test_block_comment_inside_create_table_does_not_fabricate_a_column(self, tmp_path):
+    def test_block_comment_inside_create_table_does_not_fabricate_a_column(
+        self, tmp_path
+    ):
         # Important 2 (block-comment variant).
         root = tmp_path / "block-comment"
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t (\n"
-            "  id INT,\n"
-            "  /* note (a, b) */ name TEXT\n"
-            ");\n",
+            "CREATE TABLE t (\n  id INT,\n  /* note (a, b) */ name TEXT\n);\n",
             encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
@@ -3342,22 +3521,29 @@ class TestSchemaExtractor:
         column_names = [
             ln.split("|")[1].strip()
             for ln in s.l2_md.splitlines()
-            if ln.startswith("| ") and not ln.startswith("| ---") and not ln.startswith("| Column")
+            if ln.startswith("| ")
+            and not ln.startswith("| ---")
+            and not ln.startswith("| Column")
         ]
         assert column_names == ["id", "name"]
 
-    def test_quoted_identifier_with_a_comma_is_not_split_into_two_columns(self, tmp_path):
+    def test_quoted_identifier_with_a_comma_is_not_split_into_two_columns(
+        self, tmp_path
+    ):
         # Minor 10: the splitter must not be string-literal-blind.
         root = tmp_path / "quoted-comma"
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            'CREATE TABLE t (\n  "odd,name" TEXT,\n  id INT\n);\n', encoding="utf-8",
+            'CREATE TABLE t (\n  "odd,name" TEXT,\n  id INT\n);\n',
+            encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
         assert "2 columns" in s.summary
 
-    def test_unbalanced_paren_inside_a_string_literal_does_not_skew_column_splitting(self, tmp_path):
+    def test_unbalanced_paren_inside_a_string_literal_does_not_skew_column_splitting(
+        self, tmp_path
+    ):
         # Minor 10 (unbalanced-paren-in-literal variant).
         root = tmp_path / "literal-paren"
         mig = root / "migrations"
@@ -3387,7 +3573,9 @@ class TestSchemaExtractor:
         assert "CONSTRAINT" not in s.l2_md
         assert any("002.sql" in w for w in result.warnings)
 
-    def test_re_create_table_if_not_exists_keeps_accumulated_alter_columns_and_warns(self, tmp_path):
+    def test_re_create_table_if_not_exists_keeps_accumulated_alter_columns_and_warns(
+        self, tmp_path
+    ):
         # Minor 4: a re-CREATE TABLE (typically IF NOT EXISTS re-asserting
         # a table a prior file already created) must not silently discard
         # columns an ALTER TABLE ADD COLUMN already accumulated.
@@ -3395,8 +3583,12 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text("CREATE TABLE t (id INT);\n", encoding="utf-8")
-        (mig / "002.sql").write_text("ALTER TABLE t ADD COLUMN x INT;\n", encoding="utf-8")
-        (mig / "003.sql").write_text("CREATE TABLE IF NOT EXISTS t (id INT);\n", encoding="utf-8")
+        (mig / "002.sql").write_text(
+            "ALTER TABLE t ADD COLUMN x INT;\n", encoding="utf-8"
+        )
+        (mig / "003.sql").write_text(
+            "CREATE TABLE IF NOT EXISTS t (id INT);\n", encoding="utf-8"
+        )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
         assert "x" in s.l2_md
@@ -3426,7 +3618,9 @@ class TestSchemaExtractor:
             encoding="utf-8",
         )
         s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.t"]
-        id_row = next(ln for ln in s.l2_md.splitlines() if ln.strip().startswith("| id "))
+        id_row = next(
+            ln for ln in s.l2_md.splitlines() if ln.strip().startswith("| id ")
+        )
         assert "yes" in id_row
 
     def test_sqlite_uri_percent_encodes_uri_special_characters(self, tmp_path):
@@ -3462,7 +3656,9 @@ class TestSchemaExtractor:
         finally:
             check.close()
 
-    def test_alembic_column_types_are_captured_whole_and_primary_key_is_seen(self, tmp_path):
+    def test_alembic_column_types_are_captured_whole_and_primary_key_is_seen(
+        self, tmp_path
+    ):
         # Reviewer G-13: `[^,)]+` stopped at the first paren, rendering
         # `sa.Integer(` and missing `primary_key=True`. Round 2's concern —
         # never fabricate `sa.Numeric(10)` from `sa.Numeric(10, 2)` — holds
@@ -3481,13 +3677,17 @@ class TestSchemaExtractor:
             "    )\n",
             encoding="utf-8",
         )
-        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))[
+            "db.widgets"
+        ]
         assert "| id | sa.Integer() | yes |" in s.l2_md
         assert "| amt | sa.Numeric(10, 2) |  |" in s.l2_md
         assert "| meta | sa.JSON(none_as_null=True) |  |" in s.l2_md
         assert "PK id" in s.summary
 
-    def test_alembic_column_truncated_at_end_of_file_stays_visibly_incomplete(self, tmp_path):
+    def test_alembic_column_truncated_at_end_of_file_stays_visibly_incomplete(
+        self, tmp_path
+    ):
         # Reviewer G-13 round 2: _matching_close_paren returns an index AT
         # the last real character (not past it) when a call never closes.
         # The old exclusive slice `scope[cm.end():call_close]` dropped that
@@ -3503,11 +3703,15 @@ class TestSchemaExtractor:
             "        sa.Column('id', sa.Integer(",
             encoding="utf-8",
         )
-        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.widgets"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))[
+            "db.widgets"
+        ]
         assert "| id | sa.Integer( |  |" in s.l2_md
         assert "sa.Integer()" not in s.l2_md
 
-    def test_alembic_composite_primary_key_is_not_reduced_to_its_first_column(self, tmp_path):
+    def test_alembic_composite_primary_key_is_not_reduced_to_its_first_column(
+        self, tmp_path
+    ):
         # Reviewer G-13 round 2 (plan-overriding ruling): `if not pk`
         # stopped at the first `primary_key=True`, so a 2-column composite
         # PK rendered as PK on only the first column and left the second's
@@ -3530,7 +3734,9 @@ class TestSchemaExtractor:
             "    )\n",
             encoding="utf-8",
         )
-        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))[
+            "db.membership"
+        ]
         assert "| team_id | sa.Integer() | yes |" in s.l2_md
         assert "| user_id | sa.Integer() | yes |" in s.l2_md
         assert "PK team_id, user_id" in s.summary
@@ -3555,13 +3761,17 @@ class TestSchemaExtractor:
             ");\n",
             encoding="utf-8",
         )
-        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))[
+            "db.membership"
+        ]
         assert "| team_id | INT | yes |" in s.l2_md
         assert "| user_id | INT | yes |" in s.l2_md
         assert "PK team_id, user_id" in s.summary
         assert "PK PRIMARY KEY" not in s.summary
 
-    def test_primary_key_clause_with_no_columns_degrades_to_none_detected(self, tmp_path):
+    def test_primary_key_clause_with_no_columns_degrades_to_none_detected(
+        self, tmp_path
+    ):
         # Fix wave 3, finding 1: `PRIMARY KEY ()` / `PRIMARY KEY (   )`
         # match `_PK_LIST_RE` but capture no column names -- the old
         # fallback only ran on no-match, so this collapsed to a
@@ -3582,7 +3792,7 @@ class TestSchemaExtractor:
         for table_id in ("db.t", "db.u"):
             s = by_id[table_id]
             assert "PK none detected" in s.summary
-            assert "PK  (" not in s.summary          # no double space, no bare "PK "
+            assert "PK  (" not in s.summary  # no double space, no bare "PK "
             # row cells and DDL are untouched by the summary-only fix
             assert "| a | INT |  |" in s.l2_md
             assert "| b | INT |  |" in s.l2_md
@@ -3609,7 +3819,9 @@ class TestSchemaExtractor:
             ");\n",
             encoding="utf-8",
         )
-        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.membership"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))[
+            "db.membership"
+        ]
         assert "\n" not in s.summary
         assert "PK team_id, user_id (source: migrations/001.sql)." in s.summary
         # row cells and DDL are untouched -- only the summary rendering changed
@@ -3617,7 +3829,9 @@ class TestSchemaExtractor:
         assert "| user_id | INT | yes |" in s.l2_md
         assert "PRIMARY KEY (\n    team_id,\n    user_id\n  )" in s.l3_md
 
-    def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(self, tmp_path):
+    def test_clean_type_does_not_fabricate_a_closing_paren_for_a_literal(
+        self, tmp_path
+    ):
         # New Minor: a literal like DEFAULT '(' has a genuinely unbalanced
         # paren count, but it is not a truncated capture -- it is exactly
         # what the source says. Appending ')' fabricates text that was
@@ -3633,7 +3847,9 @@ class TestSchemaExtractor:
         assert "CHAR(1) DEFAULT '('" in s.l2_md
         assert "CHAR(1) DEFAULT '(')" not in s.l2_md
 
-    def test_a_parse_time_crash_on_one_file_does_not_discard_other_files_tables(self, tmp_path, monkeypatch):
+    def test_a_parse_time_crash_on_one_file_does_not_discard_other_files_tables(
+        self, tmp_path, monkeypatch
+    ):
         # Minor 5: a parse-time exception on one migration file must not
         # unwind past the per-file loop and discard every other file's
         # already-accumulated tables (the defect class this stage has
@@ -3643,7 +3859,9 @@ class TestSchemaExtractor:
         root = tmp_path / "crash-one-file"
         mig = root / "migrations"
         mig.mkdir(parents=True)
-        (mig / "001.sql").write_text("CREATE TABLE good_one (id INT);\n", encoding="utf-8")
+        (mig / "001.sql").write_text(
+            "CREATE TABLE good_one (id INT);\n", encoding="utf-8"
+        )
         (mig / "002.sql").write_text("CREATE TABLE boom (id INT);\n", encoding="utf-8")
 
         real_create_re = schema_ext.CREATE_RE
@@ -3684,7 +3902,9 @@ class TestSchemaExtractor:
         assert "b" in s.l2_md and "c" in s.l2_md
         assert not any("could not reliably" in w for w in result.warnings)
 
-    def test_backtick_quoted_identifier_with_comment_chars_does_not_delete_a_column(self, tmp_path):
+    def test_backtick_quoted_identifier_with_comment_chars_does_not_delete_a_column(
+        self, tmp_path
+    ):
         # New Important, part 1 (backtick variant): round 1's comment
         # stripper and splitter tracked only '/" -- a "--" inside a
         # backtick-quoted identifier was misread as a real line comment,
@@ -3693,27 +3913,33 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t (\n  `a--b` INT,\n  keepme TEXT\n);\n", encoding="utf-8",
+            "CREATE TABLE t (\n  `a--b` INT,\n  keepme TEXT\n);\n",
+            encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
         assert "2 columns" in s.summary
         assert "keepme" in s.l2_md
 
-    def test_bracket_quoted_identifier_with_comment_chars_does_not_delete_a_column(self, tmp_path):
+    def test_bracket_quoted_identifier_with_comment_chars_does_not_delete_a_column(
+        self, tmp_path
+    ):
         # New Important, part 1 (bracket variant, T-SQL style).
         root = tmp_path / "bracket-comment-chars"
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t (\n  [a--b] INT,\n  keepme TEXT\n);\n", encoding="utf-8",
+            "CREATE TABLE t (\n  [a--b] INT,\n  keepme TEXT\n);\n",
+            encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
         assert "2 columns" in s.summary
         assert "keepme" in s.l2_md
 
-    def test_unterminated_string_literal_triggers_the_desync_guard_not_silent_deletion(self, tmp_path):
+    def test_unterminated_string_literal_triggers_the_desync_guard_not_silent_deletion(
+        self, tmp_path
+    ):
         # New Important, part 2 (Ruling R36's desync guard): a literal
         # that never closes before end of body must not silently
         # swallow the rest of the columns -- it must warn, naming the
@@ -3723,11 +3949,7 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t (\n"
-            "  a INT,\n"
-            "  note TEXT DEFAULT 'oops,\n"
-            "  b INT\n"
-            ");\n",
+            "CREATE TABLE t (\n  a INT,\n  note TEXT DEFAULT 'oops,\n  b INT\n);\n",
             encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
@@ -3771,16 +3993,22 @@ class TestSchemaExtractor:
         column_names = [
             ln.split("|")[1].strip()
             for ln in s.l2_md.splitlines()
-            if ln.startswith("| ") and not ln.startswith("| ---") and not ln.startswith("| Column")
+            if ln.startswith("| ")
+            and not ln.startswith("| ---")
+            and not ln.startswith("| Column")
         ]
         assert column_names == ["a", "b"]
 
     def test_scan_sql_flags_desync_on_unterminated_literal(self):
-        result = schema_ext._scan_sql("a INT, b TEXT DEFAULT 'unterminated", backslash_escapes=True)
+        result = schema_ext._scan_sql(
+            "a INT, b TEXT DEFAULT 'unterminated", backslash_escapes=True
+        )
         assert result.desynced is True
 
     def test_scan_sql_does_not_desync_on_backslash_escaped_quote(self):
-        result = schema_ext._scan_sql("a TEXT DEFAULT 'it\\'s', b INT", backslash_escapes=True)
+        result = schema_ext._scan_sql(
+            "a TEXT DEFAULT 'it\\'s', b INT", backslash_escapes=True
+        )
         assert result.desynced is False
 
     def test_scan_sql_tracks_backtick_and_bracket_quoting(self):
@@ -3838,7 +4066,9 @@ class TestSchemaExtractor:
         column_names = [
             ln.split("|")[1].strip()
             for ln in s.l2_md.splitlines()
-            if ln.startswith("| ") and not ln.startswith("| ---") and not ln.startswith("| Column")
+            if ln.startswith("| ")
+            and not ln.startswith("| ---")
+            and not ln.startswith("| Column")
         ]
         assert column_names == ["esc", "name", "email"]
         assert any("ambiguous" in w and "001.sql" in w for w in result.warnings)
@@ -3862,7 +4092,9 @@ class TestSchemaExtractor:
         quote_segments = [seg for kind, seg in resolution.segments if kind == "squote"]
         assert quote_segments == ["'it\\'s'"]
 
-    def test_resolve_scan_branch_only_literal_reading_clean_standard_sql_wins_no_warning(self):
+    def test_resolve_scan_branch_only_literal_reading_clean_standard_sql_wins_no_warning(
+        self,
+    ):
         # Branch (mirror of the above): a lone backslash literal with no
         # other quote characters anywhere else in the text for the
         # escape reading to falsely re-close on -- it just runs off the
@@ -3880,7 +4112,9 @@ class TestSchemaExtractor:
         assert resolution.segments is not None
         assert resolution.ambiguous is False
 
-    def test_resolve_scan_branch_both_clean_and_disagree_takes_literal_reading_with_flag(self):
+    def test_resolve_scan_branch_both_clean_and_disagree_takes_literal_reading_with_flag(
+        self,
+    ):
         # Branch: both readings find *a* close, but at different points
         # -- the escape reading swallows through to a later, unrelated
         # apostrophe in an English comment; the literal reading closes
@@ -3908,7 +4142,8 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t (a INT CHECK (a > [1), b INT, c INT]);\n", encoding="utf-8",
+            "CREATE TABLE t (a INT CHECK (a > [1), b INT, c INT]);\n",
+            encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
@@ -3916,7 +4151,9 @@ class TestSchemaExtractor:
         column_names = [
             ln.split("|")[1].strip()
             for ln in s.l2_md.splitlines()
-            if ln.startswith("| ") and not ln.startswith("| ---") and not ln.startswith("| Column")
+            if ln.startswith("| ")
+            and not ln.startswith("| ---")
+            and not ln.startswith("| Column")
         ]
         assert column_names == ["a", "b", "c"]
         assert any("001.sql" in w for w in result.warnings)
@@ -3927,7 +4164,8 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t ([Id] [int] IDENTITY(1,1), name TEXT);\n", encoding="utf-8",
+            "CREATE TABLE t ([Id] [int] IDENTITY(1,1), name TEXT);\n",
+            encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
@@ -3940,21 +4178,25 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t (tags TEXT[], grid INT[][]);\n", encoding="utf-8",
+            "CREATE TABLE t (tags TEXT[], grid INT[][]);\n",
+            encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
         assert "2 columns" in s.summary
         assert not result.warnings
 
-    def test_doubled_bracket_escape_in_identifier_still_parses_correctly(self, tmp_path):
+    def test_doubled_bracket_escape_in_identifier_still_parses_correctly(
+        self, tmp_path
+    ):
         # Must not break: a doubled ']]' escapes a literal ']' inside a
         # bracket-quoted identifier.
         root = tmp_path / "bracket-escaped"
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t ([we]]ird] INT, id INT);\n", encoding="utf-8",
+            "CREATE TABLE t ([we]]ird] INT, id INT);\n",
+            encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
@@ -3969,7 +4211,8 @@ class TestSchemaExtractor:
         mig = root / "migrations"
         mig.mkdir(parents=True)
         (mig / "001.sql").write_text(
-            "CREATE TABLE t ([[VERSION]] INT, id INT);\n", encoding="utf-8",
+            "CREATE TABLE t ([[VERSION]] INT, id INT);\n",
+            encoding="utf-8",
         )
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
@@ -4155,8 +4398,10 @@ class TestSchemaExtractor:
         assert "last_login" not in s.l2_md
         assert "Table users: 2 columns" in s.summary
         assert any(
-            "duplicate CREATE TABLE 'users' in src/main/resources/db/migration/V1__init.sql" in w
-            and "keeping the definition from services/billing/migrations/001_init.sql" in w
+            "duplicate CREATE TABLE 'users' in src/main/resources/db/migration/V1__init.sql"
+            in w
+            and "keeping the definition from services/billing/migrations/001_init.sql"
+            in w
             and "not merged" in w
             for w in result.warnings
         )
@@ -4165,18 +4410,23 @@ class TestSchemaExtractor:
         root = self._two_dir_users(tmp_path)
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.users"]
-        assert "V2__alter.sql" not in s.l2_md          # not in Source either
+        assert "V2__alter.sql" not in s.l2_md  # not in Source either
         assert any(
             "ALTER TABLE 'users' ADD COLUMN in src/main/resources/db/migration/V2__alter.sql not applied"
-            in w and "created in services/billing/migrations/001_init.sql" in w
+            in w
+            and "created in services/billing/migrations/001_init.sql" in w
             for w in result.warnings
         )
 
     def test_alter_in_the_same_directory_still_applies(self, repo):
-        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))["db.restrictive_airspace"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(repo, _opts(repo)))[
+            "db.restrictive_airspace"
+        ]
         assert "| effective_date |" in s.l2_md
 
-    def test_ef_table_says_columns_not_extracted_instead_of_an_empty_table(self, tmp_path):
+    def test_ef_table_says_columns_not_extracted_instead_of_an_empty_table(
+        self, tmp_path
+    ):
         # Reviewer G-13: a header row with no rows and "0 columns" reads as
         # "this table has no columns".
         root = tmp_path / "efrepo"
@@ -4186,11 +4436,19 @@ class TestSchemaExtractor:
             'migrationBuilder.CreateTable(\n    name: "Invoices",\n    columns: table => new {}\n);\n',
             encoding="utf-8",
         )
-        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))["db.Invoices"]
+        s = _by_id(schema_ext.SchemaExtractor().extract(root, _opts(root)))[
+            "db.Invoices"
+        ]
         assert "| Column | Type | PK |" not in s.l2_md
-        assert "_Columns not extracted: EF Core migrations are recognised by table name only._" in s.l2_md
+        assert (
+            "_Columns not extracted: EF Core migrations are recognised by table name only._"
+            in s.l2_md
+        )
         assert "_Source: Migrations/20240101_Init.cs_" in s.l2_md
-        assert "Table Invoices: columns not extracted (EF migration), PK none detected" in s.summary
+        assert (
+            "Table Invoices: columns not extracted (EF migration), PK none detected"
+            in s.summary
+        )
 
     def test_created_in_empty_string_never_matches_a_root_level_created_in(self):
         # Carried from Task 7's review: _dirname("") returns "." same as a
@@ -4226,8 +4484,12 @@ class TestIntegrationsExtractor:
         # into it) -- checking only l2_md/l3_md would miss a leak that
         # only shows up in the rendered summary sentence.
         blob = "".join(s.l2_md + s.l3_md + s.summary for s in result.sections)
-        for secret in ("do-not-ship-this-value", "localhost:9092",
-                       "airspace-assets", "postgres://localhost/airspace"):
+        for secret in (
+            "do-not-ship-this-value",
+            "localhost:9092",
+            "airspace-assets",
+            "postgres://localhost/airspace",
+        ):
             assert secret not in blob
 
     def test_never_emits_compose_environment_values(self, repo):
@@ -4283,7 +4545,8 @@ class TestIntegrationsExtractor:
         root = tmp_path / "openapi-no-servers"
         root.mkdir()
         (root / "openapi.yaml").write_text(
-            "openapi: 3.0.0\npaths: {}\n", encoding="utf-8",
+            "openapi: 3.0.0\npaths: {}\n",
+            encoding="utf-8",
         )
         assert int_ext.IntegrationsExtractor().detect(root) is False
 
@@ -4321,7 +4584,9 @@ class TestIntegrationsExtractor:
         assert "KAFKA_BROKER_URL" in blob
         assert "super-secret-broker-value" not in blob
 
-    def test_compose_environment_list_single_pair_mapping_form_never_leaks_value(self, tmp_path):
+    def test_compose_environment_list_single_pair_mapping_form_never_leaks_value(
+        self, tmp_path
+    ):
         # Path 3: a `KEY=value` list entry whose own text contains ": ",
         # so YAML parses that one list item as a single-pair mapping
         # instead of a plain string -- the exact shape of task B4's
@@ -4370,7 +4635,9 @@ class TestIntegrationsExtractor:
         result = int_ext.IntegrationsExtractor().extract(root, _opts(root))
         blob = "".join(s.l2_md + s.l3_md + s.summary for s in result.sections)
         assert "hunter2" not in blob
-        assert result.sections == []  # nothing survives sanitisation -> no int.redis at all
+        assert (
+            result.sections == []
+        )  # nothing survives sanitisation -> no int.redis at all
 
     def test_colon_containing_mapping_key_does_not_leak_its_value(self, tmp_path):
         # A block-mapping `environment:` entry whose *key* (not value)
@@ -4511,7 +4778,9 @@ class TestApiExtractor:
             "openapi: 3.0.0\npaths:\n  /health:\n    get:\n      summary: Health\n",
             encoding="utf-8",
         )
-        assert "api.surface" in _by_id(api_ext.ApiExtractor().extract(root, _opts(root)))
+        assert "api.surface" in _by_id(
+            api_ext.ApiExtractor().extract(root, _opts(root))
+        )
 
     def test_l3_has_no_pipe_table(self, repo):
         for s in api_ext.ApiExtractor().extract(repo, _opts(repo)).sections:
@@ -4537,9 +4806,9 @@ class TestApiExtractor:
             "openapi: 3.0.0\n"
             "paths:\n"
             "  /a:\n"
-            "    get:\n      tags: [\"My Tag\"]\n      summary: A\n"
+            '    get:\n      tags: ["My Tag"]\n      summary: A\n'
             "  /b:\n"
-            "    get:\n      tags: [\"My-Tag\"]\n      summary: B\n",
+            '    get:\n      tags: ["My-Tag"]\n      summary: B\n',
             encoding="utf-8",
         )
         result = api_ext.ApiExtractor().extract(root, _opts(root))
@@ -4663,11 +4932,11 @@ class TestComposeFacts:
         "        source: pgwal\n"
         "        target: /wal\n"
         "    healthcheck:\n"
-        "      test: [\"CMD\", \"pg_isready\", \"-U\", \"app\"]\n"
+        '      test: ["CMD", "pg_isready", "-U", "app"]\n'
         "  nginx:\n"
         "    image: nginx:1.27-alpine\n"
         "    healthcheck:\n"
-        "      test: [\"CMD-SHELL\", \"wget -qO- http://localhost/nginx-health || exit 1\"]\n"
+        '      test: ["CMD-SHELL", "wget -qO- http://localhost/nginx-health || exit 1"]\n'
         "  redis:\n"
         "    image: redis:7\n"
         "    healthcheck:\n"
@@ -4679,7 +4948,7 @@ class TestComposeFacts:
         "  cache:\n"
         "    image: cache:1\n"
         "    healthcheck:\n"
-        "      test: [\"NONE\"]\n"
+        '      test: ["NONE"]\n'
         "  transcoder:\n"
         "    image: ffmpeg:1\n"
         "    deploy:\n"
@@ -4710,7 +4979,10 @@ class TestComposeFacts:
         secs = self._sections(tmp_path)
         assert "| Healthcheck | pg_isready -U app |" in secs["svc.postgres"].l2_md
         assert "healthcheck: pg_isready -U app\n" in secs["svc.postgres"].l3_md
-        assert "| Healthcheck | wget -qO- http://localhost/nginx-health \\|\\| exit 1 |" in secs["svc.nginx"].l2_md
+        assert (
+            "| Healthcheck | wget -qO- http://localhost/nginx-health \\|\\| exit 1 |"
+            in secs["svc.nginx"].l2_md
+        )
         assert "| Healthcheck | redis-cli ping |" in secs["svc.redis"].l2_md
         assert "| Healthcheck | disabled |" in secs["svc.web"].l2_md
         assert "healthcheck: disabled\n" in secs["svc.web"].l3_md
@@ -4734,21 +5006,42 @@ class TestComposeFacts:
 
     def test_devices_render_driver_and_capabilities(self, tmp_path):
         secs = self._sections(tmp_path)
-        assert "| Devices | nvidia:gpu,video, unknown:tpu |" in secs["svc.transcoder"].l2_md
-        assert "devices:\n- nvidia:gpu,video\n- unknown:tpu\n" in secs["svc.transcoder"].l3_md
+        assert (
+            "| Devices | nvidia:gpu,video, unknown:tpu |"
+            in secs["svc.transcoder"].l2_md
+        )
+        assert (
+            "devices:\n- nvidia:gpu,video\n- unknown:tpu\n"
+            in secs["svc.transcoder"].l3_md
+        )
         assert "| Devices | none |" in secs["svc.minio"].l2_md
         assert "devices: []\n" in secs["svc.minio"].l3_md
 
     def test_yaml_key_order_after_env_keys(self, tmp_path):
         s = self._sections(tmp_path)["svc.postgres"]
         yaml_text = s.l3_md.split("```yaml\n", 1)[1].split("```", 1)[0]
-        keys = [line.split(":", 1)[0] for line in yaml_text.splitlines() if line and not line.startswith(("-", " "))]
-        assert keys[:8] == ["name", "image", "ports", "depends_on", "env_keys", "volumes", "healthcheck", "devices"]
+        keys = [
+            line.split(":", 1)[0]
+            for line in yaml_text.splitlines()
+            if line and not line.startswith(("-", " "))
+        ]
+        assert keys[:8] == [
+            "name",
+            "image",
+            "ports",
+            "depends_on",
+            "env_keys",
+            "volumes",
+            "healthcheck",
+            "devices",
+        ]
 
     def test_dockerfile_fallback_leaves_facts_empty(self, tmp_path):
         root = tmp_path / "dockerfile-only"
         root.mkdir()
-        (root / "Dockerfile").write_text("FROM python:3.12-slim\nEXPOSE 8080\n", encoding="utf-8")
+        (root / "Dockerfile").write_text(
+            "FROM python:3.12-slim\nEXPOSE 8080\n", encoding="utf-8"
+        )
         result = svc_ext.ServicesExtractor().extract(root, _opts(root))
         s = next(iter(_by_id(result).values()))
         assert "| Volumes | none |" in s.l2_md
@@ -4758,5 +5051,7 @@ class TestComposeFacts:
     def test_two_runs_are_byte_identical(self, tmp_path):
         a = self._sections(tmp_path)["svc.transcoder"]
         root = tmp_path / "compose-facts"
-        b = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))["svc.transcoder"]
+        b = _by_id(svc_ext.ServicesExtractor().extract(root, _opts(root)))[
+            "svc.transcoder"
+        ]
         assert (a.l2_md, a.l3_md) == (b.l2_md, b.l3_md)

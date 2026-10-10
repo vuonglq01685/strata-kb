@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -75,7 +76,7 @@ class SyncReport:
     embedded: int = 0
 
 
-def db_path(hub: "HubHandle") -> Path:
+def db_path(hub: HubHandle) -> Path:
     return hub.root / ".kb-work" / DB_NAME
 
 
@@ -115,7 +116,9 @@ def warm_vec() -> bool:
         # doesn't wrap as ImportError. Degrade to FTS-only same as above, but
         # this case is unexpected enough to be worth a log line (fires once,
         # thanks to _VEC_WARMED).
-        logger.warning("sqlite_vec import failed unexpectedly — semantic leg disabled: %s", exc)
+        logger.warning(
+            "sqlite_vec import failed unexpectedly — semantic leg disabled: %s", exc
+        )
         _VEC_MODULE = None
     else:
         _VEC_MODULE = sqlite_vec
@@ -124,18 +127,21 @@ def warm_vec() -> bool:
 
 
 def _load_vec(conn: sqlite3.Connection) -> bool:
-    if not warm_vec():
+    vec_module = _VEC_MODULE if warm_vec() else None
+    if vec_module is None:
         return False
     try:
         conn.enable_load_extension(True)
         try:
-            _VEC_MODULE.load(conn)
+            vec_module.load(conn)
         finally:
             conn.enable_load_extension(False)
     except (AttributeError, sqlite3.OperationalError) as exc:
         # Python build lacks loadable-extension support / extension failed to
         # load → degrade to FTS-only instead of breaking search entirely (spec §5)
-        logger.warning("sqlite-vec could not be loaded — semantic leg disabled: %s", exc)
+        logger.warning(
+            "sqlite-vec could not be loaded — semantic leg disabled: %s", exc
+        )
         return False
     return True
 
@@ -248,7 +254,7 @@ def _has_vec_table(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
-def delete_db(hub: "HubHandle") -> None:
+def delete_db(hub: HubHandle) -> None:
     """Delete the index file (plus -wal/-shm). The caller must close every
     connection first (Windows cannot unlink an open file — spec windows-support
     §R5).
@@ -287,7 +293,7 @@ def _has_schema(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
-def open_db(hub: "HubHandle") -> sqlite3.Connection:
+def open_db(hub: HubHandle) -> sqlite3.Connection:
     """Open the index, creating the schema if missing. Corrupt DB /
     schema_version mismatch / vec_sections present but sqlite-vec not installed
     → delete + rebuild exactly once.
@@ -409,7 +415,7 @@ def _repo_fingerprint(repo_dir: Path) -> str:
                         stack.append(entry.path)
                     elif entry.is_file(follow_symlinks=False):
                         st = entry.stat(follow_symlinks=False)
-                        rel = entry.path[len(base):].replace(os.sep, "/")
+                        rel = entry.path[len(base) :].replace(os.sep, "/")
                         records.append((rel, st.st_size, st.st_mtime_ns))
                     # else: a symlink (to a file or a directory) — skip, don't descend
                 except OSError:
@@ -417,12 +423,14 @@ def _repo_fingerprint(repo_dir: Path) -> str:
         finally:
             it.close()  # release the directory handle promptly (not just on GC)
     for rel, size, mtime_ns in sorted(records):
-        h.update(f"{rel}\0{size}\0{mtime_ns}\0".encode("utf-8"))
+        h.update(f"{rel}\0{size}\0{mtime_ns}\0".encode())
     return h.hexdigest()
 
 
 def _section_parts(
-    kb_dir: Path, doc_id: str, sec: models.SectionEntry,
+    kb_dir: Path,
+    doc_id: str,
+    sec: models.SectionEntry,
     texts: dict[Path, str | None] | None = None,
 ) -> tuple[str, str, str, str]:
     """(title, summary, body_l2, body_l3) — body_l2 = FULL L2 slice (summary
@@ -483,7 +491,7 @@ def _drop_repo(conn: sqlite3.Connection, repo_id: str) -> int:
 
 
 def _sync_repo(
-    conn: sqlite3.Connection, repo: "FederatedRepo", report: SyncReport
+    conn: sqlite3.Connection, repo: FederatedRepo, report: SyncReport
 ) -> None:
     rid = repo.meta.repo_id
     stored = {
@@ -552,8 +560,7 @@ def _sync_repo(
     for doc in repo.index.docs:
         for tag in {t.strip().lower() for t in doc.tags} | {doc.id.lower()}:
             conn.execute(
-                "INSERT OR IGNORE INTO doc_tags(repo_id, doc_id, tag) "
-                "VALUES(?, ?, ?)",
+                "INSERT OR IGNORE INTO doc_tags(repo_id, doc_id, tag) VALUES(?, ?, ?)",
                 (rid, doc.id, tag),
             )
 
@@ -564,10 +571,9 @@ def _sync_vectors(
     if embedder is None or not _conn_vec_loaded(conn):
         return
     meta = dict(conn.execute("SELECT key, value FROM meta"))
-    model_changed = (
-        meta.get("embed_model") != embedder.name
-        or meta.get("embed_dim") != str(embedder.dim)
-    )
+    model_changed = meta.get("embed_model") != embedder.name or meta.get(
+        "embed_dim"
+    ) != str(embedder.dim)
     if _has_vec_table(conn) and model_changed:
         conn.execute("DROP TABLE vec_sections")  # model/dim change → rebuild vec table
     table_created = not _has_vec_table(conn)
@@ -621,7 +627,12 @@ def _sync_vectors(
                 for _, title, summary, body in batch
             ]
         )
-        for (rowid, *_), vec in zip(batch, vectors):
+        if len(vectors) != len(batch):
+            raise ValueError(
+                f"embedder returned {len(vectors)} vectors for {len(batch)} "
+                "texts — check the embedder"
+            )
+        for (rowid, *_), vec in zip(batch, vectors, strict=True):
             if len(vec) != embedder.dim:
                 raise ValueError(
                     f"embedder returned a {len(vec)}-dim vector, expected "
@@ -640,22 +651,21 @@ def _sync_vectors(
     )
 
 
-def _cleanup_legacy(hub: "HubHandle") -> None:
+def _cleanup_legacy(hub: HubHandle) -> None:
     """Clean up embeddings-<rid>.db from the old architecture — pure cache,
     abandoned (spec §4)."""
     work = hub.root / ".kb-work"
     if not work.is_dir():
         return
     for p in work.glob("embeddings-*.db"):
-        try:
+        # held by another process (Windows) — clean up next time
+        with contextlib.suppress(OSError):
             p.unlink()
-        except OSError:  # held by another process (Windows) — clean up next time
-            pass
 
 
 def _sync_conn(
     conn: sqlite3.Connection,
-    hub: "HubHandle",
+    hub: HubHandle,
     embedder: Embedder | None,
     *,
     vectors_strict: bool = True,
@@ -751,7 +761,7 @@ def _sync_conn(
     return report
 
 
-def sync(hub: "HubHandle", embedder: Embedder | None) -> SyncReport:
+def sync(hub: HubHandle, embedder: Embedder | None) -> SyncReport:
     """Incremental sync: repo fingerprint → skip/diff by content-hash."""
     conn = open_db(hub)
     try:
@@ -760,7 +770,7 @@ def sync(hub: "HubHandle", embedder: Embedder | None) -> SyncReport:
         conn.close()
 
 
-def open_fresh(hub: "HubHandle", embedder: Embedder | None) -> sqlite3.Connection:
+def open_fresh(hub: HubHandle, embedder: Embedder | None) -> sqlite3.Connection:
     """Open + lazy freshness check (incremental sync if stale), return the
     connection. An embed failure here does not kill the query — degrade to
     FTS-only (vectors_strict=False)."""

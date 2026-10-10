@@ -75,14 +75,12 @@ def _call(
     return status, data
 
 
-def mint_installation_token(
-    creds: AppCreds, repo_full: str, http=_default_http
-) -> str:
+def mint_installation_token(creds: AppCreds, repo_full: str, http=_default_http) -> str:
     app_jwt = _app_jwt(creds)
     status, inst = _call(
         "GET", f"{API}/repos/{repo_full}/installation", app_jwt, None, http
     )
-    if status != 200:
+    if status != 200 or not isinstance(inst, dict):
         raise GHAppError(
             f"GET installation for '{repo_full}' -> {status} - "
             "is the GitHub App installed on the hub repo?"
@@ -94,7 +92,7 @@ def mint_installation_token(
         {},
         http,
     )
-    if status != 201:
+    if status != 201 or not isinstance(tok, dict):
         raise GHAppError(f"mint installation token -> {status}")
     return tok["token"]
 
@@ -115,7 +113,7 @@ def create_or_get_pr(
         {"title": title, "body": body, "head": head_branch, "base": base},
         http,
     )
-    if status == 201:
+    if status == 201 and isinstance(data, dict):
         return data["html_url"]
     if status == 422:  # PR for this head already open — fetch it
         owner = repo_full.split("/")[0]

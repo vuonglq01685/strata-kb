@@ -5,6 +5,7 @@ registry, the remote URL and the existing entry names, then pass them in.
 That keeps each of these -- they are the security rules -- a table test
 rather than something only a real hub can exercise.
 """
+
 from __future__ import annotations
 
 import re
@@ -217,7 +218,7 @@ def decide_mode(
     governed: bool,
     hub_label: str,
 ) -> Mode:
-    """"auto" | "pr" | "direct" -> the mode to run, or GateError.
+    """ "auto" | "pr" | "direct" -> the mode to run, or GateError.
 
     Replaces the `"github" in remote_url` substring test, which routed every
     GitLab/Gitea/Bitbucket/self-hosted hub -- and any GitHub hub on a machine

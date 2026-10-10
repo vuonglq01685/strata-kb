@@ -15,7 +15,9 @@ _ENCODER = None
 _ENCODER_FAILED = False
 
 HEADING_RE = re.compile(r"^## (?P<sid>\S+)(?:[ \t]+(?P<title>.*?))?\s*$")
-_HEADING_RE = HEADING_RE  # back-compat alias — callers import this private name directly
+_HEADING_RE = (
+    HEADING_RE  # back-compat alias — callers import this private name directly
+)
 _SEP_ROW_RE = re.compile(r"^\|[\s:|-]+\|$")
 _FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 
@@ -48,7 +50,10 @@ def _load_encoder():
     tokens skip tiktoken entirely (2026-10-10 review §6.2 F4/F5)."""
     import tiktoken
 
-    if "TIKTOKEN_CACHE_DIR" not in os.environ and "DATA_GYM_CACHE_DIR" not in os.environ:
+    if (
+        "TIKTOKEN_CACHE_DIR" not in os.environ
+        and "DATA_GYM_CACHE_DIR" not in os.environ
+    ):
         os.environ["TIKTOKEN_CACHE_DIR"] = str(tiktoken_cache_dir())
         try:
             return tiktoken.get_encoding("cl100k_base")
@@ -74,7 +79,8 @@ def count_tokens(text: str) -> int:
                 "estimates (~4 characters per token). Connect once to the "
                 "Internet to cache it in %s, or set TIKTOKEN_CACHE_DIR to a "
                 "folder that holds it.",
-                " ".join(str(exc).split())[:200], tiktoken_cache_dir(),
+                " ".join(str(exc).split())[:200],
+                tiktoken_cache_dir(),
             )
     if _ENCODER is None:
         return (len(text) + 3) // 4

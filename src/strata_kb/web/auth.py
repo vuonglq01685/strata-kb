@@ -48,7 +48,12 @@ def make_session(token: str, now: float | None = None) -> str:
 
 def verify_session(value: str, token: str, now: float | None = None) -> bool:
     issued_raw, _, sig = value.partition(".")
-    if not sig or not sig.isascii() or not issued_raw.isdecimal() or not issued_raw.isascii():
+    if (
+        not sig
+        or not sig.isascii()
+        or not issued_raw.isdecimal()
+        or not issued_raw.isascii()
+    ):
         return False
     expected = hmac.new(
         token.encode("utf-8"), issued_raw.encode("ascii"), hashlib.sha256
@@ -233,7 +238,10 @@ class TokenAuthMiddleware:
                     }
                 )
                 await send(
-                    {"type": "http.response.body", "body": b'{"error": "too many attempts"}'}
+                    {
+                        "type": "http.response.body",
+                        "body": b'{"error": "too many attempts"}',
+                    }
                 )
                 return
         if path == "/" or path.startswith("/ui"):
@@ -288,6 +296,4 @@ class TokenAuthMiddleware:
                 "headers": [(b"content-type", b"application/json")],
             }
         )
-        await send(
-            {"type": "http.response.body", "body": b'{"error": "unauthorized"}'}
-        )
+        await send({"type": "http.response.body", "body": b'{"error": "unauthorized"}'})

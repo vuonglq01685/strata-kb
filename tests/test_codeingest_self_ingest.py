@@ -2,6 +2,7 @@
 own repository must be right about it, and two clones of the same commit
 — one carrying git-ignored directories — must produce byte-identical
 documents. Skipped outside a git checkout of this repository."""
+
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,11 @@ pytestmark = pytest.mark.skipif(
 
 
 def _ingest(root: Path, kb_dir: Path) -> Path:
-    core.run(core.CodeIngestOptions(repo_root=root, kb_dir=kb_dir, doc_id="aero-code", repo_id="aero"))
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root, kb_dir=kb_dir, doc_id="aero-code", repo_id="aero"
+        )
+    )
     return kb_dir / "aero-code"
 
 

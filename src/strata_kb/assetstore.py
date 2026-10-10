@@ -4,8 +4,10 @@ Asset names are bare content-addressed filenames `<sha256>.<png|webp>`
 (spec A); the store prepends the configured key prefix. `mode: none`
 returns no store and leaves all existing behavior unchanged.
 """
+
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -90,7 +92,7 @@ class S3Store:
     def _c(self):
         if self._client is None:
             try:
-                import boto3
+                import boto3  # pyright: ignore[reportMissingImports]
             except ImportError as exc:
                 raise AssetStoreError(
                     'S3 asset store needs boto3 — run: pip install "strata-kb[s3]"'
@@ -133,9 +135,7 @@ class S3Store:
 
     def get(self, name: str) -> bytes | None:
         try:
-            resp = self._c().get_object(
-                Bucket=self._cfg.bucket, Key=self._key(name)
-            )
+            resp = self._c().get_object(Bucket=self._cfg.bucket, Key=self._key(name))
             return resp["Body"].read()
         except AssetStoreError:
             raise
@@ -170,10 +170,8 @@ def divert_assets(tree_root: Path, store) -> list[str]:
         rel = path.relative_to(tree_root).as_posix()
         path.unlink()
         diverted.append(rel)
-        try:
+        with contextlib.suppress(OSError):
             path.parent.rmdir()  # only succeeds when now empty
-        except OSError:
-            pass
     return sorted(diverted)
 
 
@@ -314,7 +312,7 @@ def bad_name_clause(bad: list[str]) -> str:
     return f"names {shown} -- none of which is a content-addressed asset name"
 
 
-def load_record(dest: Path) -> "models.AssetsRecord":
+def load_record(dest: Path) -> models.AssetsRecord:
     """`.assets` at dest's RECORD_NAME; empty only when the file is
     genuinely absent — a present-but-unreadable (OSError) or
     present-but-corrupt (bad YAML / bad schema) record raises instead of
@@ -559,7 +557,9 @@ def divert_and_record(dest: Path, store, deletes: list[str] | None = None) -> li
     try:
         existing = load_record(dest).assets
     except AssetStoreError as exc:
-        logger.warning("%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc)
+        logger.warning(
+            "%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc
+        )
         existing = []
     merged = sorted((set(existing) | set(diverted)) - set(deletes or []))
     record_path = dest / RECORD_NAME
@@ -586,7 +586,9 @@ def synthesized_asset_entries(dest: Path) -> dict[str, str]:
     try:
         assets = load_record(dest).assets
     except AssetStoreError as exc:
-        logger.warning("%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc)
+        logger.warning(
+            "%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc
+        )
         assets = []
     # The `if sha` guard is belt-and-braces and no mutant can kill it (wave
     # I-1 round 5, measured: replacing it with `entries[rel] = asset_sha(rel)

@@ -40,8 +40,7 @@ def make_kb(tmp_path: Path, statuses: dict[str, str], short: bool = False) -> Pa
         alpha_body = "Alpha body text §2.3 code P. " * 12
         beta_body = "Beta body text. " * 20
     (doc / "ch1.raw.md").write_text(
-        f"## 1.1 Alpha\n\n{alpha_body}\n\n"
-        f"## 1.2 Beta\n\n{beta_body}\n",
+        f"## 1.1 Alpha\n\n{alpha_body}\n\n## 1.2 Beta\n\n{beta_body}\n",
         encoding="utf-8",
     )
     (doc / "ch1.md").write_text(
@@ -51,12 +50,21 @@ def make_kb(tmp_path: Path, statuses: dict[str, str], short: bool = False) -> Pa
         encoding="utf-8",
     )
     manifest = models.Manifest(
-        id="d1", title="Doc One",
+        id="d1",
+        title="Doc One",
         sections=[
-            models.SectionEntry(id="1.1", title="Alpha", file="ch1",
-                                status=statuses.get("1.1", "pending")),
-            models.SectionEntry(id="1.2", title="Beta", file="ch1",
-                                status=statuses.get("1.2", "pending")),
+            models.SectionEntry(
+                id="1.1",
+                title="Alpha",
+                file="ch1",
+                status=statuses.get("1.1", "pending"),
+            ),
+            models.SectionEntry(
+                id="1.2",
+                title="Beta",
+                file="ch1",
+                status=statuses.get("1.2", "pending"),
+            ),
         ],
     )
     models.save_yaml_model(doc / "_manifest.yaml", manifest)
@@ -99,12 +107,15 @@ def test_parse_json_reply_accepts_clean_and_fenced_json():
     assert summarize.parse_json_reply(fenced, keys)["l2_summary"] == "long text"
 
 
-@pytest.mark.parametrize("bad", [
-    "no json at all",
-    '{"l2_summary": "only one key"}',
-    '{"l2_summary": "", "l1_summary": "x"}',
-    '{"l2_summary": 5, "l1_summary": "x"}',
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "no json at all",
+        '{"l2_summary": "only one key"}',
+        '{"l2_summary": "", "l1_summary": "x"}',
+        '{"l2_summary": 5, "l1_summary": "x"}',
+    ],
+)
 def test_parse_json_reply_rejects_bad_replies(bad):
     with pytest.raises(ValueError):
         summarize.parse_json_reply(bad, ("l2_summary", "l1_summary"))
@@ -116,8 +127,8 @@ def test_replace_marker_replaces_only_target_and_keeps_tables(tmp_path):
     out = summarize.replace_marker(l2, "1.1", "Condensed alpha.")
     assert "Condensed alpha." in out
     assert "<!-- TODO:summarize 1.1 -->" not in out
-    assert "<!-- TODO:summarize 1.2 -->" in out          # untouched
-    assert "| P | Prohibited |" in out                   # table intact
+    assert "<!-- TODO:summarize 1.2 -->" in out  # untouched
+    assert "| P | Prohibited |" in out  # table intact
 
 
 def test_replace_marker_raises_when_marker_missing():
@@ -139,6 +150,7 @@ def test_replace_marker_occurrence_out_of_range_raises():
 
 class FakeRunner:
     """Duck-typed stand-in for llm.Runner. Scripted replies per call order."""
+
     name = "fake"
 
     def __init__(self, reply=None, fail_ids=(), fail_times=2):
@@ -204,16 +216,19 @@ def test_summarize_kb_retries_once_then_succeeds(tmp_path):
 OBJ = '{"l2_summary": "long text", "l1_summary": "short"}'
 
 
-@pytest.mark.parametrize("reply", [
-    f"```json\n{OBJ}\n```",
-    f"Sure! Here is the JSON:\n{OBJ}",
-    f"{OBJ}\nHope that helps!",
-    f"{OBJ}\nNote: use {{curly}} braces carefully.",
-    f"Analysis {{of the section}}\n{OBJ}",
-    f"{OBJ}\n{OBJ}",
-    '{"l2_summary": "has {5.3} inside", "l1_summary": "esc \\"q\\""}',
-    f"[{OBJ}]",
-])
+@pytest.mark.parametrize(
+    "reply",
+    [
+        f"```json\n{OBJ}\n```",
+        f"Sure! Here is the JSON:\n{OBJ}",
+        f"{OBJ}\nHope that helps!",
+        f"{OBJ}\nNote: use {{curly}} braces carefully.",
+        f"Analysis {{of the section}}\n{OBJ}",
+        f"{OBJ}\n{OBJ}",
+        '{"l2_summary": "has {5.3} inside", "l1_summary": "esc \\"q\\""}',
+        f"[{OBJ}]",
+    ],
+)
 def test_parse_json_reply_survives_realistic_wrappers(reply):
     out = summarize.parse_json_reply(reply, ("l2_summary", "l1_summary"))
     assert (out["l1_summary"], out["l2_summary"]) in (
@@ -233,10 +248,13 @@ def test_parse_json_reply_prefers_fenced_object_over_an_earlier_bare_one():
     assert out == {"l2_summary": "fenced wins", "l1_summary": "fenced"}
 
 
-@pytest.mark.parametrize("bad", [
-    '{"l2_summary": "x", "l1_summary": "y",}',            # trailing comma
-    "{'l2_summary': 'x', 'l1_summary': 'y'}",             # single quotes
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        '{"l2_summary": "x", "l1_summary": "y",}',  # trailing comma
+        "{'l2_summary': 'x', 'l1_summary': 'y'}",  # single quotes
+    ],
+)
 def test_parse_json_reply_still_rejects_invalid_json(bad):
     with pytest.raises(ValueError, match="no JSON object"):
         summarize.parse_json_reply(bad, ("l2_summary", "l1_summary"))
@@ -333,9 +351,17 @@ def _add_second_doc(kb: Path, section_summary: str = "Gamma done.") -> None:
     (doc / "ch1.raw.md").write_text("## 2.1 Gamma\n\nGamma body.\n", encoding="utf-8")
     (doc / "ch1.md").write_text("## 2.1 Gamma\n\nGamma done.\n", encoding="utf-8")
     manifest = models.Manifest(
-        id="d2", title="Doc Two",
-        sections=[models.SectionEntry(id="2.1", title="Gamma", file="ch1",
-                                       status="summarized", summary=section_summary)],
+        id="d2",
+        title="Doc Two",
+        sections=[
+            models.SectionEntry(
+                id="2.1",
+                title="Gamma",
+                file="ch1",
+                status="summarized",
+                summary=section_summary,
+            )
+        ],
     )
     models.save_yaml_model(doc / "_manifest.yaml", manifest)
     index_path = kb / "index.yaml"
@@ -344,7 +370,9 @@ def _add_second_doc(kb: Path, section_summary: str = "Gamma done.") -> None:
     models.save_yaml_model(index_path, index)
 
 
-def test_summarize_kb_refreshes_l0_for_every_in_scope_doc_when_nothing_pending(tmp_path):
+def test_summarize_kb_refreshes_l0_for_every_in_scope_doc_when_nothing_pending(
+    tmp_path,
+):
     kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "reviewed"})
     _give_sections_real_summaries(kb)
     _add_second_doc(kb)
@@ -386,9 +414,7 @@ class OSErrorOnceRunner:
             raise OSError("E2BIG")
         if "one-line summaries" in prompt:  # doc-summary call
             return _json.dumps({"summary": "Doc-level summary."})
-        return _json.dumps(
-            {"l2_summary": "Condensed text.", "l1_summary": "One line."}
-        )
+        return _json.dumps({"l2_summary": "Condensed text.", "l1_summary": "One line."})
 
 
 def test_summarize_kb_survives_bare_oserror_from_one_section(tmp_path):
@@ -468,7 +494,9 @@ class _ExplodingRunner:
 
 
 def test_table_only_section_skips_llm():
-    sec = PendingSection("doc1", "2", "Table Only", "f1", "## 2 Table Only\n\n[table omitted]")
+    sec = PendingSection(
+        "doc1", "2", "Table Only", "f1", "## 2 Table Only\n\n[table omitted]"
+    )
     result = _summarize_one(_ExplodingRunner(), sec)
     assert result == {"l2_summary": "", "l1_summary": "Table-only section: Table Only."}
 
@@ -478,7 +506,10 @@ def test_brief_section_copies_prose_verbatim_without_llm():
     sec = PendingSection("doc1", "5.320", "HAL", "f1", body)
     assert sec.kind == "brief"
     result = _summarize_one(_ExplodingRunner(), sec)
-    assert result == {"l2_summary": "Used On: PA\nLength: 3", "l1_summary": "Brief section: HAL."}
+    assert result == {
+        "l2_summary": "Used On: PA\nLength: 3",
+        "l1_summary": "Brief section: HAL.",
+    }
 
 
 import json
@@ -496,7 +527,7 @@ def test_budget_is_measured_on_prose_not_on_headings_or_placeholders():
     assert sec.prose_chars == 2000
     prompt = build_section_prompt(sec)
     assert "at most 700 characters" in prompt
-    assert "[table omitted]" in prompt           # rule mentions the marker
+    assert "[table omitted]" in prompt  # rule mentions the marker
     assert "Never describe, list, or reconstruct table contents" in prompt
 
 
@@ -574,8 +605,12 @@ SCAFFOLD_WITH_FIGURE = (
 
 
 def test_rebuild_l2_scaffold_keeps_figure_lines_round_trip():
-    assert rebuild_l2_scaffold(L2_WITH_FIGURE).rstrip("\n") == SCAFFOLD_WITH_FIGURE.rstrip("\n")
-    assert rebuild_l2_scaffold(SCAFFOLD_WITH_FIGURE).rstrip("\n") == SCAFFOLD_WITH_FIGURE.rstrip("\n")
+    assert rebuild_l2_scaffold(L2_WITH_FIGURE).rstrip(
+        "\n"
+    ) == SCAFFOLD_WITH_FIGURE.rstrip("\n")
+    assert rebuild_l2_scaffold(SCAFFOLD_WITH_FIGURE).rstrip(
+        "\n"
+    ) == SCAFFOLD_WITH_FIGURE.rstrip("\n")
 
 
 def test_reset_section_prose_touches_only_that_section():
@@ -583,14 +618,16 @@ def test_reset_section_prose_touches_only_that_section():
     assert "<!-- TODO:summarize 1 -->" in out
     assert "An old summary paragraph." not in out
     assert "Figure: Holding pattern entry sectors" in out
-    assert out.endswith("## 2 Table Only\n\n| h2 |\n|----|\n| v2 |")   # §2 untouched
+    assert out.endswith("## 2 Table Only\n\n| h2 |\n|----|\n| v2 |")  # §2 untouched
     assert "<!-- TODO:summarize 2 -->" not in out
 
 
 def _redo_kb(tmp_path):
     kb = tmp_path / ".kb"
     (kb / "doc1").mkdir(parents=True)
-    (kb / "index.yaml").write_text("docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8")
+    (kb / "index.yaml").write_text(
+        "docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8"
+    )
     (kb / "doc1" / "f1.md").write_text(L2_WITH_SUMMARIES, encoding="utf-8")
     (kb / "doc1" / "_manifest.yaml").write_text(
         "id: doc1\ntitle: Doc One\nsections:\n"
@@ -652,10 +689,7 @@ def test_redo_reset_include_reviewed_clears_the_record(tmp_path):
     assert all(s.status == "pending" and s.reviewed is None for s in m.sections)
 
 
-L2_DUP_ID = (
-    "## 1 First\n\nFirst old summary.\n\n"
-    "## 1 Second\n\nSecond old summary.\n"
-)
+L2_DUP_ID = "## 1 First\n\nFirst old summary.\n\n## 1 Second\n\nSecond old summary.\n"
 
 
 def test_reset_section_prose_occurrence_targets_second_heading():
@@ -668,7 +702,9 @@ def test_reset_section_prose_occurrence_targets_second_heading():
 def _dup_id_kb(tmp_path):
     kb = tmp_path / ".kb"
     (kb / "doc1").mkdir(parents=True)
-    (kb / "index.yaml").write_text("docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8")
+    (kb / "index.yaml").write_text(
+        "docs:\n- id: doc1\n  title: Doc One\n", encoding="utf-8"
+    )
     (kb / "doc1" / "f1.md").write_text(L2_DUP_ID, encoding="utf-8")
     (kb / "doc1" / "_manifest.yaml").write_text(
         "id: doc1\ntitle: Doc One\nsections:\n"
@@ -715,7 +751,9 @@ def test_redo_reset_records_failure_for_missing_heading_without_aborting(tmp_pat
     assert report.reset == []
     assert report.failed == ["doc1/1: heading not found in f1 (occurrence 1)"]
     m = models.load_yaml_model(kb / "doc1" / "_manifest.yaml", models.Manifest)
-    assert m.sections[1].status == "summarized" and m.sections[1].summary == "old-second"
+    assert (
+        m.sections[1].status == "summarized" and m.sections[1].summary == "old-second"
+    )
 
 
 def test_redo_reset_records_failure_for_row_past_end_of_manifest(tmp_path):
@@ -731,7 +769,9 @@ def test_redo_reset_records_failure_for_row_past_end_of_manifest(tmp_path):
     assert m.sections[0].status == "summarized" and m.sections[0].summary == "old"
 
 
-def test_redo_reset_skips_l2_write_when_nothing_changed_for_the_doc(tmp_path, monkeypatch):
+def test_redo_reset_skips_l2_write_when_nothing_changed_for_the_doc(
+    tmp_path, monkeypatch
+):
     """B3: L2 is written only `if changed`. Row 1 targets a second '## 1'
     occurrence that the (single-heading) L2 file doesn't have, so the row
     fails inside reset_section_prose — but only AFTER the file was already
@@ -771,7 +811,9 @@ def test_redo_reset_continues_past_a_failing_row_in_the_same_plan(tmp_path):
     assert report.failed == ["doc1/1: heading not found in f1 (occurrence 1)"]
     m = models.load_yaml_model(kb / "doc1" / "_manifest.yaml", models.Manifest)
     assert m.sections[0].status == "pending"
-    assert m.sections[1].status == "summarized" and m.sections[1].summary == "old-second"
+    assert (
+        m.sections[1].status == "summarized" and m.sections[1].summary == "old-second"
+    )
 
 
 def test_retry_pauses_before_second_attempt(monkeypatch):
@@ -808,18 +850,24 @@ def test_length_guard_retry_does_not_pause(monkeypatch):
 def test_duplicate_ids_each_get_their_own_summary(tmp_path):
     kb = tmp_path / ".kb"
     (kb / "d").mkdir(parents=True)
-    (kb / "index.yaml").write_text("docs:\n- id: d\n  title: D\n  summary: s\n", encoding="utf-8")
+    (kb / "index.yaml").write_text(
+        "docs:\n- id: d\n  title: D\n  summary: s\n", encoding="utf-8"
+    )
     long_a = "AAAA " * 60
     long_b = "BBBB " * 60
     (kb / "d" / "f.raw.md").write_text(
-        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8")
+        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8"
+    )
     (kb / "d" / "f.md").write_text(
         "## 1.1 Part A\n\n<!-- TODO:summarize 1.1 -->\n\n## 1.1 Part B\n\n<!-- TODO:summarize 1.1 -->\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     (kb / "d" / "_manifest.yaml").write_text(
         "id: d\ntitle: D\nsections:\n"
         "- {id: '1.1', title: Part A, file: f, status: pending}\n"
-        "- {id: '1.1', title: Part B, file: f, status: pending}\n", encoding="utf-8")
+        "- {id: '1.1', title: Part B, file: f, status: pending}\n",
+        encoding="utf-8",
+    )
 
     class Echo:
         name = "echo"
@@ -839,7 +887,7 @@ def test_duplicate_ids_each_get_their_own_summary(tmp_path):
 
 
 def test_apply_results_records_provenance_and_l3_hash(tmp_path):
-    kb = make_kb(tmp_path, {}, short=True)   # ~30-char bodies → brief → no LLM call
+    kb = make_kb(tmp_path, {}, short=True)  # ~30-char bodies → brief → no LLM call
     fake = FakeRunner()
     fake.model, fake.effort = "sonnet-5", "high"
     summarize.summarize_kb(kb, fake, max_workers=1)
@@ -855,7 +903,7 @@ def test_apply_results_records_provenance_and_l3_hash(tmp_path):
 
 
 def test_llm_section_provenance_names_the_runner(tmp_path):
-    kb = make_kb(tmp_path, {})               # long bodies → llm kind
+    kb = make_kb(tmp_path, {})  # long bodies → llm kind
     fake = FakeRunner()
     fake.model, fake.effort = "sonnet-5", "high"
     summarize.summarize_kb(kb, fake, max_workers=1)
@@ -875,14 +923,18 @@ def test_duplicate_ids_partial_failure_keeps_correct_marker_and_row_status(tmp_p
     long_a = "AAAA " * 60
     long_b = "BBBB " * 60
     (kb / "d" / "f.raw.md").write_text(
-        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8")
+        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8"
+    )
     (kb / "d" / "f.md").write_text(
         "## 1.1 Part A\n\n<!-- TODO:summarize 1.1 -->\n\n## 1.1 Part B\n\n<!-- TODO:summarize 1.1 -->\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     (kb / "d" / "_manifest.yaml").write_text(
         "id: d\ntitle: D\nsections:\n"
         "- {id: '1.1', title: Part A, file: f, status: pending}\n"
-        "- {id: '1.1', title: Part B, file: f, status: pending}\n", encoding="utf-8")
+        "- {id: '1.1', title: Part B, file: f, status: pending}\n",
+        encoding="utf-8",
+    )
 
     class FlakyEcho:
         name = "flaky"
@@ -896,7 +948,7 @@ def test_duplicate_ids_partial_failure_keeps_correct_marker_and_row_status(tmp_p
     assert report.failed == ["d/1.1"]
     assert report.summarized == ["d/1.1"]
     l2 = (kb / "d" / "f.md").read_text(encoding="utf-8")
-    assert "<!-- TODO:summarize 1.1 -->" in l2   # row 0's marker survives
+    assert "<!-- TODO:summarize 1.1 -->" in l2  # row 0's marker survives
     assert "SUM-B" in l2
     assert l2.index("<!-- TODO:summarize 1.1 -->") < l2.index("SUM-B")
     m = models.load_yaml_model(kb / "d" / "_manifest.yaml", models.Manifest)
@@ -910,22 +962,28 @@ def _kb_with_missing_heading(tmp_path):
     (kb / "index.yaml").write_text("docs:\n- id: d\n  title: D\n", encoding="utf-8")
     (kb / "d" / "f.raw.md").write_text(
         "## X Only One\n\n" + "Some prose text here that is fairly long. " * 6 + "\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     (kb / "d" / "f.md").write_text(
         "## X Only One\n\n<!-- TODO:summarize X -->\n\n"
         "## X Only One\n\n<!-- TODO:summarize X -->\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     (kb / "d" / "_manifest.yaml").write_text(
         "id: d\ntitle: D\nsections:\n"
         "- {id: 'X', title: Only One, file: f, status: pending}\n"
-        "- {id: 'X', title: Only One, file: f, status: pending}\n", encoding="utf-8")
+        "- {id: 'X', title: Only One, file: f, status: pending}\n",
+        encoding="utf-8",
+    )
     return kb
 
 
 def test_collect_pending_skips_missing_heading_and_reports_via_callback(tmp_path):
     kb = _kb_with_missing_heading(tmp_path)
     pending = summarize.collect_pending(kb)
-    assert [p.row for p in pending] == [0]  # row 1's heading doesn't exist in the raw file
+    assert [p.row for p in pending] == [
+        0
+    ]  # row 1's heading doesn't exist in the raw file
 
     messages: list[str] = []
     pending2 = summarize.collect_pending(kb, on_missing=messages.append)
@@ -947,7 +1005,9 @@ def test_missing_heading_fails_that_row_without_fabricating_table_only(tmp_path)
 
 def test_replace_marker_negative_occurrence_raises():
     with pytest.raises(ValueError):
-        summarize.replace_marker("<!-- TODO:summarize 1.1 -->\n", "1.1", "s", occurrence=-1)
+        summarize.replace_marker(
+            "<!-- TODO:summarize 1.1 -->\n", "1.1", "s", occurrence=-1
+        )
 
 
 def test_duplicate_id_row_already_summarized_leaves_marker_index_correct_for_pending_row(
@@ -966,14 +1026,18 @@ def test_duplicate_id_row_already_summarized_leaves_marker_index_correct_for_pen
     long_a = "AAAA " * 60
     long_b = "BBBB " * 60
     (kb / "d" / "f.raw.md").write_text(
-        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8")
+        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8"
+    )
     (kb / "d" / "f.md").write_text(
         "## 1.1 Part A\n\nOld summary A.\n\n## 1.1 Part B\n\n<!-- TODO:summarize 1.1 -->\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     (kb / "d" / "_manifest.yaml").write_text(
         "id: d\ntitle: D\nsections:\n"
         "- {id: '1.1', title: Part A, file: f, status: summarized, summary: Old summary A.}\n"
-        "- {id: '1.1', title: Part B, file: f, status: pending}\n", encoding="utf-8")
+        "- {id: '1.1', title: Part B, file: f, status: pending}\n",
+        encoding="utf-8",
+    )
 
     class Echo:
         name = "echo"
@@ -992,7 +1056,10 @@ def test_duplicate_id_row_already_summarized_leaves_marker_index_correct_for_pen
     assert "SUM-B" in l2
     assert "<!-- TODO:summarize 1.1 -->" not in l2
     m = models.load_yaml_model(kb / "d" / "_manifest.yaml", models.Manifest)
-    assert m.sections[0].status == "summarized" and m.sections[0].summary == "Old summary A."
+    assert (
+        m.sections[0].status == "summarized"
+        and m.sections[0].summary == "Old summary A."
+    )
     assert m.sections[1].status == "summarized" and m.sections[1].summary == "L1-B"
 
 
@@ -1009,14 +1076,18 @@ def test_duplicate_id_rerun_after_partial_failure_resolves_marker_by_remaining_p
     long_a = "AAAA " * 60
     long_b = "BBBB " * 60
     (kb / "d" / "f.raw.md").write_text(
-        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8")
+        f"## 1.1 Part A\n\n{long_a}\n\n## 1.1 Part B\n\n{long_b}\n", encoding="utf-8"
+    )
     (kb / "d" / "f.md").write_text(
         "## 1.1 Part A\n\n<!-- TODO:summarize 1.1 -->\n\n## 1.1 Part B\n\n<!-- TODO:summarize 1.1 -->\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     (kb / "d" / "_manifest.yaml").write_text(
         "id: d\ntitle: D\nsections:\n"
         "- {id: '1.1', title: Part A, file: f, status: pending}\n"
-        "- {id: '1.1', title: Part B, file: f, status: pending}\n", encoding="utf-8")
+        "- {id: '1.1', title: Part B, file: f, status: pending}\n",
+        encoding="utf-8",
+    )
 
     class FlakyEcho:
         name = "flaky"

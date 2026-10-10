@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -84,27 +86,33 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
         store = intake_mod.StatusStore(intake_cfg.status_path)
         routes += intake_routes.build_intake_routes(intake_cfg, store)
 
-    lifespan = None
+    lifespan: Callable[[Starlette], AbstractAsyncContextManager[None]] | None = None
     if mcp_server is not None:
         mcp_app = mcp_server.streamable_http_app()
 
         @contextlib.asynccontextmanager
-        async def lifespan(app):
+        async def mcp_lifespan(app: Starlette) -> AsyncIterator[None]:
             # FastMCP's session manager must run for the app's lifetime,
             # but Starlette does not run a mounted sub-app's lifespan —
             # so the parent enters it explicitly.
             async with mcp_server.session_manager.run():
                 yield
 
+        lifespan = mcp_lifespan
+
         # Mounted last: /mcp requests fall through to the FastMCP app,
         # which serves them at its internal /mcp path.
         routes.append(Mount("/", app=mcp_app))
 
-    async def snapshot_corrupt(request: Request, exc: api.SnapshotCorruptError):
+    async def snapshot_corrupt(request: Request, exc: Exception):
+        # Registered for api.SnapshotCorruptError only; Starlette types every
+        # handler as taking any Exception.
+        doc_id = exc.doc_id if isinstance(exc, api.SnapshotCorruptError) else None
         logger.warning("corrupt published snapshot: %s", exc)
         if request.url.path.startswith("/api"):
             json_detail = (
-                f"published snapshot for '{exc.doc_id}' is corrupt" if exc.doc_id
+                f"published snapshot for '{doc_id}' is corrupt"
+                if doc_id
                 else "a published snapshot is corrupt"
             )
             return JSONResponse(
@@ -112,12 +120,16 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
                 status_code=503,
             )
         html_detail = (
-            f"The published snapshot for '{exc.doc_id}' is corrupt. "
-            "Re-publish it from the owning repo." if exc.doc_id
+            f"The published snapshot for '{doc_id}' is corrupt. "
+            "Re-publish it from the owning repo."
+            if doc_id
             else "A published snapshot is corrupt. Re-publish it from the owning repo."
         )
         return ui.render_error_page(
-            config, status=503, title="Document unavailable", detail=html_detail,
+            config,
+            status=503,
+            title="Document unavailable",
+            detail=html_detail,
         )
 
     app = Starlette(

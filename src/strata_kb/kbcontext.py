@@ -83,7 +83,7 @@ def _collect_tags(bucket: dict[str, str], tags: list[str]) -> None:
             bucket.setdefault(cleaned.lower(), cleaned)
 
 
-def tag_vocabulary(repos: list["FederatedRepo"]) -> dict[str, str]:
+def tag_vocabulary(repos: list[FederatedRepo]) -> dict[str, str]:
     """Every tag published anywhere on the federation: lowercase key ->
     canonical spelling as recorded in that repo's `index.yaml`.
 
@@ -106,7 +106,7 @@ def tag_vocabulary(repos: list["FederatedRepo"]) -> dict[str, str]:
     return vocab
 
 
-def derive_tags(repos: list["FederatedRepo"], refs: list[KBRef]) -> list[str]:
+def derive_tags(repos: list[FederatedRepo], refs: list[KBRef]) -> list[str]:
     """The tags of the documents these refs pin — the default content of a
     block's `tags:` line, so no agent ever chooses one.
 
@@ -237,16 +237,18 @@ def parse(text: str) -> KBContext:
         raise KBContextError("kb-context block is empty or malformed")
     version = str(payload.get("version") or "").strip()
     if not version:
-        raise KBContextError("kb-context is missing 'version' (commit hash when the BA wrote it)")
+        raise KBContextError(
+            "kb-context is missing 'version' (commit hash when the BA wrote it)"
+        )
     hub_version_raw = payload.get("hub_version")
     hub_version = str(hub_version_raw).strip() if hub_version_raw else None
     raw_refs = payload.get("refs") or []
     if not raw_refs:
-        raise KBContextError("kb-context is missing 'refs' — must cite at least 1 section")
-    if not isinstance(raw_refs, list):
         raise KBContextError(
-            "'refs' must be a YAML list (one ref per line '- ...')"
+            "kb-context is missing 'refs' — must cite at least 1 section"
         )
+    if not isinstance(raw_refs, list):
+        raise KBContextError("'refs' must be a YAML list (one ref per line '- ...')")
     refs = [parse_ref(str(r)) for r in raw_refs]
     raw_tags = payload.get("tags") or []
     if not isinstance(raw_tags, list):
@@ -268,7 +270,7 @@ def render(ctx: KBContext) -> str:
     return "\n".join(lines)
 
 
-def _age_label(hub: "HubHandle") -> str:
+def _age_label(hub: HubHandle) -> str:
     """The one place a hub's cache age is rendered as text, so the stale-hub
     wording in a warning and in `_unknown_tag_message` cannot drift apart.
 
@@ -285,7 +287,7 @@ def _age_label(hub: "HubHandle") -> str:
 
 
 def _unknown_tag_message(
-    unknown: list[str], vocab: dict[str, str], hub: "HubHandle"
+    unknown: list[str], vocab: dict[str, str], hub: HubHandle
 ) -> str:
     """One message naming every unknown tag with its nearest real neighbours,
     plus — stated separately, never implied — the two situations that are not
@@ -318,7 +320,7 @@ def _unknown_tag_message(
 
 
 def build_context_block(
-    hub: "HubHandle",
+    hub: HubHandle,
     refs: list[str],
     tags: list[str] | None = None,
 ) -> tuple[str, str | None]:

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pydantic
 import pytest
 
 from strata_kb.config import (
@@ -113,5 +114,5 @@ def test_asset_store_rejects_unknown_mode(tmp_path):
     (tmp_path / "config.yaml").write_text(
         "asset_store:\n  mode: ftp\n", encoding="utf-8"
     )
-    with pytest.raises(Exception):
+    with pytest.raises(pydantic.ValidationError, match="ftp"):
         load_config(tmp_path)

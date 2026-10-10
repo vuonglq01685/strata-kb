@@ -19,6 +19,7 @@ longer appears in stderr at all). The assertions below check
 `stdout + stderr` and additionally require the index to exist and at least
 one process to have printed a real result.
 """
+
 import subprocess
 import sys
 import threading
@@ -38,12 +39,19 @@ _KB = [sys.executable, "-c", "from strata_kb.cli import app; app()"]
 
 def _run_query(fed_hub) -> subprocess.CompletedProcess:
     return subprocess.run(
-        _KB + [
-            "query", "airspace",
-            "--hub", str(fed_hub),
-            "--kb-dir", str(fed_hub / ".kb"),
+        _KB
+        + [
+            "query",
+            "airspace",
+            "--hub",
+            str(fed_hub),
+            "--kb-dir",
+            str(fed_hub / ".kb"),
         ],
-        capture_output=True, text=True, encoding="utf-8", timeout=120,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
     )
 
 
@@ -120,7 +128,9 @@ def test_forced_two_thread_race_is_idempotent(fed_hub):
             if conn is not None:
                 conn.close()
 
-    threads = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(2)]
+    threads = [
+        threading.Thread(target=worker, args=(i,), daemon=True) for i in range(2)
+    ]
     for t in threads:
         t.start()
     for t in threads:

@@ -153,6 +153,7 @@ def build_intake_routes(
     concurrency_limiter = publish_concurrency_limiter or anyio.CapacityLimiter(
         INTAKE_PUBLISH_MAX_CONCURRENCY
     )
+
     def _load_registry():
         # round-4 appended-section fix: this used to call hub_mod.resolve_hub
         # directly and only guard its `None` return -- resolve_hub can also
@@ -167,11 +168,14 @@ def build_intake_routes(
         try:
             return federation.load_registry(handle.federation_dir)
         except federation.RegistryError as exc:
-            raise intake.IntakeError(503, str(exc))
+            raise intake.IntakeError(503, str(exc)) from exc
 
     def _missing_token() -> JSONResponse:
         return JSONResponse(
-            {"error": "missing_token", "detail": "Authorization: Bearer <OIDC JWT> required"},
+            {
+                "error": "missing_token",
+                "detail": "Authorization: Bearer <OIDC JWT> required",
+            },
             status_code=401,
         )
 
@@ -305,13 +309,17 @@ def build_intake_routes(
             capped = await _parse_capped_form(request, max_body_bytes)
             form = await capped.form()
             try:
-                meta = json.loads(form["meta"])
+                meta_field = form["meta"]
+                if not isinstance(meta_field, str):
+                    raise TypeError("'meta' was sent as a file, not a form field")
+                meta = json.loads(meta_field)
                 source_commit = str(meta["source_commit"])
                 deletes = [str(d) for d in meta.get("deletes", [])]
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise intake.IntakeError(
-                    400, "field 'meta' must be JSON with source_commit (+ optional deletes)"
-                )
+                    400,
+                    "field 'meta' must be JSON with source_commit (+ optional deletes)",
+                ) from exc
             upload = form.get("archive")
             if upload is None:
                 raise intake.IntakeError(400, "multipart field 'archive' required")
@@ -325,7 +333,9 @@ def build_intake_routes(
             if exc.status in (401, 403):
                 logger.warning(
                     "intake publish rejected (%s) from %s: %s",
-                    exc.status, client_ip, exc.detail,
+                    exc.status,
+                    client_ip,
+                    exc.detail,
                 )
             return _err(exc)
         finally:
@@ -349,7 +359,12 @@ def build_intake_routes(
                 async with concurrency_limiter:
                     pr_url = await run_in_threadpool(
                         intake.intake_publish,
-                        cfg, rid, source_commit, claims["repository"], deletes, archive,
+                        cfg,
+                        rid,
+                        source_commit,
+                        claims["repository"],
+                        deletes,
+                        archive,
                     )
             except intake.IntakeError as exc:
                 store.set(rid, source_commit, "error", detail=exc.detail)
@@ -370,14 +385,21 @@ def build_intake_routes(
                 # The traceback is logged, never returned -- spec: no traceback
                 # reaches a user.
                 logger.exception(
-                    "intake publish crashed unexpectedly for %s @ %s", rid, source_commit
+                    "intake publish crashed unexpectedly for %s @ %s",
+                    rid,
+                    source_commit,
                 )
                 store.set(
-                    rid, source_commit, "error",
+                    rid,
+                    source_commit,
+                    "error",
                     detail="internal error -- see server logs",
                 )
                 return JSONResponse(
-                    {"error": "publish_failed", "detail": "internal error -- see server logs"},
+                    {
+                        "error": "publish_failed",
+                        "detail": "internal error -- see server logs",
+                    },
                     status_code=500,
                 )
             store.set(rid, source_commit, "done", pr_url=pr_url)
@@ -399,7 +421,9 @@ def build_intake_routes(
             current = store.get(rid, source_commit)
             if current is not None and current.get("state") == "processing":
                 store.set(
-                    rid, source_commit, "error",
+                    rid,
+                    source_commit,
+                    "error",
                     detail="publish did not complete",
                 )
 

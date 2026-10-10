@@ -37,14 +37,26 @@ def _mid_with_unreviewed_own_kb(tmp_path: Path, name: str) -> tuple[Path, Path]:
 
 
 def _args(git_kb, hub_worktree, *extra):
-    return ["publish", "--hub", str(hub_worktree), "--repo-id", "demo-kb",
-            "--kb-dir", str(git_kb["kb"]), "--direct", *extra]
+    return [
+        "publish",
+        "--hub",
+        str(hub_worktree),
+        "--repo-id",
+        "demo-kb",
+        "--kb-dir",
+        str(git_kb["kb"]),
+        "--direct",
+        *extra,
+    ]
 
 
 def test_publish_warns_about_unreviewed_sections(git_kb, hub_worktree):
     result = runner.invoke(app, _args(git_kb, hub_worktree))
     assert result.exit_code == 0, result.output
-    assert "[warn] 2 section(s) in 1 doc(s) are published without SME review" in result.output
+    assert (
+        "[warn] 2 section(s) in 1 doc(s) are published without SME review"
+        in result.output
+    )
 
 
 def test_publish_require_reviewed_refuses_before_any_hub_write(git_kb, hub_worktree):
@@ -83,7 +95,9 @@ def test_hub_to_hub_federation_publish_skips_unreviewed_gate(tmp_path, run_git):
     assert "without SME review" not in result.output
 
 
-def test_publish_require_reviewed_passes_when_all_reviewed(git_kb, hub_worktree, run_git):
+def test_publish_require_reviewed_passes_when_all_reviewed(
+    git_kb, hub_worktree, run_git
+):
     mpath = git_kb["kb"] / "demo-doc" / "_manifest.yaml"
     m = models.load_yaml_model(mpath, models.Manifest)
     for s in m.sections:
@@ -109,10 +123,15 @@ def test_publish_require_reviewed_ignores_hist_but_not_other_summarized(
     src_file = m.sections[0].file
     for s in m.sections:
         s.status = "reviewed"
-    m.sections.append(models.SectionEntry(
-        id="hist.api", title="api — ticket history", summary="Tickets: 1.",
-        status="summarized", file=src_file,
-    ))
+    m.sections.append(
+        models.SectionEntry(
+            id="hist.api",
+            title="api — ticket history",
+            summary="Tickets: 1.",
+            status="summarized",
+            file=src_file,
+        )
+    )
     models.save_yaml_model(mpath, m)
     l2 = git_kb["kb"] / "demo-doc" / f"{src_file}.md"
     l2.write_text(

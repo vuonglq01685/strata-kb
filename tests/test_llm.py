@@ -7,12 +7,13 @@ from strata_kb.models import LLMConfig
 from strata_kb.summarize import PendingSection, build_section_prompt
 from tests.cli_stub import echo_after_stdin, echo_stdin_length, write_cli_stub
 
-
 # --- detect_runner -----------------------------------------------------------
+
 
 def test_detect_prefers_claude_then_copilot(monkeypatch):
     monkeypatch.setattr(
-        llm.shutil, "which",
+        llm.shutil,
+        "which",
         lambda n: f"/bin/{n}" if n in ("claude", "copilot") else None,
     )
     runner = llm.detect_runner(None, LLMConfig())
@@ -51,6 +52,7 @@ def test_runner_carries_config_values(monkeypatch):
 
 # --- Runner.run --------------------------------------------------------------
 
+
 def test_claude_run_unwraps_json_envelope(tmp_path):
     inner = json.dumps({"l2_summary": "x", "l1_summary": "y"})
     envelope = json.dumps({"type": "result", "result": inner})
@@ -71,7 +73,10 @@ def test_copilot_run_pipes_prompt_on_stdin(tmp_path):
 def test_full_section_prompt_arrives_intact(tmp_path, name):
     """B-1: a real multi-line ~3.5 kB prompt with shell metacharacters must
     reach the CLI byte for byte — through the .cmd shim on Windows."""
-    body = ("## 5.7 Route Type\n\n" + "Route type codes & their meaning | see %PATH% ^ !x! > 0.\n" * 60)
+    body = (
+        "## 5.7 Route Type\n\n"
+        + "Route type codes & their meaning | see %PATH% ^ !x! > 0.\n" * 60
+    )
     prompt = build_section_prompt(PendingSection("d", "5.7", "Route Type", "f", body))
     assert "\n" in prompt and len(prompt) > 3000
     if name == "claude":
@@ -90,6 +95,7 @@ def test_full_section_prompt_arrives_intact(tmp_path, name):
 
 def test_run_never_puts_the_prompt_in_argv(tmp_path, monkeypatch):
     seen = {}
+
     def fake_run(cmd, **kw):
         seen["cmd"], seen["input"] = cmd, kw.get("input")
 
@@ -97,20 +103,25 @@ def test_run_never_puts_the_prompt_in_argv(tmp_path, monkeypatch):
             returncode, stdout, stderr = 0, '{"type": "result", "result": "ok"}', ""
 
         return P()
+
     monkeypatch.setattr(llm.subprocess, "run", fake_run)
     for name in ("claude", "copilot"):
         llm.Runner(name, "x", "m", "high", 1).run("the prompt")
         assert "the prompt" not in seen["cmd"] and seen["input"] == "the prompt"
 
 
-@pytest.mark.parametrize(("name", "expected_cmd"), [
-    ("claude", ["x", "-p", "--model", "m", "--output-format", "json"]),
-    # copilot: no -p/--prompt — a bare -p would swallow --model as the
-    # prompt value and ignore stdin (controller ruling R7; see Evidence).
-    ("copilot", ["x", "--model", "m", "-s"]),
-])
+@pytest.mark.parametrize(
+    ("name", "expected_cmd"),
+    [
+        ("claude", ["x", "-p", "--model", "m", "--output-format", "json"]),
+        # copilot: no -p/--prompt — a bare -p would swallow --model as the
+        # prompt value and ignore stdin (controller ruling R7; see Evidence).
+        ("copilot", ["x", "--model", "m", "-s"]),
+    ],
+)
 def test_run_argv_shape_per_runner(monkeypatch, name, expected_cmd):
     seen = {}
+
     def fake_run(cmd, **kw):
         seen["cmd"], seen["kw"] = cmd, kw
 
@@ -118,6 +129,7 @@ def test_run_argv_shape_per_runner(monkeypatch, name, expected_cmd):
             returncode, stdout, stderr = 0, '{"type": "result", "result": "ok"}', ""
 
         return P()
+
     monkeypatch.setattr(llm.subprocess, "run", fake_run)
     llm.Runner(name, "x", "m", "high", 1).run("the prompt")
     assert seen["cmd"] == expected_cmd
@@ -126,11 +138,24 @@ def test_run_argv_shape_per_runner(monkeypatch, name, expected_cmd):
     assert seen["kw"]["input"] == "the prompt"
 
 
-@pytest.mark.parametrize("envelope", [
-    {"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "API Error: 500"},
-    {"type": "result", "subtype": "error_max_turns", "is_error": True, "result": ""},
-    {"type": "result", "subtype": "success"},           # no result key at all
-])
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        {
+            "type": "result",
+            "subtype": "error_during_execution",
+            "is_error": True,
+            "result": "API Error: 500",
+        },
+        {
+            "type": "result",
+            "subtype": "error_max_turns",
+            "is_error": True,
+            "result": "",
+        },
+        {"type": "result", "subtype": "success"},  # no result key at all
+    ],
+)
 def test_claude_envelope_errors_raise(tmp_path, envelope):
     exe = write_cli_stub(tmp_path, "claude", echo_after_stdin(json.dumps(envelope)))
     runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 30)
@@ -161,7 +186,8 @@ def test_run_raises_runner_error_when_prompt_lands_in_argv():
 
 def test_run_raises_on_timeout(tmp_path):
     exe = write_cli_stub(
-        tmp_path, "claude",
+        tmp_path,
+        "claude",
         "import sys, time\nsys.stdin.read()\ntime.sleep(5)\n",
     )
     runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 1)

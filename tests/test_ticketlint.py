@@ -60,16 +60,14 @@ def golden_block(fed_hub: Path) -> str:
 def _default_sections(block: str) -> dict[str, str]:
     return {
         "## Summary": (
-            "Dispatchers need restrictive airspace details while planning "
-            "a route."
+            "Dispatchers need restrictive airspace details while planning a route."
         ),
         "## User Story": (
             "As a dispatcher, I want to see restrictive airspace details, "
             "so that I can brief the flight crew accurately."
         ),
         "## Background / Business context": (
-            "Restrictive airspace records define designation, type, and "
-            "level."
+            "Restrictive airspace records define designation, type, and level."
         ),
         "## Acceptance Criteria": (
             "- [ ] AC1: Given a restrictive airspace polygon, when the "
@@ -184,10 +182,7 @@ def test_golden_ticket_passes(fed_hub: Path, golden_block: str):
     # boxes (see test_unticked_definition_of_ready_boxes_are_a_warning_only
     # — the wrappers forbid the agent from ticking one itself).
     assert _errors(report) == []
-    assert all(
-        "Definition of Ready item is not ticked" in w
-        for w in _warnings(report)
-    )
+    assert all("Definition of Ready item is not ticked" in w for w in _warnings(report))
 
 
 def test_vietnamese_golden_ticket_passes(fed_hub: Path, golden_block: str):
@@ -196,8 +191,7 @@ def test_vietnamese_golden_ticket_passes(fed_hub: Path, golden_block: str):
         title="# TAL-1580 — Hiển thị vùng cấm bay",
         overrides={
             "## Summary": (
-                "Điều phối viên cần xem chi tiết vùng cấm bay khi lập kế "
-                "hoạch bay."
+                "Điều phối viên cần xem chi tiết vùng cấm bay khi lập kế hoạch bay."
             ),
             "## Background / Business context": (
                 "Bản ghi vùng cấm bay xác định loại, mức và giới hạn độ cao."
@@ -214,10 +208,7 @@ def test_vietnamese_golden_ticket_passes(fed_hub: Path, golden_block: str):
     # Same "no errors, only the 3 unticked-DoR warnings" shape as
     # test_golden_ticket_passes above.
     assert _errors(report) == []
-    assert all(
-        "Definition of Ready item is not ticked" in w
-        for w in _warnings(report)
-    )
+    assert all("Definition of Ready item is not ticked" in w for w in _warnings(report))
 
 
 # --- check 1: required headings + title ---
@@ -231,26 +222,20 @@ def test_missing_heading_errors(fed_hub: Path, golden_block: str, heading: str):
     assert any(heading in msg for msg in _errors(report))
 
 
-def test_heading_inside_a_fence_is_reported_missing(
-    fed_hub: Path, golden_block: str
-):
+def test_heading_inside_a_fence_is_reported_missing(fed_hub: Path, golden_block: str):
     """A required heading quoted inside a fenced code block — e.g. a BA
     pasting a reference ticket into their own document as a worked example
     — must not satisfy the presence check. Regression test for the
     fence-aware `lintcore.check_headings` fix (shared with `kb mission
     lint`)."""
     text = _build_ticket(golden_block)
-    fenced = text.replace(
-        "## Summary\n", "```markdown\n## Summary\n```\n", 1
-    )
+    fenced = text.replace("## Summary\n", "```markdown\n## Summary\n```\n", 1)
     assert fenced != text  # sanity: the replace actually matched
 
     report = ticketlint.lint(fenced, _hub(fed_hub))
 
     assert report.passed is False
-    assert any(
-        "missing required heading: '## Summary'" in m for m in _errors(report)
-    )
+    assert any("missing required heading: '## Summary'" in m for m in _errors(report))
 
 
 def test_leftover_comment_fence_marker_does_not_hide_an_unfilled_section(
@@ -275,8 +260,7 @@ def test_leftover_comment_fence_marker_does_not_hide_an_unfilled_section(
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert any(
-        "'## Use cases' is empty or only placeholder text" in m
-        for m in _errors(report)
+        "'## Use cases' is empty or only placeholder text" in m for m in _errors(report)
     )
 
 
@@ -332,11 +316,10 @@ def test_sequence_diagram_absent_passes_clean(fed_hub: Path, golden_block: str):
     assert not any("Sequence diagram" in w for w in _warnings(report))
 
 
-def test_sequence_diagram_na_with_reason_passes_clean(
-    fed_hub: Path, golden_block: str
-):
+def test_sequence_diagram_na_with_reason_passes_clean(fed_hub: Path, golden_block: str):
     text = _build_ticket(
-        golden_block, overrides={"## Sequence diagram": "N/A — single actor, no integration."}
+        golden_block,
+        overrides={"## Sequence diagram": "N/A — single actor, no integration."},
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is True
@@ -349,7 +332,9 @@ def test_sequence_diagram_absent_but_story_names_an_integration_warns(
     text = _build_ticket(
         golden_block,
         skip="## Sequence diagram",
-        overrides={"## Summary": "Dispatchers need the NOTAM integration to push airspace details."},
+        overrides={
+            "## Summary": "Dispatchers need the NOTAM integration to push airspace details."
+        },
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is True
@@ -370,9 +355,7 @@ def test_extended_section_absent_without_trigger_is_silent(
     assert not any("Non-functional requirements" in w for w in _warnings(report))
 
 
-def test_extended_section_absent_with_trigger_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_extended_section_absent_with_trigger_warns(fed_hub: Path, golden_block: str):
     text = _build_ticket(
         golden_block,
         skip="## Non-functional requirements",
@@ -385,9 +368,7 @@ def test_extended_section_absent_with_trigger_warns(
     )
 
 
-def test_extended_section_present_but_empty_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_extended_section_present_but_empty_warns(fed_hub: Path, golden_block: str):
     text = _build_ticket(golden_block, overrides={"## UI / presentation spec": ""})
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is True
@@ -418,8 +399,7 @@ def test_duplicate_heading_errors(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert any(
-        "heading '## Technical grounding' appears 2 times" in e
-        for e in _errors(report)
+        "heading '## Technical grounding' appears 2 times" in e for e in _errors(report)
     )
 
 
@@ -452,9 +432,7 @@ def test_sequence_diagram_missing_fence_errors_when_filled_with_prose(
 def test_sequence_diagram_wrong_keyword_errors(fed_hub: Path, golden_block: str):
     text = _build_ticket(
         golden_block,
-        overrides={
-            "## Sequence diagram": "```mermaid\nflowchart TD\n  A --> B\n```"
-        },
+        overrides={"## Sequence diagram": "```mermaid\nflowchart TD\n  A --> B\n```"},
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is False
@@ -471,9 +449,7 @@ def test_business_flow_missing_fence_errors(fed_hub: Path, golden_block: str):
 def test_business_flow_wrong_keyword_errors(fed_hub: Path, golden_block: str):
     text = _build_ticket(
         golden_block,
-        overrides={
-            "## Business flow": "```mermaid\nsequenceDiagram\n  A->>B: hi\n```"
-        },
+        overrides={"## Business flow": "```mermaid\nsequenceDiagram\n  A->>B: hi\n```"},
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is False
@@ -490,9 +466,7 @@ def test_malformed_kb_context_yaml_errors(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is False
-    assert any(
-        "valid YAML" in msg or "kb-context" in msg for msg in _errors(report)
-    )
+    assert any("valid YAML" in msg or "kb-context" in msg for msg in _errors(report))
 
 
 # --- check 6: ref resolution (broken / stale) ---
@@ -538,9 +512,7 @@ def test_fail_on_stale_promotes_the_warning_to_an_error(
     assert report.stale_errors == 1
 
 
-def test_stale_errors_counts_only_stale_refs(
-    fed_hub: Path, golden_block: str
-):
+def test_stale_errors_counts_only_stale_refs(fed_hub: Path, golden_block: str):
     """Exit code 2 means 'nothing wrong but the upstream moved', so the
     count must exclude every other error."""
     text = _build_ticket(golden_block, skip="## Use cases")
@@ -607,9 +579,7 @@ def test_ac_without_citation_warns(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is True
-    assert any(
-        "altitude range" in msg or "AC3" in msg for msg in _warnings(report)
-    )
+    assert any("altitude range" in msg or "AC3" in msg for msg in _warnings(report))
 
 
 def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
@@ -636,20 +606,14 @@ def test_ac_citation_ending_a_sentence_produces_no_false_warnings(
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert not any(
-        "has no '[doc-id §section]' citation" in msg
-        for msg in _warnings(report)
+        "has no '[doc-id §section]' citation" in msg for msg in _warnings(report)
     )
-    assert not any(
-        "not in kb-context refs" in msg for msg in _errors(report)
-    )
+    assert not any("not in kb-context refs" in msg for msg in _errors(report))
     assert report.passed is True
     # Same "no errors, only the 3 unticked-DoR warnings" shape as
     # test_golden_ticket_passes above.
     assert _errors(report) == []
-    assert all(
-        "Definition of Ready item is not ticked" in w
-        for w in _warnings(report)
-    )
+    assert all("Definition of Ready item is not ticked" in w for w in _warnings(report))
 
 
 def test_ac_citation_warning_counts_bracketed_citations_only():
@@ -666,9 +630,7 @@ def test_passed_false_iff_error_present(fed_hub: Path, golden_block: str):
     good = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     assert good.passed is True
 
-    bad = ticketlint.lint(
-        _build_ticket(golden_block, skip="## Summary"), _hub(fed_hub)
-    )
+    bad = ticketlint.lint(_build_ticket(golden_block, skip="## Summary"), _hub(fed_hub))
     assert bad.passed is False
     assert any(i.level == "error" for i in bad.issues)
 
@@ -749,9 +711,7 @@ def test_ticket_without_parent_mission_line_is_unaffected(
     assert report.notes == []
 
 
-def test_valid_parent_mission_passes(
-    fed_hub: Path, golden_block: str, tmp_path: Path
-):
+def test_valid_parent_mission_passes(fed_hub: Path, golden_block: str, tmp_path: Path):
     missions = tmp_path / "missions"
     missions.mkdir()
     (missions / "M-airspace-filter.md").write_text(
@@ -772,9 +732,7 @@ def test_valid_parent_mission_passes(
     assert report.notes == []
 
 
-def test_missing_mission_file_errors(
-    fed_hub: Path, golden_block: str, tmp_path: Path
-):
+def test_missing_mission_file_errors(fed_hub: Path, golden_block: str, tmp_path: Path):
     missions = tmp_path / "missions"
     missions.mkdir()
     ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
@@ -799,9 +757,7 @@ def test_unreadable_mission_file_errors_instead_of_crashing(
     UnicodeDecodeError escaping out of lint()."""
     missions = tmp_path / "missions"
     missions.mkdir()
-    (missions / "M-airspace-filter.md").write_bytes(
-        b"caf\xe9 - not valid utf-8"
-    )
+    (missions / "M-airspace-filter.md").write_bytes(b"caf\xe9 - not valid utf-8")
     ticket_path = tmp_path / "tickets" / "M-airspace-filter-US1.md"
     text = _build_ticket(
         golden_block,
@@ -863,9 +819,7 @@ def test_empty_parent_mission_value_errors(fed_hub: Path, golden_block: str):
     assert any("has no mission id" in m for m in _errors(report))
 
 
-def test_whitespace_only_parent_mission_value_errors(
-    fed_hub: Path, golden_block: str
-):
+def test_whitespace_only_parent_mission_value_errors(fed_hub: Path, golden_block: str):
     text = _build_ticket(
         golden_block,
         title=f"{DEFAULT_TITLE}\n\n> Parent mission:    ",
@@ -907,8 +861,7 @@ def test_not_in_backlog_message_names_the_mission_lint_escape_hatch(
 
     assert report.passed is False
     assert any(
-        "kb mission lint" in m and str(mission_path) in m
-        for m in _errors(report)
+        "kb mission lint" in m and str(mission_path) in m for m in _errors(report)
     )
 
 
@@ -946,8 +899,7 @@ def test_backlog_errors_elsewhere_warn_instead_of_silently_passing(
 
     assert report.passed is True  # membership was found; this is a warning
     assert any(
-        "backlog has errors" in w and "kb mission lint" in w
-        for w in _warnings(report)
+        "backlog has errors" in w and "kb mission lint" in w for w in _warnings(report)
     )
     # The mission's own issue text ("does not match") must not leak through.
     assert not any("does not match" in w for w in _warnings(report))
@@ -981,15 +933,10 @@ def test_golden_ticket_still_passes_with_no_new_errors(
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     assert report.passed is True
     assert _errors(report) == []
-    assert all(
-        "Definition of Ready item is not ticked" in w
-        for w in _warnings(report)
-    )
+    assert all("Definition of Ready item is not ticked" in w for w in _warnings(report))
 
 
-def test_weasel_ac_without_open_marker_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_weasel_ac_without_open_marker_warns(fed_hub: Path, golden_block: str):
     doc = _build_ticket(
         golden_block,
         overrides={
@@ -1003,9 +950,7 @@ def test_weasel_ac_without_open_marker_warns(
     )
     report = ticketlint.lint(doc, _hub(fed_hub))
     assert report.passed is True  # warning, never an error
-    assert any(
-        "banned weasel phrase 'configured'" in w for w in _warnings(report)
-    )
+    assert any("banned weasel phrase 'configured'" in w for w in _warnings(report))
 
 
 def test_weasel_ac_open_marker_suppresses_only_its_own_parentheses(
@@ -1033,14 +978,10 @@ def test_weasel_ac_open_marker_suppresses_only_its_own_parentheses(
     report = ticketlint.lint(doc, _hub(fed_hub))
     assert report.passed is True  # warning, never an error
     # 'configured' sits outside OPEN(...)'s own parentheses — still warns.
-    assert any(
-        "banned weasel phrase 'configured'" in w for w in _warnings(report)
-    )
+    assert any("banned weasel phrase 'configured'" in w for w in _warnings(report))
     # 'appropriate' sits inside OPEN(data-team: ...)'s own parentheses —
     # suppressed, the documented owned-vagueness exception.
-    assert not any(
-        "banned weasel phrase 'appropriate'" in w for w in _warnings(report)
-    )
+    assert not any("banned weasel phrase 'appropriate'" in w for w in _warnings(report))
 
 
 def test_orphan_open_marker_warns_when_open_questions_has_no_rows(
@@ -1055,14 +996,10 @@ def test_orphan_open_marker_warns_when_open_questions_has_no_rows(
     )
     report = ticketlint.lint(doc, _hub(fed_hub))
     assert report.passed is True
-    assert any(
-        "every unknown needs an owned row" in w for w in _warnings(report)
-    )
+    assert any("every unknown needs an owned row" in w for w in _warnings(report))
 
 
-def test_open_marker_with_matching_row_is_clean(
-    fed_hub: Path, golden_block: str
-):
+def test_open_marker_with_matching_row_is_clean(fed_hub: Path, golden_block: str):
     doc = _build_ticket(
         golden_block,
         overrides={
@@ -1077,34 +1014,25 @@ def test_open_marker_with_matching_row_is_clean(
     assert not any("owned row" in w for w in _warnings(report))
 
 
-def test_ownerless_open_question_row_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_ownerless_open_question_row_warns(fed_hub: Path, golden_block: str):
     doc = _build_ticket(
         golden_block,
-        overrides={
-            "## Open questions": "- [ ] Q1 — nobody owns this question"
-        },
+        overrides={"## Open questions": "- [ ] Q1 — nobody owns this question"},
     )
     report = ticketlint.lint(doc, _hub(fed_hub))
     assert any("no 'owner:'" in w for w in _warnings(report))
 
 
-def test_missing_recommended_section_warns_but_passes(
-    fed_hub: Path, golden_block: str
-):
+def test_missing_recommended_section_warns_but_passes(fed_hub: Path, golden_block: str):
     doc = _build_ticket(golden_block, skip="## Dependencies")
     report = ticketlint.lint(doc, _hub(fed_hub))
     assert report.passed is True
     assert any(
-        "recommended section missing: '## Dependencies'" in w
-        for w in _warnings(report)
+        "recommended section missing: '## Dependencies'" in w for w in _warnings(report)
     )
 
 
-def test_legacy_nine_section_ticket_still_passes(
-    fed_hub: Path, golden_block: str
-):
+def test_legacy_nine_section_ticket_still_passes(fed_hub: Path, golden_block: str):
     """A pre-upgrade ticket (only the required sections) keeps DoR: PASS
     — the new checks are warnings."""
     sections = _default_sections(golden_block)
@@ -1125,9 +1053,7 @@ def test_legacy_nine_section_ticket_still_passes(
 
 
 def test_recommended_headings_constant_is_not_in_required():
-    assert set(ticket.RECOMMENDED_HEADINGS).isdisjoint(
-        set(ticket.REQUIRED_HEADINGS)
-    )
+    assert set(ticket.RECOMMENDED_HEADINGS).isdisjoint(set(ticket.REQUIRED_HEADINGS))
 
 
 def test_template_carries_every_recommended_heading():
@@ -1145,20 +1071,14 @@ def test_template_carries_every_recommended_heading():
     assert "docs/ac-quality.md" in content
 
 
-def test_missing_review_record_warns_but_passes(
-    fed_hub: Path, golden_block: str
-):
+def test_missing_review_record_warns_but_passes(fed_hub: Path, golden_block: str):
     doc = _build_ticket(golden_block, skip="## Review record")
     report = ticketlint.lint(doc, _hub(fed_hub))
     assert report.passed is True
-    assert any(
-        "'## Review record' missing" in w for w in _warnings(report)
-    )
+    assert any("'## Review record' missing" in w for w in _warnings(report))
 
 
-def test_placeholder_review_record_warns_but_passes(
-    fed_hub: Path, golden_block: str
-):
+def test_placeholder_review_record_warns_but_passes(fed_hub: Path, golden_block: str):
     doc = _build_ticket(
         golden_block,
         overrides={"## Review record": "Not yet reviewed."},
@@ -1168,9 +1088,7 @@ def test_placeholder_review_record_warns_but_passes(
     assert any("placeholder" in w for w in _warnings(report))
 
 
-def test_filled_review_record_emits_no_review_warning(
-    fed_hub: Path, golden_block: str
-):
+def test_filled_review_record_emits_no_review_warning(fed_hub: Path, golden_block: str):
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     assert not any("Review record" in w for w in _warnings(report))
 
@@ -1201,13 +1119,11 @@ def test_a_ticket_of_placeholders_fails(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is False
-    assert (
-        "'## Summary' is empty or only placeholder text — fill it in"
-        in _errors(report)
+    assert "'## Summary' is empty or only placeholder text — fill it in" in _errors(
+        report
     )
-    assert (
-        "'## Use cases' is empty or only placeholder text — fill it in"
-        in _errors(report)
+    assert "'## Use cases' is empty or only placeholder text — fill it in" in _errors(
+        report
     )
 
 
@@ -1216,8 +1132,7 @@ def test_a_single_acceptance_criterion_fails(fed_hub: Path, golden_block: str):
         golden_block,
         overrides={
             "## Acceptance Criteria": (
-                "- [ ] AC1: Show airspace type per "
-                "[arinc-kb:arinc-424 §5.3]"
+                "- [ ] AC1: Show airspace type per [arinc-kb:arinc-424 §5.3]"
             )
         },
     )
@@ -1250,9 +1165,7 @@ def test_duplicate_ac_ids_fail(fed_hub: Path, golden_block: str):
         },
     )
     report = ticketlint.lint(text, _hub(fed_hub))
-    assert any(
-        "duplicate Acceptance Criterion id 'AC1'" in m for m in _errors(report)
-    )
+    assert any("duplicate Acceptance Criterion id 'AC1'" in m for m in _errors(report))
 
 
 def test_a_one_letter_user_story_fails(fed_hub: Path, golden_block: str):
@@ -1272,8 +1185,7 @@ def test_a_short_but_real_user_story_passes(fed_hub: Path, golden_block: str):
         golden_block,
         overrides={
             "## User Story": (
-                "As a BA, I want the designator stored, so that the feed "
-                "is auditable."
+                "As a BA, I want the designator stored, so that the feed is auditable."
             )
         },
     )
@@ -1310,9 +1222,7 @@ def test_nfd_vietnamese_gwt_ac_does_not_error(fed_hub: Path, golden_block: str):
     assert not any("has no Given/When/Then" in m for m in _errors(report))
 
 
-def test_the_template_placeholder_user_story_fails(
-    fed_hub: Path, golden_block: str
-):
+def test_the_template_placeholder_user_story_fails(fed_hub: Path, golden_block: str):
     """I3: the shipped template's own verbatim placeholder line —
     'As a <role>, I want <capability>, so that <value>.' — must not pass
     as a real story. Each bracketed part has >= 2 letters INSIDE the
@@ -1322,9 +1232,7 @@ def test_the_template_placeholder_user_story_fails(
     text = _build_ticket(
         golden_block,
         overrides={
-            "## User Story": (
-                "As a <role>, I want <capability>, so that <value>."
-            )
+            "## User Story": ("As a <role>, I want <capability>, so that <value>.")
         },
     )
     report = ticketlint.lint(text, _hub(fed_hub))
@@ -1344,12 +1252,13 @@ def test_an_unquantified_nfr_row_fails(fed_hub: Path, golden_block: str):
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert any("no measurable Target" in m for m in _errors(report))
-    assert any("give a number from the KB, OPEN(<owner>), or 'N/A — <reason>'" in m for m in _errors(report))
+    assert any(
+        "give a number from the KB, OPEN(<owner>), or 'N/A — <reason>'" in m
+        for m in _errors(report)
+    )
 
 
-def test_a_definition_of_ready_with_no_rows_fails(
-    fed_hub: Path, golden_block: str
-):
+def test_a_definition_of_ready_with_no_rows_fails(fed_hub: Path, golden_block: str):
     text = _build_ticket(
         golden_block, overrides={"## Definition of Ready": "All good."}
     )
@@ -1366,8 +1275,7 @@ def test_unticked_definition_of_ready_boxes_are_a_warning_only(
     and still passes."""
     report = ticketlint.lint(_build_ticket(golden_block), _hub(fed_hub))
     unticked = [
-        m for m in _warnings(report)
-        if "Definition of Ready item is not ticked" in m
+        m for m in _warnings(report) if "Definition of Ready item is not ticked" in m
     ]
     assert len(unticked) == 3
     assert report.passed is True
@@ -1387,23 +1295,18 @@ def _ac_lines(n: int) -> str:
     )
 
 
-def test_more_than_ten_acceptance_criteria_fail(
-    fed_hub: Path, golden_block: str
-):
+def test_more_than_ten_acceptance_criteria_fail(fed_hub: Path, golden_block: str):
     text = _build_ticket(
         golden_block, overrides={"## Acceptance Criteria": _ac_lines(11)}
     )
     report = ticketlint.lint(text, _hub(fed_hub))
     assert report.passed is False
     assert any(
-        "Acceptance Criteria has 11 items (max 10)" in m
-        for m in _errors(report)
+        "Acceptance Criteria has 11 items (max 10)" in m for m in _errors(report)
     )
 
 
-def test_exactly_ten_acceptance_criteria_pass(
-    fed_hub: Path, golden_block: str
-):
+def test_exactly_ten_acceptance_criteria_pass(fed_hub: Path, golden_block: str):
     """The cap is inclusive — 10 is the maximum, not the first failure."""
     text = _build_ticket(
         golden_block, overrides={"## Acceptance Criteria": _ac_lines(10)}
@@ -1492,6 +1395,7 @@ def test_acceptance_criteria_inside_an_html_comment_do_not_count(
 
 # --- shell commands in an AC (spec 2026-09-23 §6) ---
 
+
 def _ac_report(fed_hub: Path, golden_block: str, ac_lines: str):
     doc = _build_ticket(golden_block, overrides={"## Acceptance Criteria": ac_lines})
     return ticketlint.lint(doc, _hub(fed_hub))
@@ -1499,20 +1403,24 @@ def _ac_report(fed_hub: Path, golden_block: str, ac_lines: str):
 
 def test_ac_with_a_shell_command_warns(fed_hub: Path, golden_block: str):
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — `docker compose up -d --wait` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Every service reports healthy per [icao-kb:icao-annex-2 §1.1]",
     )
     assert report.passed is True
     hits = [w for w in _warnings(report) if "prescribes a shell command" in w]
     assert len(hits) == 1
-    assert hits[0].startswith("AC1 prescribes a shell command (`docker compose up -d --wait`)")
+    assert hits[0].startswith(
+        "AC1 prescribes a shell command (`docker compose up -d --wait`)"
+    )
     assert "## Test data & verification" in hits[0]
 
 
 def test_ac_with_a_pipe_between_words_warns(fed_hub: Path, golden_block: str):
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — output of `something | jq .` is valid per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
@@ -1521,7 +1429,8 @@ def test_ac_with_a_pipe_between_words_warns(fed_hub: Path, golden_block: str):
 
 def test_backticked_names_and_values_do_not_warn(fed_hub: Path, golden_block: str):
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — `nginx` publishes port `80`; `.env.example` lists `POSTGRES_DB`; encoder is `h264_nvenc` per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
@@ -1532,7 +1441,8 @@ def test_backticked_enum_union_does_not_warn(fed_hub: Path, golden_block: str):
     """A spaced `|` between two ordinary words is a value union, not a
     pipe — the operator branch needs command evidence on top of it."""
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — Status field shows `active | inactive` per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
@@ -1541,16 +1451,20 @@ def test_backticked_enum_union_does_not_warn(fed_hub: Path, golden_block: str):
 
 def test_backticked_type_union_does_not_warn(fed_hub: Path, golden_block: str):
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — Field type is `string | null` per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
     assert not any("prescribes a shell command" in w for w in _warnings(report))
 
 
-def test_owned_open_marker_suppresses_the_shell_warning(fed_hub: Path, golden_block: str):
+def test_owned_open_marker_suppresses_the_shell_warning(
+    fed_hub: Path, golden_block: str
+):
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — `curl -f http://localhost/health` returns 200 OPEN(BA) per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
@@ -1563,7 +1477,8 @@ def test_open_marker_with_tbd_note_does_not_suppress_the_shell_warning(
     """OPEN(TBD: <note>) names no real owner — a note after the colon
     does not change that (acquality._marker_is_owned)."""
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — `curl -f http://localhost/health` returns 200 "
         "OPEN(TBD: Dev to confirm) per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
@@ -1573,7 +1488,8 @@ def test_open_marker_with_tbd_note_does_not_suppress_the_shell_warning(
 
 def test_kb_ticket_lint_command_warns(fed_hub: Path, golden_block: str):
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — `kb ticket lint` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
@@ -1582,7 +1498,8 @@ def test_kb_ticket_lint_command_warns(fed_hub: Path, golden_block: str):
 
 def test_sudo_prefixed_command_warns(fed_hub: Path, golden_block: str):
     report = _ac_report(
-        fed_hub, golden_block,
+        fed_hub,
+        golden_block,
         "- [ ] AC1 — `sudo docker compose up -d` exits 0 per [arinc-kb:arinc-424 §5.3]\n"
         "- [ ] AC2 — Second per [icao-kb:icao-annex-2 §1.1]",
     )
@@ -1628,9 +1545,7 @@ def test_double_ampersand_chain_warns_with_no_listed_command_either_side():
     """`&&` is ungated: `mkdir foo && cd bar` has no SHELL_COMMANDS word
     and no flag/path token, but two words joined by `&&` is a command
     chain regardless — nobody backticks `active && inactive`."""
-    issues = ticketlint._check_ac_shell(
-        ["AC1 — `mkdir foo && cd bar` per [x §1]"]
-    )
+    issues = ticketlint._check_ac_shell(["AC1 — `mkdir foo && cd bar` per [x §1]"])
     assert len(issues) == 1
 
 

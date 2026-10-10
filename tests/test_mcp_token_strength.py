@@ -1,6 +1,7 @@
 """2026-10-10 review §5.2 #5: the http server must refuse a token it cannot
 defend -- the cookie is HMAC(token, issued), so a weak token falls to an
 offline brute force of any copied cookie."""
+
 from __future__ import annotations
 
 import secrets

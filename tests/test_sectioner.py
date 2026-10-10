@@ -42,7 +42,9 @@ class TestParseSectionId:
         assert parse_section_id("Attachment 2: Datum List")[0] == "attachment-2"
 
     def test_appendix_heading_with_dotted_number(self):
-        sid, title = parse_section_id("Appendix 2.1 — Lights to be Displayed by Aeroplanes")
+        sid, title = parse_section_id(
+            "Appendix 2.1 — Lights to be Displayed by Aeroplanes"
+        )
         assert sid == "appendix-2.1"
         assert title == "Lights to be Displayed by Aeroplanes"
 
@@ -345,7 +347,9 @@ def test_label_heading_with_colon_demoted_to_text():
     items = [
         DocItem("heading", "5.93 Facility Characteristics", 2),
         DocItem("text", big),
-        DocItem("heading", "Source/Content:", 3),  # label Docling mistakes for a heading
+        DocItem(
+            "heading", "Source/Content:", 3
+        ),  # label Docling mistakes for a heading
         DocItem("text", "Derived from official sources."),
     ]
     units = build_units(items)
@@ -406,7 +410,10 @@ def test_front_matter_fallback_does_not_namespace_chapters():
 def test_small_leaf_folding_skipped_when_parent_would_exceed_cap():
     # 30 small children (~140 tokens each) -> total ~4200 + parent body ~700 > cap 4000
     small = "Field definition body. " * 35  # ~140 token
-    items = [DocItem("heading", "5.0 NAVIGATION DATA", 1), DocItem("text", "Intro. " * 200)]
+    items = [
+        DocItem("heading", "5.0 NAVIGATION DATA", 1),
+        DocItem("text", "Intro. " * 200),
+    ]
     for i in range(1, 31):
         items.append(DocItem("heading", f"5.{i} Field {i}", 2))
         items.append(DocItem("text", small))
@@ -567,7 +574,7 @@ def test_resolve_heading_config_attachment_priority():
     cfg = resolve_heading_config("", "", "", None)
     assert cfg.attachment_pattern == DEFAULT_ATTACHMENT_PATTERN
     prev = models.IngestConfig(chapter_pattern="c", appendix_pattern="a")
-    assert prev.attachment_pattern == ""      # backward-compat default
+    assert prev.attachment_pattern == ""  # backward-compat default
     assert prev.used_bookmarks is False
     custom = r"^annex\s+(\d+)\s*(.*)$"
     cfg2 = resolve_heading_config("", "", custom, None)
@@ -577,8 +584,11 @@ def test_resolve_heading_config_attachment_priority():
 def test_split_by_parts_buckets_by_page():
     from strata_kb.ingest.sectioner import Part, split_by_parts
 
-    parts = [Part("front-matter", "Front Matter", 1), Part("1", "INTRO", 21),
-             Part("att1", "FLOW DIAGRAM", 331)]
+    parts = [
+        Part("front-matter", "Front Matter", 1),
+        Part("1", "INTRO", 21),
+        Part("att1", "FLOW DIAGRAM", 331),
+    ]
     items = [
         DocItem("heading", "FOREWORD", 1, page=4),
         DocItem("text", "no page follows previous", page=None),
@@ -637,8 +647,8 @@ def test_build_units_with_parts_namespaces_attachment_numbering():
     ]
     units = build_units(items, parts=parts)
     ids = {u.id for u in units}
-    assert "attachment-1-2.1" in ids   # namespaced under the attachment part
-    assert "2.1" not in ids            # chapter 2 never polluted
+    assert "attachment-1-2.1" in ids  # namespaced under the attachment part
+    assert "2.1" not in ids  # chapter 2 never polluted
     att_units = [u for u in units if u.chapter == "attachment-1"]
     assert {u.id for u in att_units} >= {"attachment-1", "attachment-1-2.1"}
 
@@ -839,8 +849,11 @@ def test_uncovered_reports_content_that_no_unit_carries():
     ]
     units = [
         SectionUnit(
-            id="1", title="X", chapter="1",
-            body_md="Kept paragraph.\n\n| A |\n|---|\n| 1 |", tables=[],
+            id="1",
+            title="X",
+            chapter="1",
+            body_md="Kept paragraph.\n\n| A |\n|---|\n| 1 |",
+            tables=[],
         )
     ]
 
@@ -851,7 +864,11 @@ def test_uncovered_is_empty_when_every_item_landed():
     from strata_kb.ingest.sectioner import SectionUnit, uncovered
 
     items = [DocItem("text", "Only paragraph.")]
-    units = [SectionUnit(id="1", title="X", chapter="1", body_md="Only paragraph.", tables=[])]
+    units = [
+        SectionUnit(
+            id="1", title="X", chapter="1", body_md="Only paragraph.", tables=[]
+        )
+    ]
 
     assert uncovered(items, units) == []
 
@@ -860,7 +877,11 @@ def test_uncovered_tolerates_whitespace_reflow():
     from strata_kb.ingest.sectioner import SectionUnit, uncovered
 
     items = [DocItem("text", "Spaced   out\ntext.")]
-    units = [SectionUnit(id="1", title="X", chapter="1", body_md="Spaced out text.", tables=[])]
+    units = [
+        SectionUnit(
+            id="1", title="X", chapter="1", body_md="Spaced out text.", tables=[]
+        )
+    ]
 
     assert uncovered(items, units) == []
 
@@ -1016,7 +1037,10 @@ def test_duplicate_id_across_parts_is_renamed_and_noted():
     ]
     units, notes = build_units_with_notes(items, parts=parts)
     assert [(u.id, u.chapter) for u in units] == [
-        ("5", "5"), ("5.3", "5"), ("6", "6"), ("5.3-2", "6"),
+        ("5", "5"),
+        ("5.3", "5"),
+        ("6", "6"),
+        ("5.3-2", "6"),
     ]
     assert units[3].title == "Airways"
     assert "airways tail." in units[3].body_md
@@ -1054,7 +1078,14 @@ def test_duplicate_suffix_never_steals_an_id_a_later_unit_owns():
         DocItem("text", "appendix two body. " + big, page=21),
     ]
     units, notes = build_units_with_notes(items, parts=parts)
-    assert [u.id for u in units] == ["5", "appendix", "6", "appendix-3", "7", "appendix-2"]
+    assert [u.id for u in units] == [
+        "5",
+        "appendix",
+        "6",
+        "appendix-3",
+        "7",
+        "appendix-2",
+    ]
     assert notes.duplicates == [Duplicate("appendix", "appendix-3", "6")]
 
 
@@ -1111,7 +1142,9 @@ def test_inverted_headings_without_bboxes_are_only_reported():
     units, notes = build_units_with_notes(items)
     by_id = {u.id: u for u in units}
     assert [u.id for u in units] == ["5", "5.84", "5.83"]
-    assert "para-b of 5.84." in by_id["5.83"].body_md  # today's misattribution, now visible
+    assert (
+        "para-b of 5.84." in by_id["5.83"].body_md
+    )  # today's misattribution, now visible
     assert notes.inversions == [Inversion(212, "5.84", "5.83", False)]
 
 

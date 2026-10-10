@@ -1,5 +1,6 @@
 """2026-10-10 review H13 and §5.2 #8: `kb doctor` names copyrighted source
 files tracked by git, and a committed config.yaml carrying a hub token."""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,5 @@
 """The doctor checks added by the reviewer-H batch (H1, M13, M9)."""
+
 import shutil
 from pathlib import Path
 
@@ -115,8 +116,12 @@ def test_doctor_reports_unreadable_own_config_instead_of_a_traceback(
 @pytest.mark.parametrize(
     "model,payload",
     [
-        pytest.param(models.Manifest, {"id": "d", "title": "T", "nope": 1}, id="Manifest"),
-        pytest.param(models.IndexEntry, {"id": "d", "title": "T", "nope": 1}, id="IndexEntry"),
+        pytest.param(
+            models.Manifest, {"id": "d", "title": "T", "nope": 1}, id="Manifest"
+        ),
+        pytest.param(
+            models.IndexEntry, {"id": "d", "title": "T", "nope": 1}, id="IndexEntry"
+        ),
         pytest.param(models.KBIndex, {"docs": [], "nope": 1}, id="KBIndex"),
         pytest.param(
             models.SectionEntry,
@@ -279,7 +284,9 @@ def test_heading_absent_from_the_manifest_is_an_error(tmp_path):
     issues = doctor.check_kb(kb)
 
     assert any(
-        i.level == "error" and "2.77" in i.message and "not in _manifest.yaml" in i.message
+        i.level == "error"
+        and "2.77" in i.message
+        and "not in _manifest.yaml" in i.message
         for i in issues
     ), issues
 
@@ -410,9 +417,7 @@ def test_a_snapshot_without_a_stored_digest_is_skipped_with_a_note(tmp_path):
     federation.write_federation_index(fed)
     # strip the digests the way a 0.23 hub would never have written them
     text = (fed / "index.yaml").read_text(encoding="utf-8")
-    stripped = "\n".join(
-        ln for ln in text.splitlines() if "content_sha256" not in ln
-    )
+    stripped = "\n".join(ln for ln in text.splitlines() if "content_sha256" not in ln)
     (fed / "index.yaml").write_text(stripped + "\n", encoding="utf-8", newline="\n")
 
     issues = doctor.check_published_digests(fed)
@@ -575,7 +580,9 @@ def test_digest_can_exclude_the_code_document(tmp_path):
     (b / "child-code" / "services.md").write_text("# branch B\n", encoding="utf-8")
     assert doctor._kb_tree_digest(a) != doctor._kb_tree_digest(b)
     skip = frozenset({"child-code"})
-    assert doctor._kb_tree_digest(a, exclude_docs=skip) == doctor._kb_tree_digest(b, exclude_docs=skip)
+    assert doctor._kb_tree_digest(a, exclude_docs=skip) == doctor._kb_tree_digest(
+        b, exclude_docs=skip
+    )
 
 
 def test_check_hub_ignores_the_code_document_for_a_dev_repo(tmp_path):
@@ -587,14 +594,21 @@ def test_check_hub_ignores_the_code_document_for_a_dev_repo(tmp_path):
     (hub / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     entry = hub / "federation" / "child"
     shutil.copytree(kb, entry)
-    models.save_yaml_model(entry / "_meta.yaml", FederationMeta(
-        repo_id="child", source_commit="abc1234", published_at="2026-09-25T00:00:00+00:00",
-    ))
+    models.save_yaml_model(
+        entry / "_meta.yaml",
+        FederationMeta(
+            repo_id="child",
+            source_commit="abc1234",
+            published_at="2026-09-25T00:00:00+00:00",
+        ),
+    )
     write_federation_index(hub / "federation")  # from strata_kb.federation
     (kb / "child-code").mkdir()
     (kb / "child-code" / "services.md").write_text("# local branch\n", encoding="utf-8")
     handle = HubHandle(root=hub)
     dev_issues, _ = doctor.check_hub(kb, handle, repo_id="child", code_doc="child-code")
-    assert not any("differs from the published snapshot" in i.message for i in dev_issues)
+    assert not any(
+        "differs from the published snapshot" in i.message for i in dev_issues
+    )
     issues, _ = doctor.check_hub(kb, handle, repo_id="child")
     assert any("differs from the published snapshot" in i.message for i in issues)

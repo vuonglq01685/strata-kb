@@ -1,6 +1,7 @@
 """2026-10-10 review §6.2 F4/F5: tiktoken downloads cl100k_base on first use
 into a temp dir; offline or behind a proxy that raised a ProxyError
 traceback out of every command that counts tokens."""
+
 from __future__ import annotations
 
 import logging
@@ -52,10 +53,14 @@ def test_the_stable_cache_dir_is_tried_first(fresh_encoder, monkeypatch):
     monkeypatch.setattr(tiktoken, "get_encoding", loader)
     assert mdutils.count_tokens("a b c") == 3
     assert seen == [str(mdutils.tiktoken_cache_dir())]
-    assert seen[0].endswith(".strata-kb/tiktoken") or seen[0].endswith(".strata-kb\\tiktoken")
+    assert seen[0].endswith(".strata-kb/tiktoken") or seen[0].endswith(
+        ".strata-kb\\tiktoken"
+    )
 
 
-def test_the_temp_dir_cache_from_older_releases_is_still_used(fresh_encoder, monkeypatch):
+def test_the_temp_dir_cache_from_older_releases_is_still_used(
+    fresh_encoder, monkeypatch
+):
     """A machine that cached the file under tiktoken's default temp dir must
     not lose it offline because the default moved."""
     import os
@@ -88,7 +93,8 @@ def test_an_operator_cache_dir_is_respected(fresh_encoder, monkeypatch, tmp_path
             return [0, 0]
 
     monkeypatch.setattr(
-        tiktoken, "get_encoding",
+        tiktoken,
+        "get_encoding",
         lambda name: seen.append(os.environ["TIKTOKEN_CACHE_DIR"]) or Enc(),
     )
     assert mdutils.count_tokens("x") == 2

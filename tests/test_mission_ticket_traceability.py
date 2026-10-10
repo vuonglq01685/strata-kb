@@ -72,8 +72,7 @@ def _real_mission_text(block: str) -> str:
             "inline. Airspace records follow [arinc-kb:arinc-424 §5.3]."
         ),
         "## Scope": (
-            "**In scope:** map rendering.\n"
-            "**Out of scope:** editing airspace data."
+            "**In scope:** map rendering.\n**Out of scope:** editing airspace data."
         ),
         "## System context (C4 L1)": (
             "```mermaid\n"
@@ -150,8 +149,7 @@ def _real_ticket_text(block: str) -> str:
             "so that I can brief the flight crew accurately."
         ),
         "## Background / Business context": (
-            "Restrictive airspace records define designation, type, and "
-            "level."
+            "Restrictive airspace records define designation, type, and level."
         ),
         "## Acceptance Criteria": (
             "- [ ] AC1: Given a restrictive airspace polygon, when the "
@@ -173,10 +171,7 @@ def _real_ticket_text(block: str) -> str:
             "```"
         ),
         "## Business flow": (
-            "```mermaid\n"
-            "flowchart TD\n"
-            "  A[Start] --> B[Fetch airspace data]\n"
-            "```"
+            "```mermaid\nflowchart TD\n  A[Start] --> B[Fetch airspace data]\n```"
         ),
         # Recommended sections (BA upgrade v2) — clean bodies so this real,
         # fully-formed ticket stays warning-free; ticketlint now reports a
@@ -268,9 +263,7 @@ def test_mission_ticket_loop_closes_end_to_end(
     )
     assert mission_report.passed is True, mission_report.issues
     assert mission_report.issues == []
-    assert not any(
-        "US drafted" in issue.message for issue in mission_report.issues
-    )
+    assert not any("US drafted" in issue.message for issue in mission_report.issues)
 
     # The ticket lints clean, including the back-link check (10) against
     # the REAL mission file on disk.
@@ -282,9 +275,7 @@ def test_mission_ticket_loop_closes_end_to_end(
 
     # The loop actually closes: the ticket's US id is really in the
     # mission's own backlog, not merely assumed to be.
-    backlog_issues, backlog_ids = missionlint.check_backlog(
-        mission_text, MISSION_ID
-    )
+    backlog_issues, backlog_ids = missionlint.check_backlog(mission_text, MISSION_ID)
     assert backlog_issues == []
     assert US_ID in backlog_ids
 
@@ -327,9 +318,7 @@ def test_mission_ticket_loop_catches_a_break(
         mission_text, hub, path=mission_path, tickets_dir=tickets_dir
     )
     assert mission_report.passed is True, mission_report.issues
-    coverage = [
-        i for i in mission_report.issues if "US drafted" in i.message
-    ]
+    coverage = [i for i in mission_report.issues if "US drafted" in i.message]
     assert len(coverage) == 1, mission_report.issues
     assert coverage[0].level == "warning"
     assert US_ID in coverage[0].message

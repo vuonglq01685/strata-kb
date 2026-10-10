@@ -374,7 +374,11 @@ def build_federation_index(
     entries: list[models.FedIndexEntry] = []
     for repo in load_federation(federation_dir):
         rid = repo.meta.repo_id
-        digest = recorded.get(rid) if changed is not None and not _in_scope(rid, changed) else None
+        digest = (
+            recorded.get(rid)
+            if changed is not None and not _in_scope(rid, changed)
+            else None
+        )
         if digest is None:
             digest = entry_content_digest(repo.kb_dir)
         for doc in repo.index.docs:
@@ -394,7 +398,9 @@ def build_federation_index(
     return models.FederationIndex(docs=entries)
 
 
-def write_federation_index(federation_dir: Path, changed: set[str] | None = None) -> Path:
+def write_federation_index(
+    federation_dir: Path, changed: set[str] | None = None
+) -> Path:
     """Rewrite the aggregate index; see `build_federation_index` for `changed`."""
     index_path = federation_dir / FEDERATION_INDEX_NAME
     models.save_yaml_model(index_path, build_federation_index(federation_dir, changed))

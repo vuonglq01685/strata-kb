@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypedDict
 
 import yaml
 
@@ -41,7 +42,12 @@ def _raw_section(text: str | None, section_id: str) -> str | None:
     return slice_section(text, section_id)
 
 
-def _reviewed_fields(sec: models.SectionEntry) -> dict[str, str]:
+class _ReviewedFields(TypedDict, total=False):
+    reviewed_by: str
+    reviewed_at: str
+
+
+def _reviewed_fields(sec: models.SectionEntry) -> _ReviewedFields:
     """Reviewer sign-off of the worktree's version of `sec`, for display."""
     if sec.reviewed is None:
         return {}
@@ -113,12 +119,26 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
         summary_changed = old_sec.summary.strip() != sec.summary.strip()
         title_changed = old_sec.title.strip() != sec.title.strip()
         prose_changed = _level_changed(
-            root, against, doc_dir, sec.id, sec.file, old_sec.file,
-            ".md", prose_cache_new, prose_cache_old,
+            root,
+            against,
+            doc_dir,
+            sec.id,
+            sec.file,
+            old_sec.file,
+            ".md",
+            prose_cache_new,
+            prose_cache_old,
         )
         content_changed = _level_changed(
-            root, against, doc_dir, sec.id, sec.file, old_sec.file,
-            ".raw.md", raw_cache_new, raw_cache_old,
+            root,
+            against,
+            doc_dir,
+            sec.id,
+            sec.file,
+            old_sec.file,
+            ".raw.md",
+            raw_cache_new,
+            raw_cache_old,
         )
         if summary_changed or title_changed or prose_changed or content_changed:
             report.changed.append(

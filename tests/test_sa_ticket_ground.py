@@ -1,7 +1,13 @@
-import pytest
 from importlib import resources
 
-from tests.test_templates import SA_FULL_WRAPPERS, SA_WRAPPERS, _normalised, _read_init_template
+import pytest
+
+from tests.test_templates import (
+    SA_FULL_WRAPPERS,
+    SA_WRAPPERS,
+    _normalised,
+    _read_init_template,
+)
 
 
 def _after_frontmatter(text: str) -> str:
@@ -34,7 +40,7 @@ def test_sa_ticket_ground_is_wired_into_ba_only():
 
 def test_sa_full_wrappers_are_byte_identical_after_frontmatter():
     bodies = [_after_frontmatter(_read_init_template(n)) for n in SA_FULL_WRAPPERS]
-    for name, body in zip(SA_FULL_WRAPPERS, bodies):
+    for name, body in zip(SA_FULL_WRAPPERS, bodies, strict=True):
         assert body == bodies[0], f"{name} drifted from {SA_FULL_WRAPPERS[0]}"
 
 

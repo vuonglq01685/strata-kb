@@ -1,5 +1,6 @@
 """Conventions pack — detection + scaffold step (spec
 docs/superpowers/specs/2026-08-24-d-conventions-pack-design.md)."""
+
 from pathlib import Path
 
 import pytest
@@ -61,18 +62,18 @@ def test_detects_every_playwright_config_variant(tmp_path: Path, rel: str):
 
 
 def test_detects_manifests_up_to_two_levels_below_root(tmp_path: Path):
-    _touch(tmp_path, "web/package.json")        # depth 1
-    _touch(tmp_path, "services/api/go.mod")     # depth 2
+    _touch(tmp_path, "web/package.json")  # depth 1
+    _touch(tmp_path, "services/api/go.mod")  # depth 2
     assert detect_langs(tmp_path) == ["go", "ts"]
 
 
 def test_detects_manifests_three_levels_below_root(tmp_path: Path):
-    _touch(tmp_path, "apps/web/frontend/package.json")   # depth 3
+    _touch(tmp_path, "apps/web/frontend/package.json")  # depth 3
     assert detect_langs(tmp_path) == ["ts"]
 
 
 def test_ignores_manifests_below_depth_three(tmp_path: Path):
-    _touch(tmp_path, "a/b/c/d/pyproject.toml")           # depth 4
+    _touch(tmp_path, "a/b/c/d/pyproject.toml")  # depth 4
     assert detect_langs(tmp_path) == []
 
 
@@ -91,7 +92,7 @@ def test_the_no_manifest_note_names_the_lang_flag(tmp_path: Path):
 
 def test_multi_language_repo_is_sorted_and_deduped(tmp_path: Path):
     _touch(tmp_path, "pyproject.toml")
-    _touch(tmp_path, "requirements.txt")        # second python manifest: no dupe
+    _touch(tmp_path, "requirements.txt")  # second python manifest: no dupe
     _touch(tmp_path, "web/package.json")
     assert detect_langs(tmp_path) == ["python", "ts"]
 
@@ -124,7 +125,9 @@ def test_skips_glob_oserror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert detect_langs(tmp_path) == []
 
 
-def test_skips_is_file_permission_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_skips_is_file_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     _touch(tmp_path, "pyproject.toml")
 
     def _raise_permission_error(self: Path) -> bool:
@@ -152,7 +155,7 @@ def test_scaffold_creates_base_local_and_pointers_for_detected_lang(tmp_path: Pa
     assert "# Python coding conventions" in base.read_text(encoding="utf-8")
     assert "OVERRIDE" in local.read_text(encoding="utf-8")
     mdc_text = mdc.read_text(encoding="utf-8")
-    assert "globs: **/*.py" in mdc_text            # {globs} substituted
+    assert "globs: **/*.py" in mdc_text  # {globs} substituted
     assert "docs/conventions/python.md" in mdc_text  # {lang} substituted
     assert "{lang}" not in mdc_text and "{globs}" not in mdc_text
     instr_text = instr.read_text(encoding="utf-8")
@@ -195,8 +198,13 @@ def test_scaffold_writes_the_language_pack_and_the_entry_file_links_it(
         ), part
         assert f"(python/{part}.md)" in entry, part
     # the entry file handed its movable sections to the pack
-    for heading in ("## Naming", "## Module structure", "## Error handling",
-                    "## Logging", "## Testing"):
+    for heading in (
+        "## Naming",
+        "## Module structure",
+        "## Error handling",
+        "## Logging",
+        "## Testing",
+    ):
         assert heading not in entry, heading
     assert "## Citation comments" in entry and "## Linting (preset)" in entry
 

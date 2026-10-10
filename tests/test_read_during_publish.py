@@ -1,5 +1,6 @@
 """Reviewer D's F-D3: while a publish was in flight, the read side served the
 unmerged publish/<rid> branch."""
+
 import threading
 import time
 

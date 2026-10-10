@@ -99,9 +99,7 @@ INLINE_CITE_RE = re.compile(
 # federation. Two things the brackets make safe and the bare form could
 # not: '§' may be surrounded by spaces, and the section id needs no
 # "must not end on punctuation" rule, because ']' terminates it.
-BRACKET_CITE_RE = re.compile(
-    rf"\[(?:({_CITE_REPO}):)?({_CITE_DOC})\s*§\s*([^\s\]]+)\]"
-)
+BRACKET_CITE_RE = re.compile(rf"\[(?:({_CITE_REPO}):)?({_CITE_DOC})\s*§\s*([^\s\]]+)\]")
 
 # The bare 'kb-context:' key line, at any indent (mirrors kbcontext._KEY_RE)
 # — used to strip a kb-context block that was NOT wrapped in a ``` fence.
@@ -251,8 +249,7 @@ def check_title(text: str) -> list[Issue]:
     return [
         Issue(
             "error",
-            "missing level-1 title — the first non-empty line must start "
-            "with '# '",
+            "missing level-1 title — the first non-empty line must start with '# '",
         )
     ]
 
@@ -301,8 +298,7 @@ def check_duplicate_headings(text: str) -> list[Issue]:
     return [
         Issue(
             "error",
-            f"heading '{heading}' appears {count} times — merge them into "
-            "one section",
+            f"heading '{heading}' appears {count} times — merge them into one section",
         )
         for heading, count in seen.items()
         if count > 1
@@ -336,9 +332,7 @@ _EDGE_RE = re.compile(
 )
 
 
-def check_diagram(
-    text: str, heading: str, keywords: tuple[str, ...]
-) -> list[Issue]:
+def check_diagram(text: str, heading: str, keywords: tuple[str, ...]) -> list[Issue]:
     r"""The section must carry a ```mermaid fence in which one of `keywords`
     appears at the START OF A LINE, AND the fence contains at least one
     relationship (`_EDGE_RE`) — an arrow or a C4 `Rel(...)`/`BiRel(...)`
@@ -433,9 +427,7 @@ def check_open_question_owners(rows: list[str]) -> list[Issue]:
     ]
 
 
-def check_recommended_sections(
-    text: str, headings: tuple[str, ...]
-) -> list[Issue]:
+def check_recommended_sections(text: str, headings: tuple[str, ...]) -> list[Issue]:
     """Warning per recommended heading that is missing or has an empty
     body. Warning-level on purpose: the required-heading sets are
     compatibility contracts and legacy documents must keep passing."""
@@ -456,8 +448,7 @@ def check_recommended_sections(
             issues.append(
                 Issue(
                     "warning",
-                    f"'{heading}' is empty — fill it or write "
-                    "'N/A — <reason>'",
+                    f"'{heading}' is empty — fill it or write 'N/A — <reason>'",
                 )
             )
     return issues
@@ -550,7 +541,7 @@ def check_review_record(text: str) -> list[Issue]:
             Issue(
                 "error",
                 f"'{REVIEW_RECORD_HEADING}' table header is "
-                f"\"| {' | '.join(rows[0])} |\" — expected "
+                f'"| {" | ".join(rows[0])} |" — expected '
                 "'| Date | Round | Business | Dev | Reviewer |' "
                 "(rubric: docs/review-rubric.md)",
             )
@@ -574,8 +565,7 @@ def check_review_record(text: str) -> list[Issue]:
             issues.append(
                 Issue(
                     "error",
-                    f"'{REVIEW_RECORD_HEADING}' row {position} "
-                    f"{parsed_or_reason}",
+                    f"'{REVIEW_RECORD_HEADING}' row {position} {parsed_or_reason}",
                 )
             )
             continue
@@ -747,8 +737,7 @@ def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
         issues.append(
             Issue(
                 "error",
-                f"citation '{label}' in the body is not in kb-context "
-                f"refs — {fix}",
+                f"citation '{label}' in the body is not in kb-context refs — {fix}",
             )
         )
     for repo, doc, sec in bare:
@@ -763,8 +752,7 @@ def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
             )
     for ref in ctx.refs:
         cited = any(
-            cite_matches_ref(ref, repo, doc, sec)
-            for repo, doc, sec in bracketed + bare
+            cite_matches_ref(ref, repo, doc, sec) for repo, doc, sec in bracketed + bare
         ) or (
             # An UNRESOLVED bracketed citation to this ref's document
             # already earned its own "not in kb-context refs" error
@@ -788,7 +776,7 @@ def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
     return issues
 
 
-def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
+def check_context_tags(ctx: KBContext, hub: HubHandle) -> list[Issue]:
     """Every tag in the block must be one some document on the federation
     actually publishes. An invented tag makes a ticket look grounded in a
     vocabulary it is not grounded in, and drifts the words used to describe
@@ -864,7 +852,7 @@ def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
 
 
 def check_context_block(
-    text: str, hub: "HubHandle | None", *, fail_on_stale: bool = False
+    text: str, hub: HubHandle | None, *, fail_on_stale: bool = False
 ) -> tuple[list[Issue], KBContext | None]:
     """Parse the kb-context block, resolve its refs at the pinned version,
     validate its tags against the federation's tag vocabulary, and
@@ -885,8 +873,7 @@ def check_context_block(
         issues.append(
             Issue(
                 "error",
-                "hub unreachable — cannot resolve kb-context refs "
-                "without a hub",
+                "hub unreachable — cannot resolve kb-context refs without a hub",
             )
         )
     else:

@@ -18,8 +18,11 @@ from tests.fixtures_coderepo import build_code_repo
 def _run(root: Path, **kw) -> core.CodeIngestReport:
     return core.run(
         core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-code",
-            repo_id="demo", **kw
+            repo_root=root,
+            kb_dir=root / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
+            **kw,
         )
     )
 
@@ -213,7 +216,9 @@ def test_service_removed_from_code_is_reported_as_orphan_not_deleted(tmp_path):
     assert "## svc.postgres" in l2
 
 
-def test_scaffolded_state_fails_build_without_allow_pending_and_passes_with_it(tmp_path):
+def test_scaffolded_state_fails_build_without_allow_pending_and_passes_with_it(
+    tmp_path,
+):
     root = build_code_repo(tmp_path)
     _run(root, scaffold_svc=True)
     strict = build_kb(root / ".kb")
@@ -397,10 +402,15 @@ def test_missing_services_md_self_heals_from_manifest_summary(tmp_path):
 def test_doc_id_colliding_with_scaffold_svc_output_is_rejected(tmp_path):
     root = build_code_repo(tmp_path)
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-svc",
-            repo_id="demo", scaffold_svc=True,
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="demo-svc",
+                repo_id="demo",
+                scaffold_svc=True,
+            )
+        )
     assert not (root / ".kb" / "demo-svc").exists()
 
 
@@ -507,7 +517,10 @@ def test_options_post_init_resolves_relative_kb_dir_against_cwd(tmp_path, monkey
     monkeypatch.chdir(other_cwd)
 
     opts = core.CodeIngestOptions(
-        repo_root=root, kb_dir=Path("out/.kb"), doc_id="demo-code", repo_id="demo",
+        repo_root=root,
+        kb_dir=Path("out/.kb"),
+        doc_id="demo-code",
+        repo_id="demo",
     )
     assert opts.kb_dir == (other_cwd / "out" / ".kb").resolve()
 
@@ -516,7 +529,9 @@ def test_options_post_init_resolves_relative_kb_dir_against_cwd(tmp_path, monkey
     assert not (root / "out").exists()
 
 
-def test_options_post_init_resolves_relative_db_paths_against_repo_root(tmp_path, monkeypatch):
+def test_options_post_init_resolves_relative_db_paths_against_repo_root(
+    tmp_path, monkeypatch
+):
     root = build_code_repo(tmp_path)
     con = sqlite3.connect(root / "only.db")
     con.execute("CREATE TABLE widgets (id INTEGER)")
@@ -527,7 +542,10 @@ def test_options_post_init_resolves_relative_db_paths_against_repo_root(tmp_path
     monkeypatch.chdir(other_cwd)
 
     opts = core.CodeIngestOptions(
-        repo_root=root, kb_dir=root / ".kb", doc_id="demo-code", repo_id="demo",
+        repo_root=root,
+        kb_dir=root / ".kb",
+        doc_id="demo-code",
+        repo_id="demo",
         db_paths=(Path("only.db"),),
     )
     assert opts.db_paths == ((root / "only.db").resolve(),)
@@ -658,9 +676,14 @@ def test_doc_id_collision_guard_fires_even_without_scaffold_svc(tmp_path):
     original_manifest = (svc_dir / "_manifest.yaml").read_text(encoding="utf-8")
 
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-svc", repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="demo-svc",
+                repo_id="demo",
+            )
+        )
 
     assert (svc_dir / "flows.md").read_text(encoding="utf-8") == (
         "# demo-svc\n\nHuman-authored flow notes.\n"
@@ -724,9 +747,14 @@ def test_doc_id_collision_guard_catches_a_different_repo_id(tmp_path):
     original_manifest = (svc_dir / "_manifest.yaml").read_text(encoding="utf-8")
 
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-svc", repo_id="other",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="demo-svc",
+                repo_id="other",
+            )
+        )
 
     assert (svc_dir / "flows.md").read_text(encoding="utf-8") == (
         "# demo-svc\n\nHuman-authored flow notes.\n"
@@ -749,9 +777,14 @@ def test_doc_id_collision_guard_catches_a_different_case_spelling(tmp_path):
     original_manifest = (svc_dir / "_manifest.yaml").read_text(encoding="utf-8")
 
     with pytest.raises(core.CodeIngestError, match="Demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="Demo-svc", repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="Demo-svc",
+                repo_id="demo",
+            )
+        )
 
     assert (svc_dir / "flows.md").read_text(encoding="utf-8") == (
         "# demo-svc\n\nHuman-authored flow notes.\n"
@@ -772,10 +805,14 @@ def test_name_check_matches_via_resolved_path_with_no_existing_destination(tmp_p
     runs — proving the comparison never touches the raw string."""
     root = build_code_repo(tmp_path)
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-svc/",
-            repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="demo-svc/",
+                repo_id="demo",
+            )
+        )
     assert not (root / ".kb" / "demo-svc").exists()
 
 
@@ -793,14 +830,20 @@ def test_name_check_fires_for_any_repo_id_not_just_this_runs_own_slot(tmp_path):
     rather than the raw string."""
     root = build_code_repo(tmp_path)
     with pytest.raises(core.CodeIngestError, match="mismatched-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="mismatched-svc",
-            repo_id="other",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="mismatched-svc",
+                repo_id="other",
+            )
+        )
     assert not (root / ".kb" / "mismatched-svc").exists()
 
 
-def test_destination_check_protects_a_curated_dir_whose_name_does_not_end_in_svc(tmp_path):
+def test_destination_check_protects_a_curated_dir_whose_name_does_not_end_in_svc(
+    tmp_path,
+):
     """The destination check is the durable half: it protects a curated
     document regardless of naming convention, not just the "-svc" suffix
     the name check recognises."""
@@ -815,21 +858,33 @@ def test_destination_check_protects_a_curated_dir_whose_name_does_not_end_in_svc
         title="curated",
         sections=[
             models.SectionEntry(
-                id="flow.approval", title="approval", summary="x",
-                status="reviewed", file="flows",
+                id="flow.approval",
+                title="approval",
+                summary="x",
+                status="reviewed",
+                file="flows",
             ),
         ],
     )
     models.save_yaml_model(curated_dir / "_manifest.yaml", manifest)
     index = models.KBIndex(
-        docs=[models.IndexEntry(id="weird-name", title="curated", tags=["code", "curated"])]
+        docs=[
+            models.IndexEntry(
+                id="weird-name", title="curated", tags=["code", "curated"]
+            )
+        ]
     )
     models.save_yaml_model(kb_dir / "index.yaml", index)
 
     with pytest.raises(core.CodeIngestError, match="weird-name"):
-        core.run(core.CodeIngestOptions(
-            repo_root=tmp_path, kb_dir=kb_dir, doc_id="weird-name", repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=tmp_path,
+                kb_dir=kb_dir,
+                doc_id="weird-name",
+                repo_id="demo",
+            )
+        )
 
     assert (curated_dir / "flows.md").read_text(encoding="utf-8") == (
         "# weird-name\n\nHuman flow notes.\n"
@@ -852,7 +907,9 @@ def test_human_preamble_before_the_first_heading_is_preserved(tmp_path):
         "> Responsibility text is human-owned. L3 code evidence "
         "regenerated at unknown-commit."
     )
-    preamble = "This document curates the platform's services. See the team wiki for context."
+    preamble = (
+        "This document curates the platform's services. See the team wiki for context."
+    )
     text = l2_path.read_text(encoding="utf-8")
     assert banner_line + "\n" in text
     text = text.replace(banner_line + "\n", banner_line + "\n\n" + preamble + "\n", 1)
@@ -907,9 +964,14 @@ def test_all_four_reported_trailing_spellings_are_blocked_from_the_curated_dir(
     original_manifest = (svc_dir / "_manifest.yaml").read_text(encoding="utf-8")
 
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id=doc_id, repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id=doc_id,
+                repo_id="demo",
+            )
+        )
 
     assert (svc_dir / "services.md").read_text(encoding="utf-8") == original_services_md
     assert (svc_dir / "_manifest.yaml").read_text(encoding="utf-8") == original_manifest
@@ -924,10 +986,14 @@ def test_dotdot_segment_resolving_back_to_the_reserved_slot_is_blocked(tmp_path)
     root = build_code_repo(tmp_path)
     _run(root, scaffold_svc=True)
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="a/../demo-svc",
-            repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="a/../demo-svc",
+                repo_id="demo",
+            )
+        )
 
 
 def test_mixed_case_combined_with_trailing_separator_is_blocked(tmp_path):
@@ -939,10 +1005,14 @@ def test_mixed_case_combined_with_trailing_separator_is_blocked(tmp_path):
     svc_dir = root / ".kb" / "demo-svc"
     original_manifest = (svc_dir / "_manifest.yaml").read_text(encoding="utf-8")
     with pytest.raises(core.CodeIngestError, match="Demo-Svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="Demo-Svc/",
-            repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="Demo-Svc/",
+                repo_id="demo",
+            )
+        )
     assert (svc_dir / "_manifest.yaml").read_text(encoding="utf-8") == original_manifest
 
 
@@ -953,10 +1023,14 @@ def test_doc_id_absolute_path_cannot_escape_kb_dir(tmp_path):
     root = build_code_repo(tmp_path)
     outside = tmp_path / "outside"
     with pytest.raises(core.CodeIngestError, match="outside"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb",
-            doc_id=str(outside / "evil"), repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id=str(outside / "evil"),
+                repo_id="demo",
+            )
+        )
     assert not outside.exists()
 
 
@@ -965,10 +1039,14 @@ def test_doc_id_dotdot_escape_cannot_leave_kb_dir(tmp_path):
     walks entirely out of --kb-dir, not just back to another doc inside it."""
     root = build_code_repo(tmp_path)
     with pytest.raises(core.CodeIngestError, match="outside"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="../escape",
-            repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="../escape",
+                repo_id="demo",
+            )
+        )
     assert not (root / "escape").exists()
 
 
@@ -980,9 +1058,14 @@ def test_doc_id_that_is_empty_or_names_kb_dir_itself_is_rejected(tmp_path, doc_i
     rejected before anything is created."""
     root = build_code_repo(tmp_path)
     with pytest.raises(core.CodeIngestError):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id=doc_id, repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id=doc_id,
+                repo_id="demo",
+            )
+        )
     assert not (root / ".kb").exists()
 
 
@@ -999,9 +1082,14 @@ def test_doc_id_with_trailing_space_or_dot_is_rejected_up_front(tmp_path, doc_id
     FileNotFoundError instead of a CodeIngestError."""
     root = build_code_repo(tmp_path)
     with pytest.raises(core.CodeIngestError, match="trailing"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id=doc_id, repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id=doc_id,
+                repo_id="demo",
+            )
+        )
     assert not any((root / ".kb").glob("demo-code*"))
 
 
@@ -1051,7 +1139,9 @@ def test_curated_index_tag_on_a_different_document_does_not_block_this_run(tmp_p
     root = build_code_repo(tmp_path)
     (root / ".kb").mkdir(parents=True, exist_ok=True)
     index = models.KBIndex(
-        docs=[models.IndexEntry(id="unrelated-doc", title="x", tags=["code", "curated"])]
+        docs=[
+            models.IndexEntry(id="unrelated-doc", title="x", tags=["code", "curated"])
+        ]
     )
     models.save_yaml_model(root / ".kb" / "index.yaml", index)
 
@@ -1060,7 +1150,9 @@ def test_curated_index_tag_on_a_different_document_does_not_block_this_run(tmp_p
     assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
 
 
-def test_code_run_into_a_directory_with_an_unrelated_md_file_is_refused_as_foreign(tmp_path):
+def test_code_run_into_a_directory_with_an_unrelated_md_file_is_refused_as_foreign(
+    tmp_path,
+):
     """Over-fire re-check for the *curated* guard: a target directory that
     merely has a leftover, non-curated .md file in it (no banner, no
     flow./hist. manifest entries, no flows.md/history.md) must not be
@@ -1078,7 +1170,9 @@ def test_code_run_into_a_directory_with_an_unrelated_md_file_is_refused_as_forei
     assert "already holds a curated document" not in str(excinfo.value)
     assert "did not generate" in str(excinfo.value)
     assert not (doc_dir / "_manifest.yaml").exists()
-    assert (doc_dir / "NOTES.md").read_text(encoding="utf-8") == "scratch notes, not curated\n"
+    assert (doc_dir / "NOTES.md").read_text(
+        encoding="utf-8"
+    ) == "scratch notes, not curated\n"
 
 
 def test_repo_id_dotdot_escape_cannot_leave_kb_dir_via_scaffold_svc(tmp_path):
@@ -1091,10 +1185,15 @@ def test_repo_id_dotdot_escape_cannot_leave_kb_dir_via_scaffold_svc(tmp_path):
     sibling code path."""
     root = build_code_repo(tmp_path)
     with pytest.raises(core.CodeIngestError, match="outside"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-code",
-            repo_id="../../escape", scaffold_svc=True,
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="demo-code",
+                repo_id="../../escape",
+                scaffold_svc=True,
+            )
+        )
     assert not (root.parent.parent / "escape-svc").exists()
 
 
@@ -1109,7 +1208,9 @@ def _make_dir_link(link: Path, target: Path) -> None:
     if platform.system() == "Windows":
         subprocess.run(
             ["cmd", "/c", "mklink", "/J", str(link), str(target)],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
     else:
         os.symlink(target, link, target_is_directory=True)
@@ -1148,7 +1249,9 @@ def _make_dir_link(link: Path, target: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_services_md_rewritten_without_the_banner_is_still_recognised_as_curated(tmp_path):
+def test_services_md_rewritten_without_the_banner_is_still_recognised_as_curated(
+    tmp_path,
+):
     """Controller Ruling R48a, state 1 (the controller's exact
     reproduction): a human rewrites services.md's prose and, in doing so,
     the banner line is gone — the manifest still holds reviewed human
@@ -1174,15 +1277,22 @@ def test_services_md_rewritten_without_the_banner_is_still_recognised_as_curated
     original_l2_text = l2_path.read_text(encoding="utf-8")
 
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-svc", repo_id="other",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="demo-svc",
+                repo_id="other",
+            )
+        )
 
     assert manifest_path.read_bytes() == original_manifest_bytes
     assert l2_path.read_text(encoding="utf-8") == original_l2_text
 
 
-def test_missing_services_md_with_reviewed_manifest_is_still_recognised_as_curated(tmp_path):
+def test_missing_services_md_with_reviewed_manifest_is_still_recognised_as_curated(
+    tmp_path,
+):
     """Controller Ruling R48a, state 2 (the controller's exact
     reproduction): services.md doesn't exist at all — a state
     scaffold_svc() itself explicitly supports and self-heals from — while
@@ -1202,9 +1312,14 @@ def test_missing_services_md_with_reviewed_manifest_is_still_recognised_as_curat
     original_manifest_bytes = manifest_path.read_bytes()
 
     with pytest.raises(core.CodeIngestError, match="demo-svc"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-svc", repo_id="other",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="demo-svc",
+                repo_id="other",
+            )
+        )
 
     assert manifest_path.read_bytes() == original_manifest_bytes
     assert not (svc_dir / "services.md").exists()
@@ -1228,9 +1343,11 @@ def test_manifest_title_signal_alone_protects_a_non_svc_named_curated_dir(tmp_pa
         title="demo — curated service knowledge",
         sections=[
             models.SectionEntry(
-                id="svc.airspace-service", title="airspace-service",
+                id="svc.airspace-service",
+                title="airspace-service",
                 summary="Owns airspace approval decisions.",
-                status="summarized", file="services",
+                status="summarized",
+                file="services",
             ),
         ],
     )
@@ -1238,9 +1355,14 @@ def test_manifest_title_signal_alone_protects_a_non_svc_named_curated_dir(tmp_pa
     original_manifest_bytes = (curated_dir / "_manifest.yaml").read_bytes()
 
     with pytest.raises(core.CodeIngestError, match="weird-name"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="weird-name", repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="weird-name",
+                repo_id="demo",
+            )
+        )
 
     assert (curated_dir / "_manifest.yaml").read_bytes() == original_manifest_bytes
 
@@ -1268,9 +1390,11 @@ def test_manifest_status_signal_alone_protects_a_non_svc_named_curated_dir(tmp_p
         title="an unrelated title",
         sections=[
             models.SectionEntry(
-                id="svc.airspace-service", title="airspace-service",
+                id="svc.airspace-service",
+                title="airspace-service",
                 summary="Owns airspace approval decisions.",
-                status="reviewed", file="services",
+                status="reviewed",
+                file="services",
             ),
         ],
     )
@@ -1278,9 +1402,14 @@ def test_manifest_status_signal_alone_protects_a_non_svc_named_curated_dir(tmp_p
     original_manifest_bytes = (curated_dir / "_manifest.yaml").read_bytes()
 
     with pytest.raises(core.CodeIngestError, match="weird-name"):
-        core.run(core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="weird-name", repo_id="demo",
-        ))
+        core.run(
+            core.CodeIngestOptions(
+                repo_root=root,
+                kb_dir=root / ".kb",
+                doc_id="weird-name",
+                repo_id="demo",
+            )
+        )
 
     assert (curated_dir / "_manifest.yaml").read_bytes() == original_manifest_bytes
 
@@ -1342,7 +1471,9 @@ def test_approve_all_changed_with_no_doc_id_does_not_lock_code_ingest_out_of_its
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "c1 - code-ingest")
 
-    reports = approve_all_changed(root / ".kb", rev0, by="sme <sme@x>")  # no doc_id -> every doc
+    reports = approve_all_changed(
+        root / ".kb", rev0, by="sme <sme@x>"
+    )  # no doc_id -> every doc
     assert any(r.doc_id == "demo-code" and r.flipped for r in reports)
     manifest_path = root / ".kb" / "demo-code" / "_manifest.yaml"
     after_approve = models.load_yaml_model(manifest_path, models.Manifest)
@@ -1369,9 +1500,11 @@ def test_foreign_curated_manifest_with_mismatched_id_still_refuses(tmp_path):
         title="an unrelated title",
         sections=[
             models.SectionEntry(
-                id="svc.airspace-service", title="airspace-service",
+                id="svc.airspace-service",
+                title="airspace-service",
                 summary="Owns airspace approval decisions.",
-                status="reviewed", file="services",
+                status="reviewed",
+                file="services",
             ),
         ],
     )
@@ -1397,10 +1530,15 @@ def test_scaffold_svc_into_a_junctioned_directory_does_not_refuse(tmp_path):
     kb_dir.mkdir(parents=True, exist_ok=True)
     _make_dir_link(kb_dir / "demo-svc", external)
 
-    report = core.run(core.CodeIngestOptions(
-        repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo",
-        scaffold_svc=True,
-    ))
+    report = core.run(
+        core.CodeIngestOptions(
+            repo_root=root,
+            kb_dir=kb_dir,
+            doc_id="demo-code",
+            repo_id="demo",
+            scaffold_svc=True,
+        )
+    )
 
     assert report.doc_id == "demo-code"
     # Written through the link, at the real target — not merely "did not

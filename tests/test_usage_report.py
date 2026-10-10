@@ -18,10 +18,24 @@ def agg_of(rows, tmp_path: Path):
 
 def test_total_sums_tokens_and_cost(tmp_path: Path):
     rows = [
-        row("u1", model="claude-opus-5", tokens_out=1_000_000, cache_read=0,
-            cache_write_1h=0, cache_write_5m=0, tokens_in=0),
-        row("u2", model="claude-opus-5", tokens_out=1_000_000, cache_read=0,
-            cache_write_1h=0, cache_write_5m=0, tokens_in=0),
+        row(
+            "u1",
+            model="claude-opus-5",
+            tokens_out=1_000_000,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+            tokens_in=0,
+        ),
+        row(
+            "u2",
+            model="claude-opus-5",
+            tokens_out=1_000_000,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+            tokens_in=0,
+        ),
     ]
 
     agg = agg_of(rows, tmp_path)
@@ -34,8 +48,13 @@ def test_total_sums_tokens_and_cost(tmp_path: Path):
 def test_buckets_split_by_ticket_phase_model_and_actor(tmp_path: Path):
     rows = [
         row("u1", ticket="open-new-flight", phase="ba-ticket-author", actor="ba"),
-        row("u2", ticket="ATM-7", phase="dev-execute", actor="dev",
-            model="claude-opus-5"),
+        row(
+            "u2",
+            ticket="ATM-7",
+            phase="dev-execute",
+            actor="dev",
+            model="claude-opus-5",
+        ),
     ]
 
     agg = agg_of(rows, tmp_path)
@@ -73,10 +92,24 @@ def test_unattributed_rows_are_their_own_bucket_and_not_a_ticket(tmp_path: Path)
 def test_an_unknown_model_is_counted_in_tokens_but_not_in_money(tmp_path: Path):
     # Invariant I5, report half.
     rows = [
-        row("u1", model="claude-opus-5", tokens_out=1_000_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
-        row("u2", model="claude-nonexistent-9", tokens_out=1_000_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
+        row(
+            "u1",
+            model="claude-opus-5",
+            tokens_out=1_000_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
+        row(
+            "u2",
+            model="claude-nonexistent-9",
+            tokens_out=1_000_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
     ]
 
     agg = agg_of(rows, tmp_path)
@@ -89,7 +122,9 @@ def test_an_unknown_model_is_counted_in_tokens_but_not_in_money(tmp_path: Path):
 
 def test_stale_days_is_carried_into_the_aggregate(tmp_path: Path):
     agg = report.aggregate(
-        [row("u1")], prices.load_prices(tmp_path), today=date(2030, 1, 1),
+        [row("u1")],
+        prices.load_prices(tmp_path),
+        today=date(2030, 1, 1),
         generated=GEN,
     )
 
@@ -125,7 +160,9 @@ def test_html_escapes_a_field_that_carries_arbitrary_text(tmp_path: Path):
 
 def test_html_warns_when_the_price_table_is_old(tmp_path: Path):
     agg = report.aggregate(
-        [row("u1")], prices.load_prices(tmp_path), today=date(2030, 1, 1),
+        [row("u1")],
+        prices.load_prices(tmp_path),
+        today=date(2030, 1, 1),
         generated=GEN,
     )
 
@@ -149,14 +186,30 @@ def test_markdown_is_a_compact_table_for_a_pr_body(tmp_path: Path):
     assert "\n\n\n" not in md
 
 
-def test_markdown_an_all_unpriced_bucket_shows_no_completed_looking_zero(tmp_path: Path):
+def test_markdown_an_all_unpriced_bucket_shows_no_completed_looking_zero(
+    tmp_path: Path,
+):
     # Invariant I5: 0.00 in a cost column is exactly the number that looks
     # complete but is not — an all-unpriced bucket must never show it.
     rows = [
-        row("u1", model="claude-nonexistent-9", tokens_out=1_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
-        row("u2", model="claude-nonexistent-9", tokens_out=2_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
+        row(
+            "u1",
+            model="claude-nonexistent-9",
+            tokens_out=1_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
+        row(
+            "u2",
+            model="claude-nonexistent-9",
+            tokens_out=2_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
     ]
 
     md = report.render_markdown(agg_of(rows, tmp_path))
@@ -167,10 +220,24 @@ def test_markdown_an_all_unpriced_bucket_shows_no_completed_looking_zero(tmp_pat
 
 def test_html_an_all_unpriced_bucket_shows_no_completed_looking_zero(tmp_path: Path):
     rows = [
-        row("u1", model="claude-nonexistent-9", tokens_out=1_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
-        row("u2", model="claude-nonexistent-9", tokens_out=2_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
+        row(
+            "u1",
+            model="claude-nonexistent-9",
+            tokens_out=1_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
+        row(
+            "u2",
+            model="claude-nonexistent-9",
+            tokens_out=2_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
     ]
 
     html = report.render_html(agg_of(rows, tmp_path))
@@ -181,10 +248,24 @@ def test_html_an_all_unpriced_bucket_shows_no_completed_looking_zero(tmp_path: P
 
 def test_a_partially_unpriced_bucket_still_shows_its_real_cost(tmp_path: Path):
     rows = [
-        row("u1", model="claude-opus-5", tokens_out=1_000_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
-        row("u2", model="claude-nonexistent-9", tokens_out=1_000_000, tokens_in=0,
-            cache_read=0, cache_write_1h=0, cache_write_5m=0),
+        row(
+            "u1",
+            model="claude-opus-5",
+            tokens_out=1_000_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
+        row(
+            "u2",
+            model="claude-nonexistent-9",
+            tokens_out=1_000_000,
+            tokens_in=0,
+            cache_read=0,
+            cache_write_1h=0,
+            cache_write_5m=0,
+        ),
     ]
     agg = agg_of(rows, tmp_path)
 
@@ -220,7 +301,9 @@ def test_estimated_rows_are_counted_and_shown(tmp_path: Path):
 
 
 def test_priced_as_lists_only_alias_matches(tmp_path: Path):
-    agg = agg_of([row("u1", model="opus"), row("u2", model="claude-opus-5-6")], tmp_path)
+    agg = agg_of(
+        [row("u1", model="opus"), row("u2", model="claude-opus-5-6")], tmp_path
+    )
     assert agg.priced_as == {"opus": "claude-opus-5-5"}
     assert agg.unpriced_models == ["claude-opus-5-6"]
     assert "opus priced as claude-opus-5-5" in report.render_markdown(agg)
@@ -229,7 +312,9 @@ def test_priced_as_lists_only_alias_matches(tmp_path: Path):
 
 
 def test_markdown_warns_when_the_price_table_is_old(tmp_path: Path):
-    (tmp_path / "usage-prices.yaml").write_text("effective_date: '2026-01-01'\n", encoding="utf-8")
+    (tmp_path / "usage-prices.yaml").write_text(
+        "effective_date: '2026-01-01'\n", encoding="utf-8"
+    )
     md = report.render_markdown(agg_of([row("u1")], tmp_path))
     assert md.startswith("**Warning: price table is 234 days old")
 
@@ -242,20 +327,62 @@ def test_markdown_and_html_mention_hook_errors_when_present(tmp_path: Path):
 
 
 def test_unattributed_share_is_a_headline_figure(tmp_path: Path):
-    agg = agg_of([row("u1", ticket=None, model="claude-opus-5", tokens_out=1_000_000,
-                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0),
-                  row("u2", ticket="ATM-7", model="claude-opus-5", tokens_out=3_000_000,
-                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0)], tmp_path)
+    agg = agg_of(
+        [
+            row(
+                "u1",
+                ticket=None,
+                model="claude-opus-5",
+                tokens_out=1_000_000,
+                tokens_in=0,
+                cache_read=0,
+                cache_write_5m=0,
+                cache_write_1h=0,
+            ),
+            row(
+                "u2",
+                ticket="ATM-7",
+                model="claude-opus-5",
+                tokens_out=3_000_000,
+                tokens_in=0,
+                cache_read=0,
+                cache_write_5m=0,
+                cache_write_1h=0,
+            ),
+        ],
+        tmp_path,
+    )
     assert agg.unattributed_pct == pytest.approx(25.0)
     assert "Unattributed: 25.0 % of cost" in report.render_markdown(agg)
     assert "Unattributed: 25.0 % of cost" in report.render_html(agg)
 
 
 def test_unattributed_share_falls_back_to_tokens_when_nothing_is_priced(tmp_path: Path):
-    agg = agg_of([row("u1", ticket=None, model="claude-nonexistent-9", tokens_out=10,
-                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0),
-                  row("u2", ticket="ATM-7", model="claude-nonexistent-9", tokens_out=30,
-                      tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0)], tmp_path)
+    agg = agg_of(
+        [
+            row(
+                "u1",
+                ticket=None,
+                model="claude-nonexistent-9",
+                tokens_out=10,
+                tokens_in=0,
+                cache_read=0,
+                cache_write_5m=0,
+                cache_write_1h=0,
+            ),
+            row(
+                "u2",
+                ticket="ATM-7",
+                model="claude-nonexistent-9",
+                tokens_out=30,
+                tokens_in=0,
+                cache_read=0,
+                cache_write_5m=0,
+                cache_write_1h=0,
+            ),
+        ],
+        tmp_path,
+    )
     assert agg.unattributed_pct == pytest.approx(25.0)
     assert "Unattributed: 25.0 % of tokens" in report.render_markdown(agg)
     assert "Unattributed: 25.0 % of tokens" in report.render_html(agg)

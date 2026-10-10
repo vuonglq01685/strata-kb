@@ -55,7 +55,12 @@ WHEEL_REQUIRED_FONT_DIR = f"{WHEEL_PACKAGE_DIR}/templates/web/static/fonts/"
 # CHANGELOG.md: force-included sdist-only, same spot in pyproject.toml, so
 # release notes are discoverable without going into the wheel.
 SDIST_ALLOWED_TOP_LEVEL = {
-    "src", "PKG-INFO", "pyproject.toml", "README.md", "LICENSE", ".gitignore",
+    "src",
+    "PKG-INFO",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE",
+    ".gitignore",
     "CHANGELOG.md",
 }
 
@@ -76,7 +81,9 @@ def wheel_offenders(wheel: Path) -> list[str]:
     with zipfile.ZipFile(wheel) as zf:
         for name in zf.namelist():
             tops.add(name.split("/", 1)[0])
-    allowed = {WHEEL_PACKAGE_DIR} | {t for t in tops if t.endswith(WHEEL_DIST_INFO_SUFFIX)}
+    allowed = {WHEEL_PACKAGE_DIR} | {
+        t for t in tops if t.endswith(WHEEL_DIST_INFO_SUFFIX)
+    }
     return sorted(tops - allowed)
 
 
@@ -114,7 +121,9 @@ def venv_bin(venv: Path) -> Path:
 def installed_version(venv: Path) -> str:
     proc = subprocess.run(
         [str(venv_bin(venv) / "kb"), "--version"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"`kb --version` failed: {proc.stderr}")
@@ -142,7 +151,9 @@ def check(venv: Path, dist: Path, root: Path, tag: str | None) -> list[str]:
             errors.append(f"{wheel.name} wrongly packages: {', '.join(offenders)}")
         missing = wheel_required_missing(wheel)
         if missing:
-            errors.append(f"{wheel.name} is missing required assets: {', '.join(missing)}")
+            errors.append(
+                f"{wheel.name} is missing required assets: {', '.join(missing)}"
+            )
 
     for sdist in sdists:
         offenders = sdist_offenders(sdist)
@@ -157,10 +168,14 @@ def check(venv: Path, dist: Path, root: Path, tag: str | None) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--venv", type=Path, required=True, help="venv with the wheel installed")
+    ap.add_argument(
+        "--venv", type=Path, required=True, help="venv with the wheel installed"
+    )
     ap.add_argument("--dist", type=Path, default=Path("dist"))
     ap.add_argument("--root", type=Path, default=Path(__file__).parent.parent)
-    ap.add_argument("--tag", default=None, help="git tag, e.g. v0.9.1 (only on release)")
+    ap.add_argument(
+        "--tag", default=None, help="git tag, e.g. v0.9.1 (only on release)"
+    )
     args = ap.parse_args()
 
     errors = check(args.venv, args.dist, args.root, args.tag)

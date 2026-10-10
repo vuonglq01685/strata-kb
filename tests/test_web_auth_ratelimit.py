@@ -1,4 +1,5 @@
 """M6: the same secret over Authorization had no lockout at all."""
+
 import time
 
 from strata_kb.web.auth import COOKIE_NAME, SESSION_MAX_AGE, make_session
@@ -37,9 +38,12 @@ def test_duplicate_authorization_header_still_spends_the_limiter(web_client):
 
 def test_successful_auth_never_counts(web_client, token):
     for _ in range(LOGIN_MAX_ATTEMPTS + 5):
-        assert web_client.get(
-            "/api/docs", headers={"Authorization": f"Bearer {token}"}
-        ).status_code == 200
+        assert (
+            web_client.get(
+                "/api/docs", headers={"Authorization": f"Bearer {token}"}
+            ).status_code
+            == 200
+        )
 
 
 def test_the_header_path_and_the_login_form_share_one_bucket(web_client):
@@ -47,9 +51,7 @@ def test_the_header_path_and_the_login_form_share_one_bucket(web_client):
     limiter is decoration."""
     for _ in range(LOGIN_MAX_ATTEMPTS):
         web_client.get("/api/docs", headers={"Authorization": "Bearer wrong"})
-    resp = web_client.post(
-        "/ui/login", data={"token": "wrong"}, follow_redirects=False
-    )
+    resp = web_client.post("/ui/login", data={"token": "wrong"}, follow_redirects=False)
     assert resp.status_code == 429
 
 
@@ -90,9 +92,7 @@ def test_anonymous_browsing_never_spends_the_bucket(web_client, token):
     may spend M6's bucket."""
     for _ in range(LOGIN_MAX_ATTEMPTS):
         assert web_client.get("/", follow_redirects=False).status_code == 302
-    resp = web_client.post(
-        "/ui/login", data={"token": token}, follow_redirects=False
-    )
+    resp = web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
     assert resp.status_code == 303
 
 
@@ -122,9 +122,7 @@ def test_expired_own_cookie_does_not_lock_out_the_correct_token(web_client, toke
     # Budget must never be exhausted by the user's own dead cookie.
     assert 429 not in codes
 
-    resp = web_client.post(
-        "/ui/login", data={"token": token}, follow_redirects=False
-    )
+    resp = web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
     assert resp.status_code == 303
 
 

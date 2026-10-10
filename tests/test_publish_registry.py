@@ -1,5 +1,6 @@
 """Reviewer D's F-D1 repro: a hub with a registry must not accept a snapshot
 published under someone else's repo-id."""
+
 import pytest
 import yaml
 
@@ -61,7 +62,10 @@ def test_unregistered_publisher_cannot_publish_as_another_repo(
     run_git(git_kb["root"], "add", "-A")
     run_git(git_kb["root"], "commit", "-m", "attacker edit")
     run_git(
-        git_kb["root"], "remote", "set-url", "origin",
+        git_kb["root"],
+        "remote",
+        "set-url",
+        "origin",
         "https://github.com/org/attacker.git",
     )
     with pytest.raises(pubgate.GateError, match="is not registered on hub"):

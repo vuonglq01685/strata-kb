@@ -65,6 +65,7 @@ Every reader degrades rather than raises: a malformed or wrong-shaped file
 warning naming the file, and every other reader still runs — the same
 discipline `deps.py` and `services.py` use.
 """
+
 from __future__ import annotations
 
 import configparser
@@ -86,15 +87,55 @@ from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 PURPOSES = ("build", "test", "lint", "run")
 
 PURPOSE_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "test": ("pytest", "vitest", "jest", "mocha", "go test", "dotnet test",
-             "mvn test", "gradle test", "phpunit", "test"),
-    "lint": ("ruff", "eslint", "flake8", "mypy", "golangci-lint",
-             "dotnet format", "checkstyle", "lint", "format", "cargo clippy",
-             "cargo fmt", "analyze", "swiftlint"),
-    "build": ("build", "compile", "tsc", "vite build", "mvn package",
-              "gradle build", "dotnet build", "go build"),
-    "run": ("start", "serve", "uvicorn", "gunicorn", "dotnet run",
-            "go run", "dev", "cargo run", "flutter run", "swift run"),
+    "test": (
+        "pytest",
+        "vitest",
+        "jest",
+        "mocha",
+        "go test",
+        "dotnet test",
+        "mvn test",
+        "gradle test",
+        "phpunit",
+        "test",
+    ),
+    "lint": (
+        "ruff",
+        "eslint",
+        "flake8",
+        "mypy",
+        "golangci-lint",
+        "dotnet format",
+        "checkstyle",
+        "lint",
+        "format",
+        "cargo clippy",
+        "cargo fmt",
+        "analyze",
+        "swiftlint",
+    ),
+    "build": (
+        "build",
+        "compile",
+        "tsc",
+        "vite build",
+        "mvn package",
+        "gradle build",
+        "dotnet build",
+        "go build",
+    ),
+    "run": (
+        "start",
+        "serve",
+        "uvicorn",
+        "gunicorn",
+        "dotnet run",
+        "go run",
+        "dev",
+        "cargo run",
+        "flutter run",
+        "swift run",
+    ),
 }
 
 # (purpose, command, source) — the uniform shape every reader below returns.
@@ -134,7 +175,8 @@ def _step_dir_label(step: dict, lines: list[str]) -> str | None:
         return working_dir.strip().rstrip("/")
 
     cd_matches = [
-        m for m in (_CD_LINE_RE.match(line.strip()) for line in lines if line.strip())
+        m
+        for m in (_CD_LINE_RE.match(line.strip()) for line in lines if line.strip())
         if m is not None
     ]
     if len(cd_matches) > 1:
@@ -167,13 +209,17 @@ def _defaults_working_directory(
         return None
     defaults = container["defaults"]
     if not isinstance(defaults, dict):
-        warnings.append(f"could not parse {rel}: {scope_desc} 'defaults' is not a mapping")
+        warnings.append(
+            f"could not parse {rel}: {scope_desc} 'defaults' is not a mapping"
+        )
         return None
     if "run" not in defaults:
         return None
     run_defaults = defaults["run"]
     if not isinstance(run_defaults, dict):
-        warnings.append(f"could not parse {rel}: {scope_desc} 'defaults.run' is not a mapping")
+        warnings.append(
+            f"could not parse {rel}: {scope_desc} 'defaults.run' is not a mapping"
+        )
         return None
     if "working-directory" not in run_defaults:
         return None
@@ -200,17 +246,50 @@ _TOKEN_SEPARATORS = ("-", ":")
 # `tox -e lint-3.12` -> `lint` (Python version matrices) are genuine
 # separator-rule matches whose matched token carries a dot -- a generic
 # "has a dot" rule would wrongly exclude both.
-_FILENAME_EXTENSIONS = frozenset({
-    "txt", "json", "yml", "yaml", "sh", "py", "js", "ts", "md",
-    "cfg", "ini", "toml", "lock", "csv", "log", "sql", "xml",
-    "in", "gz", "tgz", "zip", "tar", "bz2", "xz", "mjs", "cjs", "bash",
-    # The compiled languages' own source extensions. Without these, a
-    # download/copy step naming a source file (`curl -o test-helper.rs`,
-    # `cp build-Program.cs /tmp`) matched its keyword through the
-    # `-`/`:` separator rule and classified as a real command -- the
-    # same false-positive class the scripting extensions above close.
-    "rs", "dart", "swift", "go", "cs", "java", "php", "kt",
-})
+_FILENAME_EXTENSIONS = frozenset(
+    {
+        "txt",
+        "json",
+        "yml",
+        "yaml",
+        "sh",
+        "py",
+        "js",
+        "ts",
+        "md",
+        "cfg",
+        "ini",
+        "toml",
+        "lock",
+        "csv",
+        "log",
+        "sql",
+        "xml",
+        "in",
+        "gz",
+        "tgz",
+        "zip",
+        "tar",
+        "bz2",
+        "xz",
+        "mjs",
+        "cjs",
+        "bash",
+        # The compiled languages' own source extensions. Without these, a
+        # download/copy step naming a source file (`curl -o test-helper.rs`,
+        # `cp build-Program.cs /tmp`) matched its keyword through the
+        # `-`/`:` separator rule and classified as a real command -- the
+        # same false-positive class the scripting extensions above close.
+        "rs",
+        "dart",
+        "swift",
+        "go",
+        "cs",
+        "java",
+        "php",
+        "kt",
+    }
+)
 
 
 def _looks_like_filename(token: str) -> bool:
@@ -261,19 +340,33 @@ def _token_matches_keyword(token: str, keyword: str) -> bool:
 # package-manager install verb is recognised as setup and dropped before
 # classification ever runs, regardless of what package name follows.
 _INSTALL_VERBS: tuple[tuple[str, ...], ...] = (
-    ("pip", "install"), ("pip3", "install"), ("python", "-m", "pip", "install"),
-    ("uv", "pip", "install"), ("uv", "add"), ("uv", "sync"),
+    ("pip", "install"),
+    ("pip3", "install"),
+    ("python", "-m", "pip", "install"),
+    ("uv", "pip", "install"),
+    ("uv", "add"),
+    ("uv", "sync"),
     ("pipx", "install"),
-    ("poetry", "install"), ("poetry", "add"),
-    ("npm", "install"), ("npm", "i"), ("npm", "ci"), ("npm", "add"),
-    ("yarn", "add"), ("yarn", "install"),
-    ("pnpm", "install"), ("pnpm", "add"),
-    ("apt-get", "install"), ("apt", "install"), ("apk", "add"),
+    ("poetry", "install"),
+    ("poetry", "add"),
+    ("npm", "install"),
+    ("npm", "i"),
+    ("npm", "ci"),
+    ("npm", "add"),
+    ("yarn", "add"),
+    ("yarn", "install"),
+    ("pnpm", "install"),
+    ("pnpm", "add"),
+    ("apt-get", "install"),
+    ("apt", "install"),
+    ("apk", "add"),
     ("brew", "install"),
     ("go", "install"),
     ("cargo", "install"),
     ("gem", "install"),
-    ("dotnet", "add"), ("dotnet", "restore"), ("dotnet", "tool", "install"),
+    ("dotnet", "add"),
+    ("dotnet", "restore"),
+    ("dotnet", "tool", "install"),
 )
 
 
@@ -290,7 +383,7 @@ def _is_install_line(tokens: list[str]) -> bool:
     of every non-excluded segment combine. This function's only job is
     whether ITS segment's purpose is "install a tool", which is setup,
     never a command a Dev agent should be told to run."""
-    return any(tuple(tokens[:len(verb)]) == verb for verb in _INSTALL_VERBS)
+    return any(tuple(tokens[: len(verb)]) == verb for verb in _INSTALL_VERBS)
 
 
 # I5 (same review, same intake-filter surface as C1): the bare keyword
@@ -383,7 +476,7 @@ def _matches_keyword(tokens: list[str], keyword: str) -> bool:
     return any(
         all(
             _token_matches_keyword(tok, kw)
-            for tok, kw in zip(tokens[i:i + width], kw_tokens)
+            for tok, kw in zip(tokens[i : i + width], kw_tokens, strict=True)
         )
         for i in range(len(tokens) - width + 1)
     )
@@ -530,7 +623,9 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
             if not isinstance(jobs, dict):
                 warnings.append(f"could not parse {rel}: 'jobs' is not a mapping")
                 continue
-            workflow_default_dir = _defaults_working_directory(data, rel, "workflow", warnings)
+            workflow_default_dir = _defaults_working_directory(
+                data, rel, "workflow", warnings
+            )
             for job_name in sorted(jobs):
                 job = jobs[job_name]
                 if not isinstance(job, dict):
@@ -567,9 +662,13 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                     # `defaults.run.working-directory`, which beats the
                     # workflow's -- GitHub Actions' own precedence.
                     dir_label = (
-                        _step_dir_label(step, lines) or job_default_dir or workflow_default_dir
+                        _step_dir_label(step, lines)
+                        or job_default_dir
+                        or workflow_default_dir
                     )
-                    source = f"{source_base} (in {dir_label}/)" if dir_label else source_base
+                    source = (
+                        f"{source_base} (in {dir_label}/)" if dir_label else source_base
+                    )
                     for line in lines:
                         purpose = _classify(line)
                         if purpose is not None:
@@ -614,7 +713,9 @@ def _read_npm(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], lis
         for name in sorted(scripts):
             body = scripts[name]
             if not isinstance(body, str):
-                warnings.append(f"could not parse {rel}: script {name!r} is not a string")
+                warnings.append(
+                    f"could not parse {rel}: script {name!r} is not a string"
+                )
                 continue
             invocation = "npm test" if name == "test" else f"npm run {name}"
             command = f"{body} ({invocation})"
@@ -666,7 +767,9 @@ def _tox_env_names(text: str) -> set[str]:
     names: set[str] = set()
     if parser.has_section("tox"):
         raw = parser.get("tox", "envlist", fallback="")
-        names.update(part.strip() for part in raw.replace("\n", ",").split(",") if part.strip())
+        names.update(
+            part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()
+        )
     for section in parser.sections():
         if section.startswith("testenv:"):
             names.add(section.split(":", 1)[1].strip())
@@ -715,8 +818,10 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
 
             for invocation, line in _tox_commands(text):
                 purpose = _classify(line)
+                if purpose is None:
+                    continue
                 candidate = (purpose, invocation, rel)
-                if purpose is not None and candidate not in candidates:
+                if candidate not in candidates:
                     candidates.append(candidate)
 
     pyproject = root / "pyproject.toml"
@@ -729,7 +834,9 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
         else:
             tool = data.get("tool", {})
             pytest_cfg = tool.get("pytest", {}) if isinstance(tool, dict) else {}
-            ini_options = pytest_cfg.get("ini_options") if isinstance(pytest_cfg, dict) else None
+            ini_options = (
+                pytest_cfg.get("ini_options") if isinstance(pytest_cfg, dict) else None
+            )
             if isinstance(ini_options, dict):
                 candidates.append(("test", "pytest", rel))
 
@@ -743,7 +850,9 @@ def _read_python(root: Path) -> tuple[list[Candidate], list[str]]:
 _SHELL_DIRS = (Path("."), Path("scripts"))
 
 
-def _read_shell(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
+def _read_shell(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[list[Candidate], list[str]]:
     """Every `*.sh` at the repo root or directly under `scripts/`. The
     script's logical lines are classified; for each purpose that appears
     at least once the candidate is `bash <script>` with the script as
@@ -796,7 +905,9 @@ def _first_matching_file(
     return None
 
 
-def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
+def _read_presence(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[list[Candidate], list[str]]:
     """No file content is read here — presence alone is the evidence, and
     the purpose of each canonical command is known statically, so these
     candidates bypass `_classify()` entirely (unlike every other reader).
@@ -824,7 +935,9 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
     if gradle_file is not None:
         candidates.append(("build", "./gradlew build", gradle_file))
 
-    dotnet_file = _first_matching_file(root, opts, lambda n: n.endswith((".csproj", ".sln")))
+    dotnet_file = _first_matching_file(
+        root, opts, lambda n: n.endswith((".csproj", ".sln"))
+    )
     if dotnet_file is not None:
         candidates.append(("build", "dotnet build", dotnet_file))
         candidates.append(("test", "dotnet test", dotnet_file))
@@ -844,7 +957,9 @@ def _read_presence(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate]
     return candidates, []
 
 
-def _read_pubspec(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
+def _read_pubspec(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[list[Candidate], list[str]]:
     """`pubspec.yaml`'s *content* — what `_read_presence` is barred from
     reading, and the only way to settle the question that kept Dart out
     of it: a Flutter app's runner is `flutter test`, a pure-Dart
@@ -907,7 +1022,9 @@ def _is_e2e_command(text: str) -> bool:
     return any(_matches_keyword(tokens, keyword) for keyword in _E2E_KEYWORDS)
 
 
-def _select(all_candidates: list[Candidate], purpose: str) -> tuple[Candidate, list[Candidate]] | None:
+def _select(
+    all_candidates: list[Candidate], purpose: str
+) -> tuple[Candidate, list[Candidate]] | None:
     """`all_candidates` is already CI-first, then local readers in the
     brief's fixed order (npm, make, python, shell, pubspec,
     presence-based) — so the first match for a purpose is, by
@@ -930,7 +1047,9 @@ def _select(all_candidates: list[Candidate], purpose: str) -> tuple[Candidate, l
     return matches[0], matches[1:]
 
 
-def _render_section(purpose: str, primary: Candidate, alternatives: list[Candidate]) -> CodeSection:
+def _render_section(
+    purpose: str, primary: Candidate, alternatives: list[Candidate]
+) -> CodeSection:
     # A captured command can itself be (or embed) a URL a Dev committed
     # with a plaintext credential in it -- `curl https://admin:pw@host/x`,
     # a `git+https://token@...` clone step, ... -- so every command text
@@ -955,7 +1074,9 @@ def _render_section(purpose: str, primary: Candidate, alternatives: list[Candida
 
     l3_blocks = [f"```bash\n{command}\n```"]
     if alternatives:
-        alt_body = "\n".join(f"# {alt_src}\n{alt_cmd}" for _, alt_cmd, alt_src in alternatives)
+        alt_body = "\n".join(
+            f"# {alt_src}\n{alt_cmd}" for _, alt_cmd, alt_src in alternatives
+        )
         l3_blocks.append(f"```\n{alt_body}\n```")
     l3_md = "\n\n".join(l3_blocks) + "\n"
 
@@ -988,8 +1109,14 @@ class CommandsExtractor:
         if any(
             (root / name).is_file()
             for name in (
-                "Makefile", "tox.ini", "pyproject.toml", "pom.xml", "go.mod",
-                "Cargo.toml", "Package.swift", "pubspec.yaml",
+                "Makefile",
+                "tox.ini",
+                "pyproject.toml",
+                "pom.xml",
+                "go.mod",
+                "Cargo.toml",
+                "Package.swift",
+                "pubspec.yaml",
             )
         ):
             return True

@@ -34,12 +34,19 @@ def _get(url: str, token: str | None = None) -> tuple[int, str]:
 def http_server(artifact, published_repo, free_port):
     proc = subprocess.Popen(
         [
-            str(artifact.python), "-m", "strata_kb.mcp",
-            "--kb", str(published_repo["kb"]),
-            "--hub", str(published_repo["hub"]),
-            "--transport", "http",
-            "--host", "127.0.0.1",
-            "--port", str(free_port),
+            str(artifact.python),
+            "-m",
+            "strata_kb.mcp",
+            "--kb",
+            str(published_repo["kb"]),
+            "--hub",
+            str(published_repo["hub"]),
+            "--transport",
+            "http",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(free_port),
         ],
         cwd=published_repo["repo"],
         env={**os.environ, "STRATA_KB_HTTP_TOKEN": TOKEN},
@@ -110,12 +117,14 @@ async def _handshake(params):
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
 
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = await session.list_tools()
-            hit = await session.call_tool("kb_search", {"query": "airspace"})
-            return tools, hit
+    async with (
+        stdio_client(params) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        tools = await session.list_tools()
+        hit = await session.call_tool("kb_search", {"query": "airspace"})
+        return tools, hit
 
 
 def test_mcp_stdio_exposes_exactly_the_five_tools(mcp_stdio_params):

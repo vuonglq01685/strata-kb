@@ -1,6 +1,7 @@
 """2026-10-10 review §6.2 F2: `slice_section` re-split the whole file per
 section -- O(sections × bytes). `section_map` splits once; `slice_section`
 must return byte-for-byte what the old per-call scan returned."""
+
 from __future__ import annotations
 
 import random
@@ -32,25 +33,27 @@ def _old_slice(md: str, section_id: str, occurrence: int = 0) -> str | None:
     return "\n".join(lines[start:]).strip()
 
 
-EDGE = "\n".join([
-    "preamble text",
-    "## 1 One",
-    "body one",
-    "### 1.1 child",
-    "child body",
-    "##notaheading",
-    "## ",  # a boundary that is not a heading
-    "after empty heading",
-    "## 2 Two",
-    "",
-    "| a | b |",
-    "## 1 Repeated id",
-    "second one",
-    "## 3",
-    "## 4 Last\t ",
-    "tail",
-    "",
-])
+EDGE = "\n".join(
+    [
+        "preamble text",
+        "## 1 One",
+        "body one",
+        "### 1.1 child",
+        "child body",
+        "##notaheading",
+        "## ",  # a boundary that is not a heading
+        "after empty heading",
+        "## 2 Two",
+        "",
+        "| a | b |",
+        "## 1 Repeated id",
+        "second one",
+        "## 3",
+        "## 4 Last\t ",
+        "tail",
+        "",
+    ]
+)
 
 
 @pytest.mark.parametrize("sid", ["1", "1.1", "2", "3", "4", "missing", ""])
@@ -76,7 +79,11 @@ def test_random_documents_match_the_old_scan():
         md = "\n".join(lines) + rng.choice(["", "\n", "\r\n"])
         for sid in ("1", "2", "2.1", "x", "é", "none"):
             for occ in range(3):
-                assert slice_section(md, sid, occ) == _old_slice(md, sid, occ), (md, sid, occ)
+                assert slice_section(md, sid, occ) == _old_slice(md, sid, occ), (
+                    md,
+                    sid,
+                    occ,
+                )
 
 
 def test_section_map_lists_repeated_ids_in_file_order():
@@ -105,7 +112,9 @@ def test_searchdb_reads_each_file_once_per_document(tmp_path, monkeypatch):
 
     doc = tmp_path / "d"
     doc.mkdir()
-    secs = [models.SectionEntry(id=str(i), title=f"T{i}", file="ch1") for i in range(50)]
+    secs = [
+        models.SectionEntry(id=str(i), title=f"T{i}", file="ch1") for i in range(50)
+    ]
     text = "\n".join(f"## {i} T{i}\n\nbody {i}\n" for i in range(50))
     (doc / "ch1.md").write_text(text, encoding="utf-8")
     (doc / "ch1.raw.md").write_text(text, encoding="utf-8")

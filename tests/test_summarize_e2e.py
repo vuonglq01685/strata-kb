@@ -14,8 +14,11 @@ runner = CliRunner()
 INNER = json.dumps({"l2_summary": "Condensed via stub.", "l1_summary": "Stub line."})
 ENVELOPE = json.dumps({"type": "result", "result": INNER})
 DOC_INNER = json.dumps(
-    {"l2_summary": "Condensed via stub.", "l1_summary": "Stub line.",
-     "summary": "Stub doc summary."}
+    {
+        "l2_summary": "Condensed via stub.",
+        "l1_summary": "Stub line.",
+        "summary": "Stub doc summary.",
+    }
 )
 DOC_ENVELOPE = json.dumps({"type": "result", "result": DOC_INNER})
 
@@ -63,7 +66,8 @@ def test_kb_summarize_parallel_many_sections_manifest_consistent(tmp_path, monke
     (doc / "ch.raw.md").write_text("\n".join(raw), encoding="utf-8")
     (doc / "ch.md").write_text("\n".join(l2), encoding="utf-8")
     models.save_yaml_model(
-        doc / "_manifest.yaml", models.Manifest(id="big", title="Big", sections=sections)
+        doc / "_manifest.yaml",
+        models.Manifest(id="big", title="Big", sections=sections),
     )
     models.save_yaml_model(
         kb / "index.yaml",

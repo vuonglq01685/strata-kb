@@ -17,7 +17,8 @@ def test_reindex_does_not_commit_hand_edited_or_untracked_content(
     (rogue / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
 
     result = runner.invoke(
-        app, ["reindex", "--hub", str(hub_worktree), "--kb-dir", str(hub_worktree / ".kb")]
+        app,
+        ["reindex", "--hub", str(hub_worktree), "--kb-dir", str(hub_worktree / ".kb")],
     )
     assert result.exit_code == 0, result.output
 

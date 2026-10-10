@@ -50,7 +50,9 @@ def test_half_broken_entry_is_skipped_with_warning(tmp_path, caplog):
     fed = _make_nested_hub(tmp_path)
     broken = fed / "mid" / "repo-broken"
     broken.mkdir()
-    (broken / "index.yaml").write_text("docs: []\n", encoding="utf-8")  # thiếu _meta.yaml
+    (broken / "index.yaml").write_text(
+        "docs: []\n", encoding="utf-8"
+    )  # thiếu _meta.yaml
     ids = [pid for pid, _ in federation.iter_entry_dirs(fed)]
     assert "mid/repo-broken" not in ids
     assert any("mid/repo-broken" in r.message for r in caplog.records)
@@ -824,9 +826,7 @@ def test_hub_to_hub_unreadable_source_record_self_heals_instead_of_aborting(
     monkeypatch.setattr(models, "load_yaml_model", _flaky_load)
 
     for source_commit in ("abc1", "abc2", "abc3"):
-        publish._snapshot_federation(
-            fed_src, upper, "mid", source_commit, store=store
-        )
+        publish._snapshot_federation(fed_src, upper, "mid", source_commit, store=store)
 
     dest_b = upper.federation_dir / "mid" / "repo-b"
     assert (dest_b / "doc-b" / "_manifest.yaml").exists()
@@ -1523,8 +1523,10 @@ def test_hub_to_hub_nested_record_dropped_from_union_and_reported_skipped(
     # directory is named, not a `<dir>/_assets.yaml` the drop may not hold
     messages = [r.getMessage() for r in caplog.records]
     assert any(
-        m.endswith("/repo-a/doc-a sits inside the entry 'repo-a', so it is "
-                   "content, not an entry of its own -- left exactly as it is")
+        m.endswith(
+            "/repo-a/doc-a sits inside the entry 'repo-a', so it is "
+            "content, not an entry of its own -- left exactly as it is"
+        )
         for m in messages
     ), messages
     assert skipped == []

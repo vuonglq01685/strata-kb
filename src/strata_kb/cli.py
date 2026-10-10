@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.metadata
 import json
 import os
 import sys
 import unicodedata
-from enum import Enum
+from datetime import UTC
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,13 +51,17 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
 )
 
-context_app = typer.Typer(help="Operate on kb-context blocks (machine-readable citations).")
+context_app = typer.Typer(
+    help="Operate on kb-context blocks (machine-readable citations)."
+)
 app.add_typer(context_app, name="context")
 
 assets_app = typer.Typer(help="Asset store operations (hub): migrate, verify")
 app.add_typer(assets_app, name="assets")
 
-ticket_app = typer.Typer(help="Ticket linting: Definition-of-Ready gate for BA tickets.")
+ticket_app = typer.Typer(
+    help="Ticket linting: Definition-of-Ready gate for BA tickets."
+)
 app.add_typer(ticket_app, name="ticket")
 
 mission_app = typer.Typer(
@@ -63,7 +69,9 @@ mission_app = typer.Typer(
 )
 app.add_typer(mission_app, name="mission")
 
-svc_app = typer.Typer(help="Service knowledge: record which tickets touched which service.")
+svc_app = typer.Typer(
+    help="Service knowledge: record which tickets touched which service."
+)
 app.add_typer(svc_app, name="svc")
 
 usage_app = typer.Typer(
@@ -76,7 +84,9 @@ pr_app = typer.Typer(
 )
 app.add_typer(pr_app, name="pr")
 
-plan_app = typer.Typer(help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md.")
+plan_app = typer.Typer(
+    help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md."
+)
 app.add_typer(plan_app, name="plan")
 
 impl_app = typer.Typer(help="Dev work folders: docs/impl/<ticket-id>/.")
@@ -102,14 +112,14 @@ def main(
     """Strata CLI."""
 
 
-class RepoKind(str, Enum):
+class RepoKind(StrEnum):
     hub = "hub"
     child = "child"
     ba = "ba"
     dev = "dev"
 
 
-class AssetsMode(str, Enum):
+class AssetsMode(StrEnum):
     none = "none"
     s3 = "s3"
 
@@ -241,8 +251,9 @@ def init(
         if resolved != "dev":
             typer.secho("--lang applies to dev repos only", fg=typer.colors.RED)
             raise typer.Exit(1)
-    report = init_repo(path, resolved, force=force,
-                       assets=assets.value if assets else None, langs=lang)
+    report = init_repo(
+        path, resolved, force=force, assets=assets.value if assets else None, langs=lang
+    )
     for rel in report.created:
         typer.echo(f"  created  {rel}")
     for rel in report.updated:
@@ -253,7 +264,11 @@ def init(
         # already carries its own explanation and `--force` cannot touch
         # it, so the hint below must not be printed for those — it would
         # tell a BA/dev a flag exists that provably cannot do what it says.
-        hint = " (protected data — use --force to overwrite)" if rel in PROTECTED_FILES else ""
+        hint = (
+            " (protected data — use --force to overwrite)"
+            if rel in PROTECTED_FILES
+            else ""
+        )
         typer.secho(f"  skipped  {rel}{hint}", fg=typer.colors.YELLOW)
     for note in report.notes:
         typer.secho(f"  note     {note}", fg=typer.colors.YELLOW)
@@ -335,7 +350,7 @@ def docker_setup(
         kind = dockersetup.repo_kind(path)
     except dockersetup.DockerSetupError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if kind == "hub":
         _docker_setup_hub(path, force, no_docker)
     elif kind == "child":
@@ -365,7 +380,7 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
                 raise
     except dockersetup.DockerSetupError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     action = "created" if report.env_created else "updated"
     typer.echo(
         f".env {action} — {dockersetup.TOKEN_VAR} written (token not shown; see .env)."
@@ -494,14 +509,14 @@ def mcp_setup(
         # file, so name it here -- otherwise the operator sees a bare codec
         # error with no clue it concerns .env.
         typer.secho(f"cannot read {path / '.env'}: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except (KbError, OSError) as exc:
         # write_env can raise OSError (unwritable repo dir), which must
         # produce the same one-line message as KbError, never propagate to
         # Typer's traceback hook where the token could leak (see
         # app=typer.Typer above).
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     action = "created" if report.env_created else "updated"
     typer.echo(
@@ -517,8 +532,7 @@ def mcp_setup(
         "[Environment]::SetEnvironmentVariable($k,$v) }"
     )
     typer.echo(
-        "To persist, add that line to your shell profile (~/.zshrc), or use "
-        "direnv."
+        "To persist, add that line to your shell profile (~/.zshrc), or use direnv."
     )
 
     if not no_verify:
@@ -646,7 +660,7 @@ def _refresh_code_or_exit(kb_dir: Path, repo_id: str) -> None:
         typer.secho(
             f"could not refresh {repo_id}-code: {exc}", fg=typer.colors.RED, err=True
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for note in result.notes:
         typer.secho(f"[note] {note}", fg=typer.colors.YELLOW, err=True)
 
@@ -662,7 +676,11 @@ def _refresh_dev_code(kb_dir: Path) -> None:
         cfg = load_config(kb_dir)
     except (*_CONFIG_READ_ERRORS, OSError):
         return  # the command's own config read reports a broken file
-    if cfg.kind != "dev" or not cfg.repo_id or not sync.has_code_doc(kb_dir, cfg.repo_id):
+    if (
+        cfg.kind != "dev"
+        or not cfg.repo_id
+        or not sync.has_code_doc(kb_dir, cfg.repo_id)
+    ):
         return
     _refresh_code_or_exit(kb_dir, cfg.repo_id)
 
@@ -677,7 +695,9 @@ def ingest(
         "", help="Only scaffold these chapters, e.g. '5,6' (empty = all)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
-    work_dir: Path = typer.Option(Path(".kb-work"), help="Intermediate cache directory"),
+    work_dir: Path = typer.Option(
+        Path(".kb-work"), help="Intermediate cache directory"
+    ),
     chapter_pattern: str = typer.Option(
         "",
         help="Chapter heading regex (default: 'Chapter N', remembered from the previous ingest)",
@@ -727,7 +747,7 @@ def ingest(
         )
     except (ValueError, RuntimeError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
@@ -742,9 +762,7 @@ def ingest(
     if report_s is None:
         _echo_no_runner(reason)
         return
-    typer.echo(
-        f"{len(report_s.summarized)} summarized, {len(report_s.failed)} failed."
-    )
+    typer.echo(f"{len(report_s.summarized)} summarized, {len(report_s.failed)} failed.")
     if report_s.failed:
         typer.secho(
             "Failed sections stay pending — re-run with: kb summarize",
@@ -798,9 +816,7 @@ def _resolve_runner(kb_dir: Path, llm_choice: str, max_workers: int):
     return runner, "", max_workers or index.llm.max_workers
 
 
-def _run_summarize(
-    kb_dir: Path, llm_choice: str, doc_id: str | None, max_workers: int
-):
+def _run_summarize(kb_dir: Path, llm_choice: str, doc_id: str | None, max_workers: int):
     """Shared engine for `kb summarize` and `kb ingest`.
 
     Returns (report | None, reason): report is None when no runner ran;
@@ -814,7 +830,10 @@ def _run_summarize(
     model = getattr(runner, "model", "")
     typer.echo(f"Summarizing with {runner.name} ({model}), {workers} workers…")
     report = summarize_kb(
-        kb_dir, runner, doc_id=doc_id, max_workers=workers,
+        kb_dir,
+        runner,
+        doc_id=doc_id,
+        max_workers=workers,
         on_progress=lambda msg: typer.echo(f"  {msg}"),
     )
     return report, ""
@@ -892,7 +911,9 @@ def summarize(
         False, "--dry-run", help="With --redo: print what would be reset and stop"
     ),
     section: list[str] = typer.Option(
-        [], "--section", help="With --redo/--print-prompt: only these section ids (repeatable)"
+        [],
+        "--section",
+        help="With --redo/--print-prompt: only these section ids (repeatable)",
     ),
     print_prompt: bool = typer.Option(
         False,
@@ -902,12 +923,29 @@ def summarize(
 ) -> None:
     """Fill pending L1/L2 summaries by calling a headless LLM CLI (claude/copilot)."""
     _validate_summarize_args(
-        kb_dir, llm, redo, print_prompt, all_docs, include_reviewed, yes, dry_run, section
+        kb_dir,
+        llm,
+        redo,
+        print_prompt,
+        all_docs,
+        include_reviewed,
+        yes,
+        dry_run,
+        section,
     )
     _refuse_generated_or_note(kb_dir, doc_id)
     _dispatch_summarize(
-        kb_dir, llm, max_workers, doc_id, redo, print_prompt,
-        all_docs, include_reviewed, yes, dry_run, section,
+        kb_dir,
+        llm,
+        max_workers,
+        doc_id,
+        redo,
+        print_prompt,
+        all_docs,
+        include_reviewed,
+        yes,
+        dry_run,
+        section,
     )
 
 
@@ -931,8 +969,15 @@ def _dispatch_summarize(
         return
     if redo:
         _redo_or_exit(
-            kb_dir, llm, max_workers, doc_id, all_docs, include_reviewed, yes,
-            dry_run, list(section),
+            kb_dir,
+            llm,
+            max_workers,
+            doc_id,
+            all_docs,
+            include_reviewed,
+            yes,
+            dry_run,
+            list(section),
         )
         if dry_run:
             return
@@ -953,7 +998,9 @@ def _validate_summarize_args(
     """Flag-combination + KB-presence checks shared by every `summarize` path."""
     _validate_llm_choice(llm)
     if redo and print_prompt:
-        typer.secho("--print-prompt cannot be combined with --redo", fg=typer.colors.RED)
+        typer.secho(
+            "--print-prompt cannot be combined with --redo", fg=typer.colors.RED
+        )
         raise typer.Exit(1)
     if not redo:
         _require_redo_for_redo_only_flags(
@@ -981,7 +1028,11 @@ def _run_summarize_and_report(
 
 
 def _require_redo_for_redo_only_flags(
-    all_docs: bool, include_reviewed: bool, yes: bool, dry_run: bool, sections: list[str]
+    all_docs: bool,
+    include_reviewed: bool,
+    yes: bool,
+    dry_run: bool,
+    sections: list[str],
 ) -> None:
     """`--all`/`--include-reviewed`/`--yes`/`--dry-run`/`--section` only mean
     anything alongside `--redo` — refuse them outright otherwise instead of
@@ -1093,7 +1144,8 @@ def _print_prompts(kb_dir: Path, doc_id: str, sections: list[str]) -> None:
         typer.secho("--print-prompt requires a DOC_ID", fg=typer.colors.RED)
         raise typer.Exit(1)
     pending = collect_pending(
-        kb_dir, doc_id,
+        kb_dir,
+        doc_id,
         on_missing=lambda msg: typer.secho(f"[skip] {msg}", fg=typer.colors.YELLOW),
     )
     if sections:
@@ -1162,7 +1214,8 @@ def build(
         False, "--strict", help="Treat quality findings (C2 rules) as errors"
     ),
     no_refresh: bool = typer.Option(
-        False, "--no-refresh",
+        False,
+        "--no-refresh",
         help="Dev repo: validate <repo_id>-code as it is; skip regenerating it first",
     ),
 ) -> None:
@@ -1193,23 +1246,32 @@ def build(
 
 @app.command(name="code-ingest")
 def code_ingest(
-    repo_root: Path = typer.Option(Path("."), "--repo-root", help="Repository root to scan"),
+    repo_root: Path = typer.Option(
+        Path("."), "--repo-root", help="Repository root to scan"
+    ),
     kb_dir: Path = typer.Option(
         Path(".kb"),
         help="KB directory (default: .kb, relative to the current directory like every other kb command)",
     ),
-    repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config, then folder name)"),
-    doc_id: str = typer.Option("", "--doc-id", help="Document ID (default: <repo_id>-code)"),
+    repo_id: str = typer.Option(
+        "", "--repo-id", help="Repo ID (default: config, then folder name)"
+    ),
+    doc_id: str = typer.Option(
+        "", "--doc-id", help="Document ID (default: <repo_id>-code)"
+    ),
     db: list[Path] = typer.Option(
-        [], "--db",
+        [],
+        "--db",
         help="SQLite file to read (repeatable, explicit only; replaces code_ingest.db for this run)",
     ),
     tags: str = typer.Option(
-        "", "--tags",
+        "",
+        "--tags",
         help="Extra index tags, comma-separated (replaces code_ingest.tags for this run)",
     ),
     scaffold_svc: bool = typer.Option(
-        False, "--scaffold-svc",
+        False,
+        "--scaffold-svc",
         help="Also upsert the curated <repo_id>-svc scaffold (pending sections)",
     ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
@@ -1235,8 +1297,13 @@ def code_ingest(
     # configuration local runs and CI share; a flag replaces its list for
     # this run only, and says so below.
     opts = sync.options_from_config(
-        resolved_root, resolved_kb_dir, rid, doc_id=did,
-        db=list(db), tags=tag_list, scaffold_svc=scaffold_svc,
+        resolved_root,
+        resolved_kb_dir,
+        rid,
+        doc_id=did,
+        db=list(db),
+        tags=tag_list,
+        scaffold_svc=scaffold_svc,
     )
 
     try:
@@ -1271,7 +1338,7 @@ def code_ingest(
                     err=True,
                 )
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     notes: list[str] = []
     if db or tag_list:
@@ -1329,7 +1396,8 @@ def svc_note(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config)"),
     no_refresh: bool = typer.Option(
-        False, "--no-refresh",
+        False,
+        "--no-refresh",
         help="Read <repo_id>-code as it is; skip regenerating it from the working tree",
     ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
@@ -1372,7 +1440,7 @@ def svc_note(
         report = svcnote.add_note(kb_dir, rid, service, note)
     except svcnote.SvcNoteError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if json_out:
         typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
@@ -1404,7 +1472,7 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
     never raise either — a broken log is not license to turn "log and move
     on" back into "crash the hook", so any failure here is swallowed too.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from strata_kb.usage import ledger as _ledger
 
@@ -1413,7 +1481,7 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
         if not (kb_dir / "config.yaml").is_file():
             return  # wrong directory: nowhere correct to write (reviewer F L2)
         path.parent.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        stamp = datetime.now(UTC).isoformat(timespec="seconds")
         with path.open("a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{stamp} {message.rstrip()}\n")
     except Exception:  # noqa: BLE001, S110 -- deliberate: see docstring, this sink must never raise
@@ -1437,7 +1505,10 @@ def _usage_ingest(
 
     try:
         _ingest.ingest_path(
-            kb_dir, source, actor=_usage_actor(kb_dir), ticket=ticket or None,
+            kb_dir,
+            source,
+            actor=_usage_actor(kb_dir),
+            ticket=ticket or None,
             result=result,
         )
     finally:
@@ -1521,8 +1592,11 @@ def usage_ingest_transcript(
                     kb_dir, "both a path and --hook-stdin were given; used the payload"
                 )
             _ingest.ingest_hook_payload(
-                kb_dir, payload, actor=_usage_actor(kb_dir),
-                ticket=ticket or None, result=result,
+                kb_dir,
+                payload,
+                actor=_usage_actor(kb_dir),
+                ticket=ticket or None,
+                result=result,
             )
         except Exception as exc:  # noqa: BLE001 -- deliberate: see comment above, must absorb every failure mode
             # The exception's class name is part of the message, not just
@@ -1562,7 +1636,7 @@ def usage_ingest_transcript(
         for note in result.notes:
             typer.secho(note, fg=typer.colors.YELLOW)
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     report = result.report
 
     if json_out:
@@ -1614,7 +1688,8 @@ def usage_note(
     cache_write_1h: int = typer.Option(0, "--cache-write-1h", min=0),
     cache_write_5m: int = typer.Option(0, "--cache-write-5m", min=0),
     est: bool = typer.Option(
-        True, "--est/--measured",
+        True,
+        "--est/--measured",
         help="A hand-entered row is a self-reported estimate (default); "
         "--measured marks a figure read from the assistant's own meter",
     ),
@@ -1627,13 +1702,13 @@ def usage_note(
     """Append one usage row by hand — for an assistant with no hook, or to
     repair an attribution the cursor got wrong."""
     import uuid as _uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from strata_kb.usage import ledger
 
     row = ledger.UsageRow(
         uuid=str(_uuid.uuid4()),
-        ts=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        ts=datetime.now(UTC).isoformat(timespec="milliseconds"),
         session=session,
         actor=_usage_actor(kb_dir),
         phase=phase,
@@ -1653,7 +1728,7 @@ def usage_note(
         report = ledger.append_rows(kb_dir, [row])
     except ledger.LedgerError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(f"recorded -> {', '.join(report.files)}")
 
 
@@ -1668,20 +1743,21 @@ def usage_report(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Aggregate the usage ledger: per ticket, phase, model, actor."""
-    from datetime import date, datetime, timezone
+    from datetime import date, datetime
 
     from pydantic import ValidationError
 
-    from strata_kb.usage import ledger, prices, report as report_mod
+    from strata_kb.usage import ledger, prices
+    from strata_kb.usage import report as report_mod
 
     try:
         rows = ledger.read_rows(kb_dir)
     except (ledger.LedgerError, ValidationError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if ticket:
         rows = [r for r in rows if r.ticket == ticket]
-    generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    generated = datetime.now(UTC).isoformat(timespec="seconds")
     hook_error_count, _ = ledger.hook_errors(kb_dir)
     if not rows:
         if json_out:
@@ -1754,15 +1830,15 @@ def query(
         )
     except searchdb.IndexBusyError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
         typer.secho(f"search index rejected the query: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except searchdb.TooManyTagsError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for note in outcome.notes:
         typer.secho(note.strip(), fg=typer.colors.YELLOW, err=True)
     results = outcome.results
@@ -1770,9 +1846,7 @@ def query(
         typer.echo("No matching section found.")
         raise typer.Exit(0)
     for r in results:
-        typer.secho(
-            f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk", bold=True
-        )
+        typer.secho(f"--- [{r.citation}] match={r.match_mode} ~{r.tokens}tk", bold=True)
         typer.echo(r.content)
         if r.snippet:
             typer.secho(f"raw match: {r.snippet}", dim=True)
@@ -1800,10 +1874,10 @@ def get(
         result = get_section(handle, doc_id, section, level=level, repo=repo or None)
     except InvalidLevelError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except AmbiguousDocError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if result is None:
         typer.secho(f"Not found: {doc_id} §{section}", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -1823,7 +1897,9 @@ def stats(
     if not docs:
         typer.echo("KB is empty.")
         raise typer.Exit(0)
-    header = f"{'doc':<20} {'sections':>8} {'L1':>8} {'L2':>10} {'L3':>10} {'saving':>8}"
+    header = (
+        f"{'doc':<20} {'sections':>8} {'L1':>8} {'L2':>10} {'L3':>10} {'saving':>8}"
+    )
     typer.echo(header)
     for d in docs:
         typer.echo(
@@ -1876,11 +1952,14 @@ def _echo_publish_report(report) -> None:
 @app.command()
 def publish(
     hub: str = typer.Option(
-        "", "--hub", envvar="STRATA_KB_HUB",
+        "",
+        "--hub",
+        envvar="STRATA_KB_HUB",
         help="kb-hub URL/path (default: .kb/config.yaml)",
     ),
     repo_id: str = typer.Option(
-        "", "--repo-id",
+        "",
+        "--repo-id",
         help="Repo ID on the hub (default: config.yaml, then the git root dir name)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
@@ -1899,7 +1978,12 @@ def publish(
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
     from strata_kb import ghio, gitio, hashsync
     from strata_kb import publish as publish_mod
-    from strata_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
+    from strata_kb.config import (
+        HubConfigError,
+        effective_repo_id,
+        load_config,
+        require_hub,
+    )
     from strata_kb.errors import KbError
 
     # module-level _CONFIG_READ_ERRORS (see its definition for why exactly
@@ -1920,7 +2004,7 @@ def publish(
             "or remove it to fall back to defaults",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     mode = "pr" if pr else "direct" if direct else "auto"
     # Spec 2026-09-25 §4.4: a hand publish sends the -code CI would send for
     # this commit — never a stale or summarized copy. No --no-refresh here:
@@ -1938,17 +2022,15 @@ def publish(
                 "to chain it to a higher hub",
                 fg=typer.colors.RED,
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         # A relative `hub:` (e.g. the `hub: .` that `kb init --kind hub`
         # ships) must anchor to the repo root, not the process cwd — the
         # same config would otherwise route differently depending on where
         # `kb publish` happens to be invoked from, and could even mirror
         # into an unrelated sibling repo that also has a `.kb/`.
         source_root = None
-        try:
+        with contextlib.suppress(gitio.GitError):
             source_root = gitio.git_root(kb_dir.resolve())
-        except gitio.GitError:
-            pass
         hub_path = Path(hub_ref)
         if source_root is not None and not hub_path.is_absolute():
             hub_path = source_root / hub_ref
@@ -1968,8 +2050,10 @@ def publish(
                 raise typer.Exit(1)
             try:
                 report = publish_mod.publish_federation(
-                    kb_dir, hub_ref,
-                    repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
+                    kb_dir,
+                    hub_ref,
+                    repo_id=effective_repo_id(repo_id, kb_dir),
+                    mode=mode,
                 )
             except (
                 # KbError: PublishError (publish_federation's own YAML reads --
@@ -1984,14 +2068,16 @@ def publish(
                 # new call site for an existing one, is covered without a
                 # fourth name added here.
                 KbError,
-                gitio.GitError, ghio.GHError, OSError,
+                gitio.GitError,
+                ghio.GHError,
+                OSError,
                 # hashsync.HashSyncError: _snapshot_federation's apply_sync
                 # guards every write against escaping federation/<rid> on the
                 # upper hub -- reachable here (fed->fed).
                 hashsync.HashSyncError,
             ) as exc:
                 typer.secho(str(exc), fg=typer.colors.RED)
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
             _echo_publish_report(report)
             return
         # is_self: fall through — a hub pointing at itself publishes its own
@@ -2019,7 +2105,7 @@ def publish(
             "re-ingest that document",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if cfg.intake and not pr and not direct:
         try:
@@ -2029,7 +2115,8 @@ def publish(
         except (
             # KbError: PublishError, GateError.
             KbError,
-            gitio.GitError, OSError,
+            gitio.GitError,
+            OSError,
             # ValueError: publish_via_intake polls the intake server's /intake/
             # status endpoint and parses its JSON body unwrapped
             # (publish.py's _default_get_json) -- a malformed 200 response
@@ -2037,7 +2124,7 @@ def publish(
             ValueError,
         ) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         if pr_url:
             typer.echo(f"kb publish: PR on the hub — {pr_url}")
             typer.echo("Content goes live when the PR is merged on the hub.")
@@ -2053,8 +2140,10 @@ def publish(
         if not is_self:
             hub_ref = require_hub(hub, kb_dir)
         report = publish_mod.publish(
-            kb_dir, hub_ref,
-            repo_id=effective_repo_id(repo_id, kb_dir), mode=mode,
+            kb_dir,
+            hub_ref,
+            repo_id=effective_repo_id(repo_id, kb_dir),
+            mode=mode,
             self_publish=is_self,
         )
     except (
@@ -2069,21 +2158,29 @@ def publish(
         # it at all, even after _snapshot_federation (that branch's own
         # snapshot_fn) started touching the asset store too (3845ee5/
         # 01cbd0a) -- both branches now catch the same base.
-        HubConfigError, KbError, gitio.GitError, ghio.GHError, OSError,
+        HubConfigError,
+        KbError,
+        gitio.GitError,
+        ghio.GHError,
+        OSError,
         *_CONFIG_READ_ERRORS,
         hashsync.HashSyncError,
     ) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     _echo_publish_report(report)
 
 
 @app.command(name="ci-publish")
 def ci_publish(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
-    repo_id: str = typer.Option("", "--repo-id", help="Repo ID on the hub (default: config)"),
+    repo_id: str = typer.Option(
+        "", "--repo-id", help="Repo ID on the hub (default: config)"
+    ),
     intake: str = typer.Option(
-        "", "--intake", envvar="STRATA_KB_INTAKE",
+        "",
+        "--intake",
+        envvar="STRATA_KB_INTAKE",
         help="Intake base URL (default: .kb/config.yaml `intake:`)",
     ),
     require_reviewed: bool = typer.Option(
@@ -2110,7 +2207,7 @@ def ci_publish(
         )
         cipublish.write_step_summary(f"error — {msg}")
         typer.secho(msg, fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if not url:
         msg = "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake"
         cipublish.write_step_summary(f"error — {msg}")
@@ -2118,7 +2215,10 @@ def ci_publish(
         raise typer.Exit(1)
     try:
         pr_url = cipublish.run(
-            kb_dir, url, effective_repo_id(repo_id, kb_dir), require_reviewed=require_reviewed
+            kb_dir,
+            url,
+            effective_repo_id(repo_id, kb_dir),
+            require_reviewed=require_reviewed,
         )
     except (
         # KbError: CIPublishError (this command's own token/upload failures)
@@ -2136,12 +2236,13 @@ def ci_publish(
         # unwrapped and does land in _CONFIG_READ_ERRORS below
         # (json.JSONDecodeError is a ValueError subclass).
         KbError,
-        gitio.GitError, OSError,
+        gitio.GitError,
+        OSError,
         *_CONFIG_READ_ERRORS,
     ) as exc:
         cipublish.write_step_summary(f"error — {exc}")
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     cipublish.write_step_summary(
         f"hub PR: {pr_url}" if pr_url else "no content change on the hub"
     )
@@ -2150,12 +2251,15 @@ def ci_publish(
 @app.command()
 def reindex(
     hub: str = typer.Option(
-        "", "--hub", envvar="STRATA_KB_HUB",
+        "",
+        "--hub",
+        envvar="STRATA_KB_HUB",
         help="kb-hub URL/path (default: .kb/config.yaml)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory (to find the config)"),
     force: bool = typer.Option(
-        False, "--force",
+        False,
+        "--force",
         help="Drop the search index and rebuild it from scratch",
     ),
 ) -> None:
@@ -2188,15 +2292,23 @@ def reindex(
         # then flags the whole directory even though committing
         # federation/index.yaml right after this was exactly correct.
         dirty_before = gitio._run(
-            handle.root, "-c", "core.quotePath=false",
-            "status", "--porcelain", "--untracked-files=all", "--", "federation"
+            handle.root,
+            "-c",
+            "core.quotePath=false",
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+            "federation",
         ).stdout.splitlines()
         committed = gitio.commit_paths(
-            handle.root, "reindex: rebuild federation/index.yaml", ["federation/index.yaml"]
+            handle.root,
+            "reindex: rebuild federation/index.yaml",
+            ["federation/index.yaml"],
         )
     except gitio.GitError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except _CONFIG_READ_ERRORS as exc:
         # write_federation_index -> build_federation_index -> load_federation
         # already skips (warns, does not raise) any entry whose _meta.yaml/
@@ -2207,16 +2319,15 @@ def reindex(
             f"({exc}) -- fix or re-publish that entry",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except OSError as exc:
         # I5: str(OSError) alone ("[Errno 13] Permission denied: '...'") names
         # no way forward -- add one.
         typer.secho(
-            f"reindex failed ({exc}) -- check file permissions under the hub "
-            "and retry",
+            f"reindex failed ({exc}) -- check file permissions under the hub and retry",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     strays = sorted(
         line[3:].strip()
         for line in dirty_before
@@ -2235,12 +2346,12 @@ def reindex(
         sreport = searchdb.sync(handle, default_embedder())
     except searchdb.IndexBusyError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
         typer.secho(f"search index rejected the reindex: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except _CONFIG_READ_ERRORS as exc:
         # searchdb._sync_repo reads every referenced doc's _manifest.yaml
         # unwrapped (unlike load_federation, it does not skip a broken one --
@@ -2250,7 +2361,7 @@ def reindex(
             f"({exc}) -- fix or re-ingest that document",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except OSError as exc:
         # F-D9 CRITICAL, routed: this try's sibling arm above (the
         # write_federation_index/commit_paths block) already has an OSError
@@ -2264,7 +2375,7 @@ def reindex(
             "file permissions under the hub and retry",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(
         f"kb reindex: search index — {sreport.sections_updated} updated, "
         f"{sreport.sections_deleted} removed, {sreport.embedded} embedded"
@@ -2279,7 +2390,7 @@ def reindex(
             typer.secho(
                 f"reindex committed but push failed: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     typer.echo("kb reindex: federation/index.yaml rebuilt")
 
 
@@ -2298,7 +2409,7 @@ def migrate(
         report = assetcmd.migrate_assets(handle)
     except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for rid, n in sorted(report.per_rid.items()):
         typer.echo(f"  {rid}: {n} asset(s) migrated")
     if report.skipped:
@@ -2341,9 +2452,11 @@ def verify(
         report = assetcmd.verify_assets(handle)
     except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for label in report.missing_records:
-        typer.secho(f"[missing] recorded but not in store: {label}", fg=typer.colors.RED)
+        typer.secho(
+            f"[missing] recorded but not in store: {label}", fg=typer.colors.RED
+        )
     for label in report.corrupt:
         typer.secho(
             f"[corrupt] bytes on disk/in the store do not hash to their own "
@@ -2351,7 +2464,9 @@ def verify(
             fg=typer.colors.RED,
         )
     for label in report.dangling_refs:
-        typer.secho(f"[dangling] referenced but unresolvable: {label}", fg=typer.colors.RED)
+        typer.secho(
+            f"[dangling] referenced but unresolvable: {label}", fg=typer.colors.RED
+        )
     for label in report.broken_links:
         typer.secho(f"[broken] {label}", fg=typer.colors.RED)
     for label in report.orphans:
@@ -2364,7 +2479,9 @@ def verify(
 @context_app.command("new")
 def context_new(
     refs: str = typer.Option(
-        ..., "--refs", help="Comma-separated refs, e.g. 'hr-handbook §4.12,travel-policy §2.1'"
+        ...,
+        "--refs",
+        help="Comma-separated refs, e.g. 'hr-handbook §4.12,travel-policy §2.1'",
     ),
     tags: str = typer.Option("", help="Tags, comma-separated"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
@@ -2384,7 +2501,7 @@ def context_new(
         )
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if stale_warning:
         typer.secho(stale_warning, fg=typer.colors.YELLOW, err=True)
     typer.echo(block)
@@ -2448,10 +2565,18 @@ def resolve(
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
     from strata_kb import gitio, kbcontext
-    from strata_kb.resolve import render_resolved, resolve_refs, render_cache, cache_problem
+    from strata_kb.resolve import (
+        cache_problem,
+        render_cache,
+        render_resolved,
+        resolve_refs,
+    )
 
     if write_cache is not None and status_only:
-        typer.secho("--write-cache needs a full resolve; drop --status-only", fg=typer.colors.RED)
+        typer.secho(
+            "--write-cache needs a full resolve; drop --status-only",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(1)
     if cache is not None and not status_only:
         typer.secho("--cache only makes sense with --status-only", fg=typer.colors.RED)
@@ -2463,33 +2588,46 @@ def resolve(
             text = Path(source).read_text(encoding="utf-8")
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     handle = _hub_or_exit(hub, kb_dir)
     try:
         ctx = kbcontext.parse(text)
         results = resolve_refs(handle, ctx)
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(render_resolved(results, include_content=not status_only))
     if write_cache is not None:
         from datetime import date
 
-        stem = (write_cache.parent.name if write_cache.name == "context.md"
-                else write_cache.stem.removesuffix("-context"))
+        stem = (
+            write_cache.parent.name
+            if write_cache.name == "context.md"
+            else write_cache.stem.removesuffix("-context")
+        )
         try:
             previous = (
-                write_cache.read_text(encoding="utf-8") if write_cache.exists() else None
+                write_cache.read_text(encoding="utf-8")
+                if write_cache.exists()
+                else None
             )
             write_cache.parent.mkdir(parents=True, exist_ok=True)
             write_cache.write_text(
-                render_cache(ctx.version, results, today=date.today().isoformat(),
-                             stem=stem, previous=previous),
-                encoding="utf-8", newline="\n",
+                render_cache(
+                    ctx.version,
+                    results,
+                    today=date.today().isoformat(),
+                    stem=stem,
+                    previous=previous,
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         except (OSError, UnicodeDecodeError) as exc:
-            typer.secho(f"could not write cache '{write_cache}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            typer.secho(
+                f"could not write cache '{write_cache}': {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1) from None
     cache_bad = False
     if cache is not None:
         if not cache.is_file():
@@ -2500,7 +2638,11 @@ def resolve(
                 cache_text = cache.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 cache_text = ""
-            problem = cache_problem(cache_text, ctx.version, results) if cache_text else "header"
+            problem = (
+                cache_problem(cache_text, ctx.version, results)
+                if cache_text
+                else "header"
+            )
             if problem:
                 typer.echo(f"!! cache-invalid: {problem}")
                 cache_bad = True
@@ -2537,9 +2679,7 @@ def _resolve_missions_dir(missions_dir: Path | None, path: Path | None) -> Path 
 
 @ticket_app.command("lint")
 def ticket_lint(
-    source: str = typer.Argument(
-        ..., help="Ticket file (or '-' to read from stdin)"
-    ),
+    source: str = typer.Argument(..., help="Ticket file (or '-' to read from stdin)"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
         "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
@@ -2575,10 +2715,10 @@ def ticket_lint(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     resolved_missions = _resolve_missions_dir(missions_dir, path)
 
@@ -2605,12 +2745,8 @@ def ticket_lint(
 
 @ticket_app.command("export")
 def ticket_export(
-    source: str = typer.Argument(
-        ..., help="Ticket file (or '-' to read from stdin)"
-    ),
-    out: Path | None = typer.Option(
-        None, "--out", help="Write here instead of stdout"
-    ),
+    source: str = typer.Argument(..., help="Ticket file (or '-' to read from stdin)"),
+    out: Path | None = typer.Option(None, "--out", help="Write here instead of stdout"),
 ) -> None:
     """Tracker-ready body: the ticket without its guidance comments and
     without the BA-internal '## Definition of Ready' and '## Review record'
@@ -2627,10 +2763,10 @@ def ticket_export(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     body = export_body(text)
     if out is None:
         typer.echo(body, nl=False)
@@ -2639,7 +2775,7 @@ def ticket_export(
         out.write_text(body, encoding="utf-8", newline="\n")
     except OSError as exc:
         typer.secho(f"could not write '{out}': {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(f"wrote {out}")
 
 
@@ -2652,7 +2788,9 @@ def ticket_tidy(
         Path("tickets"), "--tickets-dir", help="Where ticket files live"
     ),
     into: str | None = typer.Option(
-        None, "--into", help="Folder under tickets/ for FILES that have no parent mission (an epic or feature slug)"
+        None,
+        "--into",
+        help="Folder under tickets/ for FILES that have no parent mission (an epic or feature slug)",
     ),
 ) -> None:
     """Move flat tickets/*.md into tickets/<mission-id>/ by their
@@ -2663,7 +2801,8 @@ def ticket_tidy(
 
     if not tickets_dir.is_dir():
         typer.secho(
-            f"--tickets-dir '{tickets_dir}' does not exist or is not a directory", fg=typer.colors.RED
+            f"--tickets-dir '{tickets_dir}' does not exist or is not a directory",
+            fg=typer.colors.RED,
         )
         raise typer.Exit(1)
     if files and into is None:
@@ -2686,7 +2825,9 @@ def ticket_tidy(
             if f.is_file() and f.resolve().parent == resolved_dir:
                 flat_files.append(f)
             else:
-                notes.append(f"skipped {f}: not a flat file directly under {tickets_dir}")
+                notes.append(
+                    f"skipped {f}: not a flat file directly under {tickets_dir}"
+                )
         moves = tickettidy.into_moves(tickets_dir, into, flat_files)
         unsorted: list[Path] = []
     else:
@@ -2706,9 +2847,7 @@ def ticket_tidy(
 
 @ticket_app.command("check")
 def ticket_check(
-    source: str = typer.Argument(
-        ..., help="Ticket file (or '-' to read from stdin)"
-    ),
+    source: str = typer.Argument(..., help="Ticket file (or '-' to read from stdin)"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
         "",
@@ -2752,10 +2891,10 @@ def ticket_check(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     resolved_missions = _resolve_missions_dir(missions_dir, path)
 
@@ -2773,7 +2912,9 @@ def ticket_check(
             reason = "not on the hub"
         local = kb_dir / doc
         if (local / "_manifest.yaml").exists():
-            return ticketcheck.load_doc_dir(local, f"{local} (local fallback — {reason})")
+            return ticketcheck.load_doc_dir(
+                local, f"{local} (local fallback — {reason})"
+            )
         if handle is None:
             typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
             raise typer.Exit(1)
@@ -2833,10 +2974,10 @@ def pr_lint(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     report = lint_body(text, plan_dir=plan_dir)
     if json_output:
@@ -2851,7 +2992,7 @@ def pr_lint(
 def plan_waves(
     source: str = typer.Argument(..., help="Plan file (or '-' to read from stdin)"),
     json_output: bool = typer.Option(
-        False, "--json", help="Emit {\"errors\": [...], \"waves\": [[...]]} instead of text"
+        False, "--json", help='Emit {"errors": [...], "waves": [[...]]} instead of text'
     ),
 ) -> None:
     """Dependency waves of a dev plan: wave n = tasks whose every `Depends on:`
@@ -2867,11 +3008,13 @@ def plan_waves(
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
-            typer.secho(f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            typer.secho(
+                f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     errors, waves = planwaves.check(
         planwaves.parse_plan(text), unclosed=planwaves.unclosed_fence(text)
@@ -2900,7 +3043,8 @@ def impl_tidy(
 
     if not impl_dir.is_dir():
         typer.secho(
-            f"--impl-dir '{impl_dir}' does not exist or is not a directory", fg=typer.colors.RED
+            f"--impl-dir '{impl_dir}' does not exist or is not a directory",
+            fg=typer.colors.RED,
         )
         raise typer.Exit(1)
     done, conflicts = impltidy.tidy(impl_dir)
@@ -2914,9 +3058,7 @@ def impl_tidy(
 
 @mission_app.command("lint")
 def mission_lint(
-    source: str = typer.Argument(
-        ..., help="Mission file (or '-' to read from stdin)"
-    ),
+    source: str = typer.Argument(..., help="Mission file (or '-' to read from stdin)"),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: str = typer.Option(
         "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
@@ -2952,10 +3094,10 @@ def mission_lint(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     # An explicitly-passed --tickets-dir is a deliberate BA choice, so a
     # typo must be a hard error — otherwise check_coverage's per-file
@@ -2979,11 +3121,7 @@ def mission_lint(
     # specs/missions/tickets, or one under ~/Downloads/ binding to
     # ~/tickets if that happens to exist).
     resolved_tickets = tickets_dir
-    if (
-        resolved_tickets is None
-        and path is not None
-        and path.parent.name == "missions"
-    ):
+    if resolved_tickets is None and path is not None and path.parent.name == "missions":
         sibling = path.parent.parent / "tickets"
         if sibling.is_dir():
             resolved_tickets = sibling
@@ -3047,7 +3185,8 @@ def mission_next(
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
         if d is not None and not d.is_dir():
             typer.secho(
-                f"{label} '{d}' does not exist or is not a directory", fg=typer.colors.RED
+                f"{label} '{d}' does not exist or is not a directory",
+                fg=typer.colors.RED,
             )
             raise typer.Exit(1)
 
@@ -3068,7 +3207,9 @@ def mission_next(
         texts.append(text)
         parsed.append(parsed_mission)
 
-    resolved_tickets = tickets_dir if tickets_dir is not None else missions_dir.parent / "tickets"
+    resolved_tickets = (
+        tickets_dir if tickets_dir is not None else missions_dir.parent / "tickets"
+    )
     # Ticket id → (ticked, total) DoR boxes. `rglob`: tickets live at
     # tickets/<mission-id>/<id>.md since 1.6.0 and flat before it; both read.
     # A stem present under both: sorted() visits the nested copy first
@@ -3080,18 +3221,24 @@ def mission_next(
     if resolved_tickets.is_dir():
         for p in sorted(resolved_tickets.rglob("*.md")):
             if p.stem in ticket_paths:
-                notes.append(f"duplicate ticket {p.stem}: read {ticket_paths[p.stem]}, ignored {p}")
+                notes.append(
+                    f"duplicate ticket {p.stem}: read {ticket_paths[p.stem]}, ignored {p}"
+                )
                 continue
             ticket_paths[p.stem] = p
             try:
-                ticket_text = unicodedata.normalize("NFC", p.read_text(encoding="utf-8"))
+                ticket_text = unicodedata.normalize(
+                    "NFC", p.read_text(encoding="utf-8")
+                )
             except (OSError, UnicodeDecodeError) as exc:
                 notes.append(f"skipped ticket {p}: {exc} — read as draft")
                 drafted[p.stem] = (0, 0)
                 continue
             drafted[p.stem] = missionnext.dor_counts(ticket_text)
     else:
-        notes.append(f"tickets dir '{resolved_tickets}' not found — no story reads as draft or ready")
+        notes.append(
+            f"tickets dir '{resolved_tickets}' not found — no story reads as draft or ready"
+        )
 
     grounded = next((g for g in map(missionnext.grounded_doc, texts) if g), None)
     rid: str | None
@@ -3140,7 +3287,9 @@ def mission_next(
 @app.command()
 def diff(
     doc_id: str = typer.Argument(..., help="Document ID"),
-    against: str = typer.Option("HEAD", help="Git rev to diff against, e.g. HEAD, a3f9c21"),
+    against: str = typer.Option(
+        "HEAD", help="Git rev to diff against, e.g. HEAD, a3f9c21"
+    ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Diff added/removed/changed sections between the worktree and a git rev."""
@@ -3151,7 +3300,7 @@ def diff(
         report = diff_doc(kb_dir, doc_id, against=against)
     except (ValueError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(render_diff(report))
 
 
@@ -3160,7 +3309,11 @@ def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -
     (`kb build --strict` across the whole KB) that `kb approve` requires
     before flipping anything to reviewed."""
     from strata_kb import gitio
-    from strata_kb.review import check_approvable, doc_ids_with_manifest, resolve_reviewer
+    from strata_kb.review import (
+        check_approvable,
+        doc_ids_with_manifest,
+        resolve_reviewer,
+    )
 
     try:
         targets = [doc_id] if doc_id else doc_ids_with_manifest(kb_dir)
@@ -3176,7 +3329,7 @@ def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -
             raise typer.Exit(1)
     except (ValueError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     return reviewer
 
 
@@ -3197,7 +3350,9 @@ def approve(
         "", "--against", help="Git rev to compare with (required with --all-changed)"
     ),
     by: str = typer.Option(
-        "", "--by", help="Reviewer identity 'name <email>' (default: git user.name/email)"
+        "",
+        "--by",
+        help="Reviewer identity 'name <email>' (default: git user.name/email)",
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
@@ -3227,14 +3382,16 @@ def approve(
 
     try:
         if all_changed:
-            reports = approve_all_changed(kb_dir, against, doc_id=doc_id or None, by=reviewer)
+            reports = approve_all_changed(
+                kb_dir, against, doc_id=doc_id or None, by=reviewer
+            )
         else:
             reports = [
                 approve_sections(kb_dir, doc_id, list(section) or None, by=reviewer)
             ]
     except (ValueError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     flipped_total = 0
     has_missing = False
@@ -3251,7 +3408,8 @@ def approve(
             typer.secho(
                 f"[note] {rep.doc_id} §{sid} is machine-authored — skipped "
                 "(pass --section to force)",
-                fg=typer.colors.YELLOW, err=True,
+                fg=typer.colors.YELLOW,
+                err=True,
             )
         for sid in rep.missing:
             has_missing = True
@@ -3288,13 +3446,16 @@ def approve(
 def doctor(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     context: str | None = typer.Option(
-        None, "--context", help="File containing the kb-context block (or '-' to read from stdin)"
+        None,
+        "--context",
+        help="File containing the kb-context block (or '-' to read from stdin)",
     ),
     hub: str = typer.Option(
         "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
     no_refresh: bool = typer.Option(
-        False, "--no-refresh",
+        False,
+        "--no-refresh",
         help="Dev repo: check <repo_id>-code as it is; skip regenerating it first",
     ),
 ) -> None:
@@ -3429,7 +3590,9 @@ def doctor(
             issues += check_federation_publish(source_root, upstream, repo_id)
     else:
         dev_code = f"{repo_id}-code" if cfg_kind == "dev" and repo_id else None
-        hub_issues, hub_stale = check_hub(kb_dir, handle, repo_id=repo_id, code_doc=dev_code)
+        hub_issues, hub_stale = check_hub(
+            kb_dir, handle, repo_id=repo_id, code_doc=dev_code
+        )
         issues += hub_issues
         if cfg_kind == "dev":
             from strata_kb.doctor import check_dev_sync, check_hub_lag
@@ -3439,8 +3602,10 @@ def doctor(
             issues += check_hub_lag(kb_dir, repo_root, handle, repo_id)
     has_stale = False
     if context is not None:
-        text = sys.stdin.read() if context == "-" else Path(context).read_text(
-            encoding="utf-8"
+        text = (
+            sys.stdin.read()
+            if context == "-"
+            else Path(context).read_text(encoding="utf-8")
         )
         ctx_issues, results = check_context(text, handle)
         issues += ctx_issues

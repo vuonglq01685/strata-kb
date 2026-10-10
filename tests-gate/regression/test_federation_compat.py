@@ -62,8 +62,9 @@ def test_new_binary_queries_a_v090_federation(tmp_path, run_git, kb_run):
     (repo / ".kb").mkdir(parents=True)
     (repo / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
 
-    proc = kb_run("query", "leave", "--hub", str(hub),
-                  "--kb-dir", str(repo / ".kb"), cwd=repo)
+    proc = kb_run(
+        "query", "leave", "--hub", str(hub), "--kb-dir", str(repo / ".kb"), cwd=repo
+    )
 
     assert "No matching section found." not in proc.stdout, (
         "the new binary cannot read a federation published by v0.9.0\n"
@@ -78,7 +79,11 @@ def test_new_binary_queries_a_v090_federation(tmp_path, run_git, kb_run):
 
 
 def test_new_binary_doctors_a_v090_federation(
-    tmp_path, run_git, kb_run, strip_kind_warning, strip_legacy_config_mirror_warning,
+    tmp_path,
+    run_git,
+    kb_run,
+    strip_kind_warning,
+    strip_legacy_config_mirror_warning,
     strip_content_digest_not_verified_warning,
 ):
     """Not just "no Traceback" — that bar is far too low (see the reasoning in
@@ -106,8 +111,15 @@ def test_new_binary_doctors_a_v090_federation(
     (repo / ".kb").mkdir(parents=True)
     (repo / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
 
-    proc = kb_run("doctor", "--hub", str(hub), "--kb-dir", str(repo / ".kb"),
-                  cwd=repo, check=False)
+    proc = kb_run(
+        "doctor",
+        "--hub",
+        str(hub),
+        "--kb-dir",
+        str(repo / ".kb"),
+        cwd=repo,
+        check=False,
+    )
 
     assert "Traceback" not in proc.stdout + proc.stderr, (
         f"doctor blew up on a federation published by v0.9.0\n"

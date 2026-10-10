@@ -141,9 +141,7 @@ def test_migrate_rerun_over_unreadable_record_aborts_without_deleting(
     assert status == ""
 
 
-def test_migrate_rerun_over_zero_byte_record_aborts_without_deleting(
-    hub_root, run_git
-):
+def test_migrate_rerun_over_zero_byte_record_aborts_without_deleting(hub_root, run_git):
     """Critical 1 (wave I-1 round 2, P47): a zero-byte record is present,
     readable and PARSES -- models.load_yaml_model is `yaml.safe_load(...)
     or {}`, so b"" reads back as a *successful* empty AssetsRecord, not a
@@ -268,7 +266,9 @@ def test_migrate_reports_a_broken_entry_as_skipped_not_as_nothing_to_migrate(
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "seed a broken entry")
 
-    report = assetcmd.migrate_assets(HubHandle(root=root), store=assetstore.MemoryStore())
+    report = assetcmd.migrate_assets(
+        HubHandle(root=root), store=assetstore.MemoryStore()
+    )
 
     assert report.per_rid == {}
     assert report.skipped == ["rid-b/doc1"]
@@ -289,11 +289,15 @@ def test_migrate_cli_does_not_print_a_false_all_clear_when_something_was_skipped
 
     from strata_kb import cli
 
-    monkeypatch.setattr(cli, "_hub_or_exit", lambda hub, kb_dir: HubHandle(root=Path(".")))
+    monkeypatch.setattr(
+        cli, "_hub_or_exit", lambda hub, kb_dir: HubHandle(root=Path("."))
+    )
     monkeypatch.setattr(
         assetcmd,
         "migrate_assets",
-        lambda handle, store=None: assetcmd.MigrateReport(per_rid={}, skipped=["rid-b/doc1"]),
+        lambda handle, store=None: assetcmd.MigrateReport(
+            per_rid={}, skipped=["rid-b/doc1"]
+        ),
     )
     result = CliRunner().invoke(cli.app, ["assets", "migrate"])
     assert result.exit_code == 1
@@ -302,7 +306,9 @@ def test_migrate_cli_does_not_print_a_false_all_clear_when_something_was_skipped
     assert "nothing migrated" in result.stdout
 
 
-def test_migrate_cli_still_prints_a_true_all_clear_when_nothing_was_skipped(monkeypatch):
+def test_migrate_cli_still_prints_a_true_all_clear_when_nothing_was_skipped(
+    monkeypatch,
+):
     """No-op control for the test above: an empty per_rid with NOTHING
     skipped is the one case the old "nothing to migrate" / exit 0 pair is
     still correct for, and this fix must leave it alone."""
@@ -310,7 +316,9 @@ def test_migrate_cli_still_prints_a_true_all_clear_when_nothing_was_skipped(monk
 
     from strata_kb import cli
 
-    monkeypatch.setattr(cli, "_hub_or_exit", lambda hub, kb_dir: HubHandle(root=Path(".")))
+    monkeypatch.setattr(
+        cli, "_hub_or_exit", lambda hub, kb_dir: HubHandle(root=Path("."))
+    )
     monkeypatch.setattr(
         assetcmd,
         "migrate_assets",
@@ -432,7 +440,9 @@ def test_verify_reports_dangling_ref(hub_root):
     store = _migrated_hub(hub_root)
     ghost = "9" * 64
     md = hub_root / "federation" / "rid-a" / "doc1" / "ch1.md"
-    md.write_text(md.read_text(encoding="utf-8") + f"![g](assets/{ghost}.png)\n", encoding="utf-8")
+    md.write_text(
+        md.read_text(encoding="utf-8") + f"![g](assets/{ghost}.png)\n", encoding="utf-8"
+    )
     report = assetcmd.verify_assets(HubHandle(root=hub_root), store=store)
     assert any(ghost in d for d in report.dangling_refs)
 
@@ -608,7 +618,8 @@ def test_verify_local_mode_checks_files(hub_root):
     )
     dest = hub_root / "federation" / "rid-a"
     models.save_yaml_model(
-        dest / "_assets.yaml", models.AssetsRecord(assets=["doc1/assets/" + "8" * 64 + ".png"])
+        dest / "_assets.yaml",
+        models.AssetsRecord(assets=["doc1/assets/" + "8" * 64 + ".png"]),
     )
     report = assetcmd.verify_assets(HubHandle(root=hub_root))
     assert not report.ok and report.missing_records

@@ -23,11 +23,7 @@ def _page_box() -> tuple[float, float, float, float]:
 
 def test_mono_grid_keeps_columns_and_diacritics():
     out = pdftext.region_text(FIXTURE, 1, _page_box(), mono=True)
-    assert out == (
-        "+------+    +------+\n"
-        "| Nền  |    | gốc  |\n"
-        "+------+    +------+"
-    )
+    assert out == ("+------+    +------+\n| Nền  |    | gốc  |\n+------+    +------+")
 
 
 def test_flow_text_keeps_diacritics_and_lines():

@@ -10,7 +10,9 @@ def _seed_hub(tmp_path, run_git, gitattributes: str | None = None):
     seed = tmp_path / "hub-seed"
     (seed / ".kb").mkdir(parents=True)
     (seed / "federation").mkdir()
-    (seed / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
+    (seed / ".kb" / "index.yaml").write_text(
+        "docs: []\n", encoding="utf-8", newline="\n"
+    )
     (seed / "federation" / ".gitkeep").write_text("", encoding="utf-8")
     if gitattributes is not None:
         (seed / ".gitattributes").write_text(
@@ -28,9 +30,7 @@ def _force_windows_autocrlf(tmp_path, monkeypatch):
     """Simulate Git for Windows' default (core.autocrlf=true) without
     touching the runner's real global config."""
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "global.gitconfig"))
-    subprocess.run(
-        ["git", "config", "--global", "core.autocrlf", "true"], check=True
-    )
+    subprocess.run(["git", "config", "--global", "core.autocrlf", "true"], check=True)
     # The isolated GIT_CONFIG_GLOBAL above has no identity in it (unlike the
     # runner's real global config) -- publish() commits inside the hub cache
     # clone via gitio.commit_paths, which carries no -c user.name/email of
@@ -89,7 +89,11 @@ def test_gitattributes_exempts_federation_from_normalisation_for_a_crlf_child(
     pattern) exempts the byte-for-byte mirror from normalisation."""
     gitattrs_path = (
         Path(__file__).resolve().parent.parent
-        / "src" / "strata_kb" / "templates" / "init" / "gitattributes.txt"
+        / "src"
+        / "strata_kb"
+        / "templates"
+        / "init"
+        / "gitattributes.txt"
     )
     origin = _seed_hub(
         tmp_path, run_git, gitattributes=gitattrs_path.read_text(encoding="utf-8")

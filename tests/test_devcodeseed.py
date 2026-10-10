@@ -25,6 +25,7 @@ re-verified by task review):
   sections. The third argument is omitted below to approve the whole
   document, which is what the test is actually asserting.
 """
+
 from pathlib import Path
 
 import pytest
@@ -66,8 +67,11 @@ def _seed(tmp_path: Path) -> Path:
     root = build_code_repo(tmp_path)
     core.run(
         core.CodeIngestOptions(
-            repo_root=root, kb_dir=root / ".kb", doc_id="demo-code",
-            repo_id="demo", scaffold_svc=True,
+            repo_root=root,
+            kb_dir=root / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
+            scaffold_svc=True,
         )
     )
     return root
@@ -116,7 +120,8 @@ def test_summarize_then_approve_reaches_reviewed_and_builds_clean(tmp_path):
     # verbatim in SECTION_PROMPT) rather than by call order, since the
     # ThreadPoolExecutor in summarize_kb does not guarantee submission order.
     section_calls = [
-        c for c in runner.calls
+        c
+        for c in runner.calls
         if c.startswith("You are filling in summaries for a knowledge-base section.")
     ]
     assert len(section_calls) == 3
@@ -189,8 +194,11 @@ def test_scaffold_svc_rerun_preserves_the_drafted_doc_summary(tmp_path):
     # nothing else changed in the repo.
     core.run(
         core.CodeIngestOptions(
-            repo_root=root, kb_dir=kb, doc_id="demo-code",
-            repo_id="demo", scaffold_svc=True,
+            repo_root=root,
+            kb_dir=kb,
+            doc_id="demo-code",
+            repo_id="demo",
+            scaffold_svc=True,
         )
     )
 
@@ -214,7 +222,9 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
     # 1. scaffold already happened via _seed(): svc.* pending, no hist.*.
     pending = summarize.collect_pending(kb, "demo-svc")
     assert {p.section_id for p in pending} == {
-        "svc.airspace-service", "svc.postgres", "svc.gpuworker",
+        "svc.airspace-service",
+        "svc.postgres",
+        "svc.gpuworker",
     }
 
     # 2. summarize (stub runner): every svc.* section drafted, AND the
@@ -228,7 +238,9 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
     # 3. approve: every svc.* section flips summarized -> reviewed.
     approve_report = review.approve_sections(kb, "demo-svc", by="sme <sme@x>")
     assert set(approve_report.flipped) == {
-        "svc.airspace-service", "svc.postgres", "svc.gpuworker",
+        "svc.airspace-service",
+        "svc.postgres",
+        "svc.gpuworker",
     }
     sections = models.load_yaml_model(manifest_path, models.Manifest).sections
     svc_sections = [s for s in sections if s.id.startswith("svc.")]
@@ -237,9 +249,12 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
 
     # 4. kb svc note: a ticket touching airspace-service appends hist.*.
     note_report = svcnote.add_note(
-        kb, "demo", "airspace-service",
+        kb,
+        "demo",
+        "airspace-service",
         svcnote.Note(
-            ticket="M-airspace-US4", title="Approve time-bound airspace",
+            ticket="M-airspace-US4",
+            title="Approve time-bound airspace",
             refs=("ATM-STD §5.3",),
         ),
     )
@@ -255,8 +270,11 @@ def test_full_seed_sequence_survives_every_hop_in_order(tmp_path):
     #    (scaffold_svc() passes flow./hist.* entries through untouched).
     core.run(
         core.CodeIngestOptions(
-            repo_root=root, kb_dir=kb, doc_id="demo-code",
-            repo_id="demo", scaffold_svc=True,
+            repo_root=root,
+            kb_dir=kb,
+            doc_id="demo-code",
+            repo_id="demo",
+            scaffold_svc=True,
         )
     )
 

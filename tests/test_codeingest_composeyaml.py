@@ -31,7 +31,9 @@ _COMPOSE = (
 
 def test_reset_yields_the_empty_value_of_its_node_kind():
     assert load_compose("a: !reset\nb: !reset []\nc: !reset {}\n") == {
-        "a": None, "b": [], "c": {},
+        "a": None,
+        "b": [],
+        "c": {},
     }
 
 
@@ -44,8 +46,11 @@ def test_override_yields_the_plain_value():
     # own behaviour for `"3"` / `"1.10"`) -- unlike the unquoted `!override 3`
     # above, which resolves to the int 3.
     assert data == {
-        "ports": ["8080:80"], "env": {"K": "v"}, "n": 3,
-        "q": "3", "ver": "1.10",
+        "ports": ["8080:80"],
+        "env": {"K": "v"},
+        "n": 3,
+        "q": "3",
+        "ver": "1.10",
     }
 
 
@@ -69,7 +74,9 @@ def test_services_k8s_scan_ignores_a_nested_compose_file(tmp_path):
     nested.mkdir(parents=True)
     (nested / "docker-compose.cpu.yml").write_text(_COMPOSE, encoding="utf-8")
     result = svc_ext.ServicesExtractor().extract(tmp_path, _opts(tmp_path))
-    assert not any("docker-compose.cpu.yml" in w for w in result.warnings), result.warnings
+    assert not any("docker-compose.cpu.yml" in w for w in result.warnings), (
+        result.warnings
+    )
 
 
 def test_integrations_reads_a_nested_compose_file_that_uses_reset(tmp_path):
@@ -77,5 +84,7 @@ def test_integrations_reads_a_nested_compose_file_that_uses_reset(tmp_path):
     nested.mkdir(parents=True)
     (nested / "docker-compose.cpu.yml").write_text(_COMPOSE, encoding="utf-8")
     result = int_ext.IntegrationsExtractor().extract(tmp_path, _opts(tmp_path))
-    assert not any("docker-compose.cpu.yml" in w for w in result.warnings), result.warnings
+    assert not any("docker-compose.cpu.yml" in w for w in result.warnings), (
+        result.warnings
+    )
     assert "REDIS_URL" in "".join(s.l2_md + s.l3_md for s in result.sections)

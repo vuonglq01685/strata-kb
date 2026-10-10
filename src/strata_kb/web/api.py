@@ -54,9 +54,7 @@ def hub_handle(config: ServerConfig):
     try:
         return resolve_hub(config.hub)
     except gitio.GitError as exc:
-        logger.warning(
-            "hub cache unusable — serving as hub-unreachable: %s", exc
-        )
+        logger.warning("hub cache unusable — serving as hub-unreachable: %s", exc)
         return None
 
 
@@ -107,7 +105,8 @@ def load_manifest(
     if hub is None or not models.DOC_ID_RE.match(doc_id):
         return None
     holders = [
-        (r, folder) for r in load_federation(hub.federation_dir)
+        (r, folder)
+        for r in load_federation(hub.federation_dir)
         if (repo is None or r.meta.repo_id == repo)
         and (folder := doc_dir(r.kb_dir, doc_id)) is not None
         and (folder / "_manifest.yaml").exists()
@@ -158,7 +157,9 @@ def build_routes(config: ServerConfig) -> list[Route]:
             return _error(400, "ambiguous_doc", str(exc))
         if found is None:
             known = ", ".join(known_doc_ids(config))
-            return _error(404, "doc_not_found", f"unknown doc '{doc_id}'; known docs: {known}")
+            return _error(
+                404, "doc_not_found", f"unknown doc '{doc_id}'; known docs: {known}"
+            )
         manifest, rid = found
         return JSONResponse(
             {
@@ -167,7 +168,12 @@ def build_routes(config: ServerConfig) -> list[Route]:
                 "revision": manifest.revision,
                 "repo": rid,
                 "sections": [
-                    {"id": s.id, "title": s.title, "summary": s.summary, "status": s.status}
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "summary": s.summary,
+                        "status": s.status,
+                    }
                     for s in manifest.sections
                 ],
             }
@@ -194,7 +200,8 @@ def build_routes(config: ServerConfig) -> list[Route]:
         if result is None:
             known = ", ".join(known_doc_ids(config))
             return _error(
-                404, "section_not_found",
+                404,
+                "section_not_found",
                 f"{doc_id} §{section_id} not found; known docs: {known}",
             )
         return JSONResponse(

@@ -15,24 +15,29 @@ on:
 
 jobs:
   t0-lint:
-    name: T0 lint (ruff)
+    name: T0 lint (ruff, format, pyright)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Upper-bounded on purpose. `ruff>=0.15` unbounded meant a new ruff
-      # release could turn every open PR red without a single line of code
-      # changing — which is exactly what 0.16.0 did: it added default rules
-      # that flag 127 pre-existing findings on `main` itself. A lint gate
-      # that upgrades itself is not a gate.
+      # The dev extra pins both tools: ruff upper-bounded (<0.16) and
+      # pyright exact. Unbounded, a new ruff release could turn every open PR
+      # red without a single line of code changing — which is exactly what
+      # 0.16.0 did: it added default rules that flag 127 pre-existing
+      # findings on `main` itself. A lint gate that upgrades itself is not a
+      # gate.
       #
-      # Adopting a new ruff minor is a deliberate, standalone change: bump
-      # this pin, run `ruff check .`, and fix the fallout in its own PR
-      # where the rule-by-rule diff is reviewable.
-      - run: pip install "ruff>=0.15,<0.16"
+      # Adopting a new ruff minor or pyright release is a deliberate,
+      # standalone change: bump the pin in pyproject.toml, run the three
+      # steps below, and fix the fallout in its own PR where the diff is
+      # reviewable. pyright needs the package and its dev dependencies
+      # installed so imports resolve.
+      - run: pip install -e ".[dev]"
       - run: ruff check .
+      - run: ruff format --check .
+      - run: pyright
 
   t1-tests:
     name: T1 unit/integration (${{ matrix.os }}, py${{ matrix.python }})

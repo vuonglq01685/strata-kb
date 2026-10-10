@@ -15,7 +15,9 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 
 
 def read_manifest(kb: Path) -> dict:
-    return yaml.safe_load((kb / "demo-doc" / "_manifest.yaml").read_text(encoding="utf-8"))
+    return yaml.safe_load(
+        (kb / "demo-doc" / "_manifest.yaml").read_text(encoding="utf-8")
+    )
 
 
 def l2_path(kb: Path, manifest: dict) -> Path:
@@ -43,8 +45,20 @@ def test_version_and_help(kb_run, tmp_path):
 
     help_out = kb_run("--help", cwd=tmp_path).stdout
     expected = [
-        "init", "ingest", "summarize", "status", "build", "query", "get",
-        "stats", "publish", "reindex", "resolve", "diff", "doctor", "context",
+        "init",
+        "ingest",
+        "summarize",
+        "status",
+        "build",
+        "query",
+        "get",
+        "stats",
+        "publish",
+        "reindex",
+        "resolve",
+        "diff",
+        "doctor",
+        "context",
         "tags",
     ]
     for name in expected:
@@ -66,8 +80,15 @@ def test_summarize_then_build(kb_run, seed_kb, stub_claude, bare_hub, tmp_path):
     assert all(s["status"] == "pending" for s in before["sections"])
     assert "TODO:summarize" in l2_path(kb, before).read_text(encoding="utf-8")
 
-    kb_run("summarize", "--llm", "claude", "--kb-dir", str(kb),
-           cwd=tmp_path, env=stub_claude)
+    kb_run(
+        "summarize",
+        "--llm",
+        "claude",
+        "--kb-dir",
+        str(kb),
+        cwd=tmp_path,
+        env=stub_claude,
+    )
 
     after = read_manifest(kb)
     assert all(s["status"] == "summarized" for s in after["sections"])
@@ -113,9 +134,14 @@ def test_publish_mirrors_all_levels_into_the_hub(published_repo, run_git, tmp_pa
 
 
 def test_doctor_is_clean_after_publish(published_repo, kb_run):
-    proc = kb_run("doctor", "--hub", str(published_repo["hub"]),
-                  "--kb-dir", str(published_repo["kb"]),
-                  cwd=published_repo["repo"])
+    proc = kb_run(
+        "doctor",
+        "--hub",
+        str(published_repo["hub"]),
+        "--kb-dir",
+        str(published_repo["kb"]),
+        cwd=published_repo["repo"],
+    )
 
     # returncode == 0 is not enough to tell "published cleanly" apart from
     # "never published at all": kb doctor only changes its exit code on issues at
@@ -132,9 +158,15 @@ def test_doctor_is_clean_after_publish(published_repo, kb_run):
 
 
 def test_query_reads_from_the_hub(published_repo, kb_run):
-    proc = kb_run("query", "airspace", "--hub", str(published_repo["hub"]),
-                  "--kb-dir", str(published_repo["kb"]),
-                  cwd=published_repo["repo"])
+    proc = kb_run(
+        "query",
+        "airspace",
+        "--hub",
+        str(published_repo["hub"]),
+        "--kb-dir",
+        str(published_repo["kb"]),
+        cwd=published_repo["repo"],
+    )
 
     assert "No matching section found." not in proc.stdout
     assert "Condensed via stub." in proc.stdout
@@ -143,10 +175,30 @@ def test_query_reads_from_the_hub(published_repo, kb_run):
 def test_get_returns_both_levels(published_repo, kb_run):
     repo, kb, hub = published_repo["repo"], published_repo["kb"], published_repo["hub"]
 
-    l2 = kb_run("get", "demo-doc", "1.1", "--level", "l2",
-                "--hub", str(hub), "--kb-dir", str(kb), cwd=repo).stdout
-    l3 = kb_run("get", "demo-doc", "1.1", "--level", "l3",
-                "--hub", str(hub), "--kb-dir", str(kb), cwd=repo).stdout
+    l2 = kb_run(
+        "get",
+        "demo-doc",
+        "1.1",
+        "--level",
+        "l2",
+        "--hub",
+        str(hub),
+        "--kb-dir",
+        str(kb),
+        cwd=repo,
+    ).stdout
+    l3 = kb_run(
+        "get",
+        "demo-doc",
+        "1.1",
+        "--level",
+        "l3",
+        "--hub",
+        str(hub),
+        "--kb-dir",
+        str(kb),
+        cwd=repo,
+    ).stdout
 
     assert "Condensed via stub." in l2
     assert "multiple code" in l3, "L3 must be verbatim, not the summary"
@@ -155,15 +207,32 @@ def test_get_returns_both_levels(published_repo, kb_run):
 def test_context_new_then_resolve_roundtrip(published_repo, kb_run, tmp_path):
     repo, kb, hub = published_repo["repo"], published_repo["kb"], published_repo["hub"]
 
-    block = kb_run("context", "new", "--refs", "demo-doc §1.1",
-                   "--hub", str(hub), "--kb-dir", str(kb), cwd=repo).stdout
+    block = kb_run(
+        "context",
+        "new",
+        "--refs",
+        "demo-doc §1.1",
+        "--hub",
+        str(hub),
+        "--kb-dir",
+        str(kb),
+        cwd=repo,
+    ).stdout
     assert "kb-context" in block
 
     block_file = tmp_path / "ticket.md"
     block_file.write_text(block, encoding="utf-8")
 
-    proc = kb_run("resolve", str(block_file), "--hub", str(hub),
-                  "--kb-dir", str(kb), cwd=repo, check=False)
+    proc = kb_run(
+        "resolve",
+        str(block_file),
+        "--hub",
+        str(hub),
+        "--kb-dir",
+        str(kb),
+        cwd=repo,
+        check=False,
+    )
 
     # exit 0 = ok, 2 = stale, 1 = broken. Just pinned, so it must be ok.
     assert proc.returncode == 0, f"resolve → {proc.returncode}\n{proc.stdout}"
@@ -182,8 +251,9 @@ def test_diff_detects_a_changed_section(published_repo, kb_run):
     )
 
     # kb diff is local-git: it compares the worktree against a git rev.
-    proc = kb_run("diff", "demo-doc", "--against", "HEAD",
-                  "--kb-dir", str(kb), cwd=repo)
+    proc = kb_run(
+        "diff", "demo-doc", "--against", "HEAD", "--kb-dir", str(kb), cwd=repo
+    )
 
     assert "1.1" in proc.stdout
 
@@ -197,13 +267,13 @@ def test_ingest_without_docling_fails_cleanly(kb_run, seed_kb, bare_hub, tmp_pat
     fake_pdf = tmp_path / "x.pdf"
     fake_pdf.write_bytes(b"%PDF-1.4\n")
 
-    proc = kb_run("ingest", str(fake_pdf), "--id", "whatever",
-                  cwd=tmp_path, check=False)
+    proc = kb_run(
+        "ingest", str(fake_pdf), "--id", "whatever", cwd=tmp_path, check=False
+    )
 
     assert proc.returncode != 0
     combined = proc.stdout + proc.stderr
     assert "Docling is not installed" in combined
     assert "Traceback" not in combined, (
-        "ingest without docling threw a raw traceback in the user's face:\n"
-        + combined
+        "ingest without docling threw a raw traceback in the user's face:\n" + combined
     )

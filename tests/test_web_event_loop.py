@@ -1,6 +1,7 @@
 """2026-10-10 review §6.2 F3: every Web/REST handler but /api/search ran its
 sync work on the event loop -- one /ui render froze /api/health (and MCP)
 for 9 s. A slow handler must now leave the loop free."""
+
 from __future__ import annotations
 
 import time
@@ -21,6 +22,7 @@ def _slow(real, seconds=1.0):
     def wrapped(*a, **k):
         time.sleep(seconds)
         return real(*a, **k)
+
     return wrapped
 
 
@@ -63,7 +65,9 @@ async def _health_while(app, path: str) -> float:
         ("/api/docs/arinc-424/sections/5.3", "strata_kb.web.api", "get_section"),
     ],
 )
-def test_health_answers_while_a_slow_page_renders(fed_hub, monkeypatch, path, target, attr):
+def test_health_answers_while_a_slow_page_renders(
+    fed_hub, monkeypatch, path, target, attr
+):
     import importlib
 
     module = importlib.import_module(target) if isinstance(target, str) else target

@@ -119,8 +119,11 @@ def svc_with_hist_hub(tmp_path: Path, run_git) -> Path:
                     id="1.1", title="A", summary="s", status="reviewed", file="ch1"
                 ),
                 models.SectionEntry(
-                    id="hist.2026-09-15", title="service history",
-                    summary="s", status="summarized", file="ch1",
+                    id="hist.2026-09-15",
+                    title="service history",
+                    summary="s",
+                    status="summarized",
+                    file="ch1",
                 ),
             ],
         ),
@@ -160,7 +163,9 @@ def test_store_stats_docs_matches_catalog_when_manifest_broken(fed_hub):
     # while catalog() counts manifest-backed docs via _iter_manifests. A broken
     # manifest made them disagree — Overview would claim 3 docs while Documents
     # lists 2. Both must now walk the same manifest source.
-    broken_manifest = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "_manifest.yaml"
+    broken_manifest = (
+        fed_hub / "federation" / "arinc-kb" / "arinc-424" / "_manifest.yaml"
+    )
     broken_manifest.write_text("not: [valid, yaml: structure", encoding="utf-8")
 
     hub = _hub(fed_hub)
@@ -236,10 +241,16 @@ def test_last_publish_unreadable_federation_index_is_empty_not_error(
 
 def test_doc_coverage_and_prev_next():
     m = Manifest(
-        id="d", title="D",
+        id="d",
+        title="D",
         sections=[
-            SectionEntry(id="1", title="A", file="a.md", status="reviewed",
-                         tokens=SectionTokens(l2=10, l3=20)),
+            SectionEntry(
+                id="1",
+                title="A",
+                file="a.md",
+                status="reviewed",
+                tokens=SectionTokens(l2=10, l3=20),
+            ),
             SectionEntry(id="2", title="B", file="b.md", status="pending"),
             SectionEntry(id="3", title="C", file="c.md", status="summarized"),
         ],
@@ -257,7 +268,8 @@ def test_doc_coverage_and_prev_next():
 
 def test_doc_coverage_excludes_hist_sections():
     m = Manifest(
-        id="d", title="D",
+        id="d",
+        title="D",
         sections=[
             SectionEntry(id="1", title="A", file="a.md", status="reviewed"),
             SectionEntry(id="hist.x", title="note", file="a.md", status="summarized"),
@@ -274,26 +286,38 @@ def test_status_map_keys(fed_hub):
 
 
 def test_section_tree_single_file_has_no_chapter_rows():
-    m = models.Manifest(id="d", title="D", sections=[
-        models.SectionEntry(id="1", title="One", file="ch1-intro.md"),
-        models.SectionEntry(id="2", title="Two", file="ch1-intro.md"),
-    ])
+    m = models.Manifest(
+        id="d",
+        title="D",
+        sections=[
+            models.SectionEntry(id="1", title="One", file="ch1-intro.md"),
+            models.SectionEntry(id="2", title="Two", file="ch1-intro.md"),
+        ],
+    )
     tree = uidata.section_tree(m)
     assert [n.kind for n in tree] == ["section", "section"]
     assert [n.id for n in tree] == ["1", "2"]
 
 
 def test_section_tree_groups_by_file_with_chapter_headers():
-    m = models.Manifest(id="d", title="D", sections=[
-        models.SectionEntry(id="1", title="One", file="ch1-intro.md",
-                            status="reviewed"),
-        models.SectionEntry(id="1.2", title="One-two", file="ch1-intro.md"),
-        models.SectionEntry(id="2", title="Two", file="ch2-data.md"),
-    ])
+    m = models.Manifest(
+        id="d",
+        title="D",
+        sections=[
+            models.SectionEntry(
+                id="1", title="One", file="ch1-intro.md", status="reviewed"
+            ),
+            models.SectionEntry(id="1.2", title="One-two", file="ch1-intro.md"),
+            models.SectionEntry(id="2", title="Two", file="ch2-data.md"),
+        ],
+    )
     tree = uidata.section_tree(m)
     assert [(n.kind, n.label) for n in tree] == [
-        ("chapter", "ch1 intro"), ("section", "One"), ("section", "One-two"),
-        ("chapter", "ch2 data"), ("section", "Two"),
+        ("chapter", "ch1 intro"),
+        ("section", "One"),
+        ("section", "One-two"),
+        ("chapter", "ch2 data"),
+        ("section", "Two"),
     ]
     assert tree[1].status == "reviewed"
 

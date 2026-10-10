@@ -1,6 +1,6 @@
 [project]
 name = "strata-kb"
-version = "1.14.0"
+version = "1.14.1"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
@@ -40,7 +40,7 @@ ingest = [
 dev = [
     "pytest>=8.0", "anyio>=4.0", "sqlite-vec>=0.1.6", "twine>=7.0", "build>=1.2",
     "PyJWT[crypto]>=2.8", "python-multipart>=0.0.9", "httpx>=0.27",
-    "imagehash>=4.3", "Pillow>=10.0", "ruff>=0.15,<0.16",
+    "imagehash>=4.3", "Pillow>=10.0", "ruff>=0.15,<0.16", "pyright==1.1.414",
 ]
 embed = ["sqlite-vec>=0.1.6", "fastembed>=0.3"]
 server = ["PyJWT[crypto]>=2.8", "python-multipart>=0.0.9"]
@@ -79,9 +79,11 @@ force-include = { "CHANGELOG.md" = "CHANGELOG.md" }
 [tool.ruff.lint]
 # Default is E4/E7/E9/F only, which made "ruff check passed" mean very
 # little: the 11 `# noqa: BLE001` markers in src/ were inert because BLE
-# was never enabled, and RUF100 was not there to say so. B/I/UP/SIM are
-# deliberately NOT here yet — 198 mechanical edits belong in their own PR.
-select = ["E4", "E7", "E9", "F", "BLE", "RUF100", "S"]
+# was never enabled, and RUF100 was not there to say so. B/I/UP/SIM came in
+# 1.14.1 with their fallout fixed in the same PR.
+select = ["E4", "E7", "E9", "F", "BLE", "RUF100", "S", "B", "I", "UP", "SIM"]
+# B008: typer options are function calls in argument defaults by design.
+ignore = ["B008"]
 
 [tool.ruff.lint.per-file-ignores]
 # pytest.importorskip must run before the guarded import (E402); asserts are
@@ -134,6 +136,16 @@ select = ["E4", "E7", "E9", "F", "BLE", "RUF100", "S"]
 # S603: verifies the freshly built venv's own `kb` executable during release
 # checks -- path is built from the venv argument, not external input.
 "scripts/check_package.py" = ["S603"]
+
+[tool.pyright]
+# Basic mode on src/ only (1.14.1). tests/ is not checked yet. Pinned
+# exactly in the dev extra, like ruff's upper bound, so a pyright release
+# cannot turn main red. The optional extras (docling, fastembed, boto3,
+# rapidocr, pypdfium2) are not installed in T0; their lazy imports carry
+# `# pyright: ignore[reportMissingImports]`.
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

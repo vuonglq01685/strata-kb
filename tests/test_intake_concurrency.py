@@ -1,6 +1,7 @@
 """Reviewer D's F-D4: two intake publishes for different repo-ids shared one
 working tree, so beta's PR was based on publish/alpha and carried alpha's
 unreviewed content -- and the clone stayed on publish/alpha for good."""
+
 import threading
 import time
 
@@ -63,6 +64,7 @@ def test_no_worktree_is_left_behind(
     produces (see test_intake_upload_failure_leaves_no_dirty_leftovers in
     test_intake_core.py), and asserts the SAME clean worktree listing."""
     if scenario == "refusal":
+
         def boom(*a, **k):
             raise intake.hashsync.HashSyncError("boom")
 

@@ -94,7 +94,9 @@ def _worktree_db_paths(
     return tuple(out)
 
 
-def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> LagReport:
+def check(
+    repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str
+) -> LagReport:
     doc_id = f"{repo_id}-code"
     pin_note = sync.version_note(repo_root)
     if pin_note:
@@ -103,7 +105,9 @@ def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> 
     if not (hub_doc / "_manifest.yaml").exists():
         return LagReport("unknown", reason=f"the hub has no {doc_id} yet")
     if not gitio.has_remote(repo_root):
-        return LagReport("unknown", reason="no git remote — nothing to compare the hub with")
+        return LagReport(
+            "unknown", reason="no git remote — nothing to compare the hub with"
+        )
     try:
         # origin/HEAD only -- never the branch that happens to be checked
         # out (controller ruling: gitio.default_branch's fallback would
@@ -114,7 +118,9 @@ def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> 
     except gitio.GitError as exc:
         return LagReport("unknown", reason=str(exc))
     if not gitio.rev_exists(repo_root, ref):
-        return LagReport("unknown", reason=f"no local ref {ref} — run `git fetch`", ref=ref)
+        return LagReport(
+            "unknown", reason=f"no local ref {ref} — run `git fetch`", ref=ref
+        )
     ref_date = core._git(repo_root, "show", "-s", "--format=%cs", ref).stdout.strip()
     base = sync.options_from_config(repo_root, kb_dir, repo_id)
     with tempfile.TemporaryDirectory() as tmp:
@@ -127,15 +133,23 @@ def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> 
             work_db_paths = _worktree_db_paths(repo_root, work, base.db_paths)
             # kb_dir inside the worktree, so the tree extractor prunes the
             # worktree's own .kb/ exactly as a real checkout's is pruned.
-            core.run(core.CodeIngestOptions(
-                repo_root=work, kb_dir=work / ".kb", doc_id=doc_id, repo_id=repo_id,
-                db_paths=work_db_paths, tags=base.tags,
-            ))
+            core.run(
+                core.CodeIngestOptions(
+                    repo_root=work,
+                    kb_dir=work / ".kb",
+                    doc_id=doc_id,
+                    repo_id=repo_id,
+                    db_paths=work_db_paths,
+                    tags=base.tags,
+                )
+            )
             main = l3_sections(work / ".kb" / doc_id)
         except core.CodeIngestError as exc:
             return LagReport(
-                "unknown", reason=f"code-ingest failed at {ref}: {exc}",
-                ref=ref, ref_date=ref_date,
+                "unknown",
+                reason=f"code-ingest failed at {ref}: {exc}",
+                ref=ref,
+                ref_date=ref_date,
             )
         except OSError as exc:
             # A `kb doctor` check must never abort the whole command --
@@ -143,8 +157,10 @@ def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> 
             # the CodeIngestError branch just above (e.g. a --db path that
             # vanished between `options_from_config` and the copy above).
             return LagReport(
-                "unknown", reason=f"could not prepare {ref} for comparison: {exc}",
-                ref=ref, ref_date=ref_date,
+                "unknown",
+                reason=f"could not prepare {ref} for comparison: {exc}",
+                ref=ref,
+                ref_date=ref_date,
             )
         finally:
             gitio.worktree_remove(repo_root, work)
@@ -153,5 +169,11 @@ def check(repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str) -> 
     only_hub = sorted(hub.keys() - main.keys())
     changed = sorted(k for k in main.keys() & hub.keys() if main[k] != hub[k])
     state = "lags" if (only_main or only_hub or changed) else "in-sync"
-    return LagReport(state, ref=ref, ref_date=ref_date,
-                     only_on_main=only_main, only_on_hub=only_hub, changed=changed)
+    return LagReport(
+        state,
+        ref=ref,
+        ref_date=ref_date,
+        only_on_main=only_main,
+        only_on_hub=only_hub,
+        changed=changed,
+    )

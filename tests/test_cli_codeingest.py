@@ -21,8 +21,9 @@ def _init_config(root: Path, repo_id: str = "demo") -> None:
 def test_code_ingest_writes_the_document_and_reports(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb")])
+    result = runner.invoke(
+        app, ["code-ingest", "--repo-root", str(root), "--kb-dir", str(root / ".kb")]
+    )
     assert result.exit_code == 0, result.output
     assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
     assert "services" in result.output
@@ -31,12 +32,27 @@ def test_code_ingest_writes_the_document_and_reports(tmp_path):
 def test_json_output_shape(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--json"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--json",
+        ],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    for key in ("doc_id", "sections_by_extractor", "files_written", "warnings",
-                "detected", "dirty_tree"):
+    for key in (
+        "doc_id",
+        "sections_by_extractor",
+        "files_written",
+        "warnings",
+        "detected",
+        "dirty_tree",
+    ):
         assert key in payload
     assert payload["doc_id"] == "demo-code"
 
@@ -44,17 +60,36 @@ def test_json_output_shape(tmp_path):
 def test_repo_id_comes_from_config_and_doc_id_is_derived(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root, repo_id="dashboard")
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--json"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--json",
+        ],
+    )
     assert json.loads(result.output)["doc_id"] == "dashboard-code"
 
 
 def test_explicit_doc_id_overrides(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"),
-                                "--doc-id", "custom-code", "--json"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--doc-id",
+            "custom-code",
+            "--json",
+        ],
+    )
     assert json.loads(result.output)["doc_id"] == "custom-code"
 
 
@@ -66,10 +101,20 @@ def test_db_flag_is_repeatable(tmp_path):
         con.execute(f"CREATE TABLE t_{name[0]} (id INTEGER)")
         con.commit()
         con.close()
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"),
-                                "--db", str(root / "a.db"),
-                                "--db", str(root / "b.db")])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--db",
+            str(root / "a.db"),
+            "--db",
+            str(root / "b.db"),
+        ],
+    )
     assert result.exit_code == 0, result.output
     db_md = (root / ".kb" / "demo-code" / "db.md").read_text(encoding="utf-8")
     assert "t_a" in db_md and "t_b" in db_md
@@ -78,8 +123,18 @@ def test_db_flag_is_repeatable(tmp_path):
 def test_tags_flag_appends_to_the_reserved_tags(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                        "--kb-dir", str(root / ".kb"), "--tags", "team-x,platform"])
+    runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--tags",
+            "team-x,platform",
+        ],
+    )
     index = models.load_yaml_model(root / ".kb" / "index.yaml", models.KBIndex)
     entry = next(d for d in index.docs if d.id == "demo-code")
     assert entry.tags == ["code", "generated", "team-x", "platform"]
@@ -88,8 +143,17 @@ def test_tags_flag_appends_to_the_reserved_tags(tmp_path):
 def test_scaffold_svc_flag_creates_the_curated_document(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert (root / ".kb" / "demo-svc" / "_manifest.yaml").is_file()
 
@@ -99,8 +163,9 @@ def test_exit_1_when_only_the_tree_extractor_detects(tmp_path):
     (root / "src").mkdir(parents=True)
     (root / "src" / "notes.txt").write_text("hello", encoding="utf-8")
     _init_config(root)
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb")])
+    result = runner.invoke(
+        app, ["code-ingest", "--repo-root", str(root), "--kb-dir", str(root / ".kb")]
+    )
     assert result.exit_code == 1
     assert "no code artifacts" in result.output.lower()
 
@@ -108,8 +173,9 @@ def test_exit_1_when_only_the_tree_extractor_detects(tmp_path):
 def test_build_is_not_called_implicitly(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb")])
+    result = runner.invoke(
+        app, ["code-ingest", "--repo-root", str(root), "--kb-dir", str(root / ".kb")]
+    )
     assert result.exit_code == 0
     assert "kb build: OK" not in result.output
 
@@ -129,9 +195,18 @@ def test_db_flag_works_with_no_migration_files_present(tmp_path):
     con.execute("CREATE TABLE widgets (id INTEGER)")
     con.commit()
     con.close()
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"),
-                                "--db", str(root / "only.db")])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--db",
+            str(root / "only.db"),
+        ],
+    )
     assert result.exit_code == 0, result.output
     db_md = (root / ".kb" / "demo-code" / "db.md").read_text(encoding="utf-8")
     assert "widgets" in db_md
@@ -147,8 +222,17 @@ def test_repo_id_falls_back_to_folder_name_when_unconfigured(tmp_path):
     root = tmp_path / "my-service"
     build_code_repo(root)
     # Deliberately no _init_config(root) call: no .kb/config.yaml at all.
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--json"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--json",
+        ],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["doc_id"] == "my-service-code"
@@ -160,7 +244,9 @@ def test_repo_id_falls_back_to_folder_name_when_unconfigured(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_kb_dir_relative_path_resolves_against_cwd_like_every_other_kb_command(tmp_path, monkeypatch):
+def test_kb_dir_relative_path_resolves_against_cwd_like_every_other_kb_command(
+    tmp_path, monkeypatch
+):
     # Reviewer G-11: resolving against --repo-root was undocumented and
     # created directories inside a repo the reviewer had been told not to touch.
     root = tmp_path / "proj"
@@ -168,8 +254,18 @@ def test_kb_dir_relative_path_resolves_against_cwd_like_every_other_kb_command(t
     other_cwd = tmp_path / "elsewhere"
     other_cwd.mkdir()
     monkeypatch.chdir(other_cwd)
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", "out/.kb", "--repo-id", "demo"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            "out/.kb",
+            "--repo-id",
+            "demo",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert (other_cwd / "out" / ".kb" / "demo-code" / "_manifest.yaml").is_file()
     assert not (root / "out").exists()
@@ -187,27 +283,32 @@ def test_cli_degrades_on_wrong_shaped_index_yaml(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
     (root / ".kb" / "index.yaml").write_text("- a\n- b\n", encoding="utf-8")
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb")])
+    result = runner.invoke(
+        app, ["code-ingest", "--repo-root", str(root), "--kb-dir", str(root / ".kb")]
+    )
     assert result.exit_code == 0, result.output
     assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
 
 
-def test_cli_refuses_a_wrong_shaped_existing_code_manifest_without_a_traceback(tmp_path):
+def test_cli_refuses_a_wrong_shaped_existing_code_manifest_without_a_traceback(
+    tmp_path,
+):
     # Review round 2 wanted no traceback here; reviewer G-1 wants no
     # overwrite either: an unreadable manifest at the -code slot means
     # nobody can tell whose document this is, so it is refused, intact.
     root = build_code_repo(tmp_path)
     _init_config(root)
-    first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb")])
+    first = runner.invoke(
+        app, ["code-ingest", "--repo-root", str(root), "--kb-dir", str(root / ".kb")]
+    )
     assert first.exit_code == 0, first.output
     manifest = root / ".kb" / "demo-code" / "_manifest.yaml"
     manifest.write_text("- a\n- b\n", encoding="utf-8")
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb")])
+    result = runner.invoke(
+        app, ["code-ingest", "--repo-root", str(root), "--kb-dir", str(root / ".kb")]
+    )
     assert result.exit_code == 1
-    assert "could not read" in result.output          # the guarded-load warning
+    assert "could not read" in result.output  # the guarded-load warning
     assert "did not generate" in result.output
     assert "Traceback" not in result.output
     assert manifest.read_text(encoding="utf-8") == "- a\n- b\n"
@@ -224,15 +325,33 @@ def test_cli_refuses_a_wrong_shaped_existing_code_manifest_without_a_traceback(t
 def test_cli_surfaces_warnings_and_partial_success_when_svc_scaffold_refuses(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    first = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert first.exit_code == 0, first.output
     (root / ".kb" / "demo-svc" / "_manifest.yaml").write_text(
         "- a\n- b\n", encoding="utf-8"
     )
 
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
 
     assert result.exit_code == 1
     assert "could not read" in result.output
@@ -250,15 +369,34 @@ def test_cli_surfaces_warnings_and_partial_success_when_svc_scaffold_refuses(tmp
 def test_json_flag_keeps_stdout_pure_on_failure(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    first = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert first.exit_code == 0, first.output
     (root / ".kb" / "demo-svc" / "_manifest.yaml").write_text(
         "- a\n- b\n", encoding="utf-8"
     )
 
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--scaffold-svc", "--json"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+            "--json",
+        ],
+    )
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -277,16 +415,34 @@ def test_json_flag_keeps_stdout_pure_on_failure(tmp_path):
 def test_trailing_slash_doc_id_no_longer_overwrites_the_curated_svc_dir(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    scaffold = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                  "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    scaffold = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert scaffold.exit_code == 0, scaffold.output
     svc_dir = root / ".kb" / "demo-svc"
     original_services_md = (svc_dir / "services.md").read_text(encoding="utf-8")
     original_manifest = (svc_dir / "_manifest.yaml").read_text(encoding="utf-8")
 
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"),
-                                "--doc-id", "demo-svc/"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--doc-id",
+            "demo-svc/",
+        ],
+    )
 
     assert result.exit_code == 1
     assert (svc_dir / "services.md").read_text(encoding="utf-8") == original_services_md
@@ -301,11 +457,29 @@ def test_a_second_scaffold_svc_run_still_succeeds_over_fire_check(tmp_path):
     itself created."""
     root = build_code_repo(tmp_path)
     _init_config(root)
-    first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    first = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert first.exit_code == 0, first.output
-    second = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                 "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    second = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert second.exit_code == 0, second.output
     assert (root / ".kb" / "demo-svc" / "_manifest.yaml").is_file()
 
@@ -315,11 +489,31 @@ def test_tags_curated_does_not_brick_a_second_plain_code_run_at_the_cli(tmp_path
     -code run must not make the document's own next run refuse itself."""
     root = build_code_repo(tmp_path)
     _init_config(root)
-    first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--tags", "curated"])
+    first = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--tags",
+            "curated",
+        ],
+    )
     assert first.exit_code == 0, first.output
-    second = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                 "--kb-dir", str(root / ".kb"), "--tags", "curated"])
+    second = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--tags",
+            "curated",
+        ],
+    )
     assert second.exit_code == 0, second.output
 
 
@@ -335,8 +529,17 @@ def test_tags_curated_does_not_brick_a_second_plain_code_run_at_the_cli(tmp_path
 def test_stale_risk_and_orphan_ids_are_named_on_the_terminal_not_just_counted(tmp_path):
     root = build_code_repo(tmp_path)
     _init_config(root)
-    first = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    first = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert first.exit_code == 0, first.output
 
     manifest_path = root / ".kb" / "demo-svc" / "_manifest.yaml"
@@ -350,11 +553,20 @@ def test_stale_risk_and_orphan_ids_are_named_on_the_terminal_not_just_counted(tm
     # remove one service outright (orphan for the one that disappears).
     (root / "docker-compose.yml").write_text(
         "services:\n  airspace-service:\n    image: airspace:1.0\n"
-        "    ports:\n      - \"9090:9090\"\n",
+        '    ports:\n      - "9090:9090"\n',
         encoding="utf-8",
     )
-    second = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                 "--kb-dir", str(root / ".kb"), "--scaffold-svc"])
+    second = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--scaffold-svc",
+        ],
+    )
     assert second.exit_code == 0, second.output
     assert "svc.airspace-service" in second.output
     assert "svc.postgres" in second.output
@@ -377,8 +589,9 @@ def test_code_ingest_reads_tags_from_the_config_block(tmp_path):
     _init_config(root)
     with (root / ".kb" / "config.yaml").open("a", encoding="utf-8") as fh:
         fh.write("code_ingest:\n  tags: [payments]\n")
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb")])
+    result = runner.invoke(
+        app, ["code-ingest", "--repo-root", str(root), "--kb-dir", str(root / ".kb")]
+    )
     assert result.exit_code == 0, result.output
     assert "payments" in _code_entry(root).tags
     assert "replace code_ingest" not in result.stderr
@@ -389,8 +602,18 @@ def test_code_ingest_flag_replaces_the_config_block_and_says_so(tmp_path):
     _init_config(root)
     with (root / ".kb" / "config.yaml").open("a", encoding="utf-8") as fh:
         fh.write("code_ingest:\n  tags: [payments]\n")
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--tags", "other"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--tags",
+            "other",
+        ],
+    )
     assert result.exit_code == 0, result.output
     tags = _code_entry(root).tags
     assert "other" in tags and "payments" not in tags
@@ -404,10 +627,21 @@ def test_code_ingest_notes_a_version_pin_mismatch(tmp_path, monkeypatch):
     _init_config(root)
     wf = root / ".github" / "workflows"
     wf.mkdir(parents=True, exist_ok=True)
-    (wf / "kb-code.yml").write_text("- run: pip install strata-kb==0.0.1\n", encoding="utf-8")
+    (wf / "kb-code.yml").write_text(
+        "- run: pip install strata-kb==0.0.1\n", encoding="utf-8"
+    )
     monkeypatch.setattr(strata_kb, "__version__", "1.4.0")
-    result = runner.invoke(app, ["code-ingest", "--repo-root", str(root),
-                                "--kb-dir", str(root / ".kb"), "--json"])
+    result = runner.invoke(
+        app,
+        [
+            "code-ingest",
+            "--repo-root",
+            str(root),
+            "--kb-dir",
+            str(root / ".kb"),
+            "--json",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert "kb-code.yml pins 0.0.1" in result.stderr
     json.loads(result.stdout)  # --json stdout stays pure

@@ -6,6 +6,7 @@ carries no `Content-Length`, and Starlette's own form limits are per field
 off the wire before any parser buffers them. Shared by the intake upload
 (`web/intake_routes.py`) and `POST /ui/login` (2026-10-10 review §5.2 #2).
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -13,9 +14,7 @@ from collections.abc import Callable
 from starlette.requests import Request
 
 
-def capped_receive(
-    request: Request, max_bytes: int, overflow: Callable[[], Exception]
-):
+def capped_receive(request: Request, max_bytes: int, overflow: Callable[[], Exception]):
     """Wrap `request`'s ASGI receive channel. Past `max_bytes` of body,
     raise `overflow()`.
 

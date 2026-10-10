@@ -11,6 +11,7 @@ shows looks complete. "Unknown" means no row for that exact id or alias: a
 point release is never priced at its family's rate, which is a wrong number
 that looks right.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -152,7 +153,10 @@ def cost_of(row: UsageRow, table: PriceTable) -> float | None:
     # Prompt length is everything the model read, cached or not: a cache hit
     # is still context, so cache reads and writes count toward the threshold.
     prompt = row.tokens_in + row.cache_read + row.cache_write_5m + row.cache_write_1h
-    if model_rates.long_context is not None and prompt > model_rates.long_context.threshold:
+    if (
+        model_rates.long_context is not None
+        and prompt > model_rates.long_context.threshold
+    ):
         rates = model_rates.long_context
     tokens = (
         row.tokens_in * rates.input

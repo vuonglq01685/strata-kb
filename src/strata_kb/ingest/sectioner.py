@@ -28,7 +28,7 @@ class _Node:
     title: str
     depth: int
     body: list[str] = field(default_factory=list)
-    children: list["_Node"] = field(default_factory=list)
+    children: list[_Node] = field(default_factory=list)
     fallback: bool = False  # id synthesized from an unparsed heading
     page: int | None = None  # page of the heading that opened this node
 
@@ -126,7 +126,9 @@ DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
 # nothing ("APPENDIX. SEARCH AND RESCUE SIGNALS" — ICAO Annex 12). That form
 # is only accepted when a separator follows the word, so a heading that merely
 # starts with it still takes the identifier branch.
-_UNNUMBERED_PART = r"(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)"
+_UNNUMBERED_PART = (
+    r"(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)"
+)
 DEFAULT_APPENDIX_PATTERN = rf"^appendix{_UNNUMBERED_PART}(.*)$"
 DEFAULT_ATTACHMENT_PATTERN = rf"^attachment{_UNNUMBERED_PART}(.*)$"
 # The title is optional so a bare "5.15" keeps its id instead of backtracking
@@ -171,7 +173,7 @@ def resolve_heading_config(
     chapter_pattern: str,
     appendix_pattern: str,
     attachment_pattern: str,
-    previous: "models.IngestConfig | None",
+    previous: models.IngestConfig | None,
 ) -> HeadingConfig:
     """Priority: explicit arg > previous config in manifest (re-ingest) > default."""
     prev_ch = previous.chapter_pattern if previous else DEFAULT_CHAPTER_PATTERN
@@ -502,8 +504,11 @@ class _TreeBuilder:
             self.stack = list(self.seen[sid])
             return
         node = _Node(
-            id=sid, title=normalized, depth=parent.depth + 1,
-            fallback=True, page=self.last_page,
+            id=sid,
+            title=normalized,
+            depth=parent.depth + 1,
+            fallback=True,
+            page=self.last_page,
         )
         parent.children.append(node)
         self.stack.append(node)
@@ -556,7 +561,7 @@ def order_units(units: list[SectionUnit]) -> list[SectionUnit]:
         if unit.page is not None:
             last = unit.page
         keyed.append((last, i))
-    return [u for _, u in sorted(zip(keyed, units), key=lambda t: t[0])]
+    return [u for _, u in sorted(zip(keyed, units, strict=True), key=lambda t: t[0])]
 
 
 def _dedupe_ids(units: list[SectionUnit], notes: SectioningNotes) -> list[SectionUnit]:
@@ -615,8 +620,10 @@ def _numeric_heading_id(item: DocItem, cfg: HeadingConfig) -> str | None:
     if item.kind != "heading":
         return None
     parsed = parse_section_id(" ".join(item.text.split()), cfg)
-    if not parsed or "." not in parsed[0] or not all(
-        p.isdecimal() for p in parsed[0].split(".")
+    if (
+        not parsed
+        or "." not in parsed[0]
+        or not all(p.isdecimal() for p in parsed[0].split("."))
     ):
         return None
     return parsed[0]
@@ -626,7 +633,9 @@ def _id_tuple(sid: str) -> tuple[int, ...]:
     return tuple(int(p) for p in sid.split("."))
 
 
-def _find_inversion(page_items: list[DocItem], cfg: HeadingConfig) -> tuple[str, str] | None:
+def _find_inversion(
+    page_items: list[DocItem], cfg: HeadingConfig
+) -> tuple[str, str] | None:
     """First pair of numbered *sibling* headings on this page whose ids
     descend (5.84 then 5.83) — docling read the columns out of order."""
     last_by_parent: dict[str, str] = {}
@@ -647,8 +656,8 @@ def _layout_order(page_items: list[DocItem]) -> list[DocItem]:
     the page's item span) cuts the page into bands and leads its band;
     inside a band, left column before right, top to bottom. Stable, so
     docling's order breaks ties."""
-    boxes = [i.bbox for i in page_items]
-    assert all(b is not None for b in boxes)  # noqa: S101 -- internal invariant (docling always sets bbox), not input validation
+    boxes = [i.bbox for i in page_items if i.bbox is not None]
+    assert len(boxes) == len(page_items)  # noqa: S101 -- internal invariant (docling always sets bbox), not input validation
     left = min(b[0] for b in boxes)
     right = max(b[2] for b in boxes)
     span = right - left
@@ -716,18 +725,17 @@ def build_units_with_notes(
                 froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
             )
         root = _build_tree(rest, cfg, notes=notes, repeated=repeated)
-        units = order_units(front_units + _units_from_tree(
-            root, max_depth, min_tokens, max_unit_tokens, None
-        ))
+        units = order_units(
+            front_units
+            + _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, None)
+        )
         return _dedupe_ids(units, notes), notes
     units: list[SectionUnit] = []
     for part, part_items in split_by_parts(items, parts):
         if not part_items:
             continue
         root = _build_tree(part_items, cfg, part=part, notes=notes, repeated=repeated)
-        units += _units_from_tree(
-            root, max_depth, min_tokens, max_unit_tokens, part.id
-        )
+        units += _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, part.id)
     return _dedupe_ids(order_units(units), notes), notes
 
 

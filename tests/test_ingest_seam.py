@@ -80,7 +80,9 @@ def test_fixture_manifest_matches_scaffold_output(tmp_path):
 def test_fixture_index_matches_scaffold_output(tmp_path):
     generate(tmp_path / ".kb")
 
-    fresh = yaml.safe_load((tmp_path / ".kb" / "index.yaml").read_text(encoding="utf-8"))
+    fresh = yaml.safe_load(
+        (tmp_path / ".kb" / "index.yaml").read_text(encoding="utf-8")
+    )
     committed = yaml.safe_load((FIXTURE / "index.yaml").read_text(encoding="utf-8"))
     # No field here drifts with the date/time (unlike ingested in _manifest.yaml)
     # — pop nothing, compare the whole document.
@@ -125,10 +127,14 @@ def test_ingest_writes_assets_and_l3_ref(tmp_path, monkeypatch):
     result = runner.invoke(
         app,
         [
-            "ingest", str(pdf),
-            "--id", "demo",
-            "--kb-dir", str(kb_dir),
-            "--work-dir", str(tmp_path / ".kb-work"),
+            "ingest",
+            str(pdf),
+            "--id",
+            "demo",
+            "--kb-dir",
+            str(kb_dir),
+            "--work-dir",
+            str(tmp_path / ".kb-work"),
             "--no-summarize",
         ],
     )

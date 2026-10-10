@@ -7,6 +7,7 @@ ASCII only — while the index is `unicode61` and DOES hold non-ASCII tokens
 wrong results and no warning. C2 requires L2 in the source language, so a
 Vietnamese KB would be indexed and unsearchable.
 """
+
 import unicodedata
 
 from strata_kb import searchdb
@@ -17,7 +18,10 @@ from tests.conftest import make_fed_entry
 
 def test_tokenize_keeps_non_ascii_letters():
     assert searchdb.tokenize("đường băng sân bay") == [
-        "đường", "băng", "sân", "bay",
+        "đường",
+        "băng",
+        "sân",
+        "bay",
     ]
 
 
@@ -30,9 +34,16 @@ def test_tokenize_normalizes_nfd_input_to_match_nfc():
     nfc = "đường băng sân bay"
     nfd = unicodedata.normalize("NFD", nfc)
     assert nfc != nfd, "fixture must actually exercise the NFD code path"
-    assert searchdb.tokenize(nfd) == searchdb.tokenize(nfc) == [
-        "đường", "băng", "sân", "bay",
-    ]
+    assert (
+        searchdb.tokenize(nfd)
+        == searchdb.tokenize(nfc)
+        == [
+            "đường",
+            "băng",
+            "sân",
+            "bay",
+        ]
+    )
 
 
 def test_tokenize_treats_underscore_as_a_separator():
@@ -43,7 +54,12 @@ def test_tokenize_treats_underscore_as_a_separator():
 
 def test_tokenize_still_splits_the_domain_punctuation():
     assert searchdb.tokenize("ARINC-424 §5.129 CUST/AREA") == [
-        "arinc", "424", "5", "129", "cust", "area",
+        "arinc",
+        "424",
+        "5",
+        "129",
+        "cust",
+        "area",
     ]
 
 
@@ -52,8 +68,11 @@ def test_vietnamese_term_round_trips_index_to_query(tmp_path, run_git):
     fed.mkdir(parents=True)
     (tmp_path / "hub" / ".kb").mkdir()
     make_fed_entry(
-        fed, "vn-kb", "quy-chuan",
-        sec_id="2.1", sec_title="Đường băng",
+        fed,
+        "vn-kb",
+        "quy-chuan",
+        sec_id="2.1",
+        sec_title="Đường băng",
         l2="## 2.1 Đường băng\n\nĐường băng phải có ký hiệu nhận dạng rõ ràng.\n",
         l3="## 2.1 Đường băng\n\nĐường băng phải có ký hiệu nhận dạng rõ ràng.\n",
     )

@@ -19,7 +19,8 @@ def _make_manifest_schema_invalid(hub_dir):
     manifest = next((hub_dir / "federation").rglob("_manifest.yaml"))
     manifest.write_text(
         "id: ok\ntitle: t\nrevision: r\nsections: notalist\n",
-        encoding="utf-8", newline="\n",
+        encoding="utf-8",
+        newline="\n",
     )
     return manifest.parent.name
 
@@ -29,7 +30,9 @@ def test_api_doc_detail_is_503_json_not_500(web_client_logged_in, hub_dir):
     resp = web_client_logged_in.get(f"/api/docs/{doc_id}")
     assert resp.status_code == 503
     assert resp.json()["error"] == "snapshot_corrupt"
-    assert resp.headers["x-content-type-options"] == "nosniff"  # SecurityHeadersMiddleware still applies
+    assert (
+        resp.headers["x-content-type-options"] == "nosniff"
+    )  # SecurityHeadersMiddleware still applies
 
 
 def test_ui_doc_page_renders_the_shell_not_a_bare_500(web_client_logged_in, hub_dir):
@@ -77,7 +80,9 @@ def test_api_section_validation_error_manifest_is_503(web_client_logged_in, hub_
     assert resp.json()["error"] == "snapshot_corrupt"
 
 
-def test_ui_section_page_validation_error_manifest_is_503(web_client_logged_in, hub_dir):
+def test_ui_section_page_validation_error_manifest_is_503(
+    web_client_logged_in, hub_dir
+):
     doc_id = _make_manifest_schema_invalid(hub_dir)
     section_id = SECTION_FOR_DOC[doc_id]
     resp = web_client_logged_in.get(f"/ui/docs/{doc_id}/{section_id}")

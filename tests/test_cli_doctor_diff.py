@@ -8,16 +8,21 @@ runner = CliRunner()
 def test_diff_shows_changed_section(git_kb):
     result = runner.invoke(
         app,
-        ["diff", "demo-doc", "--against", git_kb["rev1"], "--kb-dir", str(git_kb["kb"])],
+        [
+            "diff",
+            "demo-doc",
+            "--against",
+            git_kb["rev1"],
+            "--kb-dir",
+            str(git_kb["kb"]),
+        ],
     )
     assert result.exit_code == 0
     assert "~ §1.1" in result.output
 
 
 def test_diff_unknown_doc_exits_1(git_kb):
-    result = runner.invoke(
-        app, ["diff", "missing-doc", "--kb-dir", str(git_kb["kb"])]
-    )
+    result = runner.invoke(app, ["diff", "missing-doc", "--kb-dir", str(git_kb["kb"])])
     assert result.exit_code == 1
 
 
@@ -69,8 +74,15 @@ def test_doctor_context_stale_exits_2(git_kb, fed_hub, run_git, tmp_path_factory
     )
     result = runner.invoke(
         app,
-        ["doctor", "--context", str(ticket), "--kb-dir", str(git_kb["kb"]),
-         "--hub", str(fed_hub)],
+        [
+            "doctor",
+            "--context",
+            str(ticket),
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--hub",
+            str(fed_hub),
+        ],
     )
     assert result.exit_code == 2
     assert "[warning]" in result.output
@@ -85,8 +97,15 @@ def test_doctor_context_broken_exits_1(git_kb, fed_hub, run_git, tmp_path_factor
     )
     result = runner.invoke(
         app,
-        ["doctor", "--context", str(ticket), "--kb-dir", str(git_kb["kb"]),
-         "--hub", str(fed_hub)],
+        [
+            "doctor",
+            "--context",
+            str(ticket),
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--hub",
+            str(fed_hub),
+        ],
     )
     assert result.exit_code == 1
 

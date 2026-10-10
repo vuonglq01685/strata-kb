@@ -14,10 +14,15 @@ def _kb(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     build_code_repo(root)
-    core.run(core.CodeIngestOptions(
-        repo_root=root, kb_dir=root / ".kb", doc_id="demo-code", repo_id="demo",
-        scaffold_svc=True,
-    ))
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root,
+            kb_dir=root / ".kb",
+            doc_id="demo-code",
+            repo_id="demo",
+            scaffold_svc=True,
+        )
+    )
     return root / ".kb"
 
 
@@ -42,13 +47,16 @@ def test_collect_pending_skips_generated_documents(tmp_path):
 
 
 def test_cli_refuses_a_generated_document(tmp_path):
-    result = runner.invoke(app, ["summarize", "demo-code", "--kb-dir", str(_kb(tmp_path)),
-                                 "--llm", "none"])
+    result = runner.invoke(
+        app, ["summarize", "demo-code", "--kb-dir", str(_kb(tmp_path)), "--llm", "none"]
+    )
     assert result.exit_code == 1
     assert "never summarized" in result.output
 
 
 def test_cli_notes_the_skip_on_an_all_documents_run(tmp_path):
-    result = runner.invoke(app, ["summarize", "--redo", "--all", "--dry-run",
-                                 "--kb-dir", str(_kb(tmp_path))])
+    result = runner.invoke(
+        app,
+        ["summarize", "--redo", "--all", "--dry-run", "--kb-dir", str(_kb(tmp_path))],
+    )
     assert "skipped generated document(s): demo-code" in result.stderr

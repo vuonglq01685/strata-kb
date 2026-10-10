@@ -1,6 +1,7 @@
 """2026-10-10 review §6.2 F6: every publish re-hashed every entry of the hub
 (4.8 s at 100 docs). A publish now hashes only what it wrote; every other
 entry keeps the digest it was published with."""
+
 from __future__ import annotations
 
 import pytest
@@ -37,7 +38,9 @@ def _hashed(monkeypatch):
 
 def test_a_publish_hashes_only_the_repo_it_wrote(fed, monkeypatch):
     before = _digests(fed)
-    (fed / "repo-a" / "doc-a" / "ch1.md").write_text("## 1.1 Changed\n\nnew\n", encoding="utf-8")
+    (fed / "repo-a" / "doc-a" / "ch1.md").write_text(
+        "## 1.1 Changed\n\nnew\n", encoding="utf-8"
+    )
     calls = _hashed(monkeypatch)
     federation.write_federation_index(fed, changed={"repo-a"})
     after = _digests(fed)

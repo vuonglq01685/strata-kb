@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import gzip
 import io
-import string
 import json
+import string
 import subprocess
 import sys
 import tarfile
@@ -156,7 +157,10 @@ def intake_client(intake_cfg):
 def _jwt(pem, **overrides):
     now = int(time.time())
     claims = {
-        "iss": intake.GITHUB_ISSUER, "aud": AUD, "iat": now, "exp": now + 300,
+        "iss": intake.GITHUB_ISSUER,
+        "aud": AUD,
+        "iat": now,
+        "exp": now + 300,
         "repository": "acme/flight-docs",
         "ref": "refs/tags/kb-publish/20260715-010101",
     }
@@ -285,7 +289,8 @@ def test_status_without_a_token_is_the_minimal_public_view(intake_cfg):
     assert err.json() == {"state": "error", "pr_url": ""}
     assert "locked" not in err.text
     assert _public_status(c, commit="inflight").json() == {
-        "state": "processing", "pr_url": "",
+        "state": "processing",
+        "pr_url": "",
     }
 
 
@@ -334,7 +339,11 @@ def test_manifest_and_status_share_a_read_limiter_checked_before_jwt_work(
     assert _get_manifest(c, _jwt(pem)).status_code == 200
     assert _get_status(c, _jwt(pem), commit="x").status_code == 404
     calls = len(resolved)
-    limited = [_get_manifest(c, _jwt(pem)), _get_status(c, _jwt(pem)), _public_status(c)]
+    limited = [
+        _get_manifest(c, _jwt(pem)),
+        _get_status(c, _jwt(pem)),
+        _public_status(c),
+    ]
     assert [r.status_code for r in limited] == [429, 429, 429]
     assert limited[0].json()["error"] == "rate_limited"
     assert len(resolved) == calls  # no JWT verify once limited
@@ -406,8 +415,7 @@ def test_manifest_and_status_503_not_500_on_a_locked_hub_cache(
 
     locked = legacy / "locked.txt"
     locked.write_text("x", encoding="utf-8")
-    fp = open(locked, "r", encoding="utf-8")
-    try:
+    with open(locked, encoding="utf-8"):  # held open for the whole test
         monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
         monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
         cfg = intake.IntakeConfig(
@@ -426,8 +434,6 @@ def test_manifest_and_status_503_not_500_on_a_locked_hub_cache(
         assert manifest_resp.status_code == 503, manifest_resp.text
         status_resp = _get_status(c, token)
         assert status_resp.status_code == 503, status_resp.text
-    finally:
-        fp.close()
 
 
 def _slow_fake_publish_factory(intervals, lock, sleep_seconds=0.3):
@@ -478,7 +484,9 @@ def _run_two_publishes_concurrently(app, pem, monkeypatch):
     async def one(commit):
         token = _jwt(pem)
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
             resp = await client.post(
                 "/intake/publish",
                 headers={"Authorization": f"Bearer {token}"},
@@ -519,9 +527,13 @@ def test_publish_concurrency_is_capped_by_the_capacity_limiter(
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     cfg = intake.IntakeConfig(
-        hub_ref=str(hub_with_registry), audience=AUD,
-        creds=ghapp.AppCreds("1", "unused"), key_resolver=lambda t: pub,
-        http=None, push_via_token_url=False, status_path=tmp_path / "status.json",
+        hub_ref=str(hub_with_registry),
+        audience=AUD,
+        creds=ghapp.AppCreds("1", "unused"),
+        key_resolver=lambda t: pub,
+        http=None,
+        push_via_token_url=False,
+        status_path=tmp_path / "status.json",
     )
     store = intake.StatusStore(cfg.status_path)
     app = Starlette(
@@ -551,9 +563,13 @@ def test_publish_concurrency_control_overlaps_when_the_limiter_allows_it(
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     cfg = intake.IntakeConfig(
-        hub_ref=str(hub_with_registry), audience=AUD,
-        creds=ghapp.AppCreds("1", "unused"), key_resolver=lambda t: pub,
-        http=None, push_via_token_url=False, status_path=tmp_path / "status.json",
+        hub_ref=str(hub_with_registry),
+        audience=AUD,
+        creds=ghapp.AppCreds("1", "unused"),
+        key_resolver=lambda t: pub,
+        http=None,
+        push_via_token_url=False,
+        status_path=tmp_path / "status.json",
     )
     store = intake.StatusStore(cfg.status_path)
     app = Starlette(
@@ -611,13 +627,17 @@ def test_publish_rate_limited_429(hub_with_registry, keypair, tmp_path, monkeypa
         audience=AUD,
         creds=ghapp.AppCreds("1", "unused"),
         key_resolver=lambda t: pub,
-        http=FakeHTTP([(200, {"id": 1}), (201, {"token": "t"}), (201, {"html_url": "u/pull/9"})]),
+        http=FakeHTTP(
+            [(200, {"id": 1}), (201, {"token": "t"}), (201, {"html_url": "u/pull/9"})]
+        ),
         push_via_token_url=False,
         status_path=tmp_path / "status.json",
     )
     store = intake.StatusStore(cfg.status_path)
     routes = intake_routes.build_intake_routes(
-        cfg, store, publish_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60)
+        cfg,
+        store,
+        publish_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60),
     )
     c = TestClient(Starlette(routes=routes))
     assert _post(c, _jwt(pem)).status_code == 200
@@ -648,14 +668,18 @@ def test_route_wires_trusted_proxies_into_the_rate_limit_key(
         audience=AUD,
         creds=ghapp.AppCreds("1", "unused"),
         key_resolver=lambda t: pub,
-        http=FakeHTTP([(200, {"id": 1}), (201, {"token": "t"}), (201, {"html_url": "u/pull/9"})]),
+        http=FakeHTTP(
+            [(200, {"id": 1}), (201, {"token": "t"}), (201, {"html_url": "u/pull/9"})]
+        ),
         push_via_token_url=False,
         status_path=tmp_path / "status.json",
         trusted_proxies=1,
     )
     store = intake.StatusStore(cfg.status_path)
     routes = intake_routes.build_intake_routes(
-        cfg, store, publish_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60)
+        cfg,
+        store,
+        publish_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60),
     )
     c = TestClient(Starlette(routes=routes))
 
@@ -724,7 +748,9 @@ def test_publish_cancelled_mid_publish_still_reaches_a_terminal_status(
 
     c, pem = client
     monkeypatch.setattr(intake, "intake_publish", boom)
-    with pytest.raises(BaseException):  # B017 once B is enabled -- CancelledError itself, intentional
+    # The TestClient's portal re-raises it as concurrent.futures' own
+    # CancelledError; accept either so the test pins the cancel, not the portal.
+    with pytest.raises((asyncio.CancelledError, concurrent.futures.CancelledError)):
         _post(c, _jwt(pem))
     st = _get_status(c, _jwt(pem))
     assert st.status_code == 200
@@ -796,7 +822,9 @@ def test_stack_intake_gets_pass_middleware_without_mcp_token(full_stack):
     # status: middleware lets it through (exempt path) with no token at all
     # -- the zero-secret dev CLI's public view; an unpublished commit is a
     # genuine 404 from the store lookup either way.
-    no_token_status = c.get("/intake/status", params={"repo_id": "flight-docs", "commit": "y"})
+    no_token_status = c.get(
+        "/intake/status", params={"repo_id": "flight-docs", "commit": "y"}
+    )
     assert no_token_status.status_code == 404
     assert no_token_status.json() == {"state": "unknown"}
     st = _get_status(c, _jwt(pem), commit="y")
@@ -914,7 +942,9 @@ def test_oversized_upload_is_refused_without_buffering_the_whole_body():
     assert sum(reads) < 5 * 1024 * 1024
 
 
-def test_content_length_over_the_cap_is_refused_before_reading(intake_client, intake_cfg):
+def test_content_length_over_the_cap_is_refused_before_reading(
+    intake_client, intake_cfg
+):
     intake_cfg.max_tar_bytes = 1024
     resp = intake_client.post(
         "/intake/publish",
@@ -1036,7 +1066,9 @@ def test_forwarded_for_multiple_header_lines_are_joined_before_indexing():
     indexing from the right."""
     from strata_kb.web import ratelimit
 
-    request = _request(client_host="10.0.0.1", xff_lines=["1.1.1.1", "2.2.2.2, 9.9.9.9"])
+    request = _request(
+        client_host="10.0.0.1", xff_lines=["1.1.1.1", "2.2.2.2, 9.9.9.9"]
+    )
     assert ratelimit.client_key(request, trusted_proxies=1) == "9.9.9.9"
 
 
@@ -1173,9 +1205,9 @@ def test_too_many_file_parts_renders_json_400_under_the_real_app(
     pem, _ = keypair
     boundary = "----files1001"
     part = (
-        'Content-Disposition: form-data; name="f"; filename="x"\r\n'
-        "Content-Type: application/octet-stream\r\n\r\n"
-    ).encode()
+        b'Content-Disposition: form-data; name="f"; filename="x"\r\n'
+        b"Content-Type: application/octet-stream\r\n\r\n"
+    )
     body = _raw_multipart(boundary, [part] * 1001)
     resp = intake_client.post(
         "/intake/publish",
@@ -1220,9 +1252,9 @@ def test_oversized_non_file_part_renders_json_400_under_the_real_app(
     from formparsers.py's non-file branch."""
     pem, _ = keypair
     boundary = "----bigfield"
-    part = (
-        'Content-Disposition: form-data; name="junk"\r\n\r\n'
-    ).encode() + b"x" * (2 * 1024 * 1024)
+    part = (b'Content-Disposition: form-data; name="junk"\r\n\r\n') + b"x" * (
+        2 * 1024 * 1024
+    )
     body = _raw_multipart(boundary, [part])
     resp = intake_client.post(
         "/intake/publish",
@@ -1244,7 +1276,7 @@ def test_part_with_no_name_renders_json_400_under_the_real_app(
 ):
     pem, _ = keypair
     boundary = "----noname"
-    part = ("Content-Disposition: form-data\r\n\r\n").encode() + b"somevalue"
+    part = (b"Content-Disposition: form-data\r\n\r\n") + b"somevalue"
     body = _raw_multipart(boundary, [part])
     resp = intake_client.post(
         "/intake/publish",
@@ -1579,7 +1611,6 @@ def test_archive_one_byte_over_cap_is_refused_by_read_capped(
     }
 
 
-
 # Item 3's third boundary case -- a body over the body cap (not just the
 # archive cap) refused by _capped_receive with the body wording, not
 # read_capped's archive wording -- is already exercised above by
@@ -1626,8 +1657,9 @@ def _raw_member(name: str, content: bytes = b"") -> bytes:
     info.mtime = 0
     buf = info.tobuf(tarfile.GNU_FORMAT)
     if content:
-        buf += content + b"\0" * ((tarfile.BLOCKSIZE - len(content) % tarfile.BLOCKSIZE)
-                                  % tarfile.BLOCKSIZE)
+        buf += content + b"\0" * (
+            (tarfile.BLOCKSIZE - len(content) % tarfile.BLOCKSIZE) % tarfile.BLOCKSIZE
+        )
     return buf
 
 
@@ -1686,7 +1718,9 @@ def test_many_small_pax_global_headers_are_refused_by_the_population_bound(
     assert "--format=gnu" in detail
 
 
-def test_a_pax_global_header_at_the_record_limit_still_publishes(intake_client, keypair):
+def test_a_pax_global_header_at_the_record_limit_still_publishes(
+    intake_client, keypair
+):
     """The bound must not refuse a legitimate pax archive. POSIX defines
     twelve pax keywords and the vendor extensions seen in the wild keep a
     real header under twenty, so a single global header at the full
@@ -1709,7 +1743,10 @@ def test_one_pax_record_over_the_population_limit_is_refused(intake_client, keyp
     archive = _gz_tar([_pax_global(records), _raw_member("index.yaml", content)])
     resp = _post_with_archive(intake_client, _jwt(pem), archive)
     assert resp.status_code == 413, resp.text
-    assert f"inherits {intake.MAX_PAX_RECORDS + 1} pax header records" in resp.json()["detail"]
+    assert (
+        f"inherits {intake.MAX_PAX_RECORDS + 1} pax header records"
+        in resp.json()["detail"]
+    )
 
 
 def test_pax_records_over_the_decoded_byte_limit_are_refused(intake_client, keypair):
@@ -1746,9 +1783,9 @@ def test_an_emoji_tag_sequence_is_refused_while_a_variation_selector_publishes(
     variation-selector exemption, `❤️.md` stops publishing and this fails too.
     """
     pem, _ = keypair
-    england = "\U0001f3f4" + "".join(
-        chr(0xE0000 + ord(c)) for c in "gbeng"
-    ) + "\U000e007f"
+    england = (
+        "\U0001f3f4" + "".join(chr(0xE0000 + ord(c)) for c in "gbeng") + "\U000e007f"
+    )
     content = b"docs:\n- id: doc-a\n  title: A\n"
     resp = _post_with_archive(
         intake_client, _jwt(pem), _gz_tar([_raw_member(f"{england}.md", content)])

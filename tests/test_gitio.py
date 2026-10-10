@@ -315,7 +315,9 @@ def test_worktree_prune_forgets_a_deleted_worktree(tmp_path, run_git):
     run_git(repo, "add", "-A")
     run_git(repo, "commit", "-m", "v1")
     wt = tmp_path / "wt"
-    gitio.worktree_add(repo, wt, "publish/alpha", gitio.current_branch(repo), reset=True)
+    gitio.worktree_add(
+        repo, wt, "publish/alpha", gitio.current_branch(repo), reset=True
+    )
     shutil.rmtree(wt)  # simulate a crashed publish
     gitio.worktree_prune(repo)
     assert "wt" not in run_git(repo, "worktree", "list")
@@ -337,7 +339,9 @@ def test_default_branch_and_path_exists_at(tmp_path, run_git):
     assert gitio.path_exists_at(repo, branch, "federation/beta.txt") is False
 
 
-def test_default_branch_reads_origin_head_and_strips_the_origin_prefix(tmp_path, run_git):
+def test_default_branch_reads_origin_head_and_strips_the_origin_prefix(
+    tmp_path, run_git
+):
     from strata_kb import gitio
 
     origin = tmp_path / "origin.git"
@@ -352,7 +356,12 @@ def test_default_branch_reads_origin_head_and_strips_the_origin_prefix(tmp_path,
     branch = gitio.current_branch(root)
     gitio.push_branch(root, branch)
     run_git(root, "fetch", "origin")
-    run_git(root, "symbolic-ref", "refs/remotes/origin/HEAD", f"refs/remotes/origin/{branch}")
+    run_git(
+        root,
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        f"refs/remotes/origin/{branch}",
+    )
 
     assert gitio.default_branch(root) == branch
 
@@ -450,7 +459,8 @@ def _is_subprocess_run_call(
         return True  # subprocess.run(...) / sp.run(...)
     if isinstance(func, ast.Name) and func.id in run_names:
         return True  # run(...) / _sprun(...) via `from subprocess import run as X`
-    if (
+    # getattr(subprocess, "run")(...)
+    return (
         isinstance(func, ast.Call)
         and isinstance(func.func, ast.Name)
         and func.func.id == "getattr"
@@ -459,9 +469,7 @@ def _is_subprocess_run_call(
         and func.args[0].id in module_names
         and isinstance(func.args[1], ast.Constant)
         and func.args[1].value == "run"
-    ):
-        return True  # getattr(subprocess, "run")(...)
-    return False
+    )
 
 
 def _stdin_offenders_in_source(
@@ -498,10 +506,12 @@ def _stdin_offenders_in_source(
             continue
         value = stdin_kw.value
         if isinstance(value, ast.Constant) and value.value is None:
-            offenders.append((
-                node.lineno,
-                "stdin=None inherits the parent's stdin -- the exact hazard this check forbids",
-            ))
+            offenders.append(
+                (
+                    node.lineno,
+                    "stdin=None inherits the parent's stdin -- the exact hazard this check forbids",
+                )
+            )
             continue
         if (
             isinstance(value, ast.Attribute)
@@ -510,10 +520,12 @@ def _stdin_offenders_in_source(
             and value.value.id in module_names
         ):
             continue  # proven safe
-        offenders.append((
-            node.lineno,
-            "stdin= is not a literal subprocess.DEVNULL -- cannot verify statically, failing closed",
-        ))
+        offenders.append(
+            (
+                node.lineno,
+                "stdin= is not a literal subprocess.DEVNULL -- cannot verify statically, failing closed",
+            )
+        )
     return offenders
 
 
@@ -551,7 +563,9 @@ def test_checker_catches_module_alias_evasion():
         "def f(args):\n"
         "    return sp.run(['git', *args], capture_output=True)\n"
     )
-    assert offenders, "checker must catch `sp.run(...)` (aliased module import) with no stdin="
+    assert offenders, (
+        "checker must catch `sp.run(...)` (aliased module import) with no stdin="
+    )
 
 
 def test_checker_catches_from_import_alias_evasion():
@@ -610,7 +624,9 @@ def test_checker_fails_closed_on_an_unverifiable_stdin_value():
         "def f(args, maybe_devnull):\n"
         "    return subprocess.run(['git', *args], capture_output=True, stdin=maybe_devnull)\n"
     )
-    assert offenders, "an unresolvable stdin= value must fail closed, not pass by default"
+    assert offenders, (
+        "an unresolvable stdin= value must fail closed, not pass by default"
+    )
 
 
 def test_checker_fails_closed_when_stdin_could_be_hiding_in_kwargs():

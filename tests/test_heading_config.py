@@ -8,15 +8,20 @@ from strata_kb.ingest.sectioner import HeadingConfig, SectionUnit
 
 def test_default_config_matches_current_behavior():
     assert sectioner.parse_section_id("Chapter 5 Navigation Data") == (
-        "5", "Navigation Data",
+        "5",
+        "Navigation Data",
     )
-    assert sectioner.parse_section_id("APPENDIX 3. Criteria") == ("appendix-3", "Criteria")
+    assert sectioner.parse_section_id("APPENDIX 3. Criteria") == (
+        "appendix-3",
+        "Criteria",
+    )
 
 
 def test_custom_chapter_pattern():
     config = HeadingConfig(chapter_pattern=r"^section\s+(\d+)\s*[.:]?\s*(.*)$")
     assert sectioner.parse_section_id("Section 5: Data Fields", config) == (
-        "5", "Data Fields",
+        "5",
+        "Data Fields",
     )
     # the default pattern no longer matches once overridden
     assert sectioner.parse_section_id("Chapter 5 Navigation", config) is None
@@ -54,8 +59,14 @@ def test_scaffold_persists_ingest_config(tmp_path):
     ]
     config = HeadingConfig(chapter_pattern=r"^section\s+(\d+)\s*[.:]?\s*(.*)$")
     scaffold_doc(
-        units, doc_id="doc-x", title="Doc X", tags=[], revision="",
-        source_path=None, kb_dir=tmp_path / ".kb", heading_config=config,
+        units,
+        doc_id="doc-x",
+        title="Doc X",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=tmp_path / ".kb",
+        heading_config=config,
     )
     manifest = models.load_yaml_model(
         tmp_path / ".kb" / "doc-x" / "_manifest.yaml", models.Manifest

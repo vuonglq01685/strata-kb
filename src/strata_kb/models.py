@@ -70,7 +70,7 @@ class SectionEntry(BaseModel):
 class IngestConfig(BaseModel):
     chapter_pattern: str
     appendix_pattern: str
-    attachment_pattern: str = ""   # "" = default pattern (backward compat)
+    attachment_pattern: str = ""  # "" = default pattern (backward compat)
     used_bookmarks: bool = False
 
 
@@ -210,7 +210,7 @@ class Registry(BaseModel):
     repos: dict[str, str | RegistryEntry] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _reject_case_colliding_keys(self) -> "Registry":
+    def _reject_case_colliding_keys(self) -> Registry:
         """Two keys differing only in case both load as distinct dict
         entries -- whichever iterates last would silently win wherever a
         caller builds a case-insensitive lookup (pubgate.resolve_identity),
@@ -302,6 +302,8 @@ def load_yaml_model(path: Path, model: type[T]) -> T:
 def save_yaml_model(path: Path, obj: BaseModel) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(
-        obj.model_dump(mode="json", exclude_none=True), allow_unicode=True, sort_keys=False
+        obj.model_dump(mode="json", exclude_none=True),
+        allow_unicode=True,
+        sort_keys=False,
     )
     path.write_text(text, encoding="utf-8", newline="\n")

@@ -7,6 +7,7 @@ produce `CodeSection`s; `run()` here sorts them, writes one `<group>.md` +
 `<group>.raw.md` pair per group, and upserts the manifest + KB index. Output
 must be a pure function of the working tree — no wall-clock, no network.
 """
+
 from __future__ import annotations
 
 import os
@@ -34,12 +35,12 @@ from strata_kb.mdutils import _HEADING_RE
 
 @dataclass(frozen=True)
 class CodeSection:
-    id: str          # e.g. "svc.airspace-service" — no whitespace (mdutils._HEADING_RE)
-    title: str       # e.g. "airspace-service"
-    summary: str     # 1-2 deterministic sentences; MUST be non-empty (build invariant)
-    group: str       # output file stem, e.g. "services" -> services.md + services.raw.md
-    l2_md: str       # body under the "## <id> <title>" heading in the L2 file
-    l3_md: str       # body under the same heading in the L3 file; fenced blocks only
+    id: str  # e.g. "svc.airspace-service" — no whitespace (mdutils._HEADING_RE)
+    title: str  # e.g. "airspace-service"
+    summary: str  # 1-2 deterministic sentences; MUST be non-empty (build invariant)
+    group: str  # output file stem, e.g. "services" -> services.md + services.raw.md
+    l2_md: str  # body under the "## <id> <title>" heading in the L2 file
+    l3_md: str  # body under the same heading in the L3 file; fenced blocks only
 
 
 @dataclass
@@ -83,10 +84,10 @@ class CodeIngestReport:
     sections_by_extractor: dict[str, int] = field(default_factory=dict)
     files_written: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    detected: list[str] = field(default_factory=list)       # extractor names that fired
-    scaffolded: list[str] = field(default_factory=list)     # new -svc section ids
-    stale_risk: list[str] = field(default_factory=list)     # -svc ids whose evidence moved
-    orphans: list[str] = field(default_factory=list)        # -svc ids with no -code peer
+    detected: list[str] = field(default_factory=list)  # extractor names that fired
+    scaffolded: list[str] = field(default_factory=list)  # new -svc section ids
+    stale_risk: list[str] = field(default_factory=list)  # -svc ids whose evidence moved
+    orphans: list[str] = field(default_factory=list)  # -svc ids with no -code peer
     dirty_tree: bool = False
 
 
@@ -136,8 +137,13 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     # the call shape, not about who currently imports the module --
     # DEVNULL costs nothing here since nothing writes to stdin.
     return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True,
-        encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdin=subprocess.DEVNULL,
     )
 
 
@@ -171,7 +177,11 @@ def _is_dirty(root: Path) -> bool:
 
 
 def _render_group(
-    sections: list[CodeSection], level: str, banner: str, doc_id: str, preamble: str = ""
+    sections: list[CodeSection],
+    level: str,
+    banner: str,
+    doc_id: str,
+    preamble: str = "",
 ) -> str:
     """Render one L2 (`level="l2"`) or L3 (`level="l3"`) group file.
 
@@ -502,9 +512,14 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
     # revision here would churn the committed index on every local ingest.
     # The manifest carries the revision; federation.load_federation reads it.
     _upsert_index_entry(
-        opts.kb_dir, opts.doc_id, manifest.title, "",
+        opts.kb_dir,
+        opts.doc_id,
+        manifest.title,
+        "",
         f"Generated code knowledge for the {opts.repo_id} repository.",
-        ["code", "generated"], opts.tags, report,
+        ["code", "generated"],
+        opts.tags,
+        report,
     )
 
     if opts.scaffold_svc:
@@ -547,7 +562,15 @@ def _load_manifest_guarded(
 # The section-id prefixes the seven extractors produce (README §7.12's
 # section-id contract). A -code manifest holding any other id was not
 # written by `run()`.
-_GENERATED_PREFIXES: tuple[str, ...] = ("struct.", "cmd.", "dep.", "db.", "svc.", "int.", "api.")
+_GENERATED_PREFIXES: tuple[str, ...] = (
+    "struct.",
+    "cmd.",
+    "dep.",
+    "db.",
+    "svc.",
+    "int.",
+    "api.",
+)
 
 
 def _foreign_destination_reason(
@@ -732,8 +755,11 @@ def _upsert_index_entry(
     if entry is None:
         index.docs.append(
             models.IndexEntry(
-                id=doc_id, title=title, revision=revision,
-                tags=list(wanted), summary=summary,
+                id=doc_id,
+                title=title,
+                revision=revision,
+                tags=list(wanted),
+                summary=summary,
             )
         )
     else:
@@ -841,7 +867,8 @@ def _service_evidence(
     files = sorted(set(files))
 
     tables = sorted(
-        s.id for s in db_sections
+        s.id
+        for s in db_sections
         if wanted and wanted <= _name_tokens(s.id.split(".", 1)[1])
     )
 
@@ -1088,13 +1115,10 @@ def scaffold_svc(opts, sections, report) -> None:
         problems = []
         if stray:
             problems.append(
-                f"heading(s) {sorted(stray)} have no matching entry in "
-                "_manifest.yaml"
+                f"heading(s) {sorted(stray)} have no matching entry in _manifest.yaml"
             )
         if duplicated:
-            problems.append(
-                f"heading id(s) {sorted(duplicated)} occur more than once"
-            )
+            problems.append(f"heading id(s) {sorted(duplicated)} occur more than once")
         raise CodeIngestError(
             f"{svc_doc_id}: services.md is not safe to scaffold blind — "
             + "; ".join(problems)
@@ -1133,9 +1157,12 @@ def scaffold_svc(opts, sections, report) -> None:
             # above, no orphaned heading for it either — nothing to lose).
             # L2 is exactly the TODO marker; L3 is fresh evidence;
             # status/summary start empty.
+            assert current is not None  # noqa: S101 -- all_ids is the union of current_by_id and existing_entries
             title = current.title
             l2_md = f"<!-- TODO:summarize {sid} -->"
-            l3_md = _service_evidence(opts.repo_root, tree_entries, current, db_sections)
+            l3_md = _service_evidence(
+                opts.repo_root, tree_entries, current, db_sections
+            )
             status = "pending"
             summary = ""
             tokens = models.SectionTokens()
@@ -1199,7 +1226,9 @@ def scaffold_svc(opts, sections, report) -> None:
                     )
                 report.orphans.append(sid)
             else:
-                l3_md = _service_evidence(opts.repo_root, tree_entries, current, db_sections)
+                l3_md = _service_evidence(
+                    opts.repo_root, tree_entries, current, db_sections
+                )
                 if status == "reviewed":
                     old_l3_slice = _slice_known_section(old_l3_text, sid, known_ids)
                     if old_l3_slice is not None:
@@ -1210,14 +1239,22 @@ def scaffold_svc(opts, sections, report) -> None:
 
         rendered_sections.append(
             CodeSection(
-                id=sid, title=title, summary=summary, group="services",
-                l2_md=l2_md, l3_md=l3_md,
+                id=sid,
+                title=title,
+                summary=summary,
+                group="services",
+                l2_md=l2_md,
+                l3_md=l3_md,
             )
         )
         manifest_entries.append(
             models.SectionEntry(
-                id=sid, title=title, summary=summary, status=status,
-                file="services", tokens=tokens,
+                id=sid,
+                title=title,
+                summary=summary,
+                status=status,
+                file="services",
+                tokens=tokens,
             )
         )
 
@@ -1233,7 +1270,9 @@ def scaffold_svc(opts, sections, report) -> None:
                 rendered_sections, "l2", banner, svc_doc_id, preamble=l2_preamble
             ),
         )
-        _write_group(l3_path, _render_group(rendered_sections, "l3", banner, svc_doc_id))
+        _write_group(
+            l3_path, _render_group(rendered_sections, "l3", banner, svc_doc_id)
+        )
         # Qualified with the document id (Minor fix): the -code doc's own
         # `run()` contribution to `report.files_written` uses bare names,
         # and with --scaffold-svc both documents share several file names
@@ -1268,9 +1307,14 @@ def scaffold_svc(opts, sections, report) -> None:
         ) from exc
 
     _upsert_index_entry(
-        opts.kb_dir, svc_doc_id, manifest.title, manifest.revision,
+        opts.kb_dir,
+        svc_doc_id,
+        manifest.title,
+        manifest.revision,
         f"Curated service knowledge for the {opts.repo_id} repository.",
-        ["code", "curated"], opts.tags, report,
+        ["code", "curated"],
+        opts.tags,
+        report,
     )
 
 

@@ -12,6 +12,7 @@ no calibrated middle.
 RRF carries no magnitude — adjacent ranks in one leg are always ~1.6% apart —
 so the score half of the rule has to read raw BM25.
 """
+
 import pytest
 
 pytest.importorskip("sqlite_vec")
@@ -27,9 +28,12 @@ from tests.conftest import make_fed_entry
 def colliding_hub(fed_hub):
     """A second repo publishing the same doc id AND the same section id."""
     make_fed_entry(
-        fed_hub / "federation", "beta-kb", "arinc-424",
+        fed_hub / "federation",
+        "beta-kb",
+        "arinc-424",
         tags=["arinc424"],
-        sec_id="5.3", sec_title="Restrictive Airspace",
+        sec_id="5.3",
+        sec_title="Restrictive Airspace",
         sec_summary="Restrictive airspace: designation, type, multiple code.",
         l2="## 5.3 Restrictive Airspace\n\nCondensed: restrictive airspace designation codes.\n",
         l3="## 5.3 Restrictive Airspace\n\nFull raw restrictive airspace text.\n",
@@ -48,7 +52,9 @@ def test_federation_collision_always_flags(colliding_hub):
 
 
 def test_unambiguous_query_is_silent(fed_hub):
-    outcome = search_detailed(HubHandle(root=fed_hub), "restrictive airspace designation")
+    outcome = search_detailed(
+        HubHandle(root=fed_hub), "restrictive airspace designation"
+    )
     assert not any("same section" in n or "score closely" in n for n in outcome.notes)
 
 

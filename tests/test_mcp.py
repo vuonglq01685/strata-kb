@@ -55,7 +55,10 @@ async def test_lists_exactly_five_tools(fed_hub):
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
         assert sorted(t.name for t in tools.tools) == [
-            "kb_context_new", "kb_get_section", "kb_resolve", "kb_search",
+            "kb_context_new",
+            "kb_get_section",
+            "kb_resolve",
+            "kb_search",
             "kb_ticket_lint",
         ]
 
@@ -143,13 +146,9 @@ async def test_kb_get_section_not_found_lists_known_docs(fed_hub):
 async def test_context_new_and_resolve_roundtrip(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
-        block = await client.call_tool(
-            "kb_context_new", {"refs": ["arinc-424 §5.3"]}
-        )
+        block = await client.call_tool("kb_context_new", {"refs": ["arinc-424 §5.3"]})
         assert "- arinc-kb:arinc-424 §5.3" in _text(block)
-        resolved = await client.call_tool(
-            "kb_resolve", {"kb_context": _text(block)}
-        )
+        resolved = await client.call_tool("kb_resolve", {"kb_context": _text(block)})
         assert "status=ok" in _text(resolved)
 
 
@@ -202,9 +201,7 @@ async def test_kb_ticket_lint_hub_unreachable_returns_guidance(tmp_path, monkeyp
     config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
     server = create_server(config)
     async with connect_client(server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "kb_ticket_lint", {"ticket_markdown": "# T\n"}
-        )
+        result = await client.call_tool("kb_ticket_lint", {"ticket_markdown": "# T\n"})
         assert "hub unreachable" in _text(result)
 
 
@@ -260,8 +257,14 @@ def _qr(mode: str, score: float, cite: str = "r:d §1"):
     from strata_kb.query import QueryResult
 
     return QueryResult(
-        doc_id="d", section_id="1", title="t", score=score,
-        citation=cite, content="c", tokens=1, content_tokens=count_tokens("c"),
+        doc_id="d",
+        section_id="1",
+        title="t",
+        score=score,
+        citation=cite,
+        content="c",
+        tokens=1,
+        content_tokens=count_tokens("c"),
         match_mode=mode,
     )
 
@@ -300,7 +303,9 @@ async def test_kb_search_no_note_for_ordinary_keyword_ranking(fed_hub):
         result = await client.call_tool(
             "kb_search", {"query": "airspace designation type"}
         )
-        assert "score closely" not in _text(result)  # 2 keyword results at adjacent ranks
+        assert "score closely" not in _text(
+            result
+        )  # 2 keyword results at adjacent ranks
 
 
 def test_ambiguity_note_silent_for_distant_hybrid_pair():
@@ -369,7 +374,9 @@ async def test_tool_body_does_not_block_the_event_loop(fed_hub, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_hub_resolution_is_serialized_under_concurrent_calls(fed_hub, monkeypatch):
+async def test_hub_resolution_is_serialized_under_concurrent_calls(
+    fed_hub, monkeypatch
+):
     """R20 (final-branch review, Important): tool bodies now run on their own
     worker threads concurrently (F-C1's fix, above) — two `kb_search` calls
     in flight at once used to be impossible (everything ran inline on the
@@ -410,7 +417,9 @@ async def test_hub_resolution_is_serialized_under_concurrent_calls(fed_hub, monk
             client.call_tool("kb_search", {"query": "airspace"}),
             client.call_tool("kb_search", {"query": "runway"}),
         )
-    assert overlap_seen is False, "resolve_hub ran concurrently — _hub()'s lock is missing"
+    assert overlap_seen is False, (
+        "resolve_hub ran concurrently — _hub()'s lock is missing"
+    )
     for result in results:
         assert result.isError is False
 
@@ -493,7 +502,9 @@ async def test_kb_search_unrelated_value_error_is_not_swallowed(fed_hub, monkeyp
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool("kb_search", {"query": "airspace"})
-        assert result.isError is True, "must surface as a tool error, not a normal result"
+        assert result.isError is True, (
+            "must surface as a tool error, not a normal result"
+        )
         assert "validation errors" in _text(result)
 
 
@@ -516,7 +527,9 @@ async def test_kb_search_corrupt_db_error_still_propagates(fed_hub, monkeypatch)
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool("kb_search", {"query": "airspace"})
-        assert result.isError is True, "must surface as a tool error, not a normal result"
+        assert result.isError is True, (
+            "must surface as a tool error, not a normal result"
+        )
         assert "search index rejected the query" not in _text(result)
         assert "database disk image is malformed" in _text(result)
 

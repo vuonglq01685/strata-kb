@@ -131,13 +131,21 @@ def test_scaffold_reingest_removes_stale_files(tmp_path: Path):
     (doc_dir / "ch9-fake-chapter.raw.md").write_text("stale", encoding="utf-8")
     units = [
         SectionUnit(
-            id="1", title="INTRO", chapter="1",
-            body_md="Body. " * 60, tables=[],
+            id="1",
+            title="INTRO",
+            chapter="1",
+            body_md="Body. " * 60,
+            tables=[],
         )
     ]
     scaffold_doc(
-        units, doc_id="doc1", title="Doc", tags=[], revision="",
-        source_path=None, kb_dir=kb,
+        units,
+        doc_id="doc1",
+        title="Doc",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=kb,
     )
     names = {p.name for p in doc_dir.iterdir()}
     assert "ch9-fake-chapter.md" not in names
@@ -149,13 +157,21 @@ def test_scaffold_stem_prefers_part_title(tmp_path: Path):
     kb = tmp_path / ".kb"
     units = [
         SectionUnit(
-            id="4.1", title="General", chapter="4",
-            body_md="Body. " * 60, tables=[],
+            id="4.1",
+            title="General",
+            chapter="4",
+            body_md="Body. " * 60,
+            tables=[],
         )
     ]
     report = scaffold_doc(
-        units, doc_id="doc1", title="Doc", tags=[], revision="",
-        source_path=None, kb_dir=kb,
+        units,
+        doc_id="doc1",
+        title="Doc",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=kb,
         part_titles={"4": "NAVIGATION DATA - RECORD LAYOUT"},
     )
     assert "ch4-navigation-data-record-layout.md" in report.files
@@ -165,13 +181,21 @@ def test_scaffold_stem_falls_back_without_part_titles(tmp_path: Path):
     kb = tmp_path / ".kb"
     units = [
         SectionUnit(
-            id="4.1", title="General", chapter="4",
-            body_md="Body. " * 60, tables=[],
+            id="4.1",
+            title="General",
+            chapter="4",
+            body_md="Body. " * 60,
+            tables=[],
         )
     ]
     report = scaffold_doc(
-        units, doc_id="doc1", title="Doc", tags=[], revision="",
-        source_path=None, kb_dir=kb,
+        units,
+        doc_id="doc1",
+        title="Doc",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=kb,
     )
     assert "ch4-general.md" in report.files
 
@@ -187,14 +211,21 @@ def test_l2_gets_figure_description_text(tmp_path: Path):
         page=12,
     )
     scaffold_doc(
-        [unit], doc_id="doc", title="T", tags=[], revision="r1",
-        source_path=None, kb_dir=tmp_path,
+        [unit],
+        doc_id="doc",
+        title="T",
+        tags=[],
+        revision="r1",
+        source_path=None,
+        kb_dir=tmp_path,
     )
     l2 = (tmp_path / "doc" / "ch5-symbols.md").read_text(encoding="utf-8")
     l3 = (tmp_path / "doc" / "ch5-symbols.raw.md").read_text(encoding="utf-8")
     assert "Figure: Holding pattern" in l2
     assert f"![Holding pattern](assets/{sha}.webp)" in l3
-    assert f"![Holding pattern](assets/{sha}.webp)" not in l2  # figures stay text-only in L2
+    assert (
+        f"![Holding pattern](assets/{sha}.webp)" not in l2
+    )  # figures stay text-only in L2
 
 
 def test_table_icon_cell_identical_in_l2_and_l3(tmp_path: Path):
@@ -202,17 +233,26 @@ def test_table_icon_cell_identical_in_l2_and_l3(tmp_path: Path):
     row = f"| ![VOR](assets/{sha}.png) | VOR station |"
     table = "| Symbol | Meaning |\n| --- | --- |\n" + row
     unit = SectionUnit(
-        id="5.2", title="Legend", chapter="5",
-        body_md=f"See legend.\n\n{table}", tables=[table], page=13,
+        id="5.2",
+        title="Legend",
+        chapter="5",
+        body_md=f"See legend.\n\n{table}",
+        tables=[table],
+        page=13,
     )
     scaffold_doc(
-        [unit], doc_id="doc", title="T", tags=[], revision="r1",
-        source_path=None, kb_dir=tmp_path,
+        [unit],
+        doc_id="doc",
+        title="T",
+        tags=[],
+        revision="r1",
+        source_path=None,
+        kb_dir=tmp_path,
     )
     l2 = (tmp_path / "doc" / "ch5-legend.md").read_text(encoding="utf-8")
     l3 = (tmp_path / "doc" / "ch5-legend.raw.md").read_text(encoding="utf-8")
-    assert row in l2 and row in l3        # byte-identical cell in both layers
-    assert "Figure: VOR" not in l2        # table icons are not figure lines
+    assert row in l2 and row in l3  # byte-identical cell in both layers
+    assert "Figure: VOR" not in l2  # table icons are not figure lines
 
 
 def test_scaffold_writes_bare_heading_for_empty_title_and_it_slices(tmp_path: Path):
@@ -222,8 +262,13 @@ def test_scaffold_writes_bare_heading_for_empty_title_and_it_slices(tmp_path: Pa
         SectionUnit("5.15", "", "5", "Orphan body.", []),
     ]
     scaffold_doc(
-        units, doc_id="d", title="D", tags=[], revision="",
-        source_path=None, kb_dir=kb,
+        units,
+        doc_id="d",
+        title="D",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=kb,
     )
     raw = (kb / "d" / "ch5-nav.raw.md").read_text(encoding="utf-8")
     l2 = (kb / "d" / "ch5-nav.md").read_text(encoding="utf-8")
@@ -238,8 +283,13 @@ def test_scaffold_rejects_section_id_with_whitespace_before_writing(tmp_path: Pa
     units = [SectionUnit("Part A", "Definitions", "Part A", "Body.", [])]
     with pytest.raises(ValueError, match="'Part A'"):
         scaffold_doc(
-            units, doc_id="d", title="D", tags=[], revision="",
-            source_path=None, kb_dir=tmp_path / ".kb",
+            units,
+            doc_id="d",
+            title="D",
+            tags=[],
+            revision="",
+            source_path=None,
+            kb_dir=tmp_path / ".kb",
         )
     assert not (tmp_path / ".kb" / "d").exists()
 
@@ -248,8 +298,13 @@ def test_scaffold_rejects_empty_section_id(tmp_path: Path):
     units = [SectionUnit("", "Nameless", "5", "Body.", [])]
     with pytest.raises(ValueError, match="empty"):
         scaffold_doc(
-            units, doc_id="d", title="D", tags=[], revision="",
-            source_path=None, kb_dir=tmp_path / ".kb",
+            units,
+            doc_id="d",
+            title="D",
+            tags=[],
+            revision="",
+            source_path=None,
+            kb_dir=tmp_path / ".kb",
         )
 
 
@@ -263,8 +318,13 @@ def test_scaffold_rejects_section_id_with_path_traversal_before_writing(
     units = [SectionUnit(bad_id, "Title", bad_id, "Body.", [])]
     with pytest.raises(ValueError) as exc_info:
         scaffold_doc(
-            units, doc_id="d", title="D", tags=[], revision="",
-            source_path=None, kb_dir=tmp_path / ".kb",
+            units,
+            doc_id="d",
+            title="D",
+            tags=[],
+            revision="",
+            source_path=None,
+            kb_dir=tmp_path / ".kb",
         )
     assert repr(bad_id) in str(exc_info.value)
     assert not (tmp_path / ".kb").exists()
@@ -274,8 +334,13 @@ def test_scaffold_report_carries_token_stats(tmp_path: Path):
     from strata_kb.ingest.scaffold import TokenStats
 
     report = scaffold_doc(
-        _units(), doc_id="d", title="D", tags=[], revision="",
-        source_path=None, kb_dir=tmp_path / ".kb",
+        _units(),
+        doc_id="d",
+        title="D",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=tmp_path / ".kb",
     )
     stats = report.token_stats
     assert isinstance(stats, TokenStats)
@@ -286,8 +351,13 @@ def test_scaffold_report_carries_token_stats(tmp_path: Path):
 
 def test_scaffold_report_token_stats_none_without_sections(tmp_path: Path):
     report = scaffold_doc(
-        [], doc_id="d", title="D", tags=[], revision="",
-        source_path=None, kb_dir=tmp_path / ".kb",
+        [],
+        doc_id="d",
+        title="D",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=tmp_path / ".kb",
     )
     assert report.token_stats is None
 
@@ -303,8 +373,14 @@ def _three_chapter_units() -> list[SectionUnit]:
 
 def _scaffold(units, kb: Path, chapters=None):
     return scaffold_doc(
-        units, doc_id="d", title="D", tags=[], revision="",
-        source_path=None, kb_dir=kb, chapters=chapters,
+        units,
+        doc_id="d",
+        title="D",
+        tags=[],
+        revision="",
+        source_path=None,
+        kb_dir=kb,
+        chapters=chapters,
     )
 
 
@@ -327,9 +403,15 @@ def test_sections_reingest_keeps_other_chapters_and_their_review_state(tmp_path:
     )
     models.save_yaml_model(
         manifest_path,
-        manifest.model_copy(update={"sections": [manifest.sections[0], reviewed, *manifest.sections[2:]]}),
+        manifest.model_copy(
+            update={
+                "sections": [manifest.sections[0], reviewed, *manifest.sections[2:]]
+            }
+        ),
     )
-    (doc / "ch5-nav.md").write_text("## 5.3 Airspace\n\nApproved L2 text.\n", encoding="utf-8")
+    (doc / "ch5-nav.md").write_text(
+        "## 5.3 Airspace\n\nApproved L2 text.\n", encoding="utf-8"
+    )
     before = _snapshot(doc, "ch5-", "ch7-")
 
     new6 = [
@@ -344,9 +426,13 @@ def test_sections_reingest_keeps_other_chapters_and_their_review_state(tmp_path:
     assert merged.sections[1].status == "reviewed"
     assert merged.sections[1].summary == "Approved summary."
     assert merged.sections[2].file == "ch6-procedures"
-    assert not (doc / "ch6-proc.md").exists()        # old stem of the rewritten chapter is gone
+    assert not (
+        doc / "ch6-proc.md"
+    ).exists()  # old stem of the rewritten chapter is gone
     assert not (doc / "ch6-proc.raw.md").exists()
-    assert "Proc intro rewritten." in (doc / "ch6-procedures.raw.md").read_text(encoding="utf-8")
+    assert "Proc intro rewritten." in (doc / "ch6-procedures.raw.md").read_text(
+        encoding="utf-8"
+    )
     assert report.n_sections == 2
     assert report.files == ["ch6-procedures.md", "ch6-procedures.raw.md"]
 
@@ -388,7 +474,12 @@ def test_sections_reingest_of_two_nonadjacent_chapters_keeps_manifest_order(
 def test_sections_without_previous_manifest_writes_only_named_chapters(tmp_path: Path):
     kb = tmp_path / ".kb"
     report = _scaffold(_three_chapter_units(), kb, chapters={"6"})
-    assert [s.id for s in models.load_yaml_model(kb / "d" / "_manifest.yaml", models.Manifest).sections] == ["6"]
+    assert [
+        s.id
+        for s in models.load_yaml_model(
+            kb / "d" / "_manifest.yaml", models.Manifest
+        ).sections
+    ] == ["6"]
     assert report.n_sections == 1
 
 
@@ -398,7 +489,12 @@ def test_full_reingest_still_replaces_everything(tmp_path: Path):
     _scaffold([SectionUnit("5", "NAV", "5", "Only nav now.", [])], kb)
     doc = kb / "d"
     assert {p.name for p in doc.glob("*.md")} == {"ch5-nav.md", "ch5-nav.raw.md"}
-    assert [s.id for s in models.load_yaml_model(doc / "_manifest.yaml", models.Manifest).sections] == ["5"]
+    assert [
+        s.id
+        for s in models.load_yaml_model(
+            doc / "_manifest.yaml", models.Manifest
+        ).sections
+    ] == ["5"]
 
 
 def _appendix_units() -> list[SectionUnit]:
@@ -421,7 +517,8 @@ def test_sections_reingest_refuses_ambiguous_chapter_stem(tmp_path: Path):
     with pytest.raises(ValueError, match="'appendix'"):
         _scaffold(
             [SectionUnit("appendix", "SIGNALS V2", "appendix", "New body.", [])],
-            kb, chapters={"appendix"},
+            kb,
+            chapters={"appendix"},
         )
 
     assert _snapshot(doc, "appendix") == before
@@ -436,7 +533,8 @@ def test_sections_reingest_of_unambiguous_sibling_chapter_succeeds(tmp_path: Pat
 
     report = _scaffold(
         [SectionUnit("appendix-a", "ALPHA V2", "appendix-a", "New alpha body.", [])],
-        kb, chapters={"appendix-a"},
+        kb,
+        chapters={"appendix-a"},
     )
 
     assert _snapshot(doc, "appendix-signals") == before
@@ -449,7 +547,9 @@ def test_sections_reingest_refuses_when_merge_would_duplicate_an_id(tmp_path: Pa
     kb = tmp_path / ".kb"
     units = [
         SectionUnit("5", "NAV", "5", "Nav intro.", []),
-        SectionUnit("6.1", "Misfiled", "5", "Misfiled body.", []),  # chapter mis-classified
+        SectionUnit(
+            "6.1", "Misfiled", "5", "Misfiled body.", []
+        ),  # chapter mis-classified
         SectionUnit("6", "PROC", "6", "Proc intro.", []),
     ]
     _scaffold(units, kb)
@@ -477,7 +577,9 @@ def test_sections_reingest_distinguishes_chapter_5_from_50(tmp_path: Path):
     doc = kb / "d"
     before = _snapshot(doc, "ch50-")
 
-    _scaffold([SectionUnit("5", "NAVIGATION", "5", "Nav rewritten.", [])], kb, chapters={"5"})
+    _scaffold(
+        [SectionUnit("5", "NAVIGATION", "5", "Nav rewritten.", [])], kb, chapters={"5"}
+    )
 
     assert _snapshot(doc, "ch50-") == before
     merged = models.load_yaml_model(doc / "_manifest.yaml", models.Manifest)
@@ -510,9 +612,7 @@ def test_sections_reingest_refuses_lone_candidate_stem_from_a_different_chapter(
     ('appendix-a-alpha'). Trusting a lone candidate blindly would destroy
     'appendix-a'; refuse instead, and touch nothing."""
     kb = tmp_path / ".kb"
-    _scaffold(
-        [SectionUnit("appendix-a", "ALPHA", "appendix-a", "Alpha body.", [])], kb
-    )
+    _scaffold([SectionUnit("appendix-a", "ALPHA", "appendix-a", "Alpha body.", [])], kb)
     doc = kb / "d"
     before = _snapshot(doc, "appendix-a-alpha")
     manifest_before = (doc / "_manifest.yaml").read_bytes()
@@ -520,7 +620,8 @@ def test_sections_reingest_refuses_lone_candidate_stem_from_a_different_chapter(
     with pytest.raises(ValueError, match="'appendix'"):
         _scaffold(
             [SectionUnit("appendix", "SIGNALS", "appendix", "Signals body.", [])],
-            kb, chapters={"appendix"},
+            kb,
+            chapters={"appendix"},
         )
 
     assert _snapshot(doc, "appendix-a-alpha") == before
@@ -602,9 +703,7 @@ def test_sections_reingest_shared_id_confirmation_is_scoped_to_the_named_chapter
     wrongly confirm 'appendix' and silently delete appendix-a's reviewed
     work. It must still refuse."""
     kb = tmp_path / ".kb"
-    _scaffold(
-        [SectionUnit("appendix-a", "ALPHA", "appendix-a", "Alpha body.", [])], kb
-    )
+    _scaffold([SectionUnit("appendix-a", "ALPHA", "appendix-a", "Alpha body.", [])], kb)
     doc = kb / "d"
     before = _snapshot(doc, "appendix-a-alpha")
     manifest_before = (doc / "_manifest.yaml").read_bytes()
@@ -612,7 +711,8 @@ def test_sections_reingest_shared_id_confirmation_is_scoped_to_the_named_chapter
     with pytest.raises(ValueError, match="'appendix'"):
         _scaffold(
             [SectionUnit("appendix-a", "ZULU HEADING", "zulu", "Zulu body.", [])],
-            kb, chapters={"appendix", "zulu"},
+            kb,
+            chapters={"appendix", "zulu"},
         )
 
     assert _snapshot(doc, "appendix-a-alpha") == before

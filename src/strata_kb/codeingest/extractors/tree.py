@@ -11,13 +11,19 @@ same commit list the same tree), with `IGNORED_DIRS` (and the caller's
 tracked file, falls back to one deterministic `os.walk` with the same
 pruning, and the section says which of the two applies.
 """
+
 from __future__ import annotations
 
 import os
 import tomllib
 from pathlib import Path
 
-from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractResult, _git
+from strata_kb.codeingest.core import (
+    CodeIngestOptions,
+    CodeSection,
+    ExtractResult,
+    _git,
+)
 
 # Shared with every other tree-walking extractor (B3-B7): each of them must
 # prune these directories too, or output would depend on whether
@@ -26,23 +32,54 @@ from strata_kb.codeingest.core import CodeIngestOptions, CodeSection, ExtractRes
 # never describes itself — but this only covers the *default* KB directory
 # name; a non-default `--kb-dir` is handled by `walk_tree()`'s `kb_dir`
 # argument instead, since the actual directory could be named anything.
-IGNORED_DIRS = frozenset({
-    ".git", ".venv", "venv", "node_modules", "vendor", "__pycache__", "dist",
-    "build", "target", "bin", "obj", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache", ".tox", ".idea", ".vscode", ".kb",
-    # Someone else's source, checked out or committed into this tree —
-    # same class as `vendor` and `node_modules`. Each of these carries a
-    # full `Package.swift`/`pubspec.yaml` per dependency, which deps.py's
-    # uncapped Swift/Dart walks (needed for multi-module and melos
-    # layouts) would otherwise read as this repo's own direct
-    # dependencies. `Pods/` in particular is routinely committed.
-    ".build", "Pods", "Carthage", ".dart_tool",
-})
+IGNORED_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "node_modules",
+        "vendor",
+        "__pycache__",
+        "dist",
+        "build",
+        "target",
+        "bin",
+        "obj",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        ".idea",
+        ".vscode",
+        ".kb",
+        # Someone else's source, checked out or committed into this tree —
+        # same class as `vendor` and `node_modules`. Each of these carries a
+        # full `Package.swift`/`pubspec.yaml` per dependency, which deps.py's
+        # uncapped Swift/Dart walks (needed for multi-module and melos
+        # layouts) would otherwise read as this repo's own direct
+        # dependencies. `Pods/` in particular is routinely committed.
+        ".build",
+        "Pods",
+        "Carthage",
+        ".dart_tool",
+    }
+)
 
-_ENTRY_POINT_NAMES = frozenset({
-    "main.py", "app.py", "manage.py", "index.js", "index.ts", "main.go",
-    "Program.cs", "Application.java", "main.rs", "main.dart", "main.swift",
-})
+_ENTRY_POINT_NAMES = frozenset(
+    {
+        "main.py",
+        "app.py",
+        "manage.py",
+        "index.js",
+        "index.ts",
+        "main.go",
+        "Program.cs",
+        "Application.java",
+        "main.rs",
+        "main.dart",
+        "main.swift",
+    }
+)
 
 _L2_DEPTH = 2  # L2 directory listing depth
 _L3_DEPTH = 4  # L3 full-tree listing depth
@@ -219,7 +256,8 @@ def _os_walk_entries(
         current = Path(dirpath)
         dirnames.sort()
         dirnames[:] = [
-            d for d in dirnames
+            d
+            for d in dirnames
             if d not in IGNORED_DIRS
             and (resolved_kb_dir is None or (current / d).resolve() != resolved_kb_dir)
         ]
@@ -406,7 +444,9 @@ class TreeExtractor:
         # `_git_ls_files`'s docstring.
         warnings: list[str] = []
         if not is_repo:
-            files_phrase = f"{n_files} files (not a git repository — listing unfiltered)"
+            files_phrase = (
+                f"{n_files} files (not a git repository — listing unfiltered)"
+            )
             warnings.append(
                 f"{root} is not a git repository — the tree is an unfiltered "
                 "directory walk, not the tracked files"

@@ -20,7 +20,9 @@ def _pin(root: Path, version: str) -> None:
 def _config(root: Path, extra: str = "") -> Path:
     kb = root / ".kb"
     kb.mkdir(exist_ok=True)
-    (kb / "config.yaml").write_text(f'kind: dev\nrepo_id: "demo"\n{extra}', encoding="utf-8")
+    (kb / "config.yaml").write_text(
+        f'kind: dev\nrepo_id: "demo"\n{extra}', encoding="utf-8"
+    )
     return kb
 
 
@@ -48,7 +50,9 @@ def test_version_note_only_when_the_pin_differs(tmp_path, monkeypatch):
 
 
 def test_options_from_config_uses_the_code_ingest_block(tmp_path):
-    kb = _config(tmp_path, "code_ingest:\n  db: [data/app.sqlite]\n  tags: [payments]\n")
+    kb = _config(
+        tmp_path, "code_ingest:\n  db: [data/app.sqlite]\n  tags: [payments]\n"
+    )
     opts = sync.options_from_config(tmp_path, kb, "demo")
     assert opts.doc_id == "demo-code"
     assert opts.db_paths == ((tmp_path / "data" / "app.sqlite").resolve(),)
@@ -56,7 +60,9 @@ def test_options_from_config_uses_the_code_ingest_block(tmp_path):
 
 
 def test_flags_replace_the_config_lists(tmp_path):
-    kb = _config(tmp_path, "code_ingest:\n  db: [data/app.sqlite]\n  tags: [payments]\n")
+    kb = _config(
+        tmp_path, "code_ingest:\n  db: [data/app.sqlite]\n  tags: [payments]\n"
+    )
     opts = sync.options_from_config(
         tmp_path, kb, "demo", db=[Path("other.sqlite")], tags=["x"]
     )
@@ -95,7 +101,8 @@ def test_regenerates_after_a_new_commit(repo, run_git):
 def test_regenerates_on_a_tracked_change(repo):
     sync.ensure_code_fresh(repo / ".kb", "demo")
     (repo / "docker-compose.yml").write_text(
-        (repo / "docker-compose.yml").read_text(encoding="utf-8") + "\n", encoding="utf-8"
+        (repo / "docker-compose.yml").read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
     )
     assert sync.ensure_code_fresh(repo / ".kb", "demo").reason == "dirty"
 
@@ -128,11 +135,11 @@ def test_extractor_warnings_are_appended_to_the_notes(repo):
     `-code` -- an extractor warning (e.g. an unparseable compose file) must
     reach the operator the same way `kb code-ingest` prints it, not be
     silently discarded because this caller only read `result.notes`."""
-    (repo / "compose.broken.yml").write_text("services: [unterminated\n", encoding="utf-8")
+    (repo / "compose.broken.yml").write_text(
+        "services: [unterminated\n", encoding="utf-8"
+    )
     result = sync.ensure_code_fresh(repo / ".kb", "demo")
     assert result.regenerated
     assert result.report is not None and result.report.warnings
     assert result.notes[0].startswith("refreshed demo-code")
-    assert any(
-        n == f"[warn] {w}" for n in result.notes for w in result.report.warnings
-    )
+    assert any(n == f"[warn] {w}" for n in result.notes for w in result.report.warnings)

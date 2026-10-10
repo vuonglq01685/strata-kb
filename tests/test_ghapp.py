@@ -73,7 +73,12 @@ def test_create_pr_created(rsa_pem):
     )
     assert url.endswith("/pull/5")
     sent = json.loads(http.requests[0].data)
-    assert sent == {"title": "t", "body": "b", "head": "publish/child-a", "base": "main"}
+    assert sent == {
+        "title": "t",
+        "body": "b",
+        "head": "publish/child-a",
+        "base": "main",
+    }
 
 
 def test_create_pr_already_exists_returns_open_pr(rsa_pem):
@@ -94,3 +99,24 @@ def test_http_error_raises_without_token_in_message():
     with pytest.raises(ghapp.GHAppError) as exc:
         ghapp.create_or_get_pr("acme/kb-hub", "ghs_secret", "b", "t", "b", http=http)
     assert "ghs_secret" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        [(200, [{"id": 77}])],  # installation answered with a JSON array
+        [(200, {"id": 77}), (201, ["ghs_test"])],  # token answered with an array
+    ],
+)
+def test_mint_installation_token_refuses_a_non_object_reply(rsa_pem, responses):
+    # A JSON array used to reach `inst["id"]` / `tok["token"]` and escape as a
+    # bare TypeError instead of the one-line GHAppError every caller handles.
+    creds = ghapp.AppCreds(app_id="1234", private_key_pem=rsa_pem)
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.mint_installation_token(creds, "acme/kb-hub", http=FakeHTTP(responses))
+
+
+def test_create_pr_refuses_a_non_object_reply():
+    http = FakeHTTP([(201, ["https://github.com/acme/kb-hub/pull/5"])])
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.create_or_get_pr("acme/kb-hub", "ghs_x", "b", "t", "b", http=http)

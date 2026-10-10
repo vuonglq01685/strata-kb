@@ -2,6 +2,7 @@
 
 subprocess text=True without encoding decodes with the locale codepage
 (cp1252) on Windows — UTF-8 output from git/claude gets mojibaked."""
+
 import ast
 import re
 from pathlib import Path
@@ -14,7 +15,7 @@ SCRIPTS = ROOT / "scripts"
 def _windows(text: str, needle: str, span: int = 300) -> list[str]:
     """A ±span-char window around each occurrence of needle."""
     return [
-        text[max(0, m.start() - span): m.start() + span]
+        text[max(0, m.start() - span) : m.start() + span]
         for m in re.finditer(re.escape(needle), text)
     ]
 
@@ -27,7 +28,7 @@ def test_subprocess_text_true_always_sets_utf8():
             if 'encoding="utf-8"' not in window:
                 offenders.append(str(py.relative_to(SRC)))
     assert not offenders, (
-        f"subprocess text=True without encoding=\"utf-8\" in: {offenders} — "
+        f'subprocess text=True without encoding="utf-8" in: {offenders} — '
         "on Windows this decodes with cp1252 and mojibakes UTF-8 output"
     )
 
@@ -97,9 +98,9 @@ def _write_calls(tree: ast.AST) -> list[ast.Call]:
         if not isinstance(node, ast.Call):
             continue
         name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
-        if name == "write_text":
-            out.append(node)
-        elif name == "open" and any(c in _open_mode(node) for c in "wax"):
+        if name == "write_text" or (
+            name == "open" and any(c in _open_mode(node) for c in "wax")
+        ):
             out.append(node)
     return out
 
@@ -153,7 +154,7 @@ def test_every_text_writer_forces_lf_or_says_why_not():
         "blind (expected dozens across src/ and scripts/)"
     )
     assert not offenders, (
-        "text writers without newline=\"\\n\" and without a "
+        'text writers without newline="\\n" and without a '
         f"'# {EXEMPT_MARKER} <reason>' comment: {offenders} — CRLF from a "
         "Windows machine churns hub diffs and skews content digests"
     )
@@ -185,10 +186,11 @@ def test_the_scan_catches_an_unmarked_writer_and_clears_a_compliant_one():
     writer must be reported; the same writer with newline="\\n" or a
     '# newline-exempt:' comment above it must not be."""
     assert _offenders_in_source("open(path, 'w').write(data)\n") == [1]
-    assert _offenders_in_source(
-        'open(path, "w", newline="\\n").write(data)\n'
-    ) == []
-    assert _offenders_in_source(
-        "# newline-exempt: binary-safe test double, not committed content\n"
-        "open(path, 'w').write(data)\n"
-    ) == []
+    assert _offenders_in_source('open(path, "w", newline="\\n").write(data)\n') == []
+    assert (
+        _offenders_in_source(
+            "# newline-exempt: binary-safe test double, not committed content\n"
+            "open(path, 'w').write(data)\n"
+        )
+        == []
+    )

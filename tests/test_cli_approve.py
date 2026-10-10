@@ -46,7 +46,14 @@ def test_approve_all_changed_ci_mode(git_kb):
 def test_approve_all_changed_nothing_to_do_exits_0(git_kb):
     result = runner.invoke(
         app,
-        ["approve", "--all-changed", "--against", "HEAD", "--kb-dir", str(git_kb["kb"])],
+        [
+            "approve",
+            "--all-changed",
+            "--against",
+            "HEAD",
+            "--kb-dir",
+            str(git_kb["kb"]),
+        ],
     )
     assert result.exit_code == 0
     assert "nothing to approve" in result.output
@@ -67,7 +74,9 @@ def test_approve_missing_section_exits_1(git_kb):
 
 
 def test_approve_unknown_doc_exits_1(git_kb):
-    result = runner.invoke(app, ["approve", "missing-doc", "--kb-dir", str(git_kb["kb"])])
+    result = runner.invoke(
+        app, ["approve", "missing-doc", "--kb-dir", str(git_kb["kb"])]
+    )
     assert result.exit_code == 1
 
 
@@ -87,7 +96,9 @@ def test_approve_bad_rev_exits_1(git_kb):
 
 
 def test_all_changed_requires_against(git_kb):
-    result = runner.invoke(app, ["approve", "--all-changed", "--kb-dir", str(git_kb["kb"])])
+    result = runner.invoke(
+        app, ["approve", "--all-changed", "--kb-dir", str(git_kb["kb"])]
+    )
     assert result.exit_code == 1
 
 
@@ -127,7 +138,10 @@ def test_approve_refuses_dirty_tree(git_kb):
         "## 1.1 Airspace Records\n\nx\n", encoding="utf-8"
     )
     result = runner.invoke(app, ["approve", "demo-doc", "--kb-dir", str(git_kb["kb"])])
-    assert result.exit_code == 1 and "commit .kb/demo-doc before approving" in result.output
+    assert (
+        result.exit_code == 1
+        and "commit .kb/demo-doc before approving" in result.output
+    )
     assert _statuses(git_kb["kb"]) == {"1.1": "summarized", "1.2": "summarized"}
 
 
@@ -150,10 +164,13 @@ def test_approve_refuses_when_strict_build_fails(git_kb, run_git):
 
 def test_approve_by_flag_is_recorded(git_kb):
     result = runner.invoke(
-        app, ["approve", "demo-doc", "--by", "Ada <ada@x>", "--kb-dir", str(git_kb["kb"])]
+        app,
+        ["approve", "demo-doc", "--by", "Ada <ada@x>", "--kb-dir", str(git_kb["kb"])],
     )
     assert result.exit_code == 0, result.output
-    m = models.load_yaml_model(git_kb["kb"] / "demo-doc" / "_manifest.yaml", models.Manifest)
+    m = models.load_yaml_model(
+        git_kb["kb"] / "demo-doc" / "_manifest.yaml", models.Manifest
+    )
     assert {s.reviewed.by for s in m.sections} == {"Ada <ada@x>"}
 
 
@@ -224,10 +241,19 @@ def test_approve_all_changed_blocked_by_unrelated_doc_error(git_kb, run_git):
     )
     models.save_yaml_model(
         broken_dir / "_manifest.yaml",
-        models.Manifest(id="broken-doc", title="Broken", sections=[
-            models.SectionEntry(id="1", title="A", summary="Broken doc section summary.",
-                                 status="summarized", file="f")
-        ]),
+        models.Manifest(
+            id="broken-doc",
+            title="Broken",
+            sections=[
+                models.SectionEntry(
+                    id="1",
+                    title="A",
+                    summary="Broken doc section summary.",
+                    status="summarized",
+                    file="f",
+                )
+            ],
+        ),
     )
     ipath = git_kb["kb"] / "index.yaml"
     idx = models.load_yaml_model(ipath, models.KBIndex)
@@ -238,7 +264,14 @@ def test_approve_all_changed_blocked_by_unrelated_doc_error(git_kb, run_git):
 
     result = runner.invoke(
         app,
-        ["approve", "--all-changed", "--against", git_kb["rev1"], "--kb-dir", str(git_kb["kb"])],
+        [
+            "approve",
+            "--all-changed",
+            "--against",
+            git_kb["rev1"],
+            "--kb-dir",
+            str(git_kb["kb"]),
+        ],
     )
     assert result.exit_code == 1
     assert "broken-doc" in result.output
@@ -248,10 +281,17 @@ def test_approve_all_changed_blocked_by_unrelated_doc_error(git_kb, run_git):
 def test_build_fails_after_l2_edit_post_approval(git_kb, run_git):
     from strata_kb.build import build_kb
 
-    assert runner.invoke(app, ["approve", "demo-doc", "--kb-dir", str(git_kb["kb"])]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["approve", "demo-doc", "--kb-dir", str(git_kb["kb"])]
+        ).exit_code
+        == 0
+    )
     l2 = git_kb["kb"] / "demo-doc" / "ch1-records.md"
     l2.write_text(
-        l2.read_text(encoding="utf-8").replace("Condensed: airway", "Condensed: AIRWAY"),
+        l2.read_text(encoding="utf-8").replace(
+            "Condensed: airway", "Condensed: AIRWAY"
+        ),
         encoding="utf-8",
     )
     assert any("L2 changed after review" in e for e in build_kb(git_kb["kb"]).errors)

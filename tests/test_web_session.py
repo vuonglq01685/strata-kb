@@ -1,4 +1,5 @@
 """M4: the /ui cookie used to be the bearer token itself."""
+
 import time
 
 import pytest
@@ -79,9 +80,7 @@ def test_malformed_cookie_is_rejected_without_raising(value):
 
 
 def test_login_sets_an_httponly_capped_cookie_that_is_not_the_token(web_client):
-    resp = web_client.post(
-        "/ui/login", data={"token": TOKEN}, follow_redirects=False
-    )
+    resp = web_client.post("/ui/login", data={"token": TOKEN}, follow_redirects=False)
     cookie = resp.headers["set-cookie"]
     assert "strata_kb_session=" in cookie
     assert TOKEN not in cookie
@@ -120,28 +119,18 @@ def test_login_clears_the_pre_024_raw_token_cookie(web_client, token=TOKEN):
     """Login must clear cookies from prior product names (raw-token
     center_kb_token, then center_kb_session) so an upgrade does not leave
     an old credential in the jar."""
-    resp = web_client.post(
-        "/ui/login", data={"token": token}, follow_redirects=False
-    )
+    resp = web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
     cookies = resp.headers.get_list("set-cookie")
-    assert any(
-        "center_kb_token=" in c and "Max-Age=0" in c for c in cookies
-    ), cookies
-    assert any(
-        "center_kb_session=" in c and "Max-Age=0" in c for c in cookies
-    ), cookies
+    assert any("center_kb_token=" in c and "Max-Age=0" in c for c in cookies), cookies
+    assert any("center_kb_session=" in c and "Max-Age=0" in c for c in cookies), cookies
 
 
 def test_logout_clears_the_pre_024_raw_token_cookie(web_client):
     web_client.post("/ui/login", data={"token": TOKEN}, follow_redirects=False)
     resp = web_client.post("/ui/logout", follow_redirects=False)
     cookies = resp.headers.get_list("set-cookie")
-    assert any(
-        "center_kb_token=" in c and "Max-Age=0" in c for c in cookies
-    ), cookies
-    assert any(
-        "center_kb_session=" in c and "Max-Age=0" in c for c in cookies
-    ), cookies
+    assert any("center_kb_token=" in c and "Max-Age=0" in c for c in cookies), cookies
+    assert any("center_kb_session=" in c and "Max-Age=0" in c for c in cookies), cookies
 
 
 def _proto_request(xfp: str):
@@ -150,9 +139,13 @@ def _proto_request(xfp: str):
     from starlette.requests import Request
 
     scope = {
-        "type": "http", "method": "GET", "path": "/", "scheme": "http",
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "scheme": "http",
         "headers": [(b"x-forwarded-proto", xfp.encode("ascii"))],
-        "client": ("1.2.3.4", 1234), "server": ("testserver", 80),
+        "client": ("1.2.3.4", 1234),
+        "server": ("testserver", 80),
         "query_string": b"",
     }
     return Request(scope)
@@ -197,9 +190,7 @@ def test_login_success_redirect_is_not_cacheable(web_client, token):
     # Fix round 1 (Minor B): the 303 success redirect is the one response in
     # this handler that carries Set-Cookie -- the most cache-sensitive path,
     # and the one the original test suite skipped.
-    resp = web_client.post(
-        "/ui/login", data={"token": token}, follow_redirects=False
-    )
+    resp = web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["cache-control"] == "no-store"
 

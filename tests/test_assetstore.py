@@ -10,7 +10,6 @@ import pytest
 
 from strata_kb import assetstore, config, models
 
-
 NAME_PNG = "a" * 64 + ".png"
 NAME_WEBP = "b" * 64 + ".webp"
 
@@ -55,7 +54,9 @@ class _StubS3Client:
 
     def put_object(self, Bucket, Key, Body, ContentType, CacheControl):
         self.objects[Key] = {
-            "Body": Body, "ContentType": ContentType, "CacheControl": CacheControl,
+            "Body": Body,
+            "ContentType": ContentType,
+            "CacheControl": CacheControl,
         }
         self.put_calls.append(Key)
 
@@ -206,7 +207,9 @@ def test_divert_and_record_corrupt_record_treated_as_empty(tmp_path):
     assert f"doc1/assets/{SHA_A}.png" in rec.assets
 
 
-def test_divert_and_record_unreadable_record_self_heals_not_raises(tmp_path, monkeypatch):
+def test_divert_and_record_unreadable_record_self_heals_not_raises(
+    tmp_path, monkeypatch
+):
     """Same contract as the corrupt-record test above, for OSError instead
     of bad YAML -- load_record now raises AssetStoreError for both (P32),
     and divert_and_record must keep shielding its own callers from that."""
@@ -235,7 +238,9 @@ def test_load_record_raises_on_unreadable_record(tmp_path, monkeypatch):
     root = tmp_path / "rid"
     root.mkdir()
     record_path = root / assetstore.RECORD_NAME
-    models.save_yaml_model(record_path, models.AssetsRecord(assets=["doc/assets/x.png"]))
+    models.save_yaml_model(
+        record_path, models.AssetsRecord(assets=["doc/assets/x.png"])
+    )
 
     def _flaky_load(path, model):
         raise PermissionError(f"permission denied: {path}")
@@ -270,7 +275,9 @@ def test_load_record_raises_on_record_that_parses_but_fails_schema(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "content", [b"", b"\n", b"{}\n"], ids=["zero-byte", "whitespace-only", "empty-mapping"]
+    "content",
+    [b"", b"\n", b"{}\n"],
+    ids=["zero-byte", "whitespace-only", "empty-mapping"],
 )
 def test_load_record_raises_on_present_but_empty_record(tmp_path, content):
     """Critical 1 (wave I-1 round 2, P47): models.load_yaml_model is
@@ -389,8 +396,13 @@ def test_load_record_raises_on_record_truncated_mid_path(tmp_path):
         "{sha}.png",
     ],
     ids=[
-        "png", "webp", "unicode-doc-id", "deeply-nested",
-        "dot-slash-prefix", "windows-drive-prefix", "bare-filename",
+        "png",
+        "webp",
+        "unicode-doc-id",
+        "deeply-nested",
+        "dot-slash-prefix",
+        "windows-drive-prefix",
+        "bare-filename",
     ],
 )
 def test_load_record_accepts_every_legal_path_shape(tmp_path, asset):
@@ -414,9 +426,7 @@ def test_load_record_accepts_every_legal_path_shape(tmp_path, asset):
     ["doc-a\\assets\\{sha}.png", "doc-a/assets\\{sha}.png"],
     ids=["all-backslashes", "mixed-separators"],
 )
-def test_load_record_rejects_a_backslash_spelled_entry_on_every_host(
-    tmp_path, asset
-):
+def test_load_record_rejects_a_backslash_spelled_entry_on_every_host(tmp_path, asset):
     """The mirror of publish's rejection test, and the half of the Critical
     that is NOT new in round 4: this reader has keyed on `Path(a).name` since
     round 3, so a backslash-spelled hub record already read back fine on a
@@ -562,7 +572,11 @@ def test_snapshot_plain_child_publish_self_heals_an_unreadable_dest_record(
 
     store = assetstore.MemoryStore()
     n_docs, changed, _skipped = publish._snapshot(
-        kb_abs, handle, "rid-a", "c0ffee", source_url="https://example.test/child.git",
+        kb_abs,
+        handle,
+        "rid-a",
+        "c0ffee",
+        source_url="https://example.test/child.git",
         store=store,
     )
     assert changed is True
@@ -571,7 +585,9 @@ def test_snapshot_plain_child_publish_self_heals_an_unreadable_dest_record(
     monkeypatch.undo()
     rec = models.load_yaml_model(record_path, models.AssetsRecord)
     assert rec.assets == [f"doc1/assets/{name}"]  # rebuilt from the tree, not merged
-    assert stale not in rec.assets  # unreadable old record -- self-healed, not preserved
+    assert (
+        stale not in rec.assets
+    )  # unreadable old record -- self-healed, not preserved
     assert store.get(name) == data
 
 
@@ -657,15 +673,16 @@ def test_divert_then_synthesis_roundtrip_no_rediff(tmp_path):
     hashsync.apply_sync(child, dest, changed, deleted)
     assetstore.divert_and_record(dest, assetstore.MemoryStore(), deleted)
 
-    hub_man = hashsync.build_manifest(dest, exclude=("_meta.yaml", assetstore.RECORD_NAME))
+    hub_man = hashsync.build_manifest(
+        dest, exclude=("_meta.yaml", assetstore.RECORD_NAME)
+    )
     hub_man.update(assetstore.synthesized_asset_entries(dest))
     changed2, deleted2 = hashsync.diff_manifests(local_man, hub_man)
     assert changed2 == [] and deleted2 == []
 
 
 LINK_CLAUSE = (
-    "is not a regular file -- it may be a directory, or a link whose "
-    "target is gone"
+    "is not a regular file -- it may be a directory, or a link whose target is gone"
 )
 
 

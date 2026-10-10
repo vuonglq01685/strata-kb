@@ -198,7 +198,10 @@ def test_cli_init_updates_stale_scaffold(tmp_path: Path):
 def test_cli_init_non_interactive_requires_kind(tmp_path: Path):
     result = runner.invoke(app, ["init", str(tmp_path)])
     assert result.exit_code == 1
-    assert "kb init requires --kind hub|child when not running interactively." in result.output
+    assert (
+        "kb init requires --kind hub|child when not running interactively."
+        in result.output
+    )
 
 
 def test_cli_init_conflicting_kind_errors(tmp_path: Path):
@@ -216,7 +219,7 @@ def test_cli_init_interactive_prompt(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
     result = runner.invoke(app, ["init", str(tmp_path)], input="hub\n")
     assert result.exit_code == 0
-    assert "Central knowledge hub" in result.output      # description shown
+    assert "Central knowledge hub" in result.output  # description shown
     assert "Authoring repo" in result.output
     assert (tmp_path / ".env.example").exists()
 
@@ -249,7 +252,7 @@ def test_init_scaffolds_ai_integration_files(tmp_path: Path):
     assert skill.is_file() and copilot.is_file()
     skill_text = skill.read_text(encoding="utf-8")
     assert "name: kb-summarize" in skill_text
-    assert "--print-prompt" in skill_text      # never restates writing rules
+    assert "--print-prompt" in skill_text  # never restates writing rules
     assert "kb build" in skill_text
     copilot_text = copilot.read_text(encoding="utf-8")
     assert 'applyTo: ".kb/**"' in copilot_text
@@ -266,9 +269,9 @@ def test_init_scaffolds_kb_ingest_slash_command(tmp_path: Path):
     assert "name: kb-ingest" in skill_text
     assert "mode: agent" in prompt_text
     for text in (skill_text, prompt_text):
-        assert "source/" in text                     # default folder
-        assert "sources/" not in text                # spec: singular only
-        assert "NEVER run `kb ingest`" in text       # hard rule present
+        assert "source/" in text  # default folder
+        assert "sources/" not in text  # spec: singular only
+        assert "NEVER run `kb ingest`" in text  # hard rule present
         assert "revision" in text and "tags" in text
         assert '"none" is a valid answer' in text
         assert "docker compose run --rm hub kb ingest" in text
@@ -286,8 +289,8 @@ def test_init_scaffolds_kb_publish_slash_command(tmp_path: Path):
     assert "name: kb-publish" in skill_text
     assert "mode: agent" in prompt_text
     for text in (skill_text, prompt_text):
-        assert "NEVER run `kb publish`" in text          # hard rule
-        assert "PR" in text                               # PR-mode publish
+        assert "NEVER run `kb publish`" in text  # hard rule
+        assert "PR" in text  # PR-mode publish
         assert "kb diff" in text
         assert "kb status" in text
         assert "STRATA_KB_HUB" in text
@@ -305,9 +308,18 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path, kind: st
         assert "## CLI reference" in text
         # every kb command appears
         for cmd in (
-            "kb init", "kb ingest", "kb summarize", "kb status", "kb build",
-            "kb query", "kb get", "kb stats", "kb diff",
-            "kb publish", "kb resolve", "kb doctor",
+            "kb init",
+            "kb ingest",
+            "kb summarize",
+            "kb status",
+            "kb build",
+            "kb query",
+            "kb get",
+            "kb stats",
+            "kb diff",
+            "kb publish",
+            "kb resolve",
+            "kb doctor",
         ):
             assert cmd in text, cmd
         assert "--level l2|l3" in text
@@ -340,9 +352,9 @@ def test_init_child_config_points_at_no_hub_yet(tmp_path: Path):
 
 def test_child_kb_publish_workflow_uses_oidc_intake(tmp_path: Path):
     init_repo(tmp_path, "child")
-    content = (
-        tmp_path / ".github" / "workflows" / "kb-publish.yml"
-    ).read_text(encoding="utf-8")
+    content = (tmp_path / ".github" / "workflows" / "kb-publish.yml").read_text(
+        encoding="utf-8"
+    )
     assert 'tags: ["kb-publish/*"]' in content
     assert "id-token: write" in content
     assert "kb ci-publish" in content
@@ -360,8 +372,8 @@ def test_child_config_documents_intake(tmp_path: Path):
 def test_child_compose_is_ingest_only(tmp_path: Path):
     init_repo(tmp_path, "child")
     text = (tmp_path / "docker-compose.yml").read_text(encoding="utf-8")
-    assert "hub:" in text          # service name stays `hub` (shared skill text)
-    assert "ports:" not in text    # no long-lived HTTP server
+    assert "hub:" in text  # service name stays `hub` (shared skill text)
+    assert "ports:" not in text  # no long-lived HTTP server
     assert "env_file" not in text
     assert "healthcheck" not in text
     assert "docker compose run --rm hub kb ingest" in text
@@ -396,9 +408,9 @@ def test_quickstarts_match_kind(tmp_path: Path):
 
 def test_kb_summarize_templates_use_print_prompt_workflow(tmp_path: Path):
     init_repo(tmp_path, "hub")
-    skill = (
-        tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
-    ).read_text(encoding="utf-8")
+    skill = (tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
     instr = (
         tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
     ).read_text(encoding="utf-8")
@@ -412,8 +424,8 @@ def test_init_scaffolds_kb_summarize_slash_command(tmp_path: Path):
     command = tmp_path / ".claude" / "commands" / "kb-summarize.md"
     assert command.is_file()
     text = command.read_text(encoding="utf-8")
-    assert "kb-summarize" in text          # invokes the skill by name
-    assert "$ARGUMENTS" in text            # forwards the doc-id filter
+    assert "kb-summarize" in text  # invokes the skill by name
+    assert "$ARGUMENTS" in text  # forwards the doc-id filter
     assert "argument-hint" in text
 
 
@@ -430,7 +442,7 @@ def test_init_scaffolds_kb_docker_setup_both_kinds(tmp_path: Path):
         assert "name: kb-docker-setup" in skill_text
         for text in (skill_text, prompt.read_text(encoding="utf-8")):
             assert "kb docker-setup" in text  # wraps the CLI
-            assert "NEVER print" in text      # secret-hygiene rule
+            assert "NEVER print" in text  # secret-hygiene rule
         assert "mode: agent" in prompt.read_text(encoding="utf-8")
         command_text = command.read_text(encoding="utf-8")
         assert "kb-docker-setup" in command_text  # invokes the skill by name
@@ -455,8 +467,8 @@ def test_init_scaffolds_kb_approve_both_kinds(tmp_path: Path):
             prompt.read_text(encoding="utf-8"),
             cursor.read_text(encoding="utf-8"),
         ):
-            assert "kb approve" in text            # wraps the CLI
-            assert "_manifest.yaml" in text        # forbids hand-editing rule
+            assert "kb approve" in text  # wraps the CLI
+            assert "_manifest.yaml" in text  # forbids hand-editing rule
         assert "kb-approve" in command.read_text(encoding="utf-8")
 
 
@@ -491,10 +503,10 @@ def test_init_scaffolds_cursor_mcp_per_kind(tmp_path: Path):
     init_repo(hub_repo, "hub")
     init_repo(child_repo, "child")
     hub_mcp = (hub_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8")
-    assert "strata_kb.mcp" in hub_mcp                      # stdio, same as .mcp.json
+    assert "strata_kb.mcp" in hub_mcp  # stdio, same as .mcp.json
     assert hub_mcp == (hub_repo / ".mcp.json").read_text(encoding="utf-8")
     child_mcp = (child_repo / ".cursor" / "mcp.json").read_text(encoding="utf-8")
-    assert "${env:STRATA_KB_HUB_URL}/mcp" in child_mcp     # Cursor env syntax
+    assert "${env:STRATA_KB_HUB_URL}/mcp" in child_mcp  # Cursor env syntax
     assert "Bearer ${env:STRATA_KB_HTTP_TOKEN}" in child_mcp
 
 
@@ -542,18 +554,18 @@ def test_cursor_docker_setup_command_both_kinds(tmp_path: Path):
 
 def test_kb_summarize_skill_is_parallel_orchestrator(tmp_path: Path):
     init_repo(tmp_path, "hub")
-    skill = (
-        tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md"
-    ).read_text(encoding="utf-8")
-    assert "READ-ONLY" in skill                      # sub-agents never write
-    assert "--print-prompt" in skill                 # never restates writing rules
+    skill = (tmp_path / ".claude" / "skills" / "kb-summarize" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "READ-ONLY" in skill  # sub-agents never write
+    assert "--print-prompt" in skill  # never restates writing rules
     assert '"l2_summary"' in skill
     assert '"l1_summary"' in skill
-    assert "batches of ~5" in skill                  # granularity
-    assert "at most 10" in skill                     # concurrency cap
+    assert "batches of ~5" in skill  # granularity
+    assert "at most 10" in skill  # concurrency cap
     assert "kb build --allow-pending --strict" in skill  # per-wave verify
-    assert "single message" in skill                 # concurrent dispatch
-    assert "one retry only" in skill                 # error handling
+    assert "single message" in skill  # concurrent dispatch
+    assert "one retry only" in skill  # error handling
     assert "Do not edit many files in parallel" not in skill  # old rule gone
 
 
@@ -738,10 +750,18 @@ def test_init_kind_ba_scaffolds_minimal_set(tmp_path: Path):
     for rel in _BA_SPEC_8_PATHS:
         assert (tmp_path / rel).is_file(), rel
     # authoring wrappers are explicitly NOT on kind `ba`
-    for name in ("kb-ingest", "kb-summarize", "kb-approve", "kb-publish", "kb-docker-setup"):
+    for name in (
+        "kb-ingest",
+        "kb-summarize",
+        "kb-approve",
+        "kb-publish",
+        "kb-docker-setup",
+    ):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
         assert not (tmp_path / ".claude" / "commands" / f"{name}.md").exists(), name
-        assert not (tmp_path / ".github" / "prompts" / f"{name}.prompt.md").exists(), name
+        assert not (tmp_path / ".github" / "prompts" / f"{name}.prompt.md").exists(), (
+            name
+        )
         assert not (tmp_path / ".cursor" / "commands" / f"{name}.md").exists(), name
     assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
     assert not (tmp_path / "source").exists()
@@ -768,18 +788,13 @@ def test_ba_init_creates_the_local_override_stubs(tmp_path):
 def test_ba_reinit_never_touches_a_local_override(tmp_path):
     initcmd.init_repo(tmp_path, "ba")
     local = tmp_path / "docs" / "review-rubric.local.md"
-    local.write_text(
-        "# our own criteria\n- [ ] cites an AIP\n", encoding="utf-8"
-    )
+    local.write_text("# our own criteria\n- [ ] cites an AIP\n", encoding="utf-8")
     before = local.read_bytes()
 
     report = initcmd.init_repo(tmp_path, "ba")
 
     assert local.read_bytes() == before
-    assert any(
-        "local overrides — never refreshed" in entry
-        for entry in report.skipped
-    )
+    assert any("local overrides — never refreshed" in entry for entry in report.skipped)
 
 
 def test_ba_reinit_still_refreshes_the_base_rubric(tmp_path):
@@ -814,7 +829,9 @@ def test_hub_child_unchanged_by_phase4(tmp_path: Path):
     for repo in (hub_repo, child_repo):
         assert not (repo / ".claude" / "skills" / "ba-ticket-author").exists()
         assert not (repo / ".claude" / "commands" / "ba-ticket-author.md").exists()
-        assert not (repo / ".github" / "prompts" / "ba-ticket-author.prompt.md").exists()
+        assert not (
+            repo / ".github" / "prompts" / "ba-ticket-author.prompt.md"
+        ).exists()
         assert not (repo / ".cursor" / "commands" / "ba-ticket-author.md").exists()
         assert not (repo / "docs" / "tickets" / "TEMPLATE.md").exists()
         assert not (repo / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
@@ -848,9 +865,9 @@ def test_ba_mcp_json_reuses_child_template(tmp_path: Path):
 
 def test_kb_ticket_lint_workflow_content(tmp_path: Path):
     init_repo(tmp_path, "ba")
-    content = (
-        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
-    ).read_text(encoding="utf-8")
+    content = (tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml").read_text(
+        encoding="utf-8"
+    )
     assert "pull_request" in content
     # Deliberately NOT `paths`-filtered: GitHub never synthesizes a passing
     # status for a job that never started, so filtering the trigger of a
@@ -906,7 +923,11 @@ def test_cli_init_local_override_skip_has_no_force_hint(tmp_path: Path):
     local_lines = [ln for ln in lines if "review-rubric.local.md" in ln]
     assert local_lines, result.output
     assert "--force" not in local_lines[0], local_lines[0]
-    protected_lines = [ln for ln in lines if ln.strip().startswith("skipped") and ".kb/config.yaml" in ln]
+    protected_lines = [
+        ln
+        for ln in lines
+        if ln.strip().startswith("skipped") and ".kb/config.yaml" in ln
+    ]
     assert protected_lines, result.output
     assert "--force" in protected_lines[0], protected_lines[0]
 
@@ -1097,7 +1118,7 @@ def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
         slices.append(text[idx:])
 
     first = slices[0]
-    for rel, body in zip(_MISSION_WRAPPER_PATHS, slices):
+    for rel, body in zip(_MISSION_WRAPPER_PATHS, slices, strict=True):
         assert body == first, f"{rel} Workflow body drifted from the others"
 
 
@@ -1142,9 +1163,9 @@ def test_ci_gate_covers_both_tickets_and_missions(tmp_path):
     from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
-    wf = (
-        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
-    ).read_text(encoding="utf-8")
+    wf = (tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml").read_text(
+        encoding="utf-8"
+    )
 
     # The trigger itself is not paths-filtered (see
     # test_kb_ticket_lint_workflow_content) — coverage of both directories
@@ -1173,9 +1194,9 @@ def test_ci_gate_has_no_hardcoded_credentials(tmp_path):
     from strata_kb.initcmd import init_repo
 
     init_repo(tmp_path, "ba")
-    wf = (
-        tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml"
-    ).read_text(encoding="utf-8")
+    wf = (tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml").read_text(
+        encoding="utf-8"
+    )
     assert "secrets.KB_HUB_TOKEN" in wf
     assert "ghp_" not in wf
 
@@ -1205,15 +1226,17 @@ def _extract_lint_dispatch_script(tmp_path: Path) -> str:
     finding the right script even if another step is appended later."""
     repo = tmp_path / "ba-scaffold"
     init_repo(repo, "ba")
-    wf_text = (
-        repo / ".github" / "workflows" / "kb-ticket-lint.yml"
-    ).read_text(encoding="utf-8")
+    wf_text = (repo / ".github" / "workflows" / "kb-ticket-lint.yml").read_text(
+        encoding="utf-8"
+    )
     data = yaml.safe_load(wf_text)
     steps = data["jobs"]["lint"]["steps"]
     for step in steps:
         if "Lint changed" in step.get("name", ""):
             return step["run"]
-    raise AssertionError("no step with 'Lint changed' in its name in kb-ticket-lint.yml")
+    raise AssertionError(
+        "no step with 'Lint changed' in its name in kb-ticket-lint.yml"
+    )
 
 
 # The literal git-diff-into-tempfile block from the workflow's dispatch
@@ -1235,7 +1258,7 @@ def _replace_git_diff_with_synthetic_paths(run_script: str, paths: list[str]) ->
         "to match kb-ticket-lint.yml"
     )
     printf_args = " ".join(f"'{p}'" for p in paths)
-    replacement = f'printf \'%s\\0\' {printf_args} > "$RUNNER_TEMP/changed.nul"\n'
+    replacement = f"printf '%s\\0' {printf_args} > \"$RUNNER_TEMP/changed.nul\"\n"
     return run_script.replace(_GIT_DIFF_BLOCK, replacement)
 
 
@@ -1402,9 +1425,7 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     assert any("tickets/T-new.md" in line for line in log_lines)
     # Task 13 review (Important 2): the failure must be annotated on the
     # failing file and pinned in the step-summary table with an error count.
-    assert (
-        "::error file=tickets/T-new.md::stub configured to fail" in result.stderr
-    )
+    assert "::error file=tickets/T-new.md::stub configured to fail" in result.stderr
     summary = (tmp_path / "step-summary.md").read_text(encoding="utf-8")
     assert "| `tickets/T-new.md` | FAIL | 1 | 0 |" in summary
 
@@ -1634,9 +1655,7 @@ def test_ci_gate_dispatch_loop_pins_stale_verdict(tmp_path):
     # The dispatch script forwards KB_FAIL_ON_STALE as --fail-on-stale
     # (kb-ticket-lint.yml ~127-128) — pin that it actually reaches the CLI.
     log_lines = log_path.read_text(encoding="utf-8").splitlines()
-    stale_line = next(
-        line for line in log_lines if "tickets/T-stale.md" in line
-    )
+    stale_line = next(line for line in log_lines if "tickets/T-stale.md" in line)
     assert "--fail-on-stale" in stale_line
 
 
@@ -1772,7 +1791,11 @@ def test_init_dev_appends_to_an_existing_gitignore_once(tmp_path: Path):
 def test_kb_code_workflow_points_db_flags_to_the_config():
     from importlib import resources
 
-    text = resources.files("strata_kb").joinpath("templates/init/kb-code.yml").read_text(encoding="utf-8")
+    text = (
+        resources.files("strata_kb")
+        .joinpath("templates/init/kb-code.yml")
+        .read_text(encoding="utf-8")
+    )
     assert "code_ingest" in text
     assert "--db <path>" not in text
 
@@ -1824,7 +1847,9 @@ def test_init_kind_dev_reports_a_tidy_conflict_and_overwrites_nothing(tmp_path: 
     (d / "ABC-12" / "plan.md").write_text("new", encoding="utf-8")
     (d / "ABC-12-plan.md").write_text("old", encoding="utf-8")
     report = init_repo(tmp_path, "dev")
-    assert any(n.startswith("conflict:") and "ABC-12-plan.md" in n for n in report.notes)
+    assert any(
+        n.startswith("conflict:") and "ABC-12-plan.md" in n for n in report.notes
+    )
     assert (d / "ABC-12" / "plan.md").read_text(encoding="utf-8") == "new"
     assert (d / "ABC-12-plan.md").read_text(encoding="utf-8") == "old"
 
@@ -1839,11 +1864,18 @@ def test_init_kind_ba_leaves_docs_impl_alone(tmp_path: Path):
 
 def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
     init_repo(tmp_path, "dev")
-    for skill in ("dev-implement-ticket", "dev-design", "dev-plan",
-                  "dev-execute", "dev-handover"):
+    for skill in (
+        "dev-implement-ticket",
+        "dev-design",
+        "dev-plan",
+        "dev-execute",
+        "dev-handover",
+    ):
         assert (tmp_path / ".claude" / "skills" / skill / "SKILL.md").is_file(), skill
         assert (tmp_path / ".claude" / "commands" / f"{skill}.md").is_file(), skill
-        assert (tmp_path / ".github" / "prompts" / f"{skill}.prompt.md").is_file(), skill
+        assert (tmp_path / ".github" / "prompts" / f"{skill}.prompt.md").is_file(), (
+            skill
+        )
         assert (tmp_path / ".cursor" / "commands" / f"{skill}.md").is_file(), skill
 
 
@@ -1934,7 +1966,10 @@ def test_noninteractive_init_error_string_is_unchanged(tmp_path: Path):
     # Frozen by contract (cli.py comment): the message still reads hub|child.
     result = runner.invoke(app, ["init", str(tmp_path)])
     assert result.exit_code == 1
-    assert "kb init requires --kind hub|child when not running interactively." in result.output
+    assert (
+        "kb init requires --kind hub|child when not running interactively."
+        in result.output
+    )
 
 
 def test_quickstart_dev_content(tmp_path: Path):
@@ -1995,11 +2030,15 @@ def test_init_kind_dev_scaffolds_dev_code_seed_and_the_reused_wrappers(tmp_path:
         assert (tmp_path / ".cursor" / "commands" / f"{name}.md").is_file(), name
     assert (tmp_path / ".claude" / "skills" / "kb-publish" / "SKILL.md").is_file()
     assert (tmp_path / ".cursor" / "commands" / "kb-publish.md").is_file()
-    assert (tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md").is_file()
+    assert (
+        tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
+    ).is_file()
     assert (tmp_path / ".cursor" / "rules" / "kb-summarize.mdc").is_file()
 
 
-def test_init_kind_dev_still_excludes_ingest_and_the_child_publish_workflow(tmp_path: Path):
+def test_init_kind_dev_still_excludes_ingest_and_the_child_publish_workflow(
+    tmp_path: Path,
+):
     init_repo(tmp_path, "dev")
     assert not (tmp_path / ".claude" / "skills" / "kb-ingest").exists()
     assert not (tmp_path / ".claude" / "skills" / "kb-docker-setup").exists()
@@ -2125,13 +2164,21 @@ def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
     for kind in ("ba", "dev"):
         target = tmp_path / kind
         init_repo(target, kind)
-        settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        settings = json.loads(
+            (target / ".claude" / "settings.json").read_text(encoding="utf-8")
+        )
         # Stop ingests the main transcript (and sweeps subagents, holding
         # back each one's last call); SubagentStop stores that last call.
         for event in ("Stop", "SubagentStop"):
-            commands = [hook["command"] for group in settings["hooks"][event]
-                        for hook in group["hooks"]]
-            assert commands == ["kb usage ingest-transcript --hook-stdin"], (kind, event)
+            commands = [
+                hook["command"]
+                for group in settings["hooks"][event]
+                for hook in group["hooks"]
+            ]
+            assert commands == ["kb usage ingest-transcript --hook-stdin"], (
+                kind,
+                event,
+            )
         # Same command, timeout and status message: the two events differ
         # only in which payload they send.
         assert settings["hooks"]["SubagentStop"] == settings["hooks"]["Stop"], kind
@@ -2170,7 +2217,9 @@ def test_quickstart_ba_documents_the_usage_hook(tmp_path: Path):
 
 def test_quickstart_dev_documents_the_usage_hook(tmp_path: Path):
     init_repo(tmp_path, "dev")
-    text = " ".join((tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8").split())
+    text = " ".join(
+        (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8").split()
+    )
     assert "kb usage report" in text
     assert "adds about 0.6s per turn" in text
 
@@ -2218,7 +2267,9 @@ def test_quickstarts_document_subagent_usage(tmp_path: Path):
         init_repo(target, kind)
         text = " ".join((target / name).read_text(encoding="utf-8").split())
         assert '"SubagentStop": [{"hooks": [' in text, kind
-        assert "`kb doctor` warns when `Stop` is there and `SubagentStop` is not" in text, kind
+        assert (
+            "`kb doctor` warns when `Stop` is there and `SubagentStop` is not" in text
+        ), kind
         assert "Subagent cost needs 1.9.0" in text, kind
         assert "also ingests its subagents" in text, kind
         assert "run it only on a session that has ended" in text, kind
@@ -2529,8 +2580,12 @@ def _assert_no_dangling_volumes(doc: dict, label: str) -> None:
             # a bind mount's source is a path, not a named volume
             if not source.startswith((".", "/", "~")):
                 mounted.add(source)
-    assert mounted <= declared, f"{label}: mounts an undeclared volume {mounted - declared}"
-    assert declared <= mounted, f"{label}: declares an unmounted volume {declared - mounted}"
+    assert mounted <= declared, (
+        f"{label}: mounts an undeclared volume {mounted - declared}"
+    )
+    assert declared <= mounted, (
+        f"{label}: declares an unmounted volume {declared - mounted}"
+    )
 
 
 def test_scaffolded_compose_pins_the_hub_data_and_model_volumes(tmp_path):
@@ -2568,7 +2623,9 @@ def test_child_compose_keeps_its_volumes_and_the_root_compose_matches_the_hub_te
     initcmd.init_repo(dest, "child")
     child = _compose_services((dest / "docker-compose.yml").read_text(encoding="utf-8"))
     for want in _HUB_MOUNTS:
-        assert want in child["services"]["hub"]["volumes"], f"child compose lost {want!r}"
+        assert want in child["services"]["hub"]["volumes"], (
+            f"child compose lost {want!r}"
+        )
     _assert_no_dangling_volumes(child, "scaffolded child")
 
     root = Path(__file__).resolve().parent.parent / "docker-compose.yml"
@@ -2599,9 +2656,7 @@ from importlib.metadata import version as _dist_version
 )
 def test_scaffolded_workflows_pin_the_cli(tmp_path, kind, workflow):
     initcmd.init_repo(tmp_path, kind)
-    text = (tmp_path / ".github" / "workflows" / workflow).read_text(
-        encoding="utf-8"
-    )
+    text = (tmp_path / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
     assert f"pip install strata-kb=={_dist_version('strata-kb')}" in text
     assert "{version}" not in text
 
@@ -2620,13 +2675,17 @@ def test_hub_and_child_scaffolds_pin_lf_line_endings(tmp_path):
 # --- Task 12: depth-3 detection and `kb init --lang` (M7) -------------------
 
 
-def test_init_dev_lang_scaffolds_the_pack_records_it_and_reinit_reuses_it(tmp_path: Path):
+def test_init_dev_lang_scaffolds_the_pack_records_it_and_reinit_reuses_it(
+    tmp_path: Path,
+):
     init_repo(tmp_path, "dev", langs=["python"])
     assert (tmp_path / "docs" / "conventions" / "python.md").is_file()
     assert (tmp_path / "CLAUDE.md").is_file()
-    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(
+        encoding="utf-8"
+    )
     (tmp_path / "docs" / "conventions" / "python.md").unlink()
-    report = init_repo(tmp_path, "dev")   # plain re-init, no flag
+    report = init_repo(tmp_path, "dev")  # plain re-init, no flag
     assert "docs/conventions/python.md" in report.created
 
 
@@ -2635,7 +2694,9 @@ def test_init_cli_rejects_an_unknown_lang(tmp_path: Path):
 
     from strata_kb.cli import app
 
-    result = CliRunner().invoke(app, ["init", str(tmp_path), "--kind", "dev", "--lang", "cobol"])
+    result = CliRunner().invoke(
+        app, ["init", str(tmp_path), "--kind", "dev", "--lang", "cobol"]
+    )
     assert result.exit_code == 1
     assert "cobol" in result.output and "python" in result.output
     assert not (tmp_path / ".kb").exists()
@@ -2661,7 +2722,9 @@ def test_init_dev_lang_notes_when_langs_already_recorded(tmp_path: Path):
     init_repo(tmp_path, "dev", langs=["python"])
     report = init_repo(tmp_path, "dev", langs=["java"])
     assert (tmp_path / "docs" / "conventions" / "java.md").is_file()
-    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    assert "langs: [python]" in (tmp_path / ".kb" / "config.yaml").read_text(
+        encoding="utf-8"
+    )
     assert any("hand-edit" in n and "python" in n for n in report.notes)
 
 
@@ -2703,7 +2766,11 @@ def test_mcp_setup_wrappers_never_take_the_token_in_chat(tmp_path: Path):
 
 @pytest.mark.parametrize(
     "kind,quickstart",
-    [("child", "QUICKSTART.md"), ("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")],
+    [
+        ("child", "QUICKSTART.md"),
+        ("ba", "QUICKSTART-BA.md"),
+        ("dev", "QUICKSTART-DEV.md"),
+    ],
 )
 def test_quickstart_points_at_mcp_setup(tmp_path: Path, kind, quickstart):
     init_repo(tmp_path, kind)
@@ -2727,17 +2794,18 @@ def test_the_dev_rubric_override_is_never_refreshed(tmp_path: Path):
     local.write_text("# mine\n", encoding="utf-8")
     report = init_repo(tmp_path, "dev")
     assert local.read_text(encoding="utf-8") == "# mine\n"
-    assert any(
-        "local overrides — never refreshed" in entry for entry in report.skipped
-    )
+    assert any("local overrides — never refreshed" in entry for entry in report.skipped)
 
 
 def test_scaffolded_workflow_names_cover_every_kind():
     from strata_kb.initcmd import SCAFFOLDED_WORKFLOW_NAMES
 
-    assert SCAFFOLDED_WORKFLOW_NAMES == {
-        "kb-publish.yml", "kb-ticket-lint.yml", "kb-code.yml", "kb-pr-lint.yml",
-    }
+    assert {
+        "kb-publish.yml",
+        "kb-ticket-lint.yml",
+        "kb-code.yml",
+        "kb-pr-lint.yml",
+    } == SCAFFOLDED_WORKFLOW_NAMES
 
 
 @pytest.mark.parametrize("kind", ["hub", "child"])
@@ -2751,15 +2819,26 @@ def test_both_source_folders_ignore_every_file_in_a_real_repo(tmp_path, kind):
         for name in ("spec.pdf", "spec.docx", "notes.txt"):
             (tmp_path / folder / name).write_text("x", encoding="utf-8")
     probe = subprocess.run(
-        ["git", "check-ignore", "--no-index",
-         "source/spec.pdf", "source/spec.docx", "source/notes.txt",
-         "sources/spec.pdf", "sources/spec.docx", "sources/notes.txt"],
-        cwd=tmp_path, capture_output=True, text=True,
+        [
+            "git",
+            "check-ignore",
+            "--no-index",
+            "source/spec.pdf",
+            "source/spec.docx",
+            "source/notes.txt",
+            "sources/spec.pdf",
+            "sources/spec.docx",
+            "sources/notes.txt",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
     )
     assert len(probe.stdout.split()) == 6, probe.stdout
     # the rule file itself stays committable, so the folder exists on clone
     keep = subprocess.run(
-        ["git", "check-ignore", "-q", "--no-index", "sources/.gitignore"], cwd=tmp_path,
+        ["git", "check-ignore", "-q", "--no-index", "sources/.gitignore"],
+        cwd=tmp_path,
     )
     assert keep.returncode == 1
 
@@ -2772,3 +2851,24 @@ def test_an_old_pdf_only_source_gitignore_is_refreshed_on_re_init(tmp_path):
     assert "source/.gitignore" in report.updated
     text = (tmp_path / "source" / ".gitignore").read_text(encoding="utf-8")
     assert text.splitlines()[1:] == ["*", "!.gitignore"]
+
+
+@pytest.mark.parametrize("kind", ["hub", "child", "ba", "dev"])
+def test_kind_flag_round_trips_every_value(tmp_path: Path, kind: str):
+    # RepoKind is a StrEnum (1.14.1): the value typer hands back must still be
+    # the bare string that lands in config.yaml, for every kind.
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", kind])
+    assert result.exit_code == 0, result.output
+    config = yaml.safe_load(
+        (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    )
+    assert config["kind"] == kind
+
+
+def test_kind_and_assets_choices_in_help():
+    result = runner.invoke(
+        app, ["init", "--help"], env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"}
+    )
+    assert result.exit_code == 0
+    assert "hub|child|ba|dev" in result.output
+    assert "none|s3" in result.output

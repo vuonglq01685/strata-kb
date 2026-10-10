@@ -33,7 +33,9 @@ def test_ingest_writes_the_ledger_and_reports_counts(tmp_path: Path):
         tmp_path, [user_row("tickets/open-new-flight.md"), usage_row("a1")]
     )
 
-    result = runner.invoke(app, ["usage", "ingest-transcript", str(t), "--kb-dir", str(d)])
+    result = runner.invoke(
+        app, ["usage", "ingest-transcript", str(t), "--kb-dir", str(d)]
+    )
 
     assert result.exit_code == 0, result.output
     assert "1" in result.output
@@ -99,8 +101,15 @@ def test_ticket_flag_against_an_already_ingested_transcript_explains_the_dead_en
 
     result = runner.invoke(
         app,
-        ["usage", "ingest-transcript", str(t), "--ticket", "open-new-flight",
-         "--kb-dir", str(d)],
+        [
+            "usage",
+            "ingest-transcript",
+            str(t),
+            "--ticket",
+            "open-new-flight",
+            "--kb-dir",
+            str(d),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -117,7 +126,8 @@ def test_hook_mode_log_includes_the_raw_payload_snippet(tmp_path: Path):
     d = kb_dir(tmp_path)
 
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
         input="<<<clobbered>>>",
     )
 
@@ -135,7 +145,8 @@ def test_hook_mode_skips_a_kb_dir_with_no_config_and_writes_no_ledger(tmp_path: 
     payload = json.dumps({"transcript_path": str(t)})
 
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
         input=payload,
     )
 
@@ -150,7 +161,9 @@ def test_report_over_a_corrupt_ledger_exits_one_with_a_message_not_a_traceback(
     d = kb_dir(tmp_path)
     usage_dir = d / "usage"
     usage_dir.mkdir(parents=True)
-    (usage_dir / "open-new-flight.jsonl").write_text('{"uuid": "x"}\n', encoding="utf-8")
+    (usage_dir / "open-new-flight.jsonl").write_text(
+        '{"uuid": "x"}\n', encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["usage", "report", "--kb-dir", str(d)])
 
@@ -176,7 +189,8 @@ def test_hook_mode_reads_the_transcript_path_from_stdin(tmp_path: Path):
     )
 
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
         input=payload,
     )
 
@@ -187,28 +201,45 @@ def test_hook_mode_reads_the_transcript_path_from_stdin(tmp_path: Path):
 
 def test_hook_mode_with_an_agent_transcript_ingests_the_subagent(tmp_path: Path):
     d = kb_dir(tmp_path)
-    main = write_transcript(tmp_path, [user_row("tickets/ATM-7.md")], name="sess-1.jsonl")
+    main = write_transcript(
+        tmp_path, [user_row("tickets/ATM-7.md")], name="sess-1.jsonl"
+    )
     folder = tmp_path / "sess-1" / "subagents"
     folder.mkdir(parents=True)
     sub = write_transcript(folder, [usage_row("s1")], name="agent-a.jsonl")
-    payload = json.dumps({"session_id": "sess-1", "transcript_path": str(main),
-                          "agent_id": "a", "agent_transcript_path": str(sub)})
+    payload = json.dumps(
+        {
+            "session_id": "sess-1",
+            "transcript_path": str(main),
+            "agent_id": "a",
+            "agent_transcript_path": str(sub),
+        }
+    )
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        input=payload,
+    )
     assert (result.exit_code, result.output) == (0, "")
     [row] = ledger.read_rows(d)
     assert (row.uuid, row.sidechain, row.ticket) == ("s1", True, "ATM-7")
 
 
-@pytest.mark.parametrize("payload", [
-    '{"agent_transcript_path": 7, "transcript_path": "x"}',
-    '{"agent_transcript_path": "/nope/agent-a.jsonl"}',
-    '{"agent_transcript_path": "/nope/agent-a.jsonl", "transcript_path": "/nope/p.jsonl"}',
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"agent_transcript_path": 7, "transcript_path": "x"}',
+        '{"agent_transcript_path": "/nope/agent-a.jsonl"}',
+        '{"agent_transcript_path": "/nope/agent-a.jsonl", "transcript_path": "/nope/p.jsonl"}',
+    ],
+)
 def test_hook_mode_never_fails_on_a_bad_subagent_payload(tmp_path: Path, payload: str):
     d = kb_dir(tmp_path)
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        input=payload,
+    )
     assert (result.exit_code, result.output) == (0, "")
     assert (d / "usage" / "ingest-errors.log").exists()
 
@@ -218,10 +249,17 @@ def test_hook_mode_with_a_missing_parent_still_ingests_and_logs_a_note(tmp_path:
     # calls: the row is stored and the miss is logged, exit 0, stdout silent.
     d = kb_dir(tmp_path)
     sub = write_transcript(tmp_path, [usage_row("s1")], name="agent-a.jsonl")
-    payload = json.dumps({"agent_transcript_path": str(sub),
-                          "transcript_path": str(tmp_path / "gone.jsonl")})
+    payload = json.dumps(
+        {
+            "agent_transcript_path": str(sub),
+            "transcript_path": str(tmp_path / "gone.jsonl"),
+        }
+    )
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        input=payload,
+    )
     assert (result.exit_code, result.output) == (0, "")
     assert [r.uuid for r in ledger.read_rows(d)] == ["s1"]
     log = (d / "usage" / "ingest-errors.log").read_text(encoding="utf-8")
@@ -233,10 +271,17 @@ def test_hook_mode_keeps_the_parent_note_when_the_subagent_also_fails(tmp_path: 
     # Both files missing: the subagent failure is logged, and so is the
     # parent note collected before it — a failure does not swallow it.
     d = kb_dir(tmp_path)
-    payload = json.dumps({"agent_transcript_path": str(tmp_path / "agent-a.jsonl"),
-                          "transcript_path": str(tmp_path / "gone.jsonl")})
+    payload = json.dumps(
+        {
+            "agent_transcript_path": str(tmp_path / "agent-a.jsonl"),
+            "transcript_path": str(tmp_path / "gone.jsonl"),
+        }
+    )
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)], input=payload)
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        input=payload,
+    )
     assert (result.exit_code, result.output) == (0, "")
     log = (d / "usage" / "ingest-errors.log").read_text(encoding="utf-8")
     assert "parent transcript unreadable" in log and "FileNotFoundError" in log
@@ -248,7 +293,8 @@ def test_hook_mode_exits_zero_on_garbage_stdin_and_logs_it(tmp_path: Path):
     d = kb_dir(tmp_path)
 
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
         input="not json at all",
     )
 
@@ -262,7 +308,8 @@ def test_hook_mode_exits_zero_when_the_transcript_is_missing(tmp_path: Path):
     payload = json.dumps({"transcript_path": str(tmp_path / "nope.jsonl")})
 
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
         input=payload,
     )
 
@@ -282,7 +329,8 @@ def test_hook_mode_exits_zero_when_the_configured_kind_is_invalid(tmp_path: Path
     payload = json.dumps({"transcript_path": str(t)})
 
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
         input=payload,
     )
 
@@ -298,12 +346,15 @@ def test_hook_mode_exits_zero_when_the_ledger_is_corrupt(tmp_path: Path):
     d = kb_dir(tmp_path)
     usage_dir = d / "usage"
     usage_dir.mkdir(parents=True)
-    (usage_dir / "_unattributed.jsonl").write_text('{"uuid": "broke\n', encoding="utf-8")
+    (usage_dir / "_unattributed.jsonl").write_text(
+        '{"uuid": "broke\n', encoding="utf-8"
+    )
     t = write_transcript(tmp_path, [usage_row("a1")])
     payload = json.dumps({"transcript_path": str(t)})
 
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
         input=payload,
     )
 
@@ -332,14 +383,34 @@ def test_note_appends_a_row_by_hand(tmp_path: Path):
 
     result = runner.invoke(
         app,
-        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
-         "--model", "claude-opus-5", "--tokens-in", "10", "--tokens-out", "20",
-         "--assistant", "copilot", "--kb-dir", str(d)],
+        [
+            "usage",
+            "note",
+            "--ticket",
+            "ATM-7",
+            "--phase",
+            "dev-plan",
+            "--model",
+            "claude-opus-5",
+            "--tokens-in",
+            "10",
+            "--tokens-out",
+            "20",
+            "--assistant",
+            "copilot",
+            "--kb-dir",
+            str(d),
+        ],
     )
 
     assert result.exit_code == 0, result.output
     (row,) = ledger.read_rows(d)
-    assert (row.ticket, row.phase, row.tokens_out, row.est) == ("ATM-7", "dev-plan", 20, True)
+    assert (row.ticket, row.phase, row.tokens_out, row.est) == (
+        "ATM-7",
+        "dev-plan",
+        20,
+        True,
+    )
 
 
 def test_note_est_marks_the_row_as_an_estimate(tmp_path: Path):
@@ -347,9 +418,25 @@ def test_note_est_marks_the_row_as_an_estimate(tmp_path: Path):
 
     runner.invoke(
         app,
-        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
-         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
-         "--est", "--assistant", "copilot", "--kb-dir", str(d)],
+        [
+            "usage",
+            "note",
+            "--ticket",
+            "ATM-7",
+            "--phase",
+            "dev-plan",
+            "--model",
+            "claude-opus-5",
+            "--tokens-in",
+            "1",
+            "--tokens-out",
+            "2",
+            "--est",
+            "--assistant",
+            "copilot",
+            "--kb-dir",
+            str(d),
+        ],
     )
 
     (row,) = ledger.read_rows(d)
@@ -361,9 +448,24 @@ def test_note_refuses_an_unusable_ticket_id(tmp_path: Path):
 
     result = runner.invoke(
         app,
-        ["usage", "note", "--ticket", "../escape", "--phase", "dev-plan",
-         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
-         "--assistant", "copilot", "--kb-dir", str(d)],
+        [
+            "usage",
+            "note",
+            "--ticket",
+            "../escape",
+            "--phase",
+            "dev-plan",
+            "--model",
+            "claude-opus-5",
+            "--tokens-in",
+            "1",
+            "--tokens-out",
+            "2",
+            "--assistant",
+            "copilot",
+            "--kb-dir",
+            str(d),
+        ],
     )
 
     assert result.exit_code == 1
@@ -377,9 +479,22 @@ def test_note_rejects_a_negative_token_count(tmp_path: Path):
 
     result = runner.invoke(
         app,
-        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
-         "--model", "claude-opus-5", "--tokens-in", "-5", "--tokens-out", "20",
-         "--kb-dir", str(d)],
+        [
+            "usage",
+            "note",
+            "--ticket",
+            "ATM-7",
+            "--phase",
+            "dev-plan",
+            "--model",
+            "claude-opus-5",
+            "--tokens-in",
+            "-5",
+            "--tokens-out",
+            "20",
+            "--kb-dir",
+            str(d),
+        ],
     )
 
     assert result.exit_code != 0
@@ -390,9 +505,22 @@ def test_note_requires_an_assistant(tmp_path: Path):
     d = kb_dir(tmp_path)
     result = runner.invoke(
         app,
-        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
-         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
-         "--kb-dir", str(d)],
+        [
+            "usage",
+            "note",
+            "--ticket",
+            "ATM-7",
+            "--phase",
+            "dev-plan",
+            "--model",
+            "claude-opus-5",
+            "--tokens-in",
+            "1",
+            "--tokens-out",
+            "2",
+            "--kb-dir",
+            str(d),
+        ],
     )
     assert result.exit_code != 0
     assert "--assistant" in result.output
@@ -402,9 +530,25 @@ def test_note_measured_overrides_the_estimate_default(tmp_path: Path):
     d = kb_dir(tmp_path)
     runner.invoke(
         app,
-        ["usage", "note", "--ticket", "ATM-7", "--phase", "dev-plan",
-         "--model", "claude-opus-5", "--tokens-in", "1", "--tokens-out", "2",
-         "--measured", "--assistant", "cursor", "--kb-dir", str(d)],
+        [
+            "usage",
+            "note",
+            "--ticket",
+            "ATM-7",
+            "--phase",
+            "dev-plan",
+            "--model",
+            "claude-opus-5",
+            "--tokens-in",
+            "1",
+            "--tokens-out",
+            "2",
+            "--measured",
+            "--assistant",
+            "cursor",
+            "--kb-dir",
+            str(d),
+        ],
     )
     (row,) = ledger.read_rows(d)
     assert (row.est, row.assistant) == (False, "cursor")
@@ -442,8 +586,10 @@ def test_report_ticket_filter_keeps_only_that_ticket(tmp_path: Path):
     t = write_transcript(
         tmp_path,
         [
-            user_row("tickets/open-new-flight.md"), usage_row("a1"),
-            user_row("tickets/ATM-7.md"), usage_row("a2"),
+            user_row("tickets/open-new-flight.md"),
+            usage_row("a1"),
+            user_row("tickets/ATM-7.md"),
+            usage_row("a2"),
         ],
     )
     runner.invoke(app, ["usage", "ingest-transcript", str(t), "--kb-dir", str(d)])
@@ -497,14 +643,20 @@ def test_report_json_on_an_empty_ledger_is_still_valid_json(tmp_path: Path):
 
 def test_report_footer_counts_hook_errors(tmp_path: Path):
     d = kb_dir(tmp_path)
-    t = write_transcript(tmp_path, [user_row("tickets/open-new-flight.md"), usage_row("a1")])
+    t = write_transcript(
+        tmp_path, [user_row("tickets/open-new-flight.md"), usage_row("a1")]
+    )
     runner.invoke(app, ["usage", "ingest-transcript", str(t), "--kb-dir", str(d)])
-    (d / "usage" / "ingest-errors.log").write_text("t1 boom\nt2 bang\n", encoding="utf-8")
+    (d / "usage" / "ingest-errors.log").write_text(
+        "t1 boom\nt2 bang\n", encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["usage", "report", "--md", "--kb-dir", str(d)])
 
     assert "2 hook ingest error(s) logged" in result.output
-    as_json = json.loads(runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output)
+    as_json = json.loads(
+        runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output
+    )
     assert as_json["hook_errors"] == 2
 
 
@@ -513,7 +665,9 @@ def test_report_counts_hook_errors_even_with_no_ledger(tmp_path: Path):
     # when the log is full, so both empty-ledger paths must still surface it.
     d = kb_dir(tmp_path)
     (d / "usage").mkdir()
-    (d / "usage" / "ingest-errors.log").write_text("t1 boom\nt2 bang\n", encoding="utf-8")
+    (d / "usage" / "ingest-errors.log").write_text(
+        "t1 boom\nt2 bang\n", encoding="utf-8"
+    )
 
     as_json = json.loads(
         runner.invoke(app, ["usage", "report", "--json", "--kb-dir", str(d)]).output
@@ -544,8 +698,10 @@ def test_subagent_stop_with_an_unusable_parent_still_ingests_and_notes_it(
     if parent is not None:
         body["transcript_path"] = parent
     result = runner.invoke(
-        app, ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
-        input=json.dumps(body))
+        app,
+        ["usage", "ingest-transcript", "--hook-stdin", "--kb-dir", str(d)],
+        input=json.dumps(body),
+    )
     assert (result.exit_code, result.output) == (0, "")
     [row] = ledger.read_rows(d)
     assert (row.uuid, row.sidechain, row.ticket) == ("s1", True, None)
@@ -558,8 +714,12 @@ def test_manual_mode_logs_notes_collected_before_a_ledger_failure(tmp_path: Path
     main = write_transcript(tmp_path, [usage_row("m1")], name="sess-1.jsonl")
     (tmp_path / "sess-1" / "subagents" / "agent-0.jsonl").mkdir(parents=True)
     (d / "usage").mkdir()
-    (d / "usage" / "_unattributed.jsonl").write_text('{"uuid": "broke\n', encoding="utf-8")
-    result = runner.invoke(app, ["usage", "ingest-transcript", str(main), "--kb-dir", str(d)])
+    (d / "usage" / "_unattributed.jsonl").write_text(
+        '{"uuid": "broke\n', encoding="utf-8"
+    )
+    result = runner.invoke(
+        app, ["usage", "ingest-transcript", str(main), "--kb-dir", str(d)]
+    )
     assert result.exit_code == 1
     log = (d / "usage" / "ingest-errors.log").read_text(encoding="utf-8")
     assert "agent-0.jsonl" in log

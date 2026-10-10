@@ -6,23 +6,31 @@ from tests.test_usage_transcript import usage_row, user_row, write_transcript
 
 
 def _session(tmp_path: Path) -> Path:
-    main = write_transcript(tmp_path, [user_row("tickets/ATM-7.md"), usage_row("m1")],
-                            name="sess-1.jsonl")
+    main = write_transcript(
+        tmp_path, [user_row("tickets/ATM-7.md"), usage_row("m1")], name="sess-1.jsonl"
+    )
     folder = tmp_path / "sess-1" / "subagents"
     folder.mkdir(parents=True)
-    write_transcript(folder, [usage_row("s1", requestId="r1"), usage_row("s2", requestId="r2")],
-                     name="agent-a.jsonl")
+    write_transcript(
+        folder,
+        [usage_row("s1", requestId="r1"), usage_row("s2", requestId="r2")],
+        name="agent-a.jsonl",
+    )
     return main
 
 
 def test_a_main_ingest_sweeps_subagents_and_holds_back_their_last_call(tmp_path: Path):
     d = kb_dir(tmp_path)
-    result = ingest.ingest_main(d, _session(tmp_path), actor="dev", hold_back_subagents=True)
+    result = ingest.ingest_main(
+        d, _session(tmp_path), actor="dev", hold_back_subagents=True
+    )
     assert sorted(r.uuid for r in ledger.read_rows(d)) == ["m1", "s1"]
     assert result.report.written == 2
 
 
-def test_subagent_stop_then_picks_up_the_held_back_call_without_duplicates(tmp_path: Path):
+def test_subagent_stop_then_picks_up_the_held_back_call_without_duplicates(
+    tmp_path: Path,
+):
     d = kb_dir(tmp_path)
     main = _session(tmp_path)
     ingest.ingest_main(d, main, actor="dev", hold_back_subagents=True)
@@ -36,7 +44,9 @@ def test_subagent_stop_then_picks_up_the_held_back_call_without_duplicates(tmp_p
 def test_an_unreadable_parent_still_ingests_the_subagent_and_says_so(tmp_path: Path):
     d = kb_dir(tmp_path)
     sub = write_transcript(tmp_path, [usage_row("s1")], name="agent-x.jsonl")
-    result = ingest.ingest_subagent(d, sub, parent=tmp_path / "missing.jsonl", actor="dev")
+    result = ingest.ingest_subagent(
+        d, sub, parent=tmp_path / "missing.jsonl", actor="dev"
+    )
     assert result.report.written == 1
     assert result.notes and "missing.jsonl" in result.notes[0]
 
@@ -44,7 +54,9 @@ def test_an_unreadable_parent_still_ingests_the_subagent_and_says_so(tmp_path: P
 def test_a_manual_path_under_subagents_finds_its_parent(tmp_path: Path):
     d = kb_dir(tmp_path)
     _session(tmp_path)
-    ingest.ingest_path(d, tmp_path / "sess-1" / "subagents" / "agent-a.jsonl", actor="dev")
+    ingest.ingest_path(
+        d, tmp_path / "sess-1" / "subagents" / "agent-a.jsonl", actor="dev"
+    )
     assert {r.ticket for r in ledger.read_rows(d)} == {"ATM-7"}
 
 
@@ -73,8 +85,11 @@ def test_a_sweep_reads_the_parent_once_and_appends_once(tmp_path, monkeypatch):
 
     d = kb_dir(tmp_path)
     main = _session(tmp_path)
-    write_transcript(tmp_path / "sess-1" / "subagents", [usage_row("b1", requestId="rb")],
-                     name="agent-b.jsonl")
+    write_transcript(
+        tmp_path / "sess-1" / "subagents",
+        [usage_row("b1", requestId="rb")],
+        name="agent-b.jsonl",
+    )
     calls = {"parent": 0, "append": 0}
     real_parent, real_append = transcript.parent_cursor, ledger.append_rows
 
@@ -92,7 +107,11 @@ def test_a_sweep_reads_the_parent_once_and_appends_once(tmp_path, monkeypatch):
     assert calls == {"parent": 1, "append": 1}
     assert result.report.written == 4
     assert {r.uuid: r.ticket for r in ledger.read_rows(d)} == {
-        "m1": "ATM-7", "s1": "ATM-7", "s2": "ATM-7", "b1": "ATM-7"}
+        "m1": "ATM-7",
+        "s1": "ATM-7",
+        "s2": "ATM-7",
+        "b1": "ATM-7",
+    }
 
 
 def test_a_sweep_logs_an_unreadable_parent_once(tmp_path, monkeypatch):
@@ -100,8 +119,11 @@ def test_a_sweep_logs_an_unreadable_parent_once(tmp_path, monkeypatch):
 
     d = kb_dir(tmp_path)
     main = _session(tmp_path)
-    write_transcript(tmp_path / "sess-1" / "subagents", [usage_row("b1", requestId="rb")],
-                     name="agent-b.jsonl")
+    write_transcript(
+        tmp_path / "sess-1" / "subagents",
+        [usage_row("b1", requestId="rb")],
+        name="agent-b.jsonl",
+    )
 
     def unreadable(path):
         raise PermissionError(13, "Permission denied", str(path))

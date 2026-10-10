@@ -25,7 +25,9 @@ def test_build_write_tokens_false_never_persists(fixture_kb: Path):
     the tree — not even to write real token counts into a passing manifest."""
     manifest_path = fixture_kb / "demo-doc" / "_manifest.yaml"
     before = manifest_path.read_bytes()
-    before_tokens = models.load_yaml_model(manifest_path, models.Manifest).sections[0].tokens
+    before_tokens = (
+        models.load_yaml_model(manifest_path, models.Manifest).sections[0].tokens
+    )
     report = build_kb(fixture_kb, write_tokens=False)
     assert report.ok, report.errors
     assert manifest_path.read_bytes() == before
@@ -112,42 +114,69 @@ def _errors(fixture_kb, **kw):
     return build_kb(fixture_kb, **kw).errors
 
 
-def test_build_rejects_extra_table_in_l2(fixture_kb):          # case a
+def test_build_rejects_extra_table_in_l2(fixture_kb):  # case a
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(TABLE, TABLE + "\n\n" + EXTRA_TABLE), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(TABLE, TABLE + "\n\n" + EXTRA_TABLE),
+        encoding="utf-8",
+    )
     errs = _errors(fixture_kb)
     assert any("not in L3" in e and "table" in e for e in errs)
 
 
-def test_build_rejects_duplicated_table_in_l2(fixture_kb):     # case b
+def test_build_rejects_duplicated_table_in_l2(fixture_kb):  # case b
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(TABLE, TABLE + "\n\n" + TABLE), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(TABLE, TABLE + "\n\n" + TABLE),
+        encoding="utf-8",
+    )
     assert any("duplicated" in e for e in _errors(fixture_kb))
 
 
-def test_build_rejects_missing_single_row_table(fixture_kb):   # cases d, s
+def test_build_rejects_missing_single_row_table(fixture_kb):  # cases d, s
     one_row = "| Only | Header |"
     for p in (_l2(fixture_kb), _l3(fixture_kb)):
-        p.write_text(p.read_text(encoding="utf-8").replace("## 1.2 Airway Records", f"{one_row}\n\n## 1.2 Airway Records"), encoding="utf-8")
+        p.write_text(
+            p.read_text(encoding="utf-8").replace(
+                "## 1.2 Airway Records", f"{one_row}\n\n## 1.2 Airway Records"
+            ),
+            encoding="utf-8",
+        )
     assert build_kb(fixture_kb).ok
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(one_row, "| Rewritten | Header |"), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(one_row, "| Rewritten | Header |"),
+        encoding="utf-8",
+    )
     assert any("missing or altered" in e for e in _errors(fixture_kb))
 
 
-def test_build_rejects_tables_reordered_within_section(fixture_kb):   # case q
+def test_build_rejects_tables_reordered_within_section(fixture_kb):  # case q
     for p in (_l2(fixture_kb), _l3(fixture_kb)):
-        p.write_text(p.read_text(encoding="utf-8").replace(TABLE, TABLE + "\n\n" + EXTRA_TABLE), encoding="utf-8")
+        p.write_text(
+            p.read_text(encoding="utf-8").replace(TABLE, TABLE + "\n\n" + EXTRA_TABLE),
+            encoding="utf-8",
+        )
     assert build_kb(fixture_kb).ok
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(TABLE + "\n\n" + EXTRA_TABLE, EXTRA_TABLE + "\n\n" + TABLE), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(
+            TABLE + "\n\n" + EXTRA_TABLE, EXTRA_TABLE + "\n\n" + TABLE
+        ),
+        encoding="utf-8",
+    )
     assert any("reordered" in e for e in _errors(fixture_kb))
 
 
-def test_build_rejects_orphan_heading(fixture_kb):             # case m
+def test_build_rejects_orphan_heading(fixture_kb):  # case m
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8") + "\n## 1.9 Ghost\n\nInvented.\n", encoding="utf-8")
-    assert any("heading '1.9'" in e and "not in the manifest" in e for e in _errors(fixture_kb))
+    p.write_text(
+        p.read_text(encoding="utf-8") + "\n## 1.9 Ghost\n\nInvented.\n",
+        encoding="utf-8",
+    )
+    assert any(
+        "heading '1.9'" in e and "not in the manifest" in e for e in _errors(fixture_kb)
+    )
 
 
 def test_build_allows_titleless_subheading_in_l2(fixture_kb):
@@ -194,15 +223,23 @@ def test_build_does_not_write_manifest_on_failure(fixture_kb):
     mpath = fixture_kb / "demo-doc" / "_manifest.yaml"
     before = mpath.read_text(encoding="utf-8")
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace("| P | Prohibited |", "| P | Permitted |"), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(
+            "| P | Prohibited |", "| P | Permitted |"
+        ),
+        encoding="utf-8",
+    )
     assert not build_kb(fixture_kb).ok
-    assert mpath.read_text(encoding="utf-8") == before        # tokens not persisted
+    assert mpath.read_text(encoding="utf-8") == before  # tokens not persisted
 
 
-@pytest.mark.parametrize("mutation", [
-    ("| P | Prohibited |", "| P    | Prohibited |"),   # e2/e3 whitespace
-    ("|---|---|", "|:--|--:|"),                          # e1 alignment
-])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        ("| P | Prohibited |", "| P    | Prohibited |"),  # e2/e3 whitespace
+        ("|---|---|", "|:--|--:|"),  # e1 alignment
+    ],
+)
 def test_build_folds_harmless_table_normalisation(fixture_kb, mutation):
     p = _l2(fixture_kb)
     p.write_text(p.read_text(encoding="utf-8").replace(*mutation), encoding="utf-8")
@@ -223,8 +260,7 @@ def test_build_allows_l2_table_when_l3_has_no_tables(fixture_kb):
     p.write_text(
         p.read_text(encoding="utf-8").replace(
             "Condensed: airway record structure, route identifiers.",
-            "Condensed: airway record structure, route identifiers.\n\n"
-            + EXTRA_TABLE,
+            "Condensed: airway record structure, route identifiers.\n\n" + EXTRA_TABLE,
         ),
         encoding="utf-8",
     )
@@ -244,31 +280,48 @@ def test_build_rejects_l2_missing_the_l3_table(fixture_kb):
 
 from strata_kb import quality
 
-LONG = " ".join(f"Sentence number {i} explains the record layout in detail." for i in range(10))
+LONG = " ".join(
+    f"Sentence number {i} explains the record layout in detail." for i in range(10)
+)
 
 
 def _make_long_l3(fixture_kb):
     """Turn §1.2 into a > 200-char prose section so ratio/overlap rules apply."""
     p = _l3(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(
-        "Full raw text about airway records and route identifiers.", LONG), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(
+            "Full raw text about airway records and route identifiers.", LONG
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_quality_findings_are_warnings_by_default(fixture_kb):
     _make_long_l3(fixture_kb)
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(
-        "Condensed: airway record structure, route identifiers.", LONG), encoding="utf-8")   # 1.0×
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(
+            "Condensed: airway record structure, route identifiers.", LONG
+        ),
+        encoding="utf-8",
+    )  # 1.0×
     report = build_kb(fixture_kb)
     assert report.ok
-    assert any("§1.2" in q and "budget" in q and q.endswith("(quality)") for q in report.quality)
+    assert any(
+        "§1.2" in q and "budget" in q and q.endswith("(quality)")
+        for q in report.quality
+    )
 
 
 def test_quality_findings_are_errors_under_strict_and_block_the_write(fixture_kb):
     _make_long_l3(fixture_kb)
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(
-        "Condensed: airway record structure, route identifiers.", LONG), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(
+            "Condensed: airway record structure, route identifiers.", LONG
+        ),
+        encoding="utf-8",
+    )
     mpath = fixture_kb / "demo-doc" / "_manifest.yaml"
     before = mpath.read_text(encoding="utf-8")
     report = build_kb(fixture_kb, strict=True)
@@ -278,8 +331,13 @@ def test_quality_findings_are_errors_under_strict_and_block_the_write(fixture_kb
 
 def test_pending_sections_are_not_quality_checked(fixture_kb):
     p = _l2(fixture_kb)
-    p.write_text(p.read_text(encoding="utf-8").replace(
-        "Condensed: airway record structure, route identifiers.", "<!-- TODO:summarize 1.2 -->"), encoding="utf-8")
+    p.write_text(
+        p.read_text(encoding="utf-8").replace(
+            "Condensed: airway record structure, route identifiers.",
+            "<!-- TODO:summarize 1.2 -->",
+        ),
+        encoding="utf-8",
+    )
     report = build_kb(fixture_kb, allow_pending=True, strict=True)
     assert not any("§1.2" in e and "(quality)" in e for e in report.errors)
 
@@ -295,6 +353,7 @@ def test_l3_hash_drift_is_an_error(fixture_kb):
 
 def test_l3_hash_matching_is_silent(fixture_kb):
     from strata_kb.mdutils import slice_section
+
     mpath = fixture_kb / "demo-doc" / "_manifest.yaml"
     m = models.load_yaml_model(mpath, models.Manifest)
     l3 = _l3(fixture_kb).read_text(encoding="utf-8")
@@ -307,7 +366,9 @@ def test_reviewed_l2_hash_drift_is_an_error(fixture_kb):
     mpath = fixture_kb / "demo-doc" / "_manifest.yaml"
     m = models.load_yaml_model(mpath, models.Manifest)
     m.sections[0].status = "reviewed"
-    m.sections[0].reviewed = models.ReviewRecord(by="x", at="t", l2_sha256=quality.digest("old"))
+    m.sections[0].reviewed = models.ReviewRecord(
+        by="x", at="t", l2_sha256=quality.digest("old")
+    )
     models.save_yaml_model(mpath, m)
     assert any("L2 changed after review" in e for e in build_kb(fixture_kb).errors)
 
@@ -373,7 +434,9 @@ def test_l3_hash_drift_respects_occurrence_for_duplicate_ids(fixture_kb):
     l3_text = _l3(fixture_kb).read_text(encoding="utf-8")
     for row, sec in enumerate(m.sections):
         if sec.id == "1.2":
-            sec.l3_sha256 = quality.digest(slice_section(l3_text, "1.2", occurrence=occ[row]))
+            sec.l3_sha256 = quality.digest(
+                slice_section(l3_text, "1.2", occurrence=occ[row])
+            )
     models.save_yaml_model(mpath, m)
 
     # Correct per-occurrence hashes -> no drift error at all.

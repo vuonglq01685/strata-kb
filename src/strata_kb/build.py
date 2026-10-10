@@ -87,8 +87,12 @@ def _build_doc(
             (report.warnings if allow_pending else report.errors).append(msg)
         _check_tables(report.errors, ref, l2_slice, l3_slice)
         _check_hashes(report.errors, ref, sec, l2_slice, l3_slice)
-        if not (is_pending or generated or sec.id.startswith(quality.MACHINE_SECTION_PREFIX)):
-            _add_findings(report, quality.check_section(ref, sec, l2_slice, l3_slice), strict)
+        if not (
+            is_pending or generated or sec.id.startswith(quality.MACHINE_SECTION_PREFIX)
+        ):
+            _add_findings(
+                report, quality.check_section(ref, sec, l2_slice, l3_slice), strict
+            )
         tokens[row] = models.SectionTokens(
             l2=count_tokens(l2_slice), l3=count_tokens(l3_slice)
         )
@@ -101,7 +105,9 @@ def _build_doc(
     models.save_yaml_model(manifest_path, manifest)
 
 
-def _add_findings(report: BuildReport, findings: list[quality.Finding], strict: bool) -> None:
+def _add_findings(
+    report: BuildReport, findings: list[quality.Finding], strict: bool
+) -> None:
     for f in findings:
         if f.level == "error" or strict:
             report.errors.append(f.text)
@@ -118,11 +124,16 @@ def _check_hashes(
             f"kb summarize --redo <doc> --section {sec.id}"
         )
     if sec.reviewed is not None and sec.reviewed.l2_sha256 != quality.digest(l2_slice):
-        errors.append(f"{ref}: L2 changed after review; approve again or redo the section")
+        errors.append(
+            f"{ref}: L2 changed after review; approve again or redo the section"
+        )
 
 
 def _check_orphan_headings(
-    report: BuildReport, kb_dir: Path, doc_id: str, manifest: models.Manifest,
+    report: BuildReport,
+    kb_dir: Path,
+    doc_id: str,
+    manifest: models.Manifest,
     cache: dict[str, str],
 ) -> None:
     """Every real `## <id> …` heading in a doc's L2/L3 files must be a known
@@ -153,7 +164,9 @@ def _check_tables(errors: list[str], ref: str, l2_slice: str, l3_slice: str) -> 
         return
     c2, c3 = Counter(l2), Counter(l3)
     if c2 == c3:
-        errors.append(f"{ref}: tables reordered within the section (table integrity fail)")
+        errors.append(
+            f"{ref}: tables reordered within the section (table integrity fail)"
+        )
         return
     missing = sum((c3 - c2).values())
     surplus = c2 - c3
