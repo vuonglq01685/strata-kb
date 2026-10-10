@@ -3,6 +3,11 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.12.0 — 2026-10-10
+
+- The hub server no longer freezes. Every Web UI / REST route except `/api/health` now runs off the event loop (Starlette's threadpool), so a slow page never holds up MCP or other requests: on a 2,000-section hub, `/api/health` took 7.9 s while `/ui` rendered and now stays under ~110 ms. `resolve_hub` takes a per-cache lock around clone/pull, since web routes now resolve the hub from worker threads as MCP tools already did.
+- YAML is parsed with libyaml (`CSafeLoader`, falling back to the pure-Python loader) and each parsed file is cached by `(mtime, size, ctime, inode)`. A file changed in the last 2 seconds is always re-read. Callers get a fresh model each time. Measured with the new `scripts/perf_web_bench.py` (2,000 sections): `load_federation` 861 → 8 ms, `/api/docs*` ~0.9 s → 8–12 ms, `/ui` 7.9 s → 53 ms, `/ui?q=` 3.4 s → 41 ms, section page 3.6 s → 23 ms; at 10,000 sections every route stays under 270 ms. Writing YAML is unchanged (still the pure-Python dumper), so committed files are byte-identical.
+
 ## 1.11.0 — 2026-10-10
 
 - `kb init` (hub, child) writes `source/.gitignore` **and** `sources/.gitignore`, each ignoring every file in its folder (`*`, `!.gitignore`). Before, only `source/` was covered, and only for `*.pdf`, while README's quickstart put documents in `sources/` — whoever followed it had no ignore rule. Re-run `kb init` to pick it up; README now says `source/` throughout.

@@ -333,7 +333,7 @@ def build_routes(
             b = 2000
         return max(200, min(b, 8000))
 
-    async def _search_screen(request: Request, q: str, raw_tags: str) -> HTMLResponse:
+    def _search_screen(request: Request, q: str, raw_tags: str) -> HTMLResponse:
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         hub = api.hub_handle(config)
         if hub is None:
@@ -359,10 +359,7 @@ def build_routes(
         use_semantic = ("1" in sem_vals) if sem_vals else True
         try:
             found = (
-                await run_in_threadpool(
-                    search, hub, q, tags=tags or None, budget=budget,
-                    use_semantic=use_semantic,
-                )
+                search(hub, q, tags=tags or None, budget=budget, use_semantic=use_semantic)
                 if q else []
             )
         except (searchdb.TooManyTagsError, searchdb.IndexBusyError) as exc:
@@ -404,14 +401,14 @@ def build_routes(
             docs_count=docs_count, semantic_on=use_semantic,
         )
 
-    async def home(request: Request) -> HTMLResponse:
+    def home(request: Request) -> HTMLResponse:
         q = request.query_params.get("q", "").strip()
         raw_tags = request.query_params.get("tags", "").strip()
         # Presence of the `q` param (even empty, as in the nav "Search" link's
         # `/ui?q=`) routes to the search screen; only a bare `/ui` with no
         # query params at all renders the overview.
         if "q" in request.query_params or raw_tags:
-            return await _search_screen(request, q, raw_tags)  # Task 6
+            return _search_screen(request, q, raw_tags)  # Task 6
         hub = api.hub_handle(config)
         if hub is None:
             return _render_page(
@@ -432,7 +429,7 @@ def build_routes(
             publish=uidata.last_publish(hub),
         )
 
-    async def docs_page(request: Request) -> HTMLResponse:
+    def docs_page(request: Request) -> HTMLResponse:
         all_docs = api.list_docs(config) or []
         filter_raw = request.query_params.get("filter", "").strip()
         fq = filter_raw.lower()
@@ -449,7 +446,7 @@ def build_routes(
             total_docs=len(all_docs),
         )
 
-    async def doc_page(request: Request) -> HTMLResponse:
+    def doc_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
         repo = request.query_params.get("repo") or None
         try:
@@ -487,7 +484,7 @@ def build_routes(
             shell_extra=_tree_extra(manifest, doc_id, rid),
         )
 
-    async def section_page(request: Request) -> HTMLResponse:
+    def section_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
         section_id = request.path_params["section"]
         level = request.query_params.get("level", "l2")
@@ -631,7 +628,8 @@ def build_routes(
         name = request.path_params["name"]
         if not asset_name_re.match(name):
             return Response("not found", status_code=404)
-        hub = api.hub_handle(config)
+        # hub_handle can run git (and pull when the TTL expired): off the loop.
+        hub = await run_in_threadpool(api.hub_handle, config)
         if hub is None:
             return Response("hub unreachable", status_code=503)
         try:

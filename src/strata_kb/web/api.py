@@ -4,7 +4,6 @@ import logging
 
 import yaml
 from pydantic import ValidationError
-from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -126,6 +125,11 @@ def load_manifest(
 
 
 def build_routes(config: ServerConfig) -> list[Route]:
+    # Every route but `health` is a plain `def`: Starlette runs it in its
+    # threadpool. As `async def` they ran manifest parsing, hub resolution
+    # (a git subprocess, a pull when the TTL expired) and file reads on the
+    # event loop -- one slow page froze MCP and REST for every agent
+    # (2026-10-10 review §6.2 F3: /api/health took 9 s while /ui rendered).
     async def health(request: Request) -> JSONResponse:
         # Fix round 3: this route is auth-exempt (EXEMPT_PATHS, auth.py) so
         # TokenAuthMiddleware never calls the limiter for it -- an
@@ -137,13 +141,13 @@ def build_routes(config: ServerConfig) -> list[Route]:
         # through the authenticated /ui and `kb doctor`.
         return JSONResponse({"status": "ok"})
 
-    async def docs(request: Request) -> JSONResponse:
+    def docs(request: Request) -> JSONResponse:
         listed = list_docs(config)
         if listed is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
         return JSONResponse({"docs": listed})
 
-    async def doc_detail(request: Request) -> JSONResponse:
+    def doc_detail(request: Request) -> JSONResponse:
         doc_id = request.path_params["doc"]
         repo = request.query_params.get("repo") or None
         if hub_handle(config) is None:
@@ -169,7 +173,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
             }
         )
 
-    async def section(request: Request) -> JSONResponse:
+    def section(request: Request) -> JSONResponse:
         doc_id = request.path_params["doc"]
         section_id = request.path_params["section"]
         repo = request.query_params.get("repo") or None
@@ -206,7 +210,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
             }
         )
 
-    async def api_search(request: Request) -> JSONResponse:
+    def api_search(request: Request) -> JSONResponse:
         q = request.query_params.get("q", "").strip()
         if not q:
             return _error(400, "missing_query", "query parameter 'q' is required")
@@ -221,9 +225,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
         if hub is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
         try:
-            results = await run_in_threadpool(
-                search, hub, q, tags=tags, budget=budget
-            )
+            results = search(hub, q, tags=tags, budget=budget)
         except searchdb.TooManyTagsError as exc:
             return _error(400, "too_many_tags", str(exc))
         except searchdb.IndexBusyError as exc:
