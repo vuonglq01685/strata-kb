@@ -108,7 +108,7 @@ def test_html_names_the_price_table_date_and_the_ticket(tmp_path: Path):
     html = report.render_html(agg_of([row("u1", ticket="open-new-flight")], tmp_path))
 
     assert "open-new-flight" in html
-    assert "2026-06-24" in html
+    assert "2026-10-10" in html
 
 
 def test_html_escapes_a_field_that_carries_arbitrary_text(tmp_path: Path):
@@ -219,12 +219,11 @@ def test_estimated_rows_are_counted_and_shown(tmp_path: Path):
     assert agg.model_dump()["total"]["est_rows"] == 1
 
 
-def test_priced_as_lists_ids_priced_at_a_family_rate(tmp_path: Path):
-    agg = agg_of([row("u1", model="claude-fable-5-1")], tmp_path)
-    assert agg.priced_as == {"claude-fable-5-1": "claude-fable-5"}
-    assert agg.unpriced_models == []
-    assert "claude-fable-5-1 priced as claude-fable-5" in report.render_markdown(agg)
-    assert "priced as" in report.render_html(agg)
+def test_priced_as_lists_only_alias_matches(tmp_path: Path):
+    agg = agg_of([row("u1", model="opus"), row("u2", model="claude-opus-5-6")], tmp_path)
+    assert agg.priced_as == {"opus": "claude-opus-5-5"}
+    assert agg.unpriced_models == ["claude-opus-5-6"]
+    assert "opus priced as claude-opus-5-5" in report.render_markdown(agg)
 
 
 def test_markdown_warns_when_the_price_table_is_old(tmp_path: Path):

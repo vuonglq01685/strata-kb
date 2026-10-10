@@ -1,35 +1,39 @@
-# Anthropic first-party API list prices, per million tokens (USD).
+# Anthropic first-party API list prices, per million tokens (USD), as
+# published at platform.claude.com/docs/en/about-claude/pricing.
 #
-# Rates are written out explicitly rather than as multipliers of `input`
-# (cache_read is 0.1x, cache_write_5m 1.25x, cache_write_1h 2x input today):
-# a multiplier convention rots silently the day one model prices its cache
-# differently, and this file is meant to be edited by hand.
+# Rates are written out explicitly, never as multipliers of `input`: the
+# cache-read multiplier is 0.1x on most models but 0.05x on Opus/Sonnet 5.5
+# and 0.025x on Fable 5.1, and a multiplier convention would have hidden that.
 #
-# Standard rates only, never promotional ones. Claude Sonnet 5 carries an
-# introductory 2.0 / 10.0 that expires 2026-08-31; a repo that needs that
-# window copies this file to `.kb/usage-prices.yaml` and overrides that one
-# model. An override merges per model, so the rest of the table survives.
+# Standard rates only, never promotional ones.
 #
-# `kb usage report` prints effective_date and warns once it is over 90 days
-# old. A model missing from this table is reported as `unpriced` with its
-# token counts — never as costing nothing.
-effective_date: "2026-06-24"
+# Every model id needs its OWN row. An id with no row (here or in
+# .kb/usage-prices.yaml) is reported as `unpriced` with its token counts.
+# There is deliberately no fallback from `claude-x-5-5` to `claude-x-5`: the
+# 5.5 generation costs less than its family and caches at a different
+# multiplier, so a family price is a wrong number that looks right. Add a row.
+#
+# `kb usage report` prints effective_date and warns once it is over 90 days old.
+effective_date: "2026-10-10"
 currency: USD
 unit: per_mtok
 models:
-  claude-opus-5:     {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25, cache_write_1h: 10.0}
-  claude-opus-4-8:   {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25, cache_write_1h: 10.0}
-  claude-opus-4-7:   {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25, cache_write_1h: 10.0}
-  claude-opus-4-6:   {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25, cache_write_1h: 10.0}
-  claude-fable-5:    {input: 10.0, output: 50.0, cache_read: 1.00, cache_write_5m: 12.5, cache_write_1h: 20.0}
-  claude-sonnet-5:   {input: 3.0,  output: 15.0, cache_read: 0.30, cache_write_5m: 3.75, cache_write_1h: 6.0}
-  claude-sonnet-4-6: {input: 3.0,  output: 15.0, cache_read: 0.30, cache_write_5m: 3.75, cache_write_1h: 6.0}
-  claude-haiku-4-5:  {input: 1.0,  output:  5.0, cache_read: 0.10, cache_write_5m: 1.25, cache_write_1h: 2.0}
+  claude-fable-5-1:  {input: 10.0, output: 50.0, cache_read: 0.25, cache_write_5m: 12.5,  cache_write_1h: 20.0}
+  claude-fable-5:    {input: 10.0, output: 50.0, cache_read: 1.00, cache_write_5m: 12.5,  cache_write_1h: 20.0}
+  claude-opus-5-5:   {input: 4.0,  output: 20.0, cache_read: 0.20, cache_write_5m: 5.0,   cache_write_1h: 8.0}
+  claude-opus-5:     {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25,  cache_write_1h: 10.0}
+  claude-opus-4-8:   {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25,  cache_write_1h: 10.0}
+  claude-opus-4-7:   {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25,  cache_write_1h: 10.0}
+  claude-opus-4-6:   {input: 5.0,  output: 25.0, cache_read: 0.50, cache_write_5m: 6.25,  cache_write_1h: 10.0}
+  claude-sonnet-5-5: {input: 2.0,  output: 10.0, cache_read: 0.10, cache_write_5m: 2.5,   cache_write_1h: 4.0}
+  claude-sonnet-5:   {input: 2.0,  output: 10.0, cache_read: 0.20, cache_write_5m: 2.5,   cache_write_1h: 4.0}
+  claude-sonnet-4-6: {input: 3.0,  output: 15.0, cache_read: 0.30, cache_write_5m: 3.75,  cache_write_1h: 6.0}
+  claude-haiku-5-5:  {input: 0.10, output: 0.50, cache_read: 0.01, cache_write_5m: 0.125, cache_write_1h: 0.20}
+  claude-haiku-4-5:  {input: 1.0,  output:  5.0, cache_read: 0.10, cache_write_5m: 1.25,  cache_write_1h: 2.0}
 
-# Bare family names Claude Code writes on some calls. A trailing
-# point-release suffix (`claude-fable-5-1`) needs no row: it falls back to
-# its family (`claude-fable-5`) and the report lists it under "priced as".
+# Bare family names Claude Code writes on some calls, priced at the current
+# generation. The report lists each alias match under "priced as".
 aliases:
-  opus: claude-opus-5
-  sonnet: claude-sonnet-5
-  haiku: claude-haiku-4-5
+  opus: claude-opus-5-5
+  sonnet: claude-sonnet-5-5
+  haiku: claude-haiku-5-5

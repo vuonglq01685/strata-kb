@@ -8,6 +8,26 @@ from pydantic import ValidationError
 from strata_kb.usage import prices
 from tests.test_usage_ledger import row
 
+# Verified against platform.claude.com/docs/en/about-claude/pricing on
+# 2026-10-10: (input, output, cache_read, cache_write_5m, cache_write_1h).
+LIST_PRICES = {
+    "claude-fable-5-1": (10.0, 50.0, 0.25, 12.5, 20.0),
+    "claude-fable-5": (10.0, 50.0, 1.0, 12.5, 20.0),
+    "claude-opus-5-5": (4.0, 20.0, 0.20, 5.0, 8.0),
+    "claude-opus-5": (5.0, 25.0, 0.50, 6.25, 10.0),
+    "claude-sonnet-5-5": (2.0, 10.0, 0.10, 2.5, 4.0),
+    "claude-sonnet-5": (2.0, 10.0, 0.20, 2.5, 4.0),
+    "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125, 0.20),
+    "claude-haiku-4-5": (1.0, 5.0, 0.10, 1.25, 2.0),
+}
+
+# The ids Claude Code writes today. Each must have its OWN row: a
+# family or alias match is exactly how the 5.5 generation was mispriced.
+CURRENT_MODEL_IDS = (
+    "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5",
+    "claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5",
+)
+
 
 def test_the_packaged_table_prices_the_models_we_actually_run(tmp_path: Path):
     table = prices.load_prices(tmp_path)
@@ -30,15 +50,24 @@ def test_the_packaged_table_has_five_rates_per_model(tmp_path: Path):
     )
 
 
-def test_the_packaged_sonnet_5_row_is_the_standard_rate_not_the_promo(tmp_path: Path):
-    # Claude Sonnet 5 carries an introductory 2.0/10.0 that expires
-    # 2026-08-31; the shipped table must carry the standard 3.0/15.0. Pin
-    # this explicitly: test_a_repo_override_replaces_only_the_models_it_names
-    # below uses 2.0/10.0 as its override value, so those promo numbers
-    # already sit in this file looking like a plausible correct value.
-    rates = prices.load_prices(tmp_path).models["claude-sonnet-5"]
+@pytest.mark.parametrize("model", sorted(LIST_PRICES))
+def test_the_packaged_row_is_the_list_price(tmp_path: Path, model: str):
+    r = prices.load_prices(tmp_path).models[model]
+    assert (r.input, r.output, r.cache_read, r.cache_write_5m, r.cache_write_1h) == (
+        pytest.approx(LIST_PRICES[model])
+    )
 
-    assert (rates.input, rates.output) == (3.0, 15.0)
+
+def test_the_packaged_sonnet_5_row_is_the_standard_rate_not_the_promo(tmp_path: Path):
+    # 2/10 was announced as introductory and then made standard; the
+    # scheduled 3/15 increase "will not occur" (pricing page, 2026-10-10).
+    rates = prices.load_prices(tmp_path).models["claude-sonnet-5"]
+    assert (rates.input, rates.output) == (2.0, 10.0)
+
+
+@pytest.mark.parametrize("model", CURRENT_MODEL_IDS)
+def test_every_current_model_id_has_its_own_row(tmp_path: Path, model: str):
+    assert prices.resolve_model(prices.load_prices(tmp_path), model) == model
 
 
 def test_a_repo_override_replaces_only_the_models_it_names(tmp_path: Path):
@@ -186,20 +215,21 @@ def test_an_override_unit_other_than_per_mtok_is_rejected(tmp_path: Path):
         prices.load_prices(tmp_path)
 
 
-def test_a_point_release_id_falls_back_to_its_family_row(tmp_path: Path):
+def test_a_point_release_id_with_no_row_is_unpriced(tmp_path: Path):
     table = prices.load_prices(tmp_path)
-    assert prices.resolve_model(table, "claude-fable-5-1") == "claude-fable-5"
-    assert prices.resolve_model(table, "claude-opus-5-2-1") == "claude-opus-5"
-    assert prices.cost_of(row("u1", model="claude-fable-5-1", tokens_out=1_000_000,
-                              tokens_in=0, cache_read=0, cache_write_5m=0, cache_write_1h=0),
-                          table) == 50.0
+    assert prices.resolve_model(table, "claude-opus-5-6") is None
+    assert prices.cost_of(row("u1", model="claude-opus-5-6"), table) is None
 
 
-def test_the_packaged_aliases_price_the_bare_family_names(tmp_path: Path):
+def test_the_packaged_aliases_point_at_the_current_generation(tmp_path: Path):
     table = prices.load_prices(tmp_path)
-    assert table.aliases == {"opus": "claude-opus-5", "sonnet": "claude-sonnet-5",
-                             "haiku": "claude-haiku-4-5"}
-    assert prices.resolve_model(table, "opus") == "claude-opus-5"
+    assert table.aliases == {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5",
+                             "haiku": "claude-haiku-5-5"}
+    assert prices.resolve_model(table, "opus") == "claude-opus-5-5"
+
+
+def test_the_packaged_table_is_dated_when_it_was_verified(tmp_path: Path):
+    assert prices.load_prices(tmp_path).effective_date == "2026-10-10"
 
 
 def test_a_genuinely_unknown_model_still_resolves_to_none(tmp_path: Path):
@@ -214,4 +244,4 @@ def test_an_override_merges_aliases_per_key(tmp_path: Path):
     )
     table = prices.load_prices(tmp_path)
     assert table.aliases["opus"] == "claude-opus-4-8"
-    assert table.aliases["sonnet"] == "claude-sonnet-5"
+    assert table.aliases["sonnet"] == "claude-sonnet-5-5"

@@ -7,11 +7,12 @@ half-filled one.
 
 An unknown model is `unpriced`, never $0: a dashboard that quietly values an
 unrecognised model at nothing is worse than no dashboard, because the number it
-shows looks complete.
+shows looks complete. "Unknown" means no row for that exact id or alias: a
+point release is never priced at its family's rate, which is a wrong number
+that looks right.
 """
 from __future__ import annotations
 
-import re
 from datetime import date, datetime
 from importlib import resources
 from pathlib import Path
@@ -102,24 +103,15 @@ def load_prices(kb_dir: Path) -> PriceTable:
     return PriceTable.model_validate(data)
 
 
-_POINT_RELEASE = re.compile(r"-\d+$")
-
-
 def resolve_model(table: PriceTable, model: str) -> str | None:
-    """The table row that prices `model`: exact id, then an alias, then the
-    family row after stripping trailing `-<digits>` segments one at a time
-    (`claude-fable-5-1` → `claude-fable-5`). None when nothing matches."""
-    candidate = model
-    while True:
-        if candidate in table.models:
-            return candidate
-        alias = table.aliases.get(candidate)
-        if alias in table.models:
-            return alias
-        stripped = _POINT_RELEASE.sub("", candidate)
-        if stripped == candidate:
-            return None
-        candidate = stripped
+    """The table row that prices `model`: its exact id, else an alias, else
+    None. No family fallback: a point release may be priced differently
+    from its family (the 5.5 generation is), so an id without a row is
+    `unpriced` until someone adds one — invariant I5 extended to ids."""
+    if model in table.models:
+        return model
+    alias = table.aliases.get(model)
+    return alias if alias in table.models else None
 
 
 def cost_of(row: UsageRow, table: PriceTable) -> float | None:
