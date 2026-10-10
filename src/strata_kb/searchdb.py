@@ -19,6 +19,7 @@ from strata_kb.embed import (
     Embedder,
     _serialize,
 )
+from strata_kb.errors import KbError
 from strata_kb.federation import _load_entry, iter_entry_dirs
 from strata_kb.mdutils import slice_section
 
@@ -29,14 +30,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger("strata_kb.searchdb")
 
 
-class IndexBusyError(RuntimeError):
+class IndexBusyError(KbError):
     """The index file is held by another process and could not be replaced.
 
-    Deliberately stays out of the KbError family (Wave G fix round 2, item
-    7; comment added round 3, Minor 2): transient and deliberately
-    swallowed in publish._publish_direct -- joining would invite a future
-    `except KbError` guard to turn a retryable condition into a terminal
-    refusal.
+    Transient: publish._publish_direct catches and swallows it before any
+    `except KbError` sees it. Elsewhere it is a one-line "retry" error, not
+    a traceback (1.15.0).
     """
 
 

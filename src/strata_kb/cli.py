@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import typer
 import yaml
 from pydantic import ValidationError
+from typer.core import TyperGroup
 
 from strata_kb import models
 from strata_kb.utf8io import force_utf8_streams
@@ -42,7 +43,23 @@ def _invalid_yaml_exit(path: Path, exc: Exception) -> None:
     raise typer.Exit(1)
 
 
+class _GuardedGroup(TyperGroup):
+    """The root `kb` group. A KbError that escapes any command, sub-apps
+    included, becomes one red line and exit 1 instead of a traceback, so a
+    command catches a KbError only when it has something to add to it."""
+
+    def invoke(self, ctx):  # click's Context; typer may vendor its own click
+        from strata_kb.errors import KbError
+
+        try:
+            return super().invoke(ctx)
+        except KbError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+
+
 app = typer.Typer(
+    cls=_GuardedGroup,
     help="Strata — Knowledge Base as Code for large reference documents.",
     no_args_is_help=True,
     # Several commands (mcp-setup) handle secrets. Some typer/click versions
@@ -346,11 +363,7 @@ def docker_setup(
     """Prepare this repo for Docker — hub: .env + token + start the service; child: pull the ingest image."""
     from strata_kb import dockersetup
 
-    try:
-        kind = dockersetup.repo_kind(path)
-    except dockersetup.DockerSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    kind = dockersetup.repo_kind(path)
     if kind == "hub":
         _docker_setup_hub(path, force, no_docker)
     elif kind == "child":
@@ -369,18 +382,14 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
     from strata_kb import dockersetup
 
     try:
-        try:
-            report = dockersetup.run_setup(path, regenerate=force)
-        except dockersetup.EnvExistsError:
-            if _stdin_isatty() and typer.confirm(
-                f"Found existing .env — regenerate {dockersetup.TOKEN_VAR}?"
-            ):
-                report = dockersetup.run_setup(path, regenerate=True)
-            else:
-                raise
-    except dockersetup.DockerSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+        report = dockersetup.run_setup(path, regenerate=force)
+    except dockersetup.EnvExistsError:
+        if _stdin_isatty() and typer.confirm(
+            f"Found existing .env — regenerate {dockersetup.TOKEN_VAR}?"
+        ):
+            report = dockersetup.run_setup(path, regenerate=True)
+        else:
+            raise
     action = "created" if report.env_created else "updated"
     typer.echo(
         f".env {action} — {dockersetup.TOKEN_VAR} written (token not shown; see .env)."
@@ -470,7 +479,6 @@ def mcp_setup(
 ) -> None:
     """Connect this repo to the hub's HTTP MCP — write .env, then verify."""
     from strata_kb import mcpsetup
-    from strata_kb.errors import KbError
 
     try:
         mcpsetup.require_client_kind(path)
@@ -510,11 +518,11 @@ def mcp_setup(
         # error with no clue it concerns .env.
         typer.secho(f"cannot read {path / '.env'}: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
-    except (KbError, OSError) as exc:
+    except OSError as exc:
         # write_env can raise OSError (unwritable repo dir), which must
-        # produce the same one-line message as KbError, never propagate to
-        # Typer's traceback hook where the token could leak (see
-        # app=typer.Typer above).
+        # produce the same one-line message the root guard gives a KbError,
+        # never propagate to Typer's traceback hook where the token could
+        # leak (see app=typer.Typer above).
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
 
@@ -1436,11 +1444,7 @@ def svc_note(
     ref_list = tuple(r.strip() for r in refs.split(",") if r.strip())
     note = svcnote.Note(ticket=ticket, title=title, refs=ref_list)
 
-    try:
-        report = svcnote.add_note(kb_dir, rid, service, note)
-    except svcnote.SvcNoteError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = svcnote.add_note(kb_dir, rid, service, note)
 
     if json_out:
         typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
@@ -1724,11 +1728,7 @@ def usage_note(
         assistant=assistant,
         est=est,
     )
-    try:
-        report = ledger.append_rows(kb_dir, [row])
-    except ledger.LedgerError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = ledger.append_rows(kb_dir, [row])
     typer.echo(f"recorded -> {', '.join(report.files)}")
 
 
@@ -1752,7 +1752,7 @@ def usage_report(
 
     try:
         rows = ledger.read_rows(kb_dir)
-    except (ledger.LedgerError, ValidationError) as exc:
+    except ValidationError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     if ticket:
@@ -1828,9 +1828,6 @@ def query(
         outcome = search_detailed(
             handle, text, tags=tag_list, budget=budget, semantic=semantic
         )
-    except searchdb.IndexBusyError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
@@ -2306,9 +2303,6 @@ def reindex(
             "reindex: rebuild federation/index.yaml",
             ["federation/index.yaml"],
         )
-    except gitio.GitError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
     except _CONFIG_READ_ERRORS as exc:
         # write_federation_index -> build_federation_index -> load_federation
         # already skips (warns, does not raise) any entry whose _meta.yaml/
@@ -2344,9 +2338,6 @@ def reindex(
             searchdb.delete_db(handle)
             typer.echo("kb reindex: search index dropped — rebuilding from scratch")
         sreport = searchdb.sync(handle, default_embedder())
-    except searchdb.IndexBusyError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
@@ -2402,14 +2393,10 @@ def migrate(
     ),
 ) -> None:
     """Move in-git federation assets to the configured object store (none → s3)."""
-    from strata_kb import assetcmd, assetstore
+    from strata_kb import assetcmd
 
     handle = _hub_or_exit(hub, kb_dir)
-    try:
-        report = assetcmd.migrate_assets(handle)
-    except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = assetcmd.migrate_assets(handle)
     for rid, n in sorted(report.per_rid.items()):
         typer.echo(f"  {rid}: {n} asset(s) migrated")
     if report.skipped:
@@ -2445,14 +2432,10 @@ def verify(
     ),
 ) -> None:
     """Check asset coverage: records vs store, markdown refs, orphans."""
-    from strata_kb import assetcmd, assetstore
+    from strata_kb import assetcmd
 
     handle = _hub_or_exit(hub, kb_dir)
-    try:
-        report = assetcmd.verify_assets(handle)
-    except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from None
+    report = assetcmd.verify_assets(handle)
     for label in report.missing_records:
         typer.secho(
             f"[missing] recorded but not in store: {label}", fg=typer.colors.RED
@@ -2490,7 +2473,7 @@ def context_new(
     ),
 ) -> None:
     """Generate a kb-context block pinned at HEAD — paste into a Jira ticket."""
-    from strata_kb import gitio, kbcontext
+    from strata_kb import kbcontext
 
     handle = _hub_or_exit(hub, kb_dir)
     ref_strs = [r for r in refs.split(",") if r.strip()]
@@ -2499,7 +2482,7 @@ def context_new(
         block, stale_warning = kbcontext.build_context_block(
             handle, ref_strs, tags=tag_list
         )
-    except (kbcontext.KBContextError, gitio.GitError) as exc:
+    except kbcontext.KBContextError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     if stale_warning:
@@ -2564,7 +2547,7 @@ def resolve(
     ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
-    from strata_kb import gitio, kbcontext
+    from strata_kb import kbcontext
     from strata_kb.resolve import (
         cache_problem,
         render_cache,
@@ -2593,7 +2576,7 @@ def resolve(
     try:
         ctx = kbcontext.parse(text)
         results = resolve_refs(handle, ctx)
-    except (kbcontext.KBContextError, gitio.GitError) as exc:
+    except kbcontext.KBContextError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     typer.echo(render_resolved(results, include_content=not status_only))
@@ -3293,12 +3276,11 @@ def diff(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Diff added/removed/changed sections between the worktree and a git rev."""
-    from strata_kb import gitio
     from strata_kb.diff import diff_doc, render_diff
 
     try:
         report = diff_doc(kb_dir, doc_id, against=against)
-    except (ValueError, gitio.GitError) as exc:
+    except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     typer.echo(render_diff(report))
@@ -3327,7 +3309,7 @@ def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -
                 "kb approve: not approvable — fix the errors above", fg=typer.colors.RED
             )
             raise typer.Exit(1)
-    except (ValueError, gitio.GitError) as exc:
+    except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     return reviewer
@@ -3357,7 +3339,6 @@ def approve(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Mark sections as reviewed (status: summarized → reviewed)."""
-    from strata_kb import gitio
     from strata_kb.review import approve_all_changed, approve_sections
 
     if all_changed != bool(against):
@@ -3389,7 +3370,7 @@ def approve(
             reports = [
                 approve_sections(kb_dir, doc_id, list(section) or None, by=reviewer)
             ]
-    except (ValueError, gitio.GitError) as exc:
+    except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
 

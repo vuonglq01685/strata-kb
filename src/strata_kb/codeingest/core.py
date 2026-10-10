@@ -22,6 +22,7 @@ import yaml
 from pydantic import ValidationError
 
 from strata_kb import models
+from strata_kb.errors import KbError
 from strata_kb.mdutils import _HEADING_RE
 
 # `_HEADING_RE` is imported rather than re-derived: `mdutils.py` is frozen
@@ -98,7 +99,7 @@ class Extractor(Protocol):
     def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult: ...
 
 
-class CodeIngestError(Exception):
+class CodeIngestError(KbError):
     """Raised when code-ingest finds no evidence beyond the repo tree itself,
     when two extractors claim the same section id, or when --scaffold-svc
     finds the -svc document unsafe to upsert blind.

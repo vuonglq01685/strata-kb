@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from strata_kb import models
 from strata_kb.codeingest.extractors._mdcells import escape_cell
+from strata_kb.errors import KbError
 from strata_kb.mdutils import _SEP_ROW_RE, slice_section
 
 # Verbatim per the task brief: used to parse existing rows back out of the
@@ -82,7 +83,7 @@ class SvcNoteReport:
     notes: int
 
 
-class SvcNoteError(Exception):
+class SvcNoteError(KbError):
     """The curated `-svc` document doesn't exist, the paired `-code`
     document doesn't exist, `service` names no `svc.<service>` section in
     it, one of the two manifests is missing or unreadable, or a `hist.*`
