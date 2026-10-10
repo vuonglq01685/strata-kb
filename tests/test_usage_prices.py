@@ -245,3 +245,43 @@ def test_an_override_merges_aliases_per_key(tmp_path: Path):
     table = prices.load_prices(tmp_path)
     assert table.aliases["opus"] == "claude-opus-4-8"
     assert table.aliases["sonnet"] == "claude-sonnet-5-5"
+
+
+def _prompt_row(prompt_in: int, cache_read: int = 0):
+    return row("u1", model="claude-haiku-5-5", tokens_in=prompt_in, tokens_out=1_000_000,
+               cache_read=cache_read, cache_write_5m=0, cache_write_1h=0)
+
+
+def test_haiku_5_5_at_the_threshold_is_the_base_tier(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    # 100,000 prompt tokens is "up to 100,000": base tier.
+    assert prices.cost_of(_prompt_row(100_000), table) == pytest.approx(
+        (100_000 * 0.10 + 1_000_000 * 0.50) / 1_000_000)
+
+
+def test_haiku_5_5_over_the_threshold_prices_the_whole_call_long(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    # Cache reads count toward prompt length: 1 + 100,000 > 100,000.
+    assert prices.cost_of(_prompt_row(1, cache_read=100_000), table) == pytest.approx(
+        (1 * 0.50 + 100_000 * 0.05 + 1_000_000 * 2.50) / 1_000_000)
+
+
+def test_an_override_can_add_a_long_context_tier(tmp_path: Path):
+    (tmp_path / "usage-prices.yaml").write_text(yaml.safe_dump({"models": {"claude-x": {
+        "input": 1.0, "output": 1.0, "cache_read": 0.1, "cache_write_5m": 1.25,
+        "cache_write_1h": 2.0,
+        "long_context": {"threshold": 10, "input": 2.0, "output": 2.0, "cache_read": 0.2,
+                         "cache_write_5m": 2.5, "cache_write_1h": 4.0}}}}), encoding="utf-8")
+    table = prices.load_prices(tmp_path)
+    r = row("u1", model="claude-x", tokens_in=11, tokens_out=0, cache_read=0,
+            cache_write_5m=0, cache_write_1h=0)
+    assert prices.cost_of(r, table) == pytest.approx(22 / 1_000_000)
+
+
+def test_a_misspelled_long_context_key_raises(tmp_path: Path):
+    (tmp_path / "usage-prices.yaml").write_text(yaml.safe_dump({"models": {"claude-x": {
+        "input": 1.0, "output": 1.0, "cache_read": 0.1, "cache_write_5m": 1.25,
+        "cache_write_1h": 2.0, "long_context": {"treshold": 10, "input": 2.0, "output": 2.0,
+        "cache_read": 0.2, "cache_write_5m": 2.5, "cache_write_1h": 4.0}}}}), encoding="utf-8")
+    with pytest.raises(ValidationError):
+        prices.load_prices(tmp_path)

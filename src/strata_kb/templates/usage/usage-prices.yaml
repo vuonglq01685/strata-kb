@@ -13,6 +13,9 @@
 # 5.5 generation costs less than its family and caches at a different
 # multiplier, so a family price is a wrong number that looks right. Add a row.
 #
+# `long_context` reprices the whole call when input + cache read + cache write
+# exceeds `threshold`.
+#
 # `kb usage report` prints effective_date and warns once it is over 90 days old.
 effective_date: "2026-10-10"
 currency: USD
@@ -28,7 +31,10 @@ models:
   claude-sonnet-5-5: {input: 2.0,  output: 10.0, cache_read: 0.10, cache_write_5m: 2.5,   cache_write_1h: 4.0}
   claude-sonnet-5:   {input: 2.0,  output: 10.0, cache_read: 0.20, cache_write_5m: 2.5,   cache_write_1h: 4.0}
   claude-sonnet-4-6: {input: 3.0,  output: 15.0, cache_read: 0.30, cache_write_5m: 3.75,  cache_write_1h: 6.0}
-  claude-haiku-5-5:  {input: 0.10, output: 0.50, cache_read: 0.01, cache_write_5m: 0.125, cache_write_1h: 0.20}
+  claude-haiku-5-5:
+    {input: 0.10, output: 0.50, cache_read: 0.01, cache_write_5m: 0.125, cache_write_1h: 0.20,
+     long_context: {threshold: 100000, input: 0.50, output: 2.50, cache_read: 0.05,
+                    cache_write_5m: 0.625, cache_write_1h: 1.0}}
   claude-haiku-4-5:  {input: 1.0,  output:  5.0, cache_read: 0.10, cache_write_5m: 1.25,  cache_write_1h: 2.0}
 
 # Bare family names Claude Code writes on some calls, priced at the current

@@ -30,12 +30,12 @@ _MTOK = 1_000_000
 # machine-written JSONL, where an unexpected key would mean a code bug and
 # extra fields are harmless. PriceTable and ModelRates parse a file this
 # feature expects a human to hand-edit, where a misspelled key (`modelz`,
-# `cache_write_1hr`) must raise instead of being silently dropped — a
-# dropped typo leaves the default price in place while looking like the
-# override applied.
+# `cache_write_1hr`, `treshold`) must raise instead of being silently
+# dropped — a dropped typo leaves the default price in place while looking
+# like the override applied. The subclasses below inherit model_config.
 
 
-class ModelRates(BaseModel):
+class Rates(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     input: float
@@ -43,6 +43,18 @@ class ModelRates(BaseModel):
     cache_read: float
     cache_write_5m: float
     cache_write_1h: float
+
+
+class LongContextRates(Rates):
+    """Rates for a call whose prompt exceeds `threshold` tokens. The whole
+    call moves tier, not just the tokens past the line ("each request is
+    priced on its own", pricing page)."""
+
+    threshold: int
+
+
+class ModelRates(Rates):
+    long_context: LongContextRates | None = None
 
 
 class PriceTable(BaseModel):
@@ -119,7 +131,13 @@ def cost_of(row: UsageRow, table: PriceTable) -> float | None:
     key = resolve_model(table, row.model)
     if key is None:
         return None
-    rates = table.models[key]
+    model_rates = table.models[key]
+    rates: Rates = model_rates
+    # Prompt length is everything the model read, cached or not: a cache hit
+    # is still context, so cache reads and writes count toward the threshold.
+    prompt = row.tokens_in + row.cache_read + row.cache_write_5m + row.cache_write_1h
+    if model_rates.long_context is not None and prompt > model_rates.long_context.threshold:
+        rates = model_rates.long_context
     return (
         row.tokens_in * rates.input
         + row.tokens_out * rates.output
