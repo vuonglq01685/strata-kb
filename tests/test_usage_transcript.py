@@ -783,3 +783,86 @@ def test_modifiers_are_copied_from_the_usage_block(tmp_path: Path):
         "standard",
         2,
     )
+
+
+def _session(tmp_path: Path, main_rows, subagents: dict[str, list[dict]]) -> Path:
+    main = write_transcript(tmp_path, main_rows, name="sess-1.jsonl")
+    folder = tmp_path / "sess-1" / "subagents"
+    folder.mkdir(parents=True)
+    for agent_id, rows in subagents.items():
+        write_transcript(folder, rows, name=f"agent-{agent_id}.jsonl")
+    return main
+
+
+def test_subagent_transcripts_are_found_next_to_the_main_file(tmp_path: Path):
+    main = _session(
+        tmp_path, [usage_row("m1")], {"b": [usage_row("s2")], "a": [usage_row("s1")]}
+    )
+
+    found = transcript.subagent_transcripts(main)
+
+    assert [p.name for p in found] == ["agent-a.jsonl", "agent-b.jsonl"]
+    assert all(transcript.is_subagent_transcript(p) for p in found)
+    assert transcript.parent_of(found[0]) == main
+    assert not transcript.is_subagent_transcript(main)
+
+
+def test_no_subagent_folder_is_no_subagents(tmp_path: Path):
+    main = write_transcript(tmp_path, [usage_row("m1")])
+
+    assert transcript.subagent_transcripts(main) == []
+
+
+def test_a_subagent_row_is_always_sidechain(tmp_path: Path):
+    path = write_transcript(tmp_path, [usage_row("s1", isSidechain=False)])
+
+    rows = transcript.rows_from_transcript(path, actor="dev", subagent=True)
+
+    assert rows[0].sidechain is True
+
+
+def test_a_subagent_inherits_the_parents_ticket_and_phase_until_it_names_its_own(
+    tmp_path: Path,
+):
+    main = write_transcript(
+        tmp_path,
+        [
+            skill_call_row("dev-execute"),  # 09:58:00
+            user_row("work on docs/impl/ATM-7/plan.md", timestamp="2026-08-23T09:59:01.000Z"),
+            user_row("now tickets/ATM-9.md", timestamp="2026-08-23T10:30:00.000Z"),
+        ],
+        name="main.jsonl",
+    )
+    sub = write_transcript(
+        tmp_path,
+        [
+            usage_row("s1", timestamp="2026-08-23T10:00:00.000Z"),
+            user_row("read docs/impl/ATM-8/plan.md", timestamp="2026-08-23T10:00:01.000Z"),
+            usage_row("s2", timestamp="2026-08-23T10:00:02.000Z"),
+        ],
+        name="sub.jsonl",
+    )
+
+    rows = transcript.rows_from_transcript(
+        sub, actor="dev", subagent=True, parent=transcript.parent_cursor(main)
+    )
+
+    assert [(r.uuid, r.ticket, r.phase) for r in rows] == [
+        ("s1", "ATM-7", "dev-execute"),  # parent at the subagent's first timestamp
+        ("s2", "ATM-8", "dev-execute"),  # its own cursor once it has one
+    ]
+
+
+def test_forced_ticket_beats_both_cursors_for_a_subagent(tmp_path: Path):
+    main = write_transcript(tmp_path, [user_row("tickets/ATM-7.md")], name="main.jsonl")
+    sub = write_transcript(tmp_path, [usage_row("s1")], name="sub.jsonl")
+
+    rows = transcript.rows_from_transcript(
+        sub,
+        actor="dev",
+        subagent=True,
+        parent=transcript.parent_cursor(main),
+        forced_ticket="X-1",
+    )
+
+    assert rows[0].ticket == "X-1"

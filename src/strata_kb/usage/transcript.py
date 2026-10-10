@@ -20,6 +20,11 @@ A cursor advances on what the session did or said, never on what it merely
 read: a `tool_result` block is file content, a directory listing, or command
 output echoed back verbatim, and scanning it would let any file the session
 reads plant a ticket or reset a phase it never actually touched.
+
+A subagent writes its own transcript (`subagent_transcripts`). It starts from
+the parent's cursors at the subagent's first timestamp (`parent_cursor`, the
+same rules walked over the main transcript) and then walks its own file
+exactly as above.
 """
 from __future__ import annotations
 
@@ -216,6 +221,74 @@ def _rows(path: Path) -> list[dict]:
     return rows
 
 
+SUBAGENTS_DIR = "subagents"
+
+
+def subagent_transcripts(main: Path) -> list[Path]:
+    """Every subagent transcript of the session whose main transcript is `main`.
+
+    Claude Code writes each subagent to `<session-id>/subagents/agent-<id>.jsonl`
+    beside `<session-id>.jsonl`. The format is documented as internal and
+    version-dependent; this module is the one place that knows the layout. A
+    hook payload's `agent_transcript_path` is used whenever there is one.
+    """
+    return sorted((main.with_suffix("") / SUBAGENTS_DIR).glob("agent-*.jsonl"))
+
+
+def is_subagent_transcript(path: Path) -> bool:
+    return path.parent.name == SUBAGENTS_DIR and path.name.startswith("agent-")
+
+
+def parent_of(subagent: Path) -> Path:
+    """The main transcript a subagent transcript belongs to."""
+    return subagent.parent.parent.with_suffix(".jsonl")
+
+
+@dataclass(frozen=True)
+class ParentCursor:
+    """The parent session's (ticket, phase) at each change, in file order.
+
+    Timestamps compare as strings: Claude Code writes every one in the same
+    ISO-8601 `YYYY-MM-DDTHH:MM:SS.mmmZ` form, so lexical order is time order.
+    """
+
+    points: tuple[tuple[str, str | None, str], ...] = ()
+
+    def at(self, ts: str) -> tuple[str | None, str]:
+        """The parent's (ticket, phase) as of `ts`, a change AT `ts` included."""
+        ticket: str | None = None
+        phase = UNKNOWN_PHASE
+        for point_ts, point_ticket, point_phase in self.points:
+            if point_ts > ts:
+                break
+            ticket, phase = point_ticket, point_phase
+        return ticket, phase
+
+
+def parent_cursor(path: Path) -> ParentCursor:
+    """Walk a main transcript with the same cursor rules as
+    `rows_from_transcript` (`_ticket_in(_ticket_blob(row))`, `_phase_in(row)`)
+    and keep each change point.
+
+    A change on a row without a timestamp is not lost: the state accumulates,
+    so the next timestamped change point carries it.
+    """
+    points: list[tuple[str, str | None, str]] = []
+    ticket: str | None = None
+    phase = UNKNOWN_PHASE
+    for row in _rows(path):
+        found = _ticket_in(_ticket_blob(row))
+        switched = _phase_in(row)
+        if found is None and switched is None:
+            continue
+        ticket = found if found is not None else ticket
+        phase = switched if switched is not None else phase
+        ts = row.get("timestamp")
+        if isinstance(ts, str) and ts:
+            points.append((ts, ticket, phase))
+    return ParentCursor(tuple(points))
+
+
 @dataclass
 class _Call:
     """One API call while the scan is still collecting its rows."""
@@ -257,6 +330,7 @@ def _to_row(
     actor: str,
     session_fallback: str,
     forced_ticket: str | None,
+    subagent: bool,
 ) -> UsageRow:
     first = call.first
     branch = first.get("gitBranch")
@@ -269,7 +343,9 @@ def _to_row(
         phase=call.phase,
         ticket=forced_ticket if forced_ticket is not None else call.ticket,
         model=str(first["message"].get("model") or ""),
-        sidechain=bool(first.get("isSidechain")),
+        # The file's location, not the row flag, makes a subagent's row
+        # sidechain.
+        sidechain=subagent or bool(first.get("isSidechain")),
         # 'HEAD' is what a non-git directory reports for every row; it is not
         # a branch, so it is not recorded as one.
         branch=branch if isinstance(branch, str) and branch != "HEAD" else None,
@@ -285,6 +361,8 @@ def rows_from_transcript(
     actor: str,
     session_fallback: str = "",
     forced_ticket: str | None = None,
+    subagent: bool = False,
+    parent: ParentCursor | None = None,
     hold_back_last: bool = False,
 ) -> list[UsageRow]:
     """Every API call in this transcript, attributed.
@@ -311,13 +389,31 @@ def rows_from_transcript(
     `hold_back_last` leaves out the last call in first-seen order: the caller
     knows it may still be streaming, and a stored row never changes (I1).
 
-    `forced_ticket` overrides the cursor entirely — the escape hatch for a
-    session the cursor read wrongly.
+    `subagent` marks a subagent's own transcript: every row is sidechain,
+    whatever its `isSidechain` flag says — the file's location decides. With
+    `parent` (the main transcript's `parent_cursor`), a subagent starts from
+    the parent's (ticket, phase) at the subagent's first timestamp; its own
+    cursors then move as usual, and its own ticket wins once it has named one.
+
+    `forced_ticket` overrides every cursor, inherited ones included — the
+    escape hatch for a session the cursor read wrongly.
     """
+    rows = _rows(path)
+    inherited_ticket: str | None = None
+    phase = UNKNOWN_PHASE
+    if parent is not None:
+        first_ts = next(
+            (
+                ts
+                for ts in (row.get("timestamp") for row in rows)
+                if isinstance(ts, str) and ts
+            ),
+            "",
+        )
+        inherited_ticket, phase = parent.at(first_ts)
     calls: dict[str, _Call] = {}
     ticket: str | None = None
-    phase = UNKNOWN_PHASE
-    for row in _rows(path):
+    for row in rows:
         found = _ticket_in(_ticket_blob(row))
         if found is not None:
             ticket = found
@@ -340,7 +436,12 @@ def rows_from_transcript(
         request = str(row.get("requestId") or message.get("id") or uuid)
         call = calls.get(request)
         if call is None:
-            calls[request] = _Call(first=row, usage=usage, ticket=ticket, phase=phase)
+            calls[request] = _Call(
+                first=row,
+                usage=usage,
+                ticket=ticket if ticket is not None else inherited_ticket,
+                phase=phase,
+            )
         elif _int(usage, "output_tokens") > _int(call.usage, "output_tokens"):
             # A streamed call writes a row per content block; the first one
             # can carry a partial output count (5 vs 329 measured). Keep the
@@ -362,6 +463,7 @@ def rows_from_transcript(
             actor=actor,
             session_fallback=session_fallback,
             forced_ticket=forced_ticket,
+            subagent=subagent,
         )
         for k in keys
     ]
