@@ -25,6 +25,16 @@ from strata_kb.usage.ledger import UsageRow
 PRICES_FILE = "usage-prices.yaml"
 _MTOK = 1_000_000
 
+# Values of the API `usage` block, verified 2026-10-10 against
+# platform.claude.com/docs/en/manage-claude/data-residency (`inference_geo`:
+# "us" | "global") and .../build-with-claude/fast-mode (`speed`: "fast" |
+# "standard"). "" is a row that did not report the field.
+US_ONLY_GEO = frozenset({"us"})
+KNOWN_GEO = frozenset({"", "global"}) | US_ONLY_GEO
+FAST_SPEED = "fast"
+KNOWN_SPEED = frozenset({"", "standard", FAST_SPEED})
+US_ONLY_FACTOR = 1.1  # "1.1x multiplier on all token pricing categories"
+
 # extra="forbid" is new to this module rather than a repo-wide convention
 # (nothing else under src/strata_kb sets model_config): UsageRow parses
 # machine-written JSONL, where an unexpected key would mean a code bug and
@@ -65,6 +75,9 @@ class PriceTable(BaseModel):
     unit: str = "per_mtok"
     models: dict[str, ModelRates] = {}
     aliases: dict[str, str] = {}
+    # USD per 1,000 web searches, charged on top of tokens. One table-wide
+    # rate: the pricing page lists it per tool, not per model.
+    web_search_per_1k: float = 10.0
 
     @field_validator("effective_date", mode="before")
     @classmethod
@@ -138,13 +151,32 @@ def cost_of(row: UsageRow, table: PriceTable) -> float | None:
     prompt = row.tokens_in + row.cache_read + row.cache_write_5m + row.cache_write_1h
     if model_rates.long_context is not None and prompt > model_rates.long_context.threshold:
         rates = model_rates.long_context
-    return (
+    tokens = (
         row.tokens_in * rates.input
         + row.tokens_out * rates.output
         + row.cache_read * rates.cache_read
         + row.cache_write_5m * rates.cache_write_5m
         + row.cache_write_1h * rates.cache_write_1h
     ) / _MTOK
+    # The geo multiplier applies on top of whichever tier was picked (the
+    # pricing page says so for Haiku 5.5's long-context prices), and to
+    # tokens only: a web search is a flat per-search charge.
+    if row.inference_geo in US_ONLY_GEO:
+        tokens *= US_ONLY_FACTOR
+    return tokens + row.web_searches * table.web_search_per_1k / 1000
+
+
+def is_lower_bound(row: UsageRow) -> bool:
+    """Fast mode has no published cache rates, so its cost is reported at
+    the standard rate and flagged rather than guessed."""
+    return row.speed == FAST_SPEED
+
+
+def has_unknown_modifier(row: UsageRow) -> bool:
+    """A geo or speed value this table does not know. Such a row is priced
+    as global/standard and flagged: the token counts are still right, and a
+    new API value must not turn a known model into `unpriced`."""
+    return row.inference_geo not in KNOWN_GEO or row.speed not in KNOWN_SPEED
 
 
 def stale_days(table: PriceTable, today: date) -> int:

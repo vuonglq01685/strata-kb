@@ -285,3 +285,35 @@ def test_a_misspelled_long_context_key_raises(tmp_path: Path):
         "cache_read": 0.2, "cache_write_5m": 2.5, "cache_write_1h": 4.0}}}}), encoding="utf-8")
     with pytest.raises(ValidationError):
         prices.load_prices(tmp_path)
+
+
+def _plain(**kw):
+    base = dict(model="claude-opus-5", tokens_in=0, tokens_out=1_000_000, cache_read=0,
+                cache_write_5m=0, cache_write_1h=0)
+    base.update(kw)
+    return row("u1", **base)
+
+
+def test_us_only_inference_multiplies_token_cost(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    assert prices.cost_of(_plain(inference_geo="us"), table) == pytest.approx(25.0 * 1.1)
+    assert prices.cost_of(_plain(inference_geo="global"), table) == pytest.approx(25.0)
+
+
+def test_web_searches_add_their_per_search_price(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    assert prices.cost_of(_plain(web_searches=3), table) == pytest.approx(25.0 + 0.03)
+
+
+def test_fast_mode_is_priced_at_standard_and_flagged_lower_bound(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    r = _plain(speed="fast")
+    assert prices.cost_of(r, table) == pytest.approx(25.0)
+    assert prices.is_lower_bound(r) and not prices.has_unknown_modifier(r)
+
+
+def test_an_unrecognised_modifier_is_flagged_and_priced_as_global(tmp_path: Path):
+    table = prices.load_prices(tmp_path)
+    r = _plain(inference_geo="mars")
+    assert prices.cost_of(r, table) == pytest.approx(25.0)
+    assert prices.has_unknown_modifier(r)

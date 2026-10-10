@@ -186,3 +186,11 @@ def test_hook_errors_survives_a_non_utf8_log(tmp_path: Path):
 
     assert count == 2
     assert "bang" in last
+
+
+def test_a_ledger_line_written_before_modifiers_existed_still_loads():
+    old = row("u1").model_dump(mode="json")
+    for key in ("inference_geo", "speed", "service_tier", "web_searches"):
+        old.pop(key)
+    loaded = ledger.UsageRow.model_validate(old)
+    assert (loaded.inference_geo, loaded.speed, loaded.web_searches) == ("", "", 0)

@@ -81,6 +81,16 @@ class UsageRow(BaseModel):
     # build that could not tell one call from one row" — those files were
     # inflated and need re-ingesting, which `kb usage report` cannot infer.
     request: str = ""
+    # Price modifiers, copied verbatim from the call's `usage` block (I3):
+    # `inference_geo`, `speed`, `service_tier`, and
+    # `server_tool_use.web_search_requests`. Defaulted for the same reason as
+    # `request`; an empty string means "not reported", which is every row
+    # written before 1.9.0. Recorded even where not priced (`service_tier`),
+    # so a later pricing rule can apply to rows already in git (I1).
+    inference_geo: str = ""
+    speed: str = ""
+    service_tier: str = ""
+    web_searches: int = 0
 
 
 @dataclass
