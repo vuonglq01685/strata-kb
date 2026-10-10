@@ -1833,7 +1833,7 @@ def _publish_in_worktree(
         published_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
     )
     models.save_yaml_model(dest / "_meta.yaml", meta)
-    federation.write_federation_index(work / "federation")
+    federation.write_federation_index(work / "federation", changed={rid})
     gitio.commit_paths(work, f"publish: {rid} @ {source_commit}", ["federation"])
     hub_url = gitio.remote_url(handle.root)
     hub_full = ghapp.repo_full_from_url(hub_url)

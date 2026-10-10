@@ -1035,7 +1035,8 @@ def _snapshot_federation(
             f"'{rid}' — refusing to wipe them; delete federation/{rid} on the hub "
             "manually if that is really intended"
         )
-    n_docs = len(federation.build_federation_index(fed_src).docs)
+    # Count only: build_federation_index would also hash every entry (F6).
+    n_docs = sum(len(r.index.docs) for r in federation.load_federation(fed_src))
     changed, deleted = hashsync.diff_manifests(src_man, dest_man)
     changed = [p for p in changed if p not in synthesized_src_only]
     # A record-only change (a Case A name newly reaches this hub with no
@@ -1365,7 +1366,7 @@ def _push_with_retry(handle: hub_mod.HubHandle, rid: str, max_retries: int) -> b
             gitio.pull_rebase(handle.root, handle.token)
             # another repo just published — the aggregate index in our commit may
             # be missing their docs; regen (deterministic), then commit the fix
-            federation.write_federation_index(handle.federation_dir)
+            federation.write_federation_index(handle.federation_dir, changed={rid})
             gitio.commit_paths(
                 handle.root,
                 f"publish: reindex after rebase ({rid})",
@@ -1418,7 +1419,7 @@ def _publish_direct(
     # rebase just happened above, this already includes any peer's entries)
     # and commit/push it separately — a plain modify, never an "add/add",
     # even on the very first publish to an empty hub.
-    federation.write_federation_index(handle.federation_dir)
+    federation.write_federation_index(handle.federation_dir, changed={rid})
     idx_committed = gitio.commit_paths(
         handle.root, f"publish: reindex ({rid})", ["federation/index.yaml"]
     )
@@ -1457,7 +1458,7 @@ def _publish_pr(
     try:
         gitio.checkout_branch(handle.root, branch, original)
         n_docs, changed, skipped = snapshot_fn(kb_abs, handle, rid, source_commit)
-        federation.write_federation_index(handle.federation_dir)
+        federation.write_federation_index(handle.federation_dir, changed={rid})
         committed = gitio.commit_paths(
             handle.root, f"publish: {rid} @ {source_commit}", ["federation"]
         )

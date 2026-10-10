@@ -3,6 +3,12 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.13.0 — 2026-10-10
+
+- Each `.md` / `.raw.md` is split into sections once instead of once per section (`mdutils.section_map`; `slice_section` returns exactly what it did). The search index's cold sync of 2,000 sections at 500 per file went from 4.2 s to 0.33 s, and `kb build`, `kb summarize` and the search index read each file once per document.
+- Token counting no longer needs the Internet after the first run, and never crashes without it. tiktoken is imported only when a count is needed, and its `cl100k_base` file is cached in `~/.strata-kb/tiktoken` (it used to sit in the system temp dir, which a reboot or a new container empties). A file already cached in the old place is still found. When the encoding cannot be loaded at all, counts become an estimate (~4 characters per token) and one warning says so: this affects the `~Ntk` display, budgets and `kb stats`, never content. `TIKTOKEN_CACHE_DIR` still wins when set.
+- A publish hashes only the repo it wrote: the other entries in `federation/index.yaml` keep the `content_sha256` they were published with, instead of the whole hub being re-hashed on every publish. This also keeps an in-place edit to another entry visible to `kb doctor` rather than re-recording it. `kb reindex` still recomputes everything.
+
 ## 1.12.0 — 2026-10-10
 
 - The hub server no longer freezes. Every Web UI / REST route except `/api/health` now runs off the event loop (Starlette's threadpool), so a slow page never holds up MCP or other requests: on a 2,000-section hub, `/api/health` took 7.9 s while `/ui` rendered and now stays under ~110 ms. `resolve_hub` takes a per-cache lock around clone/pull, since web routes now resolve the hub from worker threads as MCP tools already did.

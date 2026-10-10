@@ -422,18 +422,29 @@ def _repo_fingerprint(repo_dir: Path) -> str:
 
 
 def _section_parts(
-    kb_dir: Path, doc_id: str, sec: models.SectionEntry
+    kb_dir: Path, doc_id: str, sec: models.SectionEntry,
+    texts: dict[Path, str | None] | None = None,
 ) -> tuple[str, str, str, str]:
     """(title, summary, body_l2, body_l3) — body_l2 = FULL L2 slice (summary
-    + tables, no cap), body_l3 = full L3 slice from .raw.md."""
-    body_l2 = ""
-    l2_path = kb_dir / doc_id / f"{sec.file}.md"
-    if l2_path.exists():
-        body_l2 = slice_section(l2_path.read_text(encoding="utf-8"), sec.id) or ""
-    body_l3 = ""
+    + tables, no cap), body_l3 = full L3 slice from .raw.md.
+
+    `texts` caches each file's text for one document: the same string
+    object then hits `mdutils.section_map`'s memo, so a 500-section file is
+    read and split once, not 500 times (2026-10-10 review §6.2 F2)."""
+    texts = {} if texts is None else texts
+
+    def _text(path: Path) -> str | None:
+        if path not in texts:
+            texts[path] = path.read_text(encoding="utf-8") if path.exists() else None
+        return texts[path]
+
+    l2_text = _text(kb_dir / doc_id / f"{sec.file}.md")
+    body_l2 = (slice_section(l2_text, sec.id) or "") if l2_text is not None else ""
     l3_path = kb_dir / doc_id / f"{sec.file}.raw.md"
-    if l3_path.exists():
-        body_l3 = slice_section(l3_path.read_text(encoding="utf-8"), sec.id) or ""
+    l3_text = _text(l3_path)
+    body_l3 = ""
+    if l3_text is not None:
+        body_l3 = slice_section(l3_text, sec.id) or ""
     else:
         logger.warning("raw L3 missing — FTS indexes L2 only: %s", l3_path)
     return sec.title, sec.summary, body_l2, body_l3
@@ -489,11 +500,12 @@ def _sync_repo(
         if not manifest_path.exists():
             continue
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        texts: dict[Path, str | None] = {}
         for sec in manifest.sections:
             key = (doc.id, sec.id)
             seen.add(key)
             title, summary, body_l2, body_l3 = _section_parts(
-                repo.kb_dir, doc.id, sec
+                repo.kb_dir, doc.id, sec, texts
             )
             digest = _content_digest(title, summary, body_l2, body_l3)
             old = stored.get(key)

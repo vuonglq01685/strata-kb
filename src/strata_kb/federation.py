@@ -335,16 +335,48 @@ def entry_content_digest(entry_dir: Path) -> str:
     return _fed_tree_digest(entry_dir, skip=frozenset({".gitkeep"}))
 
 
-def build_federation_index(federation_dir: Path) -> models.FederationIndex:
+def _in_scope(path_id: str, changed: set[str]) -> bool:
+    """`path_id` is one of `changed` or nested under one (multi-tier
+    federation: publishing hub `mid` rewrites every `mid/<x>` entry)."""
+    return any(path_id == rid or path_id.startswith(rid + "/") for rid in changed)
+
+
+def _recorded_digests(federation_dir: Path) -> dict[str, str]:
+    """{repo_id: content_sha256} from the current aggregate index; {} when
+    it is missing or unreadable (then everything is recomputed)."""
+    try:
+        index = models.load_yaml_model(
+            federation_dir / FEDERATION_INDEX_NAME, models.FederationIndex
+        )
+    except (OSError, yaml.YAMLError, ValidationError, UnicodeDecodeError):
+        return {}
+    return {d.repo_id: d.content_sha256 for d in index.docs if d.content_sha256}
+
+
+def build_federation_index(
+    federation_dir: Path, changed: set[str] | None = None
+) -> models.FederationIndex:
     """The aggregate index — 100% deterministic from the sub-snapshots.
 
     Order: DFS theo tên tăng dần từng cấp (deterministic; KHÔNG phải sort
     lexicographic toàn cục của path-id), docs in the order of each repo's
     own index.
+
+    `changed` (the repo-ids a publish just wrote): every other entry keeps
+    the `content_sha256` already recorded for it, instead of re-hashing the
+    whole hub on each publish (4.8 s at 100 docs, 2026-10-10 review §6.2
+    F6). It is also the right record: the digest is what that repo
+    published, so an in-place edit to another entry stays visible to
+    `kb doctor` rather than being re-recorded by an unrelated publish.
+    None (reindex, doctor) recomputes every entry.
     """
+    recorded = _recorded_digests(federation_dir) if changed is not None else {}
     entries: list[models.FedIndexEntry] = []
     for repo in load_federation(federation_dir):
-        digest = entry_content_digest(repo.kb_dir)
+        rid = repo.meta.repo_id
+        digest = recorded.get(rid) if changed is not None and not _in_scope(rid, changed) else None
+        if digest is None:
+            digest = entry_content_digest(repo.kb_dir)
         for doc in repo.index.docs:
             entries.append(
                 models.FedIndexEntry(
@@ -362,7 +394,8 @@ def build_federation_index(federation_dir: Path) -> models.FederationIndex:
     return models.FederationIndex(docs=entries)
 
 
-def write_federation_index(federation_dir: Path) -> Path:
+def write_federation_index(federation_dir: Path, changed: set[str] | None = None) -> Path:
+    """Rewrite the aggregate index; see `build_federation_index` for `changed`."""
     index_path = federation_dir / FEDERATION_INDEX_NAME
-    models.save_yaml_model(index_path, build_federation_index(federation_dir))
+    models.save_yaml_model(index_path, build_federation_index(federation_dir, changed))
     return index_path
