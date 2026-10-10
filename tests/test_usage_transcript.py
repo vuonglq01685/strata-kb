@@ -866,3 +866,60 @@ def test_forced_ticket_beats_both_cursors_for_a_subagent(tmp_path: Path):
     )
 
     assert rows[0].ticket == "X-1"
+
+
+def test_a_subagents_own_skill_switch_overrides_the_inherited_phase(tmp_path: Path):
+    main = write_transcript(tmp_path, [skill_call_row("dev-execute")], name="main.jsonl")
+    switch = skill_call_row("dev-review")
+    switch["timestamp"] = "2026-08-23T10:00:01.000Z"
+    sub = write_transcript(
+        tmp_path,
+        [
+            usage_row("s1", timestamp="2026-08-23T10:00:00.000Z"),
+            switch,
+            usage_row("s2", timestamp="2026-08-23T10:00:02.000Z"),
+        ],
+        name="sub.jsonl",
+    )
+
+    rows = transcript.rows_from_transcript(
+        sub, actor="dev", subagent=True, parent=transcript.parent_cursor(main)
+    )
+
+    assert [(r.uuid, r.phase) for r in rows] == [
+        ("s1", "dev-execute"),
+        ("s2", "dev-review"),
+    ]
+
+
+def test_parent_cursor_at_a_change_points_own_timestamp_includes_it():
+    cursor = transcript.ParentCursor(
+        (("2026-08-23T09:00:00.000Z", "ATM-1", "dev-execute"),)
+    )
+
+    assert cursor.at("2026-08-23T09:00:00.000Z") == ("ATM-1", "dev-execute")
+
+
+def test_parent_cursor_does_not_assume_file_order_is_time_order():
+    cursor = transcript.ParentCursor(
+        (
+            ("2026-08-23T09:00:00.000Z", "A", "dev-execute"),
+            ("2026-08-23T11:00:00.000Z", "B", "dev-execute"),
+            ("2026-08-23T09:30:00.000Z", "C", "dev-execute"),
+        )
+    )
+
+    assert cursor.at("2026-08-23T10:00:00.000Z") == ("C", "dev-execute")
+
+
+def test_a_subagent_without_timestamps_inherits_nothing(tmp_path: Path):
+    main = write_transcript(tmp_path, [user_row("tickets/ATM-7.md")], name="main.jsonl")
+    s1 = usage_row("s1")
+    del s1["timestamp"]
+    sub = write_transcript(tmp_path, [s1], name="sub.jsonl")
+
+    rows = transcript.rows_from_transcript(
+        sub, actor="dev", subagent=True, parent=transcript.parent_cursor(main)
+    )
+
+    assert [(r.ticket, r.phase) for r in rows] == [(None, "unknown")]

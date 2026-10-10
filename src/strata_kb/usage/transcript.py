@@ -1,14 +1,16 @@
 """transcript — turn a Claude Code transcript into ledger rows.
 
-A transcript lives at `~/.claude/projects/<slug>/<session-id>.jsonl`. Every row
-whose `message` carries a `usage` block is one API call, and that block is the
-assistant's own accounting — not an estimate — so the numbers here are copied,
-never computed (invariant I3).
+A transcript lives at `~/.claude/projects/<slug>/<session-id>.jsonl`. A row
+whose `message` carries a `usage` block belongs to one API call (a call can
+span several rows), and that block is the assistant's own accounting — not an
+estimate — so the numbers here are copied, never computed (invariant I3).
 
 Attribution is two cursors walked in file order. Both depend only on rows
 BEFORE the current one, which is what makes re-ingestion of a growing
 transcript stable: the `Stop` hook re-reads the same file every turn, and rows
-already stored must never change (invariant I1). Both cursors are read from
+already stored must never change (invariant I1). A call's COUNTS, unlike its
+attribution, can depend on its later rows (`rows_from_transcript`), which is
+what `hold_back_last` is for. Both cursors are read from
 the current row before that row is itself attributed, so a row that both
 carries a `usage` block and triggers a switch (a `Skill` call, a command
 marker, a ticket `file_path`) is attributed to what it switches to, not to
@@ -248,6 +250,8 @@ def parent_of(subagent: Path) -> Path:
 class ParentCursor:
     """The parent session's (ticket, phase) at each change, in file order.
 
+    `at` does not assume file order is timestamp order: it scans every point
+    and keeps the last one (in file order) at or before the asked time.
     Timestamps compare as strings: Claude Code writes every one in the same
     ISO-8601 `YYYY-MM-DDTHH:MM:SS.mmmZ` form, so lexical order is time order.
     """
@@ -259,9 +263,8 @@ class ParentCursor:
         ticket: str | None = None
         phase = UNKNOWN_PHASE
         for point_ts, point_ticket, point_phase in self.points:
-            if point_ts > ts:
-                break
-            ticket, phase = point_ticket, point_phase
+            if point_ts <= ts:
+                ticket, phase = point_ticket, point_phase
         return ticket, phase
 
 
@@ -270,8 +273,8 @@ def parent_cursor(path: Path) -> ParentCursor:
     `rows_from_transcript` (`_ticket_in(_ticket_blob(row))`, `_phase_in(row)`)
     and keep each change point.
 
-    A change on a row without a timestamp is not lost: the state accumulates,
-    so the next timestamped change point carries it.
+    A change on a row without a timestamp has no point of its own: the state
+    accumulates, so it is carried by the next timestamped change point, if any.
     """
     points: list[tuple[str, str | None, str]] = []
     ticket: str | None = None
