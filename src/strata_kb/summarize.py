@@ -304,9 +304,8 @@ def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
         except (RunnerError, ValueError) as exc:
             last = exc
             if attempt == 0 and RETRY_PAUSE_SECONDS:
-                time.sleep(
-                    RETRY_PAUSE_SECONDS + random.random() * RETRY_PAUSE_SECONDS / 2
-                )  # noqa: S311 -- retry backoff jitter, not security-sensitive
+                jitter = random.random() * RETRY_PAUSE_SECONDS / 2  # noqa: S311 -- retry backoff jitter, not security-sensitive
+                time.sleep(RETRY_PAUSE_SECONDS + jitter)
             continue
         if len(reply["l2_summary"]) <= limit:
             return reply

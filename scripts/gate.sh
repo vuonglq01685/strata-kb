@@ -43,8 +43,10 @@ cd "$ROOT"
 rm -rf "$WORK" dist
 mkdir -p "$WORK"
 
-echo "==> T0: lint"
+echo "==> T0: lint, format, types"
 "$PY" -m ruff check .
+"$PY" -m ruff format --check .
+"$PY" -m pyright --pythonpath "$PY"  # check against this interpreter's packages, not PATH's python
 
 echo "==> T1: unit/integration (source tree)"
 "$PY" -m pytest -q

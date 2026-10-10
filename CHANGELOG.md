@@ -3,6 +3,12 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.14.1 — 2026-10-10
+
+- The search index's embedding backfill refuses an embedder that returns fewer vectors than it was given texts. Before, the unmatched sections were silently left without a vector while the index still recorded full coverage, so they were never embedded on later syncs either.
+- The intake server's GitHub App client reports a GitHub reply that is valid JSON but not an object as its usual one-line error, instead of a bare `TypeError`.
+- Development: CI's T0 tier (and `scripts/gate.sh`) now runs `ruff check .` with the B, I, UP and SIM rules on, `ruff format --check .`, and `pyright` in basic mode on `src/`. The repo is formatted with `ruff format` (line length 88). `pyright==1.1.414` joins the `dev` extra. No other behaviour changes.
+
 ## 1.14.0 — 2026-10-10
 
 - `kb resolve`, `kb_resolve` and the ticket lint's citation check read every pinned file through one `git cat-file --batch` process, instead of four git processes per citation: 5 citations went from 22 git processes (199 ms) to 3 (113 ms) on a 2,000-section hub.
