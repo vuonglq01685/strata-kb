@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -181,6 +182,10 @@ def _ensure_lock_ignored(directory: Path) -> None:
         pass
 
 
+# Below the hooks' 30 s timeout, with room for the ingest itself.
+_WINDOWS_LOCK_DEADLINE_S = 25.0
+
+
 @contextmanager
 def _append_lock(directory: Path) -> Iterator[None]:
     """Hold an exclusive advisory lock on `<usage>/.lock` for the block.
@@ -190,18 +195,32 @@ def _append_lock(directory: Path) -> Iterator[None]:
     the lock both scans see the uuid missing and both append it, counting
     the call twice (I2). Blocking is fine — every holder is one short ingest,
     and an OS lock is released when its process dies, so it cannot go stale.
-    Windows' `msvcrt.locking(LK_LOCK)` retries for about ten seconds, then
-    raises `OSError`, which the hook logs like any other failure.
+    Windows' `msvcrt.locking(LK_LOCK)` gives up after about ten seconds, so
+    it is retried until `_WINDOWS_LOCK_DEADLINE_S` — under the hooks' 30 s
+    timeout — before the `OSError` reaches the hook's log: a subagent fan-out
+    finishing at once can queue longer than ten seconds behind a large
+    ledger scan, and a `SubagentStop` that gives up loses that subagent's
+    held-back last call.
+
+    The `.gitignore` is written under the lock: two first appends racing on
+    it could otherwise truncate a user's existing lines.
     """
     directory.mkdir(parents=True, exist_ok=True)
-    _ensure_lock_ignored(directory)
     with (directory / LOCK_NAME).open("a+b") as fh:
         if os.name == "nt":
             import msvcrt
 
-            fh.seek(0)
-            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+            deadline = time.monotonic() + _WINDOWS_LOCK_DEADLINE_S
+            while True:
+                fh.seek(0)
+                try:
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise
             try:
+                _ensure_lock_ignored(directory)
                 yield
             finally:
                 fh.seek(0)
@@ -211,6 +230,7 @@ def _append_lock(directory: Path) -> Iterator[None]:
 
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
             try:
+                _ensure_lock_ignored(directory)
                 yield
             finally:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_UN)

@@ -275,3 +275,17 @@ def test_kb_doctor_on_a_ba_repo_reports_the_missing_subagent_hook(
     result = CliRunner().invoke(app, ["doctor", "--kb-dir", str(kb)])
 
     assert "[warning]" in result.output and "SubagentStop" in result.output
+
+
+def test_doctor_does_not_crash_on_a_malformed_hooks_entry(tmp_path: Path):
+    _settings(tmp_path, {"Stop": [{"hooks": 5}], "SubagentStop": [{"hooks": "x"}]})
+    assert check_usage_hooks(tmp_path) == []
+
+
+def test_doctor_reads_a_settings_file_saved_with_a_bom(tmp_path: Path):
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(
+        "﻿" + json.dumps({"hooks": {"Stop": [_HOOK]}}), encoding="utf-8"
+    )
+    [issue] = check_usage_hooks(tmp_path)
+    assert "SubagentStop" in issue.message

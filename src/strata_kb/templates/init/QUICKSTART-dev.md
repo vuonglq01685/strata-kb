@@ -375,7 +375,8 @@ committed too — a teammate who pulls the repo without `kb` on their `PATH`
 otherwise sees this hook fail on every turn.
 
 It **adds about 0.6s per turn** (the cost of starting the `kb` CLI; parsing the
-transcript itself is ~60ms). That is the price of the data.
+transcript itself is ~60ms), and the same again each time a subagent
+finishes. That is the price of the data.
 
 - `kb usage report` — writes `.kb/usage/report.html`; open it in a browser. Per
   ticket, per phase, per model, plus a `_unattributed` bucket.

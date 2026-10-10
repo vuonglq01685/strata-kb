@@ -144,6 +144,9 @@ def ingest_path(kb_dir: Path, path: Path, *, actor: str,
     session is over. `result` as in `ingest_subagent`.
     """
     result = result if result is not None else IngestResult()
+    # Absolute first: `agent-x.jsonl` named from inside `subagents/` has an
+    # empty parent name and would otherwise read as a main transcript.
+    path = path.absolute()
     if transcript.is_subagent_transcript(path):
         parent = transcript.parent_of(path)
         if not parent.is_file():

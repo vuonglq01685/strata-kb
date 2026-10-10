@@ -122,3 +122,11 @@ def test_a_manual_subagent_path_without_its_parent_says_so(tmp_path: Path):
     assert len(result.notes) == 1
     assert "no parent transcript, own cursor only" in result.notes[0]
     assert "sess-9.jsonl" in result.notes[0]
+
+
+def test_a_relative_subagent_path_still_finds_its_parent(tmp_path: Path, monkeypatch):
+    d = kb_dir(tmp_path)
+    _session(tmp_path)
+    monkeypatch.chdir(tmp_path / "sess-1" / "subagents")
+    ingest.ingest_path(d, Path("agent-a.jsonl"), actor="dev")
+    assert {r.ticket for r in ledger.read_rows(d)} == {"ATM-7"}

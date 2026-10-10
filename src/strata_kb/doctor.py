@@ -263,7 +263,8 @@ def _has_usage_hook(settings: dict, event: str) -> bool:
         return False
     return any(_USAGE_HOOK in str(h.get("command", ""))
                for g in groups if isinstance(g, dict)
-               for h in (g.get("hooks") or []) if isinstance(h, dict))
+               for h in (g.get("hooks") if isinstance(g.get("hooks"), list) else [])
+               if isinstance(h, dict))
 
 
 def check_usage_hooks(repo_root: Path) -> list[Issue]:
@@ -272,7 +273,8 @@ def check_usage_hooks(repo_root: Path) -> list[Issue]:
     sweep still records its subagents, minus each one's in-flight last call."""
     path = repo_root / ".claude" / "settings.json"
     try:
-        settings = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig: Notepad saves JSON with a BOM, which json.loads rejects.
+        settings = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return []
     if not isinstance(settings, dict):
