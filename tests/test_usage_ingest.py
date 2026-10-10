@@ -52,3 +52,14 @@ def test_a_manual_main_ingest_does_not_hold_back(tmp_path: Path):
     d = kb_dir(tmp_path)
     ingest.ingest_path(d, _session(tmp_path), actor="dev")
     assert sorted(r.uuid for r in ledger.read_rows(d)) == ["m1", "s1", "s2"]
+
+
+def test_one_unreadable_subagent_file_does_not_stop_the_sweep(tmp_path: Path):
+    d = kb_dir(tmp_path)
+    main = _session(tmp_path)
+    # Sorts before agent-a.jsonl and matches the glob, but reading it fails
+    # (IsADirectoryError, an OSError) — as a file deleted mid-sweep would.
+    (tmp_path / "sess-1" / "subagents" / "agent-0.jsonl").mkdir()
+    result = ingest.ingest_main(d, main, actor="dev", hold_back_subagents=False)
+    assert sorted(r.uuid for r in ledger.read_rows(d)) == ["m1", "s1", "s2"]
+    assert len(result.notes) == 1 and "agent-0.jsonl" in result.notes[0]
