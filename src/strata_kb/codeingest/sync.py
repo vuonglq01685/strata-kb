@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from strata_kb import config as config_mod
 from strata_kb import models
-from strata_kb.codeingest import core
+from strata_kb.codeingest import core, localgit
 
 KB_CODE_WORKFLOW = Path(".github") / "workflows" / "kb-code.yml"
 _PIN_RE = re.compile(r"strata-kb==([^\s\"']+)")
@@ -113,7 +113,7 @@ def _stale_reason(repo_root: Path, kb_dir: Path, doc_id: str) -> str:
     args = ["status", "--porcelain", "--untracked-files=no", "--", "."]
     with contextlib.suppress(ValueError):  # .kb outside the repo: nothing to exclude
         args.append(f":(exclude){kb_dir.relative_to(repo_root).as_posix()}")
-    proc = core._git(repo_root, *args)
+    proc = localgit.run(repo_root, *args)
     if proc.returncode != 0 or proc.stdout.strip():
         return "dirty"
     return ""

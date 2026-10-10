@@ -12,16 +12,23 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Protocol
 
 import yaml
 from pydantic import ValidationError
 
 from strata_kb import models
+from strata_kb.codeingest.extractors import ALL_EXTRACTORS
+from strata_kb.codeingest.extractors.tree import relposix, walk_tree
+from strata_kb.codeingest.localgit import run as _git
+from strata_kb.codeingest.types import (  # noqa: F401 -- re-exported: core.CodeSection etc. stay valid
+    CodeIngestOptions,
+    CodeSection,
+    Extractor,
+    ExtractResult,
+)
 from strata_kb.errors import KbError
 from strata_kb.mdutils import _HEADING_RE
 
@@ -32,51 +39,6 @@ from strata_kb.mdutils import _HEADING_RE
 # section heading apart from a human's own free-form '## Something'
 # subheading. Re-implementing the regex here instead of importing it would
 # risk the two definitions drifting apart (Defect 4 in this stage).
-
-
-@dataclass(frozen=True)
-class CodeSection:
-    id: str  # e.g. "svc.airspace-service" — no whitespace (mdutils._HEADING_RE)
-    title: str  # e.g. "airspace-service"
-    summary: str  # 1-2 deterministic sentences; MUST be non-empty (build invariant)
-    group: str  # output file stem, e.g. "services" -> services.md + services.raw.md
-    l2_md: str  # body under the "## <id> <title>" heading in the L2 file
-    l3_md: str  # body under the same heading in the L3 file; fenced blocks only
-
-
-@dataclass
-class ExtractResult:
-    sections: list[CodeSection] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class CodeIngestOptions:
-    repo_root: Path
-    kb_dir: Path
-    doc_id: str
-    repo_id: str
-    db_paths: tuple[Path, ...] = ()
-    tags: tuple[str, ...] = ()
-    scaffold_svc: bool = False
-
-    def __post_init__(self) -> None:
-        # A relative `kb_dir` is relative to the process CWD — the same
-        # rule every other `kb` command's --kb-dir follows (reviewer G-11
-        # replaced Ruling R23's repo-root resolution, which no help text
-        # documented and which wrote inside a repo the operator had not
-        # pointed at). `tree.walk_tree()` prunes an absolute kb_dir only
-        # when it lies inside repo_root, so a KB outside the repo is
-        # simply not pruned — correct. `db_paths` keep resolving against
-        # `repo_root`: a --db names a file inside the repository.
-        root = self.repo_root.resolve()
-        kb = self.kb_dir if self.kb_dir.is_absolute() else Path.cwd() / self.kb_dir
-        db_paths = tuple(
-            (p if p.is_absolute() else root / p).resolve() for p in self.db_paths
-        )
-        object.__setattr__(self, "repo_root", root)
-        object.__setattr__(self, "kb_dir", kb.resolve())
-        object.__setattr__(self, "db_paths", db_paths)
 
 
 @dataclass
@@ -90,13 +52,6 @@ class CodeIngestReport:
     stale_risk: list[str] = field(default_factory=list)  # -svc ids whose evidence moved
     orphans: list[str] = field(default_factory=list)  # -svc ids with no -code peer
     dirty_tree: bool = False
-
-
-class Extractor(Protocol):
-    name: str
-
-    def detect(self, root: Path) -> bool: ...
-    def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult: ...
 
 
 class CodeIngestError(KbError):
@@ -121,31 +76,6 @@ class CodeIngestError(KbError):
     def __init__(self, message: str, report: CodeIngestReport | None = None) -> None:
         super().__init__(message)
         self.report = report
-
-
-# ---------------------------------------------------------------------------
-# git helpers — local (not strata_kb.gitio) because a non-git scratch
-# directory is a valid code-ingest target: these degrade gracefully instead
-# of raising.
-# ---------------------------------------------------------------------------
-
-
-def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    # P55/P57 (Wave J round 2): byte-for-byte the same omission gitio._run
-    # had before the Wave J Critical fix -- an inherited stdin can be a
-    # caller's protocol stream. Not reached from the MCP stdio server today
-    # (only cli.py calls this, off that surface), but the ruling is about
-    # the call shape, not about who currently imports the module --
-    # DEVNULL costs nothing here since nothing writes to stdin.
-    return subprocess.run(
-        ["git", *args],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdin=subprocess.DEVNULL,
-    )
 
 
 def _head_commit(root: Path) -> str:
@@ -1317,31 +1247,3 @@ def scaffold_svc(opts, sections, report) -> None:
         opts.tags,
         report,
     )
-
-
-# Imported at the bottom of the module, deliberately after every class above
-# is defined. B2-B7 extractor modules import CodeSection/ExtractResult from
-# `strata_kb.codeingest.core`, and `extractors/__init__.py` imports those
-# extractor modules to build ALL_EXTRACTORS. Importing `extractors` up top
-# (before CodeSection/ExtractResult exist) would hand those modules a
-# partially-initialized `core` module with neither name bound yet —
-# `from strata_kb.codeingest.core import CodeSection` raises ImportError in
-# every import order; only `import strata_kb.codeingest.core as core` +
-# deferred `core.CodeSection` attribute access survives, by accident of
-# CPython's partial-module fallback. Deferring this import until everything
-# above it is defined makes both import styles work regardless of which
-# module a caller imports first. `run()` reads `ALL_EXTRACTORS` as a module
-# global at call time, so its position here doesn't affect that lookup —
-# and `monkeypatch.setattr(core, "ALL_EXTRACTORS", ...)` still works because
-# it rebinds this same module-level name.
-from strata_kb.codeingest.extractors import ALL_EXTRACTORS  # noqa: E402
-
-# Same deferred-import reasoning as ALL_EXTRACTORS just above: `extractors.
-# tree` imports `CodeIngestOptions`/`CodeSection`/`ExtractResult` from this
-# module, so importing it at the top of this file (before those names exist)
-# would hand it a partially-initialized `core`. By this point in the module
-# `extractors/__init__.py` has already imported `extractors.tree` to build
-# ALL_EXTRACTORS, so this is just binding names already in `sys.modules`.
-# `scaffold_svc()` (defined above, called from `run()`) uses these to walk
-# the repo for its L3 evidence.
-from strata_kb.codeingest.extractors.tree import relposix, walk_tree  # noqa: E402

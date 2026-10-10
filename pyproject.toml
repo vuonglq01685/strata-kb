@@ -107,14 +107,14 @@ ignore = ["B008"]
 # S603/S607: every subprocess call here is a fixed git argv built in code,
 # never a shell string and never user-interpolated; this is the chokepoint
 # for every git call except the two documented exceptions below (codeingest/
-# core.py, publish.py) that deliberately bypass it.
+# localgit.py, publish.py) that deliberately bypass it.
 "src/strata_kb/gitio.py" = ["S603", "S607"]
 
-# S603/S607: fixed git argv (`_git`), same shape as gitio._run -- deliberately
+# S603/S607: fixed git argv (`run`), same shape as gitio._run -- deliberately
 # NOT routed through gitio because a non-git scratch dir is a valid
 # code-ingest target and this helper must degrade gracefully instead of
-# raising (see comment above `_git` in this file).
-"src/strata_kb/codeingest/core.py" = ["S603", "S607"]
+# raising (see the module docstring).
+"src/strata_kb/codeingest/localgit.py" = ["S603", "S607"]
 
 # S603/S607: fixed `gh` CLI argv built in code, never a shell string and
 # never user-interpolated.

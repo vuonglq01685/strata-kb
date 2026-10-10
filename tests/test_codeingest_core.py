@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -564,11 +566,16 @@ def test_generated_document_is_searchable_through_the_hub(
 # --- evasion coverage) rather than a second, drifting implementation.
 
 
-def test_every_subprocess_run_call_in_codeingest_core_has_a_verifiably_safe_stdin():
-    offenders = _stdin_offenders_in_module(core)
+def test_every_subprocess_run_call_in_codeingest_git_has_a_verifiably_safe_stdin():
+    # The helper moved from core to codeingest/localgit.py in 1.15.1; core
+    # itself must stay free of subprocess calls.
+    from strata_kb.codeingest import localgit
+
+    offenders = _stdin_offenders_in_module(localgit) + _stdin_offenders_in_module(core)
     assert offenders == [], (
-        f"subprocess.run() in codeingest/core.py has an unsafe or unverifiable stdin= at: {offenders}"
+        f"subprocess.run() in codeingest has an unsafe or unverifiable stdin= at: {offenders}"
     )
+    assert "subprocess" in vars(localgit)
 
 
 # ---------------------------------------------------------------------------
@@ -663,3 +670,36 @@ def test_empty_destination_directory_is_fine(tmp_path, monkeypatch):
     monkeypatch.setattr(core, "ALL_EXTRACTORS", [_StubExtractor()])
     (tmp_path / ".kb" / "demo-code").mkdir(parents=True)
     assert core.run(_opts(tmp_path)).files_written
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        "strata_kb.codeingest.core",
+        "strata_kb.codeingest.extractors",
+        "strata_kb.codeingest.extractors.tree",
+        "strata_kb.codeingest.extractors.services",
+    ],
+)
+def test_codeingest_imports_in_any_order(first):
+    # 1.15.1: extractors import their types from codeingest.types, so core
+    # imports the registry at the top; any module may be imported first.
+    code = (
+        f"import {first}\n"
+        "from strata_kb.codeingest.core import ALL_EXTRACTORS, CodeSection\n"
+        "from strata_kb.codeingest.types import CodeSection as T\n"
+        "assert CodeSection is T and len(ALL_EXTRACTORS) == 7\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        stdin=subprocess.DEVNULL,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_core_has_no_deferred_imports():
+    source = Path(core.__file__).read_text(encoding="utf-8")
+    assert "noqa: E402" not in source
