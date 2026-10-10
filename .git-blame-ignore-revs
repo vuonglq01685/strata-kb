@@ -1,0 +1,7 @@
+# Mechanical, repo-wide reformatting. Use with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub's blame view reads this file automatically.)
+
+# #86 (1.14.1): ruff format of the whole repo at line length 88, squashed
+# together with its lint and type fixes
+11aedb100d90eb80221b7fbff09a97620ed7847f
