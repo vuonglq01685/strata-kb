@@ -611,6 +611,10 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
             "both callers, fail-closed by design"
         ),
         "strata_kb.ghapp.GHAppError": "ruling: server-side only (GitHub App auth)",
+        "strata_kb.web.ui._LoginBodyTooLarge": (
+            "ruling: server-side only -- raised inside POST /ui/login's capped "
+            "receive channel and caught by login_post itself as a 413"
+        ),
         "strata_kb.intake.IntakeError": (
             "ruling: server-side only -- carries (status, detail) and maps "
             "to an HTTP response, not a CLI one-liner; folding it in would "

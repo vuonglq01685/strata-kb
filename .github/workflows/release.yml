@@ -80,7 +80,7 @@ jobs:
           echo "docs: []" > /tmp/data/.kb/index.yaml
           echo "docs: []" > /tmp/data/federation/index.yaml
           docker run -d --name kb -p 8321:8321 \
-            -e STRATA_KB_HTTP_TOKEN=smoke-test-token \
+            -e STRATA_KB_HTTP_TOKEN=smoke-test-token-0123456789abcdef0123456789 \
             -v /tmp/data:/data \
             ghcr.io/vuonglq01685/strata-kb:sha-${GITHUB_SHA}
           for i in $(seq 1 30); do

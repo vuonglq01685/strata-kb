@@ -1546,6 +1546,10 @@ def publish_via_intake(
         f"{intake_url.rstrip('/')}/intake/status?"
         + urllib.parse.urlencode({"repo_id": rid, "commit": commit})
     )
+    actions_hint = (
+        f"check the Actions run for tag '{tag_name}' in the child repo's "
+        "GitHub Actions logs"
+    )
     deadline = time_mod.monotonic() + timeout
     while time_mod.monotonic() <= deadline:
         status, data = get_json(status_url)
@@ -1553,12 +1557,23 @@ def publish_via_intake(
             if data.get("state") == "done":
                 return data.get("pr_url", "")
             if data.get("state") == "error":
-                raise PublishError(f"intake rejected the publish: {data.get('detail')}")
+                # The public status view carries no `detail` (it can echo raw
+                # git stderr); the child CI's job summary has it.
+                detail = data.get("detail")
+                raise PublishError(
+                    f"intake rejected the publish: {detail}" if detail
+                    else f"intake rejected the publish — {actions_hint}"
+                )
+        if status == 401:
+            # A hub older than 1.10.0 demands OIDC on /intake/status, which a
+            # dev machine does not have: every poll would 401 until timeout.
+            raise PublishError(
+                "the hub's /intake/status requires a token (hub server older "
+                "than 1.10.0) — the publish may still have succeeded; "
+                f"{actions_hint}. Upgrade the hub server to get the PR link here."
+            )
         if poll_interval:
             time_mod.sleep(poll_interval)
         elif status != 200:
             break  # test mode (poll_interval=0): one loop is enough while unknown
-    raise PublishError(
-        f"timed out waiting for the intake — check the Actions run for tag "
-        f"'{tag_name}' in the child repo's GitHub Actions logs"
-    )
+    raise PublishError(f"timed out waiting for the intake — {actions_hint}")

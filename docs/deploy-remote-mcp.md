@@ -96,9 +96,16 @@ the PR itself using a GitHub App.
 The three intake routes are exempt from `STRATA_KB_HTTP_TOKEN` (children don't
 hold that token): POST /intake/publish and GET /intake/manifest are
 OIDC-authenticated — a child can only diff/publish its own registered repo-id.
-GET /intake/status is public by design (the zero-secret dev CLI polls it) and
-returns only state/PR URL keyed by repo-id + commit — same internal-network
-assumption as the MCP itself.
+GET /intake/status is public by design (the zero-secret dev CLI polls it) and,
+without a token, returns only `state` and `pr_url` keyed by repo-id + commit —
+same internal-network assumption as the MCP itself. The failure `detail` (it
+can carry raw git stderr) goes only to a caller presenting that repo-id's
+OIDC token; the child CI's job summary shows it. GET /intake/manifest and
+/intake/status share a 120/minute per-caller limit.
+
+The server refuses to start when `STRATA_KB_HTTP_TOKEN` is the `change-me`
+placeholder, shorter than 32 characters, or not printable ASCII.
+`kb docker-setup --force` writes a fresh 48-character token.
 
 ### Rate-limit key behind a reverse proxy (`STRATA_KB_TRUSTED_PROXIES`)
 

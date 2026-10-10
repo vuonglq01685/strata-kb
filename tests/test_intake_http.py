@@ -21,7 +21,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.testclient import TestClient
 
-from strata_kb import ghapp, intake
+from strata_kb import ghapp, gitio, intake
 from strata_kb.web import intake_routes
 
 AUD = "https://kb.test"
@@ -256,18 +256,99 @@ def test_manifest_bad_ref_403(client):
 
 def test_status_unknown_404(client):
     c, pem = client
-    # LOW-1: status now requires the caller's own OIDC bearer token, the
-    # same as manifest -- query the caller's OWN repo-id (a mismatched one
-    # is a 403, tested separately) for a commit that was never published.
+    # The OIDC view: the caller's OWN repo-id (a mismatched one is a 403,
+    # tested separately) for a commit that was never published.
     resp = _get_status(c, _jwt(pem), commit="never-published")
     assert resp.status_code == 404
 
 
-def test_status_no_token_401(client):
-    c, _ = client
-    resp = c.get("/intake/status", params={"repo_id": "flight-docs", "commit": "y"})
-    assert resp.status_code == 401
-    assert resp.json()["error"] == "missing_token"
+def _status_app(intake_cfg, **kw):
+    store = intake.StatusStore(intake_cfg.status_path)
+    app = Starlette(routes=intake_routes.build_intake_routes(intake_cfg, store, **kw))
+    return TestClient(app), store
+
+
+def _public_status(c, rid="flight-docs", commit="abc1234"):
+    return c.get("/intake/status", params={"repo_id": rid, "commit": commit})
+
+
+def test_status_without_a_token_is_the_minimal_public_view(intake_cfg):
+    """2026-10-10 review §5.2 #6: the zero-secret dev CLI polls this with no
+    token. It gets state + pr_url, never `detail` (raw git stderr)."""
+    c, store = _status_app(intake_cfg)
+    store.set("flight-docs", "abc1234", "done", pr_url="https://gh/pull/9")
+    store.set("flight-docs", "bad0000", "error", detail="fatal: /srv/hub/.git locked")
+    store.set("flight-docs", "inflight", "processing")
+    assert _public_status(c).json() == {"state": "done", "pr_url": "https://gh/pull/9"}
+    err = _public_status(c, commit="bad0000")
+    assert err.status_code == 200
+    assert err.json() == {"state": "error", "pr_url": ""}
+    assert "locked" not in err.text
+    assert _public_status(c, commit="inflight").json() == {
+        "state": "processing", "pr_url": "",
+    }
+
+
+def test_status_without_a_token_unknown_is_404(intake_cfg):
+    c, _ = _status_app(intake_cfg)
+    resp = _public_status(c, commit="never")
+    assert resp.status_code == 404
+    assert resp.json() == {"state": "unknown"}
+
+
+def test_status_with_the_callers_oidc_token_carries_detail(intake_cfg, keypair):
+    pem, _ = keypair
+    c, store = _status_app(intake_cfg)
+    store.set("flight-docs", "bad0000", "error", detail="fatal: locked")
+    resp = _get_status(c, _jwt(pem), commit="bad0000")
+    assert resp.status_code == 200
+    assert resp.json()["detail"] == "fatal: locked"
+
+
+@pytest.mark.parametrize(
+    "header", ["Bearer not-a-jwt", "Basic Zm9vOmJhcg==", "Bearer ", ""]
+)
+def test_status_with_a_bad_token_is_an_error_not_the_public_view(intake_cfg, header):
+    c, store = _status_app(intake_cfg)
+    store.set("flight-docs", "abc1234", "done", pr_url="https://gh/pull/9")
+    resp = c.get(
+        "/intake/status",
+        params={"repo_id": "flight-docs", "commit": "abc1234"},
+        headers={"Authorization": header},
+    )
+    assert resp.status_code in (401, 403)
+    assert "pull/9" not in resp.text
+
+
+def test_manifest_and_status_share_a_read_limiter_checked_before_jwt_work(
+    intake_cfg, keypair
+):
+    """Review §5.2 #4: each read request cost a JWT RSA verify + registry
+    load + hub resolve with no limiter in front of it."""
+    from strata_kb.web.ratelimit import SlidingWindowLimiter
+
+    pem, pub = keypair
+    resolved = []
+    intake_cfg.key_resolver = lambda t: resolved.append(t) or pub
+    c, _ = _status_app(intake_cfg, read_limiter=SlidingWindowLimiter(2, 60))
+    assert _get_manifest(c, _jwt(pem)).status_code == 200
+    assert _get_status(c, _jwt(pem), commit="x").status_code == 404
+    calls = len(resolved)
+    limited = [_get_manifest(c, _jwt(pem)), _get_status(c, _jwt(pem)), _public_status(c)]
+    assert [r.status_code for r in limited] == [429, 429, 429]
+    assert limited[0].json()["error"] == "rate_limited"
+    assert len(resolved) == calls  # no JWT verify once limited
+    # publish has its own bucket
+    assert _post(c, _jwt(pem)).status_code == 200
+
+
+def test_the_default_read_limit_allows_a_dev_cli_polling_for_ten_minutes(intake_cfg):
+    from strata_kb.web.ratelimit import INTAKE_READ_MAX_ATTEMPTS
+
+    assert INTAKE_READ_MAX_ATTEMPTS >= 60 // 5 * 4  # 4 devs on one NAT key
+    c, _ = _status_app(intake_cfg)
+    codes = {_public_status(c, commit="none").status_code for _ in range(24)}
+    assert codes == {404}
 
 
 def test_status_repo_id_of_another_tenant_403(client):
@@ -712,13 +793,12 @@ def test_stack_intake_gets_pass_middleware_without_mcp_token(full_stack):
     no_token = c.get("/intake/manifest", params={"repo_id": "flight-docs"})
     assert no_token.status_code == 401
     assert no_token.json()["error"] == "missing_token"
-    # status: middleware still lets it through (exempt path), but the route
-    # itself now enforces the same OIDC + rid==caller check manifest does
-    # (LOW-1) -- a request with no token is a 401 from the ROUTE, not the
-    # middleware, and one with the caller's own token but an unpublished
-    # commit is a genuine 404 from the store lookup.
+    # status: middleware lets it through (exempt path) with no token at all
+    # -- the zero-secret dev CLI's public view; an unpublished commit is a
+    # genuine 404 from the store lookup either way.
     no_token_status = c.get("/intake/status", params={"repo_id": "flight-docs", "commit": "y"})
-    assert no_token_status.status_code == 401
+    assert no_token_status.status_code == 404
+    assert no_token_status.json() == {"state": "unknown"}
     st = _get_status(c, _jwt(pem), commit="y")
     assert st.status_code == 404
     assert st.json() == {"state": "unknown"}
@@ -1680,3 +1760,25 @@ def test_an_emoji_tag_sequence_is_refused_while_a_variation_selector_publishes(
         intake_client, _jwt(pem), _gz_tar([_raw_member(heart, content)])
     )
     assert resp.status_code == 200, resp.text
+
+
+def test_intake_publish_passes_a_timeout_to_every_network_git_call(client, monkeypatch):
+    """2026-10-10 review §5.2 #9: pull and push run under the publish locks."""
+    seen = []
+    real_pull, real_push = gitio.pull, gitio.push_branch
+
+    def pull(*a, **k):
+        seen.append(("pull", k.get("timeout")))
+        return real_pull(*a, **k)
+
+    def push(*a, **k):
+        seen.append(("push", k.get("timeout")))
+        return real_push(*a, **k)
+
+    monkeypatch.setattr(gitio, "pull", pull)
+    monkeypatch.setattr(gitio, "push_branch", push)
+    c, pem = client
+    assert _post(c, _jwt(pem)).status_code == 200
+    assert ("pull", intake.INTAKE_GIT_TIMEOUT_SECONDS) in seen
+    assert ("push", intake.INTAKE_GIT_TIMEOUT_SECONDS) in seen
+    assert all(t == intake.INTAKE_GIT_TIMEOUT_SECONDS for _, t in seen)

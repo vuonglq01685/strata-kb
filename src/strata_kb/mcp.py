@@ -336,6 +336,39 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
     )
 
 
+HTTP_TOKEN_MIN_LENGTH = 32
+_PLACEHOLDER_TOKENS = frozenset({"change-me"})
+
+
+def check_http_token(token: str) -> None:
+    """Refuse an http-transport token the server cannot defend (2026-10-10
+    review §5.2 #5): the shipped `change-me` placeholder, anything shorter
+    than 32 characters, and anything that is not printable ASCII -- a header
+    token is compared as `str` and cannot carry non-ASCII reliably. The
+    session cookie is `HMAC(token, issued)`, so a weak token is also
+    brute-forceable offline from any copied cookie. No override: the server
+    serves copyrighted documents."""
+    how = (
+        "run `kb docker-setup --force` to regenerate .env, or set "
+        "STRATA_KB_HTTP_TOKEN to the output of "
+        '`python -c "import secrets; print(secrets.token_hex(24))"`'
+    )
+    if token in _PLACEHOLDER_TOKENS:
+        raise SystemExit(
+            f"STRATA_KB_HTTP_TOKEN is the placeholder '{token}' — {how}"
+        )
+    if len(token) < HTTP_TOKEN_MIN_LENGTH:
+        raise SystemExit(
+            f"STRATA_KB_HTTP_TOKEN is {len(token)} characters; at least "
+            f"{HTTP_TOKEN_MIN_LENGTH} are required — {how}"
+        )
+    if not (token.isascii() and token.isprintable()) or " " in token:
+        raise SystemExit(
+            "STRATA_KB_HTTP_TOKEN must be printable ASCII with no spaces — "
+            f"{how}"
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     from strata_kb.utf8io import force_utf8_streams
 
@@ -349,6 +382,7 @@ def main(argv: list[str] | None = None) -> None:
                 "missing env STRATA_KB_HTTP_TOKEN — required for http transport "
                 "(the documents are copyrighted; do not run HTTP without auth)"
             )
+        check_http_token(token)
         import uvicorn
 
         from strata_kb.hub import start_auto_pull

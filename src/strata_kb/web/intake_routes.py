@@ -13,8 +13,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from strata_kb import federation, ghapp, gitio, intake
+from strata_kb.web import bodycap
 from strata_kb.web.ratelimit import (
     INTAKE_MAX_ATTEMPTS,
+    INTAKE_READ_MAX_ATTEMPTS,
     INTAKE_WINDOW_SECONDS,
     SlidingWindowLimiter,
     client_key,
@@ -23,7 +25,7 @@ from strata_kb.web.ratelimit import (
 logger = logging.getLogger("strata_kb.web.intake")
 
 _CHUNK = 64 * 1024
-# F-D12 item 3: the receive-channel cap (_capped_receive, via
+# F-D12 item 3: the receive-channel cap (bodycap.capped_receive, via
 # _parse_capped_form) must bound the WHOLE multipart envelope -- boundaries,
 # part headers, and the `meta` JSON field, not just the `archive` part -- so
 # it needs headroom above max_tar_bytes rather than being set to it exactly.
@@ -73,44 +75,9 @@ async def read_capped(upload, max_bytes: int) -> bytes:
             raise intake.IntakeError(413, f"archive exceeds {max_bytes} bytes")
 
 
-def _capped_receive(request: Request, max_body_bytes: int):
-    """Wrap `request`'s ASGI receive channel so the BODY (the whole
-    multipart envelope -- boundaries, part headers, and the `meta` JSON
-    field, not just the `archive` part; see `_ENVELOPE_ALLOWANCE`) is
-    refused past `max_body_bytes` before python_multipart ever spools it.
-
-    Starlette's `max_part_size` bounds only the non-file branch of a
-    multipart part (starlette/formparsers.py) -- a part is a "file" iff its
-    Content-Disposition carries `filename=`, which the `archive` field
-    always does -- so file-part bytes had no size check upstream of
-    `read_capped`. This closes that gap one layer earlier: a
-    `intake.IntakeError` raised from inside `receive` propagates out of
-    `await form()` completely intact (neither formparsers.py's
-    `except (MultiPartException, OSError)` nor requests.py's
-    `except MultiPartException` catches a RuntimeError subclass), landing
-    unchanged in the route's own `except intake.IntakeError` below --
-    unlike a genuine parse failure, which `_parse_capped_form` has to
-    translate back into an `IntakeError` itself (see there).
-    """
-    seen = 0
-
-    async def receive():
-        nonlocal seen
-        message = await request.receive()
-        if message["type"] == "http.request":
-            seen += len(message.get("body", b""))
-            if seen > max_body_bytes:
-                raise intake.IntakeError(
-                    413, f"request body exceeds {max_body_bytes} bytes"
-                )
-        return message
-
-    return receive
-
-
 async def _parse_capped_form(request: Request, max_body_bytes: int) -> Request:
     """Parse `request`'s multipart body through a receive channel capped at
-    `max_body_bytes` (see `_capped_receive`) and return the capped `Request`
+    `max_body_bytes` (see `bodycap.capped_receive`) and return the capped `Request`
     (its `.form` is populated; caller reads fields/files from it and MUST
     `await capped.close()` once done -- see `publish`'s `finally`).
 
@@ -137,7 +104,23 @@ async def _parse_capped_form(request: Request, max_body_bytes: int) -> Request:
     through `_err()` instead of Starlette's plain-text 400 or an uncaught
     500.
     """
-    capped = Request(request.scope, _capped_receive(request, max_body_bytes))
+    # An `IntakeError` raised from inside `receive` lands unchanged in the
+    # route's own `except intake.IntakeError` (it is a RuntimeError
+    # subclass, which no form-parser handler catches) -- unlike a genuine
+    # parse failure, translated below. Starlette's `max_part_size` bounds
+    # only non-file parts and `archive` always carries `filename=`, so the
+    # receive cap is the only bound on file-part bytes upstream of
+    # `read_capped`.
+    capped = Request(
+        request.scope,
+        bodycap.capped_receive(
+            request,
+            max_body_bytes,
+            lambda: intake.IntakeError(
+                413, f"request body exceeds {max_body_bytes} bytes"
+            ),
+        ),
+    )
     try:
         await capped.form()
     except HTTPException as exc:
@@ -152,9 +135,15 @@ def build_intake_routes(
     store: intake.StatusStore,
     publish_limiter=None,
     publish_concurrency_limiter=None,
+    read_limiter=None,
 ) -> list[Route]:
     limiter = publish_limiter or SlidingWindowLimiter(
         INTAKE_MAX_ATTEMPTS, INTAKE_WINDOW_SECONDS
+    )
+    # manifest + status: checked before any JWT verify, registry load or hub
+    # resolve, each of which costs far more than the request (review §5.2 #4).
+    reads = read_limiter or SlidingWindowLimiter(
+        INTAKE_READ_MAX_ATTEMPTS, INTAKE_WINDOW_SECONDS
     )
     # See INTAKE_PUBLISH_MAX_CONCURRENCY's comment above. Built fresh per
     # app instance (not module-level) for the same reason `limiter` is --
@@ -194,7 +183,19 @@ def build_intake_routes(
         registry = await run_in_threadpool(_load_registry)
         return intake.authorize(claims, registry), claims
 
+    def _read_limited(request: Request) -> JSONResponse | None:
+        client_ip = client_key(request, cfg.trusted_proxies)
+        if reads.allow(client_ip):
+            return None
+        logger.warning("intake %s rate-limited for %s", request.url.path, client_ip)
+        return JSONResponse(
+            {"error": "rate_limited", "detail": "too many requests"},
+            status_code=429,
+        )
+
     async def manifest(request: Request) -> JSONResponse:
+        if (limited := _read_limited(request)) is not None:
+            return limited
         rid = request.query_params.get("repo_id", "")
         if not rid:
             return JSONResponse(
@@ -217,15 +218,14 @@ def build_intake_routes(
         return JSONResponse({"files": files})
 
     async def status(request: Request) -> JSONResponse:
-        # LOW-1: this used to have no auth check at all -- repo_id and
-        # commit are both public (repo_id lives in the hub's own
-        # federation/registry.yaml; commit is a public git SHA), but
-        # `detail` echoes internal text (e.g. raw `git` stderr from
-        # gitio.GitError, including container filesystem paths and branch
-        # names -- see the `except (gitio.GitError, ghapp.GHAppError)`
-        # branch below) to ANY unauthenticated caller for ANY repo-id. This
-        # is the authorization boundary `manifest` already enforces
-        # (`_caller_rid` + `rid == caller`); status gets the same one.
+        # Two views (2026-10-10 review §5.2 #6). Without a token: `state` and
+        # `pr_url` only -- the zero-secret dev CLI (`publish_via_intake`)
+        # polls this. `detail` can echo raw git stderr (container paths,
+        # branch names), so it goes only to the OIDC caller whose repo-id
+        # it is (the LOW-1 boundary `manifest` also enforces). A token that
+        # is present but invalid is an error, never the public view.
+        if (limited := _read_limited(request)) is not None:
+            return limited
         rid = request.query_params.get("repo_id", "")
         commit = request.query_params.get("commit", "")
         if not rid:
@@ -233,21 +233,26 @@ def build_intake_routes(
                 {"error": "missing_repo_id", "detail": "query param repo_id required"},
                 status_code=400,
             )
-        auth = request.headers.get("authorization", "")
-        if not auth.startswith("Bearer "):
-            return _missing_token()
-        try:
-            caller, _ = await _caller_rid(auth.removeprefix("Bearer "))
-            if rid != caller:
-                raise intake.IntakeError(
-                    403,
-                    f"repo_id '{rid}' does not match the caller's registered repo-id",
-                )
-        except intake.IntakeError as exc:
-            return _err(exc)
+        auth = request.headers.get("authorization")
+        if auth is not None:
+            if not auth.startswith("Bearer "):
+                return _missing_token()
+            try:
+                caller, _ = await _caller_rid(auth.removeprefix("Bearer "))
+                if rid != caller:
+                    raise intake.IntakeError(
+                        403,
+                        f"repo_id '{rid}' does not match the caller's registered repo-id",
+                    )
+            except intake.IntakeError as exc:
+                return _err(exc)
         found = store.get(rid, commit)
         if found is None:
             return JSONResponse({"state": "unknown"}, status_code=404)
+        if auth is None:
+            return JSONResponse(
+                {"state": found.get("state", ""), "pr_url": found.get("pr_url", "")}
+            )
         return JSONResponse(found)
 
     async def publish(request: Request) -> JSONResponse:
@@ -278,7 +283,7 @@ def build_intake_routes(
             # caller has already told us the body is oversized. Compared
             # against max_body_bytes (not max_tar_bytes): Content-Length
             # here is the declared size of the WHOLE request body, the same
-            # quantity _capped_receive bounds below -- comparing it to the
+            # quantity bodycap.capped_receive bounds below -- comparing it to the
             # archive-only cap would reject a legitimate request whose
             # declared body (archive + multipart overhead) exceeds
             # max_tar_bytes even though its archive does not.

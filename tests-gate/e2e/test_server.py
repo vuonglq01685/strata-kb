@@ -16,7 +16,7 @@ import urllib.request
 
 import pytest
 
-TOKEN = "e2e-token"
+TOKEN = "e2e-token-0123456789abcdef0123456789abcdef"
 
 
 def _get(url: str, token: str | None = None) -> tuple[int, str]:

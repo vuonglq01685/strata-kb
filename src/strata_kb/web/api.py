@@ -14,6 +14,7 @@ from strata_kb.mcp import ServerConfig
 from strata_kb.query import (
     AmbiguousDocError,
     InvalidLevelError,
+    doc_dir,
     get_section,
     normalize_level,
     search,
@@ -104,22 +105,21 @@ def load_manifest(
     from strata_kb.federation import load_federation
 
     hub = hub_handle(config)
-    if hub is None:
+    if hub is None or not models.DOC_ID_RE.match(doc_id):
         return None
     holders = [
-        r for r in load_federation(hub.federation_dir)
+        (r, folder) for r in load_federation(hub.federation_dir)
         if (repo is None or r.meta.repo_id == repo)
-        and (r.kb_dir / doc_id / "_manifest.yaml").exists()
+        and (folder := doc_dir(r.kb_dir, doc_id)) is not None
+        and (folder / "_manifest.yaml").exists()
     ]
     if not holders:
         return None
     if len(holders) > 1:
-        raise AmbiguousDocError(doc_id, [r.meta.repo_id for r in holders])
-    r = holders[0]
+        raise AmbiguousDocError(doc_id, [r.meta.repo_id for r, _ in holders])
+    r, folder = holders[0]
     try:
-        manifest = models.load_yaml_model(
-            r.kb_dir / doc_id / "_manifest.yaml", models.Manifest
-        )
+        manifest = models.load_yaml_model(folder / "_manifest.yaml", models.Manifest)
     except (yaml.YAMLError, ValidationError, ValueError) as exc:
         raise SnapshotCorruptError(doc_id, " ".join(str(exc).split())) from exc
     return manifest, r.meta.repo_id
