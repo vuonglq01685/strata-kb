@@ -89,7 +89,7 @@ def _reference_fingerprint(repo_dir: Path) -> str:
             continue
         st = p.stat()
         rel = p.relative_to(repo_dir).as_posix()
-        h.update(f"{rel}\0{st.st_size}\0{st.st_mtime_ns}\0".encode("utf-8"))
+        h.update(f"{rel}\0{st.st_size}\0{st.st_mtime_ns}\0".encode())
     return h.hexdigest()
 
 

@@ -20,10 +20,12 @@ async def _list_tools(params):
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
 
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            return await session.list_tools()
+    async with (
+        stdio_client(params) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        return await session.list_tools()
 
 
 def _snapshot(tools) -> dict:

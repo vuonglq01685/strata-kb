@@ -28,7 +28,7 @@ class _Node:
     title: str
     depth: int
     body: list[str] = field(default_factory=list)
-    children: list["_Node"] = field(default_factory=list)
+    children: list[_Node] = field(default_factory=list)
     fallback: bool = False  # id synthesized from an unparsed heading
     page: int | None = None  # page of the heading that opened this node
 
@@ -171,7 +171,7 @@ def resolve_heading_config(
     chapter_pattern: str,
     appendix_pattern: str,
     attachment_pattern: str,
-    previous: "models.IngestConfig | None",
+    previous: models.IngestConfig | None,
 ) -> HeadingConfig:
     """Priority: explicit arg > previous config in manifest (re-ingest) > default."""
     prev_ch = previous.chapter_pattern if previous else DEFAULT_CHAPTER_PATTERN
@@ -556,7 +556,7 @@ def order_units(units: list[SectionUnit]) -> list[SectionUnit]:
         if unit.page is not None:
             last = unit.page
         keyed.append((last, i))
-    return [u for _, u in sorted(zip(keyed, units), key=lambda t: t[0])]
+    return [u for _, u in sorted(zip(keyed, units, strict=True), key=lambda t: t[0])]
 
 
 def _dedupe_ids(units: list[SectionUnit], notes: SectioningNotes) -> list[SectionUnit]:

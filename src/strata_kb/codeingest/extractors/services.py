@@ -1185,6 +1185,6 @@ class ServicesExtractor:
         # the emitted section order always matches ascending id order,
         # regardless of how a raw name's case or script compares to
         # others under plain string ordering.
-        paired = sorted(zip(slugs, merged), key=lambda pair: pair[0])
+        paired = sorted(zip(slugs, merged, strict=True), key=lambda pair: pair[0])
         sections = [_render_section(root, rec, slug) for slug, rec in paired]
         return ExtractResult(sections=sections, warnings=warnings)

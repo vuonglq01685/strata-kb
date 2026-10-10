@@ -17,14 +17,14 @@ def _run_py(code: str, input_bytes: bytes = b"") -> subprocess.CompletedProcess[
 def test_cli_import_forces_utf8_stdout():
     proc = _run_py("from strata_kb import cli\nprint('§ tiếng Việt')")
     assert proc.returncode == 0, proc.stderr
-    assert "§ tiếng Việt".encode("utf-8") in proc.stdout
+    assert "§ tiếng Việt".encode() in proc.stdout
 
 
 def test_cli_import_forces_utf8_stdin():
     # Without the fix, UTF-8 bytes on stdin decode as cp1252 → mojibake.
     proc = _run_py(
         "from strata_kb import cli\nimport sys\nsys.stdout.write(sys.stdin.read())",
-        input_bytes="§ tiếng Việt".encode("utf-8"),
+        input_bytes="§ tiếng Việt".encode(),
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.decode("utf-8") == "§ tiếng Việt"

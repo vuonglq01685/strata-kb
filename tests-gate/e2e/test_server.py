@@ -110,12 +110,14 @@ async def _handshake(params):
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
 
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = await session.list_tools()
-            hit = await session.call_tool("kb_search", {"query": "airspace"})
-            return tools, hit
+    async with (
+        stdio_client(params) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        tools = await session.list_tools()
+        hit = await session.call_tool("kb_search", {"query": "airspace"})
+        return tools, hit
 
 
 def test_mcp_stdio_exposes_exactly_the_five_tools(mcp_stdio_params):

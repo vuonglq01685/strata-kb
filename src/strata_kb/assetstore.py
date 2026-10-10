@@ -6,6 +6,7 @@ returns no store and leaves all existing behavior unchanged.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -170,10 +171,8 @@ def divert_assets(tree_root: Path, store) -> list[str]:
         rel = path.relative_to(tree_root).as_posix()
         path.unlink()
         diverted.append(rel)
-        try:
+        with contextlib.suppress(OSError):
             path.parent.rmdir()  # only succeeds when now empty
-        except OSError:
-            pass
     return sorted(diverted)
 
 
@@ -314,7 +313,7 @@ def bad_name_clause(bad: list[str]) -> str:
     return f"names {shown} -- none of which is a content-addressed asset name"
 
 
-def load_record(dest: Path) -> "models.AssetsRecord":
+def load_record(dest: Path) -> models.AssetsRecord:
     """`.assets` at dest's RECORD_NAME; empty only when the file is
     genuinely absent — a present-but-unreadable (OSError) or
     present-but-corrupt (bad YAML / bad schema) record raises instead of

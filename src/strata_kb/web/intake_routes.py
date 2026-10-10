@@ -167,7 +167,7 @@ def build_intake_routes(
         try:
             return federation.load_registry(handle.federation_dir)
         except federation.RegistryError as exc:
-            raise intake.IntakeError(503, str(exc))
+            raise intake.IntakeError(503, str(exc)) from exc
 
     def _missing_token() -> JSONResponse:
         return JSONResponse(
@@ -308,10 +308,10 @@ def build_intake_routes(
                 meta = json.loads(form["meta"])
                 source_commit = str(meta["source_commit"])
                 deletes = [str(d) for d in meta.get("deletes", [])]
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise intake.IntakeError(
                     400, "field 'meta' must be JSON with source_commit (+ optional deletes)"
-                )
+                ) from exc
             upload = form.get("archive")
             if upload is None:
                 raise intake.IntakeError(400, "multipart field 'archive' required")

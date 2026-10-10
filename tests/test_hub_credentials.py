@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb import gitio, hub as hub_mod
-
+from strata_kb import gitio
+from strata_kb import hub as hub_mod
 
 CRED = "https://x-access-token:ghs_SECRETTOKEN@github.com/org/kb-hub.git"
 STRIPPED = "https://github.com/org/kb-hub.git"
@@ -310,7 +310,7 @@ def test_hubhandle_repr_and_str_omit_the_token():
     handle = hub_mod.HubHandle(root=Path("/tmp/hub"), token=TOKEN)
     assert TOKEN not in repr(handle)
     assert TOKEN not in str(handle)
-    assert TOKEN not in "{}".format(handle)
+    assert TOKEN not in f"{handle}"
 
 
 def _seed_hub_with_bare_origin(tmp_path, run_git) -> Path:

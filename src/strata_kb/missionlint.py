@@ -356,7 +356,7 @@ def check_grounded_on(text: str) -> list[Issue]:
 
 def lint(
     text: str,
-    hub: "HubHandle | None",
+    hub: HubHandle | None,
     *,
     path: Path | None = None,
     tickets_dir: Path | None = None,

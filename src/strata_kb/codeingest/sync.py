@@ -4,6 +4,7 @@ tells whether a local run can match what CI publishes."""
 
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -110,10 +111,8 @@ def _stale_reason(repo_root: Path, kb_dir: Path, doc_id: str) -> str:
     # change -code, and a still-tracked -code in an unmigrated repo would
     # otherwise re-trigger itself on every call.
     args = ["status", "--porcelain", "--untracked-files=no", "--", "."]
-    try:
+    with contextlib.suppress(ValueError):  # .kb outside the repo: nothing to exclude
         args.append(f":(exclude){kb_dir.relative_to(repo_root).as_posix()}")
-    except ValueError:
-        pass  # .kb outside the repo: nothing to exclude
     proc = core._git(repo_root, *args)
     if proc.returncode != 0 or proc.stdout.strip():
         return "dirty"

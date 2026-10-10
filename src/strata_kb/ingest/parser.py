@@ -581,11 +581,11 @@ def _missing_bookmarks(unit_ids: set[str], bm_ids: set[str], max_depth: int) -> 
             continue
         covered = False
         for uid in unit_ids:
-            if bm == uid:
-                covered = True
-            elif bm.startswith(uid + ".") and _is_leaf_unit(uid, unit_ids):
-                covered = True
-            elif uid.startswith(bm + "."):
+            if (
+                bm == uid
+                or (bm.startswith(uid + ".") and _is_leaf_unit(uid, unit_ids))
+                or uid.startswith(bm + ".")
+            ):
                 covered = True
             elif uid.startswith(bm + "-") and _is_part_root(bm):
                 # appendix-3 is covered by appendix-3-2.1; a numeric bookmark

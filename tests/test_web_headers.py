@@ -11,19 +11,19 @@ REQUIRED = {
 
 def test_headers_on_an_authorised_page(web_client_logged_in):
     resp = web_client_logged_in.get("/ui")
-    assert REQUIRED <= set(resp.headers)
+    assert set(resp.headers) >= REQUIRED
 
 
 def test_headers_on_the_login_redirect(web_client):
     resp = web_client.get("/ui", follow_redirects=False)
     assert resp.status_code == 302
-    assert REQUIRED <= set(resp.headers)
+    assert set(resp.headers) >= REQUIRED
 
 
 def test_headers_on_a_401(web_client):
     resp = web_client.get("/api/docs")
     assert resp.status_code == 401
-    assert REQUIRED <= set(resp.headers)
+    assert set(resp.headers) >= REQUIRED
 
 
 def test_csp_allows_the_one_external_script_and_inline_styles(web_client_logged_in):

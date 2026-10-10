@@ -617,7 +617,7 @@ def check_parent_mission(
 
 def lint(
     text: str,
-    hub: "HubHandle | None",
+    hub: HubHandle | None,
     *,
     path: Path | None = None,
     missions_dir: Path | None = None,

@@ -141,7 +141,8 @@ def test_create_app_boots_degraded_on_a_locked_intake_hub_cache(
     test_resolve_hub_or_503_converts_a_locked_cache_into_a_503_not_a_500 in
     test_intake_core.py and test_manifest_and_status_503_not_500_on_a_locked_hub_cache
     in test_intake_http.py, driven through create_app's boot path instead."""
-    from strata_kb import ghapp, hub as hub_mod
+    from strata_kb import ghapp
+    from strata_kb import hub as hub_mod
     from strata_kb.mcp import ServerConfig
     from strata_kb.web.app import create_app
 
@@ -167,9 +168,8 @@ def test_create_app_boots_degraded_on_a_locked_intake_hub_cache(
 
     locked = legacy / "locked.txt"
     locked.write_text("x", encoding="utf-8")
-    fp = open(locked, "r", encoding="utf-8")
     monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache_base))
-    try:
+    with open(locked, encoding="utf-8"):  # held open for the whole test
         config = ServerConfig(kb_dir=hub_worktree / ".kb", hub=str(hub_worktree))
         intake_cfg = intake.IntakeConfig(
             hub_ref=str(bare),
@@ -179,8 +179,6 @@ def test_create_app_boots_degraded_on_a_locked_intake_hub_cache(
         )
         with caplog.at_level("WARNING", logger="strata_kb.web.app"):
             app = create_app(config, "secret-token", intake_cfg=intake_cfg)
-    finally:
-        fp.close()
 
     warnings = "\n".join(r.message for r in caplog.records)
     assert "intake hub cache unusable at startup" in warnings

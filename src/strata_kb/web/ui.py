@@ -7,9 +7,8 @@ import os
 import re
 import tempfile
 from importlib import resources
-from urllib.parse import quote, urlencode
-
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 import yaml
 from pydantic import ValidationError

@@ -19,19 +19,18 @@ so the engine stays free of filesystem/CLI imports.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import lintcore, models
+from strata_kb import lintcore, mission, models, ticket
 from strata_kb.doctor import Issue
 from strata_kb.errors import KbError
 from strata_kb.lintcore import LintReport
 from strata_kb.mdutils import slice_section
-from strata_kb import mission, ticket
 
 HEADING = "## Technical grounding"
 

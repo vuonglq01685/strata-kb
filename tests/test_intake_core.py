@@ -807,7 +807,7 @@ def _tree_sha_from_entries(repo: Path, entries: dict[str, bytes], index_file: Pa
         )
         assert proc.returncode == 0, proc.stderr
         sha = proc.stdout.decode().strip()
-        lines.append(f"100644 blob {sha}\t{path}\n".encode("utf-8"))
+        lines.append(f"100644 blob {sha}\t{path}\n".encode())
     env = {**os.environ, "GIT_INDEX_FILE": str(index_file)}
     proc = subprocess.run(
         ["git", "-C", str(repo), "update-index", "--add", "--index-info"],

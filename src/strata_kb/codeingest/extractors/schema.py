@@ -229,7 +229,7 @@ def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
             dir_parts = reldir.parts
             if len(dir_parts) < len(dir_suffix) or not all(
                 fnmatch.fnmatchcase(part, expected)
-                for part, expected in zip(dir_parts[-len(dir_suffix):], dir_suffix)
+                for part, expected in zip(dir_parts[-len(dir_suffix):], dir_suffix, strict=True)
             ):
                 continue
         for name in filenames:

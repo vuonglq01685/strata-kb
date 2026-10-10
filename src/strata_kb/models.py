@@ -210,7 +210,7 @@ class Registry(BaseModel):
     repos: dict[str, str | RegistryEntry] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _reject_case_colliding_keys(self) -> "Registry":
+    def _reject_case_colliding_keys(self) -> Registry:
         """Two keys differing only in case both load as distinct dict
         entries -- whichever iterates last would silently win wherever a
         caller builds a case-insensitive lookup (pubgate.resolve_identity),

@@ -11,6 +11,7 @@ Record the answers in docs/superpowers/plans/2026-07-16-poc-picture-findings.md
 """
 from __future__ import annotations
 
+import contextlib
 import sys
 from pathlib import Path
 
@@ -64,10 +65,9 @@ def main() -> None:
         img = item.get_image(doc)
         size = f"{img.width}x{img.height}" if img is not None else "NO-PIXELS"
         caption = ""
-        try:
+        # best-effort caption in a manual docling exploration script
+        with contextlib.suppress(Exception):
             caption = item.caption_text(doc) or ""
-        except Exception:  # noqa: BLE001, S110 -- best-effort caption in a manual docling exploration script
-            pass
         in_table = any(tp == page and inside(tb, bbox) for tp, tb in tables)
         n_in_table += in_table
         print(f"p{page} {size} in_table={in_table} caption={caption[:60]!r}")

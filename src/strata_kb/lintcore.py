@@ -788,7 +788,7 @@ def check_citation_consistency(text: str, ctx: KBContext) -> list[Issue]:
     return issues
 
 
-def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
+def check_context_tags(ctx: KBContext, hub: HubHandle) -> list[Issue]:
     """Every tag in the block must be one some document on the federation
     actually publishes. An invented tag makes a ticket look grounded in a
     vocabulary it is not grounded in, and drifts the words used to describe
@@ -864,7 +864,7 @@ def check_context_tags(ctx: KBContext, hub: "HubHandle") -> list[Issue]:
 
 
 def check_context_block(
-    text: str, hub: "HubHandle | None", *, fail_on_stale: bool = False
+    text: str, hub: HubHandle | None, *, fail_on_stale: bool = False
 ) -> tuple[list[Issue], KBContext | None]:
     """Parse the kb-context block, resolve its refs at the pinned version,
     validate its tags against the federation's tag vocabulary, and

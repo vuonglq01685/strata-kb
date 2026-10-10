@@ -252,7 +252,7 @@ class ReviewRow:
     reviewer: str
 
 
-def parse_review_row(cells: list[str]) -> "ReviewRow | str":
+def parse_review_row(cells: list[str]) -> ReviewRow | str:
     """A '| Date | Round | Business | Dev | Reviewer |' row, or the reason
     it is malformed. Scores are 1–5 (docs/review-rubric.md's maturity
     scale); the round is any positive integer — the 3-round cap is a

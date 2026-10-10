@@ -76,7 +76,7 @@ class SearchOutcome:
     ambiguity, unknown-tag and no-usable-terms signals have to travel with the
     payload (F-C5, F-C7, F-C9, F-C14)."""
 
-    results: list["QueryResult"]
+    results: list[QueryResult]
     notes: list[str] = field(default_factory=list)
 
 
@@ -85,7 +85,7 @@ def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
     return f"{base} ({revision})" if revision else base
 
 
-def stale_hub_note(hub: "HubHandle | None") -> str:
+def stale_hub_note(hub: HubHandle | None) -> str:
     """One-line staleness warning shared by every caller that resolves a
     hub handle -- moved here from mcp.py's `_stale_note` (M17, identical
     body) so the CLI and REST surfaces can print/report the same wording
@@ -96,7 +96,7 @@ def stale_hub_note(hub: "HubHandle | None") -> str:
     return ""
 
 
-def _row_content(hub: "HubHandle", row: "SectionRow") -> str | None:
+def _row_content(hub: HubHandle, row: SectionRow) -> str | None:
     l2_path = hub.federation_dir / row.repo_id / row.doc_id / f"{row.file}.md"
     if not l2_path.exists():
         return None
@@ -107,7 +107,7 @@ _SNIPPET_WINDOW = 150  # chars on each side of the first hit in L3
 
 
 def _l3_snippet(
-    hub: "HubHandle", row: "SectionRow", terms: list[str], content: str
+    hub: HubHandle, row: SectionRow, terms: list[str], content: str
 ) -> str:
     """The match lives in L3 (fold/tail) while the L2 content contains no term →
     excerpt a window around the first hit so the user sees why this section matched."""
@@ -136,10 +136,10 @@ def _l3_snippet(
 
 
 def _search_index(
-    hub: "HubHandle", embedder, text: str, tags: list[str] | None
+    hub: HubHandle, embedder, text: str, tags: list[str] | None
 ) -> tuple[
     list[tuple[int, float, str]],
-    dict[int, "SectionRow"],
+    dict[int, SectionRow],
     bool,
     dict[int, float],
     bool,
@@ -238,7 +238,7 @@ AMBIG_BM25_RATIO = 1.00
 
 
 def _ambiguity_notes(
-    results: list["QueryResult"],
+    results: list[QueryResult],
     result_rowids: list[int],
     fts_scores: dict[int, float],
 ) -> list[str]:
@@ -269,19 +269,23 @@ def _ambiguity_notes(
             "should cite before pinning.\n\n"
         ]
     ranked = result_rowids[:2]
-    if len(ranked) == 2 and all(r in fts_scores for r in ranked):
-        if top.match_mode == "keyword" and second.match_mode == "keyword":
-            hi, lo = fts_scores[ranked[0]], fts_scores[ranked[1]]
-            if hi > 0 and lo <= hi and lo / hi >= AMBIG_BM25_RATIO:
-                return [
-                    f"Note: [{top.citation}] and [{second.citation}] score closely "
-                    "— both may be relevant to your question; review each before "
-                    "citing.\n\n"
-                ]
+    if (
+        len(ranked) == 2
+        and all(r in fts_scores for r in ranked)
+        and top.match_mode == "keyword"
+        and second.match_mode == "keyword"
+    ):
+        hi, lo = fts_scores[ranked[0]], fts_scores[ranked[1]]
+        if hi > 0 and lo <= hi and lo / hi >= AMBIG_BM25_RATIO:
+            return [
+                f"Note: [{top.citation}] and [{second.citation}] score closely "
+                "— both may be relevant to your question; review each before "
+                "citing.\n\n"
+            ]
     return []
 
 
-def _unknown_tag_notes(hub: "HubHandle", tags: list[str]) -> list[str]:
+def _unknown_tag_notes(hub: HubHandle, tags: list[str]) -> list[str]:
     """A tag filter that matched nothing is usually a tag that does not exist
     (reviewer C battery #32). Only runs on the empty-result path.
 
@@ -330,7 +334,7 @@ BUSY_INDEX_NOTE = (
 
 
 def search_detailed(
-    hub: "HubHandle",
+    hub: HubHandle,
     text: str,
     tags: list[str] | None = None,
     budget: int = 2000,
@@ -420,7 +424,7 @@ def search_detailed(
 
 
 def search(
-    hub: "HubHandle",
+    hub: HubHandle,
     text: str,
     tags: list[str] | None = None,
     budget: int = 2000,
@@ -443,9 +447,10 @@ def _parent_entry(
     '3.2'; '5.6-commentary' → '5.6')."""
     best: models.SectionEntry | None = None
     for s in manifest.sections:
-        if section_id.startswith((s.id + ".", s.id + "-")):
-            if best is None or len(s.id) > len(best.id):
-                best = s
+        if section_id.startswith((s.id + ".", s.id + "-")) and (
+            best is None or len(s.id) > len(best.id)
+        ):
+            best = s
     return best
 
 
@@ -547,7 +552,7 @@ def _get_section_in(
 
 
 def get_section(
-    hub: "HubHandle",
+    hub: HubHandle,
     doc_id: str,
     section_id: str,
     level: str = "l2",

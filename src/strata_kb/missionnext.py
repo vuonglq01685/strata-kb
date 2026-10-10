@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 
 from strata_kb import lintcore, mission
 from strata_kb.mdutils import _SEP_ROW_RE
-from strata_kb.svcnote import ROW_RE, _ESCAPED_PIPE_SENTINEL
+from strata_kb.svcnote import _ESCAPED_PIPE_SENTINEL, ROW_RE
 from strata_kb.ticketcheck import (
     BARE_US_RE,
     US_ID_IN_CELL_RE,

@@ -62,7 +62,7 @@ def test_kb_search_over_stdio_answers(fed_hub):
         encoding="utf-8",
         bufsize=1,
     )
-    q: "queue.Queue" = queue.Queue()
+    q: queue.Queue = queue.Queue()
     threading.Thread(target=_reader, args=(proc.stdout, q), daemon=True).start()
     try:
         _send(proc, {
@@ -91,7 +91,7 @@ def test_kb_search_over_stdio_answers(fed_hub):
                 raise AssertionError(
                     f"kb_search did not answer within {TIMEOUT_S}s over stdio "
                     "(F-C1: native import deadlocked on the event-loop thread)"
-                )
+                ) from None
             assert line is not None, "server closed stdout before answering"
             try:
                 msg = json.loads(line)

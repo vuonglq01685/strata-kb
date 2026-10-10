@@ -1,6 +1,7 @@
 # src/strata_kb/hashsync.py
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import shutil
@@ -77,7 +78,5 @@ def apply_sync(
         if target.exists():
             unlink_force(target)
     for d in sorted((p for p in dest_root.rglob("*") if p.is_dir()), reverse=True):
-        try:
+        with contextlib.suppress(OSError):
             d.rmdir()  # only succeeds when empty
-        except OSError:
-            pass

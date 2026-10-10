@@ -152,7 +152,7 @@ def _resolve_one(
     )
 
 
-def resolve_refs(hub: "HubHandle", ctx: KBContext) -> list[ResolvedRef]:
+def resolve_refs(hub: HubHandle, ctx: KBContext) -> list[ResolvedRef]:
     from strata_kb.federation import load_federation
 
     root = gitio.git_root(hub.root)
@@ -185,7 +185,7 @@ def resolve_refs(hub: "HubHandle", ctx: KBContext) -> list[ResolvedRef]:
 
 
 def _resolve_ref(
-    hub: "HubHandle", root: Path, version: str, ref: KBRef, repos,
+    hub: HubHandle, root: Path, version: str, ref: KBRef, repos,
     reader: gitio.BatchReader,
 ) -> ResolvedRef:
     if ref.repo_id is None:

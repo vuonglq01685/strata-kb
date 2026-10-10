@@ -125,7 +125,7 @@ def export_body(text: str) -> str:
     scan += [""] * (len(lines) - len(scan))
     kept: list[str] = []
     dropping = False
-    for line, probe in zip(lines, scan):
+    for line, probe in zip(lines, scan, strict=True):
         if probe.startswith("## ") or probe.startswith("# "):
             dropping = probe.strip() in INTERNAL_HEADINGS
         if not dropping:

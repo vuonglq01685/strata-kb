@@ -680,7 +680,7 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
     for name, mod in list(sys.modules.items()):
         if not name.startswith("strata_kb"):
             continue
-        for cname, cls in vars(mod).items():
+        for cls in vars(mod).values():
             if not (inspect.isclass(cls) and issubclass(cls, Exception)):
                 continue
             if cls.__module__ != mod.__name__:

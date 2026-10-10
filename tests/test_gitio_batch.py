@@ -71,8 +71,8 @@ def test_one_process_serves_every_read(repo, monkeypatch):
 
 def test_resolve_runs_a_constant_number_of_git_processes(fed_hub, monkeypatch):
     """5 refs used to cost 22 git processes."""
-    from strata_kb.hub import HubHandle
     from strata_kb import kbcontext
+    from strata_kb.hub import HubHandle
     from strata_kb.kbcontext import build_context_block
     from strata_kb.resolve import resolve_refs
 

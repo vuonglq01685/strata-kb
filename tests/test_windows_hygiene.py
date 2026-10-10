@@ -97,9 +97,9 @@ def _write_calls(tree: ast.AST) -> list[ast.Call]:
         if not isinstance(node, ast.Call):
             continue
         name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
-        if name == "write_text":
-            out.append(node)
-        elif name == "open" and any(c in _open_mode(node) for c in "wax"):
+        if name == "write_text" or (
+            name == "open" and any(c in _open_mode(node) for c in "wax")
+        ):
             out.append(node)
     return out
 

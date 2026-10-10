@@ -5,8 +5,8 @@ import pytest
 import yaml
 
 from strata_kb import lintcore
-from strata_kb.initcmd import COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES
 from strata_kb.conventions import CONVENTION_PARTS, LANG_IDS
+from strata_kb.initcmd import CHILD_TEMPLATES, COMMON_TEMPLATES, HUB_TEMPLATES
 
 WEB_TEMPLATES = [
     "base.html", "login.html", "overview.html", "search.html",

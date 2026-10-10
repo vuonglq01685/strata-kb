@@ -143,8 +143,8 @@ def _write_pdf(tmp_path):
 def test_ingest_auto_summarizes_by_default(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
-    from tests.test_summarize import FakeRunner
     import strata_kb.llm as llm_mod
+    from tests.test_summarize import FakeRunner
     monkeypatch.setattr(llm_mod, "detect_runner", lambda c, cfg: FakeRunner())
     # index.yaml is created by scaffold during ingest; default runner=auto
     result = runner.invoke(app, _ingest_args(tmp_path))
@@ -190,8 +190,8 @@ def test_ingest_without_runner_stays_pending_exit_0(tmp_path, monkeypatch):
 def test_ingest_failed_sections_still_exit_0(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
-    from tests.test_summarize import FakeRunner
     import strata_kb.llm as llm_mod
+    from tests.test_summarize import FakeRunner
     monkeypatch.setattr(
         llm_mod, "detect_runner", lambda c, cfg: FakeRunner(fail_ids={"5.3"})
     )
@@ -364,7 +364,12 @@ def test_warn_notes_renders_every_line_class_and_the_capped_tail():
     'repeated on N pages' rendering, and the _warn_capped 'N more … not
     shown' tail. This exercises all four directly against _warn_notes,
     with >20 demotions to trigger the cap."""
-    from strata_kb.ingest.sectioner import Demotion, Duplicate, Inversion, SectioningNotes
+    from strata_kb.ingest.sectioner import (
+        Demotion,
+        Duplicate,
+        Inversion,
+        SectioningNotes,
+    )
     from strata_kb.ingestcmd import _warn_notes
 
     repeated = Demotion(

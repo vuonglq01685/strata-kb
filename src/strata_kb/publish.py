@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -531,7 +531,7 @@ def _snapshot(
             else gitio.remote_url(gitio.git_root(kb_abs))
         ),
         source_commit=source_commit,
-        published_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        published_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )
     models.save_yaml_model(dest / "_meta.yaml", meta)
     return len(local_index.docs), True, skipped
@@ -1358,11 +1358,11 @@ def _push_with_retry(handle: hub_mod.HubHandle, rid: str, max_retries: int) -> b
         try:
             gitio.push(handle.root, handle.token)
             return True
-        except gitio.GitError:
+        except gitio.GitError as exc:
             if attempt == max_retries - 1:
                 raise PublishError(
                     f"push to hub failed after {max_retries} attempts (race?)"
-                )
+                ) from exc
             gitio.pull_rebase(handle.root, handle.token)
             # another repo just published — the aggregate index in our commit may
             # be missing their docs; regen (deterministic), then commit the fix
@@ -1540,7 +1540,7 @@ def publish_via_intake(
         )
     rid = repo_id or root.name
     commit = gitio.head_commit(root)
-    tag_name = f"kb-publish/{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
+    tag_name = f"kb-publish/{datetime.now(UTC):%Y%m%d-%H%M%S}"
     gitio.tag(root, tag_name)
     gitio.push_tag(root, tag_name)
     status_url = (

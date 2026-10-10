@@ -19,7 +19,9 @@ from strata_kb import gitio, kbcontext
 from strata_kb.query import get_section, search_detailed, stale_hub_note
 from strata_kb.resolve import render_resolved, resolve_refs
 from strata_kb.ticketlint import lint as lint_ticket
-from strata_kb.web.auth import TokenAuthMiddleware as BearerAuthMiddleware  # noqa: F401 — re-export
+from strata_kb.web.auth import (
+    TokenAuthMiddleware as BearerAuthMiddleware,  # noqa: F401 — re-export
+)
 
 logger = logging.getLogger("strata_kb.mcp")
 
@@ -329,7 +331,7 @@ def parse_args(argv: list[str] | None = None) -> ServerConfig:
             args.hub or os.environ.get("STRATA_KB_HUB", ""), args.kb
         )
     except HubConfigError as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from None
     return ServerConfig(
         kb_dir=args.kb, hub=hub, transport=args.transport,
         host=args.host, port=args.port,

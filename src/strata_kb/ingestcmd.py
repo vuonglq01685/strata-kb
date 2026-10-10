@@ -7,9 +7,9 @@ the CLI parses flags and prints; the pipeline lives here.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from strata_kb import models
 from strata_kb.ingest import parser, scaffold, sectioner

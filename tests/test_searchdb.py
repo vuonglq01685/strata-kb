@@ -3,6 +3,7 @@ import logging
 import sqlite3
 
 import pytest
+import yaml
 
 sqlite_vec = pytest.importorskip("sqlite_vec")
 
@@ -655,6 +656,26 @@ def test_sync_raises_on_wrong_vector_dim(fed_hub):
         searchdb.sync(HubHandle(root=fed_hub), _BadDimEmbedder())
 
 
+class _ShortEmbedder(FakeEmbedder):
+    """Returns one vector fewer than it was given texts."""
+
+    def embed(self, texts):
+        return super().embed(texts)[:-1]
+
+
+def test_sync_raises_when_embedder_returns_fewer_vectors(fed_hub):
+    # zip() used to drop the unmatched sections silently and still mark the
+    # vector coverage complete, so they never got embedded.
+    with pytest.raises(ValueError, match="vectors for"):
+        searchdb.sync(HubHandle(root=fed_hub), _ShortEmbedder())
+    conn = searchdb.open_db(HubHandle(root=fed_hub))
+    try:
+        meta = dict(conn.execute("SELECT key, value FROM meta"))
+        assert meta.get("vec_coverage") != "complete"
+    finally:
+        conn.close()
+
+
 def test_sync_strict_raises_on_embedder_failure(fed_hub):
     # kb reindex must see the embed error (strict) — only the query path degrades
     class Broken(FakeEmbedder):
@@ -838,7 +859,7 @@ def test_sync_commits_per_repo_midway_failure_keeps_finished_repos(fed_hub):
     # load_federation sorts by name: arinc-kb syncs first, broken icao-kb blows up after
     bad = fed_hub / "federation" / "icao-kb" / "icao-annex-2" / "_manifest.yaml"
     bad.write_text("{{{ not valid yaml", encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises(yaml.YAMLError):
         searchdb.sync(hub, None)
     conn = searchdb.open_db(hub)
     try:

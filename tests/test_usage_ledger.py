@@ -1,3 +1,4 @@
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -212,10 +213,8 @@ def test_concurrent_appends_of_the_same_rows_store_each_uuid_once(
     scan = ledger._existing_uuids
 
     def scan_in_step(path: Path) -> set[str]:
-        try:
+        with contextlib.suppress(threading.BrokenBarrierError):
             barrier.wait(timeout=0.5)
-        except threading.BrokenBarrierError:
-            pass
         return scan(path)
 
     monkeypatch.setattr(ledger, "_existing_uuids", scan_in_step)

@@ -30,7 +30,7 @@ def request(
     reason — the convention every caller in this repo already reads.
     """
     if urllib.parse.urlparse(url).scheme not in ("http", "https"):
-        return 0, f"refusing non-http(s) URL: {url}".encode("utf-8")
+        return 0, f"refusing non-http(s) URL: {url}".encode()
     req = urllib.request.Request(url, method=method, data=body, headers=headers)  # noqa: S310 -- scheme validated above
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 -- scheme validated above

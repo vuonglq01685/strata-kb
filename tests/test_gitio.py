@@ -450,7 +450,8 @@ def _is_subprocess_run_call(
         return True  # subprocess.run(...) / sp.run(...)
     if isinstance(func, ast.Name) and func.id in run_names:
         return True  # run(...) / _sprun(...) via `from subprocess import run as X`
-    if (
+    # getattr(subprocess, "run")(...)
+    return (
         isinstance(func, ast.Call)
         and isinstance(func.func, ast.Name)
         and func.func.id == "getattr"
@@ -459,9 +460,7 @@ def _is_subprocess_run_call(
         and func.args[0].id in module_names
         and isinstance(func.args[1], ast.Constant)
         and func.args[1].value == "run"
-    ):
-        return True  # getattr(subprocess, "run")(...)
-    return False
+    )
 
 
 def _stdin_offenders_in_source(

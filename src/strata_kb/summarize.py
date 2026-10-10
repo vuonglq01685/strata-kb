@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -356,7 +356,7 @@ def summarize_kb(
 
 
 def _provenance(runner, section: PendingSection) -> models.Provenance:
-    at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     if section.kind != "llm":
         return models.Provenance(runner="none", prompt_sha=PROMPT_SHA, at=at)
     return models.Provenance(

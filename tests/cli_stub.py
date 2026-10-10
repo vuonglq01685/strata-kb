@@ -10,7 +10,6 @@ import stat
 import sys
 from pathlib import Path
 
-
 _FORCE_UTF8_STDIO = (
     "import sys\n"
     "sys.stdin.reconfigure(encoding='utf-8')\n"

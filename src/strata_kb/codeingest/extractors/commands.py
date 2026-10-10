@@ -383,7 +383,7 @@ def _matches_keyword(tokens: list[str], keyword: str) -> bool:
     return any(
         all(
             _token_matches_keyword(tok, kw)
-            for tok, kw in zip(tokens[i:i + width], kw_tokens)
+            for tok, kw in zip(tokens[i:i + width], kw_tokens, strict=True)
         )
         for i in range(len(tokens) - width + 1)
     )

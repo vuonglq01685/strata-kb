@@ -7,7 +7,6 @@ from strata_kb.models import LLMConfig
 from strata_kb.summarize import PendingSection, build_section_prompt
 from tests.cli_stub import echo_after_stdin, echo_stdin_length, write_cli_stub
 
-
 # --- detect_runner -----------------------------------------------------------
 
 def test_detect_prefers_claude_then_copilot(monkeypatch):

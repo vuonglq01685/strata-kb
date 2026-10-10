@@ -10,7 +10,6 @@ import pytest
 
 from strata_kb import assetstore, config, models
 
-
 NAME_PNG = "a" * 64 + ".png"
 NAME_WEBP = "b" * 64 + ".webp"
 

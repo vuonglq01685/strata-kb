@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.metadata
 import json
 import os
 import sys
 import unicodedata
-from enum import Enum
+from datetime import UTC
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -102,14 +104,14 @@ def main(
     """Strata CLI."""
 
 
-class RepoKind(str, Enum):
+class RepoKind(StrEnum):
     hub = "hub"
     child = "child"
     ba = "ba"
     dev = "dev"
 
 
-class AssetsMode(str, Enum):
+class AssetsMode(StrEnum):
     none = "none"
     s3 = "s3"
 
@@ -335,7 +337,7 @@ def docker_setup(
         kind = dockersetup.repo_kind(path)
     except dockersetup.DockerSetupError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if kind == "hub":
         _docker_setup_hub(path, force, no_docker)
     elif kind == "child":
@@ -365,7 +367,7 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
                 raise
     except dockersetup.DockerSetupError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     action = "created" if report.env_created else "updated"
     typer.echo(
         f".env {action} — {dockersetup.TOKEN_VAR} written (token not shown; see .env)."
@@ -494,14 +496,14 @@ def mcp_setup(
         # file, so name it here -- otherwise the operator sees a bare codec
         # error with no clue it concerns .env.
         typer.secho(f"cannot read {path / '.env'}: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except (KbError, OSError) as exc:
         # write_env can raise OSError (unwritable repo dir), which must
         # produce the same one-line message as KbError, never propagate to
         # Typer's traceback hook where the token could leak (see
         # app=typer.Typer above).
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     action = "created" if report.env_created else "updated"
     typer.echo(
@@ -646,7 +648,7 @@ def _refresh_code_or_exit(kb_dir: Path, repo_id: str) -> None:
         typer.secho(
             f"could not refresh {repo_id}-code: {exc}", fg=typer.colors.RED, err=True
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for note in result.notes:
         typer.secho(f"[note] {note}", fg=typer.colors.YELLOW, err=True)
 
@@ -727,7 +729,7 @@ def ingest(
         )
     except (ValueError, RuntimeError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
@@ -1271,7 +1273,7 @@ def code_ingest(
                     err=True,
                 )
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     notes: list[str] = []
     if db or tag_list:
@@ -1372,7 +1374,7 @@ def svc_note(
         report = svcnote.add_note(kb_dir, rid, service, note)
     except svcnote.SvcNoteError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if json_out:
         typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
@@ -1404,7 +1406,7 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
     never raise either — a broken log is not license to turn "log and move
     on" back into "crash the hook", so any failure here is swallowed too.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from strata_kb.usage import ledger as _ledger
 
@@ -1413,7 +1415,7 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
         if not (kb_dir / "config.yaml").is_file():
             return  # wrong directory: nowhere correct to write (reviewer F L2)
         path.parent.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        stamp = datetime.now(UTC).isoformat(timespec="seconds")
         with path.open("a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{stamp} {message.rstrip()}\n")
     except Exception:  # noqa: BLE001, S110 -- deliberate: see docstring, this sink must never raise
@@ -1562,7 +1564,7 @@ def usage_ingest_transcript(
         for note in result.notes:
             typer.secho(note, fg=typer.colors.YELLOW)
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     report = result.report
 
     if json_out:
@@ -1627,13 +1629,13 @@ def usage_note(
     """Append one usage row by hand — for an assistant with no hook, or to
     repair an attribution the cursor got wrong."""
     import uuid as _uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from strata_kb.usage import ledger
 
     row = ledger.UsageRow(
         uuid=str(_uuid.uuid4()),
-        ts=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        ts=datetime.now(UTC).isoformat(timespec="milliseconds"),
         session=session,
         actor=_usage_actor(kb_dir),
         phase=phase,
@@ -1653,7 +1655,7 @@ def usage_note(
         report = ledger.append_rows(kb_dir, [row])
     except ledger.LedgerError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(f"recorded -> {', '.join(report.files)}")
 
 
@@ -1668,20 +1670,21 @@ def usage_report(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
 ) -> None:
     """Aggregate the usage ledger: per ticket, phase, model, actor."""
-    from datetime import date, datetime, timezone
+    from datetime import date, datetime
 
     from pydantic import ValidationError
 
-    from strata_kb.usage import ledger, prices, report as report_mod
+    from strata_kb.usage import ledger, prices
+    from strata_kb.usage import report as report_mod
 
     try:
         rows = ledger.read_rows(kb_dir)
     except (ledger.LedgerError, ValidationError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if ticket:
         rows = [r for r in rows if r.ticket == ticket]
-    generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    generated = datetime.now(UTC).isoformat(timespec="seconds")
     hook_error_count, _ = ledger.hook_errors(kb_dir)
     if not rows:
         if json_out:
@@ -1754,15 +1757,15 @@ def query(
         )
     except searchdb.IndexBusyError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
         typer.secho(f"search index rejected the query: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except searchdb.TooManyTagsError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for note in outcome.notes:
         typer.secho(note.strip(), fg=typer.colors.YELLOW, err=True)
     results = outcome.results
@@ -1800,10 +1803,10 @@ def get(
         result = get_section(handle, doc_id, section, level=level, repo=repo or None)
     except InvalidLevelError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except AmbiguousDocError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if result is None:
         typer.secho(f"Not found: {doc_id} §{section}", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -1899,7 +1902,12 @@ def publish(
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
     from strata_kb import ghio, gitio, hashsync
     from strata_kb import publish as publish_mod
-    from strata_kb.config import HubConfigError, effective_repo_id, load_config, require_hub
+    from strata_kb.config import (
+        HubConfigError,
+        effective_repo_id,
+        load_config,
+        require_hub,
+    )
     from strata_kb.errors import KbError
 
     # module-level _CONFIG_READ_ERRORS (see its definition for why exactly
@@ -1920,7 +1928,7 @@ def publish(
             "or remove it to fall back to defaults",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     mode = "pr" if pr else "direct" if direct else "auto"
     # Spec 2026-09-25 §4.4: a hand publish sends the -code CI would send for
     # this commit — never a stale or summarized copy. No --no-refresh here:
@@ -1938,17 +1946,15 @@ def publish(
                 "to chain it to a higher hub",
                 fg=typer.colors.RED,
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         # A relative `hub:` (e.g. the `hub: .` that `kb init --kind hub`
         # ships) must anchor to the repo root, not the process cwd — the
         # same config would otherwise route differently depending on where
         # `kb publish` happens to be invoked from, and could even mirror
         # into an unrelated sibling repo that also has a `.kb/`.
         source_root = None
-        try:
+        with contextlib.suppress(gitio.GitError):
             source_root = gitio.git_root(kb_dir.resolve())
-        except gitio.GitError:
-            pass
         hub_path = Path(hub_ref)
         if source_root is not None and not hub_path.is_absolute():
             hub_path = source_root / hub_ref
@@ -1991,7 +1997,7 @@ def publish(
                 hashsync.HashSyncError,
             ) as exc:
                 typer.secho(str(exc), fg=typer.colors.RED)
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
             _echo_publish_report(report)
             return
         # is_self: fall through — a hub pointing at itself publishes its own
@@ -2019,7 +2025,7 @@ def publish(
             "re-ingest that document",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if cfg.intake and not pr and not direct:
         try:
@@ -2037,7 +2043,7 @@ def publish(
             ValueError,
         ) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         if pr_url:
             typer.echo(f"kb publish: PR on the hub — {pr_url}")
             typer.echo("Content goes live when the PR is merged on the hub.")
@@ -2074,7 +2080,7 @@ def publish(
         hashsync.HashSyncError,
     ) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     _echo_publish_report(report)
 
 
@@ -2110,7 +2116,7 @@ def ci_publish(
         )
         cipublish.write_step_summary(f"error — {msg}")
         typer.secho(msg, fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if not url:
         msg = "no intake URL — add `intake: <url>` to .kb/config.yaml or pass --intake"
         cipublish.write_step_summary(f"error — {msg}")
@@ -2141,7 +2147,7 @@ def ci_publish(
     ) as exc:
         cipublish.write_step_summary(f"error — {exc}")
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     cipublish.write_step_summary(
         f"hub PR: {pr_url}" if pr_url else "no content change on the hub"
     )
@@ -2196,7 +2202,7 @@ def reindex(
         )
     except gitio.GitError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except _CONFIG_READ_ERRORS as exc:
         # write_federation_index -> build_federation_index -> load_federation
         # already skips (warns, does not raise) any entry whose _meta.yaml/
@@ -2207,7 +2213,7 @@ def reindex(
             f"({exc}) -- fix or re-publish that entry",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except OSError as exc:
         # I5: str(OSError) alone ("[Errno 13] Permission denied: '...'") names
         # no way forward -- add one.
@@ -2216,7 +2222,7 @@ def reindex(
             "and retry",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     strays = sorted(
         line[3:].strip()
         for line in dirty_before
@@ -2235,12 +2241,12 @@ def reindex(
         sreport = searchdb.sync(handle, default_embedder())
     except searchdb.IndexBusyError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
         typer.secho(f"search index rejected the reindex: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except _CONFIG_READ_ERRORS as exc:
         # searchdb._sync_repo reads every referenced doc's _manifest.yaml
         # unwrapped (unlike load_federation, it does not skip a broken one --
@@ -2250,7 +2256,7 @@ def reindex(
             f"({exc}) -- fix or re-ingest that document",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except OSError as exc:
         # F-D9 CRITICAL, routed: this try's sibling arm above (the
         # write_federation_index/commit_paths block) already has an OSError
@@ -2264,7 +2270,7 @@ def reindex(
             "file permissions under the hub and retry",
             fg=typer.colors.RED,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(
         f"kb reindex: search index — {sreport.sections_updated} updated, "
         f"{sreport.sections_deleted} removed, {sreport.embedded} embedded"
@@ -2279,7 +2285,7 @@ def reindex(
             typer.secho(
                 f"reindex committed but push failed: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     typer.echo("kb reindex: federation/index.yaml rebuilt")
 
 
@@ -2298,7 +2304,7 @@ def migrate(
         report = assetcmd.migrate_assets(handle)
     except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for rid, n in sorted(report.per_rid.items()):
         typer.echo(f"  {rid}: {n} asset(s) migrated")
     if report.skipped:
@@ -2341,7 +2347,7 @@ def verify(
         report = assetcmd.verify_assets(handle)
     except (assetcmd.AssetCmdError, assetstore.AssetStoreError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     for label in report.missing_records:
         typer.secho(f"[missing] recorded but not in store: {label}", fg=typer.colors.RED)
     for label in report.corrupt:
@@ -2384,7 +2390,7 @@ def context_new(
         )
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if stale_warning:
         typer.secho(stale_warning, fg=typer.colors.YELLOW, err=True)
     typer.echo(block)
@@ -2448,7 +2454,12 @@ def resolve(
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
     from strata_kb import gitio, kbcontext
-    from strata_kb.resolve import render_resolved, resolve_refs, render_cache, cache_problem
+    from strata_kb.resolve import (
+        cache_problem,
+        render_cache,
+        render_resolved,
+        resolve_refs,
+    )
 
     if write_cache is not None and status_only:
         typer.secho("--write-cache needs a full resolve; drop --status-only", fg=typer.colors.RED)
@@ -2463,14 +2474,14 @@ def resolve(
             text = Path(source).read_text(encoding="utf-8")
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     handle = _hub_or_exit(hub, kb_dir)
     try:
         ctx = kbcontext.parse(text)
         results = resolve_refs(handle, ctx)
     except (kbcontext.KBContextError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(render_resolved(results, include_content=not status_only))
     if write_cache is not None:
         from datetime import date
@@ -2489,7 +2500,7 @@ def resolve(
             )
         except (OSError, UnicodeDecodeError) as exc:
             typer.secho(f"could not write cache '{write_cache}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     cache_bad = False
     if cache is not None:
         if not cache.is_file():
@@ -2575,10 +2586,10 @@ def ticket_lint(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     resolved_missions = _resolve_missions_dir(missions_dir, path)
 
@@ -2627,10 +2638,10 @@ def ticket_export(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     body = export_body(text)
     if out is None:
         typer.echo(body, nl=False)
@@ -2639,7 +2650,7 @@ def ticket_export(
         out.write_text(body, encoding="utf-8", newline="\n")
     except OSError as exc:
         typer.secho(f"could not write '{out}': {exc}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(f"wrote {out}")
 
 
@@ -2752,10 +2763,10 @@ def ticket_check(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     resolved_missions = _resolve_missions_dir(missions_dir, path)
 
@@ -2833,10 +2844,10 @@ def pr_lint(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     report = lint_body(text, plan_dir=plan_dir)
     if json_output:
@@ -2868,10 +2879,10 @@ def plan_waves(
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             typer.secho(f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     errors, waves = planwaves.check(
         planwaves.parse_plan(text), unclosed=planwaves.unclosed_fence(text)
@@ -2952,10 +2963,10 @@ def mission_lint(
             typer.secho(
                 f"file '{source}' is not valid UTF-8: {exc}", fg=typer.colors.RED
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     # An explicitly-passed --tickets-dir is a deliberate BA choice, so a
     # typo must be a hard error — otherwise check_coverage's per-file
@@ -3151,7 +3162,7 @@ def diff(
         report = diff_doc(kb_dir, doc_id, against=against)
     except (ValueError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     typer.echo(render_diff(report))
 
 
@@ -3160,7 +3171,11 @@ def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -
     (`kb build --strict` across the whole KB) that `kb approve` requires
     before flipping anything to reviewed."""
     from strata_kb import gitio
-    from strata_kb.review import check_approvable, doc_ids_with_manifest, resolve_reviewer
+    from strata_kb.review import (
+        check_approvable,
+        doc_ids_with_manifest,
+        resolve_reviewer,
+    )
 
     try:
         targets = [doc_id] if doc_id else doc_ids_with_manifest(kb_dir)
@@ -3176,7 +3191,7 @@ def _resolve_reviewer_and_check_approvable(kb_dir: Path, doc_id: str, by: str) -
             raise typer.Exit(1)
     except (ValueError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     return reviewer
 
 
@@ -3234,7 +3249,7 @@ def approve(
             ]
     except (ValueError, gitio.GitError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     flipped_total = 0
     has_missing = False

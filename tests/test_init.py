@@ -1097,7 +1097,7 @@ def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
         slices.append(text[idx:])
 
     first = slices[0]
-    for rel, body in zip(_MISSION_WRAPPER_PATHS, slices):
+    for rel, body in zip(_MISSION_WRAPPER_PATHS, slices, strict=True):
         assert body == first, f"{rel} Workflow body drifted from the others"
 
 
@@ -2735,9 +2735,9 @@ def test_the_dev_rubric_override_is_never_refreshed(tmp_path: Path):
 def test_scaffolded_workflow_names_cover_every_kind():
     from strata_kb.initcmd import SCAFFOLDED_WORKFLOW_NAMES
 
-    assert SCAFFOLDED_WORKFLOW_NAMES == {
+    assert {
         "kb-publish.yml", "kb-ticket-lint.yml", "kb-code.yml", "kb-pr-lint.yml",
-    }
+    } == SCAFFOLDED_WORKFLOW_NAMES
 
 
 @pytest.mark.parametrize("kind", ["hub", "child"])
@@ -2772,3 +2772,24 @@ def test_an_old_pdf_only_source_gitignore_is_refreshed_on_re_init(tmp_path):
     assert "source/.gitignore" in report.updated
     text = (tmp_path / "source" / ".gitignore").read_text(encoding="utf-8")
     assert text.splitlines()[1:] == ["*", "!.gitignore"]
+
+
+@pytest.mark.parametrize("kind", ["hub", "child", "ba", "dev"])
+def test_kind_flag_round_trips_every_value(tmp_path: Path, kind: str):
+    # RepoKind is a StrEnum (1.14.1): the value typer hands back must still be
+    # the bare string that lands in config.yaml, for every kind.
+    result = runner.invoke(app, ["init", str(tmp_path), "--kind", kind])
+    assert result.exit_code == 0, result.output
+    config = yaml.safe_load(
+        (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8")
+    )
+    assert config["kind"] == kind
+
+
+def test_kind_and_assets_choices_in_help():
+    result = runner.invoke(
+        app, ["init", "--help"], env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"}
+    )
+    assert result.exit_code == 0
+    assert "hub|child|ba|dev" in result.output
+    assert "none|s3" in result.output

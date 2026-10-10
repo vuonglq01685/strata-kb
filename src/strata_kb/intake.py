@@ -10,7 +10,7 @@ import tempfile
 import threading
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from strata_kb import assetstore, federation, ghapp, gitio, hashsync, models
@@ -405,7 +405,9 @@ def authorize(claims: dict, registry: models.Registry) -> str:
     try:
         return normalize_repo_id(entry.repo_id)
     except GateError as exc:
-        raise IntakeError(500, f"registry maps '{repo}' to an unusable repo-id: {exc}")
+        raise IntakeError(
+            500, f"registry maps '{repo}' to an unusable repo-id: {exc}"
+        ) from exc
 
 
 # MEDIUM-2 (round 3): round 2's CONIN$/CONOUT$/COM0/LPT0/superscript-alias
@@ -1052,7 +1054,7 @@ def safe_extract(
     gz = gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb")
     bounded = _BoundedTarStream(gz, max_bytes)
     try:
-        tf = tarfile.open(fileobj=bounded, mode="r:")
+        tf = tarfile.open(fileobj=bounded, mode="r:")  # noqa: SIM115 -- closed by `with tf:` below; opened outside it so open errors map to 400
     except (tarfile.TarError, OSError, EOFError, RecursionError) as exc:
         # OSError/EOFError: opening tarfile no longer routes through
         # tarfile's own gzopen(), which used to translate a GzipFile
@@ -1745,8 +1747,8 @@ def _publish_in_worktree(
     diversion is active for this publish (round 4, P45's asset-path length
     exemption depends on the two staying in sync).
     """
-    from strata_kb import publish as publish_mod
     from strata_kb import pubgate
+    from strata_kb import publish as publish_mod
 
     dest = work / "federation" / rid
     # upload is incremental -- every file in the archive counts as changed
@@ -1822,7 +1824,7 @@ def _publish_in_worktree(
             # already wrote uncommitted changes under federation/ in this
             # worktree, and nothing has been committed yet.
             _restore_worktree_federation(work)
-            raise IntakeError(502, f"asset store upload failed: {exc}")
+            raise IntakeError(502, f"asset store upload failed: {exc}") from exc
     dirty = gitio._run(work, "status", "--porcelain", "--", "federation").stdout.strip()
     if not dirty:
         return ""  # nothing changed
@@ -1830,7 +1832,7 @@ def _publish_in_worktree(
         repo_id=rid,
         source_url=f"https://github.com/{source_repo_full}",
         source_commit=source_commit,
-        published_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        published_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )
     models.save_yaml_model(dest / "_meta.yaml", meta)
     federation.write_federation_index(work / "federation", changed={rid})

@@ -11,7 +11,12 @@ import yaml
 from pydantic import ValidationError
 
 from strata_kb import gitio, kbcontext, models
-from strata_kb.mdutils import count_tokens, heading_occurrences, orphan_heading_ids, slice_section
+from strata_kb.mdutils import (
+    count_tokens,
+    heading_occurrences,
+    orphan_heading_ids,
+    slice_section,
+)
 from strata_kb.resolve import ResolvedRef, resolve_refs
 
 if TYPE_CHECKING:
@@ -386,7 +391,7 @@ def check_asset_store(kb_dir: Path, handle, store=None) -> list[Issue]:
 
 def check_context(
     text: str,
-    hub: "HubHandle",
+    hub: HubHandle,
     *,
     stale_level: Literal["error", "warning"] = "warning",
 ) -> tuple[list[Issue], list[ResolvedRef]]:
@@ -562,7 +567,7 @@ def _ignoring_digests(idx: models.FederationIndex) -> models.FederationIndex:
 
 def check_hub(
     kb_dir: Path,
-    handle: "HubHandle | None",
+    handle: HubHandle | None,
     repo_id: str | None = None,
     *,
     warn_untracked_index: bool = False,
@@ -699,10 +704,11 @@ def check_hub(
             found = None
             found_len = -1
             for broken_rel, broken_dir in broken_entries:
-                if ns_rel == broken_rel or ns_rel.startswith(f"{broken_rel}/"):
-                    if len(broken_rel) > found_len:
-                        found = broken_dir
-                        found_len = len(broken_rel)
+                if (
+                    ns_rel == broken_rel or ns_rel.startswith(f"{broken_rel}/")
+                ) and len(broken_rel) > found_len:
+                    found = broken_dir
+                    found_len = len(broken_rel)
             return found
         for broken_rel, _broken_dir in broken_entries:
             issues.append(
@@ -1087,7 +1093,7 @@ def check_published_digests(fed: Path, live: dict[str, str] | None = None) -> li
 
 
 def check_federation_publish(
-    source_root: Path, handle: "HubHandle | None", repo_id: str | None
+    source_root: Path, handle: HubHandle | None, repo_id: str | None
 ) -> list[Issue]:
     """Health hub phân tầng: id entry hợp lệ, cảnh báo cycle, trạng thái đã
     publish lên upstream. handle = hub CẤP TRÊN (None khi root hub / offline)."""
@@ -1180,7 +1186,7 @@ def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[I
 
 
 def check_hub_lag(
-    kb_dir: Path, repo_root: Path, handle: "HubHandle | None", repo_id: str | None
+    kb_dir: Path, repo_root: Path, handle: HubHandle | None, repo_id: str | None
 ) -> list[Issue]:
     """Dev repo: is the hub's -code what the default branch would publish?"""
     if handle is None or not repo_id:

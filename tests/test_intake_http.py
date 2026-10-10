@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import gzip
 import io
-import string
 import json
+import string
 import subprocess
 import sys
 import tarfile
@@ -406,8 +407,7 @@ def test_manifest_and_status_503_not_500_on_a_locked_hub_cache(
 
     locked = legacy / "locked.txt"
     locked.write_text("x", encoding="utf-8")
-    fp = open(locked, "r", encoding="utf-8")
-    try:
+    with open(locked, encoding="utf-8"):  # held open for the whole test
         monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake")
         monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
         cfg = intake.IntakeConfig(
@@ -426,8 +426,6 @@ def test_manifest_and_status_503_not_500_on_a_locked_hub_cache(
         assert manifest_resp.status_code == 503, manifest_resp.text
         status_resp = _get_status(c, token)
         assert status_resp.status_code == 503, status_resp.text
-    finally:
-        fp.close()
 
 
 def _slow_fake_publish_factory(intervals, lock, sleep_seconds=0.3):
@@ -724,7 +722,9 @@ def test_publish_cancelled_mid_publish_still_reaches_a_terminal_status(
 
     c, pem = client
     monkeypatch.setattr(intake, "intake_publish", boom)
-    with pytest.raises(BaseException):  # B017 once B is enabled -- CancelledError itself, intentional
+    # The TestClient's portal re-raises it as concurrent.futures' own
+    # CancelledError; accept either so the test pins the cancel, not the portal.
+    with pytest.raises((asyncio.CancelledError, concurrent.futures.CancelledError)):
         _post(c, _jwt(pem))
     st = _get_status(c, _jwt(pem))
     assert st.status_code == 200
@@ -1173,9 +1173,9 @@ def test_too_many_file_parts_renders_json_400_under_the_real_app(
     pem, _ = keypair
     boundary = "----files1001"
     part = (
-        'Content-Disposition: form-data; name="f"; filename="x"\r\n'
-        "Content-Type: application/octet-stream\r\n\r\n"
-    ).encode()
+        b'Content-Disposition: form-data; name="f"; filename="x"\r\n'
+        b"Content-Type: application/octet-stream\r\n\r\n"
+    )
     body = _raw_multipart(boundary, [part] * 1001)
     resp = intake_client.post(
         "/intake/publish",
@@ -1221,8 +1221,8 @@ def test_oversized_non_file_part_renders_json_400_under_the_real_app(
     pem, _ = keypair
     boundary = "----bigfield"
     part = (
-        'Content-Disposition: form-data; name="junk"\r\n\r\n'
-    ).encode() + b"x" * (2 * 1024 * 1024)
+        b'Content-Disposition: form-data; name="junk"\r\n\r\n'
+    ) + b"x" * (2 * 1024 * 1024)
     body = _raw_multipart(boundary, [part])
     resp = intake_client.post(
         "/intake/publish",
@@ -1244,7 +1244,7 @@ def test_part_with_no_name_renders_json_400_under_the_real_app(
 ):
     pem, _ = keypair
     boundary = "----noname"
-    part = ("Content-Disposition: form-data\r\n\r\n").encode() + b"somevalue"
+    part = (b"Content-Disposition: form-data\r\n\r\n") + b"somevalue"
     body = _raw_multipart(boundary, [part])
     resp = intake_client.post(
         "/intake/publish",
