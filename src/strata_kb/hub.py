@@ -118,8 +118,8 @@ def _discard_cache(cache: Path) -> None:
     `_resolve_hub_or_503` turned a recoverable cache problem into an
     unhandled 500 instead of its usual 503. Re-raised as `gitio.GitError`:
     already caught everywhere `resolve_hub`'s other failures (clone/pull)
-    are, and deliberately kept out of the `KbError` family (errors.py) since
-    its handling is site-specific by design.
+    are; anywhere it is not, the root CLI guard prints it as one line (a
+    `KbError` since 1.15.0).
 
     onexc= (not onerror=, deprecated since 3.12) is used from 3.12 on; both
     callback shapes ignore their third argument, so `_clear_readonly_and_retry`

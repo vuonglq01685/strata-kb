@@ -51,7 +51,8 @@ batch 3b of wave 3. 3a (#86) added the tooling gate.
 
 - `app = typer.Typer(cls=_GuardedGroup)`. `_GuardedGroup(TyperGroup)`
   overrides `invoke()`: a `KbError` that escapes any command, sub-app
-  included, prints `str(exc)` in red to stderr and exits 1.
+  included, prints `str(exc)` in red and exits 1. It prints on stdout,
+  like the per-command arms it replaces.
 - This sits at the root group, so `CliRunner`, the `kb` script and
   `python -m strata_kb` all get it.
 - Exit codes are unchanged (README §16): 1 for an error. A `typer.Exit`
