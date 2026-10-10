@@ -2208,6 +2208,21 @@ def test_quickstarts_state_the_hooks_version_floor(tmp_path: Path):
         assert "blocks the turn from ending" in text, kind
 
 
+def test_quickstarts_document_subagent_usage(tmp_path: Path):
+    # 1.9.0: a repo set up earlier has Stop and not SubagentStop, and its
+    # hand-merge snippet is the only place it learns the second hook exists.
+    for kind, name in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
+        target = tmp_path / kind
+        init_repo(target, kind)
+        text = " ".join((target / name).read_text(encoding="utf-8").split())
+        assert '"SubagentStop": [{"hooks": [' in text, kind
+        assert "`kb doctor` warns when `Stop` is there and `SubagentStop` is not" in text, kind
+        assert "Subagent cost needs 1.9.0" in text, kind
+        assert "also ingests its subagents" in text, kind
+        assert "run it only on a session that has ended" in text, kind
+        assert "it is never priced as its family" in text, kind
+
+
 def test_quickstarts_document_the_reingest_repair(tmp_path: Path):
     # The repair path that actually works: delete the file and re-ingest, which
     # is safe because a call already in the ledger is skipped.
