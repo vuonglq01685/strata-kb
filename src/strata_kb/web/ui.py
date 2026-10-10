@@ -23,7 +23,7 @@ from strata_kb import hub as hub_mod
 from strata_kb.federation import load_federation
 from strata_kb.mcp import ServerConfig
 from strata_kb.query import AmbiguousDocError, get_section, search, tokenize
-from strata_kb.web import api, templating, uidata
+from strata_kb.web import api, bodycap, templating, uidata
 from strata_kb.web.auth import (
     COOKIE_NAME,
     SESSION_MAX_AGE,
@@ -57,6 +57,12 @@ logger = logging.getLogger("strata_kb.web.ui")
 # via chunked, and bounded to LOGIN_MAX_ATTEMPTS per client per
 # LOGIN_WINDOW_SECONDS because login_post's limiter check runs before form().
 LOGIN_MAX_BODY = 8 * 1024
+
+
+class _LoginBodyTooLarge(RuntimeError):
+    """Raised from inside the capped receive channel; never a
+    MultiPartException, so the form parser lets it through."""
+
 
 NO_STORE = {"Cache-Control": "no-store"}
 
@@ -266,9 +272,23 @@ def build_routes(
                 status_code=429,
                 headers=NO_STORE,
             )
-        form = await request.form()
+        # The Content-Length check above does not bound a chunked body, and
+        # request.form() alone buffers up to 1 MiB per field × 1000 fields:
+        # one unauthenticated request could OOM the whole service (2026-10-10
+        # review §5.2 #2). The capped receive refuses the bytes off the wire.
+        capped = Request(
+            request.scope,
+            bodycap.capped_receive(request, LOGIN_MAX_BODY, _LoginBodyTooLarge),
+        )
+        try:
+            form = await capped.form(max_files=0, max_fields=4)
+        except _LoginBodyTooLarge:
+            return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
         submitted = str(form.get("token", ""))
-        if hmac.compare_digest(submitted, token):
+        await capped.close()
+        # Bytes, not str: compare_digest raises TypeError on a non-ASCII str,
+        # which was a 500 for any non-ASCII guess (review §5.2 #3).
+        if hmac.compare_digest(submitted.encode("utf-8"), token.encode("utf-8")):
             resp = RedirectResponse("/ui", status_code=303, headers=NO_STORE)
             secure = cookie_is_secure(request, trusted_proxies)
             if not secure:
@@ -562,16 +582,12 @@ def build_routes(
         cached = asset_cache.get(name)
         if cached is not None and cached.is_file():
             return cached
+        # federation/ only: the hub's own .kb/ is unpublished work and README
+        # promises the server never reads it (2026-10-10 review §5.2 #10).
+        # Content-addressed name → any hit is THE asset (natural dedupe).
         local_hit = None
-        for base in (hub.kb_dir, hub.federation_dir):
-            if not base.is_dir():
-                continue
-            # content-addressed name → any hit is THE asset (natural dedupe)
-            for path in base.glob(f"**/assets/{name}"):
-                local_hit = path
-                break
-            if local_hit is not None:
-                break
+        if hub.federation_dir.is_dir():
+            local_hit = next(hub.federation_dir.glob(f"**/assets/{name}"), None)
         if local_hit is not None:
             if assetstore.verify_bytes(name, local_hit.read_bytes()):
                 asset_cache[name] = local_hit

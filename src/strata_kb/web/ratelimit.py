@@ -22,6 +22,10 @@ LOGIN_MAX_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 60.0
 INTAKE_MAX_ATTEMPTS = 30
 INTAKE_WINDOW_SECONDS = 60.0
+# /intake/manifest + /intake/status share one bucket. Higher than publish: a
+# dev CLI polls status every 5 s (12/min), and several developers behind one
+# NAT share a key when STRATA_KB_TRUSTED_PROXIES is 0.
+INTAKE_READ_MAX_ATTEMPTS = 120
 
 
 def trusted_proxies_from_env() -> int:

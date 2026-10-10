@@ -17,7 +17,8 @@ COOKIE_NAME = "strata_kb_session"
 SESSION_MAX_AGE = 43200
 # Exact intake paths only — no /intake/ prefix wildcard, so a future intake
 # route is auth-gated by default. publish + manifest enforce OIDC themselves;
-# status is public by design (zero-secret dev polling, keyed by rid+commit).
+# status answers {state, pr_url} without a token (zero-secret dev polling,
+# keyed by rid+commit) and adds `detail` only for the OIDC caller.
 EXEMPT_PATHS = (
     "/api/health",
     "/ui/login",

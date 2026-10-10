@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import yaml
 from pydantic import BaseModel, Field
 
+from strata_kb.models import DOC_ID_PATTERN
+
 if TYPE_CHECKING:
     from strata_kb.federation import FederatedRepo
     from strata_kb.hub import HubHandle
@@ -49,7 +51,7 @@ _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 
 _REF_RE = re.compile(
     r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
-    r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s+§?(?P<sec>\S+)$"
+    rf"(?P<doc>{DOC_ID_PATTERN})\s+§?(?P<sec>\S+)$"
 )
 _KEY_RE = re.compile(r"^(?P<indent>\s*)kb-context:\s*$")
 

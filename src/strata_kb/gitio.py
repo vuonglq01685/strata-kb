@@ -96,6 +96,24 @@ def _run_env(
     )
 
 
+def _run_network(
+    root: Path | None, env: dict[str, str], what: str, *args: str,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """A git call that talks to a remote. With `timeout` (unattended callers:
+    the hub auto-pull thread, the intake worker) it also turns off git's tty
+    and credential-manager prompts, which stdin=DEVNULL alone does not, so a
+    missing credential fails instead of hanging -- and a hung remote cannot
+    hold a publish lock forever (2026-10-10 review §5.2 #9). Without one
+    (the CLI), a developer's interactive credential prompt is unchanged."""
+    if timeout is not None:
+        env = {**env, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    try:
+        return _run_env(root, env, *args, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise GitError(f"{what} timed out after {timeout}s") from exc
+
+
 def git_root(start: Path) -> Path:
     cwd = start if start.is_dir() else start.parent
     proc = _run(cwd, "rev-parse", "--show-toplevel")
@@ -206,17 +224,10 @@ def pull(
     caller with no credential-bearing `url` handy must pass `token`
     separately or authentication silently has nothing to offer git.
 
-    `timeout` is for unattended callers (the hub auto-pull thread): it also
-    turns off git's tty / credential-manager prompts, which stdin=DEVNULL
-    alone does not, so a missing credential fails instead of hanging."""
+    `timeout` is for unattended callers: see `_run_network`."""
     stripped, embedded = split_credentials(url or remote_url(root))
     env = credential_env(stripped, token or embedded)
-    if timeout is not None:
-        env = {**env, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
-    try:
-        proc = _run_env(root, env, "pull", "--ff-only", timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        raise GitError(f"pull timed out after {timeout}s") from exc
+    proc = _run_network(root, env, "pull", "pull", "--ff-only", timeout=timeout)
     if proc.returncode != 0:
         raise GitError(redact_url(f"pull failed: {proc.stderr.strip()}"))
 
@@ -296,12 +307,16 @@ def checkout(root: Path, name: str) -> None:
         raise GitError(f"checkout {name} failed: {proc.stderr.strip()}")
 
 
-def push_branch(root: Path, branch: str, token: str | None = None) -> None:
-    """Force-push the working branch (publish/<rid> is owned by the publisher)."""
+def push_branch(
+    root: Path, branch: str, token: str | None = None,
+    *, timeout: float | None = None,
+) -> None:
+    """Force-push the working branch (publish/<rid> is owned by the publisher).
+    `timeout`: see `_run_network`."""
     stripped, embedded = split_credentials(remote_url(root))
-    proc = _run_env(
-        root, credential_env(stripped, token or embedded),
-        "push", "--force", "origin", branch,
+    proc = _run_network(
+        root, credential_env(stripped, token or embedded), f"push branch '{branch}'",
+        "push", "--force", "origin", branch, timeout=timeout,
     )
     if proc.returncode != 0:
         raise GitError(redact_url(f"push branch '{branch}' failed: {proc.stderr.strip()}"))
@@ -319,18 +334,23 @@ def push_tag(root: Path, name: str) -> None:
         raise GitError(redact_url(f"push tag '{name}' failed: {proc.stderr.strip()}"))
 
 
-def push_branch_with_token(root: Path, url: str, token: str, branch: str) -> None:
+def push_branch_with_token(
+    root: Path, url: str, token: str, branch: str,
+    *, timeout: float | None = None,
+) -> None:
     """Force-push `branch` to `url` with the token passed through the env.
 
     Replaces building https://x-access-token:<token>@... and handing it to
     git as an argv, where any local user could read it from
-    /proc/<pid>/cmdline.
+    /proc/<pid>/cmdline. `timeout`: see `_run_network`.
     """
     stripped, embedded = split_credentials(url)
-    proc = _run_env(
+    proc = _run_network(
         root,
         credential_env(stripped, token or embedded),
+        f"push branch '{branch}'",
         "push", "--force", stripped, f"{branch}:{branch}",
+        timeout=timeout,
     )
     if proc.returncode != 0:
         detail = redact_url(proc.stderr.strip().replace(stripped, "<hub-url>"))

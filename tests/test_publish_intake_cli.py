@@ -109,6 +109,97 @@ class TestPublishViaIntake:
             )
         assert "Actions" in str(exc.value)
 
+    def test_error_without_detail_points_at_the_actions_run(self, child):
+        """The public status view never carries `detail` (2026-10-10 review
+        §5.2 #6) -- the message must still say where to look."""
+        root, _ = child
+        with pytest.raises(publish_mod.PublishError) as exc:
+            publish_mod.publish_via_intake(
+                root / ".kb", "https://kb.test", "child-a",
+                poll_interval=0, timeout=5,
+                http_get_json=lambda url: (200, {"state": "error", "pr_url": ""}),
+            )
+        msg = str(exc.value)
+        assert "Actions run for tag 'kb-publish/" in msg
+        assert "None" not in msg
+
+    def test_a_401_from_an_older_hub_fails_fast(self, child):
+        root, _ = child
+        calls = []
+
+        def fake_get(url):
+            calls.append(url)
+            return 401, {}
+
+        with pytest.raises(publish_mod.PublishError) as exc:
+            publish_mod.publish_via_intake(
+                root / ".kb", "https://kb.test", "child-a",
+                poll_interval=1, timeout=600, http_get_json=fake_get,
+            )
+        assert len(calls) == 1
+        assert "older than 1.10.0" in str(exc.value)
+        assert "Actions run for tag" in str(exc.value)
+
+
+def _route_get_json(client):
+    """http_get_json backed by a real Starlette app instead of canned
+    responses: the canned-200 seam above is what hid the 401 for months."""
+    from urllib.parse import urlsplit
+
+    def get(url):
+        parts = urlsplit(url)
+        resp = client.get(f"{parts.path}?{parts.query}")
+        try:
+            return resp.status_code, resp.json()
+        except ValueError:
+            return resp.status_code, {}
+
+    return get
+
+
+@pytest.fixture
+def status_route(tmp_path):
+    from starlette.applications import Starlette
+    from starlette.testclient import TestClient
+
+    from strata_kb import ghapp, intake
+    from strata_kb.web import intake_routes
+
+    cfg = intake.IntakeConfig(
+        hub_ref=str(tmp_path / "no-hub"), audience="aud",
+        creds=ghapp.AppCreds("1", "unused"), key_resolver=lambda t: None,
+    )
+    store = intake.StatusStore()
+    app = Starlette(routes=intake_routes.build_intake_routes(cfg, store))
+    return TestClient(app), store
+
+
+class TestPublishViaIntakeAgainstTheRealStatusRoute:
+    def test_done_returns_the_pr_url(self, child, status_route):
+        root, _ = child
+        client, store = status_route
+        store.set("child-a", gitio.head_commit(root), "done", pr_url="https://gh/pull/7")
+        pr = publish_mod.publish_via_intake(
+            root / ".kb", "https://kb.test", "child-a",
+            poll_interval=0, timeout=5, http_get_json=_route_get_json(client),
+        )
+        assert pr == "https://gh/pull/7"
+
+    def test_error_never_leaks_detail_and_names_the_actions_run(self, child, status_route):
+        root, _ = child
+        client, store = status_route
+        store.set(
+            "child-a", gitio.head_commit(root), "error",
+            detail="fatal: /srv/hub/.git/index.lock exists",
+        )
+        with pytest.raises(publish_mod.PublishError) as exc:
+            publish_mod.publish_via_intake(
+                root / ".kb", "https://kb.test", "child-a",
+                poll_interval=0, timeout=5, http_get_json=_route_get_json(client),
+            )
+        assert "index.lock" not in str(exc.value)
+        assert "Actions run for tag" in str(exc.value)
+
 
 class FakeHTTP:
     """(method, url) -> (status, json-encoded dict or raw bytes). Records POST bodies."""

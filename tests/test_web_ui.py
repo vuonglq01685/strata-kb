@@ -1153,7 +1153,7 @@ def test_section_page_wraps_content_in_reader_container(fed_hub):
 
 def test_asset_route_serves_png(fed_hub):
     sha = hashlib.sha256(b"PNGDATA").hexdigest()
-    assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
+    assets_dir = fed_hub / "federation" / "arinc-kb" / "somedoc" / "assets"
     assets_dir.mkdir(parents=True)
     (assets_dir / f"{sha}.png").write_bytes(b"PNGDATA")
     resp = _authed_client(fed_hub / ".kb", str(fed_hub)).get(
@@ -1196,7 +1196,7 @@ def test_asset_route_hub_unreachable_503(tmp_path, monkeypatch):
 
 def test_asset_route_second_request_hits_cache(fed_hub):
     sha = hashlib.sha256(b"PNGDATA2").hexdigest()
-    assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
+    assets_dir = fed_hub / "federation" / "arinc-kb" / "somedoc" / "assets"
     assets_dir.mkdir(parents=True)
     (assets_dir / f"{sha}.png").write_bytes(b"PNGDATA2")
     client = _authed_client(fed_hub / ".kb", str(fed_hub))
@@ -1213,7 +1213,7 @@ def test_asset_route_does_not_cache_misses(fed_hub):
     client = _authed_client(fed_hub / ".kb", str(fed_hub))
     miss = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
     assert miss.status_code == 404
-    assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
+    assets_dir = fed_hub / "federation" / "arinc-kb" / "somedoc" / "assets"
     assets_dir.mkdir(parents=True)
     (assets_dir / f"{sha}.png").write_bytes(b"PNGDATA3")
     hit = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
@@ -1266,7 +1266,7 @@ def test_a_corrupt_local_asset_falls_through_to_the_store(
     monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hubcache"))
     data = b"good bytes from the store"
     name = hashlib.sha256(data).hexdigest() + ".png"
-    assets_dir = fed_hub / ".kb" / "somedoc" / "assets"
+    assets_dir = fed_hub / "federation" / "arinc-kb" / "somedoc" / "assets"
     assets_dir.mkdir(parents=True)
     (assets_dir / name).write_bytes(b"tampered on disk")
     store = assetstore.MemoryStore()
@@ -1755,3 +1755,20 @@ def test_section_toc_hidden_without_headings(fed_hub, monkeypatch):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui/docs/arinc-424/5.3?repo=arinc-kb")
     assert "On this page" not in resp.text
+
+
+def test_asset_route_never_reads_the_hubs_own_unpublished_kb(fed_hub):
+    """2026-10-10 review §5.2 #10: /assets/ globbed hub.kb_dir before
+    federation/, serving unpublished work the README says is never read."""
+    sha = hashlib.sha256(b"UNPUBLISHED").hexdigest()
+    draft = fed_hub / ".kb" / "draft-doc" / "assets"
+    draft.mkdir(parents=True)
+    (draft / f"{sha}.png").write_bytes(b"UNPUBLISHED")
+    client = _authed_client(fed_hub / ".kb", str(fed_hub))
+    assert client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS).status_code == 404
+    published = fed_hub / "federation" / "arinc-kb" / "draft-doc" / "assets"
+    published.mkdir(parents=True)
+    (published / f"{sha}.png").write_bytes(b"UNPUBLISHED")
+    resp = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    assert resp.content == b"UNPUBLISHED"

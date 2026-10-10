@@ -571,8 +571,9 @@ The same process serves agents and people.
 # local, stdio — already declared in .mcp.json
 python -m strata_kb.mcp --kb .kb
 
-# shared, HTTP
-STRATA_KB_HTTP_TOKEN=secret python -m strata_kb.mcp --hub . --transport http
+# shared, HTTP — the token must be ≥ 32 printable ASCII characters
+export STRATA_KB_HTTP_TOKEN=$(python -c "import secrets; print(secrets.token_hex(24))")
+python -m strata_kb.mcp --hub . --transport http
 # → agent:  http://<host>:8321/mcp     (Bearer token)
 # → REST:   http://<host>:8321/api/…   (Bearer token or cookie)
 # → human:  http://<host>:8321/ui      (sign in with the token; cookie stored)
@@ -605,14 +606,17 @@ hand-edited checkout is never touched; the pull fails with a logged warning.
 Every response carries CSP (`script-src 'self'`), `X-Frame-Options: DENY`,
 nosniff, `Referrer-Policy` and `Permissions-Policy`; HSTS on https. The `/ui`
 session cookie is a signed, expiring value derived from the token, never the
-token itself. `POST /ui/logout` ends a session.
+token itself. `POST /ui/logout` ends a session. The server refuses to start on
+the `change-me` placeholder, a token shorter than 32 characters, or one that is
+not printable ASCII. The login body is capped at 8 KiB however it is sent.
 
-Two per-caller rate limiters exist: `/intake/publish` (30/min) and `/ui/login`
+Three per-caller rate limiters exist: `/intake/publish` (30/min),
+`/intake/manifest` + `/intake/status` (120/min, shared), and `/ui/login`
 (5/min); a failed `Authorization` attempt shares the login bucket, so the lockout
 cannot be side-stepped by using the header. **Behind a reverse proxy, set
 `STRATA_KB_TRUSTED_PROXIES`** to the number of trusted proxies in front of the
 server. The default is `0` — `X-Forwarded-For` ignored, keyed on the socket peer.
-Leaving it at `0` behind a proxy makes both limiters key every caller on the
+Leaving it at `0` behind a proxy makes every limiter key every caller on the
 proxy's address, so one caller can exhaust them for everyone. Full guide:
 [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
 

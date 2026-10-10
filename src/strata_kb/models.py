@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import Literal, TypeVar
@@ -8,6 +9,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 T = TypeVar("T", bound=BaseModel)
+
+# A document id: one folder name under a repo's `.kb/`. No separator and no
+# leading dot, so `..` can never be a path segment. `kbcontext._REF_RE` builds
+# its `doc` group from this pattern, and `query.doc_dir` guards every reader
+# that joins a caller-supplied id onto a path (2026-10-10 review §5.2 #1).
+DOC_ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+DOC_ID_RE = re.compile(rf"^{DOC_ID_PATTERN}$")
 
 
 class SectionTokens(BaseModel):

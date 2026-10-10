@@ -1301,6 +1301,12 @@ def safe_extract(
             raise IntakeError(400, f"archive is not a valid tar.gz: {exc}") from exc
 
 
+# Network git calls in the intake worker run while holding repo_lock(rid) and
+# the hub write lock: a hung remote must not block publishing for every rid
+# (2026-10-10 review §5.2 #9). Matches hub.PULL_TIMEOUT_SECONDS.
+INTAKE_GIT_TIMEOUT_SECONDS = 300
+
+
 class StatusStore:
     """(repo_id, commit) -> {state, pr_url, detail}; thread-safe; optional JSON persistence."""
 
@@ -1654,7 +1660,9 @@ def intake_publish(
             # base the PR on the freshest main when possible -- handle.root's
             # origin is credential-stripped (strip_remote_credentials), so the
             # token has to come from the handle, not from the remote's own URL.
-            gitio.pull(handle.root, token=handle.token)
+            gitio.pull(
+                handle.root, token=handle.token, timeout=INTAKE_GIT_TIMEOUT_SECONDS
+            )
         except gitio.GitError:
             logger.warning("hub pull failed -- publishing against cached main")
         # The base is a ref, never the serving tree's current branch: reading
@@ -1832,10 +1840,13 @@ def _publish_in_worktree(
     token = ghapp.mint_installation_token(cfg.creds, hub_full, http=http)
     if cfg.push_via_token_url:
         gitio.push_branch_with_token(
-            work, f"https://github.com/{hub_full}.git", token, branch
+            work, f"https://github.com/{hub_full}.git", token, branch,
+            timeout=INTAKE_GIT_TIMEOUT_SECONDS,
         )
     else:
-        gitio.push_branch(work, branch, handle.token)
+        gitio.push_branch(
+            work, branch, handle.token, timeout=INTAKE_GIT_TIMEOUT_SECONDS
+        )
     create_pr = cfg.pr_hook or ghapp.create_or_get_pr
     return create_pr(
         hub_full,

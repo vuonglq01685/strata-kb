@@ -3,6 +3,16 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.10.0 — 2026-10-10
+
+- `kb_get_section`, `kb get`, `/api/docs/<doc>` and `/ui/docs/<doc>` refuse a doc id outside the doc grammar (`[A-Za-z0-9][A-Za-z0-9._-]*`) or one that resolves outside its repo (a symlink). `kb_get_section(doc="../../.kb/<doc>")` used to read the hub's own unpublished `.kb/` and cite it as another repo's. An invalid id reads as not found.
+- `POST /ui/login` caps the body at 8 KiB however it is sent. A chunked request with no `Content-Length` used to reach `request.form()` unbounded, so one unauthenticated request could run the service out of memory. A non-ASCII form token is a failed login, not a 500.
+- `/intake/status` without a token answers `{state, pr_url}`; `detail` goes only to the caller presenting that repo-id's OIDC token. **Dev-machine `kb publish` through `intake:` works again** — it had polled a route that demanded OIDC and timed out after 600 s even when the hub PR was open. Against an older hub it now fails at once and says to check the Actions run and upgrade the hub. An intake error without detail names the Actions run for the tag.
+- `/intake/manifest` and `/intake/status` share a 120/minute per-caller limit, checked before any JWT work.
+- **Breaking for operators:** the http server refuses to start when `STRATA_KB_HTTP_TOKEN` is `change-me`, shorter than 32 characters, or not printable ASCII. Fix: `kb docker-setup --force` (writes a 48-character token) or set `STRATA_KB_HTTP_TOKEN` to `python -c "import secrets; print(secrets.token_hex(24))"`, then update the token in every `kb mcp-setup` client.
+- The intake worker's `git pull` and pushes time out after 300 s with prompts off, so a hung remote no longer holds the publish lock for every repo.
+- `/assets/<name>` serves only from `federation/`, never the hub's own `.kb/`.
+
 ## 1.9.0 — 2026-10-10
 
 - `kb usage` counts subagents. Claude Code writes each subagent's transcript to `<session-id>/subagents/`, which the `Stop` hook never read: on the session measured for the 2026-10-10 review, the hook had seen 33 % of the cost. A new `SubagentStop` hook ingests each finished subagent, and `Stop` sweeps the folder, holding back each subagent's possibly in-flight last call. Rows are tagged `sidechain`; the HTML report's "Main thread vs subagents" table splits the cost. `kb init --kind ba|dev` scaffolds both hooks. Existing repos: add the `SubagentStop` hook to `.claude/settings.json` — `kb doctor` warns when `Stop` is there and `SubagentStop` is not; until then the `Stop` sweep still records subagents, minus each one's last call. An older `kb` reads a `SubagentStop` payload as another `Stop` and records no subagent call.

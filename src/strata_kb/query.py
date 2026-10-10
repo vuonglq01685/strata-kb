@@ -489,10 +489,34 @@ def _folded_result(
     )
 
 
+def doc_dir(repo_kb: Path, doc_id: str) -> Path | None:
+    """`repo_kb / doc_id`, or None when `doc_id` could leave `repo_kb`.
+
+    The one guard for every reader that joins a caller-supplied doc id onto
+    a path (MCP `kb_get_section`, `kb get`, `/api/docs/<doc>`, `/ui/docs/<doc>`).
+    The grammar rejects separators and a leading dot. The resolve check
+    catches a symlinked doc folder inside a published snapshot. Without it,
+    `../../.kb/<doc>` read the hub's unpublished `.kb/` (2026-10-10 review
+    §5.2 #1).
+    """
+    if not models.DOC_ID_RE.match(doc_id):
+        return None
+    path = repo_kb / doc_id
+    try:
+        if not path.resolve().is_relative_to(repo_kb.resolve()):
+            return None
+    except OSError:
+        return None
+    return path
+
+
 def _get_section_in(
     repo_kb: Path, repo_id: str, doc_id: str, section_id: str, level: str
 ) -> QueryResult | None:
-    manifest_path = repo_kb / doc_id / "_manifest.yaml"
+    folder = doc_dir(repo_kb, doc_id)
+    if folder is None:
+        return None
+    manifest_path = folder / "_manifest.yaml"
     if not manifest_path.exists():
         return None
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
@@ -535,10 +559,13 @@ def get_section(
     section_id = section_id.lstrip("§")
     if ":" in doc_id and repo is None:
         repo, doc_id = doc_id.split(":", 1)
+    if not models.DOC_ID_RE.match(doc_id):
+        return None
     holders = [
         r for r in load_federation(hub.federation_dir)
         if (repo is None or r.meta.repo_id == repo)
-        and (r.kb_dir / doc_id / "_manifest.yaml").exists()
+        and (folder := doc_dir(r.kb_dir, doc_id)) is not None
+        and (folder / "_manifest.yaml").exists()
     ]
     if not holders:
         return None
