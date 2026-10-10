@@ -3,6 +3,12 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.14.0 — 2026-10-10
+
+- `kb resolve`, `kb_resolve` and the ticket lint's citation check read every pinned file through one `git cat-file --batch` process, instead of four git processes per citation: 5 citations went from 22 git processes (199 ms) to 3 (113 ms) on a 2,000-section hub.
+- `kb summarize` writes results every 25 sections instead of only when the whole run finishes, so a crash or Ctrl-C keeps everything already summarized (and paid for); re-run to continue. Document (L0) summaries now run in parallel like sections.
+- At the default `effort: high`, the Claude thinking budget scales with the prompt (about twice its tokens, between 4,000 and 31,999) instead of 31,999 for every section; short sections, most of them, cost less. `effort: medium`/`low` are unchanged.
+
 ## 1.13.0 — 2026-10-10
 
 - Each `.md` / `.raw.md` is split into sections once instead of once per section (`mdutils.section_map`; `slice_section` returns exactly what it did). The search index's cold sync of 2,000 sections at 500 per file went from 4.2 s to 0.33 s, and `kb build`, `kb summarize` and the search index read each file once per document.
