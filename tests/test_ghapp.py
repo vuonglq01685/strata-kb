@@ -73,7 +73,12 @@ def test_create_pr_created(rsa_pem):
     )
     assert url.endswith("/pull/5")
     sent = json.loads(http.requests[0].data)
-    assert sent == {"title": "t", "body": "b", "head": "publish/child-a", "base": "main"}
+    assert sent == {
+        "title": "t",
+        "body": "b",
+        "head": "publish/child-a",
+        "base": "main",
+    }
 
 
 def test_create_pr_already_exists_returns_open_pr(rsa_pem):

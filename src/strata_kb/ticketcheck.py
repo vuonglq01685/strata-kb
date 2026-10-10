@@ -72,7 +72,9 @@ CODE_SPAN_RE = re.compile(r"`([^`]+)`")
 FIELD_RE = re.compile(r"^-\s*(?P<field>[A-Za-z][A-Za-z ]*?):\s*(?P<rest>.*)$")
 SUBITEM_RE = re.compile(r"^\s+-\s*(?P<text>.*\S)\s*$")
 PRIMARY_RE = re.compile(r"\*\*Primary:\*\*\s*`([^`]*)`")
-TREE_CAP_RE = re.compile(r"^# … \d+ more entr(?:y|ies) omitted from `(?P<first>[^`]*)` onward")
+TREE_CAP_RE = re.compile(
+    r"^# … \d+ more entr(?:y|ies) omitted from `(?P<first>[^`]*)` onward"
+)
 TREE_DEPTH = 4  # codeingest.extractors.tree._L3_DEPTH
 
 SERVICES_HEADING = "## Services & order"
@@ -96,8 +98,16 @@ COMPOSE_FIELDS: tuple[str, ...] = ("Volumes", "Healthchecks", "Devices")
 _COMPOSE_GROUP_RE = re.compile(
     r"(svc\.[A-Za-z0-9_][A-Za-z0-9_.-]*)\s*[—-]\s*(?P<values>(?:`[^`]*`|[^;])*)"
 )
-_COMPOSE_ROW = {"Volumes": "Volumes", "Healthchecks": "Healthcheck", "Devices": "Devices"}
-_COMPOSE_NOUN = {"Volumes": "volume", "Healthchecks": "healthcheck", "Devices": "device"}
+_COMPOSE_ROW = {
+    "Volumes": "Volumes",
+    "Healthchecks": "Healthcheck",
+    "Devices": "Devices",
+}
+_COMPOSE_NOUN = {
+    "Volumes": "volume",
+    "Healthchecks": "healthcheck",
+    "Devices": "device",
+}
 
 
 class DocLoadError(KbError):
@@ -110,7 +120,7 @@ class LoadedDoc:
     manifest: models.Manifest
     source: str  # human label for the [note] line, e.g. ".kb/demo-code"
     read_group: Callable[[str], str | None]  # group stem -> L2 text
-    read_raw: Callable[[str], str | None]    # group stem -> L3 text
+    read_raw: Callable[[str], str | None]  # group stem -> L3 text
 
 
 LoadDoc = Callable[[str | None, str], LoadedDoc | None]
@@ -121,7 +131,7 @@ class Decision:
     id: str
     status: str
     owner: str
-    blocks: tuple[str, ...] = ()   # US ids in the `Blocks` cell, as written
+    blocks: tuple[str, ...] = ()  # US ids in the `Blocks` cell, as written
 
 
 @dataclass(frozen=True)
@@ -130,7 +140,9 @@ class DecisionTable:
     rows: dict[str, Decision]
 
 
-LoadDecisions = Callable[[str], DecisionTable | None]  # mission id -> table, None = file missing
+LoadDecisions = Callable[
+    [str], DecisionTable | None
+]  # mission id -> table, None = file missing
 
 
 def parse_decisions(text: str, source: str) -> DecisionTable:
@@ -160,7 +172,9 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
         full_blocks = US_ID_IN_CELL_RE.findall(blocks_cell)
         bare_blocks = BARE_US_RE.findall(US_ID_IN_CELL_RE.sub(" ", blocks_cell))
         blocks = tuple(dict.fromkeys(full_blocks + bare_blocks))
-        out[r[i_id].strip()] = Decision(r[i_id].strip(), r[i_status].strip(), owner, blocks)
+        out[r[i_id].strip()] = Decision(
+            r[i_id].strip(), r[i_status].strip(), owner, blocks
+        )
     return DecisionTable(source, out)
 
 
@@ -193,7 +207,8 @@ def load_from_hub(federation_dir: Path, repo: str | None, doc: str) -> LoadedDoc
     from strata_kb.federation import load_federation
 
     holders = [
-        r for r in load_federation(federation_dir)
+        r
+        for r in load_federation(federation_dir)
         if (repo is None or r.meta.repo_id == repo)
         and (r.kb_dir / doc / "_manifest.yaml").exists()
     ]
@@ -216,9 +231,9 @@ def load_from_hub(federation_dir: Path, repo: str | None, doc: str) -> LoadedDoc
 
 @dataclass
 class _Section:
-    first_line: int                     # 1-based ticket line of the body's first line
-    lines: list[str]                    # visible body lines (HTML comments blanked)
-    field_of_line: list[str | None]     # the `- <Field>:` a line belongs to
+    first_line: int  # 1-based ticket line of the body's first line
+    lines: list[str]  # visible body lines (HTML comments blanked)
+    field_of_line: list[str | None]  # the `- <Field>:` a line belongs to
     subitems: dict[str, list[tuple[int, str]]]  # field -> [(lineno, text)]
 
 
@@ -237,7 +252,9 @@ def _parse_section(text: str, heading: str) -> _Section | None:
     if body is None:
         return None
     first_line = _heading_line_index(text, heading) + 2
-    blanked = lintcore.HTML_COMMENT_RE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
+    blanked = lintcore.HTML_COMMENT_RE.sub(
+        lambda m: "\n" * m.group(0).count("\n"), body
+    )
     lines = blanked.splitlines()
     field_of_line: list[str | None] = []
     subitems: dict[str, list[tuple[int, str]]] = {}
@@ -249,7 +266,9 @@ def _parse_section(text: str, heading: str) -> _Section | None:
         elif current is not None:
             m = SUBITEM_RE.match(line)
             if m:
-                subitems.setdefault(current, []).append((first_line + i, m.group("text")))
+                subitems.setdefault(current, []).append(
+                    (first_line + i, m.group("text"))
+                )
         field_of_line.append(current)
     return _Section(first_line, lines, field_of_line, subitems)
 
@@ -260,7 +279,9 @@ class _Decisions:
     mission_id: str | None  # the `> Parent mission:` id, or None
 
 
-def _resolve_decisions(text: str, heading: str, load_decisions: LoadDecisions | None) -> _Decisions:
+def _resolve_decisions(
+    text: str, heading: str, load_decisions: LoadDecisions | None
+) -> _Decisions:
     """Mission heading: the table is in the checked text itself. Ticket
     heading: via the back-link; `table is None` with a `mission_id` means
     the mission file could not be loaded."""
@@ -284,48 +305,74 @@ def _issue_once(issues: list[Issue], issue: Issue) -> None:
         issues.append(issue)
 
 
-def _judge_new(label: str, new: re.Match, lineno: int, decisions: _Decisions,
-               issues: list[Issue], notes: list[str]) -> None:
+def _judge_new(
+    label: str,
+    new: re.Match,
+    lineno: int,
+    decisions: _Decisions,
+    issues: list[Issue],
+    notes: list[str],
+) -> None:
     """One `[NEW: …]` marker: free text -> note; `D<n>` -> verified against
     the decisions table. `label` is the id or path the marker exempts."""
     reason = (new.group("reason") or "").strip()
     if not reason:
-        _issue_once(issues, Issue("warning", f"[NEW] without a reason for {label} (line {lineno})"))
+        _issue_once(
+            issues,
+            Issue("warning", f"[NEW] without a reason for {label} (line {lineno})"),
+        )
         return
     if not DECISION_REF_RE.match(reason):
         notes.append(f"new: {label} — {reason} (line {lineno})")
         if decisions.table is not None and decisions.table.rows:
             _issue_once(
                 issues,
-                Issue("warning", f"{decisions.table.source} has Technology decisions — reference the row as [NEW: D<n>] (line {lineno})"),
+                Issue(
+                    "warning",
+                    f"{decisions.table.source} has Technology decisions — reference the row as [NEW: D<n>] (line {lineno})",
+                ),
             )
         return
     if decisions.table is None:
         if decisions.mission_id is None:
             _issue_once(
                 issues,
-                Issue("error", f"[NEW: {reason}] needs a parent mission to hold the decision — add `> Parent mission: M-<slug>` under the title, or write [NEW: <reason>] (line {lineno})"),
+                Issue(
+                    "error",
+                    f"[NEW: {reason}] needs a parent mission to hold the decision — add `> Parent mission: M-<slug>` under the title, or write [NEW: <reason>] (line {lineno})",
+                ),
             )
         else:
             _issue_once(
                 issues,
-                Issue("error", f"parent mission '{decisions.mission_id}' not found under missions/ — pass --missions-dir, or write [NEW: <reason>] (line {lineno})"),
+                Issue(
+                    "error",
+                    f"parent mission '{decisions.mission_id}' not found under missions/ — pass --missions-dir, or write [NEW: <reason>] (line {lineno})",
+                ),
             )
         return
     row = decisions.table.rows.get(reason)
     if row is None:
         _issue_once(
             issues,
-            Issue("error", f"decision {reason} not in {decisions.table.source}'s Technology decisions — append the row there first (line {lineno})"),
+            Issue(
+                "error",
+                f"decision {reason} not in {decisions.table.source}'s Technology decisions — append the row there first (line {lineno})",
+            ),
         )
         return
     if row.status.upper() != "DECIDED":
         _issue_once(
             issues,
-            Issue("error", f"decision {reason} is {row.status} (owner: {row.owner or 'none'}) — a human decides before Dev (line {lineno})"),
+            Issue(
+                "error",
+                f"decision {reason} is {row.status} (owner: {row.owner or 'none'}) — a human decides before Dev (line {lineno})",
+            ),
         )
         return
-    notes.append(f"new: {label} — {reason} (DECIDED, owner {row.owner or 'none'}) (line {lineno})")
+    notes.append(
+        f"new: {label} — {reason} (DECIDED, owner {row.owner or 'none'}) (line {lineno})"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -333,8 +380,13 @@ def _judge_new(label: str, new: re.Match, lineno: int, decisions: _Decisions,
 # ---------------------------------------------------------------------------
 
 
-def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
-          load_decisions: LoadDecisions | None = None) -> LintReport:
+def check(
+    text: str,
+    *,
+    load_doc: LoadDoc,
+    heading: str = HEADING,
+    load_decisions: LoadDecisions | None = None,
+) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
     # An SA that appends a second copy of the section instead of replacing
@@ -382,7 +434,9 @@ def check(text: str, *, load_doc: LoadDoc, heading: str = HEADING,
     return LintReport(issues, notes)
 
 
-def _grounded_on(section: _Section, heading: str, issues: list[Issue]) -> tuple[str | None, str, str, int] | None:
+def _grounded_on(
+    section: _Section, heading: str, issues: list[Issue]
+) -> tuple[str | None, str, str, int] | None:
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] != "Grounded on" or line[:1].isspace():
             continue
@@ -402,7 +456,9 @@ def _grounded_on(section: _Section, heading: str, issues: list[Issue]) -> tuple[
                     )
                 )
                 return None
-            repo, doc, rev = next((e for e in entries if e[1].endswith("-code")), entries[0])
+            repo, doc, rev = next(
+                (e for e in entries if e[1].endswith("-code")), entries[0]
+            )
             return repo, doc, rev, lineno
         m = GROUNDED_ON_RE.match(line.strip())
         if m is None:
@@ -426,11 +482,16 @@ def _grounded_on(section: _Section, heading: str, issues: list[Issue]) -> tuple[
     return None
 
 
-def _check_revision(doc: LoadedDoc, doc_id: str, rev: str, line: int, issues: list[Issue]) -> None:
+def _check_revision(
+    doc: LoadedDoc, doc_id: str, rev: str, line: int, issues: list[Issue]
+) -> None:
     have = (doc.manifest.revision or "").lower()
     if not have:
         issues.append(
-            Issue("warning", f"{doc_id} has no revision in its manifest — grounding revision not verified")
+            Issue(
+                "warning",
+                f"{doc_id} has no revision in its manifest — grounding revision not verified",
+            )
         )
         return
     if not (have.startswith(rev) or rev.startswith(have)):
@@ -462,15 +523,23 @@ def _id_lines(section: _Section):
             continue
         if section.field_of_line[i] == "Healthchecks":
             line = _COMPOSE_GROUP_RE.sub(
-                lambda m: m.string[m.start():m.start("values")]
-                + " ".join(n.group(0) for n in NEW_RE.finditer(m.group("values"))),
+                lambda m: (
+                    m.string[m.start() : m.start("values")]
+                    + " ".join(n.group(0) for n in NEW_RE.finditer(m.group("values")))
+                ),
                 line,
             )
         if line.strip():
             yield section.first_line + i, line
 
 
-def _check_ids(section: _Section, doc: LoadedDoc, decisions: _Decisions, issues: list[Issue], notes: list[str]) -> None:
+def _check_ids(
+    section: _Section,
+    doc: LoadedDoc,
+    decisions: _Decisions,
+    issues: list[Issue],
+    notes: list[str],
+) -> None:
     known = _known_ids(doc)
     for lineno, line in _id_lines(section):
         new = NEW_RE.search(line)
@@ -500,7 +569,9 @@ def _check_ids(section: _Section, doc: LoadedDoc, decisions: _Decisions, issues:
             )
 
 
-def _check_service_present(section: _Section, heading: str, issues: list[Issue]) -> None:
+def _check_service_present(
+    section: _Section, heading: str, issues: list[Issue]
+) -> None:
     if heading == SERVICES_HEADING:
         return  # the mission table has no `- Service:` line by design
     for i, line in enumerate(section.lines):
@@ -508,7 +579,12 @@ def _check_service_present(section: _Section, heading: str, issues: list[Issue])
             sid.startswith("svc.") for sid in ID_RE.findall(line)
         ):
             return
-    issues.append(Issue("warning", "no `svc.<name>` on the `Service:` line — which service does this ticket touch?"))
+    issues.append(
+        Issue(
+            "warning",
+            "no `svc.<name>` on the `Service:` line — which service does this ticket touch?",
+        )
+    )
 
 
 def _check_open_decisions(section: _Section, issues: list[Issue]) -> None:
@@ -522,10 +598,14 @@ def _check_open_decisions(section: _Section, issues: list[Issue]) -> None:
     for lineno, item in open_items:
         issues.append(Issue("error", f"open decision: {item} (line {lineno})"))
     if open_items:
-        issues.append(Issue("error", f"{len(open_items)} open decision(s) — resolve before Dev"))
+        issues.append(
+            Issue("error", f"{len(open_items)} open decision(s) — resolve before Dev")
+        )
 
 
-def _l2_slice(doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue]) -> str | None:
+def _l2_slice(
+    doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue]
+) -> str | None:
     """The `## <sid> …` L2 section text, or None — memoised in `unreadable`
     (by group stem for an unreadable file, by `sid` for a missing heading;
     the two id shapes never collide) so either failure warns once, not
@@ -537,14 +617,20 @@ def _l2_slice(doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue
     if text is None:
         unreadable.add(group)
         issues.append(
-            Issue("warning", f"could not read {group}.md of {doc.manifest.id} — column/route/command checks for its sections skipped")
+            Issue(
+                "warning",
+                f"could not read {group}.md of {doc.manifest.id} — column/route/command checks for its sections skipped",
+            )
         )
         return None
     body = slice_section(text, sid)
     if body is None:
         unreadable.add(sid)
         issues.append(
-            Issue("warning", f"section {sid} not found in {group}.md of {doc.manifest.id} — its column/route/command checks skipped")
+            Issue(
+                "warning",
+                f"section {sid} not found in {group}.md of {doc.manifest.id} — its column/route/command checks skipped",
+            )
         )
     return body
 
@@ -552,7 +638,9 @@ def _l2_slice(doc: LoadedDoc, sid: str, unreadable: set[str], issues: list[Issue
 _table_column = lintcore.table_column
 
 
-def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: list[Issue]) -> None:
+def _check_tables_routes_commands(
+    section: _Section, doc: LoadedDoc, issues: list[Issue]
+) -> None:
     known = _known_ids(doc)
     unreadable: set[str] = set()
     for lineno, line in _id_lines(section):
@@ -574,7 +662,10 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                 names = {r[col] for r in rows[1:] if col is not None and len(r) > col}
                 if column not in names:
                     issues.append(
-                        Issue("error", f"column '{column}' is not in {table} ({', '.join(sorted(names)) or 'no columns'}) (line {lineno})")
+                        Issue(
+                            "error",
+                            f"column '{column}' is not in {table} ({', '.join(sorted(names)) or 'no columns'}) (line {lineno})",
+                        )
                     )
             # api.<tag> — METHOD /path
             elif raw.startswith("api.") and raw in known:
@@ -586,19 +677,31 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                     continue
                 rows = lintcore.table_rows(body)
                 mi, pi = _table_column(rows, "method"), _table_column(rows, "path")
-                have = {(r[mi].upper(), r[pi]) for r in rows[1:] if mi is not None and pi is not None and len(r) > max(mi, pi)}
+                have = {
+                    (r[mi].upper(), r[pi])
+                    for r in rows[1:]
+                    if mi is not None and pi is not None and len(r) > max(mi, pi)
+                }
                 valid = ", ".join(f"{m} {p}" for m, p in sorted(have)) or "no routes"
                 for method, path in pairs:
                     path = path.rstrip(".,;:)`")
                     if (method.upper(), path) not in have:
                         issues.append(
-                            Issue("error", f"route '{method} {path}' is not in {raw} — copy a row of its table ({valid}) (line {lineno})")
+                            Issue(
+                                "error",
+                                f"route '{method} {path}' is not in {raw} — copy a row of its table ({valid}) (line {lineno})",
+                            )
                         )
             # cmd.<x> — `command`
             elif raw.startswith("cmd.") and raw in known:
                 spans = CODE_SPAN_RE.findall(line)
                 if not spans:
-                    issues.append(Issue("warning", f"{raw}: put the command in backticks so it can be verified (line {lineno})"))
+                    issues.append(
+                        Issue(
+                            "warning",
+                            f"{raw}: put the command in backticks so it can be verified (line {lineno})",
+                        )
+                    )
                     continue
                 body = _l2_slice(doc, raw, unreadable, issues)
                 if body is None:
@@ -613,7 +716,10 @@ def _check_tables_routes_commands(section: _Section, doc: LoadedDoc, issues: lis
                 if not any(s in allowed for s in spans):
                     found = ", ".join(f"`{s}`" for s in spans)
                     issues.append(
-                        Issue("error", f"command not in {raw} — copy the primary or an alternative verbatim (found: {found}; allowed: {', '.join(sorted(allowed))}) (line {lineno})")
+                        Issue(
+                            "error",
+                            f"command not in {raw} — copy the primary or an alternative verbatim (found: {found}; allowed: {', '.join(sorted(allowed))}) (line {lineno})",
+                        )
                     )
 
 
@@ -666,8 +772,14 @@ def _property(body: str, name: str) -> str | None:
     return None
 
 
-def _svc_facts(doc: LoadedDoc, sid: str, field: str, unreadable: set[str],
-               issues: list[Issue], row_absent: set[str]) -> set[str] | None:
+def _svc_facts(
+    doc: LoadedDoc,
+    sid: str,
+    field: str,
+    unreadable: set[str],
+    issues: list[Issue],
+    row_absent: set[str],
+) -> set[str] | None:
     """The svc's values for one compose field as a set: `{"pgdata"}`,
     `{"curl -f …"}`, `set()` for `none`. None when the section is unreadable
     or missing (`_l2_slice` already warned about that) or when its L2
@@ -699,11 +811,21 @@ def _split_values(field: str, raw: str) -> list[str]:
     return [v.strip().strip("`") for v in raw.split(",") if v.strip()]
 
 
-def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decisions,
-                         issues: list[Issue], notes: list[str]) -> None:
+def _check_compose_facts(
+    section: _Section,
+    doc: LoadedDoc,
+    decisions: _Decisions,
+    issues: list[Issue],
+    notes: list[str],
+) -> None:
     present = [f for f in COMPOSE_FIELDS if _field_lines(section, f)]
     if len(present) < len(COMPOSE_FIELDS):
-        issues.append(Issue("warning", "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them"))
+        issues.append(
+            Issue(
+                "warning",
+                "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them",
+            )
+        )
     if not present:
         return
     services = _service_ids(section)
@@ -719,19 +841,31 @@ def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decision
                         continue  # not in this document (e.g. a [NEW] service) — _check_ids already reported it
                     facts = _svc_facts(doc, sid, field, unreadable, issues, row_absent)
                     if facts:
-                        issues.append(Issue("warning", f"{sid} has {noun}s the grounding omits: {', '.join(sorted(facts))} (line {lineno})"))
+                        issues.append(
+                            Issue(
+                                "warning",
+                                f"{sid} has {noun}s the grounding omits: {', '.join(sorted(facts))} (line {lineno})",
+                            )
+                        )
                 continue
             matches = list(_COMPOSE_GROUP_RE.finditer(rest))
             if not matches:
-                issues.append(Issue(
-                    "warning",
-                    f"{field}: line does not parse — expected `svc.<name> — <values>` (got: {rest}) (line {lineno})",
-                ))
+                issues.append(
+                    Issue(
+                        "warning",
+                        f"{field}: line does not parse — expected `svc.<name> — <values>` (got: {rest}) (line {lineno})",
+                    )
+                )
                 continue
             for g in matches:
                 sid = g.group(1).rstrip(".")
                 if sid not in services:
-                    issues.append(Issue("error", f"{sid} on the {field}: line is not on the Service: line (line {lineno})"))
+                    issues.append(
+                        Issue(
+                            "error",
+                            f"{sid} on the {field}: line is not on the Service: line (line {lineno})",
+                        )
+                    )
                     continue
                 if sid not in known:
                     continue  # not in this document (e.g. a [NEW] service) — _check_ids already reported it
@@ -741,7 +875,12 @@ def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decision
                 values_raw = g.group("values")
                 if values_raw.strip().casefold() in _NONE_WORDS:
                     if facts:
-                        issues.append(Issue("error", f"{noun} for {sid} is '{', '.join(sorted(facts))}', not 'none' (line {lineno})"))
+                        issues.append(
+                            Issue(
+                                "error",
+                                f"{noun} for {sid} is '{', '.join(sorted(facts))}', not 'none' (line {lineno})",
+                            )
+                        )
                     continue
                 # A Healthchecks `[NEW: …]` marker sits outside the backtick
                 # span, so `_split_values` never returns it as part of
@@ -760,17 +899,36 @@ def _check_compose_facts(section: _Section, doc: LoadedDoc, decisions: _Decision
                 for value in split_values:
                     new = NEW_RE.search(value) or raw_new
                     if new is not None:
-                        _judge_new(NEW_RE.sub("", value).strip(), new, lineno, decisions, issues, notes)
+                        _judge_new(
+                            NEW_RE.sub("", value).strip(),
+                            new,
+                            lineno,
+                            decisions,
+                            issues,
+                            notes,
+                        )
                         continue
                     if value in facts:
                         continue
                     have = ", ".join(sorted(facts)) or "none"
                     if field == "Healthchecks":
-                        issues.append(Issue("error", f"healthcheck for {sid} is '{have}', not '{value}' (line {lineno})"))
+                        issues.append(
+                            Issue(
+                                "error",
+                                f"healthcheck for {sid} is '{have}', not '{value}' (line {lineno})",
+                            )
+                        )
                     else:
-                        issues.append(Issue("error", f"{noun} '{value}' is not in {sid} (has: {have}) (line {lineno})"))
+                        issues.append(
+                            Issue(
+                                "error",
+                                f"{noun} '{value}' is not in {sid} (has: {have}) (line {lineno})",
+                            )
+                        )
     if row_absent:
-        notes.append(f"{doc.manifest.id} has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped")
+        notes.append(
+            f"{doc.manifest.id} has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped"
+        )
 
 
 def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:
@@ -808,7 +966,13 @@ def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:
     return paths, first_dropped
 
 
-def _check_files(section: _Section, doc: LoadedDoc, decisions: _Decisions, issues: list[Issue], notes: list[str]) -> None:
+def _check_files(
+    section: _Section,
+    doc: LoadedDoc,
+    decisions: _Decisions,
+    issues: list[Issue],
+    notes: list[str],
+) -> None:
     entries = list(section.subitems.get("Files", []))
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] == "Files" and not line[:1].isspace():
@@ -821,7 +985,10 @@ def _check_files(section: _Section, doc: LoadedDoc, decisions: _Decisions, issue
     raw = doc.read_raw(group) if group else None
     if raw is None:
         issues.append(
-            Issue("warning", f"could not read {group or 'structure'}.raw.md of {doc.manifest.id} — file checks skipped")
+            Issue(
+                "warning",
+                f"could not read {group or 'structure'}.raw.md of {doc.manifest.id} — file checks skipped",
+            )
         )
         return
     paths, first_dropped = _tree_paths(raw)
@@ -835,7 +1002,10 @@ def _check_files(section: _Section, doc: LoadedDoc, decisions: _Decisions, issue
             continue
         if path.count("/") >= TREE_DEPTH:
             issues.append(
-                Issue("warning", f"cannot verify '{path}': beyond struct.tree's depth cap ({TREE_DEPTH}) — list the deepest directory the document shows (line {lineno})")
+                Issue(
+                    "warning",
+                    f"cannot verify '{path}': beyond struct.tree's depth cap ({TREE_DEPTH}) — list the deepest directory the document shows (line {lineno})",
+                )
             )
         elif first_dropped is not None:
             # ponytail: the cap marker names a bare file name, so "does this
@@ -843,9 +1013,15 @@ def _check_files(section: _Section, doc: LoadedDoc, decisions: _Decisions, issue
             # a capped tree makes every absent path unverifiable, never an
             # error. Upgrade path: a full-path marker in tree.py's renderer.
             issues.append(
-                Issue("warning", f"cannot verify '{path}': struct.tree hit its line cap (listing stops at '{first_dropped}') — the document cannot prove absence (line {lineno})")
+                Issue(
+                    "warning",
+                    f"cannot verify '{path}': struct.tree hit its line cap (listing stops at '{first_dropped}') — the document cannot prove absence (line {lineno})",
+                )
             )
         else:
             issues.append(
-                Issue("error", f"file '{path}' not in struct.tree of {doc.manifest.id} — spell it as the document lists it, or mark [NEW: <reason>] (line {lineno})")
+                Issue(
+                    "error",
+                    f"file '{path}' not in struct.tree of {doc.manifest.id} — spell it as the document lists it, or mark [NEW: <reason>] (line {lineno})",
+                )
             )

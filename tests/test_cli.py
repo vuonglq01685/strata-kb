@@ -35,50 +35,74 @@ def test_query_prints_raw_match_snippet_when_present(fed_hub, fixture_kb, monkey
 
     fake_results = [
         QueryResult(
-            doc_id="arinc-424", section_id="5.3", title="Restrictive Airspace",
-            score=1.0, citation="arinc-kb:arinc-424 §5.3", content="Condensed body.",
-            tokens=5, content_tokens=count_tokens("Condensed body."),
-            source="arinc-kb", match_mode="keyword",
+            doc_id="arinc-424",
+            section_id="5.3",
+            title="Restrictive Airspace",
+            score=1.0,
+            citation="arinc-kb:arinc-424 §5.3",
+            content="Condensed body.",
+            tokens=5,
+            content_tokens=count_tokens("Condensed body."),
+            source="arinc-kb",
+            match_mode="keyword",
             snippet="...GRYPHON42 in raw...",
         )
     ]
     monkeypatch.setattr(
-        query_module, "search_detailed",
+        query_module,
+        "search_detailed",
         lambda *a, **k: SearchOutcome(results=fake_results),
     )
     result = runner.invoke(
         app,
         [
-            "query", "restrictive airspace",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "restrictive airspace",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 0
     assert "raw match: ...GRYPHON42 in raw..." in result.output
 
 
-def test_query_omits_raw_match_line_when_snippet_empty(fed_hub, fixture_kb, monkeypatch):
+def test_query_omits_raw_match_line_when_snippet_empty(
+    fed_hub, fixture_kb, monkeypatch
+):
     from strata_kb import query as query_module
     from strata_kb.mdutils import count_tokens
     from strata_kb.query import QueryResult, SearchOutcome
 
     fake_results = [
         QueryResult(
-            doc_id="arinc-424", section_id="5.3", title="Restrictive Airspace",
-            score=1.0, citation="arinc-kb:arinc-424 §5.3", content="Condensed body.",
-            tokens=5, content_tokens=count_tokens("Condensed body."),
-            source="arinc-kb", match_mode="keyword",
+            doc_id="arinc-424",
+            section_id="5.3",
+            title="Restrictive Airspace",
+            score=1.0,
+            citation="arinc-kb:arinc-424 §5.3",
+            content="Condensed body.",
+            tokens=5,
+            content_tokens=count_tokens("Condensed body."),
+            source="arinc-kb",
+            match_mode="keyword",
         )
     ]
     monkeypatch.setattr(
-        query_module, "search_detailed",
+        query_module,
+        "search_detailed",
         lambda *a, **k: SearchOutcome(results=fake_results),
     )
     result = runner.invoke(
         app,
         [
-            "query", "restrictive airspace",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "restrictive airspace",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 0
@@ -93,8 +117,12 @@ def test_query_no_usable_terms_prints_note_to_stderr(fed_hub, fixture_kb):
     result = runner.invoke(
         app,
         [
-            "query", "§§§ ---",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "§§§ ---",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 0
@@ -102,7 +130,9 @@ def test_query_no_usable_terms_prints_note_to_stderr(fed_hub, fixture_kb):
     assert "no searchable terms" not in result.stdout
 
 
-def test_query_index_busy_is_a_clean_error_not_a_traceback(fed_hub, fixture_kb, monkeypatch):
+def test_query_index_busy_is_a_clean_error_not_a_traceback(
+    fed_hub, fixture_kb, monkeypatch
+):
     """F-C2: a still-held index file must surface as a clean red message +
     exit 1, never a raw PermissionError/IndexBusyError traceback."""
     from strata_kb import query as query_module
@@ -115,8 +145,12 @@ def test_query_index_busy_is_a_clean_error_not_a_traceback(fed_hub, fixture_kb, 
     result = runner.invoke(
         app,
         [
-            "query", "restrictive airspace",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "restrictive airspace",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 1
@@ -124,7 +158,9 @@ def test_query_index_busy_is_a_clean_error_not_a_traceback(fed_hub, fixture_kb, 
     assert "in use by another process" in result.output
 
 
-def test_query_client_db_error_is_a_clean_error_not_a_traceback(fed_hub, fixture_kb, monkeypatch):
+def test_query_client_db_error_is_a_clean_error_not_a_traceback(
+    fed_hub, fixture_kb, monkeypatch
+):
     """F-C2: a lost cold-build race (UNIQUE constraint) classified as a
     client error must surface as a clean red message + exit 1, never the raw
     sqlite3.IntegrityError traceback."""
@@ -139,8 +175,12 @@ def test_query_client_db_error_is_a_clean_error_not_a_traceback(fed_hub, fixture
     result = runner.invoke(
         app,
         [
-            "query", "restrictive airspace",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "restrictive airspace",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 1
@@ -162,8 +202,12 @@ def test_query_lock_db_error_still_propagates(fed_hub, fixture_kb, monkeypatch):
     result = runner.invoke(
         app,
         [
-            "query", "restrictive airspace",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "restrictive airspace",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 1
@@ -188,8 +232,12 @@ def test_query_too_many_tags_is_a_clean_error_not_a_traceback(
     result = runner.invoke(
         app,
         [
-            "query", "restrictive airspace",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "restrictive airspace",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 1
@@ -215,8 +263,12 @@ def test_query_unrelated_value_error_still_propagates(fed_hub, fixture_kb, monke
     result = runner.invoke(
         app,
         [
-            "query", "restrictive airspace",
-            "--kb-dir", str(fixture_kb), "--hub", str(fed_hub),
+            "query",
+            "restrictive airspace",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
         ],
     )
     assert result.exit_code == 1
@@ -247,17 +299,31 @@ def test_tags_on_a_kb_with_no_tags_exits_zero_with_guidance(fed_hub, fixture_kb)
 
 
 def test_build_strict_flag_and_quality_warn_rendering(fixture_kb):
-    long = " ".join(f"Sentence number {i} explains the record layout in detail." for i in range(10))
+    long = " ".join(
+        f"Sentence number {i} explains the record layout in detail." for i in range(10)
+    )
     l3 = fixture_kb / "demo-doc" / "ch1-records.raw.md"
-    l3.write_text(l3.read_text(encoding="utf-8").replace(
-        "Full raw text about airway records and route identifiers.", long), encoding="utf-8")
+    l3.write_text(
+        l3.read_text(encoding="utf-8").replace(
+            "Full raw text about airway records and route identifiers.", long
+        ),
+        encoding="utf-8",
+    )
     l2 = fixture_kb / "demo-doc" / "ch1-records.md"
-    l2.write_text(l2.read_text(encoding="utf-8").replace(
-        "Condensed: airway record structure, route identifiers.", long), encoding="utf-8")
+    l2.write_text(
+        l2.read_text(encoding="utf-8").replace(
+            "Condensed: airway record structure, route identifiers.", long
+        ),
+        encoding="utf-8",
+    )
     soft = runner.invoke(app, ["build", "--kb-dir", str(fixture_kb)])
-    assert soft.exit_code == 0 and "[warn]" in soft.output and "(quality)" in soft.output
+    assert (
+        soft.exit_code == 0 and "[warn]" in soft.output and "(quality)" in soft.output
+    )
     hard = runner.invoke(app, ["build", "--strict", "--kb-dir", str(fixture_kb)])
-    assert hard.exit_code == 1 and "[error]" in hard.output and "(quality)" in hard.output
+    assert (
+        hard.exit_code == 1 and "[error]" in hard.output and "(quality)" in hard.output
+    )
 
 
 def test_stats_hints_when_tokens_never_built(fixture_kb):

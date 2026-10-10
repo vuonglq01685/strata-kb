@@ -35,9 +35,9 @@ def test_prose_only_empty_for_table_only_slice():
 
 
 def test_budget_floor_and_ratio():
-    assert budget(201) == 120            # floor wins
-    assert budget(2000) == 700           # 0.35 ratio wins
-    assert budget(342) == 120            # int(0.35*342)=119 < floor
+    assert budget(201) == 120  # floor wins
+    assert budget(2000) == 700  # 0.35 ratio wins
+    assert budget(342) == 120  # int(0.35*342)=119 < floor
 
 
 def test_brief_and_table_only_boundaries():
@@ -47,7 +47,10 @@ def test_brief_and_table_only_boundaries():
 
 
 def test_digest_is_sha256_hex_of_utf8():
-    assert digest("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    assert (
+        digest("abc")
+        == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    )
 
 
 def test_finding_text_marks_quality_level():
@@ -63,11 +66,15 @@ def test_labels_are_exact():
     assert quality.TABLE_PLACEHOLDER == "[table omitted]"
 
 
-LONG_PROSE = " ".join(f"Sentence number {i} explains the record layout." for i in range(12))  # > 200 chars
+LONG_PROSE = " ".join(
+    f"Sentence number {i} explains the record layout." for i in range(12)
+)  # > 200 chars
 
 
 def _sec(summary="Covers the record layout.", title="Route Type"):
-    return models.SectionEntry(id="5.7", title=title, summary=summary, status="summarized", file="ch5")
+    return models.SectionEntry(
+        id="5.7", title=title, summary=summary, status="summarized", file="ch5"
+    )
 
 
 def _codes(findings):
@@ -82,7 +89,7 @@ def test_clean_section_has_no_findings():
 
 def test_ratio_fires_when_l2_exceeds_budget():
     l3 = f"## 5.7 Route Type\n\n{LONG_PROSE}\n"
-    l2 = f"## 5.7 Route Type\n\n{LONG_PROSE}\n"          # 1.0× — over 0.35
+    l2 = f"## 5.7 Route Type\n\n{LONG_PROSE}\n"  # 1.0× — over 0.35
     f = check_section("d §5.7", _sec(), l2, l3)
     assert _codes(f) == ["ratio"] and f[0].level == "quality"
     assert f[0].text.endswith("(quality)")
@@ -101,7 +108,10 @@ def test_brief_section_must_be_verbatim_and_labelled():
     assert check_section("d §5.320", good, ok_l2, l3) == []
     bad_l2 = "## 5.320 HAL\n\nThis header contains only field usage metadata.\n"
     bad = _sec(summary="Explains HAL metadata.", title="HAL")
-    assert _codes(check_section("d §5.320", bad, bad_l2, l3)) == ["brief-label", "brief-verbatim"]
+    assert _codes(check_section("d §5.320", bad, bad_l2, l3)) == [
+        "brief-label",
+        "brief-verbatim",
+    ]
 
 
 def test_table_only_section_label_and_empty_prose():
@@ -137,7 +147,9 @@ def test_table_transcription_ignores_short_and_numeric_cells():
 def test_invented_code_fires_for_uppercase_token_absent_from_l3():
     l3 = f"## 5.99 Marker\n\n{LONG_PROSE} Column 18 holds I and column 19 holds M.\n"
     l2 = "## 5.99 Marker\n\nThe codes IM, MM, OM and BM mark the marker type.\n"
-    f = [x for x in check_section("d §5.99", _sec(), l2, l3) if x.code == "invented-code"]
+    f = [
+        x for x in check_section("d §5.99", _sec(), l2, l3) if x.code == "invented-code"
+    ]
     assert len(f) == 1 and "BM" in f[0].message and "IM" in f[0].message
 
 
@@ -160,7 +172,7 @@ def test_lexical_overlap_fires_on_unrelated_or_translated_prose():
 
 def test_lexical_overlap_skipped_for_short_l2():
     l3 = f"## 5.1 A\n\n{LONG_PROSE}\n"
-    l2 = "## 5.1 A\n\nTotally unrelated words here.\n"   # < 20 words
+    l2 = "## 5.1 A\n\nTotally unrelated words here.\n"  # < 20 words
     assert "lexical-overlap" not in _codes(check_section("d §5.1", _sec(), l2, l3))
 
 
@@ -198,7 +210,9 @@ def test_ratio_message_reports_the_floor_not_a_false_35_percent_of_n3():
     l2 = f"## 5.7 X\n\n{'X' * 130}\n"
     f = check_section("d §5.7", _sec(), l2, l3)
     assert _codes(f) == ["ratio"]
-    assert f[0].message == "d §5.7: L2 prose 130 chars > budget 120 (max(120, 35% of 250))"
+    assert (
+        f[0].message == "d §5.7: L2 prose 130 chars > budget 120 (max(120, 35% of 250))"
+    )
 
 
 def test_invented_code_uses_word_boundary_not_substring_containment():
@@ -206,7 +220,9 @@ def test_invented_code_uses_word_boundary_not_substring_containment():
     # a naive `t not in l3_slice` check would wrongly accept it.
     l3 = f"## 5.50 Q\n\n{LONG_PROSE} Data FROM the header appears here.\n"
     l2 = "## 5.50 Q\n\nThe code OM marks this record.\n"
-    f = [x for x in check_section("d §5.50", _sec(), l2, l3) if x.code == "invented-code"]
+    f = [
+        x for x in check_section("d §5.50", _sec(), l2, l3) if x.code == "invented-code"
+    ]
     assert len(f) == 1 and "OM" in f[0].message
 
 
@@ -273,5 +289,7 @@ def test_l1_words_exempts_table_only_label_even_when_title_is_long():
     long_title = " ".join(["Word"] * 30)
     l3 = "## 5.9 T\n\n| h |\n|---|\n| v |\n"
     l2 = "## 5.9 T\n\n| h |\n|---|\n| v |\n"
-    sec = _sec(summary=quality.TABLE_ONLY_LABEL.format(title=long_title), title=long_title)
+    sec = _sec(
+        summary=quality.TABLE_ONLY_LABEL.format(title=long_title), title=long_title
+    )
     assert "l1-words" not in _codes(check_section("d §5.9", sec, l2, l3))

@@ -28,9 +28,20 @@ def _clone_hub(hub: Path, dest: Path) -> Path:
     content that publish did not transform.
     """
     subprocess.run(
-        ["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
-         "clone", "--quiet", str(hub), str(dest)],
-        check=True, capture_output=True, text=True,
+        [
+            "git",
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "core.eol=lf",
+            "clone",
+            "--quiet",
+            str(hub),
+            str(dest),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
     return dest
 
@@ -45,8 +56,14 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
     published on the hub and compares it against the source.
     """
     kb_run(
-        "publish", "--direct", "--hub", str(legacy_kb["hub"]),
-        "--repo-id", "legacy", "--kb-dir", str(legacy_kb["kb"]),
+        "publish",
+        "--direct",
+        "--hub",
+        str(legacy_kb["hub"]),
+        "--repo-id",
+        "legacy",
+        "--kb-dir",
+        str(legacy_kb["kb"]),
         cwd=legacy_kb["repo"],
     )
 
@@ -59,7 +76,8 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
 
     source_kb = legacy_kb["kb"]
     doc_ids = sorted(
-        p.name for p in source_kb.iterdir()
+        p.name
+        for p in source_kb.iterdir()
         if p.is_dir() and (p / "_manifest.yaml").exists()
     )
     assert doc_ids, (
@@ -138,13 +156,27 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run, strip_kind_war
     `kind:` is the DESIGNED upgrade nudge, not a mis-read — see KIND_WARNING
     in tests-gate/conftest.py.
     """
-    kb_run("publish", "--direct", "--hub", str(legacy_kb["hub"]),
-           "--repo-id", "legacy", "--kb-dir", str(legacy_kb["kb"]),
-           cwd=legacy_kb["repo"])
+    kb_run(
+        "publish",
+        "--direct",
+        "--hub",
+        str(legacy_kb["hub"]),
+        "--repo-id",
+        "legacy",
+        "--kb-dir",
+        str(legacy_kb["kb"]),
+        cwd=legacy_kb["repo"],
+    )
 
-    proc = kb_run("doctor", "--hub", str(legacy_kb["hub"]),
-                  "--kb-dir", str(legacy_kb["kb"]),
-                  cwd=legacy_kb["repo"], check=False)
+    proc = kb_run(
+        "doctor",
+        "--hub",
+        str(legacy_kb["hub"]),
+        "--kb-dir",
+        str(legacy_kb["kb"]),
+        cwd=legacy_kb["repo"],
+        check=False,
+    )
 
     assert "Traceback" not in proc.stdout + proc.stderr, (
         f"doctor blew up on the .kb of {legacy_kb['tag']}"
@@ -170,12 +202,27 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run, strip_kind_war
 
 
 def test_new_binary_queries_a_legacy_kb(legacy_kb, kb_run):
-    kb_run("publish", "--direct", "--hub", str(legacy_kb["hub"]),
-           "--repo-id", "legacy", "--kb-dir", str(legacy_kb["kb"]),
-           cwd=legacy_kb["repo"])
+    kb_run(
+        "publish",
+        "--direct",
+        "--hub",
+        str(legacy_kb["hub"]),
+        "--repo-id",
+        "legacy",
+        "--kb-dir",
+        str(legacy_kb["kb"]),
+        cwd=legacy_kb["repo"],
+    )
 
-    proc = kb_run("query", "leave", "--hub", str(legacy_kb["hub"]),
-                  "--kb-dir", str(legacy_kb["kb"]), cwd=legacy_kb["repo"])
+    proc = kb_run(
+        "query",
+        "leave",
+        "--hub",
+        str(legacy_kb["hub"]),
+        "--kb-dir",
+        str(legacy_kb["kb"]),
+        cwd=legacy_kb["repo"],
+    )
 
     assert "No matching section found." not in proc.stdout, (
         f"query against the .kb of {legacy_kb['tag']} returned nothing — were "

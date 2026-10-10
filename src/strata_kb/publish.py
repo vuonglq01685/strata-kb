@@ -425,7 +425,9 @@ def _restore_federation_after_store_failure(
     if co.returncode != 0:
         logger.warning(
             "git checkout -- %s failed while restoring after an "
-            "asset store failure: %s", pathspec, co.stderr.strip()
+            "asset store failure: %s",
+            pathspec,
+            co.stderr.strip(),
         )
     clean_args = ["clean", "-fd"]
     if protect is not None:
@@ -441,7 +443,9 @@ def _restore_federation_after_store_failure(
             # scoped to `dest`, so a path outside it was never at risk).
             logger.warning(
                 "%s is outside %s — cannot exclude it from the restore's "
-                "clean; continuing without the exclusion", protect, handle.root
+                "clean; continuing without the exclusion",
+                protect,
+                handle.root,
             )
         else:
             clean_args += ["-e", _gitignore_literal(protect_rel.as_posix())]
@@ -450,7 +454,9 @@ def _restore_federation_after_store_failure(
     if cl.returncode != 0:
         logger.warning(
             "git clean -fd -- %s failed while restoring after an "
-            "asset store failure: %s", pathspec, cl.stderr.strip()
+            "asset store failure: %s",
+            pathspec,
+            cl.stderr.strip(),
         )
 
 
@@ -835,13 +841,15 @@ def _reconcile_asset_records(
         parts = asset_file.relative_to(dest).parts
         entry_rel = _asset_entry_root(parts, leaves)
         if entry_rel is None:
-            dropped.append((
-                "/".join(parts),
-                "sits directly under the walk root, so no entry directory "
-                "encloses it -- its bytes are left raw rather than diverted "
-                "into a record at namespace depth (spec 11.2 fixes the record "
-                f"at <entry>/{assetstore.RECORD_NAME})",
-            ))
+            dropped.append(
+                (
+                    "/".join(parts),
+                    "sits directly under the walk root, so no entry directory "
+                    "encloses it -- its bytes are left raw rather than diverted "
+                    "into a record at namespace depth (spec 11.2 fixes the record "
+                    f"at <entry>/{assetstore.RECORD_NAME})",
+                )
+            )
             continue
         entries.setdefault(entry_rel, dest.joinpath(*entry_rel.split("/")))
 
@@ -876,11 +884,13 @@ def _reconcile_asset_records(
         below = sorted(leaf for leaf in leaves if leaf.startswith(entry_rel + "/"))
         if below:
             del entries[entry_rel]
-            dropped.append((
-                entry_rel,
-                f"is a namespace above the entry '{below[0]}', not an entry "
-                "of its own -- left exactly as it is",
-            ))
+            dropped.append(
+                (
+                    entry_rel,
+                    f"is a namespace above the entry '{below[0]}', not an entry "
+                    "of its own -- left exactly as it is",
+                )
+            )
     for entry_rel in sorted(entries):
         if entry_rel in leaves:
             continue
@@ -891,11 +901,13 @@ def _reconcile_asset_records(
         )
         if above:
             del entries[entry_rel]
-            dropped.append((
-                entry_rel,
-                f"sits inside the entry '{above[-1]}', so it is content, not "
-                "an entry of its own -- left exactly as it is",
-            ))
+            dropped.append(
+                (
+                    entry_rel,
+                    f"sits inside the entry '{above[-1]}', so it is content, not "
+                    "an entry of its own -- left exactly as it is",
+                )
+            )
     # A thing the system drops must be a thing the operator can see it
     # dropped (P34's own words) -- but through its own warning, not through
     # PublishReport.skipped (task 21 fix round 5, M4-1). cli.
@@ -932,9 +944,7 @@ def _reconcile_asset_records(
             if inherited:
                 models.save_yaml_model(
                     dest_record,
-                    models.AssetsRecord(
-                        assets=sorted(set(existing) | set(inherited))
-                    ),
+                    models.AssetsRecord(assets=sorted(set(existing) | set(inherited))),
                 )
             if active_store is not None and assetstore.divert_and_record(
                 entry_dir, active_store
@@ -1186,9 +1196,7 @@ def _existing_entry_names(handle: hub_mod.HubHandle) -> list[str]:
     if not fed.is_dir():
         return []
     return sorted(
-        p.name
-        for p in fed.iterdir()
-        if p.is_dir() and p.name not in _FED_TOP_EXCLUDE
+        p.name for p in fed.iterdir() if p.is_dir() and p.name not in _FED_TOP_EXCLUDE
     )
 
 
@@ -1343,7 +1351,11 @@ def publish_federation(
             fed_src, handle, rid, source_commit, snapshot_fn=_snapshot_federation
         )
     return _publish_direct(
-        fed_src, handle, rid, source_commit, max_retries,
+        fed_src,
+        handle,
+        rid,
+        source_commit,
+        max_retries,
         snapshot_fn=_snapshot_federation,
     )
 
@@ -1435,8 +1447,11 @@ def _publish_direct(
     return PublishReport(
         rid,
         _reported_commit(handle, rid, source_commit, changed),
-        n_docs, pushed, mode="direct",
-        skipped=skipped, remote=gitio.has_remote(handle.root),
+        n_docs,
+        pushed,
+        mode="direct",
+        skipped=skipped,
+        remote=gitio.has_remote(handle.root),
     )
 
 
@@ -1466,7 +1481,11 @@ def _publish_pr(
             return PublishReport(
                 rid,
                 _reported_commit(handle, rid, source_commit, changed),
-                n_docs, False, mode="pr", skipped=skipped, remote=True,
+                n_docs,
+                False,
+                mode="pr",
+                skipped=skipped,
+                remote=True,
             )
         # Read _meta.yaml (when changed=False) while still checked out on
         # `branch` -- finding 7: computing this after the `finally` below has
@@ -1487,7 +1506,12 @@ def _publish_pr(
     return PublishReport(
         rid,
         reported_commit,
-        n_docs, True, mode="pr", pr_url=url, skipped=skipped, remote=True,
+        n_docs,
+        True,
+        mode="pr",
+        pr_url=url,
+        skipped=skipped,
+        remote=True,
     )
 
 
@@ -1543,9 +1567,8 @@ def publish_via_intake(
     tag_name = f"kb-publish/{datetime.now(UTC):%Y%m%d-%H%M%S}"
     gitio.tag(root, tag_name)
     gitio.push_tag(root, tag_name)
-    status_url = (
-        f"{intake_url.rstrip('/')}/intake/status?"
-        + urllib.parse.urlencode({"repo_id": rid, "commit": commit})
+    status_url = f"{intake_url.rstrip('/')}/intake/status?" + urllib.parse.urlencode(
+        {"repo_id": rid, "commit": commit}
     )
     actions_hint = (
         f"check the Actions run for tag '{tag_name}' in the child repo's "
@@ -1562,7 +1585,8 @@ def publish_via_intake(
                 # git stderr); the child CI's job summary has it.
                 detail = data.get("detail")
                 raise PublishError(
-                    f"intake rejected the publish: {detail}" if detail
+                    f"intake rejected the publish: {detail}"
+                    if detail
                     else f"intake rejected the publish — {actions_hint}"
                 )
         if status == 401:

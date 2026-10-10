@@ -251,7 +251,11 @@ DEV_TEMPLATES: dict[str, str] = {
 SCAFFOLDED_WORKFLOW_NAMES: frozenset[str] = frozenset(
     rel.removeprefix(".github/workflows/")
     for templates in (
-        COMMON_TEMPLATES, HUB_TEMPLATES, CHILD_TEMPLATES, BA_TEMPLATES, DEV_TEMPLATES,
+        COMMON_TEMPLATES,
+        HUB_TEMPLATES,
+        CHILD_TEMPLATES,
+        BA_TEMPLATES,
+        DEV_TEMPLATES,
     )
     for rel in templates
     if rel.startswith(".github/workflows/")
@@ -441,7 +445,9 @@ def record_langs(config_path: Path, langs: Sequence[str]) -> bool:
     if text and not text.endswith("\n"):
         text += "\n"
     config_path.write_text(
-        text + f"langs: [{', '.join(sorted(set(langs)))}]\n", encoding="utf-8", newline="\n"
+        text + f"langs: [{', '.join(sorted(set(langs)))}]\n",
+        encoding="utf-8",
+        newline="\n",
     )
     return True
 

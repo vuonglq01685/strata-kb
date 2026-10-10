@@ -210,7 +210,9 @@ def _visible(content: str) -> str:
 
 
 # A mission user story (`M-<slug>-US<n>`, mission.us_id_re) or an `ABC-12` id.
-_TICKET_ID = re.compile(r"\bM-[a-z0-9]+(?:-[a-z0-9]+)*-US[1-9]\d*\b|\b[A-Z][A-Z0-9]*-\d+\b")
+_TICKET_ID = re.compile(
+    r"\bM-[a-z0-9]+(?:-[a-z0-9]+)*-US[1-9]\d*\b|\b[A-Z][A-Z0-9]*-\d+\b"
+)
 _CMD_TEST = re.compile(r"^cmd\.test:\s*(?P<cmd>\S.*?)\s*$", re.MULTILINE)
 
 
@@ -254,42 +256,75 @@ def _fenced_blocks(text: str) -> list[str]:
 def _plan_findings(first: dict[str, str], plan_dir: Path | None) -> list[Finding]:
     """The cmd.test check, or the one warning saying why it did not run."""
     if plan_dir is None:
-        return [Finding("Testing", "plan-dir-unset",
-                        "no plan directory given — the cmd.test check did not run",
-                        level="warning")]
+        return [
+            Finding(
+                "Testing",
+                "plan-dir-unset",
+                "no plan directory given — the cmd.test check did not run",
+                level="warning",
+            )
+        ]
     ticket_id = ticket_id_of(_visible(first.get("Ticket", "")))
     if ticket_id is None:
-        return [Finding("Ticket", "ticket-id-unparsed",
-                        "no M-<slug>-US<n> or ABC-12 ticket id found, so the plan's cmd.test "
-                        "could not be checked — start the section with the id",
-                        level="warning")]
+        return [
+            Finding(
+                "Ticket",
+                "ticket-id-unparsed",
+                "no M-<slug>-US<n> or ABC-12 ticket id found, so the plan's cmd.test "
+                "could not be checked — start the section with the id",
+                level="warning",
+            )
+        ]
     plan_path = plan_dir / ticket_id / "plan.md"
     if not plan_path.is_file():
         flat = plan_dir / f"{ticket_id}-plan.md"
-        hint = (f" — flat layout {flat} found: run kb impl tidy" if flat.is_file()
-                else " (spike or no plan yet)")
-        return [Finding("Testing", "plan-missing",
-                        f"{plan_path} not found — the cmd.test check did not run{hint}",
-                        level="warning")]
+        hint = (
+            f" — flat layout {flat} found: run kb impl tidy"
+            if flat.is_file()
+            else " (spike or no plan yet)"
+        )
+        return [
+            Finding(
+                "Testing",
+                "plan-missing",
+                f"{plan_path} not found — the cmd.test check did not run{hint}",
+                level="warning",
+            )
+        ]
     try:
         plan_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return [Finding("Testing", "plan-missing",
-                        f"{plan_path} could not be read — the cmd.test check did "
-                        "not run (spike or no plan yet)",
-                        level="warning")]
+        return [
+            Finding(
+                "Testing",
+                "plan-missing",
+                f"{plan_path} could not be read — the cmd.test check did "
+                "not run (spike or no plan yet)",
+                level="warning",
+            )
+        ]
     cmd = plan_cmd_test(plan_dir, ticket_id)
     if cmd is None:
-        return [Finding("Testing", "cmd-test-unset",
-                        f"{plan_path} has no `cmd.test:` header line — the "
-                        "cmd.test check did not run",
-                        level="warning")]
+        return [
+            Finding(
+                "Testing",
+                "cmd-test-unset",
+                f"{plan_path} has no `cmd.test:` header line — the "
+                "cmd.test check did not run",
+                level="warning",
+            )
+        ]
     fences = _fenced_blocks(_visible(first.get("Testing", "")))
     if any(cmd in block for block in fences):
         return []
-    return [Finding("Testing", "verification-missing-cmd",
-                    f"no fenced block contains the plan's cmd.test `{cmd}` "
-                    f"(from {plan_path}) — paste that command's real run")]
+    return [
+        Finding(
+            "Testing",
+            "verification-missing-cmd",
+            f"no fenced block contains the plan's cmd.test `{cmd}` "
+            f"(from {plan_path}) — paste that command's real run",
+        )
+    ]
 
 
 def _has_unclosed_fence(text: str) -> bool:

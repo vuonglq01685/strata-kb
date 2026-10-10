@@ -67,8 +67,11 @@ NO_STORE = {"Cache-Control": "no-store"}
 
 
 def _tag_links(
-    all_tags: list[str], selected: list[str], q: str,
-    budget: int | None = None, semantic_on: bool | None = None,
+    all_tags: list[str],
+    selected: list[str],
+    q: str,
+    budget: int | None = None,
+    semantic_on: bool | None = None,
 ) -> list[dict]:
     """One toggle link per known tag: clicking adds/removes it from `tags=`.
 
@@ -116,39 +119,58 @@ def _tag_links(
     for t in selected:
         if t in known:
             continue
-        out.append({"label": t, "href": href_for([x for x in selected if x != t]), "on": True})
+        out.append(
+            {"label": t, "href": href_for([x for x in selected if x != t]), "on": True}
+        )
     return out
 
 
 def _shell_ctx(
-    config: ServerConfig, screen: str, q: str = "",
-    raw_tags: str = "", budget: int | None = None,
+    config: ServerConfig,
+    screen: str,
+    q: str = "",
+    raw_tags: str = "",
+    budget: int | None = None,
     semantic_on: bool | None = None,
 ) -> dict:
     selected = [t.strip() for t in raw_tags.split(",") if t.strip()]
     hub = api.hub_handle(config)
     if hub is None:
-        return {"screen": screen, "hub_ok": False, "q": q,
-                "raw_tags": raw_tags, "budget": budget,
-                "repo_count": 0,
-                "tags": _tag_links([], selected, q, budget=budget,
-                                    semantic_on=semantic_on),
-                "selected_tags": selected}
+        return {
+            "screen": screen,
+            "hub_ok": False,
+            "q": q,
+            "raw_tags": raw_tags,
+            "budget": budget,
+            "repo_count": 0,
+            "tags": _tag_links([], selected, q, budget=budget, semantic_on=semantic_on),
+            "selected_tags": selected,
+        }
     return {
-        "screen": screen, "hub_ok": True, "q": q,
-        "raw_tags": raw_tags, "budget": budget,
+        "screen": screen,
+        "hub_ok": True,
+        "q": q,
+        "raw_tags": raw_tags,
+        "budget": budget,
         "repo_count": len(load_federation(hub.federation_dir)),
-        "tags": _tag_links(uidata.all_tags(hub), selected, q, budget=budget,
-                            semantic_on=semantic_on),
+        "tags": _tag_links(
+            uidata.all_tags(hub), selected, q, budget=budget, semantic_on=semantic_on
+        ),
         "selected_tags": selected,
     }
 
 
 def _render_page(
-    template: str, config: ServerConfig, screen: str,
-    status: int = 200, q: str = "", raw_tags: str = "",
-    budget: int | None = None, semantic_on: bool | None = None,
-    shell_extra: dict | None = None, **ctx,
+    template: str,
+    config: ServerConfig,
+    screen: str,
+    status: int = 200,
+    q: str = "",
+    raw_tags: str = "",
+    budget: int | None = None,
+    semantic_on: bool | None = None,
+    shell_extra: dict | None = None,
+    **ctx,
 ) -> HTMLResponse:
     # raw_tags/budget/semantic_on are only ever passed by _search_screen
     # (every other caller keeps the falsy defaults, so their shell carries
@@ -156,8 +178,9 @@ def _render_page(
     # top-level {{ raw_tags }}/{{ budget }}/{{ semantic_on }} references
     # (meta-line, budget rail form, match-mode rail form) keep working
     # exactly as before this shell plumbing was added.
-    shell = _shell_ctx(config, screen, q=q, raw_tags=raw_tags, budget=budget,
-                        semantic_on=semantic_on)
+    shell = _shell_ctx(
+        config, screen, q=q, raw_tags=raw_tags, budget=budget, semantic_on=semantic_on
+    )
     if shell_extra:
         shell.update(shell_extra)
     ctx["q"] = q
@@ -175,15 +198,22 @@ def render_error_page(
     """Render the shared error shell (used for the 404 path, and by app.py's
     SnapshotCorruptError handler for a corrupt published snapshot, M8)."""
     return _render_page(
-        "error.html", config, screen="", status=status,
-        title=title, code=str(status), heading=title, message=detail,
+        "error.html",
+        config,
+        screen="",
+        status=status,
+        title=title,
+        code=str(status),
+        heading=title,
+        message=detail,
     )
 
 
 def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
     tagset = {t.lower() for t in tags}
     return [
-        d for d in docs
+        d
+        for d in docs
         if tagset & {t.lower() for t in d["tags"]} or d["id"].lower() in tagset
     ]
 
@@ -198,9 +228,17 @@ async def static_file(request: Request) -> Response:
     # ":" and "\" never appear in legit asset names; they cover Windows
     # drive-absolute (C:\...) and backslash traversal, where a bare
     # startswith("/") check does not.
-    if media is None or ".." in name or name.startswith("/") or ":" in name or "\\" in name:
+    if (
+        media is None
+        or ".." in name
+        or name.startswith("/")
+        or ":" in name
+        or "\\" in name
+    ):
         return Response("not found", status_code=404)
-    target = resources.files("strata_kb").joinpath("templates/web/static").joinpath(name)
+    target = (
+        resources.files("strata_kb").joinpath("templates/web/static").joinpath(name)
+    )
     try:
         if not target.is_file():
             return Response("not found", status_code=404)
@@ -211,7 +249,8 @@ async def static_file(request: Request) -> Response:
         logger.warning("static file lookup failed for %r: %s", name, exc)
         return Response("not found", status_code=404)
     return Response(
-        data, media_type=media,
+        data,
+        media_type=media,
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
@@ -222,13 +261,21 @@ def _tree_extra(manifest, doc_id: str, rid: str, active: str = "") -> dict:
         meta = f"{manifest.revision} · {meta}"
     return {
         "tree": uidata.section_tree(manifest),
-        "tree_doc": {"id": doc_id, "repo": rid, "name": manifest.title,
-                     "meta": meta, "active": active},
+        "tree_doc": {
+            "id": doc_id,
+            "repo": rid,
+            "name": manifest.title,
+            "meta": meta,
+            "active": active,
+        },
     }
 
 
 def build_routes(
-    config: ServerConfig, token: str, store_factory=None, login_limiter=None,
+    config: ServerConfig,
+    token: str,
+    store_factory=None,
+    login_limiter=None,
     trusted_proxies: int | None = None,
 ) -> list[Route]:
     limiter = login_limiter or SlidingWindowLimiter(
@@ -314,7 +361,9 @@ def build_routes(
         # never log the submitted value — it may be a near-miss of the token
         logger.warning("failed login attempt from %s", client_ip)
         return HTMLResponse(
-            templating.render("login.html", error="Invalid token — check for trailing spaces."),
+            templating.render(
+                "login.html", error="Invalid token — check for trailing spaces."
+            ),
             headers=NO_STORE,
         )
 
@@ -337,17 +386,31 @@ def build_routes(
         hub = api.hub_handle(config)
         if hub is None:
             return _render_page(
-                "search.html", config, screen="search", title="Search", q=q,
-                results=[], budget=_budget(request), active_tags=tags,
-                raw_tags=raw_tags, docs_count=0, semantic_on=True,
+                "search.html",
+                config,
+                screen="search",
+                title="Search",
+                q=q,
+                results=[],
+                budget=_budget(request),
+                active_tags=tags,
+                raw_tags=raw_tags,
+                docs_count=0,
+                semantic_on=True,
             )
         if not q and tags:
             docs = api.list_docs(config) or []
             matched = _match_tags(docs, tags)
             return _render_page(
-                "docs.html", config, screen="docs", title="Documents",
-                docs=matched, browse_tags=tags, raw_tags=raw_tags,
-                filter_value="", total_docs=len(docs),
+                "docs.html",
+                config,
+                screen="docs",
+                title="Documents",
+                docs=matched,
+                browse_tags=tags,
+                raw_tags=raw_tags,
+                filter_value="",
+                total_docs=len(docs),
             )
         budget = _budget(request)
         terms = set(tokenize(q))
@@ -358,8 +421,11 @@ def build_routes(
         use_semantic = ("1" in sem_vals) if sem_vals else True
         try:
             found = (
-                search(hub, q, tags=tags or None, budget=budget, use_semantic=use_semantic)
-                if q else []
+                search(
+                    hub, q, tags=tags or None, budget=budget, use_semantic=use_semantic
+                )
+                if q
+                else []
             )
         except (searchdb.TooManyTagsError, searchdb.IndexBusyError) as exc:
             # search.html has no slot for a caller-error message (only the
@@ -395,9 +461,17 @@ def build_routes(
             for r in found
         ]
         return _render_page(
-            "search.html", config, screen="search", title="Search", q=q,
-            results=results, budget=budget, active_tags=tags, raw_tags=raw_tags,
-            docs_count=docs_count, semantic_on=use_semantic,
+            "search.html",
+            config,
+            screen="search",
+            title="Search",
+            q=q,
+            results=results,
+            budget=budget,
+            active_tags=tags,
+            raw_tags=raw_tags,
+            docs_count=docs_count,
+            semantic_on=use_semantic,
         )
 
     def home(request: Request) -> HTMLResponse:
@@ -411,9 +485,16 @@ def build_routes(
         hub = api.hub_handle(config)
         if hub is None:
             return _render_page(
-                "overview.html", config, screen="overview", title="Overview",
-                stats=uidata.StoreStats(0, 0, 0, 0), queue=[], pending_total=0,
-                awaiting_total=0, index_ok=False, publish=uidata.PublishInfo(),
+                "overview.html",
+                config,
+                screen="overview",
+                title="Overview",
+                stats=uidata.StoreStats(0, 0, 0, 0),
+                queue=[],
+                pending_total=0,
+                awaiting_total=0,
+                index_ok=False,
+                publish=uidata.PublishInfo(),
             )
         stats = uidata.store_stats(hub)
         queue = uidata.review_queue(hub)
@@ -421,8 +502,13 @@ def build_routes(
         pending_total = sum(d.pending for d in cat)
         awaiting_total = sum(d.pending + d.summarized for d in cat)
         return _render_page(
-            "overview.html", config, screen="overview", title="Overview",
-            stats=stats, queue=queue, pending_total=pending_total,
+            "overview.html",
+            config,
+            screen="overview",
+            title="Overview",
+            stats=stats,
+            queue=queue,
+            pending_total=pending_total,
             awaiting_total=awaiting_total,
             index_ok=(hub.federation_dir / "index.yaml").exists(),
             publish=uidata.last_publish(hub),
@@ -433,15 +519,21 @@ def build_routes(
         filter_raw = request.query_params.get("filter", "").strip()
         fq = filter_raw.lower()
         docs = [
-            d for d in all_docs
+            d
+            for d in all_docs
             if not fq
             or fq in d["id"].lower()
             or fq in (d.get("title") or "").lower()
             or any(fq in t.lower() for t in d["tags"])
         ]
         return _render_page(
-            "docs.html", config, screen="docs", title="Documents",
-            docs=docs, browse_tags=[], filter_value=filter_raw,
+            "docs.html",
+            config,
+            screen="docs",
+            title="Documents",
+            docs=docs,
+            browse_tags=[],
+            filter_value=filter_raw,
             total_docs=len(all_docs),
         )
 
@@ -456,7 +548,9 @@ def build_routes(
             )
         if found is None:
             return render_error_page(
-                config, status=404, title="Not found",
+                config,
+                status=404,
+                title="Not found",
                 detail=f"Unknown doc '{doc_id}'.",
             )
         manifest, rid = found
@@ -470,16 +564,25 @@ def build_routes(
         if status_q not in ("all", "pending", "summarized", "reviewed"):
             status_q = "all"
         rows = [
-            s for s in manifest.sections
+            s
+            for s in manifest.sections
             if (status_q == "all" or s.status == status_q)
             and (not filter_q or filter_q in f"{s.id} {s.title} {s.summary}".lower())
         ]
         files = sorted({s.file for s in manifest.sections})
         return _render_page(
-            "doc.html", config, screen="doc", title=manifest.title,
-            doc_id=doc_id, manifest=manifest, rid=rid, rows=rows,
+            "doc.html",
+            config,
+            screen="doc",
+            title=manifest.title,
+            doc_id=doc_id,
+            manifest=manifest,
+            rid=rid,
+            rows=rows,
             coverage=uidata.doc_coverage(manifest),
-            filter_value=filter_raw, status_q=status_q, files=files,
+            filter_value=filter_raw,
+            status_q=status_q,
+            files=files,
             shell_extra=_tree_extra(manifest, doc_id, rid),
         )
 
@@ -493,7 +596,9 @@ def build_routes(
         hub = api.hub_handle(config)
         if hub is None:
             return render_error_page(
-                config, status=503, title="Hub unreachable",
+                config,
+                status=503,
+                title="Hub unreachable",
                 detail="The federation is the only read source.",
             )
         try:
@@ -506,7 +611,9 @@ def build_routes(
             raise api.SnapshotCorruptError(doc_id, " ".join(str(exc).split())) from exc
         if result is None:
             return render_error_page(
-                config, status=404, title="Not found",
+                config,
+                status=404,
+                title="Not found",
                 detail=f"{doc_id} §{section_id} not found.",
             )
         prev = nxt = entry = None
@@ -530,15 +637,23 @@ def build_routes(
             shell_extra = _tree_extra(
                 manifest, result.doc_id, result.source, active=result.section_id
             )
-        content_html, toc = uidata.inject_heading_anchors(
-            md_render(result.content)
-        )
+        content_html, toc = uidata.inject_heading_anchors(md_render(result.content))
         return _render_page(
-            "section.html", config, screen="section",
+            "section.html",
+            config,
+            screen="section",
             title=f"{doc_id} §{section_id}",
-            doc_id=result.doc_id, section_id=result.section_id, repo=result.source,
-            level=level, result=result, content_html=content_html, toc=toc,
-            prev=prev, next=nxt, entry=entry, revision=revision,
+            doc_id=result.doc_id,
+            section_id=result.section_id,
+            repo=result.source,
+            level=level,
+            result=result,
+            content_html=content_html,
+            toc=toc,
+            prev=prev,
+            next=nxt,
+            entry=entry,
+            revision=revision,
             shell_extra=shell_extra,
         )
 
@@ -590,7 +705,8 @@ def build_routes(
                 return local_hit
             logger.warning(
                 "local asset %s does not match its name -- ignoring, "
-                "falling through to the store", local_hit,
+                "falling through to the store",
+                local_hit,
             )
         cache_file = _disk_cache_dir() / name
         if cache_file.is_file():
@@ -599,7 +715,8 @@ def build_routes(
                 return cache_file
             logger.warning(
                 "disk-cached asset %s does not match its name -- evicting, "
-                "falling through to the store", cache_file,
+                "falling through to the store",
+                cache_file,
             )
             try:
                 cache_file.unlink()

@@ -76,13 +76,20 @@ def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     # it forever (Wave J Critical). No call here writes to git's stdin, so
     # DEVNULL is correct, not just convenient.
     return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True,
-        encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdin=subprocess.DEVNULL,
     )
 
 
 def _run_env(
-    root: Path | None, env_extra: dict[str, str], *args: str,
+    root: Path | None,
+    env_extra: dict[str, str],
+    *args: str,
     timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     import os
@@ -90,14 +97,23 @@ def _run_env(
     env = {**os.environ, **env_extra} if env_extra else None
     # P55 -- see _run above.
     return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True,
-        encoding="utf-8", errors="replace", env=env, stdin=subprocess.DEVNULL,
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        stdin=subprocess.DEVNULL,
         timeout=timeout,
     )
 
 
 def _run_network(
-    root: Path | None, env: dict[str, str], what: str, *args: str,
+    root: Path | None,
+    env: dict[str, str],
+    what: str,
+    *args: str,
     timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """A git call that talks to a remote. With `timeout` (unattended callers:
@@ -180,7 +196,9 @@ def read_at(root: Path, rev: str, path: Path) -> str | None:
     """
     rel = _relpath(root, path)
     if not rev_exists(root, rev):
-        raise GitError(f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)")
+        raise GitError(
+            f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)"
+        )
     proc = _run(root, "show", f"{rev}:{rel}")
     if proc.returncode != 0:
         return None
@@ -225,8 +243,11 @@ class BatchReader:
     def _cat(self, spec: str) -> bytes | None:
         if self._proc is None:
             self._proc = subprocess.Popen(
-                ["git", "cat-file", "--batch"], cwd=self.root,
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                ["git", "cat-file", "--batch"],
+                cwd=self.root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
             )
         stdin, stdout = self._proc.stdin, self._proc.stdout
         if stdin is None or stdout is None:  # pragma: no cover - PIPE always sets both
@@ -265,8 +286,11 @@ class BatchReader:
                 )
             data = self._cat(f"{rev}:{rel}")
             self._blobs[key] = (
-                None if data is None
-                else data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+                None
+                if data is None
+                else data.decode("utf-8", errors="replace")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
             )
         return self._blobs[key]
 
@@ -305,8 +329,13 @@ def clone(url: str, dest: Path) -> None:
     proc = _run_env(
         None,
         credential_env(stripped, token),
-        "-c", "core.autocrlf=false", "-c", "core.eol=lf",
-        "clone", stripped, str(dest),
+        "-c",
+        "core.autocrlf=false",
+        "-c",
+        "core.eol=lf",
+        "clone",
+        stripped,
+        str(dest),
     )
     if proc.returncode != 0:
         raise GitError(redact_url(f"clone '{stripped}' failed: {proc.stderr.strip()}"))
@@ -314,8 +343,11 @@ def clone(url: str, dest: Path) -> None:
 
 
 def pull(
-    root: Path, url: str | None = None, token: str | None = None,
-    *, timeout: float | None = None,
+    root: Path,
+    url: str | None = None,
+    token: str | None = None,
+    *,
+    timeout: float | None = None,
 ) -> None:
     """`token` is an explicit credential (e.g. HubHandle.token) to use when
     `url` is omitted -- remote_url(root) is the clone's own origin, which is
@@ -407,18 +439,29 @@ def checkout(root: Path, name: str) -> None:
 
 
 def push_branch(
-    root: Path, branch: str, token: str | None = None,
-    *, timeout: float | None = None,
+    root: Path,
+    branch: str,
+    token: str | None = None,
+    *,
+    timeout: float | None = None,
 ) -> None:
     """Force-push the working branch (publish/<rid> is owned by the publisher).
     `timeout`: see `_run_network`."""
     stripped, embedded = split_credentials(remote_url(root))
     proc = _run_network(
-        root, credential_env(stripped, token or embedded), f"push branch '{branch}'",
-        "push", "--force", "origin", branch, timeout=timeout,
+        root,
+        credential_env(stripped, token or embedded),
+        f"push branch '{branch}'",
+        "push",
+        "--force",
+        "origin",
+        branch,
+        timeout=timeout,
     )
     if proc.returncode != 0:
-        raise GitError(redact_url(f"push branch '{branch}' failed: {proc.stderr.strip()}"))
+        raise GitError(
+            redact_url(f"push branch '{branch}' failed: {proc.stderr.strip()}")
+        )
 
 
 def tag(root: Path, name: str) -> None:
@@ -434,8 +477,12 @@ def push_tag(root: Path, name: str) -> None:
 
 
 def push_branch_with_token(
-    root: Path, url: str, token: str, branch: str,
-    *, timeout: float | None = None,
+    root: Path,
+    url: str,
+    token: str,
+    branch: str,
+    *,
+    timeout: float | None = None,
 ) -> None:
     """Force-push `branch` to `url` with the token passed through the env.
 
@@ -448,7 +495,10 @@ def push_branch_with_token(
         root,
         credential_env(stripped, token or embedded),
         f"push branch '{branch}'",
-        "push", "--force", stripped, f"{branch}:{branch}",
+        "push",
+        "--force",
+        stripped,
+        f"{branch}:{branch}",
         timeout=timeout,
     )
     if proc.returncode != 0:
@@ -456,9 +506,7 @@ def push_branch_with_token(
         raise GitError(f"push branch '{branch}' failed: {detail}")
 
 
-def worktree_add(
-    root: Path, path: Path, branch: str, base: str, reset: bool
-) -> None:
+def worktree_add(root: Path, path: Path, branch: str, base: str, reset: bool) -> None:
     """Check `branch` out into its own working tree at `path`.
 
     reset=True recreates the branch at `base` (`-B`); reset=False attaches to
@@ -525,7 +573,7 @@ def origin_head_ref(root: Path) -> str:
         raise GitError(
             "origin/HEAD is not set — run `git remote set-head origin --auto`"
         )
-    return ref[len(prefix):]
+    return ref[len(prefix) :]
 
 
 def path_exists_at(root: Path, rev: str, relpath: str) -> bool:
@@ -544,7 +592,9 @@ def path_exists_at(root: Path, rev: str, relpath: str) -> bool:
     must be loud, not silently answered False).
     """
     if not rev_exists(root, rev):
-        raise GitError(f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)")
+        raise GitError(
+            f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)"
+        )
     posix_relpath = relpath.replace("\\", "/")
     return _run(root, "cat-file", "-e", f"{rev}:{posix_relpath}").returncode == 0
 
@@ -564,5 +614,9 @@ def neutralize_line_endings(root: Path) -> None:
         if proc.returncode != 0:
             logger.debug(
                 "git config %s %s failed in %s (rc=%s): %s",
-                key, value, root, proc.returncode, proc.stderr.strip(),
+                key,
+                value,
+                root,
+                proc.returncode,
+                proc.stderr.strip(),
             )

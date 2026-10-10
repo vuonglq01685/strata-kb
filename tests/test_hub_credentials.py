@@ -221,7 +221,12 @@ def test_cache_key_survives_a_token_rotation(tmp_path, monkeypatch):
         "https://x-access-token:ghs_ROTATED@github.com/org/kb-hub.git"
     )
     assert key_a == key_b
-    assert key_a == hashlib.sha1(STRIPPED.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    assert (
+        key_a
+        == hashlib.sha1(STRIPPED.encode("utf-8"), usedforsecurity=False).hexdigest()[
+            :12
+        ]
+    )
 
 
 @pytest.mark.skipif(
@@ -260,7 +265,9 @@ def test_resolve_hub_uses_the_stripped_key_cache_and_rewrites_its_origin(
     bare = tmp_path / "bare.git"
     run_git(tmp_path, "init", "--bare", str(bare))
 
-    key = hashlib.sha1(UNREACHABLE_STRIPPED.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    key = hashlib.sha1(
+        UNREACHABLE_STRIPPED.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:12]
     cache = cache_base / key
     cache_base.mkdir(parents=True, exist_ok=True)
     run_git(tmp_path, "clone", str(bare), str(cache))
@@ -290,9 +297,7 @@ def test_doctor_reports_a_clone_whose_credential_could_not_be_stripped(
 
     run_git(hub_worktree, "remote", "add", "upstream", CRED)
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
-    assert any(
-        "credential" in i.message and i.level == "warning" for i in issues
-    )
+    assert any("credential" in i.message and i.level == "warning" for i in issues)
     assert not any("ghs_SECRETTOKEN" in i.message for i in issues)
     # Minor 3 (Wave G fix round 2): user-facing messages start lower-case --
     # this one used to start "{handle.root} still stores...", capitalised
@@ -319,7 +324,9 @@ def _seed_hub_with_bare_origin(tmp_path, run_git) -> Path:
     seed = tmp_path / "hub-seed"
     (seed / ".kb").mkdir(parents=True)
     (seed / "federation").mkdir()
-    (seed / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
+    (seed / ".kb" / "index.yaml").write_text(
+        "docs: []\n", encoding="utf-8", newline="\n"
+    )
     (seed / "federation" / ".gitkeep").write_text("", encoding="utf-8")
     run_git(tmp_path, "init", str(seed))
     run_git(seed, "add", "-A")
@@ -329,7 +336,9 @@ def _seed_hub_with_bare_origin(tmp_path, run_git) -> Path:
     return origin
 
 
-def _seed_credentialed_cache(tmp_path, origin, token: str, run_git, monkeypatch) -> Path:
+def _seed_credentialed_cache(
+    tmp_path, origin, token: str, run_git, monkeypatch
+) -> Path:
     """Pre-seed a managed-cache clone at the address a credential-bearing
     fake hub_ref hashes to (cache_key hashes the STRIPPED url), with a real
     LOCAL origin -- so publish() actually authenticates/pushes for real,
@@ -396,8 +405,7 @@ def test_rebase_retry_threads_the_hub_token_into_pull_rebase(
     report = publish(git_kb["kb"], fake_hub_ref, repo_id="child", mode="direct")
 
     rebase_calls = [
-        c for c in calls
-        if c["argv"][:2] == ["git", "pull"] and "--rebase" in c["argv"]
+        c for c in calls if c["argv"][:2] == ["git", "pull"] and "--rebase" in c["argv"]
     ]
     assert rebase_calls, "publish() never retried with pull --rebase"
     env = rebase_calls[0]["env"]
@@ -424,7 +432,8 @@ def test_pr_path_threads_the_hub_token_into_the_branch_push(
     monkeypatch.setattr(ghio, "can_open_pr", lambda root: True)
     monkeypatch.setattr(ghio, "pr_url_for_branch", lambda root, branch: "")
     monkeypatch.setattr(
-        ghio, "create_pr",
+        ghio,
+        "create_pr",
         lambda root, branch, title, body: "https://github.com/org/hub/pull/1",
     )
 
@@ -440,7 +449,8 @@ def test_pr_path_threads_the_hub_token_into_the_branch_push(
     report = publish(git_kb["kb"], fake_hub_ref, repo_id="child", mode="pr")
 
     push_calls = [
-        c for c in calls
+        c
+        for c in calls
         if c["argv"][:2] == ["git", "push"] and "publish/child" in c["argv"]
     ]
     assert push_calls, "publish() in PR mode never pushed the branch"

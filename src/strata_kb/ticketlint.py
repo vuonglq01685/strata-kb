@@ -32,12 +32,36 @@ _AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 # absent: they collide too often with ordinary AC nouns (`` `git SHA` ``,
 # `` `python 3.13` ``, `` `make build` ``, `` `echo cancellation` ``) for a
 # BA-facing lint to warn on the bare word.
-SHELL_COMMANDS: frozenset[str] = frozenset({
-    "docker", "docker-compose", "curl", "wget", "grep", "psql", "redis-cli",
-    "ffmpeg", "ffprobe", "mc", "kubectl", "npm", "pnpm", "npx", "prisma",
-    "ls", "cat", "find", "nvidia-smi", "sh", "bash",
-    "kb", "uv", "pytest", "jq", "ssh",
-})
+SHELL_COMMANDS: frozenset[str] = frozenset(
+    {
+        "docker",
+        "docker-compose",
+        "curl",
+        "wget",
+        "grep",
+        "psql",
+        "redis-cli",
+        "ffmpeg",
+        "ffprobe",
+        "mc",
+        "kubectl",
+        "npm",
+        "pnpm",
+        "npx",
+        "prisma",
+        "ls",
+        "cat",
+        "find",
+        "nvidia-smi",
+        "sh",
+        "bash",
+        "kb",
+        "uv",
+        "pytest",
+        "jq",
+        "ssh",
+    }
+)
 _CODE_SPAN_RE = re.compile(r"`([^`]+)`")
 # `&&` alone is a command chain — nobody backticks `` `active && inactive` ``
 # — so it fires unqualified. `|`, `||` and `;` collide with a value union
@@ -59,9 +83,9 @@ _LEADING_PREFIX_RE = re.compile(r"^(?:sudo|\$|[A-Za-z_]\w*=\S*)\s+")
 # check — a second "is it filled" error would only duplicate it.
 _FILL_EXEMPT: frozenset[str] = frozenset(
     {
-        "## KB context",          # parsed by check_context_block
-        "## Business flow",       # check_diagram
-        "## Definition of Ready", # _check_dor_checklist, below
+        "## KB context",  # parsed by check_context_block
+        "## Business flow",  # check_diagram
+        "## Definition of Ready",  # _check_dor_checklist, below
     }
 )
 
@@ -173,8 +197,7 @@ def _check_required_filled(text: str) -> list[Issue]:
             issues.append(
                 Issue(
                     "error",
-                    f"'{heading}' is empty or only placeholder text — "
-                    "fill it in",
+                    f"'{heading}' is empty or only placeholder text — fill it in",
                 )
             )
     return issues
@@ -232,8 +255,7 @@ def _check_story_count(text: str) -> list[Issue]:
     return [
         Issue(
             "error",
-            f"User Story has {found} stories — one ticket per story, "
-            "split the ticket",
+            f"User Story has {found} stories — one ticket per story, split the ticket",
         )
     ]
 
@@ -315,9 +337,7 @@ def _check_ac_substance(ac_items: list[str]) -> list[Issue]:
     for item in ac_items:
         reason = acquality.ac_substance(item)
         if reason is not None:
-            issues.append(
-                Issue("error", f"AC {reason}: '{item.strip()}'")
-            )
+            issues.append(Issue("error", f"AC {reason}: '{item.strip()}'"))
     return issues
 
 
@@ -392,19 +412,19 @@ def _check_ac_shell(ac_items: list[str]) -> list[Issue]:
             for m in acquality.OPEN_OWNER_RE.finditer(item)
         ):
             continue
-        span = next(
-            (s for s in _CODE_SPAN_RE.findall(item) if _is_shell_span(s)), None
-        )
+        span = next((s for s in _CODE_SPAN_RE.findall(item) if _is_shell_span(s)), None)
         if span is None:
             continue
         m = _AC_ID_RE.match(item.strip())
         label = m.group(1) if m else "AC"
-        issues.append(Issue(
-            "warning",
-            f"{label} prescribes a shell command (`{span}`) — state the observable "
-            "outcome here; the command belongs in ## Test data & verification or "
-            "the Dev's plan — see docs/ac-quality.md",
-        ))
+        issues.append(
+            Issue(
+                "warning",
+                f"{label} prescribes a shell command (`{span}`) — state the observable "
+                "outcome here; the command belongs in ## Test data & verification or "
+                "the Dev's plan — see docs/ac-quality.md",
+            )
+        )
     return issues
 
 
@@ -412,9 +432,7 @@ def _unknown_count(text: str) -> int:
     """OPEN(...) + %%TODO%% markers, guidance comments stripped so the
     templates' own '<!-- ... OPEN(<owner>) ... -->' examples never count."""
     clean = lintcore.HTML_COMMENT_RE.sub("", text)
-    return len(acquality.OPEN_RE.findall(clean)) + clean.count(
-        mission.PLACEHOLDER
-    )
+    return len(acquality.OPEN_RE.findall(clean)) + clean.count(mission.PLACEHOLDER)
 
 
 def _check_owned_unknowns(text: str) -> list[Issue]:
@@ -423,9 +441,7 @@ def _check_owned_unknowns(text: str) -> list[Issue]:
     there. Count-based: exact marker-to-row matching is not decidable, so
     the check demands at least as many rows as markers."""
     rows = lintcore.open_question_rows(text) or []
-    oq_body = lintcore.section_body(
-        text, lintcore.OPEN_QUESTIONS_HEADING
-    )
+    oq_body = lintcore.section_body(text, lintcore.OPEN_QUESTIONS_HEADING)
     outside = _unknown_count(text) - _unknown_count(oq_body or "")
     issues: list[Issue] = []
     if outside > len(rows):
@@ -500,8 +516,7 @@ def _check_dor_checklist(text: str) -> list[Issue]:
     return [
         Issue(
             "warning",
-            f"Definition of Ready item is not ticked: "
-            f"'{m.group('text').strip()}'",
+            f"Definition of Ready item is not ticked: '{m.group('text').strip()}'",
         )
         for m in rows
         if m.group("mark") == " "
@@ -580,9 +595,7 @@ def check_parent_mission(
                 f"could not read mission file '{mission_path}': {exc}",
             )
         ], []
-    backlog_issues, backlog_ids = missionlint.check_backlog(
-        mission_text, mission_id
-    )
+    backlog_issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
     if us_id not in backlog_ids:
         return [
             Issue(
@@ -658,9 +671,7 @@ def lint(
     issues += _check_ac_weasel(ac_items)
     issues += _check_ac_shell(ac_items)
     issues += _check_ac_gwt(ac_items)
-    issues += lintcore.check_recommended_sections(
-        text, ticket.RECOMMENDED_HEADINGS
-    )
+    issues += lintcore.check_recommended_sections(text, ticket.RECOMMENDED_HEADINGS)
     issues += _check_extended_sections(text)
     issues += _check_owned_unknowns(text)
     issues += _check_nfr_targets(text)

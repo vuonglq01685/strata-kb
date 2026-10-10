@@ -37,7 +37,9 @@ def upper(tmp_path: Path) -> HubHandle:
 
 
 def test_snapshot_federation_mirrors_entries(mid_fed, upper):
-    n_docs, changed, _skipped = publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
+    n_docs, changed, _skipped = publish._snapshot_federation(
+        mid_fed, upper, "mid", "abc1234"
+    )
     assert changed is True
     assert n_docs == 2
     dest = upper.federation_dir / "mid"
@@ -49,15 +51,17 @@ def test_snapshot_federation_mirrors_entries(mid_fed, upper):
 def test_snapshot_federation_excludes_top_level_files(mid_fed, upper):
     publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
     dest = upper.federation_dir / "mid"
-    assert not (dest / "index.yaml").exists()      # aggregate index nguồn không đẩy
+    assert not (dest / "index.yaml").exists()  # aggregate index nguồn không đẩy
     assert not (dest / "registry.yaml").exists()
     assert not (dest / ".gitkeep").exists()
-    assert not (dest / "_meta.yaml").exists()      # không viết meta gốc
+    assert not (dest / "_meta.yaml").exists()  # không viết meta gốc
 
 
 def test_snapshot_federation_noop_when_unchanged(mid_fed, upper):
     publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
-    n_docs, changed, _skipped = publish._snapshot_federation(mid_fed, upper, "mid", "abc1234")
+    n_docs, changed, _skipped = publish._snapshot_federation(
+        mid_fed, upper, "mid", "abc1234"
+    )
     assert changed is False
     assert n_docs == 2
 
@@ -67,7 +71,9 @@ def test_snapshot_federation_applies_deletions(mid_fed, upper):
     import shutil
 
     shutil.rmtree(mid_fed / "repo-a")
-    _, changed, _skipped = publish._snapshot_federation(mid_fed, upper, "mid", "abc1235")
+    _, changed, _skipped = publish._snapshot_federation(
+        mid_fed, upper, "mid", "abc1235"
+    )
     assert changed is True
     assert not (upper.federation_dir / "mid" / "repo-a").exists()
 
@@ -208,7 +214,9 @@ def test_publish_federation_direct_end_to_end(mid_hub, root_hub):
 
 
 def test_publish_federation_second_run_noop(mid_hub, root_hub):
-    publish.publish_federation(mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct")
+    publish.publish_federation(
+        mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct"
+    )
     report = publish.publish_federation(
         mid_hub / ".kb", str(root_hub), repo_id="mid", mode="direct"
     )
@@ -270,19 +278,25 @@ def test_publish_federation_missing_federation_dir(tmp_path, run_git, root_hub):
     (bare / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     _git_repo(run_git, bare)
     with pytest.raises(publish.PublishError, match="no federation"):
-        publish.publish_federation(bare / ".kb", str(root_hub), repo_id="bare", mode="direct")
+        publish.publish_federation(
+            bare / ".kb", str(root_hub), repo_id="bare", mode="direct"
+        )
 
 
 def test_publish_federation_rejects_dest_with_same_repo_id(mid_hub, tmp_path, run_git):
     # upstream là cache clone của chính mình: cùng repo_id trong config
     clone = tmp_path / "cache-clone"
     (clone / ".kb").mkdir(parents=True)
-    (clone / ".kb" / "config.yaml").write_text("kind: hub\nrepo_id: mid\n", encoding="utf-8")
+    (clone / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: mid\n", encoding="utf-8"
+    )
     (clone / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     (clone / "federation").mkdir()
     _git_repo(run_git, clone)
     with pytest.raises(publish.PublishError, match="federation cycle detected"):
-        publish.publish_federation(mid_hub / ".kb", str(clone), repo_id="mid", mode="direct")
+        publish.publish_federation(
+            mid_hub / ".kb", str(clone), repo_id="mid", mode="direct"
+        )
 
 
 def test_find_cycle_segment_single_segment_dest_id(tmp_path):
@@ -290,7 +304,10 @@ def test_find_cycle_segment_single_segment_dest_id(tmp_path):
 
     fed = tmp_path / "federation"
     make_fed_entry(fed, "root-hub", "doc-d")  # entry 1 segment mang id hub đích
-    assert federation.find_cycle_segment(fed, {"root-hub"}, exempt_exact={"mid"}) == "root-hub"
+    assert (
+        federation.find_cycle_segment(fed, {"root-hub"}, exempt_exact={"mid"})
+        == "root-hub"
+    )
 
 
 def test_cli_hub_to_hub_publish_error_is_one_line_not_a_traceback(mid_hub, root_hub):
@@ -308,8 +325,16 @@ def test_cli_hub_to_hub_publish_error_is_one_line_not_a_traceback(mid_hub, root_
     make_fed_entry(mid_hub / "federation" / "root-hub", "repo-d", "doc-d")
     result = runner.invoke(
         app,
-        ["publish", "--direct", "--hub", str(root_hub), "--repo-id", "mid",
-         "--kb-dir", str(mid_hub / ".kb")],
+        [
+            "publish",
+            "--direct",
+            "--hub",
+            str(root_hub),
+            "--repo-id",
+            "mid",
+            "--kb-dir",
+            str(mid_hub / ".kb"),
+        ],
     )
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)

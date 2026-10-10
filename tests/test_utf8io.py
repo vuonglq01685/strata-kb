@@ -1,5 +1,6 @@
 """Windows pipes/redirects default to cp1252 — force UTF-8 at the entrypoints
 (spec 2026-07-14-windows-support R2/R3)."""
+
 import os
 import subprocess
 import sys
@@ -9,8 +10,10 @@ def _run_py(code: str, input_bytes: bytes = b"") -> subprocess.CompletedProcess[
     # PYTHONIOENCODING=cp1252 simulates a Windows pipe on any OS.
     env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
     return subprocess.run(
-        [sys.executable, "-c", code], input=input_bytes,
-        capture_output=True, env=env,
+        [sys.executable, "-c", code],
+        input=input_bytes,
+        capture_output=True,
+        env=env,
     )
 
 

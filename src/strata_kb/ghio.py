@@ -19,14 +19,21 @@ class GHError(KbError):
 def _run_gh(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
-            ["gh", *args], cwd=root, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=_GH_TIMEOUT_SECONDS,
+            ["gh", *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_GH_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
         # A hung `gh` (captive portal, stalled proxy, slow GHE) must degrade
         # to a failed probe, not block the publish indefinitely.
         return subprocess.CompletedProcess(
-            ["gh", *args], returncode=124, stdout="",
+            ["gh", *args],
+            returncode=124,
+            stdout="",
             stderr=f"gh timed out after {_GH_TIMEOUT_SECONDS}s",
         )
 

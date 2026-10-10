@@ -12,6 +12,7 @@ so columns are placed by rounding each char's delta from its predecessor
 rather than its absolute offset: no accumulated drift, no two glyphs in
 one cell.
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,7 +21,9 @@ from pathlib import Path
 
 logger = logging.getLogger("strata_kb.ingest.pdftext")
 
-Box = tuple[float, float, float, float]  # (left, top, right, bottom), BOTTOMLEFT, points
+Box = tuple[
+    float, float, float, float
+]  # (left, top, right, bottom), BOTTOMLEFT, points
 
 
 def region_text(
@@ -61,7 +64,9 @@ def _flow(textpage, box: Box) -> str:
 
 def _mono_grid(textpage, box: Box) -> str:
     left, top, right, bottom = box
-    chars: list[tuple[float, float, float, float, str]] = []  # (cy, left, width, height, ch)
+    chars: list[
+        tuple[float, float, float, float, str]
+    ] = []  # (cy, left, width, height, ch)
     for i in range(textpage.count_chars()):
         ch = textpage.get_text_range(i, 1)
         if not ch or ch.isspace():

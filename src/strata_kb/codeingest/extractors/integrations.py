@@ -67,6 +67,7 @@ tie), so sorting the keys within one integration, and sorting integration
 names against each other, can never depend on `dict`/`set` iteration
 order the way an earlier task's untotaled sort key once did.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -92,12 +93,23 @@ ENV_FILES = (".env.example", ".env.sample", ".env.template")
 _ENV_KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=", re.M)
 
 INTEGRATION_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("KAFKA", "kafka"), ("RABBIT", "rabbitmq"), ("REDIS", "redis"),
-    ("S3", "s3"), ("MINIO", "s3"), ("AWS", "aws"), ("AZURE", "azure"),
-    ("GCP", "gcp"), ("SMTP", "smtp"), ("MAIL", "smtp"),
-    ("ELASTIC", "elasticsearch"), ("OPENSEARCH", "elasticsearch"),
-    ("KEYCLOAK", "keycloak"), ("OIDC", "oidc"), ("OAUTH", "oauth"),
-    ("STRIPE", "stripe"), ("TWILIO", "twilio"),
+    ("KAFKA", "kafka"),
+    ("RABBIT", "rabbitmq"),
+    ("REDIS", "redis"),
+    ("S3", "s3"),
+    ("MINIO", "s3"),
+    ("AWS", "aws"),
+    ("AZURE", "azure"),
+    ("GCP", "gcp"),
+    ("SMTP", "smtp"),
+    ("MAIL", "smtp"),
+    ("ELASTIC", "elasticsearch"),
+    ("OPENSEARCH", "elasticsearch"),
+    ("KEYCLOAK", "keycloak"),
+    ("OIDC", "oidc"),
+    ("OAUTH", "oauth"),
+    ("STRIPE", "stripe"),
+    ("TWILIO", "twilio"),
 )
 
 _GENERIC_SUFFIXES = ("_URL", "_ENDPOINT", "_HOST", "_URI")
@@ -128,7 +140,9 @@ def _classify(key: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _read_env_files(root: Path, kb_dir: Path | None) -> tuple[dict[str, set[str]], list[str]]:
+def _read_env_files(
+    root: Path, kb_dir: Path | None
+) -> tuple[dict[str, set[str]], list[str]]:
     """key -> set of contributing file relpaths, from every `ENV_FILES`
     name found anywhere in the pruned tree (Ruling R7)."""
     sources: dict[str, set[str]] = {}
@@ -149,7 +163,9 @@ def _read_env_files(root: Path, kb_dir: Path | None) -> tuple[dict[str, set[str]
     return sources, warnings
 
 
-def _read_compose_env(root: Path, kb_dir: Path | None) -> tuple[dict[str, set[str]], list[str]]:
+def _read_compose_env(
+    root: Path, kb_dir: Path | None
+) -> tuple[dict[str, set[str]], list[str]]:
     """key -> set of contributing file relpaths, from every compose
     file's every service's `environment:` block, found anywhere in the
     pruned tree (Ruling R7). A malformed file, or a wrong-shaped
@@ -277,10 +293,14 @@ class IntegrationsExtractor:
             if any(name in ENV_FILES for name in filenames):
                 return True
             if any(
-                fnmatch.fnmatch(name, pat) for name in filenames for pat in _COMPOSE_GLOBS
+                fnmatch.fnmatch(name, pat)
+                for name in filenames
+                for pat in _COMPOSE_GLOBS
             ):
                 return True
-        return any(_openapi_has_servers(path) for path in find_openapi_files(root, None))
+        return any(
+            _openapi_has_servers(path) for path in find_openapi_files(root, None)
+        )
 
     def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         warnings: list[str] = []
@@ -297,7 +317,10 @@ class IntegrationsExtractor:
         try:
             compose_sources, compose_warnings = _read_compose_env(root, opts.kb_dir)
         except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
-            compose_sources, compose_warnings = {}, [f"could not read compose manifests: {exc}"]
+            compose_sources, compose_warnings = (
+                {},
+                [f"could not read compose manifests: {exc}"],
+            )
         warnings.extend(compose_warnings)
         for key, sources in compose_sources.items():
             merged.setdefault(key, set()).update(sources)

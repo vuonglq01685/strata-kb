@@ -4,6 +4,7 @@ Pure functions only: no I/O, no manifest writes, no LLM. `prose_only()` is
 the single unit of measure for every length rule in the pipeline — the
 engine's budget and the build gate must never disagree on the denominator.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -14,10 +15,10 @@ from typing import Literal
 from strata_kb import models
 from strata_kb.mdutils import extract_tables, normalize_table
 
-RATIO = 0.35            # L2 prose ≤ RATIO × L3 prose …
-FLOOR_CHARS = 120       # … but never required below this many characters
-BRIEF_CHARS = 200       # ≤ this much L3 prose: copy verbatim, no LLM
-OVERLAP_MIN = 0.45      # share of L2 word-types that occur in the L3 slice
+RATIO = 0.35  # L2 prose ≤ RATIO × L3 prose …
+FLOOR_CHARS = 120  # … but never required below this many characters
+BRIEF_CHARS = 200  # ≤ this much L3 prose: copy verbatim, no LLM
+OVERLAP_MIN = 0.45  # share of L2 word-types that occur in the L3 slice
 OVERLAP_MIN_WORDS = 20  # overlap is only measured on L2 prose this long
 CELLS_PER_SENTENCE = 4  # distinct table cells quoted in one L2 sentence
 L1_MAX_WORDS = 25
@@ -126,22 +127,42 @@ def _q(code: str, ref: str, msg: str) -> Finding:
 def _check_length(ref: str, l2: str, l3: str, n3: int) -> list[Finding]:
     if n3 > BRIEF_CHARS:
         if not l2:
-            return [_q("l2-empty", ref, f"L2 prose is empty while L3 has {n3} chars of prose")]
+            return [
+                _q(
+                    "l2-empty",
+                    ref,
+                    f"L2 prose is empty while L3 has {n3} chars of prose",
+                )
+            ]
         limit = budget(n3)
         if len(l2) > limit:
             msg = f"L2 prose {len(l2)} chars > budget {limit} (max({FLOOR_CHARS}, {RATIO:.0%} of {n3}))"
             return [_q("ratio", ref, msg)]
         return []
     if is_brief(n3) and _norm_ws(l2) != _norm_ws(l3):
-        return [_q("brief-verbatim", ref, f"brief section ({n3} chars of prose) must carry the L3 prose verbatim in L2")]
+        return [
+            _q(
+                "brief-verbatim",
+                ref,
+                f"brief section ({n3} chars of prose) must carry the L3 prose verbatim in L2",
+            )
+        ]
     return []
 
 
-def _check_labels(ref: str, sec: models.SectionEntry, l2: str, n3: int) -> list[Finding]:
+def _check_labels(
+    ref: str, sec: models.SectionEntry, l2: str, n3: int
+) -> list[Finding]:
     if is_table_only(n3):
         want = TABLE_ONLY_LABEL.format(title=sec.title)
         if sec.summary != want or l2:
-            return [_q("table-only-label", ref, f"table-only section must have L1 '{want}' and no L2 prose")]
+            return [
+                _q(
+                    "table-only-label",
+                    ref,
+                    f"table-only section must have L1 '{want}' and no L2 prose",
+                )
+            ]
     elif is_brief(n3):
         want = BRIEF_LABEL.format(title=sec.title)
         if sec.summary != want:
@@ -150,7 +171,10 @@ def _check_labels(ref: str, sec: models.SectionEntry, l2: str, n3: int) -> list[
 
 
 def _check_l1_words(ref: str, sec: models.SectionEntry) -> list[Finding]:
-    fixed_labels = (BRIEF_LABEL.format(title=sec.title), TABLE_ONLY_LABEL.format(title=sec.title))
+    fixed_labels = (
+        BRIEF_LABEL.format(title=sec.title),
+        TABLE_ONLY_LABEL.format(title=sec.title),
+    )
     if sec.summary in fixed_labels:
         return []  # a fixed brief/table-only label never counts toward l1-words
     n = len(sec.summary.split())
@@ -178,16 +202,29 @@ def _check_transcription(ref: str, l2: str, l3_slice: str) -> list[Finding]:
     for sentence in _SENTENCE_SPLIT_RE.split(l2):
         hits = [c for c, p in patterns.items() if p.search(sentence)]
         if len(hits) >= CELLS_PER_SENTENCE:
-            return [_q("table-transcription", ref,
-                       f"L2 sentence quotes {len(hits)} cells of this section's table: '{sentence[:60]}…'")]
+            return [
+                _q(
+                    "table-transcription",
+                    ref,
+                    f"L2 sentence quotes {len(hits)} cells of this section's table: '{sentence[:60]}…'",
+                )
+            ]
     return []
 
 
 def _check_codes(ref: str, l2: str, l3_slice: str) -> list[Finding]:
     tokens = set(_CODE_RE.findall(l2))
-    invented = sorted(t for t in tokens if not re.search(rf"(?<!\w){re.escape(t)}(?!\w)", l3_slice))
+    invented = sorted(
+        t for t in tokens if not re.search(rf"(?<!\w){re.escape(t)}(?!\w)", l3_slice)
+    )
     if invented:
-        return [_q("invented-code", ref, f"codes in L2 that do not occur in L3: {', '.join(invented)}")]
+        return [
+            _q(
+                "invented-code",
+                ref,
+                f"codes in L2 that do not occur in L3: {', '.join(invented)}",
+            )
+        ]
     return []
 
 
@@ -199,14 +236,33 @@ def _check_overlap(ref: str, l2: str, l3_slice: str) -> list[Finding]:
     l3_types = set(_WORD_RE.findall(l3_slice.lower()))
     share = len(types & l3_types) / len(types)
     if share < OVERLAP_MIN:
-        return [_q("lexical-overlap", ref, f"only {share:.0%} of L2 word-types occur in L3 (< {OVERLAP_MIN:.0%})")]
+        return [
+            _q(
+                "lexical-overlap",
+                ref,
+                f"only {share:.0%} of L2 word-types occur in L3 (< {OVERLAP_MIN:.0%})",
+            )
+        ]
     return []
 
 
 def check_doc(entry: models.IndexEntry) -> list[Finding]:
     if not entry.summary.strip():
-        return [Finding("l0-empty", entry.id, f"{entry.id}: index.yaml summary is empty", "error")]
+        return [
+            Finding(
+                "l0-empty",
+                entry.id,
+                f"{entry.id}: index.yaml summary is empty",
+                "error",
+            )
+        ]
     n = len(entry.summary.split())
     if n > L0_MAX_WORDS:
-        return [_q("l0-words", entry.id, f"index.yaml summary has {n} words > {L0_MAX_WORDS}")]
+        return [
+            _q(
+                "l0-words",
+                entry.id,
+                f"index.yaml summary has {n} words > {L0_MAX_WORDS}",
+            )
+        ]
     return []

@@ -31,7 +31,12 @@ def test_trailing_dot_is_refused(rid):
 @pytest.mark.parametrize(
     "rid",
     [
-        "CON", "con", "NUL", "COM1", "lpt9", "CON.md",
+        "CON",
+        "con",
+        "NUL",
+        "COM1",
+        "lpt9",
+        "CON.md",
         # Round 3 (MEDIUM-2): these used to be accepted here while
         # intake.py's member-name rule already refused them as tar
         # members -- both COM0/LPT0 and the '$' console-handle names are
@@ -39,7 +44,9 @@ def test_trailing_dot_is_refused(rid):
         # itself never reaches this check (REPO_ID_RE refuses '$' first),
         # so only the plain-ASCII COM0/LPT0 spellings are meaningfully new
         # here.
-        "COM0", "LPT0", "lpt0",
+        "COM0",
+        "LPT0",
+        "lpt0",
     ],
 )
 def test_reserved_windows_device_names_are_refused(rid):
@@ -76,7 +83,9 @@ def test_is_reserved_device_name_control_ordinary_stem_is_not_reserved():
 
 
 def test_case_insensitive_collision_with_a_sibling_is_refused():
-    with pytest.raises(pubgate.GateError, match="collides with the existing entry 'victim'"):
+    with pytest.raises(
+        pubgate.GateError, match="collides with the existing entry 'victim'"
+    ):
         pubgate.normalize_repo_id("VICTIM", existing=["victim", "other"])
 
 
@@ -100,7 +109,9 @@ def test_owner_repo_parsed_from_remote(url, expected):
     assert pubgate.owner_repo_from_remote(url) == expected
 
 
-@pytest.mark.parametrize("url", ["", "/srv/kb-hub", "C:\\hubs\\kb-hub", "https://github.com/org"])
+@pytest.mark.parametrize(
+    "url", ["", "/srv/kb-hub", "C:\\hubs\\kb-hub", "https://github.com/org"]
+)
 def test_local_paths_and_incomplete_urls_have_no_owner_repo(url):
     assert pubgate.owner_repo_from_remote(url) is None
 
@@ -114,12 +125,16 @@ def test_registry_maps_the_publisher_to_its_own_repo_id():
 
 
 def test_registry_lookup_is_case_insensitive():
-    rid = pubgate.resolve_identity(REG, "https://github.com/ORG/Attacker.git", None, "hub")
+    rid = pubgate.resolve_identity(
+        REG, "https://github.com/ORG/Attacker.git", None, "hub"
+    )
     assert rid == "attacker"
 
 
 def test_requesting_another_repos_id_is_refused():
-    with pytest.raises(pubgate.GateError, match="maps 'org/attacker' to repo-id 'attacker'"):
+    with pytest.raises(
+        pubgate.GateError, match="maps 'org/attacker' to repo-id 'attacker'"
+    ):
         pubgate.resolve_identity(
             REG, "https://github.com/org/attacker.git", "victim", "hub"
         )
@@ -132,7 +147,8 @@ def test_repo_id_mismatch_names_both_the_flag_and_the_config_entry():
     flag they never passed. Fails against the old text ('drop --repo-id,
     or ask the hub owner')."""
     with pytest.raises(
-        pubgate.GateError, match=r"drop --repo-id or the repo_id: entry in \.kb/config\.yaml"
+        pubgate.GateError,
+        match=r"drop --repo-id or the repo_id: entry in \.kb/config\.yaml",
     ):
         pubgate.resolve_identity(
             REG, "https://github.com/org/attacker.git", "victim", "hub"
@@ -141,7 +157,9 @@ def test_repo_id_mismatch_names_both_the_flag_and_the_config_entry():
 
 def test_unregistered_publisher_is_refused_with_the_registry_hint():
     with pytest.raises(pubgate.GateError, match="is not registered on hub"):
-        pubgate.resolve_identity(REG, "https://github.com/org/stranger.git", None, "hub")
+        pubgate.resolve_identity(
+            REG, "https://github.com/org/stranger.git", None, "hub"
+        )
 
 
 def test_publisher_without_a_remote_is_told_to_add_one():
@@ -158,7 +176,9 @@ def test_publisher_without_a_remote_is_told_to_add_one():
 
 
 def test_matching_requested_repo_id_is_accepted():
-    rid = pubgate.resolve_identity(REG, "https://github.com/org/victim", "victim", "hub")
+    rid = pubgate.resolve_identity(
+        REG, "https://github.com/org/victim", "victim", "hub"
+    )
     assert rid == "victim"
 
 
@@ -167,9 +187,15 @@ def test_matching_requested_repo_id_is_accepted():
     [
         ("direct", False, False, False, "direct"),
         ("direct", True, True, False, "direct"),
-        ("direct", False, False, True, "direct"),   # local-path governed hub
+        ("direct", False, False, True, "direct"),  # local-path governed hub
         ("pr", True, True, False, "pr"),
-        ("auto", False, False, False, "direct"),    # README's stated kb publish mode behaviour (§7.9)
+        (
+            "auto",
+            False,
+            False,
+            False,
+            "direct",
+        ),  # README's stated kb publish mode behaviour (§7.9)
         ("auto", False, False, True, "direct"),
         ("auto", True, True, False, "pr"),
         ("auto", True, True, True, "pr"),

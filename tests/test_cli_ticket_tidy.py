@@ -52,16 +52,23 @@ def test_apply_moves_creates_folders_and_refuses_to_overwrite(tmp_path):
     moves, _u, _n = tickettidy.plan_moves(d)
     done, conflicts = tickettidy.apply_moves(moves)
     assert done == [(d / "M-platform-US1.md", d / "M-platform" / "M-platform-US1.md")]
-    assert (d / "M-platform" / "M-platform-US1.md").read_text(encoding="utf-8") == PARENTED
+    assert (d / "M-platform" / "M-platform-US1.md").read_text(
+        encoding="utf-8"
+    ) == PARENTED
     assert (d / "M-platform-US2.md").exists()
-    assert conflicts == [f"conflict: {d / 'M-platform' / 'M-platform-US2.md'} already exists — left {d / 'M-platform-US2.md'} in place"]
+    assert conflicts == [
+        f"conflict: {d / 'M-platform' / 'M-platform-US2.md'} already exists — left {d / 'M-platform-US2.md'} in place"
+    ]
 
 
 def test_cli_tidy_moves_reports_and_is_idempotent(tmp_path):
     d = _tickets(tmp_path)
     result = runner.invoke(app, ["ticket", "tidy", "--tickets-dir", str(d)])
     assert result.exit_code == 0, result.output
-    assert f"moved: {d / 'M-platform-US1.md'} → {d / 'M-platform' / 'M-platform-US1.md'}" in result.output
+    assert (
+        f"moved: {d / 'M-platform-US1.md'} → {d / 'M-platform' / 'M-platform-US1.md'}"
+        in result.output
+    )
     assert f"unsorted: {d / 'legacy-login.md'} — pass --into <folder>" in result.output
     again = runner.invoke(app, ["ticket", "tidy", "--tickets-dir", str(d)])
     assert again.exit_code == 0
@@ -71,9 +78,18 @@ def test_cli_tidy_moves_reports_and_is_idempotent(tmp_path):
 
 def test_cli_tidy_into_moves_the_named_files(tmp_path):
     d = _tickets(tmp_path)
-    result = runner.invoke(app, [
-        "ticket", "tidy", "--tickets-dir", str(d), "--into", "epic-login", str(d / "legacy-login.md"),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "ticket",
+            "tidy",
+            "--tickets-dir",
+            str(d),
+            "--into",
+            "epic-login",
+            str(d / "legacy-login.md"),
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert (d / "epic-login" / "legacy-login.md").is_file()
     assert "unsorted:" not in result.output
@@ -81,31 +97,58 @@ def test_cli_tidy_into_moves_the_named_files(tmp_path):
 
 def test_cli_tidy_into_rejects_a_bad_folder_name(tmp_path):
     d = _tickets(tmp_path)
-    result = runner.invoke(app, ["ticket", "tidy", "--tickets-dir", str(d), "--into", "../x", str(d / "legacy-login.md")])
+    result = runner.invoke(
+        app,
+        [
+            "ticket",
+            "tidy",
+            "--tickets-dir",
+            str(d),
+            "--into",
+            "../x",
+            str(d / "legacy-login.md"),
+        ],
+    )
     assert result.exit_code == 1
     assert "--into" in result.output
 
 
 def test_cli_tidy_missing_dir_is_a_red_line(tmp_path):
-    result = runner.invoke(app, ["ticket", "tidy", "--tickets-dir", str(tmp_path / "nope")])
+    result = runner.invoke(
+        app, ["ticket", "tidy", "--tickets-dir", str(tmp_path / "nope")]
+    )
     assert result.exit_code == 1
 
 
 def test_cli_tidy_files_without_into_is_a_red_line(tmp_path):
     d = _tickets(tmp_path)
-    result = runner.invoke(app, ["ticket", "tidy", "--tickets-dir", str(d), str(d / "legacy-login.md")])
+    result = runner.invoke(
+        app, ["ticket", "tidy", "--tickets-dir", str(d), str(d / "legacy-login.md")]
+    )
     assert result.exit_code == 1
     assert "--into" in result.output
 
 
 def test_cli_tidy_into_skips_a_missing_file_and_still_reports_the_rest(tmp_path):
     d = _tickets(tmp_path)
-    result = runner.invoke(app, [
-        "ticket", "tidy", "--tickets-dir", str(d), "--into", "epic-login",
-        str(d / "legacy-login.md"), str(d / "nope.md"),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "ticket",
+            "tidy",
+            "--tickets-dir",
+            str(d),
+            "--into",
+            "epic-login",
+            str(d / "legacy-login.md"),
+            str(d / "nope.md"),
+        ],
+    )
     assert result.exit_code == 0, result.output
-    assert f"moved: {d / 'legacy-login.md'} → {d / 'epic-login' / 'legacy-login.md'}" in result.output
+    assert (
+        f"moved: {d / 'legacy-login.md'} → {d / 'epic-login' / 'legacy-login.md'}"
+        in result.output
+    )
     assert (d / "epic-login" / "legacy-login.md").is_file()
     assert "note: skipped" in result.output
     assert "nope.md" in result.output
@@ -115,10 +158,19 @@ def test_cli_tidy_into_refuses_a_directory_and_a_filed_ticket(tmp_path):
     d = _tickets(tmp_path)
     (d / "M-platform").mkdir()
     (d / "M-platform" / "M-platform-US3.md").write_text(PARENTED, encoding="utf-8")
-    result = runner.invoke(app, [
-        "ticket", "tidy", "--tickets-dir", str(d), "--into", "epic",
-        str(d / "M-platform"), str(d / "M-platform" / "M-platform-US3.md"),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "ticket",
+            "tidy",
+            "--tickets-dir",
+            str(d),
+            "--into",
+            "epic",
+            str(d / "M-platform"),
+            str(d / "M-platform" / "M-platform-US3.md"),
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert (d / "M-platform").is_dir()
     assert (d / "M-platform" / "M-platform-US3.md").is_file()

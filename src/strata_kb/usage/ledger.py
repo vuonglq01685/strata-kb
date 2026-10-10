@@ -10,6 +10,7 @@ Append-only and de-duplicated by the transcript row's `uuid`: the `Stop` hook
 re-ingests the same growing transcript every turn, so appending must be safe to
 repeat forever.
 """
+
 from __future__ import annotations
 
 import json
@@ -143,13 +144,17 @@ def _existing_uuids(path: Path) -> set[str]:
     if not path.exists():
         return set()
     found: set[str] = set()
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for lineno, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
         if not line.strip():
             continue
         try:
             uuid = json.loads(line)["uuid"]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise LedgerError(f"unparseable ledger line {path}:{lineno}: {exc}") from exc
+            raise LedgerError(
+                f"unparseable ledger line {path}:{lineno}: {exc}"
+            ) from exc
         found.add(uuid)
     return found
 
@@ -292,7 +297,9 @@ def read_rows(kb_dir: Path) -> list[UsageRow]:
     if not directory.exists():
         return out
     for path in sorted(directory.glob("*.jsonl")):
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for lineno, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
             if not line.strip():
                 continue
             try:
@@ -302,5 +309,7 @@ def read_rows(kb_dir: Path) -> list[UsageRow]:
                 # json.JSONDecodeError) for malformed JSON too — this one
                 # except clause covers both a bad line and a well-formed
                 # line that fails UsageRow's schema.
-                raise LedgerError(f"unparseable ledger line {path}:{lineno}: {exc}") from exc
+                raise LedgerError(
+                    f"unparseable ledger line {path}:{lineno}: {exc}"
+                ) from exc
     return out

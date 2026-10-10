@@ -116,7 +116,9 @@ def warm_vec() -> bool:
         # doesn't wrap as ImportError. Degrade to FTS-only same as above, but
         # this case is unexpected enough to be worth a log line (fires once,
         # thanks to _VEC_WARMED).
-        logger.warning("sqlite_vec import failed unexpectedly — semantic leg disabled: %s", exc)
+        logger.warning(
+            "sqlite_vec import failed unexpectedly — semantic leg disabled: %s", exc
+        )
         _VEC_MODULE = None
     else:
         _VEC_MODULE = sqlite_vec
@@ -137,7 +139,9 @@ def _load_vec(conn: sqlite3.Connection) -> bool:
     except (AttributeError, sqlite3.OperationalError) as exc:
         # Python build lacks loadable-extension support / extension failed to
         # load → degrade to FTS-only instead of breaking search entirely (spec §5)
-        logger.warning("sqlite-vec could not be loaded — semantic leg disabled: %s", exc)
+        logger.warning(
+            "sqlite-vec could not be loaded — semantic leg disabled: %s", exc
+        )
         return False
     return True
 
@@ -411,7 +415,7 @@ def _repo_fingerprint(repo_dir: Path) -> str:
                         stack.append(entry.path)
                     elif entry.is_file(follow_symlinks=False):
                         st = entry.stat(follow_symlinks=False)
-                        rel = entry.path[len(base):].replace(os.sep, "/")
+                        rel = entry.path[len(base) :].replace(os.sep, "/")
                         records.append((rel, st.st_size, st.st_mtime_ns))
                     # else: a symlink (to a file or a directory) — skip, don't descend
                 except OSError:
@@ -424,7 +428,9 @@ def _repo_fingerprint(repo_dir: Path) -> str:
 
 
 def _section_parts(
-    kb_dir: Path, doc_id: str, sec: models.SectionEntry,
+    kb_dir: Path,
+    doc_id: str,
+    sec: models.SectionEntry,
     texts: dict[Path, str | None] | None = None,
 ) -> tuple[str, str, str, str]:
     """(title, summary, body_l2, body_l3) — body_l2 = FULL L2 slice (summary
@@ -554,8 +560,7 @@ def _sync_repo(
     for doc in repo.index.docs:
         for tag in {t.strip().lower() for t in doc.tags} | {doc.id.lower()}:
             conn.execute(
-                "INSERT OR IGNORE INTO doc_tags(repo_id, doc_id, tag) "
-                "VALUES(?, ?, ?)",
+                "INSERT OR IGNORE INTO doc_tags(repo_id, doc_id, tag) VALUES(?, ?, ?)",
                 (rid, doc.id, tag),
             )
 
@@ -566,10 +571,9 @@ def _sync_vectors(
     if embedder is None or not _conn_vec_loaded(conn):
         return
     meta = dict(conn.execute("SELECT key, value FROM meta"))
-    model_changed = (
-        meta.get("embed_model") != embedder.name
-        or meta.get("embed_dim") != str(embedder.dim)
-    )
+    model_changed = meta.get("embed_model") != embedder.name or meta.get(
+        "embed_dim"
+    ) != str(embedder.dim)
     if _has_vec_table(conn) and model_changed:
         conn.execute("DROP TABLE vec_sections")  # model/dim change → rebuild vec table
     table_created = not _has_vec_table(conn)

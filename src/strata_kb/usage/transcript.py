@@ -28,6 +28,7 @@ the parent's cursors at the subagent's first timestamp (`parent_cursor`, the
 same rules walked over the main transcript) and then walks its own file
 exactly as above.
 """
+
 from __future__ import annotations
 
 import json
@@ -322,7 +323,9 @@ def _usage_counts(usage: dict) -> dict:
         inference_geo=_str(usage, "inference_geo"),
         speed=_str(usage, "speed"),
         service_tier=_str(usage, "service_tier"),
-        web_searches=_int(server, "web_search_requests") if isinstance(server, dict) else 0,
+        web_searches=_int(server, "web_search_requests")
+        if isinstance(server, dict)
+        else 0,
     )
 
 

@@ -132,9 +132,16 @@ def test_section_status_still_parses_reviewed():
 def test_section_entry_new_fields_default_absent_and_roundtrip(tmp_path: Path):
     sec = models.SectionEntry(id="1", title="T", file="f")
     assert sec.l3_sha256 is None and sec.provenance is None and sec.reviewed is None
-    sec.provenance = models.Provenance(runner="claude", model="sonnet-5", effort="high",
-                                       prompt_sha="abc123abc123", at="2026-09-09T10:00:00Z")
-    sec.reviewed = models.ReviewRecord(by="d <d@x>", at="2026-09-09T11:00:00Z", l2_sha256="ff" * 32)
+    sec.provenance = models.Provenance(
+        runner="claude",
+        model="sonnet-5",
+        effort="high",
+        prompt_sha="abc123abc123",
+        at="2026-09-09T10:00:00Z",
+    )
+    sec.reviewed = models.ReviewRecord(
+        by="d <d@x>", at="2026-09-09T11:00:00Z", l2_sha256="ff" * 32
+    )
     sec.l3_sha256 = "aa" * 32
     m = models.Manifest(id="d", title="D", sections=[sec])
     path = tmp_path / "_manifest.yaml"
@@ -145,15 +152,16 @@ def test_section_entry_new_fields_default_absent_and_roundtrip(tmp_path: Path):
 
 
 def test_save_omits_none_fields(tmp_path: Path):
-    m = models.Manifest(id="d", title="D",
-                        sections=[models.SectionEntry(id="1", title="T", file="f")])
+    m = models.Manifest(
+        id="d", title="D", sections=[models.SectionEntry(id="1", title="T", file="f")]
+    )
     path = tmp_path / "_manifest.yaml"
     models.save_yaml_model(path, m)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert "provenance" not in data["sections"][0]
     assert "reviewed" not in data["sections"][0]
     assert "l3_sha256" not in data["sections"][0]
-    assert "ingested" not in data          # was already None → now omitted
+    assert "ingested" not in data  # was already None → now omitted
 
 
 def test_old_manifest_without_new_fields_loads(tmp_path: Path):

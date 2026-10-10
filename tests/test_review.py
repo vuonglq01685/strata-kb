@@ -53,7 +53,9 @@ def test_approve_reports_missing_section(git_kb):
 
 
 def test_approve_duplicate_missing_ids_reported_once(git_kb):
-    report = approve_sections(git_kb["kb"], "demo-doc", ["9.9", "9.9"], by="sme <sme@x>")
+    report = approve_sections(
+        git_kb["kb"], "demo-doc", ["9.9", "9.9"], by="sme <sme@x>"
+    )
     assert report.missing == ["9.9"]
 
 
@@ -77,10 +79,34 @@ def _dup_doc(kb):
             id="dup-doc",
             title="Dup Doc",
             sections=[
-                models.SectionEntry(id="1", title="A one", summary="s", status="summarized", file="partA"),
-                models.SectionEntry(id="1.1", title="A oneone", summary="s", status="summarized", file="partA"),
-                models.SectionEntry(id="1", title="B one", summary="s", status="summarized", file="partB"),
-                models.SectionEntry(id="1.1", title="B oneone", summary="s", status="summarized", file="partB"),
+                models.SectionEntry(
+                    id="1",
+                    title="A one",
+                    summary="s",
+                    status="summarized",
+                    file="partA",
+                ),
+                models.SectionEntry(
+                    id="1.1",
+                    title="A oneone",
+                    summary="s",
+                    status="summarized",
+                    file="partA",
+                ),
+                models.SectionEntry(
+                    id="1",
+                    title="B one",
+                    summary="s",
+                    status="summarized",
+                    file="partB",
+                ),
+                models.SectionEntry(
+                    id="1.1",
+                    title="B oneone",
+                    summary="s",
+                    status="summarized",
+                    file="partB",
+                ),
             ],
         ),
     )
@@ -123,8 +149,12 @@ def _add_new_doc(kb, register_in_index: bool) -> None:
     """A doc present in the worktree but absent at every committed rev."""
     doc_dir = kb / "new-doc"
     doc_dir.mkdir()
-    (doc_dir / "ch1.md").write_text("## 1.1 Intro\n\nCondensed intro.\n", encoding="utf-8")
-    (doc_dir / "ch1.raw.md").write_text("## 1.1 Intro\n\nRaw intro.\n", encoding="utf-8")
+    (doc_dir / "ch1.md").write_text(
+        "## 1.1 Intro\n\nCondensed intro.\n", encoding="utf-8"
+    )
+    (doc_dir / "ch1.raw.md").write_text(
+        "## 1.1 Intro\n\nRaw intro.\n", encoding="utf-8"
+    )
     models.save_yaml_model(
         doc_dir / "_manifest.yaml",
         models.Manifest(
@@ -191,7 +221,9 @@ def test_all_changed_new_doc_flips_all_its_summarized_sections(git_kb):
 
 def test_all_changed_single_doc_scope(git_kb):
     _add_new_doc(git_kb["kb"], register_in_index=True)
-    reports = approve_all_changed(git_kb["kb"], git_kb["rev1"], doc_id="demo-doc", by="sme <sme@x>")
+    reports = approve_all_changed(
+        git_kb["kb"], git_kb["rev1"], doc_id="demo-doc", by="sme <sme@x>"
+    )
     assert [r.doc_id for r in reports] == ["demo-doc"]
     # new-doc untouched despite being changed too
     assert _statuses(git_kb["kb"], "new-doc") == {"1.1": "summarized"}
@@ -236,12 +268,16 @@ def test_check_approvable_refuses_strict_build_errors(git_kb, run_git):
 def test_check_approvable_only_reports_this_doc(git_kb, run_git):
     other = git_kb["kb"] / "other"
     other.mkdir()
-    (other / "f.md").write_text("## 1 A\n\n<!-- TODO:summarize 1 -->\n", encoding="utf-8")
+    (other / "f.md").write_text(
+        "## 1 A\n\n<!-- TODO:summarize 1 -->\n", encoding="utf-8"
+    )
     (other / "f.raw.md").write_text("## 1 A\n\nprose\n", encoding="utf-8")
     models.save_yaml_model(
         other / "_manifest.yaml",
         models.Manifest(
-            id="other", title="O", sections=[models.SectionEntry(id="1", title="A", file="f")]
+            id="other",
+            title="O",
+            sections=[models.SectionEntry(id="1", title="A", file="f")],
         ),
     )
     ipath = git_kb["kb"] / "index.yaml"
@@ -260,13 +296,17 @@ def test_check_approvable_never_dirties_tree(git_kb, run_git):
     kb = git_kb["kb"]
     other_dir = kb / "other-doc"
     other_dir.mkdir()
-    (other_dir / "f.md").write_text("## 1 A\n\n<!-- TODO:summarize 1 -->\n", encoding="utf-8")
+    (other_dir / "f.md").write_text(
+        "## 1 A\n\n<!-- TODO:summarize 1 -->\n", encoding="utf-8"
+    )
     (other_dir / "f.raw.md").write_text("## 1 A\n\nraw prose.\n", encoding="utf-8")
     models.save_yaml_model(
         other_dir / "_manifest.yaml",
-        models.Manifest(id="other-doc", title="Other", sections=[
-            models.SectionEntry(id="1", title="A", file="f")
-        ]),
+        models.Manifest(
+            id="other-doc",
+            title="Other",
+            sections=[models.SectionEntry(id="1", title="A", file="f")],
+        ),
     )
     ipath = kb / "index.yaml"
     idx = models.load_yaml_model(ipath, models.KBIndex)
@@ -342,7 +382,9 @@ def test_approve_writes_review_record(git_kb):
     from strata_kb.mdutils import slice_section
 
     approve_sections(git_kb["kb"], "demo-doc", ["1.1"], by="sme <sme@x>")
-    m = models.load_yaml_model(git_kb["kb"] / "demo-doc" / "_manifest.yaml", models.Manifest)
+    m = models.load_yaml_model(
+        git_kb["kb"] / "demo-doc" / "_manifest.yaml", models.Manifest
+    )
     rec = m.sections[0].reviewed
     l2 = (git_kb["kb"] / "demo-doc" / "ch1-records.md").read_text(encoding="utf-8")
     assert rec.by == "sme <sme@x>" and rec.at.endswith("Z")
@@ -384,14 +426,18 @@ Full raw text of the second occurrence. Designation, type, level fields are docu
             title="Dup Review Doc",
             sections=[
                 models.SectionEntry(
-                    id="1.1", title="Duplicate Section",
+                    id="1.1",
+                    title="Duplicate Section",
                     summary="First occurrence summary of duplicate section fields.",
-                    status="summarized", file="ch1",
+                    status="summarized",
+                    file="ch1",
                 ),
                 models.SectionEntry(
-                    id="1.1", title="Duplicate Section",
+                    id="1.1",
+                    title="Duplicate Section",
                     summary="Second occurrence summary of duplicate section fields.",
-                    status="summarized", file="ch1",
+                    status="summarized",
+                    file="ch1",
                 ),
             ],
         ),
@@ -401,7 +447,9 @@ Full raw text of the second occurrence. Designation, type, level fields are docu
         models.KBIndex(
             docs=[
                 models.IndexEntry(
-                    id="dup-review-doc", title="Dup Review Doc", summary="Dup doc for review test."
+                    id="dup-review-doc",
+                    title="Dup Review Doc",
+                    summary="Dup doc for review test.",
                 )
             ]
         ),
@@ -416,10 +464,15 @@ def _add_hist_section(kb):
     manifest_path = kb / "demo-doc" / "_manifest.yaml"
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     src = manifest.sections[0]
-    manifest.sections.append(models.SectionEntry(
-        id="hist.api", title="api — ticket history", summary="Tickets: 1.",
-        status="summarized", file=src.file,
-    ))
+    manifest.sections.append(
+        models.SectionEntry(
+            id="hist.api",
+            title="api — ticket history",
+            summary="Tickets: 1.",
+            status="summarized",
+            file=src.file,
+        )
+    )
     models.save_yaml_model(manifest_path, manifest)
     l2 = kb / "demo-doc" / f"{src.file}.md"
     with l2.open("a", encoding="utf-8") as fh:

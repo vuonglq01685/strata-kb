@@ -23,9 +23,7 @@ def test_credential_check_is_scoped_to_local_config(
     (unrelated to this hub clone) would be misreported as living in this
     clone's own .git/config."""
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "global.gitconfig"))
-    subprocess.run(
-        ["git", "config", "--global", "remote.decoy.url", CRED], check=True
-    )
+    subprocess.run(["git", "config", "--global", "remote.decoy.url", CRED], check=True)
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     assert not any("credential" in i.message for i in issues)
 
@@ -82,13 +80,17 @@ def test_clean_state_after_publish_is_ok(git_kb, hub_worktree):
     # so without this the new F-C17 doctor check would (correctly) flag it.
     (hub_worktree / ".gitignore").write_text(".kb-work/\n", encoding="utf-8")
     publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
-    issues, stale = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb")
+    issues, stale = check_hub(
+        git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb"
+    )
     assert issues == [] and stale is False
 
 
 def test_unpublished_repo_warns(git_kb, hub_worktree):
     publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
-    issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="ghost-kb")
+    issues, _ = check_hub(
+        git_kb["kb"], HubHandle(root=hub_worktree), repo_id="ghost-kb"
+    )
     assert any(i.level == "warning" and "kb publish" in i.message for i in issues)
 
 
@@ -127,9 +129,7 @@ def test_a_pre_024_stored_index_does_not_turn_doctor_red(git_kb, hub_worktree):
     publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
     index_path = hub_worktree / "federation" / "index.yaml"
     text = index_path.read_text(encoding="utf-8")
-    stripped = "\n".join(
-        ln for ln in text.splitlines() if "content_sha256" not in ln
-    )
+    stripped = "\n".join(ln for ln in text.splitlines() if "content_sha256" not in ln)
     index_path.write_text(stripped + "\n", encoding="utf-8", newline="\n")
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb")
@@ -284,8 +284,12 @@ def test_doctor_catches_a_stray_at_every_federation_level(hub_worktree, git_kb):
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
-    assert any("federation/" in m and "leaked-top.yaml" in m for m in warnings), warnings
-    assert any("federation/mid" in m and "leaked-ns.yaml" in m for m in warnings), warnings
+    assert any("federation/" in m and "leaked-top.yaml" in m for m in warnings), (
+        warnings
+    )
+    assert any("federation/mid" in m and "leaked-ns.yaml" in m for m in warnings), (
+        warnings
+    )
     assert any(
         "federation/mid/repo-a" in m and "leaked-leaf.yaml" in m for m in warnings
     ), warnings
@@ -315,9 +319,9 @@ def test_doctor_warns_about_fed_top_exclude_names_at_a_nested_level(
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
-    assert any(
-        "federation/mid" in m and "registry.yaml" in m for m in warnings
-    ), warnings
+    assert any("federation/mid" in m and "registry.yaml" in m for m in warnings), (
+        warnings
+    )
 
 
 def test_doctor_scans_inside_a_broken_federation_entry(hub_worktree, git_kb):
@@ -347,9 +351,7 @@ def test_doctor_scans_inside_a_broken_federation_entry(hub_worktree, git_kb):
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
-    assert any(
-        "federation/broken-mid" in m and ".env" in m for m in warnings
-    ), warnings
+    assert any("federation/broken-mid" in m and ".env" in m for m in warnings), warnings
     assert any(
         "federation/broken-mid/sub" in m and "stray.bin" in m for m in warnings
     ), warnings
@@ -417,9 +419,7 @@ def test_doctor_scans_a_valid_leaf_entry_nested_beneath_a_broken_one(
         "repo_id: broken-outer\nsource_commit: abc1234\n", encoding="utf-8"
     )
     nested = make_fed_entry(broken, "leaf-a", "doc-a")
-    (nested / "config.yaml").write_text(
-        "hub_token: ghp_LEAFLEAK\n", encoding="utf-8"
-    )
+    (nested / "config.yaml").write_text("hub_token: ghp_LEAFLEAK\n", encoding="utf-8")
 
     make_fed_entry(fed, "healthy", "doc-b")
     (fed / "healthy" / "config.yaml").write_text(
@@ -429,16 +429,13 @@ def test_doctor_scans_a_valid_leaf_entry_nested_beneath_a_broken_one(
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
     assert any(
-        "federation/broken-outer/leaf-a" in m and "config.yaml" in m
-        for m in warnings
+        "federation/broken-outer/leaf-a" in m and "config.yaml" in m for m in warnings
     ), warnings
+    assert any("federation/healthy" in m and "config.yaml" in m for m in warnings), (
+        warnings
+    )
     assert any(
-        "federation/healthy" in m and "config.yaml" in m for m in warnings
-    ), warnings
-    assert any(
-        "federation/broken-outer" in m
-        and "missing" in m
-        and "leaf-a" not in m
+        "federation/broken-outer" in m and "missing" in m and "leaf-a" not in m
         for m in warnings
     ), warnings
 
@@ -473,12 +470,12 @@ def test_doctor_reports_strays_in_namespace_directories_regardless_of_name(
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
-    assert any(
-        "federation/assets" in m and "config.yaml" in m for m in warnings
-    ), warnings
-    assert any(
-        "federation/notassets" in m and "config.yaml" in m for m in warnings
-    ), warnings
+    assert any("federation/assets" in m and "config.yaml" in m for m in warnings), (
+        warnings
+    )
+    assert any("federation/notassets" in m and "config.yaml" in m for m in warnings), (
+        warnings
+    )
 
 
 def test_doctor_does_not_flag_a_legitimate_file_under_a_dot_named_namespace(
@@ -539,9 +536,7 @@ def test_doctor_reports_a_stray_beside_manifests_inside_a_broken_entry(
     )
     legacy = broken / "legacy"
     (legacy / "manifests").mkdir(parents=True)
-    (legacy / "config.yaml").write_text(
-        "hub_token: ghp_SLIMLEAK\n", encoding="utf-8"
-    )
+    (legacy / "config.yaml").write_text("hub_token: ghp_SLIMLEAK\n", encoding="utf-8")
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
@@ -557,9 +552,7 @@ def test_doctor_reports_a_stray_beside_manifests_inside_a_broken_entry(
     ), warnings
 
 
-def test_doctor_reports_a_stray_beside_manifests_at_the_top_level(
-    hub_worktree, git_kb
-):
+def test_doctor_reports_a_stray_beside_manifests_at_the_top_level(hub_worktree, git_kb):
     """N-4, the pre-existing top-level gap the brief asked to be recorded
     separately: the same leak beside a top-level slim entry's manifests/
     was unreported before this round -- only the "uses the old slim
@@ -573,22 +566,20 @@ def test_doctor_reports_a_stray_beside_manifests_at_the_top_level(
     fed = hub_worktree / "federation"
     legacy = fed / "legacy-top"
     (legacy / "manifests").mkdir(parents=True)
-    (legacy / "config.yaml").write_text(
-        "hub_token: ghp_SLIMLEAK\n", encoding="utf-8"
-    )
+    (legacy / "config.yaml").write_text("hub_token: ghp_SLIMLEAK\n", encoding="utf-8")
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
     assert any(
-        "federation/legacy-top" in m
-        and "config.yaml" in m
-        and "would never write" in m
+        "federation/legacy-top" in m and "config.yaml" in m and "would never write" in m
         for m in warnings
     ), warnings
     # Not double-reported by the old depth-1-only check this loop replaced.
     slim_issues = [m for m in warnings if "old slim layout" in m]
-    assert slim_issues == ["federation/legacy-top uses the old slim layout — "
-                            "run `kb publish` from that repo to upgrade it"], slim_issues
+    assert slim_issues == [
+        "federation/legacy-top uses the old slim layout — "
+        "run `kb publish` from that repo to upgrade it"
+    ], slim_issues
     # Item 7's second, milder finding (wave L1 brief): "delete them on the
     # hub" used to be the whole remedy here too, but republishing from that
     # repo (which the slim-layout warning above already tells the operator
@@ -601,7 +592,9 @@ def test_doctor_reports_a_stray_beside_manifests_at_the_top_level(
     # unchanged: it is byte-for-byte tests-gate/conftest.py's
     # LEGACY_CONFIG_MIRROR_WARNING, out of this wave's scope to touch),
     # nothing in tests-gate/ depends on this message's exact wording.
-    stray_msg = next(m for m in warnings if "config.yaml" in m and "would never write" in m)
+    stray_msg = next(
+        m for m in warnings if "config.yaml" in m and "would never write" in m
+    )
     assert "delete them on the hub" not in stray_msg, stray_msg
     assert "republish" in stray_msg and "automatically" in stray_msg, stray_msg
     assert "rotate any credential" in stray_msg, stray_msg
@@ -699,15 +692,13 @@ def test_doctor_still_calls_a_top_level_assets_dir_with_manifests_a_slim_entry(
     fed = hub_worktree / "federation"
     legacy = fed / "assets"
     (legacy / "manifests").mkdir(parents=True)
-    (legacy / "config.yaml").write_text(
-        "hub_token: ghp_SLIMLEAK\n", encoding="utf-8"
-    )
+    (legacy / "config.yaml").write_text("hub_token: ghp_SLIMLEAK\n", encoding="utf-8")
 
     issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree))
     warnings = [i.message for i in issues if i.level == "warning"]
-    assert any(
-        "federation/assets" in m and "old slim layout" in m for m in warnings
-    ), warnings
+    assert any("federation/assets" in m and "old slim layout" in m for m in warnings), (
+        warnings
+    )
     assert any(
         "federation/assets" in m and "config.yaml" in m and "would never write" in m
         for m in warnings
@@ -733,18 +724,14 @@ def test_doctor_still_sees_drift_in_a_published_asset_file(git_kb, hub_worktree)
     pic.write_bytes(b"PNG-v1")
     publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
 
-    issues, _ = check_hub(
-        git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb"
-    )
+    issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb")
     assert [i.message for i in issues] == []
 
     pic.write_bytes(b"PNG-v2-different-bytes")
-    issues, _ = check_hub(
-        git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb"
-    )
-    assert any(
-        "differs from the published snapshot" in i.message for i in issues
-    ), [i.message for i in issues]
+    issues, _ = check_hub(git_kb["kb"], HubHandle(root=hub_worktree), repo_id="demo-kb")
+    assert any("differs from the published snapshot" in i.message for i in issues), [
+        i.message for i in issues
+    ]
 
 
 def test_doctor_is_not_permanently_drifted_by_a_diverted_asset(git_kb, hub_worktree):
@@ -789,7 +776,9 @@ def test_doctor_is_not_permanently_drifted_by_a_diverted_asset(git_kb, hub_workt
     # (a separate step in publish()) -- write it so the unrelated "federation/
     # index.yaml is missing" issue doesn't muddy this test's one assertion.
     federation.write_federation_index(handle.federation_dir)
-    dest_pic = hub_worktree / "federation" / "demo-kb" / "demo-doc" / "assets" / f"{sha}.png"
+    dest_pic = (
+        hub_worktree / "federation" / "demo-kb" / "demo-doc" / "assets" / f"{sha}.png"
+    )
     # sanity: the divert actually happened (real bytes gone from the hub
     # tree), or the rest of this test would be vacuous
     assert not dest_pic.exists()

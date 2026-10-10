@@ -101,6 +101,7 @@ quoting) and `_clean_type` (collapse whitespace) — Task B4's postmortem
 was a secret-sanitisation rule applied in one of two duplicated code paths
 and not the other; the fix here is that there is only one path.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -121,12 +122,18 @@ from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 @dataclass
 class TableRecord:
     name: str
-    columns: list[tuple[str, str]] = field(default_factory=list)  # (name, type_and_constraints)
-    pk: str = ""    # bare column name, or a full "PRIMARY KEY (a, b)" clause
-    ddl: str = ""   # genuine DDL text (sql, sqlite) or a reconstruction (prisma, alembic, ef)
+    columns: list[tuple[str, str]] = field(
+        default_factory=list
+    )  # (name, type_and_constraints)
+    pk: str = ""  # bare column name, or a full "PRIMARY KEY (a, b)" clause
+    ddl: str = (
+        ""  # genuine DDL text (sql, sqlite) or a reconstruction (prisma, alembic, ef)
+    )
     source: str = ""  # comma-joined list of contributing files/paths
-    created_in: str = ""       # the file whose CREATE TABLE produced this record
-    columns_known: bool = True  # False when the reader recognises the table name only (EF)
+    created_in: str = ""  # the file whose CREATE TABLE produced this record
+    columns_known: bool = (
+        True  # False when the reader recognises the table name only (EF)
+    )
 
 
 def _clean_name(raw: str) -> str:
@@ -229,7 +236,9 @@ def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
             dir_parts = reldir.parts
             if len(dir_parts) < len(dir_suffix) or not all(
                 fnmatch.fnmatchcase(part, expected)
-                for part, expected in zip(dir_parts[-len(dir_suffix):], dir_suffix, strict=True)
+                for part, expected in zip(
+                    dir_parts[-len(dir_suffix) :], dir_suffix, strict=True
+                )
             ):
                 continue
         for name in filenames:
@@ -243,7 +252,10 @@ def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 MIGRATION_GLOBS = (
-    "**/migrations/*.sql", "**/migration/*.sql", "**/db/migration/*.sql", "**/changelog/*.sql",
+    "**/migrations/*.sql",
+    "**/migration/*.sql",
+    "**/db/migration/*.sql",
+    "**/changelog/*.sql",
     # diesel (Rust) gives each migration its own directory holding
     # `up.sql` and `down.sql` — one level deeper than the flat globs
     # above, whose `*` does not cross a path separator. Only `up.sql` is
@@ -330,6 +342,7 @@ class _ScanResult:
     quote/backtick/bracket span or an unterminated (possibly nested)
     block comment, *or* a bracket span's content contained a `)` with no
     matching `(` inside it — see Ruling R38 in the module docstring."""
+
     segments: list[tuple[str, str]]
     desynced: bool
 
@@ -375,7 +388,12 @@ def _scan_sql(text: str, *, backslash_escapes: bool) -> _ScanResult:
             bracket_paren_depth = 0
             while j < n:
                 c = text[j]
-                if backslash_escapes and kind in ("squote", "dquote") and c == "\\" and j + 1 < n:
+                if (
+                    backslash_escapes
+                    and kind in ("squote", "dquote")
+                    and c == "\\"
+                    and j + 1 < n
+                ):
                     j += 2
                     continue
                 if kind == "bracket":
@@ -404,7 +422,7 @@ def _scan_sql(text: str, *, backslash_escapes: bool) -> _ScanResult:
             if not closed:
                 return _ScanResult(segments, desynced=True)
             continue
-        if ch == "-" and text[i + 1:i + 2] == "-":
+        if ch == "-" and text[i + 1 : i + 2] == "-":
             if i > code_start:
                 segments.append(("code", text[code_start:i]))
             j = text.find("\n", i)
@@ -413,13 +431,13 @@ def _scan_sql(text: str, *, backslash_escapes: bool) -> _ScanResult:
             i = end
             code_start = i
             continue
-        if ch == "/" and text[i + 1:i + 2] == "*":
+        if ch == "/" and text[i + 1 : i + 2] == "*":
             if i > code_start:
                 segments.append(("code", text[code_start:i]))
             depth = 1
             j = i + 2
             while j < n and depth > 0:
-                two = text[j:j + 2]
+                two = text[j : j + 2]
                 if two == "/*":
                     depth += 1
                     j += 2
@@ -449,6 +467,7 @@ class _ScanResolution:
     clean but produced a different partition of the text — the dialect
     is genuinely ambiguous from this text alone, and `segments` holds
     the backslash-as-literal (standard SQL) reading in that case."""
+
     segments: list[tuple[str, str]] | None
     ambiguous: bool
 
@@ -532,7 +551,9 @@ def _strip_sql_comments(text: str, rel: str, warnings: list[str]) -> str:
     if resolution.ambiguous:
         warnings.append(f"{rel}: {_AMBIGUOUS_DIALECT_NOTE}")
     return "".join(
-        seg for kind, seg in resolution.segments if kind not in ("line_comment", "block_comment")
+        seg
+        for kind, seg in resolution.segments
+        if kind not in ("line_comment", "block_comment")
     )
 
 
@@ -665,7 +686,9 @@ def _split_sql_columns(
     return columns, pk
 
 
-def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]) -> None:
+def _apply_sql_file(
+    text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]
+) -> None:
     text = _strip_sql_comments(text, rel, warnings)
     # Same length as `text`, quoted spans replaced with filler — used only
     # to find the table's real closing paren and terminating `;` without a
@@ -680,7 +703,7 @@ def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warning
         name = m.group("name")
         open_idx = m.end() - 1  # CREATE_RE's match ends right after the "("
         close_idx = _matching_close_paren(masked, open_idx)
-        body = text[open_idx + 1:close_idx]
+        body = text[open_idx + 1 : close_idx]
         # The table's real closing paren may be followed by a
         # dialect-specific trailing clause before the statement actually
         # ends — MySQL `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`, SQLite
@@ -690,7 +713,7 @@ def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warning
         # still parses correctly: the body was already bounded above.
         semi_idx = masked.find(";", close_idx + 1)
         stmt_end = semi_idx + 1 if semi_idx != -1 else len(text)
-        ddl_text = text[m.start():stmt_end].strip()
+        ddl_text = text[m.start() : stmt_end].strip()
         if name in tables:
             existing = tables[name]
             if _dirname(existing.created_in) != _dirname(rel):
@@ -714,7 +737,12 @@ def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warning
             continue
         columns, pk = _split_sql_columns(body, rel, warnings)
         tables[name] = TableRecord(
-            name=name, columns=columns, pk=pk, ddl=ddl_text, source=rel, created_in=rel,
+            name=name,
+            columns=columns,
+            pk=pk,
+            ddl=ddl_text,
+            source=rel,
+            created_in=rel,
         )
 
     # A `CREATE TABLE` occurrence CREATE_RE never matched at all (a name
@@ -757,7 +785,9 @@ def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warning
         rest = _clean_type(tokens[1]) if len(tokens) > 1 else ""
         record = tables.get(name)
         if record is None:
-            warnings.append(f"ALTER TABLE ADD COLUMN on unknown table {name!r} in {rel}")
+            warnings.append(
+                f"ALTER TABLE ADD COLUMN on unknown table {name!r} in {rel}"
+            )
             continue
         if _dirname(record.created_in) != _dirname(rel):
             warnings.append(
@@ -788,7 +818,9 @@ def _apply_sql_file(text: str, rel: str, tables: dict[str, TableRecord], warning
         warnings.append(f"unsupported DDL in {rel}: {tail_match.group(0).strip()}")
 
 
-def _read_sql(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecord], list[str]]:
+def _read_sql(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[dict[str, TableRecord], list[str]]:
     warnings: list[str] = []
     found: set[Path] = set()
     for pattern in MIGRATION_GLOBS:
@@ -823,7 +855,9 @@ PRISMA_GLOB = "**/schema.prisma"
 PRISMA_MODEL_RE = re.compile(r"^model\s+(\w+)\s*\{(.*?)^\}", re.S | re.M)
 
 
-def _apply_prisma_file(text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]) -> None:
+def _apply_prisma_file(
+    text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]
+) -> None:
     for m in PRISMA_MODEL_RE.finditer(text):
         name = m.group(1)
         columns: list[tuple[str, str]] = []
@@ -844,15 +878,23 @@ def _apply_prisma_file(text: str, rel: str, tables: dict[str, TableRecord], warn
             _warn_duplicate("prisma model", name, rel, warnings)
             continue
         tables[name] = TableRecord(
-            name=name, columns=columns, pk=pk,
-            ddl=_reconstruct_ddl(name, columns, pk), source=rel, created_in=rel,
+            name=name,
+            columns=columns,
+            pk=pk,
+            ddl=_reconstruct_ddl(name, columns, pk),
+            source=rel,
+            created_in=rel,
         )
 
 
-def _read_prisma(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecord], list[str]]:
+def _read_prisma(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[dict[str, TableRecord], list[str]]:
     tables: dict[str, TableRecord] = {}
     warnings: list[str] = []
-    paths = sorted(_glob_via_walk(root, opts.kb_dir, PRISMA_GLOB), key=lambda p: relposix(root, p))
+    paths = sorted(
+        _glob_via_walk(root, opts.kb_dir, PRISMA_GLOB), key=lambda p: relposix(root, p)
+    )
     for path in paths:
         rel = relposix(root, path)
         try:
@@ -919,8 +961,8 @@ def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
         # plausible-looking, wrong, complete `sa.Integer` (reviewer
         # G-13 round 2). Slice through the end of `scope` instead so the
         # truncation stays visible.
-        end = call_close if scope[call_close:call_close + 1] == ")" else len(scope)
-        args = _split_top_level_quote_blind(scope[cm.end():end])
+        end = call_close if scope[call_close : call_close + 1] == ")" else len(scope)
+        args = _split_top_level_quote_blind(scope[cm.end() : end])
         if not args:
             continue
         cname = _clean_name(cm.group(1))
@@ -934,28 +976,38 @@ def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
     return columns, pk
 
 
-def _apply_alembic_file(text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]) -> None:
+def _apply_alembic_file(
+    text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]
+) -> None:
     for m in ALEMBIC_TABLE_RE.finditer(text):
         name = m.group(1)
         open_idx = text.find("(", m.start())
         if open_idx == -1:
             continue
         close_idx = _matching_close_paren(text, open_idx)
-        scope = text[open_idx:close_idx + 1]
+        scope = text[open_idx : close_idx + 1]
         columns, pk = _alembic_columns(scope)
         if name in tables:
             _warn_duplicate("alembic table", name, rel, warnings)
             continue
         tables[name] = TableRecord(
-            name=name, columns=columns, pk=pk,
-            ddl=_reconstruct_ddl(name, columns, pk), source=rel, created_in=rel,
+            name=name,
+            columns=columns,
+            pk=pk,
+            ddl=_reconstruct_ddl(name, columns, pk),
+            source=rel,
+            created_in=rel,
         )
 
 
-def _read_alembic(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecord], list[str]]:
+def _read_alembic(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[dict[str, TableRecord], list[str]]:
     tables: dict[str, TableRecord] = {}
     warnings: list[str] = []
-    paths = sorted(_glob_via_walk(root, opts.kb_dir, ALEMBIC_GLOB), key=lambda p: relposix(root, p))
+    paths = sorted(
+        _glob_via_walk(root, opts.kb_dir, ALEMBIC_GLOB), key=lambda p: relposix(root, p)
+    )
     for path in paths:
         rel = relposix(root, path)
         try:
@@ -978,26 +1030,37 @@ EF_GLOB = "**/Migrations/*.cs"
 EF_TABLE_RE = re.compile(r'migrationBuilder\.CreateTable\(\s*name:\s*"(\w+)"')
 
 
-def _apply_ef_file(text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]) -> None:
+def _apply_ef_file(
+    text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]
+) -> None:
     for m in EF_TABLE_RE.finditer(text):
         name = m.group(1)
         if name in tables:
             _warn_duplicate("EF table", name, rel, warnings)
             continue
         tables[name] = TableRecord(
-            name=name, columns=[], pk="", ddl=_reconstruct_ddl(name, [], ""), source=rel,
-            created_in=rel, columns_known=False,
+            name=name,
+            columns=[],
+            pk="",
+            ddl=_reconstruct_ddl(name, [], ""),
+            source=rel,
+            created_in=rel,
+            columns_known=False,
         )
 
 
-def _read_ef(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecord], list[str]]:
+def _read_ef(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[dict[str, TableRecord], list[str]]:
     """No column regex is given for EF in the brief — only the table
     name is recognised, so every EF-sourced `TableRecord` has an empty
     column list and `columns_known=False`, which the renderer states in
     the document."""
     tables: dict[str, TableRecord] = {}
     warnings: list[str] = []
-    paths = sorted(_glob_via_walk(root, opts.kb_dir, EF_GLOB), key=lambda p: relposix(root, p))
+    paths = sorted(
+        _glob_via_walk(root, opts.kb_dir, EF_GLOB), key=lambda p: relposix(root, p)
+    )
     for path in paths:
         rel = relposix(root, path)
         try:
@@ -1048,7 +1111,9 @@ def _sqlite_uri(path: Path, mode: str) -> str:
     return f"{path.resolve().as_uri()}?mode={mode}"
 
 
-def _read_sqlite_columns(con: sqlite3.Connection, table_name: str) -> tuple[list[tuple[str, str]], str]:
+def _read_sqlite_columns(
+    con: sqlite3.Connection, table_name: str
+) -> tuple[list[tuple[str, str]], str]:
     """`PRAGMA table_info(<table>)` rows are `(cid, name, type, notnull,
     dflt_value, pk)`; `cid` is already declaration order, but the explicit
     sort documents that guarantee rather than relying on it silently. A
@@ -1057,7 +1122,9 @@ def _read_sqlite_columns(con: sqlite3.Connection, table_name: str) -> tuple[list
     *position within the key*, not its `cid` — and rendered as a
     `PRIMARY KEY (...)` clause, matching the `sql` reader's shape."""
     quoted = table_name.replace('"', '""')
-    rows = sorted(con.execute(f'PRAGMA table_info("{quoted}")').fetchall(), key=lambda r: r[0])
+    rows = sorted(
+        con.execute(f'PRAGMA table_info("{quoted}")').fetchall(), key=lambda r: r[0]
+    )
     columns: list[tuple[str, str]] = []
     pk_positions: list[tuple[int, str]] = []
     for _cid, col_name, col_type, notnull, _dflt, pk_flag in rows:
@@ -1074,7 +1141,9 @@ def _read_sqlite_columns(con: sqlite3.Connection, table_name: str) -> tuple[list
     return columns, pk
 
 
-def _read_sqlite(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRecord], list[str]]:
+def _read_sqlite(
+    root: Path, opts: CodeIngestOptions
+) -> tuple[dict[str, TableRecord], list[str]]:
     """The only code path in this module that opens a `.db` file — and
     only for a path already in `opts.db_paths` (spec §3.11: never a file
     merely discovered on disk). Opened read-only via `_sqlite_uri`'s
@@ -1103,7 +1172,9 @@ def _read_sqlite(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRe
                     # other reader's name comes from a `\w+`-shaped regex
                     # capture that can never contain one, but a raw
                     # sqlite_master name is unconstrained.
-                    warnings.append(f"skipping table with whitespace in its name in {label}: {name!r}")
+                    warnings.append(
+                        f"skipping table with whitespace in its name in {label}: {name!r}"
+                    )
                     continue
                 columns, pk = _read_sqlite_columns(con, name)
                 if name in tables:
@@ -1113,7 +1184,12 @@ def _read_sqlite(root: Path, opts: CodeIngestOptions) -> tuple[dict[str, TableRe
                     continue
                 ddl = (sql_text or "").strip() or _reconstruct_ddl(name, columns, pk)
                 tables[name] = TableRecord(
-                    name=name, columns=columns, pk=pk, ddl=ddl, source=label, created_in=label,
+                    name=name,
+                    columns=columns,
+                    pk=pk,
+                    ddl=ddl,
+                    source=label,
+                    created_in=label,
                 )
         except Exception as exc:  # noqa: BLE001 -- defense in depth, see comment below
             # a failure partway through this db's tables must not also
@@ -1166,7 +1242,11 @@ def _pk_columns(pk: str) -> set[str]:
         return set()
     m = _PK_LIST_RE.search(pk)
     if m:
-        return {c.strip().strip('"`[]').casefold() for c in m.group(1).split(",") if c.strip()}
+        return {
+            c.strip().strip('"`[]').casefold()
+            for c in m.group(1).split(",")
+            if c.strip()
+        }
     return {pk.casefold()}
 
 
@@ -1207,7 +1287,11 @@ def _render_section(record: TableRecord) -> CodeSection:
     # clause wrapped across source lines back to the one-line field this
     # summary is persisted as (fix wave 3, finding 2).
     pk_match = _PK_LIST_RE.search(record.pk)
-    pk_phrase = " ".join(((pk_match.group(1).strip() if pk_match else record.pk) or "none detected").split())
+    pk_phrase = " ".join(
+        (
+            (pk_match.group(1).strip() if pk_match else record.pk) or "none detected"
+        ).split()
+    )
     summary = (
         f"Table {record.name}: {columns_phrase}, "
         f"PK {pk_phrase} (source: {record.source})."

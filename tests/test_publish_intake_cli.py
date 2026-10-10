@@ -73,8 +73,12 @@ class TestPublishViaIntake:
             return 200, {"state": "done", "pr_url": "https://gh/pull/4", "detail": ""}
 
         pr = publish_mod.publish_via_intake(
-            root / ".kb", "https://kb.test", "child-a",
-            poll_interval=0, timeout=5, http_get_json=fake_get,
+            root / ".kb",
+            "https://kb.test",
+            "child-a",
+            poll_interval=0,
+            timeout=5,
+            http_get_json=fake_get,
         )
         assert pr == "https://gh/pull/4"
         tags = _git(bare, "tag", "--list")
@@ -91,8 +95,12 @@ class TestPublishViaIntake:
 
         with pytest.raises(publish_mod.PublishError) as exc:
             publish_mod.publish_via_intake(
-                root / ".kb", "https://kb.test", "child-a",
-                poll_interval=0, timeout=5, http_get_json=fake_get,
+                root / ".kb",
+                "https://kb.test",
+                "child-a",
+                poll_interval=0,
+                timeout=5,
+                http_get_json=fake_get,
             )
         assert "boom" in str(exc.value)
 
@@ -104,8 +112,12 @@ class TestPublishViaIntake:
 
         with pytest.raises(publish_mod.PublishError) as exc:
             publish_mod.publish_via_intake(
-                root / ".kb", "https://kb.test", "child-a",
-                poll_interval=0, timeout=0.1, http_get_json=fake_get,
+                root / ".kb",
+                "https://kb.test",
+                "child-a",
+                poll_interval=0,
+                timeout=0.1,
+                http_get_json=fake_get,
             )
         assert "Actions" in str(exc.value)
 
@@ -115,8 +127,11 @@ class TestPublishViaIntake:
         root, _ = child
         with pytest.raises(publish_mod.PublishError) as exc:
             publish_mod.publish_via_intake(
-                root / ".kb", "https://kb.test", "child-a",
-                poll_interval=0, timeout=5,
+                root / ".kb",
+                "https://kb.test",
+                "child-a",
+                poll_interval=0,
+                timeout=5,
                 http_get_json=lambda url: (200, {"state": "error", "pr_url": ""}),
             )
         msg = str(exc.value)
@@ -133,8 +148,12 @@ class TestPublishViaIntake:
 
         with pytest.raises(publish_mod.PublishError) as exc:
             publish_mod.publish_via_intake(
-                root / ".kb", "https://kb.test", "child-a",
-                poll_interval=1, timeout=600, http_get_json=fake_get,
+                root / ".kb",
+                "https://kb.test",
+                "child-a",
+                poll_interval=1,
+                timeout=600,
+                http_get_json=fake_get,
             )
         assert len(calls) == 1
         assert "older than 1.10.0" in str(exc.value)
@@ -166,8 +185,10 @@ def status_route(tmp_path):
     from strata_kb.web import intake_routes
 
     cfg = intake.IntakeConfig(
-        hub_ref=str(tmp_path / "no-hub"), audience="aud",
-        creds=ghapp.AppCreds("1", "unused"), key_resolver=lambda t: None,
+        hub_ref=str(tmp_path / "no-hub"),
+        audience="aud",
+        creds=ghapp.AppCreds("1", "unused"),
+        key_resolver=lambda t: None,
     )
     store = intake.StatusStore()
     app = Starlette(routes=intake_routes.build_intake_routes(cfg, store))
@@ -178,24 +199,38 @@ class TestPublishViaIntakeAgainstTheRealStatusRoute:
     def test_done_returns_the_pr_url(self, child, status_route):
         root, _ = child
         client, store = status_route
-        store.set("child-a", gitio.head_commit(root), "done", pr_url="https://gh/pull/7")
+        store.set(
+            "child-a", gitio.head_commit(root), "done", pr_url="https://gh/pull/7"
+        )
         pr = publish_mod.publish_via_intake(
-            root / ".kb", "https://kb.test", "child-a",
-            poll_interval=0, timeout=5, http_get_json=_route_get_json(client),
+            root / ".kb",
+            "https://kb.test",
+            "child-a",
+            poll_interval=0,
+            timeout=5,
+            http_get_json=_route_get_json(client),
         )
         assert pr == "https://gh/pull/7"
 
-    def test_error_never_leaks_detail_and_names_the_actions_run(self, child, status_route):
+    def test_error_never_leaks_detail_and_names_the_actions_run(
+        self, child, status_route
+    ):
         root, _ = child
         client, store = status_route
         store.set(
-            "child-a", gitio.head_commit(root), "error",
+            "child-a",
+            gitio.head_commit(root),
+            "error",
             detail="fatal: /srv/hub/.git/index.lock exists",
         )
         with pytest.raises(publish_mod.PublishError) as exc:
             publish_mod.publish_via_intake(
-                root / ".kb", "https://kb.test", "child-a",
-                poll_interval=0, timeout=5, http_get_json=_route_get_json(client),
+                root / ".kb",
+                "https://kb.test",
+                "child-a",
+                poll_interval=0,
+                timeout=5,
+                http_get_json=_route_get_json(client),
             )
         assert "index.lock" not in str(exc.value)
         assert "Actions run for tag" in str(exc.value)
@@ -291,7 +326,8 @@ class TestCIPublish:
                 "https://actions.local/token": (200, {"value": "oidc-jwt"}),
                 "https://kb.test/intake/manifest": (200, {"files": {}}),
                 "https://kb.test/intake/publish": (
-                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
+                    200,
+                    {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
                 ),
             }
         )
@@ -308,7 +344,8 @@ class TestCIPublish:
                 "https://kb.test/intake/manifest": (200, {"files": {}}),
                 "https://actions.local/token": (200, {"value": "oidc-jwt"}),
                 "https://kb.test/intake/publish": (
-                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
+                    200,
+                    {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
                 ),
             }
         )
@@ -329,14 +366,17 @@ class TestCIPublish:
                 "https://kb.test/intake/manifest": (503, {"detail": "down"}),
                 "https://actions.local/token": (200, {"value": "oidc-jwt"}),
                 "https://kb.test/intake/publish": (
-                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
+                    200,
+                    {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
                 ),
             }
         )
         out = cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
         assert out == "https://gh/pull/8"  # still publishes: full upload
 
-    def test_manifest_connection_down_falls_back_to_full_upload(self, child, monkeypatch):
+    def test_manifest_connection_down_falls_back_to_full_upload(
+        self, child, monkeypatch
+    ):
         root, _ = child
         self._env(monkeypatch)
         http = FakeHTTP(
@@ -344,7 +384,8 @@ class TestCIPublish:
                 "https://kb.test/intake/manifest": (0, b"connection refused"),
                 "https://actions.local/token": (200, {"value": "oidc-jwt"}),
                 "https://kb.test/intake/publish": (
-                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/9"},
+                    200,
+                    {"repo_id": "child-a", "pr_url": "https://gh/pull/9"},
                 ),
             }
         )
@@ -405,7 +446,8 @@ class TestCIPublish:
                 "https://kb.test/intake/manifest": (200, {"files": {}}),
                 "https://actions.local/token": (200, {"value": "oidc-jwt"}),
                 "https://kb.test/intake/publish": (
-                    200, {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
+                    200,
+                    {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
                 ),
             }
         )
@@ -413,7 +455,10 @@ class TestCIPublish:
         assert out == "https://gh/pull/8"
         assert http.posted  # the warn does not block the upload
         printed = capsys.readouterr().out
-        assert "[warn] 1 section(s) in 1 doc(s) are published without SME review" in printed
+        assert (
+            "[warn] 1 section(s) in 1 doc(s) are published without SME review"
+            in printed
+        )
 
     def test_run_require_reviewed_refuses_before_any_upload(self, child, monkeypatch):
         root, _ = child
@@ -422,8 +467,11 @@ class TestCIPublish:
         http = FakeHTTP({})  # any HTTP call at all is a bug for this path
         with pytest.raises(cipublish.CIPublishError) as exc:
             cipublish.run(
-                root / ".kb", "https://kb.test", "child-a",
-                require_reviewed=True, http=http,
+                root / ".kb",
+                "https://kb.test",
+                "child-a",
+                require_reviewed=True,
+                http=http,
             )
         assert "without SME review" in str(exc.value)
         assert http.calls == []

@@ -9,6 +9,7 @@ same way `tests/test_init.py`'s QUICKSTART pins already do: distinctive
 multi-word phrases, matched against whitespace-normalised text so a future
 re-wrap of the prose does not itself break this test.
 """
+
 import re
 from pathlib import Path
 
@@ -123,8 +124,7 @@ def test_readme_pins_the_exit_code_contract():
     assert (
         "`kb ticket lint --fail-on-stale`, `kb mission lint --fail-on-stale`; "
         "`kb doctor` also exits 2, with or without `--context`, when the hub "
-        "cache itself is stale"
-        in text
+        "cache itself is stale" in text
     )
     assert "kb ba lint" not in text
     assert "--fail-on-stale` only" not in text
@@ -146,7 +146,7 @@ def test_readme_says_usage_counts_subagents_and_never_guesses_a_price():
 def _section(text: str, heading: str) -> str:
     start = text.index(heading)
     nxt = text.find("\n## ", start + len(heading))
-    return text[start: nxt if nxt != -1 else len(text)]
+    return text[start : nxt if nxt != -1 else len(text)]
 
 
 def test_readme_stats_example_sits_inside_the_l2_budget():
@@ -154,7 +154,8 @@ def test_readme_stats_example_sits_inside_the_l2_budget():
     product's own `kb build --strict`."""
     block = re.search(r"\$ kb stats\n(.*?)```", _readme_text(), re.S).group(1)
     rows = [
-        line.split() for line in block.splitlines()
+        line.split()
+        for line in block.splitlines()
         if line and not line.startswith(("L0", "doc"))
     ]
     assert rows
@@ -223,8 +224,13 @@ def test_readme_command_table_lists_every_top_level_command():
 
 def test_readme_documents_the_usage_and_ticket_subcommands():
     table = _normalised(_section(_readme_text(), "## 6. Command reference"))
-    for sub in ("kb ticket check", "kb ticket export", "kb usage ingest-transcript",
-                "kb usage note", "kb usage report"):
+    for sub in (
+        "kb ticket check",
+        "kb ticket export",
+        "kb usage ingest-transcript",
+        "kb usage note",
+        "kb usage report",
+    ):
         assert f"`{sub}" in table, sub
 
 

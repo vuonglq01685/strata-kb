@@ -67,7 +67,11 @@ def test_parse_plan_reads_numbers_dependencies_and_paths():
     assert tasks[0].depends_on == ()
     assert tasks[1].depends_on == (1,)
     assert tasks[3].depends_on == (1, 2, 3)
-    assert tasks[1].paths == ("src/app/api.py", "src/app/__init__.py", "tests/test_api.py")
+    assert tasks[1].paths == (
+        "src/app/api.py",
+        "src/app/__init__.py",
+        "tests/test_api.py",
+    )
     assert tasks[0].paths == ("src/app/model.py", "tests/test_model.py")
 
 
@@ -219,6 +223,9 @@ def test_check_reports_an_unclosed_code_fence():
 
 def test_render_and_json():
     waves = [[1, 3], [2], [4]]
-    assert planwaves.render(waves) == "wave 1: task 1, task 3\nwave 2: task 2\nwave 3: task 4"
+    assert (
+        planwaves.render(waves)
+        == "wave 1: task 1, task 3\nwave 2: task 2\nwave 3: task 4"
+    )
     assert planwaves.to_json([], waves) == {"errors": [], "waves": [[1, 3], [2], [4]]}
     assert planwaves.to_json(["e"], []) == {"errors": ["e"], "waves": []}

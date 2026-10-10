@@ -167,8 +167,13 @@ def collect_pending(
                 continue
             out.append(
                 PendingSection(
-                    entry.id, sec.id, sec.title, sec.file, strip_tables(body),
-                    row=row, l3_sha256=quality.digest(body),
+                    entry.id,
+                    sec.id,
+                    sec.title,
+                    sec.file,
+                    strip_tables(body),
+                    row=row,
+                    l3_sha256=quality.digest(body),
                 )
             )
     return out
@@ -184,7 +189,9 @@ def build_section_prompt(section: PendingSection) -> str:
 
 
 def build_doc_prompt(title: str, l1_summaries: list[str]) -> str:
-    return DOC_PROMPT.format(title=title, l1_lines="\n".join(f"- {s}" for s in l1_summaries))
+    return DOC_PROMPT.format(
+        title=title, l1_lines="\n".join(f"- {s}" for s in l1_summaries)
+    )
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)
@@ -247,7 +254,9 @@ def parse_json_reply(text: str, required: tuple[str, ...]) -> dict[str, str]:
     raise ValueError("no JSON object in reply")
 
 
-def replace_marker(l2_text: str, section_id: str, summary: str, occurrence: int = 0) -> str:
+def replace_marker(
+    l2_text: str, section_id: str, summary: str, occurrence: int = 0
+) -> str:
     """Replace the `occurrence`-th (0-based, file order) marker for
     `section_id`. Ids are not unique within a file, so a caller writing a
     specific manifest row's summary must target that row's own marker
@@ -262,7 +271,7 @@ def replace_marker(l2_text: str, section_id: str, summary: str, occurrence: int 
         if idx == -1:
             raise ValueError(f"marker not found: {marker} (occurrence {occurrence})")
         start = idx + len(marker)
-    return l2_text[: idx] + summary + l2_text[start:]
+    return l2_text[:idx] + summary + l2_text[start:]
 
 
 @dataclass
@@ -277,7 +286,10 @@ class SummarizeReport:
 
 def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
     if section.kind == "table_only":
-        return {"l2_summary": "", "l1_summary": TABLE_ONLY_LABEL.format(title=section.title)}
+        return {
+            "l2_summary": "",
+            "l1_summary": TABLE_ONLY_LABEL.format(title=section.title),
+        }
     if section.kind == "brief":
         return {
             "l2_summary": quality.prose_only(section.l3_body),
@@ -292,7 +304,9 @@ def _summarize_one(runner, section: PendingSection) -> dict[str, str]:
         except (RunnerError, ValueError) as exc:
             last = exc
             if attempt == 0 and RETRY_PAUSE_SECONDS:
-                time.sleep(RETRY_PAUSE_SECONDS + random.random() * RETRY_PAUSE_SECONDS / 2)  # noqa: S311 -- retry backoff jitter, not security-sensitive
+                time.sleep(
+                    RETRY_PAUSE_SECONDS + random.random() * RETRY_PAUSE_SECONDS / 2
+                )  # noqa: S311 -- retry backoff jitter, not security-sensitive
             continue
         if len(reply["l2_summary"]) <= limit:
             return reply
@@ -361,8 +375,11 @@ def _provenance(runner, section: PendingSection) -> models.Provenance:
     if section.kind != "llm":
         return models.Provenance(runner="none", prompt_sha=PROMPT_SHA, at=at)
     return models.Provenance(
-        runner=getattr(runner, "name", ""), model=getattr(runner, "model", ""),
-        effort=getattr(runner, "effort", ""), prompt_sha=PROMPT_SHA, at=at,
+        runner=getattr(runner, "name", ""),
+        model=getattr(runner, "model", ""),
+        effort=getattr(runner, "effort", ""),
+        prompt_sha=PROMPT_SHA,
+        at=at,
     )
 
 
@@ -417,13 +434,18 @@ def _apply_results(
                 continue
             key = f"{doc}/{sec.id}"
             if sec.file not in l2_cache:
-                l2_cache[sec.file] = (kb_dir / doc / f"{sec.file}.md").read_text(encoding="utf-8")
+                l2_cache[sec.file] = (kb_dir / doc / f"{sec.file}.md").read_text(
+                    encoding="utf-8"
+                )
             index = marker_index[row]
             assert index is not None  # noqa: S101 -- rows holds only rows pending in the snapshot, which all have an index
             occurrence = index - consumed.get((sec.file, sec.id), 0)
             try:
                 l2_cache[sec.file] = replace_marker(
-                    l2_cache[sec.file], sec.id, pair["l2_summary"], occurrence=occurrence
+                    l2_cache[sec.file],
+                    sec.id,
+                    pair["l2_summary"],
+                    occurrence=occurrence,
                 )
             except ValueError:
                 report.failed.append(key)
@@ -437,7 +459,9 @@ def _apply_results(
             sec.reviewed = None
             report.summarized.append(key)
         for stem, text in l2_cache.items():
-            (kb_dir / doc / f"{stem}.md").write_text(text, encoding="utf-8", newline="\n")
+            (kb_dir / doc / f"{stem}.md").write_text(
+                text, encoding="utf-8", newline="\n"
+            )
         models.save_yaml_model(manifest_path, manifest)
 
 
@@ -453,8 +477,10 @@ def _scaffold_lines(lines: list[str]) -> list[str]:
         if line.lstrip().startswith("|") or line.startswith("Figure: "):
             out.append(line)
             continue
-        if line.strip() == "" and out and (
-            out[-1].lstrip().startswith("|") or out[-1].startswith("Figure: ")
+        if (
+            line.strip() == ""
+            and out
+            and (out[-1].lstrip().startswith("|") or out[-1].startswith("Figure: "))
         ):
             out.append("")  # the single blank that closes a table/figure block
         # anything else is prose/old summary/old marker -> dropped
@@ -490,8 +516,13 @@ def reset_section_prose(l2_text: str, section_id: str, occurrence: int = 0) -> s
                 start = i
                 break
     if start is None:
-        raise ValueError(f"section not found in L2: {section_id} (occurrence {occurrence})")
-    end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+        raise ValueError(
+            f"section not found in L2: {section_id} (occurrence {occurrence})"
+        )
+    end = next(
+        (j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")),
+        len(lines),
+    )
     block = _scaffold_lines(lines[start:end])
     if end < len(lines) and block and block[-1] != "":
         block.append("")
@@ -599,7 +630,11 @@ def _reset_one_row(
     None, was_reviewed). Mutates `manifest`/`l2_cache` in place on success —
     the caller decides whether to persist them."""
     if item.row >= len(manifest.sections):
-        return None, f"{doc}/{item.section_id}: manifest row {item.row} no longer exists", False
+        return (
+            None,
+            f"{doc}/{item.section_id}: manifest row {item.row} no longer exists",
+            False,
+        )
     sec = manifest.sections[item.row]
     occurrence = occurrences[item.row]
     if sec.id != item.section_id:
@@ -652,7 +687,9 @@ def _redo_reset_one_doc(
             reset.append(reset_id)
     if changed:
         for stem, text in l2_cache.items():
-            (kb_dir / doc / f"{stem}.md").write_text(text, encoding="utf-8", newline="\n")
+            (kb_dir / doc / f"{stem}.md").write_text(
+                text, encoding="utf-8", newline="\n"
+            )
         models.save_yaml_model(manifest_path, manifest)
     return reset, reviewed_reset, failed
 
@@ -686,7 +723,12 @@ def _fill_doc_summaries(
             continue  # doc not complete yet
         if not any(s.summary.strip() for s in manifest.sections):
             continue  # no section summary to draw on — never fabricate one
-        todo.append((entry, build_doc_prompt(entry.title, [s.summary for s in manifest.sections])))
+        todo.append(
+            (
+                entry,
+                build_doc_prompt(entry.title, [s.summary for s in manifest.sections]),
+            )
+        )
     if not todo:
         return
 

@@ -377,7 +377,9 @@ def test_reingesting_a_longer_transcript_reproduces_the_earlier_rows(tmp_path: P
 def test_a_malformed_line_does_not_lose_the_rest_of_the_file(tmp_path: Path):
     path = tmp_path / "t.jsonl"
     path.write_text(
-        json.dumps(usage_row("a1")) + "\n{ not json\n" + json.dumps(usage_row("a2"))
+        json.dumps(usage_row("a1"))
+        + "\n{ not json\n"
+        + json.dumps(usage_row("a2"))
         + "\n",
         encoding="utf-8",
     )
@@ -580,7 +582,9 @@ def tool_use_row(uuid: str, name: str, tool_input: dict, **kw):
         "uuid": uuid,
         "sessionId": "sess-1",
         "timestamp": "2026-08-23T09:59:30.000Z",
-        "message": {"content": [{"type": "tool_use", "name": name, "input": tool_input}]},
+        "message": {
+            "content": [{"type": "tool_use", "name": name, "input": tool_input}]
+        },
     }
     row.update(kw)
     return row
@@ -668,7 +672,9 @@ def test_the_collapsed_row_keeps_the_first_rows_attribution(tmp_path: Path):
         [
             usage_row("a1", requestId="req_1"),
             tool_use_row(
-                "a2", "Read", {"file_path": "tickets/open-new-flight.md"},
+                "a2",
+                "Read",
+                {"file_path": "tickets/open-new-flight.md"},
                 requestId="req_1",
                 message={"model": "claude-sonnet-5", "usage": {"output_tokens": 100}},
             ),
@@ -685,8 +691,11 @@ def test_a_dropped_duplicate_still_advances_the_cursor(tmp_path: Path):
     # named inside it must still attribute every later call.
     dup = usage_row("a2", requestId="req_1")
     dup["message"]["content"] = [
-        {"type": "tool_use", "name": "Read",
-         "input": {"file_path": "tickets/open-new-flight.md"}}
+        {
+            "type": "tool_use",
+            "name": "Read",
+            "input": {"file_path": "tickets/open-new-flight.md"},
+        }
     ]
     path = write_transcript(
         tmp_path,
@@ -755,7 +764,9 @@ def test_hold_back_last_drops_only_the_final_call(tmp_path: Path):
     assert [r.uuid for r in rows] == ["a1"]
 
 
-def test_top_level_cache_creation_is_read_as_5m_when_the_split_is_absent(tmp_path: Path):
+def test_top_level_cache_creation_is_read_as_5m_when_the_split_is_absent(
+    tmp_path: Path,
+):
     r = usage_row("a1")
     del r["message"]["usage"]["cache_creation"]
 
@@ -775,7 +786,9 @@ def test_modifiers_are_copied_from_the_usage_block(tmp_path: Path):
         }
     )
 
-    row = transcript.rows_from_transcript(write_transcript(tmp_path, [r]), actor="dev")[0]
+    row = transcript.rows_from_transcript(write_transcript(tmp_path, [r]), actor="dev")[
+        0
+    ]
 
     assert (row.inference_geo, row.speed, row.service_tier, row.web_searches) == (
         "us",
@@ -828,7 +841,9 @@ def test_a_subagent_inherits_the_parents_ticket_and_phase_until_it_names_its_own
         tmp_path,
         [
             skill_call_row("dev-execute"),  # 09:58:00
-            user_row("work on docs/impl/ATM-7/plan.md", timestamp="2026-08-23T09:59:01.000Z"),
+            user_row(
+                "work on docs/impl/ATM-7/plan.md", timestamp="2026-08-23T09:59:01.000Z"
+            ),
             user_row("now tickets/ATM-9.md", timestamp="2026-08-23T10:30:00.000Z"),
         ],
         name="main.jsonl",
@@ -837,7 +852,9 @@ def test_a_subagent_inherits_the_parents_ticket_and_phase_until_it_names_its_own
         tmp_path,
         [
             usage_row("s1", timestamp="2026-08-23T10:00:00.000Z"),
-            user_row("read docs/impl/ATM-8/plan.md", timestamp="2026-08-23T10:00:01.000Z"),
+            user_row(
+                "read docs/impl/ATM-8/plan.md", timestamp="2026-08-23T10:00:01.000Z"
+            ),
             usage_row("s2", timestamp="2026-08-23T10:00:02.000Z"),
         ],
         name="sub.jsonl",
@@ -869,7 +886,9 @@ def test_forced_ticket_beats_both_cursors_for_a_subagent(tmp_path: Path):
 
 
 def test_a_subagents_own_skill_switch_overrides_the_inherited_phase(tmp_path: Path):
-    main = write_transcript(tmp_path, [skill_call_row("dev-execute")], name="main.jsonl")
+    main = write_transcript(
+        tmp_path, [skill_call_row("dev-execute")], name="main.jsonl"
+    )
     switch = skill_call_row("dev-review")
     switch["timestamp"] = "2026-08-23T10:00:01.000Z"
     sub = write_transcript(

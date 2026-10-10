@@ -87,7 +87,11 @@ def _row_rects(
     for i, row in enumerate(order):
         top, bottom = rows[row]
         upper = table.top if i == 0 else (rows[order[i - 1]][1] + top) / 2
-        lower = table.bottom if i == len(order) - 1 else (bottom + rows[order[i + 1]][0]) / 2
+        lower = (
+            table.bottom
+            if i == len(order) - 1
+            else (bottom + rows[order[i + 1]][0]) / 2
+        )
         rects[row] = (upper, lower)
     return rects
 
@@ -119,7 +123,9 @@ def empty_glyph_cells(
             if (row, col) in occupied:
                 continue
             top, bottom = rows[row]
-            missing.append((row, col, Box(left=left, top=top, right=right, bottom=bottom)))
+            missing.append(
+                (row, col, Box(left=left, top=top, right=right, bottom=bottom))
+            )
     return missing
 
 

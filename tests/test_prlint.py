@@ -62,9 +62,9 @@ def test_an_empty_body_reports_every_section_missing():
     # Exact set: no plan_dir given, so a plan-dir-unset warning rides along
     # (see test_no_plan_dir_is_a_warning_not_a_failure) alongside the
     # missing-section errors this test pins — nothing else.
-    assert _codes("") == {
-        (name, "missing-section") for name in REQUIRED_SECTIONS
-    } | {("Testing", "plan-dir-unset")}
+    assert _codes("") == {(name, "missing-section") for name in REQUIRED_SECTIONS} | {
+        ("Testing", "plan-dir-unset")
+    }
 
 
 def test_a_missing_heading_is_reported_by_name():
@@ -108,7 +108,9 @@ def test_testing_with_an_empty_fence_is_rejected():
 
 def test_testing_accepts_a_tilde_fence_and_an_info_string():
     assert lint_body(_body(Testing=_testing("~~~text\n12 passed in 0.4s\n~~~"))).passed
-    assert lint_body(_body(Testing=_testing("```console\n12 passed in 0.4s\n```"))).passed
+    assert lint_body(
+        _body(Testing=_testing("```console\n12 passed in 0.4s\n```"))
+    ).passed
 
 
 def test_output_hidden_inside_a_comment_does_not_count_as_evidence():
@@ -124,9 +126,12 @@ def test_output_hidden_by_a_comment_opened_on_the_heading_line_does_not_count_as
     # heading had matched, so a fence and its output that only ever existed
     # inside the still-open comment were captured as real content and read
     # as visible evidence.
-    body = _body(Testing=_testing(_FENCE)).replace(
-        "## Testing\n\n```", "## Testing <!--\n\n```"
-    ) + "\n\n-->"
+    body = (
+        _body(Testing=_testing(_FENCE)).replace(
+            "## Testing\n\n```", "## Testing <!--\n\n```"
+        )
+        + "\n\n-->"
+    )
     assert ("Testing", "empty-section") in _codes(body)
 
 
@@ -179,7 +184,9 @@ def test_an_unbalanced_comment_inside_a_fence_fails_closed():
     # Same rule from the other direction: an unclosed `<!--` started inside
     # a fence never lets that fence close either, so it swallows the rest of
     # the body exactly as an unbalanced fence does on its own.
-    body = _body(Testing=_testing("```\n<!-- oops\n12 passed\n```")) + "\n\n## Notes\n\nx"
+    body = (
+        _body(Testing=_testing("```\n<!-- oops\n12 passed\n```")) + "\n\n## Notes\n\nx"
+    )
     assert not lint_body(body).passed
 
 
@@ -283,7 +290,9 @@ def test_ticket_id_is_the_first_upper_dash_number_token():
 
 
 def test_ticket_id_reads_a_mission_user_story_id():
-    assert ticket_id_of("M-myflix-search-US2 — search by title") == "M-myflix-search-US2"
+    assert (
+        ticket_id_of("M-myflix-search-US2 — search by title") == "M-myflix-search-US2"
+    )
     assert ticket_id_of("M-x1-US10") == "M-x1-US10"
 
 

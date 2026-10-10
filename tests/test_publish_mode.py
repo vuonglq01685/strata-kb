@@ -40,7 +40,9 @@ def test_explicit_direct_still_publishes_to_a_remote_hub(
     assert (hub / "federation" / "demo-kb" / "index.yaml").exists()
 
 
-def test_auto_still_picks_direct_for_a_local_path_hub(git_kb, hub_worktree, monkeypatch):
+def test_auto_still_picks_direct_for_a_local_path_hub(
+    git_kb, hub_worktree, monkeypatch
+):
     monkeypatch.setattr("strata_kb.ghio.can_open_pr", lambda root: True)
     report = publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
     assert report.mode == "direct"

@@ -126,7 +126,9 @@ DEFAULT_CHAPTER_PATTERN = r"^chapter\s+(\d+)\s*[.:–—-]?\s*(.*)$"
 # nothing ("APPENDIX. SEARCH AND RESCUE SIGNALS" — ICAO Annex 12). That form
 # is only accepted when a separator follows the word, so a heading that merely
 # starts with it still takes the identifier branch.
-_UNNUMBERED_PART = r"(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)"
+_UNNUMBERED_PART = (
+    r"(?:\s*[.:–—-]\s*|\s+([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)\s*[.:–—-]?\s*)"
+)
 DEFAULT_APPENDIX_PATTERN = rf"^appendix{_UNNUMBERED_PART}(.*)$"
 DEFAULT_ATTACHMENT_PATTERN = rf"^attachment{_UNNUMBERED_PART}(.*)$"
 # The title is optional so a bare "5.15" keeps its id instead of backtracking
@@ -502,8 +504,11 @@ class _TreeBuilder:
             self.stack = list(self.seen[sid])
             return
         node = _Node(
-            id=sid, title=normalized, depth=parent.depth + 1,
-            fallback=True, page=self.last_page,
+            id=sid,
+            title=normalized,
+            depth=parent.depth + 1,
+            fallback=True,
+            page=self.last_page,
         )
         parent.children.append(node)
         self.stack.append(node)
@@ -615,8 +620,10 @@ def _numeric_heading_id(item: DocItem, cfg: HeadingConfig) -> str | None:
     if item.kind != "heading":
         return None
     parsed = parse_section_id(" ".join(item.text.split()), cfg)
-    if not parsed or "." not in parsed[0] or not all(
-        p.isdecimal() for p in parsed[0].split(".")
+    if (
+        not parsed
+        or "." not in parsed[0]
+        or not all(p.isdecimal() for p in parsed[0].split("."))
     ):
         return None
     return parsed[0]
@@ -626,7 +633,9 @@ def _id_tuple(sid: str) -> tuple[int, ...]:
     return tuple(int(p) for p in sid.split("."))
 
 
-def _find_inversion(page_items: list[DocItem], cfg: HeadingConfig) -> tuple[str, str] | None:
+def _find_inversion(
+    page_items: list[DocItem], cfg: HeadingConfig
+) -> tuple[str, str] | None:
     """First pair of numbered *sibling* headings on this page whose ids
     descend (5.84 then 5.83) — docling read the columns out of order."""
     last_by_parent: dict[str, str] = {}
@@ -716,18 +725,17 @@ def build_units_with_notes(
                 froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
             )
         root = _build_tree(rest, cfg, notes=notes, repeated=repeated)
-        units = order_units(front_units + _units_from_tree(
-            root, max_depth, min_tokens, max_unit_tokens, None
-        ))
+        units = order_units(
+            front_units
+            + _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, None)
+        )
         return _dedupe_ids(units, notes), notes
     units: list[SectionUnit] = []
     for part, part_items in split_by_parts(items, parts):
         if not part_items:
             continue
         root = _build_tree(part_items, cfg, part=part, notes=notes, repeated=repeated)
-        units += _units_from_tree(
-            root, max_depth, min_tokens, max_unit_tokens, part.id
-        )
+        units += _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, part.id)
     return _dedupe_ids(order_units(units), notes), notes
 
 

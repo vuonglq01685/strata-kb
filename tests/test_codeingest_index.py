@@ -36,12 +36,17 @@ def _entry(tmp_path, index_revision: str):
     )
     models.save_yaml_model(
         entry / "index.yaml",
-        models.KBIndex(docs=[models.IndexEntry(id="demo-code", title="t", revision=index_revision)]),
+        models.KBIndex(
+            docs=[models.IndexEntry(id="demo-code", title="t", revision=index_revision)]
+        ),
     )
     models.save_yaml_model(
         entry / "_meta.yaml",
-        FederationMeta(repo_id="demo", source_commit="abc1234",
-                       published_at="2026-09-25T00:00:00+00:00"),
+        FederationMeta(
+            repo_id="demo",
+            source_commit="abc1234",
+            published_at="2026-09-25T00:00:00+00:00",
+        ),
     )
     return tmp_path / "federation"
 

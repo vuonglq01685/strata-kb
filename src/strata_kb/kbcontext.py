@@ -237,16 +237,18 @@ def parse(text: str) -> KBContext:
         raise KBContextError("kb-context block is empty or malformed")
     version = str(payload.get("version") or "").strip()
     if not version:
-        raise KBContextError("kb-context is missing 'version' (commit hash when the BA wrote it)")
+        raise KBContextError(
+            "kb-context is missing 'version' (commit hash when the BA wrote it)"
+        )
     hub_version_raw = payload.get("hub_version")
     hub_version = str(hub_version_raw).strip() if hub_version_raw else None
     raw_refs = payload.get("refs") or []
     if not raw_refs:
-        raise KBContextError("kb-context is missing 'refs' — must cite at least 1 section")
-    if not isinstance(raw_refs, list):
         raise KBContextError(
-            "'refs' must be a YAML list (one ref per line '- ...')"
+            "kb-context is missing 'refs' — must cite at least 1 section"
         )
+    if not isinstance(raw_refs, list):
+        raise KBContextError("'refs' must be a YAML list (one ref per line '- ...')")
     refs = [parse_ref(str(r)) for r in raw_refs]
     raw_tags = payload.get("tags") or []
     if not isinstance(raw_tags, list):

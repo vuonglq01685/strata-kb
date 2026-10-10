@@ -1,6 +1,7 @@
 """Operator commands for the asset store: migrate (none→s3 backfill) and
 verify (coverage check). Both run against a hub clone and never touch a
 child's .kb/."""
+
 from __future__ import annotations
 
 import logging
@@ -113,7 +114,9 @@ def migrate_assets(handle, store=None) -> MigrateReport:
 
     report.skipped = sorted(
         entry_rel
-        for entry_rel, _entry_dir in federation.scan_broken_entries(handle.federation_dir).broken
+        for entry_rel, _entry_dir in federation.scan_broken_entries(
+            handle.federation_dir
+        ).broken
     )
     if report.per_rid:
         report.committed = gitio.commit_paths(

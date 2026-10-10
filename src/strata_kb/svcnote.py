@@ -13,6 +13,7 @@ never pushes a just-`reviewed` responsibility section back to `pending`
 (spec Sec6.2) — this module never reads or writes a `svc.*` section's own
 L2/L3 body, only its manifest entry's `id`, to validate the service exists.
 """
+
 from __future__ import annotations
 
 import re
@@ -206,8 +207,7 @@ def _render_l2_rows(notes: list[Note]) -> str:
     for note in notes:
         refs_cell = escape_cell(", ".join(note.refs))
         lines.append(
-            f"| {escape_cell(note.ticket)} | {escape_cell(note.title)} | "
-            f"{refs_cell} |"
+            f"| {escape_cell(note.ticket)} | {escape_cell(note.title)} | {refs_cell} |"
         )
     return "\n".join(lines)
 
@@ -379,9 +379,7 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
             "manifest entry before re-running `kb svc note`"
         )
 
-    existing_entry = next(
-        (s for s in manifest.sections if s.id == section_id), None
-    )
+    existing_entry = next((s for s in manifest.sections if s.id == section_id), None)
     rows = _parse_existing_rows(old_l2_text, section_id)
 
     if existing_entry is None:
@@ -415,9 +413,7 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
     if existing_entry is None:
         sections = [*manifest.sections, new_entry]
     else:
-        sections = [
-            new_entry if s.id == section_id else s for s in manifest.sections
-        ]
+        sections = [new_entry if s.id == section_id else s for s in manifest.sections]
 
     # Every hist.* section shares this one history.md/history.raw.md file
     # pair, exactly the way every svc.* section shares services.md (spec

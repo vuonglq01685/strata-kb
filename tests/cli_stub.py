@@ -3,6 +3,7 @@
 The stub is a two-part pair: <name>_impl.py (the behavior, plain Python) plus
 a thin OS wrapper — `<name>` sh script on POSIX, `<name>.cmd` on Windows
 (shutil.which resolves .cmd via PATHEXT)."""
+
 from __future__ import annotations
 
 import os
@@ -31,7 +32,8 @@ def write_cli_stub(bindir: Path, name: str, python_body: str) -> Path:
     stub = bindir / name
     stub.write_text(
         f'#!/bin/sh\nexec "{sys.executable}" "{impl}" "$@"\n',
-        encoding="utf-8", newline="\n",
+        encoding="utf-8",
+        newline="\n",
     )
     stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
     return stub

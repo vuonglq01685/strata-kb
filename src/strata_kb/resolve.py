@@ -32,8 +32,13 @@ class ResolvedRef:
 
 def _broken(ref: KBRef, reason: str, pinned_rev: str = "") -> ResolvedRef:
     return ResolvedRef(
-        ref=ref, status="broken", citation=str(ref), content="", tokens=0,
-        reason=reason, pinned_rev=pinned_rev,
+        ref=ref,
+        status="broken",
+        citation=str(ref),
+        content="",
+        tokens=0,
+        reason=reason,
+        pinned_rev=pinned_rev,
     )
 
 
@@ -68,11 +73,16 @@ def _worktree_section(kb_dir: Path, ref: KBRef) -> tuple[str | None, str]:
 
 
 def _resolve_one(
-    kb_dir: Path, root: Path, rev: str, ref: KBRef,
+    kb_dir: Path,
+    root: Path,
+    rev: str,
+    ref: KBRef,
     reader: gitio.BatchReader | None = None,
 ) -> ResolvedRef:
-    read_at = reader.read_at if reader is not None else (
-        lambda r, path: gitio.read_at(root, r, path)
+    read_at = (
+        reader.read_at
+        if reader is not None
+        else (lambda r, path: gitio.read_at(root, r, path))
     )
     try:
         manifest_text = read_at(rev, kb_dir / ref.doc_id / "_manifest.yaml")
@@ -123,17 +133,20 @@ def _resolve_one(
             f"'{ref.doc_id}' at the current revision (deleted or renumbered) — "
             "confirm the replacement with the BA, then re-pin with kb_context_new"
         ),
-        BAD_MANIFEST: (
-            f"manifest for '{ref.doc_id}' is unreadable in the worktree"
-        ),
+        BAD_MANIFEST: (f"manifest for '{ref.doc_id}' is unreadable in the worktree"),
     }
     if problem:
         # broken, not stale: CI must be able to BLOCK on a citation whose target
         # is gone, and must not treat it like an amendment (F-C6). The pinned
         # bytes still resolve, so they travel with the failure.
         return ResolvedRef(
-            ref=ref, status="broken", citation=citation, content=pinned,
-            tokens=count_tokens(pinned), reason=reasons[problem], pinned_rev=rev,
+            ref=ref,
+            status="broken",
+            citation=citation,
+            content=pinned,
+            tokens=count_tokens(pinned),
+            reason=reasons[problem],
+            pinned_rev=rev,
         )
     assert now is not None  # noqa: S101 -- _worktree_section returns the text whenever problem is empty
     if now.strip() != pinned.strip():
@@ -186,7 +199,11 @@ def resolve_refs(hub: HubHandle, ctx: KBContext) -> list[ResolvedRef]:
 
 
 def _resolve_ref(
-    hub: HubHandle, root: Path, version: str, ref: KBRef, repos,
+    hub: HubHandle,
+    root: Path,
+    version: str,
+    ref: KBRef,
+    repos,
     reader: gitio.BatchReader,
 ) -> ResolvedRef:
     repo_id = ref.repo_id
@@ -206,9 +223,7 @@ def _resolve_ref(
     return _resolve_one(hub.federation_dir / repo_id, root, version, ref, reader)
 
 
-def render_resolved(
-    results: list[ResolvedRef], include_content: bool = True
-) -> str:
+def render_resolved(results: list[ResolvedRef], include_content: bool = True) -> str:
     parts: list[str] = []
     for r in results:
         rev = r.pinned_rev or "?"
@@ -275,7 +290,7 @@ def render_cache(
     contributes everything from CACHE_MARKER down, byte for byte."""
     segment = render_resolved(results) + "\n\n"
     if previous is not None and CACHE_MARKER in previous:
-        tail = previous[previous.index(CACHE_MARKER):]
+        tail = previous[previous.index(CACHE_MARKER) :]
     elif previous is not None and _PLACEHOLDER_HEADING in previous:
         # Pre-0.23 cache: agent-written placeholder map, no marker yet.
         # Splice the marker in front of it instead of stubbing over the

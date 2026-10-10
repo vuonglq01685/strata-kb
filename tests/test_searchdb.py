@@ -24,9 +24,8 @@ def test_open_db_creates_schema(tmp_path):
     conn = searchdb.open_db(hub)
     try:
         tables = {
-            r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert {"meta", "repos", "sections", "doc_tags", "fts"} <= tables
         ver = conn.execute(
@@ -231,7 +230,9 @@ def test_delete_db_held_file_raises_index_busy_error(tmp_path, monkeypatch):
         searchdb.delete_db(hub)
 
 
-def test_delete_db_survives_file_vanishing_between_exists_and_unlink(tmp_path, monkeypatch):
+def test_delete_db_survives_file_vanishing_between_exists_and_unlink(
+    tmp_path, monkeypatch
+):
     # F-C2 review fix: exists() is not a lock — another process's own
     # delete_db (or SQLite's own -wal/-shm cleanup) can remove the file
     # between the exists() check and unlink_force's unlink(); that must be
@@ -328,15 +329,21 @@ def test_sync_survives_missing_raw_md(fed_hub):
 def test_bm25_title_match_outranks_l3_only_match(fed_hub, tmp_path):
     fed = fed_hub / "federation"
     make_fed_entry(
-        fed, "title-kb", "title-doc",
-        sec_id="1.1", sec_title="Corridor Spacing",
+        fed,
+        "title-kb",
+        "title-doc",
+        sec_id="1.1",
+        sec_title="Corridor Spacing",
         sec_summary="About corridor spacing.",
         l2="## 1.1 Corridor Spacing\n\nCondensed corridor text.\n",
         l3="## 1.1 Corridor Spacing\n\nRaw corridor text.\n",
     )
     make_fed_entry(
-        fed, "body-kb", "body-doc",
-        sec_id="2.1", sec_title="Unrelated Title",
+        fed,
+        "body-kb",
+        "body-doc",
+        sec_id="2.1",
+        sec_title="Unrelated Title",
         sec_summary="Unrelated summary.",
         l2="## 2.1 Unrelated Title\n\nUnrelated condensed.\n",
         l3="## 2.1 Unrelated Title\n\ncorridor corridor corridor mentioned in raw.\n",
@@ -373,7 +380,8 @@ def test_sync_builds_sections_fts_tags(fed_hub):
         ]
         assert conn.execute("SELECT COUNT(*) FROM fts").fetchone() == (2,)
         tags = {
-            t for (t,) in conn.execute(
+            t
+            for (t,) in conn.execute(
                 "SELECT tag FROM doc_tags WHERE repo_id='arinc-kb'"
             )
         }
@@ -434,13 +442,19 @@ def test_sync_drops_a_repo_that_goes_broken(fed_hub):
             "SELECT COUNT(*) FROM sections WHERE repo_id = 'icao-kb'"
         ).fetchone()[0]
         assert after == 0
-        assert conn.execute(
-            "SELECT COUNT(*) FROM repos WHERE repo_id = 'icao-kb'"
-        ).fetchone()[0] == 0
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM repos WHERE repo_id = 'icao-kb'"
+            ).fetchone()[0]
+            == 0
+        )
         # the other repo is untouched
-        assert conn.execute(
-            "SELECT COUNT(*) FROM sections WHERE repo_id = 'arinc-kb'"
-        ).fetchone()[0] > 0
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM sections WHERE repo_id = 'arinc-kb'"
+            ).fetchone()[0]
+            > 0
+        )
     finally:
         conn.close()
 
@@ -752,7 +766,9 @@ def test_concurrent_sync_same_repo_survives_losing_race(fed_hub, monkeypatch):
             # set BEFORE the nested sync: B's own _repo_fingerprint calls
             # must hit real_fingerprint, not recurse back into this hook
             fired["done"] = True
-            searchdb.sync(hub, None)  # process B wins the race, own connection, own commit
+            searchdb.sync(
+                hub, None
+            )  # process B wins the race, own connection, own commit
         return real_fingerprint(repo_dir)
 
     def sync_repo_spy(conn, repo, report):
@@ -803,8 +819,11 @@ def test_vector_backfill_survives_low_sql_variable_limit(tmp_path, monkeypatch):
         sid = f"1.{i}"
         secs.append(
             models.SectionEntry(
-                id=sid, title=f"S{i}", summary=f"summary {i}",
-                status="summarized", file="ch1",
+                id=sid,
+                title=f"S{i}",
+                summary=f"summary {i}",
+                status="summarized",
+                file="ch1",
             )
         )
         body.append(f"## {sid} S{i}\n\ncontent {i}\n")
@@ -815,12 +834,15 @@ def test_vector_backfill_survives_low_sql_variable_limit(tmp_path, monkeypatch):
     )
     models.save_yaml_model(
         entry / "index.yaml",
-        models.KBIndex(docs=[models.IndexEntry(id="big-doc", title="Big", summary="s")]),
+        models.KBIndex(
+            docs=[models.IndexEntry(id="big-doc", title="Big", summary="s")]
+        ),
     )
     models.save_yaml_model(
         entry / "_meta.yaml",
         FederationMeta(
-            repo_id="big-kb", source_commit="abc1234",
+            repo_id="big-kb",
+            source_commit="abc1234",
             published_at="2026-07-13T00:00:00+00:00",
         ),
     )
@@ -945,7 +967,7 @@ def test_fts_search_escapes_fts_syntax(fed_hub):
     conn = searchdb.open_fresh(HubHandle(root=fed_hub), None)
     try:
         # must not blow up with a syntax error on input containing FTS5 syntax
-        for q in ['NEAR(airspace records)', 'title:"x" OR *', 'a"b', "air-space"]:
+        for q in ["NEAR(airspace records)", 'title:"x" OR *', 'a"b', "air-space"]:
             searchdb.fts_search(conn, q)  # just must not raise
         assert searchdb.fts_search(conn, "") == []
         assert searchdb.fts_search(conn, "!!! ???") == []

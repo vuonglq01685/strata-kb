@@ -230,12 +230,16 @@ def test_check_usage_log_is_silent_without_a_log(tmp_path: Path):
     assert doctor.check_usage_log(tmp_path) == []
 
 
-_HOOK = {"hooks": [{"type": "command", "command": "kb usage ingest-transcript --hook-stdin"}]}
+_HOOK = {
+    "hooks": [{"type": "command", "command": "kb usage ingest-transcript --hook-stdin"}]
+}
 
 
 def _settings(root: Path, events: dict) -> None:
     (root / ".claude").mkdir(parents=True, exist_ok=True)
-    (root / ".claude" / "settings.json").write_text(json.dumps({"hooks": events}), encoding="utf-8")
+    (root / ".claude" / "settings.json").write_text(
+        json.dumps({"hooks": events}), encoding="utf-8"
+    )
 
 
 def test_doctor_warns_when_only_the_stop_usage_hook_is_present(tmp_path: Path):

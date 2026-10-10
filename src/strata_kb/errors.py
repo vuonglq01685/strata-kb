@@ -36,6 +36,7 @@ Deriving from `RuntimeError` (not replacing it) keeps every existing
 `except PublishError`, `except GateError`, `except SomeSpecificSubclass` and
 `except RuntimeError` working unchanged -- this is purely additive.
 """
+
 from __future__ import annotations
 
 

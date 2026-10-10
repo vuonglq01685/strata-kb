@@ -9,10 +9,19 @@ from strata_kb.conventions import CONVENTION_PARTS, LANG_IDS
 from strata_kb.initcmd import CHILD_TEMPLATES, COMMON_TEMPLATES, HUB_TEMPLATES
 
 WEB_TEMPLATES = [
-    "base.html", "login.html", "overview.html", "search.html",
-    "docs.html", "doc.html", "section.html", "error.html",
-    "_partials/status.html", "_partials/left_rail.html", "_partials/cards.html",
-    "static/style.css", "static/app.js",
+    "base.html",
+    "login.html",
+    "overview.html",
+    "search.html",
+    "docs.html",
+    "doc.html",
+    "section.html",
+    "error.html",
+    "_partials/status.html",
+    "_partials/left_rail.html",
+    "_partials/cards.html",
+    "static/style.css",
+    "static/app.js",
 ]
 
 # Package resources only (Task 4) — not yet wired into a *_TEMPLATES map;
@@ -25,8 +34,15 @@ BA_TICKET_AUTHOR_TEMPLATES = [
 ]
 
 BA_TICKET_AUTHOR_PIPELINE_STEPS = (
-    "Intake", "Parent mission", "Ground", "Draft", "Pin", "Lint",
-    "Ground technical", "Maturity review", "Review → save",
+    "Intake",
+    "Parent mission",
+    "Ground",
+    "Draft",
+    "Pin",
+    "Lint",
+    "Ground technical",
+    "Maturity review",
+    "Review → save",
 )
 
 
@@ -50,19 +66,43 @@ def test_all_web_templates_exist_as_package_resources():
 # Scan is HTML-only now (was also scanning .js/.css, which is how app.js's
 # OWN explanatory comment about onchange tripped this test on itself).
 _EVENT_HANDLER_ATTRS = (
-    "onclick", "ondblclick", "onchange", "oninput", "onsubmit", "onreset",
-    "onload", "onerror", "onfocus", "onblur",
-    "onkeydown", "onkeyup", "onkeypress",
-    "onmousedown", "onmouseup", "onmouseover", "onmouseout",
-    "onmouseenter", "onmouseleave", "onmousemove",
-    "ondrag", "ondragstart", "ondragend", "ondragenter", "ondragleave",
-    "ondragover", "ondrop",
-    "onscroll", "onwheel", "ontoggle", "onselect", "oncontextmenu",
-    "oncopy", "oncut", "onpaste",
+    "onclick",
+    "ondblclick",
+    "onchange",
+    "oninput",
+    "onsubmit",
+    "onreset",
+    "onload",
+    "onerror",
+    "onfocus",
+    "onblur",
+    "onkeydown",
+    "onkeyup",
+    "onkeypress",
+    "onmousedown",
+    "onmouseup",
+    "onmouseover",
+    "onmouseout",
+    "onmouseenter",
+    "onmouseleave",
+    "onmousemove",
+    "ondrag",
+    "ondragstart",
+    "ondragend",
+    "ondragenter",
+    "ondragleave",
+    "ondragover",
+    "ondrop",
+    "onscroll",
+    "onwheel",
+    "ontoggle",
+    "onselect",
+    "oncontextmenu",
+    "oncopy",
+    "oncut",
+    "onpaste",
 )
-_INLINE_HANDLER_RE_SRC = (
-    r"\b(?:" + "|".join(_EVENT_HANDLER_ATTRS) + r")\s*=\s*['\"]?"
-)
+_INLINE_HANDLER_RE_SRC = r"\b(?:" + "|".join(_EVENT_HANDLER_ATTRS) + r")\s*=\s*['\"]?"
 _SCANNED_SUFFIXES = (".html",)
 
 
@@ -264,9 +304,7 @@ def test_every_quoted_doc_phrase_is_in_the_detector():
         if line.startswith("|") and '"' in line
     ]
     quoted = [
-        phrase
-        for cell in banned_col
-        for phrase in _re.findall(r'"([^"]+)"', cell)
+        phrase for cell in banned_col for phrase in _re.findall(r'"([^"]+)"', cell)
     ]
     assert quoted, "no quoted phrases parsed from the doc table"
     lowered = {p.lower() for p in WEASEL_PHRASES}
@@ -392,9 +430,9 @@ SHARED_BLOCKS = {
 # deletes or rewords a hard rule now fails here, where the pairwise-only
 # version did not.
 SHARED_BLOCK_TEXT = {
-    'SHARED-FRESHNESS': '## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n',
-    'SHARED-HARD-RULES': '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
-    'SHARED-NEXT-STEP': '## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n',
+    "SHARED-FRESHNESS": "## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
+    "SHARED-HARD-RULES": '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
+    "SHARED-NEXT-STEP": "## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n",
 }
 
 
@@ -511,9 +549,9 @@ def test_dev_implement_ticket_uses_resolve_and_get_never_diff():
     # the skill-specific half is asserted against the body in the test below.
     for name in _dev_wrapper_names("dev-implement-ticket"):
         text = _dev_wrapper_text(name)
-        assert "kb_resolve" in text, name          # MCP tool
-        assert "kb resolve" in text, name          # CLI fallback
-        assert "kb get " in text, name             # current hub version
+        assert "kb_resolve" in text, name  # MCP tool
+        assert "kb resolve" in text, name  # CLI fallback
+        assert "kb get " in text, name  # current hub version
         assert "kb diff" not in text.replace("Do NOT use `kb diff`", ""), name
 
 
@@ -550,9 +588,7 @@ def test_dev_implement_ticket_carries_placeholder_and_ticket_ownership_rules():
         # Imperative in the full-content mirrors, declarative in the command
         # wrapper's list of declaratives — either wording counts, neither may
         # go missing.
-        assert (
-            "never edit the ticket" in body or "never edits the ticket" in body
-        ), name
+        assert "never edit the ticket" in body or "never edits the ticket" in body, name
         assert "OPEN(BA)" in body, name
 
 
@@ -837,8 +873,12 @@ def test_all_dev_workflow_wrappers_carry_the_tdd_and_evidence_rules():
     for skill in DEV_WORKFLOW_SKILLS:
         for name in _dev_wrapper_names(skill):
             text = _dev_wrapper_text(name)
-            assert "No production code without a failing test observed first" in text, name
-            assert "Never claim done without showing the verification output" in text, name
+            assert "No production code without a failing test observed first" in text, (
+                name
+            )
+            assert "Never claim done without showing the verification output" in text, (
+                name
+            )
 
 
 def test_dev_implement_ticket_caveats_the_svc_document_by_repo_state():
@@ -855,9 +895,8 @@ def test_dev_implement_ticket_caveats_the_svc_document_by_repo_state():
     # own remaining `-svc` gap too, or a Dev reports a missing document as
     # a KB gap.
     for name in _dev_wrapper_names("dev-implement-ticket"):
-        assert (
-            '"seeded, unpublished: run `kb publish --pr`"'
-            in _dev_wrapper_body(name)
+        assert '"seeded, unpublished: run `kb publish --pr`"' in _dev_wrapper_body(
+            name
         ), name
 
 
@@ -1055,8 +1094,15 @@ def test_dev_code_seed_templates_exist_as_package_resources():
 def test_dev_code_seed_carries_the_seven_steps():
     for name in _dev_code_seed_names():
         text = _read_init_template(name)
-        for step in ("Preflight", "Extract", "Draft", "Review", "Approve",
-                     "Flows", "Validate and publish"):
+        for step in (
+            "Preflight",
+            "Extract",
+            "Draft",
+            "Review",
+            "Approve",
+            "Flows",
+            "Validate and publish",
+        ):
             assert step in text, f"{name} missing step {step}"
 
 
@@ -1131,11 +1177,11 @@ def test_dev_code_seed_ends_with_the_next_step_block():
 def test_dev_code_seed_wrappers_are_byte_identical_from_steps_onward():
     names = _dev_code_seed_names()
     canon_text = _read_init_template(names[0])
-    canon = canon_text[canon_text.index("## Steps"):]
+    canon = canon_text[canon_text.index("## Steps") :]
     assert canon.strip(), "empty canon"
     for name in names[1:]:
         text = _read_init_template(name)
-        assert text[text.index("## Steps"):] == canon, name
+        assert text[text.index("## Steps") :] == canon, name
 
 
 def test_claude_skill_dev_code_seed_has_expected_frontmatter():
@@ -1297,8 +1343,15 @@ def test_ba_wrappers_no_longer_ground_code_detail_themselves():
 def test_ba_ticket_wrappers_leave_technical_grounding_to_the_sa():
     for name in BA_TICKET_WRAPPERS:
         assert "## Technical grounding" in _ba_wrapper_text(name), name
-    for name in ("claude-skill-ba-ticket-author.md", "copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md"):
-        assert "is SA-owned: leave it exactly as the template ships it" in _ba_wrapper_text(name), name
+    for name in (
+        "claude-skill-ba-ticket-author.md",
+        "copilot-ba-ticket-author.prompt.md",
+        "cursor-ba-ticket-author.md",
+    ):
+        assert (
+            "is SA-owned: leave it exactly as the template ships it"
+            in _ba_wrapper_text(name)
+        ), name
 
 
 def test_ba_mission_wrappers_leave_services_and_order_to_the_sa():
@@ -1329,8 +1382,15 @@ def test_ba_wrappers_still_carry_their_pre_phase5_rules():
 
 def test_shared_freshness_keeps_the_kb_diff_trap_and_the_three_verdicts():
     block = _normalised(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"])
-    for needle in ("**broken**", "**stale**", "**ok**", "kb diff", "kb_resolve",
-                   "re-pin", "--level l3"):
+    for needle in (
+        "**broken**",
+        "**stale**",
+        "**ok**",
+        "kb diff",
+        "kb_resolve",
+        "re-pin",
+        "--level l3",
+    ):
         assert needle in block, needle
     # Final review F4: "Do NOT use `kb diff`" was trimmed to the bare
     # fragment "NOT `kb diff`", losing the imperative. Guard the full
@@ -1345,8 +1405,14 @@ def test_shared_freshness_keeps_the_kb_diff_trap_and_the_three_verdicts():
 
 def test_shared_freshness_prefers_the_cache_and_status_only():
     block = _normalised(SHARED_BLOCK_TEXT["SHARED-FRESHNESS"])
-    for needle in ("--status-only --cache", "/context.md", "--write-cache",
-                   "below the marker", "never edit above it", "`cache-*`"):
+    for needle in (
+        "--status-only --cache",
+        "/context.md",
+        "--write-cache",
+        "below the marker",
+        "never edit above it",
+        "`cache-*`",
+    ):
         assert needle in block, needle
 
 
@@ -1501,10 +1567,15 @@ def test_ba_wrappers_keep_round_one_two_perspective():
     the `gap-verifier` clause, not these two phrases. Same asymmetry
     as `test_ba_wrappers_do_not_let_the_gap_verifier_invent_a_score`.
     """
-    for name in ("claude-skill-ba-ticket-author.md", "claude-skill-ba-mission-plan.md",
-                 "copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md",
-                 "copilot-ba-mission-plan.prompt.md", "cursor-ba-mission-plan.md",
-                 "claude-command-ba-mission-plan.md"):
+    for name in (
+        "claude-skill-ba-ticket-author.md",
+        "claude-skill-ba-mission-plan.md",
+        "copilot-ba-ticket-author.prompt.md",
+        "cursor-ba-ticket-author.md",
+        "copilot-ba-mission-plan.prompt.md",
+        "cursor-ba-mission-plan.md",
+        "claude-command-ba-mission-plan.md",
+    ):
         text = _ba_wrapper_text(name)
         assert "Business-coverage reviewer" in text, name
         assert "Dev-implementability reviewer" in text, name
@@ -1519,10 +1590,15 @@ def test_ba_wrappers_do_not_let_the_gap_verifier_invent_a_score():
     carry an instruction instead of that description, so the rule
     holds regardless of which branch a given runtime takes.
     """
-    for name in ("claude-skill-ba-ticket-author.md", "claude-skill-ba-mission-plan.md",
-                 "copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md",
-                 "copilot-ba-mission-plan.prompt.md", "cursor-ba-mission-plan.md",
-                 "claude-command-ba-mission-plan.md"):
+    for name in (
+        "claude-skill-ba-ticket-author.md",
+        "claude-skill-ba-mission-plan.md",
+        "copilot-ba-ticket-author.prompt.md",
+        "cursor-ba-ticket-author.md",
+        "copilot-ba-mission-plan.prompt.md",
+        "cursor-ba-mission-plan.md",
+        "claude-command-ba-mission-plan.md",
+    ):
         text = _ba_wrapper_text(name)
         assert "does not score an axis" not in text, name
         assert "do **not** re-score an axis in this pass" in text, name
@@ -1560,7 +1636,11 @@ def test_conventions_python_and_ts_templates_carry_the_full_skeleton():
         ),
         (
             "conventions-ts.md",
-            ("eslint.config.mjs", "npx eslint . && npx prettier --check .", ".prettierrc.json"),
+            (
+                "eslint.config.mjs",
+                "npx eslint . && npx prettier --check .",
+                ".prettierrc.json",
+            ),
         ),
     ):
         text = _read_init_template(name)
@@ -1568,17 +1648,24 @@ def test_conventions_python_and_ts_templates_carry_the_full_skeleton():
             assert heading in text, f"{name}: missing {heading!r}"
         for needle in needles:
             assert needle in text, f"{name}: missing {needle!r}"
-        assert ".local.md" in text, name          # override pointer in the header
-        assert ".editorconfig" in text, name      # editorconfig block present
-        assert "per ATM-STD §5.3" in text, name   # citation-comment example
-        assert "cmd.lint" in text, name           # preset names the recorded command
+        assert ".local.md" in text, name  # override pointer in the header
+        assert ".editorconfig" in text, name  # editorconfig block present
+        assert "per ATM-STD §5.3" in text, name  # citation-comment example
+        assert "cmd.lint" in text, name  # preset names the recorded command
 
 
 def test_conventions_java_and_go_templates_carry_the_full_skeleton():
     for name, needles in (
         (
             "conventions-java.md",
-            ("spotless", "checkstyle", "googleJavaFormat", "spotlessCheck", "resources.text.fromArchiveEntry", "checkstyleConfig"),
+            (
+                "spotless",
+                "checkstyle",
+                "googleJavaFormat",
+                "spotlessCheck",
+                "resources.text.fromArchiveEntry",
+                "checkstyleConfig",
+            ),
         ),
         (
             "conventions-go.md",
@@ -1604,7 +1691,11 @@ def test_conventions_php_and_dotnet_templates_carry_the_full_skeleton():
         ),
         (
             "conventions-dotnet.md",
-            ("dotnet format --verify-no-changes", "dotnet_diagnostic", "EnforceCodeStyleInBuild"),
+            (
+                "dotnet format --verify-no-changes",
+                "dotnet_diagnostic",
+                "EnforceCodeStyleInBuild",
+            ),
         ),
     ):
         text = _read_init_template(name)
@@ -1649,7 +1740,9 @@ def test_conventions_entry_file_links_its_pack(lang):
         assert f"({lang}/{part}.md)" in text, f"{lang}: no link to {lang}/{part}.md"
         assert f"(common/{part}.md)" in text, f"{lang}: no link to common/{part}.md"
     for heading in CONVENTIONS_MOVED_HEADINGS:
-        assert heading not in text, f"{lang}: {heading!r} should have moved into the pack"
+        assert heading not in text, (
+            f"{lang}: {heading!r} should have moved into the pack"
+        )
 
 
 @pytest.mark.parametrize("lang", LANG_IDS)
@@ -1684,7 +1777,9 @@ def test_common_pack_templates_exist_and_carry_no_extends_line():
         assert text.startswith("# "), name
         assert "This file extends" not in text, name
         assert "\n## " in text, f"{name}: no section heading — content missing"
-        assert len(text.splitlines()) >= 12, f"{name}: looks like unfilled T1 boilerplate"
+        assert len(text.splitlines()) >= 12, (
+            f"{name}: looks like unfilled T1 boilerplate"
+        )
         for banned in ("ECC", "everything-claude", "~/.claude", "See skill:"):
             assert banned not in text, f"{name}: {banned!r} survived"
 
@@ -1874,7 +1969,11 @@ SUMMARIZE_WRAPPERS = [
 
 
 def _tpl(name: str) -> str:
-    return resources.files("strata_kb.templates.init").joinpath(name).read_text(encoding="utf-8")
+    return (
+        resources.files("strata_kb.templates.init")
+        .joinpath(name)
+        .read_text(encoding="utf-8")
+    )
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -1905,12 +2004,14 @@ def test_summarize_wrappers_use_print_prompt_not_l3(name):
     assert "kb summarize <doc-id> --print-prompt" in text
     assert "--level l3" not in text
     assert "kb build --strict" in text
-    assert "Table-only section:" not in text   # engine alone decides table-only
+    assert "Table-only section:" not in text  # engine alone decides table-only
 
 
 def test_claude_skill_summarize_contract_and_validation():
     text = _tpl("claude-skill-kb-summarize.md")
-    assert '[{"section_id": "...", "l2_summary": "...", "l1_summary": "..."}, ...]' in text
+    assert (
+        '[{"section_id": "...", "l2_summary": "...", "l1_summary": "..."}, ...]' in text
+    )
     assert '"table_only"' not in text
     assert "HARD LIMIT" in text and "≤ 25 words" in text
     assert "kb build --allow-pending --strict" in text
@@ -1983,7 +2084,9 @@ def _lint_dispatch_run_script(text: str) -> str:
     for step in data["jobs"]["lint"]["steps"]:
         if "Lint changed" in step.get("name", ""):
             return step["run"]
-    raise AssertionError("no step with 'Lint changed' in its name in kb-ticket-lint.yml")
+    raise AssertionError(
+        "no step with 'Lint changed' in its name in kb-ticket-lint.yml"
+    )
 
 
 def test_ticket_lint_workflow_annotates_and_summarises():
@@ -2004,9 +2107,7 @@ def test_ticket_lint_workflow_annotates_and_summarises():
 
 
 def test_ticket_lint_workflow_keeps_a_non_https_hub_scheme():
-    assert "${STRATA_KB_HUB#https://}" not in _read_init_template(
-        "kb-ticket-lint.yml"
-    )
+    assert "${STRATA_KB_HUB#https://}" not in _read_init_template("kb-ticket-lint.yml")
 
 
 def test_quickstart_ba_documents_the_ci_variables():
@@ -2021,9 +2122,13 @@ def test_pr_workflow_checks_out_the_branch_read_only_for_the_plan_file():
 
     wf = yaml.safe_load(_read_init_template("kb-pr-lint.yml"))
     steps = wf["jobs"]["pr-lint"]["steps"]
-    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
+    checkout = next(
+        s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@")
+    )
     assert checkout["with"]["persist-credentials"] is False
-    assert steps.index(checkout) < steps.index(next(s for s in steps if "Check the PR" in s.get("name", "")))
+    assert steps.index(checkout) < steps.index(
+        next(s for s in steps if "Check the PR" in s.get("name", ""))
+    )
 
 
 # --- Task 13: one tightening rule in every preset, plus the lint values ----
@@ -2076,9 +2181,15 @@ def test_dev_plan_refuses_a_draft_design_and_writes_the_cmd_headers():
 def test_dev_implement_ticket_names_every_re_entry_case():
     for name in _dev_wrapper_names("dev-implement-ticket"):
         body = _dev_wrapper_body(name)
-        for needle in ("status: draft", "N commits on branch", "--state merged",
-                       "--state closed", "two tickets in flight",
-                       "git switch -c <ticket-id>", "gh not installed"):
+        for needle in (
+            "status: draft",
+            "N commits on branch",
+            "--state merged",
+            "--state closed",
+            "two tickets in flight",
+            "git switch -c <ticket-id>",
+            "gh not installed",
+        ):
             assert needle in body, f"{name}: {needle}"
 
 
@@ -2356,8 +2467,7 @@ def test_dev_plan_a2_requires_the_exempt_line_and_the_failing_test_question():
             "<config|ci|docs|style>` and name its verification?" in body
         ), name
         assert (
-            "Does every task state its failing test before its "
-            "implementation?" in body
+            "Does every task state its failing test before its implementation?" in body
         ), name
 
 
@@ -2423,9 +2533,7 @@ def test_dev_handover_runs_a_merge_risk_review_before_gate_three():
 def test_dev_handover_pr_assembly_ends_testing_with_the_verdict():
     for name in _dev_wrapper_names("dev-handover"):
         body = _dev_wrapper_body(name)
-        assert (
-            "`Blocking: No`, A5's verdict line, as the last line" in body
-        ), name
+        assert "`Blocking: No`, A5's verdict line, as the last line" in body, name
 
 
 # --- SA grounding layer (PR 1): the two SA-owned template sections ---------
@@ -2592,8 +2700,8 @@ def test_sa_hard_rules_carry_the_two_greenfield_rules():
     assert (
         "A thing the code does not have yet is a design decision, not missing "
         "data: propose it as a `## Technology decisions` row (status OPEN, a "
-        "human owner) and reference it as [NEW: D<n>]. Never park \"not built "
-        "yet\" under Open decisions."
+        'human owner) and reference it as [NEW: D<n>]. Never park "not built '
+        'yet" under Open decisions.'
     ) in block
     assert (
         "You may APPEND rows to `## Technology decisions`; never edit or "
@@ -2652,7 +2760,10 @@ def test_ba_ticket_full_wrappers_re_ground_only_on_a_check_failure():
     for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
         text = _ba_wrapper_text(name)
         assert "no shared context: the SA sees the file and the hub" in text, name
-        assert "After every round that changed the draft, also run `kb ticket check`" in text, name
+        assert (
+            "After every round that changed the draft, also run `kb ticket check`"
+            in text
+        ), name
         assert "on PASS, do not re-ground" in text, name
 
 
@@ -2697,9 +2808,7 @@ def test_ba_mission_wrappers_run_the_sa_inside_the_pipeline():
 def test_ba_mission_reviewer_receives_the_service_order():
     for name in BA_MISSION_WRAPPERS:
         text = _ba_wrapper_text(name)
-        assert (
-            "Give it `## Services & order` as input" in text
-        ), name
+        assert "Give it `## Services & order` as input" in text, name
 
 
 def test_ba_mission_pipeline_line_names_the_new_step():
@@ -2789,7 +2898,7 @@ def test_ba_ticket_full_wrappers_teach_the_ticket_split():
     only a prose summary of the skill's rules (see line 193's note)."""
     for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
         assert (
-            'One AC is one testable condition and one outcome; a ticket '
+            "One AC is one testable condition and one outcome; a ticket "
             'that needs more than 10 AC, or a second "As a …" story, is '
             "two tickets — split it before Lint, never merge ACs to fit."
         ) in _ba_wrapper_text(name), name
@@ -2804,6 +2913,7 @@ def test_quickstart_ba_gate_list_names_the_size_gates():
 
 
 # --- compose facts grounding (spec 2026-09-23) ---
+
 
 def test_ticket_template_carries_the_compose_grounding_lines():
     text = _read_init_template("ticket-template.md")
@@ -2824,7 +2934,10 @@ def test_ac_quality_doc_bans_shell_commands_in_an_ac():
 
 def test_review_rubric_dev_axis_checks_compose_literals_against_grounding():
     text = _read_init_template("review-rubric.md")
-    assert "matches the value on the corresponding `## Technical grounding` line, or carries `[NEW: D<n>]`" in text
+    assert (
+        "matches the value on the corresponding `## Technical grounding` line, or carries `[NEW: D<n>]`"
+        in text
+    )
 
 
 def test_quickstarts_name_the_compose_facts():
@@ -2835,15 +2948,21 @@ def test_quickstarts_name_the_compose_facts():
     assert "named volumes, the healthcheck command and device reservations" in dev
 
 
-@pytest.mark.parametrize("name", [
-    "claude-skill-ba-ticket-author.md",
-    "copilot-ba-ticket-author.prompt.md",
-    "cursor-ba-ticket-author.md",
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "claude-skill-ba-ticket-author.md",
+        "copilot-ba-ticket-author.prompt.md",
+        "cursor-ba-ticket-author.md",
+    ],
+)
 def test_ba_ticket_author_wrappers_carry_the_no_shell_and_no_rescore_rules(name):
     text = _normalised(_read_init_template(name))
     assert "An AC states an observable outcome, never a shell command" in text
-    assert "A round that only closes open questions is not a review round and never changes a score" in text
+    assert (
+        "A round that only closes open questions is not a review round and never changes a score"
+        in text
+    )
 
 
 # --- plan waves (spec 2026-09-24 §5): dev-plan and dev-execute -------------
@@ -2863,8 +2982,13 @@ def test_dev_plan_records_a_depends_on_line_per_task():
 def test_dev_plan_a2_asks_the_fifth_question_and_runs_plan_waves():
     for name in _dev_wrapper_names("dev-plan"):
         body = _dev_wrapper_body(name)
-        assert "Is every `Depends on:` line consistent with Files and Interfaces" in body, name
-        assert "The reviewer also runs `kb plan waves` and quotes its output; an error there is a BLOCKER on its own" in body, name
+        assert (
+            "Is every `Depends on:` line consistent with Files and Interfaces" in body
+        ), name
+        assert (
+            "The reviewer also runs `kb plan waves` and quotes its output; an error there is a BLOCKER on its own"
+            in body
+        ), name
 
 
 def test_dev_execute_runs_plan_waves_and_lanes():
@@ -2873,15 +2997,25 @@ def test_dev_execute_runs_plan_waves_and_lanes():
         assert "run `kb plan waves docs/impl/<ticket-id>/plan.md`" in body, name
         assert "an error returns the plan to `dev-plan`" in body, name
         assert "runs sequentially as today" in body, name
-        assert "git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD" in body, name
+        assert (
+            "git worktree add .worktrees/<ticket-id>-task-<n> -b <ticket-id>-task-<n> HEAD"
+            in body
+        ), name
         assert "git merge-base --is-ancestor" in body, name
         assert "at most **3 lanes at a time**" in body, name
-        assert "Never use `run_in_background`; run every test in the foreground and let the call block." in body, name
+        assert (
+            "Never use `run_in_background`; run every test in the foreground and let the call block."
+            in body
+        ), name
         assert "git merge --no-ff <ticket-id>-task-<n>" in body, name
         assert "a conflict is a plan defect" in body, name
         assert "git diff <merge-commit>^1...<lane-branch>" in body, name
-        assert "shows exactly the lane's own commits, for every lane in the wave" in body, name
-        assert "A lane implementer never edits `docs/impl/<ticket-id>/plan.md`" in body, name
+        assert (
+            "shows exactly the lane's own commits, for every lane in the wave" in body
+        ), name
+        assert (
+            "A lane implementer never edits `docs/impl/<ticket-id>/plan.md`" in body
+        ), name
         assert "the first wave with an unticked task" in body, name
         assert "skips to A3" in body, name
         assert "must be gitignored" in body, name
@@ -2912,7 +3046,10 @@ def test_mission_template_teaches_the_cited_decision_row():
         in decisions
     )
     # D2 stays exactly as the earlier pin expects
-    assert "| D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |" in decisions
+    assert (
+        "| D2 | New svc.<name> — <one line> | OPEN | <SA / tech lead> | <US id> |"
+        in decisions
+    )
 
 
 def test_mission_template_sequencing_allows_cross_mission_dependencies():
@@ -2924,8 +3061,15 @@ def test_mission_template_sequencing_allows_cross_mission_dependencies():
 
 
 def test_mission_template_dor_names_the_decided_rows_gate():
-    dor = _normalised(lintcore.section_body(_read_init_template("mission-template.md"), "## Definition of Ready"))
-    assert "- [ ] Every D-row blocking a story with no dependency is DECIDED (kb mission next shows it ready)" in dor
+    dor = _normalised(
+        lintcore.section_body(
+            _read_init_template("mission-template.md"), "## Definition of Ready"
+        )
+    )
+    assert (
+        "- [ ] Every D-row blocking a story with no dependency is DECIDED (kb mission next shows it ready)"
+        in dor
+    )
 
 
 def test_sa_full_wrappers_cite_the_architecture_document_for_greenfield_rows():
@@ -2936,19 +3080,26 @@ def test_sa_full_wrappers_cite_the_architecture_document_for_greenfield_rows():
             "table or route the mission needs comes from the architecture "
             "document on the hub: cite it in the Decision cell"
         ) in text, name
-        assert "| D2 | New svc.api — REST gateway [myflix-arch §3.2] | OPEN | <SA / tech lead> | M-x-US1 |" in text, name
+        assert (
+            "| D2 | New svc.api — REST gateway [myflix-arch §3.2] | OPEN | <SA / tech lead> | M-x-US1 |"
+            in text
+        ), name
         assert "that absence is the BA's signal to keep the row `OPEN`" in text, name
 
 
 def test_every_sa_wrapper_says_the_proposal_cites_the_architecture_document():
     for name in SA_WRAPPERS:
-        assert "cites the architecture document" in _normalised(_read_init_template(name)), name
+        assert "cites the architecture document" in _normalised(
+            _read_init_template(name)
+        ), name
 
 
 def test_ba_mission_wrappers_ask_for_the_architecture_document_at_intake():
     for name in BA_MISSION_WRAPPERS:
         text = _ba_wrapper_text(name)
-        assert "Ask also for the doc-id of the architecture document on the hub" in text, name
+        assert (
+            "Ask also for the doc-id of the architecture document on the hub" in text
+        ), name
         assert "Never ask whether the repo is greenfield" in text, name
 
 
@@ -2957,14 +3108,19 @@ def test_ba_mission_wrappers_teach_the_foundation_slice():
         text = _ba_wrapper_text(name)
         assert "the first story is the **foundation slice**" in text, name
         assert "every other story `Depends on` it in `## Sequencing`" in text, name
-        assert "`Depends on` may name a story of another mission (`M-<other>-US<n>`)" in text, name
+        assert (
+            "`Depends on` may name a story of another mission (`M-<other>-US<n>`)"
+            in text
+        ), name
 
 
 def test_ba_mission_wrappers_carry_step_5b_decide():
     for name in BA_MISSION_WRAPPERS:
         text = _ba_wrapper_text(name)
         assert "5b. **Decide**" in text, name
-        assert "present the whole `## Technology decisions` table to the BA once" in text, name
+        assert (
+            "present the whole `## Technology decisions` table to the BA once" in text
+        ), name
         assert "You never flip a status." in text, name
         assert "what `kb mission next` reports as `ready`" in text, name
 
@@ -2986,35 +3142,56 @@ def test_ba_ticket_wrappers_run_kb_mission_next_at_intake():
         assert "run `kb ticket tidy` first" in text, name
         assert "then `kb mission next`" in text, name
         assert "propose the first `to-draft` story" in text, name
-        assert "Print every `note:` line of `kb mission next` to the BA verbatim, before the table" in text, name
-        assert "A `blocked` story may be drafted only with its reasons acknowledged by the BA" in text, name
+        assert (
+            "Print every `note:` line of `kb mission next` to the BA verbatim, before the table"
+            in text
+        ), name
+        assert (
+            "A `blocked` story may be drafted only with its reasons acknowledged by the BA"
+            in text
+        ), name
 
 
 def test_ba_ticket_full_wrappers_point_a_draft_or_ready_story_at_its_file():
     for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
         text = _ba_wrapper_text(name)
         assert "A `draft` or `ready` story points at its existing file." in text, name
-        assert "A `done: unknown` note means a `draft` or `ready` row may be a merged story — say so." in text, name
+        assert (
+            "A `done: unknown` note means a `draft` or `ready` row may be a merged story — say so."
+            in text
+        ), name
 
 
 def test_ba_ticket_wrappers_save_into_a_mission_or_ba_named_folder():
     for name in BA_TICKET_WRAPPERS:
         text = _ba_wrapper_text(name)
         assert "`tickets/<mission-id>/<mission-id>-US<n>.md`" in text, name
-        assert "ask the BA for a kebab-case folder name (an epic or feature, e.g. `epic-billing`)" in text, name
+        assert (
+            "ask the BA for a kebab-case folder name (an epic or feature, e.g. `epic-billing`)"
+            in text
+        ), name
         assert "never invent the folder name" in text, name
-        assert "for every `unsorted:` line ask the BA for its folder and run `kb ticket tidy --into <folder> <file>`" in text, name
+        assert (
+            "for every `unsorted:` line ask the BA for its folder and run `kb ticket tidy --into <folder> <file>`"
+            in text
+        ), name
 
 
 def test_mission_template_allows_a_grounded_on_list():
     text = _read_init_template("mission-template.md")
-    assert "A comma-separated list is allowed; the `-code` entry is the one `kb mission next` reads." in text
+    assert (
+        "A comma-separated list is allowed; the `-code` entry is the one `kb mission next` reads."
+        in text
+    )
 
 
 def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
     for name in _dev_wrapper_names("dev-handover"):
         body = _dev_wrapper_body(name)
-        assert "`kb svc note` is what makes `kb mission next` on the BA side see this story as done" in body, name
+        assert (
+            "`kb svc note` is what makes `kb mission next` on the BA side see this story as done"
+            in body
+        ), name
         assert "stays `draft` or `ready` forever" in body, name
 
 
@@ -3023,8 +3200,19 @@ def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():
     assert "## Which ticket next" in text
     assert "`kb mission next`" in text
     assert "### Greenfield: decide the D-rows once" in text
-    assert "- `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`" in text
-    for word in ("`done`", "`ready`", "`draft`", "`to-draft`", "`blocked`", "Next:", "`kb ticket tidy`"):
+    assert (
+        "- `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`"
+        in text
+    )
+    for word in (
+        "`done`",
+        "`ready`",
+        "`draft`",
+        "`to-draft`",
+        "`blocked`",
+        "Next:",
+        "`kb ticket tidy`",
+    ):
         assert word in text, word
     assert "`drafted`" not in text
 
@@ -3032,8 +3220,10 @@ def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():
 def test_changelog_names_the_ba_side_of_mission_next():
     from pathlib import Path as _P
 
-    changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog[changelog.index("## 1.4.0"):changelog.index("## 1.3.0")]
+    changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(
+        encoding="utf-8"
+    )
+    unreleased = changelog[changelog.index("## 1.4.0") : changelog.index("## 1.3.0")]
     assert "BA repos:" in unreleased
     assert "step 5b" in unreleased
     assert "foundation slice" in unreleased
@@ -3044,7 +3234,9 @@ def test_dev_implement_ticket_runs_impl_tidy_at_intake():
     for name in _dev_wrapper_names("dev-implement-ticket"):
         body = _dev_wrapper_body(name)
         assert "kb impl tidy" in body, name
-        assert "commit the renames on their own before the first task" in _normalised(body), name
+        assert "commit the renames on their own before the first task" in _normalised(
+            body
+        ), name
 
 
 def test_no_template_names_the_flat_impl_layout():

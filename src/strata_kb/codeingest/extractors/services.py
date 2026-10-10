@@ -28,6 +28,7 @@ services", exactly like no compose file being present at all — so
 `extract()` decides the fallback from `_read_compose()`'s result, not
 from a bare file-existence check.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -75,13 +76,19 @@ class ServiceRecord:
     depends_on: list[str] = field(default_factory=list)
     env_keys: list[str] = field(default_factory=list)
     source: str = ""  # the file this record came from, e.g. "docker-compose.yml"
-    directory: str = ""                 # the service's own code directory, when known
-    command: str = ""                   # Dockerfile CMD/ENTRYPOINT as one shell line (Task 11)
-    env_files: list[str] = field(default_factory=list)  # compose env_file *names*, never opened
-    base_image: str = ""                # FROM of a built service (Task 11); feeds technology
-    volumes: list[str] = field(default_factory=list)   # compose named volumes, sorted (spec 2026-09-23 §4)
-    healthcheck: str = ""                              # one-line `healthcheck.test`; "" = none; "disabled"
-    devices: list[str] = field(default_factory=list)   # "<driver>:<caps>" from deploy.resources.reservations.devices
+    directory: str = ""  # the service's own code directory, when known
+    command: str = ""  # Dockerfile CMD/ENTRYPOINT as one shell line (Task 11)
+    env_files: list[str] = field(
+        default_factory=list
+    )  # compose env_file *names*, never opened
+    base_image: str = ""  # FROM of a built service (Task 11); feeds technology
+    volumes: list[str] = field(
+        default_factory=list
+    )  # compose named volumes, sorted (spec 2026-09-23 §4)
+    healthcheck: str = ""  # one-line `healthcheck.test`; "" = none; "disabled"
+    devices: list[str] = field(
+        default_factory=list
+    )  # "<driver>:<caps>" from deploy.resources.reservations.devices
 
 
 HEALTHCHECK_MAX = 200
@@ -161,7 +168,11 @@ def _devices(spec: dict) -> list[str]:
             continue
         driver = str(dev.get("driver") or "unknown")
         caps = dev.get("capabilities", [])
-        caps_str = ",".join(sorted(str(c) for c in caps)) if isinstance(caps, list) else str(caps)
+        caps_str = (
+            ",".join(sorted(str(c) for c in caps))
+            if isinstance(caps, list)
+            else str(caps)
+        )
         out.append(f"{driver}:{caps_str}" if caps_str else driver)
     return sorted(out)
 
@@ -270,7 +281,9 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
     records: list[ServiceRecord] = []
     warnings: list[str] = []
 
-    paths = sorted({p for pattern in _COMPOSE_GLOBS for p in root.glob(pattern) if p.is_file()})
+    paths = sorted(
+        {p for pattern in _COMPOSE_GLOBS for p in root.glob(pattern) if p.is_file()}
+    )
     for path in paths:
         rel = relposix(root, path)
         try:
@@ -293,7 +306,9 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
         for name in sorted(services):
             spec = services[name]
             if not isinstance(spec, dict):
-                warnings.append(f"could not parse {rel}: service {name!r} is not a mapping")
+                warnings.append(
+                    f"could not parse {rel}: service {name!r} is not a mapping"
+                )
                 continue
             image = spec.get("image", "")
             if not isinstance(image, str):
@@ -318,7 +333,8 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                 # in-repo path (re-review finding 3).
                 normalised = (
                     Path(os.path.normpath(dockerfile_path))
-                    if dockerfile_path is not None else None
+                    if dockerfile_path is not None
+                    else None
                 )
                 # Fix wave finding 1 (previous wave): a build context that
                 # escapes the repo root (e.g. `build: ../outside`) must
@@ -336,10 +352,13 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                 # inlining the whole branch into that helper, since the
                 # `.is_file()` read below needs `normalised` regardless of
                 # which of the two rejects it.
-                escapes_repo = normalised is not None and not _within_repo(root, normalised)
+                escapes_repo = normalised is not None and not _within_repo(
+                    root, normalised
+                )
                 dockerfile_rel = (
                     relposix(root, normalised)
-                    if normalised is not None and not escapes_repo else None
+                    if normalised is not None and not escapes_repo
+                    else None
                 )
                 if escapes_repo:
                     image = f"build: {context or '.'} (outside the repository)"
@@ -369,20 +388,22 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                         f"service {name!r} in {rel}: build context {context or '.'!r} "
                         "has no Dockerfile"
                     )
-            records.append(ServiceRecord(
-                name=str(name),
-                image=image,
-                ports=ports,
-                depends_on=_stringify_list(spec.get("depends_on", [])),
-                env_keys=_env_keys_from(spec.get("environment", {})),
-                source=source,
-                command=command,
-                env_files=_stringify_list(spec.get("env_file", [])),
-                base_image=base_image,
-                volumes=_named_volumes(spec.get("volumes")),
-                healthcheck=_healthcheck_line(spec.get("healthcheck")),
-                devices=_devices(spec),
-            ))
+            records.append(
+                ServiceRecord(
+                    name=str(name),
+                    image=image,
+                    ports=ports,
+                    depends_on=_stringify_list(spec.get("depends_on", [])),
+                    env_keys=_env_keys_from(spec.get("environment", {})),
+                    source=source,
+                    command=command,
+                    env_files=_stringify_list(spec.get("env_file", [])),
+                    base_image=base_image,
+                    volumes=_named_volumes(spec.get("volumes")),
+                    healthcheck=_healthcheck_line(spec.get("healthcheck")),
+                    devices=_devices(spec),
+                )
+            )
 
     return records, warnings
 
@@ -465,7 +486,12 @@ def _read_dockerfile(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
         return [], [f"could not parse {rel}: {exc}"]
     image, ports, command = _parse_dockerfile(text)
     record = ServiceRecord(
-        name=repo_id, image=image, ports=ports, source=rel, command=command, base_image=image,
+        name=repo_id,
+        image=image,
+        ports=ports,
+        source=rel,
+        command=command,
+        base_image=image,
     )
     return [record], []
 
@@ -534,17 +560,28 @@ def _read_k8s(root: Path, kb_dir: Path | None) -> tuple[list[ServiceRecord], lis
                 if doc.get("kind") not in _K8S_KINDS:
                     continue
                 metadata = doc.get("metadata", {})
-                svc_name = metadata.get("name", "") if isinstance(metadata, dict) else ""
+                svc_name = (
+                    metadata.get("name", "") if isinstance(metadata, dict) else ""
+                )
                 if not svc_name or not isinstance(svc_name, str):
                     continue
                 spec = doc.get("spec", {})
                 template = spec.get("template", {}) if isinstance(spec, dict) else {}
-                pod_spec = template.get("spec", {}) if isinstance(template, dict) else {}
-                containers = pod_spec.get("containers", []) if isinstance(pod_spec, dict) else []
+                pod_spec = (
+                    template.get("spec", {}) if isinstance(template, dict) else {}
+                )
+                containers = (
+                    pod_spec.get("containers", []) if isinstance(pod_spec, dict) else []
+                )
                 image, ports = _first_container(containers)
-                records.append(ServiceRecord(
-                    name=svc_name, image=image, ports=ports, source=rel,
-                ))
+                records.append(
+                    ServiceRecord(
+                        name=svc_name,
+                        image=image,
+                        ports=ports,
+                        source=rel,
+                    )
+                )
 
     return records, warnings
 
@@ -627,7 +664,9 @@ def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
     seen: set[str] = set()
     for pattern in workspaces:
         if not isinstance(pattern, str):
-            warnings.append(f"could not parse {rel}: workspace entry {pattern!r} is not a string")
+            warnings.append(
+                f"could not parse {rel}: workspace entry {pattern!r} is not a string"
+            )
             continue
         for match in sorted(root.glob(pattern)):
             if not match.is_dir():
@@ -691,9 +730,14 @@ def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
                 pkg_name = pkg_data.get("name") if isinstance(pkg_data, dict) else None
                 if isinstance(pkg_name, str) and pkg_name.strip():
                     name = pkg_name
-            records.append(ServiceRecord(
-                name=name, image="", source=f"{rel_dir}/package.json", directory=rel_dir,
-            ))
+            records.append(
+                ServiceRecord(
+                    name=name,
+                    image="",
+                    source=f"{rel_dir}/package.json",
+                    directory=rel_dir,
+                )
+            )
     records.sort(key=lambda r: r.directory)
     return records, warnings
 
@@ -917,13 +961,29 @@ def _assign_slugs(records: list[ServiceRecord]) -> tuple[list[str], list[str]]:
 # repository name (reviewer G-8: Technology was `none` on every service in
 # every fixture). Matched on the image's base name, exactly.
 _INFRA_IMAGES: dict[str, str] = {
-    "postgres": "PostgreSQL", "postgresql": "PostgreSQL", "mysql": "MySQL",
-    "mariadb": "MariaDB", "redis": "Redis", "nginx": "nginx", "mongo": "MongoDB",
-    "rabbitmq": "RabbitMQ", "kafka": "Kafka", "cp-kafka": "Kafka",
-    "elasticsearch": "Elasticsearch", "traefik": "Traefik", "minio": "MinIO",
-    "memcached": "Memcached", "python": "Python", "node": "Node.js",
-    "golang": "Go", "openjdk": "Java", "eclipse-temurin": "Java", "amazoncorretto": "Java",
-    "rust": "Rust", "swift": "Swift", "dart": "Dart",
+    "postgres": "PostgreSQL",
+    "postgresql": "PostgreSQL",
+    "mysql": "MySQL",
+    "mariadb": "MariaDB",
+    "redis": "Redis",
+    "nginx": "nginx",
+    "mongo": "MongoDB",
+    "rabbitmq": "RabbitMQ",
+    "kafka": "Kafka",
+    "cp-kafka": "Kafka",
+    "elasticsearch": "Elasticsearch",
+    "traefik": "Traefik",
+    "minio": "MinIO",
+    "memcached": "Memcached",
+    "python": "Python",
+    "node": "Node.js",
+    "golang": "Go",
+    "openjdk": "Java",
+    "eclipse-temurin": "Java",
+    "amazoncorretto": "Java",
+    "rust": "Rust",
+    "swift": "Swift",
+    "dart": "Dart",
 }
 
 
@@ -973,7 +1033,7 @@ def _dep_names_from_directory(directory: Path) -> list[str]:
                     for d in deps:
                         if isinstance(d, str):
                             idx = _PEP508_SPLIT_RE.search(d)
-                            names.append(d[:idx.start()].strip() if idx else d.strip())
+                            names.append(d[: idx.start()].strip() if idx else d.strip())
 
     pom = directory / "pom.xml"
     if pom.is_file():
@@ -1009,10 +1069,12 @@ def _technology_for(root: Path, record: ServiceRecord) -> str:
 
 def _lead_sentence(name: str, record: ServiceRecord) -> str:
     if record.base_image and record.image.startswith("build: "):
-        dockerfile = record.image[len("build: "):].split(" (", 1)[0]
+        dockerfile = record.image[len("build: ") :].split(" (", 1)[0]
         return f"Container `{name}` — built from `{dockerfile}` (base `{record.base_image}`)."
     if not record.image and record.directory:
-        return f"Workspace package `{name}` in `{record.directory}` — no container image."
+        return (
+            f"Workspace package `{name}` in `{record.directory}` — no container image."
+        )
     return f"Container `{name}` — image `{record.image}`."
 
 
@@ -1051,11 +1113,21 @@ def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection
         "| --- | --- |",
         f"| Image | {escape_cell(record.image)} |",
         f"| Ports | {escape_cell(ports_str) or 'none'} |",
-        *([f"| Command | {escape_cell(redact_userinfo(record.command))} |"] if record.command else []),
+        *(
+            [f"| Command | {escape_cell(redact_userinfo(record.command))} |"]
+            if record.command
+            else []
+        ),
         f"| Depends on | {escape_cell(depends_str) or 'nothing'} |",
         f"| Technology | {escape_cell(technology)} |",
         f"| Env keys | {escape_cell(env_str) or 'none'} |",
-        *([f"| Env file | {escape_cell(redact_userinfo(', '.join(record.env_files)))} |"] if record.env_files else []),
+        *(
+            [
+                f"| Env file | {escape_cell(redact_userinfo(', '.join(record.env_files)))} |"
+            ]
+            if record.env_files
+            else []
+        ),
         f"| Volumes | {escape_cell(', '.join(record.volumes)) or 'none'} |",
         f"| Healthcheck | {escape_cell(record.healthcheck) or 'none'} |",
         f"| Devices | {escape_cell(', '.join(record.devices)) or 'none'} |",
@@ -1139,7 +1211,10 @@ class ServicesExtractor:
         try:
             compose_records, compose_warnings = _read_compose(root)
         except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract()
-            compose_records, compose_warnings = [], [f"could not read compose manifests: {exc}"]
+            compose_records, compose_warnings = (
+                [],
+                [f"could not read compose manifests: {exc}"],
+            )
         warnings.extend(compose_warnings)
 
         if compose_records:
@@ -1149,9 +1224,14 @@ class ServicesExtractor:
             # compose file, or a parse failure just warned about above —
             # is what triggers the Dockerfile fallback.
             try:
-                dockerfile_records, dockerfile_warnings = _read_dockerfile(root, opts.repo_id)
+                dockerfile_records, dockerfile_warnings = _read_dockerfile(
+                    root, opts.repo_id
+                )
             except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
-                dockerfile_records, dockerfile_warnings = [], [f"could not read Dockerfile: {exc}"]
+                dockerfile_records, dockerfile_warnings = (
+                    [],
+                    [f"could not read Dockerfile: {exc}"],
+                )
             records = list(dockerfile_records)
             warnings.extend(dockerfile_warnings)
 
@@ -1172,7 +1252,10 @@ class ServicesExtractor:
         try:
             ws_records, ws_warnings = _read_workspaces(root, opts.repo_id)
         except Exception as exc:  # noqa: BLE001 -- defense in depth: readers must never crash extract() (see above)
-            ws_records, ws_warnings = [], [f"could not read workspace package.json: {exc}"]
+            ws_records, ws_warnings = (
+                [],
+                [f"could not read workspace package.json: {exc}"],
+            )
         records.extend(ws_records)
         warnings.extend(ws_warnings)
 

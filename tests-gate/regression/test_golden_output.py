@@ -120,9 +120,7 @@ def test_golden_kb_search(published_kb_mcp_params):
 
 def test_golden_kb_search_restrictive(published_kb_mcp_params):
     out = asyncio.run(
-        _call_mcp(
-            published_kb_mcp_params, "kb_search", {"query": "parental leave"}
-        )
+        _call_mcp(published_kb_mcp_params, "kb_search", {"query": "parental leave"})
     )
 
     assert_golden("mcp_outputs/kb_search_parental.txt", out)
@@ -148,8 +146,14 @@ def test_golden_kb_get_section(published_kb_mcp_params):
 
 
 def test_golden_cli_query(published_kb, kb_run):
-    out = kb_run("query", "leave", "--hub", str(published_kb["hub"]),
-                 "--kb-dir", str(published_kb["kb"]),
-                 cwd=published_kb["repo"]).stdout
+    out = kb_run(
+        "query",
+        "leave",
+        "--hub",
+        str(published_kb["hub"]),
+        "--kb-dir",
+        str(published_kb["kb"]),
+        cwd=published_kb["repo"],
+    ).stdout
 
     assert_golden("cli_outputs/query_leave.txt", out)

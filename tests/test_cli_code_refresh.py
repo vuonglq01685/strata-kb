@@ -38,9 +38,15 @@ def _dev_repo(tmp_path: Path, run_git) -> Path:
         'kind: dev\nhub: ""\nrepo_id: "demo"\nintake: ""\n', encoding="utf-8"
     )
     (root / ".gitignore").write_text(".kb/*-code/\n", encoding="utf-8")
-    core.run(core.CodeIngestOptions(
-        repo_root=root, kb_dir=kb, doc_id="demo-code", repo_id="demo", scaffold_svc=True,
-    ))
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root,
+            kb_dir=kb,
+            doc_id="demo-code",
+            repo_id="demo",
+            scaffold_svc=True,
+        )
+    )
     run_git(root, "init")
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "init")
@@ -53,10 +59,21 @@ def _add_billing(root: Path, run_git) -> None:
 
 
 def _note(root: Path, *extra: str):
-    return runner.invoke(app, [
-        "svc", "note", "billing-service", "--ticket", "T-1", "--title", "Billing",
-        "--kb-dir", str(root / ".kb"), *extra,
-    ])
+    return runner.invoke(
+        app,
+        [
+            "svc",
+            "note",
+            "billing-service",
+            "--ticket",
+            "T-1",
+            "--title",
+            "Billing",
+            "--kb-dir",
+            str(root / ".kb"),
+            *extra,
+        ],
+    )
 
 
 def test_svc_note_finds_a_service_the_ticket_just_added(tmp_path, run_git):
@@ -79,10 +96,14 @@ def test_svc_note_no_refresh_reads_the_document_as_it_is(tmp_path, run_git):
 def test_build_refreshes_code_in_a_dev_repo(tmp_path, run_git):
     root = _dev_repo(tmp_path, run_git)
     _add_billing(root, run_git)
-    result = runner.invoke(app, ["build", "--kb-dir", str(root / ".kb"), "--allow-pending"])
+    result = runner.invoke(
+        app, ["build", "--kb-dir", str(root / ".kb"), "--allow-pending"]
+    )
     assert result.exit_code == 0, result.output
     assert "refreshed demo-code" in result.stderr
-    assert "svc.billing-service" in (root / ".kb" / "demo-code" / "services.md").read_text(encoding="utf-8")
+    assert "svc.billing-service" in (
+        root / ".kb" / "demo-code" / "services.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_build_before_the_seed_does_not_ingest(tmp_path):
@@ -102,7 +123,9 @@ def test_build_regenerates_code_when_only_the_index_lists_it(tmp_path, run_git):
     never checked out) -- currently untested at the `kb build` layer."""
     root = _dev_repo(tmp_path, run_git)
     shutil.rmtree(root / ".kb" / "demo-code")
-    result = runner.invoke(app, ["build", "--kb-dir", str(root / ".kb"), "--allow-pending"])
+    result = runner.invoke(
+        app, ["build", "--kb-dir", str(root / ".kb"), "--allow-pending"]
+    )
     assert result.exit_code == 0, result.output
     assert (root / ".kb" / "demo-code" / "_manifest.yaml").is_file()
 
@@ -147,10 +170,20 @@ def test_svc_note_before_the_seed_does_not_create_code(tmp_path):
     kb.mkdir()
     (kb / "config.yaml").write_text('kind: dev\nrepo_id: "demo"\n', encoding="utf-8")
     (kb / "index.yaml").write_text("docs: []\n", encoding="utf-8")
-    result = runner.invoke(app, [
-        "svc", "note", "billing-service", "--ticket", "T-1", "--title", "Billing",
-        "--kb-dir", str(kb),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "svc",
+            "note",
+            "billing-service",
+            "--ticket",
+            "T-1",
+            "--title",
+            "Billing",
+            "--kb-dir",
+            str(kb),
+        ],
+    )
     assert result.exit_code == 1
     assert "demo-svc does not exist" in result.output
     assert "refreshed" not in result.stderr
@@ -161,7 +194,9 @@ def test_svc_note_before_the_seed_does_not_create_code(tmp_path):
 def test_publish_refreshes_before_anything_else(tmp_path, monkeypatch):
     kb = tmp_path / ".kb"
     kb.mkdir()
-    (kb / "config.yaml").write_text('kind: dev\nrepo_id: "demo"\nhub: ""\n', encoding="utf-8")
+    (kb / "config.yaml").write_text(
+        'kind: dev\nrepo_id: "demo"\nhub: ""\n', encoding="utf-8"
+    )
     seen: list[Path] = []
     monkeypatch.setattr(cli, "_refresh_dev_code", lambda kb_dir: seen.append(kb_dir))
     runner.invoke(app, ["publish", "--kb-dir", str(kb)])  # fails later: no hub

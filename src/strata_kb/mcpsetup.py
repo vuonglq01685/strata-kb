@@ -11,6 +11,7 @@ The mirror image of `dockersetup`: that one stands the service up, this one
 connects a client to it. Same shape — pure logic plus helpers the tests
 monkeypatch, with the CLI in `cli.py` doing only dispatch.
 """
+
 from __future__ import annotations
 
 import json
@@ -234,8 +235,7 @@ def probe(hub_url: str, token: str, http=None) -> ProbeResult:
     if status == 0:
         return ProbeResult(
             False,
-            f"lost the connection to {hub_url} between the two checks. "
-            f"{_decode(raw)}",
+            f"lost the connection to {hub_url} between the two checks. {_decode(raw)}",
         )
     if status in (401, 403):
         return ProbeResult(
@@ -262,7 +262,5 @@ def probe(hub_url: str, token: str, http=None) -> ProbeResult:
             ),
         )
     if status != 200:
-        return ProbeResult(
-            False, f"unexpected {status} from {hub_url}/api/docs"
-        )
+        return ProbeResult(False, f"unexpected {status} from {hub_url}/api/docs")
     return ProbeResult(True, f"hub reached — token accepted{_docs_suffix(raw)}")

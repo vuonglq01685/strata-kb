@@ -312,7 +312,12 @@ def test_intake_diverts_assets_to_store(hub_root, monkeypatch):
     cfg = _cfg(hub_root, _pr_http())
     store = assetstore.MemoryStore()
     intake.intake_publish(
-        cfg, "child-a", "abc123", "org/child-a", [], _archive_with_asset(),
+        cfg,
+        "child-a",
+        "abc123",
+        "org/child-a",
+        [],
+        _archive_with_asset(),
         store=store,
     )
     _git(hub_root, "checkout", "publish/child-a")
@@ -406,8 +411,13 @@ def test_intake_second_publish_over_unreadable_record_aborts_without_deleting(
 
     # publish 1: a real asset, diverted and merged into main
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [],
-        _archive_with_asset(), store=assetstore.MemoryStore(),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc123",
+        "org/child-a",
+        [],
+        _archive_with_asset(),
+        store=assetstore.MemoryStore(),
     )
     _git(hub_root, "merge", "--no-ff", "--no-edit", "publish/child-a")
     record_path = hub_root / "federation" / "child-a" / assetstore.RECORD_NAME
@@ -425,8 +435,13 @@ def test_intake_second_publish_over_unreadable_record_aborts_without_deleting(
     archive2 = _tar_bytes({"doc1/ch1-intro.md": b"text v2"})
     with pytest.raises(intake.IntakeError) as exc:
         intake.intake_publish(
-            _cfg(hub_root, FakeHTTP([])), "child-a", "abc124", "org/child-a", [],
-            archive2, store=assetstore.MemoryStore(),
+            _cfg(hub_root, FakeHTTP([])),
+            "child-a",
+            "abc124",
+            "org/child-a",
+            [],
+            archive2,
+            store=assetstore.MemoryStore(),
         )
     assert exc.value.status == 500
 
@@ -451,8 +466,13 @@ def test_intake_second_publish_new_asset_over_unreadable_record_does_not_truncat
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
 
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [],
-        _archive_with_asset(), store=assetstore.MemoryStore(),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc123",
+        "org/child-a",
+        [],
+        _archive_with_asset(),
+        store=assetstore.MemoryStore(),
     )
     _git(hub_root, "merge", "--no-ff", "--no-edit", "publish/child-a")
     record_path = hub_root / "federation" / "child-a" / assetstore.RECORD_NAME
@@ -470,8 +490,13 @@ def test_intake_second_publish_new_asset_over_unreadable_record_does_not_truncat
     )
     with pytest.raises(intake.IntakeError) as exc:
         intake.intake_publish(
-            _cfg(hub_root, FakeHTTP([])), "child-a", "abc124", "org/child-a", [],
-            archive2, store=assetstore.MemoryStore(),
+            _cfg(hub_root, FakeHTTP([])),
+            "child-a",
+            "abc124",
+            "org/child-a",
+            [],
+            archive2,
+            store=assetstore.MemoryStore(),
         )
     assert exc.value.status == 500
 
@@ -514,8 +539,13 @@ def test_intake_second_publish_over_zero_byte_record_aborts_without_deleting(
 
     # publish 1: a real asset, diverted and merged into main
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [],
-        _archive_with_asset(), store=assetstore.MemoryStore(),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc123",
+        "org/child-a",
+        [],
+        _archive_with_asset(),
+        store=assetstore.MemoryStore(),
     )
     _git(hub_root, "merge", "--no-ff", "--no-edit", "publish/child-a")
     record_path = hub_root / "federation" / "child-a" / assetstore.RECORD_NAME
@@ -545,8 +575,13 @@ def test_intake_second_publish_over_zero_byte_record_aborts_without_deleting(
     aborted = None
     try:
         intake.intake_publish(
-            _cfg(hub_root, http), "child-a", "abc124", "org/child-a", [],
-            archive2, store=assetstore.MemoryStore(),
+            _cfg(hub_root, http),
+            "child-a",
+            "abc124",
+            "org/child-a",
+            [],
+            archive2,
+            store=assetstore.MemoryStore(),
         )
     except intake.IntakeError as exc:
         aborted = exc
@@ -597,7 +632,12 @@ def test_intake_upload_failure_aborts_before_commit(hub_root, monkeypatch):
     before = gitio.head_commit(hub_root)
     with pytest.raises(intake.IntakeError) as exc:
         intake.intake_publish(
-            cfg, "child-a", "abc123", "org/child-a", [], _archive_with_asset(),
+            cfg,
+            "child-a",
+            "abc123",
+            "org/child-a",
+            [],
+            _archive_with_asset(),
             store=_FailingStore(),
         )
     assert exc.value.status == 502
@@ -628,8 +668,13 @@ def test_intake_upload_failure_leaves_no_dirty_leftovers(hub_root, monkeypatch):
     )
     with pytest.raises(intake.IntakeError):
         intake.intake_publish(
-            _cfg(hub_root, FakeHTTP([])), "child-a", "abc123", "org/child-a",
-            [], archive1, store=_FailingStore(),
+            _cfg(hub_root, FakeHTTP([])),
+            "child-a",
+            "abc123",
+            "org/child-a",
+            [],
+            archive1,
+            store=_FailingStore(),
         )
     status = gitio._run(
         hub_root, "status", "--porcelain", "--", "federation"
@@ -638,8 +683,13 @@ def test_intake_upload_failure_leaves_no_dirty_leftovers(hub_root, monkeypatch):
 
     archive2 = _tar_bytes({"doc1/ch1-intro.md": b"text"})
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc124", "org/child-a", [],
-        archive2, store=assetstore.MemoryStore(),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc124",
+        "org/child-a",
+        [],
+        archive2,
+        store=assetstore.MemoryStore(),
     )
     _git(hub_root, "checkout", "publish/child-a")
     dest = hub_root / "federation" / "child-a"
@@ -676,12 +726,15 @@ def test_asset_shaped_name_without_a_configured_store_still_obeys_the_length_bou
         f"this test needs an asset-shaped path OVER the bound; "
         f"{len(over_length)} is not over {intake.MAX_MEMBER_PATH_LEN}"
     )
-    archive = _tar_bytes(
-        {"doc1/ch1-intro.md": b"text", over_length: b"PNGBYTES"}
-    )
+    archive = _tar_bytes({"doc1/ch1-intro.md": b"text", over_length: b"PNGBYTES"})
     with pytest.raises(intake.IntakeError) as exc:
         intake.intake_publish(
-            cfg, "child-a", "abc123", "org/child-a", [], archive,
+            cfg,
+            "child-a",
+            "abc123",
+            "org/child-a",
+            [],
+            archive,
         )
     assert exc.value.status == 400
     assert "UTF-16 code units" in str(exc.value)
@@ -699,8 +752,13 @@ def test_hub_manifest_synthesizes_assets_and_hides_record(hub_root, monkeypatch)
         "asset_store:\n  mode: s3\n  bucket: kb-assets\n", encoding="utf-8"
     )
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [],
-        _archive_with_asset(), store=assetstore.MemoryStore(),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc123",
+        "org/child-a",
+        [],
+        _archive_with_asset(),
+        store=assetstore.MemoryStore(),
     )
     # hub_manifest reads main -- merge the publish branch in first
     _git(hub_root, "merge", "--no-ff", "--no-edit", "publish/child-a")
@@ -728,7 +786,12 @@ def test_intake_child_supplied_assets_record_is_ignored(hub_root, monkeypatch):
         }
     )
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [], archive,
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc123",
+        "org/child-a",
+        [],
+        archive,
         store=assetstore.MemoryStore(),
     )
     _git(hub_root, "checkout", "publish/child-a")
@@ -742,15 +805,25 @@ def test_intake_child_supplied_assets_record_is_ignored(hub_root, monkeypatch):
 @pytest.mark.parametrize(
     "name",
     [
-        "C:evil.md", "C:/evil.md", "dir\\evil.md", "\\evil.md",
+        "C:evil.md",
+        "C:/evil.md",
+        "dir\\evil.md",
+        "\\evil.md",
         # HIGH-1 / I-7: the position-0-anchored regex this replaced let all
         # of these through -- a drive letter, a reserved device name, or a
         # trailing dot/space in a NON-LEADING segment, each measured to
         # collapse (Windows) or commit verbatim and break every Windows
         # clone (Linux, where this service actually runs).
-        "doc1/C:evil.md", "doc1/dir\\evil.md", "doc1/CON.md", "doc1/NUL.md",
-        "doc1/COM1.md", "doc1/assets/NUL", "doc./a.md", "doc /a.md",
-        "doc1/a.md.", "doc1/a.md ",
+        "doc1/C:evil.md",
+        "doc1/dir\\evil.md",
+        "doc1/CON.md",
+        "doc1/NUL.md",
+        "doc1/COM1.md",
+        "doc1/assets/NUL",
+        "doc./a.md",
+        "doc /a.md",
+        "doc1/a.md.",
+        "doc1/a.md ",
         # Round 2 / N-1: the round-1 list was built from the review's
         # examples rather than the rule -- these five shape families still
         # passed every guard and reproduced the identical measured outcome
@@ -758,12 +831,23 @@ def test_intake_child_supplied_assets_record_is_ignored(hub_root, monkeypatch):
         # test_shapes_this_round_newly_refuses_would_have_broken_every_
         # windows_clone below for the measured proof, not just the
         # refusal message.
-        "doc1/NUL .txt", "doc1/NUL  .txt", "doc1/CON .md",  # device + trailing space before ext
-        "doc1/CONIN$.md", "doc1/CONOUT$.md", "doc1/CONIN$",  # devices pubgate.WIN32_DEVICES lacked
-        "doc1/a\x01b.md", "doc1/a\nb.md", "doc1/a\rb.md", "doc1/a\tb.md",
+        "doc1/NUL .txt",
+        "doc1/NUL  .txt",
+        "doc1/CON .md",  # device + trailing space before ext
+        "doc1/CONIN$.md",
+        "doc1/CONOUT$.md",
+        "doc1/CONIN$",  # devices pubgate.WIN32_DEVICES lacked
+        "doc1/a\x01b.md",
+        "doc1/a\nb.md",
+        "doc1/a\rb.md",
+        "doc1/a\tb.md",
         "doc1/\x1b[31mred.md",  # C0 controls other than NUL
-        "doc1/a<b.md", "doc1/a>b.md", "doc1/a\"b.md", "doc1/a|b.md",
-        "doc1/a?b.md", "doc1/a*b.md",  # Windows-illegal, POSIX-legal
+        "doc1/a<b.md",
+        "doc1/a>b.md",
+        'doc1/a"b.md',
+        "doc1/a|b.md",
+        "doc1/a?b.md",
+        "doc1/a*b.md",  # Windows-illegal, POSIX-legal
         # LOW-3 (round 3): the re-review's mutation pass found `cp < 0x20`
         # -> `cp < 0x1F` survives the whole suite -- U+001F is genuinely
         # clone-fatal (measured) and was simply never exercised at the
@@ -772,7 +856,8 @@ def test_intake_child_supplied_assets_record_is_ignored(hub_root, monkeypatch):
         # LOW-6 (round 3): '.git' and its NTFS 8.3 short-name alias reach
         # the hub's own `git add` and fail there with a raw stderr 502
         # instead of a clean 400 -- a git rule, not a Windows one.
-        "doc1/.git", "doc1/git~1",
+        "doc1/.git",
+        "doc1/git~1",
     ],
 )
 def test_windows_path_shapes_in_a_tar_are_refused(name, tmp_path):
@@ -790,7 +875,9 @@ def test_windows_path_shape_in_a_tar_does_not_collapse_into_dest(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def _tree_sha_from_entries(repo: Path, entries: dict[str, bytes], index_file: Path) -> str:
+def _tree_sha_from_entries(
+    repo: Path, entries: dict[str, bytes], index_file: Path
+) -> str:
     """A git tree object sha for exactly `entries` (path -> content), built
     with `update-index --index-info` + `write-tree` against a private
     GIT_INDEX_FILE -- plumbing, not `git add`/checkout, so no Windows
@@ -803,7 +890,8 @@ def _tree_sha_from_entries(repo: Path, entries: dict[str, bytes], index_file: Pa
     for path, content in entries.items():
         proc = subprocess.run(
             ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
-            input=content, capture_output=True,
+            input=content,
+            capture_output=True,
         )
         assert proc.returncode == 0, proc.stderr
         sha = proc.stdout.decode().strip()
@@ -811,11 +899,15 @@ def _tree_sha_from_entries(repo: Path, entries: dict[str, bytes], index_file: Pa
     env = {**os.environ, "GIT_INDEX_FILE": str(index_file)}
     proc = subprocess.run(
         ["git", "-C", str(repo), "update-index", "--add", "--index-info"],
-        input=b"".join(lines), capture_output=True, env=env,
+        input=b"".join(lines),
+        capture_output=True,
+        env=env,
     )
     assert proc.returncode == 0, proc.stderr
     proc = subprocess.run(
-        ["git", "-C", str(repo), "write-tree"], capture_output=True, env=env,
+        ["git", "-C", str(repo), "write-tree"],
+        capture_output=True,
+        env=env,
     )
     assert proc.returncode == 0, proc.stderr
     return proc.stdout.decode().strip()
@@ -831,7 +923,9 @@ def _tree_sha_from_entries(repo: Path, entries: dict[str, bytes], index_file: Pa
         "asymmetry is the whole finding, not a platform gap in this test"
     ),
 )
-def test_shapes_this_round_newly_refuses_would_have_broken_every_windows_clone(tmp_path):
+def test_shapes_this_round_newly_refuses_would_have_broken_every_windows_clone(
+    tmp_path,
+):
     """The standing instruction for this round: a test that only asserts
     the refusal message is not enough -- the outcome that matters is
     whether a Windows client can still clone the hub. This builds, with
@@ -852,12 +946,14 @@ def test_shapes_this_round_newly_refuses_would_have_broken_every_windows_clone(t
     origin = tmp_path / "origin.git"
     subprocess.run(
         ["git", "init", "--bare", "-b", "main", str(origin)],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     # off for this authoring step only -- see the docstring above.
     subprocess.run(
         ["git", "-C", str(origin), "config", "core.protectNTFS", "false"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     entries = {
         # LOW-7 (round 3): 'NUL .txt' is not a kb-artifact (.txt is not
@@ -874,17 +970,21 @@ def test_shapes_this_round_newly_refuses_would_have_broken_every_windows_clone(t
     tree_sha = _tree_sha_from_entries(origin, entries, tmp_path / "poison-index")
     commit = subprocess.run(
         ["git", "-C", str(origin), "commit-tree", tree_sha, "-m", "poison"],
-        input=b"", capture_output=True,
+        input=b"",
+        capture_output=True,
     )
     assert commit.returncode == 0, commit.stderr
     commit_sha = commit.stdout.decode().strip()
     subprocess.run(
         ["git", "-C", str(origin), "update-ref", "refs/heads/main", commit_sha],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     clone_dir = tmp_path / "clone"
     proc = subprocess.run(
-        ["git", "clone", str(origin), str(clone_dir)], capture_output=True, text=True,
+        ["git", "clone", str(origin), str(clone_dir)],
+        capture_output=True,
+        text=True,
     )
     assert proc.returncode != 0, proc.stdout + proc.stderr
     checked_out_files = (
@@ -898,20 +998,52 @@ def test_shapes_this_round_newly_refuses_would_have_broken_every_windows_clone(t
 @pytest.mark.parametrize(
     "rel",
     [
-        "C:boom", "dir\\boom.md", "C:/boom", "\\boom",
-        "doc1/C:boom.md", "doc1/dir\\boom.md", "doc1/C:/boom",
-        "CON.md", "NUL", "com1.txt", "doc1/Nul.md", "doc1/assets/lpt1",
-        "boom.", "boom ", "doc1/boom. ", "boom..",
+        "C:boom",
+        "dir\\boom.md",
+        "C:/boom",
+        "\\boom",
+        "doc1/C:boom.md",
+        "doc1/dir\\boom.md",
+        "doc1/C:/boom",
+        "CON.md",
+        "NUL",
+        "com1.txt",
+        "doc1/Nul.md",
+        "doc1/assets/lpt1",
+        "boom.",
+        "boom ",
+        "doc1/boom. ",
+        "boom..",
         "file.md:stream",  # LOW-4: an NTFS alternate data stream
         # Round 2 / N-1: enumerated by property, not by example (see the
         # ruling quoted in _reject_path_shape's docstring).
-        "NUL .txt", "NUL  .txt", "CON .md",  # device name + trailing space before ext
-        "CONIN$", "CONIN$.md", "CONOUT$.md",  # devices pubgate.WIN32_DEVICES lacked
-        "COM0.md", "LPT0.md", "COM¹.md", "LPT².md",  # COM0/LPT0 + superscript aliases
-        "a\x01b.md", "a\nb.md", "a\rb.md", "a\tb.md", "a\x1bb.md", "a\x7fb.md",
-        "a<b.md", "a>b.md", 'a"b.md', "a|b.md", "a?b.md", "a*b.md",
+        "NUL .txt",
+        "NUL  .txt",
+        "CON .md",  # device name + trailing space before ext
+        "CONIN$",
+        "CONIN$.md",
+        "CONOUT$.md",  # devices pubgate.WIN32_DEVICES lacked
+        "COM0.md",
+        "LPT0.md",
+        "COM¹.md",
+        "LPT².md",  # COM0/LPT0 + superscript aliases
+        "a\x01b.md",
+        "a\nb.md",
+        "a\rb.md",
+        "a\tb.md",
+        "a\x1bb.md",
+        "a\x7fb.md",
+        "a<b.md",
+        "a>b.md",
+        'a"b.md',
+        "a|b.md",
+        "a?b.md",
+        "a*b.md",
         "a\x1fb.md",  # LOW-3: cp < 0x20 boundary, was untested exactly here
-        ".git", "git~1", ".GIT", "GIT~1",  # LOW-6
+        ".git",
+        "git~1",
+        ".GIT",
+        "GIT~1",  # LOW-6
     ],
 )
 def test_reject_path_shape_rejects_windows_shapes(rel):
@@ -928,7 +1060,8 @@ def test_reject_path_shape_rejects_windows_shapes(rel):
 
 
 @pytest.mark.parametrize(
-    "rel", ["boom", "dir/boom.md", "a/b/c.md", "./leading-dot.md", "../up.md", "a/../b.md"]
+    "rel",
+    ["boom", "dir/boom.md", "a/b/c.md", "./leading-dot.md", "../up.md", "a/../b.md"],
 )
 def test_reject_path_shape_accepts_shapes_it_does_not_own(rel):
     """'.'/'..'/empty components are a traversal question, not a
@@ -976,8 +1109,13 @@ def test_intake_deletes_cannot_touch_assets_record(hub_root, monkeypatch):
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc124", "org/child-a",
-        ["_assets.yaml"], _archive_with_asset(), store=assetstore.MemoryStore(),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc124",
+        "org/child-a",
+        ["_assets.yaml"],
+        _archive_with_asset(),
+        store=assetstore.MemoryStore(),
     )
     _git(hub_root, "checkout", "publish/child-a")
     assert (hub_root / "federation" / "child-a" / "_assets.yaml").exists()
@@ -1131,12 +1269,21 @@ def test_intake_deletes_hub_owned_bypass_spellings_are_ignored(
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a",
-        [], _archive_with_asset(), store=assetstore.MemoryStore(),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc123",
+        "org/child-a",
+        [],
+        _archive_with_asset(),
+        store=assetstore.MemoryStore(),
     )
     intake.intake_publish(
-        _cfg(hub_root, _pr_http()), "child-a", "abc124", "org/child-a",
-        [bypass], _tar_bytes({"doc1/other.md": b"other"}),
+        _cfg(hub_root, _pr_http()),
+        "child-a",
+        "abc124",
+        "org/child-a",
+        [bypass],
+        _tar_bytes({"doc1/other.md": b"other"}),
         store=assetstore.MemoryStore(),
     )
     _git(hub_root, "checkout", "publish/child-a")
@@ -1145,7 +1292,9 @@ def test_intake_deletes_hub_owned_bypass_spellings_are_ignored(
 
 
 @pytest.mark.parametrize("bypass", ["_assets.yaml ", "_assets.yaml."])
-def test_intake_deletes_hub_owned_trailing_shapes_are_refused(bypass, intake_cfg, make_upload):
+def test_intake_deletes_hub_owned_trailing_shapes_are_refused(
+    bypass, intake_cfg, make_upload
+):
     """A trailing space/dot also folds onto '_assets.yaml' on a
     Windows/macOS filesystem -- closed here as a hard refusal (via
     _reject_path_shape's trailing-dot/space rule) rather than a silent
@@ -1193,8 +1342,12 @@ def test_degenerate_member_names_refused_by_validation_not_by_a_crash(name, tmp_
     assert exc.value.status == 400
 
 
-@pytest.mark.parametrize("order", [("assets", "assets/x.png"), ("assets/x.png", "assets")])
-def test_a_file_and_directory_name_collision_in_the_tar_is_refused_not_500(order, tmp_path):
+@pytest.mark.parametrize(
+    "order", [("assets", "assets/x.png"), ("assets/x.png", "assets")]
+)
+def test_a_file_and_directory_name_collision_in_the_tar_is_refused_not_500(
+    order, tmp_path
+):
     """MEDIUM-2: a member named 'assets' (a file) and a member
     'assets/x.png' collide on disk regardless of shape/traversal
     validation -- extraction itself raises OSError (PermissionError /
@@ -1256,8 +1409,13 @@ def test_skipped_file_names_reach_the_log_escaped(hub_root, monkeypatch, caplog)
     )
     with caplog.at_level("WARNING", logger="strata_kb.intake"):
         intake.intake_publish(
-            _cfg(hub_root, _pr_http()), "child-a", "abc123", "org/child-a", [],
-            _archive_with_asset(), store=assetstore.MemoryStore(),
+            _cfg(hub_root, _pr_http()),
+            "child-a",
+            "abc123",
+            "org/child-a",
+            [],
+            _archive_with_asset(),
+            store=assetstore.MemoryStore(),
         )
     warnings = "\n".join(r.message for r in caplog.records)
     assert "\nFAKE" not in warnings
@@ -1313,7 +1471,9 @@ def test_nfd_only_names_are_not_refused_outright(tmp_path):
     intake.safe_extract(_tar_bytes({nfd_name: b"x"}), tmp_path)  # must not raise
     written = list((tmp_path / "doc1").iterdir())
     assert len(written) == 1
-    assert written[0].name == unicodedata.normalize("NFD", "café") + ".md"  # exact spelling kept
+    assert (
+        written[0].name == unicodedata.normalize("NFD", "café") + ".md"
+    )  # exact spelling kept
 
 
 @pytest.mark.parametrize(
@@ -1984,4 +2144,3 @@ def test_a_case_colliding_pair_is_refused(tmp_path):
     with pytest.raises(intake.IntakeError) as exc:
         intake.safe_extract(buf.getvalue(), tmp_path)
     assert exc.value.status == 400
-

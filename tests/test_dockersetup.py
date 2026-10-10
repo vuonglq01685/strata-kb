@@ -180,9 +180,7 @@ def test_cli_docker_setup_hub_compose_failure_exits_nonzero(
     assert TOKEN_RE.search((tmp_path / ".env").read_text(encoding="utf-8"))
 
 
-def test_cli_docker_setup_hub_no_docker_flag_skips_compose(
-    tmp_path: Path, monkeypatch
-):
+def test_cli_docker_setup_hub_no_docker_flag_skips_compose(tmp_path: Path, monkeypatch):
     calls = _mock_docker(monkeypatch, ready=True)
     init_repo(tmp_path, "hub")
     result = runner.invoke(app, ["docker-setup", str(tmp_path), "--no-docker"])
@@ -199,9 +197,7 @@ def test_cli_docker_setup_child_without_docker_fails(tmp_path: Path, monkeypatch
     assert "Docker not detected" in result.output
 
 
-def test_cli_docker_setup_child_pull_failure_exits_nonzero(
-    tmp_path: Path, monkeypatch
-):
+def test_cli_docker_setup_child_pull_failure_exits_nonzero(tmp_path: Path, monkeypatch):
     _mock_docker(monkeypatch, ready=True, pull_rc=1)
     init_repo(tmp_path, "child")
     result = runner.invoke(app, ["docker-setup", str(tmp_path)])
@@ -209,9 +205,7 @@ def test_cli_docker_setup_child_pull_failure_exits_nonzero(
     assert "docker compose pull failed" in result.output
 
 
-def test_cli_docker_setup_child_no_docker_flag_skips_pull(
-    tmp_path: Path, monkeypatch
-):
+def test_cli_docker_setup_child_no_docker_flag_skips_pull(tmp_path: Path, monkeypatch):
     calls = _mock_docker(monkeypatch, ready=False)
     init_repo(tmp_path, "child")
     result = runner.invoke(app, ["docker-setup", str(tmp_path), "--no-docker"])

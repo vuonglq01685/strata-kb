@@ -97,7 +97,9 @@ def test_get_section_folded_id_l2_returns_parent(fed_hub):
     hub = HubHandle(root=fed_hub)
     r = get_section(hub, "arinc-424", "5.3.1", level="l2")
     assert r is not None
-    assert r.section_id == "5.3"  # L2 has no child anchor — return the parent, don't lie
+    assert (
+        r.section_id == "5.3"
+    )  # L2 has no child anchor — return the parent, don't lie
     assert "§5.3" in r.citation
 
 
@@ -142,6 +144,7 @@ def test_get_section_nested_qualifier(tmp_path):
 
 def test_search_use_semantic_false_skips_embedder(monkeypatch):
     import strata_kb.query as query_mod
+
     seen = {}
 
     def spy(hub, embedder, text, tags):
@@ -150,14 +153,16 @@ def test_search_use_semantic_false_skips_embedder(monkeypatch):
 
     monkeypatch.setattr(query_mod, "_search_index", spy)
     sentinel = object()
-    assert query_mod.search(
-        object(), "airspace", use_semantic=False, embedder=sentinel
-    ) == []
+    assert (
+        query_mod.search(object(), "airspace", use_semantic=False, embedder=sentinel)
+        == []
+    )
     assert seen["embedder"] is None
 
 
 def test_search_use_semantic_default_passes_embedder(monkeypatch):
     import strata_kb.query as query_mod
+
     seen = {}
 
     def spy(hub, embedder, text, tags):

@@ -6,6 +6,7 @@ default token has 192-bit entropy, but an operator may configure a weaker
 one, and unauthorized attempts need a cost. Per-process state is enough for
 the single-instance deployments this server targets.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -143,9 +144,7 @@ class SlidingWindowLimiter:
     def _sweep(self, cutoff: float) -> None:
         """Drop keys whose hits all expired. Caller holds the lock."""
         stale = [
-            key
-            for key, hits in self._hits.items()
-            if not hits or hits[-1] <= cutoff
+            key for key, hits in self._hits.items() if not hits or hits[-1] <= cutoff
         ]
         for key in stale:
             del self._hits[key]

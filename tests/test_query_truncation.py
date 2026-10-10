@@ -5,6 +5,7 @@ caller. `record` matched 154 sections in FTS and returned 50; `runway` matched
 63 and returned 50 — under a docstring that tells agents kb_search "Returns
 every relevant section found". For a broad BA query that is a false assurance.
 """
+
 import pytest
 
 pytest.importorskip("sqlite_vec")
@@ -33,11 +34,15 @@ def _wide_hub(tmp_path, n_sections: int) -> HubHandle:
     models.save_yaml_model(
         entry / "_manifest.yaml",
         models.Manifest(
-            id="wide-doc", title="Wide Doc",
+            id="wide-doc",
+            title="Wide Doc",
             sections=[
                 models.SectionEntry(
-                    id=f"{i}.0", title=f"Record {i}",
-                    summary=f"Record {i}.", status="summarized", file="ch1",
+                    id=f"{i}.0",
+                    title=f"Record {i}",
+                    summary=f"Record {i}.",
+                    status="summarized",
+                    file="ch1",
                 )
                 for i in range(1, n_sections + 1)
             ],
@@ -45,14 +50,19 @@ def _wide_hub(tmp_path, n_sections: int) -> HubHandle:
     )
     models.save_yaml_model(
         fed / "wide-kb" / "index.yaml",
-        models.KBIndex(docs=[models.IndexEntry(
-            id="wide-doc", title="Wide Doc", tags=["wide"], summary="Wide."
-        )]),
+        models.KBIndex(
+            docs=[
+                models.IndexEntry(
+                    id="wide-doc", title="Wide Doc", tags=["wide"], summary="Wide."
+                )
+            ]
+        ),
     )
     models.save_yaml_model(
         fed / "wide-kb" / "_meta.yaml",
         FederationMeta(
-            repo_id="wide-kb", source_commit="abc1234",
+            repo_id="wide-kb",
+            source_commit="abc1234",
             published_at="2026-07-13T00:00:00+00:00",
         ),
     )

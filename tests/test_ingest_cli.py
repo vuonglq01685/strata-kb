@@ -26,7 +26,9 @@ def _fake_parse(monkeypatch):
     from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: FAKE_ITEMS)
+    monkeypatch.setattr(
+        parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: FAKE_ITEMS
+    )
     monkeypatch.setattr(
         parser, "bookmark_ids", lambda pdf, config=None: {"5", "5.3", "5.9"}
     )
@@ -36,12 +38,19 @@ def _fake_parse_with_bookmark_parts(monkeypatch):
     from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS)
+    monkeypatch.setattr(
+        parser,
+        "doc_to_items",
+        lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS,
+    )
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
     monkeypatch.setattr(
         parser,
         "outline_parts",
-        lambda pdf, config=None: [Part("1", "INTRO", 1), Part("attachment-1", "FLOW", 5)],
+        lambda pdf, config=None: [
+            Part("1", "INTRO", 1),
+            Part("attachment-1", "FLOW", 5),
+        ],
     )
 
 
@@ -49,7 +58,11 @@ def _fake_parse_outline_forbidden(monkeypatch):
     from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS)
+    monkeypatch.setattr(
+        parser,
+        "doc_to_items",
+        lambda doc, assets_dir=None, pdf_path=None: BOOKMARK_ITEMS,
+    )
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
 
     def _forbidden(pdf, config=None):
@@ -67,11 +80,16 @@ def test_ingest_rejects_traversal_doc_id_before_touching_paths(
     result = runner.invoke(
         app,
         [
-            "ingest", str(pdf),
-            "--id", "../evil",
-            "--kb-dir", str(tmp_path / ".kb"),
-            "--work-dir", str(tmp_path / ".kb-work"),
-            "--llm", "none",
+            "ingest",
+            str(pdf),
+            "--id",
+            "../evil",
+            "--kb-dir",
+            str(tmp_path / ".kb"),
+            "--work-dir",
+            str(tmp_path / ".kb-work"),
+            "--llm",
+            "none",
         ],
     )
     assert result.exit_code == 1
@@ -86,13 +104,20 @@ def test_ingest_creates_kb_and_reports_warnings(tmp_path: Path, monkeypatch):
     result = runner.invoke(
         app,
         [
-            "ingest", str(pdf),
-            "--id", "arinc-424",
-            "--tags", "arinc424,navdata",
-            "--revision", "Supplement 22",
-            "--kb-dir", str(tmp_path / ".kb"),
-            "--work-dir", str(tmp_path / ".kb-work"),
-            "--llm", "none",
+            "ingest",
+            str(pdf),
+            "--id",
+            "arinc-424",
+            "--tags",
+            "arinc424,navdata",
+            "--revision",
+            "Supplement 22",
+            "--kb-dir",
+            str(tmp_path / ".kb"),
+            "--work-dir",
+            str(tmp_path / ".kb-work"),
+            "--llm",
+            "none",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -110,12 +135,18 @@ def test_status_lists_pending_sections(tmp_path: Path, monkeypatch):
     runner.invoke(
         app,
         [
-            "ingest", str(pdf),
-            "--id", "arinc-424",
-            "--tags", "arinc424",
-            "--kb-dir", str(tmp_path / ".kb"),
-            "--work-dir", str(tmp_path / ".kb-work"),
-            "--llm", "none",
+            "ingest",
+            str(pdf),
+            "--id",
+            "arinc-424",
+            "--tags",
+            "arinc424",
+            "--kb-dir",
+            str(tmp_path / ".kb"),
+            "--work-dir",
+            str(tmp_path / ".kb-work"),
+            "--llm",
+            "none",
         ],
     )
     result = runner.invoke(app, ["status", "--kb-dir", str(tmp_path / ".kb")])
@@ -127,10 +158,14 @@ def test_status_lists_pending_sections(tmp_path: Path, monkeypatch):
 
 def _ingest_args(tmp_path, extra=()):
     return [
-        "ingest", str(tmp_path / "doc.pdf"),
-        "--id", "arinc-424",
-        "--kb-dir", str(tmp_path / ".kb"),
-        "--work-dir", str(tmp_path / ".kb-work"),
+        "ingest",
+        str(tmp_path / "doc.pdf"),
+        "--id",
+        "arinc-424",
+        "--kb-dir",
+        str(tmp_path / ".kb"),
+        "--work-dir",
+        str(tmp_path / ".kb-work"),
         *extra,
     ]
 
@@ -145,6 +180,7 @@ def test_ingest_auto_summarizes_by_default(tmp_path, monkeypatch):
     _write_pdf(tmp_path)
     import strata_kb.llm as llm_mod
     from tests.test_summarize import FakeRunner
+
     monkeypatch.setattr(llm_mod, "detect_runner", lambda c, cfg: FakeRunner())
     # index.yaml is created by scaffold during ingest; default runner=auto
     result = runner.invoke(app, _ingest_args(tmp_path))
@@ -160,8 +196,10 @@ def test_ingest_no_summarize_flag_skips_llm(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
     import strata_kb.llm as llm_mod
+
     monkeypatch.setattr(
-        llm_mod, "detect_runner",
+        llm_mod,
+        "detect_runner",
         lambda c, cfg: (_ for _ in ()).throw(AssertionError("must not be called")),
     )
     result = runner.invoke(app, _ingest_args(tmp_path, ["--no-summarize"]))
@@ -177,6 +215,7 @@ def test_ingest_without_runner_stays_pending_exit_0(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)
     import strata_kb.llm as llm_mod
+
     monkeypatch.setattr(llm_mod, "detect_runner", lambda c, cfg: None)
     result = runner.invoke(app, _ingest_args(tmp_path))
     assert result.exit_code == 0, result.output
@@ -192,6 +231,7 @@ def test_ingest_failed_sections_still_exit_0(tmp_path, monkeypatch):
     _write_pdf(tmp_path)
     import strata_kb.llm as llm_mod
     from tests.test_summarize import FakeRunner
+
     monkeypatch.setattr(
         llm_mod, "detect_runner", lambda c, cfg: FakeRunner(fail_ids={"5.3"})
     )
@@ -236,7 +276,9 @@ def test_ingest_warns_when_content_never_reaches_l3(tmp_path: Path, monkeypatch)
     orphan = "Stranded preamble sentence."
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
     monkeypatch.setattr(
-        parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: [DocItem("text", orphan)]
+        parser,
+        "doc_to_items",
+        lambda doc, assets_dir=None, pdf_path=None: [DocItem("text", orphan)],
     )
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: set())
     monkeypatch.setattr(parser, "outline_parts", lambda pdf, config=None: None)
@@ -271,7 +313,9 @@ def _stub_parser(monkeypatch, items, bookmark_ids=frozenset()):
     from strata_kb.ingest import parser
 
     monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: object())
-    monkeypatch.setattr(parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: items)
+    monkeypatch.setattr(
+        parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: items
+    )
     monkeypatch.setattr(parser, "bookmark_ids", lambda pdf, config=None: bookmark_ids)
     monkeypatch.setattr(parser, "outline_parts", lambda pdf, config=None: None)
 
@@ -299,18 +343,28 @@ INVERTED_ITEMS = [
 ]
 
 
-def test_ingest_report_names_demotions_fallbacks_and_token_stats(tmp_path: Path, monkeypatch):
+def test_ingest_report_names_demotions_fallbacks_and_token_stats(
+    tmp_path: Path, monkeypatch
+):
     _stub_parser(monkeypatch, NOISY_ITEMS)
     _write_pdf(tmp_path)
     result = runner.invoke(app, _ingest_args(tmp_path, ["--llm", "none"]))
     assert result.exit_code == 0, result.output
-    assert "[warn] heading demoted to text (caption, page 2): 'Table 5-6 Airport SID Record'" in result.output
-    assert "[warn] fallback id '5.6-ndb-navaid-record' for unparsed heading 'NDB Navaid Record' (page 3)" in result.output
+    assert (
+        "[warn] heading demoted to text (caption, page 2): 'Table 5-6 Airport SID Record'"
+        in result.output
+    )
+    assert (
+        "[warn] fallback id '5.6-ndb-navaid-record' for unparsed heading 'NDB Navaid Record' (page 3)"
+        in result.output
+    )
     assert "sections: 3 · L3 tokens min/median/max " in result.output
     assert "below 300, 0 above 5000 · 1 fallback ids" in result.output
 
 
-def test_ingest_report_names_a_page_inversion_without_layout_data(tmp_path: Path, monkeypatch):
+def test_ingest_report_names_a_page_inversion_without_layout_data(
+    tmp_path: Path, monkeypatch
+):
     _stub_parser(monkeypatch, INVERTED_ITEMS)
     _write_pdf(tmp_path)
     result = runner.invoke(app, _ingest_args(tmp_path, ["--llm", "none"]))
@@ -321,13 +375,17 @@ def test_ingest_report_names_a_page_inversion_without_layout_data(tmp_path: Path
     ) in result.output
 
 
-def test_ingest_report_carries_parser_logger_warnings_and_detaches(tmp_path: Path, monkeypatch):
+def test_ingest_report_carries_parser_logger_warnings_and_detaches(
+    tmp_path: Path, monkeypatch
+):
     import logging
 
     from strata_kb.ingest import parser
 
     def _items(doc, assets_dir=None, pdf_path=None):
-        logging.getLogger("strata_kb.ingest.parser").warning("picture on page 7 skipped: boom")
+        logging.getLogger("strata_kb.ingest.parser").warning(
+            "picture on page 7 skipped: boom"
+        )
         return FAKE_ITEMS
 
     _stub_parser(monkeypatch, FAKE_ITEMS)
@@ -343,13 +401,17 @@ def test_ingest_warns_when_the_outline_is_unreadable(tmp_path: Path, monkeypatch
     _stub_parser(monkeypatch, FAKE_ITEMS, bookmark_ids=None)
     _write_pdf(tmp_path)
     result = runner.invoke(app, _ingest_args(tmp_path, ["--llm", "none"]))
-    assert "[warn] PDF outline unreadable — bookmark cross-check skipped" in result.output
+    assert (
+        "[warn] PDF outline unreadable — bookmark cross-check skipped" in result.output
+    )
 
 
 def test_ingest_warns_when_sections_filter_matches_nothing(tmp_path: Path, monkeypatch):
     _stub_parser(monkeypatch, FAKE_ITEMS)
     _write_pdf(tmp_path)
-    result = runner.invoke(app, _ingest_args(tmp_path, ["--llm", "none", "--sections", "9"]))
+    result = runner.invoke(
+        app, _ingest_args(tmp_path, ["--llm", "none", "--sections", "9"])
+    )
     assert result.exit_code == 0, result.output
     assert (
         "[warn] --sections 9 matched no headings this run — existing files "

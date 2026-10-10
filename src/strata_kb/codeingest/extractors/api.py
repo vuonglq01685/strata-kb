@@ -60,6 +60,7 @@ the `Extractor` protocol's `detect()` is never passed `opts`, so
 `find_openapi_files()` is called with `kb_dir=None` there; `extract()`
 threads `opts.kb_dir` through (Ruling R24).
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -80,7 +81,11 @@ from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 # via `walk_tree`'s pruned, deterministic traversal -- never
 # rglob/glob/os.walk (Ruling R7).
 API_GLOBS: tuple[str, ...] = (
-    "openapi*.y*ml", "openapi*.json", "swagger*.y*ml", "swagger*.json", "**/openapi*.y*ml",
+    "openapi*.y*ml",
+    "openapi*.json",
+    "swagger*.y*ml",
+    "swagger*.json",
+    "**/openapi*.y*ml",
 )
 
 _METHODS: tuple[str, ...] = ("get", "post", "put", "patch", "delete", "head", "options")
@@ -199,7 +204,9 @@ def _extract_servers(data: dict, rel: str, warnings: list[str]) -> list[str]:
 
 def _read_openapi(
     root: Path, kb_dir: Path | None
-) -> tuple[dict[str, list[_Operation]], dict[str, set[str]], dict[str, set[str]], list[str]]:
+) -> tuple[
+    dict[str, list[_Operation]], dict[str, set[str]], dict[str, set[str]], list[str]
+]:
     """Every OpenAPI/Swagger file `find_openapi_files` locates, parsed
     with `yaml.safe_load` (YAML is a JSON superset, so one loader covers
     both `.yaml`/`.yml` and `.json`). Returns `(ops_by_id, servers_by_id,
@@ -243,7 +250,9 @@ def _read_openapi(
 
         for path_key, path_item in paths_raw.items():
             if not isinstance(path_item, dict):
-                warnings.append(f"could not parse {rel}: path {path_key!r} is not a mapping")
+                warnings.append(
+                    f"could not parse {rel}: path {path_key!r} is not a mapping"
+                )
                 continue
             for method in _METHODS:
                 if method not in path_item:
@@ -262,8 +271,10 @@ def _read_openapi(
                 tag_id = _safe_tag_id(tag)
                 ops_by_id.setdefault(tag_id, []).append(
                     _Operation(
-                        path=str(path_key), method=method.upper(),
-                        summary=summary, source=rel,
+                        path=str(path_key),
+                        method=method.upper(),
+                        summary=summary,
+                        source=rel,
                     )
                 )
                 servers_by_id.setdefault(tag_id, set()).update(file_servers)
@@ -319,7 +330,9 @@ def _render_section(
     # rendered heading. Same field-sanitisation rule, applied to the one
     # field the previous round missed.
     clean_tag = _display_tag(display_tag)
-    summary = f"API tag {clean_tag}: {len(ops_sorted)} operations ({methods}) from {files}."
+    summary = (
+        f"API tag {clean_tag}: {len(ops_sorted)} operations ({methods}) from {files}."
+    )
 
     return CodeSection(
         id=f"api.{tag_id}",
@@ -351,7 +364,9 @@ class ApiExtractor:
         sections = [
             _render_section(
                 tag_id,
-                sorted(raw_tags_by_id[tag_id])[0],  # deterministic: lexicographically first
+                sorted(raw_tags_by_id[tag_id])[
+                    0
+                ],  # deterministic: lexicographically first
                 ops_by_id[tag_id],
                 servers_by_id.get(tag_id, set()),
             )

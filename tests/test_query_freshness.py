@@ -7,6 +7,7 @@ review gate" — never invalidated the index. `kb query` and `kb get`
 disagreed about the same section forever, and neither `kb reindex` nor
 `kb doctor` repaired it; only `rm hub/.kb-work/search.db` did.
 """
+
 import hashlib
 import os
 from pathlib import Path
@@ -26,7 +27,7 @@ MARKER = "ZZHUBFIXMARKERZZ"
 
 def test_hub_side_edit_is_visible_to_the_next_query(fed_hub, run_git):
     hub = HubHandle(root=fed_hub)
-    assert search(hub, MARKER) == []          # builds the index
+    assert search(hub, MARKER) == []  # builds the index
 
     l2 = fed_hub / "federation" / "arinc-kb" / "arinc-424" / "ch1.md"
     l2.write_text(
@@ -60,8 +61,7 @@ def test_reindex_force_rebuilds_from_scratch(fed_hub):
 
     result = CliRunner().invoke(
         app,
-        ["reindex", "--force", "--hub", str(fed_hub),
-         "--kb-dir", str(fed_hub / ".kb")],
+        ["reindex", "--force", "--hub", str(fed_hub), "--kb-dir", str(fed_hub / ".kb")],
     )
     assert result.exit_code == 0, result.output
     assert search(hub, "restrictive airspace")

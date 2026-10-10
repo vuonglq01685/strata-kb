@@ -6,6 +6,7 @@
 
 Targets (spec §2): keyword leg < 100ms, hybrid query < 300ms (warm).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,8 +40,18 @@ class HashEmbedder:
 
 
 WORDS = [
-    "airspace", "airway", "waypoint", "procedure", "runway", "approach",
-    "departure", "navaid", "frequency", "altitude", "restriction", "sector",
+    "airspace",
+    "airway",
+    "waypoint",
+    "procedure",
+    "runway",
+    "approach",
+    "departure",
+    "navaid",
+    "frequency",
+    "altitude",
+    "restriction",
+    "sector",
 ]
 
 
@@ -62,9 +73,11 @@ def build_hub(root: Path, n_sections: int, n_repos: int) -> None:
             )
             sections.append(
                 models.SectionEntry(
-                    id=sid, title=title,
+                    id=sid,
+                    title=title,
                     summary=f"{' '.join(w)} structure fields.",
-                    status="summarized", file="body",
+                    status="summarized",
+                    file="body",
                 )
             )
         # newline-exempt: manual perf smoke, root is always tempfile.mkdtemp()
@@ -77,15 +90,14 @@ def build_hub(root: Path, n_sections: int, n_repos: int) -> None:
         models.save_yaml_model(
             fed / rid / "index.yaml",
             models.KBIndex(
-                docs=[
-                    models.IndexEntry(id=doc_id, title=doc_id, tags=[f"tag{r % 5}"])
-                ]
+                docs=[models.IndexEntry(id=doc_id, title=doc_id, tags=[f"tag{r % 5}"])]
             ),
         )
         models.save_yaml_model(
             fed / rid / "_meta.yaml",
             FederationMeta(
-                repo_id=rid, source_commit="perf",
+                repo_id=rid,
+                source_commit="perf",
                 published_at="2026-07-14T00:00:00+00:00",
             ),
         )
@@ -118,13 +130,21 @@ def main() -> None:
             f"sync cold:            {time.perf_counter() - t0:8.1f} s  "
             f"({report.sections_updated} sections, {report.embedded} embedded)"
         )
-        print(f"sync warm (no-op):    {timed_ms(lambda: searchdb.sync(hub, emb)):8.1f} ms")
+        print(
+            f"sync warm (no-op):    {timed_ms(lambda: searchdb.sync(hub, emb)):8.1f} ms"
+        )
         conn = searchdb.open_fresh(hub, emb)
         q = "airspace restriction sector"
-        print(f"fts leg warm:         {timed_ms(lambda: searchdb.fts_search(conn, q)):8.1f} ms")
-        print(f"knn leg warm:         {timed_ms(lambda: searchdb.knn_search(conn, emb, q)):8.1f} ms")
+        print(
+            f"fts leg warm:         {timed_ms(lambda: searchdb.fts_search(conn, q)):8.1f} ms"
+        )
+        print(
+            f"knn leg warm:         {timed_ms(lambda: searchdb.knn_search(conn, emb, q)):8.1f} ms"
+        )
         conn.close()
-        print(f"search() hybrid warm: {timed_ms(lambda: search(hub, q, embedder=emb)):8.1f} ms")
+        print(
+            f"search() hybrid warm: {timed_ms(lambda: search(hub, q, embedder=emb)):8.1f} ms"
+        )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

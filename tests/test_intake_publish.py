@@ -90,9 +90,7 @@ def test_intake_publish_creates_branch_and_pr(hub, monkeypatch):
         ]
     )
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
-    monkeypatch.setattr(
-        intake.ghapp, "repo_full_from_url", lambda url: "acme/hub"
-    )
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     cfg = _cfg(hub, http)
     pr = intake.intake_publish(
         cfg, "flight-docs", "abc1234", "acme/flight-docs", [], _kb_archive()
@@ -192,7 +190,8 @@ def test_intake_publish_threads_the_hub_token_into_pull_and_push(tmp_path, monke
     assert pr.endswith("/pull/7")
 
     pull_calls = [
-        c for c in calls
+        c
+        for c in calls
         if c["argv"][:2] == ["git", "pull"] and "--ff-only" in c["argv"]
     ]
     assert pull_calls, "intake_publish never pulled the freshest main"
@@ -202,7 +201,8 @@ def test_intake_publish_threads_the_hub_token_into_pull_and_push(tmp_path, monke
     assert "ghs_INTAKETOKEN" not in pull_calls[0]["argv"]
 
     push_calls = [
-        c for c in calls
+        c
+        for c in calls
         if c["argv"][:2] == ["git", "push"] and "publish/flight-docs" in c["argv"]
     ]
     assert push_calls, "intake_publish never pushed the fallback branch"
@@ -219,12 +219,22 @@ def test_intake_publish_nothing_changed_returns_empty(hub, monkeypatch):
         [(200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/1"})]
     )
     intake.intake_publish(
-        _cfg(hub, http1), "flight-docs", "abc1234", "acme/flight-docs", [], _kb_archive()
+        _cfg(hub, http1),
+        "flight-docs",
+        "abc1234",
+        "acme/flight-docs",
+        [],
+        _kb_archive(),
     )
     # 2nd run with identical content → no GitHub API calls, returns ""
     http2 = FakeHTTP([])
     pr = intake.intake_publish(
-        _cfg(hub, http2), "flight-docs", "abc1234", "acme/flight-docs", [], _kb_archive()
+        _cfg(hub, http2),
+        "flight-docs",
+        "abc1234",
+        "acme/flight-docs",
+        [],
+        _kb_archive(),
     )
     assert pr == ""
     assert http2.requests == []
@@ -234,8 +244,12 @@ def test_intake_publish_applies_deletes(hub, monkeypatch):
     monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     responses = [
-        (200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/1"}),
-        (200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/1"}),
+        (200, {"id": 9}),
+        (201, {"token": "t"}),
+        (201, {"html_url": "u/pull/1"}),
+        (200, {"id": 9}),
+        (201, {"token": "t"}),
+        (201, {"html_url": "u/pull/1"}),
     ]
     http = FakeHTTP(responses)
     cfg = _cfg(hub, http)
@@ -250,8 +264,12 @@ def test_intake_publish_applies_deletes(hub, monkeypatch):
         info.size = len(content)
         tf.addfile(info, io.BytesIO(content))
     intake.intake_publish(
-        cfg, "flight-docs", "bbb", "acme/flight-docs",
-        ["doc-a/_manifest.yaml"], buf.getvalue(),
+        cfg,
+        "flight-docs",
+        "bbb",
+        "acme/flight-docs",
+        ["doc-a/_manifest.yaml"],
+        buf.getvalue(),
     )
     _git(hub, "checkout", "publish/flight-docs")
     assert not (hub / "federation" / "flight-docs" / "doc-a").exists()
@@ -265,8 +283,12 @@ def test_intake_publish_after_merge_resets_branch_from_main(hub, monkeypatch):
     monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
     http = FakeHTTP(
         [
-            (200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/1"}),
-            (200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/2"}),
+            (200, {"id": 9}),
+            (201, {"token": "t"}),
+            (201, {"html_url": "u/pull/1"}),
+            (200, {"id": 9}),
+            (201, {"token": "t"}),
+            (201, {"html_url": "u/pull/2"}),
         ]
     )
     cfg = _cfg(hub, http)
@@ -553,7 +575,9 @@ def test_content_addressed_assets_publish_on_the_default_store(tmp_path):
     over = "z" * 40 + f"/assets/{_SHA256_HEX}.png"
     assert len(over) > intake.MAX_MEMBER_PATH_LEN
     with pytest.raises(intake.IntakeError) as exc:
-        intake.safe_extract(_asset_member(over), tmp_path / "no", assets_will_divert=False)
+        intake.safe_extract(
+            _asset_member(over), tmp_path / "no", assets_will_divert=False
+        )
     assert exc.value.status == 400
     assert "core.longpaths" in exc.value.detail
     diverted = tmp_path / "yes"

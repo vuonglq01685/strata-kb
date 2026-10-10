@@ -66,8 +66,8 @@ def test_direct_publish_mirrors_full_tree(git_kb, hub_worktree):
     entry = hub_worktree / "federation" / "demo-kb"
     assert (entry / "index.yaml").exists()
     assert (entry / "demo-doc" / "_manifest.yaml").exists()
-    assert (entry / "demo-doc" / "ch1-records.md").exists()       # L2
-    assert (entry / "demo-doc" / "ch1-records.raw.md").exists()   # L3
+    assert (entry / "demo-doc" / "ch1-records.md").exists()  # L2
+    assert (entry / "demo-doc" / "ch1-records.raw.md").exists()  # L3
     meta = models.load_yaml_model(entry / "_meta.yaml", FederationMeta)
     assert meta.repo_id == "demo-kb"
     assert meta.source_commit == report.source_commit
@@ -100,7 +100,9 @@ def test_direct_publish_threads_the_hub_token_into_the_push(
     seed = tmp_path / "hub-seed"
     (seed / ".kb").mkdir(parents=True)
     (seed / "federation").mkdir()
-    (seed / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
+    (seed / ".kb" / "index.yaml").write_text(
+        "docs: []\n", encoding="utf-8", newline="\n"
+    )
     (seed / "federation" / ".gitkeep").write_text("", encoding="utf-8")
     run_git(tmp_path, "init", str(seed))
     run_git(seed, "add", "-A")
@@ -137,8 +139,11 @@ def test_direct_publish_threads_the_hub_token_into_the_push(
     publish(git_kb["kb"], fake_hub_ref, repo_id="child", mode="direct")
 
     push_calls = [
-        c for c in calls
-        if c["argv"][:2] == ["git", "push"] and "origin" in c["argv"] and "HEAD" in c["argv"]
+        c
+        for c in calls
+        if c["argv"][:2] == ["git", "push"]
+        and "origin" in c["argv"]
+        and "HEAD" in c["argv"]
     ]
     assert push_calls, "publish() never pushed"
     env = push_calls[0]["env"]
@@ -214,11 +219,14 @@ def test_pr_mode_pushes_branch_and_opens_pr(git_kb, hub_with_origin, monkeypatch
     assert not (hub_with_origin / ".kb-work" / "search.db").exists()
 
 
-def test_pr_mode_updates_existing_pr_without_creating(git_kb, hub_with_origin, monkeypatch):
+def test_pr_mode_updates_existing_pr_without_creating(
+    git_kb, hub_with_origin, monkeypatch
+):
     monkeypatch.setattr(ghio, "gh_available", lambda: True)
     monkeypatch.setattr(ghio, "can_open_pr", lambda root: True)
     monkeypatch.setattr(
-        ghio, "pr_url_for_branch",
+        ghio,
+        "pr_url_for_branch",
         lambda root, branch: "https://github.com/org/hub/pull/7",
     )
 
@@ -310,7 +318,9 @@ def test_warn_legacy_ids_clean_kb_silent(tmp_path, caplog):
     assert not caplog.records
 
 
-def test_direct_push_race_reindexes_after_rebase(git_kb, hub_with_origin, run_git, tmp_path):
+def test_direct_push_race_reindexes_after_rebase(
+    git_kb, hub_with_origin, run_git, tmp_path
+):
     rival = tmp_path / "rival-clone"
     run_git(tmp_path, "clone", str(tmp_path / "hub-origin.git"), str(rival))
     run_git(rival, "config", "user.name", "t")
@@ -357,8 +367,11 @@ def _child_kb_with_asset(tmp_path) -> Path:
             title="Doc One",
             sections=[
                 models.SectionEntry(
-                    id="1.1", title="Doc One", summary="s",
-                    status="summarized", file="ch1",
+                    id="1.1",
+                    title="Doc One",
+                    summary="s",
+                    status="summarized",
+                    file="ch1",
                 )
             ],
         ),
@@ -384,7 +397,9 @@ def test_snapshot_diverts_assets_and_keeps_child_intact(tmp_path, hub_worktree):
     kb_abs = _child_kb_with_asset(tmp_path)
     handle = HubHandle(root=hub_worktree)
     store = assetstore.MemoryStore()
-    n_docs, changed, _skipped = publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    n_docs, changed, _skipped = publish._snapshot(
+        kb_abs, handle, "rid-a", "c0ffee", store=store
+    )
     assert changed
     dest = handle.federation_dir / "rid-a"
     assert store.get(f"{SHA_Y}.png") == b"YBYTES"
@@ -402,11 +417,15 @@ def test_snapshot_second_publish_is_noop_with_store(tmp_path, hub_worktree):
     handle = HubHandle(root=hub_worktree)
     store = assetstore.MemoryStore()
     publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
-    n_docs, changed, _skipped = publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    n_docs, changed, _skipped = publish._snapshot(
+        kb_abs, handle, "rid-a", "c0ffee", store=store
+    )
     assert not changed  # synthesized entries make diverted assets look present
 
 
-def test_snapshot_upload_failure_raises_before_any_write_is_kept(tmp_path, hub_worktree):
+def test_snapshot_upload_failure_raises_before_any_write_is_kept(
+    tmp_path, hub_worktree
+):
     from strata_kb import publish
 
     kb_abs = _child_kb_with_asset(tmp_path)
@@ -420,7 +439,9 @@ def test_snapshot_upload_failure_raises_before_any_write_is_kept(tmp_path, hub_w
         publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=_FailingStore())
 
 
-def test_snapshot_store_outage_then_retry_never_commits_binaries(tmp_path, hub_worktree):
+def test_snapshot_store_outage_then_retry_never_commits_binaries(
+    tmp_path, hub_worktree
+):
     """Regression: a store outage mid-divert must not leave un-diverted asset
     bytes sitting in the hub clone's working tree. Left dirty, a retry with a
     healthy store would see dest's manifest already match the child's (bytes
@@ -449,7 +470,9 @@ def test_snapshot_store_outage_then_retry_never_commits_binaries(tmp_path, hub_w
 
     # 2nd attempt with a healthy store: diverts for real
     store = assetstore.MemoryStore()
-    n_docs, changed, _skipped = publish._snapshot(kb_abs, handle, "rid-a", "c0ffee", store=store)
+    n_docs, changed, _skipped = publish._snapshot(
+        kb_abs, handle, "rid-a", "c0ffee", store=store
+    )
     assert changed
     assert store.get(f"{SHA_Y}.png") == b"YBYTES"  # asset uploaded
     dest = handle.federation_dir / "rid-a"
@@ -459,10 +482,14 @@ def test_snapshot_store_outage_then_retry_never_commits_binaries(tmp_path, hub_w
 def test_report_distinguishes_no_remote_from_nothing_to_push(
     git_kb, hub_with_origin, hub_worktree
 ):
-    first = publish(git_kb["kb"], str(hub_with_origin), repo_id="demo-kb", mode="direct")
+    first = publish(
+        git_kb["kb"], str(hub_with_origin), repo_id="demo-kb", mode="direct"
+    )
     assert first.remote is True and first.pushed is True
 
-    second = publish(git_kb["kb"], str(hub_with_origin), repo_id="demo-kb", mode="direct")
+    second = publish(
+        git_kb["kb"], str(hub_with_origin), repo_id="demo-kb", mode="direct"
+    )
     assert second.remote is True and second.pushed is False
 
 
@@ -474,7 +501,9 @@ def test_report_marks_a_hub_without_a_remote(git_kb, hub_worktree, run_git, tmp_
     discriminates real detection from "always reports the default"."""
     import shutil
 
-    no_remote = publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+    no_remote = publish(
+        git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct"
+    )
     assert no_remote.remote is False
 
     hub2 = tmp_path / "kb-hub-with-remote"
@@ -508,9 +537,7 @@ def test_a_no_change_publish_reports_the_commit_actually_snapshotted(
     assert second.source_commit != gitio.head_commit(git_kb["root"])
 
 
-def test_cli_does_not_claim_a_hub_has_no_remote_when_it_does(
-    git_kb, hub_with_origin
-):
+def test_cli_does_not_claim_a_hub_has_no_remote_when_it_does(git_kb, hub_with_origin):
     from typer.testing import CliRunner
 
     from strata_kb.cli import app
@@ -518,13 +545,29 @@ def test_cli_does_not_claim_a_hub_has_no_remote_when_it_does(
     runner = CliRunner()
     runner.invoke(
         app,
-        ["publish", "--hub", str(hub_with_origin), "--repo-id", "demo-kb",
-         "--kb-dir", str(git_kb["kb"]), "--direct"],
+        [
+            "publish",
+            "--hub",
+            str(hub_with_origin),
+            "--repo-id",
+            "demo-kb",
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--direct",
+        ],
     )
     result = runner.invoke(
         app,
-        ["publish", "--hub", str(hub_with_origin), "--repo-id", "demo-kb",
-         "--kb-dir", str(git_kb["kb"]), "--direct"],
+        [
+            "publish",
+            "--hub",
+            str(hub_with_origin),
+            "--repo-id",
+            "demo-kb",
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--direct",
+        ],
     )
     assert "hub has no remote" not in result.output
     assert "nothing to push" in result.output
@@ -540,8 +583,7 @@ def test_cli_does_not_claim_a_hub_has_no_remote_when_it_does(
 
 
 LINK_CLAUSE = (
-    "is not a regular file -- it may be a directory, or a link whose "
-    "target is gone"
+    "is not a regular file -- it may be a directory, or a link whose target is gone"
 )
 
 
@@ -638,8 +680,13 @@ def test_dest_record_assets_raises_on_a_directory_at_the_record_path(tmp_path):
         "{sha}.png",
     ],
     ids=[
-        "png", "webp", "unicode-doc-id", "deeply-nested",
-        "dot-slash-prefix", "windows-drive-prefix", "bare-filename",
+        "png",
+        "webp",
+        "unicode-doc-id",
+        "deeply-nested",
+        "dot-slash-prefix",
+        "windows-drive-prefix",
+        "bare-filename",
     ],
 )
 def test_dest_record_assets_accepts_every_legal_path_shape(tmp_path, asset):
@@ -731,9 +778,7 @@ def test_every_dest_record_assets_refusal_names_the_recovery_that_works(tmp_path
         assert assetstore.restore_clause(record_path) in msg, label
 
 
-def test_the_recovery_the_refusal_names_actually_restores_the_record(
-    tmp_path, run_git
-):
+def test_the_recovery_the_refusal_names_actually_restores_the_record(tmp_path, run_git):
     """Wave I-1 round 5, Important 1: run the shipped instruction end to end.
 
     Every hard refusal in both readers used to offer `git checkout -- <path>`
@@ -791,7 +836,9 @@ def test_the_recovery_the_refusal_names_actually_restores_the_record(
     # the form the message names, run exactly as the message spells it
     assert f"`git log --oneline -- {record_path}` lists them" in msg
     assert f"`git checkout <commit> -- {record_path}`" in msg
-    assert good_commit in run_git(root, "log", "--oneline", "--format=%H", "--", str(record_path))
+    assert good_commit in run_git(
+        root, "log", "--oneline", "--format=%H", "--", str(record_path)
+    )
     run_git(root, "checkout", good_commit, "--", str(record_path))
     assert record_path.read_bytes() == good
     assert _dest_record_assets(record_path) == [entry]

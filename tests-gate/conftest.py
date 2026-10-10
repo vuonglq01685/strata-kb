@@ -260,7 +260,8 @@ def stub_claude(tmp_path_factory) -> dict[str, str]:
     impl = bindir / "claude_impl.py"
     impl.write_text(
         f"import sys\nsys.stdin.read()\nsys.stdout.write({CLAUDE_ENVELOPE!r} + '\\n')\n",
-        encoding="utf-8", newline="\n",
+        encoding="utf-8",
+        newline="\n",
     )
     if os.name == "nt":
         (bindir / "claude.cmd").write_text(
@@ -270,7 +271,8 @@ def stub_claude(tmp_path_factory) -> dict[str, str]:
         script = bindir / "claude"
         script.write_text(
             f'#!/bin/sh\nexec "{sys.executable}" "{impl}" "$@"\n',
-            encoding="utf-8", newline="\n",
+            encoding="utf-8",
+            newline="\n",
         )
         script.chmod(0o755)
     return {"PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}"}
@@ -355,13 +357,23 @@ def published_repo(
     run_git(repo, "init", "-b", "main")
     kb_run("init", "--kind", "child", cwd=repo)
     kb = seed_kb(repo, bare_hub)
-    kb_run("summarize", "--llm", "claude", "--kb-dir", str(kb),
-           cwd=repo, env=stub_claude)
+    kb_run(
+        "summarize", "--llm", "claude", "--kb-dir", str(kb), cwd=repo, env=stub_claude
+    )
     kb_run("build", "--kb-dir", str(kb), cwd=repo)
     run_git(repo, "add", "-A")
     run_git(repo, "commit", "-m", "kb v1")
-    kb_run("publish", "--direct", "--hub", str(bare_hub), "--repo-id", "e2e-repo",
-           "--kb-dir", str(kb), cwd=repo)
+    kb_run(
+        "publish",
+        "--direct",
+        "--hub",
+        str(bare_hub),
+        "--repo-id",
+        "e2e-repo",
+        "--kb-dir",
+        str(kb),
+        cwd=repo,
+    )
     return {"repo": repo, "kb": kb, "hub": bare_hub}
 
 
@@ -448,8 +460,17 @@ def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
     run_git(repo, "init", "-b", "main")
     run_git(repo, "add", "-A")
     run_git(repo, "commit", "-m", "golden kb")
-    kb_run("publish", "--direct", "--hub", str(bare_hub), "--repo-id", "golden",
-           "--kb-dir", str(kb), cwd=repo)
+    kb_run(
+        "publish",
+        "--direct",
+        "--hub",
+        str(bare_hub),
+        "--repo-id",
+        "golden",
+        "--kb-dir",
+        str(kb),
+        cwd=repo,
+    )
     return {"repo": repo, "kb": kb, "hub": bare_hub}
 
 

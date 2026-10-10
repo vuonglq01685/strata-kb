@@ -18,6 +18,7 @@ This module owns orchestration only. Parsing and attribution stay in
 `transcript`, storage in `ledger`; how a failure is reported (a red line, or
 one line in `ingest-errors.log`) stays with the caller.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -46,7 +47,9 @@ class IngestResult:
         self.report.files = sorted(set(self.report.files) | set(other.files))
 
 
-def _parent(parent: Path | None, result: IngestResult) -> transcript.ParentCursor | None:
+def _parent(
+    parent: Path | None, result: IngestResult
+) -> transcript.ParentCursor | None:
     if parent is None:
         return None
     try:
@@ -58,13 +61,21 @@ def _parent(parent: Path | None, result: IngestResult) -> transcript.ParentCurso
         # the OS cannot even name (an embedded NUL from a hook payload).
         # No call is dropped for want of attribution: the subagent's own
         # cursor still applies, and the miss is reported.
-        result.notes.append(f"parent transcript unreadable, own cursor only: {parent}: {exc}")
+        result.notes.append(
+            f"parent transcript unreadable, own cursor only: {parent}: {exc}"
+        )
         return None
 
 
-def _subagent_rows(path: Path, *, cursor: transcript.ParentCursor | None, actor: str,
-                   session: str, ticket: str | None,
-                   hold_back_last: bool) -> list[UsageRow]:
+def _subagent_rows(
+    path: Path,
+    *,
+    cursor: transcript.ParentCursor | None,
+    actor: str,
+    session: str,
+    ticket: str | None,
+    hold_back_last: bool,
+) -> list[UsageRow]:
     """Read one subagent transcript, every row sidechain, starting from the
     parent's `cursor` at the subagent's first timestamp.
 
@@ -73,29 +84,55 @@ def _subagent_rows(path: Path, *, cursor: transcript.ParentCursor | None, actor:
     the main sweep absorbs exactly this failure and nothing else.
     """
     return transcript.rows_from_transcript(
-        path, actor=actor, session_fallback=session, forced_ticket=ticket,
-        subagent=True, parent=cursor, hold_back_last=hold_back_last)
+        path,
+        actor=actor,
+        session_fallback=session,
+        forced_ticket=ticket,
+        subagent=True,
+        parent=cursor,
+        hold_back_last=hold_back_last,
+    )
 
 
-def ingest_subagent(kb_dir: Path, path: Path, *, parent: Path | None, actor: str,
-                    session: str = "", ticket: str | None = None,
-                    hold_back_last: bool = False,
-                    result: IngestResult | None = None) -> IngestResult:
+def ingest_subagent(
+    kb_dir: Path,
+    path: Path,
+    *,
+    parent: Path | None,
+    actor: str,
+    session: str = "",
+    ticket: str | None = None,
+    hold_back_last: bool = False,
+    result: IngestResult | None = None,
+) -> IngestResult:
     """One subagent transcript, attributed from `parent`'s cursor.
 
     `result`, when given, is filled in place and returned: a caller that must
     report notes even if this raises (hook mode) passes its own.
     """
     result = result if result is not None else IngestResult()
-    rows = _subagent_rows(path, cursor=_parent(parent, result), actor=actor,
-                          session=session, ticket=ticket, hold_back_last=hold_back_last)
+    rows = _subagent_rows(
+        path,
+        cursor=_parent(parent, result),
+        actor=actor,
+        session=session,
+        ticket=ticket,
+        hold_back_last=hold_back_last,
+    )
     result.add(ledger.append_rows(kb_dir, rows))
     return result
 
 
-def ingest_main(kb_dir: Path, main: Path, *, actor: str, session: str = "",
-                ticket: str | None = None, hold_back_subagents: bool,
-                result: IngestResult | None = None) -> IngestResult:
+def ingest_main(
+    kb_dir: Path,
+    main: Path,
+    *,
+    actor: str,
+    session: str = "",
+    ticket: str | None = None,
+    hold_back_subagents: bool,
+    result: IngestResult | None = None,
+) -> IngestResult:
     """A main transcript in full, then every subagent transcript beside it.
 
     The main file is never held back: a `Stop` hook fires once the main
@@ -111,13 +148,20 @@ def ingest_main(kb_dir: Path, main: Path, *, actor: str, session: str = "",
     """
     result = result if result is not None else IngestResult()
     rows = transcript.rows_from_transcript(
-        main, actor=actor, session_fallback=session, forced_ticket=ticket)
+        main, actor=actor, session_fallback=session, forced_ticket=ticket
+    )
     subs = transcript.subagent_transcripts(main)
     cursor = _parent(main, result) if subs else None
     for sub in subs:
         try:
-            rows += _subagent_rows(sub, cursor=cursor, actor=actor, session=session,
-                                   ticket=ticket, hold_back_last=hold_back_subagents)
+            rows += _subagent_rows(
+                sub,
+                cursor=cursor,
+                actor=actor,
+                session=session,
+                ticket=ticket,
+                hold_back_last=hold_back_subagents,
+            )
         except OSError as exc:
             # One subagent file that cannot be read (deleted between the glob
             # and the read, a directory that matches the pattern, no
@@ -127,14 +171,21 @@ def ingest_main(kb_dir: Path, main: Path, *, actor: str, session: str = "",
             # absorbed — a ledger failure (`LedgerError`, or an `OSError`
             # writing the ledger) happens below, outside this `try`, and
             # still propagates.
-            result.notes.append(f"subagent transcript unreadable, skipped: {sub}: {exc}")
+            result.notes.append(
+                f"subagent transcript unreadable, skipped: {sub}: {exc}"
+            )
     result.add(ledger.append_rows(kb_dir, rows))
     return result
 
 
-def ingest_path(kb_dir: Path, path: Path, *, actor: str,
-                ticket: str | None = None,
-                result: IngestResult | None = None) -> IngestResult:
+def ingest_path(
+    kb_dir: Path,
+    path: Path,
+    *,
+    actor: str,
+    ticket: str | None = None,
+    result: IngestResult | None = None,
+) -> IngestResult:
     """The manual entry point: whatever transcript a human names.
 
     A `subagents/agent-*.jsonl` path is ingested as a subagent, attributed
@@ -151,10 +202,22 @@ def ingest_path(kb_dir: Path, path: Path, *, actor: str,
         parent = transcript.parent_of(path)
         if not parent.is_file():
             result.notes.append(f"no parent transcript, own cursor only: {parent}")
-        return ingest_subagent(kb_dir, path, parent=parent if parent.is_file() else None,
-                               actor=actor, ticket=ticket, result=result)
-    return ingest_main(kb_dir, path, actor=actor, ticket=ticket, hold_back_subagents=False,
-                       result=result)
+        return ingest_subagent(
+            kb_dir,
+            path,
+            parent=parent if parent.is_file() else None,
+            actor=actor,
+            ticket=ticket,
+            result=result,
+        )
+    return ingest_main(
+        kb_dir,
+        path,
+        actor=actor,
+        ticket=ticket,
+        hold_back_subagents=False,
+        result=result,
+    )
 
 
 def _payload_path(payload: dict, key: str) -> Path:
@@ -165,9 +228,14 @@ def _payload_path(payload: dict, key: str) -> Path:
     return Path(value)
 
 
-def ingest_hook_payload(kb_dir: Path, payload: object, *, actor: str,
-                        ticket: str | None = None,
-                        result: IngestResult | None = None) -> IngestResult:
+def ingest_hook_payload(
+    kb_dir: Path,
+    payload: object,
+    *,
+    actor: str,
+    ticket: str | None = None,
+    result: IngestResult | None = None,
+) -> IngestResult:
     """Dispatch one `Stop` or `SubagentStop` hook payload (parsed JSON).
 
     A `SubagentStop` payload carries `agent_transcript_path`: that one
@@ -195,9 +263,23 @@ def ingest_hook_payload(kb_dir: Path, payload: object, *, actor: str,
         else:
             result.notes.append(
                 f"hook payload has no usable transcript_path ({raw_parent!r}), "
-                f"own cursor only: {agent}")
-        return ingest_subagent(kb_dir, agent, parent=parent, actor=actor,
-                               session=session, ticket=ticket, result=result)
-    return ingest_main(kb_dir, _payload_path(payload, "transcript_path"), actor=actor,
-                       session=session, ticket=ticket, hold_back_subagents=True,
-                       result=result)
+                f"own cursor only: {agent}"
+            )
+        return ingest_subagent(
+            kb_dir,
+            agent,
+            parent=parent,
+            actor=actor,
+            session=session,
+            ticket=ticket,
+            result=result,
+        )
+    return ingest_main(
+        kb_dir,
+        _payload_path(payload, "transcript_path"),
+        actor=actor,
+        session=session,
+        ticket=ticket,
+        hold_back_subagents=True,
+        result=result,
+    )

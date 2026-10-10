@@ -1,5 +1,6 @@
 """Rate limiting + auth-failure logging: brute-force defense-in-depth and an
 audit trail for unauthorized attempts (OWASP A09)."""
+
 from __future__ import annotations
 
 import logging

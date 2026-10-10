@@ -18,7 +18,9 @@ from dataclasses import dataclass
 TASK_RE = re.compile(r"^#{2,4}\s+Task\s+(?P<n>\d+)\b")
 DEPENDS_RE = re.compile(r"^\*{0,2}Depends on:?\*{0,2}\s*(?P<rest>.*?)\s*$", re.I)
 SECTION_RE = re.compile(r"^\*\*(?P<name>Files|Interfaces|Steps):?\*\*:?\s*$")
-FILE_LINE_RE = re.compile(r"^\s*-\s*(?:Create|Modify|Test|Delete)\s*:\s*(?P<rest>.+?)\s*$", re.I)
+FILE_LINE_RE = re.compile(
+    r"^\s*-\s*(?:Create|Modify|Test|Delete)\s*:\s*(?P<rest>.+?)\s*$", re.I
+)
 CODE_SPAN_RE = re.compile(r"`([^`]+)`")
 LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
 
@@ -28,7 +30,7 @@ _NONE_WORDS = frozenset({"", "none", "-", "n/a"})
 @dataclass(frozen=True)
 class Task:
     number: int
-    depends_on: tuple[int, ...] | None   # None = no `Depends on:` line
+    depends_on: tuple[int, ...] | None  # None = no `Depends on:` line
     paths: tuple[str, ...]
 
 
@@ -161,7 +163,7 @@ def _find_cycle(deps: dict[int, tuple[int, ...]]) -> list[int] | None:
             if d not in deps:
                 continue
             if state.get(d) == 1:
-                return path[path.index(d):] + [d]
+                return path[path.index(d) :] + [d]
             if state.get(d) is None:
                 found = visit(d)
                 if found:
@@ -226,11 +228,13 @@ def check(
     by_number = {t.number: t for t in tasks}
     numbers = sorted(by_number)
     for i, a in enumerate(numbers):
-        for b in numbers[i + 1:]:
+        for b in numbers[i + 1 :]:
             shared = sorted(set(by_number[a].paths) & set(by_number[b].paths))
             if shared and b not in reach[a] and a not in reach[b]:
                 for p in shared:
-                    errors.append(f"tasks {a} and {b} share {p} but neither depends on the other")
+                    errors.append(
+                        f"tasks {a} and {b} share {p} but neither depends on the other"
+                    )
 
     if errors:
         return errors, []

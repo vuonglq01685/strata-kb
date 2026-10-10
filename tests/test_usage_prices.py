@@ -24,8 +24,14 @@ LIST_PRICES = {
 # The ids Claude Code writes today. Each must have its OWN row: a
 # family or alias match is exactly how the 5.5 generation was mispriced.
 CURRENT_MODEL_IDS = (
-    "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5",
-    "claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5",
+    "claude-fable-5-1",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+    "claude-fable-5",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-4-5",
 )
 
 
@@ -223,8 +229,11 @@ def test_a_point_release_id_with_no_row_is_unpriced(tmp_path: Path):
 
 def test_the_packaged_aliases_point_at_the_current_generation(tmp_path: Path):
     table = prices.load_prices(tmp_path)
-    assert table.aliases == {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5",
-                             "haiku": "claude-haiku-5-5"}
+    assert table.aliases == {
+        "opus": "claude-opus-5-5",
+        "sonnet": "claude-sonnet-5-5",
+        "haiku": "claude-haiku-5-5",
+    }
     assert prices.resolve_model(table, "opus") == "claude-opus-5-5"
 
 
@@ -248,55 +257,118 @@ def test_an_override_merges_aliases_per_key(tmp_path: Path):
 
 
 def _prompt_row(prompt_in: int, cache_read: int = 0):
-    return row("u1", model="claude-haiku-5-5", tokens_in=prompt_in, tokens_out=1_000_000,
-               cache_read=cache_read, cache_write_5m=0, cache_write_1h=0)
+    return row(
+        "u1",
+        model="claude-haiku-5-5",
+        tokens_in=prompt_in,
+        tokens_out=1_000_000,
+        cache_read=cache_read,
+        cache_write_5m=0,
+        cache_write_1h=0,
+    )
 
 
 def test_haiku_5_5_at_the_threshold_is_the_base_tier(tmp_path: Path):
     table = prices.load_prices(tmp_path)
     # 100,000 prompt tokens is "up to 100,000": base tier.
     assert prices.cost_of(_prompt_row(100_000), table) == pytest.approx(
-        (100_000 * 0.10 + 1_000_000 * 0.50) / 1_000_000)
+        (100_000 * 0.10 + 1_000_000 * 0.50) / 1_000_000
+    )
 
 
 def test_haiku_5_5_over_the_threshold_prices_the_whole_call_long(tmp_path: Path):
     table = prices.load_prices(tmp_path)
     # Cache reads count toward prompt length: 1 + 100,000 > 100,000.
     assert prices.cost_of(_prompt_row(1, cache_read=100_000), table) == pytest.approx(
-        (1 * 0.50 + 100_000 * 0.05 + 1_000_000 * 2.50) / 1_000_000)
+        (1 * 0.50 + 100_000 * 0.05 + 1_000_000 * 2.50) / 1_000_000
+    )
 
 
 def test_an_override_can_add_a_long_context_tier(tmp_path: Path):
-    (tmp_path / "usage-prices.yaml").write_text(yaml.safe_dump({"models": {"claude-x": {
-        "input": 1.0, "output": 1.0, "cache_read": 0.1, "cache_write_5m": 1.25,
-        "cache_write_1h": 2.0,
-        "long_context": {"threshold": 10, "input": 2.0, "output": 2.0, "cache_read": 0.2,
-                         "cache_write_5m": 2.5, "cache_write_1h": 4.0}}}}), encoding="utf-8")
+    (tmp_path / "usage-prices.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "models": {
+                    "claude-x": {
+                        "input": 1.0,
+                        "output": 1.0,
+                        "cache_read": 0.1,
+                        "cache_write_5m": 1.25,
+                        "cache_write_1h": 2.0,
+                        "long_context": {
+                            "threshold": 10,
+                            "input": 2.0,
+                            "output": 2.0,
+                            "cache_read": 0.2,
+                            "cache_write_5m": 2.5,
+                            "cache_write_1h": 4.0,
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     table = prices.load_prices(tmp_path)
-    r = row("u1", model="claude-x", tokens_in=11, tokens_out=0, cache_read=0,
-            cache_write_5m=0, cache_write_1h=0)
+    r = row(
+        "u1",
+        model="claude-x",
+        tokens_in=11,
+        tokens_out=0,
+        cache_read=0,
+        cache_write_5m=0,
+        cache_write_1h=0,
+    )
     assert prices.cost_of(r, table) == pytest.approx(22 / 1_000_000)
 
 
 def test_a_misspelled_long_context_key_raises(tmp_path: Path):
-    (tmp_path / "usage-prices.yaml").write_text(yaml.safe_dump({"models": {"claude-x": {
-        "input": 1.0, "output": 1.0, "cache_read": 0.1, "cache_write_5m": 1.25,
-        "cache_write_1h": 2.0, "long_context": {"treshold": 10, "input": 2.0, "output": 2.0,
-        "cache_read": 0.2, "cache_write_5m": 2.5, "cache_write_1h": 4.0}}}}), encoding="utf-8")
+    (tmp_path / "usage-prices.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "models": {
+                    "claude-x": {
+                        "input": 1.0,
+                        "output": 1.0,
+                        "cache_read": 0.1,
+                        "cache_write_5m": 1.25,
+                        "cache_write_1h": 2.0,
+                        "long_context": {
+                            "treshold": 10,
+                            "input": 2.0,
+                            "output": 2.0,
+                            "cache_read": 0.2,
+                            "cache_write_5m": 2.5,
+                            "cache_write_1h": 4.0,
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValidationError):
         prices.load_prices(tmp_path)
 
 
 def _plain(**kw):
-    base = dict(model="claude-opus-5", tokens_in=0, tokens_out=1_000_000, cache_read=0,
-                cache_write_5m=0, cache_write_1h=0)
+    base = dict(
+        model="claude-opus-5",
+        tokens_in=0,
+        tokens_out=1_000_000,
+        cache_read=0,
+        cache_write_5m=0,
+        cache_write_1h=0,
+    )
     base.update(kw)
     return row("u1", **base)
 
 
 def test_us_only_inference_multiplies_token_cost(tmp_path: Path):
     table = prices.load_prices(tmp_path)
-    assert prices.cost_of(_plain(inference_geo="us"), table) == pytest.approx(25.0 * 1.1)
+    assert prices.cost_of(_plain(inference_geo="us"), table) == pytest.approx(
+        25.0 * 1.1
+    )
     assert prices.cost_of(_plain(inference_geo="global"), table) == pytest.approx(25.0)
 
 

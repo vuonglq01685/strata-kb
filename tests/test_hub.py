@@ -152,9 +152,7 @@ def test_legacy_cache_is_discarded_even_when_global_autocrlf_is_already_false(
     this fix exists to heal, and the one the old merged read could never
     see was still broken."""
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "global.gitconfig"))
-    subprocess.run(
-        ["git", "config", "--global", "core.autocrlf", "false"], check=True
-    )
+    subprocess.run(["git", "config", "--global", "core.autocrlf", "false"], check=True)
     cache_base = _use_cache(monkeypatch, tmp_path)
     bare = tmp_path / "hub.git"
     bare.mkdir()
@@ -240,7 +238,9 @@ def test_pull_interval_reads_env(monkeypatch, raw, expected):
     assert hub.pull_interval() == expected
 
 
-def test_pull_once_fast_forwards_the_served_checkout(tmp_path, hub_with_origin, run_git):
+def test_pull_once_fast_forwards_the_served_checkout(
+    tmp_path, hub_with_origin, run_git
+):
     serving = _serving_clone(tmp_path, hub_with_origin, run_git)
     _push_new_commit(hub_with_origin, run_git)
 
@@ -367,7 +367,9 @@ def test_concurrent_resolves_never_pull_one_cache_twice_at_once(
             active[0] -= 1
 
     monkeypatch.setattr(hub.gitio, "pull", fake_pull)
-    threads = [threading.Thread(target=hub.resolve_hub, args=(str(bare),)) for _ in range(6)]
+    threads = [
+        threading.Thread(target=hub.resolve_hub, args=(str(bare),)) for _ in range(6)
+    ]
     for t in threads:
         t.start()
     for t in threads:

@@ -65,14 +65,21 @@ MISSION = """# Billing — mission
 
 def decisions_of(mission_text: str | None):
     """A `load_decisions` over one in-memory mission; `None` = file missing."""
+
     def load(mission_id: str):
         if mission_text is None:
             return None
         return ticketcheck.parse_decisions(mission_text, f"missions/{mission_id}.md")
+
     return load
 
 
-def ticket(section: str | None, *, parent: str | None = None, heading: str = "## Technical grounding") -> str:
+def ticket(
+    section: str | None,
+    *,
+    parent: str | None = None,
+    heading: str = "## Technical grounding",
+) -> str:
     parts = ["# T-1 — Show airspace"]
     if parent is not None:
         parts.append(f"> Parent mission: {parent}")
@@ -83,14 +90,22 @@ def ticket(section: str | None, *, parent: str | None = None, heading: str = "##
     return "\n".join(parts)
 
 
-def run(text: str, kb_dir: Path, *, heading: str = "## Technical grounding", load_decisions=None) -> LintReport:
+def run(
+    text: str,
+    kb_dir: Path,
+    *,
+    heading: str = "## Technical grounding",
+    load_decisions=None,
+) -> LintReport:
     def load_doc(repo, doc):
         d = kb_dir / doc
         if not (d / "_manifest.yaml").exists():
             return None
         return ticketcheck.load_doc_dir(d, str(d))
 
-    return ticketcheck.check(text, load_doc=load_doc, heading=heading, load_decisions=load_decisions)
+    return ticketcheck.check(
+        text, load_doc=load_doc, heading=heading, load_decisions=load_decisions
+    )
 
 
 def errors(r: LintReport) -> list[str]:
@@ -120,7 +135,9 @@ def test_missing_section_is_an_error(code_doc):
     kb_dir, _ = code_doc
     report = run(ticket(None), kb_dir)
     assert report.passed is False
-    assert errors(report) == ["missing '## Technical grounding' — run /sa-ticket-ground"]
+    assert errors(report) == [
+        "missing '## Technical grounding' — run /sa-ticket-ground"
+    ]
 
 
 def test_missing_grounded_on_stops_with_an_error(code_doc):
@@ -133,7 +150,9 @@ def test_missing_grounded_on_stops_with_an_error(code_doc):
 
 def test_malformed_grounded_on_names_the_expected_shape(code_doc):
     kb_dir, _ = code_doc
-    report = run(ticket(grounding("x", **{"Grounded on": "demo-code (rev abc1234)"})), kb_dir)
+    report = run(
+        ticket(grounding("x", **{"Grounded on": "demo-code (rev abc1234)"})), kb_dir
+    )
     assert len(errors(report)) == 1
     assert "<repo-id>:<doc-id> @ <revision>" in errors(report)[0]
     assert "(line 7)" in errors(report)[0]
@@ -141,7 +160,9 @@ def test_malformed_grounded_on_names_the_expected_shape(code_doc):
 
 def test_unknown_document_is_an_error(code_doc):
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, **{"Grounded on": "other:other-code @ {rev}"})), kb_dir)
+    report = run(
+        ticket(grounding(rev, **{"Grounded on": "other:other-code @ {rev}"})), kb_dir
+    )
     assert len(errors(report)) == 1
     assert "other-code" in errors(report)[0]
     assert "not found" in errors(report)[0]
@@ -150,7 +171,9 @@ def test_unknown_document_is_an_error(code_doc):
 
 def test_unreadable_manifest_is_an_error_not_a_traceback(code_doc):
     kb_dir, rev = code_doc
-    (kb_dir / "demo-code" / "_manifest.yaml").write_text("id: [broken", encoding="utf-8")
+    (kb_dir / "demo-code" / "_manifest.yaml").write_text(
+        "id: [broken", encoding="utf-8"
+    )
     report = run(ticket(grounding(rev)), kb_dir)
     assert len(errors(report)) == 1
     assert "could not read" in errors(report)[0]
@@ -193,25 +216,38 @@ def test_render_label_defaults_to_dor_and_accepts_grounding():
 
 def test_unknown_ids_are_errors_with_line_numbers(code_doc):
     kb_dir, rev = code_doc
-    text = ticket(grounding(
-        rev,
-        Service="svc.nope",
-        Tables="db.ghost.col",
-        Routes="api.missing",
-        Externals="int.unknown",
-    ))
+    text = ticket(
+        grounding(
+            rev,
+            Service="svc.nope",
+            Tables="db.ghost.col",
+            Routes="api.missing",
+            Externals="int.unknown",
+        )
+    )
     report = run(text, kb_dir)
     msgs = errors(report)
-    for bad, line in (("svc.nope", 8), ("db.ghost", 11), ("api.missing", 12), ("int.unknown", 13)):
-        assert any(f"unknown id '{bad}'" in m and f"(line {line})" in m for m in msgs), (bad, msgs)
+    for bad, line in (
+        ("svc.nope", 8),
+        ("db.ghost", 11),
+        ("api.missing", 12),
+        ("int.unknown", 13),
+    ):
+        assert any(
+            f"unknown id '{bad}'" in m and f"(line {line})" in m for m in msgs
+        ), (bad, msgs)
 
 
 def test_new_marker_exempts_the_line_and_emits_a_note(code_doc):
     kb_dir, rev = code_doc
-    text = ticket(grounding(rev, Externals="int.stripe [NEW: billing arrives with this ticket]"))
+    text = ticket(
+        grounding(rev, Externals="int.stripe [NEW: billing arrives with this ticket]")
+    )
     report = run(text, kb_dir)
     assert not any("int.stripe" in e for e in errors(report))
-    assert any("new: int.stripe — billing arrives with this ticket" in n for n in notes(report))
+    assert any(
+        "new: int.stripe — billing arrives with this ticket" in n for n in notes(report)
+    )
 
 
 def test_new_marker_without_a_reason_is_a_warning(code_doc):
@@ -239,15 +275,28 @@ def test_missing_service_line_is_a_warning(code_doc):
 
 def test_open_decisions_fail_the_gate_one_error_each_plus_summary(code_doc):
     kb_dir, rev = code_doc
-    text = ticket(grounding(rev, **{"Open decisions": [
-        "Failure mode: what if Kafka is down during approval?",
-        "Request body of POST /airspace",
-    ]}))
+    text = ticket(
+        grounding(
+            rev,
+            **{
+                "Open decisions": [
+                    "Failure mode: what if Kafka is down during approval?",
+                    "Request body of POST /airspace",
+                ]
+            },
+        )
+    )
     report = run(text, kb_dir)
     assert report.passed is False
     msgs = errors(report)
-    assert any("open decision: Failure mode: what if Kafka is down" in m and "(line 16)" in m for m in msgs)
-    assert any("open decision: Request body of POST /airspace" in m and "(line 17)" in m for m in msgs)
+    assert any(
+        "open decision: Failure mode: what if Kafka is down" in m and "(line 16)" in m
+        for m in msgs
+    )
+    assert any(
+        "open decision: Request body of POST /airspace" in m and "(line 17)" in m
+        for m in msgs
+    )
     assert "2 open decision(s) — resolve before Dev" in msgs
 
 
@@ -260,7 +309,9 @@ def test_open_decisions_none_variants_pass(code_doc):
 
 def test_inline_open_decision_counts_too(code_doc):
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, **{"Open decisions": "retry policy unknown"})), kb_dir)
+    report = run(
+        ticket(grounding(rev, **{"Open decisions": "retry policy unknown"})), kb_dir
+    )
     assert any("open decision: retry policy unknown" in e for e in errors(report))
 
 
@@ -277,10 +328,12 @@ def test_blank_line_between_open_decisions_does_not_crash(code_doc):
 
 def test_new_marker_on_a_column_of_a_known_table_emits_a_note(code_doc):
     kb_dir, rev = code_doc
-    text = ticket(grounding(
-        rev,
-        Tables="db.restrictive_airspace.brand_new [NEW: column arrives with this ticket]",
-    ))
+    text = ticket(
+        grounding(
+            rev,
+            Tables="db.restrictive_airspace.brand_new [NEW: column arrives with this ticket]",
+        )
+    )
     report = run(text, kb_dir)
     assert any(
         "new: db.restrictive_airspace.brand_new — column arrives with this ticket" in n
@@ -295,22 +348,32 @@ def test_new_marker_on_a_column_of_a_known_table_emits_a_note(code_doc):
 def test_unknown_column_is_an_error_known_column_is_fine(code_doc):
     kb_dir, rev = code_doc
     bad = run(ticket(grounding(rev, Tables="db.restrictive_airspace.nope")), kb_dir)
-    assert any("column 'nope'" in e and "db.restrictive_airspace" in e and "(line 11)" in e for e in errors(bad))
-    good = run(ticket(grounding(rev, Tables="db.restrictive_airspace.effective_date")), kb_dir)
+    assert any(
+        "column 'nope'" in e and "db.restrictive_airspace" in e and "(line 11)" in e
+        for e in errors(bad)
+    )
+    good = run(
+        ticket(grounding(rev, Tables="db.restrictive_airspace.effective_date")), kb_dir
+    )
     assert not any("column" in e for e in errors(good))
 
 
 def test_route_must_be_a_row_of_the_tag_table(code_doc):
     kb_dir, rev = code_doc
     bad = run(ticket(grounding(rev, Routes="api.airspace — DELETE /airspace")), kb_dir)
-    assert any("route 'DELETE /airspace'" in e and "api.airspace" in e and "(line 12)" in e for e in errors(bad))
+    assert any(
+        "route 'DELETE /airspace'" in e and "api.airspace" in e and "(line 12)" in e
+        for e in errors(bad)
+    )
     good = run(ticket(grounding(rev, Routes="api.airspace — POST /airspace")), kb_dir)
     assert not any("route" in e for e in errors(good))
 
 
 def test_backticked_route_is_accepted(code_doc):
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, Routes="api.airspace — `GET /airspace`")), kb_dir)
+    report = run(
+        ticket(grounding(rev, Routes="api.airspace — `GET /airspace`")), kb_dir
+    )
     assert not any("route" in e for e in errors(report))
 
 
@@ -322,11 +385,15 @@ def test_tag_without_a_route_pair_is_accepted(code_doc):
 
 def test_command_must_be_primary_or_an_alternative_verbatim(code_doc):
     kb_dir, rev = code_doc
-    bad = run(ticket(grounding(rev, **{"Verify with": "cmd.test — `pytest -q`"})), kb_dir)
+    bad = run(
+        ticket(grounding(rev, **{"Verify with": "cmd.test — `pytest -q`"})), kb_dir
+    )
     assert any("command not in cmd.test" in e and "(line 14)" in e for e in errors(bad))
     alt = run(ticket(grounding(rev, **{"Verify with": "cmd.test — `pytest`"})), kb_dir)
     assert not any("command" in e for e in errors(alt))
-    other = run(ticket(grounding(rev, **{"Verify with": "cmd.lint — `ruff check src`"})), kb_dir)
+    other = run(
+        ticket(grounding(rev, **{"Verify with": "cmd.lint — `ruff check src`"})), kb_dir
+    )
     assert not any("command" in e for e in errors(other))
 
 
@@ -349,19 +416,28 @@ def test_unreadable_group_file_degrades_to_a_warning(code_doc):
 
 def test_command_check_accepts_any_code_span_on_the_line(code_doc):
     kb_dir, rev = code_doc
-    good = run(ticket(grounding(rev, **{"Verify with": "`cmd.test` — `pytest`"})), kb_dir)
+    good = run(
+        ticket(grounding(rev, **{"Verify with": "`cmd.test` — `pytest`"})), kb_dir
+    )
     assert not any("command" in e for e in errors(good))
     bad = run(ticket(grounding(rev, **{"Verify with": "`cmd.test` — `nope`"})), kb_dir)
     msgs = errors(bad)
-    assert any("command not in cmd.test" in m and "found:" in m and "`nope`" in m for m in msgs)
+    assert any(
+        "command not in cmd.test" in m and "found:" in m and "`nope`" in m for m in msgs
+    )
 
 
 def test_route_trailing_punctuation_is_tolerated(code_doc):
     kb_dir, rev = code_doc
-    good = run(ticket(grounding(rev, Routes="api.airspace — GET /airspace, POST /airspace.")), kb_dir)
+    good = run(
+        ticket(grounding(rev, Routes="api.airspace — GET /airspace, POST /airspace.")),
+        kb_dir,
+    )
     assert not any("route" in e for e in errors(good))
     bad = run(ticket(grounding(rev, Routes="api.airspace — DELETE /airspace")), kb_dir)
-    assert any("route 'DELETE /airspace'" in e and "GET /airspace" in e for e in errors(bad))
+    assert any(
+        "route 'DELETE /airspace'" in e and "GET /airspace" in e for e in errors(bad)
+    )
 
 
 def test_missing_l2_heading_is_a_warning_not_a_silent_pass(code_doc):
@@ -375,7 +451,9 @@ def test_missing_l2_heading_is_a_warning_not_a_silent_pass(code_doc):
     )
     report = run(ticket(grounding(rev, Tables="db.restrictive_airspace.nope")), kb_dir)
     assert not any("column" in e for e in errors(report))
-    assert any("db.restrictive_airspace" in w and "skipped" in w for w in warnings(report))
+    assert any(
+        "db.restrictive_airspace" in w and "skipped" in w for w in warnings(report)
+    )
 
 
 # --- Task 4: Files vs struct.tree -------------------------------------------
@@ -383,17 +461,28 @@ def test_missing_l2_heading_is_a_warning_not_a_silent_pass(code_doc):
 
 def test_files_present_missing_and_new(code_doc):
     kb_dir, rev = code_doc
-    text = ticket(grounding(rev, Files=[
-        "src/airspace/service.py",
-        "db/migration/V1__create_airspace.sql",
-        "src/airspace/ghost.py",
-        "src/airspace/approval.py [NEW: created by this ticket]",
-    ]))
+    text = ticket(
+        grounding(
+            rev,
+            Files=[
+                "src/airspace/service.py",
+                "db/migration/V1__create_airspace.sql",
+                "src/airspace/ghost.py",
+                "src/airspace/approval.py [NEW: created by this ticket]",
+            ],
+        )
+    )
     report = run(text, kb_dir)
     msgs = errors(report)
-    assert any("file 'src/airspace/ghost.py' not in struct.tree" in m and "(line 12)" in m for m in msgs)
+    assert any(
+        "file 'src/airspace/ghost.py' not in struct.tree" in m and "(line 12)" in m
+        for m in msgs
+    )
     assert not any("service.py" in m or "V1__create" in m for m in msgs)
-    assert any("new: src/airspace/approval.py — created by this ticket" in n for n in notes(report))
+    assert any(
+        "new: src/airspace/approval.py — created by this ticket" in n
+        for n in notes(report)
+    )
 
 
 def test_inline_files_value_is_verified(code_doc):
@@ -419,15 +508,22 @@ def test_inline_files_value_is_verified(code_doc):
 
 def test_directory_entries_count_as_paths(code_doc):
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, Files=["src/airspace", "db/migration/"])), kb_dir)
+    report = run(
+        ticket(grounding(rev, Files=["src/airspace", "db/migration/"])), kb_dir
+    )
     assert not any("not in struct.tree" in e for e in errors(report))
 
 
 def test_path_beyond_depth_cap_is_a_warning_not_an_error(code_doc):
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, Files=["src/airspace/deep/deeper/x.py"])), kb_dir)
+    report = run(
+        ticket(grounding(rev, Files=["src/airspace/deep/deeper/x.py"])), kb_dir
+    )
     assert not any("not in struct.tree" in e for e in errors(report))
-    assert any("cannot verify 'src/airspace/deep/deeper/x.py'" in w and "depth" in w for w in warnings(report))
+    assert any(
+        "cannot verify 'src/airspace/deep/deeper/x.py'" in w and "depth" in w
+        for w in warnings(report)
+    )
 
 
 def test_path_after_the_line_cap_marker_is_a_warning(tmp_path: Path, run_git):
@@ -442,17 +538,31 @@ def test_path_after_the_line_cap_marker_is_a_warning(tmp_path: Path, run_git):
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "init")
     kb_dir = tmp_path / "kb"
-    core.run(core.CodeIngestOptions(repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"))
-    rev = models.load_yaml_model(kb_dir / "demo-code" / "_manifest.yaml", models.Manifest).revision
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"
+        )
+    )
+    rev = models.load_yaml_model(
+        kb_dir / "demo-code" / "_manifest.yaml", models.Manifest
+    ).revision
     raw = (kb_dir / "demo-code" / "structure.raw.md").read_text(encoding="utf-8")
     assert "more entries omitted" in raw  # precondition: the cap fired
-    report = run(ticket(grounding(rev, Files=["wide/f0699.txt", "wide/f0000.txt", "aaa.txt"])), kb_dir)
+    report = run(
+        ticket(grounding(rev, Files=["wide/f0699.txt", "wide/f0000.txt", "aaa.txt"])),
+        kb_dir,
+    )
     # The listing is truncated, so an absent path can never be proven absent:
     # f0699 (past the cut) and aaa.txt (would sort before it, but the marker
     # names a bare file name, so order is not comparable) are both warnings;
     # f0000 is listed → ok. No false errors on a capped tree.
-    assert any("cannot verify 'wide/f0699.txt'" in w and "line cap" in w for w in warnings(report))
-    assert any("cannot verify 'aaa.txt'" in w and "line cap" in w for w in warnings(report))
+    assert any(
+        "cannot verify 'wide/f0699.txt'" in w and "line cap" in w
+        for w in warnings(report)
+    )
+    assert any(
+        "cannot verify 'aaa.txt'" in w and "line cap" in w for w in warnings(report)
+    )
     assert not any("f0000" in e for e in errors(report))
     assert not any("not in struct.tree" in e for e in errors(report))
 
@@ -462,7 +572,9 @@ def test_missing_structure_raw_is_a_warning(code_doc):
     (kb_dir / "demo-code" / "structure.raw.md").unlink()
     report = run(ticket(grounding(rev)), kb_dir)
     assert not any("struct.tree" in e for e in errors(report))
-    assert any("structure.raw.md" in w and "file checks skipped" in w for w in warnings(report))
+    assert any(
+        "structure.raw.md" in w and "file checks skipped" in w for w in warnings(report)
+    )
 
 
 # --- Task 1 (greenfield): [NEW: D<n>] against the parent mission ----------
@@ -471,7 +583,9 @@ def test_missing_structure_raw_is_a_warning(code_doc):
 def test_parse_decisions_reads_id_status_owner_by_header_name():
     table = ticketcheck.parse_decisions(MISSION, "missions/M-demo.md")
     assert table.source == "missions/M-demo.md"
-    assert table.rows["D1"] == ticketcheck.Decision("D1", "DECIDED", "tech-lead", ("M-demo-US1",))
+    assert table.rows["D1"] == ticketcheck.Decision(
+        "D1", "DECIDED", "tech-lead", ("M-demo-US1",)
+    )
     assert table.rows["D2"].status == "OPEN"
 
 
@@ -494,15 +608,23 @@ def test_decided_reference_passes_with_a_note(code_doc):
     kb_dir, rev = code_doc
     text = ticket(
         grounding(
-            rev, Service="svc.billing [NEW: D1]", Files=["src/billing/ [NEW: D1]"],
-            Volumes=None, Healthchecks=None, Devices=None,
+            rev,
+            Service="svc.billing [NEW: D1]",
+            Files=["src/billing/ [NEW: D1]"],
+            Volumes=None,
+            Healthchecks=None,
+            Devices=None,
         ),
         parent="M-demo",
     )
     report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
     assert errors(report) == [], report.render("Grounding")
-    assert any("new: svc.billing — D1 (DECIDED, owner tech-lead)" in n for n in notes(report))
-    assert any("new: src/billing — D1 (DECIDED, owner tech-lead)" in n for n in notes(report))
+    assert any(
+        "new: svc.billing — D1 (DECIDED, owner tech-lead)" in n for n in notes(report)
+    )
+    assert any(
+        "new: src/billing — D1 (DECIDED, owner tech-lead)" in n for n in notes(report)
+    )
 
 
 def test_open_decision_reference_is_an_error_naming_the_owner(code_doc):
@@ -517,7 +639,10 @@ def test_missing_decision_row_is_an_error(code_doc):
     kb_dir, rev = code_doc
     text = ticket(grounding(rev, Externals="int.stripe [NEW: D9]"), parent="M-demo")
     report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
-    assert any("decision D9 not in missions/M-demo.md's Technology decisions" in e for e in errors(report))
+    assert any(
+        "decision D9 not in missions/M-demo.md's Technology decisions" in e
+        for e in errors(report)
+    )
 
 
 def test_decision_reference_without_a_parent_mission_is_an_error(code_doc):
@@ -545,7 +670,10 @@ def test_decision_reference_with_no_loader_is_treated_as_not_found(code_doc):
 
 def test_free_text_new_with_a_decisions_table_present_warns(code_doc):
     kb_dir, rev = code_doc
-    text = ticket(grounding(rev, Externals="int.stripe [NEW: billing arrives later]"), parent="M-demo")
+    text = ticket(
+        grounding(rev, Externals="int.stripe [NEW: billing arrives later]"),
+        parent="M-demo",
+    )
     report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
     assert report.passed is True
     assert any("reference the row as [NEW: D<n>]" in w for w in warnings(report))
@@ -598,7 +726,12 @@ def services_and_order(rev: str, second_row: str) -> str:
 
 
 def mission_with_services(rev: str, second_row: str) -> str:
-    return MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + services_and_order(rev, second_row) + "\n"
+    return (
+        MISSION
+        + f"\n{ticketcheck.SERVICES_HEADING}\n"
+        + services_and_order(rev, second_row)
+        + "\n"
+    )
 
 
 def test_mission_heading_resolves_decisions_from_the_same_file(code_doc):
@@ -632,13 +765,18 @@ def test_mission_heading_unknown_service_is_still_an_error(code_doc):
 
 def test_mission_heading_grounded_on_list_grounds_on_the_code_entry(code_doc):
     kb_dir, rev = code_doc
-    text = MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + (
-        f"- Grounded on: demo:demo-code @ {rev}, demo:demo-svc @ {rev}\n"
-        "\n"
-        "| Order | Service | Depends on | Why this order |\n"
-        "|---|---|---|---|\n"
-        "| 1 | svc.airspace-service | — | base |\n"
-    ) + "\n"
+    text = (
+        MISSION
+        + f"\n{ticketcheck.SERVICES_HEADING}\n"
+        + (
+            f"- Grounded on: demo:demo-code @ {rev}, demo:demo-svc @ {rev}\n"
+            "\n"
+            "| Order | Service | Depends on | Why this order |\n"
+            "|---|---|---|---|\n"
+            "| 1 | svc.airspace-service | — | base |\n"
+        )
+        + "\n"
+    )
     report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
     assert errors(report) == [], report.render("Grounding")
     assert any("demo-code read from" in n for n in notes(report))
@@ -646,13 +784,18 @@ def test_mission_heading_grounded_on_list_grounds_on_the_code_entry(code_doc):
 
 def test_mission_heading_grounded_on_list_picks_the_code_entry_wherever_it_is(code_doc):
     kb_dir, rev = code_doc
-    text = MISSION + f"\n{ticketcheck.SERVICES_HEADING}\n" + (
-        f"- Grounded on: demo:demo-svc @ {rev}, demo:demo-code @ {rev}\n"
-        "\n"
-        "| Order | Service | Depends on | Why this order |\n"
-        "|---|---|---|---|\n"
-        "| 1 | svc.airspace-service | — | base |\n"
-    ) + "\n"
+    text = (
+        MISSION
+        + f"\n{ticketcheck.SERVICES_HEADING}\n"
+        + (
+            f"- Grounded on: demo:demo-svc @ {rev}, demo:demo-code @ {rev}\n"
+            "\n"
+            "| Order | Service | Depends on | Why this order |\n"
+            "|---|---|---|---|\n"
+            "| 1 | svc.airspace-service | — | base |\n"
+        )
+        + "\n"
+    )
     report = run(text, kb_dir, heading=ticketcheck.SERVICES_HEADING)
     assert errors(report) == [], report.render("Grounding")
     assert any("demo-code read from" in n for n in notes(report))
@@ -661,7 +804,11 @@ def test_mission_heading_grounded_on_list_picks_the_code_entry_wherever_it_is(co
 def test_ticket_heading_grounded_on_list_is_still_rejected(code_doc):
     kb_dir, rev = code_doc
     report = run(
-        ticket(grounding(rev, **{"Grounded on": "demo:demo-code @ {rev}, demo:demo-svc @ {rev}"})),
+        ticket(
+            grounding(
+                rev, **{"Grounded on": "demo:demo-code @ {rev}, demo:demo-svc @ {rev}"}
+            )
+        ),
         kb_dir,
     )
     assert len(errors(report)) == 1
@@ -682,42 +829,104 @@ def test_golden_compose_facts_pass(code_doc):
 
 def test_volume_not_on_the_service_is_an_error(code_doc):
     kb_dir, rev = code_doc
-    bad = run(ticket(grounding(rev, Service=TWO_SVC, Volumes="svc.postgres — myflix-postgres-data")), kb_dir)
-    assert any(e == "volume 'myflix-postgres-data' is not in svc.postgres (has: pgdata) (line 17)" for e in errors(bad))
-    good = run(ticket(grounding(rev, Service=TWO_SVC, Volumes="svc.postgres — pgdata")), kb_dir)
+    bad = run(
+        ticket(
+            grounding(
+                rev, Service=TWO_SVC, Volumes="svc.postgres — myflix-postgres-data"
+            )
+        ),
+        kb_dir,
+    )
+    assert any(
+        e
+        == "volume 'myflix-postgres-data' is not in svc.postgres (has: pgdata) (line 17)"
+        for e in errors(bad)
+    )
+    good = run(
+        ticket(grounding(rev, Service=TWO_SVC, Volumes="svc.postgres — pgdata")), kb_dir
+    )
     assert not any("volume" in e for e in errors(good))
 
 
 def test_healthcheck_must_match_verbatim(code_doc):
     kb_dir, rev = code_doc
-    bad = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/api/health`")), kb_dir)
+    bad = run(
+        ticket(
+            grounding(
+                rev,
+                Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/api/health`",
+            )
+        ),
+        kb_dir,
+    )
     assert any(
-        e == "healthcheck for svc.airspace-service is 'curl -f http://localhost:8080/health', not 'curl -f http://localhost:8080/api/health' (line 18)"
+        e
+        == "healthcheck for svc.airspace-service is 'curl -f http://localhost:8080/health', not 'curl -f http://localhost:8080/api/health' (line 18)"
         for e in errors(bad)
     )
-    none_bad = run(ticket(grounding(rev, Service=TWO_SVC, Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/health`; svc.postgres — `pg_isready`")), kb_dir)
+    none_bad = run(
+        ticket(
+            grounding(
+                rev,
+                Service=TWO_SVC,
+                Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/health`; svc.postgres — `pg_isready`",
+            )
+        ),
+        kb_dir,
+    )
     assert any("healthcheck for svc.postgres is 'none'" in e for e in errors(none_bad))
-    none_good = run(ticket(grounding(rev, Service=TWO_SVC, Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/health`; svc.postgres — none")), kb_dir)
+    none_good = run(
+        ticket(
+            grounding(
+                rev,
+                Service=TWO_SVC,
+                Healthchecks="svc.airspace-service — `curl -f http://localhost:8080/health`; svc.postgres — none",
+            )
+        ),
+        kb_dir,
+    )
     assert not any("healthcheck" in e for e in errors(none_good))
 
 
 def test_healthcheck_url_is_never_read_as_a_section_id(code_doc):
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — `curl -f http://api.internal/health`")), kb_dir)
+    report = run(
+        ticket(
+            grounding(
+                rev,
+                Healthchecks="svc.airspace-service — `curl -f http://api.internal/health`",
+            )
+        ),
+        kb_dir,
+    )
     assert not any("unknown id 'api.internal" in e for e in errors(report))
 
 
 def test_device_not_on_the_service_is_an_error(code_doc):
     kb_dir, rev = code_doc
-    bad = run(ticket(grounding(rev, Service=TWO_SVC, Devices="svc.postgres — nvidia:gpu")), kb_dir)
-    assert any(e == "device 'nvidia:gpu' is not in svc.postgres (has: none) (line 19)" for e in errors(bad))
+    bad = run(
+        ticket(grounding(rev, Service=TWO_SVC, Devices="svc.postgres — nvidia:gpu")),
+        kb_dir,
+    )
+    assert any(
+        e == "device 'nvidia:gpu' is not in svc.postgres (has: none) (line 19)"
+        for e in errors(bad)
+    )
 
 
 def test_new_marker_exempts_a_compose_value(code_doc):
     kb_dir, rev = code_doc
     report = run(
-        ticket(grounding(rev, Service=TWO_SVC, Volumes="svc.postgres — pgdata, myflix-minio-data [NEW: D1]"), parent="M-demo"),
-        kb_dir, load_decisions=decisions_of(MISSION),
+        ticket(
+            grounding(
+                rev,
+                Service=TWO_SVC,
+                Volumes="svc.postgres — pgdata, myflix-minio-data [NEW: D1]",
+            ),
+            parent="M-demo",
+        ),
+        kb_dir,
+        load_decisions=decisions_of(MISSION),
     )
     assert not any("volume" in e for e in errors(report))
     assert any("new: myflix-minio-data — D1 (DECIDED" in n for n in notes(report))
@@ -726,32 +935,52 @@ def test_new_marker_exempts_a_compose_value(code_doc):
 def test_svc_on_a_compose_line_must_be_on_the_service_line(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev, Volumes="svc.postgres — pgdata")), kb_dir)
-    assert any(e == "svc.postgres on the Volumes: line is not on the Service: line (line 17)" for e in errors(report))
+    assert any(
+        e == "svc.postgres on the Volumes: line is not on the Service: line (line 17)"
+        for e in errors(report)
+    )
 
 
 def test_whole_line_none_while_the_service_has_volumes_warns(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev, Service=TWO_SVC, Volumes="none")), kb_dir)
     assert errors(report) == []
-    assert any(w == "svc.postgres has volumes the grounding omits: pgdata (line 17)" for w in warnings(report))
+    assert any(
+        w == "svc.postgres has volumes the grounding omits: pgdata (line 17)"
+        for w in warnings(report)
+    )
 
 
 def test_missing_compose_lines_are_a_warning_not_an_error(code_doc):
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, Volumes=None, Healthchecks=None, Devices=None)), kb_dir)
+    report = run(
+        ticket(grounding(rev, Volumes=None, Healthchecks=None, Devices=None)), kb_dir
+    )
     assert errors(report) == []
-    assert any(w == "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them" for w in warnings(report))
+    assert any(
+        w
+        == "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them"
+        for w in warnings(report)
+    )
 
 
 def test_old_code_doc_without_the_rows_skips_with_a_note(code_doc, tmp_path):
     kb_dir, rev = code_doc
     services_md = kb_dir / "demo-code" / "services.md"
     text = services_md.read_text(encoding="utf-8")
-    text = "\n".join(ln for ln in text.splitlines() if not ln.startswith(("| Volumes |", "| Healthcheck |", "| Devices |")))
+    text = "\n".join(
+        ln
+        for ln in text.splitlines()
+        if not ln.startswith(("| Volumes |", "| Healthcheck |", "| Devices |"))
+    )
     services_md.write_text(text + "\n", encoding="utf-8")
     report = run(ticket(grounding(rev, Volumes="svc.airspace-service — ghost")), kb_dir)
     assert not any("volume" in e for e in errors(report))
-    assert any(n == "demo-code has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped" for n in notes(report))
+    assert any(
+        n
+        == "demo-code has no Volumes/Healthcheck/Devices rows (pre-1.3.0 code-ingest) — compose-fact checks skipped"
+        for n in notes(report)
+    )
 
 
 def test_new_service_compose_line_does_not_trigger_the_pre_1_3_0_note(code_doc):
@@ -773,7 +1002,9 @@ def test_new_service_compose_line_does_not_trigger_the_pre_1_3_0_note(code_doc):
     assert any("new: svc.billing — D1 (DECIDED" in n for n in notes(report))
 
 
-def test_real_error_and_new_service_on_one_line_do_not_add_a_contradicting_skip_note(code_doc):
+def test_real_error_and_new_service_on_one_line_do_not_add_a_contradicting_skip_note(
+    code_doc,
+):
     """A real error for a known service and a [NEW] service must not be
     collapsed into one contradictory "checks skipped" note (review finding
     #1)."""
@@ -795,9 +1026,17 @@ def test_healthcheck_semicolon_in_a_shell_command_is_not_truncated(code_doc):
     """A `;` inside a backticked healthcheck command must not cut the value
     short, nor leak a stray backtick into the error (review finding #2)."""
     kb_dir, rev = code_doc
-    text = ticket(grounding(rev, Healthchecks="svc.airspace-service — `sh -c 'pg_isready; exit 0'`"))
+    text = ticket(
+        grounding(
+            rev, Healthchecks="svc.airspace-service — `sh -c 'pg_isready; exit 0'`"
+        )
+    )
     report = run(text, kb_dir)
-    msgs = [e for e in errors(report) if e.startswith("healthcheck for svc.airspace-service")]
+    msgs = [
+        e
+        for e in errors(report)
+        if e.startswith("healthcheck for svc.airspace-service")
+    ]
     assert len(msgs) == 1, errors(report)
     assert "sh -c 'pg_isready; exit 0'" in msgs[0]
     assert "`" not in msgs[0]
@@ -812,7 +1051,8 @@ def test_unparseable_compose_line_warns_instead_of_passing_silently(code_doc):
     report = run(text, kb_dir)
     assert errors(report) == []
     assert any(
-        w == "Volumes: line does not parse — expected `svc.<name> — <values>` (got: pgdata) (line 17)"
+        w
+        == "Volumes: line does not parse — expected `svc.<name> — <values>` (got: pgdata) (line 17)"
         for w in warnings(report)
     )
 
@@ -843,7 +1083,15 @@ def test_healthcheck_bare_url_is_never_read_as_a_section_id(code_doc):
     the id scan must reject it the same way it rejects the backticked form
     (review finding #5)."""
     kb_dir, rev = code_doc
-    report = run(ticket(grounding(rev, Healthchecks="svc.airspace-service — curl -f http://api.internal/health")), kb_dir)
+    report = run(
+        ticket(
+            grounding(
+                rev,
+                Healthchecks="svc.airspace-service — curl -f http://api.internal/health",
+            )
+        ),
+        kb_dir,
+    )
     assert not any("unknown id 'api.internal" in e for e in errors(report))
 
 
@@ -927,7 +1175,10 @@ def test_healthcheck_containing_a_pipe_grounds_clean(code_doc):
 
     # Extractor side: the L2 cell really is escaped in the real document.
     services_md = (kb_dir / "demo-code" / "services.md").read_text(encoding="utf-8")
-    assert "| Healthcheck | curl -s http://localhost/health \\| grep -q ok |" in services_md
+    assert (
+        "| Healthcheck | curl -s http://localhost/health \\| grep -q ok |"
+        in services_md
+    )
 
     text = ticket(
         grounding(
@@ -952,7 +1203,10 @@ def test_healthcheck_containing_a_pipe_grounds_clean(code_doc):
 def test_table_column_is_shared_from_lintcore():
     from strata_kb import lintcore
 
-    rows = [["#", "Decision", "Status", "Owner", "Blocks"], ["D1", "x", "OPEN", "a", "M-demo-US1"]]
+    rows = [
+        ["#", "Decision", "Status", "Owner", "Blocks"],
+        ["D1", "x", "OPEN", "a", "M-demo-US1"],
+    ]
     assert lintcore.table_column(rows, "status") == 2
     assert lintcore.table_column(rows, "Blocks") == 4
     assert lintcore.table_column(rows, "nope") is None
@@ -991,9 +1245,12 @@ def test_parse_decisions_without_blocks_column_keeps_empty_tuple():
 def test_grounded_entries_splits_a_list_and_rejects_a_bad_entry():
     from strata_kb.ticketcheck import grounded_entries
 
-    assert grounded_entries("- Grounded on: demo:demo-code @ ABC1234") == [("demo", "demo-code", "abc1234")]
+    assert grounded_entries("- Grounded on: demo:demo-code @ ABC1234") == [
+        ("demo", "demo-code", "abc1234")
+    ]
     assert grounded_entries("- Grounded on: a:a-code @ 1234567, a:a-svc @ 1234567") == [
-        ("a", "a-code", "1234567"), ("a", "a-svc", "1234567"),
+        ("a", "a-code", "1234567"),
+        ("a", "a-svc", "1234567"),
     ]
     assert grounded_entries("- Grounded on: a:a-code @ 1234567, junk") == []
     assert grounded_entries("- Files: x.py") == []

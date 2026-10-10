@@ -4,6 +4,7 @@
 Keeps cli.py a thin wrapper (same pattern as dockersetup/initcmd/publish):
 the CLI parses flags and prints; the pipeline lives here.
 """
+
 from __future__ import annotations
 
 import logging

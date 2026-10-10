@@ -61,9 +61,7 @@ def run_setup(repo_root: Path, regenerate: bool = False) -> SetupReport:
         )
     if env_created:
         example = repo_root / ".env.example"
-        base = (
-            example.read_text(encoding="utf-8") if example.exists() else _DEFAULT_ENV
-        )
+        base = example.read_text(encoding="utf-8") if example.exists() else _DEFAULT_ENV
     else:
         base = env_path.read_text(encoding="utf-8")
     content = set_env_line(base, TOKEN_VAR, secrets.token_hex(24))
@@ -93,8 +91,9 @@ def docker_ready() -> bool:
     """True when the Docker CLI exists and the daemon answers `docker info`."""
     try:
         return (
-            subprocess.run(["docker", "info"], capture_output=True, timeout=30)
-            .returncode
+            subprocess.run(
+                ["docker", "info"], capture_output=True, timeout=30
+            ).returncode
             == 0
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -125,9 +124,7 @@ def ensure_gitignored(repo_root: Path) -> bool:
     """Make sure .env never lands in git; returns True when .gitignore changed."""
     gitignore = repo_root / ".gitignore"
     lines = (
-        gitignore.read_text(encoding="utf-8").splitlines()
-        if gitignore.exists()
-        else []
+        gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
     )
     if any(line.strip() in (".env", "/.env") for line in lines):
         return False

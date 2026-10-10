@@ -155,8 +155,13 @@ def test_explicit_missions_dir_missing_is_a_hard_error(fed_hub, tmp_path):
     result = runner.invoke(
         app,
         [
-            "ticket", "lint", str(ticket_path), "--hub", str(fed_hub),
-            "--missions-dir", str(bad_dir),
+            "ticket",
+            "lint",
+            str(ticket_path),
+            "--hub",
+            str(fed_hub),
+            "--missions-dir",
+            str(bad_dir),
         ],
     )
 
@@ -209,8 +214,13 @@ def test_explicit_missions_dir_overrides_the_sibling(fed_hub, tmp_path):
     result = runner.invoke(
         app,
         [
-            "ticket", "lint", str(ticket_path), "--hub", str(fed_hub),
-            "--missions-dir", str(elsewhere),
+            "ticket",
+            "lint",
+            str(ticket_path),
+            "--hub",
+            str(fed_hub),
+            "--missions-dir",
+            str(elsewhere),
         ],
     )
 
@@ -260,8 +270,7 @@ def test_lint_exits_2_when_only_the_ref_is_stale(fed_hub, tmp_path):
 
     result = runner.invoke(
         app,
-        ["ticket", "lint", str(path), "--hub", str(fed_hub),
-         "--fail-on-stale"],
+        ["ticket", "lint", str(path), "--hub", str(fed_hub), "--fail-on-stale"],
     )
     assert result.exit_code == 2, result.output
     # Click also exits 2 for a usage error (e.g. an unrecognised option) —
@@ -281,8 +290,7 @@ def test_lint_exits_1_when_something_else_also_fails(fed_hub, tmp_path):
 
     result = runner.invoke(
         app,
-        ["ticket", "lint", str(path), "--hub", str(fed_hub),
-         "--fail-on-stale"],
+        ["ticket", "lint", str(path), "--hub", str(fed_hub), "--fail-on-stale"],
     )
     assert result.exit_code == 1
 
@@ -293,9 +301,7 @@ def test_lint_exits_0_on_a_stale_ref_without_the_flag(fed_hub, tmp_path):
     path.write_text(_build_ticket(block), encoding="utf-8")
     make_stale(fed_hub)
 
-    result = runner.invoke(
-        app, ["ticket", "lint", str(path), "--hub", str(fed_hub)]
-    )
+    result = runner.invoke(app, ["ticket", "lint", str(path), "--hub", str(fed_hub)])
     assert result.exit_code == 0
 
 
@@ -314,8 +320,7 @@ def test_lint_exits_1_when_the_only_failure_is_a_broken_ref_not_stale(
 
     result = runner.invoke(
         app,
-        ["ticket", "lint", str(path), "--hub", str(fed_hub),
-         "--fail-on-stale"],
+        ["ticket", "lint", str(path), "--hub", str(fed_hub), "--fail-on-stale"],
     )
     assert result.exit_code == 1, result.output
     assert "DoR: FAIL" in result.output

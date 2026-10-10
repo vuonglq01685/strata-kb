@@ -30,7 +30,9 @@ def test_a_healthy_clone_reports_nothing(hub_worktree):
     assert intake.check_serving_clone(HubHandle(root=hub_worktree)) == []
 
 
-def test_a_clone_with_a_remote_but_no_origin_head_is_reported(hub_worktree, run_git, tmp_path):
+def test_a_clone_with_a_remote_but_no_origin_head_is_reported(
+    hub_worktree, run_git, tmp_path
+):
     """I-1: default_branch() falls back to current_branch() when
     refs/remotes/origin/HEAD is unset, so the pre-fix check compared that
     fallback against itself and could never fire here -- exactly the shape
@@ -59,7 +61,11 @@ def test_startup_prunes_a_stale_worktree(hub_worktree, tmp_path, run_git):
     # whether pruning actually ran.
     wt = tmp_path / "ghost-worktree"
     gitio.worktree_add(
-        hub_worktree, wt, "publish/ghost", gitio.default_branch(hub_worktree), reset=True
+        hub_worktree,
+        wt,
+        "publish/ghost",
+        gitio.default_branch(hub_worktree),
+        reset=True,
     )
     shutil.rmtree(wt)
     intake.check_serving_clone(HubHandle(root=hub_worktree))
@@ -70,7 +76,9 @@ def test_startup_prunes_a_stale_worktree(hub_worktree, tmp_path, run_git):
     assert wt.as_posix() not in listing
 
 
-def test_a_crashed_worktree_whose_directory_survives_is_reclaimed(hub_worktree, tmp_path):
+def test_a_crashed_worktree_whose_directory_survives_is_reclaimed(
+    hub_worktree, tmp_path
+):
     """I-5: unlike the stale-worktree case above, a crash between
     worktree_add and worktree_remove can leave the DIRECTORY in place --
     `git worktree prune` alone does not forget a worktree whose directory
@@ -79,7 +87,11 @@ def test_a_crashed_worktree_whose_directory_survives_is_reclaimed(hub_worktree, 
     repo-id ("... is already used by worktree at ...")."""
     wt = tmp_path / "crashed-worktree"
     gitio.worktree_add(
-        hub_worktree, wt, "publish/alpha", gitio.default_branch(hub_worktree), reset=True
+        hub_worktree,
+        wt,
+        "publish/alpha",
+        gitio.default_branch(hub_worktree),
+        reset=True,
     )
     assert wt.exists()  # the crash-with-surviving-directory shape
 
@@ -90,7 +102,11 @@ def test_a_crashed_worktree_whose_directory_survives_is_reclaimed(hub_worktree, 
     # and the branch is free again for a real publish to reuse
     wt2 = tmp_path / "second-worktree"
     gitio.worktree_add(
-        hub_worktree, wt2, "publish/alpha", gitio.default_branch(hub_worktree), reset=True
+        hub_worktree,
+        wt2,
+        "publish/alpha",
+        gitio.default_branch(hub_worktree),
+        reset=True,
     )
     gitio.worktree_remove(hub_worktree, wt2)
 
@@ -102,7 +118,9 @@ def test_reclaim_only_touches_publish_branch_worktrees(hub_worktree, tmp_path, r
     always porcelain entry 0) is never a candidate at all."""
     run_git(hub_worktree, "branch", "not-a-publish-branch")
     wt = tmp_path / "other-branch-worktree"
-    gitio.worktree_add(hub_worktree, wt, "not-a-publish-branch", "not-a-publish-branch", reset=False)
+    gitio.worktree_add(
+        hub_worktree, wt, "not-a-publish-branch", "not-a-publish-branch", reset=False
+    )
     try:
         intake._reclaim_leaked_worktrees(hub_worktree)
         listing = gitio._run(hub_worktree, "worktree", "list").stdout.replace("\\", "/")

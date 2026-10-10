@@ -1,6 +1,7 @@
 """Credentials embedded in hub URLs (x-access-token:...@) must never reach
 logs, exceptions, or CLI output — CI templates pass token-bearing URLs and
 Actions logs are readable by every collaborator."""
+
 from __future__ import annotations
 
 import logging

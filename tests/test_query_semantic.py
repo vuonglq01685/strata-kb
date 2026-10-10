@@ -74,7 +74,8 @@ def test_knn_leg_error_falls_back_to_keyword(fed_hub, caplog):
 
     with caplog.at_level("WARNING", logger="strata_kb.query"):
         results = search(
-            HubHandle(root=fed_hub), "restrictive airspace",
+            HubHandle(root=fed_hub),
+            "restrictive airspace",
             embedder=ExplodingEmbedder(),
         )
     assert results  # keyword leg still returns
@@ -201,7 +202,9 @@ def test_corrupt_db_rebuilt_once_transparently(fed_hub):
     hub = HubHandle(root=fed_hub)
     search(hub, "airspace")  # build index
     searchdb.db_path(hub).write_bytes(b"corrupted")
-    results = search(hub, "restrictive airspace designation")  # rebuild + return results
+    results = search(
+        hub, "restrictive airspace designation"
+    )  # rebuild + return results
     assert results
 
 

@@ -429,9 +429,10 @@ def test_derive_tags_ignores_a_document_absent_from_its_repo_index(fed_hub):
     )
     repos = load_federation(fed_hub / "federation")
 
-    assert kbcontext.derive_tags(
-        repos, [kbcontext.parse_ref("arinc-kb:arinc-424 §5.3")]
-    ) == []
+    assert (
+        kbcontext.derive_tags(repos, [kbcontext.parse_ref("arinc-kb:arinc-424 §5.3")])
+        == []
+    )
 
 
 def test_derive_tags_ignores_an_unqualified_ref(fed_hub):
@@ -500,9 +501,7 @@ def test_build_block_omits_tags_line_when_nothing_is_derivable(fed_hub):
     models.save_yaml_model(
         fed_hub / "federation" / "arinc-kb" / "index.yaml", models.KBIndex()
     )
-    block, _ = build_context_block(
-        HubHandle(root=fed_hub), ["arinc-kb:arinc-424 §5.3"]
-    )
+    block, _ = build_context_block(HubHandle(root=fed_hub), ["arinc-kb:arinc-424 §5.3"])
     assert "tags:" not in block
     assert parse(block).tags == []
 

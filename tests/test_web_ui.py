@@ -42,7 +42,9 @@ def _topbar(resp) -> str:
     return text[start : text.index("</form>", start)]
 
 
-def _add_section(fed_hub, repo_id: str, doc_id: str, section: models.SectionEntry) -> None:
+def _add_section(
+    fed_hub, repo_id: str, doc_id: str, section: models.SectionEntry
+) -> None:
     """Append a second section to an existing make_fed_entry manifest.
 
     make_fed_entry always writes exactly one section; several doc-page tests
@@ -120,12 +122,17 @@ def _authed_client(kb_dir, hub: str, store_factory=None) -> TestClient:
 def demo_doc_hub(fed_hub):
     """fed_hub plus a 'demo-kb:demo-doc' entry carrying a table (verbatim-render check)."""
     make_fed_entry(
-        fed_hub / "federation", "demo-kb", "demo-doc",
-        title="Demo Document", tags=["demo", "airspace"],
+        fed_hub / "federation",
+        "demo-kb",
+        "demo-doc",
+        title="Demo Document",
+        tags=["demo", "airspace"],
         summary="Demo aviation data spec.",
-        sec_id="1.1", sec_title="Airspace Records",
+        sec_id="1.1",
+        sec_title="Airspace Records",
         sec_summary="Airspace record structure: designation, type, level.",
-        l2=DEMO_L2, l3=DEMO_L3,
+        l2=DEMO_L2,
+        l3=DEMO_L3,
     )
     return fed_hub
 
@@ -248,13 +255,16 @@ def test_login_limiter_honours_trusted_proxies_for_the_rate_limit_key(
     monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "1")
     config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
     routes = ui.build_routes(
-        config, TOKEN,
+        config,
+        TOKEN,
         login_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60),
     )
     c = TestClient(Starlette(routes=routes))
 
     def post(xff):
-        return c.post("/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff})
+        return c.post(
+            "/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff}
+        )
 
     first = post("9.9.9.9, 1.1.1.1")
     assert first.status_code == 200, first.text  # wrong token, not yet limited
@@ -279,13 +289,16 @@ def test_login_limiter_ignores_forged_xff_when_trusted_proxies_is_zero(
     monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "0")
     config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
     routes = ui.build_routes(
-        config, TOKEN,
+        config,
+        TOKEN,
         login_limiter=SlidingWindowLimiter(max_attempts=1, window_seconds=60),
     )
     c = TestClient(Starlette(routes=routes))
 
     def post(xff):
-        return c.post("/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff})
+        return c.post(
+            "/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff}
+        )
 
     first = post("9.9.9.9, 1.1.1.1")
     assert first.status_code == 200, first.text
@@ -373,7 +386,9 @@ def test_home_hub_unreachable_shows_message(tmp_path, monkeypatch):
 
 
 def test_tag_only_search_lists_matching_docs(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui", params={"tags": "airspace"})
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"tags": "airspace"}
+    )
     assert resp.status_code == 200
     main = _main(resp)
     assert "icao-annex-2" in main
@@ -486,9 +501,7 @@ def test_search_index_busy_falls_back_to_empty_state(fed_hub, monkeypatch):
         raise searchdb.IndexBusyError("search index is in use by another process")
 
     monkeypatch.setattr("strata_kb.web.ui.search", fake_search)
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui", params={"q": "airspace"}
-    )
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui", params={"q": "airspace"})
     assert resp.status_code == 200
     assert "No matching section" in resp.text
 
@@ -526,12 +539,8 @@ def test_search_density_and_budget_controls_have_a11y_labels(demo_doc_hub):
     )
     assert 'aria-label="Token budget"' in resp.text
     assert 'role="group" aria-label="Result density"' in resp.text
-    assert re.search(
-        r'data-density-btn="compact" aria-pressed="true"', resp.text
-    )
-    assert re.search(
-        r'data-density-btn="full" aria-pressed="false"', resp.text
-    )
+    assert re.search(r'data-density-btn="compact" aria-pressed="true"', resp.text)
+    assert re.search(r'data-density-btn="full" aria-pressed="false"', resp.text)
     # expand/collapse toggle buttons start collapsed -> aria-expanded="false"
     assert re.search(r'data-toggle-card aria-expanded="false"', resp.text)
 
@@ -618,7 +627,9 @@ def test_doc_page_rows_carry_data_attrs_and_token_count(demo_doc_hub):
     # Directly set a non-zero, distinctive L2 token count on the fixture
     # section (make_fed_entry never sets `tokens`, so it defaults to 0 —
     # asserting "0" alone wouldn't prove the tk cell is bound to real data).
-    manifest_path = demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    manifest_path = (
+        demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    )
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     manifest.sections[0].tokens = models.SectionTokens(l2=137, l3=0)
     models.save_yaml_model(manifest_path, manifest)
@@ -636,11 +647,15 @@ def test_doc_page_rows_carry_data_attrs_and_token_count(demo_doc_hub):
 
 def test_doc_page_server_side_filter_matches_case_insensitively(demo_doc_hub):
     _add_section(
-        demo_doc_hub, "demo-kb", "demo-doc",
+        demo_doc_hub,
+        "demo-kb",
+        "demo-doc",
         models.SectionEntry(
-            id="2.1", title="Weather Minima",
+            id="2.1",
+            title="Weather Minima",
             summary="Ceiling and visibility limits.",
-            status="summarized", file="ch1",
+            status="summarized",
+            file="ch1",
         ),
     )
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
@@ -655,11 +670,15 @@ def test_doc_page_server_side_filter_matches_case_insensitively(demo_doc_hub):
 
 def test_doc_page_bogus_status_falls_back_to_all(demo_doc_hub):
     _add_section(
-        demo_doc_hub, "demo-kb", "demo-doc",
+        demo_doc_hub,
+        "demo-kb",
+        "demo-doc",
         models.SectionEntry(
-            id="2.1", title="Weather Minima",
+            id="2.1",
+            title="Weather Minima",
             summary="Ceiling and visibility limits.",
-            status="reviewed", file="ch1",
+            status="reviewed",
+            file="ch1",
         ),
     )
     client = _client(demo_doc_hub / ".kb", str(demo_doc_hub))
@@ -706,11 +725,15 @@ def test_doc_page_shown_label_carries_true_total(demo_doc_hub):
     # visible <span data-row> count in the DOM can be a server-filtered
     # subset that doesn't match the real total.
     _add_section(
-        demo_doc_hub, "demo-kb", "demo-doc",
+        demo_doc_hub,
+        "demo-kb",
+        "demo-doc",
         models.SectionEntry(
-            id="2.1", title="Weather Minima",
+            id="2.1",
+            title="Weather Minima",
             summary="Ceiling and visibility limits.",
-            status="reviewed", file="ch1",
+            status="reviewed",
+            file="ch1",
         ),
     )
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
@@ -788,13 +811,13 @@ def test_section_page_renders_l2_with_table_and_citation(demo_doc_hub):
     )
     assert resp.status_code == 200
     assert "demo-kb:demo-doc §1.1" in resp.text
-    assert "<td>Prohibited</td>" in resp.text          # table rendered verbatim
+    assert "<td>Prohibited</td>" in resp.text  # table rendered verbatim
     main = _main(resp)
-    assert "level=l3" in main                          # toggle link to L3
+    assert "level=l3" in main  # toggle link to L3
     # scoped to <main> (not resp.text): the left rail also renders repo
     # metadata on every page, so an unscoped "repo=demo-kb" substring check
     # would pass even if the level-toggle links themselves dropped ?repo=.
-    assert "level=l3&repo=demo-kb" in main             # toggle link keeps repo
+    assert "level=l3&repo=demo-kb" in main  # toggle link keeps repo
 
 
 def test_section_page_l3(demo_doc_hub):
@@ -879,10 +902,17 @@ def test_section_page_new_reader_shell(demo_doc_hub):
 
 def test_section_page_title_xss_escaped(fed_hub):
     make_fed_entry(
-        fed_hub / "federation", "demo-kb", "xss-doc",
-        title="<script>alert(1)</script>", tags=[],
-        summary="x", sec_id="1", sec_title="<script>alert(2)</script>",
-        sec_summary="s", l2="## 1 T\n\nbody", l3="## 1 T\n\nbody",
+        fed_hub / "federation",
+        "demo-kb",
+        "xss-doc",
+        title="<script>alert(1)</script>",
+        tags=[],
+        summary="x",
+        sec_id="1",
+        sec_title="<script>alert(2)</script>",
+        sec_summary="s",
+        l2="## 1 T\n\nbody",
+        l3="## 1 T\n\nbody",
     )
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
         "/ui/docs/xss-doc/1", params={"repo": "demo-kb"}
@@ -893,8 +923,12 @@ def test_section_page_title_xss_escaped(fed_hub):
 
 def test_section_page_prev_next_pager_links_to_siblings(demo_doc_hub):
     _add_section(
-        demo_doc_hub, "demo-kb", "demo-doc",
-        models.SectionEntry(id="1.2", title="Next Section", status="pending", file="ch1"),
+        demo_doc_hub,
+        "demo-kb",
+        "demo-doc",
+        models.SectionEntry(
+            id="1.2", title="Next Section", status="pending", file="ch1"
+        ),
     )
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
         "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
@@ -913,11 +947,20 @@ def test_section_page_prev_link_binds_to_previous_sibling(demo_doc_hub):
     # previous sibling). Query the *second* section here so the ← previous
     # branch actually renders and is bound to the right sibling.
     _add_section(
-        demo_doc_hub, "demo-kb", "demo-doc",
-        models.SectionEntry(id="1.2", title="Weather Minima", status="pending", file="ch1"),
+        demo_doc_hub,
+        "demo-kb",
+        "demo-doc",
+        models.SectionEntry(
+            id="1.2", title="Weather Minima", status="pending", file="ch1"
+        ),
     )
     _append_section_body(
-        demo_doc_hub, "demo-kb", "demo-doc", "ch1", "1.2", "Weather Minima",
+        demo_doc_hub,
+        "demo-kb",
+        "demo-doc",
+        "ch1",
+        "1.2",
+        "Weather Minima",
         "Condensed weather minima content.",
     )
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
@@ -941,8 +984,12 @@ def test_section_page_no_siblings_hides_pager(demo_doc_hub):
 
 def test_section_page_pager_appears_above_and_below_article(demo_doc_hub):
     _add_section(
-        demo_doc_hub, "demo-kb", "demo-doc",
-        models.SectionEntry(id="1.2", title="Next Section", status="pending", file="ch1"),
+        demo_doc_hub,
+        "demo-kb",
+        "demo-doc",
+        models.SectionEntry(
+            id="1.2", title="Next Section", status="pending", file="ch1"
+        ),
     )
     main = _main(
         _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
@@ -958,7 +1005,9 @@ def test_section_page_rail_shows_status_and_token_counts(demo_doc_hub):
     # Give L2/L3 distinct, non-zero token counts (make_fed_entry defaults
     # both to 0) so the assertions prove the rail is bound to the real
     # per-level values, not just that the row labels are present.
-    manifest_path = demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    manifest_path = (
+        demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    )
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     manifest.sections[0].tokens = models.SectionTokens(l2=42, l3=99)
     models.save_yaml_model(manifest_path, manifest)
@@ -975,7 +1024,9 @@ def test_section_page_rail_shows_status_and_token_counts(demo_doc_hub):
 
 
 def test_section_page_rail_shows_revision_when_set(demo_doc_hub):
-    manifest_path = demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    manifest_path = (
+        demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    )
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     manifest.revision = "Rev 7"
     models.save_yaml_model(manifest_path, manifest)
@@ -1010,7 +1061,9 @@ def test_home_query_highlights_matched_keywords(fed_hub):
 
 
 def test_tag_only_search_has_no_highlight(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui", params={"tags": "airspace"})
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        "/ui", params={"tags": "airspace"}
+    )
     assert "<mark>" not in resp.text
 
 
@@ -1042,11 +1095,16 @@ def test_home_query_shows_semantic_match_badge_on_fallback(fed_hub, monkeypatch)
 
     content = "## 1.1 Airspace Records\n\nFuzzy semantic match."
     fake_result = QueryResult(
-        doc_id="demo-doc", section_id="1.1", title="Airspace Records",
-        score=0.42, citation="demo-doc §1.1 (Rev 1)",
+        doc_id="demo-doc",
+        section_id="1.1",
+        title="Airspace Records",
+        score=0.42,
+        citation="demo-doc §1.1 (Rev 1)",
         content=content,
-        tokens=5, content_tokens=count_tokens(content),
-        source="local", match_mode="semantic",
+        tokens=5,
+        content_tokens=count_tokens(content),
+        source="local",
+        match_mode="semantic",
     )
     monkeypatch.setattr(ui_module, "search", lambda *a, **k: [fake_result])
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
@@ -1070,11 +1128,16 @@ def test_home_query_never_renders_raw_snippet_block(fed_hub, monkeypatch):
 
     content = "## 1.1 Airspace Records\n\nCondensed match."
     fake_result = QueryResult(
-        doc_id="demo-doc", section_id="1.1", title="Airspace Records",
-        score=0.42, citation="demo-doc §1.1 (Rev 1)",
+        doc_id="demo-doc",
+        section_id="1.1",
+        title="Airspace Records",
+        score=0.42,
+        citation="demo-doc §1.1 (Rev 1)",
         content=content,
-        tokens=5, content_tokens=count_tokens(content),
-        source="local", match_mode="keyword",
+        tokens=5,
+        content_tokens=count_tokens(content),
+        source="local",
+        match_mode="keyword",
         snippet="raw <b>GRYPHON42</b> context",
     )
     monkeypatch.setattr(ui_module, "search", lambda *a, **k: [fake_result])
@@ -1115,9 +1178,7 @@ def test_home_query_tokens_describe_the_rendered_text(fed_hub):
     r = search(HubHandle(root=fed_hub), "GRYPHON42")[0]
     assert r.snippet and r.tokens != r.content_tokens  # fixture bears a real snippet
 
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui", params={"q": "GRYPHON42"}
-    )
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui", params={"q": "GRYPHON42"})
     assert f'class="tk">{r.content_tokens} tk' in resp.text
     assert f'class="tk">{r.tokens} tk' not in resp.text
 
@@ -1221,7 +1282,9 @@ def test_asset_route_does_not_cache_misses(fed_hub):
     assert hit.content == b"PNGDATA3"
 
 
-def test_a_tampered_store_object_is_not_cached_or_served(fed_hub, tmp_path, monkeypatch):
+def test_a_tampered_store_object_is_not_cached_or_served(
+    fed_hub, tmp_path, monkeypatch
+):
     monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "hubcache"))
     name = "e" * 64 + ".png"
     store = assetstore.MemoryStore()
@@ -1305,7 +1368,9 @@ def test_asset_route_store_miss_404_and_error_503(fed_hub, tmp_path, monkeypatch
             raise assetstore.AssetStoreError("down")
 
     client_miss = _authed_client(
-        fed_hub / ".kb", str(fed_hub), store_factory=lambda handle: assetstore.MemoryStore()
+        fed_hub / ".kb",
+        str(fed_hub),
+        store_factory=lambda handle: assetstore.MemoryStore(),
     )
     assert (
         client_miss.get(f"/assets/{'8' * 64}.png", headers=AUTH_HEADERS).status_code
@@ -1502,6 +1567,7 @@ def _left_rail(resp) -> str:
 
 def test_tag_links_toggle_on_and_off():
     from strata_kb.web.ui import _tag_links
+
     links = _tag_links(["airspace", "icao"], ["icao"], q="air")
     by_label = {link["label"]: link for link in links}
     assert by_label["icao"]["on"] is True
@@ -1514,6 +1580,7 @@ def test_tag_links_toggle_on_and_off():
 
 def test_tag_links_no_query_no_tags_falls_back_to_search_screen():
     from strata_kb.web.ui import _tag_links
+
     links = _tag_links(["icao"], ["icao"], q="")
     assert links[0]["href"] == "/ui?q="
 
@@ -1525,6 +1592,7 @@ def test_tag_links_removal_with_budget_falls_back_to_search_screen():
     # must be decided by intent (q and the new tag list both empty), not
     # by whether the params list happens to be non-empty.
     from strata_kb.web.ui import _tag_links
+
     links = _tag_links(["icao"], ["icao"], q="", budget=2000)
     assert links[0]["href"] == "/ui?q="
 
@@ -1533,13 +1601,14 @@ def test_rail_tag_panel_marks_selected_and_searchable(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=air&tags=icao")
     rail = _left_rail(resp)
     assert "Search tags…" in rail
-    assert 'class="chip on"' in rail          # selected chip highlighted
-    assert "tags=icao%2Cairspace" in rail     # unselected chip adds itself
+    assert 'class="chip on"' in rail  # selected chip highlighted
+    assert "tags=icao%2Cairspace" in rail  # unselected chip adds itself
 
 
 def test_doc_screen_rail_shows_section_tree_not_catalog(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui/docs/arinc-424?repo=arinc-kb")
+        "/ui/docs/arinc-424?repo=arinc-kb"
+    )
     rail = _left_rail(resp)
     assert "← all documents" in rail
     assert "§5.3" in rail and "Restrictive Airspace" in rail
@@ -1549,7 +1618,8 @@ def test_doc_screen_rail_shows_section_tree_not_catalog(fed_hub):
 
 def test_section_screen_tree_marks_active_row(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb"
+    )
     rail = _left_rail(resp)
     assert "tree-row active" in rail
 
@@ -1559,7 +1629,7 @@ def test_overview_rail_has_tags_not_tree_and_signin(fed_hub):
     rail = _left_rail(resp)
     assert "Search tags…" in rail
     assert "tree-row" not in rail
-    assert "/ui/login" in rail          # Sign in nav entry
+    assert "/ui/login" in rail  # Sign in nav entry
     assert "catalog-card" not in rail
 
 
@@ -1595,19 +1665,20 @@ def test_docs_cards_have_open_sections_link_and_filter_text(fed_hub):
 def test_search_meta_line_counts_docs(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=airspace")
     main = _main(resp)
-    assert "docs · budget" in main   # "<N> sections · <M> docs · budget …"
+    assert "docs · budget" in main  # "<N> sections · <M> docs · budget …"
 
 
 def test_search_tag_row_offers_removal_or_none_label(fed_hub):
     c = _client(fed_hub / ".kb", str(fed_hub))
     with_tag = _main(c.get("/ui?q=airspace&tags=icao"))
-    assert "✕" in with_tag           # removable chip
+    assert "✕" in with_tag  # removable chip
     without = _main(c.get("/ui?q=airspace"))
     assert "none — searching the whole store" in without
 
 
 def test_tag_links_thread_budget_through_href():
     from strata_kb.web.ui import _tag_links
+
     links = _tag_links(["icao"], [], q="air", budget=8000)
     by_label = {link["label"]: link for link in links}
     assert "budget=8000" in by_label["icao"]["href"]
@@ -1615,6 +1686,7 @@ def test_tag_links_thread_budget_through_href():
 
 def test_tag_links_thread_semantic_through_href():
     from strata_kb.web.ui import _tag_links
+
     links = _tag_links(["icao"], [], q="air", semantic_on=False)
     by_label = {link["label"]: link for link in links}
     assert "semantic=0" in by_label["icao"]["href"]
@@ -1622,15 +1694,14 @@ def test_tag_links_thread_semantic_through_href():
 
 def test_tag_links_semantic_default_none_omits_param():
     from strata_kb.web.ui import _tag_links
+
     links = _tag_links(["icao"], [], q="air")
     by_label = {link["label"]: link for link in links}
     assert "semantic=" not in by_label["icao"]["href"]
 
 
 def test_search_tag_chip_hrefs_preserve_budget(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui?q=air&tags=icao&budget=8000"
-    )
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui?q=air&tags=icao&budget=8000")
     rail = _left_rail(resp)
     main = _main(resp)
     assert "budget=8000" in rail
@@ -1659,14 +1730,23 @@ def test_search_docs_count_dedupes_by_doc(fed_hub):
     # dedupe-by-doc_id behaviour instead of trivially passing because every
     # fixture query happens to hit exactly one section per doc.
     _add_section(
-        fed_hub, "arinc-kb", "arinc-424",
+        fed_hub,
+        "arinc-kb",
+        "arinc-424",
         models.SectionEntry(
-            id="5.4", title="Restrictive Airspace Notes",
-            status="reviewed", file="ch1",
+            id="5.4",
+            title="Restrictive Airspace Notes",
+            status="reviewed",
+            file="ch1",
         ),
     )
     _append_section_body(
-        fed_hub, "arinc-kb", "arinc-424", "ch1", "5.4", "Restrictive Airspace Notes",
+        fed_hub,
+        "arinc-kb",
+        "arinc-424",
+        "ch1",
+        "5.4",
+        "Restrictive Airspace Notes",
         "More restrictive airspace designation notes and codes.",
     )
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
@@ -1688,7 +1768,7 @@ def test_search_semantic_param_controls_flag(fed_hub, monkeypatch):
     c.get("/ui?q=airspace&semantic=0")
     assert calls["use_semantic"] is False
     calls.clear()
-    c.get("/ui?q=airspace")            # no param → default on
+    c.get("/ui?q=airspace")  # no param → default on
     assert calls["use_semantic"] is True
     calls.clear()
     c.get("/ui?q=airspace&semantic=0&semantic=1")  # hidden 0 + checked box
@@ -1709,7 +1789,7 @@ def test_search_semantic_off_renders_unchecked_checkbox_and_off_copy(fed_hub):
     # the token-budget form's own hidden semantic field mirrors the off
     # state too — scope to that block so we don't match the match-mode
     # form's always-"0" unchecked-checkbox trick field
-    budget_block = text[text.index("Token budget"):text.index("Match mode")]
+    budget_block = text[text.index("Token budget") : text.index("Match mode")]
     assert '<input type="hidden" name="semantic" value="0">' in budget_block
     # off-state copy replaces the RRF-fusion line
     assert "semantic re-ranking is off" in text
@@ -1724,7 +1804,8 @@ def test_search_rail_renders_match_mode_form(fed_hub):
 
 def test_section_rail_shows_on_this_page_toc(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb"
+    )
     assert "On this page" in resp.text
     # fed_hub L2 body starts "## 5.3 Restrictive Airspace"
     assert 'id="5-3-restrictive-airspace"' in resp.text
@@ -1746,14 +1827,21 @@ def test_section_toc_hidden_without_headings(fed_hub, monkeypatch):
     def fake_get_section(hub, doc_id, section_id, level="l2", repo=None):
         content = "Plain paragraph only."
         return QueryResult(
-            doc_id=doc_id, section_id=section_id, title="No Heading",
-            score=0.0, citation="arinc-kb:arinc-424 §5.3", content=content,
-            tokens=3, content_tokens=count_tokens(content), source="arinc-kb",
+            doc_id=doc_id,
+            section_id=section_id,
+            title="No Heading",
+            score=0.0,
+            citation="arinc-kb:arinc-424 §5.3",
+            content=content,
+            tokens=3,
+            content_tokens=count_tokens(content),
+            source="arinc-kb",
         )
 
     monkeypatch.setattr("strata_kb.web.ui.get_section", fake_get_section)
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui/docs/arinc-424/5.3?repo=arinc-kb")
+        "/ui/docs/arinc-424/5.3?repo=arinc-kb"
+    )
     assert "On this page" not in resp.text
 
 

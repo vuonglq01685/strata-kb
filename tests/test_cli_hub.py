@@ -9,8 +9,14 @@ def test_query_reads_federation_only(fed_hub, fixture_kb):
     # fixture_kb holds demo-doc, which is NOT published — it must not show up
     result = runner.invoke(
         app,
-        ["query", "restrictive airspace designation",
-         "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+        [
+            "query",
+            "restrictive airspace designation",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
+        ],
     )
     assert result.exit_code == 0
     assert "arinc-kb:arinc-424 §5.3" in result.output
@@ -19,9 +25,7 @@ def test_query_reads_federation_only(fed_hub, fixture_kb):
 
 def test_query_without_hub_config_errors_with_guide(fixture_kb, monkeypatch):
     monkeypatch.delenv("STRATA_KB_HUB", raising=False)
-    result = runner.invoke(
-        app, ["query", "anything", "--kb-dir", str(fixture_kb)]
-    )
+    result = runner.invoke(app, ["query", "anything", "--kb-dir", str(fixture_kb)])
     assert result.exit_code == 1
     assert "config.yaml" in result.output
 
@@ -39,8 +43,19 @@ def test_query_hub_from_config_file(fed_hub, fixture_kb, monkeypatch):
 def test_get_with_repo_and_l3(fed_hub, fixture_kb):
     result = runner.invoke(
         app,
-        ["get", "arinc-424", "5.3", "--level", "l3", "--repo", "arinc-kb",
-         "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+        [
+            "get",
+            "arinc-424",
+            "5.3",
+            "--level",
+            "l3",
+            "--repo",
+            "arinc-kb",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
+        ],
     )
     assert result.exit_code == 0
     assert "Full raw restrictive airspace" in result.output
@@ -71,13 +86,20 @@ def test_query_warns_when_the_hub_cache_is_stale(fed_hub, fixture_kb, monkeypatc
     from strata_kb.hub import HubHandle
 
     monkeypatch.setattr(
-        hub_mod, "resolve_hub",
+        hub_mod,
+        "resolve_hub",
         lambda hub_ref: HubHandle(root=fed_hub, stale=True, age_seconds=1234.0),
     )
     result = runner.invoke(
         app,
-        ["query", "restrictive airspace designation",
-         "--kb-dir", str(fixture_kb), "--hub", str(fed_hub)],
+        [
+            "query",
+            "restrictive airspace designation",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(fed_hub),
+        ],
     )
     assert result.exit_code == 0
     assert result.stderr.count("hub cache is stale") == 1
@@ -89,7 +111,8 @@ def test_get_warns_when_the_hub_cache_is_stale(fed_hub, fixture_kb, monkeypatch)
     from strata_kb.hub import HubHandle
 
     monkeypatch.setattr(
-        hub_mod, "resolve_hub",
+        hub_mod,
+        "resolve_hub",
         lambda hub_ref: HubHandle(root=fed_hub, stale=True, age_seconds=1234.0),
     )
     result = runner.invoke(
@@ -127,8 +150,12 @@ def test_publish_cli_prints_pr_url(git_kb, hub_worktree, monkeypatch):
     def fake_publish(kb_dir, hub_ref, repo_id=None, mode="auto", self_publish=False):
         calls["self_publish"] = self_publish
         return publish_mod.PublishReport(
-            repo_id="demo-kb", source_commit="abc1234", n_docs=1,
-            pushed=True, mode="pr", pr_url="https://github.com/org/hub/pull/7",
+            repo_id="demo-kb",
+            source_commit="abc1234",
+            n_docs=1,
+            pushed=True,
+            mode="pr",
+            pr_url="https://github.com/org/hub/pull/7",
         )
 
     monkeypatch.setattr(publish_mod, "publish", fake_publish)
@@ -151,7 +178,9 @@ def test_reindex_builds_search_db(fed_hub, git_kb):
     assert "search index" in result.output
 
 
-def test_reindex_commits_index_before_search_sync(fed_hub, git_kb, run_git, monkeypatch):
+def test_reindex_commits_index_before_search_sync(
+    fed_hub, git_kb, run_git, monkeypatch
+):
     # a sync (embed) blowup must still surface the error, but the rebuilt
     # federation/index.yaml must not sit uncommitted — commit first, sync after
     from strata_kb import searchdb as searchdb_mod
@@ -188,7 +217,9 @@ def test_reindex_push_threads_the_hub_token(tmp_path, run_git, monkeypatch, git_
     seed = tmp_path / "hub-seed"
     (seed / ".kb").mkdir(parents=True)
     (seed / "federation").mkdir()
-    (seed / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
+    (seed / ".kb" / "index.yaml").write_text(
+        "docs: []\n", encoding="utf-8", newline="\n"
+    )
     (seed / "federation" / ".gitkeep").write_text("", encoding="utf-8")
     run_git(tmp_path, "init", str(seed))
     run_git(seed, "add", "-A")
@@ -227,8 +258,11 @@ def test_reindex_push_threads_the_hub_token(tmp_path, run_git, monkeypatch, git_
     assert result.exit_code == 0, result.output
 
     push_calls = [
-        c for c in calls
-        if c["argv"][:2] == ["git", "push"] and "origin" in c["argv"] and "HEAD" in c["argv"]
+        c
+        for c in calls
+        if c["argv"][:2] == ["git", "push"]
+        and "origin" in c["argv"]
+        and "HEAD" in c["argv"]
     ]
     assert push_calls, "reindex never pushed"
     env = push_calls[0]["env"]
@@ -413,7 +447,9 @@ def test_cli_publish_hub_kind_self_hub_publishes_own_kb(tmp_path, run_git):
     assert (hub / "federation" / "hub-self" / "own-doc" / "_manifest.yaml").exists()
 
 
-def test_cli_publish_hub_kind_self_hub_dot_from_other_cwd(tmp_path, run_git, monkeypatch):
+def test_cli_publish_hub_kind_self_hub_dot_from_other_cwd(
+    tmp_path, run_git, monkeypatch
+):
     from typer.testing import CliRunner
 
     from strata_kb.cli import app
@@ -493,12 +529,22 @@ def test_publish_cli_prints_gate_refusal_not_a_traceback(git_kb, hub_worktree, r
     run_git(hub_worktree, "add", "-A")
     run_git(hub_worktree, "commit", "-m", "hub: register org/victim")
 
-    run_git(git_kb["root"], "remote", "add", "origin", "https://github.com/org/attacker.git")
+    run_git(
+        git_kb["root"], "remote", "add", "origin", "https://github.com/org/attacker.git"
+    )
 
     result = runner.invoke(
         app,
-        ["publish", "--repo-id", "victim", "--direct",
-         "--hub", str(hub_worktree), "--kb-dir", str(git_kb["kb"])],
+        [
+            "publish",
+            "--repo-id",
+            "victim",
+            "--direct",
+            "--hub",
+            str(hub_worktree),
+            "--kb-dir",
+            str(git_kb["kb"]),
+        ],
     )
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
@@ -539,7 +585,8 @@ def test_hub_to_hub_publish_gate_refusal_is_one_line_not_a_traceback(
     (mid / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
     make_fed_entry(mid / "federation", "repo-a", "doc-a")
     (mid / ".kb" / "config.yaml").write_text(
-        f"kind: hub\nrepo_id: mid\nhub: {root_hub}\n", encoding="utf-8",
+        f"kind: hub\nrepo_id: mid\nhub: {root_hub}\n",
+        encoding="utf-8",
     )
     _git_repo(run_git, mid)
 

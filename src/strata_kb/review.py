@@ -81,7 +81,9 @@ def check_approvable(kb_dir: Path, doc_ids: list[str]) -> list[str]:
     report = build_kb(kb_dir, allow_pending=True, strict=True, write_tokens=False)
     target_prefixes = tuple(f"{d} §" for d in doc_ids) + tuple(f"{d}:" for d in doc_ids)
     known_ids = _indexed_doc_ids(kb_dir)
-    known_prefixes = tuple(f"{d} §" for d in known_ids) + tuple(f"{d}:" for d in known_ids)
+    known_prefixes = tuple(f"{d} §" for d in known_ids) + tuple(
+        f"{d}:" for d in known_ids
+    )
     return [
         e
         for e in report.errors
@@ -125,7 +127,11 @@ def _resolve_wanted_sections(
 
 
 def _flip_summarized_sections(
-    kb_dir: Path, doc_id: str, manifest: models.Manifest, wanted: set[str] | None, by: str
+    kb_dir: Path,
+    doc_id: str,
+    manifest: models.Manifest,
+    wanted: set[str] | None,
+    by: str,
 ) -> tuple[list[str], list[str], list[str]]:
     """Flip status summarized → reviewed for the wanted sections; return
     (flipped ids, skipped-pending ids, skipped-machine ids). Ids repeat within
@@ -152,9 +158,14 @@ def _flip_summarized_sections(
                 l2_cache[sec.file] = (kb_dir / doc_id / f"{sec.file}.md").read_text(
                     encoding="utf-8"
                 )
-            l2_slice = slice_section(l2_cache[sec.file], sec.id, occurrence=occurrences[row]) or ""
+            l2_slice = (
+                slice_section(l2_cache[sec.file], sec.id, occurrence=occurrences[row])
+                or ""
+            )
             sec.status = "reviewed"
-            sec.reviewed = models.ReviewRecord(by=by, at=at, l2_sha256=quality.digest(l2_slice))
+            sec.reviewed = models.ReviewRecord(
+                by=by, at=at, l2_sha256=quality.digest(l2_slice)
+            )
             flipped.append(sec.id)
         elif sec.status == "pending":
             skipped_pending.append(sec.id)
@@ -180,8 +191,8 @@ def approve_sections(
 
     report = ApproveReport(doc_id=doc_id)
     wanted, report.missing = _resolve_wanted_sections(manifest, section_ids)
-    report.flipped, report.skipped_pending, report.skipped_machine = _flip_summarized_sections(
-        kb_dir, doc_id, manifest, wanted, by
+    report.flipped, report.skipped_pending, report.skipped_machine = (
+        _flip_summarized_sections(kb_dir, doc_id, manifest, wanted, by)
     )
 
     if report.flipped:
@@ -200,9 +211,7 @@ def changed_section_ids(kb_dir: Path, doc_id: str, against: str) -> list[str] | 
     if gitio.read_at(root, against, kb_abs / doc_id / "_manifest.yaml") is None:
         return None
     report = diff_doc(kb_dir, doc_id, against=against)
-    return [c.section_id for c in report.added] + [
-        c.section_id for c in report.changed
-    ]
+    return [c.section_id for c in report.added] + [c.section_id for c in report.changed]
 
 
 def approve_all_changed(

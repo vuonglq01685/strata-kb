@@ -63,8 +63,7 @@ WEASEL_PHRASES: tuple[str, ...] = (
 # boundaries work for the Vietnamese phrases too.
 _WEASEL_RE = re.compile(
     "|".join(
-        rf"\b{re.escape(p)}\b"
-        for p in sorted(WEASEL_PHRASES, key=len, reverse=True)
+        rf"\b{re.escape(p)}\b" for p in sorted(WEASEL_PHRASES, key=len, reverse=True)
     ),
     re.IGNORECASE,
 )

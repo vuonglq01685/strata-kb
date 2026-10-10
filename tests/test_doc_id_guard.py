@@ -4,6 +4,7 @@
 The planted target is the hub's own UNPUBLISHED `.kb/secret-draft`, which
 `federation/arinc-kb/../../.kb/secret-draft` used to reach (cited as
 `arinc-kb:secret-draft`)."""
+
 from __future__ import annotations
 
 import os
@@ -50,9 +51,10 @@ TRAVERSALS = [
 @pytest.mark.parametrize(("doc", "repo"), TRAVERSALS)
 def test_get_section_refuses_a_doc_id_outside_the_grammar(leaky_hub, doc, repo):
     for level in ("l2", "l3"):
-        assert get_section(
-            HubHandle(root=leaky_hub), doc, "5.3", level=level, repo=repo
-        ) is None
+        assert (
+            get_section(HubHandle(root=leaky_hub), doc, "5.3", level=level, repo=repo)
+            is None
+        )
 
 
 def test_another_repos_doc_is_not_reachable_through_the_repo_filter(leaky_hub):
@@ -74,7 +76,9 @@ def test_ids_with_dots_and_dashes_still_resolve(fed_hub):
 def test_a_symlinked_doc_dir_pointing_outside_the_repo_is_refused(leaky_hub):
     link = leaky_hub / "federation" / "arinc-kb" / "linked"
     os.symlink(leaky_hub / ".kb" / "secret-draft", link, target_is_directory=True)
-    assert get_section(HubHandle(root=leaky_hub), "linked", "5.3", repo="arinc-kb") is None
+    assert (
+        get_section(HubHandle(root=leaky_hub), "linked", "5.3", repo="arinc-kb") is None
+    )
     assert doc_dir(leaky_hub / "federation" / "arinc-kb", "linked") is None
 
 
@@ -92,8 +96,19 @@ def test_search_never_returns_an_unpublished_doc(leaky_hub):
 def test_kb_get_refuses_traversal(leaky_hub, fixture_kb):
     result = runner.invoke(
         app,
-        ["get", "../../.kb/secret-draft", "5.3", "--level", "l3", "--repo", "arinc-kb",
-         "--kb-dir", str(fixture_kb), "--hub", str(leaky_hub)],
+        [
+            "get",
+            "../../.kb/secret-draft",
+            "5.3",
+            "--level",
+            "l3",
+            "--repo",
+            "arinc-kb",
+            "--kb-dir",
+            str(fixture_kb),
+            "--hub",
+            str(leaky_hub),
+        ],
     )
     assert SECRET not in result.output
     assert result.exit_code != 0

@@ -288,11 +288,17 @@ def check_usage_hooks(repo_root: Path) -> list[Issue]:
         return []
     if not isinstance(settings, dict):
         return []
-    if _has_usage_hook(settings, "Stop") and not _has_usage_hook(settings, "SubagentStop"):
-        return [Issue("warning",
-                      f"{path} records usage on Stop but not on SubagentStop — add a "
-                      '"SubagentStop" entry with the same command '
-                      f"(`{_USAGE_HOOK} --hook-stdin`) so every subagent call is counted")]
+    if _has_usage_hook(settings, "Stop") and not _has_usage_hook(
+        settings, "SubagentStop"
+    ):
+        return [
+            Issue(
+                "warning",
+                f"{path} records usage on Stop but not on SubagentStop — add a "
+                '"SubagentStop" entry with the same command '
+                f"(`{_USAGE_HOOK} --hook-stdin`) so every subagent call is counted",
+            )
+        ]
     return []
 
 
@@ -306,19 +312,24 @@ def check_source_dirs(repo_root: Path) -> list[Issue]:
     issues: list[Issue] = []
     for folder in SOURCE_DIRS:
         files = [
-            f for f in gitio.tracked_files(repo_root, folder)
+            f
+            for f in gitio.tracked_files(repo_root, folder)
             if f != f"{folder}/.gitignore"
         ]
         if not files:
             continue
-        shown = ", ".join(files[:5]) + (f" (+{len(files) - 5} more)" if len(files) > 5 else "")
-        issues.append(Issue(
-            "warning",
-            f"{folder}/ holds {len(files)} file(s) tracked by git: {shown} — source "
-            "documents are often copyrighted; untrack them with "
-            f"`git rm --cached <file>` and commit (`kb init` writes {folder}/.gitignore "
-            "to keep them out)",
-        ))
+        shown = ", ".join(files[:5]) + (
+            f" (+{len(files) - 5} more)" if len(files) > 5 else ""
+        )
+        issues.append(
+            Issue(
+                "warning",
+                f"{folder}/ holds {len(files)} file(s) tracked by git: {shown} — source "
+                "documents are often copyrighted; untrack them with "
+                f"`git rm --cached <file>` and commit (`kb init` writes {folder}/.gitignore "
+                "to keep them out)",
+            )
+        )
     return issues
 
 
@@ -335,18 +346,21 @@ def check_config_credentials(kb_dir: Path, repo_root: Path) -> list[Issue]:
     if not isinstance(raw, dict) or not gitio.is_tracked(repo_root, relpath):
         return []
     keys = [
-        key for key in ("hub", "intake")
+        key
+        for key in ("hub", "intake")
         if isinstance(raw.get(key), str) and gitio.split_credentials(raw[key])[1]
     ]
     if not keys:
         return []
-    return [Issue(
-        "warning",
-        f"{relpath} is tracked by git and its {' and '.join(f'`{k}:`' for k in keys)} "
-        "URL carries a credential — rewrite it without one, pass the credentialed URL "
-        "in the STRATA_KB_HUB environment variable instead, commit, and rotate the "
-        "token: it is in this repo's history",
-    )]
+    return [
+        Issue(
+            "warning",
+            f"{relpath} is tracked by git and its {' and '.join(f'`{k}:`' for k in keys)} "
+            "URL carries a credential — rewrite it without one, pass the credentialed URL "
+            "in the STRATA_KB_HUB environment variable instead, commit, and rotate the "
+            "token: it is in this repo's history",
+        )
+    ]
 
 
 ASSET_SIZE_WARN_BYTES = 100 * 1024 * 1024
@@ -563,11 +577,7 @@ def _ignoring_digests(idx: models.FederationIndex) -> models.FederationIndex:
     overwriting the stored digest with the live one. That verdict belongs to
     check_published_digests alone; strip the field before this equality."""
     return idx.model_copy(
-        update={
-            "docs": [
-                d.model_copy(update={"content_sha256": ""}) for d in idx.docs
-            ]
-        }
+        update={"docs": [d.model_copy(update={"content_sha256": ""}) for d in idx.docs]}
     )
 
 
@@ -607,9 +617,7 @@ def check_hub(
     hub_stale = False
     if handle.stale:
         age = f"~{handle.age_seconds:.0f}s" if handle.age_seconds else "unknown"
-        issues.append(
-            Issue("warning", f"hub cache is stale (pull failed, age {age})")
-        )
+        issues.append(Issue("warning", f"hub cache is stale (pull failed, age {age})"))
         hub_stale = True
 
     # The URL itself is never put in the message -- gitio.redact_url exists
@@ -716,6 +724,7 @@ def check_hub(
                     found = broken_dir
                     found_len = len(broken_rel)
             return found
+
         for broken_rel, _broken_dir in broken_entries:
             issues.append(
                 Issue(
@@ -804,9 +813,7 @@ def check_hub(
                     if p.is_file()
                     and p.name != assetstore.RECORD_NAME
                     and p.relative_to(slim_dir).parts[0] != "manifests"
-                    and not pubgate.is_kb_artifact(
-                        p.relative_to(slim_dir).as_posix()
-                    )
+                    and not pubgate.is_kb_artifact(p.relative_to(slim_dir).as_posix())
                 )
                 if slim_strays:
                     issues.append(
@@ -979,9 +986,7 @@ def check_hub(
                     )
                 )
 
-    counts = Counter(
-        d.id for r in load_federation(fed) for d in r.index.docs
-    )
+    counts = Counter(d.id for r in load_federation(fed) for d in r.index.docs)
     for doc_id, n in sorted(counts.items()):
         if n > 1:
             issues.append(
@@ -998,7 +1003,9 @@ _ENTRY_SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
 
 
-def _fed_tree_digest(root: Path, skip: frozenset[str] | set[str] = _FED_TOP_SKIP) -> str:
+def _fed_tree_digest(
+    root: Path, skip: frozenset[str] | set[str] = _FED_TOP_SKIP
+) -> str:
     """Digest deterministic của một cây federation — bỏ file tầng đỉnh mà
     publish không mirror (index/registry/.gitkeep). KHÔNG bỏ _meta.yaml ở
     đây (khác _kb_tree_digest): _snapshot_federation mirror leaf _meta.yaml
@@ -1048,7 +1055,9 @@ def _fed_tree_digest(root: Path, skip: frozenset[str] | set[str] = _FED_TOP_SKIP
     return h.hexdigest()
 
 
-def check_published_digests(fed: Path, live: dict[str, str] | None = None) -> list[Issue]:
+def check_published_digests(
+    fed: Path, live: dict[str, str] | None = None
+) -> list[Issue]:
     """Compare each snapshot's content against the digest stored for it in
     federation/index.yaml. This is the only tamper check available at the
     hub: there is no local .kb there to diff against.
@@ -1162,18 +1171,24 @@ def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[I
     except (OSError, UnicodeDecodeError):
         workflow = ""
     if _DB_FLAG_RE.search(workflow):
-        issues.append(Issue(
-            "warning",
-            "kb-code.yml passes --db to kb code-ingest — move the paths to "
-            "`code_ingest.db` in .kb/config.yaml before re-running "
-            "`kb init --kind dev`, which overwrites the workflow",
-        ))
+        issues.append(
+            Issue(
+                "warning",
+                "kb-code.yml passes --db to kb code-ingest — move the paths to "
+                "`code_ingest.db` in .kb/config.yaml before re-running "
+                "`kb init --kind dev`, which overwrites the workflow",
+            )
+        )
     pin_note = sync.version_note(repo_root)
     if pin_note:
         issues.append(Issue("warning", pin_note))
     if repo_id:
         try:
-            rel = (kb_dir.resolve() / f"{repo_id}-code").relative_to(repo_root.resolve()).as_posix()
+            rel = (
+                (kb_dir.resolve() / f"{repo_id}-code")
+                .relative_to(repo_root.resolve())
+                .as_posix()
+            )
         except ValueError:
             rel = ""
         if rel:
@@ -1182,12 +1197,14 @@ def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[I
             except FileNotFoundError:
                 proc = None
             if proc is not None and proc.returncode == 0 and proc.stdout.strip():
-                issues.append(Issue(
-                    "warning",
-                    f"{rel} is tracked by git but is derived on demand — run "
-                    f"`git rm -r --cached {rel}` and commit (a .gitignore line "
-                    "does not untrack files)",
-                ))
+                issues.append(
+                    Issue(
+                        "warning",
+                        f"{rel} is tracked by git but is derived on demand — run "
+                        f"`git rm -r --cached {rel}` and commit (a .gitignore line "
+                        "does not untrack files)",
+                    )
+                )
     return issues
 
 
@@ -1211,9 +1228,11 @@ def check_hub_lag(
         parts.append("only on the hub: " + ", ".join(report.only_on_hub))
     if report.changed:
         parts.append("changed: " + ", ".join(report.changed))
-    return [Issue(
-        "warning",
-        f"hub {repo_id}-code lags {report.ref} (as of {report.ref_date}) — "
-        f"{'; '.join(parts)} — check for a pending -code PR on the hub, or the "
-        "latest kb-code.yml run",
-    )]
+    return [
+        Issue(
+            "warning",
+            f"hub {repo_id}-code lags {report.ref} (as of {report.ref_date}) — "
+            f"{'; '.join(parts)} — check for a pending -code PR on the hub, or the "
+            "latest kb-code.yml run",
+        )
+    ]

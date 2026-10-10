@@ -111,7 +111,8 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
         logger.warning("corrupt published snapshot: %s", exc)
         if request.url.path.startswith("/api"):
             json_detail = (
-                f"published snapshot for '{doc_id}' is corrupt" if doc_id
+                f"published snapshot for '{doc_id}' is corrupt"
+                if doc_id
                 else "a published snapshot is corrupt"
             )
             return JSONResponse(
@@ -120,11 +121,15 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
             )
         html_detail = (
             f"The published snapshot for '{doc_id}' is corrupt. "
-            "Re-publish it from the owning repo." if doc_id
+            "Re-publish it from the owning repo."
+            if doc_id
             else "A published snapshot is corrupt. Re-publish it from the owning repo."
         )
         return ui.render_error_page(
-            config, status=503, title="Document unavailable", detail=html_detail,
+            config,
+            status=503,
+            title="Document unavailable",
+            detail=html_detail,
         )
 
     app = Starlette(

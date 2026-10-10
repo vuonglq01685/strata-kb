@@ -77,6 +77,7 @@ hub, an audience wider than the source repo a plaintext credential might
 otherwise only ever be seen by. `deps.py`, `commands.py`, and `api.py`
 all import `redact_userinfo` from here rather than keeping their own
 copy, for the same "fix it once" reason `env_keys_from` lives here."""
+
 from __future__ import annotations
 
 import re

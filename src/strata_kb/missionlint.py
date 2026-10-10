@@ -27,10 +27,10 @@ if TYPE_CHECKING:
 # Required sections with a stronger, section-specific check of their own.
 _FILL_EXEMPT: frozenset[str] = frozenset(
     {
-        "## KB context",                # check_context_block
-        "## System context (C4 L1)",    # check_diagram
-        "## Containers (C4 L2)",        # check_diagram
-        "## US backlog",                # check_backlog
+        "## KB context",  # check_context_block
+        "## System context (C4 L1)",  # check_diagram
+        "## Containers (C4 L2)",  # check_diagram
+        "## US backlog",  # check_backlog
     }
 )
 
@@ -48,8 +48,7 @@ def _check_required_filled(text: str) -> list[Issue]:
             issues.append(
                 Issue(
                     "error",
-                    f"'{heading}' is empty or only placeholder text — "
-                    "fill it in",
+                    f"'{heading}' is empty or only placeholder text — fill it in",
                 )
             )
     return issues
@@ -113,9 +112,7 @@ def check_mission_id(
     return [], [], mission_id
 
 
-def check_backlog(
-    text: str, mission_id: str | None
-) -> tuple[list[Issue], list[str]]:
+def check_backlog(text: str, mission_id: str | None) -> tuple[list[Issue], list[str]]:
     """Checks 6 and 7. Returns (issues, us_ids).
 
     Numbering gaps are allowed: format and uniqueness are checked, never
@@ -127,11 +124,7 @@ def check_backlog(
 
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     header_at = next(
-        (
-            i
-            for i, line in enumerate(lines)
-            if mission.BACKLOG_HEADER_RE.match(line)
-        ),
+        (i for i, line in enumerate(lines) if mission.BACKLOG_HEADER_RE.match(line)),
         None,
     )
     if header_at is None:
@@ -188,9 +181,7 @@ def check_backlog(
         us_ids.append(m.group(1))
 
     if not us_ids:
-        issues.append(
-            Issue("error", "US backlog must have at least 1 story row")
-        )
+        issues.append(Issue("error", "US backlog must have at least 1 story row"))
         return issues, []
 
     if mission_id is not None:
@@ -200,8 +191,7 @@ def check_backlog(
                 issues.append(
                     Issue(
                         "error",
-                        f"US id '{us_id}' does not match "
-                        f"'{mission_id}-US<n>'",
+                        f"US id '{us_id}' does not match '{mission_id}-US<n>'",
                     )
                 )
 
@@ -224,8 +214,7 @@ def check_placeholders(text: str) -> list[Issue]:
     return [
         Issue(
             "warning",
-            f"{count} unresolved '{mission.PLACEHOLDER}' placeholder(s) "
-            "remain",
+            f"{count} unresolved '{mission.PLACEHOLDER}' placeholder(s) remain",
         )
     ]
 
@@ -288,9 +277,7 @@ def check_sequencing(text: str, us_ids: list[str]) -> list[Issue]:
     stripped = lintcore.HTML_COMMENT_RE.sub("", body).strip()
     if stripped[:3].upper() == "N/A":
         return []
-    covered = {
-        cells[0] for cells in lintcore.table_rows(body)[1:] if cells[0]
-    }
+    covered = {cells[0] for cells in lintcore.table_rows(body)[1:] if cells[0]}
     missing = [u for u in us_ids if u not in covered]
     if not missing:
         return []
@@ -388,9 +375,7 @@ def lint(
     issues += lintcore.check_diagram(
         text, "## System context (C4 L1)", mission.L1_KEYWORDS
     )
-    issues += lintcore.check_diagram(
-        text, "## Containers (C4 L2)", mission.L2_KEYWORDS
-    )
+    issues += lintcore.check_diagram(text, "## Containers (C4 L2)", mission.L2_KEYWORDS)
     if lintcore.section_body(text, mission.COMPONENT_HEADING) is not None:
         issues += lintcore.check_diagram(
             text, mission.COMPONENT_HEADING, mission.L3_KEYWORDS
@@ -424,13 +409,10 @@ def lint(
     # issue would then skip coverage with no note at all, the one silent
     # skip in an otherwise fully-noted pipeline.
     if tickets_dir is None:
-        notes.append(
-            "coverage check skipped — no tickets directory supplied"
-        )
+        notes.append("coverage check skipped — no tickets directory supplied")
     elif backlog_issues:
         notes.append(
-            "coverage check skipped — the US backlog has errors; "
-            "fix those first"
+            "coverage check skipped — the US backlog has errors; fix those first"
         )
     else:
         issues += check_coverage(us_ids, tickets_dir)

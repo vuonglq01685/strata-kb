@@ -75,9 +75,7 @@ def _call(
     return status, data
 
 
-def mint_installation_token(
-    creds: AppCreds, repo_full: str, http=_default_http
-) -> str:
+def mint_installation_token(creds: AppCreds, repo_full: str, http=_default_http) -> str:
     app_jwt = _app_jwt(creds)
     status, inst = _call(
         "GET", f"{API}/repos/{repo_full}/installation", app_jwt, None, http

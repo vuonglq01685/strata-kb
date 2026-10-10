@@ -13,6 +13,7 @@ makes `load_federation` open every manifest), then measures, median of
 - `/api/health` latency while each slow route is in flight — the event-loop
   blocking the 2026-10-10 review measured at 9 s for `/ui` (§6.2 F3).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -48,34 +49,52 @@ def build_hub(root: Path, repos: int, docs: int, sections: int, per_file: int) -
             for s in range(sections):
                 sid = f"{s // 10 + 1}.{s % 10 + 1}"
                 fname = f"ch{s // per_file + 1}"
-                secs.append(models.SectionEntry(
-                    id=sid, title=f"Section {sid} airspace records",
-                    summary=f"Summary of {doc_id} section {sid}: designation and type.",
-                    status="summarized", file=fname,
-                ))
+                secs.append(
+                    models.SectionEntry(
+                        id=sid,
+                        title=f"Section {sid} airspace records",
+                        summary=f"Summary of {doc_id} section {sid}: designation and type.",
+                        status="summarized",
+                        file=fname,
+                    )
+                )
                 files.setdefault(fname, []).append(
                     f"## {sid} Section {sid} airspace records\n\n"
-                    + f"Condensed text about restrictive airspace {sid} in {doc_id}. " * 6
+                    + f"Condensed text about restrictive airspace {sid} in {doc_id}. "
+                    * 6
                     + "\n"
                 )
             for fname, bodies in files.items():
                 text = "\n".join(bodies)
-                (doc_dir / f"{fname}.md").write_text(text, encoding="utf-8", newline="\n")
-                (doc_dir / f"{fname}.raw.md").write_text(text * 2, encoding="utf-8", newline="\n")
+                (doc_dir / f"{fname}.md").write_text(
+                    text, encoding="utf-8", newline="\n"
+                )
+                (doc_dir / f"{fname}.raw.md").write_text(
+                    text * 2, encoding="utf-8", newline="\n"
+                )
             models.save_yaml_model(
                 doc_dir / "_manifest.yaml",
-                models.Manifest(id=doc_id, title=f"Document {doc_id}", revision="r1",
-                                sections=secs),
+                models.Manifest(
+                    id=doc_id, title=f"Document {doc_id}", revision="r1", sections=secs
+                ),
             )
-            index.docs.append(models.IndexEntry(
-                id=doc_id, title=f"Document {doc_id}", tags=[f"t{d}", "airspace"],
-                summary="A synthetic document.",
-            ))
+            index.docs.append(
+                models.IndexEntry(
+                    id=doc_id,
+                    title=f"Document {doc_id}",
+                    tags=[f"t{d}", "airspace"],
+                    summary="A synthetic document.",
+                )
+            )
         models.save_yaml_model(entry / "index.yaml", index)
-        models.save_yaml_model(entry / "_meta.yaml", FederationMeta(
-            repo_id=rid, source_commit="abc1234",
-            published_at="2026-10-10T00:00:00+00:00",
-        ))
+        models.save_yaml_model(
+            entry / "_meta.yaml",
+            FederationMeta(
+                repo_id=rid,
+                source_commit="abc1234",
+                published_at="2026-10-10T00:00:00+00:00",
+            ),
+        )
     write_federation_index(fed)
     # A served checkout's files are minutes-to-days old; a just-written file
     # sits inside the YAML cache's 2 s racy window and is always re-parsed.
@@ -83,8 +102,11 @@ def build_hub(root: Path, repos: int, docs: int, sections: int, per_file: int) -
     for path in root.rglob("*"):
         if path.is_file():
             os.utime(path, (past, past))
-    for args in (["init", "-q"], ["add", "-A"],
-                 ["-c", "user.name=b", "-c", "user.email=b@b", "commit", "-qm", "hub"]):
+    for args in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["-c", "user.name=b", "-c", "user.email=b@b", "commit", "-qm", "hub"],
+    ):
         subprocess.run(["git", *args], cwd=root, check=True)  # noqa: S603, S607 -- fixed argv; git from PATH, bench only
 
 
@@ -119,20 +141,29 @@ def main() -> None:
         hub = tmp / "hub"
         build_hub(hub, args.repos, args.docs, args.sections, args.per_file)
         total = args.repos * args.docs * args.sections
-        print(f"hub: {args.repos} repos × {args.docs} docs × {args.sections} sections "
-              f"= {total} sections, {args.per_file}/file")
+        print(
+            f"hub: {args.repos} repos × {args.docs} docs × {args.sections} sections "
+            f"= {total} sections, {args.per_file}/file"
+        )
 
         t0 = time.perf_counter()
         load_federation(hub / "federation")
         first = (time.perf_counter() - t0) * 1000
         warm = _median_ms(lambda: load_federation(hub / "federation"), args.runs)
-        print(f"load_federation           first {first:8.1f} ms   repeat {warm:8.1f} ms")
+        print(
+            f"load_federation           first {first:8.1f} ms   repeat {warm:8.1f} ms"
+        )
 
         config = ServerConfig(kb_dir=hub / ".kb", hub=str(hub))
-        server = uvicorn.Server(uvicorn.Config(
-            create_app(config, TOKEN), host="127.0.0.1", port=args.port,
-            log_level="warning", proxy_headers=False,
-        ))
+        server = uvicorn.Server(
+            uvicorn.Config(
+                create_app(config, TOKEN),
+                host="127.0.0.1",
+                port=args.port,
+                log_level="warning",
+                proxy_headers=False,
+            )
+        )
         threading.Thread(target=server.run, daemon=True).start()
         base = f"http://127.0.0.1:{args.port}"
         auth = {"Authorization": f"Bearer {TOKEN}"}
@@ -171,7 +202,9 @@ def main() -> None:
                 httpx.get(f"{base}/api/health", timeout=120)
                 probe.append((time.perf_counter() - t0) * 1000)
                 th.join()
-                print(f"{label:32s} {ms:8.1f} ms   /api/health meanwhile {probe[0]:8.1f} ms")
+                print(
+                    f"{label:32s} {ms:8.1f} ms   /api/health meanwhile {probe[0]:8.1f} ms"
+                )
         server.should_exit = True
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

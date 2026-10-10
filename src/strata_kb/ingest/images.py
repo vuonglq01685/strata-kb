@@ -8,6 +8,7 @@ validates docling's in-cell icon detection. sha256 is computed over the
 stored (compressed) bytes so the filename is stable and hub verification is
 byte-exact.
 """
+
 from __future__ import annotations
 
 import hashlib

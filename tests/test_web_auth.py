@@ -19,7 +19,15 @@ def _app():
 
     routes = [
         Route(path, ok, methods=["GET"])
-        for path in ["/", "/mcp", "/api/docs", "/api/health", "/ui", "/ui/login", "/ui/static/style.css"]
+        for path in [
+            "/",
+            "/mcp",
+            "/api/docs",
+            "/api/health",
+            "/ui",
+            "/ui/login",
+            "/ui/static/style.css",
+        ]
     ]
     return Starlette(routes=routes)
 
@@ -105,71 +113,100 @@ _PROBE_SHAPES = [
     ("no headers at all", [], False, False),
     ("empty authorization, no cookie", [("authorization", "")], False, False),
     ("Bearer with no token", [("authorization", "Bearer")], False, True),
-    ("Bearer with trailing space, no token", [("authorization", "Bearer ")], False, True),
+    (
+        "Bearer with trailing space, no token",
+        [("authorization", "Bearer ")],
+        False,
+        True,
+    ),
     ("garbage authorization", [("authorization", "garbage-not-bearer")], False, True),
     ("wrong bearer token", [("authorization", "Bearer wrong-token")], False, True),
     ("correct bearer token", [("authorization", f"Bearer {TOKEN}")], True, True),
     ("garbage cookie value", [("cookie", f"{COOKIE_NAME}=garbage")], False, True),
-    ("valid session cookie alone", [("cookie", f"{COOKIE_NAME}={_VALID_SESSION}")], True, True),
+    (
+        "valid session cookie alone",
+        [("cookie", f"{COOKIE_NAME}={_VALID_SESSION}")],
+        True,
+        True,
+    ),
     (
         "valid cookie + wrong bearer",
-        [("authorization", "Bearer wrong"), ("cookie", f"{COOKIE_NAME}={_VALID_SESSION}")],
-        True, True,
+        [
+            ("authorization", "Bearer wrong"),
+            ("cookie", f"{COOKIE_NAME}={_VALID_SESSION}"),
+        ],
+        True,
+        True,
     ),
     ("empty cookie header", [("cookie", "")], False, False),
-    ("cookie header with no equals sign at all", [("cookie", "nonsense")], False, False),
+    (
+        "cookie header with no equals sign at all",
+        [("cookie", "nonsense")],
+        False,
+        False,
+    ),
     ("non-ascii authorization", [("authorization", "Bearer ééé")], False, True),
     ("non-ascii cookie value", [("cookie", f"{COOKIE_NAME}=123.café")], False, True),
     (
         "unquoted space in unrelated cookie value",
         [("cookie", f"other=a b; {COOKIE_NAME}={_VALID_SESSION}")],
-        True, True,
+        True,
+        True,
     ),
     (
         "unterminated quote",
         [("cookie", f'other="abc; {COOKIE_NAME}={_VALID_SESSION}')],
-        True, True,
+        True,
+        True,
     ),
     (
         "bare token, no equals sign",
         [("cookie", f"justavalue; {COOKIE_NAME}={_VALID_SESSION}")],
-        True, True,
+        True,
+        True,
     ),
     (
         "doubled semicolons",
         [("cookie", f"other=x;;{COOKIE_NAME}={_VALID_SESSION}")],
-        True, True,
+        True,
+        True,
     ),
     (
         "space in a cookie name",
         [("cookie", f"my cookie=x; {COOKIE_NAME}={_VALID_SESSION}")],
-        True, True,
+        True,
+        True,
     ),
     (
         "backslash-escaped quote",
         [("cookie", f'other="a\\"b"; {COOKIE_NAME}={_VALID_SESSION}')],
-        True, True,
+        True,
+        True,
     ),
     (
         "session cookie first, space-case second",
         [("cookie", f"{COOKIE_NAME}={_VALID_SESSION}; other=a b")],
-        True, True,
+        True,
+        True,
     ),
     (
         "comma-separated (RFC2965 style)",
         [("cookie", f"foo=bar, {COOKIE_NAME}={_VALID_SESSION}")],
-        False, False,
+        False,
+        False,
     ),
     # -- duplicate-header class (fix round 2) --
     (
         "duplicate authorization: guess then trailing empty",
         [("authorization", "Bearer wrong"), ("authorization", "")],
-        False, True,  # the guess IS evaluated (and rejected) -> must be charged
+        False,
+        True,  # the guess IS evaluated (and rejected) -> must be charged
     ),
     (
         "duplicate authorization: correct token then trailing empty",
         [("authorization", f"Bearer {TOKEN}"), ("authorization", "")],
-        True, True,
+        True,
+        True,
     ),
     (
         "duplicate authorization: empty then guess",
@@ -177,7 +214,8 @@ _PROBE_SHAPES = [
         # first entry (empty) is what both methods read -- the second
         # duplicate is never consulted by either, so this is NOT the bypass
         # shape (no guess is ever evaluated) and must stay consistent False/False.
-        False, False,
+        False,
+        False,
     ),
     # -- duplicate Cookie HEADER LINE class (fix round 3, folded in) --
     # Starlette's HTTPConnection.cookies merges ALL "Cookie" header lines
@@ -189,22 +227,31 @@ _PROBE_SHAPES = [
     (
         "two separate Cookie header lines, unrelated + valid session",
         [("cookie", "other=x"), ("cookie", f"{COOKIE_NAME}={_VALID_SESSION}")],
-        True, True,
+        True,
+        True,
     ),
     (
         "two separate Cookie header lines, garbage session then valid session",
-        [("cookie", f"{COOKIE_NAME}=garbage"), ("cookie", f"{COOKIE_NAME}={_VALID_SESSION}")],
+        [
+            ("cookie", f"{COOKIE_NAME}=garbage"),
+            ("cookie", f"{COOKIE_NAME}={_VALID_SESSION}"),
+        ],
         # last header LINE wins on a repeated cookie name (dict.update merge
         # order) -> the valid one survives.
-        True, True,
+        True,
+        True,
     ),
     (
         "two separate Cookie header lines, valid session then garbage",
-        [("cookie", f"{COOKIE_NAME}={_VALID_SESSION}"), ("cookie", f"{COOKIE_NAME}=garbage")],
+        [
+            ("cookie", f"{COOKIE_NAME}={_VALID_SESSION}"),
+            ("cookie", f"{COOKIE_NAME}=garbage"),
+        ],
         # the later header LINE overrides the earlier valid one -> not
         # authorized, but a credential (the garbage cookie) was still
         # presented and must still be charged.
-        False, True,
+        False,
+        True,
     ),
 ]
 

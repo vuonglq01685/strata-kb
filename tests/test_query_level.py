@@ -6,6 +6,7 @@ Reviewer C F-C4: `query.py:261` was `suffix = ".raw.md" if level == "l3" else
 caller could not tell. Measured on §5.129: l3 = 1310 bytes, everything else
 1219. The MCP tool did validate, so the two surfaces disagreed.
 """
+
 import pytest
 from typer.testing import CliRunner
 
@@ -38,8 +39,17 @@ def test_get_section_accepts_either_case(fed_hub, level):
 def test_cli_get_exits_1_on_an_invalid_level(fed_hub, level):
     result = CliRunner().invoke(
         app,
-        ["get", "arinc-kb:arinc-424", "5.3", "--level", level,
-         "--hub", str(fed_hub), "--kb-dir", str(fed_hub / ".kb")],
+        [
+            "get",
+            "arinc-kb:arinc-424",
+            "5.3",
+            "--level",
+            level,
+            "--hub",
+            str(fed_hub),
+            "--kb-dir",
+            str(fed_hub / ".kb"),
+        ],
     )
     assert result.exit_code == 1
     assert "use 'l2' or 'l3'" in result.output
@@ -48,8 +58,17 @@ def test_cli_get_exits_1_on_an_invalid_level(fed_hub, level):
 def test_cli_get_l3_returns_the_verbatim_text(fed_hub):
     result = CliRunner().invoke(
         app,
-        ["get", "arinc-kb:arinc-424", "5.3", "--level", "l3",
-         "--hub", str(fed_hub), "--kb-dir", str(fed_hub / ".kb")],
+        [
+            "get",
+            "arinc-kb:arinc-424",
+            "5.3",
+            "--level",
+            "l3",
+            "--hub",
+            str(fed_hub),
+            "--kb-dir",
+            str(fed_hub / ".kb"),
+        ],
     )
     assert result.exit_code == 0
     assert "Verbatim" in result.output

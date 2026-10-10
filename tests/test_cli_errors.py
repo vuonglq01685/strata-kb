@@ -8,8 +8,16 @@ runner = CliRunner()
 def _invoke_publish(git_kb, hub, repo_id):
     return runner.invoke(
         app,
-        ["publish", "--hub", str(hub), "--repo-id", repo_id,
-         "--kb-dir", str(git_kb["kb"]), "--direct"],
+        [
+            "publish",
+            "--hub",
+            str(hub),
+            "--repo-id",
+            repo_id,
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--direct",
+        ],
     )
 
 
@@ -57,8 +65,16 @@ def test_a_failing_gh_pr_create_is_one_line(git_kb, hub_with_origin, monkeypatch
     monkeypatch.setattr(ghio, "create_pr", _boom)
     result = runner.invoke(
         app,
-        ["publish", "--hub", str(hub_with_origin), "--repo-id", "demo-kb",
-         "--kb-dir", str(git_kb["kb"]), "--pr"],
+        [
+            "publish",
+            "--hub",
+            str(hub_with_origin),
+            "--repo-id",
+            "demo-kb",
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--pr",
+        ],
     )
     assert result.exit_code == 1
     _assert_no_propagated_exception(result)
@@ -235,8 +251,14 @@ def test_assets_verify_corrupt_only_report_exits_nonzero_and_names_the_asset(
     )
     result = runner.invoke(
         app,
-        ["assets", "verify", "--hub", str(hub_worktree),
-         "--kb-dir", str(hub_worktree / ".kb")],
+        [
+            "assets",
+            "verify",
+            "--hub",
+            str(hub_worktree),
+            "--kb-dir",
+            str(hub_worktree / ".kb"),
+        ],
     )
     assert result.exit_code == 1
     assert name in result.output
@@ -258,7 +280,9 @@ def test_assets_verify_corrupt_only_report_exits_nonzero_and_names_the_asset(
 # re-enumerating siblings one at a time.
 
 
-def test_corrupt_doc_manifest_via_publish_is_one_line_not_a_traceback(git_kb, hub_worktree):
+def test_corrupt_doc_manifest_via_publish_is_one_line_not_a_traceback(
+    git_kb, hub_worktree
+):
     (git_kb["kb"] / "demo-doc" / "_manifest.yaml").write_text(
         "id: [broken\n", encoding="utf-8"
     )
@@ -274,8 +298,15 @@ def test_corrupt_doc_manifest_via_ci_publish_is_one_line_not_a_traceback(git_kb)
     )
     result = runner.invoke(
         app,
-        ["ci-publish", "--repo-id", "demo-kb", "--kb-dir", str(git_kb["kb"]),
-         "--intake", "https://intake.example"],
+        [
+            "ci-publish",
+            "--repo-id",
+            "demo-kb",
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--intake",
+            "https://intake.example",
+        ],
     )
     assert result.exit_code == 1
     _assert_no_propagated_exception(result)
@@ -295,7 +326,9 @@ def test_reindex_names_an_unreadable_manifest_while_syncing(fed_hub, fixture_kb)
     no `unreviewed_gate` call, so this is a different escape route than
     publish/ci-publish's PublishError wrap -- a raw yaml.YAMLError here,
     already in `_CONFIG_READ_ERRORS`."""
-    manifest_path = fed_hub / "federation" / "icao-kb" / "icao-annex-2" / "_manifest.yaml"
+    manifest_path = (
+        fed_hub / "federation" / "icao-kb" / "icao-annex-2" / "_manifest.yaml"
+    )
     manifest_path.write_text("id: [broken\n", encoding="utf-8")
     result = runner.invoke(
         app, ["reindex", "--hub", str(fed_hub), "--kb-dir", str(fixture_kb)]
@@ -376,7 +409,9 @@ def test_locked_hub_cache_discard_is_one_line_not_a_traceback(
     seed = tmp_path / "hub-seed"
     (seed / ".kb").mkdir(parents=True)
     (seed / "federation").mkdir()
-    (seed / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
+    (seed / ".kb" / "index.yaml").write_text(
+        "docs: []\n", encoding="utf-8", newline="\n"
+    )
     (seed / "federation" / ".gitkeep").write_text("", encoding="utf-8")
     run_git(tmp_path, "init", str(seed))
     run_git(seed, "add", "-A")
@@ -427,7 +462,9 @@ def test_doctor_locked_hub_cache_discard_is_one_line_not_a_traceback(
     seed = tmp_path / "hub-seed"
     (seed / ".kb").mkdir(parents=True)
     (seed / "federation").mkdir()
-    (seed / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8", newline="\n")
+    (seed / ".kb" / "index.yaml").write_text(
+        "docs: []\n", encoding="utf-8", newline="\n"
+    )
     (seed / "federation" / ".gitkeep").write_text("", encoding="utf-8")
     run_git(tmp_path, "init", str(seed))
     run_git(seed, "add", "-A")
@@ -633,20 +670,16 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
             "turn a retryable condition into a terminal refusal"
         ),
         "strata_kb.codeingest.core.CodeIngestError": (
-            "not a RuntimeError (Exception) -- outside KbError's "
-            "inheritance shape"
+            "not a RuntimeError (Exception) -- outside KbError's inheritance shape"
         ),
         "strata_kb.llm.RunnerError": (
-            "not a RuntimeError (Exception) -- outside KbError's "
-            "inheritance shape"
+            "not a RuntimeError (Exception) -- outside KbError's inheritance shape"
         ),
         "strata_kb.query.AmbiguousDocError": (
-            "not a RuntimeError (LookupError) -- outside KbError's "
-            "inheritance shape"
+            "not a RuntimeError (LookupError) -- outside KbError's inheritance shape"
         ),
         "strata_kb.svcnote.SvcNoteError": (
-            "not a RuntimeError (Exception) -- outside KbError's "
-            "inheritance shape"
+            "not a RuntimeError (Exception) -- outside KbError's inheritance shape"
         ),
         "strata_kb.kbcontext.KBContextError": (
             "not a RuntimeError (ValueError) -- doctor.check_context and "
@@ -663,12 +696,10 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
             "transitive issubclass matching (Minor 4)"
         ),
         "strata_kb.query.InvalidLevelError": (
-            "not a RuntimeError (ValueError) -- outside KbError's "
-            "inheritance shape"
+            "not a RuntimeError (ValueError) -- outside KbError's inheritance shape"
         ),
         "strata_kb.searchdb.TooManyTagsError": (
-            "not a RuntimeError (ValueError) -- outside KbError's "
-            "inheritance shape"
+            "not a RuntimeError (ValueError) -- outside KbError's inheritance shape"
         ),
     }
     allowed_classes = set()

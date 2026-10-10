@@ -32,7 +32,7 @@ REQUIRED_HEADINGS: tuple[str, ...] = (
 RECOMMENDED_HEADINGS: tuple[str, ...] = (
     "## Dependencies",
     "## Out of scope",
-    "## Technical grounding",   # SA-owned (spec 2026-09-20-sa-grounding-design §3)
+    "## Technical grounding",  # SA-owned (spec 2026-09-20-sa-grounding-design §3)
     "## Open questions",
 )
 

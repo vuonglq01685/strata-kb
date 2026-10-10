@@ -120,8 +120,14 @@ def test_mcp_setup_does_not_warn_on_loopback_http(tmp_path: Path, monkeypatch):
     _ok_probe(monkeypatch)
     result = runner.invoke(
         app,
-        ["mcp-setup", str(tmp_path), "--hub-url", "http://localhost:8321",
-         "--token", TOKEN],
+        [
+            "mcp-setup",
+            str(tmp_path),
+            "--hub-url",
+            "http://localhost:8321",
+            "--token",
+            TOKEN,
+        ],
     )
     assert "cross the network in clear" not in result.output
 
@@ -195,8 +201,14 @@ def test_mcp_setup_refuses_a_non_http_url(tmp_path: Path):
     init_repo(tmp_path, "child")
     result = runner.invoke(
         app,
-        ["mcp-setup", str(tmp_path), "--hub-url", "file:///etc/passwd",
-         "--token", TOKEN],
+        [
+            "mcp-setup",
+            str(tmp_path),
+            "--hub-url",
+            "file:///etc/passwd",
+            "--token",
+            TOKEN,
+        ],
     )
     assert result.exit_code == 1
     _assert_no_propagated_exception(result)
@@ -209,16 +221,13 @@ def test_mcp_setup_no_verify_skips_the_probe(tmp_path: Path, monkeypatch):
     _never_probe(monkeypatch)
     result = runner.invoke(
         app,
-        ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN,
-         "--no-verify"],
+        ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN, "--no-verify"],
     )
     assert result.exit_code == 0
     assert "STRATA_KB_HUB_URL" in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
-def test_mcp_setup_keeps_env_written_when_the_probe_fails(
-    tmp_path: Path, monkeypatch
-):
+def test_mcp_setup_keeps_env_written_when_the_probe_fails(tmp_path: Path, monkeypatch):
     init_repo(tmp_path, "child")
     _failing_probe(monkeypatch)
     result = runner.invoke(
@@ -228,9 +237,9 @@ def test_mcp_setup_keeps_env_written_when_the_probe_fails(
     _assert_no_propagated_exception(result)
     assert "cannot reach the hub" in result.output
     assert ".env is written" in result.output
-    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
-        tmp_path / ".env"
-    ).read_text(encoding="utf-8")
+    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (tmp_path / ".env").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_mcp_setup_on_a_rejected_token_names_a_working_escape(
@@ -279,9 +288,7 @@ def test_mcp_setup_rerun_reuses_the_values_from_env(tmp_path: Path, monkeypatch)
     """The wrapper's step 4: a bare re-run re-verifies and asks nothing."""
     init_repo(tmp_path, "dev")
     seen = _ok_probe(monkeypatch)
-    runner.invoke(
-        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
-    )
+    runner.invoke(app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN])
     seen.clear()
     monkeypatch.delenv("STRATA_KB_HUB_URL", raising=False)
     monkeypatch.delenv("STRATA_KB_HTTP_TOKEN", raising=False)
@@ -290,9 +297,7 @@ def test_mcp_setup_rerun_reuses_the_values_from_env(tmp_path: Path, monkeypatch)
     assert seen == {"url": HUB, "token": TOKEN}
 
 
-def test_mcp_setup_reads_the_token_from_the_environment(
-    tmp_path: Path, monkeypatch
-):
+def test_mcp_setup_reads_the_token_from_the_environment(tmp_path: Path, monkeypatch):
     init_repo(tmp_path, "child")
     seen = _ok_probe(monkeypatch)
     monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", TOKEN)
@@ -302,9 +307,7 @@ def test_mcp_setup_reads_the_token_from_the_environment(
     assert "shell history" not in result.output
 
 
-def test_mcp_setup_fails_without_a_token_and_without_a_tty(
-    tmp_path: Path, monkeypatch
-):
+def test_mcp_setup_fails_without_a_token_and_without_a_tty(tmp_path: Path, monkeypatch):
     from strata_kb import cli
 
     init_repo(tmp_path, "ba")
@@ -342,18 +345,16 @@ def test_mcp_setup_refuses_a_whitespace_only_token_and_does_not_clobber_env(
 ):
     init_repo(tmp_path, "child")
     _ok_probe(monkeypatch)
-    runner.invoke(
-        app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN]
-    )
+    runner.invoke(app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", TOKEN])
     monkeypatch.delenv("STRATA_KB_HTTP_TOKEN", raising=False)
     result = runner.invoke(
         app, ["mcp-setup", str(tmp_path), "--hub-url", HUB, "--token", "   "]
     )
     assert result.exit_code == 1
     _assert_no_propagated_exception(result)
-    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
-        tmp_path / ".env"
-    ).read_text(encoding="utf-8")
+    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (tmp_path / ".env").read_text(
+        encoding="utf-8"
+    )
 
 
 # --- Fix wave 1 -------------------------------------------------------------
@@ -405,9 +406,7 @@ def test_mcp_setup_catches_write_env_unicodedecodeerror_without_a_traceback(
     assert TOKEN not in result.output
 
 
-def test_mcp_setup_probes_the_same_value_it_writes_to_env(
-    tmp_path: Path, monkeypatch
-):
+def test_mcp_setup_probes_the_same_value_it_writes_to_env(tmp_path: Path, monkeypatch):
     """Important 2: a trailing space on the pasted token must not make the
     probe see a different value than what write_env stripped onto disk."""
     init_repo(tmp_path, "child")
@@ -418,9 +417,9 @@ def test_mcp_setup_probes_the_same_value_it_writes_to_env(
     )
     assert result.exit_code == 0, result.output
     assert seen["token"] == TOKEN
-    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
-        tmp_path / ".env"
-    ).read_text(encoding="utf-8")
+    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (tmp_path / ".env").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_mcp_setup_hidden_prompt_never_echoes_the_token(tmp_path: Path, monkeypatch):
@@ -438,6 +437,6 @@ def test_mcp_setup_hidden_prompt_never_echoes_the_token(tmp_path: Path, monkeypa
     )
     assert result.exit_code == 0, result.output
     assert TOKEN not in result.output
-    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (
-        tmp_path / ".env"
-    ).read_text(encoding="utf-8")
+    assert f"STRATA_KB_HTTP_TOKEN={TOKEN}" in (tmp_path / ".env").read_text(
+        encoding="utf-8"
+    )

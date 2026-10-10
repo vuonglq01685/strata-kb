@@ -88,7 +88,9 @@ class _StubDoc:
 def test_doc_to_items_maps_labels():
     doc = _StubDoc(
         items=[
-            _StubItem(_StubLabel("section_header"), text="5.3 Restrictive Airspace", level=2),
+            _StubItem(
+                _StubLabel("section_header"), text="5.3 Restrictive Airspace", level=2
+            ),
             _StubItem(_StubLabel("text"), text="Body paragraph."),
             _StubItem(
                 _StubLabel("table"),
@@ -121,9 +123,7 @@ def test_doc_to_items_carries_page_numbers():
 
 
 def test_crosscheck_reports_missing_bookmark():
-    warnings = parser.crosscheck(
-        unit_ids={"5", "5.3"}, bm_ids={"5", "5.3", "5.4"}
-    )
+    warnings = parser.crosscheck(unit_ids={"5", "5.3"}, bm_ids={"5", "5.3", "5.4"})
     assert len(warnings) == 1
     assert "5.4" in warnings[0]
 
@@ -140,7 +140,9 @@ def test_crosscheck_ignores_bookmarks_deeper_than_max_depth():
 
 
 def test_crosscheck_covered_by_dash_namespaced_units():
-    warnings = parser.crosscheck(unit_ids={"attachment-4-2.1", "attachment-4-2.2"}, bm_ids={"attachment-4"})
+    warnings = parser.crosscheck(
+        unit_ids={"attachment-4-2.1", "attachment-4-2.2"}, bm_ids={"attachment-4"}
+    )
     assert warnings == []
 
 
@@ -221,7 +223,9 @@ def test_load_or_parse_pins_rapidocr_backend_and_language(tmp_path, monkeypatch)
         "docling_core.types.doc": types.ModuleType("docling_core.types.doc"),
         "docling": types.ModuleType("docling"),
         "docling.datamodel": types.ModuleType("docling.datamodel"),
-        "docling.datamodel.base_models": types.ModuleType("docling.datamodel.base_models"),
+        "docling.datamodel.base_models": types.ModuleType(
+            "docling.datamodel.base_models"
+        ),
         "docling.datamodel.pipeline_options": types.ModuleType(
             "docling.datamodel.pipeline_options"
         ),
@@ -256,7 +260,7 @@ def _pdf_with_outline(tmp_path):
     w.add_outline_item("COVER PAGE", 0)
     toc = w.add_outline_item("TABLE OF CONTENTS", 1)
     w.add_outline_item("1.0 INTRODUCTION", 2, parent=toc)
-    w.add_outline_item("1.1 Sub Section", 3, parent=toc)     # sub-bookmark: not a part
+    w.add_outline_item("1.1 Sub Section", 3, parent=toc)  # sub-bookmark: not a part
     w.add_outline_item("2.0 DATA", 4, parent=toc)
     w.add_outline_item("ATTACHMENT 1 FLOW DIAGRAM", 6, parent=toc)
     w.add_outline_item("SUPPLEMENT 22", 8)
@@ -272,7 +276,7 @@ def test_outline_parts_extracts_and_orders_parts(tmp_path):
     parts = parser.outline_parts(path)
     assert parts is not None
     assert [(p.id, p.page) for p in parts] == [
-        ("front-matter", 1),   # COVER PAGE + TABLE OF CONTENTS grouped
+        ("front-matter", 1),  # COVER PAGE + TABLE OF CONTENTS grouped
         ("1", 3),
         ("2", 5),
         ("attachment-1", 7),
@@ -373,8 +377,13 @@ def test_doc_to_items_folds_text_drawn_inside_a_picture_into_alt(tmp_path, monke
 
 
 def test_doc_to_items_picture_alt_prefers_pdf_text_layer(tmp_path, monkeypatch):
-    monkeypatch.setattr(parser.pdftext, "region_text", lambda *a, **k: "Nền tảng\nstreaming VOD")
-    nested = [_StubItem(_StubLabel("text"), text="N"), _StubItem(_StubLabel("text"), text="ề")]
+    monkeypatch.setattr(
+        parser.pdftext, "region_text", lambda *a, **k: "Nền tảng\nstreaming VOD"
+    )
+    nested = [
+        _StubItem(_StubLabel("text"), text="N"),
+        _StubItem(_StubLabel("text"), text="ề"),
+    ]
     doc = _StubDoc(
         items=[
             _StubItem(
@@ -464,7 +473,9 @@ def test_doc_to_items_picture_without_image_emits_folded_text(tmp_path):
     nested = [_StubItem(_StubLabel("text"), text="10 m minimum")]
     doc = _StubDoc(
         items=[
-            _StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=nested)
+            _StubItem(
+                _StubLabel("picture"), prov=[_StubProv(page_no=9)], children=nested
+            )
         ]
     )
     items = parser.doc_to_items(doc, assets_dir=tmp_path)
@@ -479,7 +490,9 @@ def test_doc_to_items_picture_image_failure_emits_folded_text(tmp_path):
     nested = [_StubItem(_StubLabel("text"), text="10 m minimum")]
     doc = _StubDoc(
         items=[
-            _BrokenImageItem(_StubLabel("picture"), prov=[_StubProv(page_no=1)], children=nested)
+            _BrokenImageItem(
+                _StubLabel("picture"), prov=[_StubProv(page_no=1)], children=nested
+            )
         ]
     )
     items = parser.doc_to_items(doc, assets_dir=tmp_path)
@@ -549,13 +562,23 @@ def test_doc_to_items_without_assets_dir_keeps_picture_text_as_paragraphs():
     # No assets dir means no image is written, so the nested text is the
     # only trace of the figure: keep the old loose-paragraph behaviour.
     nested = _StubItem(_StubLabel("text"), text="10 m minimum distance.")
-    doc = _StubDoc(items=[_StubItem(_StubLabel("picture"), prov=[_StubProv(page_no=9)], children=[nested])])
+    doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("picture"), prov=[_StubProv(page_no=9)], children=[nested]
+            )
+        ]
+    )
     assert [i.text for i in parser.doc_to_items(doc)] == ["10 m minimum distance."]
 
 
 def test_doc_to_items_keeps_footnotes():
     doc = _StubDoc(
-        items=[_StubItem(_StubLabel("footnote"), text="† Applicable until 25 November 2026.")]
+        items=[
+            _StubItem(
+                _StubLabel("footnote"), text="† Applicable until 25 November 2026."
+            )
+        ]
     )
 
     items = parser.doc_to_items(doc)
@@ -569,28 +592,42 @@ def test_doc_to_items_keeps_text_under_an_unlisted_label():
     # L3 is the complete-content layer: a label nobody enumerated yet (docling
     # grows new ones) must still reach it. Only running headers/footers are
     # dropped, and those are pinned by test_doc_to_items_maps_labels.
-    doc = _StubDoc(items=[_StubItem(_StubLabel("checkbox_unselected"), text="Aeroplane")])
+    doc = _StubDoc(
+        items=[_StubItem(_StubLabel("checkbox_unselected"), text="Aeroplane")]
+    )
 
-    assert [(i.kind, i.text) for i in parser.doc_to_items(doc)] == [("text", "Aeroplane")]
+    assert [(i.kind, i.text) for i in parser.doc_to_items(doc)] == [
+        ("text", "Aeroplane")
+    ]
 
 
 def _signal_table_doc(img):
     """A 1-row table whose second column holds a glyph image, not text."""
     cells = [
-        _StubCell(0, 0, _StubBBox(l=323.8, t=487.9, r=336.2, b=495.5, coord_origin="TOPLEFT")),
-        _StubCell(0, 1, _StubBBox(l=521.4, t=484.0, r=546.8, b=499.6, coord_origin="TOPLEFT")),
-        _StubCell(1, 0, _StubBBox(l=327.7, t=517.9, r=332.1, b=525.6, coord_origin="TOPLEFT")),
+        _StubCell(
+            0, 0, _StubBBox(l=323.8, t=487.9, r=336.2, b=495.5, coord_origin="TOPLEFT")
+        ),
+        _StubCell(
+            0, 1, _StubBBox(l=521.4, t=484.0, r=546.8, b=499.6, coord_origin="TOPLEFT")
+        ),
+        _StubCell(
+            1, 0, _StubBBox(l=327.7, t=517.9, r=332.1, b=525.6, coord_origin="TOPLEFT")
+        ),
     ]
     table = _StubItem(
         _StubLabel("table"),
         table_md="| No. | Code symbol |\n|-----|-------------|\n| 1   |             |",
-        prov=[_StubProv(page_no=24, bbox=_StubBBox(l=316.8, t=314.6, r=558.9, b=107.3))],
+        prov=[
+            _StubProv(page_no=24, bbox=_StubBBox(l=316.8, t=314.6, r=558.9, b=107.3))
+        ],
         data=_StubTableData(table_cells=cells),
     )
     # BOTTOMLEFT t=278.4/b=259.8 on a 792pt page -> TOPLEFT 513.6..532.2 = row 1
     glyph = _StubItem(
         _StubLabel("picture"),
-        prov=[_StubProv(page_no=24, bbox=_StubBBox(l=523.3, t=278.4, r=545.2, b=259.8))],
+        prov=[
+            _StubProv(page_no=24, bbox=_StubBBox(l=523.3, t=278.4, r=545.2, b=259.8))
+        ],
         image=img,
     )
     return _StubDoc(items=[glyph, table], pages={24: _StubPage()})
@@ -624,7 +661,9 @@ def test_doc_to_items_consumed_glyph_keeps_its_folded_text(tmp_path):
 def test_doc_to_items_keeps_a_glyph_outside_any_table_as_an_image(tmp_path):
     img = Image.new("RGB", (16, 16), (0, 0, 0))
     doc = _signal_table_doc(img)
-    doc.items[0].prov = [_StubProv(page_no=24, bbox=_StubBBox(l=60.0, t=278.4, r=80.0, b=259.8))]
+    doc.items[0].prov = [
+        _StubProv(page_no=24, bbox=_StubBBox(l=60.0, t=278.4, r=80.0, b=259.8))
+    ]
 
     items = parser.doc_to_items(doc, assets_dir=tmp_path)
 
@@ -715,7 +754,14 @@ def test_doc_to_items_carries_topleft_bbox():
             _StubItem(
                 _StubLabel("text"),
                 text="Body.",
-                prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=100, r=200, b=120, coord_origin="TOPLEFT"))],
+                prov=[
+                    _StubProv(
+                        page_no=1,
+                        bbox=_StubBBox(
+                            l=10, t=100, r=200, b=120, coord_origin="TOPLEFT"
+                        ),
+                    )
+                ],
             ),
             _StubItem(
                 _StubLabel("table"),
@@ -762,7 +808,10 @@ def test_doc_to_items_code_uses_pdf_text_layer(monkeypatch, tmp_path):
     assert items[0].text == "```\nline one\n  line two\n```"
     assert items[0].page == 3
     assert seen == {
-        "pdf_path": tmp_path / "doc.pdf", "page_no": 3, "box": (10, 100, 200, 50), "mono": True,
+        "pdf_path": tmp_path / "doc.pdf",
+        "page_no": 3,
+        "box": (10, 100, 200, 50),
+        "mono": True,
     }
 
 
@@ -790,7 +839,11 @@ def test_doc_to_items_list_item_becomes_bullet():
     )
     items = parser.doc_to_items(doc)
     assert [i.kind for i in items] == ["list", "list", "list"]
-    assert [i.text for i in items] == ["- Xác thực user", "- Kiểm tra asset", "- đã có gạch"]
+    assert [i.text for i in items] == [
+        "- Xác thực user",
+        "- Kiểm tra asset",
+        "- đã có gạch",
+    ]
 
 
 def test_doc_to_items_list_item_strips_only_one_leading_marker():
@@ -812,7 +865,12 @@ def test_doc_to_items_list_item_strips_only_one_leading_marker():
 def test_bottomleft_box_flips_topleft_provenance():
     item = _StubItem(
         _StubLabel("text"),
-        prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=100, r=200, b=120, coord_origin="TOPLEFT"))],
+        prov=[
+            _StubProv(
+                page_no=1,
+                bbox=_StubBBox(l=10, t=100, r=200, b=120, coord_origin="TOPLEFT"),
+            )
+        ],
     )
     doc = _StubDoc(pages={1: _StubPage()})  # height 792
     assert parser._bottomleft_box(item, doc) == (1, (10, 692, 200, 672))
@@ -824,7 +882,10 @@ def test_bottomleft_box_passes_bottomleft_through():
         prov=[_StubProv(page_no=2, bbox=_StubBBox(l=1, t=9, r=5, b=3))],
     )
     assert parser._bottomleft_box(item, _StubDoc()) == (2, (1, 9, 5, 3))
-    assert parser._bottomleft_box(_StubItem(_StubLabel("text")), _StubDoc()) == (None, None)
+    assert parser._bottomleft_box(_StubItem(_StubLabel("text")), _StubDoc()) == (
+        None,
+        None,
+    )
     # inverted BOTTOMLEFT bbox (t < b) must also be swapped so top >= bottom,
     # the same invariant _topleft_box enforces.
     inverted = _StubItem(
@@ -839,7 +900,12 @@ def test_bottomleft_box_normalizes_inverted_topleft_provenance():
     # still be swapped so top >= bottom, mirroring _topleft_box's own rule.
     item = _StubItem(
         _StubLabel("text"),
-        prov=[_StubProv(page_no=1, bbox=_StubBBox(l=10, t=120, r=200, b=100, coord_origin="TOPLEFT"))],
+        prov=[
+            _StubProv(
+                page_no=1,
+                bbox=_StubBBox(l=10, t=120, r=200, b=100, coord_origin="TOPLEFT"),
+            )
+        ],
     )
     doc = _StubDoc(pages={1: _StubPage()})  # height 792
     assert parser._bottomleft_box(item, doc) == (1, (10, 692, 200, 672))

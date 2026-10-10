@@ -4,6 +4,7 @@ Asset names are bare content-addressed filenames `<sha256>.<png|webp>`
 (spec A); the store prepends the configured key prefix. `mode: none`
 returns no store and leaves all existing behavior unchanged.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -134,9 +135,7 @@ class S3Store:
 
     def get(self, name: str) -> bytes | None:
         try:
-            resp = self._c().get_object(
-                Bucket=self._cfg.bucket, Key=self._key(name)
-            )
+            resp = self._c().get_object(Bucket=self._cfg.bucket, Key=self._key(name))
             return resp["Body"].read()
         except AssetStoreError:
             raise
@@ -558,7 +557,9 @@ def divert_and_record(dest: Path, store, deletes: list[str] | None = None) -> li
     try:
         existing = load_record(dest).assets
     except AssetStoreError as exc:
-        logger.warning("%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc)
+        logger.warning(
+            "%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc
+        )
         existing = []
     merged = sorted((set(existing) | set(diverted)) - set(deletes or []))
     record_path = dest / RECORD_NAME
@@ -585,7 +586,9 @@ def synthesized_asset_entries(dest: Path) -> dict[str, str]:
     try:
         assets = load_record(dest).assets
     except AssetStoreError as exc:
-        logger.warning("%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc)
+        logger.warning(
+            "%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc
+        )
         assets = []
     # The `if sha` guard is belt-and-braces and no mutant can kill it (wave
     # I-1 round 5, measured: replacing it with `entries[rel] = asset_sha(rel)

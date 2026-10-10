@@ -6,6 +6,7 @@ Deliberately standalone: `codeingest.extractors.deps` parses manifest
 *contents* (it needs dependency names); this module needs only manifest
 *presence*, and must not pull codeingest machinery into the init path.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -250,7 +251,5 @@ def ensure_claude_block(target: Path, report: InitReport) -> None:
         return
     if text and not text.endswith("\n"):
         text += "\n"
-    dest.write_text(
-        text + "\n" + _CLAUDE_BLOCK, encoding="utf-8", newline="\n"
-    )
+    dest.write_text(text + "\n" + _CLAUDE_BLOCK, encoding="utf-8", newline="\n")
     report.updated.append("CLAUDE.md (conventions block appended)")

@@ -4,6 +4,7 @@
 Everything derives from the hub federation mirror each request. Failures in
 non-essential data (git metadata) degrade to empty values, never to a 500.
 """
+
 from __future__ import annotations
 
 import html
@@ -120,8 +121,12 @@ def catalog(hub: HubHandle) -> list[CatalogDoc]:
             total += 1
         out.append(
             CatalogDoc(
-                id=m.id, repo=repo_id, title=m.title, revision=m.revision,
-                total=total, **counts,
+                id=m.id,
+                repo=repo_id,
+                title=m.title,
+                revision=m.revision,
+                total=total,
+                **counts,
             )
         )
     return out
@@ -139,8 +144,9 @@ def all_tags(hub: HubHandle) -> list[str]:
 
 def review_queue(hub: HubHandle, limit: int = 8) -> list[QueueItem]:
     items = [
-        QueueItem(repo=repo_id, doc_id=m.id, section_id=s.id,
-                  title=s.title, status=s.status)
+        QueueItem(
+            repo=repo_id, doc_id=m.id, section_id=s.id, title=s.title, status=s.status
+        )
         for repo_id, m in _iter_manifests(hub)
         for s in m.sections
         if s.status != "reviewed" and not s.id.startswith(MACHINE_SECTION_PREFIX)
@@ -157,7 +163,11 @@ def store_stats(hub: HubHandle) -> StoreStats:
         docs += 1
         sections += len(m.sections)
     index_path = hub.federation_dir / "index.yaml"
-    l0 = count_tokens(index_path.read_text(encoding="utf-8")) if index_path.exists() else 0
+    l0 = (
+        count_tokens(index_path.read_text(encoding="utf-8"))
+        if index_path.exists()
+        else 0
+    )
     return StoreStats(docs=docs, sections=sections, repos=len(repos), l0_tokens=l0)
 
 

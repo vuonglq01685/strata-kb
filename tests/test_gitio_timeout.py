@@ -1,6 +1,7 @@
 """2026-10-10 review §5.2 #9: intake's network git calls run under
 repo_lock(rid) + the hub write lock, so each one needs a timeout and no
 prompt. CLI callers pass no timeout and keep git's interactive prompt."""
+
 from __future__ import annotations
 
 import subprocess
@@ -21,7 +22,9 @@ def hung(monkeypatch):
         return subprocess.CompletedProcess(["git", *args], 0, "", "")
 
     monkeypatch.setattr(gitio, "_run_env", fake)
-    monkeypatch.setattr(gitio, "remote_url", lambda root: "https://example.test/hub.git")
+    monkeypatch.setattr(
+        gitio, "remote_url", lambda root: "https://example.test/hub.git"
+    )
     return seen
 
 
@@ -38,7 +41,9 @@ def hung(monkeypatch):
         (lambda: gitio.pull(None, token="tok", timeout=7), "pull"),
     ],
 )
-def test_a_timed_network_call_never_prompts_and_times_out_as_git_error(hung, call, what):
+def test_a_timed_network_call_never_prompts_and_times_out_as_git_error(
+    hung, call, what
+):
     with pytest.raises(gitio.GitError, match=f"{what}.*timed out after 7s"):
         call()
     assert hung["timeout"] == 7

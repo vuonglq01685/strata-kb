@@ -31,7 +31,7 @@ def test_table_cell_characters_preserved_exactly():
     # cell content must survive character-for-character (after HTML escaping)
     md = "| Field | Value |\n|---|---|\n| SEC CODE  | 1 alpha <A-Z> |"
     out = render(md)
-    assert "<td>SEC CODE</td>" in out          # strip() around cells is allowed
+    assert "<td>SEC CODE</td>" in out  # strip() around cells is allowed
     assert "<td>1 alpha &lt;A-Z&gt;</td>" in out
 
 
@@ -93,7 +93,10 @@ def test_render_block_image():
 
 def test_render_image_in_table_cell():
     sha = "b" * 64
-    md = "| Symbol | Meaning |\n| --- | --- |\n" + f"| ![VOR](assets/{sha}.png) | VOR station |"
+    md = (
+        "| Symbol | Meaning |\n| --- | --- |\n"
+        + f"| ![VOR](assets/{sha}.png) | VOR station |"
+    )
     out = render(md)
     assert f'<td><img src="/assets/{sha}.png" alt="VOR" loading="lazy"></td>' in out
     assert "<td>VOR station</td>" in out
@@ -122,7 +125,10 @@ def test_fenced_code_language_tag_is_ignored():
 
 
 def test_fenced_code_is_not_highlighted():
-    assert render("```\nairspace\n```", terms={"airspace"}) == "<pre><code>airspace</code></pre>"
+    assert (
+        render("```\nairspace\n```", terms={"airspace"})
+        == "<pre><code>airspace</code></pre>"
+    )
 
 
 def test_unclosed_fence_runs_to_end():
@@ -148,7 +154,10 @@ def test_list_item_is_highlighted_and_escaped():
 def test_list_closes_before_heading_and_table():
     md = "- a\n## H\n- b\n| x |"
     out = render(md)
-    assert out == "<ul><li>a</li></ul>\n<h2>H</h2>\n<ul><li>b</li></ul>\n<table><tr><td>x</td></tr></table>"
+    assert (
+        out
+        == "<ul><li>a</li></ul>\n<h2>H</h2>\n<ul><li>b</li></ul>\n<table><tr><td>x</td></tr></table>"
+    )
 
 
 def test_dash_inside_paragraph_is_not_a_list():

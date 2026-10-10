@@ -12,7 +12,7 @@ def build_code_repo(root: Path) -> Path:
     (root / "pyproject.toml").write_text(
         '[project]\nname = "airspace"\nversion = "1.0.0"\n'
         'dependencies = ["fastapi>=0.110", "pydantic>=2.7"]\n'
-        "\n[tool.pytest.ini_options]\naddopts = \"-q\"\n",
+        '\n[tool.pytest.ini_options]\naddopts = "-q"\n',
         encoding="utf-8",
     )
     (root / "web").mkdir()
@@ -63,7 +63,7 @@ def build_code_repo(root: Path) -> Path:
         encoding="utf-8",
     )
     (root / "Dockerfile").write_text(
-        "FROM python:3.12-slim\nEXPOSE 8080\nCMD [\"uvicorn\", \"airspace:app\"]\n",
+        'FROM python:3.12-slim\nEXPOSE 8080\nCMD ["uvicorn", "airspace:app"]\n',
         encoding="utf-8",
     )
     (root / ".env.example").write_text(

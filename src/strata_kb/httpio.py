@@ -9,6 +9,7 @@ own dev-machine intake flow keeps a separate copy of this guard on purpose
 (it must raise before tagging/pushing, not just return a failed status) —
 every other caller shares this one.
 """
+
 from __future__ import annotations
 
 import urllib.error

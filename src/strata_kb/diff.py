@@ -119,12 +119,26 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
         summary_changed = old_sec.summary.strip() != sec.summary.strip()
         title_changed = old_sec.title.strip() != sec.title.strip()
         prose_changed = _level_changed(
-            root, against, doc_dir, sec.id, sec.file, old_sec.file,
-            ".md", prose_cache_new, prose_cache_old,
+            root,
+            against,
+            doc_dir,
+            sec.id,
+            sec.file,
+            old_sec.file,
+            ".md",
+            prose_cache_new,
+            prose_cache_old,
         )
         content_changed = _level_changed(
-            root, against, doc_dir, sec.id, sec.file, old_sec.file,
-            ".raw.md", raw_cache_new, raw_cache_old,
+            root,
+            against,
+            doc_dir,
+            sec.id,
+            sec.file,
+            old_sec.file,
+            ".raw.md",
+            raw_cache_new,
+            raw_cache_old,
         )
         if summary_changed or title_changed or prose_changed or content_changed:
             report.changed.append(

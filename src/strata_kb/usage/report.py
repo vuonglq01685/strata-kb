@@ -7,6 +7,7 @@ HTML is static and self-contained on purpose — no server to run, no CDN to
 reach, no JavaScript. Tables, not charts: a self-contained chart means shipping
 a library, and a table survives a git diff.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -137,8 +138,12 @@ def aggregate(
         else:
             tickets[row.ticket].key = row.ticket
             _add(tickets[row.ticket], row, cost)
-        for store, key_ in ((phases, row.phase), (models, row.model),
-                             (actors, row.actor), (assistants, row.assistant)):
+        for store, key_ in (
+            (phases, row.phase),
+            (models, row.model),
+            (actors, row.actor),
+            (assistants, row.assistant),
+        ):
             store[key_].key = key_
             _add(store[key_], row, cost)
     agg.by_ticket = _ranked(tickets)
@@ -154,6 +159,7 @@ def aggregate(
         # Nothing priced: fall back to tokens, so the share is still shown.
         def _tok(b: Bucket) -> int:
             return b.tokens_in + b.tokens_out + b.cache_read + b.cache_write
+
         total = _tok(agg.total)
         agg.unattributed_basis = "tokens"
         agg.unattributed_pct = 100 * _tok(agg.unattributed) / total if total else 0.0
@@ -205,9 +211,14 @@ def render_markdown(agg: Aggregate) -> str:
     """A PR-body table: what it cost, and where the cost went."""
     lines: list[str] = []
     if agg.stale:
-        lines += [f"**Warning: price table is {agg.stale_days} days old — update "
-                  ".kb/usage-prices.yaml.**", ""]
-    total_key = "total" + (f" ({agg.total.est_rows} estimated)" if agg.total.est_rows else "")
+        lines += [
+            f"**Warning: price table is {agg.stale_days} days old — update "
+            ".kb/usage-prices.yaml.**",
+            "",
+        ]
+    total_key = "total" + (
+        f" ({agg.total.est_rows} estimated)" if agg.total.est_rows else ""
+    )
     lines += [
         "| scope | calls | output tokens | cache read | cost |",
         "| --- | --- | --- | --- | --- |",
@@ -216,23 +227,43 @@ def render_markdown(agg: Aggregate) -> str:
     for bucket in agg.by_ticket:
         lines.append(_md_row(bucket, agg.currency))
     for bucket in agg.by_phase:
-        lines.append(_md_row(Bucket(**{**bucket.model_dump(), "key": f"phase: {bucket.key}"}), agg.currency))
+        lines.append(
+            _md_row(
+                Bucket(**{**bucket.model_dump(), "key": f"phase: {bucket.key}"}),
+                agg.currency,
+            )
+        )
     for bucket in agg.by_assistant:
-        lines.append(_md_row(Bucket(**{**bucket.model_dump(), "key": f"assistant: {bucket.key}"}), agg.currency))
+        lines.append(
+            _md_row(
+                Bucket(**{**bucket.model_dump(), "key": f"assistant: {bucket.key}"}),
+                agg.currency,
+            )
+        )
     lines.append("")
     if agg.total.rows:
         lines.append(
             f"Unattributed: {agg.unattributed_pct:.1f} % of {agg.unattributed_basis}."
         )
     if agg.lower_bound_rows:
-        lines.append(f"{agg.lower_bound_rows} call(s) in fast mode priced at the standard "
-                     "rate — the total is a lower bound.")
+        lines.append(
+            f"{agg.lower_bound_rows} call(s) in fast mode priced at the standard "
+            "rate — the total is a lower bound."
+        )
     if agg.unknown_modifier_rows:
-        lines.append(f"{agg.unknown_modifier_rows} call(s) with an unrecognised modifier.")
+        lines.append(
+            f"{agg.unknown_modifier_rows} call(s) with an unrecognised modifier."
+        )
     if agg.priced_as:
-        lines.append("Priced as: " + "; ".join(f"{raw} priced as {key}" for raw, key in agg.priced_as.items()) + ".")
+        lines.append(
+            "Priced as: "
+            + "; ".join(f"{raw} priced as {key}" for raw, key in agg.priced_as.items())
+            + "."
+        )
     if agg.hook_errors:
-        lines.append(f"{agg.hook_errors} hook ingest error(s) logged — see .kb/usage/ingest-errors.log.")
+        lines.append(
+            f"{agg.hook_errors} hook ingest error(s) logged — see .kb/usage/ingest-errors.log."
+        )
     lines.append(
         f"Prices effective {agg.effective_date} ({agg.stale_days} days old); "
         f"generated {agg.generated}."

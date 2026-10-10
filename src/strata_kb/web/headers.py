@@ -6,6 +6,7 @@ is the wrong shape. Defence in depth — the escaping in mdrender/Jinja is
 what actually stops XSS today; this is what limits the damage if that ever
 regresses.
 """
+
 from __future__ import annotations
 
 # style-src allows 'unsafe-inline': the templates carry ~30 inline style=

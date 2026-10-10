@@ -2,6 +2,7 @@
 every call, several times per web request. `models.load_yaml_data` parses
 with libyaml and caches by stat; a file younger than the racy window is
 always re-parsed."""
+
 from __future__ import annotations
 
 import os
@@ -40,10 +41,17 @@ def _age(path: Path, seconds: float = 10.0) -> None:
 
 
 def _manifest(path: Path, title: str = "Doc", n: int = 3) -> Path:
-    models.save_yaml_model(path, models.Manifest(
-        id="d", title=title,
-        sections=[models.SectionEntry(id=f"{i}", title=f"S{i}", file="ch1") for i in range(n)],
-    ))
+    models.save_yaml_model(
+        path,
+        models.Manifest(
+            id="d",
+            title=title,
+            sections=[
+                models.SectionEntry(id=f"{i}", title=f"S{i}", file="ch1")
+                for i in range(n)
+            ],
+        ),
+    )
     return path
 
 

@@ -118,9 +118,7 @@ def test_placeholder_matches_the_design_docs_convention():
 
 def test_parent_mission_line_extracts_the_id():
     text = "# Ticket title\n\n> Parent mission: M-airspace-filter\n"
-    assert (
-        ticket.PARENT_MISSION_RE.search(text).group(1) == "M-airspace-filter"
-    )
+    assert ticket.PARENT_MISSION_RE.search(text).group(1) == "M-airspace-filter"
 
 
 def test_parent_mission_line_rejects_missing_marker():
@@ -220,17 +218,17 @@ def _default_sections(block: str) -> dict[str, str]:
         "## System context (C4 L1)": (
             "```mermaid\n"
             "C4Context\n"
-            "  Person(dispatcher, \"Dispatcher\")\n"
-            "  System(planner, \"Flight Planner\")\n"
-            "  Rel(dispatcher, planner, \"Plans routes with\")\n"
+            '  Person(dispatcher, "Dispatcher")\n'
+            '  System(planner, "Flight Planner")\n'
+            '  Rel(dispatcher, planner, "Plans routes with")\n'
             "```"
         ),
         "## Containers (C4 L2)": (
             "```mermaid\n"
             "C4Container\n"
-            "  Container(spa, \"Map UI\", \"TypeScript\")\n"
-            "  Container(api, \"Airspace API\", \"Python\")\n"
-            "  Rel(spa, api, \"Reads airspace from\", \"HTTPS\")\n"
+            '  Container(spa, "Map UI", "TypeScript")\n'
+            '  Container(api, "Airspace API", "Python")\n'
+            '  Rel(spa, api, "Reads airspace from", "HTTPS")\n'
             "```"
         ),
         "## Constraints & assumptions": (
@@ -364,9 +362,7 @@ def test_filename_match_is_clean(golden_block: str, tmp_path: Path):
 
 
 def test_backlog_parses(golden_block: str):
-    issues, us_ids = missionlint.check_backlog(
-        _build_mission(golden_block), MISSION_ID
-    )
+    issues, us_ids = missionlint.check_backlog(_build_mission(golden_block), MISSION_ID)
     assert issues == []
     assert us_ids == [f"{MISSION_ID}-US1", f"{MISSION_ID}-US2"]
 
@@ -376,9 +372,7 @@ def test_backlog_missing_header_errors(golden_block: str):
         golden_block,
         overrides={
             "## US backlog": (
-                "| Story | Name |\n"
-                "|---|---|\n"
-                f"| {MISSION_ID}-US1 | Render polygons |"
+                f"| Story | Name |\n|---|---|\n| {MISSION_ID}-US1 | Render polygons |"
             )
         },
     )
@@ -402,9 +396,7 @@ def test_backlog_bad_us_id_errors(golden_block: str):
         golden_block,
         overrides={
             "## US backlog": (
-                "| US ID | Title |\n"
-                "|---|---|\n"
-                "| M-other-mission-US1 | Wrong mission |"
+                "| US ID | Title |\n|---|---|\n| M-other-mission-US1 | Wrong mission |"
             )
         },
     )
@@ -447,8 +439,7 @@ def test_backlog_row_above_header_errors(golden_block: str):
     issues, us_ids = missionlint.check_backlog(text, MISSION_ID)
     assert us_ids == [f"{MISSION_ID}-US1"]
     assert any(
-        f"{MISSION_ID}-US9" in i.message and "above" in i.message
-        for i in issues
+        f"{MISSION_ID}-US9" in i.message and "above" in i.message for i in issues
     )
 
 
@@ -594,16 +585,10 @@ def test_flowchart_fallback_passes(fed_hub: Path, golden_block: str):
         golden_block,
         overrides={
             "## System context (C4 L1)": (
-                "```mermaid\n"
-                "flowchart TD\n"
-                "  D[Dispatcher] --> P[Flight Planner]\n"
-                "```"
+                "```mermaid\nflowchart TD\n  D[Dispatcher] --> P[Flight Planner]\n```"
             ),
             "## Containers (C4 L2)": (
-                "```mermaid\n"
-                "flowchart LR\n"
-                "  UI[Map UI] --> API[Airspace API]\n"
-                "```"
+                "```mermaid\nflowchart LR\n  UI[Map UI] --> API[Airspace API]\n```"
             ),
         },
     )
@@ -621,9 +606,9 @@ def test_mermaid_init_directive_before_the_type_passes(
                 "```mermaid\n"
                 "%%{init: {'theme':'neutral'}}%%\n"
                 "C4Context\n"
-                "  Person(d, \"Dispatcher\")\n"
-                "  System(kb, \"Knowledge Base\")\n"
-                "  Rel(d, kb, \"queries\")\n"
+                '  Person(d, "Dispatcher")\n'
+                '  System(kb, "Knowledge Base")\n'
+                '  Rel(d, kb, "queries")\n'
                 "```"
             ),
         },
@@ -643,9 +628,7 @@ def test_missing_heading_errors(fed_hub: Path, golden_block: str, heading: str):
     assert any(heading in msg for msg in _errors(report))
 
 
-def test_heading_inside_a_fence_is_reported_missing(
-    fed_hub: Path, golden_block: str
-):
+def test_heading_inside_a_fence_is_reported_missing(fed_hub: Path, golden_block: str):
     """A required heading quoted inside a fenced code block — e.g. a BA
     pasting a reference mission or `TEMPLATE.md` into their own document as
     a worked example — must not satisfy the presence check. Regression
@@ -661,8 +644,7 @@ def test_heading_inside_a_fence_is_reported_missing(
 
     assert report.passed is False
     assert any(
-        "missing required heading: '## Business goal'" in m
-        for m in _errors(report)
+        "missing required heading: '## Business goal'" in m for m in _errors(report)
     )
 
 
@@ -728,9 +710,9 @@ def test_valid_l3_section_passes(fed_hub: Path, golden_block: str):
             mission.COMPONENT_HEADING: (
                 "```mermaid\n"
                 "C4Component\n"
-                "  Component(h, \"Airspace handler\", \"Python\")\n"
-                "  Component(v, \"Validator\", \"Python\")\n"
-                "  Rel(h, v, \"delegates to\")\n"
+                '  Component(h, "Airspace handler", "Python")\n'
+                '  Component(v, "Validator", "Python")\n'
+                '  Rel(h, v, "delegates to")\n'
                 "```"
             )
         },
@@ -757,9 +739,7 @@ def test_malformed_kb_context_errors(fed_hub: Path, golden_block: str):
 def test_uncited_pinned_ref_warns(fed_hub: Path, golden_block: str):
     text = _build_mission(
         golden_block,
-        overrides={
-            "## Constraints & assumptions": "No citation in this section."
-        },
+        overrides={"## Constraints & assumptions": "No citation in this section."},
     )
     report = missionlint.lint(text, _hub(fed_hub))
     assert any("icao-annex-2" in msg for msg in _warnings(report))
@@ -835,9 +815,7 @@ def test_coverage_skipped_when_the_backlog_has_errors(
         golden_block,
         overrides={
             "## US backlog": (
-                "| US ID | Title |\n"
-                "|---|---|\n"
-                "| M-other-mission-US1 | Wrong mission |"
+                "| US ID | Title |\n|---|---|\n| M-other-mission-US1 | Wrong mission |"
             )
         },
     )
@@ -899,16 +877,11 @@ def test_shipped_template_carries_both_required_diagrams():
     kb-context checks are expected to fail on it."""
     text = _template_text()
     assert (
-        lintcore.check_diagram(
-            text, "## System context (C4 L1)", mission.L1_KEYWORDS
-        )
+        lintcore.check_diagram(text, "## System context (C4 L1)", mission.L1_KEYWORDS)
         == []
     ), "template L1 fence does not satisfy the L1 diagram check"
     assert (
-        lintcore.check_diagram(
-            text, "## Containers (C4 L2)", mission.L2_KEYWORDS
-        )
-        == []
+        lintcore.check_diagram(text, "## Containers (C4 L2)", mission.L2_KEYWORDS) == []
     )
 
 
@@ -917,8 +890,7 @@ def test_shipped_template_backlog_table_has_the_exact_header():
     body = lintcore.section_body(text, "## US backlog")
     assert body is not None
     assert any(
-        mission.BACKLOG_HEADER_RE.match(line.strip())
-        for line in body.splitlines()
+        mission.BACKLOG_HEADER_RE.match(line.strip()) for line in body.splitlines()
     )
 
 
@@ -928,23 +900,19 @@ def test_shipped_template_backlog_table_has_the_exact_header():
 def test_golden_mission_emits_no_new_warnings(
     fed_hub: Path, golden_block: str, tmp_path: Path
 ):
-    report = missionlint.lint(
-        _build_mission(golden_block), _hub(fed_hub)
-    )
+    report = missionlint.lint(_build_mission(golden_block), _hub(fed_hub))
     assert report.passed is True
     assert _warnings(report) == []
 
 
-def test_c4_todo_without_decision_row_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_c4_todo_without_decision_row_warns(fed_hub: Path, golden_block: str):
     l2 = (
         "```mermaid\n"
         "C4Container\n"
-        "  Container(api, \"Airspace API — "
-        "%%TODO: verify against codebase%%\", \"Python\")\n"
-        "  Container(db, \"Airspace DB\", \"Postgres\")\n"
-        "  Rel(api, db, \"reads from\")\n"
+        '  Container(api, "Airspace API — '
+        '%%TODO: verify against codebase%%", "Python")\n'
+        '  Container(db, "Airspace DB", "Postgres")\n'
+        '  Rel(api, db, "reads from")\n'
         "```"
     )
     doc = _build_mission(
@@ -952,29 +920,25 @@ def test_c4_todo_without_decision_row_warns(
         overrides={
             "## Containers (C4 L2)": l2,
             "## Technology decisions": (
-                "| # | Decision | Status | Owner | Blocks |\n"
-                "|---|---|---|---|---|"
+                "| # | Decision | Status | Owner | Blocks |\n|---|---|---|---|---|"
             ),
         },
     )
     report = missionlint.lint(doc, _hub(fed_hub))
     assert report.passed is True
     assert any(
-        "every placeholder needs an owned decision row" in w
-        for w in _warnings(report)
+        "every placeholder needs an owned decision row" in w for w in _warnings(report)
     )
 
 
-def test_c4_todo_with_owned_decision_row_is_clean(
-    fed_hub: Path, golden_block: str
-):
+def test_c4_todo_with_owned_decision_row_is_clean(fed_hub: Path, golden_block: str):
     l2 = (
         "```mermaid\n"
         "C4Container\n"
-        "  Container(api, \"Airspace API — "
-        "%%TODO: verify against codebase%%\", \"Python\")\n"
-        "  Container(db, \"Airspace DB\", \"Postgres\")\n"
-        "  Rel(api, db, \"reads from\")\n"
+        '  Container(api, "Airspace API — '
+        '%%TODO: verify against codebase%%", "Python")\n'
+        '  Container(db, "Airspace DB", "Postgres")\n'
+        '  Rel(api, db, "reads from")\n'
         "```"
     )
     doc = _build_mission(
@@ -990,9 +954,7 @@ def test_c4_todo_with_owned_decision_row_is_clean(
         },
     )
     report = missionlint.lint(doc, _hub(fed_hub))
-    assert not any(
-        "decision row" in w for w in _warnings(report)
-    )
+    assert not any("decision row" in w for w in _warnings(report))
     # The pre-existing placeholder-count warning still fires — additive.
     assert any("unresolved" in w for w in _warnings(report))
 
@@ -1009,14 +971,10 @@ def test_ownerless_decision_row_warns(fed_hub: Path, golden_block: str):
         },
     )
     report = missionlint.lint(doc, _hub(fed_hub))
-    assert any(
-        "has no owner" in w for w in _warnings(report)
-    )
+    assert any("has no owner" in w for w in _warnings(report))
 
 
-def test_sequencing_not_covering_backlog_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_sequencing_not_covering_backlog_warns(fed_hub: Path, golden_block: str):
     doc = _build_mission(
         golden_block,
         overrides={
@@ -1047,14 +1005,10 @@ def test_sequencing_na_body_is_clean(fed_hub: Path, golden_block: str):
     )
     report = missionlint.lint(doc, _hub(fed_hub))
     assert report.passed is True
-    assert not any(
-        "'## Sequencing' does not cover" in w for w in _warnings(report)
-    )
+    assert not any("'## Sequencing' does not cover" in w for w in _warnings(report))
 
 
-def test_sequencing_skipped_when_backlog_broken(
-    fed_hub: Path, golden_block: str
-):
+def test_sequencing_skipped_when_backlog_broken(fed_hub: Path, golden_block: str):
     """When the US backlog itself has zero story rows (an error-level
     backlog issue), check_sequencing must stay gated off by `if not
     backlog_issues:` in `lint` — it should not pile a confusing coverage
@@ -1065,26 +1019,19 @@ def test_sequencing_skipped_when_backlog_broken(
     )
     report = missionlint.lint(doc, _hub(fed_hub))
     assert report.passed is False
-    assert not any(
-        "'## Sequencing' does not cover" in w for w in _warnings(report)
-    )
+    assert not any("'## Sequencing' does not cover" in w for w in _warnings(report))
 
 
-def test_missing_recommended_mission_section_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_missing_recommended_mission_section_warns(fed_hub: Path, golden_block: str):
     doc = _build_mission(golden_block, skip="## Sequencing")
     report = missionlint.lint(doc, _hub(fed_hub))
     assert report.passed is True
     assert any(
-        "recommended section missing: '## Sequencing'" in w
-        for w in _warnings(report)
+        "recommended section missing: '## Sequencing'" in w for w in _warnings(report)
     )
 
 
-def test_ownerless_mission_open_question_warns(
-    fed_hub: Path, golden_block: str
-):
+def test_ownerless_mission_open_question_warns(fed_hub: Path, golden_block: str):
     doc = _build_mission(
         golden_block,
         overrides={"## Open questions": "- [ ] Q1 — unowned question"},
@@ -1105,22 +1052,16 @@ def test_legacy_mission_still_passes(fed_hub: Path, golden_block: str):
     assert report.passed is True
 
 
-def test_missing_review_record_warns_but_passes(
-    fed_hub: Path, golden_block: str
-):
+def test_missing_review_record_warns_but_passes(fed_hub: Path, golden_block: str):
     report = missionlint.lint(
         _build_mission(golden_block, skip="## Review record"),
         _hub(fed_hub),
     )
     assert report.passed is True
-    assert any(
-        "'## Review record' missing" in w for w in _warnings(report)
-    )
+    assert any("'## Review record' missing" in w for w in _warnings(report))
 
 
-def test_placeholder_review_record_warns_but_passes(
-    fed_hub: Path, golden_block: str
-):
+def test_placeholder_review_record_warns_but_passes(fed_hub: Path, golden_block: str):
     report = missionlint.lint(
         _build_mission(
             golden_block,
@@ -1162,9 +1103,8 @@ def test_a_mission_of_placeholders_fails(fed_hub: Path, golden_block: str):
         "## Scope",
         "## Constraints & assumptions",
     ):
-        assert (
-            f"'{heading}' is empty or only placeholder text — fill it in"
-            in _errors(report)
+        assert f"'{heading}' is empty or only placeholder text — fill it in" in _errors(
+            report
         )
 
 
@@ -1178,7 +1118,9 @@ def test_a_filled_mission_reports_no_placeholder_errors(
 # --- check 14: Grounded on parseable ---
 
 
-def test_lint_wires_the_grounded_on_check_as_a_warning(fed_hub: Path, golden_block: str):
+def test_lint_wires_the_grounded_on_check_as_a_warning(
+    fed_hub: Path, golden_block: str
+):
     text = _build_mission(
         golden_block,
         extra={"## Services & order": "- Grounded on: a-code (rev 1234567)\n"},

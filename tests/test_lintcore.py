@@ -37,9 +37,7 @@ def test_notes_render_between_issues_and_verdict():
         notes=["coverage check skipped"],
     )
     assert report.render() == (
-        "[warn] a warning\n"
-        "[note] coverage check skipped\n"
-        "DoR: PASS"
+        "[warn] a warning\n[note] coverage check skipped\nDoR: PASS"
     )
 
 
@@ -72,12 +70,7 @@ def test_check_headings_ignores_a_heading_inside_a_fence():
     check with no real section anywhere in the document. AFTER: fences are
     stripped first (mirroring `citation_scan_text`'s idiom), so the same
     document now reports the heading missing."""
-    text = (
-        "# Title\n\n"
-        "```markdown\n"
-        "## Business goal\n"
-        "```\n"
-    )
+    text = "# Title\n\n```markdown\n## Business goal\n```\n"
 
     issues = check_headings(text, ("## Business goal",))
 
@@ -113,24 +106,13 @@ def test_check_headings_ignores_a_heading_inside_a_comment():
     be commented out and the gate still passed (reviewer E's G5). AFTER:
     comments are stripped first — they are invisible in the rendered
     document, so a heading inside one is not present."""
-    text = (
-        "# Ticket\n"
-        "<!--\n"
-        "## Summary\n"
-        "hidden\n"
-        "-->\n"
-        "## User Story\n"
-    )
+    text = "# Ticket\n<!--\n## Summary\nhidden\n-->\n## User Story\n"
     issues = check_headings(text, ("## Summary", "## User Story"))
-    assert [i.message for i in issues] == [
-        "missing required heading: '## Summary'"
-    ]
+    assert [i.message for i in issues] == ["missing required heading: '## Summary'"]
 
 
 def test_visible_body_strips_comments():
-    assert lintcore.visible_body("<!-- guidance -->\n\nreal text\n") == (
-        "real text"
-    )
+    assert lintcore.visible_body("<!-- guidance -->\n\nreal text\n") == ("real text")
     assert lintcore.visible_body("<!-- only guidance -->\n") == ""
 
 
@@ -201,9 +183,7 @@ def test_section_body_does_not_start_at_a_heading_inside_a_fence():
         "## Summary\n"
         "the real summary\n"
     )
-    assert lintcore.section_body(text, "## Summary").strip() == (
-        "the real summary"
-    )
+    assert lintcore.section_body(text, "## Summary").strip() == ("the real summary")
 
 
 def test_section_body_does_not_start_at_a_heading_inside_a_comment():
@@ -216,9 +196,7 @@ def test_section_body_does_not_start_at_a_heading_inside_a_comment():
         "## Summary\n"
         "the real summary\n"
     )
-    assert lintcore.section_body(text, "## Summary").strip() == (
-        "the real summary"
-    )
+    assert lintcore.section_body(text, "## Summary").strip() == ("the real summary")
 
 
 def test_section_body_still_returns_none_for_a_missing_heading():
@@ -305,9 +283,7 @@ def test_a_bare_fence_marker_inside_a_comment_does_not_swallow_later_headings():
     assert body is not None
     assert "there is no diagram here at all" in body
 
-    issues = lintcore.check_diagram(
-        text, "## Sequence diagram", ("sequenceDiagram",)
-    )
+    issues = lintcore.check_diagram(text, "## Sequence diagram", ("sequenceDiagram",))
     assert [i.level for i in issues] == ["error"]
     assert "must contain" in issues[0].message
 
@@ -336,11 +312,7 @@ def test_diagram_fails_when_keyword_only_appears_inside_a_node_label():
     # Arrange: 'flowchart' appears only inside a node label, never at the
     # start of a line — this is the false-pass the anchoring closes.
     text = (
-        "## Business flow\n"
-        "```mermaid\n"
-        "graph TD\n"
-        "  A[flowchart of payment] --> B\n"
-        "```\n"
+        "## Business flow\n```mermaid\ngraph TD\n  A[flowchart of payment] --> B\n```\n"
     )
 
     issues = check_diagram(text, "## Business flow", ("flowchart",))
@@ -423,26 +395,14 @@ def test_check_diagram_accepts_a_sequence_arrow():
 def test_check_diagram_accepts_a_thick_flowchart_arrow():
     """Fix-loop finding: '==>' (thick arrow) is standard, documented
     flowchart syntax and was false-ERRORing before `_EDGE_RE` widened."""
-    text = (
-        "## Business flow\n"
-        "```mermaid\n"
-        "flowchart TD\n"
-        "  A ==> B\n"
-        "```\n"
-    )
+    text = "## Business flow\n```mermaid\nflowchart TD\n  A ==> B\n```\n"
     assert check_diagram(text, "## Business flow", ("flowchart",)) == []
 
 
 def test_check_diagram_accepts_an_async_sequence_message():
     """Fix-loop finding: '-x' (async cross, sequence) was false-ERRORing
     before `_EDGE_RE` widened."""
-    text = (
-        "## Sequence diagram\n"
-        "```mermaid\n"
-        "sequenceDiagram\n"
-        "  A-xB: fire\n"
-        "```\n"
-    )
+    text = "## Sequence diagram\n```mermaid\nsequenceDiagram\n  A-xB: fire\n```\n"
     assert check_diagram(text, "## Sequence diagram", ("sequenceDiagram",)) == []
 
 
@@ -457,7 +417,10 @@ def test_check_diagram_accepts_a_c4_rel_call():
         '  Rel(ba, kb, "queries")\n'
         "```\n"
     )
-    assert check_diagram(text, "## System context (C4 L1)", ("C4Context", "flowchart")) == []
+    assert (
+        check_diagram(text, "## System context (C4 L1)", ("C4Context", "flowchart"))
+        == []
+    )
 
 
 # --- INLINE_CITE_RE: sentence-ending punctuation ---
@@ -671,7 +634,8 @@ def test_natural_prose_never_produces_an_error(prose):
     these failed the gate at error level (reviewer E's HIGH-4 table).
     AFTER: only bracketed citations are parsed, so prose is prose."""
     assert [
-        i for i in check_citation_consistency(prose + " [arinc-424 §5.129]", _CTX)
+        i
+        for i in check_citation_consistency(prose + " [arinc-424 §5.129]", _CTX)
         if i.level == "error"
     ] == []
 
@@ -745,12 +709,9 @@ def test_check_recommended_sections_missing_and_empty():
     )
     messages = [i.message for i in issues]
     assert all(i.level == "warning" for i in issues)
+    assert any("'## Dependencies' is empty" in m for m in messages)
     assert any(
-        "'## Dependencies' is empty" in m for m in messages
-    )
-    assert any(
-        "recommended section missing: '## Open questions'" in m
-        for m in messages
+        "recommended section missing: '## Open questions'" in m for m in messages
     )
     assert not any("Out of scope" in m for m in messages)
 
@@ -865,8 +826,7 @@ def test_review_record_requires_the_gap_verifier_from_round_two():
     )
     issues = lintcore.check_review_record(text)
     assert any(
-        "round 2 must be reviewed by 'gap-verifier'" in i.message
-        and i.level == "error"
+        "round 2 must be reviewed by 'gap-verifier'" in i.message and i.level == "error"
         for i in issues
     )
 

@@ -16,7 +16,9 @@ from strata_kb import mission, ticket
 FOLDER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
-def plan_moves(tickets_dir: Path) -> tuple[list[tuple[Path, Path]], list[Path], list[str]]:
+def plan_moves(
+    tickets_dir: Path,
+) -> tuple[list[tuple[Path, Path]], list[Path], list[str]]:
     """(moves, unsorted, notes) for the flat `*.md` files directly under
     `tickets_dir`. A valid `> Parent mission: M-x` line sends the file to
     `tickets_dir/M-x/<name>`; no line, or a malformed id, is `unsorted`."""
@@ -37,11 +39,15 @@ def plan_moves(tickets_dir: Path) -> tuple[list[tuple[Path, Path]], list[Path], 
     return moves, unsorted, notes
 
 
-def into_moves(tickets_dir: Path, folder: str, files: list[Path]) -> list[tuple[Path, Path]]:
+def into_moves(
+    tickets_dir: Path, folder: str, files: list[Path]
+) -> list[tuple[Path, Path]]:
     return [(f, tickets_dir / folder / f.name) for f in files]
 
 
-def apply_moves(moves: list[tuple[Path, Path]]) -> tuple[list[tuple[Path, Path]], list[str]]:
+def apply_moves(
+    moves: list[tuple[Path, Path]],
+) -> tuple[list[tuple[Path, Path]], list[str]]:
     """Rename each (src, dst), creating dst's folder. Returns (done,
     conflicts); an existing dst leaves src where it is. An `OSError` while
     creating dst's folder or renaming (missing src, dst's parent already a
@@ -57,7 +63,9 @@ def apply_moves(moves: list[tuple[Path, Path]]) -> tuple[list[tuple[Path, Path]]
             dst.parent.mkdir(parents=True, exist_ok=True)
             src.rename(dst)
         except OSError as exc:
-            conflicts.append(f"conflict: {src} → {dst} failed: {exc} — left {src} in place")
+            conflicts.append(
+                f"conflict: {src} → {dst} failed: {exc} — left {src} in place"
+            )
             continue
         done.append((src, dst))
     return done, conflicts

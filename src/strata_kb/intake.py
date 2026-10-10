@@ -385,7 +385,7 @@ def authorize(claims: dict, registry: models.Registry) -> str:
     # Exact segments, not a bare prefix: 'refs/tags/kb-publish/../../heads/main'
     # passes startswith() above and is the shape that becomes a hole the
     # moment the ref namespace grows.
-    tail = ref[len(TAG_REF_PREFIX):]
+    tail = ref[len(TAG_REF_PREFIX) :]
     segments = tail.split("/")
     if not tail or not all(_TAG_SEGMENT_RE.fullmatch(s) for s in segments):
         raise IntakeError(403, f"ref '{ref}' is not a well-formed publish tag")
@@ -500,9 +500,7 @@ def _reject_path_shape(label: str, rel: str) -> None:
     not a Windows-only concern.
     """
     if "\\" in rel:
-        raise IntakeError(
-            400, f"{label} '{rel}' uses a backslash -- use posix paths"
-        )
+        raise IntakeError(400, f"{label} '{rel}' uses a backslash -- use posix paths")
     for part in rel.split("/"):
         if part in ("", ".", ".."):
             continue
@@ -1203,9 +1201,7 @@ def safe_extract(
                 # 1,000,000-byte cap purely from `member.size`).
                 total += member.size + (member.offset_data - member.offset)
                 if total > max_bytes:
-                    raise IntakeError(
-                        413, f"archive content exceeds {max_bytes} bytes"
-                    )
+                    raise IntakeError(413, f"archive content exceeds {max_bytes} bytes")
                 if not member.isreg():
                     raise IntakeError(
                         400, f"tar member '{member.name}' is not a regular file"
@@ -1335,7 +1331,9 @@ class StatusStore:
     ) -> None:
         with self._lock:
             self._data[self._key(repo_id, commit)] = {
-                "state": state, "pr_url": pr_url, "detail": detail,
+                "state": state,
+                "pr_url": pr_url,
+                "detail": detail,
             }
             if self._path is not None:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -1374,7 +1372,9 @@ class IntakeConfig:
     http: object = None  # test seam -- None = real urllib
     push_via_token_url: bool = True  # False in tests: push plain origin, no token URL
     trusted_proxies: int = 0  # X-Forwarded-For hops to trust; 0 = ignore the header
-    pr_hook: Callable[..., str] | None = None  # test seam -- None = ghapp.create_or_get_pr
+    pr_hook: Callable[..., str] | None = (
+        None  # test seam -- None = ghapp.create_or_get_pr
+    )
 
 
 def intake_config_from_env(hub_ref: str) -> IntakeConfig | None:
@@ -1557,9 +1557,7 @@ def _dest_for_rid(federation_dir: Path, rid: str) -> Path:
 def hub_manifest(hub_ref: str, rid: str) -> dict[str, str]:
     handle = _resolve_hub_or_503(hub_ref)
     dest = _dest_for_rid(handle.federation_dir, rid)
-    man = hashsync.build_manifest(
-        dest, exclude=("_meta.yaml", assetstore.RECORD_NAME)
-    )
+    man = hashsync.build_manifest(dest, exclude=("_meta.yaml", assetstore.RECORD_NAME))
     # Gate synthesis on the hub's own configured store, same rule
     # publish._snapshot applies (active_store is not None) -- a hub with no
     # asset_store block has no diverted assets to synthesize entries for.
@@ -1697,7 +1695,9 @@ def intake_publish(
             tmp_kb = Path(tmp) / "kb"
             tmp_kb.mkdir()
             safe_extract(
-                archive, tmp_kb, cfg.max_tar_bytes,
+                archive,
+                tmp_kb,
+                cfg.max_tar_bytes,
                 assets_will_divert=active_store is not None,
             )
             work = Path(tmp) / "hub"
@@ -1706,9 +1706,18 @@ def intake_publish(
                 gitio.worktree_add(handle.root, work, branch, base, reset=reset)
             try:
                 return _publish_in_worktree(
-                    cfg, handle, work, rid, branch, base,
-                    source_commit, source_repo_full, deletes, tmp_kb,
-                    active_store, http,
+                    cfg,
+                    handle,
+                    work,
+                    rid,
+                    branch,
+                    base,
+                    source_commit,
+                    source_repo_full,
+                    deletes,
+                    tmp_kb,
+                    active_store,
+                    http,
                 )
             finally:
                 with _hub_write_lock:
@@ -1785,7 +1794,10 @@ def _publish_in_worktree(
         )
         logger.warning(
             "intake: %d uploaded file(s) are not KB artefacts and were "
-            "not published: %s%s", len(skipped), shown, more
+            "not published: %s%s",
+            len(skipped),
+            shown,
+            more,
         )
     try:
         hashsync.apply_sync(tmp_kb, dest, sorted(local_man), deletes)
@@ -1846,7 +1858,10 @@ def _publish_in_worktree(
     token = ghapp.mint_installation_token(cfg.creds, hub_full, http=http)
     if cfg.push_via_token_url:
         gitio.push_branch_with_token(
-            work, f"https://github.com/{hub_full}.git", token, branch,
+            work,
+            f"https://github.com/{hub_full}.git",
+            token,
+            branch,
             timeout=INTAKE_GIT_TIMEOUT_SECONDS,
         )
     else:

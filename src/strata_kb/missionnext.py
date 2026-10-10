@@ -38,8 +38,8 @@ class Story:
     us_id: str
     mission_id: str
     title: str
-    depends_on: tuple[str, ...]   # full US ids
-    seq_index: int | None         # row index in ## Sequencing; None = absent
+    depends_on: tuple[str, ...]  # full US ids
+    seq_index: int | None  # row index in ## Sequencing; None = absent
 
 
 @dataclass(frozen=True)
@@ -47,8 +47,8 @@ class StoryStatus:
     us_id: str
     mission_id: str
     title: str
-    status: str                   # done | ready | draft | to-draft | blocked
-    reasons: tuple[str, ...]      # blocked / draft
+    status: str  # done | ready | draft | to-draft | blocked
+    reasons: tuple[str, ...]  # blocked / draft
 
 
 ParsedMission = tuple[str | None, list[Story], DecisionTable]
@@ -175,12 +175,17 @@ def _mission_order(stories: list[Story]) -> list[Story]:
     backlog order (stable sort on the 'absent' flag)."""
     return sorted(
         stories,
-        key=lambda s: (s.seq_index is None, s.seq_index if s.seq_index is not None else 0),
+        key=lambda s: (
+            s.seq_index is None,
+            s.seq_index if s.seq_index is not None else 0,
+        ),
     )
 
 
 def statuses(
-    missions: list[ParsedMission], drafted: dict[str, tuple[int, int]], done: set[str] | None
+    missions: list[ParsedMission],
+    drafted: dict[str, tuple[int, int]],
+    done: set[str] | None,
 ) -> list[StoryStatus]:
     """One `StoryStatus` per backlog story, first rule that matches:
     done (id in `done`) → ready (ticket file, every DoR box ticked) → draft
@@ -209,19 +214,29 @@ def statuses(
                 if total and ticked == total:
                     out.append(StoryStatus(s.us_id, s.mission_id, s.title, "ready", ()))
                     continue
-                why = f"DoR {ticked}/{total} ticked" if total else "no Definition of Ready section"
+                why = (
+                    f"DoR {ticked}/{total} ticked"
+                    if total
+                    else "no Definition of Ready section"
+                )
                 out.append(StoryStatus(s.us_id, s.mission_id, s.title, "draft", (why,)))
                 continue
             reasons: list[str] = []
             for dep in s.depends_on:
                 if dep in done_set:
                     continue
-                reasons.append(f"US {dep} not done" if dep in known else f"US {dep} unknown")
+                reasons.append(
+                    f"US {dep} not done" if dep in known else f"US {dep} unknown"
+                )
             for d, blocks in blocking:
                 if s.us_id in blocks and d.status.strip().upper() != DECIDED:
-                    reasons.append(f"{d.id} {d.status.strip() or 'OPEN'} (owner: {d.owner or '?'})")
+                    reasons.append(
+                        f"{d.id} {d.status.strip() or 'OPEN'} (owner: {d.owner or '?'})"
+                    )
             status = "blocked" if reasons else "to-draft"
-            out.append(StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons)))
+            out.append(
+                StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons))
+            )
     return out
 
 
@@ -233,7 +248,10 @@ def _next_line(results: list[StoryStatus]) -> str:
     nxt = next_story(results)
     if nxt is not None:
         return f"Next: {nxt.us_id} — {nxt.title}"
-    count = {k: sum(1 for r in results if r.status == k) for k in ("blocked", "draft", "ready", "done")}
+    count = {
+        k: sum(1 for r in results if r.status == k)
+        for k in ("blocked", "draft", "ready", "done")
+    }
     return (
         f"Next: none to draft — {count['blocked']} blocked, {count['draft']} draft, "
         f"{count['ready']} ready, {count['done']} done"
@@ -246,7 +264,9 @@ def render(results: list[StoryStatus], notes: list[str]) -> str:
         lines.append("")
     lines += ["| US | Mission | Status | Reason |", "|---|---|---|---|"]
     for r in results:
-        lines.append(f"| {r.us_id} | {r.mission_id} | {r.status} | {'; '.join(r.reasons)} |")
+        lines.append(
+            f"| {r.us_id} | {r.mission_id} | {r.status} | {'; '.join(r.reasons)} |"
+        )
     lines += ["", _next_line(results)]
     return "\n".join(lines)
 

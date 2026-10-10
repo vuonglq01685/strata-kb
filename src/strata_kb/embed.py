@@ -34,7 +34,9 @@ class _FastEmbedder:
         return [list(map(float, v)) for v in self._model.embed(texts)]
 
 
-_UNRESOLVED = object()  # sentinel — distinguishes "not resolved yet" from "resolved to None"
+_UNRESOLVED = (
+    object()
+)  # sentinel — distinguishes "not resolved yet" from "resolved to None"
 _default_cache: object = _UNRESOLVED
 _default_lock = threading.Lock()
 
@@ -72,9 +74,7 @@ def _resolve_default() -> Embedder | None:
         )
         return None
     except Exception as exc:  # noqa: BLE001 -- degrade to FTS-only: model download failed (first run offline...)
-        logger.warning(
-            "could not initialize embedder — keyword search only: %s", exc
-        )
+        logger.warning("could not initialize embedder — keyword search only: %s", exc)
         return None
 
 

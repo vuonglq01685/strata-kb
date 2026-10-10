@@ -6,8 +6,9 @@ from strata_kb import ghio
 
 
 def _proc(returncode: int, stdout: str = "", stderr: str = ""):
-    return subprocess.CompletedProcess(args=["gh"], returncode=returncode,
-                                       stdout=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(
+        args=["gh"], returncode=returncode, stdout=stdout, stderr=stderr
+    )
 
 
 def test_run_gh_passes_a_timeout(tmp_path, monkeypatch):
@@ -45,12 +46,16 @@ def test_run_gh_turns_a_hang_into_a_failed_probe(tmp_path, monkeypatch):
 
 def test_pr_url_for_branch_found(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        ghio, "_run_gh",
+        ghio,
+        "_run_gh",
         lambda root, *a: _proc(
             0, '{"state":"OPEN","url":"https://github.com/org/hub/pull/7"}\n'
         ),
     )
-    assert ghio.pr_url_for_branch(tmp_path, "publish/x") == "https://github.com/org/hub/pull/7"
+    assert (
+        ghio.pr_url_for_branch(tmp_path, "publish/x")
+        == "https://github.com/org/hub/pull/7"
+    )
 
 
 @pytest.mark.parametrize("state", ["MERGED", "CLOSED"])
@@ -58,7 +63,8 @@ def test_pr_url_for_branch_ignores_a_finished_pr(tmp_path, monkeypatch, state):
     # `gh pr view <branch>` falls back to the branch's last merged/closed PR;
     # reusing that URL hides the fresh push behind a PR nobody will reopen.
     monkeypatch.setattr(
-        ghio, "_run_gh",
+        ghio,
+        "_run_gh",
         lambda root, *a: _proc(
             0, f'{{"state":"{state}","url":"https://github.com/org/hub/pull/7"}}\n'
         ),

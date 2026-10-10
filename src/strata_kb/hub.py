@@ -16,7 +16,9 @@ from strata_kb import gitio
 logger = logging.getLogger("strata_kb.hub")
 
 DEFAULT_TTL_SECONDS = 900  # 15 minutes — override with env STRATA_KB_HUB_TTL
-DEFAULT_PULL_INTERVAL_SECONDS = 300  # hub service auto-pull — env STRATA_KB_HUB_PULL_INTERVAL, 0 = off
+DEFAULT_PULL_INTERVAL_SECONDS = (
+    300  # hub service auto-pull — env STRATA_KB_HUB_PULL_INTERVAL, 0 = off
+)
 PULL_TIMEOUT_SECONDS = 300  # a stalled fetch must not park the auto-pull thread forever
 
 
@@ -63,7 +65,9 @@ def cache_key(hub: str) -> str:
     token inside it -- on every rotation.
     """
     stripped, _ = gitio.split_credentials(hub)
-    return hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    return hashlib.sha1(stripped.encode("utf-8"), usedforsecurity=False).hexdigest()[
+        :12
+    ]
 
 
 def strip_remote_credentials(root: Path) -> None:
@@ -235,7 +239,14 @@ def _resolve_cached(hub: str, cache: Path, token: str | None) -> HubHandle | Non
 def pull_interval() -> int:
     """Seconds between hub-service auto-pulls; 0 (or negative) = off."""
     try:
-        return max(0, int(os.environ.get("STRATA_KB_HUB_PULL_INTERVAL", DEFAULT_PULL_INTERVAL_SECONDS)))
+        return max(
+            0,
+            int(
+                os.environ.get(
+                    "STRATA_KB_HUB_PULL_INTERVAL", DEFAULT_PULL_INTERVAL_SECONDS
+                )
+            ),
+        )
     except ValueError:
         return DEFAULT_PULL_INTERVAL_SECONDS
 

@@ -9,6 +9,7 @@ summary. Answers the spec §4 gate questions:
   1. large-figure coverage   2. in-cell icon detection   3. legend-table shape
 Record the answers in docs/superpowers/plans/2026-07-16-poc-picture-findings.md
 """
+
 from __future__ import annotations
 
 import contextlib

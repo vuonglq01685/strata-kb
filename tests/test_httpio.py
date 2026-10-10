@@ -50,9 +50,7 @@ def test_request_flattens_http_error_to_status_and_body(monkeypatch):
     import urllib.error
 
     def fake_urlopen(req, timeout=None):
-        raise urllib.error.HTTPError(
-            req.full_url, 401, "Unauthorized", {}, None
-        )
+        raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
 
     monkeypatch.setattr(httpio.urllib.request, "urlopen", fake_urlopen)
     status, _raw = httpio.request("GET", "http://h:8321/api/docs", {})

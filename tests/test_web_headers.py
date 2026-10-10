@@ -36,12 +36,14 @@ def test_csp_allows_the_one_external_script_and_inline_styles(web_client_logged_
 
 
 def test_hsts_only_over_https(web_client, web_client_https):
-    assert "strict-transport-security" not in web_client.get(
-        "/ui", follow_redirects=False
-    ).headers
-    assert "strict-transport-security" in web_client_https.get(
-        "/ui", follow_redirects=False
-    ).headers
+    assert (
+        "strict-transport-security"
+        not in web_client.get("/ui", follow_redirects=False).headers
+    )
+    assert (
+        "strict-transport-security"
+        in web_client_https.get("/ui", follow_redirects=False).headers
+    )
 
 
 def test_a_header_the_wrapped_app_already_set_is_not_duplicated():

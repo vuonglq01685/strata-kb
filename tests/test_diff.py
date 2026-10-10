@@ -89,20 +89,26 @@ def test_render_diff_shows_review_record_on_added_section():
         against="HEAD",
         added=[
             SectionChange(
-                "1.3", "Waypoint Records",
-                reviewed_by="sme <sme@x>", reviewed_at="2026-01-01T00:00:00+00:00",
+                "1.3",
+                "Waypoint Records",
+                reviewed_by="sme <sme@x>",
+                reviewed_at="2026-01-01T00:00:00+00:00",
             )
         ],
     )
     text = render_diff(report)
-    assert "+ §1.3 Waypoint Records — reviewed by sme <sme@x> at 2026-01-01T00:00:00+00:00" in text
+    assert (
+        "+ §1.3 Waypoint Records — reviewed by sme <sme@x> at 2026-01-01T00:00:00+00:00"
+        in text
+    )
 
 
 def test_render_diff_added_without_review_record_unchanged():
     from strata_kb.diff import DiffReport, SectionChange
 
     report = DiffReport(
-        doc_id="demo-doc", against="HEAD",
+        doc_id="demo-doc",
+        against="HEAD",
         added=[SectionChange("1.3", "Waypoint Records")],
     )
     text = render_diff(report)

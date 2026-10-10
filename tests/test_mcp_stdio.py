@@ -22,6 +22,7 @@ loop — is what covers that remaining case.
 The reader runs on its own thread so that a hang fails this test instead of
 hanging it.
 """
+
 import json
 import queue
 import subprocess
@@ -50,10 +51,15 @@ def _send(proc, payload: dict) -> None:
 def test_kb_search_over_stdio_answers(fed_hub):
     proc = subprocess.Popen(
         [
-            sys.executable, "-m", "strata_kb.mcp",
-            "--kb", str(fed_hub / ".kb"),
-            "--hub", str(fed_hub),
-            "--transport", "stdio",
+            sys.executable,
+            "-m",
+            "strata_kb.mcp",
+            "--kb",
+            str(fed_hub / ".kb"),
+            "--hub",
+            str(fed_hub),
+            "--transport",
+            "stdio",
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -65,19 +71,29 @@ def test_kb_search_over_stdio_answers(fed_hub):
     q: queue.Queue = queue.Queue()
     threading.Thread(target=_reader, args=(proc.stdout, q), daemon=True).start()
     try:
-        _send(proc, {
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "stdio-test", "version": "0"},
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "stdio-test", "version": "0"},
+                },
             },
-        })
+        )
         _send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
-        _send(proc, {
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": "kb_search", "arguments": {"query": "airspace"}},
-        })
+        _send(
+            proc,
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "kb_search", "arguments": {"query": "airspace"}},
+            },
+        )
         deadline = time.monotonic() + TIMEOUT_S
         while True:
             remaining = deadline - time.monotonic()

@@ -5,6 +5,7 @@ OIDC JWT ← ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN; manifest diff against the hub
 (via the intake service); uploads only changed files + a delete list.
 No static secret anywhere in the child repo.
 """
+
 from __future__ import annotations
 
 import io
@@ -33,7 +34,9 @@ def write_step_summary(line: str) -> None:
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
-    line = " ".join(line.split())  # the summary is one line; collapse any newlines/whitespace
+    line = " ".join(
+        line.split()
+    )  # the summary is one line; collapse any newlines/whitespace
     try:
         with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"kb ci-publish: {line}\n")
@@ -77,9 +80,8 @@ def _request_oidc_token(audience: str, http) -> str:
 def _fetch_remote_manifest(
     intake_url: str, rid: str, token: str, http
 ) -> dict[str, str]:
-    url = (
-        f"{intake_url.rstrip('/')}/intake/manifest?"
-        + urllib.parse.urlencode({"repo_id": rid})
+    url = f"{intake_url.rstrip('/')}/intake/manifest?" + urllib.parse.urlencode(
+        {"repo_id": rid}
     )
     # The manifest endpoint is OIDC-gated (same audience as publish) so one
     # child can never diff another child's tree.
@@ -110,11 +112,13 @@ def _multipart(meta: dict, archive: bytes) -> tuple[bytes, str]:
         [
             f"--{boundary}\r\n".encode(),
             b'Content-Disposition: form-data; name="meta"\r\n\r\n',
-            meta_json, b"\r\n",
+            meta_json,
+            b"\r\n",
             f"--{boundary}\r\n".encode(),
             b'Content-Disposition: form-data; name="archive"; filename="kb.tar.gz"\r\n',
             b"Content-Type: application/gzip\r\n\r\n",
-            archive, b"\r\n",
+            archive,
+            b"\r\n",
             f"--{boundary}--\r\n".encode(),
         ]
     )
@@ -195,5 +199,7 @@ def run(
             detail = _decode(raw[:200] if isinstance(raw, bytes) else raw)
         raise CIPublishError(f"intake rejected the publish (HTTP {status}): {detail}")
     pr_url = json.loads(raw).get("pr_url", "")
-    typer.echo(f"PR: {pr_url}" if pr_url else "published (no content change on the hub)")
+    typer.echo(
+        f"PR: {pr_url}" if pr_url else "published (no content change on the hub)"
+    )
     return pr_url

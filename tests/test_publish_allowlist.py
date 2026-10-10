@@ -74,8 +74,16 @@ def test_cli_publish_prints_the_skip_warning(git_kb, hub_worktree, run_git):
 
     result = runner.invoke(
         app,
-        ["publish", "--hub", str(hub_worktree), "--repo-id", "child",
-         "--kb-dir", str(git_kb["kb"]), "--direct"],
+        [
+            "publish",
+            "--hub",
+            str(hub_worktree),
+            "--repo-id",
+            "child",
+            "--kb-dir",
+            str(git_kb["kb"]),
+            "--direct",
+        ],
     )
     assert result.exit_code == 0
     assert "[warn]" in result.output

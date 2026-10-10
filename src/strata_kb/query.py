@@ -106,17 +106,13 @@ def _row_content(hub: HubHandle, row: SectionRow) -> str | None:
 _SNIPPET_WINDOW = 150  # chars on each side of the first hit in L3
 
 
-def _l3_snippet(
-    hub: HubHandle, row: SectionRow, terms: list[str], content: str
-) -> str:
+def _l3_snippet(hub: HubHandle, row: SectionRow, terms: list[str], content: str) -> str:
     """The match lives in L3 (fold/tail) while the L2 content contains no term →
     excerpt a window around the first hit so the user sees why this section matched."""
     lower = content.lower()
     if not terms or any(t in lower for t in terms):
         return ""
-    raw_path = (
-        hub.federation_dir / row.repo_id / row.doc_id / f"{row.file}.raw.md"
-    )
+    raw_path = hub.federation_dir / row.repo_id / row.doc_id / f"{row.file}.raw.md"
     if not raw_path.exists():
         return ""
     raw = slice_section(raw_path.read_text(encoding="utf-8"), row.section_id)
@@ -434,8 +430,13 @@ def search(
 ) -> list[QueryResult]:
     """Backwards-compatible view of `search_detailed` — results only."""
     return search_detailed(
-        hub, text, tags=tags, budget=budget, semantic=semantic,
-        use_semantic=use_semantic, embedder=embedder,
+        hub,
+        text,
+        tags=tags,
+        budget=budget,
+        semantic=semantic,
+        use_semantic=use_semantic,
+        embedder=embedder,
     ).results
 
 
@@ -527,9 +528,7 @@ def _get_section_in(
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     sec = next((s for s in manifest.sections if s.id == section_id), None)
     if sec is None:
-        return _folded_result(
-            repo_kb, repo_id, manifest, doc_id, section_id, level
-        )
+        return _folded_result(repo_kb, repo_id, manifest, doc_id, section_id, level)
     suffix = ".raw.md" if level == "l3" else ".md"
     path = repo_kb / doc_id / f"{sec.file}{suffix}"
     if not path.exists():
@@ -567,7 +566,8 @@ def get_section(
     if not models.DOC_ID_RE.match(doc_id):
         return None
     holders = [
-        r for r in load_federation(hub.federation_dir)
+        r
+        for r in load_federation(hub.federation_dir)
         if (repo is None or r.meta.repo_id == repo)
         and (folder := doc_dir(r.kb_dir, doc_id)) is not None
         and (folder / "_manifest.yaml").exists()

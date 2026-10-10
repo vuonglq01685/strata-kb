@@ -128,14 +128,16 @@ def test_extract_image_descs_standalone_only_ordered_deduped():
     from strata_kb.mdutils import extract_image_descs
 
     sha_a, sha_b, sha_c = "a" * 64, "b" * 64, "c" * 64
-    md = "\n".join([
-        f"![Holding pattern](assets/{sha_a}.webp)",
-        "Some text.",
-        f"| ![VOR](assets/{sha_b}.png) | VOR |",          # table icon: excluded
-        f"![](assets/{sha_c}.png)",                        # empty alt: excluded
-        f"![Holding pattern](assets/{sha_a}.webp)",        # duplicate: excluded
-        "![not an asset](http://x/y.png)",                 # non-asset ref: excluded
-    ])
+    md = "\n".join(
+        [
+            f"![Holding pattern](assets/{sha_a}.webp)",
+            "Some text.",
+            f"| ![VOR](assets/{sha_b}.png) | VOR |",  # table icon: excluded
+            f"![](assets/{sha_c}.png)",  # empty alt: excluded
+            f"![Holding pattern](assets/{sha_a}.webp)",  # duplicate: excluded
+            "![not an asset](http://x/y.png)",  # non-asset ref: excluded
+        ]
+    )
     assert extract_image_descs(md) == ["Holding pattern"]
 
 

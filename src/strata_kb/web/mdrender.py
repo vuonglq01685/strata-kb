@@ -9,6 +9,7 @@ rule is that tables render character-for-character. Optional keyword
 highlighting wraps matched whole words in <mark> without altering any
 other character.
 """
+
 from __future__ import annotations
 
 import html
@@ -17,9 +18,7 @@ import re
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
-_IMG_LINE_RE = re.compile(
-    r"^!\[([^\]]*)\]\(assets/([0-9a-f]{64}\.(?:png|webp))\)$"
-)
+_IMG_LINE_RE = re.compile(r"^!\[([^\]]*)\]\(assets/([0-9a-f]{64}\.(?:png|webp))\)$")
 _FENCE_RE = re.compile(r"^```[\w-]*\s*$")
 _LIST_RE = re.compile(r"^[-*] (.*)$")
 
@@ -45,7 +44,7 @@ def _highlight(text: str, terms: set[str]) -> str:
     for m in _WORD_RE.finditer(text):
         word = m.group(0)
         if word.lower() in terms:
-            out.append(html.escape(text[last:m.start()]))
+            out.append(html.escape(text[last : m.start()]))
             out.append(f"<mark>{html.escape(word)}</mark>")
             last = m.end()
     out.append(html.escape(text[last:]))
@@ -126,7 +125,9 @@ def render(md: str, terms: set[str] | None = None) -> str:
             flush_para()
             flush_list()
             level = len(m.group(1))
-            blocks.append(f"<h{level}>{_highlight(m.group(2).strip(), terms)}</h{level}>")
+            blocks.append(
+                f"<h{level}>{_highlight(m.group(2).strip(), terms)}</h{level}>"
+            )
         elif m_li:
             flush_para()
             bullets.append(f"<li>{_highlight(m_li.group(1).strip(), terms)}</li>")

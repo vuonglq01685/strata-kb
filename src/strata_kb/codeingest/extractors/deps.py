@@ -33,6 +33,7 @@ zero sections. This is accepted, not routed around: widening
 `Extractor.detect()`'s signature is out of scope, and the failure mode is
 silent-but-safe (a quieter `deps` group), never a wrong one.
 """
+
 from __future__ import annotations
 
 import configparser
@@ -112,8 +113,7 @@ def detect_frameworks(names: Iterable[str]) -> list[str]:
             if not lname.startswith(lprefix):
                 continue
             at_boundary = (
-                len(lname) == len(lprefix)
-                or lname[len(lprefix)] in _NAME_SEPARATORS
+                len(lname) == len(lprefix) or lname[len(lprefix)] in _NAME_SEPARATORS
             )
             if at_boundary and len(lprefix) > best_len:
                 best_len = len(lprefix)
@@ -207,7 +207,9 @@ def _merge(groups: Groups, group: str, pairs: list[tuple[str, str]]) -> None:
     groups.setdefault(group, []).extend(pairs)
 
 
-def _finish(groups: Groups, warnings: list[str], existing: list[str]) -> tuple[Groups, list[str]]:
+def _finish(
+    groups: Groups, warnings: list[str], existing: list[str]
+) -> tuple[Groups, list[str]]:
     """Sort every group by name; if manifests were found but none produced
     a dependency and nothing more specific already explains why, warn once
     naming the manifest(s) considered."""
@@ -253,9 +255,11 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
                 else:
                     deps = project.get("dependencies", [])
                     if isinstance(deps, list):
-                        _merge(groups, "direct", [
-                            _split_pep508(d) for d in deps if isinstance(d, str)
-                        ])
+                        _merge(
+                            groups,
+                            "direct",
+                            [_split_pep508(d) for d in deps if isinstance(d, str)],
+                        )
                     elif deps:
                         warnings.append(
                             f"could not parse {rel}: 'project.dependencies' is not a list"
@@ -266,9 +270,15 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
                         for extra in sorted(extras, key=str):
                             specs = extras[extra]
                             if isinstance(specs, list):
-                                _merge(groups, f"extra:{extra}", [
-                                    _split_pep508(d) for d in specs if isinstance(d, str)
-                                ])
+                                _merge(
+                                    groups,
+                                    f"extra:{extra}",
+                                    [
+                                        _split_pep508(d)
+                                        for d in specs
+                                        if isinstance(d, str)
+                                    ],
+                                )
                             else:
                                 warnings.append(
                                     f"could not parse {rel}: optional-dependencies "
@@ -418,7 +428,9 @@ def _read_java(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
                 warnings.append(f"could not parse {rel}: {exc}")
                 continue
             matches = _GRADLE_DEP_RE.findall(text)
-            _merge(groups, "direct", [_split_gradle_coordinate(m.strip()) for m in matches])
+            _merge(
+                groups, "direct", [_split_gradle_coordinate(m.strip()) for m in matches]
+            )
 
     return _finish(groups, warnings, existing)
 
@@ -613,7 +625,9 @@ def _read_rust(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
             continue
         manifests.append(data)
         workspace = data.get("workspace")
-        catalogue = workspace.get("dependencies") if isinstance(workspace, dict) else None
+        catalogue = (
+            workspace.get("dependencies") if isinstance(workspace, dict) else None
+        )
         if isinstance(catalogue, dict):
             for name, value in catalogue.items():
                 constraint = _cargo_constraint(value)
@@ -625,15 +639,19 @@ def _read_rust(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
             section = data.get(table, {})
             if not isinstance(section, dict):
                 continue
-            _merge(groups, group, [
-                (
-                    name,
-                    workspace_versions.get(name, "")
-                    if _inherits_workspace(value)
-                    else _cargo_constraint(value),
-                )
-                for name, value in section.items()
-            ])
+            _merge(
+                groups,
+                group,
+                [
+                    (
+                        name,
+                        workspace_versions.get(name, "")
+                        if _inherits_workspace(value)
+                        else _cargo_constraint(value),
+                    )
+                    for name, value in section.items()
+                ],
+            )
 
     return _finish(groups, warnings, existing)
 
@@ -820,9 +838,15 @@ def _read_dart(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
         # to `extract()`'s blanket handler and drops every other
         # pubspec.yaml in the repo with it, naming no file.
         if isinstance(direct, dict):
-            _merge(groups, "direct", [(str(k), _dart_constraint(v)) for k, v in direct.items()])
+            _merge(
+                groups,
+                "direct",
+                [(str(k), _dart_constraint(v)) for k, v in direct.items()],
+            )
         if isinstance(dev, dict):
-            _merge(groups, "dev", [(str(k), _dart_constraint(v)) for k, v in dev.items()])
+            _merge(
+                groups, "dev", [(str(k), _dart_constraint(v)) for k, v in dev.items()]
+            )
 
     return _finish(groups, warnings, existing)
 
@@ -931,7 +955,11 @@ class DepsExtractor:
         if any(
             (root / name).is_file()
             for name in (
-                "pyproject.toml", "setup.cfg", "pom.xml", "go.mod", "composer.json",
+                "pyproject.toml",
+                "setup.cfg",
+                "pom.xml",
+                "go.mod",
+                "composer.json",
             )
         ):
             return True

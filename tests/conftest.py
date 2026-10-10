@@ -230,9 +230,9 @@ def git_kb(fixture_kb: Path, run_git) -> dict:
     )
     manifest_path = fixture_kb / "demo-doc" / "_manifest.yaml"
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
-    manifest.sections[0].summary = (
-        "Airspace record structure: designation, type, multiple code."
-    )
+    manifest.sections[
+        0
+    ].summary = "Airspace record structure: designation, type, multiple code."
     # The amendment above changed §1.1's L2 body -- recount, or doctor's
     # stale-token check (M9) flags this fixture's own "clean" state as drift.
     manifest.sections[0].tokens.l2 = count_tokens(
@@ -371,8 +371,12 @@ def intake_cfg(hub_with_origin, tmp_path, monkeypatch):
         if req.get_method() == "POST" and url.endswith("/access_tokens"):
             return 201, json.dumps({"token": "fake-installation-token"}).encode()
         if req.get_method() == "POST" and url.endswith("/pulls"):
-            return 201, json.dumps({"html_url": "https://github.com/acme/hub/pull/1"}).encode()
-        raise AssertionError(f"unexpected http call in intake_cfg fixture: {req.get_method()} {url}")
+            return 201, json.dumps(
+                {"html_url": "https://github.com/acme/hub/pull/1"}
+            ).encode()
+        raise AssertionError(
+            f"unexpected http call in intake_cfg fixture: {req.get_method()} {url}"
+        )
 
     return intake.IntakeConfig(
         hub_ref=str(hub_with_origin),
@@ -405,11 +409,15 @@ def make_fed_entry(
     entry = federation_dir / repo_id
     doc_dir = entry / doc_id
     doc_dir.mkdir(parents=True)
-    body_l2 = l2 if l2 is not None else (
-        f"## {sec_id} {sec_title}\n\nCondensed content of {doc_id} {sec_id}.\n"
+    body_l2 = (
+        l2
+        if l2 is not None
+        else (f"## {sec_id} {sec_title}\n\nCondensed content of {doc_id} {sec_id}.\n")
     )
-    body_l3 = l3 if l3 is not None else (
-        f"## {sec_id} {sec_title}\n\nVerbatim content of {doc_id} {sec_id}.\n"
+    body_l3 = (
+        l3
+        if l3 is not None
+        else (f"## {sec_id} {sec_title}\n\nVerbatim content of {doc_id} {sec_id}.\n")
     )
     (doc_dir / "ch1.md").write_text(body_l2, encoding="utf-8")
     (doc_dir / "ch1.raw.md").write_text(body_l3, encoding="utf-8")
@@ -420,8 +428,11 @@ def make_fed_entry(
             title=title or doc_id,
             sections=[
                 models.SectionEntry(
-                    id=sec_id, title=sec_title, summary=sec_summary,
-                    status="summarized", file="ch1",
+                    id=sec_id,
+                    title=sec_title,
+                    summary=sec_summary,
+                    status="summarized",
+                    file="ch1",
                 )
             ],
         ),
@@ -431,7 +442,10 @@ def make_fed_entry(
         models.KBIndex(
             docs=[
                 models.IndexEntry(
-                    id=doc_id, title=title or doc_id, tags=tags or [], summary=summary,
+                    id=doc_id,
+                    title=title or doc_id,
+                    tags=tags or [],
+                    summary=summary,
                 )
             ]
         ),
@@ -439,7 +453,9 @@ def make_fed_entry(
     models.save_yaml_model(
         entry / "_meta.yaml",
         FederationMeta(
-            repo_id=repo_id, source_commit=source_commit, published_at=published_at,
+            repo_id=repo_id,
+            source_commit=source_commit,
+            published_at=published_at,
         ),
     )
     return entry
@@ -456,17 +472,23 @@ def fed_hub(tmp_path: Path, run_git) -> Path:
     models.save_yaml_model(hub / ".kb" / "index.yaml", models.KBIndex())
     fed = hub / "federation"
     make_fed_entry(
-        fed, "icao-kb", "icao-annex-2",
+        fed,
+        "icao-kb",
+        "icao-annex-2",
         tags=["icao", "airspace"],
-        sec_id="1.1", sec_title="Airspace Records",
+        sec_id="1.1",
+        sec_title="Airspace Records",
         sec_summary="Airspace record structure: designation, type, level.",
         l2="## 1.1 Airspace Records\n\nCondensed: airspace designation and type fields.\n",
         l3="## 1.1 Airspace Records\n\nFull raw text about airspace designation.\n",
     )
     make_fed_entry(
-        fed, "arinc-kb", "arinc-424",
+        fed,
+        "arinc-kb",
+        "arinc-424",
         tags=["arinc424"],
-        sec_id="5.3", sec_title="Restrictive Airspace",
+        sec_id="5.3",
+        sec_title="Restrictive Airspace",
         sec_summary="Restrictive airspace: designation, type, multiple code.",
         l2="## 5.3 Restrictive Airspace\n\nCondensed: restrictive airspace designation codes.\n",
         l3="## 5.3 Restrictive Airspace\n\nVerbatim: Full raw restrictive airspace text.\n",
@@ -530,9 +552,7 @@ def web_client_https(hub_dir: Path, token: str):
     from strata_kb.web.app import create_app
 
     config = ServerConfig(kb_dir=hub_dir / ".kb", hub=str(hub_dir))
-    with TestClient(
-        create_app(config, token), base_url="https://testserver"
-    ) as c:
+    with TestClient(create_app(config, token), base_url="https://testserver") as c:
         yield c
 
 

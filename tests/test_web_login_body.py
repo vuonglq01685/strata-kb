@@ -1,6 +1,7 @@
 """2026-10-10 review §5.2 #2 / #3: `POST /ui/login` is reachable without a
 token, so its body must be bounded however it is framed, and no submitted
 value may turn into a 500."""
+
 from __future__ import annotations
 
 import anyio
@@ -40,15 +41,22 @@ def test_a_chunked_login_body_is_refused_at_the_cap(hub_dir, token):
         sent.append(message)
 
     scope = {
-        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
-        "method": "POST", "scheme": "http", "path": "/ui/login",
-        "raw_path": b"/ui/login", "root_path": "", "query_string": b"",
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/ui/login",
+        "raw_path": b"/ui/login",
+        "root_path": "",
+        "query_string": b"",
         "headers": [
             (b"host", b"testserver"),
             (b"content-type", b"application/x-www-form-urlencoded"),
             (b"transfer-encoding", b"chunked"),
         ],
-        "client": ("10.9.9.9", 1234), "server": ("testserver", 80),
+        "client": ("10.9.9.9", 1234),
+        "server": ("testserver", 80),
     }
     anyio.run(app, scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")

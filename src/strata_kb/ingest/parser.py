@@ -152,7 +152,7 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
         )
     except ImportError as exc:
         raise RuntimeError(
-            "Docling is not installed. Run: pip install \"strata-kb[ingest]\""
+            'Docling is not installed. Run: pip install "strata-kb[ingest]"'
         ) from exc
 
     cache = work_dir / "parsed-v2.json"  # v2: includes generated picture images
@@ -192,7 +192,9 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
         images_scale=2.0,
     )
     converter = DocumentConverter(
-        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+        }
     )
     result = converter.convert(str(pdf_path))
     doc = result.document
@@ -227,7 +229,9 @@ def doc_to_items(
                 continue
             kids = [
                 k
-                for k in (_resolve(c, doc) for c in (getattr(item, "children", None) or []))
+                for k in (
+                    _resolve(c, doc) for c in (getattr(item, "children", None) or [])
+                )
                 if k is not None
             ]
             # Nested pictures/tables keep their own normal emission path;
@@ -236,13 +240,15 @@ def doc_to_items(
             text_kids = [k for k in kids if _label_value(k) not in _NON_FOLDABLE]
             nested_ids.update(id(k) for k in text_kids)
             child_text[id(item)] = " ".join(
-                t for t in (_clean(getattr(k, "text", "") or "") for k in text_kids) if t
+                t
+                for t in (_clean(getattr(k, "text", "") or "") for k in text_kids)
+                if t
             )
-    tables = [(item, _table_cells(item, doc)) for item, label in entries if label == "table"]
+    tables = [
+        (item, _table_cells(item, doc)) for item, label in entries if label == "table"
+    ]
     placements, consumed, placed_boxes = _place_glyphs(entries, tables, doc, assets_dir)
-    _recover_missed_glyphs(
-        tables, placements, placed_boxes, doc, assets_dir, pdf_path
-    )
+    _recover_missed_glyphs(tables, placements, placed_boxes, doc, assets_dir, pdf_path)
 
     items: list[DocItem] = []
     for item, label in entries:
@@ -253,7 +259,9 @@ def doc_to_items(
         if id(item) in nested_ids:
             continue
         if label in _HEADING_LABELS:
-            heading_level = getattr(item, "level", 1) if label == "section_header" else 1
+            heading_level = (
+                getattr(item, "level", 1) if label == "section_header" else 1
+            )
             items.append(
                 DocItem("heading", item.text, heading_level, page=page, bbox=bbox)
             )
@@ -266,8 +274,10 @@ def doc_to_items(
             if assets_dir is None:
                 continue
             folded = child_text.get(id(item), "")
-            md = None if id(item) in consumed else _picture_md(
-                item, doc, assets_dir, pdf_path, folded
+            md = (
+                None
+                if id(item) in consumed
+                else _picture_md(item, doc, assets_dir, pdf_path, folded)
             )
             if md:
                 items.append(DocItem("image", md, page=page, bbox=bbox))
@@ -293,8 +303,10 @@ def _iterate(doc):
     try:
         return list(doc.iterate_items(traverse_pictures=True))
     except TypeError:
-        logger.warning("docling iterate_items has no traverse_pictures — "
-                       "text drawn inside figures will be missing")
+        logger.warning(
+            "docling iterate_items has no traverse_pictures — "
+            "text drawn inside figures will be missing"
+        )
         return list(doc.iterate_items())
 
 
@@ -378,13 +390,17 @@ def _recover_missed_glyphs(
         page, table_box = _prov_box(table, doc)
         if page is None or table_box is None:
             continue
-        missing = tableimages.empty_glyph_cells(cells, placed_boxes.get(id(table), {}), table_box)
+        missing = tableimages.empty_glyph_cells(
+            cells, placed_boxes.get(id(table), {}), table_box
+        )
         if not missing:
             continue
         try:
             raster = _render_page(pdf_path, page)
         except Exception as exc:  # noqa: BLE001 — a lost crop must not stop ingest
-            logger.warning("page %s could not be rendered for cell crops: %s", page, exc)
+            logger.warning(
+                "page %s could not be rendered for cell crops: %s", page, exc
+            )
             continue
         for row, col, box in missing:
             md = _crop_md(raster, box, assets_dir, page)
@@ -418,8 +434,10 @@ def _crop_md(raster, box: tableimages.Box, assets_dir: Path, page: int) -> str |
         )
         if crop.width < 2 or crop.height < 2 or images.is_blank(crop):
             return None
-        return images.image_ref(images.resolve_description("", images.ocr_image(crop)),
-                                images.save_asset(crop, assets_dir))
+        return images.image_ref(
+            images.resolve_description("", images.ocr_image(crop)),
+            images.save_asset(crop, assets_dir),
+        )
     except Exception as exc:  # noqa: BLE001 -- cell crop best-effort, page rendering continues without it
         logger.warning("cell crop on page %s skipped: %s", page, exc)
         return None
@@ -465,7 +483,9 @@ def _picture_md(
         return None
 
 
-def bookmark_ids(pdf_path: Path, config: HeadingConfig | None = None) -> set[str] | None:
+def bookmark_ids(
+    pdf_path: Path, config: HeadingConfig | None = None
+) -> set[str] | None:
     """Section ids named by the PDF outline. None when the outline cannot be
     read at all (missing/corrupt file) — the caller must say the cross-check
     was skipped; an empty set means a readable PDF with no usable outline."""
@@ -521,7 +541,7 @@ def outline_parts(
             if isinstance(entry, list):
                 walk(entry, depth + 1)
                 continue
-            title = " ".join(((getattr(entry, "title", "") or "")).split())
+            title = " ".join((getattr(entry, "title", "") or "").split())
             try:
                 page_index = reader.get_destination_page_number(entry)
             except Exception as exc:  # noqa: BLE001 -- one bad bookmark must not abort the whole outline walk
@@ -570,9 +590,7 @@ def _is_leaf_unit(uid: str, unit_ids: set[str]) -> bool:
     along that branch -> every bookmark that is a descendant of it is
     treated as already folded into this unit's body.
     """
-    return not any(
-        other != uid and other.startswith(uid + ".") for other in unit_ids
-    )
+    return not any(other != uid and other.startswith(uid + ".") for other in unit_ids)
 
 
 # A numeric unit id, optionally carrying a duplicate-rename suffix ("5.3-2").
@@ -584,7 +602,9 @@ def _parent_id(sid: str) -> str:
     return sid.rsplit(".", 1)[0]
 
 
-def _missing_bookmarks(unit_ids: set[str], bm_ids: set[str], max_depth: int) -> list[str]:
+def _missing_bookmarks(
+    unit_ids: set[str], bm_ids: set[str], max_depth: int
+) -> list[str]:
     warnings: list[str] = []
     for bm in sorted(bm_ids):
         if bm[0].isdigit() and bm.count(".") + 1 > max_depth:
@@ -626,9 +646,7 @@ def _units_outside_outline(unit_ids: set[str], bm_ids: set[str]) -> list[str]:
     ]
 
 
-def crosscheck(
-    unit_ids: set[str], bm_ids: set[str], max_depth: int = 3
-) -> list[str]:
+def crosscheck(unit_ids: set[str], bm_ids: set[str], max_depth: int = 3) -> list[str]:
     """Both directions of the outline cross-check (phase-1 spec §4.3:
     'section thiếu/thừa'): bookmarks no unit covers, then units the
     outline does not name."""
