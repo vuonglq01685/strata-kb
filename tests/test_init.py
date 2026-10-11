@@ -2860,8 +2860,64 @@ def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
             "git status --porcelain` must print nothing",
             "gh pr view kb-bot/code-sync --json body",
             "git branch -D kb-bot/code-sync",
+            "same command that calls it",
+            "effective_repo_id",
+            "## Needs the SA",
+            "## Images that may need a redraw",
+            "## Rounds",
+            "### Round <scan sha12>",
+            "--state all --json number,state,mergedAt",
+            "git log --oneline origin/<default>..kb-bot/code-sync",
+            "there is no local branch of",
         ):
             assert needle in text, (rel, needle)
+
+
+def _draft_check_script(repo: Path) -> str:
+    lines = (
+        (repo / ".github/prompts/kb-code-sync.prompt.md")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    start = lines.index("    draft_check() {")
+    end = lines.index("    }", start)
+    return "\n".join(line[4:] for line in lines[start : end + 1])
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None, reason="needs bash"
+)
+def test_kb_code_sync_draft_check_runs_against_a_real_hub(tmp_path: Path):
+    """The shipped shell function must stay silent for a clean doc (the
+    config's quoted repo_id included) and speak for any drift."""
+    repo = tmp_path / "hubrepo"
+    repo.mkdir()
+    init_repo(repo, "hub")
+    for base in (repo / ".kb", repo / "federation" / "hubrepo"):
+        (base / "arch").mkdir(parents=True)
+        (base / "arch" / "_manifest.yaml").write_text("m\n", encoding="utf-8")
+        (base / "arch" / "a.md").write_text("l2\n", encoding="utf-8")
+        (base / "arch" / "a.raw.md").write_text("l3\n", encoding="utf-8")
+    script = _draft_check_script(repo) + '\ndraft_check "$1"\n'
+    env = {**os.environ, "KB_PYTHON": sys.executable}
+
+    def run() -> str:
+        proc = subprocess.run(
+            ["bash", "-c", script, "bash", "arch"],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return proc.stdout
+
+    assert run() == ""
+    (repo / ".kb" / "arch" / "a.raw.md").write_text("l3 edited\n", encoding="utf-8")
+    assert "arch/a.raw.md differs" in run()
+    (repo / ".kb" / "arch" / "a.raw.md").write_text("l3\n", encoding="utf-8")
+    (repo / ".kb" / "arch" / "b.md").write_text("new\n", encoding="utf-8")
+    assert "file present on one side only" in run()
 
 
 _MCP_SETUP_WRAPPERS = [

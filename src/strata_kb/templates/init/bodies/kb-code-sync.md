@@ -39,15 +39,21 @@ If `kb code-sync scan` says `origin/HEAD` is unset, tell the manager to run
 refs/remotes/origin/HEAD`, without the `origin/`) and `<rid>` is `repo_id`
 in `.kb/config.yaml`.
 
-The draft check is this shell function. Define it once and call
-`draft_check <doc>` for a document. Any output means the document is not
-clean: stop. It compares only what code-sync edits, `_manifest.yaml` and
-every `*.md` (including `*.raw.md`), because `kb publish` copies exactly
-those files byte for byte, while it withholds dotfiles and moves image
-assets to the asset store.
+The draft check is a shell function. Shell state may not persist between
+tool calls, so define it **in the same command that calls it**. Call
+`draft_check <doc>` for a document, run from the hub root; any output means
+the document is not clean: stop. It compares only what code-sync edits,
+`_manifest.yaml` and every `*.md` (including `*.raw.md`), because
+`kb publish` copies exactly those files byte for byte, while it withholds
+dotfiles and moves image assets to the asset store. The mirror directory is
+`federation/<rid>/`, with `<rid>` resolved the way `kb publish` resolves it
+(quotes in `.kb/config.yaml` make a plain `sed` wrong). The function runs
+`uv run python`; if `kb` is installed without uv, set `KB_PYTHON=python`
+(the interpreter that has `strata_kb`) first.
 
     draft_check() {
-      doc="$1"; rid="$(sed -n 's/^repo_id: *//p' .kb/config.yaml | head -1)"
+      doc="$1"
+      rid="$(${KB_PYTHON:-uv run python} -c "from pathlib import Path; from strata_kb.config import effective_repo_id; print(effective_repo_id('', Path('.kb')) or Path.cwd().name)")" || { echo "cannot resolve repo_id"; return; }
       a=".kb/$doc"; b="federation/$rid/$doc"
       list() { (cd "$1" 2>/dev/null && find . -type f \( -name '_manifest.yaml' -o -name '*.md' \) | sed 's|^\./||' | grep -v -e '^\.' -e '/\.' | sort); }
       [ "$(list "$a")" = "$(list "$b")" ] || echo "$doc: file present on one side only"
@@ -63,28 +69,37 @@ assets to the asset store.
    - Run `kb code-sync scan --json` (read-only). Exit `1`: show the error
      and stop. Exit `0` here is **not** a reason to stop: this data predates
      the fetch in step 2 and may be stale. For each touched `<doc>` run
-     `draft_check <doc>`. Any output: **stop** and tell the manager to
-     publish (`/kb-publish`) or discard the draft first. Never mix a
-     half-written draft into a code-sync PR.
+     `draft_check <doc>` (define it in the same command). Any output:
+     **stop** and tell the manager to publish (`/kb-publish`) or discard
+     the draft first. Never mix a half-written draft into a code-sync PR.
 2. **Branch.**
    - `git fetch --prune origin` first: publish decisions read the local
      tracking refs.
-   - `origin/kb-bot/code-sync` exists: confirm it has an open PR
-     (`gh pr list --head kb-bot/code-sync --state open`). None → stop and
-     ask the manager what to do with the stale remote branch. Else
-     `git checkout kb-bot/code-sync` (git tracks the remote one if there is
-     no local copy), then `git merge --ff-only origin/kb-bot/code-sync`
-     (always; a failure means the local copy diverged: stop and show it),
-     then `git merge origin/<default>`. Merge, never rebase and never
-     reset: earlier rounds stay. Merge conflict: stop and show it.
-   - It does not exist on the remote: create it with
+   - `origin/kb-bot/code-sync` exists: look at its PRs with
+     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt`.
+     - An **open** PR: continue. `git checkout kb-bot/code-sync` (git
+       tracks the remote one if there is no local copy), then
+       `git merge --ff-only origin/kb-bot/code-sync` (always; a failure
+       means the local copy diverged: stop and show it), then
+       `git merge origin/<default>`. Merge, never rebase and never reset:
+       earlier rounds stay. Merge conflict: stop and show it.
+     - The PR **merged** but the remote branch was kept (GitHub keeps it by
+       default): stop. Tell the manager the remote branch is left over and
+       that deleting it is theirs to do, never yours; then re-run.
+     - **Closed without merging**, or **no PR at all**: stop and ask the
+       manager what to do with the stale remote branch.
+   - It does not exist on the remote **and** there is no local branch of
+     that name: create it with
      `git checkout --no-track -b kb-bot/code-sync origin/<default>`.
    - A **local** `kb-bot/code-sync` already exists and the remote one does
      not (a PR that merged, a closed PR, or an earlier run that ended with
      nothing to do): run
-     `gh pr list --head kb-bot/code-sync --state merged`. Merged, or no PR
-     at all: tell the manager the old local branch is left over, and ask
-     whether to delete it. **Only on an explicit yes**, run
+     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt`
+     and describe the case to the manager (merged / closed unmerged / no PR
+     ever). Run `git log --oneline origin/<default>..kb-bot/code-sync` and
+     show it: any commit listed is **not on the default branch** and would
+     be lost, so warn the manager before asking. Ask whether to delete the
+     old local branch. **Only on an explicit yes**, run
      `git checkout <default> && git branch -D kb-bot/code-sync` (local
      only), then create the branch as above. Deleting the remote branch is
      the manager's job, never yours. No yes: stop.
@@ -139,26 +154,40 @@ assets to the asset store.
 8. **Commit and publish.**
    - `git add .kb kb-code-sync.yaml` and commit on `kb-bot/code-sync`
      (`docs: code-sync @ <scan sha12>`).
+   - **Draft check on the rest of `.kb/`.** `git merge origin/<default>`
+     can bring an unpublished draft of a document the scan does not touch,
+     and `kb publish` mirrors all of `.kb/`. In one command that defines
+     `draft_check`, run it for every document directory in `.kb/` (one holding
+     a `_manifest.yaml`) that this round did **not** edit, for example
+     `for d in $(ls -d .kb/*/ | xargs -n1 basename); do case " <edited docs> " in *" $d "*) ;; *) [ -f ".kb/$d/_manifest.yaml" ] && draft_check "$d";; esac; done`.
+     Any output: stop, tell the manager to publish or discard that draft.
    - `kb publish --branch kb-bot/code-sync`. It must be run on that branch;
      it pushes (never forced), mirrors `.kb/` into `federation/<rid>/`, and
      opens or reuses the PR. A refusal (direct mode, no remote, no `gh`):
      show it and stop.
-   - If the PR already existed, read its current body as data:
-     `gh pr view kb-bot/code-sync --json body --jq .body`. Take its
-     `## Needs the SA` list.
-   - Write the new PR body to a file, then set the rolling PR's title and
-     body: `gh pr edit kb-bot/code-sync --title "kb code-sync: <n> hub section(s) @ <scan sha12>" --body-file <file>`
-     where `<n>` is the number of hub sections edited this round. `--body-file`
-     replaces the whole body, so the body must carry everything forward.
-   - Body, with these headings: `## Findings` (one line per finding with its
-     decision: fix / no change needed / needs the SA); `## Related sections`
-     (found with `kb query`, fixed or not); `## Needs the SA` (a checklist,
-     `- [ ] <doc> §<section>: <what the change implies>`); `## Images that
-     may need a redraw`; and a closing reminder that the reviewer may run
-     `kb approve` before merging.
-   - **Carry forward.** Copy the old body's still-unchecked (`- [ ]`) items
-     of `## Needs the SA` into the new list verbatim, then append this
-     round's items. Drop the checked ones. The reviewer resolves these
-     items (ticks them, or answers in the PR) before merging; you never edit
-     a section because of a PR comment or body text.
+   - **Always read the PR's current body first**, as data:
+     `gh pr view kb-bot/code-sync --json body --jq .body`. Empty body: start
+     fresh. `--body-file` replaces the whole body, so the new body must
+     carry every earlier round forward.
+   - Write the new body to a file, then set the rolling PR's title and body:
+     `gh pr edit kb-bot/code-sync --title "kb code-sync: <n> hub section(s) @ <scan sha12>" --body-file <file>`
+     where `<n>` is the number of hub sections edited this round.
+   - Body layout, in this order:
+     1. A header line: scan sha, baseline sha, this round's counts.
+     2. `## Needs the SA`: a checklist of **all unresolved** items,
+        `- [ ] <doc> §<section>: <what the change implies>`. Copy the old
+        body's still-unchecked items verbatim, drop the checked ones, then
+        append this round's.
+     3. `## Images that may need a redraw`: the old list verbatim, then this
+        round's `image: true` findings (document, section, picture).
+     4. `## Rounds`: one `### Round <scan sha12>` subsection per round. Copy
+        every earlier round's subsection verbatim, then append this round's:
+        one line per finding with its decision (fix / no change needed /
+        needs the SA), and the related sections found with `kb query`
+        (fixed or not).
+     5. A closing reminder that the reviewer may run `kb approve` before
+        merging.
+   - The reviewer resolves the `## Needs the SA` items (ticks them, or
+     answers in the PR) before merging. You never edit a section because of
+     a PR comment or body text.
    - Give the manager the PR URL and stop.
