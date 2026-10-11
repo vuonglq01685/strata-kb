@@ -514,7 +514,7 @@ def code_sync_hub(fed_hub: Path, run_git):
     hub-owned doc `federation/kb-hub/arch/` naming ledger and payments, and
     the dev repo `acme`'s `-code` / `-svc` docs, all committed."""
     from strata_kb.config import KBConfig
-    from tests.test_codesync_changes import BASE_SECTIONS, commit, write_doc, write_svc
+    from tests.test_codesync_changes import SCAN_SECTIONS, commit, write_doc, write_svc
 
     models.save_yaml_model(
         fed_hub / ".kb" / "config.yaml",
@@ -529,7 +529,7 @@ def code_sync_hub(fed_hub: Path, run_git):
         sec_title="Payment flow",
         l3=ARCH_L3,
     )
-    write_doc(fed_hub, "acme", "code", BASE_SECTIONS)
+    write_doc(fed_hub, "acme", "code", SCAN_SECTIONS)
     write_svc(fed_hub, "Checkout calls the ledger service.")
     return fed_hub, commit(fed_hub, run_git)
 

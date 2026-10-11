@@ -105,12 +105,23 @@ def _pattern(term: str) -> re.Pattern[str]:
 
 def _tags(
     reader: gitio.BatchReader, root: Path, sha: str, rid: str
-) -> dict[str, list[str]]:
+) -> dict[str, list[str]] | None:
+    """Tags per published hub doc; None when the hub has no index at `sha`."""
     text = reader.read_at(sha, root / "federation" / rid / "index.yaml")
     if text is None:
-        return {}
+        return None
     index = models.KBIndex.model_validate(yaml.safe_load(text))
     return {e.id: e.tags for e in index.docs}
+
+
+def _must_read(reader: gitio.BatchReader, sha: str, root: Path, path: Path) -> str:
+    """A file a published hub doc lists must exist at `sha`; a half-published
+    doc is an error (exit 1), not a silent gap."""
+    text = reader.read_at(sha, path)
+    if text is None:
+        rel = path.relative_to(root).as_posix()
+        raise gitio.GitError(f"{rel} is missing at {sha[:12]} (unreadable hub doc)")
+    return text
 
 
 def _hub_sections(
@@ -118,18 +129,14 @@ def _hub_sections(
 ) -> list[tuple[str, str, str]]:
     """`(section id, title, L3 text)` of one hub doc at `sha`."""
     folder = root / "federation" / rid / doc_id
-    text = reader.read_at(sha, folder / "_manifest.yaml")
-    if text is None:
-        return []
+    text = _must_read(reader, sha, root, folder / "_manifest.yaml")
     manifest = models.Manifest.model_validate(yaml.safe_load(text))
     out: list[tuple[str, str, str]] = []
     for sec, occ in zip(
         manifest.sections, mdutils.heading_occurrences(manifest.sections), strict=True
     ):
-        md = reader.read_at(sha, folder / f"{sec.file}.raw.md") or ""
-        # Body only: a hub heading that happens to share a name is not a mention.
-        body = (mdutils.slice_section(md, sec.id, occ) or "").partition("\n")[2]
-        out.append((sec.id, sec.title, body))
+        md = _must_read(reader, sha, root, folder / f"{sec.file}.raw.md")
+        out.append((sec.id, sec.title, mdutils.slice_section(md, sec.id, occ) or ""))
     return out
 
 
@@ -157,7 +164,13 @@ def _findings(
     findings: list[Finding] = []
     notes: list[str] = []
     with gitio.BatchReader(root) as reader:
-        for doc_id, tags in sorted(_tags(reader, root, scan_sha, rid).items()):
+        docs = _tags(reader, root, scan_sha, rid)
+        if docs is None:
+            notes.append(
+                f"no published hub documents under federation/{rid}/ — check repo_id"
+            )
+            return findings, notes
+        for doc_id, tags in sorted(docs.items()):
             if GENERATED_TAG in tags or SKIP_TAG in tags:
                 continue
             if AUTHORED_TAG not in tags:

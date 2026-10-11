@@ -33,6 +33,13 @@ BASE_SECTIONS = {
     "int.stripe": ("stripe", STRIPE),
 }
 
+# BASE_SECTIONS with the payment service named like hub prose names it
+# (`payment-service`): a bare "payment" would also hit a "Payment flow" heading.
+SCAN_SECTIONS = {
+    **{k: v for k, v in BASE_SECTIONS.items() if k != "svc.payment"},
+    "svc.payment-service": ("payment-service", _svc("`ledger`, `postgres`")),
+}
+
 
 def write_doc(
     hub: Path,

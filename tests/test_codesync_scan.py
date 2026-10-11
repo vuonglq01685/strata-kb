@@ -10,14 +10,17 @@ from strata_kb.codesync import baseline, scan
 from strata_kb.codesync.changes import ChangedItem
 from tests.conftest import make_fed_entry
 from tests.test_codesync_changes import (
-    BASE_SECTIONS,
+    SCAN_SECTIONS,
     _db,
     _svc,
     commit,
     write_doc,
 )
 
-NO_LEDGER = {**BASE_SECTIONS, "svc.payment": ("payment", _svc("`postgres`"))}
+NO_LEDGER = {
+    **SCAN_SECTIONS,
+    "svc.payment-service": ("payment-service", _svc("`postgres`")),
+}
 
 
 def _item(section_id: str, title: str, facts=(), *, removed=True) -> ChangedItem:
@@ -135,14 +138,14 @@ def test_removed_dependency_matches_arch_section(code_sync_hub, run_git):
     assert (f.doc_id, f.section_id, f.section_title) == ("arch", "4.2", "Payment flow")
     assert f.term in {"payment-service", "ledger"}
     assert f.image is False
-    assert f.item.section_id == "svc.payment"
+    assert f.item.section_id == "svc.payment-service"
     assert scan.exit_code(r) == 2
 
 
 def test_generic_and_short_names_never_match(code_sync_hub, run_git):
     root, c1 = code_sync_hub
     sections = {
-        **BASE_SECTIONS,
+        **SCAN_SECTIONS,
         "svc.api": ("api", _svc("`postgres`")),
         "cmd.test": ("test", "**Primary:** `pytest -q`\n"),
     }
@@ -163,14 +166,14 @@ def test_cmd_matches_on_command_string_only(code_sync_hub, run_git):
         root,
         "acme",
         "code",
-        {**BASE_SECTIONS, "cmd.build": ("build", "**Primary:** `make release`\n")},
+        {**SCAN_SECTIONS, "cmd.build": ("build", "**Primary:** `make release`\n")},
     )
     c2 = commit(root, run_git)
     write_doc(
         root,
         "acme",
         "code",
-        {**BASE_SECTIONS, "cmd.build": ("build", "**Primary:** `make dist`\n")},
+        {**SCAN_SECTIONS, "cmd.build": ("build", "**Primary:** `make dist`\n")},
     )
     commit(root, run_git)
 
@@ -197,6 +200,46 @@ def test_word_boundary_case_insensitive(code_sync_hub, run_git):
         _set_arch(root, f"## 4.2 Payment flow\n\n{prose}\n")
         commit(root, run_git)
         assert scan.run_scan(root, baseline_sha=c1).findings == ()
+
+
+def test_hub_section_heading_is_searched(code_sync_hub, run_git):
+    root, c1 = code_sync_hub
+    write_doc(root, "acme", "code", NO_LEDGER)
+    commit(root, run_git)
+    _set_arch(root, "## 4.2 Ledger integration\n\nPosting rules follow.\n")
+    commit(root, run_git)
+
+    [f] = scan.run_scan(root, baseline_sha=c1).findings
+
+    assert (f.term, f.section_title) == ("ledger", "Payment flow")
+
+
+def test_missing_index_is_a_note_not_an_error(code_sync_hub, run_git):
+    root, c1 = code_sync_hub
+    (root / ".kb" / "config.yaml").write_text(
+        "kind: hub\nhub: .\nrepo_id: typo-hub\n", encoding="utf-8"
+    )
+    write_doc(root, "acme", "code", NO_LEDGER)
+    commit(root, run_git)
+
+    r = scan.run_scan(root, baseline_sha=c1)
+
+    assert r.findings == ()
+    assert r.notes == (
+        "no published hub documents under federation/typo-hub/ — check repo_id",
+    )
+    assert scan.exit_code(r) == 0
+
+
+@pytest.mark.parametrize("missing", ["_manifest.yaml", "ch1.raw.md"])
+def test_half_published_hub_doc_raises(code_sync_hub, run_git, missing):
+    root, c1 = code_sync_hub
+    write_doc(root, "acme", "code", NO_LEDGER)
+    (root / "federation" / "kb-hub" / "arch" / missing).unlink()
+    commit(root, run_git)
+
+    with pytest.raises(gitio.GitError, match=rf"arch/{missing} is missing"):
+        scan.run_scan(root, baseline_sha=c1)
 
 
 def test_match_inside_image_description_sets_image_flag(code_sync_hub, run_git):
@@ -346,7 +389,7 @@ def test_dirty_worktree_does_not_change_output(code_sync_hub, run_git):
 
     raw = root / "federation" / "kb-hub" / "arch" / "ch1.raw.md"
     raw.write_text("## 4.2 Payment flow\n\nrewritten, uncommitted.\n", encoding="utf-8")
-    write_doc(root, "acme", "code", BASE_SECTIONS)
+    write_doc(root, "acme", "code", SCAN_SECTIONS)
 
     assert scan.to_json(scan.run_scan(root, baseline_sha=c1)) == before
 

@@ -10,10 +10,13 @@ from strata_kb import models
 from strata_kb.cli import app
 from strata_kb.codesync import baseline
 from strata_kb.config import KBConfig
-from tests.test_codesync_changes import BASE_SECTIONS, _svc, commit, write_doc
+from tests.test_codesync_changes import SCAN_SECTIONS, _svc, commit, write_doc
 
 runner = CliRunner()
-NO_LEDGER = {**BASE_SECTIONS, "svc.payment": ("payment", _svc("`postgres`"))}
+NO_LEDGER = {
+    **SCAN_SECTIONS,
+    "svc.payment-service": ("payment-service", _svc("`postgres`")),
+}
 
 
 def _kb(root: Path) -> list[str]:
@@ -123,3 +126,14 @@ def test_non_hub_kind_exits_1(code_sync_hub, command):
     assert result.exit_code == 1
     assert "kind: hub" in result.output
     assert not (root / baseline.BASELINE_FILE).exists()
+
+
+def test_half_published_hub_doc_exits_1(code_sync_hub, run_git):
+    root, c1 = code_sync_hub
+    (root / "federation" / "kb-hub" / "arch" / "ch1.raw.md").unlink()
+    commit(root, run_git)
+
+    result = runner.invoke(app, ["code-sync", "scan", "--baseline", c1, *_kb(root)])
+
+    assert result.exit_code == 1
+    assert "ch1.raw.md is missing" in result.output
