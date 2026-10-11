@@ -361,3 +361,36 @@ Selection and rendering follow spec §4 A1 exactly:
 - [ ] **Step 5: Template test** `test_dev_implement_ticket_fetches_from_hub_first`: every dev-implement-ticket template, read via `initcmd.read_template`, contains `kb ticket fetch`. Assert also that `impl-gitignore.txt` contains `*/ticket.md`.
 - [ ] **Step 6: Run** `.venv/bin/pytest tests/test_ticketfetch.py tests/test_cli_ticket.py tests/test_init.py tests/test_planingest.py -q -n auto`, then the full suite once. Expected: only the 19 baseline failures.
 - [ ] **Step 7: Commit** `feat: kb ticket fetch — dev takes a ticket id and reads it from the hub`.
+
+### Task 10: Role guides, architecture doc and README sweep (runs last, after Task 8)
+
+Owner request: once everything is done, update the guidelines and README for the whole framework.
+
+**Files:**
+- Modify: `docs/src/guide-ba.en.md`, `docs/src/guide-ba.vi.md`, `docs/src/guide-dev.en.md`, `docs/src/guide-dev.vi.md`, `docs/src/guide-hub-child.en.md`, `docs/src/guide-hub-child.vi.md`, `docs/src/architecture.en.md`, `docs/src/architecture.vi.md`
+- Regenerate: `docs/strata-guide-ba.{en,vi}.pdf`, `docs/strata-guide-dev.{en,vi}.pdf`, `docs/strata-guide-hub-child.{en,vi}.pdf`, `docs/strata-architecture.{en,vi}.pdf` with `docs/src/build_pdf.py`. Install its deps with `uv sync --extra dev --extra docs`; read the script's docstring for the exact invocation.
+- Modify: `README.md`, as a consistency sweep over the whole file, not only §12.
+
+**Content each doc must carry** (spec §4 A1–A6 and §5; match what Tasks 1–9 shipped, verified against the code and `--help` output, never from memory):
+- **BA guide:**
+  - publishing the plan (`kb publish` / `/kb-publish`), what qualifies and what is skipped (with the exact skip reasons);
+  - registry + `intake:` setup, and that `.kb/<repo_id>-plan/` and `.kb/index.yaml` are generated and gitignored;
+  - `> Revision:` + `## Change log`, the `--amend` modes, and the B4 change rules (full `M-x-US<n>` ids in `Affected`; `SUPERSEDED`);
+  - the daily `kb-stale-citations` issue now also lists `architecture` rows, and what to do with each.
+- **Dev guide:**
+  - "a ticket id is enough": `kb ticket fetch`, hub first, path/paste as fallback;
+  - `docs/impl/<id>/ticket.md`; mission sequencing read from the hub;
+  - `mission next` reporting `draft` with reason `parent mission rev <M> affects this story`.
+- **Hub/child guide:** registering a `ba` repo in `federation/registry.yaml` (optional `workflow:` pin), and that `<repo>-plan` docs appear in the federation like `-code`.
+- **Architecture doc:** the `ba` repo is now a publisher (the `-plan` document, tag-driven intake flow); the publish and drift data flows, including the per-section architecture-drift check.
+- **README:**
+  - every section touching repo kinds, publishing, BA or dev flows is consistent with the above;
+  - the command table lists `kb plan-ingest` and `kb ticket fetch`;
+  - nothing still says a `ba` repo never publishes.
+- **Vietnamese files:** each mirrors its English twin section for section. Keep the existing vi files' terminology and register; keep code, commands, ids and error strings verbatim.
+
+- [ ] **Step 1:** Grep all docs for stale claims: `never publishes`, `never ingests, summarizes or publishes`, `informational only`, `accept a pasted ticket body or a path`. List every hit in the report before editing.
+- [ ] **Step 2:** Edit the eight markdown sources and README.
+- [ ] **Step 3:** Regenerate the eight PDFs. If PDF generation cannot run in this environment (for example a font or network fetch is blocked), commit the markdown and report the exact error as a concern. Do not commit stale PDFs as if regenerated.
+- [ ] **Step 4:** Run the README/docs-related tests (`.venv/bin/pytest -q -n auto -k "readme or docs or guide or template"`), then the full suite once. Expected: only the 19 baseline failures.
+- [ ] **Step 5: Commit** `docs: guides, architecture and README cover plan publishing, amend and ticket fetch`.
