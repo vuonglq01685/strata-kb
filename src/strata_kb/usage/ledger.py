@@ -283,6 +283,22 @@ def append_rows(kb_dir: Path, rows: list[UsageRow]) -> AppendReport:
     return report
 
 
+def read_rows_from(kb_dirs: list[Path]) -> list[UsageRow]:
+    """Rows of several ledgers, e.g. a Dev repo's and its BA repo's, so one
+    report can price a ticket end to end (2026-10-10 review B4). A row read
+    twice (the same `.kb/` named twice, or a ledger copied between repos) is
+    kept once, keyed on its session and uuid."""
+    seen: set[tuple[str, str]] = set()
+    merged: list[UsageRow] = []
+    for kb_dir in kb_dirs:
+        for row in read_rows(kb_dir):
+            key = (row.session, row.uuid)
+            if key not in seen:
+                seen.add(key)
+                merged.append(row)
+    return merged
+
+
 def read_rows(kb_dir: Path) -> list[UsageRow]:
     """Every row in the ledger, files in name order, rows in file order.
 

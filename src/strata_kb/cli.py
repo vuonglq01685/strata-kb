@@ -1740,6 +1740,17 @@ def usage_report(
         None, "--out", help="HTML output path (default: <kb-dir>/usage/report.html)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    with_kb: list[Path] = typer.Option(
+        [],
+        "--with",
+        help="Also read this KB directory's ledger, e.g. the BA repo's .kb, to "
+        "price a ticket end to end (repeatable; read-only)",
+    ),
+    summary: bool = typer.Option(
+        False,
+        "--summary",
+        help="Print the short '## Usage' block for a PR body",
+    ),
 ) -> None:
     """Aggregate the usage ledger: per ticket, phase, model, actor."""
     from datetime import date, datetime
@@ -1750,7 +1761,7 @@ def usage_report(
     from strata_kb.usage import report as report_mod
 
     try:
-        rows = ledger.read_rows(kb_dir)
+        rows = ledger.read_rows_from([kb_dir, *with_kb])
     except ValidationError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
@@ -1788,6 +1799,9 @@ def usage_report(
         generated=generated,
     )
     agg.hook_errors = hook_error_count
+    if summary:
+        typer.echo(report_mod.render_summary(agg, ticket), nl=False)
+        return
     if md:
         typer.echo(report_mod.render_markdown(agg))
         return

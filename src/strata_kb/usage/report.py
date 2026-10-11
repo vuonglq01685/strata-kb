@@ -207,6 +207,31 @@ def _md_row(bucket: Bucket, currency: str) -> str:
     )
 
 
+SUMMARY_MAX_PHASES = 6
+
+
+def render_summary(agg: Aggregate, ticket: str = "") -> str:
+    """The short `## Usage` block a PR body carries (2026-10-10 review B4):
+    one total line and at most SUMMARY_MAX_PHASES phase rows, the costliest
+    first. The full breakdown stays in `kb usage report`."""
+    subject = f" for {ticket}" if ticket else ""
+    lines = [
+        "## Usage",
+        "",
+        f"Total{subject}: {agg.total.rows} calls, "
+        f"{agg.total.tokens_in + agg.total.tokens_out:,} tokens, "
+        f"{_money(agg.total, agg.currency)}.",
+    ]
+    phases = agg.by_phase[:SUMMARY_MAX_PHASES]
+    if phases:
+        lines += ["", "| phase | calls | cost |", "| --- | --- | --- |"]
+        lines += [f"| {b.key} | {b.rows} | {_money(b, agg.currency)} |" for b in phases]
+        rest = len(agg.by_phase) - len(phases)
+        if rest:
+            lines.append(f"| {rest} more phase(s) | | |")
+    return "\n".join(lines) + "\n"
+
+
 def render_markdown(agg: Aggregate) -> str:
     """A PR-body table: what it cost, and where the cost went."""
     lines: list[str] = []

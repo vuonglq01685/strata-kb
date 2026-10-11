@@ -63,10 +63,14 @@ edit above it.
   log, and `Blocking: No`, A5's verdict line, as the last line;
   **Notes** — only when there is something: out of scope, not handled,
   every `OPEN(...)`, KB gap, ambiguity or contradiction as a concrete
-  feedback item on the owning repo. Leave out what the branch already
-  carries: kb-context (the ticket), placeholder resolutions
+  feedback item on the owning repo; **Usage** — paste the output of
+  `kb usage report --ticket <ticket-id> --summary` as is (add
+  `--with <path-to-the-BA-repo>/.kb` when that clone is at hand, so the
+  cost covers the BA side too); drop the section when the ledger has no
+  row for the ticket. Leave out what the branch already carries:
+  kb-context (the ticket), placeholder resolutions
   (`docs/impl/<ticket-id>/context.md`), TDD exemptions (the plan), the
-  usage table (`kb usage report`), and A5's finding table
+  full usage breakdown (`kb usage report`), and A5's finding table
   (`docs/impl/<ticket-id>/review/merge-risk.md`). A section left as the
   template's comment counts as empty and fails the check.
 - **Amend findings** — if the ticket changed what a service is

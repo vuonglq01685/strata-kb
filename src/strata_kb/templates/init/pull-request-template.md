@@ -1,7 +1,8 @@
 <!--
 Assembled by /dev-handover and checked in CI by `kb pr lint`. Ticket, Changes
 and Testing are required; a section still holding only its comment counts as
-empty and fails. Notes is optional — delete it when there is nothing to say.
+empty and fails. Notes and Usage are optional — delete either when there is
+nothing to put in it.
 Keep it short: the branch already carries the context cache, the plan and
 the review files.
 
@@ -30,3 +31,8 @@ command line itself and its summary lines only (e.g. `$ pytest -q` then
 
 <!-- Optional: out of scope, not handled, OPEN(...) / KB-gap findings, a
 non-ok freshness result, `amend needed`. -->
+
+## Usage
+
+<!-- Optional: the output of `kb usage report --ticket <id> --summary`, as
+is. Delete the section when the ledger has nothing for this ticket. -->

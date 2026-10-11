@@ -21,8 +21,9 @@ from typing import Literal
 
 # Kept short on purpose: what the ticket asked, what the PR changed, how it
 # was tested. Everything else (kb-context, placeholder map, TDD exemptions,
-# usage, A5's finding table) already lives on the branch. An optional
-# `## Notes` section is ignored like any other extra heading.
+# A5's finding table) already lives on the branch. The optional `## Notes`
+# and `## Usage` (1.16.0: `kb usage report --summary`) sections are ignored
+# like any other extra heading.
 REQUIRED_SECTIONS: tuple[str, ...] = ("Ticket", "Changes", "Testing")
 
 # Level 1 and 2 headings both end a section; `###` and deeper are content, so
