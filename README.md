@@ -273,6 +273,7 @@ that follows it.
 | `kb resolve` | Resolve a `kb-context` block — sections at the pinned version, plus freshness |
 | `kb diff` | Diff added/removed/changed sections between the worktree and a git rev |
 | `kb code-ingest` | Extract a codebase's structure into `.kb/<repo_id>-code/` — deterministic, no LLM |
+| `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the ready missions and tickets of a `ba` repo — deterministic, offline, no LLM |
 | `kb svc note` | Record which tickets touched which service in `<repo_id>-svc` |
 | `kb ticket lint` | Definition-of-Ready gate for a BA ticket |
 | `kb ticket check` | SA grounding gate: every id in `## Technical grounding` exists in the hub's `<repo>-code` document |

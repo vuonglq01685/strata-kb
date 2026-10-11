@@ -1396,6 +1396,61 @@ def code_ingest(
             typer.echo(f"  orphan: {sid}")
 
 
+@app.command(name="plan-ingest")
+def plan_ingest(
+    repo_root: Path = typer.Option(
+        Path("."), "--repo-root", help="Repository root (read for the commit)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    repo_id: str = typer.Option(
+        "", "--repo-id", help="Repo ID (default: config, then folder name)"
+    ),
+    missions_dir: Path = typer.Option(
+        Path("missions"), "--missions-dir", help="Where mission files live"
+    ),
+    tickets_dir: Path = typer.Option(
+        Path("tickets"), "--tickets-dir", help="Where ticket files live"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Build .kb/<repo_id>-plan/ from ready missions and tickets — deterministic,
+    offline, no LLM. Items that are not ready are listed as skipped."""
+    from strata_kb import cipublish, config, planingest
+
+    resolved_root = repo_root.resolve()
+    resolved_kb_dir = kb_dir.resolve()
+    rid = config.effective_repo_id(repo_id, resolved_kb_dir) or resolved_root.name
+    try:
+        report = planingest.run(
+            resolved_root, resolved_kb_dir, rid, missions_dir, tickets_dir
+        )
+    except planingest.PlanIngestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from None
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "doc_id": report.doc_id,
+                    "published": report.published,
+                    "skipped": [list(pair) for pair in report.skipped],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    typer.echo(f"doc: {report.doc_id}")
+    typer.echo(f"published: {len(report.published)} section(s)")
+    for sid in report.published:
+        typer.echo(f"  {sid}")
+    for file, reason in report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.echo(line)
+        cipublish.write_step_summary(line)
+
+
 @svc_app.command("note")
 def svc_note(
     service: str = typer.Argument(
