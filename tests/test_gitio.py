@@ -245,6 +245,29 @@ def test_push_branch_to_local_bare_origin(tmp_path, run_git):
     assert "publish/demo" in out
 
 
+def test_remote_branch_exists_true_false_and_raises_on_bad_remote(tmp_path, run_git):
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    root = tmp_path / "repo"
+    run_git(tmp_path, "clone", str(origin), str(root))
+    run_git(root, "config", "user.name", "t")
+    run_git(root, "config", "user.email", "t@t")
+    (root / "a.txt").write_text("v1", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "v1")
+    gitio.checkout_branch(root, "publish/demo", "HEAD")
+    gitio.push_branch(root, "publish/demo")
+
+    assert gitio.remote_branch_exists(root, "publish/demo")
+    assert not gitio.remote_branch_exists(root, "publish/other")
+    # exact ref match: a longer name must not satisfy a prefix lookup
+    assert not gitio.remote_branch_exists(root, "publish/dem")
+
+    run_git(root, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
+    with pytest.raises(gitio.GitError):
+        gitio.remote_branch_exists(root, "publish/demo")
+
+
 def test_worktree_add_and_remove_leave_the_main_tree_on_its_branch(tmp_path, run_git):
     from strata_kb import gitio
 

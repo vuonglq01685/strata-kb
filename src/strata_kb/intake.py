@@ -1609,21 +1609,43 @@ def intake_publish(
         branch = f"publish/{rid}"
         dest_on_main = gitio.path_exists_at(handle.root, base, f"federation/{rid}")
         # Hybrid worktree rule:
-        # - rid already on main (PR merged), or no local branch yet:
-        #   reset -B from main. Post-merge, a stale publish/<rid>
-        #   would predate the merge -- reusing it makes the next PR
-        #   diff show already-merged content against an old merge
-        #   base and invites add/add conflicts under
-        #   "require branches up to date" protection.
-        # - rid NOT on main + branch exists (PR still pending):
-        #   reuse the branch, so an unmerged PR accumulates
-        #   snapshots and a byte-identical re-publish diffs against
-        #   its own prior write and stays a true no-op ("").
+        # - rid already on main (PR merged), or no local branch yet, or the
+        #   branch is gone from the remote: reset -B from main. Post-merge, a
+        #   stale publish/<rid> would predate the merge -- reusing it makes
+        #   the next PR diff show already-merged content against an old merge
+        #   base and invites add/add conflicts under "require branches up to
+        #   date" protection. A branch missing on the remote means its PR was
+        #   closed or merged and the branch deleted, while the local copy
+        #   survives (and main can be stale if the pull above failed):
+        #   reusing it makes an unchanged resend a "nothing changed" no-op
+        #   with no PR, and otherwise force-pushes the closed PR's commits.
+        # - rid NOT on main + branch exists locally AND on the remote (PR
+        #   still pending): reuse the branch, so an unmerged PR accumulates
+        #   snapshots and a byte-identical re-publish diffs against its own
+        #   prior write and stays a true no-op ("").
+        # - remote lookup fails (network): reset. A fresh branch from main is
+        #   always safe; reusing a dead one is what loses PRs.
         # Accepted trade-off: once the rid exists on main, a resend
         # of identical *pending* (unmerged-PR) content is no longer
         # detected as a no-op -- it re-commits on the fresh branch
         # and converges via create_or_get_pr's 422 reuse path.
         reset = dest_on_main or not gitio.rev_exists(handle.root, branch)
+        if not reset:
+            try:
+                reset = not gitio.remote_branch_exists(
+                    handle.root,
+                    branch,
+                    handle.token,
+                    timeout=INTAKE_GIT_TIMEOUT_SECONDS,
+                )
+            except gitio.GitError as exc:
+                logger.warning(
+                    "remote lookup of %s failed (%s) -- resetting from %s",
+                    branch,
+                    exc,
+                    base,
+                )
+                reset = True
         with tempfile.TemporaryDirectory() as tmp:
             tmp_kb = Path(tmp) / "kb"
             tmp_kb.mkdir()

@@ -487,6 +487,36 @@ def push_branch(
         )
 
 
+def remote_branch_exists(
+    root: Path,
+    branch: str,
+    token: str | None = None,
+    *,
+    timeout: float | None = None,
+) -> bool:
+    """True when `origin` has branch `branch` (`git ls-remote --heads`).
+    Same credential handling as `push_branch`. Raises GitError on a non-zero
+    exit, so a network failure is never read as "branch is gone".
+    `timeout`: see `_run_network`."""
+    stripped, embedded = split_credentials(remote_url(root))
+    ref = f"refs/heads/{branch}"
+    proc = _run_network(
+        root,
+        credential_env(stripped, token or embedded),
+        f"look up branch '{branch}'",
+        "ls-remote",
+        "--heads",
+        "origin",
+        ref,
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        raise GitError(
+            redact_url(f"look up branch '{branch}' failed: {proc.stderr.strip()}")
+        )
+    return any(line.split()[-1:] == [ref] for line in proc.stdout.splitlines())
+
+
 def tag(root: Path, name: str) -> None:
     proc = _run(root, "tag", name)
     if proc.returncode != 0:

@@ -584,3 +584,128 @@ def test_content_addressed_assets_publish_on_the_default_store(tmp_path):
     diverted.mkdir()
     intake.safe_extract(_asset_member(over), diverted, assets_will_divert=True)
     assert (diverted / over).exists()
+
+
+# --- publish/<rid> branch reuse: only while its PR is still pending ---------
+
+
+def _tar(index_yaml: bytes) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        info = tarfile.TarInfo("index.yaml")
+        info.size = len(index_yaml)
+        tf.addfile(info, io.BytesIO(index_yaml))
+    return buf.getvalue()
+
+
+@pytest.fixture
+def publisher(hub, monkeypatch):
+    """publish(archive) -> PR url (or ""), recording each PR creation."""
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    monkeypatch.setattr(
+        intake.ghapp, "mint_installation_token", lambda *a, **k: "ghs_t"
+    )
+    calls: list[str] = []
+
+    def pr_hook(hub_full, token, branch, **kwargs):
+        calls.append(branch)
+        return f"https://github.com/acme/hub/pull/{len(calls)}"
+
+    cfg = _cfg(hub, FakeHTTP([]))
+    cfg.pr_hook = pr_hook
+
+    def publish(archive: bytes) -> str:
+        return intake.intake_publish(
+            cfg, "flight-docs", "abc1234", "acme/flight-docs", [], archive
+        )
+
+    publish.calls = calls
+    publish.bare = hub.parent / "hub-origin.git"
+    return publish
+
+
+def _remote_has(bare: Path, branch: str) -> bool:
+    return bool(_git(bare, "branch", "--list", branch).strip())
+
+
+def test_republish_after_closed_pr_with_deleted_branch_opens_new_pr(hub, publisher):
+    branch = "publish/flight-docs"
+    publisher(_kb_archive())
+    assert len(publisher.calls) == 1
+    # PR closed unmerged, branch deleted on the remote; the serving clone's
+    # local branch survives.
+    _git(publisher.bare, "branch", "-D", branch)
+    assert _git(hub, "branch", "--list", branch).strip()
+
+    pr = publisher(_kb_archive())
+
+    assert pr.endswith("/pull/2")
+    assert len(publisher.calls) == 2
+    assert _remote_has(publisher.bare, branch)
+    main_sha = _git(publisher.bare, "rev-parse", "main").strip()
+    parent = _git(publisher.bare, "rev-parse", f"{branch}~1").strip()
+    assert parent == main_sha
+
+
+def test_republish_after_merge_with_stale_main_opens_new_pr(
+    hub, publisher, monkeypatch, tmp_path
+):
+    from strata_kb import gitio
+
+    branch = "publish/flight-docs"
+    publisher(_kb_archive())
+    # GitHub merges the PR and deletes the branch, but the serving clone never
+    # learns of it: its pull fails, so local main stays at the pre-merge commit.
+    merger = tmp_path / "merger"
+    _git(tmp_path, "clone", str(publisher.bare), str(merger))
+    _git(merger, "config", "user.email", "m@t")
+    _git(merger, "config", "user.name", "m")
+    _git(merger, "merge", "--no-ff", "--no-edit", f"origin/{branch}")
+    _git(merger, "push", "origin", "main")
+    _git(publisher.bare, "branch", "-D", branch)
+    monkeypatch.setattr(
+        gitio, "pull", lambda *a, **k: (_ for _ in ()).throw(gitio.GitError("offline"))
+    )
+    stale_main = _git(hub, "rev-parse", "main").strip()
+
+    pr = publisher(_tar(b"docs:\n- id: doc-a\n  title: Doc A v2\n"))
+
+    assert pr.endswith("/pull/2")
+    assert len(publisher.calls) == 2
+    assert _remote_has(publisher.bare, branch)
+    # one fresh commit on top of base; the closed PR's commit is not carried
+    assert _git(publisher.bare, "rev-parse", f"{branch}~1").strip() == stale_main
+
+
+def test_pending_pr_branch_still_reused(hub, publisher):
+    branch = "publish/flight-docs"
+    publisher(_kb_archive())
+    v2 = _tar(b"docs:\n- id: doc-a\n  title: Doc A v2\n")
+
+    publisher(v2)
+
+    # remote branch alive -> second publish accumulates on top of the first
+    assert _git(publisher.bare, "rev-list", "--count", f"main..{branch}").strip() == "2"
+    # byte-identical re-publish against the live branch stays a true no-op
+    assert publisher(v2) == ""
+    assert len(publisher.calls) == 2
+
+
+def test_remote_check_failure_falls_back_to_reset(hub, publisher, monkeypatch):
+    from strata_kb import gitio
+
+    branch = "publish/flight-docs"
+    publisher(_kb_archive())
+
+    def boom(*a, **k):
+        raise gitio.GitError("network down")
+
+    monkeypatch.setattr(gitio, "remote_branch_exists", boom)
+
+    pr = publisher(_kb_archive())
+
+    assert pr.endswith("/pull/2")
+    assert len(publisher.calls) == 2
+    main_sha = _git(publisher.bare, "rev-parse", "main").strip()
+    assert _git(publisher.bare, "rev-parse", f"{branch}~1").strip() == main_sha
