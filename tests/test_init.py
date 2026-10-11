@@ -812,7 +812,11 @@ def test_init_rejects_unknown_kind_still_excludes_ba_typos(tmp_path: Path):
 
 
 def test_hub_child_unchanged_by_phase4(tmp_path: Path):
-    assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
+    # hub gained exactly the four kb-code-sync wrappers (named, like the
+    # kb-mcp-setup ones below, so the freeze keeps its meaning).
+    assert sorted(expected_files("hub")) == sorted(
+        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS
+    )
     # child gained exactly the four kb-mcp-setup wrappers since Phase 4 —
     # named explicitly rather than folded into the frozen list, so the
     # freeze keeps meaning "Phase 4/5 added nothing".
@@ -2006,7 +2010,9 @@ def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
 
 
 def test_phase5_adds_nothing_to_hub_child_or_ba(tmp_path: Path):
-    assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
+    assert sorted(expected_files("hub")) == sorted(
+        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS
+    )
     assert sorted(expected_files("child")) == sorted(
         _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
     )
@@ -2810,6 +2816,43 @@ def test_init_dev_lang_notes_when_langs_already_recorded(tmp_path: Path):
         encoding="utf-8"
     )
     assert any("hand-edit" in n and "python" in n for n in report.notes)
+
+
+_CODE_SYNC_WRAPPERS = [
+    ".claude/skills/kb-code-sync/SKILL.md",
+    ".claude/commands/kb-code-sync.md",
+    ".github/prompts/kb-code-sync.prompt.md",
+    ".cursor/commands/kb-code-sync.md",
+]
+
+
+def test_hub_ships_kb_code_sync_wrappers(tmp_path: Path):
+    for rel in _CODE_SYNC_WRAPPERS:
+        assert rel in expected_files("hub"), rel
+        for kind in ("child", "ba", "dev"):
+            assert rel not in expected_files(kind), (kind, rel)
+    init_repo(tmp_path, "hub")
+    for rel in _CODE_SYNC_WRAPPERS:
+        assert (tmp_path / rel).is_file(), rel
+
+
+def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
+    init_repo(tmp_path, "hub")
+    for rel in _CODE_SYNC_WRAPPERS:
+        if rel.endswith(".claude/commands/kb-code-sync.md"):
+            continue  # the thin Claude command only delegates to the skill
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        for needle in (
+            "never merge",
+            "never `kb approve`",
+            "kb publish --branch kb-bot/code-sync",
+            "kb code-sync scan --json",
+            "kb code-sync baseline --at",
+            "git fetch --prune origin",
+            "git diff --no-index --quiet",
+            "gh pr edit kb-bot/code-sync",
+        ):
+            assert needle in text, (rel, needle)
 
 
 _MCP_SETUP_WRAPPERS = [

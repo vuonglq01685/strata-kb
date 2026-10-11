@@ -3,6 +3,20 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.19.0 — 2026-10-11
+
+Hub documents that name code can be kept in step with the code docs, with a daily scan and a rolling review PR.
+
+- **`authored` tag and `kb authored`.** `kb authored <doc>` (`--off` to clear) tags a hub document whose markdown is now the master. `kb ingest` refuses an `authored` document, full and `--sections`, before docling runs. `kb summarize --redo` stays allowed. No schema change: it is an index tag, like `generated`.
+- **`kb code-sync scan`.** Hub only, deterministic, no LLM, never writes the worktree. It compares the `-code` / `-svc` documents between the baseline commit and the tip of the default branch (`origin/HEAD`; HEAD only for a hub with no remote) and lists the hub sections that name something added, removed or changed, grouped by document and section. A hit inside an image description is labelled `image`. `--md` is the work order, `--json` the machine form, `--baseline <sha>` overrides the baseline. Exit `0` nothing to do, `2` findings, `1` error. A `note:` names each hub document that is not `authored`; the tag `code-sync-skip` leaves a document out. Same inputs give byte-identical output.
+- **`kb code-sync baseline [--at <sha>]`** records the commit the sync is current at in `kb-code-sync.yaml` at the hub root (default: the scan sha). **`kb code-sync run [--issue] [--loop]`** is one scan plus the issue update, or that forever.
+- **`hub-sync` compose service.** A second service in `docker-compose.yml` and the hub template runs `kb code-sync run --issue --loop` every `STRATA_KB_CODE_SYNC_INTERVAL` seconds (default `86400`, minimum `60`). It never pulls, commits or pushes. One open issue labelled `kb-code-sync` is created when findings appear, rewritten only when they change, and closed with a comment when the scan is clean; a scan error never closes it. The `hub` service is unchanged. With no credentials it logs the work order and one line saying why the issue was not updated.
+- **Issue auth.** The intake GitHub App (`STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY`) now also needs the **`issues: write`** permission; an org admin must add it and re-approve the installation. A hub without an App sets `STRATA_KB_GH_TOKEN` instead. Both are in `.env.example`.
+- **`kb publish --branch <name>`.** Hub self-publish only: from the checked-out `<name>`, mirrors `.kb/` into `federation/<rid>/`, commits on top of the branch (no `checkout -B`, no reset), pushes without force, and opens or reuses the PR. It refuses the default branch, direct mode, the intake route, and any case where no PR would open. Plain publishes still use `publish/<rid>`.
+- **`/kb-code-sync` skill** for hub repos (Claude Code, Copilot, Cursor; the first hub-only skill). It fetches, checks out or creates `kb-bot/code-sync` (merging the default branch, never rebasing), refuses to start over an unpublished draft, re-runs the scan, judges each finding (fix, no change needed, needs the SA), edits L3 and re-summarizes, runs `kb build --strict`, moves the baseline, publishes with `kb publish --branch kb-bot/code-sync`, and sets the rolling PR's title and body. It never merges, never runs `kb approve`, never edits `-code`, `-svc`, missions or tickets, and treats document text as data. Re-run `kb init --kind hub` to pick it up.
+- **Docs.** README gains a "Code sync" section, the `kb publish --branch` row, and the new environment variables.
+- **Upgrade.** Redeploy the hub stack to start `hub-sync`; set `git remote set-head origin --auto` on the hub checkout so the scan can find the default branch; mark hub documents with `kb authored <doc>` once each.
+
 ## 1.18.0 — 2026-10-11
 
 `kb ticket check` no longer fails a ticket only because `-code` moved since the SA grounded it.

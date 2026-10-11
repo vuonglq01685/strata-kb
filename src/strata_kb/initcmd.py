@@ -78,6 +78,10 @@ HUB_TEMPLATES: dict[str, str] = {
     ".mcp.json": "mcp-hub.json",
     "QUICKSTART.md": "QUICKSTART-hub.md",
     ".cursor/mcp.json": "mcp-hub.json",
+    ".claude/skills/kb-code-sync/SKILL.md": "claude-skill-kb-code-sync.md",
+    ".claude/commands/kb-code-sync.md": "claude-command-kb-code-sync.md",
+    ".github/prompts/kb-code-sync.prompt.md": "copilot-kb-code-sync.prompt.md",
+    ".cursor/commands/kb-code-sync.md": "cursor-kb-code-sync.md",
 }
 
 # Filled in by the child-scaffold task; kept separate so hub and child can
