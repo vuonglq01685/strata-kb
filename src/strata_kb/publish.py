@@ -1187,6 +1187,7 @@ class PublishPlan:
       None means "resolve it when publishing", so a missing `hub:` is still
       reported after the unreviewed gate, as before.
     - `refresh_code`: a dev repo sends the `-code` this commit would send.
+    - `refresh_plan`: a ba repo sends the `-plan` this commit would send.
     """
 
     route: str
@@ -1195,6 +1196,7 @@ class PublishPlan:
     self_publish: bool = False
     intake_url: str = ""
     refresh_code: bool = False
+    refresh_plan: bool = False
 
 
 def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
@@ -1223,6 +1225,7 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             mode=mode,
             intake_url=cfg.intake or "",
             refresh_code=cfg.kind == "dev",
+            refresh_plan=cfg.kind == "ba",
         )
     try:
         hub_ref = require_hub(hub_flag, kb_dir)

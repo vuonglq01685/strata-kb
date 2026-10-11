@@ -122,3 +122,14 @@ def test_the_hub_flag_beats_the_config(tmp_path, run_git):
     _git(run_git, root)
     plan = publish.plan(kb_dir, str(upper), pr=False, direct=False)
     assert plan.route == "federation" and plan.hub_ref == str(upper)
+
+
+def test_ba_refreshes_its_plan_doc(tmp_path):
+    kb_dir = _kb(tmp_path, "kind: ba\nrepo_id: acme\nintake: https://hub.example\n")
+    plan = publish.plan(kb_dir, "", pr=False, direct=False)
+    assert plan.route == "intake" and plan.refresh_plan and not plan.refresh_code
+
+
+def test_dev_does_not_refresh_a_plan_doc(tmp_path):
+    kb_dir = _kb(tmp_path, "kind: dev\nhub: ../hub\n")
+    assert not publish.plan(kb_dir, "", pr=False, direct=False).refresh_plan

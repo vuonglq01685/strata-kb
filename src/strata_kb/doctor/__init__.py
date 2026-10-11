@@ -151,9 +151,12 @@ def run(
                     upstream = handle
             issues += check_federation_publish(source_root, upstream, repo_id)
     else:
-        dev_code = f"{repo_id}-code" if cfg_kind == "dev" and repo_id else None
+        # The generated doc (dev `-code`, ba `-plan`) is rebuilt per branch
+        # and CI publishes it, so it is left out of the snapshot compare.
+        suffix = {"dev": "code", "ba": "plan"}.get(cfg_kind)
+        generated = f"{repo_id}-{suffix}" if suffix and repo_id else None
         hub_issues, hub_stale = check_hub(
-            kb_dir, handle, repo_id=repo_id, code_doc=dev_code
+            kb_dir, handle, repo_id=repo_id, code_doc=generated
         )
         issues += hub_issues
         if cfg_kind == "dev":

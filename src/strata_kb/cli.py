@@ -700,6 +700,30 @@ def _refresh_dev_code(kb_dir: Path) -> None:
     _refresh_code_or_exit(kb_dir, cfg.repo_id)
 
 
+def _refresh_ba_plan(kb_dir: Path) -> None:
+    """`kb publish` in a ba repo: regenerate `<repo_id>-plan` from the working
+    tree, so the diff preview and the upload show what CI will send. Same
+    defaults as `kb plan-ingest`, anchored to the repo root."""
+    from strata_kb import config, planingest
+    from strata_kb.build import build_kb
+
+    resolved_kb_dir = kb_dir.resolve()
+    root = resolved_kb_dir.parent
+    rid = config.effective_repo_id("", resolved_kb_dir) or root.name
+    try:
+        planingest.run(root, resolved_kb_dir, rid, root / "missions", root / "tickets")
+    except planingest.PlanIngestError as exc:
+        typer.secho(f"could not refresh {rid}-plan: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    report = build_kb(kb_dir)
+    for warning in report.warnings + report.quality:
+        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
+    for error in report.errors:
+        typer.secho(f"[error] {error}", fg=typer.colors.RED)
+    if not report.ok:
+        raise typer.Exit(1)
+
+
 @app.command()
 def ingest(
     pdf: Path = typer.Argument(..., help="Source PDF file"),
@@ -2058,6 +2082,8 @@ def publish(
     # the divergence this prevents.
     if plan.refresh_code:
         _refresh_dev_code(kb_dir)
+    if plan.refresh_plan:
+        _refresh_ba_plan(kb_dir)
 
     # KbError (PublishError, GateError, AssetStoreError, GitError, GHError,
     # HashSyncError, HubConfigError) reaches the root guard. What is caught
