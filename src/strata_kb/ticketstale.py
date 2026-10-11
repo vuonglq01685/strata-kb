@@ -19,9 +19,17 @@ import yaml
 from pydantic import ValidationError
 
 from strata_kb import gitio, kbcontext, models
-from strata_kb.lintcore import section_body
 from strata_kb.resolve import resolve_refs
-from strata_kb.ticketcheck import HEADING, SERVICES_HEADING, grounded_entries
+
+# `_parse_section` / `_id_lines` are private to ticketcheck: reusing them keeps
+# the id-reading rules in one place instead of copying the skip rules here.
+from strata_kb.ticketcheck import (
+    HEADING,
+    SERVICES_HEADING,
+    _id_lines,
+    _parse_section,
+    grounded_entries,
+)
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
@@ -108,20 +116,27 @@ def _grounded_code_entry(text: str) -> tuple[str | None, str, str] | None:
 
 
 def _cited_ids(text: str) -> list[str]:
-    """Architecture ids the file cites, in order, once each. A mission cites
-    `svc.*` in `## Services & order`; a ticket cites every kind in
-    `## Technical grounding`. A line carrying `[NEW:` proposes the id, so it
-    has nothing to drift from."""
-    mission_body = section_body(text, SERVICES_HEADING)
-    body = mission_body if mission_body is not None else section_body(text, HEADING)
+    """Architecture section ids the file cites, in order, once each. A
+    mission cites `svc.*` in `## Services & order`; a ticket cites every kind
+    in `## Technical grounding`. Lines are read the way `kb ticket check`
+    reads them (`_id_lines` skips `Files:` / `Grounded on:` and blanks
+    healthcheck values); a `db.<table>.<column>` cites the `db.<table>`
+    section. A line carrying `[NEW:` proposes the id, so it has nothing to
+    drift from."""
+    mission_section = _parse_section(text, SERVICES_HEADING)
+    section = mission_section or _parse_section(text, HEADING)
     ids: dict[str, None] = {}
-    for line in (body or "").splitlines():
+    if section is None:
+        return []
+    for _, line in _id_lines(section):
         if "[NEW:" in line:
             continue
-        for m in _ARCH_ID_RE.finditer(line):
-            id_ = m.group(0).rstrip(".")
-            if mission_body is None or id_.startswith("svc."):
-                ids[id_] = None
+        for raw in _ARCH_ID_RE.findall(line):
+            sid = raw.rstrip(".")
+            if sid.startswith("db.") and sid.count(".") >= 2:
+                sid = sid.rsplit(".", 1)[0]
+            if mission_section is None or sid.startswith("svc."):
+                ids[sid] = None
     return list(ids)
 
 

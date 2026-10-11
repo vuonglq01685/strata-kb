@@ -306,3 +306,22 @@ def test_render_markdown_has_kind_column():
     assert "| `tickets/T.md` | kb-context | a §1 | stale | x |" in body
     assert "| `tickets/T.md` | architecture | demo-code §svc.a | stale | y |" in body
     assert ticketstale.to_json(findings)[0]["refs"][1]["kind"] == "architecture"
+
+
+def test_architecture_reads_ids_the_way_ticket_check_does(tmp_path, fed_hub, run_git):
+    # A DEFAULTS-shaped grounding: `Files:` paths (`api.py`), a `db.t.column`
+    # id and a healthcheck URL (`api.internal`) are not sections of their own.
+    _publish(fed_hub, run_git, "aaaaaaa", svc_web="S1", db_table="T1")
+    _publish(fed_hub, run_git, "bbbbbbb", svc_web="S1", db_table="T1", svc_z="Z")
+    body = "\n".join(
+        [
+            "- Service: svc.web",
+            "- Files: src/api.py, cmd.sh",
+            "- Tables: db.table.designation",
+            "- Healthchecks: svc.web — `curl -f http://api.internal/health`",
+        ]
+    )
+    path = _ticket(tmp_path, "aaaaaaa", body)
+    text = path.read_text(encoding="utf-8")
+    assert ticketstale._cited_ids(text) == ["svc.web", "db.table"]
+    assert _arch(tmp_path, fed_hub) == []
