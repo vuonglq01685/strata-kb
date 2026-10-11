@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.16.0 — 2026-10-11
+
+- **Merged tickets are re-checked.** New `kb ticket stale [PATH...]` lists every ticket and mission (default: `tickets/` and `missions/`) whose citations the hub has moved since they were pinned. `--md` gives an issue body and `--json` gives data. It exits 0 when everything is current, 2 when citations are only stale, and 1 when any is broken. `ba` and `dev` repos now get `.github/workflows/kb-doctor.yml`, which runs it daily. While anything is stale or broken it keeps one open issue, labelled `kb-stale-citations`, up to date; once everything is current it closes that issue. Re-run `kb init` to pick up the workflow.
+- **A ticket's cost, end to end.** `kb usage report --with <other .kb>` adds another repo's ledger, typically the BA repo's clone, so `--ticket T` covers both the BA phases and the Dev phases. It is read-only, and a row read twice counts once.
+- **Cost is back in the PR.** `kb usage report --ticket T --summary` prints a short `## Usage` block: the total and the costliest phases. `dev-handover` pastes it into the PR, and the PR template has an optional `## Usage` section. `kb pr lint` still requires only Ticket, Changes and Testing.
+- **`kb svc note` sorts by number.** It orders ticket ids numerically, so `T-2` comes before `T-10`.
+- **New test for unpublished documents.** A document in the hub's own `.kb/` that was never published must not come back from `kb query`/`kb get`, MCP, the REST API or the Web UI. This was already true; the test now guards it.
+
 ## 1.15.2 — 2026-10-11
 
 - Skill templates: a skill's Copilot and Cursor copies, and for seven skills its Claude skill too, now share one body under `templates/init/bodies/`. Each copy keeps only its own frontmatter and intro. `kb init` writes exactly the same files as 1.15.1, byte for byte; an edit to a shared skill is now made once.
