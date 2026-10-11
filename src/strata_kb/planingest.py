@@ -209,6 +209,18 @@ def _rel(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+def _fence_reason(text: str) -> str | None:
+    """`mdutils.section_map` splits on every line starting with `## `, fenced
+    or not, so such a line inside a fence would cut the section for readers."""
+    lines = text.split("\n")
+    if any(
+        f and line.startswith("## ")
+        for line, f in zip(lines, _fenced(lines), strict=True)
+    ):
+        return "fenced line starting with '## ' would split the section — indent it inside the fence"
+    return None
+
+
 def _lint_reason(report) -> str | None:
     errors = _offline_errors(report)
     if not errors:
@@ -227,8 +239,10 @@ def _select(
         text = _read(path)
         mission_texts[path.stem] = text
         file = _rel(path, root)
-        reason = _lint_reason(missionlint.lint(text, None, path=path)) or _dor_reason(
-            text
+        reason = (
+            _lint_reason(missionlint.lint(text, None, path=path))
+            or _fence_reason(text)
+            or _dor_reason(text)
         )
         if reason:
             report.skipped.append((file, reason))
@@ -256,7 +270,9 @@ def _select(
         ) or _lint_reason(
             ticketlint.lint(text, None, path=path, missions_dir=missions_dir)
         )
-        reason = reason or _dor_reason(text) or demoted.get(us_id)
+        reason = (
+            reason or _fence_reason(text) or _dor_reason(text) or demoted.get(us_id)
+        )
         if reason:
             report.skipped.append((file, reason))
             continue

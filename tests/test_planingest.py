@@ -9,7 +9,12 @@ import pytest
 
 from strata_kb import build, kbcontext, models, planingest
 from strata_kb.hub import HubHandle
-from strata_kb.mdutils import extract_tables, normalize_table, slice_section
+from strata_kb.mdutils import (
+    extract_tables,
+    normalize_table,
+    section_map,
+    slice_section,
+)
 from tests.test_missionlint import MISSION_ID, REFS, _build_mission
 from tests.test_ticketlint import _build_ticket
 
@@ -169,19 +174,55 @@ def test_demote_headings_skips_fences():
     )
 
 
-def test_fenced_heading_does_not_open_a_section(tmp_path: Path, block: str):
-    text = mission_text(
-        block,
-        overrides={"## Scope": "Scope.\n\n```md\n## inside\n```"},
+FENCE_REASON = "fenced line starting with '## ' would split the section"
+
+
+def test_item_with_fenced_h2_line_is_skipped(tmp_path: Path, block: str):
+    bad = "Scope.\n\n```md\n## inside\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |"
+    write_repo(
+        tmp_path,
+        {f"{MISSION_ID}.md": mission_text(block, overrides={"## Scope": bad})},
+        {
+            f"{US1}.md": ticket_text(block).replace(
+                "Main flow", "Main flow\n```\n## x\n```"
+            )
+        },
     )
-    write_repo(tmp_path, {f"{MISSION_ID}.md": text}, {})
-    run_plan(tmp_path)
+    report = run_plan(tmp_path)
+    assert report.published == []
+    assert [f for f, _ in report.skipped] == [
+        f"missions/{MISSION_ID}.md",
+        f"tickets/{US1}.md",
+    ]
+    assert all(r.startswith(FENCE_REASON) for _, r in report.skipped)
+
+
+def test_ticket_of_fence_skipped_mission_goes_in_tickets_group(
+    tmp_path: Path, block: str
+):
+    bad = "Scope.\n```md\n## inside\n```"
+    write_repo(
+        tmp_path,
+        {f"{MISSION_ID}.md": mission_text(block, overrides={"## Scope": bad})},
+        {f"{US1}.md": ticket_text(block)},
+    )
+    assert run_plan(tmp_path).published == [US1]
+    assert f"## {US1} " in doc_file(tmp_path, "tickets.raw.md")
+
+
+def test_fenced_h1_and_h3_lines_do_not_split_the_section(tmp_path: Path, block: str):
+    fenced = "Scope.\n\n```md\n# one\n### two\n```\n\nAfter the fence."
+    write_repo(
+        tmp_path,
+        {f"{MISSION_ID}.md": mission_text(block, overrides={"## Scope": fenced})},
+        {},
+    )
+    assert run_plan(tmp_path).published == [MISSION_ID]
     l3 = doc_file(tmp_path, f"{MISSION_ID}.raw.md")
-    assert "```md\n## inside\n```" in l3
-    manifest = models.load_yaml_model(
-        tmp_path / ".kb/demo-plan/_manifest.yaml", models.Manifest
-    )
-    assert [s.id for s in manifest.sections] == [MISSION_ID]
+    sliced = slice_section(l3, MISSION_ID)
+    assert sliced is not None
+    assert "### two\n```\n\nAfter the fence." in sliced
+    assert list(section_map(l3)) == [MISSION_ID]
 
 
 def test_l2_tables_equal_l3_tables(tmp_path: Path, block: str):
