@@ -3,7 +3,7 @@
 Status is derived and read-only (`planstatus`). The repo rides in `?repo=`
 because a nested federation id (`mid/ba-x`) contains `/`; it is only compared
 with federation ids, never joined into a path. Mission and ticket ids are
-checked with `ticketfetch.safe_name` before any lookup.
+checked with `planstatus.safe_name` before any lookup.
 """
 
 from __future__ import annotations

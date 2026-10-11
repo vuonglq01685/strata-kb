@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import re
 
+from strata_kb import mdmask
+
 REQUIRED_HEADINGS: tuple[str, ...] = (
     "## Summary",
     "## User Story",
@@ -120,10 +122,8 @@ def export_body(text: str) -> str:
     Dev reads stays — `## KB context` (the pin `kb resolve` needs),
     `## Dependencies`, `## Technical grounding`. Fence-aware: a `##` line
     inside a mermaid or yaml fence never opens or closes a section."""
-    from strata_kb import lintcore  # local: lintcore has no ticket import
-
-    lines = lintcore.HTML_COMMENT_RE.sub("", text).splitlines()
-    scan = lintcore._blank_invisible("\n".join(lines)).splitlines()
+    lines = mdmask.HTML_COMMENT_RE.sub("", text).splitlines()
+    scan = mdmask._blank_invisible("\n".join(lines)).splitlines()
     scan += [""] * (len(lines) - len(scan))
     kept: list[str] = []
     dropping = False

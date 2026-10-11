@@ -182,27 +182,6 @@ def _check_ac_gwt(ac_items: list[str]) -> list[Issue]:
     ]
 
 
-def _check_required_filled(text: str) -> list[Issue]:
-    """NT1 — a required section that says nothing is not a section.
-    Presence was the whole contract before 0.22.0, so a ticket of nine
-    headings over nine 'TBD's passed the gate."""
-    issues: list[Issue] = []
-    for heading in ticket.REQUIRED_HEADINGS:
-        if heading in _FILL_EXEMPT:
-            continue
-        body = lintcore.section_body(text, heading)
-        if body is None:
-            continue  # missing heading — already reported by check_headings
-        if acquality.is_unfilled(lintcore.visible_body(body)):
-            issues.append(
-                Issue(
-                    "error",
-                    f"'{heading}' is empty or only placeholder text — fill it in",
-                )
-            )
-    return issues
-
-
 def _check_story(text: str) -> list[Issue]:
     body = lintcore.section_body(text, "## User Story")
     if body is None:
@@ -648,7 +627,9 @@ def lint(
     issues += lintcore.check_title(text)
     issues += lintcore.check_headings(text, ticket.REQUIRED_HEADINGS)
     issues += lintcore.check_duplicate_headings(text)
-    issues += _check_required_filled(text)
+    issues += lintcore.check_required_filled(
+        text, ticket.REQUIRED_HEADINGS, _FILL_EXEMPT
+    )
     issues += _check_story(text)
     issues += _check_story_count(text)
 

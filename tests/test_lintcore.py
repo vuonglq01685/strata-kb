@@ -252,7 +252,7 @@ def test_a_bare_fence_marker_inside_a_comment_does_not_swallow_later_headings():
     blanked every heading in between — including '## Sequence diagram'
     and '## Use cases' themselves. `section_body` then returned None for
     a heading `check_headings` correctly says is present, so
-    `check_diagram`/`_check_required_filled` silently skip the section
+    `check_diagram`/`check_required_filled` silently skip the section
     instead of judging it. AFTER: comments are blanked first (mirroring
     `_visible_text`), so the embedded backtick never reaches `FENCE_RE`."""
     text = (
@@ -1052,3 +1052,14 @@ def test_check_context_block_skips_the_tag_check_without_a_hub():
 
     assert ctx is not None and ctx.tags == ["ghost-tag"]
     assert all("ghost-tag" not in i.message for i in issues)
+
+
+def test_check_required_filled_flags_placeholder_and_skips_exempt_and_missing():
+    text = "## A\nTBD\n\n## B\n<!-- hint -->\n\n## C\nreal text here\n"
+    issues = lintcore.check_required_filled(
+        text, ("## A", "## B", "## C", "## Missing"), frozenset({"## B"})
+    )
+    assert [i.message for i in issues] == [
+        "'## A' is empty or only placeholder text — fill it in"
+    ]
+    assert all(i.level == "error" for i in issues)

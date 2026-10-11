@@ -8,7 +8,7 @@ from starlette.testclient import TestClient
 
 from strata_kb.mcp import ServerConfig
 from strata_kb.serving.auth import TokenAuthMiddleware
-from strata_kb.web import ui
+from strata_kb.web import planui, ui
 from tests.conftest import make_fed_entry
 from tests.test_planingest import context_block
 from tests.test_planstatus import MISSION_ID, US, add_symlinked_plan, publish_ba
@@ -18,7 +18,7 @@ TOKEN = "secret-token"
 
 def _client(hub, *, authed: bool = False) -> TestClient:
     config = ServerConfig(kb_dir=hub.root / ".kb", hub=str(hub.root))
-    app = Starlette(routes=ui.build_routes(config, TOKEN))
+    app = Starlette(routes=ui.build_routes(config, TOKEN) + planui.plan_routes(config))
     return TestClient(TokenAuthMiddleware(app, TOKEN) if authed else app)
 
 

@@ -5,7 +5,6 @@ shape: H1, one provenance line, the L3 body with its headings promoted back."""
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from strata_kb import gitio, query
@@ -13,19 +12,11 @@ from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import slice_section
 from strata_kb.planingest import promote_headings
+from strata_kb.planstatus import plan_docs, safe_name
 
 
 class TicketFetchError(KbError):
     """The ticket is not on the hub, or several repos publish the same id."""
-
-
-# An id and a group file stem become path segments (`docs/impl/<id>/`,
-# `<file>.raw.md`), so anything that could leave its directory is refused.
-_SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-
-
-def safe_name(name: str) -> bool:
-    return _SAFE_NAME_RE.fullmatch(name) is not None and name not in (".", "..")
 
 
 def split_ref(ticket_ref: str) -> tuple[str | None, str]:
@@ -44,12 +35,11 @@ def split_ref(ticket_ref: str) -> tuple[str | None, str]:
 def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
     """`(repo_id, doc_id, l3_file)` of the one `*-plan` document that lists
     section `<id>`."""
-    from strata_kb import planstatus  # lazy: planstatus imports safe_name from here
 
     repo, ticket_id = split_ref(ticket_ref)
     holders: list[tuple[str, str, Path]] = []
     # plan_docs skips unreadable documents and symlinked folders.
-    for fed, manifest in planstatus.plan_docs(hub, repo):
+    for fed, manifest in plan_docs(hub, repo):
         section = next((s for s in manifest.sections if s.id == ticket_id), None)
         folder = query.doc_dir(fed.kb_dir, manifest.id)
         if section is not None and folder is not None:

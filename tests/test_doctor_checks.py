@@ -641,3 +641,11 @@ def test_doctor_ignores_the_plan_document_for_a_ba_repo(tmp_path):
     (kb / "other" / "a.md").write_text("# not generated\n", encoding="utf-8")
     (drift,) = [i for i in doctor.run(kb, handle).issues if differs in i.message]
     assert drift.message.endswith("run `kb publish`")
+
+
+def test_fed_tree_digest_has_one_home_in_federation():
+    from strata_kb import doctor, federation
+    from strata_kb.doctor.checks import hub as hub_checks
+
+    assert doctor._fed_tree_digest is federation._fed_tree_digest
+    assert hub_checks._FED_TOP_SKIP is federation._FED_TOP_SKIP

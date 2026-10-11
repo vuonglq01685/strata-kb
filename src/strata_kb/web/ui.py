@@ -775,10 +775,6 @@ def build_routes(
             headers={"Cache-Control": "private, max-age=31536000, immutable"},
         )
 
-    # planui imports this module's page helpers, so it can only be imported
-    # once they exist: here, not at the top.
-    from strata_kb.web import planui
-
     return [
         Route("/ui", home, methods=["GET"]),
         Route("/ui/login", login_get, methods=["GET"]),
@@ -787,7 +783,6 @@ def build_routes(
         Route("/ui/docs", docs_page, methods=["GET"]),
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),
         Route("/ui/docs/{doc}/{section}", section_page, methods=["GET"]),
-        *planui.plan_routes(config),
         Route("/ui/static/{path:path}", static_file, methods=["GET"]),
         Route("/assets/{name}", asset, methods=["GET"]),
     ]

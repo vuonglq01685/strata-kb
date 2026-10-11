@@ -13,6 +13,7 @@ Feeds `kb mission next --from-hub` and the web UI's Plans menu.
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
@@ -26,12 +27,20 @@ from strata_kb.federation import FederatedRepo, load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import slice_section
 from strata_kb.planingest import TICKETS_GROUP, TITLE_SUFFIX, promote_headings
-from strata_kb.ticketfetch import safe_name
 
 logger = logging.getLogger("strata_kb.planstatus")
 
 # One ticket section = ticked Definition of Ready (plan-ingest only publishes those).
 _PUBLISHED = (1, 1)
+
+
+# An id and a group file stem become path segments (`docs/impl/<id>/`,
+# `<file>.raw.md`), so anything that could leave its directory is refused.
+_SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def safe_name(name: str) -> bool:
+    return _SAFE_NAME_RE.fullmatch(name) is not None and name not in (".", "..")
 
 
 def is_plan(title: str, tags: Iterable[str]) -> bool:

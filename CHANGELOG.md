@@ -18,7 +18,29 @@ BA repos can publish their plan to the hub, and missions and tickets can be amen
 - **Intake fix: the old PR branch is gone.** When `publish/<rid>` survived on the hub's clone but its remote branch had been deleted (PR closed or merged), a resend either opened no PR or carried the closed PR's history. The intake now checks the remote and starts a fresh branch. **Redeploy the hub's intake service to get this fix.**
 - **Plan status on the hub.** `kb mission next --from-hub [--repo <ba-repo>] [--json]` reports every story from the hub alone, with no `missions/` or `tickets/` read: `done` from the Dev repo's `-svc` history (found from the mission's `Grounded on:` line), `ready` when the ticket is published, `blocked` with its reasons, and `to-draft` shown as `not ready (no published ticket)` (`--json` keeps `to-draft`). A missing `-svc` or `Grounded on:` is a `note:` line, never an error. The hub web UI gains a **Plans** menu beside Documents: `/ui/plans` (`?repo=<id>` for one repo), `/ui/plans/<mission>?repo=<id>` (backlog with status, reasons and ticket links) and `/ui/plans/<mission>/<story>?repo=<id>` (the ticket); the repo is a query parameter so nested federation ids work, and `repo` may be left out when only one repo publishes that id. Status is derived and read-only; nothing new is stored. Generated plan documents no longer appear under Documents, in the overview counts or in the tag rail, and a search hit in one links to its Plans page.
 - **Publish and plan details.** In a `ba` repo, `kb publish` refuses when `missions/` or `tickets/` has uncommitted or untracked changes, because CI publishes the tagged commit and `.kb/` is gitignored there. Only documents `kb plan-ingest` generated (title ending `— plan`, tags `plan` and `generated`) are treated as plans: a hand-ingested `release-plan` stays under Documents. Plan readers skip a symlinked document folder. `kb ticket stale` no longer reports architecture drift for a story already done in the Dev repo's `-svc` history, nor for a mission whose whole backlog is done, and a bare `[NEW]` row is no longer reported.
-- **Existing BA repos need three manual steps.** Add `intake: <url>` to `.kb/config.yaml`, ask the hub maintainer to register the repo in the hub's `federation/registry.yaml` (same name as `repo_id`), then re-run `kb init --kind ba` to pick up the workflow, skill, `.gitattributes` and gitignore lines. Until then `kb publish` has nowhere to send the plan.
+- **Existing BA repos need three manual steps.** Add `intake: <url>` to `.kb/config.yaml`, ask the hub maintainer to register the repo in the hub's `federation/registry.yaml` (key `owner/repo`, mapped to your `repo_id`; leave `workflow:` unset), then re-run `kb init --kind ba` to pick up the workflow, skill, `.gitattributes` and gitignore lines. Until then `kb publish` takes the snapshot route (direct or a PR on the hub, no CI or intake).
+
+## 1.16.3 — 2026-10-11
+
+Internal cleanup. No command output, message, exit code or JSON shape changes, except the two `kb doctor` hub-lag heading cases named below.
+
+- **No import cycle left, even through function-level imports.** The 20-module loop that lazy imports had been hiding is gone. Three things moved, and their old import paths still work:
+  - The Markdown masking helpers (`FENCE_RE`, `HTML_COMMENT_RE`, `visible_body` and two private helpers) now live in a new leaf module, `strata_kb.mdmask`. `lintcore` re-exports them. `ticket`, `kbcontext` and `prlint` now use it, so `kbcontext` and `prlint` drop their own copies of the HTML-comment regex.
+  - `_fed_tree_digest` moved from `doctor` into `federation`.
+  - `AmbiguousDocError` moved from `query` into `errors`.
+- **New guards in `tests/test_layering.py`:**
+  - any import cycle fails the suite, function-level imports included;
+  - `prlint` and `mdmask` may import only the standard library;
+  - every module must import cleanly as the first module in a fresh interpreter.
+- **One required-section check.** `kb ticket lint` and `kb mission lint` now share `lintcore.check_required_filled`, instead of two copies of the same function.
+- **`kb doctor` hub-lag reads section ids with the standard heading grammar.** It uses `mdutils.HEADING_RE` instead of parsing them by hand. Two edge cases change, and `kb code-ingest` writes neither:
+  - a `## ` line with no id is now body text of the section above it;
+  - a tab before the title is no longer part of the id.
+- **Closed as intended, no code change:**
+  - `prlint` keeps its own scanner. It handles `~~~` and unclosed fences, an unterminated comment, and tab-separated headings, and it must stay standard-library only.
+  - The heading regexes in `web/mdrender`, `prlint` and `planwaves` parse different grammars.
+  - `prlint.Finding`, `doctor.Issue` and `quality.Finding` stay three separate types, because their levels, keys and JSON contracts differ.
+- The duplicate `_ENTRY_SEGMENT_RE` definition in `doctor/checks/hub.py` is gone.
 
 ## 1.16.2 — 2026-10-11
 
