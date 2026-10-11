@@ -49,7 +49,8 @@ echo "==> T0: lint, format, types"
 "$PY" -m pyright --pythonpath "$PY"  # check against this interpreter's packages, not PATH's python
 
 echo "==> T1: unit/integration (source tree)"
-"$PY" -m pytest -q
+"$PY" -c "from strata_kb.mdutils import count_tokens; count_tokens('warm')"  # one download before xdist workers start
+"$PY" -m pytest -q -n auto
 
 echo "==> Build wheel + sdist"
 "$PY" -m build

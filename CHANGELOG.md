@@ -3,6 +3,15 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.16.2 — 2026-10-11
+
+Contributor tooling only. Nothing in the installed package changes.
+
+- **The test suite runs in parallel.** `pytest-xdist` is in the `dev` extra. CI's T1 and `scripts/gate.sh` run `pytest -n auto`. Locally, on 4 cores, the full suite went from 325 s to 96 s with the same results.
+- **Faster Windows CI.** The Windows T1 jobs also turn off Defender real-time scanning on the throwaway runner. They were taking about 25 minutes, against about 2.5 for the Ubuntu jobs.
+- **No more download race.** CI and `gate.sh` fetch the tiktoken file once, before the workers start, so parallel workers never race to download it.
+- **Slowest tests shown.** T1 prints its 15 slowest tests (`--durations=15`).
+
 ## 1.16.1 — 2026-10-11
 
 Comments and docstrings only. No behaviour or exit code changes.
