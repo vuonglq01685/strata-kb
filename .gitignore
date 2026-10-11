@@ -33,3 +33,6 @@ build/
 
 # Harness-managed agent worktrees (parallel SDD tasks)
 .claude/worktrees/
+
+# GitNexus local code-search index (built by SessionStart hook)
+.gitnexus/
