@@ -659,7 +659,7 @@ def test_every_cli_terminal_exception_joins_kb_error_or_is_allowlisted():
             "to a 503 JSON body or the error-page shell; never reaches "
             "cli.py, same shape as intake.IntakeError above"
         ),
-        "strata_kb.query.AmbiguousDocError": (
+        "strata_kb.errors.AmbiguousDocError": (
             "not a RuntimeError (LookupError) -- outside KbError's inheritance shape"
         ),
         "strata_kb.kbcontext.KBContextError": (

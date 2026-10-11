@@ -58,6 +58,19 @@ def test_l3_sections_split_by_heading_and_drop_the_banner(tmp_path):
     assert hublag.l3_sections(doc) == {"svc.a": "body a", "svc.b": "body b"}
 
 
+def test_l3_sections_reads_ids_with_the_section_heading_grammar(tmp_path):
+    doc = tmp_path / "doc"
+    doc.mkdir()
+    (doc / "services.raw.md").write_text(
+        "## svc.a\tService a\n\nbody a\n## \nstill a\n\n## svc.b Service b\n\nbody b\n",
+        encoding="utf-8",
+    )
+    assert hublag.l3_sections(doc) == {
+        "svc.a": "body a\n## \nstill a",
+        "svc.b": "body b",
+    }
+
+
 def test_in_sync_when_the_hub_matches_main(clone, tmp_path):
     fed = tmp_path / "hub" / "federation"
     _publish(clone, fed)

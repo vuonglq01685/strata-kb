@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 import yaml
 from pydantic import BaseModel, Field
 
+from strata_kb import mdmask
+from strata_kb.errors import AmbiguousDocError
 from strata_kb.models import DOC_ID_PATTERN
 
 if TYPE_CHECKING:
@@ -53,11 +55,6 @@ class KBContext(BaseModel):
     refs: list[KBRef]
     tags: list[str] = Field(default_factory=list)
 
-
-# An HTML comment. `kbcontext` cannot import `lintcore.HTML_COMMENT_RE`
-# (lintcore imports kbcontext, so the reverse import would cycle) — kept
-# local rather than moved to a new shared module for one constant.
-_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 
 _REF_RE = re.compile(
     r"^(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
@@ -188,7 +185,7 @@ def _without_comments(text: str) -> str:
     def _blank(m: re.Match[str]) -> str:
         return "\n" * m.group(0).count("\n")
 
-    return _HTML_COMMENT_RE.sub(_blank, text)
+    return mdmask.HTML_COMMENT_RE.sub(_blank, text)
 
 
 def _extract_block(text: str) -> str:
@@ -341,7 +338,6 @@ def build_context_block(
     """
     from strata_kb import gitio, models
     from strata_kb.federation import load_federation
-    from strata_kb.query import AmbiguousDocError
 
     ref_list = [parse_ref(r) for r in refs if r.strip()]
     if not ref_list:

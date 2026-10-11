@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from strata_kb import models
+from strata_kb.errors import AmbiguousDocError  # also re-exported
 from strata_kb.mdutils import count_tokens, slice_section, slice_subsection
 from strata_kb.searchdb import tokenize  # re-export (web/ui.py import)
 
@@ -24,19 +25,6 @@ if TYPE_CHECKING:
     from strata_kb.searchdb import SectionRow
 
 logger = logging.getLogger("strata_kb.query")
-
-
-class AmbiguousDocError(LookupError):
-    """doc_id exists in several federation repos — must be qualified as repo:doc."""
-
-    def __init__(self, doc_id: str, repo_ids: list[str]) -> None:
-        self.doc_id = doc_id
-        self.repo_ids = repo_ids
-        options = ", ".join(f"{rid}:{doc_id}" for rid in repo_ids)
-        super().__init__(
-            f"doc '{doc_id}' exists in {len(repo_ids)} federation repos — "
-            f"qualify the ref: {options}"
-        )
 
 
 class InvalidLevelError(ValueError):

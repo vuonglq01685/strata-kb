@@ -76,6 +76,9 @@ def digest(text: str) -> str:
 
 @dataclass(frozen=True)
 class Finding:
+    """One `kb build` quality result. Kept apart from `doctor.Issue`: its
+    `quality` level and section `ref` exist only in the build report."""
+
     code: str
     ref: str
     message: str

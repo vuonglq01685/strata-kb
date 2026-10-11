@@ -299,3 +299,14 @@ def test_doc_id_tag_is_not_reported_unknown_on_the_empty_path(fed_hub):
     note2 = "".join(outcome2.notes)
     assert "'nonexistent-tag'" in note2
     assert "'arinc-424'" not in note2
+
+
+def test_ambiguous_doc_error_is_one_class_with_the_same_message():
+    from strata_kb import errors, query
+
+    assert query.AmbiguousDocError is errors.AmbiguousDocError
+    err = errors.AmbiguousDocError("d", ["a", "b"])
+    assert isinstance(err, LookupError)
+    assert str(err) == (
+        "doc 'd' exists in 2 federation repos — qualify the ref: a:d, b:d"
+    )

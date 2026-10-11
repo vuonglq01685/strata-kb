@@ -15,7 +15,7 @@ import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb import acquality, lintcore, mission
+from strata_kb import lintcore, mission
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
 from strata_kb.ticketcheck import SERVICES_HEADING, grounded_entries
@@ -33,25 +33,6 @@ _FILL_EXEMPT: frozenset[str] = frozenset(
         "## US backlog",  # check_backlog
     }
 )
-
-
-def _check_required_filled(text: str) -> list[Issue]:
-    """A required section that says nothing is not a section (M8)."""
-    issues: list[Issue] = []
-    for heading in mission.REQUIRED_MISSION_HEADINGS:
-        if heading in _FILL_EXEMPT:
-            continue
-        body = lintcore.section_body(text, heading)
-        if body is None:
-            continue  # missing heading — already reported by check_headings
-        if acquality.is_unfilled(lintcore.visible_body(body)):
-            issues.append(
-                Issue(
-                    "error",
-                    f"'{heading}' is empty or only placeholder text — fill it in",
-                )
-            )
-    return issues
 
 
 def check_mission_id(
@@ -371,7 +352,9 @@ def lint(
 
     issues += lintcore.check_headings(text, mission.REQUIRED_MISSION_HEADINGS)
     issues += lintcore.check_duplicate_headings(text)
-    issues += _check_required_filled(text)
+    issues += lintcore.check_required_filled(
+        text, mission.REQUIRED_MISSION_HEADINGS, _FILL_EXEMPT
+    )
 
     issues += lintcore.check_diagram(
         text, "## System context (C4 L1)", mission.L1_KEYWORDS

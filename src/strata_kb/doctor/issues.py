@@ -18,6 +18,9 @@ _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
 
 @dataclass
 class Issue:
+    """One doctor, ticket-lint or mission-lint result. `prlint.Finding` and
+    `quality.Finding` are separate on purpose: other levels, other keys."""
+
     level: Literal["error", "warning"]
     message: str
     # A stable machine tag for the checks a caller needs to tell apart —
