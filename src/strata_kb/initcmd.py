@@ -112,6 +112,7 @@ BA_TEMPLATES: dict[str, str] = {
     "tickets/.gitkeep": "gitkeep.txt",
     "missions/.gitkeep": "gitkeep.txt",
     ".github/workflows/kb-ticket-lint.yml": "kb-ticket-lint.yml",
+    ".github/workflows/kb-doctor.yml": "kb-doctor.yml",
     "QUICKSTART-BA.md": "QUICKSTART-ba.md",
 }
 
@@ -213,6 +214,7 @@ DEV_TEMPLATES: dict[str, str] = {
     # `Exempt:` lines may use.
     ".github/pull_request_template.md": "pull-request-template.md",
     ".github/workflows/kb-pr-lint.yml": "kb-pr-lint.yml",
+    ".github/workflows/kb-doctor.yml": "kb-doctor.yml",
     "docs/tdd-exemptions.md": "tdd-exemptions.md",
     "docs/pr-review-rubric.md": "pr-review-rubric.md",
     **{

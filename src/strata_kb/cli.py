@@ -2634,6 +2634,40 @@ def ticket_lint(
     raise typer.Exit(2 if report.stale_errors == errors else 1)
 
 
+@ticket_app.command("stale")
+def ticket_stale(
+    paths: list[Path] = typer.Argument(
+        None, help="Files or directories to scan (default: tickets/ and missions/)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    md: bool = typer.Option(False, "--md", help="Emit the Markdown issue body"),
+) -> None:
+    """Every ticket and mission whose citations the hub has moved since they
+    were pinned. Exit 0 all current, 2 stale only, 1 any broken."""
+    from strata_kb import ticketstale
+
+    targets = paths or [Path(d) for d in ticketstale.DEFAULT_DIRS]
+    handle = _hub_or_exit(hub, kb_dir)
+    findings = ticketstale.scan(targets, handle)
+    if json_output:
+        typer.echo(json.dumps(ticketstale.to_json(findings)))
+    elif md:
+        typer.echo(ticketstale.render_markdown(findings), nl=False)
+    elif not findings:
+        typer.echo("kb ticket stale: every citation is current")
+    else:
+        for f in findings:
+            for ref in f.refs:
+                typer.echo(f"{f.path}: [{ref.status}] {ref.citation} — {ref.reason}")
+    code = ticketstale.exit_code(findings)
+    if code:
+        raise typer.Exit(code)
+
+
 @ticket_app.command("export")
 def ticket_export(
     source: str = typer.Argument(..., help="Ticket file (or '-' to read from stdin)"),
