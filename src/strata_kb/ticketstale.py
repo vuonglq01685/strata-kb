@@ -257,22 +257,12 @@ def architecture_refs(path: Path, text: str, hub: HubHandle) -> list[StaleRef]:
                 f"{doc} has no unique holder in the federation — qualify it: "
                 f"`Grounded on: <repo-id>:{doc} @ {rev}`",
             )
-        hub_root = gitio.git_root(hub.root)
-        commit = _baseline_commit(
-            hub_root, hub.federation_dir / holder / doc / "_manifest.yaml", rev
-        )
-        if commit is None:
+        results = drift_refs(hub, holder, doc, rev, ids)
+        if results is None:
             return finding("stale", BASELINE_MISSING)
-        ctx = kbcontext.KBContext(
-            version=commit,
-            refs=[
-                kbcontext.KBRef(repo_id=holder, doc_id=doc, section_id=id_)
-                for id_ in ids
-            ],
-        )
         return [
             StaleRef(r.citation, r.status, r.reason, kind=ARCHITECTURE)
-            for r in resolve_refs(hub, ctx)
+            for r in results
             if r.status in ("stale", "broken")
         ]
     except gitio.GitError as exc:
