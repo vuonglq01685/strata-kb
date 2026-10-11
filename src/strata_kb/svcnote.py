@@ -83,6 +83,21 @@ class SvcNoteReport:
     notes: int
 
 
+_DIGITS_RE = re.compile(r"(\d+)")
+
+
+def _natural_key(ticket: str) -> list[tuple[int, int | str]]:
+    """Sort key that orders the numbers inside ticket ids by value, so
+    `T-2` comes before `T-10` (2026-10-10 review G15). Text runs compare
+    case-insensitively; a number always sorts before text at the same
+    position, which keeps the key total."""
+    return [
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in _DIGITS_RE.split(ticket)
+        if part
+    ]
+
+
 class SvcNoteError(KbError):
     """The curated `-svc` document doesn't exist, the paired `-code`
     document doesn't exist, `service` names no `svc.<service>` section in
@@ -391,7 +406,7 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
         action = "added"
 
     rows[note.ticket] = note
-    ordered = [rows[t] for t in sorted(rows)]
+    ordered = [rows[t] for t in sorted(rows, key=_natural_key)]
 
     title = f"{service} — ticket history"
     new_entry = models.SectionEntry(
