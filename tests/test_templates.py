@@ -2751,9 +2751,12 @@ def test_ba_ticket_wrappers_run_the_sa_inside_the_pipeline():
         assert "Ground technical" in text, name
         assert "## Needs input" in text, name
         # The manual hand-off is gone; the only by-hand case left is a
-        # re-ground after <repo>-code moves.
+        # re-ground after `kb ticket check` fails on a drifted -code.
         assert "once the business sections are drafted" not in text, name
-        assert "only when `-code` moves after handover" in text, name
+        assert (
+            "only when `kb ticket check` fails with `re-run /sa-ticket-ground`" in text
+        ), name
+        assert "only when `-code` moves after handover" not in text, name
 
 
 def test_ba_ticket_full_wrappers_re_ground_only_on_a_check_failure():
@@ -3246,3 +3249,43 @@ def test_no_template_names_the_flat_impl_layout():
     for f in resources.files("strata_kb").joinpath("templates/init").iterdir():
         if f.is_file():
             assert not flat.search(read_template(f.name)), f.name
+
+
+def test_dev_implement_ticket_local_fallback_note_is_neutral():
+    """The note the engine prints no longer claims the hub is unreachable (it
+    also fires when the hub lacks the doc); the dev skill quotes the new one."""
+    for name in _dev_wrapper_names("dev-implement-ticket"):
+        text = _normalised(_read_init_template(name))
+        assert "hub unreachable" not in text, name
+        assert "checked against the local -code, not the hub's copy" in text, name
+        assert "once the hub is reachable and holds the -code" in text, name
+    quick = _normalised(_read_init_template("QUICKSTART-dev.md"))
+    assert "hub unreachable" not in quick
+    assert "checked against the local -code, not the hub's copy" in quick
+
+
+def test_ba_mission_plan_non_architecture_skip_reason_is_current():
+    """Skipping the SA for non-architecture triggers: the reason is that a
+    mission's own stories change the cited svc.* sections while it is being
+    delivered, not that every dev commit would force a re-ground."""
+    for name in BA_MISSION_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "re-ground after every dev commit" not in text, name
+    for name in (
+        "claude-skill-ba-mission-plan.md",
+        "claude-command-ba-mission-plan.md",
+    ):
+        text = _ba_wrapper_text(name)
+        assert (
+            "a mission's own stories change the svc.* sections it cites while it is "
+            "being delivered"
+        ) in text, name
+
+
+def test_ba_ticket_author_names_the_re_ground_line_a_fail_may_lack():
+    for name in BA_TICKET_WRAPPERS:
+        text = _ba_wrapper_text(name)
+        assert "A FAIL without that line" not in text, name
+    for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
+        text = _ba_wrapper_text(name)
+        assert "A FAIL without the `re-run /sa-ticket-ground` line" in text, name

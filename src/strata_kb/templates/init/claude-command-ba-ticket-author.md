@@ -18,8 +18,9 @@ handover.
 With `--amend <ticket>`, skip Intake and follow the skill's `## Amend mode`:
 read the ticket and its `kb ticket stale --md` findings, ask the BA for the
 trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`), re-pin with
-`kb_context_new` (FULL ref list, whole block replaced), run `/sa-ticket-ground` and
-`kb ticket check` ONLY for an `architecture` trigger, bump `> Revision:` and
+`kb_context_new` (FULL ref list, whole block replaced), run `kb ticket check`
+on every amend (`/sa-ticket-ground` first for an `architecture` trigger, else
+only when the check FAILs with `re-run /sa-ticket-ground`; any other FAIL goes to the BA), bump `> Revision:` and
 append a `## Change log` row (`Affected` = section names), run `kb ticket
 lint` until `DoR: PASS`, review the changed sections only (one round, scores
 in the row's `Review` cell, never in `## Review record`), untick the DoR
@@ -73,7 +74,7 @@ draft — it fills the SA-owned `## Technical grounding` section from the
 hub's `<repo>-code` document, proposes an `OPEN` row in the parent
 mission's `## Technology decisions` for anything the code does not have
 yet (referenced as `[NEW: D<n>]`), and `kb ticket check` verifies every
-id. Re-run `/sa-ticket-ground` by hand only when `-code` moves after
-handover. Never read `<repo>-code` or `<repo>-svc` yourself; leave
+id. Re-run `/sa-ticket-ground` by hand only when `kb ticket check` fails
+with `re-run /sa-ticket-ground`. Never read `<repo>-code` or `<repo>-svc` yourself; leave
 `## Technical grounding` exactly as the template ships it, and carry the
 SA's `## Needs input` block into your handover verbatim.

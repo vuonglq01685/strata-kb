@@ -3,6 +3,17 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.18.0 — 2026-10-11
+
+`kb ticket check` no longer fails a ticket only because `-code` moved since the SA grounded it.
+
+- **Tiered check.** A moved `Grounded on:` revision is judged by the cited facts. All still hold: PASS (exit 0) with `[note] grounded @<old>, still valid at @<new> — cited sections unchanged`, or per changed cited section a `[warn]` and a unified diff of the baseline against the current section (capped at 40 lines). No baseline on the hub: `[warn] … no baseline to diff, cited facts still hold`. A fact that could not be checked: `[warn] some cited facts could not be verified since @<old> … check them by hand`. A cited id, column, route, command, `Files:` path or compose fact that is gone: FAIL (exit 1) with the fact errors and `grounding drifted since @<old> (now @<new>) and no longer holds — re-run /sa-ticket-ground`; when `-code` came from the local fallback it adds a `[note]` that your own branch may be the cause. Open and not-DECIDED decisions never carry the re-ground line. A matching revision prints exactly what it did before.
+- **`dev-implement-ticket` runs `kb ticket check`.** A new step right after Intake runs `kb ticket check docs/impl/<id>/ticket.md`: a PASS with a `[warn]` diff is shown and the Dev decides; a FAIL with `re-run /sa-ticket-ground` stops as a blocker for the BA; a FAIL with the local-fallback note (`checked against the local -code, not the hub's copy`) re-runs once the hub is reachable and holds the -code; no `## Technical grounding` skips with a note. All four skill flavours and `QUICKSTART-dev.md` carry it.
+- **Parent mission from the hub.** A ticket outside a BA repo (such as `docs/impl/<id>/ticket.md` in a Dev repo) reads its parent mission's decisions from the hub `<repo_id>-plan` document when no local `missions/` holds it, so `[NEW: D<k>]` rows are checked there too.
+- **`ba-ticket-author` amend rule.** `kb ticket check` now runs on every amend, whatever the trigger. The SA still runs first for an `architecture` trigger; for any other trigger it runs only when the check FAILs with `re-run /sa-ticket-ground`, and the "re-run by hand" rule follows the same test instead of "when `-code` moves". `ba-mission-plan` is unchanged. `sa-ticket-ground` learns that a `[warn] grounded @…` is a PASS.
+- **Public helpers.** `ticketstale.drift_refs` and `ticketstale.cited_ids` are now public: other modules may call them. `kb ticket stale`, its exit codes and `kb-doctor.yml` are unchanged.
+- **Docs follow.** The BA, Dev and architecture guides (English and Vietnamese), `QUICKSTART-ba.md`, `QUICKSTART-dev.md` and the README describe the tiered check, the Dev-side Check step and the split amend rule (tickets check on every amend; missions only for `architecture`).
+
 ## 1.17.0 — 2026-10-11
 
 BA repos can publish their plan to the hub, and missions and tickets can be amended in place.

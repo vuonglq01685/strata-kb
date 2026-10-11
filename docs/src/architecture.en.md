@@ -528,10 +528,19 @@ Drift is judged **per cited section**, never on the document revision: `-code`'s
 revision moves on every dev commit, so comparing it would flag every mission on
 every merge. A merge that touches nothing a mission cites produces no finding.
 
+`kb ticket check` follows the same rule. A moved `Grounded on:` revision is never a
+failure by itself: the check finds the baseline the same way, then lets the
+ticket's own fact checks against the current `-code` decide. Every cited fact
+holds → PASS, with a `[note]` when the cited sections are unchanged or a `[warn]`
+plus a diff for each one that changed. A cited fact is gone → FAIL with
+`re-run /sa-ticket-ground`. Decision errors never carry that line.
+
 An amendment (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) records its
 trigger (`kb-context`, `architecture`, `scope`, `delivery`), bumps the revision
-and appends a change-log row. Only an `architecture` trigger invokes the SA and
-`kb ticket check`. Delivered stories are never rewritten: change lands as new
+and appends a change-log row. A ticket amend runs `kb ticket check` every time and
+invokes the SA for an `architecture` trigger, or when the check fails with
+`re-run /sa-ticket-ground`; a mission amend invokes the SA and the check only for
+`architecture`. Delivered stories are never rewritten: change lands as new
 stories or as superseding decisions (`SUPERSEDED`), and a ticket pinned
 `> Parent mission: M-<slug> @ rev <N>` is reported `draft` by `kb mission next`
 when its mission has since changed that story.

@@ -6,7 +6,7 @@ description: Implement a BA ticket grounded in the KB — resolve its pinned kb-
 # dev-implement-ticket — implement a BA ticket, grounded and re-entrant
 
 You are the ORCHESTRATOR of the ticket-implementation pipeline: Intake →
-Resolve → Ground → Placeholders → design → plan → execute → handover. You
+Check → Resolve → Ground → Placeholders → design → plan → execute → handover. You
 are also the **safe re-entry point** for this pipeline — called again on a
 ticket that already has work in progress, you detect how far it got and
 offer the next step instead of redoing phases that are already finished.
@@ -52,6 +52,17 @@ edit above it.
   <doc> <M-id> --level l3` from the hub); if this story is blocked by something
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
+- **Check the grounding** — if the ticket has a `## Technical grounding`
+  section, run `kb ticket check docs/impl/<id>/ticket.md` (your
+  `<ticket-file>`). PASS → show every `[warn]` (a diff, or facts that could
+  not be verified), the Dev decides, continue. FAIL with `re-run
+  /sa-ticket-ground` → STOP, blocker for the BA (the SA re-grounds on the
+  current `-code`) — unless the run also printed the local-fallback note
+  (`checked against the local -code, not the hub's copy`): your branch's own
+  changes may cause it, so re-run once the hub is reachable and holds the
+  -code. FAIL without that line
+  → report the errors to the BA and STOP. No `## Technical grounding` →
+  skip, with a note. No CLI → skip, with a note.
 - **Resolve** — triage exactly as in the Freshness re-check above:
   `broken` → stop and report to the BA; `stale` → show both versions and
   let the Dev decide; `ok` → continue. A full resolve is

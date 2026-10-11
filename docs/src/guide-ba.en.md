@@ -254,8 +254,22 @@ owner — flipping it to `DECIDED` is
 your call, never the agent's. The handover carries a `## Needs input` block
 listing exactly those rows.
 
-Run `/sa-ticket-ground` by hand only to re-ground a ticket after
-`<repo>-code` has moved.
+The gate also compares the `Grounded on:` revision with the current `-code`.
+That revision moves with every dev commit, so a mismatch alone never fails:
+
+- every cited fact still holds and no cited section changed → PASS with
+  `[note] grounded @<old>, still valid at @<new> — cited sections unchanged`;
+- a cited section changed but every cited name in it still exists → PASS with a
+  `[warn]` and a unified diff of that section, for the developer to judge;
+- a cited fact is gone (an id, a column, a route, a command, a `Files:` path, a
+  compose fact) → FAIL, ending with `grounding drifted since @<old> (now @<new>)
+  and no longer holds — re-run /sa-ticket-ground`.
+
+Open decisions and undecided `[NEW: D<k>]` rows fail as before, without that
+line: they are your call, not a re-ground.
+
+Run `/sa-ticket-ground` by hand only when `kb ticket check` fails with
+`re-run /sa-ticket-ground`.
 
 ---
 
@@ -518,12 +532,14 @@ Neither starts from Intake, creates a file, or renames anything. The agent:
 3. for `kb-context`, re-pins `## KB context` with `kb_context_new` using the
    **full** list of refs (kept, moved and new), replacing the block. You
    re-confirm only the moved or new refs;
-4. for `architecture` **only**, hands off to `sa-ticket-ground` (`--mission` for a
-   mission), which refreshes `## Services & order` or `## Technical grounding`
-   and the `Grounded on:` revision, then runs `kb ticket check`. For any other
-   trigger it skips the SA and `kb ticket check`, which would otherwise force a
-   re-ground after every dev commit. The BA skills still never read `-code`
-   themselves;
+4. for a **ticket**, runs `kb ticket check` on every amend. An `architecture`
+   trigger first hands off to `sa-ticket-ground`, which refreshes
+   `## Technical grounding` and the `Grounded on:` revision; any other trigger
+   calls the SA only when the check fails with `re-run /sa-ticket-ground`, and
+   reports any other FAIL to you. For a **mission**, `architecture` **only**
+   hands off to `sa-ticket-ground --mission` and runs the check: a mission's own
+   stories change the `svc.*` sections it cites while it is delivered. The BA
+   skills still never read `-code` themselves;
 5. applies the change rules (§6.3), bumps `Revision` and appends the change-log row;
 6. lints until PASS, and runs one maturity review of the **changed sections only**;
 7. hands you the diff.
@@ -759,7 +775,7 @@ kb mission lint missions/M-checkout.md
 | `kb diff <doc> --against <rev>` | What an amendment changed | `0` |
 | `kb ticket lint <file>` | Ticket Definition-of-Ready gate | `0` PASS, `1` FAIL, `2` stale |
 | `kb mission lint <file>` | Mission Definition-of-Ready gate | `0` PASS, `1` FAIL, `2` stale |
-| `kb ticket check <file>` | SA grounding gate: every id in `## Technical grounding` exists in the hub's `-code` | `0` PASS, `1` FAIL |
+| `kb ticket check <file>` | SA grounding gate: every id in `## Technical grounding` exists in the hub's `-code`; a moved `Grounded on:` revision fails only when a cited fact is gone | `0` PASS, `1` FAIL |
 | `kb ticket export <file>` | The ticket for the tracker, without BA-internal sections | `0` |
 | `kb ticket stale [paths]` | Every ticket and mission whose citations the hub moved, `kb-context` and `architecture` (`--md`, `--json`) | `0` current, `2` stale only, `1` broken |
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent line | `0` |

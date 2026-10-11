@@ -323,7 +323,7 @@ def test_architecture_reads_ids_the_way_ticket_check_does(tmp_path, fed_hub, run
     )
     path = _ticket(tmp_path, "aaaaaaa", body)
     text = path.read_text(encoding="utf-8")
-    assert ticketstale._cited_ids(text) == ["svc.web", "db.table"]
+    assert ticketstale.cited_ids(text) == ["svc.web", "db.table"]
     assert _arch(tmp_path, fed_hub) == []
 
 
@@ -435,3 +435,33 @@ def test_architecture_mission_with_an_undone_story_is_still_reported(
 def test_render_markdown_legend_explains_drift_under_delivery():
     body = ticketstale.render_markdown([ticketstale.StaleFile("t.md", [])])
     assert "mission under delivery" in body
+
+
+# --- drift_refs: the grounding baseline lookup ------------------------------
+
+
+def test_drift_refs_returns_every_status(fed_hub, run_git):
+    _publish(fed_hub, run_git, "rev1", svc_a="A", svc_b="B")
+    _publish(fed_hub, run_git, "rev2", svc_a="A", svc_b="B2")
+    refs = ticketstale.drift_refs(
+        HubHandle(root=fed_hub), "demo", "demo-code", "rev1", ["svc.a", "svc.b"]
+    )
+    assert refs is not None
+    assert {r.ref.section_id: r.status for r in refs} == {
+        "svc.a": "ok",
+        "svc.b": "stale",
+    }
+    [svc_b] = [r for r in refs if r.ref.section_id == "svc.b"]
+    assert svc_b.content.strip().endswith("B")
+
+
+def test_drift_refs_none_when_baseline_missing(fed_hub, run_git):
+    _publish(fed_hub, run_git, "rev2", svc_a="A")
+    hub = HubHandle(root=fed_hub)
+    assert ticketstale.drift_refs(hub, "demo", "demo-code", "rev1", ["svc.a"]) is None
+
+
+def test_drift_refs_none_without_unique_holder(fed_hub, run_git):
+    _publish(fed_hub, run_git, "rev1", svc_a="A")
+    hub = HubHandle(root=fed_hub)
+    assert ticketstale.drift_refs(hub, None, "ghost-code", "rev1", ["svc.a"]) is None

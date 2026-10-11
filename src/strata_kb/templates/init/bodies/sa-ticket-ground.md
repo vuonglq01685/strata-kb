@@ -133,6 +133,13 @@ to the mission layer.
      Dev. Report it and stop; NEVER flip a Status to make the gate pass.
    - warning `has Technology decisions — reference the row as
      [NEW: D<n>]` — you used free text where a D-row belongs.
+   - `[note] grounded @<old>, still valid at @<new>` or a `[warn]
+     grounded @<old>, now @<new> …` — a PASS: `-code` moved but every
+     cited fact still holds. Show the diff to the BA; do not re-ground.
+   - `grounding drifted since @<old> (now @<new>) and no longer holds —
+     re-run /sa-ticket-ground` — a FAIL: a cited fact is gone from the
+     current `-code`. Re-ground on it: re-read the document, replace the
+     section, set `Grounded on:` to the current revision, re-run the gate.
    A non-empty `Open decisions` is a FAIL by design: report the list to
    the BA instead of emptying it by guessing.
 6. **Handover** — report: the ids grounded, the `[NEW: D<n>]` entries,

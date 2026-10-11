@@ -34,6 +34,7 @@ line, copied from the hub document's manifest revision; never write
 internal flow or failure modes — the document cannot prove them; the
 gate is `kb ticket check <file> [--missions-dir <dir>]`, or
 `kb ticket check --heading "## Services & order" <file>` for a mission,
-and failing to RUN is not a PASS; the handover ends with the fixed
+a `[warn] grounded @…` is a PASS, a FAIL carrying `re-run /sa-ticket-ground`
+means re-ground on the current `-code`; failing to RUN is not a PASS; the handover ends with the fixed
 `## Needs input` block naming every decision still waiting for a human;
 never tick a Definition of Ready checkbox — only the BA confirms DoR.

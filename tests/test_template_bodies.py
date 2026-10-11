@@ -69,3 +69,18 @@ def test_kb_init_writes_rendered_text(tmp_path, kind):
     for path in tmp_path.rglob("*"):
         if path.is_file() and path.suffix in {".md", ".mdc"}:
             assert "strata-kb:include" not in path.read_text(encoding="utf-8"), path
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+        "copilot-dev-implement-ticket.prompt.md",
+        "cursor-dev-implement-ticket.md",
+    ],
+)
+def test_dev_implement_ticket_runs_ticket_check(name):
+    text = " ".join(read_template(name).split())
+    assert "kb ticket check docs/impl/<id>/ticket.md" in text, name
+    assert "re-run /sa-ticket-ground" in text, name

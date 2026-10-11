@@ -19,7 +19,7 @@ import yaml
 from pydantic import ValidationError
 
 from strata_kb import gitio, kbcontext, missionnext, models
-from strata_kb.resolve import resolve_refs
+from strata_kb.resolve import ResolvedRef, resolve_refs
 
 # `_parse_section` / `_id_lines` are private to ticketcheck: reusing them keeps
 # the id-reading rules in one place instead of copying the skip rules here.
@@ -118,7 +118,7 @@ def _grounded_code_entry(text: str) -> tuple[str | None, str, str] | None:
     return None
 
 
-def _cited_ids(text: str) -> list[str]:
+def cited_ids(text: str) -> list[str]:
     """Architecture section ids the file cites, in order, once each. A
     mission cites `svc.*` in `## Services & order`; a ticket cites every kind
     in `## Technical grounding`. Lines are read the way `kb ticket check`
@@ -205,6 +205,32 @@ def _delivered(
     return bool(backlog) and backlog <= done
 
 
+def drift_refs(
+    hub: HubHandle, repo: str | None, doc: str, rev: str, ids: list[str]
+) -> list[ResolvedRef] | None:
+    """The cited sections of `doc` as they stood at the hub commit that
+    published revision `rev`, every status included (`ok` too). None when the
+    doc has no unique holder or no hub commit carries `rev`. `gitio.GitError`
+    propagates."""
+    holder = _holder(hub, repo, doc)
+    if holder is None:
+        return None
+    commit = _baseline_commit(
+        gitio.git_root(hub.root),
+        hub.federation_dir / holder / doc / "_manifest.yaml",
+        rev,
+    )
+    if commit is None:
+        return None
+    ctx = kbcontext.KBContext(
+        version=commit,
+        refs=[
+            kbcontext.KBRef(repo_id=holder, doc_id=doc, section_id=id_) for id_ in ids
+        ],
+    )
+    return resolve_refs(hub, ctx)
+
+
 def architecture_refs(path: Path, text: str, hub: HubHandle) -> list[StaleRef]:
     """Cited architecture sections that changed (`stale`) or vanished
     (`broken`) in the `-code` document since the revision the file is
@@ -212,7 +238,7 @@ def architecture_refs(path: Path, text: str, hub: HubHandle) -> list[StaleRef]:
     nothing the file used yields nothing. `path` is unused today; it keeps the
     signature parallel to the other per-file checks."""
     entry = _grounded_code_entry(text)
-    ids = _cited_ids(text) if entry else []
+    ids = cited_ids(text) if entry else []
     if entry is None or not ids:
         return []
     repo, doc, rev = entry
@@ -231,22 +257,12 @@ def architecture_refs(path: Path, text: str, hub: HubHandle) -> list[StaleRef]:
                 f"{doc} has no unique holder in the federation — qualify it: "
                 f"`Grounded on: <repo-id>:{doc} @ {rev}`",
             )
-        hub_root = gitio.git_root(hub.root)
-        commit = _baseline_commit(
-            hub_root, hub.federation_dir / holder / doc / "_manifest.yaml", rev
-        )
-        if commit is None:
+        results = drift_refs(hub, holder, doc, rev, ids)
+        if results is None:
             return finding("stale", BASELINE_MISSING)
-        ctx = kbcontext.KBContext(
-            version=commit,
-            refs=[
-                kbcontext.KBRef(repo_id=holder, doc_id=doc, section_id=id_)
-                for id_ in ids
-            ],
-        )
         return [
             StaleRef(r.citation, r.status, r.reason, kind=ARCHITECTURE)
-            for r in resolve_refs(hub, ctx)
+            for r in results
             if r.status in ("stale", "broken")
         ]
     except gitio.GitError as exc:

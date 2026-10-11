@@ -527,10 +527,18 @@ cả tài liệu: revision của `-code` đổi ở mỗi commit dev, nên so s�
 mọi mission ở mỗi lần merge. Một lần merge không đụng tới thứ mission trích dẫn thì
 không tạo phát hiện nào.
 
+`kb ticket check` theo cùng quy tắc đó. Revision `Grounded on:` bị lệch không bao
+giờ tự nó là lỗi: check tìm baseline theo cùng cách, rồi để các bước kiểm tra fact
+của ticket trên `-code` hiện tại quyết định. Mọi fact được trích vẫn đúng → PASS,
+kèm `[note]` khi các section được trích không đổi, hoặc `[warn]` kèm diff cho mỗi
+section đã đổi. Một fact được trích đã mất → FAIL với `re-run /sa-ticket-ground`.
+Lỗi về quyết định không bao giờ mang dòng đó.
+
 Một lần sửa đổi (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) ghi lại
 trigger của nó (`kb-context`, `architecture`, `scope`, `delivery`), tăng revision và
-thêm một dòng change log. Chỉ trigger `architecture` mới gọi SA và `kb ticket
-check`. Story đã giao không bao giờ bị viết lại: thay đổi đến dưới dạng story mới
+thêm một dòng change log. Một lần amend ticket luôn chạy `kb ticket check`
+và gọi SA với trigger `architecture`, hoặc khi check fail với `re-run
+/sa-ticket-ground`; một lần amend mission chỉ gọi SA và check với `architecture`. Story đã giao không bao giờ bị viết lại: thay đổi đến dưới dạng story mới
 hoặc quyết định thay thế (`SUPERSEDED`), và một ticket ghim `> Parent mission:
 M-<slug> @ rev <N>` bị `kb mission next` báo `draft` khi mission của nó đã đổi
 story đó.

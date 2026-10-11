@@ -250,8 +250,22 @@ làm fail cổng và nêu tên chủ sở hữu — đổi nó sang
 `DECIDED` là quyết định của bạn, không bao giờ của agent. Bản bàn giao mang
 theo khối `## Needs input` liệt kê đúng những dòng đó.
 
-Chỉ chạy `/sa-ticket-ground` bằng tay khi cần ghim lại một ticket sau lúc
-`<repo>-code` đã thay đổi.
+Cổng này cũng so revision ở `Grounded on:` với `-code` hiện tại. Revision đó
+đổi theo mỗi commit của dev, nên chỉ lệch revision thì không bao giờ fail:
+
+- mọi fact được trích vẫn đúng và không section nào được trích thay đổi → PASS
+  với `[note] grounded @<old>, still valid at @<new> — cited sections unchanged`;
+- một section được trích có đổi nhưng mọi tên được trích trong đó vẫn còn → PASS
+  với một `[warn]` kèm unified diff của section đó, để lập trình viên tự đánh giá;
+- một fact được trích đã mất (id, cột, route, lệnh, đường dẫn `Files:`, compose
+  fact) → FAIL, kết thúc bằng `grounding drifted since @<old> (now @<new>) and no
+  longer holds — re-run /sa-ticket-ground`.
+
+Open decisions và các dòng `[NEW: D<k>]` chưa quyết vẫn fail như trước, không có
+dòng đó: chúng là quyết định của bạn, không phải việc ground lại.
+
+Chỉ chạy `/sa-ticket-ground` bằng tay khi `kb ticket check` fail với
+`re-run /sa-ticket-ground`.
 
 ---
 
@@ -511,11 +525,13 @@ Không lệnh nào bắt đầu từ Intake, tạo file hay đổi tên gì. Age
 3. với `kb-context`, ghim lại `## KB context` bằng `kb_context_new` với **toàn bộ**
    danh sách tham chiếu (giữ nguyên, đã dịch chuyển và mới), thay cả khối. Bạn chỉ
    xác nhận lại những tham chiếu đã dịch chuyển hoặc mới;
-4. **chỉ với** `architecture`, chuyển cho `sa-ticket-ground` (`--mission` với
-   mission), lệnh này làm mới `## Services & order` hoặc `## Technical grounding`
-   cùng revision ở `Grounded on:`, rồi chạy `kb ticket check`. Với mọi trigger khác
-   nó bỏ qua SA và `kb ticket check`, vì nếu không sẽ bắt ghim lại sau mỗi commit
-   của dev. Các skill BA vẫn không tự đọc `-code`;
+4. với **ticket**, chạy `kb ticket check` ở mọi lần amend. Trigger `architecture`
+   trước hết chuyển cho `sa-ticket-ground`, lệnh này làm mới `## Technical
+   grounding` cùng revision ở `Grounded on:`; mọi trigger khác chỉ gọi SA khi check
+   fail với `re-run /sa-ticket-ground`, và báo cho bạn mọi FAIL khác. Với
+   **mission**, **chỉ** `architecture` mới chuyển cho `sa-ticket-ground --mission`
+   và chạy check: chính các story của mission làm đổi các section `svc.*` nó trích
+   trong lúc giao. Các skill BA vẫn không tự đọc `-code`;
 5. áp dụng các quy tắc thay đổi (mục 6.3), tăng `Revision` và thêm dòng change log;
 6. lint cho tới khi PASS, và chạy một vòng maturity review **chỉ cho các section đã
    đổi**;
@@ -749,7 +765,7 @@ kb mission lint missions/M-checkout.md
 | `kb diff <doc> --against <rev>` | Sửa đổi đã thay đổi những gì | `0` |
 | `kb ticket lint <file>` | Cổng Definition of Ready cho ticket | `0` PASS, `1` FAIL, `2` cũ |
 | `kb mission lint <file>` | Cổng Definition of Ready cho mission | `0` PASS, `1` FAIL, `2` cũ |
-| `kb ticket check <file>` | Cổng SA grounding: mọi id trong `## Technical grounding` đều có trong `-code` của hub | `0` PASS, `1` FAIL |
+| `kb ticket check <file>` | Cổng SA grounding: mọi id trong `## Technical grounding` đều có trong `-code` của hub; revision `Grounded on:` bị lệch chỉ fail khi một fact được trích đã mất | `0` PASS, `1` FAIL |
 | `kb ticket export <file>` | Ticket cho hệ thống issue, không có các mục nội bộ của BA | `0` |
 | `kb ticket stale [paths]` | Mọi ticket và mission có trích dẫn mà hub đã dịch chuyển, `kb-context` và `architecture` (`--md`, `--json`) | `0` còn mới, `2` chỉ cũ, `1` hỏng |
 | `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |

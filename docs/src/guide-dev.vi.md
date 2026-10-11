@@ -191,7 +191,7 @@ bao giờ qua auto-merge.
 Năm lệnh, được dựng sẵn cho Claude Code, GitHub Copilot và Cursor.
 
 ```
-/dev-implement-ticket <ticket>     intake · resolve · ground · placeholders
+/dev-implement-ticket <ticket>     intake · check · resolve · ground · placeholders
         │
         ├─► dev-design       ── A1: reviewer độc lập ── GATE 1: bạn duyệt thiết kế
         ├─► dev-plan         ── A2: reviewer độc lập ── GATE 2: bạn duyệt kế hoạch
@@ -200,7 +200,7 @@ Năm lệnh, được dựng sẵn cho Claude Code, GitHub Copilot và Cursor.
                                 GATE 4: bạn merge
 ```
 
-`/dev-implement-ticket` cũng là bộ điều phối: với một ticket mới, nó chạy bốn
+`/dev-implement-ticket` cũng là bộ điều phối: với một ticket mới, nó chạy năm
 bước đầu rồi gọi các pha theo thứ tự, tự phát hiện ticket đã đi tới đâu nên không
 bao giờ làm lại phần đã xong.
 
@@ -236,6 +236,23 @@ tick mọi ô, nên không bước nào được dừng vì thiếu mục đó.
 `## Sequencing` của mission cha được đọc theo cùng cách khi không có file mission
 cục bộ (`kb get <doc> <M-id> --level l3`), nên bạn thấy được ticket bị chặn bởi gì
 mà không cần clone repo BA.
+
+### Kiểm tra grounding
+
+Ngay sau Intake, luồng chạy `kb ticket check docs/impl/<id>/ticket.md` (chính là
+`<ticket-file>`; bỏ qua kèm một note khi ticket không có `## Technical
+grounding`). Lệnh đọc `-code` trên hub và, với `[NEW: D<n>]`, đọc mission cha từ
+plan trên hub khi không có `missions/` cục bộ. Revision ở `Grounded on:` đổi theo
+mỗi commit bạn merge, nên chỉ lệch revision thì không bao giờ fail:
+
+| Output | Ý nghĩa | Việc cần làm |
+|---|---|---|
+| PASS, `[note] grounded @<old>, still valid at @<new> — cited sections unchanged` | Không thứ gì ticket trích bị đổi | Làm tiếp |
+| PASS, `[warn] … §<id> changed; cited names still hold, review the diff:` | Một section được trích có đổi, mọi tên được trích vẫn còn | Đọc diff rồi quyết; làm tiếp trừ khi nó đổi ý nghĩa ticket |
+| PASS, `[warn] some cited facts could not be verified …` | Một bước check bị bỏ qua (ví dụ giới hạn của tree) | Tự kiểm tra những fact đó |
+| FAIL, `… re-run /sa-ticket-ground` | Một id, cột, route, lệnh, file hay compose fact được trích đã mất | Dừng: blocker cho BA, SA sẽ ground lại ticket |
+| FAIL, kèm `[note] checked against the local -code, not the hub's copy …` | Hub không với tới được hoặc không có `-code`; branch của bạn có thể là nguyên nhân | Chạy lại khi hub với tới được và có `-code` |
+| FAIL không có dòng re-ground | Một open decision hoặc `[NEW: D<k>]` chưa quyết | Báo BA và dừng |
 
 ### Trạng thái của ticket nghĩa là gì với bạn
 
@@ -507,7 +524,7 @@ tài liệu được sinh lại từ working tree mỗi khi một lệnh cần �
 `kb svc note`, `kb build`, `kb doctor` và `kb publish` làm mới nó trước khi
 chạy nếu nó chưa có, cũ hơn `HEAD`, hoặc các file đang được git track có
 thay đổi. File mới chỉ được tính sau khi `git add`. `kb ticket check` đọc
-bản trên hub trước — đó là bản SA đã dùng để ground ticket.
+bản trên hub trước — đó là bản SA đã dùng để ground ticket (mục 4.1).
 
 So sánh với snapshot đã publish của `kb doctor` bỏ hẳn `-code` ra ngoài (repo
 dev không bao giờ khớp hub ở tài liệu này); `kb publish` mới là lệnh thực sự
@@ -588,6 +605,8 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | `pr-lint` fail: `review-blocking` | Mục `## Testing` ghi `Blocking: Yes` | Sửa các phát hiện BLOCKER rồi review lại; PR còn `Blocking: Yes` thì không bao giờ được merge |
 | `kb ticket fetch`: "is not on the hub" | BA chưa publish nó, hoặc nó bị bỏ khỏi plan (DoR chưa tick đủ, hoặc mission cha đã đi tiếp) | Nhờ BA `kb publish` (hoặc cho biết vì sao nó bị bỏ qua); hoặc đưa file ticket hay dán nội dung |
 | `kb ticket fetch`: "published by several repos" | Hai repo BA cùng publish một id | Viết id dạng `kb ticket fetch <repo>:<id>` |
+| `kb ticket check` fail với `re-run /sa-ticket-ground` | Một fact ticket trích đã mất khỏi `-code` | Dừng và trả ticket cho BA; SA sẽ ground lại |
+| `kb ticket check`: `[warn] … review the diff` | Một section được trích có đổi nhưng các tên được trích vẫn còn | Đọc diff; làm tiếp trừ khi nó đổi ý nghĩa ticket |
 | `kb ticket fetch` không kết nối được hub | `hub:` chưa đặt hoặc không với tới được | Sửa `hub:` trong `.kb/config.yaml` (hoặc `STRATA_KB_HUB`), hoặc dùng đường dẫn/dán nội dung |
 | Một trích dẫn báo `stale` giữa chừng | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi BA. Đừng tự diễn giải lại tiêu chí chấp nhận. |
 | Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
@@ -614,6 +633,7 @@ thật.
 | `kb approve <doc> [--section <id>]` | Chuyển các section đã sửa sang `reviewed` | `0` ok |
 | `kb publish --pr` | Mở PR trên hub (lượt publish đầu của bước seed) | `0` ok |
 | `kb ticket fetch <id> [--out p] [--hub u]` | Lấy một ticket từ hub vào `docs/impl/<id>/ticket.md` | `0` ok, `1` không có trên hub, mơ hồ, hoặc id không an toàn |
+| `kb ticket check <file> [--hub u]` | Grounding của ticket so với `-code` trên hub; revision bị lệch chỉ fail khi một fact được trích đã mất | `0` PASS, `1` FAIL |
 | `kb mission next --from-hub [--repo id]` | Trạng thái mọi story đã publish, chỉ từ hub | `0` |
 | `kb resolve <file>` | Kiểm tra trích dẫn của ticket | `0` ok, `1` hỏng, `2` cũ |
 | `kb diff <doc> --against <rev>` | Sửa đổi đã thay đổi những gì | `0` |

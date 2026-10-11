@@ -14,7 +14,10 @@ from strata_kb import models
 from strata_kb.cli import app
 from strata_kb.federation import FederationMeta, write_federation_index
 from strata_kb.initcmd import read_template
+from tests.test_missionlint import MISSION_ID
+from tests.test_planingest import context_block
 from tests.test_ticketcheck import MISSION, grounding, mission_with_services, ticket
+from tests.test_ticketfetch import publish_plan
 
 runner = CliRunner()
 
@@ -412,3 +415,208 @@ def test_local_copy_is_the_fallback_when_the_hub_lacks_the_doc(
     )
     assert result.exit_code == 0, result.output
     assert "(local fallback — not on the hub)" in result.output
+
+
+# --- grounding drift: a moved revision is judged by the cited sections -----
+
+MOVED_REV = "bbbbbbb"
+
+
+def _republish_moved(
+    fed_hub: Path, kb_dir: Path, run_git, edits: dict[str, tuple[str, str]]
+) -> None:
+    """Second hub commit of `demo-code`: manifest `revision` moved and each
+    `file -> (old, new)` text edit applied to the local copy first. Edit both
+    the L2 and raw file so facts and sections move together."""
+    manifest_path = kb_dir / "demo-code" / "_manifest.yaml"
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.revision = MOVED_REV
+    models.save_yaml_model(manifest_path, manifest)
+    for name, (old, new) in edits.items():
+        f = kb_dir / "demo-code" / name
+        text = f.read_text(encoding="utf-8")
+        assert old in text, (name, old)
+        f.write_text(text.replace(old, new, 1), encoding="utf-8")
+    target = fed_hub / "federation" / "demo" / "demo-code"
+    shutil.rmtree(target)
+    shutil.copytree(kb_dir / "demo-code", target)
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish demo moved")
+
+
+def _check_against_hub(text: str, fed_hub: Path, tmp_path: Path, *extra: str):
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir(exist_ok=True)
+    path = tmp_path / "t.md"
+    path.write_text(text, encoding="utf-8")
+    return runner.invoke(
+        app,
+        ["ticket", "check", str(path), "--kb-dir", str(empty_kb)]
+        + ["--hub", str(fed_hub), *extra],
+    )
+
+
+def test_moved_revision_unchanged_sections_exit_0(code_doc, fed_hub, run_git, tmp_path):
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {"services.md": ("Container `gpuworker`", "Container `gpuworker` (v2)")},
+    )
+    result = _check_against_hub(ticket(grounding(rev)), fed_hub, tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "cited sections unchanged" in result.output
+
+
+def test_moved_revision_changed_section_shows_diff(
+    code_doc, fed_hub, run_git, tmp_path
+):
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {
+            "services.md": (
+                "| Source | docker-compose.yml |\n\n## svc.gpuworker",
+                "| Source | docker-compose.yml |\n\nNew trailing line.\n\n## svc.gpuworker",
+            )
+        },
+    )
+    result = _check_against_hub(ticket(grounding(rev)), fed_hub, tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "[warn] grounded @" in result.output
+    assert "+New trailing line." in result.output
+
+
+def test_moved_revision_missing_fact_exit_1(code_doc, fed_hub, run_git, tmp_path):
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    route = "| GET | /airspace | List airspace |\n"
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {
+            "api.md": (route, ""),
+            "api.raw.md": ("GET /airspace — List airspace\n", ""),
+        },
+    )
+    result = _check_against_hub(ticket(grounding(rev)), fed_hub, tmp_path)
+    assert result.exit_code == 1, result.output
+    assert "re-run /sa-ticket-ground" in result.output
+
+
+def test_mission_heading_moved_revision(code_doc, fed_hub, run_git, tmp_path):
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {"services.md": ("Container `gpuworker`", "Container `gpuworker` (v2)")},
+    )
+    text = mission_with_services(rev, "svc.billing [NEW: D1]")
+    result = _check_against_hub(
+        text, fed_hub, tmp_path, "--heading", "## Services & order"
+    )
+    assert result.exit_code == 0, result.output
+    assert "cited sections unchanged" in result.output
+
+
+def test_parent_mission_read_from_hub_plan(code_doc, fed_hub, run_git, tmp_path):
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    publish_plan(fed_hub, "ba-one", tmp_path / "ba-one", context_block(fed_hub))
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish ba-one plan")
+    text = ticket(
+        grounding(
+            rev,
+            Service="svc.billing [NEW: D1]",
+            Volumes=None,
+            Healthchecks=None,
+            Devices=None,
+        ),
+        parent=MISSION_ID,
+    )
+    path = tmp_path / "docs" / "impl" / "T-1" / "ticket.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(text, encoding="utf-8")
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    result = runner.invoke(
+        app,
+        ["ticket", "check", str(path), "--kb-dir", str(empty_kb)]
+        + ["--hub", str(fed_hub)],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"parent mission '{MISSION_ID}' not found" not in result.output
+    assert "D1 (DECIDED" in result.output
+
+
+def test_unreadable_local_mission_does_not_fall_through_to_the_hub(
+    code_doc, fed_hub, run_git, tmp_path
+):
+    """Only a missing local mission file falls back to the hub's plan: a file
+    that is there but unreadable (non-UTF-8) stays 'not found'."""
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    publish_plan(fed_hub, "ba-one", tmp_path / "ba-one", context_block(fed_hub))
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish ba-one plan")
+    (tmp_path / "tickets").mkdir()
+    (tmp_path / "missions").mkdir()
+    (tmp_path / "missions" / f"{MISSION_ID}.md").write_bytes(b"\xff\xfe not utf-8")
+    path = tmp_path / "tickets" / "t.md"
+    path.write_text(
+        ticket(
+            grounding(
+                rev,
+                Service="svc.billing [NEW: D1]",
+                Volumes=None,
+                Healthchecks=None,
+                Devices=None,
+            ),
+            parent=MISSION_ID,
+        ),
+        encoding="utf-8",
+    )
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    result = runner.invoke(
+        app,
+        ["ticket", "check", str(path), "--kb-dir", str(empty_kb)]
+        + ["--hub", str(fed_hub)],
+    )
+    assert result.exit_code == 1, result.output
+    assert f"parent mission '{MISSION_ID}' not found" in result.output
+
+
+def test_drift_baseline_failure_degrades_to_the_no_baseline_warning(
+    code_doc, fed_hub, run_git, tmp_path, monkeypatch
+):
+    """drift_refs raising past KbError (an undecodable hub L2, a path outside
+    the checkout) is the no-baseline warning, never a traceback."""
+    from strata_kb import ticketstale
+
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {"services.md": ("Container `gpuworker`", "Container `gpuworker` (v2)")},
+    )
+
+    def boom(*args, **kwargs):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(ticketstale, "drift_refs", boom)
+    result = _check_against_hub(ticket(grounding(rev)), fed_hub, tmp_path)
+    assert result.exit_code == 0, result.output
+    assert result.exception is None
+    assert "no baseline to diff" in result.output
