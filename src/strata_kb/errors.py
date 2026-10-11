@@ -34,6 +34,11 @@ every subpackage in this tree has an `__init__.py`.
 Deriving from `RuntimeError` (not replacing it) keeps every existing
 `except PublishError`, `except GateError`, `except SomeSpecificSubclass` and
 `except RuntimeError` working unchanged -- this is purely additive.
+
+The module also holds error classes shared across modules that sit outside
+the `KbError` family on purpose -- today `AmbiguousDocError`, a `LookupError`
+that `query` raises and `kbcontext`, the CLI, MCP and the web UI catch. Keeping
+it here, in a leaf, lets each of them import it without an import cycle.
 """
 
 from __future__ import annotations
@@ -42,3 +47,16 @@ from __future__ import annotations
 class KbError(RuntimeError):
     """Base for strata_kb errors a CLI command converts into a one-line,
     exit-1 message naming the way forward, rather than letting propagate."""
+
+
+class AmbiguousDocError(LookupError):
+    """doc_id exists in several federation repos — must be qualified as repo:doc."""
+
+    def __init__(self, doc_id: str, repo_ids: list[str]) -> None:
+        self.doc_id = doc_id
+        self.repo_ids = repo_ids
+        options = ", ".join(f"{rid}:{doc_id}" for rid in repo_ids)
+        super().__init__(
+            f"doc '{doc_id}' exists in {len(repo_ids)} federation repos — "
+            f"qualify the ref: {options}"
+        )

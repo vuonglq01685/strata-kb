@@ -18,6 +18,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from strata_kb import mdmask
+from strata_kb.errors import AmbiguousDocError
 from strata_kb.models import DOC_ID_PATTERN
 
 if TYPE_CHECKING:
@@ -337,7 +338,6 @@ def build_context_block(
     """
     from strata_kb import gitio, models
     from strata_kb.federation import load_federation
-    from strata_kb.query import AmbiguousDocError
 
     ref_list = [parse_ref(r) for r in refs if r.strip()]
     if not ref_list:
