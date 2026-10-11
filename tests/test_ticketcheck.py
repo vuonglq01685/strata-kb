@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from strata_kb import models, ticketcheck
+from strata_kb import gitio, models, ticketcheck
 from strata_kb.codeingest import core
+from strata_kb.kbcontext import KBRef
 from strata_kb.lintcore import LintReport
+from strata_kb.resolve import ResolvedRef
 from tests.fixtures_coderepo import build_code_repo
 
 # `code_doc` ((kb_dir, revision) for a freshly ingested `demo-code`) lives in
@@ -96,6 +98,7 @@ def run(
     *,
     heading: str = "## Technical grounding",
     load_decisions=None,
+    load_drift=None,
 ) -> LintReport:
     def load_doc(repo, doc):
         d = kb_dir / doc
@@ -104,7 +107,11 @@ def run(
         return ticketcheck.load_doc_dir(d, str(d))
 
     return ticketcheck.check(
-        text, load_doc=load_doc, heading=heading, load_decisions=load_decisions
+        text,
+        load_doc=load_doc,
+        heading=heading,
+        load_decisions=load_decisions,
+        load_drift=load_drift,
     )
 
 
@@ -180,11 +187,106 @@ def test_unreadable_manifest_is_an_error_not_a_traceback(code_doc):
     assert "_manifest.yaml" in errors(report)[0]
 
 
-def test_revision_mismatch_is_stale_grounding(code_doc):
-    kb_dir, _ = code_doc
+NO_BASELINE_DEADBEE = (
+    "grounded @deadbee, now @{rev} — no baseline to diff, cited facts still hold"
+)
+UNCHANGED_DEADBEE = (
+    "grounded @deadbee, still valid at @{rev} — cited sections unchanged"
+)
+
+
+def tier2(old: str, new: str) -> str:
+    return (
+        f"grounding drifted since @{old} (now @{new}) and no longer holds "
+        "— re-run /sa-ticket-ground"
+    )
+
+
+def test_revision_mismatch_alone_passes(code_doc):
+    kb_dir, rev = code_doc
     report = run(ticket(grounding("deadbee")), kb_dir)
-    assert any("stale grounding" in e and "deadbee" in e for e in errors(report))
-    assert any("stale grounding" in e and "(line 7)" in e for e in errors(report))
+    assert errors(report) == [], report.render("Grounding")
+    assert NO_BASELINE_DEADBEE.format(rev=rev) in warnings(report)
+    assert not any("stale grounding" in e for e in errors(report))
+
+
+def test_revision_mismatch_with_unknown_id_is_tier2(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding("deadbee", Service="svc.gone")), kb_dir)
+    assert any("unknown id 'svc.gone'" in e for e in errors(report))
+    assert tier2("deadbee", rev) in errors(report)
+
+
+def test_revision_mismatch_with_dropped_column_is_tier2(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding("deadbee", Tables="db.restrictive_airspace.no_such_col"))
+    report = run(text, kb_dir)
+    assert any("no_such_col" in e for e in errors(report))
+    assert tier2("deadbee", rev) in errors(report)
+
+
+def test_open_decision_with_moved_revision_has_no_reground_line(code_doc):
+    kb_dir, _ = code_doc
+    report = run(
+        ticket(grounding("deadbee", **{"Open decisions": ["pick a queue"]})), kb_dir
+    )
+    assert any("open decision" in e for e in errors(report))
+    assert not any("grounding drifted" in e for e in errors(report))
+
+
+def test_load_drift_used_on_mismatch(code_doc):
+    kb_dir, rev = code_doc
+    seen: list[tuple] = []
+
+    def load_drift(repo, doc_id, old_rev):
+        seen.append((repo, doc_id, old_rev))
+        return [
+            ResolvedRef(
+                ref=KBRef(
+                    repo_id="demo",
+                    doc_id="demo-code",
+                    section_id="svc.airspace-service",
+                ),
+                status="ok",
+                citation="demo-code §svc.airspace-service",
+                content="",
+                tokens=0,
+            )
+        ]
+
+    report = run(ticket(grounding("deadbee")), kb_dir, load_drift=load_drift)
+    assert seen == [("demo", "demo-code", "deadbee")]
+    assert UNCHANGED_DEADBEE.format(rev=rev) in report.notes
+    assert errors(report) == []
+
+
+def test_load_drift_error_degrades(code_doc):
+    kb_dir, rev = code_doc
+
+    def load_drift(repo, doc_id, old_rev):
+        raise gitio.GitError("boom")
+
+    report = run(ticket(grounding("deadbee")), kb_dir, load_drift=load_drift)
+    assert report.passed
+    assert NO_BASELINE_DEADBEE.format(rev=rev) in warnings(report)
+
+
+def test_open_decision_new_marker_with_moved_revision_is_not_drift(code_doc):
+    kb_dir, _ = code_doc
+    text = ticket(grounding("deadbee", Tables="db.invoice [NEW: D2]"), parent="M-demo")
+    report = run(text, kb_dir, load_decisions=decisions_of(MISSION))
+    assert any(i.code == ticketcheck.DECISION for i in report.issues)
+    assert not any("grounding drifted" in e for e in errors(report))
+
+
+def test_matching_revision_unchanged(code_doc):
+    kb_dir, rev = code_doc
+    called: list[object] = []
+    report = run(ticket(grounding(rev)), kb_dir, load_drift=lambda *a: called.append(a))
+    assert errors(report) == []
+    assert called == []
+    assert not any(n.startswith("grounded @") for n in report.notes)
+    assert not any(w.startswith("grounded @") for w in warnings(report))
 
 
 def test_long_revision_prefix_matches(code_doc):

@@ -25,11 +25,12 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import lintcore, mission, models, ticket
+from strata_kb import groundingdrift, lintcore, mission, models, ticket
 from strata_kb.doctor import Issue
 from strata_kb.errors import KbError
 from strata_kb.lintcore import LintReport
 from strata_kb.mdutils import slice_section
+from strata_kb.resolve import ResolvedRef
 
 HEADING = "## Technical grounding"
 
@@ -143,7 +144,12 @@ class DecisionTable:
 
 
 SUPERSEDED = "SUPERSEDED"
+# Issue.code of decision-type errors: a human decides, the code did not drift.
+DECISION = groundingdrift.DECISION_CODE
 _SUPERSEDES_RE = re.compile(r"\bSupersedes\s+(D\d+)\b")
+
+# (repo, doc id, grounded rev) -> the cited sections at that rev, None = no baseline
+LoadDrift = Callable[[str | None, str, str], list[ResolvedRef] | None]
 
 LoadDecisions = Callable[
     [str], DecisionTable | None
@@ -352,6 +358,7 @@ def _judge_new(
                 Issue(
                     "error",
                     f"[NEW: {reason}] needs a parent mission to hold the decision — add `> Parent mission: M-<slug>` under the title, or write [NEW: <reason>] (line {lineno})",
+                    code=DECISION,
                 ),
             )
         else:
@@ -360,6 +367,7 @@ def _judge_new(
                 Issue(
                     "error",
                     f"parent mission '{decisions.mission_id}' not found under missions/ — pass --missions-dir, or write [NEW: <reason>] (line {lineno})",
+                    code=DECISION,
                 ),
             )
         return
@@ -370,6 +378,7 @@ def _judge_new(
             Issue(
                 "error",
                 f"decision {reason} not in {decisions.table.source}'s Technology decisions — append the row there first (line {lineno})",
+                code=DECISION,
             ),
         )
         return
@@ -383,6 +392,7 @@ def _judge_new(
                 Issue(
                     "error",
                     f"decision {reason} is {SUPERSEDED} by {successor.id} — cite {successor.id} (line {lineno})",
+                    code=DECISION,
                 ),
             )
             return
@@ -392,6 +402,7 @@ def _judge_new(
             Issue(
                 "error",
                 f"decision {reason} is {row.status} (owner: {row.owner or 'none'}) — a human decides before Dev (line {lineno})",
+                code=DECISION,
             ),
         )
         return
@@ -411,6 +422,7 @@ def check(
     load_doc: LoadDoc,
     heading: str = HEADING,
     load_decisions: LoadDecisions | None = None,
+    load_drift: LoadDrift | None = None,
 ) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
@@ -448,7 +460,10 @@ def check(
     notes.append(f"{doc_id} read from {doc.source}")
     decisions = _resolve_decisions(text, heading, load_decisions)
 
-    _check_revision(doc, doc_id, rev, line, issues)
+    have = (doc.manifest.revision or "").lower()
+    moved = bool(have) and not (have.startswith(rev) or rev.startswith(have))
+    _check_revision(doc_id, have, issues)
+    start = len(issues)
     _check_ids(section, doc, decisions, issues, notes)
     _check_service_present(section, heading, issues)
     _check_open_decisions(section, issues)
@@ -456,7 +471,47 @@ def check(
     if heading != SERVICES_HEADING:
         _check_compose_facts(section, doc, decisions, issues, notes)
     _check_files(section, doc, decisions, issues, notes)
+    if moved:
+        _judge_drift(
+            doc, repo, doc_id, rev, have, load_drift, issues[start:], issues, notes
+        )
     return LintReport(issues, notes)
+
+
+def _judge_drift(
+    doc: LoadedDoc,
+    repo: str | None,
+    doc_id: str,
+    rev: str,
+    have: str,
+    load_drift: LoadDrift | None,
+    fact_issues: list[Issue],
+    issues: list[Issue],
+    notes: list[str],
+) -> None:
+    """The ticket is grounded on an older revision than the document's:
+    the fact checks already ran against the current document — judge them."""
+    try:
+        drift = load_drift(repo, doc_id, rev) if load_drift is not None else None
+    except KbError:  # incl. gitio.GitError: no baseline, not a failure
+        drift = None
+
+    def current_section(sid: str) -> str | None:
+        group = next((s.file for s in doc.manifest.sections if s.id == sid), None)
+        text = doc.read_group(group) if group is not None else None
+        return slice_section(text, sid) if text is not None else None
+
+    new_issues, new_notes = groundingdrift.judge(
+        doc_id,
+        rev,
+        have,
+        drift,
+        current_section,
+        fact_issues,
+        local_fallback="local fallback" in doc.source,
+    )
+    issues.extend(new_issues)
+    notes.extend(new_notes)
 
 
 def _grounded_on(
@@ -507,24 +562,12 @@ def _grounded_on(
     return None
 
 
-def _check_revision(
-    doc: LoadedDoc, doc_id: str, rev: str, line: int, issues: list[Issue]
-) -> None:
-    have = (doc.manifest.revision or "").lower()
+def _check_revision(doc_id: str, have: str, issues: list[Issue]) -> None:
     if not have:
         issues.append(
             Issue(
                 "warning",
                 f"{doc_id} has no revision in its manifest — grounding revision not verified",
-            )
-        )
-        return
-    if not (have.startswith(rev) or rev.startswith(have)):
-        issues.append(
-            Issue(
-                "error",
-                f"stale grounding: ticket says @{rev}, {doc_id} is @{have} — "
-                f"re-run /sa-ticket-ground against the current document (line {line})",
             )
         )
 
@@ -621,10 +664,16 @@ def _check_open_decisions(section: _Section, issues: list[Issue]) -> None:
                 items.insert(0, (section.first_line + i, m.group("rest").strip()))
     open_items = [(n, t) for n, t in items if t.strip().casefold() not in _NONE_WORDS]
     for lineno, item in open_items:
-        issues.append(Issue("error", f"open decision: {item} (line {lineno})"))
+        issues.append(
+            Issue("error", f"open decision: {item} (line {lineno})", code=DECISION)
+        )
     if open_items:
         issues.append(
-            Issue("error", f"{len(open_items)} open decision(s) — resolve before Dev")
+            Issue(
+                "error",
+                f"{len(open_items)} open decision(s) — resolve before Dev",
+                code=DECISION,
+            )
         )
 
 
