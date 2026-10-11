@@ -578,7 +578,7 @@ re-summarizes, runs `kb build --strict`, moves the baseline
 runs merge the default branch into `kb-bot/code-sync` and add to it. At sprint
 review (every two weeks) the SA or hub manager reviews the PR, may run
 `kb approve`, and merges. The skill never merges and never approves. It ships to
-hub repos only, in the four standard flavours (Claude Code, Copilot, Cursor).
+hub repos only, as the standard four wrapper files (Claude Code skill and command, Copilot prompt, Cursor command).
 
 **Prerequisites.**
 

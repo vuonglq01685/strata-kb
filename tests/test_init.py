@@ -2849,8 +2849,17 @@ def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
             "kb code-sync scan --json",
             "kb code-sync baseline --at",
             "git fetch --prune origin",
-            "git diff --no-index --quiet",
+            "draft_check() {",
+            "cmp -s",
             "gh pr edit kb-bot/code-sync",
+            "never merge the PR, and never merge `kb-bot/code-sync` into another",
+            "never set the first baseline yourself",
+            "never edit `federation/` by hand",
+            "git checkout --no-track -b kb-bot/code-sync",
+            "git merge --ff-only origin/kb-bot/code-sync",
+            "git status --porcelain` must print nothing",
+            "gh pr view kb-bot/code-sync --json body",
+            "git branch -D kb-bot/code-sync",
         ):
             assert needle in text, (rel, needle)
 
