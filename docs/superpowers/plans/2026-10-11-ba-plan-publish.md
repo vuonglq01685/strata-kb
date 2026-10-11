@@ -362,7 +362,7 @@ Selection and rendering follow spec §4 A1 exactly:
 - [ ] **Step 6: Run** `.venv/bin/pytest tests/test_ticketfetch.py tests/test_cli_ticket.py tests/test_init.py tests/test_planingest.py -q -n auto`, then the full suite once. Expected: only the 19 baseline failures.
 - [ ] **Step 7: Commit** `feat: kb ticket fetch — dev takes a ticket id and reads it from the hub`.
 
-### Task 10: Role guides, architecture doc and README sweep (runs last, after Task 8)
+### Task 10: Role guides, architecture doc and README sweep (runs last, after Tasks 8 and 12; also covers spec §4 A7: Plans menu, `mission next --from-hub`)
 
 Owner request: once everything is done, update the guidelines and README for the whole framework.
 
@@ -429,3 +429,54 @@ Owner report: on child, dev and ba repos, a publish often lands on the branch na
 - [ ] **Step 2: Fix** per Interfaces. Update the "Hybrid worktree rule" comment block to state the new rule and why.
 - [ ] **Step 3: Run** `.venv/bin/pytest tests/test_intake_publish.py tests/test_intake_core.py tests/test_intake_http.py tests/test_publish_intake_cli.py -q -n auto`. Expected: PASS. Then the full suite once.
 - [ ] **Step 4: Commit** `fix: intake opens a new PR when the old publish branch is gone`.
+
+### Task 12: Plan status on the hub — `mission next --from-hub` and a Plans menu (runs after Task 8, before Task 10)
+
+Owner decision (spec §4 A7): status is derived and read-only, BA missions and tickets live in their own **Plans** menu, and nothing of them shows under Documents.
+
+**Files:**
+- Create: `src/strata_kb/planstatus.py` (hub-side status engine)
+- Modify: `src/strata_kb/missionnext.py` (only if a small extraction is needed to reuse `parse_mission`, `statuses`, `done_ids_from_history`, `svc_doc_id`, `grounded_doc` from text)
+- Modify: `src/strata_kb/cli.py` (`mission next` gains `--from-hub` and `--repo`)
+- Modify: `src/strata_kb/web/ui.py` (routes), `src/strata_kb/web/uidata.py` (catalog/tag/overview exclusion of `*-plan`), `src/strata_kb/templates/web/_partials/left_rail.html` (Plans link)
+- Create: `src/strata_kb/templates/web/plans.html`, `plan_repo.html`, `plan_mission.html`. The ticket page reuses `section.html`, or a thin `plan_ticket.html` extending it.
+- Test: `tests/test_planstatus.py`, `tests/test_cli_mission.py`, `tests/test_web_app.py` (or a new `tests/test_web_plans.py` mirroring its fixtures)
+
+**Interfaces:**
+- Consumes:
+  - `planingest.promote_headings` (Task 9), to turn a hub `M-x` L3 section back into mission markdown that `missionnext.parse_mission` can read: add the H1 from the section title, then promote headings;
+  - `missionnext.parse_mission(text)`, `statuses(missions, drafted, done, demoted=None)`, `done_ids_from_history`, `svc_doc_id`, `grounded_doc`;
+  - `federation.load_federation`, `models.Manifest`, `mdutils.slice_section`.
+- Produces:
+  - `planstatus.PlanMission`, a frozen dataclass: `repo: str; doc: str; mission_id: str; title: str; summary: str; stories: list[missionnext.StoryStatus]`
+  - `planstatus.PlanRepo`, a frozen dataclass: `repo: str; doc: str; missions: list[PlanMission]; unparented: list[tuple[str, str]]` (the list holds (section id, title) pairs)
+  - `planstatus.hub_plans(hub: HubHandle, repo: str | None = None) -> tuple[list[PlanRepo], list[str]]`. It returns the plans and the notes. Notes use the same wording style as `mission next`: a missing `-svc` or no `Grounded on:` gives a `note:` line, never an exception.
+  - Rule: `drafted = {us_id: (1, 1)}` for every published ticket section, and `done` comes from the `-svc` history.
+  - CLI `kb mission next --from-hub [--repo <id>] [--json]`. It skips the local `missions/` / `tickets/` read. Its output format and exit codes are the same as today. The text output names `to-draft` as `not ready (no published ticket)` only in `--from-hub` mode. `--json` keeps the raw status value.
+  - UI routes, all behind the same auth as `/ui/docs`: `/ui/plans`, `/ui/plans/{repo}`, `/ui/plans/{repo}/{mission}`, `/ui/plans/{repo}/{mission}/{story}`.
+  - `shell.screen` values: `plans`, `plan`.
+  - Left rail: `<a href="/ui/plans">Plans</a>`, after Documents.
+  - Unknown repo, mission or story: render the existing 404 error page.
+  - `uidata.catalog`, `all_tags`, `review_queue` and overview counts skip docs whose id ends in `-plan`.
+  - Search results for a `-plan` doc link to `/ui/plans/{repo}/{mission}[/{story}]` instead of `/ui/docs/...`.
+
+- [ ] **Step 1: Failing tests.**
+  - `tests/test_planstatus.py`: build a hub fixture with a `<ba>-plan` produced by `planingest.run`, mirrored into `federation/<ba>/`, plus a dev repo `<dev>-svc` with a `hist.*` row naming one story.
+    - `test_hub_plans_statuses`: one story `done`, one `ready` (published ticket), one `to-draft`, one `blocked` via `Depends on`.
+    - `test_hub_plans_unparented_tickets`.
+    - `test_hub_plans_missing_svc_is_a_note`.
+    - `test_hub_plans_repo_filter`.
+  - `tests/test_cli_mission.py`: `kb mission next --from-hub --hub <fixture>` prints the four statuses and a `Next:` line; `--json` is parseable; it runs in an empty cwd with no `missions/`.
+  - Web tests:
+    - `/ui/plans` lists the repo and mission with counts;
+    - the mission page shows the backlog statuses and ticket links;
+    - the ticket page renders the ticket body;
+    - an unknown mission gives 404;
+    - `/ui/docs` does **not** list `<ba>-plan`;
+    - the left rail on every page has a `Plans` link;
+    - unauthenticated access is refused exactly as `/ui/docs` is (mirror the existing auth test);
+    - a search hit in `<ba>-plan` links under `/ui/plans/`.
+- [ ] **Step 2: Run.** Expected: FAIL.
+- [ ] **Step 3: Implement** `planstatus.py`, the CLI flag, the routes and the templates. Templates use the existing `base.html` shell and its classes; no new CSS framework. Escape every hub-supplied string with Jinja autoescaping (already on). URL path segments use the `urlencode` filter as `doc.html` does.
+- [ ] **Step 4: Run** `.venv/bin/pytest tests/test_planstatus.py tests/test_cli_mission.py tests/test_web_app.py tests/test_web_api.py tests/test_web_auth.py -q -n auto` plus any new web test file, then the full suite once. Expected: only the 19 baseline failures.
+- [ ] **Step 5: Commit** `feat: plan status on the hub — mission next --from-hub and a Plans menu`.

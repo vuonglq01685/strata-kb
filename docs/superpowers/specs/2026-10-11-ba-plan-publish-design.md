@@ -208,8 +208,10 @@ seen before it ships. No placeholder is kept.
   `refresh_code` refreshes `-code`. This makes the local diff preview show the
   `-plan` that CI will send.
 - `.kb/<repo_id>-plan/` is gitignored in a `ba` repo, so regenerating it never
-  makes `.kb/` dirty. `.kb/index.yaml` stays committed, without the revision,
-  as `-code` does.
+  makes `.kb/` dirty. In a `ba` repo `.kb/index.yaml` is also generated and
+  gitignored (a committed copy tripped the dirty-`.kb` refusal on first
+  publish; `kb ci-publish` enumerates files with rglob, so ignored files
+  still upload).
 
 ### A3. `ba` scaffolding (`kb init --kind ba`)
 
@@ -273,6 +275,51 @@ gets the ticket **from the hub first**.
 - The hub copy has no `## Definition of Ready` (plan-ingest drops it).
   Being on the hub means its DoR was fully ticked. No dev step may require
   that section.
+
+### A7. Plan status on the hub, in its own UI menu (owner decision, added during build)
+
+Ticket and mission status is **derived, read-only**, from what the hub
+already holds. Nothing new is stored and there is no new write path:
+
+- **Missions and backlog:** the `M-<slug>` sections of every `<ba-repo>-plan`.
+- **Published ticket:** a `M-<slug>-US<n>` section exists in that `-plan`.
+  Being published means its DoR passed.
+- **Done:** the story id is in a `hist.*` row of the dev repo's `-svc`. The
+  `-svc` is found from the mission's `Grounded on:` line, exactly as
+  `kb mission next` does today.
+
+Hub status per story. The order is the same as `missionnext.statuses`:
+
+1. `done`
+2. `ready` (ticket published)
+3. `to-draft`, shown as **not ready**: no published ticket, dependencies done
+4. `blocked`, with its reasons
+
+The repo-only states (`draft`, and the parent-revision demotion) cannot be
+seen on the hub: such tickets are not published, so they show as not ready.
+
+**CLI:** `kb mission next --from-hub [--repo <ba-repo-id>] [--json]`
+computes the same report from the hub alone. It needs no `missions/` or
+`tickets/` directory and uses the configured or `--hub` hub.
+
+**UI:** a separate left-rail menu, **Plans**, at the same level as
+Documents.
+
+- `/ui/plans` lists the BA repos and their missions, each with status
+  counts.
+- `/ui/plans/{repo}/{mission}` shows the mission summary and the backlog
+  table, with each story's status, its reasons, and a link to its ticket.
+- `/ui/plans/{repo}/{mission}/{story}` shows the ticket (L3, rendered like
+  the section reader).
+- Unparented tickets are listed under `/ui/plans/{repo}` as "tickets
+  without mission".
+
+`*-plan` documents no longer appear under Documents: not in the catalog,
+not in the overview counts, not in the tag rail. Search still finds plan
+sections, but a hit in a `-plan` document links to its Plans page.
+
+Out of scope: an "in progress" state, assignees, and any status writes.
+The tracker stays the place for those.
 
 ### A5. Docs
 
