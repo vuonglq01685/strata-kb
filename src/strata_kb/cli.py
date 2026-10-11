@@ -30,6 +30,7 @@ from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
+    from strata_kb.resolve import ResolvedRef
     from strata_kb.usage.ingest import IngestResult
 
 force_utf8_streams()
@@ -2944,7 +2945,7 @@ def ticket_check(
     -code document, columns/routes/commands/files match it, `[NEW: D<n>]`
     points at a DECIDED row of the parent mission's Technology decisions,
     and Open decisions is empty. Exit 0 PASS, 1 FAIL."""
-    from strata_kb import ticketcheck
+    from strata_kb import ticketcheck, ticketfetch, ticketstale
 
     path: Path | None = None
     if source == "-":
@@ -2964,13 +2965,21 @@ def ticket_check(
 
     resolved_missions = _resolve_missions_dir(missions_dir, path)
 
+    hub_cache: list[tuple[HubHandle | None, str]] = []
+
+    def hub_handle() -> tuple[HubHandle | None, str]:
+        # One resolution per run: load_doc, load_drift and load_decisions share it.
+        if not hub_cache:
+            hub_cache.append(_hub_or_reason(hub, kb_dir))
+        return hub_cache[0]
+
     def load_doc(repo: str | None, doc: str) -> ticketcheck.LoadedDoc | None:
         # Hub first: the SA grounded on the hub copy, and a dev repo's local
         # -code is regenerated from its working tree, so its revision is the
         # branch's, never the grounding's. The local copy is the fallback when
         # no hub is reachable or the hub does not hold the doc (the hub's own
         # checkout, a doc not published yet).
-        handle, reason = _hub_or_reason(hub, kb_dir)
+        handle, reason = hub_handle()
         if handle is not None:
             found = ticketcheck.load_from_hub(handle.federation_dir, repo, doc)
             if found is not None:
@@ -2986,18 +2995,40 @@ def ticket_check(
             raise typer.Exit(1)
         return None
 
+    def load_drift(repo: str | None, doc: str, rev: str) -> list[ResolvedRef] | None:
+        # The cited sections as the hub held them when `rev` was published;
+        # None (no baseline to diff) without a hub.
+        handle, _ = hub_handle()
+        if handle is None:
+            return None
+        ids = ticketstale.cited_ids(text)
+        return ticketstale.drift_refs(handle, repo, doc, rev, ids) if ids else []
+
     def load_decisions(mission_id: str) -> ticketcheck.DecisionTable | None:
-        if resolved_missions is None:
+        # Local missions/ first; else the mission's plan section on the hub.
+        if resolved_missions is not None:
+            mission_path = resolved_missions / f"{mission_id}.md"
+            try:
+                mission_text = mission_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                pass
+            else:
+                return ticketcheck.parse_decisions(mission_text, str(mission_path))
+        handle, _ = hub_handle()
+        if handle is None:
             return None
-        mission_path = resolved_missions / f"{mission_id}.md"
         try:
-            mission_text = mission_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            hub_text = ticketfetch.render(handle, mission_id)
+        except ticketfetch.TicketFetchError:
             return None
-        return ticketcheck.parse_decisions(mission_text, str(mission_path))
+        return ticketcheck.parse_decisions(hub_text, f"hub:{mission_id}")
 
     report = ticketcheck.check(
-        text, load_doc=load_doc, heading=heading, load_decisions=load_decisions
+        text,
+        load_doc=load_doc,
+        heading=heading,
+        load_decisions=load_decisions,
+        load_drift=load_drift,
     )
     if json_output:
         typer.echo(json.dumps(report.to_json()))
