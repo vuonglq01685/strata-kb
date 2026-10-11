@@ -206,6 +206,30 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     ]
 
 
+def check_required_filled(
+    text: str, headings: tuple[str, ...], exempt: frozenset[str]
+) -> list[Issue]:
+    """Error per required section that says nothing. Presence alone used
+    to be the whole contract, so a document of headings over 'TBD's
+    passed. `exempt` names sections with a stronger, section-specific check
+    of their own; a missing heading is `check_headings`' to report."""
+    issues: list[Issue] = []
+    for heading in headings:
+        if heading in exempt:
+            continue
+        body = section_body(text, heading)
+        if body is None:
+            continue  # missing heading — already reported by check_headings
+        if acquality.is_unfilled(visible_body(body)):
+            issues.append(
+                Issue(
+                    "error",
+                    f"'{heading}' is empty or only placeholder text — fill it in",
+                )
+            )
+    return issues
+
+
 def check_duplicate_headings(text: str) -> list[Issue]:
     """Error per '## ' heading that appears twice outside fences and
     comments. `section_body` reads the FIRST occurrence, so a second
