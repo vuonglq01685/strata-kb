@@ -394,3 +394,38 @@ Owner request: once everything is done, update the guidelines and README for the
 - [ ] **Step 3:** Regenerate the eight PDFs. If PDF generation cannot run in this environment (for example a font or network fetch is blocked), commit the markdown and report the exact error as a concern. Do not commit stale PDFs as if regenerated.
 - [ ] **Step 4:** Run the README/docs-related tests (`.venv/bin/pytest -q -n auto -k "readme or docs or guide or template"`), then the full suite once. Expected: only the 19 baseline failures.
 - [ ] **Step 5: Commit** `docs: guides, architecture and README cover plan publishing, amend and ticket fetch`.
+
+### Task 11: Intake reuses a dead `publish/<rid>` branch and opens no PR (runs after Task 7)
+
+Owner report: on child, dev and ba repos, a publish often lands on the branch name of an old PR whose branch was deleted, and no new PR is created.
+
+**Suspected root cause (verify before fixing; superpowers:systematic-debugging):**
+- `intake.intake_publish` (`src/strata_kb/intake.py:~1609-1640`) decides `reset = dest_on_main or not gitio.rev_exists(handle.root, branch)`. It reuses the serving clone's **local** `publish/<rid>` whenever `federation/<rid>` is not on main. It never checks whether that branch still exists on the remote, or whether an open PR still uses it.
+- After the old PR is closed unmerged, or merged while the clone's main is stale (`gitio.pull` failure is only a warning), the remote branch is deleted but the local branch survives. The next publish diffs against that dead branch's snapshot. If nothing changed relative to it, `_publish_in_worktree` returns `""` (`:~1777`, "nothing changed"): nothing is pushed and no PR is opened, although main does not hold the content.
+- If something did change, the stale history is force-pushed under the old name. That works, but it carries commits of a closed PR.
+
+**Files:**
+- Modify: `src/strata_kb/intake.py` (`intake_publish` reuse decision)
+- Modify: `src/strata_kb/gitio.py` (a remote-branch existence helper, if none exists; reuse `credential_env` / `_run_network`)
+- Test: `tests/test_intake_publish.py` (follow its existing fixtures: local bare "GitHub" remote, `pr_hook`)
+
+**Interfaces:**
+- Produces: `gitio.remote_branch_exists(root: Path, branch: str, token: str | None = None, *, timeout: float | None = None) -> bool`, via `git ls-remote --heads origin <branch>` with the same credential handling as `push_branch`. It raises `GitError` on a non-zero exit.
+- The rule becomes: reuse the local branch **only if** it also exists on the remote, i.e. its PR is still pending. Otherwise reset from base:
+  `reset = dest_on_main or not rev_exists(local) or not remote_branch_exists(...)`.
+  A `remote_branch_exists` failure (network) falls back to `reset=True` with a `logger.warning`. A fresh branch from main is always safe; reusing a dead one is what loses PRs.
+- The no-op return `""` must mean "the hub already holds this content". After the change it can only happen on a reused (live) branch or when main already equals the snapshot.
+
+- [ ] **Step 1: Reproduce (RED).** In `tests/test_intake_publish.py`:
+  - `test_republish_after_closed_pr_with_deleted_branch_opens_new_pr`:
+    - publish snapshot A, so `pr_hook` is called and the branch is pushed;
+    - delete `publish/<rid>` on the bare remote only, keeping the serving clone's local branch, and do not merge;
+    - publish snapshot A again;
+    - assert `pr_hook` is called a second time, the remote branch exists again, and its tip's parent is the base (main), not the old snapshot commit.
+  - `test_republish_after_merge_with_stale_main_opens_new_pr`: the same, but simulate the merge with a pull that failed (stale local main) and the remote branch deleted; publish changed content B; assert a PR is created from a branch rooted at base.
+  - `test_pending_pr_branch_still_reused`: the remote branch exists, so the second publish of changed content B is a new commit on top of A (accumulates); an identical re-publish returns `""`. This pins the existing good behaviour.
+  - `test_remote_check_failure_falls_back_to_reset`: patch `remote_branch_exists` to raise `GitError`; the publish still opens a PR.
+  Run them; the first two must FAIL for the reason above. Record the RED output in the report. If they do not fail, stop and report `NEEDS_CONTEXT` with what you observed, without changing code.
+- [ ] **Step 2: Fix** per Interfaces. Update the "Hybrid worktree rule" comment block to state the new rule and why.
+- [ ] **Step 3: Run** `.venv/bin/pytest tests/test_intake_publish.py tests/test_intake_core.py tests/test_intake_http.py tests/test_publish_intake_cli.py -q -n auto`. Expected: PASS. Then the full suite once.
+- [ ] **Step 4: Commit** `fix: intake opens a new PR when the old publish branch is gone`.
