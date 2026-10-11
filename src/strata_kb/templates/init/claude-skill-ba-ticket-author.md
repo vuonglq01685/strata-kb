@@ -230,12 +230,14 @@ change is recorded in `## Change log`.
    need the BA's re-confirmation, and only the claims citing them need
    re-checking. The `tags`
    rule of step 5 still holds: never pass tags.
-4. **`architecture` trigger only** — run `/sa-ticket-ground` on the saved
-   file as a separate run (no shared context). It refreshes
-   `## Technical grounding` and the `Grounded on:` revision, then runs
-   `kb ticket check`. For any other trigger, skip the SA and `kb ticket
-   check`: they would force a re-ground after every dev commit. You still
-   never read `<repo>-code` or `<repo>-svc` yourself.
+4. **Check the grounding** — run `kb ticket check` on the saved file on
+   every amend, whatever the trigger. An `architecture` trigger runs
+   `/sa-ticket-ground` first, as a separate run (no shared context): it
+   refreshes `## Technical grounding` and the `Grounded on:` revision,
+   then runs the check. For any other trigger, run the SA only when the
+   check FAILs with `re-run /sa-ticket-ground`; a `[warn] grounded @…`
+   is a PASS, not a re-ground. You still never read `<repo>-code` or
+   `<repo>-svc` yourself.
 5. **Apply the change rules** below.
 6. **Bump `> Revision:` and append the change-log row** `| Rev | Date |
    Trigger | What changed | Affected | Review |`. In `Affected` write the
@@ -281,7 +283,8 @@ Change rules:
   step 7 invoke `/sa-ticket-ground` on the saved draft — it fills the
   SA-owned `## Technical grounding` section from the hub's `<repo>-code`
   document and `kb ticket check` verifies every id. Re-run
-  `/sa-ticket-ground` by hand only when `-code` moves after handover.
+  `/sa-ticket-ground` by hand only when `kb ticket check` fails with
+  `re-run /sa-ticket-ground`.
   Never read `<repo>-code` or `<repo>-svc` yourself.
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - Lint must report `DoR: PASS` before handover; report remaining

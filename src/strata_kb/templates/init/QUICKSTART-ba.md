@@ -343,8 +343,9 @@ findings, asks you for the trigger (`kb-context`, `architecture`, `scope`,
 In a mission's `Affected` cell it writes full story ids
 (`M-<slug>-US<n>`), because `kb mission next` matches only full ids.
 
-- The SA (`/sa-ticket-ground`) and `kb ticket check` run only for an
-  `architecture` trigger.
+- `kb ticket check` runs on every amend; the SA (`/sa-ticket-ground`) runs
+  for an `architecture` trigger, and for any other trigger only when the check
+  FAILs with `re-run /sa-ticket-ground`.
 - A story `kb mission next` reports `done` is frozen: new work gets the next
   free US number. A `DECIDED` decision is superseded by a new row, never
   edited.

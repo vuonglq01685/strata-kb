@@ -2751,9 +2751,12 @@ def test_ba_ticket_wrappers_run_the_sa_inside_the_pipeline():
         assert "Ground technical" in text, name
         assert "## Needs input" in text, name
         # The manual hand-off is gone; the only by-hand case left is a
-        # re-ground after <repo>-code moves.
+        # re-ground after `kb ticket check` fails on a drifted -code.
         assert "once the business sections are drafted" not in text, name
-        assert "only when `-code` moves after handover" in text, name
+        assert (
+            "only when `kb ticket check` fails with `re-run /sa-ticket-ground`" in text
+        ), name
+        assert "only when `-code` moves after handover" not in text, name
 
 
 def test_ba_ticket_full_wrappers_re_ground_only_on_a_check_failure():

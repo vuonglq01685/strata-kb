@@ -52,6 +52,15 @@ edit above it.
   <doc> <M-id> --level l3` from the hub); if this story is blocked by something
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
+- **Check the grounding** — if the ticket has a `## Technical grounding`
+  section, run `kb ticket check docs/impl/<id>/ticket.md`. PASS with a
+  `[warn]` diff → show it, the Dev decides, continue. FAIL with `re-run
+  /sa-ticket-ground` → STOP, blocker for the BA (the SA re-grounds on the
+  current `-code`) — unless the run also printed the local-fallback note
+  (`checked against the local -code (hub unreachable)`): your branch's own
+  changes may cause it, so retry with the hub first. FAIL without that line
+  → report the errors to the BA and STOP. No `## Technical grounding` →
+  skip, with a note. No CLI → skip, with a note.
 - **Resolve** — triage exactly as in the Freshness re-check above:
   `broken` → stop and report to the BA; `stale` → show both versions and
   let the Dev decide; `ok` → continue. A full resolve is

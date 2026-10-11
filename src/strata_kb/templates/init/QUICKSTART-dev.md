@@ -152,6 +152,16 @@ regenerated on every fetch and gitignored, so never edit it — amend the ticket
 in the BA repo. A path or a pasted body still works when the hub has no copy or
 is unreachable. If several repos publish the same id, qualify it: `<repo>:<id>`.
 
+**The ticket's grounding is checked next.** Right after Intake the flow runs
+`kb ticket check docs/impl/<id>/ticket.md` (skipped, with a note, when the
+ticket has no `## Technical grounding`). A `-code` that moved since the SA
+grounded the ticket is not a failure: PASS with a `[warn]` diff means the cited
+names still hold, so read the diff and decide. A FAIL carrying `re-run
+/sa-ticket-ground` means a cited fact is gone: STOP and send it back to the BA,
+who has the SA re-ground it. If the run also says it checked against the local
+`-code` (hub unreachable), your own branch may be the cause: retry with the hub
+first.
+
 ## Where work lives
 
 - `docs/impl/<ticket-id>/design.md` — the design produced by `dev-design`.
