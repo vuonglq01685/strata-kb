@@ -704,22 +704,31 @@ def _refresh_ba_plan(kb_dir: Path) -> None:
     """`kb publish` in a ba repo: regenerate `<repo_id>-plan` from the working
     tree, so the diff preview and the upload show what CI will send. Same
     defaults as `kb plan-ingest`, anchored to the repo root."""
-    from strata_kb import config, planingest
+    from strata_kb import cipublish, config, planingest
     from strata_kb.build import build_kb
 
     resolved_kb_dir = kb_dir.resolve()
     root = resolved_kb_dir.parent
     rid = config.effective_repo_id("", resolved_kb_dir) or root.name
     try:
-        planingest.run(root, resolved_kb_dir, rid, root / "missions", root / "tickets")
+        plan_report = planingest.run(
+            root, resolved_kb_dir, rid, root / "missions", root / "tickets"
+        )
     except planingest.PlanIngestError as exc:
-        typer.secho(f"could not refresh {rid}-plan: {exc}", fg=typer.colors.RED)
+        typer.secho(
+            f"could not refresh {rid}-plan: {exc}", fg=typer.colors.RED, err=True
+        )
         raise typer.Exit(1) from None
+    # A skipped story is not an error, but the BA must see it before it ships.
+    for file, reason in plan_report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.secho(line, fg=typer.colors.YELLOW, err=True)
+        cipublish.write_step_summary(line)
     report = build_kb(kb_dir)
     for warning in report.warnings + report.quality:
         typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
     for error in report.errors:
-        typer.secho(f"[error] {error}", fg=typer.colors.RED)
+        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
     if not report.ok:
         raise typer.Exit(1)
 

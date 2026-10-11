@@ -639,4 +639,5 @@ def test_doctor_ignores_the_plan_document_for_a_ba_repo(tmp_path):
     assert not any(differs in i.message for i in doctor.run(kb, handle).issues)
     (kb / "other").mkdir()
     (kb / "other" / "a.md").write_text("# not generated\n", encoding="utf-8")
-    assert any(differs in i.message for i in doctor.run(kb, handle).issues)
+    (drift,) = [i for i in doctor.run(kb, handle).issues if differs in i.message]
+    assert drift.message.endswith("run `kb publish`")

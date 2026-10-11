@@ -526,9 +526,11 @@ def check_hub(
             if _kb_tree_digest(kb_dir.resolve(), exclude_docs=skip) != _kb_tree_digest(
                 entry, synthesized, exclude_docs=skip
             ):
+                # dev's -code is published by CI on push to the default branch;
+                # a ba repo's -plan only goes out when the BA runs `kb publish`.
                 advice = (
                     "merge to the default branch; CI publishes it"
-                    if code_doc
+                    if code_doc and code_doc.endswith("-code")
                     else "run `kb publish`"
                 )
                 issues.append(

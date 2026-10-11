@@ -497,12 +497,14 @@ class TestBaPlanRefresh:
             encoding="utf-8",
         )
         (root / ".gitignore").write_text(".kb/*-plan/\n", encoding="utf-8")
+        block = context_block(fed_hub)
         write_repo(
             root,
             {
-                "M-demo.md": mission_text(context_block(fed_hub)).replace(
-                    "M-airspace-filter", "M-demo"
-                )
+                "M-demo.md": mission_text(block).replace("M-airspace-filter", "M-demo"),
+                "M-held.md": mission_text(block, ticked=False).replace(
+                    "M-airspace-filter", "M-held"
+                ),
             },
             {},
         )
@@ -539,6 +541,15 @@ class TestBaPlanRefresh:
             result.output
         )
         assert not publish_mod.unreviewed_gate(root / ".kb", False).blocked
+
+    def test_publish_reports_skipped_items(self, ba, monkeypatch, tmp_path):
+        root, _ = ba
+        summary = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 0, result.output
+        assert "skipped: missions/M-held.md" in result.output
+        assert "skipped: missions/M-held.md" in summary.read_text(encoding="utf-8")
 
     def test_publish_stops_when_the_plan_cannot_be_built(self, ba):
         root, bare = ba
