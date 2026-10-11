@@ -49,7 +49,7 @@ MIN_TERM_LEN = 4
 
 NO_BASELINE_NOTE = "no baseline — run kb code-sync baseline"
 
-_DIGEST_PREFIX = "<!-- kb-code-sync digest:"
+DIGEST_PREFIX = "<!-- kb-code-sync digest:"
 
 
 @dataclass(frozen=True)
@@ -321,5 +321,5 @@ def render_markdown(r: ScanResult) -> str:
     ):
         lines += ["", f"## {doc_id} §{sid} {title}" + ("  (image)" if image else "")]
         lines += [f"- {line(f)}" for f in group]
-    lines += ["", f"{_DIGEST_PREFIX}{digest(r)} -->"]
+    lines += ["", f"{DIGEST_PREFIX}{digest(r)} -->"]
     return "\n".join(lines) + "\n"
