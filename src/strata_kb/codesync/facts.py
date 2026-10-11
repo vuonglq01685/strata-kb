@@ -115,15 +115,23 @@ _CODE: tuple[tuple[str, Callable[[str, str], frozenset[Fact]]], ...] = (
     ("dep.", _dep),
 )
 _SVC_PREFIXES = ("svc.", "flow.")
+_CODE_PREFIXES = tuple(prefix for prefix, _ in _CODE)
+
+
+def in_scope(section_id: str, doc_kind: Literal["code", "svc"]) -> bool:
+    """Is the id one whose appearance or removal is itself a fact?"""
+    prefixes = _SVC_PREFIXES if doc_kind == "svc" else _CODE_PREFIXES
+    return section_id.startswith(prefixes)
 
 
 def facts_for(
     section_id: str, doc_kind: Literal["code", "svc"], l2: str, l3: str
 ) -> frozenset[Fact]:
     """Facts of one section; empty for ids with nothing in scope."""
+    if not in_scope(section_id, doc_kind):
+        return frozenset()
     if doc_kind == "svc":
-        return _text(l2, l3) if section_id.startswith(_SVC_PREFIXES) else frozenset()
-    for prefix, parse in _CODE:
-        if section_id.startswith(prefix):
-            return parse(l2, l3)
-    return frozenset()
+        return _text(l2, l3)
+    return next(parse for prefix, parse in _CODE if section_id.startswith(prefix))(
+        l2, l3
+    )

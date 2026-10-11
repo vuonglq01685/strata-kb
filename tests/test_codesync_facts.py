@@ -153,3 +153,13 @@ def test_db_facts_keep_escaped_pipes_in_type_cell():
     assert ("column_type", "d:INT") in facts
     changed = facts_for("db.t", "code", body.replace("a \\|\\| b", "a \\|\\| z"), "")
     assert changed != facts
+
+
+def test_in_scope_lists_the_ids_whose_appearance_is_a_fact():
+    from strata_kb.codesync.facts import in_scope
+
+    for sid in ("svc.a", "db.a", "api.a", "int.a", "cmd.a", "dep.a"):
+        assert in_scope(sid, "code")
+    assert not any(in_scope(s, "code") for s in ("struct.tree", "hist.1", "flow.x"))
+    assert in_scope("svc.a", "svc") and in_scope("flow.a", "svc")
+    assert not any(in_scope(s, "svc") for s in ("db.a", "hist.1", "struct.tree"))

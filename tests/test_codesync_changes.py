@@ -202,3 +202,37 @@ def test_missing_base_raises_git_error(hub):
     root, c1 = hub
     with pytest.raises(gitio.GitError):
         code_changes(root, "0" * 40, c1)
+
+
+def test_added_in_scope_section_without_facts_is_still_one_item(hub, run_git):
+    root, c1 = hub
+    sections = {
+        **BASE_SECTIONS,
+        "cmd.deploy": ("Deploy command", "No primary command."),
+    }
+    write_doc(root, "acme", "code", sections)
+    c2 = commit(root, run_git)
+    [item] = code_changes(root, c1, c2)
+    assert (item.section_id, item.status, item.title) == (
+        "cmd.deploy",
+        "added",
+        "Deploy command",
+    )
+    assert item.added == frozenset() == item.removed
+    [gone] = code_changes(root, c2, c1)
+    assert (gone.section_id, gone.status) == ("cmd.deploy", "removed")
+
+
+def test_added_out_of_scope_section_is_ignored(hub, run_git):
+    root, c1 = hub
+    sections = {**BASE_SECTIONS, "hist.2024": ("History", "old things")}
+    write_doc(root, "acme", "code", sections)
+    assert code_changes(root, c1, commit(root, run_git)) == []
+
+
+def test_new_doc_without_in_scope_facts_is_one_doc_item(hub, run_git):
+    root, c1 = hub
+    write_doc(root, "zeta", "code", {"struct.tree": ("Tree", "src/")})
+    [item] = code_changes(root, c1, commit(root, run_git))
+    assert (item.doc_id, item.section_id, item.status) == ("zeta-code", None, "added")
+    assert item.added == frozenset()

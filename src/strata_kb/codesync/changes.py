@@ -15,7 +15,7 @@ from typing import Literal
 import yaml
 
 from strata_kb import gitio, mdutils, models
-from strata_kb.codesync.facts import Fact, facts_for
+from strata_kb.codesync.facts import Fact, facts_for, in_scope
 
 _MANIFEST_RE = re.compile(
     r"federation/(?:.+/)?(?P<rid>[^/]+)/(?P<doc>[^/]+-(?P<kind>code|svc))/_manifest\.yaml"
@@ -83,12 +83,18 @@ def _doc_items(
         return [ChangedItem(rid, did, None, new[0], "added", _whole(new), frozenset())]
     if old is None or new is None:  # pragma: no cover - key came from one side
         return []
+    kind: Literal["code", "svc"] = "code" if did.endswith("-code") else "svc"
     items: list[ChangedItem] = []
     for sid in old[1].keys() | new[1].keys():
         o, n = old[1].get(sid), new[1].get(sid)
         of, nf = (o[1] if o else frozenset()), (n[1] if n else frozenset())
         status = "added" if o is None else "removed" if n is None else "changed"
         title = n[0] if n else o[0] if o else sid
+        # Adding or removing an in-scope id is itself a fact, even with no facts.
+        if status != "changed" and not in_scope(sid, kind):
+            continue
+        if status == "changed" and of == nf:
+            continue
         items.append(ChangedItem(rid, did, sid, title, status, nf - of, of - nf))
     return items
 
@@ -106,6 +112,6 @@ def code_changes(root: Path, base: str, head: str) -> list[ChangedItem]:
         for item in _doc_items(*key, before.get(key), after.get(key))
     ]
     return sorted(
-        (i for i in items if i.added or i.removed),
+        items,
         key=lambda i: (i.repo_id, i.doc_id, i.section_id or ""),
     )
