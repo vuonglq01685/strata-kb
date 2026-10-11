@@ -3,6 +3,28 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.16.3 — 2026-10-11
+
+Internal cleanup. No command output, message, exit code or JSON shape changes, except the two `kb doctor` hub-lag heading cases named below.
+
+- **No import cycle left, even through function-level imports.** The 20-module loop that lazy imports had been hiding is gone. Three things moved, and their old import paths still work:
+  - The Markdown masking helpers (`FENCE_RE`, `HTML_COMMENT_RE`, `visible_body` and two private helpers) now live in a new leaf module, `strata_kb.mdmask`. `lintcore` re-exports them. `ticket`, `kbcontext` and `prlint` now use it, so `kbcontext` and `prlint` drop their own copies of the HTML-comment regex.
+  - `_fed_tree_digest` moved from `doctor` into `federation`.
+  - `AmbiguousDocError` moved from `query` into `errors`.
+- **New guards in `tests/test_layering.py`:**
+  - any import cycle fails the suite, function-level imports included;
+  - `prlint` and `mdmask` may import only the standard library;
+  - every module must import cleanly as the first module in a fresh interpreter.
+- **One required-section check.** `kb ticket lint` and `kb mission lint` now share `lintcore.check_required_filled`, instead of two copies of the same function.
+- **`kb doctor` hub-lag reads section ids with the standard heading grammar.** It uses `mdutils.HEADING_RE` instead of parsing them by hand. Two edge cases change, and `kb code-ingest` writes neither:
+  - a `## ` line with no id is now body text of the section above it;
+  - a tab before the title is no longer part of the id.
+- **Closed as intended, no code change:**
+  - `prlint` keeps its own scanner. It handles `~~~` and unclosed fences, an unterminated comment, and tab-separated headings, and it must stay standard-library only.
+  - The heading regexes in `web/mdrender`, `prlint` and `planwaves` parse different grammars.
+  - `prlint.Finding`, `doctor.Issue` and `quality.Finding` stay three separate types, because their levels, keys and JSON contracts differ.
+- The duplicate `_ENTRY_SEGMENT_RE` definition in `doctor/checks/hub.py` is gone.
+
 ## 1.16.2 — 2026-10-11
 
 Contributor tooling only. Nothing in the installed package changes.

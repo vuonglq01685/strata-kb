@@ -386,7 +386,7 @@ Nguyên nhân gốc: quy tắc fallback point-release (`claude-x-5-1 → claude-
 **Đợt 2 — gỡ nghẽn performance (≈ 1–2 tuần).**
 4. `models.load_yaml_model/save_yaml_model` → `CSafeLoader/CSafeDumper` (fallback); cache `load_federation` theo fingerprint/HEAD; ghi `revision` vào `index.yaml` lúc ingest/publish (F1).
 5. `sections_of(text)` một lần/file dùng chung searchdb/build/summarize/query/resolve/diff (F2).
-6. `run_in_threadpool` cho mọi handler Web/REST + `hub_handle`; `status_map`/catalog từ search.db (F3). Lazy tiktoken + vendor BPE + fallback ước lượng (F4/F5) — đồng thời sửa luôn 16 % test không chạy offline. Digest federation tăng dần + sparse worktree intake (F6/F7). `git cat-file --batch` cho resolve (F8).
+6. `run_in_threadpool` cho mọi handler Web/REST + `hub_handle`; `status_map`/catalog từ search.db (F3). Lazy tiktoken + vendor BPE + fallback ước lượng (F4/F5) — đồng thời sửa luôn 16 % test không chạy offline. Digest federation tăng dần + sparse worktree intake (F6/F7). `git cat-file --batch` cho resolve (F8). *(Phần sparse worktree intake (F7) đã hoãn sang mục Backlog của `docs/superpowers/specs/2026-10-11-wave4-debt-cleanup-design.md`.)*
 7. Summarize: ghi theo doc, `effort=medium`, doc summary vào pool (F12).
 
 **Đợt 3 — trả nợ kiến trúc/maintainability (liên tục, mỗi PR một mục).**

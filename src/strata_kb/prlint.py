@@ -56,6 +56,9 @@ Level = Literal["error", "warning"]
 
 @dataclass(frozen=True)
 class Finding:
+    """One `kb pr lint` result. Kept apart from `doctor.Issue`: it carries a
+    section and backs the `--json` shape, and prlint stays stdlib-only."""
+
     section: str
     code: str
     message: str
