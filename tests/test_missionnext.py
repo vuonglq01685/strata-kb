@@ -380,3 +380,29 @@ def test_to_json_shape():
         "D2 OPEN (owner: Alice)",
     ]
     assert missionnext.to_json([], [])["next"] is None
+
+
+def test_statuses_demoted_ready_becomes_draft():
+    why = "parent mission rev 3 affects this story"
+    got = missionnext.statuses(
+        [missionnext.parse_mission(PLATFORM)],
+        {"M-platform-US1": (2, 2), "M-platform-US2": (2, 2)},
+        set(),
+        {"M-platform-US1": why},
+    )
+    by_id = {r.us_id: r for r in got}
+    assert (by_id["M-platform-US1"].status, by_id["M-platform-US1"].reasons) == (
+        "draft",
+        (why,),
+    )
+    assert by_id["M-platform-US2"].status == "ready"
+
+
+def test_statuses_demotion_does_not_undo_done():
+    got = missionnext.statuses(
+        [missionnext.parse_mission(PLATFORM)],
+        {"M-platform-US1": (2, 2)},
+        {"M-platform-US1"},
+        {"M-platform-US1": "x"},
+    )
+    assert got[0].status == "done"

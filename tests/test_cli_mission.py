@@ -751,3 +751,29 @@ def test_resolve_missions_dir_from_a_nested_ticket(tmp_path):
     flat = tmp_path / "tickets" / "M-platform-US1.md"
     assert _resolve_missions_dir(None, flat) == tmp_path / "missions"
     assert _resolve_missions_dir(None, tmp_path / "elsewhere" / "x.md") is None
+
+
+def test_mission_next_demotes_ready_ticket_behind_its_mission_revision(tmp_path):
+    root = _ba_layout(tmp_path)
+    (root / "missions" / "M-platform.md").write_text(
+        PLATFORM_NEXT.replace(
+            "> Mission: M-platform\n",
+            "> Mission: M-platform\n> Revision: 2\n",
+        )
+        + "\n## Change log\n"
+        "| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 2 | 2026-10-11 | scope | cut | M-platform-US1 | B4 D4 (agent) |\n",
+        encoding="utf-8",
+    )
+    (root / "tickets" / "M-platform-US1.md").write_text(
+        f"# US1\n> Parent mission: M-platform @ rev 1\n\n{DOR_FULL}", encoding="utf-8"
+    )
+    result = runner.invoke(
+        app, ["mission", "next", "--missions-dir", str(root / "missions")]
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        "| M-platform-US1 | M-platform | draft | "
+        "parent mission rev 2 affects this story |" in result.output
+    )

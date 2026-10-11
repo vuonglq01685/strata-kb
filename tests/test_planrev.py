@@ -109,3 +109,55 @@ def test_shipped_templates_carry_revision_and_clean_change_log():
         assert planrev.parse_revision(text) == 1
         assert text.index(planrev.CHANGE_LOG_HEADING) < text.index("## Review record")
         assert planrev.check_revision(text) == []
+
+
+def _mission(revision: int, *rows: str) -> str:
+    return "# M\n> Mission: M-x\n" + _doc(revision, *rows).split("\n", 1)[1]
+
+
+def _aff_row(rev: int, affected: str) -> str:
+    return f"| {rev} | 2026-10-11 | scope | changed | {affected} | B4 D4 (agent) |"
+
+
+def _ticket(pin: str) -> str:
+    return f"# T\n> Parent mission: M-x{pin}\n"
+
+
+def test_demotions_flags_affected_story_after_pin():
+    missions = {"M-x": _mission(3, _row(2), _aff_row(3, "M-x-US2"))}
+    tickets = {"M-x-US2": _ticket(" @ rev 2")}
+    assert planrev.demotions(missions, tickets) == {
+        "M-x-US2": "parent mission rev 3 affects this story"
+    }
+
+
+def test_demotions_ignores_unlisted_and_current_pins():
+    missions = {"M-x": _mission(3, _row(2), _aff_row(3, "M-x-US9"))}
+    assert planrev.demotions(missions, {"M-x-US2": _ticket(" @ rev 2")}) == {}
+    missions = {"M-x": _mission(3, _row(2), _aff_row(3, "M-x-US2"))}
+    assert planrev.demotions(missions, {"M-x-US2": _ticket(" @ rev 3")}) == {}
+
+
+def test_demotions_ignores_rows_at_or_below_the_pin():
+    missions = {"M-x": _mission(3, _aff_row(2, "M-x-US2"), _row(3))}
+    assert planrev.demotions(missions, {"M-x-US2": _ticket(" @ rev 2")}) == {}
+
+
+def test_demotions_no_pin_means_rev1():
+    missions = {"M-x": _mission(2, _aff_row(2, "M-x-US2"))}
+    assert planrev.demotions(missions, {"M-x-US2": _ticket("")}) == {
+        "M-x-US2": "parent mission rev 2 affects this story"
+    }
+
+
+def test_demotions_skips_unknown_mission_and_unparented_ticket():
+    missions = {"M-x": _mission(2, _aff_row(2, "M-x-US2"))}
+    tickets = {"M-x-US2": "# T\n", "M-y-US1": _ticket("").replace("M-x", "M-y")}
+    assert planrev.demotions(missions, tickets) == {}
+
+
+def test_demotions_mission_without_revision_line_is_rev1():
+    assert (
+        planrev.demotions({"M-x": "# M\n> Mission: M-x\n"}, {"M-x-US2": _ticket("")})
+        == {}
+    )

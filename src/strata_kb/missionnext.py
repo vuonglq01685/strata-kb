@@ -206,16 +206,20 @@ def statuses(
     missions: list[ParsedMission],
     drafted: dict[str, tuple[int, int]],
     done: set[str] | None,
+    demoted: dict[str, str] | None = None,
 ) -> list[StoryStatus]:
     """One `StoryStatus` per backlog story, first rule that matches:
     done (id in `done`) → ready (ticket file, every DoR box ticked) → draft
     (ticket file, some box unticked, or no DoR section) → to-draft (no
     file, every dependency done, every D-row blocking it DECIDED) →
     blocked, with one reason per cause. `drafted` maps a ticket id to its
-    `dor_counts`. `done=None` means the hub could not answer: nothing is
-    done, and the caller says why in a note."""
+    `dor_counts`. A fully ticked ticket listed in `demoted` (US id →
+    reason) reads `draft` with that reason: its parent mission moved on
+    after the BA ticked it. `done=None` means the hub could not answer:
+    nothing is done, and the caller says why in a note."""
     known = {s.us_id for _m, stories, _d in missions for s in stories}
     done_set = done or set()
+    demoted_map = demoted or {}
     out: list[StoryStatus] = []
     for mission_id, stories, decisions in missions:
         # A `Blocks` cell may hold a bare `US<n>` (the same id rule as
@@ -232,7 +236,20 @@ def statuses(
             if s.us_id in drafted:
                 ticked, total = drafted[s.us_id]
                 if total and ticked == total:
-                    out.append(StoryStatus(s.us_id, s.mission_id, s.title, "ready", ()))
+                    if s.us_id in demoted_map:
+                        out.append(
+                            StoryStatus(
+                                s.us_id,
+                                s.mission_id,
+                                s.title,
+                                "draft",
+                                (demoted_map[s.us_id],),
+                            )
+                        )
+                    else:
+                        out.append(
+                            StoryStatus(s.us_id, s.mission_id, s.title, "ready", ())
+                        )
                     continue
                 why = (
                     f"DoR {ticked}/{total} ticked"

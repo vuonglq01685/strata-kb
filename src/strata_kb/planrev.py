@@ -112,3 +112,25 @@ def parent_pin(text: str) -> tuple[str, int] | None:
     if m is None:
         return None
     return m.group(1), int(m.group(2)) if m.group(2) else 1
+
+
+def demotions(missions: dict[str, str], tickets: dict[str, str]) -> dict[str, str]:
+    """US id → reason, for each ticket whose pinned mission revision is behind
+    the mission's and whose id a later change-log row lists as affected.
+    `missions` maps mission id → text, `tickets` US id → text. A ticket with
+    no parent-mission line, or naming an unknown mission, is skipped."""
+    out: dict[str, str] = {}
+    for us_id, text in tickets.items():
+        pin = parent_pin(text)
+        if pin is None or pin[0] not in missions:
+            continue
+        mission_text = missions[pin[0]]
+        current = parse_revision(mission_text) or 1
+        if pin[1] >= current:
+            continue
+        if any(
+            r.rev > pin[1] and us_id in r.affected
+            for r in parse_change_log(mission_text)
+        ):
+            out[us_id] = f"parent mission rev {current} affects this story"
+    return out

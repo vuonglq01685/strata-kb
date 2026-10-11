@@ -3105,7 +3105,7 @@ def mission_next(
     <repo>-svc history (kb svc note rows); ready and draft from the
     ticket's Definition of Ready checklist. Read-only; exit 0 after a
     report."""
-    from strata_kb import missionnext, ticketcheck
+    from strata_kb import missionnext, planrev, ticketcheck
 
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
         if d is not None and not d.is_dir():
@@ -3142,6 +3142,7 @@ def mission_next(
     # that first copy wins; a repeated stem is noted and skipped rather
     # than silently overwriting it.
     drafted: dict[str, tuple[int, int]] = {}
+    ticket_texts: dict[str, str] = {}
     ticket_paths: dict[str, Path] = {}
     if resolved_tickets.is_dir():
         for p in sorted(resolved_tickets.rglob("*.md")):
@@ -3159,6 +3160,7 @@ def mission_next(
                 notes.append(f"skipped ticket {p}: {exc} — read as draft")
                 drafted[p.stem] = (0, 0)
                 continue
+            ticket_texts[p.stem] = ticket_text
             drafted[p.stem] = missionnext.dor_counts(ticket_text)
     else:
         notes.append(
@@ -3202,7 +3204,9 @@ def mission_next(
         if doc is not None:
             done = missionnext.done_ids_from_history(doc.read_group("history"))
 
-    results = missionnext.statuses(parsed, drafted, done)
+    mission_texts = {m[0]: t for m, t in zip(parsed, texts, strict=True) if m[0]}
+    demoted = planrev.demotions(mission_texts, ticket_texts)
+    results = missionnext.statuses(parsed, drafted, done, demoted)
     if json_output:
         typer.echo(json.dumps(missionnext.to_json(results, notes)))
     else:
