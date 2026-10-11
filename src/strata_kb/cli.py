@@ -833,6 +833,33 @@ def ingest(
         typer.echo("kb build: OK")
 
 
+@app.command()
+def authored(
+    doc_id: str = typer.Argument(..., help="Document ID to mark"),
+    off: bool = typer.Option(False, "--off", help="Remove the authored tag"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Tag a hub doc `authored`: its markdown is the master, `kb ingest` refuses it."""
+    from strata_kb import authored as authored_mod
+    from strata_kb import config
+
+    try:
+        kind = config.load_config(kb_dir).kind
+        if kind != "hub":
+            typer.secho(
+                f"kb authored runs only on a kind: hub repo (this one is "
+                f"kind: {kind or 'unset'})",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        changed = authored_mod.set_authored(kb_dir, doc_id, not off)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    state = "unmarked" if off else "marked"
+    typer.echo(f"kb authored: {doc_id} {state if changed else 'already ' + state}")
+
+
 _LLM_CHOICES = ("", "claude", "copilot", "none")
 
 
