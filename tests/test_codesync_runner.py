@@ -4,8 +4,11 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import urllib.error
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from strata_kb import gitio
 from strata_kb.codesync import baseline, runner, scan
@@ -135,21 +138,123 @@ def test_run_once_non_github_remote_logs_and_returns(hub_with_drift, run_git, ca
     assert "not a GitHub repo URL" in caplog.text
 
 
-def test_run_once_github_error_returns_scan_code_and_hides_token(
+def test_run_once_non_404_baseline_read_error_skips_issue_sync(
     hub_with_drift, monkeypatch, caplog
 ):
-    root, c1 = hub_with_drift
+    root, _ = hub_with_drift
     monkeypatch.setenv("STRATA_KB_GH_TOKEN", "sekret-token")
+    requests: list[str] = []
 
-    def boom(req):
+    def http(req):
+        requests.append(req.get_method())
         return 500, b"{}"
 
     with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
-        code = runner.run_once(root, issue=True, http=boom)
+        code = runner.run_once(root, issue=True, http=http)
 
     assert code == 2
+    assert requests == ["GET"]  # the baseline read only: no list, no write
+    assert "bot-branch baseline not read" in caplog.text
     assert "issue not updated" in caplog.text
+    assert "## arch" in caplog.text  # work order logged
     assert "sekret-token" not in caplog.text
+
+
+def test_run_once_remote_credentials_never_logged(hub_with_drift, run_git, caplog):
+    root, _ = hub_with_drift
+    run_git(
+        root,
+        "remote",
+        "set-url",
+        "origin",
+        "https://user:SECRET@gitlab.example.com/x/y.git",
+    )
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        assert runner.run_once(root, issue=True, http=RouteHTTP()) == 2
+    assert "issue not updated: " in caplog.text
+    assert "gitlab.example.com" in caplog.text
+    assert "SECRET" not in caplog.text
+
+
+def test_run_once_no_origin_remote_says_so(hub_with_drift, run_git, caplog):
+    root, _ = hub_with_drift
+    run_git(root, "remote", "remove", "origin")
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        assert runner.run_once(root, issue=True, http=RouteHTTP()) == 2
+    assert "issue not updated: no origin remote" in caplog.text
+
+
+def test_work_order_is_logged_when_issue_not_updated(hub_with_drift, caplog):
+    root, _ = hub_with_drift
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        runner.run_once(root, issue=True, http=RouteHTTP())
+    text = caplog.text
+    assert text.index("issue not updated: no GitHub credentials") < text.index(
+        "## arch"
+    )
+    assert "<!-- kb-code-sync digest:" in text
+
+
+def test_work_order_is_not_logged_when_issue_synced(
+    hub_with_drift, monkeypatch, caplog
+):
+    root, c1 = hub_with_drift
+    monkeypatch.setenv("STRATA_KB_GH_TOKEN", "tok")
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        runner.run_once(root, issue=True, http=RouteHTTP(baseline_sha=c1))
+    assert "issue created" in caplog.text
+    assert "work order" not in caplog.text
+
+
+def _app_key(tmp_path, monkeypatch, pem: bytes | None = None) -> None:
+    if pem is None:
+        pem = (
+            rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        ).private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    path = tmp_path / "app.pem"
+    path.write_bytes(pem)
+    monkeypatch.setenv("STRATA_KB_GH_APP_ID", "1234")
+    monkeypatch.setenv("STRATA_KB_GH_APP_KEY", str(path))
+
+
+def _down(req):
+    raise urllib.error.URLError("dns down")
+
+
+@pytest.mark.parametrize("where", ["token", "bad-key", "baseline-read", "sync"])
+def test_network_and_key_errors_still_scan_and_return_scan_code(
+    hub_with_drift, monkeypatch, tmp_path, caplog, where
+):
+    root, c1 = hub_with_drift
+    if where == "token":
+        _app_key(tmp_path, monkeypatch)
+        http = _down
+    elif where == "bad-key":
+        _app_key(tmp_path, monkeypatch, b"not a pem")
+        http = RouteHTTP()
+    else:
+        monkeypatch.setenv("STRATA_KB_GH_TOKEN", "sekret-token")
+        route = RouteHTTP(baseline_sha=c1)
+        fail_on = "/contents/" if where == "baseline-read" else "/issues"
+
+        def http(req):
+            if fail_on in req.full_url:
+                raise urllib.error.URLError("dns down")
+            return route(req)
+
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        code = runner.run_once(root, issue=True, http=http)
+
+    assert code == 2
+    assert "1 finding(s)" in caplog.text  # the scan ran
+    assert "issue not updated: " in caplog.text
+    assert "## arch" in caplog.text
+    assert "sekret-token" not in caplog.text
+    assert "Traceback" not in caplog.text
 
 
 def test_scan_error_never_closes_issue(hub_with_drift, monkeypatch, caplog):

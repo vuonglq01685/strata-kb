@@ -98,7 +98,7 @@ def clean_env(monkeypatch):
         monkeypatch.delenv(k, raising=False)
 
 
-def test_issue_token_prefers_env_token_then_app(clean_env, monkeypatch, tmp_path):
+def test_issue_token_prefers_app_creds_then_env_token(clean_env, monkeypatch, tmp_path):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pem = tmp_path / "app.pem"
     pem.write_bytes(
@@ -110,15 +110,15 @@ def test_issue_token_prefers_env_token_then_app(clean_env, monkeypatch, tmp_path
     )
     assert issue.issue_token("a/b") is None  # nothing configured
 
-    monkeypatch.setenv("STRATA_KB_GH_APP_ID", "1234")
-    monkeypatch.setenv("STRATA_KB_GH_APP_KEY", str(pem))
-    http = FakeHTTP([(200, {"id": 77}), (201, {"token": "ghs_app"})])
-    assert issue.issue_token("a/b", http=http) == "ghs_app"
-
     monkeypatch.setenv("STRATA_KB_GH_TOKEN", "ghp_env")
     http = FakeHTTP([])
     assert issue.issue_token("a/b", http=http) == "ghp_env"
-    assert http.requests == []  # env token wins, no App call
+    assert http.requests == []  # no App creds: the token is the fallback
+
+    monkeypatch.setenv("STRATA_KB_GH_APP_ID", "1234")
+    monkeypatch.setenv("STRATA_KB_GH_APP_KEY", str(pem))
+    http = FakeHTTP([(200, {"id": 77}), (201, {"token": "ghs_app"})])
+    assert issue.issue_token("a/b", http=http) == "ghs_app"  # App wins over token
 
 
 def test_issue_token_unreadable_pem_is_none(clean_env, monkeypatch, tmp_path, caplog):

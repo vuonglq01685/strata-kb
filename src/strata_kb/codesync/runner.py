@@ -39,61 +39,76 @@ def interval_from_env() -> int:
     return int(raw)
 
 
+_GITHUB_ERRORS = (ghapp.GHAppError, OSError, ValueError)
+
+
+def _why(exc: BaseException) -> str:
+    """One log-safe line for a failed GitHub call: URLs carry no credentials
+    and messages never carry a token."""
+    text = " ".join(f"{type(exc).__name__}: {exc}".split())
+    return gitio.redact_url(text)
+
+
 def _github(root: Path, http) -> tuple[str, str] | str:
     """`(repo_full, token)`, or the reason the issue cannot be updated."""
+    url = gitio.remote_url(root)
+    if not url:
+        return "no origin remote"
     try:
-        repo_full = ghapp.repo_full_from_url(gitio.remote_url(root))
+        repo_full = ghapp.repo_full_from_url(url)
         token = issue_mod.issue_token(repo_full, http=http)
-    except ghapp.GHAppError as exc:
-        return str(exc)
+    except Exception as exc:  # noqa: BLE001 -- also jwt/crypto key errors (optional dep)
+        return _why(exc)
     return (repo_full, token) if token else "no GitHub credentials"
 
 
-def _rest_baseline(creds, http) -> str | None:
-    """The baseline sha on the rolling PR branch, read over REST (the image
-    has no fetched bot branch); None when absent or unreadable."""
+def _rest_baseline(creds: tuple[str, str], http) -> tuple[str | None, str | None]:
+    """`(sha, error)`: the baseline on the rolling PR branch, read over REST
+    (the image has no fetched bot branch). `sha` None with no error means the
+    branch has no file (404); `error` means the read failed."""
     repo_full, token = creds
     try:
         text = ghapp.read_file(
             repo_full, token, baseline.BASELINE_FILE, baseline.BOT_BRANCH, http=http
         )
-    except ghapp.GHAppError as exc:
-        logger.warning("bot-branch baseline not read (%s); using git", exc)
-        return None
-    return None if text is None else baseline.parse(text)
+    except _GITHUB_ERRORS as exc:
+        return None, f"bot-branch baseline not read ({_why(exc)})"
+    return (None if text is None else baseline.parse(text)), None
 
 
 def run_once(root: Path, *, issue: bool, http=ghapp._default_http) -> int:
     """Exit code: 0 nothing to do, 2 findings, 1 scan error."""
     creds = _github(root, http) if issue else None
+    reason = creds if isinstance(creds, str) else None
     try:
-        sha = _rest_baseline(creds, http) if isinstance(creds, tuple) else None
+        sha = None
+        if isinstance(creds, tuple):
+            sha, reason = _rest_baseline(creds, http)
         r = scan.run_scan(root, baseline_sha=sha, baseline_source="bot-branch")
     except (KbError, ValueError, yaml.YAMLError, OSError) as exc:
         # Never reach sync_issue: an error must not close or rewrite the issue.
         logger.error("code-sync scan failed: %s", " ".join(str(exc).split()))
         return 1
-    code = scan.exit_code(r)
     logger.info(
         "code-sync: %d finding(s) at %s (baseline %s)",
         len(r.findings),
         r.scan_sha[:12],
         r.baseline_sha[:12] if r.baseline_sha else "none",
     )
-    if isinstance(creds, str):
-        logger.info("issue not updated: %s", creds)
-    elif creds is not None:
+    if isinstance(creds, tuple) and reason is None:
         try:
-            outcome = _sync(r, creds, http)
-        except ghapp.GHAppError as exc:
-            logger.error("issue not updated: %s", exc)
+            outcome = issue_mod.sync_issue(
+                r, repo_full=creds[0], token=creds[1], http=http
+            )
+        except _GITHUB_ERRORS as exc:
+            reason = _why(exc)
         else:
             logger.info("issue %s", outcome)
-    return code
-
-
-def _sync(r: scan.ScanResult, creds: tuple[str, str], http) -> str:
-    return issue_mod.sync_issue(r, repo_full=creds[0], token=creds[1], http=http)
+    if reason is not None:
+        logger.info("issue not updated: %s", reason)
+    if (reason is not None or creds is None) and r.findings:
+        logger.info("work order:\n%s", scan.render_markdown(r))
+    return scan.exit_code(r)
 
 
 def run_loop(

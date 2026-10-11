@@ -51,14 +51,12 @@ def sync_issue(
 
 
 def issue_token(repo_full: str, http=ghapp._default_http) -> str | None:
-    """STRATA_KB_GH_TOKEN, else a minted App installation token, else None."""
-    token = os.environ.get("STRATA_KB_GH_TOKEN", "").strip()
-    if token:
-        return token
+    """A minted App installation token when App creds are set, else
+    STRATA_KB_GH_TOKEN, else None."""
     app_id = os.environ.get("STRATA_KB_GH_APP_ID", "")
     key_path = os.environ.get("STRATA_KB_GH_APP_KEY", "")
     if not (app_id and key_path):
-        return None
+        return os.environ.get("STRATA_KB_GH_TOKEN", "").strip() or None
     try:
         pem = Path(key_path).read_text(encoding="utf-8")
     except OSError as exc:
