@@ -4,7 +4,7 @@ Single source of truth for the mission heading list, the id formats, and
 the backlog table shape that `missionlint.py` enforces.
 `REQUIRED_MISSION_HEADINGS` is a compatibility contract between the BA's
 local install and CI — changing it is a breaking change (minor/major
-release only, changelog entry mandatory; see spec §3.6).
+release only, changelog entry mandatory).
 
 English headings are fixed (the lint contract); mission body text follows
 the BA's working language.
@@ -37,7 +37,7 @@ COMPONENT_HEADING = "## Components (C4 L3)"
 # properties subject to change"; binding a breaking-change-class lint
 # contract to that would let an upstream release fail every team's DoR
 # gate. The check asks "is there a diagram at this level", not "is this
-# diagram syntactically C4" (spec §5.1).
+# diagram syntactically C4".
 L1_KEYWORDS: tuple[str, ...] = ("C4Context", "flowchart")
 L2_KEYWORDS: tuple[str, ...] = ("C4Container", "flowchart")
 L3_KEYWORDS: tuple[str, ...] = ("C4Component", "flowchart")
@@ -59,7 +59,7 @@ BACKLOG_SEP_RE = re.compile(r"^\|[\s:|-]+\|$")
 # A backlog data row: '| <us-id> | <title> |'.
 BACKLOG_ROW_RE = re.compile(r"^\|\s*([^|]+?)\s*\|\s*(.*?)\s*\|$")
 
-# The placeholder convention inherited from Phase 4 (spec §12): detail
+# The placeholder convention shared with the ticket template: detail
 # that would need code knowledge is marked, never invented. Phase 5
 # agents find and resolve these.
 PLACEHOLDER = "%%TODO: verify against codebase%%"

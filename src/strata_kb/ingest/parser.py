@@ -1,3 +1,13 @@
+"""parser — turn a PDF into the flat item stream the sectioner consumes.
+
+Runs docling once per PDF (`load_or_parse`, cached as JSON under the work
+dir) and flattens the result into `DocItem`s (`doc_to_items`), recovering
+code, glyphs and figures from the PDF itself where docling loses them. Also
+reads the PDF outline (`bookmark_ids`, `outline_parts`) and cross-checks it
+against the sections built (`crosscheck`). Text extraction is a deny-list:
+L3 must hold the document's complete text. Called by `ingestcmd`.
+"""
+
 from __future__ import annotations
 
 import json
@@ -647,9 +657,9 @@ def _units_outside_outline(unit_ids: set[str], bm_ids: set[str]) -> list[str]:
 
 
 def crosscheck(unit_ids: set[str], bm_ids: set[str], max_depth: int = 3) -> list[str]:
-    """Both directions of the outline cross-check (phase-1 spec §4.3:
-    'section thiếu/thừa'): bookmarks no unit covers, then units the
-    outline does not name."""
+    """Both directions of the outline cross-check (missing and extra
+    sections): bookmarks no unit covers, then units the outline does not
+    name."""
     return _missing_bookmarks(unit_ids, bm_ids, max_depth) + _units_outside_outline(
         unit_ids, bm_ids
     )

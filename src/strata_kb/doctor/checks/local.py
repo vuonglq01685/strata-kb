@@ -62,12 +62,11 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
             stored = sec.tokens.l2 if suffix == ".md" else sec.tokens.l3
             field = "tokens.l2" if suffix == ".md" else "tokens.l3"
             if stored != recount:
-                # Warning, not error (Important 4, fix round 1): svc_note
-                # deliberately leaves stale counts in place (svcnote.py) and
-                # code-ingest leaves every section unbuilt -- both routine,
-                # both fixed by the next `kb build`. Still reported (review
-                # row #9's actual drift case), just not a red doctor exit on
-                # a healthy day-to-day workflow.
+                # Warning, not error: svc_note deliberately leaves stale counts
+                # in place (svcnote.py) and code-ingest leaves every section
+                # unbuilt -- both routine, both fixed by the next `kb build`.
+                # Still reported (real drift looks the same), just not a red
+                # doctor exit on a healthy day-to-day workflow.
                 issues.append(
                     Issue(
                         "warning",
@@ -76,13 +75,12 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
                     )
                 )
     # Repeated ids are legal WITHIN one file -- heading_occurrences/
-    # slice_section(occurrence=) exist for exactly that, spec-allowed
-    # "repeated numbering" (mdutils.py). heading_occurrences scopes its
-    # count per (file, id), so same id + different files each independently
-    # slice fine and "could not slice" above never catches this. The only
-    # real ambiguity is a citation `doc#<id>` that cannot say which FILE it
-    # meant -- so flag an id only when its rows span more than one file
-    # (Critical 3, fix round 1 -- narrows the original brief's check).
+    # slice_section(occurrence=) exist for exactly that, spec-allowed "repeated
+    # numbering" (mdutils.py). heading_occurrences scopes its count per (file,
+    # id), so same id + different files each independently slice fine and "could
+    # not slice" above never catches this. The only real ambiguity is a citation
+    # `doc#<id>` that cannot say which FILE it meant -- so flag an id only when
+    # its rows span more than one file.
     files_by_id: dict[str, set[str]] = {}
     for s in manifest.sections:
         files_by_id.setdefault(s.id, set()).add(s.file)
@@ -95,19 +93,18 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
             )
         )
 
-    # Final review item 5: re-widened after the batch's own narrowing ruling
-    # turned out half right. A within-file repeat IS legal (heading_
-    # occurrences/slice_section(occurrence=) exist for exactly that,
-    # spec-allowed "repeated numbering") and a citation `doc#<id>` truly
-    # cannot name a FILE (the reason the check above stays scoped to
-    # cross-file) -- but it cannot name an OCCURRENCE either, and nothing on
-    # the read path does that job for it: query.py, resolve.py, searchdb.py,
-    # diff.py and svcnote.py all resolve occurrence 0 only (`_get_section_in`
-    # picks the first matching manifest row, then slices occurrence 0). So a
-    # within-file repeat's 2nd-and-later rows build, publish, and are
-    # permanently unreachable by `kb get`/`kb resolve`/the section API/any
-    # MCP tool -- not an error (the format allows the repeat and four write
-    # modules rely on it), but not silently doctor-green either.
+    # A within-file repeat IS legal
+    # (heading_occurrences/slice_section(occurrence=) exist for exactly that,
+    # spec-allowed "repeated numbering") and a citation `doc#<id>` truly cannot
+    # name a FILE (the reason the check above stays scoped to cross-file) -- but
+    # it cannot name an OCCURRENCE either, and nothing on the read path does
+    # that job for it: query.py, resolve.py, searchdb.py, diff.py and svcnote.py
+    # all resolve occurrence 0 only (`_get_section_in` picks the first matching
+    # manifest row, then slices occurrence 0). So a within-file repeat's
+    # 2nd-and-later rows build, publish, and are permanently unreachable by `kb
+    # get`/`kb resolve`/the section API/any MCP tool -- not an error (the format
+    # allows the repeat and four write modules rely on it), but not silently
+    # doctor-green either.
     per_file_counts: dict[tuple[str, str], int] = {}
     for s in manifest.sections:
         per_file_counts[(s.file, s.id)] = per_file_counts.get((s.file, s.id), 0) + 1
@@ -125,8 +122,8 @@ def _check_doc(kb_dir: Path, doc_id: str) -> list[Issue]:
 
     # The manifest→file direction is checked above (missing file, unsliceable
     # section). This is the file→manifest direction for headings, the way the
-    # orphan-file loop below is for files: a heading nothing lists is content
-    # no citation can reach (M9, review row #4).
+    # orphan-file loop below is for files: a heading nothing lists is content no
+    # citation can reach.
     listed = {s.id for s in manifest.sections}
     for suffix in (".md", ".raw.md"):
         for name in sorted({f"{s.file}{suffix}" for s in manifest.sections}):
@@ -199,8 +196,8 @@ def check_kind(kb_dir: Path) -> list[Issue]:
     try:
         kind = load_config(kb_dir).kind
     # OSError is a vanished or unreadable file -- doctor's job is to report
-    # it, not die on it (H1: check_kind now runs before _hub_or_exit, which
-    # used to catch this first); worded like cli.py's identical condition
+    # it, not die on it (check_kind runs before _hub_or_exit, so nothing
+    # else catches this first); worded like cli.py's identical condition
     # rather than "invalid", which is only true of the branch below.
     except OSError as exc:
         return [Issue("error", f"could not read .kb/config.yaml: {_flatten(exc)}")]
@@ -224,9 +221,9 @@ SOURCE_DIRS = ("source", "sources")
 
 
 def check_source_dirs(repo_root: Path) -> list[Issue]:
-    """Copyrighted source documents must never be in git (2026-10-10 review
-    H13). `kb init` ignores every file in both folders; a file tracked
-    before that -- or force-added -- is still published with every push."""
+    """Copyrighted source documents must never be in git. `kb init` ignores
+    every file in both folders; a file tracked before that -- or force-added
+    -- is still published with every push."""
     issues: list[Issue] = []
     for folder in SOURCE_DIRS:
         files = [
@@ -253,8 +250,8 @@ def check_source_dirs(repo_root: Path) -> list[Issue]:
 
 def check_config_credentials(kb_dir: Path, repo_root: Path) -> list[Issue]:
     """A committed `.kb/config.yaml` whose `hub:` or `intake:` URL carries a
-    token puts that token in every clone's history (2026-10-10 review §5.2
-    #8). The value is never printed."""
+    token puts that token in every clone's history. The value is never
+    printed."""
     config_path = kb_dir.resolve() / "config.yaml"
     try:
         relpath = config_path.relative_to(repo_root.resolve()).as_posix()

@@ -3,6 +3,15 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.16.1 — 2026-10-11
+
+Comments and docstrings only. No behaviour or exit code changes.
+
+- **Every module under `src/strata_kb` has a docstring.** Each one says what the module owns and what a reader must know before touching it. 40 modules had none, among them `cli.py`, `publish.py`, `intake.py` and `searchdb.py`.
+- **Comments no longer point at internal reviews.** Tags like "F-D9 finding 2", "wave I-1 round 4", "fix round 1, Important 3" and "spec 2026-09-25 §4.1" are gone from comments and docstrings. The rationale they carried stays: what the code does, why, and the failure it prevents. Git history keeps the old wording.
+- **Two error messages are shorter.** A truncated asset record and the `.kb-work/` warning from `kb doctor --hub` dropped the same kind of tag from their text.
+- **New test:** `tests/test_source_hygiene.py` fails on a module with no docstring, and on a comment that cites an internal review again.
+
 ## 1.16.0 — 2026-10-11
 
 - **Merged tickets are re-checked.** New `kb ticket stale [PATH...]` lists every ticket and mission (default: `tickets/` and `missions/`) whose citations the hub has moved since they were pinned. `--md` gives an issue body and `--json` gives data. It exits 0 when everything is current, 2 when citations are only stale, and 1 when any is broken. `ba` and `dev` repos now get `.github/workflows/kb-doctor.yml`, which runs it daily. While anything is stale or broken it keeps one open issue, labelled `kb-stale-citations`, up to date; once everything is current it closes that issue. Re-run `kb init` to pick up the workflow.

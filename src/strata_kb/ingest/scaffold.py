@@ -1,3 +1,13 @@
+"""scaffold — write sectioned units into `.kb/<doc-id>/` as L3 and L2 files.
+
+`scaffold_doc` writes one `<stem>.raw.md` (L3, full text) and one `<stem>.md`
+(L2, a `TODO:summarize` placeholder plus verbatim tables and figure lines)
+per chapter, then the document manifest and the `index.yaml` entry. A
+`--sections` re-ingest replaces only the targeted chapters' files and keeps
+every other file and manifest entry as it was; all id and path checks run
+before anything is deleted or written.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -26,7 +36,7 @@ __all__ = [
 # never a path — no separators, no leading dot.
 _DOC_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
-_TARGET_MIN_TOKENS = 300  # phase-1 spec §4.4-3: a measured target, not a rule
+_TARGET_MIN_TOKENS = 300  # a measured target, not a rule
 _TARGET_MAX_TOKENS = 5000
 _WHITESPACE_RE = re.compile(r"\s")
 _PATH_SEP_RE = re.compile(r"[/\\]")

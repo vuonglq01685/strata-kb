@@ -1,3 +1,12 @@
+"""query — search and section lookup over a hub's federated knowledge.
+
+The read side shared by `kb query`/`kb get`, the MCP tools and the web UI.
+`search_detailed` runs the keyword and semantic legs through searchdb, fuses
+them, fills a token budget and returns results plus the notes an MCP agent
+must see in the payload (it never sees stderr); `get_section` fetches one
+section at L2 or L3. Every caller-supplied doc id goes through `doc_dir`.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -37,10 +46,10 @@ class InvalidLevelError(ValueError):
 def normalize_level(value: str) -> str:
     """'l2' | 'l3', case-insensitive; anything else raises.
 
-    Reviewer C F-C4: two surfaces disagreeing about what a level means is the
-    bug — the MCP tool validated, the CLI did not, and a caller asking for the
-    untouched original silently received the AI-condensed text. One function
-    both call is the fix."""
+    Two surfaces disagreeing about what a level means is the bug to avoid: if
+    the MCP tool validates and the CLI does not, a caller asking for the
+    untouched original silently receives the AI-condensed text. One function
+    both call prevents that."""
     norm = (value or "").strip().lower()
     if norm not in ("l2", "l3"):
         raise InvalidLevelError(f"level '{value}' is invalid — use 'l2' or 'l3'.")
@@ -60,7 +69,7 @@ class QueryResult:
     # actually got (content alone) — REST and the web UI report this one,
     # so their number stops describing text they never send. `tokens`
     # (above) keeps counting content + snippet: the budget this result
-    # actually spent (M17). Required, not defaulted: a construction site
+    # actually spent. Required, not defaulted: a construction site
     # that forgets it would otherwise silently report 0 tk on REST/the UI.
     content_tokens: int
     source: str = ""  # repo-id within the federation
@@ -74,7 +83,7 @@ class SearchOutcome:
 
     `notes` exists because an MCP agent never sees stderr: the truncation,
     ambiguity, unknown-tag and no-usable-terms signals have to travel with the
-    payload (F-C5, F-C7, F-C9, F-C14)."""
+    payload."""
 
     results: list[QueryResult]
     notes: list[str] = field(default_factory=list)
@@ -87,9 +96,9 @@ def _citation(repo_id: str, doc_id: str, revision: str, section_id: str) -> str:
 
 def stale_hub_note(hub: HubHandle | None) -> str:
     """One-line staleness warning shared by every caller that resolves a
-    hub handle -- moved here from mcp.py's `_stale_note` (M17, identical
-    body) so the CLI and REST surfaces can print/report the same wording
-    instead of re-deriving it from `hub.stale`/`hub.age_seconds` themselves."""
+    hub handle, so the MCP, CLI and REST surfaces print/report the same
+    wording instead of re-deriving it from `hub.stale`/`hub.age_seconds`
+    themselves."""
     if hub is not None and hub.stale:
         age = f"~{hub.age_seconds:.0f}s" if hub.age_seconds else "unknown age"
         return f"[warn] hub cache is stale ({age}) — results may lag the hub\n\n"
@@ -142,14 +151,13 @@ def _search_index(
 ]:
     """Run both legs + RRF on the index. DB corrupt mid-way → delete, rebuild
     exactly once; still failing → raise (spec §5). The third element is True
-    when a leg filled K_LEG, i.e. matches were dropped before fusion (F-C7).
-    The fourth element is the keyword leg's raw BM25 scores (rowid → positive
+    when a leg filled K_LEG, i.e. matches were dropped before fusion. The
+    fourth element is the keyword leg's raw BM25 scores (rowid → positive
     score, higher is better) — RRF only carries rank, so the ambiguity note's
-    score check needs the real magnitude (F-C5). The fifth element (`busy`)
-    is True when the writer lock forced us onto the existing (possibly stale
-    or cold-empty) index instead of the freshly-synced one — the caller must
-    tell the user, not just log a warning nobody sees (R19, final-branch
-    review)."""
+    score check needs the real magnitude. The fifth element (`busy`) is True
+    when the writer lock forced us onto the existing (possibly stale or
+    cold-empty) index instead of the freshly-synced one — the caller must tell
+    the user, not just log a warning nobody sees."""
     from strata_kb import searchdb
 
     for attempt in (1, 2):
@@ -197,7 +205,7 @@ def _search_index(
             kind = searchdb.classify_db_error(exc)
             if kind != "corrupt" or attempt == 2:
                 # lock = another process is writing; client = the caller's own
-                # input. Neither is a reason to delete the shared index (F-C2).
+                # input. Neither is a reason to delete the shared index.
                 raise
             logger.warning("search.db corrupt — rebuilding once: %s", exc)
             searchdb.delete_db(hub)
@@ -207,9 +215,9 @@ def _search_index(
     raise AssertionError("unreachable")
 
 
-# Measured in Task 10, Step 6 — this repo's own .kb/ published to a scratch
-# federation entry, top-2 BM25 ratio (2nd-hit / 1st-hit) for reviewer C's
-# rank-1-correct query battery:
+# Measured on this repo's own .kb/ published to a scratch federation entry:
+# top-2 BM25 ratio (2nd-hit / 1st-hit) for a battery of queries whose rank-1
+# hit is correct:
 #
 #   0.642  Restrictive Airspace Designation
 #   0.991  Runway Identifier
@@ -238,7 +246,7 @@ def _ambiguity_notes(
     result_rowids: list[int],
     fts_scores: dict[int, float],
 ) -> list[str]:
-    """Two reasons the caller should look at #2 as well as #1 (F-C5).
+    """Two reasons the caller should look at #2 as well as #1.
 
     1. STRUCTURAL — the top two are the SAME section published by two
        federation repos. No threshold, no calibration, and it is the case a BA
@@ -254,7 +262,7 @@ def _ambiguity_notes(
     `results[:2]` can name different rows; scoring the wrong pair could name
     two sections whose scores were never actually compared, and — with an
     unlucky skip — invert `lo`/`hi` so a mismatched pair satisfies
-    `>= AMBIG_BM25_RATIO` when the cited pair never would (review round 2)."""
+    `>= AMBIG_BM25_RATIO` when the cited pair never would."""
     if len(results) < 2:
         return []
     top, second = results[0], results[1]
@@ -282,13 +290,13 @@ def _ambiguity_notes(
 
 
 def _unknown_tag_notes(hub: HubHandle, tags: list[str]) -> list[str]:
-    """A tag filter that matched nothing is usually a tag that does not exist
-    (reviewer C battery #32). Only runs on the empty-result path.
+    """A tag filter that matched nothing is usually a tag that does not
+    exist. Only runs on the empty-result path.
 
-    Document ids count as valid: `searchdb.py:350` indexes `doc.id.lower()` as
-    a synthetic tag, so `--tags arinc-424` is a supported filter (F-C14). It is
-    deliberately NOT part of `kbcontext.tag_vocabulary`, which governs what a
-    kb-context block may carry."""
+    Document ids count as valid: `searchdb._sync_repo` indexes
+    `doc.id.lower()` as a synthetic tag, so `--tags arinc-424` is a supported
+    filter. It is deliberately NOT part of `kbcontext.tag_vocabulary`, which
+    governs what a kb-context block may carry."""
     from strata_kb import kbcontext
     from strata_kb.federation import load_federation
 
@@ -314,9 +322,8 @@ def _truncate_echo(text: str) -> str:
     """Bound a raw caller-supplied query before it's echoed into a note.
 
     The no-usable-terms note quotes the query verbatim; an MCP agent can
-    hand back an arbitrarily long punctuation-only string, and that was
-    landing in the payload unbounded (minor finding, promoted on final-branch
-    review)."""
+    hand back an arbitrarily long punctuation-only string, which must not
+    land in the payload unbounded."""
     if len(text) <= _ECHO_MAX_CHARS:
         return text
     return text[:_ECHO_MAX_CHARS] + "…"
@@ -398,16 +405,16 @@ def search_detailed(
         if used >= budget:
             break
     if busy:
-        # R19 (final-branch review, Important): a lock error from open_fresh
-        # used to fall back to the existing index silently (log.warning only
-        # — an MCP agent never sees stderr). On a cold hub that existing
-        # index is empty, so the caller got a confident "No matching section
-        # found" with no hint the index simply hadn't synced yet.
+        # A lock error from open_fresh falls back to the existing index; do
+        # not do that silently (log.warning only — an MCP agent never sees
+        # stderr). On a cold hub that existing index is empty, so the caller
+        # would get a confident "No matching section found" with no hint the
+        # index simply hadn't synced yet.
         notes.append(BUSY_INDEX_NOTE)
     if truncated:
         # Deliberately conservative: a query with exactly K_LEG matches reports a
         # cut it did not suffer. That costs the caller one sentence and never
-        # hides a real one (F-C7).
+        # hides a real one.
         notes.append(
             f"Note: more sections matched than were ranked — each leg is capped "
             f"at {searchdb.K_LEG} before fusion, so this is not the complete set. "
@@ -502,8 +509,7 @@ def doc_dir(repo_kb: Path, doc_id: str) -> Path | None:
     a path (MCP `kb_get_section`, `kb get`, `/api/docs/<doc>`, `/ui/docs/<doc>`).
     The grammar rejects separators and a leading dot. The resolve check
     catches a symlinked doc folder inside a published snapshot. Without it,
-    `../../.kb/<doc>` read the hub's unpublished `.kb/` (2026-10-10 review
-    §5.2 #1).
+    `../../.kb/<doc>` reads the hub's unpublished `.kb/`.
     """
     if not models.DOC_ID_RE.match(doc_id):
         return None

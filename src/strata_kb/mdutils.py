@@ -1,3 +1,12 @@
+"""mdutils — Markdown and token helpers shared across the KB.
+
+Owns the `## <id> <title>` section-heading grammar (`HEADING_RE`), section
+slicing (`section_map`, `slice_section`, `slice_subsection`), fence-aware
+heading and table extraction, the orphan-heading predicate that `kb build`
+and `kb doctor` share, slugs, and cl100k_base token counting with an
+offline estimate. Used by ingest, build, summarize, search and doctor.
+"""
+
 from __future__ import annotations
 
 import functools
@@ -47,7 +56,7 @@ def tiktoken_cache_dir() -> Path:
 def _load_encoder():
     """cl100k_base, or None when it cannot be loaded (offline, a proxy
     refusing the download). Imported lazily: commands that never count
-    tokens skip tiktoken entirely (2026-10-10 review §6.2 F4/F5)."""
+    tokens skip tiktoken entirely."""
     import tiktoken
 
     if (
@@ -93,9 +102,9 @@ def section_map(md: str) -> dict[str, tuple[str, ...]]:
     in file order (ids may repeat within a file). A slice runs from its
     heading to the next line starting with '## ', stripped.
 
-    `slice_section` used to re-split the whole file for each section, so a
-    caller walking a file's sections paid O(sections × bytes): 20 s to index
-    2,000 sections at 500 per file (2026-10-10 review §6.2 F2). Memoised on
+    Do not re-split the whole file per section: a caller walking a file's
+    sections would pay O(sections × bytes), 20 s to index 2,000 sections at
+    500 per file. Memoised on
     the text itself -- the same string object hits without re-hashing --
     so callers keep calling `slice_section` per section. Treat the result
     as read-only.
@@ -167,7 +176,7 @@ def _unfenced_lines(md: str):
     line after it -- shared by `_iter_headings(fence_aware=True)` and
     `extract_tables()` so a fenced code block embedding a heading-shaped
     or table-shaped line (a `.raw.md` quoting a source file) is never
-    mistaken for real document structure (Ruling R16)."""
+    mistaken for real document structure."""
     in_fence = False
     fence_char = ""
     fence_len = 0
@@ -205,7 +214,7 @@ def _iter_headings(md: str, *, fence_aware: bool):
     fence_aware=True tracks fences via `_unfenced_lines()` and never yields
     a match for a '## ' line that falls inside one -- a `.raw.md` embedding
     a source file whose own text happens to contain a Markdown heading line
-    is not a document heading (Ruling R16)."""
+    is not a document heading."""
     lines = _unfenced_lines(md) if fence_aware else md.splitlines()
     for line in lines:
         m = HEADING_RE.match(line)
@@ -227,7 +236,7 @@ def heading_id_titles(md: str, *, fence_aware: bool = False) -> list[tuple[str, 
     '## <id>'). A title-less heading ('## Ownership') is the same shape as
     codeingest's human 'free-form single-word subheading'
     (codeingest/core.py:839, `_slice_known_section`) -- callers use this to
-    tell that apart from a real, titled scaffold heading (Ruling R16)."""
+    tell that apart from a real, titled scaffold heading."""
     out: list[tuple[str, bool]] = []
     for m in _iter_headings(md, fence_aware=fence_aware):
         title = m.group("title")
@@ -241,12 +250,12 @@ def orphan_heading_ids(text: str, suffix: str, known_ids: set[str]) -> list[str]
 
     The shared predicate behind `kb build`'s orphan-heading check
     (`build._check_orphan_headings`) and `kb doctor`'s (`doctor._check_doc`)
-    -- they must never diverge on it again (fix round 1, Critical 2: doctor
-    used to skip the exemption below and flagged a KB `kb build` calls
-    clean). `suffix` is the caller's literal ".md"/".raw.md" loop variable:
-    the one exemption is L2-only -- a title-less heading ('## Ownership', a
-    single token, no title) in the L2 `.md` is a human's own free-form
-    subheading, not a scaffold section break (Ruling R16), mirroring
+    -- they must never diverge on it: a doctor that skipped the exemption
+    below would flag a KB that `kb build` calls clean. `suffix` is the
+    caller's literal ".md"/".raw.md" loop variable: the one exemption is
+    L2-only -- a title-less heading ('## Ownership', a single token, no
+    title) in the L2 `.md` is a human's own free-form subheading, not a
+    scaffold section break, mirroring
     codeingest's own `_slice_known_section` reader. `.raw.md` gets no such
     exemption; a title-less heading there is still an orphan."""
     out = []

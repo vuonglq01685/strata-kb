@@ -14,7 +14,7 @@ former every run — once the ecosystem as a whole has evidence — would be
 noise, not signal.
 
 `detect_frameworks()` is the one function this module exposes beyond
-`DepsExtractor` itself — Task B4 reuses it, unmodified, to label a
+`DepsExtractor` itself — `services.py` reuses it, unmodified, to label a
 service's `technology` from the same dependency names.
 
 `DepsExtractor.detect()` cannot see `opts.kb_dir`: `Extractor.detect(self,
@@ -53,7 +53,7 @@ from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 from strata_kb.codeingest.types import CodeIngestOptions, CodeSection, ExtractResult
 
 # ---------------------------------------------------------------------------
-# framework detection — published interface, reused by Task B4.
+# framework detection — published interface, reused by services.py.
 # ---------------------------------------------------------------------------
 
 FRAMEWORKS: tuple[tuple[str, str], ...] = (
@@ -131,7 +131,7 @@ def detect_frameworks(names: Iterable[str]) -> list[str]:
 # uses "direct"; node and php add "dev"; python adds "extra:<name>" per
 # `[project.optional-dependencies]` table and one group per non-root
 # `requirements*.txt`, named by that file's repo-relative path. Every group
-# is rendered (reviewer G-5) — names in L2, constraints in L3.
+# is rendered — names in L2, constraints in L3.
 Groups = dict[str, list[tuple[str, str]]]
 
 _NODE_MAX_DEPTH = 2  # package.json is only searched at depth <= 2
@@ -175,8 +175,8 @@ def _fmt_dep(name: str, constraint: str) -> str:
     with a version operator (PEP 508's `>=`, npm's `^`/`~`, ...) reads
     naturally concatenated (`fastapi>=0.110`); a bare version number gets a
     separating space (`spring-boot-starter-web 3.2.0`). Both `name` and
-    `constraint` are run through `redact_userinfo` first (task review,
-    Important 2) -- a PEP 508 direct-URL requirement or an npm
+    `constraint` are run through `redact_userinfo` first -- a PEP 508
+    direct-URL requirement or an npm
     `git+https://token@...` dependency is the normal way a private
     package is declared, and either can carry a `user:pass@`/`token@`
     credential the source repo already committed in plaintext; `.kb/`
@@ -335,7 +335,7 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
                 pairs.append(_split_pep508(code_part))
             # Only the root requirements.txt is the runtime set; every other
             # requirements file (a CI runner venv, a docs build) is its own
-            # group so nothing is duplicated or misattributed (reviewer G-5).
+            # group so nothing is duplicated or misattributed.
             _merge(groups, "direct" if rel == "requirements.txt" else rel, pairs)
 
     return _finish(groups, warnings, existing)
@@ -855,9 +855,9 @@ def _read_dart(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
 # section rendering + extractor
 # ---------------------------------------------------------------------------
 
-# (section id, human label, reader key) — the first six match the brief's
-# Step 4 ecosystem list (python, node, java, dotnet, go, php); rust/swift/
-# dart were appended later, not alphabetical by id either way.
+# (section id, human label, reader key) — the first six are the original
+# ecosystem list (python, node, java, dotnet, go, php); rust/swift/dart
+# were appended later, not alphabetical by id either way.
 # core.run() re-sorts every extractor's sections by (group, id) before
 # writing them out, so this order has no effect on the emitted files — it
 # only affects which warning appears first when more than one ecosystem's
@@ -924,7 +924,7 @@ def _render_section(section_id: str, label: str, groups: Groups) -> CodeSection:
     # Count only names not already listed under `direct` — a non-root
     # requirements file that repeats a direct dependency (pinned to a
     # different constraint for that file) must not be claimed as "more"
-    # when it isn't (reviewer finding: extra_count over-counted overlap).
+    # when it isn't (that would over-count `extra_count`).
     direct_names = {name for name, _constraint in direct}
     extra_count = sum(
         1 for _g, deps in others for name, _c in deps if name not in direct_names

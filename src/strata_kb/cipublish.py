@@ -30,7 +30,7 @@ class CIPublishError(KbError):
 def write_step_summary(line: str) -> None:
     """Append one line to the GitHub Actions job summary; a no-op outside
     Actions. The same hub PR URL repeating run after run is how a pending
-    hub PR becomes visible (spec 2026-09-25 §4.3b)."""
+    hub PR becomes visible."""
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
@@ -126,7 +126,7 @@ def _multipart(meta: dict, archive: bytes) -> tuple[bytes, str]:
 
 
 def _check_unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> None:
-    """Warn/refuse on sections published without SME review (R18) — the
+    """Warn/refuse on sections published without SME review — the
     same helper `kb publish` calls, run here before any upload."""
     gate = publish_mod.unreviewed_gate(kb_dir, require_reviewed)
     if gate.line is not None:
@@ -158,15 +158,15 @@ def run(
 
     remote_man = _fetch_remote_manifest(intake_url, rid, token, http)
     local_man = hashsync.build_manifest(kb_abs)
-    # F-D6/finding 4: remote_man reflects the hub's already-allowlist-filtered
-    # federation/<rid>/ (nothing else was ever committed there), but local_man
-    # was built raw -- every child has a .kb/config.yaml (kb init always
-    # writes one) that can never appear on the remote side, so the diff was
-    # permanently non-empty: the "nothing to publish" fast path below never
-    # fired, every CI run uploaded + churned a branch, and config.yaml (which
-    # may hold a hub token/URL) was archived and sent to the intake server on
-    # every single run. Filter local_man through the same predicate the
-    # remote side is implicitly already held to.
+    # remote_man reflects the hub's already-allowlist-filtered
+    # federation/<rid>/ (nothing else is ever committed there), but local_man
+    # is built raw -- every child has a .kb/config.yaml (kb init always
+    # writes one) that can never appear on the remote side. Unfiltered, the
+    # diff is permanently non-empty: the "nothing to publish" fast path below
+    # never fires, every CI run uploads + churns a branch, and config.yaml
+    # (which may hold a hub token/URL) is archived and sent to the intake
+    # server on every single run. Filter local_man through the same
+    # predicate the remote side is implicitly already held to.
     local_man, skipped = pubgate.split_allowlist(local_man)
     if skipped:
         typer.echo(

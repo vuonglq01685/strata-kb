@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 # A '- [ ]' / '- [x]' checkbox list item.
 _AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 
-# An AC is an observable outcome, never a shell command (docs/ac-quality.md,
-# spec 2026-09-23 §6). A backticked span whose first word — after skipping
+# An AC is an observable outcome, never a shell command (docs/ac-quality.md).
+# A backticked span whose first word — after skipping
 # a leading `sudo`, a `$` prompt marker, or a `VAR=value` assignment — is
 # one of these, or that chains two command-like words with `&&`, is the
 # command a Dev would run — it belongs in `## Test data & verification` or
@@ -185,7 +185,7 @@ def _check_ac_gwt(ac_items: list[str]) -> list[Issue]:
 def _check_required_filled(text: str) -> list[Issue]:
     """NT1 — a required section that says nothing is not a section.
     Presence was the whole contract before 0.22.0, so a ticket of nine
-    headings over nine 'TBD's passed the gate (reviewer E's T1)."""
+    headings over nine 'TBD's passed the gate."""
     issues: list[Issue] = []
     for heading in ticket.REQUIRED_HEADINGS:
         if heading in _FILL_EXEMPT:
@@ -532,7 +532,7 @@ def check_parent_mission(
     Traceability is enforced here rather than at mission lint because this
     is the point where both artifacts exist: a mission is authored before
     its tickets, so a mission-side existence check would fail every
-    freshly written mission (spec §5.2).
+    freshly written mission.
     """
     m = ticket.PARENT_MISSION_RE.search(text)
     if m is None:

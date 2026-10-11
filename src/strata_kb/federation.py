@@ -1,3 +1,14 @@
+"""federation — read the hub's federation/ mirror layout.
+
+Every leaf directory holding both `_meta.yaml` and `index.yaml` is one
+published repo's full `.kb` mirror; directories above leaves are namespaces
+(one tier per hub-to-hub publish). Owns the walks over that tree
+(`iter_entry_dirs`, plus doctor-only `iter_namespace_dirs` and
+`scan_broken_entries`), `load_federation`, the governance registry, and the
+deterministic aggregate `federation/index.yaml`. Read by search, publish,
+intake and doctor; `iter_entry_dirs` is the definition of a published entry.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -29,10 +40,10 @@ FED_TOP_EXCLUDE = ("index.yaml", "registry.yaml", ".gitkeep")
 class RegistryError(RuntimeError):
     """federation/registry.yaml is unreadable — intake must fail closed.
 
-    Deliberately stays out of the KbError family (Wave G fix round 2, item
-    7): not CLI-reachable -- both callers (publish's _governed_registry,
-    intake's authorize path) already convert it to their own message/HTTP
-    response themselves, fail-closed by design.
+    Deliberately stays out of the KbError family: not CLI-reachable -- both
+    callers (publish's _governed_registry, intake's authorize path) already
+    convert it to their own message/HTTP response themselves, fail-closed by
+    design.
     """
 
 
@@ -45,8 +56,7 @@ def load_registry(federation_dir: Path) -> models.Registry:
     except (yaml.YAMLError, ValidationError, UnicodeDecodeError) as exc:
         # UnicodeDecodeError is a ValueError, not a yaml.YAMLError/
         # ValidationError -- a non-UTF-8 registry.yaml must fail closed here
-        # too, not escape as a raw traceback (F-D9 finding 2's exact gap,
-        # one call deeper).
+        # too, not escape as a raw traceback.
         raise RegistryError(f"federation/{REGISTRY_NAME} is invalid: {exc}") from exc
 
 
@@ -137,15 +147,15 @@ def iter_namespace_dirs(federation_dir: Path) -> list[tuple[str, Path]]:
     dropped directly under federation/ itself or under an intermediate
     namespace directory (e.g. federation/<mid>/ after a hub-to-hub publish)
     -- doctor's stray-file sweep (check_hub) uses this to reach those levels
-    too (F-D9 batch finding 5).
+    too.
 
     Diverges from iter_entry_dirs on ONE of its three stop conditions on
-    purpose (M3): a broken entry (exactly one of _meta.yaml/index.yaml) is
-    still walked and reported as a namespace directory here, not skipped.
+    purpose: a broken entry (exactly one of _meta.yaml/index.yaml) is still
+    walked and reported as a namespace directory here, not skipped.
     iter_entry_dirs is right to skip it as unusable content -- but "unusable
     as an entry" must not mean "unscanned": a half-written entry is exactly
     what an interrupted publish leaves behind, and skipping the walk here
-    left the whole subtree beneath it -- including a stray credential-
+    would leave the whole subtree beneath it -- including a stray credential-
     bearing file dropped directly inside it -- entirely invisible to
     doctor's stray-file sweep, with no issue raised about the broken entry
     either to signal that anything had gone unscanned. The other two stop
@@ -164,7 +174,7 @@ def iter_namespace_dirs(federation_dir: Path) -> list[tuple[str, Path]]:
             has_index = (child / ENTRY_INDEX_NAME).exists()
             if has_meta and has_index:
                 continue  # leaf entry, not a namespace directory
-            # Neither, or exactly one (a broken entry, M3) -- either way this
+            # Neither, or exactly one (a broken entry) -- either way this
             # is a directory doctor's stray-file sweep must still look inside.
             out.append((child_rel, child))
             _walk(child, child_rel)
@@ -181,13 +191,12 @@ class BrokenEntryScan(NamedTuple):
 
 
 def scan_broken_entries(federation_dir: Path) -> BrokenEntryScan:
-    """(broken, nested_leaves) -- additive, doctor-only (Ruling P36, Wave G
-    fix round 3): iter_entry_dirs keeps its `elif has_meta or has_index:`
-    stop and does not recurse past a broken entry (exactly one of
-    _meta.yaml/index.yaml); iter_namespace_dirs (M3) now walks in but
-    `continue`s at a leaf without sweeping its contents. Net: a fully valid
-    leaf entry nested beneath a broken entry is reached by NEITHER sweep,
-    and nothing signals that the broken subtree was skipped at all.
+    """(broken, nested_leaves) -- additive, doctor-only: iter_entry_dirs
+    keeps its `elif has_meta or has_index:` stop and does not recurse past a
+    broken entry (exactly one of _meta.yaml/index.yaml); iter_namespace_dirs
+    walks in but `continue`s at a leaf without sweeping its contents. Net: a
+    fully valid leaf entry nested beneath a broken entry is reached by
+    NEITHER sweep, and nothing signals that the broken subtree was skipped.
 
     Does not widen what iter_entry_dirs itself yields -- load_federation
     consumes that exact yield as the definition of a published entry, and a
@@ -198,8 +207,8 @@ def scan_broken_entries(federation_dir: Path) -> BrokenEntryScan:
 
     broken: every directory holding exactly one of _meta.yaml/index.yaml,
     at any depth -- so doctor.check_hub can raise an Issue naming each one
-    (previously only a logger.warning inside iter_entry_dirs's own walk,
-    which never reached doctor's output).
+    (iter_entry_dirs's own walk only logs a warning, which never reaches
+    doctor's output).
 
     nested_leaves: every fully valid leaf entry (_meta.yaml AND
     index.yaml) whose path passes through a broken ancestor -- exactly the
@@ -261,7 +270,7 @@ def find_cycle_segment(
 def _with_manifest_revisions(index: models.KBIndex, entry_dir: Path) -> models.KBIndex:
     """An index entry with no `revision` takes its document's manifest
     revision. code-ingest leaves `-code`'s index revision empty so a dev
-    repo's committed `index.yaml` never churns (spec 2026-09-25 §4.1);
+    repo's committed `index.yaml` never churns;
     every reader of `IndexEntry.revision` goes through here."""
     for doc in index.docs:
         if doc.revision:
@@ -284,7 +293,7 @@ def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
     meta.repo_id được đè bằng path-id tương đối (vd 'mid/repo-x') — file
     _meta.yaml mirror từ tầng dưới chỉ biết tên cụt của chính nó.
 
-    Factored out of `load_federation` (spec 2026-09-25 §3.4/§4.1) so a
+    Factored out of `load_federation` so a
     caller that already has a cheap reason to skip an entry — searchdb's
     stat-only repo fingerprint, e.g. — can avoid paying for
     `_with_manifest_revisions`'s manifest reads on an entry it is not going
@@ -364,10 +373,10 @@ def build_federation_index(
 
     `changed` (the repo-ids a publish just wrote): every other entry keeps
     the `content_sha256` already recorded for it, instead of re-hashing the
-    whole hub on each publish (4.8 s at 100 docs, 2026-10-10 review §6.2
-    F6). It is also the right record: the digest is what that repo
-    published, so an in-place edit to another entry stays visible to
-    `kb doctor` rather than being re-recorded by an unrelated publish.
+    whole hub on each publish (4.8 s at 100 docs). It is also the right
+    record: the digest is what that repo published, so an in-place edit to
+    another entry stays visible to `kb doctor` rather than being re-recorded
+    by an unrelated publish.
     None (reindex, doctor) recomputes every entry.
     """
     recorded = _recorded_digests(federation_dir) if changed is not None else {}

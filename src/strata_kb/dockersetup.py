@@ -1,3 +1,12 @@
+"""dockersetup — prepare a hub repo for Docker HTTP serving.
+
+`run_setup` writes `.env` with a fresh random `STRATA_KB_HTTP_TOKEN` (never
+echoed) and makes sure `.env` is git-ignored; it refuses any repo kind but
+`hub`. `docker_ready`, `compose_pull` and `compose_up` wrap the Docker CLI.
+Backs `kb docker-setup`; cli.py keeps the flags and printing, the steps live
+here.
+"""
+
 from __future__ import annotations
 
 import re
@@ -32,9 +41,8 @@ def set_env_line(text: str, var: str, value: str) -> str:
 
 class DockerSetupError(KbError):
     """Setup cannot proceed (wrong repo kind, missing prerequisites). Every
-    CLI call site already converts it to a one-line message -- joins the
-    KbError family (Wave G fix round 2, item 7); EnvExistsError below
-    inherits the membership."""
+    CLI call site already converts it to a one-line message -- it joins the
+    KbError family, and EnvExistsError below inherits the membership."""
 
 
 class EnvExistsError(DockerSetupError):

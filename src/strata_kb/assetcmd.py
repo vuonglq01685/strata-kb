@@ -24,7 +24,7 @@ _REF_RE = re.compile(r"assets/([0-9a-f]{64}\.(?:png|webp))")
 class AssetCmdError(KbError):
     """Preconditions unmet (mode/config), distinct from store failures.
     Caught in the same except tuple as assetstore.AssetStoreError, already a
-    KbError -- joins the family too (Wave G fix round 2, item 7)."""
+    KbError -- joins the family too."""
 
 
 @dataclass
@@ -35,7 +35,7 @@ class MigrateReport:
     # index.yaml (federation.iter_entry_dirs's own "broken" shape) -- found
     # under federation/ but never handed to the per-rid loop above, so an
     # empty per_rid here is NOT the same claim as "no in-git assets under
-    # federation/" (ruling P53, item 3, wave L1 brief). See migrate_assets.
+    # federation/". See migrate_assets.
     skipped: list[str] = field(default_factory=list)
 
 
@@ -73,28 +73,26 @@ def migrate_assets(handle, store=None) -> MigrateReport:
     rid's working tree is restored before the error surfaces, so a later
     unrelated commit can never pick up half-migrated state.
 
-    Each entry's committed record is read with assetstore.load_record
-    BEFORE divert_and_record runs (task 21 fix round, P32): migrate is
-    documented as idempotent and expected to be re-run, and on a re-run an
-    entry with nothing left to divert has `diverted == []` — if that
-    entry's record could not be read, divert_and_record's own lenient
-    merge (needed elsewhere, see its docstring) would see the same "empty"
-    and unlink the record outright while the store still holds the only
-    copy of what it named. Pre-checking here means that never happens:
-    load_record raises before divert_and_record is ever called for the
-    entry, so nothing is derived from the failed read and nothing is
-    unlinked -- the same except below restores the working tree and
-    re-raises, naming the file, exiting non-zero.
+    Each entry's committed record is read with assetstore.load_record BEFORE
+    divert_and_record runs: migrate is documented as idempotent and expected to
+    be re-run, and on a re-run an entry with nothing left to divert has
+    `diverted == []` — if that entry's record could not be read,
+    divert_and_record's own lenient merge (needed elsewhere, see its docstring)
+    would see the same "empty" and unlink the record outright while the store
+    still holds the only copy of what it named. Pre-checking here means that
+    never happens: load_record raises before divert_and_record is ever called
+    for the entry, so nothing is derived from the failed read and nothing is
+    unlinked -- the same except below restores the working tree and re-raises,
+    naming the file, exiting non-zero.
 
-    report.skipped (item 3, ruling P53) is populated from
-    federation.scan_broken_entries, read-only and additional to the sweep
-    above -- it does not widen what gets diverted, only what the caller is
-    told. Before this, an entry with exactly one of _meta.yaml/index.yaml
-    was invisible to this function entirely (iter_entry_dirs logs a
-    warning and moves on), so a hub with committed raw bytes sitting
-    under exactly that shape made this function return an empty per_rid
-    -- indistinguishable, to the caller, from a hub with genuinely nothing
-    left under federation/."""
+    report.skipped is populated from federation.scan_broken_entries,
+    read-only and additional to the sweep above -- it does not widen what
+    gets diverted, only what the caller is told. Without it, an entry with
+    exactly one of _meta.yaml/index.yaml is invisible to this function
+    entirely (iter_entry_dirs logs a warning and moves on), so a hub with
+    committed raw bytes sitting under exactly that shape would return an
+    empty per_rid -- indistinguishable, to the caller, from a hub with
+    genuinely nothing left under federation/."""
     store = _require_store(handle, store)
     report = MigrateReport()
     for entry_rel, rid_dir in _rid_dirs(handle):
@@ -155,10 +153,10 @@ def _record_entries(entry_rel: str, rid_dir: Path, corrupt: list[str]) -> list[s
 
     Goes through assetstore.load_record — the same primitive migrate's
     pre-flight uses — instead of its own bare `except Exception: return
-    []` (Important 3, wave I-1 round 2): that used to report a record
-    verify cannot read, or reads back degenerate (unreadable, corrupt, or
-    present-but-empty — see load_record), as clean, with `ok=True` unless
-    some markdown happened to still reference the asset. verify is
+    []`: that would report a record verify cannot read, or reads back
+    degenerate (unreadable, corrupt, or present-but-empty — see
+    load_record), as clean, with `ok=True` unless some markdown happened to
+    still reference the asset. verify is
     read-only — nothing here derives a write or a delete from the failed
     read — so the failure is surfaced as a finding naming the file instead
     of raised: `kb assets verify`'s whole job is telling an operator the
@@ -177,20 +175,18 @@ def _entry_resolves(
     """Resolvable AND intact. `kb assets verify` used to call store.exists,
     which cannot tell a good object from a tampered one.
 
-    `PurePosixPath(rel).name`, not `Path(rel).name` (item 6, wave L1
-    brief): `rel` is a record entry, a POSIX-spelled relative path by
-    construction (assetstore.divert_assets, the only writer of them
-    anywhere in this tree, writes `.as_posix()`), and `Path(rel).name`
-    binds to the host -- a WindowsPath splits it on backslash, a
-    PosixPath does not, so a backslash-bearing entry's "basename" would
-    differ by host (ruling P49, assetstore.asset_sha/is_asset_name's own
-    fix, b92637f). Currently dead ground, not a live bug: load_record
-    already rejects any entry `is_asset_name` refuses -- including a
-    backslash-bearing one -- before this function ever sees it, so `rel`
-    here is always well-formed. Kept platform-correct anyway, on the same
-    logic load_record's own docstring gives for closing this gap in a
-    second file -- the mechanism, not today's reachability, is the
-    property that must hold."""
+    `PurePosixPath(rel).name`, not `Path(rel).name`: `rel` is a record entry, a
+    POSIX-spelled relative path by construction (assetstore.divert_assets, the
+    only writer of them anywhere in this tree, writes `.as_posix()`), and
+    `Path(rel).name` binds to the host -- a WindowsPath splits it on backslash,
+    a PosixPath does not, so a backslash-bearing entry's "basename" would
+    differ by host (see assetstore.asset_sha). Currently dead ground, not a
+    live bug: load_record already rejects any entry `is_asset_name` refuses --
+    including a backslash-bearing one -- before this function ever sees it, so
+    `rel` here is always well-formed. Kept platform-correct anyway, on the same
+    logic load_record's own docstring gives for closing this gap in a second
+    file -- the mechanism, not today's reachability, is the property that
+    must hold."""
     local = rid_dir / rel
     if local.is_file():
         if not assetstore.verify_bytes(PurePosixPath(rel).name, local.read_bytes()):
@@ -224,28 +220,26 @@ def _walk_md_root(
     replacing the separate `root.glob("**/assets/*")` and
     `root.rglob("*.md")` calls this used to make.
 
-    Walked with `os.walk(onerror=...)`, not `Path.glob`/`Path.rglob` (item
-    2, wave L1 brief; measured pre-existing on 2fe4d62): both glob methods
-    use pathlib's recursive '**' selector, which raises an uncaught
+    Walked with `os.walk(onerror=...)`, not `Path.glob`/`Path.rglob`: both glob
+    methods use pathlib's recursive '**' selector, which raises an uncaught
     FileNotFoundError partway through the walk when it meets a broken link
-    anywhere under md_root -- reproduced here with a real broken NTFS
-    junction: `Path("federation").glob("**/assets/*")` dies with
-    `FileNotFoundError: [WinError 3] ... 'federation\\demo\\assets\\
-    broken_junction'`, so `kb assets verify` exited 1 with a bare traceback
-    and no message naming the way forward. `os.walk`'s `onerror` hook is
-    the one traversal primitive that neither crashes nor silently drops the
-    rest of the walk on a scandir failure at any depth: it names the exact
-    path that could not be read and keeps going, so the broken path
-    becomes a `[broken]` finding instead of an unhandled exception --
-    consistent with the rest of this module, where verify is read-only and
-    every read failure surfaces as a finding, never a raise (see
-    _record_entries above). This is deliberately not symmetric with
-    assetstore.load_record's dangling-link handling, which *raises*: that
-    raise exists because a dangling link at a record path could otherwise
-    be misread as "nothing to preserve" and drive migrate to delete the
-    record while the store still holds the only copy -- a destructive
-    action gated on the read. Nothing here is destructive; verify only
-    reports what it found, so the read-only module norm applies instead.
+    anywhere under md_root -- reproduced here with a real broken NTFS junction:
+    `Path("federation").glob("**/assets/*")` dies with `FileNotFoundError:
+    [WinError 3] ... 'federation\\demo\\assets\\broken_junction'`, so `kb
+    assets verify` exited 1 with a bare traceback and no message naming the way
+    forward. `os.walk`'s `onerror` hook is the one traversal primitive that
+    neither crashes nor silently drops the rest of the walk on a scandir
+    failure at any depth: it names the exact path that could not be read and
+    keeps going, so the broken path becomes a `[broken]` finding instead of an
+    unhandled exception -- consistent with the rest of this module, where
+    verify is read-only and every read failure surfaces as a finding, never a
+    raise (see _record_entries above). This is deliberately not symmetric with
+    assetstore.load_record's dangling-link handling, which *raises*: that raise
+    exists because a dangling link at a record path could otherwise be misread
+    as "nothing to preserve" and drive migrate to delete the record while the
+    store still holds the only copy -- a destructive action gated on the read.
+    Nothing here is destructive; verify only reports what it found, so the
+    read-only module norm applies instead.
 
     A filename that os.walk still hands back as "not a directory" but that
     Path.is_file() then refuses (a dangling POSIX symlink sitting directly
@@ -289,7 +283,7 @@ def verify_assets(handle, store=None) -> VerifyReport:
         for rel in _record_entries(entry_rel, rid_dir, report.corrupt):
             label = f"{entry_rel}: {rel}"
             # PurePosixPath, not Path -- same reasoning as _entry_resolves
-            # above (item 6, wave L1 brief): recorded's keys are matched
+            # above: recorded's keys are matched
             # against local_names/referenced below, both content-addressed
             # basenames, and must not depend on which host verify runs on.
             recorded[PurePosixPath(rel).name] = label

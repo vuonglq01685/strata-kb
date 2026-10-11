@@ -1,7 +1,7 @@
 """integrations extractor -- `int.<name>` sections naming which external
 systems a repo talks to, from environment-variable *key names* alone.
 
-**Never a secret channel (spec §3.11) -- the constraint this module is
+**Never a secret channel -- the constraint this module is
 built around.** Every code path below that can contribute a string to the
 rendered output is enumerated here:
 
@@ -18,7 +18,7 @@ rendered output is enumerated here:
   3. Compose `environment:` as a list of plain strings (`["KEY=value"]`)
      -- `env_keys_from()`'s list-of-str branch.
   4. Compose `environment:` as a list containing a *single-pair mapping*
-     -- the YAML-parsing artifact behind Task B4's Critical secret leak:
+     -- the YAML-parsing artifact behind a past secret leak in services.py:
      an unquoted list entry whose text contains ": " (e.g.
      `- KAFKA_BROKER_URL=kafka: 9092`) is parsed by PyYAML as a one-entry
      mapping (`{"KAFKA_BROKER_URL=kafka": 9092}`), not a string.
@@ -28,36 +28,34 @@ rendered output is enumerated here:
      remembered to be excluded.
 
   Paths 2-4 all route through `_envkeys.sanitize_env_key` -- the one
-  place this whole rule is stated (Ruling R40). That module's docstring
-  has the full account of why: this exact rule caused a Critical secret
-  leak *twice* -- once in `services.py` (Task B4, three review rounds)
-  and once in this module (Task B7), because this module's first version
-  copied `services.py`'s already-hardened function verbatim instead of
-  importing it, and inherited a bug the round-3 fix never had to close
-  (a `:`-delimited value with no `=` at all was published whole). Both
+  place this whole rule is stated. That module's docstring has the full
+  account of why: this exact rule caused a secret leak *twice* -- once
+  in `services.py` and once in this module, because this module's first
+  version copied `services.py`'s already-hardened function verbatim
+  instead of importing it, and inherited a bug the earlier fix never had
+  to close (a `:`-delimited value with no `=` at all was published
+  whole). Both
   modules now import the same function from `_envkeys.py` so the rule
   cannot drift out of sync between them again.
 
   A fifth candidate path -- an OpenAPI/Swagger document's `servers[*].url`
   -- is read only far enough to decide `detect()` (was a committed
   contract with a non-empty `servers` list found at all); no server URL
-  is ever added to an integration's key list or rendered here (Ruling
-  R39 -- the controller confirmed this reading is correct, not merely
-  unfalsified: `_classify()` is the only route into an `int.*` section
-  and matches uppercase prefixes or `_URL`/`_ENDPOINT`/`_HOST`/`_URI`
-  suffixes, which no realistic server URL or hostname satisfies, so
-  folding servers in would produce no observable output difference; the
-  brief's own summary format string counts "environment keys", which a
-  URL is not). A server URL describes where *this* repo's own API is
-  hosted, not an external system it depends on -- `api.py`'s own
-  `ApiExtractor` already renders every `servers[*].url` verbatim in its
-  `**Servers:**` line, which is the one place in this task's two
-  extractors the security note's "servers[*].url may be emitted as a
-  URL" exception is exercised.
+  is ever added to an integration's key list or rendered here
+  (`_classify()` is the only route into an `int.*` section and matches
+  uppercase prefixes or `_URL`/`_ENDPOINT`/`_HOST`/`_URI` suffixes,
+  which no realistic server URL or hostname satisfies, so folding
+  servers in would produce no observable output difference; the summary
+  format string counts "environment keys", which a URL is not). A server
+  URL describes where *this* repo's own API is hosted, not an external
+  system it depends on -- `api.py`'s own `ApiExtractor` already renders
+  every `servers[*].url` verbatim in its `**Servers:**` line, which is
+  the one place in this module or `api.py` the security note's
+  "servers[*].url may be emitted as a URL" exception is exercised.
 
 Both env-file and compose discovery walk the *entire* pruned tree, not
-just the repository root (Ruling R7: "your compose/env discovery is the
-same shape" as `api.API_GLOBS`'s `**/`-rooted pattern) -- via
+just the repository root (the same shape as `api.API_GLOBS`'s
+`**/`-rooted pattern) -- via
 `walk_tree`, never `rglob`/`glob`/`os.walk`.
 
 **Determinism.** Every key -> integration-name classification is a pure
@@ -65,7 +63,7 @@ function of the key text; two keys are compared as ordinary Python
 strings, which is already a *total* order (no two distinct strings ever
 tie), so sorting the keys within one integration, and sorting integration
 names against each other, can never depend on `dict`/`set` iteration
-order the way an earlier task's untotaled sort key once did.
+order the way an untotaled sort key would.
 """
 
 from __future__ import annotations
@@ -83,7 +81,7 @@ from strata_kb.codeingest.extractors.api import find_openapi_files
 from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 from strata_kb.codeingest.types import CodeIngestOptions, CodeSection, ExtractResult
 
-# spec §3.11 -- never a secret channel: read only these three committed,
+# Never a secret channel: read only these three committed,
 # template-style filenames. NEVER a real `.env`, which holds live values.
 ENV_FILES = (".env.example", ".env.sample", ".env.template")
 
@@ -114,9 +112,8 @@ INTEGRATION_PREFIXES: tuple[tuple[str, str], ...] = (
 
 _GENERIC_SUFFIXES = ("_URL", "_ENDPOINT", "_HOST", "_URI")
 
-# Recursive (Ruling R7), unlike services.py's root-only `_COMPOSE_GLOBS` --
-# that module predates this ruling and covers a different facet (running
-# containers) of the same files.
+# Recursive, unlike services.py's root-only `_COMPOSE_GLOBS` -- that
+# module covers a different facet (running containers) of the same files.
 _COMPOSE_GLOBS = ("compose*.y*ml", "docker-compose*.y*ml")
 
 
@@ -125,7 +122,7 @@ def _classify(key: str) -> str | None:
     matching no prefix but ending in one of the four generic suffixes
     falls into `"other"`; anything else -- a plain `SECRET_KEY`, say -- is
     not evidence of an external integration and is dropped, never
-    published (spec §3.11)."""
+    published."""
     for prefix, name in INTEGRATION_PREFIXES:
         if key.startswith(prefix):
             return name
@@ -144,7 +141,7 @@ def _read_env_files(
     root: Path, kb_dir: Path | None
 ) -> tuple[dict[str, set[str]], list[str]]:
     """key -> set of contributing file relpaths, from every `ENV_FILES`
-    name found anywhere in the pruned tree (Ruling R7)."""
+    name found anywhere in the pruned tree."""
     sources: dict[str, set[str]] = {}
     warnings: list[str] = []
     for _depth, reldir, filenames in walk_tree(root, kb_dir):
@@ -168,7 +165,7 @@ def _read_compose_env(
 ) -> tuple[dict[str, set[str]], list[str]]:
     """key -> set of contributing file relpaths, from every compose
     file's every service's `environment:` block, found anywhere in the
-    pruned tree (Ruling R7). A malformed file, or a wrong-shaped
+    pruned tree. A malformed file, or a wrong-shaped
     top-level/`services`/service/`environment` entry, warns naming the
     file and contributes nothing for it; every other compose file (and
     every other service in the same file) still runs."""
@@ -217,7 +214,7 @@ def _read_compose_env(
                     # positive on a real shape, not a caught defect.
                     continue
                 if not isinstance(environment, (dict, list)):
-                    # Minor review finding: every other wrong shape in
+                    # Every other wrong shape in
                     # this reader warns naming the file -- a scalar
                     # `environment:` (e.g. `environment: KEY=value`, a
                     # plain string) must not be the one silent exception.

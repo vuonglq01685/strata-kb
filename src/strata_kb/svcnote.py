@@ -28,13 +28,13 @@ from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.errors import KbError
 from strata_kb.mdutils import _SEP_ROW_RE, slice_section
 
-# Verbatim per the task brief: used to parse existing rows back out of the
-# L2 table so the operation is idempotent without a sidecar store. Matches
-# exactly three pipe-delimited cells — the header row ("| Ticket | Title |
-# Domain refs |") and the separator row ("| --- | --- | --- |", or a
-# Markdown formatter's alignment variant, "|:---|:---:|---:|") have the
-# same three-cell shape and DO match this too; they are told apart by
-# content in `_parse_existing_rows`, not by a different regex shape.
+# Used to parse existing rows back out of the L2 table so the operation is
+# idempotent without a sidecar store. Matches exactly three pipe-delimited
+# cells — the header row ("| Ticket | Title | Domain refs |") and the separator
+# row ("| --- | --- | --- |", or a Markdown formatter's alignment variant,
+# "|:---|:---:|---:|") have the same three-cell shape and DO match this too;
+# they are told apart by content in `_parse_existing_rows`, not by a different
+# regex shape.
 ROW_RE = re.compile(
     r"^\|\s*(?P<ticket>[^|]+?)\s*\|\s*(?P<title>[^|]*?)\s*\|\s*(?P<refs>[^|]*?)\s*\|\s*$",
     re.M,
@@ -46,24 +46,21 @@ _BANNER = "> Ticket history, appended by `kb svc note`. Do not edit by hand."
 
 # A byte with no meaning to ROW_RE's `[^|]` groups, used to hide an escaped
 # pipe (`\|`, written by `escape_cell`) from the delimiter-matching regex
-# while re-parsing a row (fix round 1, Important 1) — see
-# `_parse_existing_rows`.
+# while re-parsing a row — see `_parse_existing_rows`.
 _ESCAPED_PIPE_SENTINEL = "\x00"
 
 
 def _strip_nul(text: str) -> str:
-    """Neutralise a literal NUL byte in caller-supplied text before it
-    ever reaches `escape_cell`/`_l3_safe` (final review, Minor 4):
-    `escape_cell`'s whitespace-collapse does not touch `\\x00`, so an
-    unstripped NUL would both land literally in the published
-    `history.md`/`history.raw.md` — worse than merely CLI-unreachable
-    (argv cannot carry NUL) once `.kb/` publishes to the shared
-    federation hub — and collide with `_ESCAPED_PIPE_SENTINEL` above,
-    which is spelled the same `\\x00` for its own escaped-pipe
-    bookkeeping: a genuine NUL surviving into the file would be misread
-    back as a literal `|` on the very next `kb svc note` call. Stripped
-    outright, not substituted — unlike `|` or a backtick, a NUL carries
-    no meaning worth preserving in a rendered cell.
+    """Neutralise a literal NUL byte in caller-supplied text before it ever
+    reaches `escape_cell`/`_l3_safe`: `escape_cell`'s whitespace-collapse does
+    not touch `\\x00`, so an unstripped NUL would both land literally in the
+    published `history.md`/`history.raw.md` — worse than merely CLI-unreachable
+    (argv cannot carry NUL) once `.kb/` publishes to the shared federation hub
+    — and collide with `_ESCAPED_PIPE_SENTINEL` above, which is spelled the
+    same `\\x00` for its own escaped-pipe bookkeeping: a genuine NUL surviving
+    into the file would be misread back as a literal `|` on the very next `kb
+    svc note` call. Stripped outright, not substituted — unlike `|` or a
+    backtick, a NUL carries no meaning worth preserving in a rendered cell.
     """
     return text.replace("\x00", "")
 
@@ -87,10 +84,9 @@ _DIGITS_RE = re.compile(r"(\d+)")
 
 
 def _natural_key(ticket: str) -> list[tuple[int, int | str]]:
-    """Sort key that orders the numbers inside ticket ids by value, so
-    `T-2` comes before `T-10` (2026-10-10 review G15). Text runs compare
-    case-insensitively; a number always sorts before text at the same
-    position, which keeps the key total."""
+    """Sort key that orders the numbers inside ticket ids by value, so `T-2`
+    comes before `T-10`. Text runs compare case-insensitively; a number always
+    sorts before text at the same position, which keeps the key total."""
     return [
         (0, int(part)) if part.isdigit() else (1, part.casefold())
         for part in _DIGITS_RE.split(ticket)
@@ -103,7 +99,7 @@ class SvcNoteError(KbError):
     document doesn't exist, `service` names no `svc.<service>` section in
     it, one of the two manifests is missing or unreadable, or a `hist.*`
     section recorded in the manifest has no matching heading in the file
-    (manifest/file desync — fix round 1, Important 3)."""
+    (manifest/file desync)."""
 
 
 def _l3_safe(text: str) -> str:
@@ -113,27 +109,27 @@ def _l3_safe(text: str) -> str:
     merely escape — a literal `|` or a backtick.
 
     `escape_cell` (reused below for L2) turns `|` into `\\|`: the pipe BYTE
-    survives, backslash-prefixed, which is exactly right for a Markdown
-    table cell (the delimiter is neutralised, the character is still
-    there) and exactly wrong for L3, where the invariant (task Ruling R5,
-    covered by `test_l3_has_no_pipe_table`) is that the character is
-    ABSENT so no fenced block can ever be mistaken for spilling out of a
-    pipe table. Substituting "/" rather than deleting outright keeps the
-    text readable (e.g. a title like "approve A|B corridor" reads as
-    "approve A/B corridor") instead of silently fusing two words.
+    survives, backslash-prefixed, which is exactly right for a Markdown table
+    cell (the delimiter is neutralised, the character is still there) and
+    exactly wrong for L3, where the invariant (covered by
+    `test_l3_has_no_pipe_table`) is that the character is ABSENT so no fenced
+    block can ever be mistaken for spilling out of a pipe table. Substituting
+    "/" rather than deleting outright keeps the text readable (e.g. a title
+    like "approve A|B corridor" reads as "approve A/B corridor") instead of
+    silently fusing two words.
 
-    A backtick gets the same treatment, substituted with "'" (fix round 1,
-    Minor 6): `_render_l3_rows` wraps every ticket's stanza in a ```text
-    fence, and an un-neutralised triple backtick in a title would close
-    that fence early, corrupting every stanza rendered after it.
+    A backtick gets the same treatment, substituted with "'": `_render_l3_rows`
+    wraps every ticket's stanza in a ```text fence, and an un-neutralised
+    triple backtick in a title would close that fence early, corrupting every
+    stanza rendered after it.
 
-    Ruling R5's "absent, not merely escaped" invariant is scoped to
-    author-supplied text that actually flows through this function (ticket
-    titles, refs); it does not bind machine-extracted command values a
-    different reader inlines straight into a service's L3 (e.g. a compose
-    healthcheck's `CMD-SHELL` string) — rewriting those would corrupt the
-    evidence the SA grounds on. `test_l3_has_no_pipe_table` carves that
-    case out explicitly rather than routing it through `_l3_safe`.
+    The "absent, not merely escaped" invariant is scoped to author-supplied
+    text that actually flows through this function (ticket titles, refs); it
+    does not bind machine-extracted command values a different reader inlines
+    straight into a service's L3 (e.g. a compose healthcheck's `CMD-SHELL`
+    string) — rewriting those would corrupt the evidence the SA grounds on.
+    `test_l3_has_no_pipe_table` carves that case out explicitly rather than
+    routing it through `_l3_safe`.
     """
     text = " ".join(text.split())
     return text.replace("|", "/").replace("`", "'")
@@ -158,10 +154,9 @@ def _parse_existing_rows(l2_text: str, section_id: str) -> dict[str, Note]:
     - A separator row — the fixed `| --- | --- | --- |` this module always
       writes, or a Markdown formatter's alignment variant
       (`|:---|:---:|---:|`) — is recognised via mdutils' own
-      `_SEP_ROW_RE`, not a home-grown, narrower check (fix round 1, Minor
-      1: a hand-rolled "all dashes" test passed a real data row whose
-      ticket cell happened to be an alignment marker like `":---"`
-      straight through as junk).
+      `_SEP_ROW_RE`, not a home-grown, narrower check (a hand-rolled "all
+      dashes" test passes a real data row whose ticket cell happens to be
+      an alignment marker like `":---"` straight through as junk).
     - The header row (`"Ticket"` in the first cell) is skipped by exact
       literal match — it is not a `SEP_ROW_RE` shape (it contains
       letters), so it needs its own check.
@@ -170,13 +165,12 @@ def _parse_existing_rows(l2_text: str, section_id: str) -> dict[str, Note]:
       `escape_cell` when a ticket/title/ref itself contains a literal
       `|`) swapped for `_ESCAPED_PIPE_SENTINEL`, so `ROW_RE`'s `[^|]`
       groups don't mistake it for a column delimiter and refuse to match
-      the whole line (fix round 1, Important 1 — this used to silently
-      drop such a row on the next call; it no longer does). The swap is
-      unambiguous: a genuine delimiter pipe is always preceded by the
-      literal `" "` the render template inserts (`f"| {a} | {b} | {c}
-      |"`), never by the bare backslash `escape_cell` places immediately
-      before an escaped one. The sentinel is restored to `|` in each
-      captured group before the `Note` is built.
+      the whole line (which would silently drop such a row on the next
+      call). The swap is unambiguous: a genuine delimiter pipe is always
+      preceded by the literal `" "` the render template inserts (`f"| {a}
+      | {b} | {c} |"`), never by the bare backslash `escape_cell` places
+      immediately before an escaped one. The sentinel is restored to `|`
+      in each captured group before the `Note` is built.
     """
     rows: dict[str, Note] = {}
     if not l2_text:
@@ -217,8 +211,8 @@ def _render_l2_rows(notes: list[Note]) -> str:
     — sorting is the caller's job (`add_note`) so this stays a pure
     renderer. Every cell goes through the one shared `escape_cell` helper
     (collapse whitespace, then escape `|`) rather than a fresh copy of
-    that rule (task Ruling R5: this codebase has had that exact duplicated
-    rule defect three times already)."""
+    that rule: copies of that rule have drifted apart in this codebase
+    before."""
     lines = [_L2_HEADER, _L2_SEP]
     for note in notes:
         refs_cell = escape_cell(", ".join(note.refs))
@@ -231,10 +225,9 @@ def _render_l2_rows(notes: list[Note]) -> str:
 def _render_l3_rows(notes: list[Note]) -> str:
     """One fenced stanza per ticket, `ticket:` / `title:` / `refs:` lines —
     no pipe table anywhere, so the table-integrity invariant (`kb build`'s
-    L2/L3 verbatim-echo check) is satisfied by construction, and R5's
+    L2/L3 verbatim-echo check) is satisfied by construction, and the L3
     "absent, not escaped" rule is satisfied by `_l3_safe` (which also
-    neutralises a backtick — fix round 1, Minor 6 — so a title can never
-    close the fence early)."""
+    neutralises a backtick, so a title can never close the fence early)."""
     stanzas = [
         f"ticket: {_l3_safe(note.ticket)}\n"
         f"title: {_l3_safe(note.title)}\n"
@@ -249,7 +242,7 @@ def _load_manifest(path: Path, doc_id: str) -> models.Manifest:
     """Load `<doc_id>/_manifest.yaml`, converting a missing or malformed
     file into a `SvcNoteError` (a red message + exit 1 from the CLI)
     instead of a raw `FileNotFoundError` / `yaml.YAMLError` /
-    `ValidationError` traceback (fix round 1, Minor 3).
+    `ValidationError` traceback.
 
     Unlike `kb code-ingest`'s own guarded manifest loader — which degrades
     a corrupt `-code` manifest to "no prior state" because that document
@@ -268,17 +261,16 @@ def _load_manifest(path: Path, doc_id: str) -> models.Manifest:
 
 
 def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteReport:
-    # Fix round 1, Important 1(a): normalize the incoming ticket the same
-    # way `_parse_existing_rows` normalizes one read back (`.strip()` on
-    # each captured group) — otherwise a whitespace-padded id (a pasted or
-    # shell-quoted ticket, e.g. "M-1 ") never matches its own already-
-    # written row on the next call: the key spaces disagree, `action`
-    # reports "added" instead of "updated", and the row duplicates every
-    # time it is renoted.
+    # Normalize the incoming ticket the same way `_parse_existing_rows`
+    # normalizes one read back (`.strip()` on each captured group) — otherwise
+    # a whitespace-padded id (a pasted or shell-quoted ticket, e.g. "M-1 ")
+    # never matches its own already- written row on the next call: the key
+    # spaces disagree, `action` reports "added" instead of "updated", and the
+    # row duplicates every time it is renoted.
     #
-    # Final review, Minor 4: strip a literal NUL from every field at this
-    # same entry point, before any of ticket/title/refs reaches
-    # `escape_cell`/`_l3_safe` or the sentinel-based re-parse below.
+    # Strip a literal NUL from every field at this same entry point, before any
+    # of ticket/title/refs reaches `escape_cell`/`_l3_safe` or the
+    # sentinel-based re-parse below.
     note = replace(
         note,
         ticket=_strip_nul(" ".join(note.ticket.split())),
@@ -286,17 +278,15 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
         refs=tuple(_strip_nul(r) for r in note.refs),
     )
 
-    # Final review, Minor 5: an empty (post-normalisation) ticket renders
-    # as an all-blank row (`|  |  |  |` when title/refs are also empty)
-    # that `_SEP_ROW_RE` cannot tell apart from the table's own separator
-    # row, so it is silently dropped as junk on the very next call —
-    # producing a permanent junk row this command can never repair, and
-    # mislabelling that next call's own `action` along the way. An empty
-    # TITLE carries no equivalent failure mode (it can never by itself
-    # produce an all-separator-shaped row, since the ticket cell still
-    # holds the real, non-blank id), so it is deliberately left
-    # unvalidated here — rejecting it would be a policy choice this
-    # finding does not require.
+    # An empty (post-normalisation) ticket renders as an all-blank row (`|  |
+    # |  |` when title/refs are also empty) that `_SEP_ROW_RE` cannot tell
+    # apart from the table's own separator row, so it is silently dropped as
+    # junk on the very next call — producing a permanent junk row this command
+    # can never repair, and mislabelling that next call's own `action` along
+    # the way. An empty TITLE carries no equivalent failure mode (it can never
+    # by itself produce an all-separator-shaped row, since the ticket cell
+    # still holds the real, non-blank id), so it is deliberately left
+    # unvalidated here — rejecting it would be a policy choice, not a fix.
     if not note.ticket:
         raise SvcNoteError(
             "--ticket must not be empty — an empty ticket renders as an "
@@ -314,19 +304,17 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
         )
     manifest_path = doc_dir / "_manifest.yaml"
 
-    # Validate the service against the paired -code document (step 2): a
-    # typo must not invent a service. `svc.<name>` deliberately collides
-    # across -code and -svc (spec Sec6.2) as the join key, and a name over
-    # 40 characters carries an unconditional, opaque 6-hex-character hash
-    # suffix (services.py's `_assign_slugs()`) — Ruling R1 requires this
-    # error to say so, since this command is the one place a human types
-    # that id by hand.
+    # Validate the service against the paired -code document: a typo must not
+    # invent a service. `svc.<name>` deliberately collides across -code and
+    # -svc (spec Sec6.2) as the join key, and a name over 40 characters carries
+    # an unconditional, opaque 6-hex-character hash suffix (services.py's
+    # `_assign_slugs()`) — this error must say so, since this command is the
+    # one place a human types that id by hand.
     #
-    # Fix round 1, Minor 3(a): the -code document itself might not exist
-    # at all — checked explicitly, and named as such, rather than falling
-    # through to "unknown service" (an accurate-sounding but misleading
-    # diagnosis when the real problem is that nothing has been ingested
-    # yet).
+    # The -code document itself might not exist at all — checked explicitly,
+    # and named as such, rather than falling through to "unknown service" (an
+    # accurate-sounding but misleading diagnosis when the real problem is that
+    # nothing has been ingested yet).
     code_doc_id = f"{repo_id}-code"
     code_doc_dir = kb_dir / code_doc_id
     if not code_doc_dir.is_dir():
@@ -339,11 +327,11 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
     known_ids = {s.id for s in code_manifest.sections}
     svc_section_id = f"svc.{service}"
     if svc_section_id not in known_ids:
-        # Spec 2026-09-25 §4.1: `kb svc note` regenerates -code from the
-        # working tree first, so a stale snapshot is no longer a cause. Two
-        # remain: a typo (mind the opaque hash suffix on a name over 40
-        # characters, Ruling R1), or a new service whose files git does not
-        # track yet — the tree extractor lists files with `git ls-files`.
+        # `kb svc note` regenerates -code from the working tree first, so a
+        # stale snapshot is not a cause. Two remain: a typo (mind the opaque
+        # hash suffix on a name over 40 characters), or a new service whose
+        # files git does not track yet — the tree extractor lists files with
+        # `git ls-files`.
         raise SvcNoteError(
             f"unknown service '{service}' — no svc.{service} section in "
             f"{code_doc_id} (list the real ids in "
@@ -355,9 +343,9 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
             f"{code_doc_id} only sees files git tracks)"
         )
 
-    # Fix round 1, Minor 3(b): guarded load, not a raw `models.
-    # load_yaml_model` call — a missing or malformed -svc manifest must
-    # surface as a red message + exit 1, not a traceback.
+    # Guarded load, not a raw `models. load_yaml_model` call — a missing or
+    # malformed -svc manifest must surface as a red message + exit 1, not a
+    # traceback.
     manifest = _load_manifest(manifest_path, doc_id)
     section_id = f"hist.{service}"
 
@@ -366,17 +354,16 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
     old_l2_text = l2_path.read_text(encoding="utf-8") if l2_path.exists() else ""
     old_l3_text = l3_path.read_text(encoding="utf-8") if l3_path.exists() else ""
 
-    # Fix round 1, Important 3: a hist.* section already recorded in the
-    # manifest MUST have a matching heading in both history.md and
-    # history.raw.md. `kb build` cannot catch a manifest entry whose row
-    # content silently vanished — it only checks that the heading exists
-    # and the summary is non-empty (build.py:50-56) — so a manifest still
-    # claiming "N tickets recorded" for a heading the file no longer has
-    # would otherwise pass `kb build` clean while being flatly wrong.
-    # Checked against every hist.* entry the manifest already has, not
-    # only the one this call is about (the sibling half of the same
-    # defect: noting service B must never paper over service A's
-    # already-lost history), and before anything is written.
+    # A hist.* section already recorded in the manifest MUST have a matching
+    # heading in both history.md and history.raw.md. `kb build` cannot catch a
+    # manifest entry whose row content silently vanished — it only checks that
+    # the heading exists and the summary is non-empty (build.py:50-56) — so a
+    # manifest still claiming "N tickets recorded" for a heading the file no
+    # longer has would otherwise pass `kb build` clean while being flatly
+    # wrong. Checked against every hist.* entry the manifest already has, not
+    # only the one this call is about (the sibling half of the same defect:
+    # noting service B must never paper over service A's already-lost history),
+    # and before anything is written.
     desynced = sorted(
         entry.id
         for entry in manifest.sections

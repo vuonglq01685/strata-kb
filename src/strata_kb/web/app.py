@@ -1,3 +1,13 @@
+"""app — assembles the one ASGI app the shared HTTP server runs.
+
+`create_app` (called by `mcp.create_http_app`) builds the route table (`/`
+redirect, `/api/*`, `/ui/*`, the optional `/intake/*`, and FastMCP mounted
+last at `/mcp`), installs the corrupt-snapshot error handler, and wraps
+everything in token auth and then security headers. The headers middleware
+sits outside auth so the auth layer's own redirects and 401/429 responses
+carry the headers too.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -33,12 +43,14 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
         trusted_proxies_from_env,
     )
 
-    # F-C1, same reason as mcp.create_server. NOT in `lifespan`: line 36 leaves
-    # lifespan None when mcp_server is None, so the API-only app would skip it.
+    # Import sqlite_vec/numpy now, off the event loop: doing it inside a request
+    # handler that runs on the loop thread deadlocks (see searchdb.warm_vec).
+    # NOT in `lifespan`: `lifespan` stays None when mcp_server is None, so the
+    # API-only app would skip it.
     searchdb.warm_vec()
 
     # One bucket for "a failed attempt at the shared secret", wherever it
-    # arrives (M6). Read once here rather than inside build_routes, so the
+    # arrives. Read once here rather than inside build_routes, so the
     # middleware and the login form cannot disagree about the proxy count.
     trusted_proxies = trusted_proxies_from_env()
     auth_limiter = SlidingWindowLimiter(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS)
@@ -57,14 +69,13 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
         from strata_kb import intake as intake_mod
         from strata_kb.web import intake_routes
 
-        # round-4 appended-section fix: resolve_hub can raise gitio.GitError
-        # (a stale/locked hub cache it cannot clean up itself) -- unguarded,
-        # that used to crash create_app itself, so the SERVER FAILED TO BOOT
-        # over an intake-only cache problem, taking /api, /ui and /mcp down
-        # with it even though none of them touch this cache. Chosen fix:
-        # start degraded, not refuse to start -- the routes built below
-        # already guard every per-request resolve_hub call of their own
-        # (_load_registry, intake_publish, both via
+        # resolve_hub can raise gitio.GitError (a stale/locked hub cache it
+        # cannot clean up itself). Unguarded, that would crash create_app
+        # itself, so the SERVER WOULD FAIL TO BOOT over an intake-only cache
+        # problem, taking /api, /ui and /mcp down with it even though none of
+        # them touch this cache. Start degraded, not refuse to start -- the
+        # routes built below already guard every per-request resolve_hub call
+        # of their own (_load_registry, intake_publish, both via
         # intake._resolve_hub_or_503) into a clean 503, so this one-time
         # boot-time diagnostic has nothing a live request cannot recover on
         # its own; refusing to start would make the outage strictly worse

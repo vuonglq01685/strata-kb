@@ -14,11 +14,11 @@ from __future__ import annotations
 # that is the directive that matters, and the UI has exactly one external
 # script (/ui/static/app.js) and zero inline script. search.html's token
 # budget slider and semantic-KNN checkbox used to auto-submit via an inline
-# onchange attribute (Task 10 fix round 1 caught this: it would silently
-# stop working under this CSP) — they now do it through app.js's delegated
-# `change` listener keyed on `data-autosubmit`, which is what keeps this
-# statement true. tests/test_templates.py::
-# test_web_templates_carry_no_inline_event_handlers guards the regression.
+# onchange attribute, which would silently stop working under this CSP —
+# they now do it through app.js's delegated `change` listener keyed on
+# `data-autosubmit`, which is what keeps this statement true.
+# tests/test_templates.py::test_web_templates_carry_no_inline_event_handlers
+# guards the regression.
 CSP = "; ".join(
     (
         "default-src 'self'",

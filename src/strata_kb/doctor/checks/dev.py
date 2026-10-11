@@ -16,8 +16,8 @@ _DB_FLAG_RE = re.compile(r"kb code-ingest[^\n]*--db")
 
 
 def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[Issue]:
-    """Dev repo: what makes local `-code` differ from CI's (spec 2026-09-25
-    §4.2) and the one migration step a gitignore line cannot do (§5)."""
+    """Dev repo: what makes local `-code` differ from CI's, and the one
+    migration step a gitignore line cannot do."""
     from strata_kb.codeingest import sync
 
     issues: list[Issue] = []

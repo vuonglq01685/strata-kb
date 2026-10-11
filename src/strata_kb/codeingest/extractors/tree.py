@@ -80,22 +80,22 @@ _ENTRY_POINT_NAMES = frozenset(
 _L2_DEPTH = 2  # L2 directory listing depth
 _L3_DEPTH = 4  # L3 full-tree listing depth
 
-# Hard line cap on the L3 listing (≈ 5 000 tokens, C3's ceiling). Depth
-# alone does not bound a wide directory — reviewer G grew a 27-file repo's
-# L3 to 25 k tokens with one unignored vendor directory.
+# Hard line cap on the L3 listing (≈ 5 000 tokens). Depth alone does not
+# bound a wide directory — one unignored vendor directory grew a 27-file
+# repo's L3 to 25 k tokens.
 _L3_MAX_LINES = 600
 
 
 def relposix(root: Path, path: Path) -> str:
     """Shared path helper: `path` relative to `root` as a `/`-separated
-    string. B3-B7 import this rather than re-deriving it."""
+    string. The other extractors import this rather than re-deriving it."""
     return path.relative_to(root).as_posix()
 
 
 def _index_cache_key(root: Path) -> tuple[str, int, int] | None:
     """A cache key for `root`'s git index — `(resolved root, .git/index
     mtime_ns, size)` — or `None` when no stable key can be obtained, in
-    which case the caller must never cache (I3). `None` covers: `root`
+    which case the caller must never cache. `None` covers: `root`
     has no `.git` at all; `.git/index` does not exist for some other
     reason (stat raises); and, deliberately, `root/.git` being a *file*
     rather than a directory — a linked worktree or a submodule's gitlink,
@@ -116,18 +116,17 @@ def _index_cache_key(root: Path) -> tuple[str, int, int] | None:
     return (str(resolved), st.st_mtime_ns, st.st_size)
 
 
-# I3: `_git_ls_files` used to run fresh on every call — ~23 times in one
-# self-ingest of this repository (walk_tree() is shared by every
-# extractor, and `TreeExtractor.extract()` itself called it twice; see
-# `_walk_tree_with_git_state` below for the second call). Memoised per
-# process, keyed by `_index_cache_key()`: every test in this suite that
+# Uncached, `_git_ls_files` would run ~23 times in one self-ingest of
+# this repository (walk_tree() is shared by every extractor; see also
+# `_walk_tree_with_git_state` below). Memoised per process, keyed by
+# `_index_cache_key()`: every test in this suite that
 # changes what `git ls-files` would report does so through `git
 # add`/`git commit`, both of which rewrite `.git/index` and so
 # invalidate the key — this answers the spec's stated objection to
 # caching ("tests mutate trees between calls in one process") directly,
 # rather than working around it with a manual invalidation hook.
 #
-# R2-6 (re-review round 2): keyed by resolved root alone (not by the
+# Keyed by resolved root alone (not by the
 # full `(root, mtime_ns, size)` key), holding only the newest
 # `(full_key, result)` pair seen for that root -- one entry per root is
 # all one ingest ever needs, since it never revisits an older index
@@ -168,10 +167,9 @@ def _git_ls_files(root: Path) -> tuple[bool, list[str]]:
     through it, `TreeExtractor.extract()`) can tell "not a repository"
     apart from "a repository with nothing tracked" for its summary/
     warning wording, while `tracked_files()` keeps returning a single
-    `None` for both (R2-5, re-review round 2: `tracked_files()` itself
-    has had no `src/` caller since `_walk_tree_with_git_state()` started
-    calling this function directly — see `tracked_files()`'s own
-    docstring)."""
+    `None` for both (`tracked_files()` itself has no `src/` caller, since
+    `_walk_tree_with_git_state()` calls this function directly — see
+    `tracked_files()`'s own docstring)."""
     key = _index_cache_key(root)
     if key is None:
         return _git_ls_files_uncached(root)
@@ -192,8 +190,8 @@ def tracked_files(root: Path) -> list[str] | None:
     the wrong root — an empty tree would be a lie). See `_git_ls_files` for
     the dedup rationale and the `-z` note.
 
-    R2-5 (re-review round 2): this has no `src/` caller — `walk_tree()`
-    was rewritten to call `_walk_tree_with_git_state()`, which calls
+    This has no `src/` caller — `walk_tree()` calls
+    `_walk_tree_with_git_state()`, which calls
     `_git_ls_files()` directly (it needs `is_repo` and "has tracked
     paths" as two separate facts, which this function's single collapsed
     `None` can't give it) — so this function is now a test/diagnostic
@@ -273,7 +271,7 @@ def _walk_tree_with_git_state(
     nothing tracked" summary/warning (see `_git_ls_files`'s docstring).
     Giving `extract()` this function directly, instead of it calling
     `walk_tree()` and then separately calling `_git_ls_files()` again
-    (I3), means the whole ingest run's very first `walk_tree`-family call
+    means the whole ingest run's very first `walk_tree`-family call
     is the only one that can ever miss `_git_ls_files`'s cache — every
     other extractor's own `walk_tree()` call below hits it. `walk_tree()`
     itself just discards the extra two values; every other caller is
@@ -367,11 +365,9 @@ def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
     (`lines[_L3_MAX_LINES]`) so a reader can tell *where* the real tree
     kept going, not just how much was lost — entries arrive in a stable
     alphabetical preorder (`walk_tree`), so the entry named here is
-    deterministic across machines. (M6: this used to also return the
-    `omitted` count for a caller that only ever discarded it — the marker
-    line above already carries that number for anyone reading the
-    rendered text, so there was nothing left for a second, dead return
-    value to do.)"""
+    deterministic across machines. No separate `omitted` count is
+    returned: the marker line already carries that number for anyone
+    reading the rendered text."""
     lines: list[str] = []
     for depth, rel, filenames in entries:
         if depth > _L3_DEPTH:
@@ -404,11 +400,11 @@ class TreeExtractor:
     def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         # Calls `_walk_tree_with_git_state()` directly, not the public
         # `walk_tree()` followed by its own separate `_git_ls_files()`
-        # call (I3) -- the `(is_repo, tracked)` pair below used to cost a
-        # second `git ls-files` subprocess purely to distinguish "not a
-        # repository" from "a repository with nothing tracked" for the
-        # wording further down, information the entries-building call
-        # already had.
+        # call -- that would cost a second `git ls-files` subprocess
+        # purely to get the `(is_repo, tracked)` pair below, which
+        # distinguishes "not a repository" from "a repository with nothing
+        # tracked" for the wording further down: information the
+        # entries-building call already has.
         entries, is_repo, tracked = _walk_tree_with_git_state(root, opts.kb_dir)
         n_dirs = sum(1 for _depth, rel, _filenames in entries if rel != Path("."))
         n_files = sum(len(filenames) for _depth, _rel, filenames in entries)

@@ -1,3 +1,12 @@
+"""mcp — the Strata MCP server (`python -m strata_kb.mcp`).
+
+`create_server()` registers the kb_search, kb_get_section, kb_context_new,
+kb_resolve and kb_ticket_lint tools over the hub federation; every tool body
+runs on a worker thread and resolves the hub under one lock. `main()` serves
+stdio by default; `--transport http` mounts the same server inside the
+token-guarded `web.app` and refuses a weak STRATA_KB_HTTP_TOKEN.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,9 +18,9 @@ from pathlib import Path
 
 import anyio.to_thread
 
-# Contingency (see task-9-brief.md Step 1): mcp>=2.0 has no released build on
-# PyPI for this environment (only 2.0.0a1..2.0.0b1) — pin mcp>=1.2 and use
-# FastMCP (the SDK v1 high-level API) as MCPServer.
+# mcp>=2.0 has no released build on PyPI for this environment (only
+# 2.0.0a1..2.0.0b1) — pin mcp>=1.2 and use FastMCP (the SDK v1 high-level API)
+# as MCPServer.
 from mcp.server.fastmcp import FastMCP as MCPServer
 
 from strata_kb import gitio, kbcontext
@@ -88,14 +97,13 @@ def create_server(config: ServerConfig) -> MCPServer:
 
     from strata_kb import searchdb
 
-    # F-C1: never import sqlite_vec/numpy from inside a tool call — FastMCP runs
-    # sync tools on the event-loop thread and the native import deadlocks there.
+    # Never import sqlite_vec/numpy from inside a tool call — FastMCP runs sync
+    # tools on the event-loop thread and the native import deadlocks there.
     searchdb.warm_vec()
     mcp = MCPServer("strata-kb")
-    # R20 (final-branch review, Important): each tool body runs on its own
-    # worker thread (anyio.to_thread.run_sync) now that F-C1 moved them off
-    # the loop thread — concurrent calls used to be serialized by the single
-    # event loop and now genuinely race. resolve_hub() clones/pulls into a
+    # Each tool body runs on its own worker thread (anyio.to_thread.run_sync),
+    # off the loop thread, so concurrent calls genuinely race rather than being
+    # serialized by the single event loop. resolve_hub() clones/pulls into a
     # cache shared by every call; without a lock, two concurrent URL-hub
     # resolutions can run `git clone`/`git pull` against the same directory
     # at once. One lock, held only around resolve_hub() itself, keeps hub
@@ -107,27 +115,24 @@ def create_server(config: ServerConfig) -> MCPServer:
         from strata_kb.hub import resolve_hub
 
         with _hub_lock:
-            # Important 1 (Wave G fix round 2 re-review): resolve_hub can
-            # now raise gitio.GitError (hub.py's _discard_cache) when a
-            # stale cache cannot be removed -- e.g. Windows holding a lock
+            # resolve_hub can raise gitio.GitError (hub.py's _discard_cache)
+            # when a stale cache cannot be removed -- e.g. Windows holding a lock
             # on <cache>/.kb-work/search.sqlite3, and a serving MCP process
             # is exactly the kind of process that would be holding it open.
             # Every call site below already treats None as "hub
             # unreachable" (HUB_DOWN); folding the exception into that same
             # None reuses the guard every tool call already has, instead of
             # letting it crash the tool call as an unhandled exception. Same
-            # shape as intake._resolve_hub_or_503 (item 3, round 2) minus
-            # the 503 wrapping -- there is no HTTP status here to carry it.
+            # shape as intake._resolve_hub_or_503 minus the 503 wrapping --
+            # there is no HTTP status here to carry it.
             #
-            # N-6 (Wave G fix round 4 re-review, review-waveG-fix3-verdict.md
-            # and review-webapi-guard-verdict.md Important 1): a bare
-            # `except ... return None` here discarded the ONLY diagnostic --
-            # a full locked-cache sweep at DEBUG produced zero strata_kb.*
-            # log records. Worse, in that exact condition HUB_DOWN's "and no
-            # local cache" is false on both halves (the hub can be perfectly
-            # reachable, and the whole reason this raised is that a cache
-            # DOES exist -- it is merely locked); the message above was
-            # softened to stop asserting that. resolve_hub's own clone/pull
+            # Log it: a bare `except ... return None` here would discard the
+            # ONLY diagnostic -- a full locked-cache sweep at DEBUG would
+            # produce zero strata_kb.* log records. In this exact condition a
+            # "no local cache" claim would be false on both halves (the hub
+            # can be perfectly reachable, and the whole reason this raised is
+            # that a cache DOES exist -- it is merely locked), which is why
+            # HUB_DOWN does not assert it. resolve_hub's own clone/pull
             # failures already log at warning (see hub.py) -- match that
             # shape instead of being the one silent guard.
             try:
@@ -349,9 +354,8 @@ _PLACEHOLDER_TOKENS = frozenset({"change-me"})
 
 
 def check_http_token(token: str) -> None:
-    """Refuse an http-transport token the server cannot defend (2026-10-10
-    review §5.2 #5): the shipped `change-me` placeholder, anything shorter
-    than 32 characters, and anything that is not printable ASCII -- a header
+    """Refuse an http-transport token the server cannot defend: the shipped
+    `change-me` placeholder, anything shorter than 32 characters, and anything that is not printable ASCII -- a header
     token is compared as `str` and cannot carry non-ASCII reliably. The
     session cookie is `HMAC(token, issued)`, so a weak token is also
     brute-forceable offline from any copied cookie. No override: the server

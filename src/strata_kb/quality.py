@@ -106,7 +106,7 @@ def check_section(
     findings += _check_labels(ref, sec, l2, n3)
     findings += _check_l1_words(ref, sec)
     if (is_brief(n3) or is_table_only(n3)) and not findings:
-        # Ruling R17: the engine's own deterministic brief/table-only
+        # The engine's own deterministic brief/table-only
         # output is a verbatim copy of the L3 prose (or an empty L2 with
         # a fixed label) by construction -- once the length/label check
         # above confirms that, it cannot transcribe a table cell, invent

@@ -1,4 +1,13 @@
 # src/strata_kb/ghapp.py
+"""ghapp — GitHub App REST calls for the hub intake service.
+
+Mints an installation token for the hub repo from the App's id and private
+key (a short-lived RS256 JWT), and opens -- or finds the already-open -- PR
+for a branch. Server-side only: intake.py and web/intake_routes.py call it,
+never the CLI. Every HTTP call goes through an injectable `http` callable so
+tests never touch api.github.com; tokens never appear in error messages.
+"""
+
 from __future__ import annotations
 
 import json
@@ -15,10 +24,9 @@ _GH_URL_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$")
 class GHAppError(RuntimeError):
     """GitHub App call failed (token is never included in the message).
 
-    Deliberately stays out of the KbError family (Wave G fix round 2, item
-    7; comment added round 3, Minor 2): server-side only (GitHub App auth)
-    -- never raised on a CLI-terminal path, so there is no `except KbError`
-    guard for it to hide from.
+    Deliberately stays out of the KbError family: server-side only (GitHub
+    App auth) -- never raised on a CLI-terminal path, so there is no `except
+    KbError` guard for it to hide from.
     """
 
 

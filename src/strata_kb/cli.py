@@ -1,3 +1,13 @@
+"""cli — the `kb` command line (typer), entry point `strata_kb.cli:app`.
+
+Defines the root `app` and its sub-apps (context, assets, ticket, mission, svc,
+usage, pr, plan, impl). Commands stay thin: they import their domain module
+lazily, inside the command body, and turn its errors into one red line and
+exit 1. `_GuardedGroup` catches any KbError that escapes a command, so a new
+error class must derive from KbError rather than reach the user as a
+traceback. Importing this module forces the standard streams to UTF-8.
+"""
+
 from __future__ import annotations
 
 import importlib.metadata
@@ -604,8 +614,8 @@ def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
     """Same resolution as `_hub_or_exit`, but a failure is a returned reason
     string instead of a red line + exit — for a caller (`mission next`) that
     treats "no hub" as a fact to report, not a fatal error. A malformed
-    operator .kb/config.yaml is still a hard exit via `_invalid_yaml_exit`
-    (H1): that is an authoring error, not a "no hub configured" fact."""
+    operator .kb/config.yaml is still a hard exit via `_invalid_yaml_exit`:
+    that is an authoring error, not a "no hub configured" fact."""
     from strata_kb import gitio
     from strata_kb.config import HubConfigError, require_hub
     from strata_kb.hub import resolve_hub
@@ -618,18 +628,16 @@ def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
         # require_hub -> load_config -> models.load_yaml_model raises
         # ValidationError / yaml.YAMLError for an operator-edited
         # .kb/config.yaml. 11 commands funnel through here, so this is the
-        # one place that keeps any of them from printing a traceback (H1).
+        # one place that keeps any of them from printing a traceback.
         _invalid_yaml_exit(kb_dir / "config.yaml", exc)
-    # cli.py's own last unguarded resolve_hub call site (release review,
-    # 2026-09-11): resolve_hub can raise gitio.GitError (hub.py's
-    # _discard_cache) when a stale cache's removal is blocked -- e.g. a
-    # locked .kb-work/search.sqlite3, and every command that reaches here
-    # (`doctor` included, the CHANGELOG's 0.21.0 no-traceback claim for it)
-    # is exactly the kind of process that would be holding it open. Same
-    # shape as mcp._hub (Wave G fix round 3) and web/api.hub_handle
-    # (e869320) -- the message already names the cache, says it is
-    # disposable, and tells the operator to delete it -- let it through
-    # unwrapped rather than replacing it.
+    # resolve_hub can raise gitio.GitError (hub.py's _discard_cache) when a
+    # stale cache's removal is blocked -- e.g. a locked
+    # .kb-work/search.sqlite3, and every command that reaches here (`doctor`
+    # included, the CHANGELOG's 0.21.0 no-traceback claim for it) is exactly
+    # the kind of process that would be holding it open. Same shape as
+    # mcp._hub and web/api.hub_handle -- the message already names the cache,
+    # says it is disposable, and tells the operator to delete it -- let it
+    # through unwrapped rather than replacing it.
     try:
         handle = resolve_hub(hub_ref)
     except gitio.GitError as exc:
@@ -658,7 +666,7 @@ def _hub_or_exit(hub_flag: str, kb_dir: Path) -> HubHandle:
 
 def _refresh_code_or_exit(kb_dir: Path, repo_id: str) -> None:
     """Bring `<repo_id>-code` up to the working tree before a command reads
-    it (spec 2026-09-25 §4.1). Notes go to stderr so --json stays pure."""
+    it. Notes go to stderr so --json stays pure."""
     from strata_kb.codeingest import core, sync
 
     try:
@@ -807,7 +815,7 @@ def _resolve_runner(kb_dir: Path, llm_choice: str, max_workers: int):
     except ValueError as exc:
         # pydantic.ValidationError is a ValueError subclass — a bad literal
         # (e.g. a typo'd llm.effort) must read as a clean CLI error, not a
-        # traceback (B4).
+        # traceback.
         typer.secho(f"[error] {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from exc
     effective = llm_choice or index.llm.runner
@@ -860,12 +868,12 @@ def _echo_no_runner(reason: str) -> None:
 
 
 def _refuse_generated_or_note(kb_dir: Path, doc_id: str) -> None:
-    """Spec 2026-09-25 §4.4: -code has one producer, `kb code-ingest`.
+    """-code has one producer, `kb code-ingest`.
 
     A malformed index.yaml (e.g. a typo'd `llm.effort`) is not this
     helper's concern — let it through so `_resolve_runner`'s own
-    ValueError handling turns it into the usual clean `[error]` (B4)
-    instead of this helper surfacing a raw traceback first.
+    ValueError handling turns it into the usual clean `[error]` instead of
+    this helper surfacing a raw traceback first.
     """
     from strata_kb.summarize import generated_doc_ids
 
@@ -1229,8 +1237,8 @@ def build(
     """Validate KB: no TODOs left, table integrity, C2 quality rules, updated token counts."""
     from strata_kb.build import build_kb
 
-    # Dev repo (spec 2026-09-25 §4.1): validate what the merge would
-    # publish — on a PR checkout -code is absent until this regenerates it.
+    # Dev repo: validate what the merge would publish — on a PR checkout
+    # -code is absent until this regenerates it.
     if not no_refresh:
         _refresh_dev_code(kb_dir)
 
@@ -1239,7 +1247,7 @@ def build(
     except ValueError as exc:
         # pydantic.ValidationError is a ValueError subclass — a bad literal
         # (e.g. a typo'd llm.effort) must read as a clean CLI error, not a
-        # traceback (B4).
+        # traceback.
         typer.secho(f"[error] {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from exc
     for warning in report.warnings + report.quality:
@@ -1290,19 +1298,19 @@ def code_ingest(
     from strata_kb.codeingest import core, sync
 
     resolved_root = repo_root.resolve()
-    # Relative --kb-dir is cwd-relative, like every other kb command (G-11).
+    # Relative --kb-dir is cwd-relative, like every other kb command.
     resolved_kb_dir = kb_dir.resolve()
 
-    # Ruling R4: effective_repo_id() returns None when neither --repo-id nor
-    # .kb/config.yaml supplies one; the help text above promises a folder-
-    # name fallback, so supply it here rather than writing a "None-code" doc.
+    # effective_repo_id() returns None when neither --repo-id nor
+    # .kb/config.yaml supplies one; the help text above promises a folder-name
+    # fallback, so supply it here rather than writing a "None-code" doc.
     rid = config.effective_repo_id(repo_id, resolved_kb_dir) or resolved_root.name
     did = doc_id or f"{rid}-code"
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
-    # Spec 2026-09-25 §4.2: `code_ingest:` in .kb/config.yaml is the one
-    # configuration local runs and CI share; a flag replaces its list for
-    # this run only, and says so below.
+    # `code_ingest:` in .kb/config.yaml is the one configuration local runs
+    # and CI share; a flag replaces its list for this run only, and says so
+    # below.
     opts = sync.options_from_config(
         resolved_root,
         resolved_kb_dir,
@@ -1316,23 +1324,21 @@ def code_ingest(
     try:
         report = core.run(opts)
     except core.CodeIngestError as exc:
-        # Review round 3 (Important 5 follow-up): CodeIngestError now
-        # carries whatever partial CodeIngestReport existed at the point
-        # of failure, so a warning already collected before the refusal
-        # (e.g. "could not read _manifest.yaml") is shown too, instead of
-        # only this exception's own message — which, for a corrupt -svc
-        # manifest, otherwise reads as "no matching entry in
-        # _manifest.yaml — restore the manifest entries" with no hint
-        # that the manifest is simply malformed. A non-empty
-        # `files_written` also means the -code document was already
-        # written and indexed before a later --scaffold-svc refusal — a
-        # partial success, not a full failure — so that's called out too.
-        # Review round 4: all three lines below now pass err=True (the
-        # codebase's existing convention for diagnostics that must never
-        # land on stdout — see e.g. the RED-secho'd errors elsewhere in
-        # this file) so a --json invocation's stdout stays empty, never
-        # polluted, on this path — matching the purity --json already
-        # guarantees on the success path.
+        # CodeIngestError carries whatever partial CodeIngestReport existed at
+        # the point of failure, so a warning already collected before the
+        # refusal (e.g. "could not read _manifest.yaml") is shown too, instead
+        # of only this exception's own message — which, for a corrupt -svc
+        # manifest, otherwise reads as "no matching entry in _manifest.yaml —
+        # restore the manifest entries" with no hint that the manifest is
+        # simply malformed. A non-empty `files_written` also means the -code
+        # document was already written and indexed before a later
+        # --scaffold-svc refusal — a partial success, not a full failure — so
+        # that's called out too. All three lines below pass err=True (the
+        # codebase's existing convention for diagnostics that must never land
+        # on stdout — see e.g. the RED-secho'd errors elsewhere in this file)
+        # so a --json invocation's stdout stays empty, never polluted, on this
+        # path — matching the purity --json already guarantees on the success
+        # path.
         if exc.report is not None:
             for warning in exc.report.warnings:
                 typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
@@ -1380,12 +1386,10 @@ def code_ingest(
             f"scaffolded: {len(report.scaffolded)} new, "
             f"{len(report.stale_risk)} stale-risk, {len(report.orphans)} orphan(s)"
         )
-        # Spec Sec8.3 asks for "stale-risk: svc.<name>" / "orphan: svc.<name>"
-        # "in the report and in --json" -- --json already carries the ids
-        # via report.stale_risk/report.orphans, but the terminal used to
-        # print only counts. Stage C's machine consumer of --json does not
-        # exist yet, so the terminal is the only surface a Dev has today
-        # (task review, Important 5).
+        # List each id ("stale-risk: svc.<name>" / "orphan: svc.<name>"), not
+        # just the counts: --json already carries them via
+        # report.stale_risk/report.orphans, but no machine consumer of --json
+        # exists yet, so the terminal is the only surface a Dev has today.
         for sid in report.stale_risk:
             typer.echo(f"  stale-risk: {sid}")
         for sid in report.orphans:
@@ -1414,7 +1418,7 @@ def svc_note(
 
     from strata_kb import config, svcnote
 
-    # Ruling: effective_repo_id() returns None when neither --repo-id nor
+    # effective_repo_id() returns None when neither --repo-id nor
     # .kb/config.yaml supplies one; surfaced the same way every other
     # SvcNoteError-shaped failure is (red message naming the fix, exit 1),
     # since add_note() itself takes a plain (non-optional) repo_id str.
@@ -1430,9 +1434,9 @@ def svc_note(
     # Guarded the same way build/publish are (_refresh_dev_code): a repo
     # that has not run /dev-code-seed has neither -code nor -svc yet, and
     # svcnote.add_note below is always going to refuse it as "-svc does not
-    # exist" — refreshing first used to create a -code document and an
+    # exist" — refreshing first would create a -code document and an
     # index.yaml entry as a side effect of a command that was never going
-    # to succeed (Important 2).
+    # to succeed.
     from strata_kb.codeingest import sync
 
     if not no_refresh and (
@@ -1482,7 +1486,7 @@ def _usage_log_error(kb_dir: Path, message: str) -> None:
     try:
         path = _ledger.usage_dir(kb_dir) / "ingest-errors.log"
         if not (kb_dir / "config.yaml").is_file():
-            return  # wrong directory: nowhere correct to write (reviewer F L2)
+            return  # wrong directory: nowhere correct to write
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(UTC).isoformat(timespec="seconds")
         with path.open("a", encoding="utf-8", newline="\n") as fh:
@@ -1922,7 +1926,7 @@ def stats(
 
 def _apply_unreviewed_gate(gate) -> None:
     """Echo `publish_mod.unreviewed_gate`'s line (if any) and exit(1) when
-    it blocks — shared by `publish` and `ci_publish` (R18)."""
+    it blocks — shared by `publish` and `ci_publish`."""
     if gate.line is None:
         return
     typer.secho(gate.line, fg=typer.colors.RED if gate.blocked else typer.colors.YELLOW)
@@ -1994,9 +1998,9 @@ def publish(
     # root hub with no `hub:`, intake on a hub-to-hub publish) is a
     # PublishError, which the root guard prints as one line.
     plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
-    # Spec 2026-09-25 §4.4: a hand publish sends the -code CI would send for
-    # this commit — never a stale or summarized copy. No --no-refresh here:
-    # skipping it is exactly the divergence this prevents.
+    # A hand publish sends the -code CI would send for this commit — never a
+    # stale or summarized copy. No --no-refresh here: skipping it is exactly
+    # the divergence this prevents.
     if plan.refresh_code:
         _refresh_dev_code(kb_dir)
 
@@ -2133,10 +2137,9 @@ def ci_publish(
         # publish._load_manifest_or_raise, which converts a corrupt/
         # schema-invalid/non-UTF-8 file into PublishError, NOT a raw
         # yaml/pydantic exception -- it does not land in the ValueError-
-        # family classes below (that claim was true before this round
-        # wrapped the read, and stale once it did: PublishError is a
-        # RuntimeError, not a ValueError, so it escaped uncaught until this
-        # arm named the base it belongs to). The OIDC token/publish-response
+        # family classes below (PublishError is a RuntimeError, not a
+        # ValueError, so without this arm naming the base it belongs to, it
+        # would escape uncaught). The OIDC token/publish-response
         # JSON parsing (json.loads, in _request_oidc_token/run) IS still
         # unwrapped and does land in _CONFIG_READ_ERRORS below
         # (json.JSONDecodeError is a ValueError subclass).
@@ -2188,10 +2191,10 @@ def reindex(
         # hand-edited content and untracked directories -- and publish's own
         # error paths leave exactly that behind.
         #
-        # -c core.quotePath=false (finding 7): without it, porcelain C-quotes
-        # any non-ASCII path (e.g. "federation/ghi-ch\303\272.md") instead of
-        # printing it as UTF-8.
-        # --untracked-files=all (finding 7): without it, an entirely-untracked
+        # -c core.quotePath=false: without it, porcelain C-quotes any non-ASCII
+        # path (e.g. "federation/ghi-ch\303\272.md") instead of printing it as
+        # UTF-8.
+        # --untracked-files=all: without it, an entirely-untracked
         # federation/ (first-ever reindex, nothing under it committed yet)
         # collapses to one "?? federation/" line -- the strays check below
         # then flags the whole directory even though committing
@@ -2223,8 +2226,8 @@ def reindex(
         )
         raise typer.Exit(1) from None
     except OSError as exc:
-        # I5: str(OSError) alone ("[Errno 13] Permission denied: '...'") names
-        # no way forward -- add one.
+        # str(OSError) alone ("[Errno 13] Permission denied: '...'") names no
+        # way forward -- add one.
         typer.secho(
             f"reindex failed ({exc}) -- check file permissions under the hub and retry",
             fg=typer.colors.RED,
@@ -2262,13 +2265,11 @@ def reindex(
         )
         raise typer.Exit(1) from None
     except OSError as exc:
-        # F-D9 CRITICAL, routed: this try's sibling arm above (the
-        # write_federation_index/commit_paths block) already has an OSError
-        # arm -- this one, guarding searchdb.sync, was added later and
-        # missed it. A locked file under the hub (e.g. .kb-work/search.sqlite3
-        # held open by another kb process) raised PermissionError with no
-        # arm to catch it here -- reindex is one of the three commands the
-        # spec names by name for "no traceback reaches a user".
+        # This try guards searchdb.sync and needs its own OSError arm, like
+        # its sibling above (the write_federation_index/commit_paths block):
+        # a locked file under the hub (e.g. .kb-work/search.sqlite3 held open
+        # by another kb process) raises PermissionError here, and reindex
+        # must never let a traceback reach a user.
         typer.secho(
             f"reindex failed while syncing the search index ({exc}) -- check "
             "file permissions under the hub and retry",
@@ -2317,12 +2318,11 @@ def migrate(
         )
     if not report.per_rid:
         if report.skipped:
-            # P53 (item 3, wave L1 brief): "nothing to migrate" is an
-            # all-clear a script may read at exit 0 -- printing it here
-            # would be false, since the entries above were found and
-            # skipped, not swept. A skip is not itself a migrate failure
-            # (the entry's markers are broken upstream, not this run), but
-            # the run could not confirm federation/ is clean, so it must
+            # "nothing to migrate" is an all-clear a script may read at exit 0
+            # -- printing it here would be false, since the entries above were
+            # found and skipped, not swept. A skip is not itself a migrate
+            # failure (the entry's markers are broken upstream, not this run),
+            # but the run could not confirm federation/ is clean, so it must
             # not report clean: exit non-zero with the skip named above.
             typer.echo("nothing migrated -- entries were skipped (see above)")
             raise typer.Exit(1)
@@ -2824,11 +2824,11 @@ def ticket_check(
     resolved_missions = _resolve_missions_dir(missions_dir, path)
 
     def load_doc(repo: str | None, doc: str) -> ticketcheck.LoadedDoc | None:
-        # Hub first (spec 2026-09-25 §4.1): the SA grounded on the hub copy,
-        # and a dev repo's local -code is regenerated from its working tree,
-        # so its revision is the branch's, never the grounding's. The local
-        # copy is the fallback when no hub is reachable or the hub does not
-        # hold the doc (the hub's own checkout, a doc not published yet).
+        # Hub first: the SA grounded on the hub copy, and a dev repo's local
+        # -code is regenerated from its working tree, so its revision is the
+        # branch's, never the grounding's. The local copy is the fallback when
+        # no hub is reachable or the hub does not hold the doc (the hub's own
+        # checkout, a doc not published yet).
         handle, reason = _hub_or_reason(hub, kb_dir)
         if handle is not None:
             found = ticketcheck.load_from_hub(handle.federation_dir, repo, doc)
@@ -3388,19 +3388,19 @@ def doctor(
 
     # check_kind first: it is the only check that can report a broken
     # config.yaml, and _hub_or_exit reads that same file to find the hub —
-    # resolving first meant doctor exited before its own handler ran (H1).
+    # resolving first would make doctor exit before its own handler runs.
     kind_issues = check_kind(kb_dir)
     if any(i.level == "error" for i in kind_issues):
         for issue in kind_issues:
             typer.secho(f"[{issue.level}] {issue.message}", fg=typer.colors.RED)
         raise typer.Exit(1)
-    # Spec 2026-09-25 §4.1: every local reader sees a derived -code. A dev
-    # repo whose index.yaml still lists <repo_id>-code but whose directory
-    # is absent (fresh clone, or a teammate's pull of the migration's `git
-    # rm --cached` commit) must get it back before check_kb runs below --
-    # otherwise check_kb reports a permanent "missing _manifest.yaml" that
-    # kb doctor itself could have fixed. _refresh_dev_code is already a
-    # no-op for any other kind and for a repo without a -code document.
+    # Every local reader sees a derived -code. A dev repo whose index.yaml
+    # still lists <repo_id>-code but whose directory is absent (fresh clone, or
+    # a teammate's pull of the migration's `git rm --cached` commit) must get
+    # it back before check_kb runs below -- otherwise check_kb reports a
+    # permanent "missing _manifest.yaml" that kb doctor itself could have
+    # fixed. _refresh_dev_code is already a no-op for any other kind and for a
+    # repo without a -code document.
     if not no_refresh:
         _refresh_dev_code(kb_dir)
     handle = _hub_or_exit(hub, kb_dir)

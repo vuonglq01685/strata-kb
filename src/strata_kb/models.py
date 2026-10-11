@@ -1,3 +1,13 @@
+"""models — pydantic models for every YAML file the KB reads and writes.
+
+Authored files (`index.yaml`, each doc's `_manifest.yaml`), the generated
+federation index, the hub's publisher registry and the asset record, plus the
+stat-keyed YAML parse cache (`load_yaml_data`, `load_yaml_model`) and
+`save_yaml_model`. Several of these models are also read cross-install off a
+hub's mirrored tree: a field added to one must be optional with a safe default
+(see FedIndexEntry's comment).
+"""
+
 from __future__ import annotations
 
 import os
@@ -17,7 +27,7 @@ T = TypeVar("T", bound=BaseModel)
 # A document id: one folder name under a repo's `.kb/`. No separator and no
 # leading dot, so `..` can never be a path segment. `kbcontext._REF_RE` builds
 # its `doc` group from this pattern, and `query.doc_dir` guards every reader
-# that joins a caller-supplied id onto a path (2026-10-10 review §5.2 #1).
+# that joins a caller-supplied id onto a path.
 DOC_ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 DOC_ID_RE = re.compile(rf"^{DOC_ID_PATTERN}$")
 
@@ -47,10 +57,10 @@ class ReviewRecord(BaseModel):
 
 
 class SectionEntry(BaseModel):
-    # extra="forbid", same reason as RegistryEntry below: a plausible
-    # operator typo in an authored YAML file (`sumary:` for `summary:`)
-    # used to validate cleanly, take the field's default, and publish an
-    # empty L1 summary. `kb doctor` reported OK on it (M10). Also read
+    # extra="forbid", same reason as RegistryEntry below: without it, a
+    # plausible operator typo in an authored YAML file (`sumary:` for
+    # `summary:`) validates cleanly, takes the field's default, and publishes
+    # an empty L1 summary that `kb doctor` reports as OK. Also read
     # cross-install: nested inside every mirrored _manifest.yaml
     # (Manifest.sections), so a field added here is a wire-compat break
     # for an older reader too -- see FedIndexEntry's comment below.
@@ -136,8 +146,8 @@ class FedIndexEntry(BaseModel):
     # SectionEntry) -- so a field added to any of them is a wire-compat
     # break for an older reader too, exactly like a field added here. They
     # stay strict anyway: a human types those files before they are ever
-    # mirrored, and the typo-catching value (M10) is worth that risk for
-    # them. This file differs because nothing types it by hand --
+    # mirrored, and the typo-catching value (see SectionEntry) is worth that
+    # risk for them. This file differs because nothing types it by hand --
     # build_federation_index generates it -- so there is no typo to catch
     # and nothing offsets the same risk. Whenever a field is added to any
     # of those four, it must be optional with a safe default -- the way
@@ -157,8 +167,8 @@ class FedIndexEntry(BaseModel):
     published_at: str = ""
     # sha256 of the snapshot's own content tree (federation/<rid>/**),
     # written by reindex/publish so `kb doctor` at the HUB can detect
-    # content edited in place — the hub has no local .kb to diff against
-    # (M9 row #18). "" = published before 0.25, not verifiable.
+    # content edited in place — the hub has no local .kb to diff against.
+    # "" = published before 0.25, not verifiable.
     content_sha256: str = ""
 
 
@@ -175,8 +185,8 @@ class RegistryEntry(BaseModel):
     Registry's docstring below) -- without it, a typo'd key inside an
     entry (e.g. `workflw:` for `workflow:`) validates cleanly, silently
     drops the pin the hub owner thought they set, and `authorize` accepts
-    any workflow for that repo. I-3: a security control must fail closed
-    on a plausible operator typo, not just on a malicious payload.
+    any workflow for that repo. A security control must fail closed on a
+    plausible operator typo, not just on a malicious payload.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -239,7 +249,7 @@ class Registry(BaseModel):
 
 class AssetsRecord(BaseModel):
     """Relative paths of assets diverted to the object store for one rid.
-    The filename's sha256 IS the file content's sha256 (spec A), so hub
+    The filename's sha256 IS the file content's sha256, so hub
     manifests can synthesize exact entries without holding the bytes."""
 
     assets: list[str] = Field(default_factory=list)
@@ -254,7 +264,7 @@ except ImportError:  # PyYAML built without libyaml
 # cached: file timestamps tick at ~4 ms on Linux (coarse clock), so a
 # same-size rewrite inside one tick could keep its stat key. Git's "racy
 # entry" rule. A hub checkout's files are older than this on every request
-# after the first (2026-10-10 review §6.2 F1).
+# after the first.
 RACY_WINDOW_NS = 2_000_000_000
 _YAML_CACHE_MAX = 2048
 _yaml_cache: OrderedDict[str, tuple[tuple[int, int, int, int], object]] = OrderedDict()
@@ -269,8 +279,8 @@ def clear_yaml_cache() -> None:
 def load_yaml_data(path: Path) -> object:
     """Parsed YAML of `path` — libyaml when available, cached by stat.
 
-    The review measured a 500-section manifest at 439 ms with the
-    pure-Python loader and 49 ms with libyaml, and `load_federation` plus
+    A 500-section manifest measured 439 ms with the pure-Python loader and
+    49 ms with libyaml, and `load_federation` plus
     the web pages parsed every manifest several times per request. Callers
     get the shared parsed object: validate it into a model (as
     `load_yaml_model` does), never mutate it.

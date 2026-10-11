@@ -1,4 +1,13 @@
-# src/strata_kb/web/ui.py
+"""ui — the server-rendered HTML screens under `/ui/*` and `/assets/*`.
+
+`build_routes` returns the overview/search screen, doc and section pages, the
+token login and logout, static files, and content-addressed asset serving.
+Pages render through `templating` with `mdrender` for Markdown bodies and read
+only the hub's `federation/`, never its unpublished `.kb/`. The login form is
+unauthenticated, so it is size-capped and rate-limited before the token
+compare.
+"""
+
 from __future__ import annotations
 
 import hmac
@@ -44,17 +53,18 @@ logger = logging.getLogger("strata_kb.web.ui")
 # limit to a form body -- the same reason intake_routes caps every upload
 # (intake_routes.read_capped). A token is tens of bytes; 8 KiB is generous.
 #
-# Fix round 1 (Minor C): a chunked request (no Content-Length) skips the
-# header check below and reaches request.form() regardless -- still bounded,
-# but not because "the token field is not a file part" (that reasoning was
-# wrong: Starlette's FormParser, not just MultiPartParser, enforces its own
-# limits on plain url-encoded fields too). Verified against pinned Starlette
-# 1.6.0: FormParser caps each field at max_part_size (1 MiB) and the whole
-# form at max_fields (1000), raising HTTPException(400) past either. Residual
-# worth naming: up to ~1000 fields x 1 MiB can accumulate in
-# FormParser.messages before the field-count check trips -- reachable only
-# via chunked, and bounded to LOGIN_MAX_ATTEMPTS per client per
-# LOGIN_WINDOW_SECONDS because login_post's limiter check runs before form().
+# A chunked request (no Content-Length) skips the header check in login_post
+# and reaches request.form() regardless. Do not rely on "the token field is
+# not a file part" to bound it: Starlette's FormParser, not just
+# MultiPartParser, enforces its own limits on plain url-encoded fields too.
+# Verified against pinned Starlette 1.6.0: FormParser caps each field at
+# max_part_size (1 MiB) and the whole form at max_fields (1000), raising
+# HTTPException(400) past either -- but up to ~1000 fields x 1 MiB can
+# accumulate in FormParser.messages before the field-count check trips. That
+# path is reachable only via chunked, and bounded to LOGIN_MAX_ATTEMPTS per
+# client per LOGIN_WINDOW_SECONDS because login_post's limiter check runs
+# before form(); login_post also reads the body through
+# bodycap.capped_receive, which refuses it past LOGIN_MAX_BODY.
 LOGIN_MAX_BODY = 8 * 1024
 
 
@@ -196,7 +206,7 @@ def render_error_page(
     config: ServerConfig, *, status: int, title: str, detail: str
 ) -> HTMLResponse:
     """Render the shared error shell (used for the 404 path, and by app.py's
-    SnapshotCorruptError handler for a corrupt published snapshot, M8)."""
+    SnapshotCorruptError handler for a corrupt published snapshot)."""
     return _render_page(
         "error.html",
         config,
@@ -281,14 +291,14 @@ def build_routes(
     limiter = login_limiter or SlidingWindowLimiter(
         LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS
     )
-    # F-D12 item 4: this route has no IntakeConfig to read (build_routes only
-    # gets ServerConfig), so it reads the same env var through ratelimit.py's
+    # This route has no IntakeConfig to read (build_routes only gets
+    # ServerConfig), so it reads the same env var through ratelimit.py's
     # shared parser rather than duplicating intake.py's parsing -- one
     # authority for STRATA_KB_TRUSTED_PROXIES, covering both limiters.
-    # Task 11: create_app now reads it once and passes it in, so the
-    # middleware and the login form cannot disagree about the proxy count --
-    # the env fallback stays for direct unit callers (e.g. test_web_ui.py)
-    # that build routes without going through create_app.
+    # create_app reads it once and passes it in, so the middleware and the
+    # login form cannot disagree about the proxy count -- the env fallback
+    # stays for direct unit callers (e.g. test_web_ui.py) that build routes
+    # without going through create_app.
     if trusted_proxies is None:
         trusted_proxies = trusted_proxies_from_env()
 
@@ -299,7 +309,7 @@ def build_routes(
         # Checked first, before the rate limiter and before request.form()
         # touches the body: a fat-fingered paste (an honest mistake) is not
         # an attempt at the shared secret, so it must not spend a lockout
-        # attempt the same way a wrong token does (M6's own rule for
+        # attempt the same way a wrong token does (the same rule as auth's
         # _credential_presented -- absence/non-attempt doesn't count). An
         # attacker sending oversized bodies to probe gains nothing either:
         # this is a header-only check, no body is ever read, so it costs the
@@ -320,8 +330,8 @@ def build_routes(
             )
         # The Content-Length check above does not bound a chunked body, and
         # request.form() alone buffers up to 1 MiB per field × 1000 fields:
-        # one unauthenticated request could OOM the whole service (2026-10-10
-        # review §5.2 #2). The capped receive refuses the bytes off the wire.
+        # one unauthenticated request could OOM the whole service. The capped
+        # receive refuses the bytes off the wire.
         capped = Request(
             request.scope,
             bodycap.capped_receive(request, LOGIN_MAX_BODY, _LoginBodyTooLarge),
@@ -333,7 +343,7 @@ def build_routes(
         submitted = str(form.get("token", ""))
         await capped.close()
         # Bytes, not str: compare_digest raises TypeError on a non-ASCII str,
-        # which was a 500 for any non-ASCII guess (review §5.2 #3).
+        # which would be a 500 for any non-ASCII guess.
         if hmac.compare_digest(submitted.encode("utf-8"), token.encode("utf-8")):
             resp = RedirectResponse("/ui", status_code=303, headers=NO_STORE)
             secure = cookie_is_secure(request, trusted_proxies)
@@ -448,7 +458,7 @@ def build_routes(
                 "status": smap.get((r.source, r.doc_id, r.section_id), "pending"),
                 "match_mode": r.match_mode,
                 # content_tokens, not tokens: the rendered card shows only
-                # r.content (via md_render below), never r.snippet (M17).
+                # r.content (via md_render below), never r.snippet.
                 "tokens": r.content_tokens,
                 "score_pct": round(100 * r.score / top),
                 "body_html": md_render(r.content, terms=terms),
@@ -481,7 +491,7 @@ def build_routes(
         # `/ui?q=`) routes to the search screen; only a bare `/ui` with no
         # query params at all renders the overview.
         if "q" in request.query_params or raw_tags:
-            return _search_screen(request, q, raw_tags)  # Task 6
+            return _search_screen(request, q, raw_tags)
         hub = api.hub_handle(config)
         if hub is None:
             return _render_page(
@@ -694,7 +704,7 @@ def build_routes(
         if cached is not None and cached.is_file():
             return cached
         # federation/ only: the hub's own .kb/ is unpublished work and README
-        # promises the server never reads it (2026-10-10 review §5.2 #10).
+        # promises the server never reads it.
         # Content-addressed name → any hit is THE asset (natural dedupe).
         local_hit = None
         if hub.federation_dir.is_dir():

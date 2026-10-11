@@ -1,3 +1,13 @@
+"""hub — resolve a hub reference to a local checkout.
+
+`resolve_hub` turns a hub ref (a local path with a `.kb/`, or a git URL) into
+a HubHandle: a path used in place, or a clone cached under
+~/.strata-kb/hub/<sha1 of the credential-free URL> and pulled when its TTL
+marker expires. The cached clone never stores the credential; it travels on
+the handle. Also owns the hub service's auto-pull thread (`pull_once`,
+`start_auto_pull`). Clone/pull of one cache is serialised by a per-cache lock.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -90,17 +100,18 @@ def _clear_readonly_and_retry(func, target, _exc_info) -> None:
 
 def _cache_needs_reclone(cache: Path) -> bool:
     """A cache directory `clone()` created has core.autocrlf=false written
-    into its local config (gitio.py:136-154). A cache a pre-Task-12 version
-    left behind never got that -- and a config change alone would not
+    into its local config (see gitio.clone). A cache an older version left
+    behind never got that -- and a config change alone would not
     re-materialise files already checked out CRLF, so the only reliable fix
-    is discarding it (F-D10 stays open on every existing install otherwise).
+    is discarding it (otherwise every existing install keeps publishing a
+    whole-tree diff every time).
 
-    `local=True` is load-bearing (Important 2): a merged read (the default
-    `git config --get`) is satisfied by a global `core.autocrlf=false` even
-    when the cache's OWN config never set it -- exactly the state an
-    operator lands in after applying the F-D10 workaround by hand
-    (`git config --global core.autocrlf false`). That machine's legacy
-    caches would then look healthy forever and never get re-cloned.
+    `local=True` is load-bearing: a merged read (the default `git config
+    --get`) is satisfied by a global `core.autocrlf=false` even when the
+    cache's OWN config never set it -- exactly the state an operator lands
+    in after applying the CRLF workaround by hand (`git config --global
+    core.autocrlf false`). That machine's legacy caches would then look
+    healthy forever and never get re-cloned.
     """
     return gitio.config_value(cache, "core.autocrlf", local=True) != "false"
 
@@ -112,11 +123,11 @@ def _discard_cache(cache: Path) -> None:
     removal itself can fail: on Windows, one open handle anywhere under it
     (e.g. a `kb query`/MCP/web process still has `<cache>/.kb-work/
     search.sqlite3` open) is enough, and `_clear_readonly_and_retry`'s retry
-    cannot help that. Before this wrap (Important 3) that OSError escaped
-    `resolve_hub` raw for the first time ever -- `kb publish` printed a bare
-    `[WinError 32] ...` naming no way forward, and intake's
-    `_resolve_hub_or_503` turned a recoverable cache problem into an
-    unhandled 500 instead of its usual 503. Re-raised as `gitio.GitError`:
+    cannot help that. Left unwrapped, that OSError escapes `resolve_hub`
+    raw -- `kb publish` prints a bare `[WinError 32] ...` naming no way
+    forward, and intake's `_resolve_hub_or_503` turns a recoverable cache
+    problem into an unhandled 500 instead of its usual 503. Re-raised as
+    `gitio.GitError`:
     already caught everywhere `resolve_hub`'s other failures (clone/pull)
     are; anywhere it is not, the root CLI guard prints it as one line (a
     `KbError` since 1.15.0).
@@ -173,8 +184,8 @@ def _cache_lock(cache: Path) -> threading.Lock:
 def resolve_hub(hub: str) -> HubHandle | None:
     """Local path with a .kb/ → use it directly; otherwise clone/pull into the cache per TTL.
 
-    None = the hub is unreachable and there is no cache yet — since the
-    2026-07-13 hub-first change, that is not "continue with the local KB".
+    None = the hub is unreachable and there is no cache yet — callers must
+    not read that as "continue with the local KB".
 
     The clone/pull branch holds a per-cache lock: MCP tools and the web
     routes run on worker threads, and two of them finding the TTL expired
@@ -191,13 +202,13 @@ def resolve_hub(hub: str) -> HubHandle | None:
 
 
 def _resolve_cached(hub: str, cache: Path, token: str | None) -> HubHandle | None:
-    # Marker lives outside the clone directory: `commit_all` (publish, Task 4)
+    # Marker lives outside the clone directory: `commit_all` (publish)
     # runs `git add -A` on the hub — if the marker were inside the clone it
     # would get added by mistake.
     marker = cache.parent / f"{cache.name}.last-pull"
     if cache.exists() and _cache_needs_reclone(cache):
-        # A legacy (pre-Task-12) cache never got core.autocrlf=false written
-        # locally -- repairing it in place (renormalise/checkout -f) risks a
+        # A legacy cache never got core.autocrlf=false written locally --
+        # repairing it in place (renormalise/checkout -f) risks a
         # half-converted tree; discard and re-clone under the same key
         # instead, exactly as if it had never existed. A crashed publish
         # leaves at most an unpushed commit on a publish/<rid> branch inside

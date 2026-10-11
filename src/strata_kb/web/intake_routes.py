@@ -1,3 +1,12 @@
+"""intake_routes — the `/intake/*` HTTP routes for CI publishes to the hub.
+
+`build_intake_routes` returns `/intake/manifest`, `/intake/status` and
+`/intake/publish`, built only when publish intake is configured. Every route
+is rate-limited per client before any OIDC verify or hub work; the publish
+body is capped off the wire and publishes run under a small concurrency cap.
+A job's status must always leave "processing", whatever way `publish` exits.
+"""
+
 from __future__ import annotations
 
 import json
@@ -25,30 +34,29 @@ from strata_kb.web import bodycap
 logger = logging.getLogger("strata_kb.web.intake")
 
 _CHUNK = 64 * 1024
-# F-D12 item 3: the receive-channel cap (bodycap.capped_receive, via
-# _parse_capped_form) must bound the WHOLE multipart envelope -- boundaries,
-# part headers, and the `meta` JSON field, not just the `archive` part -- so
-# it needs headroom above max_tar_bytes rather than being set to it exactly.
-# Measured worst case: 1000 `deletes` entries alone put `meta` at 43041
-# bytes; 1 MiB is comfortably above that while still a tight bound on total
-# bytes accepted off the wire. `read_capped` (below) is the archive-only cap
-# and does NOT use this allowance.
+# The receive-channel cap (bodycap.capped_receive, via _parse_capped_form) must
+# bound the WHOLE multipart envelope -- boundaries, part headers, and the
+# `meta` JSON field, not just the `archive` part -- so it needs headroom above
+# max_tar_bytes rather than being set to it exactly. Measured worst case: 1000
+# `deletes` entries alone put `meta` at 43041 bytes; 1 MiB is comfortably above
+# that while still a tight bound on total bytes accepted off the wire.
+# `read_capped` (below) is the archive-only cap and does NOT use this
+# allowance.
 _ENVELOPE_ALLOWANCE = 1024 * 1024
 
-# HIGH-1 blast-radius containment (round 4): HIGH-1's own fix bounds a
-# single publish's decoded-pax-header memory, but intake_publish as a whole
-# still legitimately holds tens of MiB per call (a full DEFAULT_MAX_TAR
-# member read into memory at once, worst measured case ~56 MiB above a bare
-# process -- see the round-4 report's publish_mem_driver.py harness). This
-# is NOT the HIGH-1 fix itself -- it is a cap on how many such calls may
-# run at once, so N simultaneous publishes (legitimate concurrent CI runs,
-# or an attacker opening several connections in parallel) cannot multiply
-# that per-call cost into an unbounded total. 2: publish is already
-# rate-limited per caller (SlidingWindowLimiter above) and is not a
-# high-QPS path -- 2 gives a little real overlap for near-simultaneous
-# legitimate CI publishes without letting the count grow with request
-# volume. Sized together with the mem_limit added to docker-compose.yml /
-# docker-compose-hub.yml this round -- see their comments for the number.
+# Blast-radius containment: intake.MAX_PAX_METADATA_BYTES and
+# intake.MAX_PAX_RECORDS bound a single publish's decoded-pax-header memory,
+# but intake_publish as a whole still legitimately holds tens of MiB per call
+# (a full DEFAULT_MAX_TAR member read into memory at once, worst measured case
+# ~56 MiB above a bare process). This does not bound a single publish -- it is
+# a cap on how many such calls may run at once, so N simultaneous publishes
+# (legitimate concurrent CI runs, or an attacker opening several connections in
+# parallel) cannot multiply that per-call cost into an unbounded total. 2:
+# publish is already rate-limited per caller (SlidingWindowLimiter above) and
+# is not a high-QPS path -- 2 gives a little real overlap for near-simultaneous
+# legitimate CI publishes without letting the count grow with request volume.
+# Sized together with the mem_limit in docker-compose.yml /
+# docker-compose-hub.yml -- see their comments for the number.
 INTAKE_PUBLISH_MAX_CONCURRENCY = 2
 
 
@@ -141,7 +149,7 @@ def build_intake_routes(
         INTAKE_MAX_ATTEMPTS, INTAKE_WINDOW_SECONDS
     )
     # manifest + status: checked before any JWT verify, registry load or hub
-    # resolve, each of which costs far more than the request (review §5.2 #4).
+    # resolve, each of which costs far more than the request.
     reads = read_limiter or SlidingWindowLimiter(
         INTAKE_READ_MAX_ATTEMPTS, INTAKE_WINDOW_SECONDS
     )
@@ -155,10 +163,9 @@ def build_intake_routes(
     )
 
     def _load_registry():
-        # round-4 appended-section fix: this used to call hub_mod.resolve_hub
-        # directly and only guard its `None` return -- resolve_hub can also
-        # RAISE gitio.GitError (a stale/locked hub cache it cannot clean up
-        # itself), which was previously unguarded here and reached
+        # Do not call hub_mod.resolve_hub directly and guard only its `None`
+        # return: resolve_hub can also RAISE gitio.GitError (a stale/locked
+        # hub cache it cannot clean up itself), which would reach
         # /intake/manifest and /intake/status as an uncaught 500. Reusing
         # intake._resolve_hub_or_503 (already the guard hub_manifest and
         # intake_publish use for the identical resolve_hub call) covers both
@@ -222,12 +229,12 @@ def build_intake_routes(
         return JSONResponse({"files": files})
 
     async def status(request: Request) -> JSONResponse:
-        # Two views (2026-10-10 review §5.2 #6). Without a token: `state` and
-        # `pr_url` only -- the zero-secret dev CLI (`publish_via_intake`)
-        # polls this. `detail` can echo raw git stderr (container paths,
-        # branch names), so it goes only to the OIDC caller whose repo-id
-        # it is (the LOW-1 boundary `manifest` also enforces). A token that
-        # is present but invalid is an error, never the public view.
+        # Two views. Without a token: `state` and `pr_url` only -- the
+        # zero-secret dev CLI (`publish_via_intake`) polls this. `detail` can
+        # echo raw git stderr (container paths, branch names), so it goes only
+        # to the OIDC caller whose repo-id it is (the same boundary `manifest`
+        # enforces). A token that is present but invalid is an error, never the
+        # public view.
         if (limited := _read_limited(request)) is not None:
             return limited
         rid = request.query_params.get("repo_id", "")
@@ -273,12 +280,12 @@ def build_intake_routes(
             return _missing_token()
         token = auth.removeprefix("Bearer ")
         capped = None
-        # F-D12 item 3: the body cap bounds the WHOLE multipart envelope
-        # (boundaries, part headers, the `meta` JSON field), not just the
-        # archive -- it needs headroom above max_tar_bytes, or an archive of
-        # exactly the documented limit no longer fits inside its own
-        # envelope. read_capped (below) applies max_tar_bytes to the
-        # archive part alone and is unaffected by this allowance.
+        # The body cap bounds the WHOLE multipart envelope (boundaries, part
+        # headers, the `meta` JSON field), not just the archive -- it needs
+        # headroom above max_tar_bytes, or an archive of exactly the documented
+        # limit no longer fits inside its own envelope. read_capped (below)
+        # applies max_tar_bytes to the archive part alone and is unaffected by
+        # this allowance.
         max_body_bytes = cfg.max_tar_bytes + _ENVELOPE_ALLOWANCE
         try:
             # Check the declared size before doing any auth/network work --
@@ -351,11 +358,11 @@ def build_intake_routes(
         store.set(rid, source_commit, "processing")
         try:
             try:
-                # HIGH-1 blast-radius containment: brackets exactly the
-                # memory-heavy phase (extraction, hashing, worktree write --
-                # everything intake_publish itself does), not the multipart
-                # read/parse above, which is already bounded per-request by
-                # max_tar_bytes regardless of concurrency.
+                # Blast-radius containment (INTAKE_PUBLISH_MAX_CONCURRENCY):
+                # brackets exactly the memory-heavy phase (extraction, hashing,
+                # worktree write -- everything intake_publish itself does), not
+                # the multipart read/parse above, which is already bounded
+                # per-request by max_tar_bytes regardless of concurrency.
                 async with concurrency_limiter:
                     pr_url = await run_in_threadpool(
                         intake.intake_publish,
@@ -375,15 +382,14 @@ def build_intake_routes(
                     {"error": "publish_failed", "detail": str(exc)}, status_code=502
                 )
             except Exception:
-                # MEDIUM-2 backstop: intake_publish's own extraction step now
-                # translates every OS/parse error it can see into IntakeError,
-                # but this is the terminal-state guarantee itself, not a bet
-                # that every future failure mode was anticipated -- an
-                # unexpected crash here must never leave the job at
-                # "processing" forever (no other code path ever moves it out
-                # of that state), so this is a deliberately broad backstop.
-                # The traceback is logged, never returned -- spec: no traceback
-                # reaches a user.
+                # Backstop: intake_publish's own extraction step translates
+                # every OS/parse error it can see into IntakeError, but this is
+                # the terminal-state guarantee itself, not a bet that every
+                # future failure mode was anticipated -- an unexpected crash
+                # here must never leave the job at "processing" forever (no
+                # other code path ever moves it out of that state), so this is
+                # a deliberately broad backstop. The traceback is logged, never
+                # returned -- no traceback reaches a user.
                 logger.exception(
                     "intake publish crashed unexpectedly for %s @ %s",
                     rid,
@@ -405,19 +411,19 @@ def build_intake_routes(
             store.set(rid, source_commit, "done", pr_url=pr_url)
             return JSONResponse({"repo_id": rid, "pr_url": pr_url})
         finally:
-            # N-6: `except Exception` above does not catch a BaseException
-            # -- notably asyncio.CancelledError, raised into this coroutine
-            # when the client disconnects mid-publish (Python 3.8+ makes it
-            # a BaseException, not an Exception, precisely so `except
-            # Exception` does not swallow cancellation). Such an exception
-            # unwinds past every `except` clause above without ever
-            # reaching a `store.set(..., "error"/"done", ...)` call, which
-            # is MEDIUM-2's exact symptom -- /intake/status stuck at
-            # "processing" forever -- by a different route than an
-            # unanticipated extraction failure. This promotes any job this
-            # coroutine leaves at "processing", however it exits, to
-            # "error" -- and is a no-op on every path above, since each of
-            # them already sets a terminal state before returning.
+            # `except Exception` above does not catch a BaseException --
+            # notably asyncio.CancelledError, raised into this coroutine when
+            # the client disconnects mid-publish (Python 3.8+ makes it a
+            # BaseException, not an Exception, precisely so `except Exception`
+            # does not swallow cancellation). Such an exception unwinds past
+            # every `except` clause above without ever reaching a
+            # `store.set(..., "error"/"done", ...)` call, which leaves
+            # /intake/status stuck at "processing" forever -- the same symptom
+            # the `except Exception` backstop prevents, by a different route.
+            # This promotes any job this coroutine leaves at "processing",
+            # however it exits, to "error" -- and is a no-op on every path
+            # above, since each of them already sets a terminal state before
+            # returning.
             current = store.get(rid, source_commit)
             if current is not None and current.get("state") == "processing":
                 store.set(

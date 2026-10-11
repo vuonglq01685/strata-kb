@@ -1,4 +1,4 @@
-"""Keeping `<repo_id>-code` in step (spec 2026-09-25): one ingest
+"""Keeping `<repo_id>-code` in step: one ingest
 configuration shared by local runs and CI, and the CI version pin that
 tells whether a local run can match what CI publishes."""
 
@@ -123,7 +123,7 @@ def ensure_code_fresh(
     kb_dir: Path, repo_id: str, repo_root: Path | None = None
 ) -> FreshResult:
     """Regenerate `<repo_id>-code` when it is missing, older than HEAD, or
-    the tracked tree has changes outside .kb/ (spec 2026-09-25 §4.1).
+    the tracked tree has changes outside .kb/.
     Never scaffolds -svc. Raises core.CodeIngestError when the ingest
     refuses; callers print it."""
     kb_abs = kb_dir.resolve()
@@ -134,8 +134,8 @@ def ensure_code_fresh(
         return FreshResult(regenerated=False)
     report = core.run(opts)
     notes = [f"refreshed {opts.doc_id} from the working tree ({reason})"]
-    # This refresh is now the main local producer of `-code` (spec
-    # 2026-09-25 §4.1) -- an extractor warning (e.g. "could not parse …")
+    # This refresh is the main local producer of `-code` -- an extractor
+    # warning (e.g. "could not parse …")
     # must reach the caller the same way `kb code-ingest` prints it, not be
     # discarded because callers here only read `.notes`.
     notes.extend(f"[warn] {warning}" for warning in report.warnings)

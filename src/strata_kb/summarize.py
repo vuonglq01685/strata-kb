@@ -1,3 +1,13 @@
+"""summarize — fill pending L0/L1/L2 summaries in `.kb/` with an LLM runner.
+
+`summarize_kb` (`kb summarize`) collects every `pending` section's L3 prose
+(tables stripped), asks the runner for an L2 condensation and an L1 sentence
+in parallel, and writes results back on the main thread in batches, then
+fills each finished document's L0 line. `plan_redo`/`redo_reset` reset
+chosen sections to `pending`. `-code` documents are deterministic and never
+summarized here (`generated_doc_ids`).
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -68,7 +78,7 @@ RETRY_PAUSE_SECONDS = 1.0  # pause before the retry after a RunnerError (tests s
 
 # code-ingest tags every `-code` document `generated`. Its L1/L2 are
 # deterministic; an LLM summary would make the published text depend on
-# who published last (spec 2026-09-25 §4.4), so summarize never touches it.
+# who published last, so summarize never touches it.
 
 
 def generated_doc_ids(kb_dir: Path) -> set[str]:
@@ -352,11 +362,10 @@ def summarize_kb(
                     say(f"[fail] {key}: {exc}")
                 else:
                     say(f"[ok] {key}")
-                # Write as we go, still on this (main) thread: a crash in an
-                # hours-long run used to lose every paid-for call, because
-                # nothing was written until all of them finished (2026-10-10
-                # review §6.2 F12). Each flush re-reads the manifest, so the
-                # L2 markers still pending are counted afresh.
+                # Write as we go, still on this (main) thread: if nothing were
+                # written until all calls finished, a crash in an hours-long
+                # run would lose every paid-for call. Each flush re-reads the
+                # manifest, so the L2 markers still pending are counted afresh.
                 if len(results) >= FLUSH_EVERY:
                     _apply_results(kb_dir, results, sections, runner, report)
                     results = {}

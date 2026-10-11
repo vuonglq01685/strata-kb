@@ -1,8 +1,7 @@
 """`kb ticket check` engine — the SA grounding gate.
 
-Verifies a ticket's `## Technical grounding` section (spec
-2026-09-20-sa-grounding-design §3/§7) against the real `<repo>-code`
-document: every `svc.* / db.* / api.* / int.* / cmd.*` id must exist in the
+Verifies a ticket's `## Technical grounding` section against the real
+`<repo>-code` document: every `svc.* / db.* / api.* / int.* / cmd.*` id must exist in the
 document's `_manifest.yaml` (or carry `[NEW: <reason>]`), columns / routes /
 commands must match the document's own L2 tables, `Files:` must be listed in
 `struct.tree`, `Volumes:` / `Healthchecks:` / `Devices:` must match the svc
@@ -552,7 +551,7 @@ def _check_ids(
                 table = sid.rsplit(".", 1)[0]
                 if table in known:
                     if new is None:
-                        continue  # column verified in Task 3
+                        continue  # the column was verified above
                     # else: fall through with sid = full column id so the
                     # [NEW] branch below can note/warn on it.
                 else:

@@ -1,3 +1,13 @@
+"""build — validate the `.kb/` tree and refresh its token counts (`kb build`).
+
+`build_kb` checks every indexed document: each manifest section is present
+in its L2/L3 files, L2 tables match L3 verbatim, hashes match what was
+summarized and reviewed, no orphan headings, and the `quality` rules. It
+writes per-section token counts back to a manifest only when that document
+passed and `write_tokens` is set (the approval gate validates without
+writing). `kb_stats` reports L0-L3 token totals for `kb stats`.
+"""
+
 from __future__ import annotations
 
 from collections import Counter
@@ -137,7 +147,7 @@ def _check_orphan_headings(
     cache: dict[str, str],
 ) -> None:
     """Every real `## <id> …` heading in a doc's L2/L3 files must be a known
-    manifest id (Ruling R16) -- see `mdutils.orphan_heading_ids` for the
+    manifest id -- see `mdutils.orphan_heading_ids` for the
     shared per-file predicate (also used by doctor's `_check_doc`, and it
     must stay the single source of the fence/title-less exemptions)."""
     ids = {s.id for s in manifest.sections}
