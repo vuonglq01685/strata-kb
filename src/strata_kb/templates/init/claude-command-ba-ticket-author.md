@@ -18,14 +18,15 @@ handover.
 With `--amend <ticket>`, skip Intake and follow the skill's `## Amend mode`:
 read the ticket and its `kb ticket stale --md` findings, ask the BA for the
 trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`), re-pin with
-`kb_context_new` only the refs that moved, run `/sa-ticket-ground` and
+`kb_context_new` (FULL ref list, whole block replaced), run `/sa-ticket-ground` and
 `kb ticket check` ONLY for an `architecture` trigger, bump `> Revision:` and
 append a `## Change log` row (`Affected` = section names), run `kb ticket
 lint` until `DoR: PASS`, review the changed sections only (one round, scores
 in the row's `Review` cell, never in `## Review record`), untick the DoR
 boxes whose evidence changed and update the `@ rev` pin. A `done` story's
 ticket is frozen: new work gets the next free US number. A `DECIDED` row is
-superseded, never edited. The agent never ticks DoR, commits or pushes.
+superseded, never edited (a superseded row still cited by a `[NEW: D<k>]`
+forces the `architecture` trigger). The agent never ticks DoR, commits or pushes.
 
 Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
 to `tickets/<mission-id>/<mission-id>-US<n>.md` under a parent mission, so

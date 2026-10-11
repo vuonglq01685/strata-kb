@@ -166,15 +166,19 @@ from Intake: the mission keeps its id and filename, and every change is
 recorded in `## Change log`. A new mission is never created by `--amend`.
 
 1. **Read** `missions/<M-id>.md`, then run `kb ticket stale --md
-   missions/<M-id>.md` and read the findings for it (reason
-   `kb-context` or `architecture`). Run `kb mission next` as well, to see
+   missions/<M-id>.md` and read the findings for it (kind: the
+   `Kind` column, `kb-context` or `architecture`). Run `kb mission next` as well, to see
    which stories are `done`.
 2. **Ask** the BA for the trigger(s) — one or more of `kb-context`,
    `architecture`, `scope`, `delivery` — and what changed. The drift
    findings pre-fill the answer; ask, don't guess.
 3. **`kb-context` trigger** — re-pin `## KB context` with the MCP tool
    `kb_context_new` when available, otherwise `kb context new --refs
-   "<refs>"` (CLI), only for the refs that moved or are new. The `tags`
+   "<refs>"` (CLI), with the FULL ref list (kept + moved + new) — the tool
+   renders one block with one `version:`, so a partial list drops the
+   unchanged refs — and replace the whole block. Only the moved or new refs
+   need the BA's re-confirmation, and only the claims citing them need
+   re-checking. The `tags`
    rule of step 6 still holds: never pass tags.
 4. **`architecture` trigger only** — hand off to `sa-ticket-ground
    --mission` on the mission. It refreshes `## Services & order` and the
@@ -203,7 +207,11 @@ Change rules:
 - Stories not yet done may be edited; list each in the row's `Affected`.
 - **A `DECIDED` row is superseded, never edited.** Add a row `D<n>` with
   `Supersedes D<k>` in its Decision cell, and set `D<k>`'s status to
-  `SUPERSEDED`. Later `[NEW: D<k>]` citations must name `D<n>`.
+  `SUPERSEDED`. Later `[NEW: D<k>]` citations must name `D<n>`. If any
+  `[NEW: D<k>]` (this mission's `## Services & order`, or a ticket) still
+  cites the superseded row, the amendment MUST include the `architecture`
+  trigger so `sa-ticket-ground` re-points it to `D<n>`: list the citing
+  files to the BA (`grep -rn "D<k>" missions tickets`).
 - Tickets already written against this mission keep their `@ rev` pin; the
   BA re-authors a flagged story with `/ba-ticket-author --amend`.
 

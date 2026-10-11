@@ -2986,3 +2986,26 @@ def test_ba_skills_document_amend_mode():
             f"cursor-{stem}.md",
         ):
             assert "--amend" in initcmd.read_template(name), name
+
+
+def test_amend_text_repins_with_the_full_ref_list_and_forces_architecture_on_supersede():
+    for stem in ("ba-mission-plan", "ba-ticket-author"):
+        for name in (f"claude-skill-{stem}.md", f"claude-command-{stem}.md"):
+            text = " ".join(initcmd.read_template(name).split())
+            assert "FULL ref list" in text, name
+            assert "only for the refs that moved" not in text, name
+            assert "MUST include the `architecture` trigger" in text or (
+                "forces the `architecture` trigger" in text
+            ), name
+            assert "reason `kb-context`" not in text, name
+
+
+def test_sa_ticket_ground_asks_for_the_parent_mission_pin():
+    for name in (
+        "claude-skill-sa-ticket-ground.md",
+        "cursor-sa-ticket-ground.md",
+        "copilot-sa-ticket-ground.prompt.md",
+    ):
+        text = initcmd.read_template(name)
+        assert "needs a parent mission" in text, name
+        assert "> Parent mission: M-<slug> @ rev <N>" in text, name

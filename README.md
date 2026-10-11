@@ -759,8 +759,8 @@ section names in a ticket. `Review` holds the amendment's maturity scores, never
 
 `/ba-mission-plan --amend M-<slug>` and `/ba-ticket-author --amend <ticket>`
 make the change. They read the file and its `kb ticket stale --md` findings,
-ask for the trigger, re-pin `## KB context` with `kb_context_new` for the refs
-that moved, and run `sa-ticket-ground` (`--mission` for a mission) plus `kb
+ask for the trigger, re-pin `## KB context` with `kb_context_new` (the full ref
+list, replacing the block), and run `sa-ticket-ground` (`--mission` for a mission) plus `kb
 ticket check` only for an `architecture` trigger. Then they bump `Revision`,
 append the row, lint, review the changed sections for one round and hand the
 diff to the BA. The agent never ticks a Definition of Ready box (an amended

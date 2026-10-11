@@ -214,7 +214,8 @@ workflow above from Intake: the ticket keeps its id and path, and every
 change is recorded in `## Change log`.
 
 1. **Read** the ticket and run `kb ticket stale --md <file>`; read the
-   findings for it (reason `kb-context` or `architecture`). With a
+   findings for it (kind: the `Kind` column, `kb-context` or `architecture`).
+   With a
    `> Parent mission:` line, read the mission's `## Change log` rows after
    the ticket's `@ rev` pin that list this story in `Affected` — that is
    why `kb mission next` flags the ticket `draft`.
@@ -223,7 +224,11 @@ change is recorded in `## Change log`.
    findings pre-fill the answer; ask, don't guess.
 3. **`kb-context` trigger** — re-pin `## KB context` with the MCP tool
    `kb_context_new` when available, otherwise `kb context new --refs
-   "<refs>"` (CLI), only for the refs that moved or are new. The `tags`
+   "<refs>"` (CLI), with the FULL ref list (kept + moved + new) — the tool
+   renders one block with one `version:`, so a partial list drops the
+   unchanged refs — and replace the whole block. Only the moved or new refs
+   need the BA's re-confirmation, and only the claims citing them need
+   re-checking. The `tags`
    rule of step 5 still holds: never pass tags.
 4. **`architecture` trigger only** — run `/sa-ticket-ground` on the saved
    file as a separate run (no shared context). It refreshes
@@ -256,7 +261,9 @@ Change rules:
   `/ba-mission-plan --amend`.
 - **A `DECIDED` row is superseded, never edited.** A `[NEW: D<k>]` naming
   a `SUPERSEDED` row fails `kb ticket check`: cite the superseding row
-  `D<n>` instead.
+  `D<n>` instead. When this ticket cites one, the amendment MUST include
+  the `architecture` trigger so `/sa-ticket-ground` re-points it; tell the
+  BA which other files cite the same row.
 
 ## Hard rules
 
