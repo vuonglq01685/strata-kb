@@ -306,13 +306,16 @@ computes the same report from the hub alone. It needs no `missions/` or
 Documents.
 
 - `/ui/plans` lists the BA repos and their missions, each with status
-  counts.
-- `/ui/plans/{repo}/{mission}` shows the mission summary and the backlog
-  table, with each story's status, its reasons, and a link to its ticket.
-- `/ui/plans/{repo}/{mission}/{story}` shows the ticket (L3, rendered like
-  the section reader).
-- Unparented tickets are listed under `/ui/plans/{repo}` as "tickets
+  counts; `/ui/plans?repo=<id>` shows one repo, including its "tickets
   without mission".
+- `/ui/plans/{mission}?repo=<id>` shows the mission summary and the backlog
+  table, with each story's status, its reasons, and a link to its ticket.
+- `/ui/plans/{mission}/{story}?repo=<id>` shows the ticket (L3, rendered
+  like the section reader). Unparented tickets use
+  `/ui/plans/tickets/{story}?repo=<id>`.
+- The repo is a query parameter, as on `/ui/docs`, because nested federation
+  ids contain `/`. Without `?repo=` the unique holder is used. Several
+  holders give a 404 page that names them.
 
 `*-plan` documents no longer appear under Documents: not in the catalog,
 not in the overview counts, not in the tag rail. Search still finds plan
