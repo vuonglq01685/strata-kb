@@ -629,6 +629,31 @@ def origin_head_ref(root: Path) -> str:
     return ref[len(prefix) :]
 
 
+def resolve_commit(root: Path, rev: str) -> str:
+    """Full sha of `rev`; GitError if it does not name a commit."""
+    proc = _run(root, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
+    if proc.returncode != 0:
+        raise GitError(
+            f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)"
+        )
+    return proc.stdout.strip()
+
+
+def ls_tree(root: Path, rev: str, relpath: str) -> list[str]:
+    """POSIX paths of the blobs under `relpath` at `rev`, repo-relative.
+
+    Empty when `relpath` is absent at `rev`; GitError when `rev` is missing
+    (same split as `path_exists_at`)."""
+    sha = resolve_commit(root, rev)
+    posix_relpath = relpath.replace("\\", "/")
+    proc = _run(root, "ls-tree", "-r", "-z", "--name-only", sha, "--", posix_relpath)
+    if proc.returncode != 0:
+        raise GitError(
+            f"git ls-tree failed for '{posix_relpath}': {proc.stderr.strip()}"
+        )
+    return [p for p in proc.stdout.split("\0") if p]
+
+
 def path_exists_at(root: Path, rev: str, relpath: str) -> bool:
     """Does `relpath` exist in the tree at `rev`?
 
