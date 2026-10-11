@@ -7,8 +7,10 @@ import time
 
 from starlette.requests import Request
 
-from strata_kb.web.ratelimit import client_key
+from strata_kb.serving.ratelimit import client_key
 
+# Logger name kept from before the move to serving/ (1.15.1): operators
+# filter on it.
 logger = logging.getLogger("strata_kb.web.auth")
 
 COOKIE_NAME = "strata_kb_session"

@@ -1,4 +1,4 @@
-# src/strata_kb/web/ratelimit.py
+# src/strata_kb/serving/ratelimit.py
 """In-process sliding-window rate limiter — no external dependency.
 
 Defense-in-depth for the shared-secret login and the intake surface: the

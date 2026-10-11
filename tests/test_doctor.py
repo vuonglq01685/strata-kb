@@ -209,7 +209,7 @@ def test_asset_store_none_mode_size_warning(tmp_path, monkeypatch):
     assets = kb / "doc1" / "assets"
     assets.mkdir(parents=True)
     (assets / ("a" * 64 + ".png")).write_bytes(b"x" * 2048)
-    monkeypatch.setattr(doctor, "ASSET_SIZE_WARN_BYTES", 1024)
+    monkeypatch.setattr(doctor.checks.assets, "ASSET_SIZE_WARN_BYTES", 1024)
     issues = doctor.check_asset_store(kb, None)
     assert any(i.level == "warning" and "s3" in i.message for i in issues)
 

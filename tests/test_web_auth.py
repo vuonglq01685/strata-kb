@@ -5,7 +5,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from strata_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware, make_session
+from strata_kb.serving.auth import COOKIE_NAME, TokenAuthMiddleware, make_session
 
 
 @pytest.fixture

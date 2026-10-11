@@ -209,7 +209,7 @@ def _docs_suffix(raw: bytes) -> str:
 def probe(hub_url: str, token: str, http=None) -> ProbeResult:
     """Two requests that tell a wrong URL apart from a wrong token.
 
-    `/api/health` is in `web.auth.EXEMPT_PATHS`, so reaching it proves the
+    `/api/health` is in `serving.auth.EXEMPT_PATHS`, so reaching it proves the
     URL without involving the token. `/api/docs` is not, so its answer is
     entirely about the token.
     """

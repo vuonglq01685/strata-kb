@@ -8,8 +8,8 @@ from starlette.testclient import TestClient
 
 from strata_kb import assetstore, models, searchdb
 from strata_kb.mcp import ServerConfig
+from strata_kb.serving.auth import COOKIE_NAME, TokenAuthMiddleware
 from strata_kb.web import ui
-from strata_kb.web.auth import COOKIE_NAME, TokenAuthMiddleware
 from tests.conftest import make_fed_entry
 
 TOKEN = "secret-token"
@@ -250,7 +250,7 @@ def test_login_limiter_honours_trusted_proxies_for_the_rate_limit_key(
     X-Forwarded-For real-client tail land in the SAME bucket (429 on
     repeat) at trusted_proxies=1, and a request with a DIFFERENT real tail
     gets its own bucket instead of also being blocked."""
-    from strata_kb.web.ratelimit import SlidingWindowLimiter
+    from strata_kb.serving.ratelimit import SlidingWindowLimiter
 
     monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "1")
     config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))
@@ -284,7 +284,7 @@ def test_login_limiter_ignores_forged_xff_when_trusted_proxies_is_zero(
     cannot pick its own bucket -- every request still keys on the same
     TestClient peer, so a second request with a DIFFERENT forged tail is
     still rate-limited alongside the first."""
-    from strata_kb.web.ratelimit import SlidingWindowLimiter
+    from strata_kb.serving.ratelimit import SlidingWindowLimiter
 
     monkeypatch.setenv("STRATA_KB_TRUSTED_PROXIES", "0")
     config = ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub))

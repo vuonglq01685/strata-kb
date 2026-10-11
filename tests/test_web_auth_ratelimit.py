@@ -2,8 +2,8 @@
 
 import time
 
-from strata_kb.web.auth import COOKIE_NAME, SESSION_MAX_AGE, make_session
-from strata_kb.web.ratelimit import LOGIN_MAX_ATTEMPTS
+from strata_kb.serving.auth import COOKIE_NAME, SESSION_MAX_AGE, make_session
+from strata_kb.serving.ratelimit import LOGIN_MAX_ATTEMPTS
 
 
 def test_failed_header_auth_is_eventually_429(web_client):

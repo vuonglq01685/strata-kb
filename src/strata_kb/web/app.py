@@ -10,9 +10,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Mount, Route
 
-from strata_kb.mcp import ServerConfig
+from strata_kb.serving.auth import TokenAuthMiddleware
+from strata_kb.serving.config import ServerConfig
 from strata_kb.web import api, ui
-from strata_kb.web.auth import TokenAuthMiddleware
 from strata_kb.web.headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger("strata_kb.web.app")
@@ -26,7 +26,7 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     intake_cfg=None (default): no /intake/* routes — publish intake disabled.
     """
     from strata_kb import searchdb
-    from strata_kb.web.ratelimit import (
+    from strata_kb.serving.ratelimit import (
         LOGIN_MAX_ATTEMPTS,
         LOGIN_WINDOW_SECONDS,
         SlidingWindowLimiter,

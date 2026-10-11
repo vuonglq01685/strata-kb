@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.15.1 — 2026-10-10
+
+Internal structure only; no behaviour, message or exit-code change.
+
+- `codeingest/types.py` holds the types extractors receive and return, and `codeingest/localgit.py` the code-ingest git helper. `codeingest.core` imports its extractor registry at the top of the module instead of at the bottom to dodge an import cycle. `core.CodeSection` and friends still resolve.
+- `serving/` holds what the MCP server, the Web UI/REST app and the intake routes share: `ServerConfig`, bearer/session auth and rate limiting (moved from `web/auth.py` and `web/ratelimit.py`). `web` no longer imports `mcp`, and `intake` no longer imports `web`. `strata_kb.mcp.ServerConfig` and `BearerAuthMiddleware` still resolve.
+- `doctor` is a package: `doctor/issues.py` and one module per concern under `doctor/checks/` (local, usage, assets, context, hub, dev). `from strata_kb.doctor import check_hub` and the other names still work.
+
 ## 1.15.0 — 2026-10-10
 
 - A git, search-index, code-ingest, `kb svc note` or LLM-runner error that a command did not handle now ends that command with one red line and exit 1, like every other operational error, instead of a Python traceback. `GitError`, `IndexBusyError`, `CodeIngestError`, `SvcNoteError` and `RunnerError` joined the `KbError` family, and the root `kb` command catches that family once.

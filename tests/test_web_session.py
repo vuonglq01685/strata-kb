@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from strata_kb.web import auth
+from strata_kb.serving import auth
 
 TOKEN = "s3cr3t-token-abcdefgh"
 
