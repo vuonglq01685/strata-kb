@@ -327,6 +327,60 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
     return repos
 
 
+_FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
+
+
+def _fed_tree_digest(
+    root: Path, skip: frozenset[str] | set[str] = _FED_TOP_SKIP
+) -> str:
+    """Digest deterministic của một cây federation — bỏ file tầng đỉnh mà
+    publish không mirror (index/registry/.gitkeep). KHÔNG bỏ _meta.yaml ở
+    đây (khác _kb_tree_digest): _snapshot_federation mirror leaf _meta.yaml
+    verbatim từ nguồn sang đích — không có bước ghi lại meta như _snapshot
+    của .kb/ — nên cả hai phía đều mang cùng bytes khi thật sự đồng bộ;
+    bỏ _meta.yaml khỏi digest sẽ che mất drift thật (vd. child republish
+    chỉ đổi source_commit của một leaf mà không đổi nội dung nào khác).
+
+    `skip` defaults to _FED_TOP_SKIP (root IS the top of a federation/ tree,
+    e.g. check_federation_publish's fed_src/dest). A LEAF entry
+    (federation/<rid>/, e.g. entry_content_digest's root) has its own
+    index.yaml -- the doc titles/revisions/tags/summaries mirrored from that
+    repo's .kb -- which is real content, not the top-level aggregate
+    index.yaml/registry.yaml this set was written to exempt. The exclusion is
+    by bare relative name, not depth, so a leaf root must pass a narrower
+    `skip` or its own index.yaml silently drops out of the digest."""
+    import hashlib
+
+    # Fold over a {rel: sha256hex} manifest, sorted by the STRING key, exactly
+    # like _kb_tree_digest -- not directly over sorted(root.rglob("*")) (Path
+    # order), which is case-folded on Windows and case-sensitive on POSIX. A
+    # digest is written on the publisher's machine and verified on the
+    # operator's, so a platform-dependent fold order is a real
+    # red-on-an-untampered-hub risk, not a same-process curiosity.
+    manifest: dict[str, str] = {}
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        if rel in skip:
+            continue
+        # Legacy self-heal: a hub cache cloned before clones forced
+        # core.autocrlf=false and shipped .gitattributes still has a CRLF
+        # working tree, and neutralize_line_endings runs on clone, never on
+        # pull. Normalising here keeps a byte-identical tree from reading as
+        # drift until the TTL re-clone.
+        manifest[rel] = hashlib.sha256(
+            path.read_bytes().replace(b"\r\n", b"\n")
+        ).hexdigest()
+    h = hashlib.sha256()
+    for rel in sorted(manifest):
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(manifest[rel].encode("utf-8"))
+        h.update(b"\0")
+    return h.hexdigest()
+
+
 def entry_content_digest(entry_dir: Path) -> str:
     """Digest of one snapshot's content tree — the value stored in
     federation/index.yaml as FedIndexEntry.content_sha256.
@@ -337,10 +391,6 @@ def entry_content_digest(entry_dir: Path) -> str:
     default skip set was written to exempt. Only .gitkeep (the placeholder
     that keeps an otherwise-empty dir tracked by git) can legitimately show
     up at a leaf's own top level."""
-    # Function-local: doctor.py imports federation.py already, so a
-    # module-level import here would be circular.
-    from strata_kb.doctor import _fed_tree_digest
-
     return _fed_tree_digest(entry_dir, skip=frozenset({".gitkeep"}))
 
 
