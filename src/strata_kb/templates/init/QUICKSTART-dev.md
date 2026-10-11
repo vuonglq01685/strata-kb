@@ -141,7 +141,7 @@ the PR, not in the assistant's memory:
 | Just want to check a citation, no implementation | `kb resolve <file>` |
 
 `/dev-implement-ticket` is also the orchestrator: given a ticket fresh, it
-runs Intake → Resolve → Ground → Placeholders, then invokes `dev-design`,
+runs Intake → Check → Resolve → Ground → Placeholders, then invokes `dev-design`,
 `dev-plan`, `dev-execute`, and `dev-handover` in order, detecting how far a
 ticket already got so it never redoes finished work.
 
@@ -155,7 +155,7 @@ is unreachable. If several repos publish the same id, qualify it: `<repo>:<id>`.
 **The ticket's grounding is checked next.** Right after Intake the flow runs
 `kb ticket check docs/impl/<id>/ticket.md` (skipped, with a note, when the
 ticket has no `## Technical grounding`). A `-code` that moved since the SA
-grounded the ticket is not a failure: PASS with a `[warn]` diff means the cited
+grounded the ticket is not a failure: PASS with a `[warn]` means the cited
 names still hold, so read the diff and decide. A FAIL carrying `re-run
 /sa-ticket-ground` means a cited fact is gone: STOP and send it back to the BA,
 who has the SA re-ground it. If the run also says it checked against the local

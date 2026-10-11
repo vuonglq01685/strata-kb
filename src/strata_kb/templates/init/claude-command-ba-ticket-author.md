@@ -20,7 +20,7 @@ read the ticket and its `kb ticket stale --md` findings, ask the BA for the
 trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`), re-pin with
 `kb_context_new` (FULL ref list, whole block replaced), run `kb ticket check`
 on every amend (`/sa-ticket-ground` first for an `architecture` trigger, else
-only when the check FAILs with `re-run /sa-ticket-ground`), bump `> Revision:` and
+only when the check FAILs with `re-run /sa-ticket-ground`; any other FAIL goes to the BA), bump `> Revision:` and
 append a `## Change log` row (`Affected` = section names), run `kb ticket
 lint` until `DoR: PASS`, review the changed sections only (one round, scores
 in the row's `Review` cell, never in `## Review record`), untick the DoR
