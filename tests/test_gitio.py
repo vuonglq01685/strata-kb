@@ -819,3 +819,17 @@ anyio.run(main)
     out = anyio.run(_drive)
     assert b"CHILD-RESULT: pulled" in out
     assert (dest / "a.txt").read_text(encoding="utf-8") == "v2"
+
+
+def test_log_commits_newest_first(git_kb):
+    root = git_kb["root"]
+    rel = (git_kb["kb"] / "demo-doc" / "ch1-records.md").relative_to(root).as_posix()
+    commits = gitio.log_commits(root, rel)
+    assert [c[:7] for c in commits] == [git_kb["rev2"], git_kb["rev1"]]
+    assert all(len(c) == 40 for c in commits)
+    assert gitio.log_commits(root, "no/such/file.yaml") == []
+
+
+def test_log_commits_raises_outside_a_repo(tmp_path: Path):
+    with pytest.raises(gitio.GitError):
+        gitio.log_commits(tmp_path, "x.yaml")

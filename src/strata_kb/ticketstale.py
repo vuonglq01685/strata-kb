@@ -9,18 +9,31 @@ a schedule and keeps one issue up to date.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb import gitio, kbcontext
+import yaml
+from pydantic import ValidationError
+
+from strata_kb import gitio, kbcontext, models
+from strata_kb.lintcore import section_body
 from strata_kb.resolve import resolve_refs
+from strata_kb.ticketcheck import HEADING, SERVICES_HEADING, grounded_entries
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
 
 DEFAULT_DIRS = ("tickets", "missions")
+
+KB_CONTEXT = "kb-context"
+ARCHITECTURE = "architecture"
+BASELINE_MISSING = "baseline not on hub"
+# Narrower than ticketcheck.ID_RE: only the ids a `-code` section can carry.
+_ARCH_ID_RE = re.compile(r"\b(?:svc|db|api|int|cmd)\.[A-Za-z0-9._-]+")
+_MIN_REV_LEN = 7
 
 
 @dataclass
@@ -28,6 +41,7 @@ class StaleRef:
     citation: str
     status: str  # "stale" | "broken"
     reason: str
+    kind: str = KB_CONTEXT  # "kb-context" | "architecture"
 
 
 @dataclass
@@ -46,34 +60,152 @@ def _files(paths: Iterable[Path]) -> list[Path]:
     return sorted(found)
 
 
-def scan(paths: Iterable[Path], hub: HubHandle) -> list[StaleFile]:
-    """Files whose kb-context block cites something stale or broken.
+def _kb_context_refs(text: str, hub: HubHandle) -> list[StaleRef]:
+    """Stale or broken refs of the file's kb-context block. A file without a
+    block, or whose block does not parse, yields nothing: `kb ticket lint` is
+    the gate that reports those, and a scheduled sweep that failed on a
+    half-written draft would hide every real finding."""
+    try:
+        ctx = kbcontext.parse(text)
+    except kbcontext.KBContextError:
+        return []
+    try:
+        results = resolve_refs(hub, ctx)
+    except gitio.GitError as exc:
+        return [StaleRef(ctx.version, "broken", str(exc))]
+    return [
+        StaleRef(r.citation, r.status, r.reason)
+        for r in results
+        if r.status in ("stale", "broken")
+    ]
 
-    A file without a block, or whose block does not parse, is skipped:
-    `kb ticket lint` is the gate that reports those, and a scheduled sweep
-    that failed on a half-written draft would hide every real finding."""
+
+def scan(paths: Iterable[Path], hub: HubHandle) -> list[StaleFile]:
+    """Files whose kb-context block cites something stale or broken, or whose
+    cited architecture sections moved since the `-code` baseline. The two
+    checks are independent: a file with no kb-context block still gets the
+    architecture check."""
     findings: list[StaleFile] = []
     for path in _files(paths):
         try:
             text = path.read_text(encoding="utf-8")
-            ctx = kbcontext.parse(text)
-        except (OSError, UnicodeDecodeError, kbcontext.KBContextError):
+        except (OSError, UnicodeDecodeError):
             continue
-        try:
-            results = resolve_refs(hub, ctx)
-        except gitio.GitError as exc:
-            findings.append(
-                StaleFile(path.as_posix(), [StaleRef(ctx.version, "broken", str(exc))])
-            )
-            continue
-        refs = [
-            StaleRef(r.citation, r.status, r.reason)
-            for r in results
-            if r.status in ("stale", "broken")
-        ]
+        refs = _kb_context_refs(text, hub) + architecture_refs(path, text, hub)
         if refs:
             findings.append(StaleFile(path.as_posix(), refs))
     return findings
+
+
+def _grounded_code_entry(text: str) -> tuple[str | None, str, str] | None:
+    """`(repo, doc, rev)` of the first parseable `- Grounded on:` line, its
+    `-code` entry preferred (the way `missionnext.grounded_doc` picks it)."""
+    for line in text.splitlines():
+        entries = grounded_entries(line)
+        if entries:
+            return next((e for e in entries if e[1].endswith("-code")), entries[0])
+    return None
+
+
+def _cited_ids(text: str) -> list[str]:
+    """Architecture ids the file cites, in order, once each. A mission cites
+    `svc.*` in `## Services & order`; a ticket cites every kind in
+    `## Technical grounding`. A line carrying `[NEW:` proposes the id, so it
+    has nothing to drift from."""
+    mission_body = section_body(text, SERVICES_HEADING)
+    body = mission_body if mission_body is not None else section_body(text, HEADING)
+    ids: dict[str, None] = {}
+    for line in (body or "").splitlines():
+        if "[NEW:" in line:
+            continue
+        for m in _ARCH_ID_RE.finditer(line):
+            id_ = m.group(0).rstrip(".")
+            if mission_body is None or id_.startswith("svc."):
+                ids[id_] = None
+    return list(ids)
+
+
+def _same_revision(pinned: str, published: str) -> bool:
+    # Prefix match in either direction, but only when both are long enough to
+    # mean a commit; anything shorter must match exactly.
+    a, b = pinned.lower(), published.lower()
+    if len(a) >= _MIN_REV_LEN and len(b) >= _MIN_REV_LEN:
+        return a.startswith(b) or b.startswith(a)
+    return a == b
+
+
+def _holder(hub: HubHandle, repo: str | None, doc: str) -> str | None:
+    """The repo publishing `doc`, resolved as `ticketcheck.load_from_hub`
+    does: the qualifier when given, else the unique holder (None if none or
+    several)."""
+    from strata_kb.federation import load_federation
+
+    if repo is not None:
+        return repo
+    holders = [
+        r.meta.repo_id
+        for r in load_federation(hub.federation_dir)
+        if (r.kb_dir / doc / "_manifest.yaml").exists()
+    ]
+    return holders[0] if len(holders) == 1 else None
+
+
+def _baseline_commit(hub_root: Path, repo: str, doc: str, rev: str) -> str | None:
+    """Newest hub commit whose `<doc>/_manifest.yaml` carries `revision: rev`."""
+    rel = f"federation/{repo}/{doc}/_manifest.yaml"
+    for commit in gitio.log_commits(hub_root, rel):
+        text = gitio.read_at(hub_root, commit, hub_root / rel)
+        try:
+            manifest = models.Manifest.model_validate(yaml.safe_load(text or "") or {})
+        except (yaml.YAMLError, ValidationError):
+            continue
+        if manifest.revision and _same_revision(rev, manifest.revision):
+            return commit
+    return None
+
+
+def architecture_refs(path: Path, text: str, hub: HubHandle) -> list[StaleRef]:
+    """Cited architecture sections that changed (`stale`) or vanished
+    (`broken`) in the `-code` document since the revision the file is
+    grounded on. Only cited sections are compared, so a dev merge touching
+    nothing the file used yields nothing. `path` is unused today; it keeps the
+    signature parallel to the other per-file checks."""
+    entry = _grounded_code_entry(text)
+    ids = _cited_ids(text) if entry else []
+    if entry is None or not ids:
+        return []
+    repo, doc, rev = entry
+    citation = f"{doc} @ {rev}"
+
+    def finding(status: str, reason: str) -> list[StaleRef]:
+        return [StaleRef(citation, status, reason, kind=ARCHITECTURE)]
+
+    try:
+        holder = _holder(hub, repo, doc)
+        if holder is None:
+            return finding(
+                "broken",
+                f"{doc} has no unique holder in the federation — qualify it: "
+                f"`Grounded on: <repo-id>:{doc} @ {rev}`",
+            )
+        hub_root = gitio.git_root(hub.root)
+        commit = _baseline_commit(hub_root, holder, doc, rev)
+        if commit is None:
+            return finding("stale", BASELINE_MISSING)
+        ctx = kbcontext.KBContext(
+            version=commit,
+            refs=[
+                kbcontext.KBRef(repo_id=holder, doc_id=doc, section_id=id_)
+                for id_ in ids
+            ],
+        )
+        return [
+            StaleRef(r.citation, r.status, r.reason, kind=ARCHITECTURE)
+            for r in resolve_refs(hub, ctx)
+            if r.status in ("stale", "broken")
+        ]
+    except gitio.GitError as exc:
+        return finding("broken", str(exc))
 
 
 def exit_code(findings: list[StaleFile]) -> int:
@@ -95,15 +227,20 @@ def render_markdown(findings: list[StaleFile]) -> str:
         "",
         "A **stale** citation still resolves, but the cited content changed after "
         "it was pinned: review the amendment (`kb diff <doc> --against <pin>`), "
-        "then re-pin with `kb context new`. A **broken** one no longer resolves.",
+        "then re-pin with `kb context new`. A **broken** one no longer resolves. "
+        "An **architecture** finding means a service, table, route or command "
+        "the file cites changed in the `-code` document after the revision it "
+        "is grounded on: re-ground it with `sa-ticket-ground`.",
         "",
-        "| File | Citation | Status | Reason |",
-        "| --- | --- | --- | --- |",
+        "| File | Kind | Citation | Status | Reason |",
+        "| --- | --- | --- | --- | --- |",
     ]
     for f in findings:
         for ref in f.refs:
             reason = ref.reason.replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| `{f.path}` | {ref.citation} | {ref.status} | {reason} |")
+            lines.append(
+                f"| `{f.path}` | {ref.kind} | {ref.citation} | {ref.status} | {reason} |"
+            )
     return "\n".join(lines) + "\n"
 
 

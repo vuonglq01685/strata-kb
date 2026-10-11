@@ -163,6 +163,19 @@ def rev_exists(root: Path, rev: str) -> bool:
     return proc.returncode == 0
 
 
+def log_commits(root: Path, relpath: str) -> list[str]:
+    """Full hashes of the commits that touch `relpath`, newest first.
+
+    `relpath` is repo-relative; separators are normalised to POSIX like
+    `path_exists_at`. Raises GitError on a non-zero exit (not a repo, git
+    failure); a path git has never seen is an empty list, not an error."""
+    posix_relpath = relpath.replace("\\", "/")
+    proc = _run(root, "log", "--format=%H", "--", posix_relpath)
+    if proc.returncode != 0:
+        raise GitError(f"git log failed for '{posix_relpath}': {proc.stderr.strip()}")
+    return proc.stdout.split()
+
+
 def is_tracked(root: Path, relpath: str) -> bool:
     """True when `relpath` is tracked by git under `root`.
 
