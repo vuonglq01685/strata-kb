@@ -2,10 +2,10 @@
 
 This repo is a **requirements** repo: it reads the shared knowledge base
 to ground tickets in cited, versioned facts, and it versions the tickets
-themselves under `tickets/`. It never ingests, summarizes, or publishes
-KB content — that happens in `child` repos, reviewed on the `hub`. It does
-publish one thing: its **plan**, the ready missions and tickets, as the
-`<repo_id>-plan` document, so other repos can read them from the hub.
+themselves under `tickets/`. It never ingests or summarizes KB content —
+that happens in `child` repos, reviewed on the `hub`. It publishes only its
+own **plan**, the ready missions and tickets, as the `<repo_id>-plan`
+document, so other repos can read them from the hub.
 
 ## Setup once
 
@@ -53,7 +53,7 @@ publish one thing: its **plan**, the ready missions and tickets, as the
 
 ## Create a ticket
 
-5. **Draft** — invoke `/ba-ticket-author` (or the `ba-ticket-author`
+6. **Draft** — invoke `/ba-ticket-author` (or the `ba-ticket-author`
    skill) with the business need. It runs the pipeline for you:
    1. **Intake** — you describe the need: capability, role, value.
    2. **Parent mission (optional)** — if this ticket implements a story
@@ -113,7 +113,7 @@ publish one thing: its **plan**, the ready missions and tickets, as the
       `kb ticket export tickets/<folder>/<ticket-id>.md`
       into Jira yourself — the guidance comments and the BA-internal
       `## Definition of Ready` / `## Review record` are left out; the
-      assistant never publishes for you.
+      assistant never pushes to the tracker for you.
 Run `/sa-ticket-ground tickets/<folder>/<ticket-id>.md` by hand only to
 re-ground a ticket after `<repo>-code` has moved.
 

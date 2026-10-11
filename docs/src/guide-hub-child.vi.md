@@ -11,6 +11,12 @@ Bạn sở hữu tri thức, hoặc bạn tạo ra tri thức.
 Hai vai trò dùng chung bộ lệnh và chung mô hình bốn lớp nên được trình bày cùng
 nhau. Chỗ nào chỉ áp dụng cho một vai trò sẽ được nói rõ.
 
+Có hai loại repository khác cũng publish lên cùng hub và có tài liệu hướng dẫn
+riêng: repo `dev` publish tri thức về chính code của nó (`<repo>-code`,
+`<repo>-svc`), và repo `ba` publish plan của nó (`<repo>-plan`: các mission và
+ticket đã sẵn sàng). Là người vận hành hub, bạn đăng ký cả hai như một child bất
+kỳ (mục 9.3).
+
 Bạn không cần đọc tài liệu kiến trúc trước. Nhưng bạn cần hiểu một quy tắc trước
 mọi thứ khác:
 
@@ -296,7 +302,8 @@ luôn credential.
 File `kb-publish.yml` được dựng sẵn sẽ chạy `kb ci-publish` từ chính GitHub
 Actions job của bạn. Nó xác thực với dịch vụ intake của hub bằng OIDC của GitHub
 Actions, nên không có secret dài hạn nào phải lưu hay xoay vòng. Chính `kb
-publish` tạo và đẩy tag kích hoạt nó.
+publish` tạo và đẩy tag kích hoạt nó. Repo `dev` và `ba` publish theo cùng con
+đường này, từ `kb-code.yml` và `kb-publish.yml` của chúng.
 
 ## 9.2 Khi publish bị từ chối
 
@@ -306,6 +313,41 @@ publish` tạo và đẩy tag kích hoạt nó.
 | từ chối push trực tiếp lên hub được quản trị | Dùng `--pr`, hoặc `kb ci-publish` từ CI. Việc từ chối chính là cơ chế quản trị đang hoạt động. |
 | `federation cycle detected` | Một chuỗi hub sẽ khiến nội dung quay vòng về chính nó. Kiểm tra `hub:` trên từng hub trong chuỗi. |
 | mọi lệnh hub đều lỗi xác thực | Kiểm tra `git --version` — dưới 2.31 với URL hub có credential thì không gì chạy được |
+| intake: repo "is not registered" | Repo chưa có trong `federation/registry.yaml` — xem mục 9.3 |
+
+## 9.3 Đăng ký các bên publish trên hub (người vận hành hub)
+
+Intake chỉ nhận publish từ một repository có trong `federation/registry.yaml` của
+hub, và chính mục đó — không bao giờ là payload — quyết định nó được ghi vào
+`repo_id` nào. Hãy thêm từng bên publish bằng một PR bình thường:
+
+```yaml
+repos:
+  acme/safety-docs: safety               # một child
+  acme/payments: payments                # một repo dev: -code và -svc
+  acme/requirements:                     # một repo ba: -plan
+    repo_id: acme-requirements
+    workflow: "<job_workflow_ref claim của kb-publish.yml của nó>"
+```
+
+- `repo_id` phải bằng `repo_id:` trong `.kb/config.yaml` của repo đó. Nó cũng đặt
+  tên cho các tài liệu được publish: repo `ba` có `repo_id: acme-requirements`
+  publish ra `acme-requirements-plan`.
+- `workflow:` là tuỳ chọn. Khi đặt, intake từ chối mọi token OIDC do workflow khác
+  phát hành, và giá trị được so nguyên văn với claim `job_workflow_ref` của token.
+  Với repo `ba`, workflow đó là `.github/workflows/kb-publish.yml`, được khởi động
+  bởi lần push tag `kb-publish/*`.
+- Intake chỉ nhận `refs/tags/kb-publish/*`. Vì vậy repo `ba` publish khi BA chạy
+  `kb publish`, không bao giờ tự động khi merge.
+- BA cũng đặt `intake: <url>` trong `.kb/config.yaml` của repo (repo `ba` có sẵn
+  thêm nó bằng tay rồi chạy lại `kb init --kind ba`).
+
+Một tài liệu `<repo>-plan` đã publish xuất hiện trong federation giống như `-code`:
+trong index tổng hợp, với `kb query` và MCP (gắn tag `plan`), và dưới menu **Plans**
+của web UI (mục 10.2). PR hub mà nó mở được review và merge như mọi PR khác. Nếu một
+PR đã đóng hoặc đã merge và nhánh `publish/<repo-id>` của nó đã bị xoá, lần publish
+kế tiếp mở một PR mới; bản sửa này đi cùng 1.17.0, nên hãy **triển khai lại dịch vụ
+intake** sau khi nâng cấp.
 
 ---
 
@@ -344,7 +386,27 @@ docker compose run --rm hub kb ingest source/handbook.pdf --id hr-handbook
 Trên child, `kb docker-setup` kéo image ingest về để việc ingest không cần
 Python cục bộ.
 
-## 10.2 Trước khi mở ra ngoài
+## 10.2 Menu Plans
+
+Web UI có menu **Plans** nằm cạnh Documents. Nó hiển thị những gì các repo `ba`
+publish dưới dạng tài liệu `<repo>-plan`, với trạng thái từng story được suy ra
+chỉ từ hub: **done** (id nằm trong một dòng `hist.*` của `-svc` của repo Dev),
+**ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã publish)
+hoặc **blocked** (kèm lý do). Không có gì mới được lưu và không có đường ghi.
+
+| Route | Hiển thị |
+|---|---|
+| `/ui/plans` | Mọi repo BA và các mission của chúng, kèm số lượng theo trạng thái. `?repo=<id>` cho một repo |
+| `/ui/plans/{mission}?repo=<id>` | Tóm tắt mission và bảng backlog |
+| `/ui/plans/{mission}/{story}?repo=<id>` | Ticket. Ticket không có mission là `/ui/plans/tickets/{story}?repo=<id>` |
+
+Repo là tham số truy vấn vì id federation lồng nhau có chứa `/`. Không có `?repo=`
+thì dùng repo duy nhất đang giữ id đó; nếu có nhiều repo, trang là 404 nêu tên
+chúng. Tài liệu `*-plan` bị loại khỏi Documents, số đếm ở trang tổng quan và dải
+tag; một kết quả tìm kiếm nằm trong đó dẫn tới trang Plans của nó. Bản CLI tương
+ứng là `kb mission next --from-hub [--repo <ba-repo>]`.
+
+## 10.3 Trước khi mở ra ngoài
 
 - **Thay token được sinh tự động.** `kb docker-setup` sinh token cho tiện. Hãy
   coi đó là giá trị tạm.

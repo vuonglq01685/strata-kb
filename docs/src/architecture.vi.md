@@ -120,7 +120,7 @@ lại thành một chuỗi cung ứng tri thức.
 |---|---|---|---|
 | `hub` | `federation/`, dịch vụ tìm kiếm | publish từ mọi child | chính nó, và tuỳ chọn lên một hub cấp trên |
 | `child` | tài liệu nghiệp vụ từ nguồn bên ngoài | — | có |
-| `ba` | ticket và mission plan | hub, chỉ đọc | không |
+| `ba` | ticket và mission plan | hub, chỉ đọc | có (chỉ `-plan`) |
 | `dev` | code sản phẩm, kèm tri thức về chính code đó | hub, chỉ đọc | có (`-code`, `-svc`) |
 
 ```
@@ -134,8 +134,8 @@ lại thành một chuỗi cung ứng tri thức.
                                v   v
                           +----------+           chỉ đọc
                           |   hub    |<---------------------- ba
-                          |federation|                   (kb_search,
-                          +----+-----+                 kb_context_new)
+                          |federation|        đọc: kb_search, kb_context_new
+                          +----+-----+        publish: -plan (kb publish)
                                |
                    kb query / MCP / Web UI
 ```
@@ -152,9 +152,12 @@ ingest gì cả** và chỉ soạn tri thức về chính source code của nó.
 một repo sản phẩm có thể publish tri thức liên tục từ CI mà không bao giờ có được
 khả năng thêm tài liệu tuỳ ý vào kho chung.
 
-Repo `ba` hoàn toàn chỉ đọc đối với cơ sở tri thức. Nó trích dẫn, không bao giờ
-đóng góp. Nhờ vậy yêu cầu nghiệp vụ truy vết được tới một phiên bản tri thức mà
-không trao cho quy trình làm yêu cầu quyền thay đổi tri thức đó.
+Repo `ba` chỉ đọc đối với cơ sở *tri thức*. Nó trích dẫn, không bao giờ đóng góp,
+và không bao giờ ingest hay tóm tắt. Nhờ vậy yêu cầu nghiệp vụ truy vết được tới
+một phiên bản tri thức mà không trao cho quy trình làm yêu cầu quyền thay đổi tri
+thức đó. Thứ duy nhất nó publish là plan của chính nó, một tài liệu do máy sinh
+(`<repo_id>-plan`) chỉ liệt kê các mission và ticket mà BA đã đánh dấu sẵn sàng
+(mục 8). Plan nằm cạnh tri thức; nó không sửa tri thức.
 
 ---
 
@@ -242,6 +245,9 @@ Một tiến trình phục vụ ba nhóm đối tượng qua HTTP:
 | `/api/…` | người gọi lập trình | Bearer token hoặc cookie phiên |
 | `/ui` | con người | đăng nhập bằng token, lưu cookie phiên |
 
+UI có menu **Plans** nằm cạnh Documents (`/ui/plans`) cho các mission và ticket mà
+repo `ba` publish (mục 8.4).
+
 Cũng tiến trình đó chạy qua stdio cho agent cục bộ. Ở mọi chế độ, hub là **bắt
 buộc** — lấy từ `--hub`, biến môi trường, hoặc `.kb/config.yaml`, theo đúng thứ
 tự đó — và server từ chối khởi động nếu không có. Nó chỉ tìm trong `federation/`
@@ -294,7 +300,8 @@ kèm credential, sao chiếu nó lên hub là publish luôn cả token.
 
 `kb ci-publish` là đường đi cho CI. Nó chạy bên trong chính GitHub Actions job của
 repo publish, xác thực với dịch vụ intake bằng OIDC của GitHub Actions, nhờ vậy
-không cần secret dài hạn ở bất cứ đâu.
+không cần secret dài hạn ở bất cứ đâu. Repo `child`, `dev` và `ba` đều publish qua
+đường này; luồng của `ba` được mô tả ở mục 8.2.
 
 ## 5.3 Federation nhiều tầng
 
@@ -431,7 +438,115 @@ hợp này được phát hiện và báo bằng cảnh báo `dirty_tree`.
 
 ---
 
-# 8. Mô hình tin cậy
+# 8. Tri thức về plan
+
+Repo `ba` là bên publish thứ ba. Thứ nó publish không phải tri thức nghiệp vụ và
+cũng không phải tri thức về code mà là **plan**: các mission và ticket mà BA đã
+review, dưới dạng một tài liệu do máy sinh, `<repo_id>-plan`.
+
+| Tài liệu | Nguồn gốc | Sinh lại | Cần review | Gắn tag |
+|---|---|---|---|---|
+| `<repo_id>-plan` | `kb plan-ingest`, tất định, không model, chạy offline | theo yêu cầu từ `missions/` và `tickets/` | không: Definition of Ready được tick đủ chính là review | `plan, generated` |
+
+Về mặt cơ học nó theo `-code` ở mọi điểm. Nó không bao giờ được commit
+(`.kb/*-plan/` bị gitignore, `.kb/index.yaml` do máy sinh của repo `ba` cũng vậy),
+revision của nó nằm trong manifest, và nó là một tài liệu bốn lớp bình thường nên
+build, query, federation và Web UI đọc được mà không cần xử lý đặc biệt. Các
+section của nó được ghi là `summarized`, không bao giờ `pending`, nên `kb build`
+pass mà không cần model.
+
+## 8.1 Cái gì đủ điều kiện, và hình dạng tài liệu
+
+Một mission được publish khi qua `kb mission lint` về cấu trúc **và** mọi ô trong
+`## Definition of Ready` đã được tick. Một ticket cần điều tương tự từ `kb ticket
+lint`, và `kb mission next` không được hạ nó xuống `draft` vì mission cha đã đi
+tiếp. Việc phân giải trích dẫn **không** phải là cổng: nó cần hub, và lint ở pull
+request đã cưỡng chế việc đó. Mỗi mục bị bỏ ra ngoài được báo là `skipped: <file> —
+<reason>` và không bao giờ làm lệnh fail, nên một mục chưa sẵn sàng đơn giản là
+không được publish, và mục thôi đủ điều kiện sẽ rời đi ở lần publish kế tiếp.
+
+Tài liệu có một nhóm cho mỗi mission và một nhóm `tickets` cho phần còn lại. Section
+là `## <id> <title>`, với `M-<slug>-US<n>` là id của một story. L3 là nguồn đã bỏ
+tiêu đề, hạ heading một cấp và bỏ hai mục nội bộ của BA `## Review record` và
+`## Definition of Ready`; L2 giữ nguyên từng byte mọi bảng (nên bất biến về bảng
+vẫn đúng mà không phải nới `kb build`) cộng thêm phần văn xuôi tóm tắt mục đó. Một
+dòng bắt đầu bằng `## ` nằm trong khối code sẽ cắt section với mọi người đọc, nên mục
+như vậy bị bỏ qua cho tới khi dòng đó được thụt vào.
+
+## 8.2 Luồng publish
+
+Publish là theo yêu cầu. Intake của hub chỉ nhận tag `kb-publish/*` (không bao giờ
+nhận push nhánh), nên plan đi theo cùng con đường dựa trên tag mà repo `child` dùng:
+
+```
+  BA chạy kb publish
+        |  kb plan-ingest + kb build      (bản xem trước cục bộ = thứ CI sẽ gửi)
+        |  gắn tag kb-publish/<ts>, đẩy tag
+        v
+  kb-publish.yml (kích hoạt bởi tag, OIDC)
+        |  kb plan-ingest + kb build + kb ci-publish
+        v
+  intake: xác minh token OIDC, tra repo trong
+          federation/registry.yaml  -->  PR trên hub
+        |  review + merge
+        v
+  federation/<repo_id>/<repo_id>-plan  -->  kb query / MCP / Web UI
+```
+
+Mục trong registry, không bao giờ là payload, quyết định repo id mà nó được ghi, và
+có thể ghim đúng một workflow được phép dùng nó. Không có gì publish khi merge: BA
+quyết định khi nào, và `/kb-publish` cho xem thay đổi trước khi hỏi. Repo chưa cấu
+hình `intake:` sẽ quay về đường snapshot.
+
+## 8.3 Drift: giữ mission và ticket luôn cập nhật
+
+Một mission được viết một lần rồi thực tế dịch chuyển. Mỗi mission và ticket mang
+`> Revision: <N>` cùng một `## Change log` chỉ thêm vào, và hai phép kiểm tra phát
+hiện drift. Cả hai chạy trong workflow `kb-doctor` hằng ngày qua `kb ticket stale`,
+lệnh này giữ một issue `kb-stale-citations`:
+
+```
+  Drift KB-context       section hub được trích, ở commit hub đã ghim
+                         so với worktree của hub    -->  ok | stale | broken
+
+  Drift architecture     các id được trích trong Services & order / Technical
+                         grounding (svc.* db.* api.* int.* cmd.*, trừ [NEW: D<n>])
+                              |
+        Grounded on: <repo>-code @ <rev>   (commit của repo dev)
+                              |  duyệt lịch sử hub của manifest -code;
+                              |  commit hub mới nhất có revision == <rev>
+                              v
+        <repo>-code §<id> @ <commit hub đó>  --> cùng bước resolve
+                              -->  stale | broken, kind "architecture"
+        không commit hub nào mang <rev>  -->  một phát hiện, "baseline not on hub"
+```
+
+Drift được xét **theo từng section được trích**, không bao giờ theo revision của
+cả tài liệu: revision của `-code` đổi ở mỗi commit dev, nên so sánh nó sẽ gắn cờ
+mọi mission ở mỗi lần merge. Một lần merge không đụng tới thứ mission trích dẫn thì
+không tạo phát hiện nào.
+
+Một lần sửa đổi (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) ghi lại
+trigger của nó (`kb-context`, `architecture`, `scope`, `delivery`), tăng revision và
+thêm một dòng change log. Chỉ trigger `architecture` mới gọi SA và `kb ticket
+check`. Story đã giao không bao giờ bị viết lại: thay đổi đến dưới dạng story mới
+hoặc quyết định thay thế (`SUPERSEDED`), và một ticket ghim `> Parent mission:
+M-<slug> @ rev <N>` bị `kb mission next` báo `draft` khi mission của nó đã đổi
+story đó.
+
+## 8.4 Trạng thái trên hub
+
+Trạng thái story được suy ra, chỉ đọc, từ những gì hub đã có: `done` khi id nằm
+trong một dòng `hist.*` của `-svc` của repo dev, `ready` khi ticket đã publish,
+`not ready` khi chưa, `blocked` kèm lý do. `kb mission next --from-hub` tính nó ở
+CLI; menu **Plans** của Web UI hiển thị nó, và tài liệu `*-plan` được giữ ngoài
+Documents, số đếm tổng quan và dải tag. Không có gì được lưu và không có đường ghi.
+Theo chiều ngược lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc
+ticket từ `-plan` của hub và khôi phục dạng nguồn của nó.
+
+---
+
+# 9. Mô hình tin cậy
 
 Lập luận về tính đúng đắn của Strata là một chuỗi bốn mắt xích, mỗi mắt xích đều
 có thể hỏng một cách ồn ào, và không mắt nào được phép bỏ qua.
@@ -448,9 +563,12 @@ cũng không cần nó đáng tin: nó bị giới hạn trong văn xuôi, đầ
 bởi các phép kiểm tra tự động, và nó không publish được. Tương tự, registry trên
 hub là **hàng rào chống nhầm lẫn**, không phải cơ chế xác thực — URL remote của
 bên publish là do chính bên đó tự khai. Branch protection trên hub và intake OIDC
-mới là những biện pháp thực sự có hiệu lực.
+mới là những biện pháp thực sự có hiệu lực. Điều này cũng đúng với plan của repo
+`ba`: thứ được gửi đi do Definition of Ready mà một con người tick chọn ra, trên một
+tag mà con người đó đẩy, và nó vẫn chỉ tới tay người đọc qua một pull request trên
+hub.
 
-## 8.1 An toàn của dịch vụ
+## 9.1 An toàn của dịch vụ
 
 - Mọi phản hồi đều mang content security policy, chặn nhúng frame, nosniff, chính
   sách referrer và permissions; HSTS trên https.
@@ -467,9 +585,9 @@ mới là những biện pháp thực sự có hiệu lực.
 
 ---
 
-# 9. Các mô hình triển khai
+# 10. Các mô hình triển khai
 
-## 9.1 Một nhóm
+## 10.1 Một nhóm
 
 ```
   người soạn ──► repo child ──► repo hub ──► một tiến trình dịch vụ
@@ -480,7 +598,7 @@ Một hub, một hoặc vài child, một dịch vụ. Hub có thể chính là 
 dung. Đây là cấu hình khởi đầu và nó mở rộng xa hơn phần lớn nhóm nghĩ, vì dịch vụ
 không giữ trạng thái còn kho chỉ là một bản clone Git.
 
-## 9.2 Toàn tổ chức
+## 10.2 Toàn tổ chức
 
 ```
      nhóm nghiệp vụ        nhóm sản phẩm         nhóm yêu cầu
@@ -493,10 +611,10 @@ không giữ trạng thái còn kho chỉ là một bản clone Git.
 ```
 
 Mọi repository publish về một hub; mọi bên tiêu thụ đọc từ đó. Repo `ba` và `dev`
-tiêu thụ mà không đóng góp nội dung nghiệp vụ, còn repo `dev` chỉ đóng góp tri
-thức về chính nó.
+không đóng góp nội dung nghiệp vụ: repo `dev` chỉ publish tri thức về chính nó, còn
+repo `ba` chỉ publish plan của nó.
 
-## 9.3 Tổ chức liên kết nhiều tầng
+## 10.3 Tổ chức liên kết nhiều tầng
 
 ```
    hub nhóm A ──┐
@@ -513,7 +631,7 @@ lọc lúc truy vấn.
 
 ---
 
-# 10. Đặc tính vận hành
+# 11. Đặc tính vận hành
 
 | Thuộc tính | Giá trị |
 |---|---|
@@ -528,7 +646,7 @@ lọc lúc truy vấn.
 
 ---
 
-# 11. Điểm mở rộng
+# 12. Điểm mở rộng
 
 Strata được thiết kế để mở rộng theo bốn đường nối, mỗi đường hấp thụ thay đổi mà
 không phải động vào lõi.
@@ -547,7 +665,7 @@ không phải động vào lõi.
 
 ---
 
-# 12. Tóm lại
+# 13. Tóm lại
 
 Kiến trúc của Strata là một ý tưởng duy nhất được áp dụng nhất quán: **đặt phần
 việc tốn kém và dễ sai vào nơi có thể kiểm tra được.**

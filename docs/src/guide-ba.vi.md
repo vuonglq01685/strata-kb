@@ -17,19 +17,28 @@ Strata cho bạn ba thứ để làm việc đó:
 3. **Cổng Definition of Ready**, để một ticket không thể đến tay lập trình viên
    với trích dẫn hỏng hoặc thiếu.
 
+Và khi mission và ticket của bạn đã sẵn sàng, bạn có thể **publish plan** lên hub,
+để lập trình viên và các team khác tìm thấy *cái gì đang được lên kế hoạch* theo
+cùng cách họ tìm cái đã có (mục 5), và **sửa đổi** mission hay ticket tại chỗ khi
+tri thức, architecture, phạm vi hay quá trình giao hàng dịch chuyển bên dưới nó
+(mục 6).
+
 ## 1.1 Repo BA làm gì và không làm gì
 
 | Có làm | Không làm |
 |---|---|
 | Đọc tri thức đã publish trên hub | Ingest tài liệu |
 | Trích dẫn tri thức đó, ghim theo commit của hub | Tóm tắt bất cứ thứ gì |
-| Quản lý phiên bản ticket và mission trong Git | Publish tri thức |
+| Quản lý phiên bản ticket và mission trong Git | Publish nội dung tri thức |
 | Kiểm soát chúng bằng CI | Đẩy lên hệ thống quản lý issue |
+| Publish plan của chính nó (`<repo_id>-plan`) theo yêu cầu | Publish bản nháp, hay bất cứ thứ gì bạn chưa đánh dấu là sẵn sàng |
 
-Repository của bạn hoàn toàn **chỉ đọc** đối với cơ sở tri thức. Bạn trích dẫn,
+Repository của bạn hoàn toàn **chỉ đọc** đối với cơ sở *tri thức*. Bạn trích dẫn,
 bạn không bao giờ đóng góp. Điều này là có chủ đích: nó giữ cho yêu cầu nghiệp vụ
 truy vết được tới một phiên bản tri thức mà không trao cho quy trình làm yêu cầu
-quyền thay đổi chính tri thức đó.
+quyền thay đổi chính tri thức đó. Thứ duy nhất bạn gửi lên hub là plan của chính
+bạn: các mission và ticket đã review, dưới dạng một tài liệu do máy sinh. Nó nằm
+cạnh tri thức; nó không bao giờ sửa tri thức.
 
 Trợ lý cũng không bao giờ tự mở ticket thay bạn. Nó tạo ra Markdown; bạn đọc,
 commit, và tự dán vào hệ thống quản lý issue.
@@ -49,9 +58,13 @@ kb init --kind ba
 # .kb/config.yaml
 kind: ba
 hub: https://github.com/acme/kb-hub.git
+repo_id: acme-requirements
+intake: ""   # đặt giá trị này để publish plan, xem 2.5
 ```
 
-Đây là nơi `kb ticket lint` và `kb query` phân giải tham chiếu.
+`hub:` là nơi `kb ticket lint` và `kb query` phân giải tham chiếu. `repo_id` không
+còn chỉ là một nhãn: nó đặt tên cho tài liệu bạn publish, `<repo_id>-plan`, và
+phải khớp với mục của repo bạn trong registry của hub (2.5).
 
 ## 2.2 Nối trợ lý của bạn với hub
 
@@ -101,6 +114,25 @@ việc yêu cầu check mới chặn.
 > hub riêng tư cổng sẽ fail ở đó kèm thông báo không kết nối được hub. Đó là cổng
 > từ chối báo xanh khi chưa kiểm tra được, không phải lỗi mạng. Hãy merge đóng góp
 > từ fork qua một nhánh trong chính repository này.
+
+## 2.5 Bật publish plan (tuỳ chọn, một lần cho mỗi repo)
+
+Publish cần hai thứ, mỗi bên một việc:
+
+1. **Người vận hành hub đăng ký repo của bạn** trong `federation/registry.yaml`
+   của hub, dưới cùng tên với `repo_id` của bạn. Họ cũng có thể ghim `workflow:`
+   vào `.github/workflows/kb-publish.yml` của bạn, để hub không nhận file workflow
+   nào khác từ bạn.
+2. **Bạn đặt `intake:`** trong `.kb/config.yaml` thành URL của dịch vụ intake của
+   hub (người vận hành đưa cho bạn). Repo tạo trước tính năng này không có key
+   `intake:`: hãy thêm `intake: <url>` bằng tay, rồi chạy lại `kb init --kind ba`.
+   Lệnh đó ghi workflow `kb-publish`, skill `kb-publish` (cùng các file bọc cho
+   Copilot và Cursor) và `.gitattributes`, và thêm `.kb/*-plan/` và
+   `.kb/index.yaml` vào `.gitignore`. Nó không đụng tới `config.yaml` của bạn.
+
+Cho tới khi đặt `intake:`, `kb publish` không có nơi nào để gửi plan. Cả
+`.kb/<repo_id>-plan/` lẫn `.kb/index.yaml` đều do `kb plan-ingest` sinh ra nên được
+gitignore: đừng bao giờ commit chúng.
 
 ---
 
@@ -184,9 +216,10 @@ Hãy đọc các câu hỏi mở. Đó là chỗ agent nói cho bạn biết nó
 
 ## 3.7 Bạn review
 
-Bản nháp được lưu vào `tickets/<ticket-id>.md`. Bạn đọc, commit, rồi dán vào hệ
+Bản nháp được lưu vào `tickets/<folder>/<ticket-id>.md` (folder là mission cha,
+hoặc một slug epic hay tính năng bạn đặt tên). Bạn đọc, commit, rồi dán vào hệ
 thống quản lý issue. Trợ lý không bao giờ làm việc đó thay bạn. Thứ bạn dán là
-`kb ticket export tickets/<ticket-id>.md`: cùng ticket đó nhưng không còn các
+`kb ticket export tickets/<folder>/<ticket-id>.md`: cùng ticket đó nhưng không còn các
 chú thích hướng dẫn của template và hai mục nội bộ của BA, `## Definition of
 Ready` và `## Review record`. `## KB context`, `## Dependencies` và
 `## Technical grounding` được giữ — lập trình viên đọc chúng.
@@ -255,12 +288,16 @@ Cái vẫn thuộc **phán đoán của bạn**: backlog đã thực sự đầy
 Khi soạn một story từ backlog, hãy nêu mission cha. Agent sẽ:
 
 - đọc `missions/<mission-id>.md` và lấy tiêu đề story từ dòng backlog,
-- ghi `> Parent mission: <mission-id>` trên một dòng riêng ngay dưới tiêu đề
-  ticket,
-- lưu ticket thành `tickets/<mission-id>-US<n>.md`.
+- ghi `> Parent mission: <mission-id> @ rev <N>` trên một dòng riêng ngay dưới
+  tiêu đề ticket, với `<N>` là `> Revision:` hiện tại của mission (phần `@ rev`
+  là tuỳ chọn; vắng mặt nghĩa là rev 1),
+- lưu ticket thành `tickets/<mission-id>/<mission-id>-US<n>.md`.
 
 Chính tên file đó là thứ phép kiểm tra liên kết ngược tìm kiếm. Bỏ dòng parent đi
-vẫn hợp lệ — chỉ là ticket không truy vết được về mission của nó.
+vẫn hợp lệ — chỉ là ticket không truy vết được về mission của nó. Ghim này quan
+trọng khi bạn sửa đổi mission (mục 6.3): nhờ nó `kb mission next` biết ticket được
+viết theo một revision cũ hơn. `kb ticket tidy` chuyển một `tickets/` phẳng vào
+bố cục theo từng mission dựa trên dòng đó.
 
 ## 4.2 Đánh số
 
@@ -295,24 +332,224 @@ thuộc vào nó trong `## Sequencing`.
 kb mission next
 ```
 
-Mọi story trong backlog của toàn bộ `missions/` được báo là `done` (id của nó
-nằm trong một dòng `hist.*` của `<repo>-svc` trên hub — thứ `kb svc note` ghi
-lúc lập trình viên bàn giao và CI publish khi merge), `drafted` (đã có file
-ticket), `ready` (chưa có ticket, mọi story trong `Depends on` đã done, mọi
-dòng D chặn nó đã `DECIDED`) hoặc `blocked` (nêu rõ lý do). Báo cáo kết thúc
-bằng `Next: <us-id> — <title>`; `/ba-ticket-author` không kèm tham số sẽ chạy
-lệnh này trước và đề xuất đúng story đó. Một phụ thuộc mới chỉ `drafted` vẫn
-chặn: done nghĩa là đã merge. Thứ tự giữa các mission được ghi trong ô
-`Depends on` bằng story của mission khác (`M-<other>-US<n>`).
+Mọi story trong backlog của toàn bộ `missions/` được báo là một trong năm trạng thái:
+
+| Trạng thái | Nghĩa là |
+|---|---|
+| `done` | Id của nó nằm trong một dòng `hist.*` của `<repo>-svc` trên hub — thứ `kb svc note` ghi lúc lập trình viên bàn giao và CI publish khi merge |
+| `ready` | Đã có file ticket và mọi ô `## Definition of Ready` đã được tick |
+| `draft` | Đã có file ticket nhưng còn ô DoR chưa tick, hoặc không có mục DoR, hoặc mission cha đã đi tiếp (xem dưới) |
+| `to-draft` | Chưa có ticket, mọi story trong `Depends on` đã `done`, mọi dòng D chặn nó đã `DECIDED` |
+| `blocked` | Nêu rõ lý do: `US <id> not done`, `D<n> OPEN (owner: <x>)` |
+
+Báo cáo kết thúc bằng `Next: <us-id> — <title>`; `/ba-ticket-author` không kèm
+tham số sẽ chạy lệnh này trước và đề xuất đúng story đó. Một phụ thuộc mới chỉ
+`draft` hay `ready` vẫn chặn: done nghĩa là đã merge. Thứ tự giữa các mission được
+ghi trong ô `Depends on` bằng story của mission khác (`M-<other>-US<n>`).
+
+Một ticket cũng được báo `draft`, với lý do `parent mission rev <M> affects this
+story`, khi hai điều cùng đúng: `> Revision:` của mission cha cao hơn ghim `@ rev`
+của ticket, **và** một dòng change log sau ghim đó liệt kê story trong `Affected`.
+Hãy sửa đổi ticket (mục 6.2) và đặt ghim của nó bằng revision của mission, thì nó
+lại là `ready` sau khi bạn tick lại.
 
 Lệnh chỉ đọc và thoát 0 sau khi in báo cáo. Hub chưa cấu hình hoặc không
 kết nối được, `-svc` chưa publish, hay không mission nào có dòng
 `Grounded on:` đều thành một dòng `note:`, không bao giờ là lỗi — không
 story nào được đánh `done` chừng nào hub chưa trả lời được.
 
+`kb mission next --from-hub [--repo <ba-repo-id>]` tính cùng báo cáo đó chỉ từ hub:
+không cần `missions/` hay `tickets/`. Story có ticket đã publish là `ready`;
+`to-draft` hiện là `not ready (no published ticket)`; các trạng thái chỉ thấy ở
+repo (`draft`, việc hạ cấp theo revision) không thấy được từ hub, vì những ticket
+như vậy không được publish. Menu Plans của hub (mục 5.3) hiển thị đúng điều đó
+trên trình duyệt.
+
 ---
 
-# 5. Dùng tri thức về code
+# 5. Publish plan
+
+Khi một mission hoặc ticket đã được review, bạn có thể đưa nó lên hub. Lập trình
+viên, SA và các team khác khi đó thấy được cái gì đang được lên kế hoạch, không
+chỉ cái gì đã có. Publish là theo yêu cầu: không có gì tự đi ra khi bạn merge.
+Phần thiết lập nằm ở mục 2.5.
+
+## 5.1 Cái gì được publish
+
+`kb plan-ingest` quyết định. Lệnh này mang tính xác định, không cần LLM, không
+cần hub, và chạy offline. Nó publish:
+
+| Mục | Được publish khi |
+|---|---|
+| Mission | `kb mission lint` không báo lỗi cấu trúc **và** mọi ô dưới `## Definition of Ready` đã được tick |
+| Ticket | `kb ticket lint` không báo lỗi cấu trúc **và** mọi ô DoR đã được tick **và** `kb mission next` sẽ không hạ nó xuống `draft` (mục 4.4) |
+
+Việc một trích dẫn còn phân giải được hay không **không** phải là cổng publish:
+việc đó cần hub, và `kb-ticket-lint` đã chặn pull request vì nó rồi. Bản nháp
+không bao giờ được publish. Hai mục `## Review record` và `## Definition of Ready`
+của bạn cũng không được publish: có mặt trên hub nghĩa là DoR đã được tick đủ.
+
+Mọi thứ còn lại bị bỏ ra ngoài, và mỗi mục in một dòng:
+
+```text
+skipped: tickets/M-checkout/M-checkout-US3.md — Definition of Ready not fully ticked (6/8)
+```
+
+Các lý do bạn có thể gặp:
+
+| Lý do | Làm gì |
+|---|---|
+| `lint error: <first error>` (`(+N more)` khi có nhiều lỗi) | Chạy `kb mission lint` hoặc `kb ticket lint` trên file đó rồi sửa |
+| `Definition of Ready not fully ticked (<ticked>/<total>)` | Hoàn tất review, rồi tick các ô. Chỉ bạn được tick |
+| `parent mission rev <M> affects this story` | Mission đã đổi sau khi ticket được viết: sửa đổi ticket (mục 6.2) |
+| `fenced line starting with '## ' would split the section — indent it inside the fence` | Một khối code trong file có dòng bắt đầu bằng `## `. Hãy thụt dòng đó vào trong khối code |
+| `id contains whitespace` | Tên file có dấu cách. Đổi tên file |
+| `duplicate id <stem>; kept the first` | Hai file trùng tên. Đổi tên một file |
+| `no '# ' title line` | File không có dòng `# Title`. Thêm một dòng |
+
+Một mục bị bỏ qua không bao giờ làm lệnh fail và không chặn publish. Khi chạy
+trong GitHub Actions, các dòng này cũng được ghi vào step summary. `kb plan-ingest`
+chỉ thoát `1` khi gặp file không đọc được, đầu vào sai dạng mà lint báo là lỗi,
+hoặc cờ sai.
+
+## 5.2 Publish
+
+```bash
+/kb-publish          # hoặc: kb publish
+```
+
+`kb publish` chạy `kb plan-ingest` và `kb build` trước, nên thứ bạn xem cục bộ
+đúng là thứ CI sẽ gửi đi. Hãy tự chạy `kb plan-ingest` trước để thấy mục nào đi,
+mục nào bị bỏ qua. Sau một lần bạn xác nhận rõ ràng go hoặc no-go, `kb publish`
+gắn tag `kb-publish/<timestamp>` lên commit rồi đẩy tag. Tag kích hoạt
+`.github/workflows/kb-publish.yml`, chạy `kb plan-ingest`, `kb build` và
+`kb ci-publish`; intake của hub sau đó mở một pull request trên hub. Nội dung có
+hiệu lực khi PR đó được merge.
+
+`kb publish` từ chối nếu `.kb/` còn thay đổi chưa commit. Vì `.kb/<repo_id>-plan/`
+và `.kb/index.yaml` được gitignore trong repo BA, việc sinh lại chúng không bao
+giờ làm `.kb/` bẩn. Đừng commit chúng.
+
+Một mục thôi đủ điều kiện (ví dụ bạn bỏ tick một ô DoR khi sửa đổi nó) sẽ rời khỏi
+plan ở lần publish kế tiếp. Điều này là chủ đích: không để lại placeholder, và
+lịch sử git của hub giữ mọi phiên bản trước đó.
+
+## 5.3 Trên hub nó trông thế nào
+
+Plan là một tài liệu duy nhất, `<repo_id>-plan`, nằm cạnh `-code` và `-svc`:
+
+- mỗi mission một **nhóm** (`M-<slug>`): mission, rồi các ticket đã publish của nó;
+- một nhóm **`tickets`** cho các ticket không có mission cha đã publish;
+- mỗi section là `## <id> <title>`, với `M-<slug>-US<n>` là id của ticket.
+
+Bản L3 là nguồn của bạn đã bỏ dòng tiêu đề, hạ mọi heading xuống một cấp, và bỏ
+hai mục nội bộ của BA. `## Open questions` được giữ. Bản L2 giữ nguyên từng byte
+mọi bảng, cộng thêm tóm tắt và mục tiêu nghiệp vụ của mission, hoặc story và tiêu
+chí chấp nhận của ticket. Agent tìm nó bằng `kb_search`; con người đọc trên web UI
+ở menu **Plans**, nằm cạnh Documents:
+
+| Trang | Hiển thị |
+|---|---|
+| `/ui/plans` | Mọi repo BA và các mission của chúng, kèm số lượng theo trạng thái. `?repo=<id>` cho một repo, gồm cả "tickets without mission" |
+| `/ui/plans/<mission>?repo=<id>` | Tóm tắt mission và backlog: trạng thái từng story, lý do, liên kết tới ticket |
+| `/ui/plans/<mission>/<story>?repo=<id>` | Chính ticket đó |
+
+Trạng thái được suy ra và chỉ đọc: **done** (story có trong lịch sử `-svc` của repo
+Dev), **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã
+publish, các phụ thuộc đã done) hoặc **blocked** (kèm lý do). Muốn đổi trạng thái
+thì đổi nguồn: hoàn tất và publish ticket, hoặc để Dev bàn giao. Hệ thống quản lý
+issue, không phải hub, là nơi cho "đang làm" và người được giao.
+
+Dev chỉ có id ticket thì lấy nó từ đây (`kb ticket fetch <id>`); xem hướng dẫn
+Developer.
+
+---
+
+# 6. Giữ mission và ticket luôn cập nhật
+
+Một mission được viết một lần, từ đầu, rồi thực tế dịch chuyển: tri thức được trích
+dẫn bị sửa, architecture đổi, phạm vi trượt, quá trình giao hàng dạy thêm điều
+mới. Mục này là cách bạn đổi một mission hay ticket mà không mất dấu lý do.
+
+## 6.1 Revision và change log
+
+Mỗi mission và ticket mang `> Revision: <N>` ngay dưới tiêu đề, bắt đầu từ 1, và
+một mục `## Change log` chỉ thêm vào, đặt trước `## Review record`:
+
+```text
+| Rev | Date | Trigger | What changed | Affected | Review |
+|---|---|---|---|---|---|
+| 2 | 2026-10-14 | kb-context, scope | Refund window cut to 14 days | M-checkout-US3, M-checkout-US5 | B4 D4 (agent) |
+```
+
+| Cột | Nội dung |
+|---|---|
+| `Trigger` | Một hoặc nhiều giá trị `kb-context`, `architecture`, `scope`, `delivery`, cách nhau bằng dấu phẩy |
+| `Affected` | Ở mission: id story **đầy đủ** (`M-<slug>-US<n>`). `US3` trần không khớp, nên ticket sẽ không bao giờ bị gắn cờ. Ở ticket: tên các section. `-` khi không có |
+| `Review` | Điểm maturity của lần sửa đổi, ví dụ `B4 D4 (agent)`. Review của sửa đổi ghi ở đây, không bao giờ ghi vào `## Review record` |
+
+Lint cưỡng chế điều này. `Revision` thiếu được đọc là 1 và chỉ cảnh báo, nên file
+cũ vẫn pass. Khi `Revision: N` lớn hơn 1, log phải có **đúng một dòng cho mỗi
+revision `2..N`, theo thứ tự**, và mỗi `Trigger` phải là một trong bốn giá trị;
+nếu không lint fail.
+
+## 6.2 Sửa đổi
+
+```bash
+/ba-mission-plan --amend M-checkout
+/ba-ticket-author --amend M-checkout-US3
+```
+
+Không lệnh nào bắt đầu từ Intake, tạo file hay đổi tên gì. Agent:
+
+1. đọc file và các phát hiện của `kb ticket stale --md` cho nó (với mission thì
+   thêm `kb mission next`, để biết story nào đã done);
+2. hỏi bạn trigger và điều gì đã đổi. Phát hiện drift điền sẵn câu trả lời, nhưng
+   nó hỏi chứ không đoán;
+3. với `kb-context`, ghim lại `## KB context` bằng `kb_context_new` với **toàn bộ**
+   danh sách tham chiếu (giữ nguyên, đã dịch chuyển và mới), thay cả khối. Bạn chỉ
+   xác nhận lại những tham chiếu đã dịch chuyển hoặc mới;
+4. **chỉ với** `architecture`, chuyển cho `sa-ticket-ground` (`--mission` với
+   mission), lệnh này làm mới `## Services & order` hoặc `## Technical grounding`
+   cùng revision ở `Grounded on:`, rồi chạy `kb ticket check`. Với mọi trigger khác
+   nó bỏ qua SA và `kb ticket check`, vì nếu không sẽ bắt ghim lại sau mỗi commit
+   của dev. Các skill BA vẫn không tự đọc `-code`;
+5. áp dụng các quy tắc thay đổi (mục 6.3), tăng `Revision` và thêm dòng change log;
+6. lint cho tới khi PASS, và chạy một vòng maturity review **chỉ cho các section đã
+   đổi**;
+7. đưa diff cho bạn.
+
+Sửa một ticket cũng **bỏ tick** (các) ô Definition of Ready có bằng chứng đã đổi,
+và cập nhật ghim `@ rev` khi ticket đã phản ánh mọi dòng change log kể từ ghim cũ
+có nhắc tới nó. Agent không bao giờ tick ô DoR, không bao giờ commit hay push.
+Bạn đọc diff, tick lại, commit, rồi `kb publish` để đưa nó đi.
+
+## 6.3 Quy tắc thay đổi
+
+- **Story đã done thì đóng băng.** Story mà `kb mission next` báo `done` giữ nguyên
+  dòng backlog của nó. Việc mới hoặc việc đã đổi trở thành **một dòng mới với số
+  trống kế tiếp**. Số không bao giờ được dùng lại hay đánh số lại: chúng được
+  trích dẫn trong hệ thống issue, pull request và lịch sử của repo Dev.
+- **Story chưa done thì được sửa.** Liệt kê từng cái ở `Affected` của dòng đó.
+- **Quyết định được thay thế, không bị sửa.** Một dòng `DECIDED` trong
+  `## Technology decisions` không bao giờ bị viết lại. Thêm một dòng mới `D<n>` với
+  `Supersedes D<k>` trong ô Decision, và đặt trạng thái của `D<k>` thành
+  `SUPERSEDED`. Từ đó `kb ticket check` từ chối mọi `[NEW: D<k>]` vẫn nêu `D<k>`,
+  và cho bạn biết dòng thay thế nó; `kb mission next` xét một blocker `SUPERSEDED`
+  theo dòng thay thế nó, nên story không bị chặn vĩnh viễn. Nếu một mission hay
+  ticket vẫn trích dòng cũ, lần sửa đổi phải mang trigger `architecture`, để SA
+  trỏ lại. Agent liệt kê các file trích dẫn nó.
+- **Ticket đi theo mission.** Dòng cha của ticket là `> Parent mission: M-<slug> @
+  rev <N>`. Khi mission được sửa, mọi ticket có story nằm trong `Affected` của
+  dòng mới sẽ thành `draft` trong `kb mission next` (mục 4.4) và rời khỏi plan đã
+  publish cho tới khi bạn sửa đổi nó.
+
+Publish không cần thêm gì: mục đã sửa đi cùng lần `kb publish` kế tiếp, và
+`Revision` cùng `## Change log` làm phiên bản đọc được ngay trong tài liệu.
+
+---
+
+# 7. Dùng tri thức về code
 
 Ngoài tài liệu nghiệp vụ, hub còn giữ hai tài liệu cho mỗi repo sản phẩm, do
 chính workflow của repo đó publish: `<repo>-code` (cấu trúc do máy sinh —
@@ -343,9 +580,9 @@ Chính tham chiếu section, viết đúng dạng một trích dẫn thật:
 
 ---
 
-# 6. Cổng kiểm tra những gì — và không kiểm tra những gì
+# 8. Cổng kiểm tra những gì — và không kiểm tra những gì
 
-## 6.1 Lỗi (cổng fail)
+## 8.1 Lỗi (cổng fail)
 
 - **Có đủ các mục bắt buộc**: Summary, User Story, Background, Acceptance
   Criteria, Use cases, Business flow, KB context, Definition of Ready.
@@ -361,16 +598,20 @@ Chính tham chiếu section, viết đúng dạng một trích dẫn thật:
   Không có tham chiếu hỏng hay sai định dạng.
 - **Mọi trích dẫn `[doc-id §section]` trong nội dung đều có một tham chiếu đã
   ghim đứng sau.**
+- **Change log khớp với revision.** Khi `> Revision: N` lớn hơn 1, `## Change log`
+  phải có đúng một dòng cho mỗi revision `2..N`, theo thứ tự, và mỗi `Trigger`
+  phải là `kb-context`, `architecture`, `scope` hoặc `delivery`.
 
 Trích dẫn viết theo dạng trần kiểu cũ vẫn được tính, kèm cảnh báo nhắc bạn đặt
 vào ngoặc vuông.
 
-## 6.2 Cảnh báo (vẫn là phán đoán của bạn)
+## 8.2 Cảnh báo (vẫn là phán đoán của bạn)
 
 | Cảnh báo | Vì sao không phải lỗi |
 |---|---|
 | Một tiêu chí chấp nhận chạm tới tiêu chuẩn nhưng không có trích dẫn | Công cụ không thể xác định đáng tin cậy tiêu chí nào chạm tới tiêu chuẩn |
 | Chất lượng nghiệp vụ của story | Máy không kiểm được |
+| Thiếu dòng `> Revision: <N>` | Nó được đọc là 1, nên file viết trước khi có revision vẫn pass |
 | `## Review record` thiếu, rỗng, hoặc còn nguyên chỗ trống mẫu | Lint thấy được mục đó, không thấy được review có thực chất hay không |
 | Tham chiếu đã cũ | Section được trích đã bị sửa đổi phía trên. Vẫn phân giải được nên không hỏng — nhưng bạn nên xem lại. |
 | Một tham chiếu đã ghim mà nội dung không trích dẫn | Đó có thể là phần nền mà ticket không cần dẫn lại |
@@ -379,7 +620,7 @@ vào ngoặc vuông.
 | Story nhắc tới tải, màn hình, bản ghi hay tích hợp mà mục mở rộng tương ứng đang thiếu | Chỉ là từ khoá trùng; trả lời bằng mục đó hoặc `N/A — <lý do>` |
 | Một mục mở rộng có mặt nhưng rỗng, hoặc `## Sequence diagram` còn là chỗ trống mẫu | Xoá, điền, hoặc viết `N/A — <lý do>` |
 
-## 6.3 Bắt cổng fail khi trích dẫn cũ
+## 8.3 Bắt cổng fail khi trích dẫn cũ
 
 ```bash
 kb ticket lint tickets/ABC-123.md --fail-on-stale
@@ -390,7 +631,7 @@ kb resolve tickets/ABC-123.md --status-only
 Hoặc đặt biến repository `KB_FAIL_ON_STALE` để cổng CI làm điều đó cho mọi
 ticket.
 
-## 6.4 Vì sao workflow không lọc theo đường dẫn
+## 8.4 Vì sao workflow không lọc theo đường dẫn
 
 Workflow được dựng sẵn tên là `kb-ticket-lint` và chạy trên mọi pull request,
 không chỉ khi có thay đổi dưới `tickets/` hay `missions/`. Đó là chủ đích.
@@ -407,7 +648,7 @@ một check không còn tồn tại.
 
 ---
 
-# 7. Khi một trích dẫn trở nên cũ
+# 9. Khi một trích dẫn trở nên cũ
 
 Tri thức thay đổi. Một ticket viết hồi tháng Ba dựa trên tài liệu bị sửa vào
 tháng Năm không được phép âm thầm mang nghĩa khác đi.
@@ -431,9 +672,31 @@ Phần lớn các trường hợp cũ là vô hại — một lỗi chính tả 
 số trường hợp là yêu cầu không còn khớp thực tế nữa. Công cụ chỉ cho bạn biết cần
 xem section nào; phán đoán vẫn là của bạn.
 
+## 9.1 Kiểm tra hằng ngày
+
+Một ticket đã merge nhiều tuần trước sẽ không bao giờ được cổng của pull request
+nhìn lại, dù hub vẫn tiếp tục publish. Vì vậy `.github/workflows/kb-doctor.yml`
+chạy `kb ticket stale` mỗi ngày (và theo yêu cầu) trên `tickets/` và `missions/`.
+Khi còn bất cứ thứ gì cũ hoặc hỏng, nó giữ **một** issue mở gắn nhãn
+`kb-stale-citations`; khi mọi thứ đã cập nhật trở lại thì nó đóng issue. Nó cần
+cùng biến `STRATA_KB_HUB` và secret `KB_HUB_TOKEN` như cổng lint.
+
+Issue là một bảng có cột `Kind`:
+
+| Kind | Nghĩa là | Làm gì |
+|---|---|---|
+| `kb-context` | Một section mà file trích trong `## KB context` đã đổi (`stale`) hoặc không còn phân giải được (`broken`) | Chạy `kb diff` xem đã đổi gì; rồi `/ba-ticket-author --amend` hoặc `/ba-mission-plan --amend` với trigger `kb-context`, lệnh này ghim lại |
+| `architecture` | Một service, bảng, route, tích hợp hay lệnh mà file trích trong `## Services & order` hoặc `## Technical grounding` đã đổi trong tài liệu `-code` của repo Dev kể từ revision nó được ghim (`stale`), hoặc đã bị xoá (`broken`) | Sửa đổi với trigger `architecture`, để `sa-ticket-ground` ghim lại. Kiểm tra các AC dựa trên giá trị đã đổi |
+| `architecture`, lý do `baseline not on hub` | Revision ở `Grounded on:` hoàn toàn không có trên hub: PR của Dev mang nó chưa bao giờ được merge hoặc đã bị thay thế | Đợi `-code` của repo Dev được publish, rồi sửa đổi với trigger `architecture` để ghim chuyển sang một revision hub có |
+
+Chỉ các section mà mission hay ticket **trích dẫn** mới được so sánh. Một lần merge
+của Dev không đụng tới thứ nó dùng thì không tạo dòng nào. Không phải dòng nào
+cũng cần sửa đổi: hãy đọc thay đổi, và nếu yêu cầu vẫn đúng thì sửa đổi với ghim
+mới và nói rõ điều đó trong dòng change log.
+
 ---
 
-# 8. Làm việc không cần trợ lý
+# 10. Làm việc không cần trợ lý
 
 Mọi thứ agent làm, bạn đều làm được ở terminal.
 
@@ -450,7 +713,7 @@ kb mission lint missions/M-checkout.md
 
 ---
 
-# 9. Xử lý sự cố
+# 11. Xử lý sự cố
 
 | Hiện tượng | Nguyên nhân | Cách xử lý |
 |---|---|---|
@@ -462,11 +725,16 @@ kb mission lint missions/M-checkout.md
 | Trợ lý không kết nối được hub | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
 | `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |
 | `kb query` không tìm thấy gì | Tài liệu chưa được publish, hoặc tag quá hẹp | Bỏ `--tags`; hỏi chủ hub xem PR publish đã merge chưa |
+| `kb publish` không gắn tag và không khởi động CI | `intake:` đang rỗng trong `.kb/config.yaml`, nên nó đi đường snapshot | Đặt `intake:` (2.5) |
+| Intake từ chối lần publish của bạn | Repo chưa có trong `federation/registry.yaml` của hub, hoặc registry ghim một `workflow:` khác | Nhờ người vận hành hub đăng ký `repo_id` và ghim `.github/workflows/kb-publish.yml` |
+| `kb publish` dừng với ".kb/ has uncommitted changes" | Có gì đó dưới `.kb/` khác với `HEAD` — thường là `.kb/index.yaml` hoặc `.kb/<repo_id>-plan/` đang bị theo dõi | Commit phần bạn tự sửa; `git rm --cached` các file do máy sinh rồi chạy lại `kb init --kind ba` để chúng được gitignore |
+| Một mission hay ticket vắng mặt trong plan | Nó không đủ điều kiện | Chạy `kb plan-ingest` và đọc dòng `skipped:` của nó (5.1) |
+| Lint: lỗi "change log" sau khi sửa đổi | `Revision` được tăng mà không có dòng tương ứng, hoặc một `Trigger` viết sai | Thêm đúng một dòng cho mỗi revision `2..N`, theo thứ tự, dùng bốn giá trị trigger |
 | Sau khi nâng cấp mọi thứ đều `broken` | Ticket mang khối ghim theo định dạng cũ | Ghim lại bằng `kb context new` |
 
 ---
 
-# 10. Tóm tắt lệnh
+# 12. Tóm tắt lệnh
 
 | Lệnh | Mục đích | Mã thoát |
 |---|---|---|
@@ -479,23 +747,34 @@ kb mission lint missions/M-checkout.md
 | `kb diff <doc> --against <rev>` | Sửa đổi đã thay đổi những gì | `0` |
 | `kb ticket lint <file>` | Cổng Definition of Ready cho ticket | `0` PASS, `1` FAIL, `2` cũ |
 | `kb mission lint <file>` | Cổng Definition of Ready cho mission | `0` PASS, `1` FAIL, `2` cũ |
+| `kb ticket check <file>` | Cổng SA grounding: mọi id trong `## Technical grounding` đều có trong `-code` của hub | `0` PASS, `1` FAIL |
+| `kb ticket export <file>` | Ticket cho hệ thống issue, không có các mục nội bộ của BA | `0` |
+| `kb ticket stale [paths]` | Mọi ticket và mission có trích dẫn mà hub đã dịch chuyển, `kb-context` và `architecture` (`--md`, `--json`) | `0` còn mới, `2` chỉ cũ, `1` hỏng |
+| `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |
+| `kb mission next [--from-hub [--repo id]]` | Story nào done, ready, draft, to-draft hay blocked | `0` |
+| `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` đầu vào không đọc được hoặc cờ sai |
+| `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0` |
 
-**Slash command:** `/ba-ticket-author`, `/ba-mission-plan`.
+**Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/sa-ticket-ground`, `/kb-publish`.
 
 ---
 
-# 11. Nâng cấp repository
+# 13. Nâng cấp repository
 
 ```bash
 kb init --kind ba
 ```
 
-Lệnh này **chỉ đụng tới file dựng khung** — CI workflow, các file bọc skill,
-command và prompt, và template dưới `docs/` — và chỉ ghi đè khi nội dung khác với
-template mới.
+Lệnh này **chỉ đụng tới file dựng khung** — các CI workflow (gồm
+`kb-publish.yml`), các skill, file bọc command và prompt, `.gitattributes`, và
+template dưới `docs/` — và chỉ ghi đè khi nội dung khác với template mới. Nó cũng
+nối `.kb/*-plan/` và `.kb/index.yaml` vào `.gitignore` nếu còn thiếu, và không bao
+giờ xoá dòng nào.
 
 `.kb/config.yaml`, `.kb/index.yaml` và `.claude/settings.json` không bao giờ bị
-`kb init` thường đụng tới.
+`kb init` thường đụng tới. Điều đó gồm cả key `intake:` của `config.yaml`: repo tạo
+trước khi có publish plan không có key này, nên hãy thêm `intake: <url>` bằng tay
+(2.5).
 
 > **`--force` thay thế thẳng cả ba**, không hợp nhất: `.kb/config.yaml` bạn đã tự
 > sửa, bao gồm `kind`, `repo_id` và `asset_store`; `.kb/index.yaml`; và toàn bộ

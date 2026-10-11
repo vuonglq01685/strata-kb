@@ -167,7 +167,8 @@ This repo can be one of four kinds:
   ba    — Requirements repo. Drafts Dev-ready tickets grounded in the KB
           via the ba-ticket-author skill, versions them under tickets/,
           and gates them with a CI Definition-of-Ready check. Never
-          ingests, summarizes, or publishes KB content.
+          ingests or summarizes KB content; publishes only its own plan
+          (`<repo_id>-plan`) to the hub.
 
   dev   — Product code repo. Implements BA tickets grounded in the KB via the
           dev-implement-ticket workflow (design → plan → execute → handover,

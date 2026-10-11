@@ -11,6 +11,11 @@ You own knowledge, or you produce it.
 Both roles use the same commands and the same four-layer model, so they are
 covered together. Where a step applies to only one, it says so.
 
+Two other repository kinds publish to the same hub and have their own guides: a
+`dev` repo publishes knowledge about its own code (`<repo>-code`, `<repo>-svc`),
+and a `ba` repo publishes its plan (`<repo>-plan`: the ready missions and
+tickets). As the hub operator you register both like any child (§9.3).
+
 You do not need to read the architecture document first. You do need to
 understand one rule before anything else:
 
@@ -300,7 +305,8 @@ publish a credential.
 The scaffolded `kb-publish.yml` runs `kb ci-publish` from your own GitHub Actions
 job. It authenticates to the hub's intake service with GitHub Actions OIDC, so
 there is no long-lived secret to store or rotate. `kb publish` creates and pushes
-the tag that triggers it.
+the tag that triggers it. `dev` and `ba` repos publish by the same route, from
+their own `kb-code.yml` and `kb-publish.yml`.
 
 ## 9.2 When a publish is refused
 
@@ -310,6 +316,41 @@ the tag that triggers it.
 | direct push refused on a governed hub | Use `--pr`, or `kb ci-publish` from CI. The refusal is the governance working. |
 | `federation cycle detected` | A hub chain would loop content back to itself. Check `hub:` on each hub in the chain. |
 | authentication error on every hub command | Check `git --version` — below 2.31 with a credentialed hub URL, nothing will work |
+| intake: the repo "is not registered" | The repo is missing from `federation/registry.yaml` — see §9.3 |
+
+## 9.3 Registering publishers on the hub (hub operator)
+
+The intake accepts a publish only from a repository listed in the hub's
+`federation/registry.yaml`, and that entry — never the payload — decides which
+`repo_id` it may write. Add every publisher by a normal PR:
+
+```yaml
+repos:
+  acme/safety-docs: safety               # a child
+  acme/payments: payments                # a dev repo: -code and -svc
+  acme/requirements:                     # a ba repo: -plan
+    repo_id: acme-requirements
+    workflow: "<job_workflow_ref claim of its kb-publish.yml>"
+```
+
+- The `repo_id` must equal `repo_id:` in that repo's `.kb/config.yaml`. It also
+  names the published documents: a `ba` repo with `repo_id: acme-requirements`
+  publishes `acme-requirements-plan`.
+- `workflow:` is optional. When set, the intake rejects any OIDC token minted by a
+  different workflow, and the value is compared as-is with the token's
+  `job_workflow_ref` claim. For a `ba` repo the workflow is its
+  `.github/workflows/kb-publish.yml`, which a tag push `kb-publish/*` starts.
+- Intake accepts only `refs/tags/kb-publish/*`. A `ba` repo therefore publishes
+  when the BA runs `kb publish`, never automatically on merge.
+- The BA also sets `intake: <url>` in the repo's `.kb/config.yaml` (an existing
+  `ba` repo adds it by hand and re-runs `kb init --kind ba`).
+
+A published `<repo>-plan` document appears in the federation like `-code`: in the
+aggregate index, to `kb query` and to MCP (tagged `plan`), and under the **Plans**
+menu of the web UI (§10.2). The hub PR it opens is reviewed and merged like any
+other. If a PR is closed or merged and its `publish/<repo-id>` branch deleted, the
+next publish opens a fresh PR; this fix ships with 1.17.0, so **redeploy the
+intake service** after upgrading.
 
 ---
 
@@ -348,7 +389,27 @@ docker compose run --rm hub kb ingest source/handbook.pdf --id hr-handbook
 On a child, `kb docker-setup` pulls the ingest image so ingestion needs no local
 Python at all.
 
-## 10.2 Before you expose it
+## 10.2 The Plans menu
+
+The web UI has a **Plans** menu beside Documents. It shows what `ba` repos publish
+as `<repo>-plan` documents, with a status per story derived from the hub alone:
+**done** (the id is in a `hist.*` row of the Dev repo's `-svc`), **ready** (its
+ticket is published), **not ready** (no published ticket yet) or **blocked** (with
+reasons). Nothing new is stored and there is no write path.
+
+| Route | Shows |
+|---|---|
+| `/ui/plans` | Every BA repo and its missions, with status counts. `?repo=<id>` for one repo |
+| `/ui/plans/{mission}?repo=<id>` | The mission summary and backlog table |
+| `/ui/plans/{mission}/{story}?repo=<id>` | The ticket. A ticket with no mission is `/ui/plans/tickets/{story}?repo=<id>` |
+
+The repo is a query parameter because nested federation ids contain `/`. Without
+`?repo=` the one repo that holds the id is used; if several do, the page is a 404
+naming them. `*-plan` documents are left out of Documents, the overview counts and
+the tag rail; a search hit inside one links to its Plans page. The CLI twin is
+`kb mission next --from-hub [--repo <ba-repo>]`.
+
+## 10.3 Before you expose it
 
 - **Replace the generated token.** `kb docker-setup` generates one for
   convenience. Treat it as a placeholder.
