@@ -2762,6 +2762,41 @@ def ticket_stale(
         raise typer.Exit(code)
 
 
+@ticket_app.command("fetch")
+def ticket_fetch(
+    ticket: str = typer.Argument(
+        ..., help="Ticket id, or <repo>:<id> if several repos hold it"
+    ),
+    out: Path | None = typer.Option(
+        None, "--out", help="Write here (default: docs/impl/<id>/ticket.md)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Read a ticket from the hub by id and save it as a local ticket file.
+    Always overwrites; the BA's repo stays the place to amend it."""
+    from strata_kb import ticketfetch
+
+    handle = _hub_or_exit(hub, kb_dir)
+    try:
+        repo, doc, _ = ticketfetch.find(handle, ticket)
+        text = ticketfetch.render(handle, ticket)
+    except ticketfetch.TicketFetchError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    ticket_id = ticketfetch.split_ref(ticket)[1]
+    path = out or Path("docs") / "impl" / ticket_id / "ticket.md"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        typer.secho(f"could not write '{path}': {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo(f"fetched: {repo}:{doc} §{ticket_id} -> {path}")
+
+
 @ticket_app.command("export")
 def ticket_export(
     source: str = typer.Argument(..., help="Ticket file (or '-' to read from stdin)"),

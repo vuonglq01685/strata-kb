@@ -34,6 +34,9 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
+`<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file
+`kb ticket fetch <ticket-id>` wrote from the hub.
+
 Steps the skill enforces: **Isolate** the work onto a dedicated branch and,
 where the environment supports it, a git worktree named from the ticket id.
 Never work directly on the default branch; `.worktrees/` must be

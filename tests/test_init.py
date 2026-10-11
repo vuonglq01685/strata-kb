@@ -2957,3 +2957,21 @@ def test_kind_and_assets_choices_in_help():
     assert result.exit_code == 0
     assert "hub|child|ba|dev" in result.output
     assert "none|s3" in result.output
+
+
+def test_dev_implement_ticket_fetches_from_hub_first():
+    names = (
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+        "copilot-dev-implement-ticket.prompt.md",
+        "cursor-dev-implement-ticket.md",
+    )
+    for name in names:
+        assert "kb ticket fetch" in initcmd.read_template(name), name
+    assert "*/ticket.md" in initcmd.read_template("impl-gitignore.txt")
+
+
+def test_other_dev_skills_accept_a_fetched_ticket_file():
+    for skill in ("dev-plan", "dev-design", "dev-execute", "dev-handover"):
+        for name in (f"claude-skill-{skill}.md", f"claude-command-{skill}.md"):
+            assert "docs/impl/<ticket-id>/ticket.md" in initcmd.read_template(name)

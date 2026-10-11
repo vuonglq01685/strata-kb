@@ -278,6 +278,7 @@ that follows it.
 | `kb ticket lint` | Definition-of-Ready gate for a BA ticket |
 | `kb ticket check` | SA grounding gate: every id in `## Technical grounding` exists in the hub's `<repo>-code` document |
 | `kb ticket export` | The ticket for the tracker: guidance comments, `## Definition of Ready` and `## Review record` dropped |
+| `kb ticket fetch` | A ticket from the hub by id (`<id>` or `<repo>:<id>`), restored to its source shape with a provenance line; writes `docs/impl/<id>/ticket.md` (`--out` to change), always overwriting; `1` if the id is not on the hub or several repos hold it |
 | `kb ticket stale` | Every ticket and mission whose citations the hub moved since they were pinned (`--md` / `--json`); `0` current, `2` stale only, `1` broken |
 | `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
 | `kb mission next` | Which story next: done / ready / draft / to-draft / blocked across `missions/`, done derived from the hub's `<repo>-svc` history, ready and draft from the ticket's Definition of Ready checklist |

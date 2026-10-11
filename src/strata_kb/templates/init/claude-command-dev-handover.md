@@ -31,6 +31,9 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
+`<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file
+`kb ticket fetch <ticket-id>` wrote from the hub.
+
 Steps the skill enforces: for a `path: spike` design there is no plan and
 usually no code — put the recommendation under `## Notes` in the PR body,
 or as a ticket comment when there is no PR, and mark the ticket's plan state

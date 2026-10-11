@@ -344,3 +344,65 @@ def test_export_writes_tracker_body(fed_hub, tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert out.read_text(encoding="utf-8").startswith("# TAL-1580")
+
+
+def _plan_hub(fed_hub, tmp_path, run_git):
+    from tests.test_missionlint import MISSION_ID
+    from tests.test_planingest import US1, context_block
+    from tests.test_ticketfetch import publish_plan
+
+    publish_plan(fed_hub, "ba-one", tmp_path / "ba-one", context_block(fed_hub))
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish plan")
+    return US1, MISSION_ID
+
+
+def test_fetch_writes_ticket_under_docs_impl(fed_hub, tmp_path, run_git, monkeypatch):
+    us1, _ = _plan_hub(fed_hub, tmp_path, run_git)
+    work = tmp_path / "dev-repo"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    result = runner.invoke(app, ["ticket", "fetch", us1, "--hub", str(fed_hub)])
+
+    assert result.exit_code == 0, result.output
+    path = Path("docs") / "impl" / us1 / "ticket.md"
+    assert f"fetched: ba-one:ba-one-plan §{us1} -> {path}" in result.output
+    text = (work / path).read_text(encoding="utf-8")
+    assert text.startswith("# TAL-1580")
+    assert "> Fetched from hub: ba-one:ba-one-plan" in text
+    assert "\r" not in text
+
+
+def test_fetch_out_overwrites_and_creates_parents(fed_hub, tmp_path, run_git):
+    us1, _ = _plan_hub(fed_hub, tmp_path, run_git)
+    out = tmp_path / "a" / "b" / "t.md"
+    out.parent.mkdir(parents=True)
+    out.write_text("stale", encoding="utf-8")
+    args = ["ticket", "fetch", f"ba-one:{us1}", "--hub", str(fed_hub), "--out"]
+
+    result = runner.invoke(app, [*args, str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert out.read_text(encoding="utf-8").startswith("# TAL-1580")
+
+
+def test_fetch_unknown_id_exits_1_with_hint(fed_hub, tmp_path, run_git, monkeypatch):
+    _plan_hub(fed_hub, tmp_path, run_git)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app, ["ticket", "fetch", "M-nope-US9", "--hub", str(fed_hub)]
+    )
+
+    assert result.exit_code == 1
+    assert "ask the BA to run kb publish" in result.output
+    assert not (tmp_path / "docs").exists()
+
+
+def test_fetch_unreachable_hub_exits_1(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["ticket", "fetch", "M-x-US1", "--hub", str(tmp_path / "no-hub")]
+    )
+    assert result.exit_code == 1

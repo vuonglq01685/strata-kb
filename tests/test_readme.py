@@ -227,6 +227,7 @@ def test_readme_documents_the_usage_and_ticket_subcommands():
     for sub in (
         "kb ticket check",
         "kb ticket export",
+        "kb ticket fetch",
         "kb usage ingest-transcript",
         "kb usage note",
         "kb usage report",

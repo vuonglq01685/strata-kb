@@ -94,6 +94,17 @@ def demote_headings(markdown: str) -> str:
     return "\n".join(out)
 
 
+def promote_headings(markdown: str) -> str:
+    """Inverse of `demote_headings`: every ATX heading deeper than `##` one
+    level up (`###` -> `##`); fenced lines and `#`/`##` lines stay."""
+    lines = markdown.split("\n")
+    out = []
+    for line, fenced in zip(lines, _fenced(lines), strict=True):
+        m = None if fenced else _ATX_RE.match(line)
+        out.append(line[1:] if m and len(m.group(1)) > 2 else line)
+    return "\n".join(out)
+
+
 def _normalize(text: str) -> str:
     """LF and NFC, so a CRLF or NFD twin renders the same sections."""
     return unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
