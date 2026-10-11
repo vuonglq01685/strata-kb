@@ -406,3 +406,21 @@ def test_fetch_unreachable_hub_exits_1(tmp_path, monkeypatch):
         app, ["ticket", "fetch", "M-x-US1", "--hub", str(tmp_path / "no-hub")]
     )
     assert result.exit_code == 1
+
+
+def test_fetch_refuses_traversal_and_absolute_ids(
+    fed_hub, tmp_path, run_git, monkeypatch
+):
+    _plan_hub(fed_hub, tmp_path, run_git)
+    work = tmp_path / "dev-repo"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    outside = tmp_path / "outside"
+
+    for bad in ("../x", "../../x", str(outside), "repo:../x"):
+        result = runner.invoke(app, ["ticket", "fetch", bad, "--hub", str(fed_hub)])
+        assert result.exit_code == 1, (bad, result.output)
+        assert "not a ticket id" in result.output
+
+    assert list(work.iterdir()) == []
+    assert not outside.exists()

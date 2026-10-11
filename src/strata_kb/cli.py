@@ -2788,6 +2788,9 @@ def ticket_fetch(
         raise typer.Exit(1) from None
     ticket_id = ticketfetch.split_ref(ticket)[1]
     path = out or Path("docs") / "impl" / ticket_id / "ticket.md"
+    if out is None and not path.resolve().is_relative_to(Path("docs/impl").resolve()):
+        typer.secho(f"refusing to write outside docs/impl: {path}", fg=typer.colors.RED)
+        raise typer.Exit(1)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")

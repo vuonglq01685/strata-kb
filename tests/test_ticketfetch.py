@@ -134,3 +134,35 @@ def test_render_passes_ticket_lint_structure(plan_hub):
         and "Definition of Ready" not in i.message
     ]
     assert unexpected == []
+
+
+@pytest.mark.parametrize(
+    "ref", ["../x", "/tmp/x", "..", ".", "a/b", "..\\x", "repo:", "repo:../x", ""]
+)
+def test_split_ref_refuses_ids_that_are_not_plain_names(ref):
+    with pytest.raises(ticketfetch.TicketFetchError, match="not a ticket id"):
+        ticketfetch.split_ref(ref)
+
+
+def test_split_ref_accepts_plain_and_qualified_ids():
+    assert ticketfetch.split_ref("M-a-US1") == (None, "M-a-US1")
+    assert ticketfetch.split_ref("r-1:M-a-US1") == ("r-1", "M-a-US1")
+
+
+def _edit_manifest(hub: HubHandle, old: str, new: str) -> None:
+    path = hub.root / "federation/ba-one/ba-one-plan/_manifest.yaml"
+    text = path.read_text(encoding="utf-8")
+    assert old in text
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+
+def test_hub_section_id_that_escapes_is_refused(plan_hub):
+    _edit_manifest(plan_hub, f"id: {US1}", "id: ../evil")
+    with pytest.raises(ticketfetch.TicketFetchError, match="not a ticket id"):
+        ticketfetch.find(plan_hub, "../evil")
+
+
+def test_hub_manifest_file_that_escapes_is_refused(plan_hub):
+    _edit_manifest(plan_hub, f"file: {MISSION_ID}", "file: ../../../x")
+    with pytest.raises(ticketfetch.TicketFetchError, match="not a plain file name"):
+        ticketfetch.find(plan_hub, US1)

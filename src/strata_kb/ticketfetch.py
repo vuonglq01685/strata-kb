@@ -5,6 +5,7 @@ shape: H1, one provenance line, the L3 body with its headings promoted back."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -22,10 +23,26 @@ class TicketFetchError(KbError):
     """The ticket is not on the hub, or several repos publish the same id."""
 
 
+# An id and a group file stem become path segments (`docs/impl/<id>/`,
+# `<file>.raw.md`), so anything that could leave its directory is refused.
+_SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _safe(name: str) -> bool:
+    return _SAFE_NAME_RE.fullmatch(name) is not None and name not in (".", "..")
+
+
 def split_ref(ticket_ref: str) -> tuple[str | None, str]:
-    """`<repo>:<id>` -> (repo, id); a bare `<id>` -> (None, id)."""
+    """`<repo>:<id>` -> (repo, id); a bare `<id>` -> (None, id). An id that
+    is not a plain name (path separators, `..`, empty) is refused."""
     repo, sep, ticket_id = ticket_ref.strip().rpartition(":")
-    return (repo or None, ticket_id) if sep else (None, ticket_id)
+    if not sep:
+        repo, ticket_id = "", ticket_ref.strip()
+    if not _safe(ticket_id):
+        raise TicketFetchError(
+            f"'{ticket_id}' is not a ticket id — use letters, digits, '.', '_' or '-'"
+        )
+    return repo or None, ticket_id
 
 
 def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
@@ -43,6 +60,11 @@ def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
                 continue  # one unreadable document cannot hold the ticket
             section = next((s for s in manifest.sections if s.id == ticket_id), None)
             if section is not None:
+                if not _safe(section.file):
+                    raise TicketFetchError(
+                        f"{manifest.id} on the hub lists {ticket_id} in file "
+                        f"'{section.file}', which is not a plain file name — refusing to read it"
+                    )
                 l3 = manifest_path.parent / f"{section.file}.raw.md"
                 holders.append((fed.meta.repo_id, manifest.id, l3))
     if not holders:
