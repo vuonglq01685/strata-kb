@@ -1,6 +1,6 @@
 # Grounding drift tolerance — `kb ticket check` stops failing on a moved revision alone
 
-Status: approved direction · 2026-10-11
+Status: approved direction, builder-checked · 2026-10-11
 
 ## 1. Intent
 
@@ -46,6 +46,15 @@ error:
 
 Exit 1, as today.
 
+**Unverified facts.** Some fact checks skip themselves and only warn when
+they cannot read what they need (`_l2_slice` "checks skipped", `_check_files`
+"could not read structure.raw.md" / depth cap / line cap, pre-1.3.0 `-code`
+with no compose rows, a `cmd.*` without backticks). When the revision has
+moved, a skipped check is **not** counted as holding: the run stays Tier 1
+(exit 0, no new noise), but adds `[warn] could not verify <what> since @<old>
+— check it by hand`, and the Tier 1 note/warning wording says "cited facts
+that could be checked still hold". (My call — see §6.)
+
 **Unchanged.** Revision matches → behaviour exactly as today. Errors that are
 not drift (`Open decisions` not empty, `[NEW: D<k>]` not `DECIDED` or
 `SUPERSEDED`, duplicate heading, malformed `Grounded on:`, no unique holder,
@@ -67,6 +76,11 @@ Goals
 
 Non-goals
 
+- Changing the `ba-mission-plan` amend rule. A mission's own stories change
+  the `svc.*` sections it cites while it is being delivered, so running the
+  check on every mission amend would be noise. The engine change still
+  applies to `kb ticket check --heading "## Services & order"`; only the
+  skill rule stays as is.
 - `kb ticket stale` and `kb-doctor.yml`. They keep their current output and
   exit codes (a changed cited section is still `stale` there). The user scoped
   this change to `kb ticket check`.
@@ -111,6 +125,18 @@ Anti-goals
     commit". That reason is no longer true.
   - `ba-ticket-author.md:269`: re-run `/sa-ticket-ground` "only when `-code`
     moves after handover" — becomes "only when `kb ticket check` fails".
+  - `dev-implement-ticket.md` has **no** `kb ticket check` step today
+    (verified: none of `bodies/dev-*.md` mention it), yet the user reports
+    the dev agent runs it there and that is where the failure surfaced.
+  - A fetched ticket (`docs/impl/<id>/ticket.md`) has no sibling
+    `missions/`, so `_resolve_missions_dir` returns None and a
+    `[NEW: D<n>]` errors with "parent mission ... not found"
+    (`ticketcheck.py:362`) — a failure unrelated to drift. The parent
+    mission is on the hub in the BA repo's `<repo_id>-plan` document
+    (`kb ticket fetch` / `ticketfetch.find` already locate ids there).
+  - With no hub, `load_doc` falls back to the Dev repo's local `-code`,
+    built from the dev's own branch, so a Tier 2 there may be the dev's own
+    change.
   - `sa-ticket-ground.md` gate step (≈ line 116) should state that a Tier 1
     warning is a PASS and a Tier 2 failure means re-ground.
 
@@ -120,6 +146,8 @@ Anti-goals
 - Grey zone warns with a diff and does not block (user decision).
 - Tier 2 always routes back to `/sa-ticket-ground` (user decision).
 - Scope: `kb ticket check` only; `kb ticket stale` untouched (user decision).
+- The dev runs `kb ticket check` from `dev-implement-ticket` (user statement),
+  so the dev side is in scope.
 
 ## 6. Builder's calls (made by me, not the user — flag if wrong)
 
@@ -139,11 +167,33 @@ Anti-goals
   Tier 1 note/warnings. A `broken` ref from the drift lookup with no fact-check
   error (section renamed but the cited id still resolves) stays a grey-zone
   warning — the fact checks are the source of truth.
-- **Amend skills.** Remove the "skip `kb ticket check`" rule for non-
-  `architecture` triggers in `ba-ticket-author` / `ba-mission-plan`: they now
-  run `kb ticket check` on every amend, and hand off to the SA only when it
-  fails. Regenerate the derived skill/command/prompt flavours with the repo's
-  own template tooling, never by hand.
+- **Skipped checks under drift** stay Tier 1 with an explicit "could not
+  verify" warning (§2), rather than failing (which would re-create the noise
+  for large repos whose tree hits the line cap).
+- **Ticket amend skill.** Remove the "skip `kb ticket check`" rule for non-
+  `architecture` triggers in `ba-ticket-author` only: it now runs
+  `kb ticket check` on every amend and hands off to the SA only when it
+  fails. `ba-mission-plan` keeps its rule (§3 non-goal). There is no
+  generator for the skill flavours: edit `bodies/ba-ticket-author.md`,
+  `claude-skill-ba-ticket-author.md`, `claude-command-ba-ticket-author.md`
+  and `QUICKSTART-ba.md` (≈ line 346) by hand, keeping them in step.
+- **Dev skill step.** Add an explicit step to `bodies/dev-implement-ticket.md`
+  (and its flavours: `claude-skill-`, `claude-command-`, `copilot-…prompt`,
+  `cursor-`, `QUICKSTART-dev.md` where it lists the steps) right after
+  Intake: run `kb ticket check docs/impl/<id>/ticket.md`. PASS with a
+  `[warn]` diff → show the diff, the Dev decides, continue. FAIL with the
+  re-ground line → STOP, blocker for the BA: re-run `/sa-ticket-ground`.
+  FAIL without it → report the errors to the BA, STOP. A ticket with no
+  `## Technical grounding` (not SA-grounded) → skip the step with a note.
+- **Parent mission from the hub.** When no local `missions/` holds the
+  parent mission, the CLI's `load_decisions` falls back to the mission
+  section in the hub's `<repo_id>-plan` document (reuse `ticketfetch`'s
+  lookup). Not on the hub either → today's behaviour.
+- **Local `-code` fallback.** When `load_doc` returned the local fallback
+  (`doc.source` says so), a Tier 2 result adds a note: `checked against the
+  local -code (hub unreachable) — your branch's own changes may cause this;
+  re-run with the hub before sending it back`. The dev skill treats that as
+  "retry with the hub", not as a BA blocker.
 - **Release.** Minor bump to 1.18.0 (behaviour change of a gate), CHANGELOG
   entry, README `kb ticket check` row updated.
 
