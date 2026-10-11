@@ -14,6 +14,7 @@ from strata_kb import gitio, models, ticketcheck
 from strata_kb.codeingest import core
 from strata_kb.kbcontext import KBRef
 from strata_kb.lintcore import LintReport
+from strata_kb.mdutils import slice_section
 from strata_kb.resolve import ResolvedRef
 from tests.fixtures_coderepo import build_code_repo
 
@@ -258,6 +259,84 @@ def test_load_drift_used_on_mismatch(code_doc):
     assert seen == [("demo", "demo-code", "deadbee")]
     assert UNCHANGED_DEADBEE.format(rev=rev) in report.notes
     assert errors(report) == []
+
+
+def _drift_ref(sid: str, status: str, content: str = "") -> ResolvedRef:
+    return ResolvedRef(
+        ref=KBRef(repo_id="demo", doc_id="demo-code", section_id=sid),
+        status=status,  # type: ignore[arg-type]
+        citation=f"demo-code §{sid}",
+        content=content,
+        tokens=0,
+    )
+
+
+def _current_section(kb_dir: Path, sid: str) -> str:
+    m = models.load_yaml_model(kb_dir / "demo-code" / "_manifest.yaml", models.Manifest)
+    group = next(s.file for s in m.sections if s.id == sid)
+    text = (kb_dir / "demo-code" / f"{group}.md").read_text(encoding="utf-8")
+    body = slice_section(text, sid)
+    assert body
+    return body
+
+
+def test_stale_cited_section_warns_with_the_current_text_in_the_diff(code_doc):
+    kb_dir, rev = code_doc
+    sid = "svc.airspace-service"
+    current = _current_section(kb_dir, sid)
+    report = run(
+        ticket(grounding("deadbee")),
+        kb_dir,
+        load_drift=lambda *a: [_drift_ref(sid, "stale", "OLD BASELINE TEXT\n")],
+    )
+    assert errors(report) == []
+    (warn,) = [w for w in warnings(report) if w.startswith("grounded @deadbee")]
+    assert f"§{sid} changed" in warn
+    assert f"demo-code §{sid} @deadbee" in warn
+    assert "-OLD BASELINE TEXT" in warn
+    assert "+" + current.strip().splitlines()[0] in warn
+
+
+def test_skipped_compose_checks_with_moved_revision_are_unverified(code_doc):
+    kb_dir, rev = code_doc
+    services_md = kb_dir / "demo-code" / "services.md"
+    text = services_md.read_text(encoding="utf-8")
+    text = "\n".join(
+        ln
+        for ln in text.splitlines()
+        if not ln.startswith(("| Volumes |", "| Healthcheck |", "| Devices |"))
+    )
+    services_md.write_text(text + "\n", encoding="utf-8")
+    report = run(
+        ticket(grounding("deadbee")),
+        kb_dir,
+        load_drift=lambda *a: [_drift_ref("svc.airspace-service", "ok")],
+    )
+    assert errors(report) == []
+    assert (
+        f"grounded @deadbee, still valid at @{rev}"
+        " — cited facts that could be checked still hold"
+    ) in notes(report)
+    assert (
+        "some cited facts could not be verified since @deadbee (see warnings above)"
+        " — check them by hand"
+    ) in warnings(report)
+
+
+def test_plain_warning_with_moved_revision_is_not_unverified(code_doc):
+    kb_dir, rev = code_doc
+    report = run(
+        ticket(
+            grounding(
+                "deadbee", Service="none", Volumes=None, Healthchecks=None, Devices=None
+            )
+        ),
+        kb_dir,
+        load_drift=lambda *a: [_drift_ref("svc.airspace-service", "ok")],
+    )
+    assert any("no `svc.<name>`" in w for w in warnings(report))
+    assert UNCHANGED_DEADBEE.format(rev=rev) in notes(report)
+    assert not any("could not be verified" in w for w in warnings(report))
 
 
 def test_load_drift_error_degrades(code_doc):

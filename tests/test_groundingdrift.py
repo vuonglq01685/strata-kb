@@ -40,7 +40,7 @@ def ref(sid: str, status="ok", content="") -> ResolvedRef:
     )
 
 
-def judge(drift, facts=(), current=None, local=False):
+def judge(drift, facts=(), current=None, local=False, skipped=False):
     return groundingdrift.judge(
         "demo-code",
         OLD,
@@ -49,6 +49,7 @@ def judge(drift, facts=(), current=None, local=False):
         lambda sid: (current or {}).get(sid),
         list(facts),
         local,
+        skipped,
     )
 
 
@@ -93,9 +94,22 @@ def test_no_baseline_warns():
 
 
 def test_skipped_check_adds_unverified_warning():
-    issues, notes = judge([ref("a")], [Issue("warning", "could not read x.md")])
+    issues, notes = judge([ref("a")], skipped=True)
     assert notes == [CHECKABLE]
     assert [i.message for i in issues] == [UNVERIFIED]
+
+
+def test_plain_warning_is_not_a_skipped_check():
+    issues, notes = judge([ref("a")], [Issue("warning", "no svc on Service line")])
+    assert issues == []
+    assert notes == [UNCHANGED]
+
+
+def test_missing_current_section_diffs_against_empty():
+    issues, _ = judge([ref("db.orders", "broken", "| a |\n")])
+    msg = issues[0].message
+    assert "-| a |" in msg
+    assert "+++ demo-code §db.orders @bbbbbbb" in msg
 
 
 def test_local_fallback_note_only_on_tier2():
@@ -111,4 +125,4 @@ def test_diff_capped_at_40_lines():
     diff = groundingdrift.section_diff("demo-code", "s", OLD, NEW, before, after)
     lines = diff.splitlines()
     assert len(lines) == 41
-    assert lines[-1].startswith("… (")
+    assert lines[-1] == "… (163 more lines)"

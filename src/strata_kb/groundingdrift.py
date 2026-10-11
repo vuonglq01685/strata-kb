@@ -20,6 +20,8 @@ from strata_kb.resolve import ResolvedRef
 
 # Issue.code of decision-type errors (ticketcheck.DECISION): not drift.
 DECISION_CODE = "decision"
+# Issue.code of a warning for a fact check that could not run.
+UNVERIFIED_CODE = "unverified"
 DIFF_CAP = 40
 
 
@@ -49,9 +51,11 @@ def judge(
     current_section: Callable[[str], str | None],
     fact_issues: list[Issue],
     local_fallback: bool,
+    skipped: bool,
 ) -> tuple[list[Issue], list[str]]:
     """`(issues, notes)` to append for a ticket grounded @`old` while the
-    document is @`new`. `fact_issues` are those the fact checks just raised."""
+    document is @`new`. `fact_issues` are those the fact checks just raised;
+    `skipped` = some fact check could not run (ticketcheck.UNVERIFIED)."""
     if any(i.level == "error" and i.code != DECISION_CODE for i in fact_issues):
         notes = (
             [
@@ -69,7 +73,6 @@ def judge(
         )
         return [error], notes
 
-    skipped = any(i.level == "warning" for i in fact_issues)
     issues: list[Issue] = []
     notes = []
     if drift is None:

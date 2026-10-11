@@ -146,6 +146,10 @@ class DecisionTable:
 SUPERSEDED = "SUPERSEDED"
 # Issue.code of decision-type errors: a human decides, the code did not drift.
 DECISION = groundingdrift.DECISION_CODE
+# Issue.code of a warning for a fact check that could not run (unreadable
+# doc, depth/line cap, ...): the drift judgement reports it as unverified.
+UNVERIFIED = groundingdrift.UNVERIFIED_CODE
+_COMPOSE_SKIP_NOTE = "compose-fact checks skipped"
 _SUPERSEDES_RE = re.compile(r"\bSupersedes\s+(D\d+)\b")
 
 # (repo, doc id, grounded rev) -> the cited sections at that rev, None = no baseline
@@ -463,7 +467,7 @@ def check(
     have = (doc.manifest.revision or "").lower()
     moved = bool(have) and not (have.startswith(rev) or rev.startswith(have))
     _check_revision(doc_id, have, issues)
-    start = len(issues)
+    start, notes_start = len(issues), len(notes)
     _check_ids(section, doc, decisions, issues, notes)
     _check_service_present(section, heading, issues)
     _check_open_decisions(section, issues)
@@ -472,8 +476,21 @@ def check(
         _check_compose_facts(section, doc, decisions, issues, notes)
     _check_files(section, doc, decisions, issues, notes)
     if moved:
+        fact_issues = issues[start:]
+        skipped = any(i.code == UNVERIFIED for i in fact_issues) or any(
+            _COMPOSE_SKIP_NOTE in n for n in notes[notes_start:]
+        )
         _judge_drift(
-            doc, repo, doc_id, rev, have, load_drift, issues[start:], issues, notes
+            doc,
+            repo,
+            doc_id,
+            rev,
+            have,
+            load_drift,
+            fact_issues,
+            skipped,
+            issues,
+            notes,
         )
     return LintReport(issues, notes)
 
@@ -486,6 +503,7 @@ def _judge_drift(
     have: str,
     load_drift: LoadDrift | None,
     fact_issues: list[Issue],
+    skipped: bool,
     issues: list[Issue],
     notes: list[str],
 ) -> None:
@@ -509,6 +527,7 @@ def _judge_drift(
         current_section,
         fact_issues,
         local_fallback="local fallback" in doc.source,
+        skipped=skipped,
     )
     issues.extend(new_issues)
     notes.extend(new_notes)
@@ -694,6 +713,7 @@ def _l2_slice(
             Issue(
                 "warning",
                 f"could not read {group}.md of {doc.manifest.id} — column/route/command checks for its sections skipped",
+                code=UNVERIFIED,
             )
         )
         return None
@@ -704,6 +724,7 @@ def _l2_slice(
             Issue(
                 "warning",
                 f"section {sid} not found in {group}.md of {doc.manifest.id} — its column/route/command checks skipped",
+                code=UNVERIFIED,
             )
         )
     return body
@@ -774,6 +795,7 @@ def _check_tables_routes_commands(
                         Issue(
                             "warning",
                             f"{raw}: put the command in backticks so it can be verified (line {lineno})",
+                            code=UNVERIFIED,
                         )
                     )
                     continue
@@ -1062,6 +1084,7 @@ def _check_files(
             Issue(
                 "warning",
                 f"could not read {group or 'structure'}.raw.md of {doc.manifest.id} — file checks skipped",
+                code=UNVERIFIED,
             )
         )
         return
@@ -1079,6 +1102,7 @@ def _check_files(
                 Issue(
                     "warning",
                     f"cannot verify '{path}': beyond struct.tree's depth cap ({TREE_DEPTH}) — list the deepest directory the document shows (line {lineno})",
+                    code=UNVERIFIED,
                 )
             )
         elif first_dropped is not None:
@@ -1090,6 +1114,7 @@ def _check_files(
                 Issue(
                     "warning",
                     f"cannot verify '{path}': struct.tree hit its line cap (listing stops at '{first_dropped}') — the document cannot prove absence (line {lineno})",
+                    code=UNVERIFIED,
                 )
             )
         else:
