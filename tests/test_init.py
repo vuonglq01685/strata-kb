@@ -1763,8 +1763,9 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # (Wave G fix round 2 Minor 1: .gitattributes, the same F-D10 exemption
     # a child repo gets) + 4 (the kb-mcp-setup wrappers, MCP_CLIENT_TEMPLATES)
     # + 1 (docs/pr-review-rubric.md, the dev PR review rubric)
-    # = 54.
-    assert len(expected_files("dev")) == 54
+    # + 1 (1.16.0: kb-doctor.yml, the scheduled stale-citation sweep)
+    # = 55.
+    assert len(expected_files("dev")) == 55
     assert sorted(report.created) == sorted(
         expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]
     )
@@ -2805,6 +2806,7 @@ def test_scaffolded_workflow_names_cover_every_kind():
         "kb-ticket-lint.yml",
         "kb-code.yml",
         "kb-pr-lint.yml",
+        "kb-doctor.yml",
     } == SCAFFOLDED_WORKFLOW_NAMES
 
 

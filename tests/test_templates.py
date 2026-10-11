@@ -1498,12 +1498,13 @@ def test_search_budget_names_what_the_budget_buys():
 # spelling the names a second time.
 
 
-def test_dev_handover_keeps_usage_out_of_the_pr():
-    # The short PR body (2026-10-04) leaves the usage table to the ledger.
+def test_dev_handover_puts_the_usage_summary_in_the_pr():
+    # 1.16.0 (review B4): the short PR body carries cost again, as the short
+    # `--summary` block; the full breakdown stays with the ledger.
     for name in _dev_wrapper_names("dev-handover"):
         text = _dev_wrapper_body(name)
-        assert "## Usage" not in text, name
-        assert "the usage table" in text, name
+        assert "kb usage report --ticket <ticket-id> --summary" in text, name
+        assert "full usage breakdown" in text, name
 
 
 def test_ba_ticket_author_reports_usage_at_handover():
@@ -1841,7 +1842,7 @@ def _pr_template_headings() -> list[str]:
 
 
 _RETIRED_PR_SECTIONS = _re.compile(
-    r"## Findings|## Usage|## TDD exemptions|## Verification|Verification fence"
+    r"## Findings|## TDD exemptions|## Verification|Verification fence"
     r"|## Review(?! record| dispatch)|AC→test map|for a PR body"
 )
 
@@ -1863,8 +1864,8 @@ def test_no_shipped_template_points_at_a_retired_pr_section():
 
 def test_pr_template_headings_are_the_canon_in_order():
     # Canon pin, place 1 of 3: the shipped template against the module,
-    # plus the optional Notes the linter never inspects.
-    assert tuple(_pr_template_headings()) == REQUIRED_SECTIONS + ("Notes",)
+    # plus the optional Notes and Usage the linter never inspects.
+    assert tuple(_pr_template_headings()) == REQUIRED_SECTIONS + ("Notes", "Usage")
 
 
 def test_every_required_section_is_named_in_the_dev_handover_wrappers():

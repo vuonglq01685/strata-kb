@@ -513,3 +513,24 @@ def test_whitespace_only_ticket_is_rejected(seeded):
         svcnote.add_note(
             seeded / ".kb", "demo", "airspace-service", _note(ticket="   ")
         )
+
+
+def test_rows_sort_ticket_numbers_by_value(seeded):
+    # 2026-10-10 review G15: plain string order put T-10 before T-2.
+    for ticket in ("T-10", "T-2", "T-9"):
+        svcnote.add_note(
+            seeded / ".kb", "demo", "airspace-service", _note(ticket=ticket)
+        )
+    l2 = (seeded / ".kb" / "demo-svc" / "history.md").read_text(encoding="utf-8")
+    assert l2.index("| T-2 ") < l2.index("| T-9 ") < l2.index("| T-10 ")
+
+
+def test_natural_key_orders_mixed_ids():
+    ids = ["M-b-US10", "M-b-US2", "M-a-US1", "T-10", "T-2"]
+    assert sorted(ids, key=svcnote._natural_key) == [
+        "M-a-US1",
+        "M-b-US2",
+        "M-b-US10",
+        "T-2",
+        "T-10",
+    ]

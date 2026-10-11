@@ -424,3 +424,17 @@ def test_an_unclosed_fence_in_testing_fails_even_with_nothing_after_it():
     body = _body(Testing="```\n12 passed\n\nBlocking: No")
     assert ("Testing", "unclosed-fence") in _codes(body)
     assert not lint_body(body + "\n\n## Notes\n\nx").passed
+
+
+def test_an_optional_usage_section_passes_with_or_without_content():
+    # 1.16.0 (review B4): `## Usage` is allowed, never required.
+    from strata_kb.prlint import lint_body as _lint_pr
+
+    base = (
+        "## Ticket\n\nT-7 add search.\n\n## Changes\n\n- search box\n\n"
+        "## Testing\n\nAC1 -> test_search\n\n```\n$ pytest -q\n3 passed\n```\n\n"
+        "Blocking: No\n"
+    )
+    usage = "\n## Usage\n\nTotal for T-7: 4 calls, 1,040 tokens, 0.01 USD.\n"
+    assert _lint_pr(base).passed
+    assert _lint_pr(base + usage).passed

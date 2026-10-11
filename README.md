@@ -277,6 +277,7 @@ that follows it.
 | `kb ticket lint` | Definition-of-Ready gate for a BA ticket |
 | `kb ticket check` | SA grounding gate: every id in `## Technical grounding` exists in the hub's `<repo>-code` document |
 | `kb ticket export` | The ticket for the tracker: guidance comments, `## Definition of Ready` and `## Review record` dropped |
+| `kb ticket stale` | Every ticket and mission whose citations the hub moved since they were pinned (`--md` / `--json`); `0` current, `2` stale only, `1` broken |
 | `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
 | `kb mission next` | Which story next: done / ready / draft / to-draft / blocked across `missions/`, done derived from the hub's `<repo>-svc` history, ready and draft from the ticket's Definition of Ready checklist |
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent mission; `--into <folder>` for the rest |
@@ -297,7 +298,7 @@ standard rate and flagged, so a total that contains them is a lower bound.
 |---|---|
 | `kb usage ingest-transcript <file>` | Append a transcript's API calls (and its session's subagents) to `.kb/usage/<ticket>.jsonl`. `--hook-stdin` reads the hook payload and never blocks a turn; `--ticket <id>` forces the attribution |
 | `kb usage note --ticket --phase --model --assistant --tokens-in --tokens-out` | Append one row by hand — for an assistant with no hook, or to repair an attribution. `--cache-read`, `--cache-write-5m`, `--cache-write-1h`; `--est` (default) or `--measured` |
-| `kb usage report` | Aggregate per ticket · phase · model · actor · main vs subagents, with the unattributed share. HTML at `.kb/usage/report.html` (`--out`), or `--md` / `--json` to stdout; `--ticket <id>` for one ticket |
+| `kb usage report` | Aggregate per ticket · phase · model · actor · main vs subagents, with the unattributed share. HTML at `.kb/usage/report.html` (`--out`), or `--md` / `--json` to stdout; `--ticket <id>` for one ticket; `--with <other .kb>` adds another repo's ledger (e.g. the BA repo's) to price a ticket end to end; `--summary` prints the short `## Usage` block a PR body carries |
 
 ---
 
@@ -753,6 +754,13 @@ passing status for a job that never starts, so filtering a required check would
 leave unrelated PRs waiting forever. The job always starts, inspects the PR's own
 diff, and dispatches `kb ticket lint` or `kb mission lint` by directory — exiting
 0 with a notice when neither directory changed.
+
+A ticket is checked again after it merges: `ba` and `dev` repos also get
+`.github/workflows/kb-doctor.yml`, which runs `kb ticket stale` every day (and on
+demand) over `tickets/` and `missions/`. While any citation is stale or broken it
+keeps one open issue labelled `kb-stale-citations` listing them; once everything
+is current again it closes that issue. It needs the same `STRATA_KB_HUB` variable
+and `KB_HUB_TOKEN` secret as `kb-ticket-lint.yml`.
 
 Scaffold with `kb init --kind ba`; the generated `QUICKSTART-BA.md` covers
 `kb mcp-setup` (`/kb-mcp-setup`), which writes the hub's HTTP MCP credentials
