@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from strata_kb import cipublish, gitio, planingest
+from strata_kb import cipublish, gitio
 from strata_kb import publish as publish_mod
 from strata_kb.cli import app
 
@@ -491,12 +491,14 @@ class TestBaPlanRefresh:
         monkeypatch.delenv("STRATA_KB_HUB", raising=False)
         root = tmp_path / "ba-repo"
         (root / ".kb").mkdir(parents=True)
-        (root / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
         (root / ".kb" / "config.yaml").write_text(
             'kind: ba\nhub: ""\nrepo_id: "demo"\nintake: "https://kb.test"\n',
             encoding="utf-8",
         )
-        (root / ".gitignore").write_text(".kb/*-plan/\n", encoding="utf-8")
+        # What `kb init --kind ba` writes: the plan and the index are generated.
+        (root / ".gitignore").write_text(
+            ".kb/*-plan/\n.kb/index.yaml\n", encoding="utf-8"
+        )
         block = context_block(fed_hub)
         write_repo(
             root,
@@ -511,8 +513,7 @@ class TestBaPlanRefresh:
         _git(root, "init", "-b", "main")
         _git(root, "config", "user.email", "t@t")
         _git(root, "config", "user.name", "t")
-        # The index entry `-plan` adds is committed, as it is in a real repo.
-        planingest.run(root, root / ".kb", "demo", root / "missions", root / "tickets")
+        # Nothing generated is committed: a fresh clone has no index.yaml at all.
         _git(root, "add", "-A")
         _git(root, "commit", "-m", "init")
         bare = tmp_path / "ba-origin.git"
@@ -528,8 +529,10 @@ class TestBaPlanRefresh:
     def test_publish_regenerates_plan_and_tags_a_clean_kb(self, ba):
         root, bare = ba
         plan_dir = root / ".kb" / "demo-plan"
-        assert plan_dir.is_dir()
-        shutil.rmtree(plan_dir)  # a fresh clone has no -plan: publish rebuilds it
+        # A fresh clone has neither -plan nor index.yaml: publish rebuilds both
+        # and must not trip over the (ignored) generated files.
+        assert not plan_dir.exists()
+        assert not (root / ".kb" / "index.yaml").exists()
         result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
         assert result.exit_code == 0, result.output
         assert (plan_dir / "_manifest.yaml").is_file()

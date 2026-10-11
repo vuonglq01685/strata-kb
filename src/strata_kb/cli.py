@@ -336,6 +336,10 @@ def init(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
             "run /ba-ticket-author"
         )
+        typer.echo(
+            "  4. kb publish    (or /kb-publish)"
+            "  # sends the plan; needs intake: and a hub registry entry"
+        )
     else:  # dev
         typer.echo(
             "  1. Fill hub: in .kb/config.yaml with the main hub URL/path — "

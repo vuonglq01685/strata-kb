@@ -122,7 +122,7 @@ the choice as `kind:` in `.kb/config.yaml`. Non-interactive runs pass
 |---|---|
 | **`hub`** | Central knowledge hub. Hosts `federation/` — the single source of truth for search — and runs the shared HTTP MCP server and Web UI. Receives publishes from every other repo; merging a hub PR is the gate that makes content searchable. |
 | **`child`** | Authoring repo. Ingest documents → summarize → `kb build` → `kb publish` to the hub. Points `hub:` at the hub. Does not host the shared service. |
-| **`ba`** | Requirements repo. Drafts Dev-ready tickets — and, for large features, epic-level mission plans — grounded in the KB, versioned under `tickets/` and `missions/` and gated by CI Definition-of-Ready checks. Never ingests or publishes KB content. |
+| **`ba`** | Requirements repo. Drafts Dev-ready tickets — and, for large features, epic-level mission plans — grounded in the KB, versioned under `tickets/` and `missions/` and gated by CI Definition-of-Ready checks. Never ingests or publishes KB content, but publishes its own plan (`<repo_id>-plan`, from the ready missions and tickets) to the hub. |
 | **`dev`** | Product code repo. Implements BA tickets grounded in the KB through a five-command agent workflow. Never ingests outside documents; it publishes knowledge about *its own source code* — generated (`-code`) and curated (`-svc`). |
 
 Re-running `kb init` refreshes scaffold files (skills, templates, workflows) and
@@ -551,7 +551,7 @@ content back. Scope a search by choosing which hub you query: a team hub returns
 the team's knowledge, the root hub returns everything.
 
 Hub-to-hub publishing needs direct git access upstream, or `gh` for `--pr`. The
-intake/OIDC route is child-repo-only. An emptied local `federation/` will not
+intake/OIDC route is for child and `ba` repos only. An emptied local `federation/` will not
 propagate deletions upstream — publish refuses rather than wipe entries.
 Removing *some* entries does propagate, as an ordinary mirror, in a pull request
 on the upstream hub.
@@ -689,7 +689,18 @@ criteria need updating. `kb doctor --context` runs the same check in CI.
 ## 12. BA repos — tickets and missions
 
 A `ba` repo never ingests, summarizes or publishes KB content. It drafts
-Dev-ready tickets grounded in it.
+Dev-ready tickets grounded in it. It does publish one document, its own plan:
+`kb publish` runs `kb plan-ingest` (the ready missions and tickets, no LLM) and
+`kb build`, then tags, and CI sends `<repo_id>-plan` to the hub through the
+intake, as a child repo's publish does. Items left out print as `skipped:`
+lines. `.kb/<repo_id>-plan/` and `.kb/index.yaml` are generated, so `kb init
+--kind ba` gitignores both.
+
+To turn this on, the hub operator adds the repo to `federation/registry.yaml`
+(optionally pinning `workflow:` to the repo's `.github/workflows/kb-publish.yml`),
+and the BA sets `intake:` in `.kb/config.yaml`. An existing `ba` repo adds
+`intake:` by hand and re-runs `kb init --kind ba` to get the workflow and the
+`kb-publish` skill.
 
 **`ba-ticket-author`** runs a nine-step pipeline: **Intake** (the business
 need — capability, role, value) → **Parent mission** (optional; reads
@@ -1042,7 +1053,7 @@ second PR *there*, and merging that one is what makes it live.
 | `kind` | `hub`, `child`, `ba` or `dev` — set by `kb init`, reused on re-runs |
 | `hub` | Hub location: a git URL or a local directory. Mandatory for every command that reads the federation. Committed with the file, so it carries no credential — a URL that needs one goes in `STRATA_KB_HUB`. |
 | `repo_id` | This repo's entry id under `federation/` |
-| `intake` | Intake service URL for `kb ci-publish` (child repos only; http(s) only) |
+| `intake` | Intake service URL for `kb ci-publish` (child and `ba` repos; http(s) only) |
 | `asset_store` | `{mode: none}` (default) or `{mode: s3, bucket: …}` |
 
 ### Environment variables

@@ -88,7 +88,7 @@ def test_require_client_kind_rejects_hub(tmp_path: Path):
 def test_write_env_creates_env_and_gitignore(tmp_path: Path):
     from strata_kb.mcpsetup import HUB_URL_VAR, TOKEN_VAR, write_env
 
-    init_repo(tmp_path, "ba")  # a ba repo gets no root .gitignore from kb init
+    init_repo(tmp_path, "child")  # a child repo gets no root .gitignore from kb init
     assert not (tmp_path / ".gitignore").exists()
     report = write_env(tmp_path, HUB, TOKEN)
     assert report.env_created is True
