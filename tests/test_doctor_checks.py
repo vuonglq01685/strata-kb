@@ -614,6 +614,35 @@ def test_check_hub_ignores_the_code_document_for_a_dev_repo(tmp_path):
     assert any("differs from the published snapshot" in i.message for i in issues)
 
 
+def test_doctor_ignores_the_plan_document_for_a_ba_repo(tmp_path):
+    from strata_kb import doctor
+
+    kb = _minimal_kb(tmp_path, kind="ba")
+    hub = tmp_path / "hub"
+    (hub / ".kb").mkdir(parents=True)
+    (hub / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    entry = hub / "federation" / "child"
+    shutil.copytree(kb, entry)
+    models.save_yaml_model(
+        entry / "_meta.yaml",
+        FederationMeta(
+            repo_id="child",
+            source_commit="abc1234",
+            published_at="2026-09-25T00:00:00+00:00",
+        ),
+    )
+    write_federation_index(hub / "federation")
+    handle = HubHandle(root=hub)
+    differs = "differs from the published snapshot"
+    (kb / "child-plan").mkdir()
+    (kb / "child-plan" / "tickets.md").write_text("# local plan\n", encoding="utf-8")
+    assert not any(differs in i.message for i in doctor.run(kb, handle).issues)
+    (kb / "other").mkdir()
+    (kb / "other" / "a.md").write_text("# not generated\n", encoding="utf-8")
+    (drift,) = [i for i in doctor.run(kb, handle).issues if differs in i.message]
+    assert drift.message.endswith("run `kb publish`")
+
+
 def test_fed_tree_digest_has_one_home_in_federation():
     from strata_kb import doctor, federation
     from strata_kb.doctor.checks import hub as hub_checks

@@ -37,10 +37,19 @@ edit above it.
 Steps the skill enforces: **Intake** runs `kb impl tidy` first (it moves an
 old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/` — commit the
 renames on their own before the first task; no CLI → move them by hand),
-then reads the ticket's `## Dependencies`
-(`Blocked by:` / `Blocks:`) and, when a `> Parent mission:` line is
-present, that mission's `## Sequencing` row, and stops if there is no
-`kb-context` block to resolve; **Resolve** triages exactly as in the
+then gets the ticket — given only an id,
+`kb ticket fetch <id>` first (the hub is the source of truth; it writes
+`docs/impl/<id>/ticket.md`, your `<ticket-file>`; no CLI → MCP
+`kb_get_section` `<doc> §<id>` at `l3`, saved to that path with headings
+promoted one level and the provenance line `> Fetched from hub:
+<repo>:<doc> §<id> @ <rev> — do not edit; amend in the BA repo.`), a path
+or a pasted body being the fallback when the hub has no copy or is
+unreachable; a fetched ticket has no `## Definition of Ready` (being on
+the hub means DoR passed), so its absence is not a stop — then reads the
+ticket's `## Dependencies` (`Blocked by:` / `Blocks:`) and, when a
+`> Parent mission:` line is present, that mission's `## Sequencing` row
+(from the local mission file, else `kb get <doc> <M-id> --level l3` from
+the hub), and stops if there is no `kb-context` block to resolve; **Resolve** triages exactly as in the
 Freshness re-check above; the full resolve is `kb resolve --write-cache
 docs/impl/<ticket-id>/context.md <ticket-file>`, which writes the header
 and the resolved sections — you never edit above the

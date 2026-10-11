@@ -131,6 +131,9 @@ class Decision:
     status: str
     owner: str
     blocks: tuple[str, ...] = ()  # US ids in the `Blocks` cell, as written
+    supersedes: str | None = (
+        None  # D-id named by `Supersedes D<n>` in the Decision cell
+    )
 
 
 @dataclass(frozen=True)
@@ -138,6 +141,9 @@ class DecisionTable:
     source: str  # human label, e.g. "missions/M-demo.md" or "this mission"
     rows: dict[str, Decision]
 
+
+SUPERSEDED = "SUPERSEDED"
+_SUPERSEDES_RE = re.compile(r"\bSupersedes\s+(D\d+)\b")
 
 LoadDecisions = Callable[
     [str], DecisionTable | None
@@ -160,6 +166,7 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
     i_status = _table_column(rows, "status")
     i_owner = _table_column(rows, "owner")
     i_blocks = _table_column(rows, "blocks")
+    i_decision = _table_column(rows, "decision")
     if i_id is None or i_status is None:
         return DecisionTable(source, {})
     out: dict[str, Decision] = {}
@@ -171,8 +178,14 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
         full_blocks = US_ID_IN_CELL_RE.findall(blocks_cell)
         bare_blocks = BARE_US_RE.findall(US_ID_IN_CELL_RE.sub(" ", blocks_cell))
         blocks = tuple(dict.fromkeys(full_blocks + bare_blocks))
+        cell = r[i_decision] if i_decision is not None and len(r) > i_decision else ""
+        sup = _SUPERSEDES_RE.search(cell)
         out[r[i_id].strip()] = Decision(
-            r[i_id].strip(), r[i_status].strip(), owner, blocks
+            r[i_id].strip(),
+            r[i_status].strip(),
+            owner,
+            blocks,
+            sup.group(1) if sup else None,
         )
     return DecisionTable(source, out)
 
@@ -360,6 +373,19 @@ def _judge_new(
             ),
         )
         return
+    if row.status.upper() == SUPERSEDED:
+        successor = next(
+            (r for r in decisions.table.rows.values() if r.supersedes == row.id), None
+        )
+        if successor is not None:
+            _issue_once(
+                issues,
+                Issue(
+                    "error",
+                    f"decision {reason} is {SUPERSEDED} by {successor.id} — cite {successor.id} (line {lineno})",
+                ),
+            )
+            return
     if row.status.upper() != "DECIDED":
         _issue_once(
             issues,

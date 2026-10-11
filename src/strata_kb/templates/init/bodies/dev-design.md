@@ -26,6 +26,9 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
+`<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file
+`kb ticket fetch <ticket-id>` wrote from the hub.
+
 ## Path classification — say it out loud so the Dev can override it
 
 - **spike** — a feasibility question the ticket itself raises; the

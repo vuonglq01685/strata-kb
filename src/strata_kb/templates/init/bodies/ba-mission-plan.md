@@ -158,6 +158,63 @@
 9. **Review → save** — write the final Markdown to
    `missions/<mission-id>.md`. Hand it to the BA to review and commit.
 
+## Amend mode — `--amend <M-id>`
+
+`/ba-mission-plan --amend M-<slug>` changes a mission that already exists
+(committed, perhaps already published). It does NOT run the workflow above
+from Intake: the mission keeps its id and filename, and every change is
+recorded in `## Change log`. A new mission is never created by `--amend`.
+
+1. **Read** `missions/<M-id>.md`, then run `kb ticket stale --md
+   missions/<M-id>.md` and read the findings for it (kind: the
+   `Kind` column, `kb-context` or `architecture`). Run `kb mission next` as well, to see
+   which stories are `done`.
+2. **Ask** the BA for the trigger(s) — one or more of `kb-context`,
+   `architecture`, `scope`, `delivery` — and what changed. The drift
+   findings pre-fill the answer; ask, don't guess.
+3. **`kb-context` trigger** — re-pin `## KB context` with the MCP tool
+   `kb_context_new` when available, otherwise `kb context new --refs
+   "<refs>"` (CLI), with the FULL ref list (kept + moved + new) — the tool
+   renders one block with one `version:`, so a partial list drops the
+   unchanged refs — and replace the whole block. Only the moved or new refs
+   need the BA's re-confirmation, and only the claims citing them need
+   re-checking. The `tags`
+   rule of step 6 still holds: never pass tags.
+4. **`architecture` trigger only** — hand off to `sa-ticket-ground
+   --mission` on the mission. It refreshes `## Services & order` and the
+   `Grounded on:` revision, then runs `kb ticket check`. For any other
+   trigger, skip the SA and `kb ticket check`: they would force a
+   re-ground after every dev commit. You still never read `<repo>-code`
+   or `<repo>-svc` yourself.
+5. **Apply the change rules** below.
+6. **Bump `> Revision:` and append the change-log row** `| Rev | Date |
+   Trigger | What changed | Affected | Review |`. In `Affected` write FULL
+   story ids (`M-<slug>-US<n>`), comma-separated, or `-` — a bare `US<n>`
+   is not matched by `kb mission next`, so a ticket would never be flagged.
+7. **Lint** — `kb mission lint <file>` until it reports `DoR: PASS`.
+8. **Maturity review of the changed sections only** — one round, the same
+   rubric and the same two perspectives as step 8 of the workflow. Write
+   the scores into the new row's `Review` cell (e.g. `B4 D4 (agent)`) —
+   never into `## Review record`.
+9. **Hand the diff to the BA.** The agent never ticks a DoR box, commits
+   or pushes. The BA's next `kb publish` ships the amended mission.
+
+Change rules:
+
+- **Done stories are frozen.** A story `kb mission next` reports `done`
+  keeps its backlog row unchanged. New or changed work becomes a new row
+  with the next free US number — numbers are never reused or renumbered.
+- Stories not yet done may be edited; list each in the row's `Affected`.
+- **A `DECIDED` row is superseded, never edited.** Add a row `D<n>` with
+  `Supersedes D<k>` in its Decision cell, and set `D<k>`'s status to
+  `SUPERSEDED`. Later `[NEW: D<k>]` citations must name `D<n>`. If any
+  `[NEW: D<k>]` (this mission's `## Services & order`, or a ticket) still
+  cites the superseded row, the amendment MUST include the `architecture`
+  trigger so `sa-ticket-ground` re-points it to `D<n>`: list the citing
+  files to the BA (`grep -rn "D<k>" missions tickets`).
+- Tickets already written against this mission keep their `@ rev` pin; the
+  BA re-authors a flagged story with `/ba-ticket-author --amend`.
+
 ## Hard rules
 
 - Citations are mandatory for every claim that touches a standard — no

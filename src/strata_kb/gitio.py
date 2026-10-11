@@ -163,6 +163,19 @@ def rev_exists(root: Path, rev: str) -> bool:
     return proc.returncode == 0
 
 
+def log_commits(root: Path, relpath: str) -> list[str]:
+    """Full hashes of the commits that touch `relpath`, newest first.
+
+    `relpath` is repo-relative; separators are normalised to POSIX like
+    `path_exists_at`. Raises GitError on a non-zero exit (not a repo, git
+    failure); a path git has never seen is an empty list, not an error."""
+    posix_relpath = relpath.replace("\\", "/")
+    proc = _run(root, "log", "--format=%H", "--", posix_relpath)
+    if proc.returncode != 0:
+        raise GitError(f"git log failed for '{posix_relpath}': {proc.stderr.strip()}")
+    return proc.stdout.split()
+
+
 def is_tracked(root: Path, relpath: str) -> bool:
     """True when `relpath` is tracked by git under `root`.
 
@@ -472,6 +485,36 @@ def push_branch(
         raise GitError(
             redact_url(f"push branch '{branch}' failed: {proc.stderr.strip()}")
         )
+
+
+def remote_branch_exists(
+    root: Path,
+    branch: str,
+    token: str | None = None,
+    *,
+    timeout: float | None = None,
+) -> bool:
+    """True when `origin` has branch `branch` (`git ls-remote --heads`).
+    Same credential handling as `push_branch`. Raises GitError on a non-zero
+    exit, so a network failure is never read as "branch is gone".
+    `timeout`: see `_run_network`."""
+    stripped, embedded = split_credentials(remote_url(root))
+    ref = f"refs/heads/{branch}"
+    proc = _run_network(
+        root,
+        credential_env(stripped, token or embedded),
+        f"look up branch '{branch}'",
+        "ls-remote",
+        "--heads",
+        "origin",
+        ref,
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        raise GitError(
+            redact_url(f"look up branch '{branch}' failed: {proc.stderr.strip()}")
+        )
+    return any(line.split()[-1:] == [ref] for line in proc.stdout.splitlines())
 
 
 def tag(root: Path, name: str) -> None:

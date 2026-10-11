@@ -167,7 +167,8 @@ This repo can be one of four kinds:
   ba    — Requirements repo. Drafts Dev-ready tickets grounded in the KB
           via the ba-ticket-author skill, versions them under tickets/,
           and gates them with a CI Definition-of-Ready check. Never
-          ingests, summarizes, or publishes KB content.
+          ingests or summarizes KB content; publishes only its own plan
+          (`<repo_id>-plan`) to the hub.
 
   dev   — Product code repo. Implements BA tickets grounded in the KB via the
           dev-implement-ticket workflow (design → plan → execute → handover,
@@ -335,6 +336,10 @@ def init(
         typer.echo(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
             "run /ba-ticket-author"
+        )
+        typer.echo(
+            "  4. kb publish    (or /kb-publish)"
+            "  # sends the plan; needs intake: and a hub registry entry"
         )
     else:  # dev
         typer.echo(
@@ -698,6 +703,39 @@ def _refresh_dev_code(kb_dir: Path) -> None:
     ):
         return
     _refresh_code_or_exit(kb_dir, cfg.repo_id)
+
+
+def _refresh_ba_plan(kb_dir: Path) -> None:
+    """`kb publish` in a ba repo: regenerate `<repo_id>-plan` from the working
+    tree, so the diff preview and the upload show what CI will send. Same
+    defaults as `kb plan-ingest`, anchored to the repo root."""
+    from strata_kb import cipublish, config, planingest
+    from strata_kb.build import build_kb
+
+    resolved_kb_dir = kb_dir.resolve()
+    root = resolved_kb_dir.parent
+    rid = config.effective_repo_id("", resolved_kb_dir) or root.name
+    try:
+        plan_report = planingest.run(
+            root, resolved_kb_dir, rid, root / "missions", root / "tickets"
+        )
+    except planingest.PlanIngestError as exc:
+        typer.secho(
+            f"could not refresh {rid}-plan: {exc}", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1) from None
+    # A skipped story is not an error, but the BA must see it before it ships.
+    for file, reason in plan_report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.secho(line, fg=typer.colors.YELLOW, err=True)
+        cipublish.write_step_summary(line)
+    report = build_kb(kb_dir)
+    for warning in report.warnings + report.quality:
+        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
+    for error in report.errors:
+        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
+    if not report.ok:
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -1396,6 +1434,61 @@ def code_ingest(
             typer.echo(f"  orphan: {sid}")
 
 
+@app.command(name="plan-ingest")
+def plan_ingest(
+    repo_root: Path = typer.Option(
+        Path("."), "--repo-root", help="Repository root (read for the commit)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    repo_id: str = typer.Option(
+        "", "--repo-id", help="Repo ID (default: config, then folder name)"
+    ),
+    missions_dir: Path = typer.Option(
+        Path("missions"), "--missions-dir", help="Where mission files live"
+    ),
+    tickets_dir: Path = typer.Option(
+        Path("tickets"), "--tickets-dir", help="Where ticket files live"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Build .kb/<repo_id>-plan/ from ready missions and tickets — deterministic,
+    offline, no LLM. Items that are not ready are listed as skipped."""
+    from strata_kb import cipublish, config, planingest
+
+    resolved_root = repo_root.resolve()
+    resolved_kb_dir = kb_dir.resolve()
+    rid = config.effective_repo_id(repo_id, resolved_kb_dir) or resolved_root.name
+    try:
+        report = planingest.run(
+            resolved_root, resolved_kb_dir, rid, missions_dir, tickets_dir
+        )
+    except planingest.PlanIngestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from None
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "doc_id": report.doc_id,
+                    "published": report.published,
+                    "skipped": [list(pair) for pair in report.skipped],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    typer.echo(f"doc: {report.doc_id}")
+    typer.echo(f"published: {len(report.published)} section(s)")
+    for sid in report.published:
+        typer.echo(f"  {sid}")
+    for file, reason in report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.echo(line)
+        cipublish.write_step_summary(line)
+
+
 @svc_app.command("note")
 def svc_note(
     service: str = typer.Argument(
@@ -2003,6 +2096,8 @@ def publish(
     # the divergence this prevents.
     if plan.refresh_code:
         _refresh_dev_code(kb_dir)
+    if plan.refresh_plan:
+        _refresh_ba_plan(kb_dir)
 
     # KbError (PublishError, GateError, AssetStoreError, GitError, GHError,
     # HashSyncError, HubConfigError) reaches the root guard. What is caught
@@ -2042,8 +2137,16 @@ def publish(
 
     if plan.route == "intake":
         try:
+            ba_root = kb_dir.resolve().parent
             pr_url = publish_mod.publish_via_intake(
-                kb_dir, plan.intake_url, effective_repo_id(repo_id, kb_dir)
+                kb_dir,
+                plan.intake_url,
+                effective_repo_id(repo_id, kb_dir),
+                plan_inputs=(
+                    (ba_root / "missions", ba_root / "tickets")
+                    if plan.refresh_plan
+                    else ()
+                ),
             )
         except (
             OSError,
@@ -2668,6 +2771,44 @@ def ticket_stale(
         raise typer.Exit(code)
 
 
+@ticket_app.command("fetch")
+def ticket_fetch(
+    ticket: str = typer.Argument(
+        ..., help="Ticket id, or <repo>:<id> if several repos hold it"
+    ),
+    out: Path | None = typer.Option(
+        None, "--out", help="Write here (default: docs/impl/<id>/ticket.md)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Read a ticket from the hub by id and save it as a local ticket file.
+    Always overwrites; the BA's repo stays the place to amend it."""
+    from strata_kb import ticketfetch
+
+    handle = _hub_or_exit(hub, kb_dir)
+    try:
+        repo, doc, _ = ticketfetch.find(handle, ticket)
+        text = ticketfetch.render(handle, ticket)
+    except ticketfetch.TicketFetchError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    ticket_id = ticketfetch.split_ref(ticket)[1]
+    path = out or Path("docs") / "impl" / ticket_id / "ticket.md"
+    if out is None and not path.resolve().is_relative_to(Path("docs/impl").resolve()):
+        typer.secho(f"refusing to write outside docs/impl: {path}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        typer.secho(f"could not write '{path}': {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo(f"fetched: {repo}:{doc} §{ticket_id} -> {path}")
+
+
 @ticket_app.command("export")
 def ticket_export(
     source: str = typer.Argument(..., help="Ticket file (or '-' to read from stdin)"),
@@ -3099,13 +3240,47 @@ def mission_next(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    from_hub: bool = typer.Option(
+        False,
+        "--from-hub",
+        help="Read the published plan (<ba-repo>-plan) from the hub instead of "
+        "missions/ and tickets/: a story with a published ticket is ready, "
+        "and to-draft reads 'not ready (no published ticket)'",
+    ),
+    repo: str = typer.Option(
+        "", "--repo", help="With --from-hub: only this BA repo's plan"
+    ),
 ) -> None:
     """Which story next: every backlog story across missions/ as done /
     ready / draft / to-draft / blocked. Done is derived from the hub's
     <repo>-svc history (kb svc note rows); ready and draft from the
     ticket's Definition of Ready checklist. Read-only; exit 0 after a
     report."""
-    from strata_kb import missionnext, ticketcheck
+    from strata_kb import missionnext, planrev, planstatus, ticketcheck
+
+    if repo and not from_hub:
+        typer.secho("--repo needs --from-hub", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if from_hub:
+        handle, reason = _hub_or_reason(hub, kb_dir)
+        notes = [] if handle is not None else [f"hub unavailable ({reason})"]
+        plans, plan_notes = (
+            planstatus.hub_plans(handle, repo or None) if handle else ([], [])
+        )
+        notes += plan_notes
+        if handle is not None and not plans:
+            notes.append(
+                f"no plan for repo '{repo}' on the hub"
+                if repo
+                else "no <repo>-plan document on the hub"
+            )
+        results = [s for r in plans for m in r.missions for s in m.stories]
+        if json_output:
+            typer.echo(json.dumps(missionnext.to_json(results, notes)))
+        else:
+            labels = {"to-draft": "not ready (no published ticket)"}
+            typer.echo(missionnext.render(results, notes, labels))
+        return
 
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
         if d is not None and not d.is_dir():
@@ -3142,6 +3317,7 @@ def mission_next(
     # that first copy wins; a repeated stem is noted and skipped rather
     # than silently overwriting it.
     drafted: dict[str, tuple[int, int]] = {}
+    ticket_texts: dict[str, str] = {}
     ticket_paths: dict[str, Path] = {}
     if resolved_tickets.is_dir():
         for p in sorted(resolved_tickets.rglob("*.md")):
@@ -3159,6 +3335,7 @@ def mission_next(
                 notes.append(f"skipped ticket {p}: {exc} — read as draft")
                 drafted[p.stem] = (0, 0)
                 continue
+            ticket_texts[p.stem] = ticket_text
             drafted[p.stem] = missionnext.dor_counts(ticket_text)
     else:
         notes.append(
@@ -3202,7 +3379,9 @@ def mission_next(
         if doc is not None:
             done = missionnext.done_ids_from_history(doc.read_group("history"))
 
-    results = missionnext.statuses(parsed, drafted, done)
+    mission_texts = {m[0]: t for m, t in zip(parsed, texts, strict=True) if m[0]}
+    demoted = planrev.demotions(mission_texts, ticket_texts)
+    results = missionnext.statuses(parsed, drafted, done, demoted)
     if json_output:
         typer.echo(json.dumps(missionnext.to_json(results, notes)))
     else:

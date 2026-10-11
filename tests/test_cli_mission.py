@@ -751,3 +751,90 @@ def test_resolve_missions_dir_from_a_nested_ticket(tmp_path):
     flat = tmp_path / "tickets" / "M-platform-US1.md"
     assert _resolve_missions_dir(None, flat) == tmp_path / "missions"
     assert _resolve_missions_dir(None, tmp_path / "elsewhere" / "x.md") is None
+
+
+def test_mission_next_demotes_ready_ticket_behind_its_mission_revision(tmp_path):
+    root = _ba_layout(tmp_path)
+    (root / "missions" / "M-platform.md").write_text(
+        PLATFORM_NEXT.replace(
+            "> Mission: M-platform\n",
+            "> Mission: M-platform\n> Revision: 2\n",
+        )
+        + "\n## Change log\n"
+        "| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 2 | 2026-10-11 | scope | cut | M-platform-US1 | B4 D4 (agent) |\n",
+        encoding="utf-8",
+    )
+    (root / "tickets" / "M-platform-US1.md").write_text(
+        f"# US1\n> Parent mission: M-platform @ rev 1\n\n{DOR_FULL}", encoding="utf-8"
+    )
+    result = runner.invoke(
+        app, ["mission", "next", "--missions-dir", str(root / "missions")]
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        "| M-platform-US1 | M-platform | draft | "
+        "parent mission rev 2 affects this story |" in result.output
+    )
+
+
+# --- kb mission next --from-hub -------------------------------------------
+
+
+def test_mission_next_from_hub_prints_the_four_statuses(
+    plan_hub, tmp_path, monkeypatch
+):
+    from tests.test_planstatus import US
+
+    cwd = tmp_path / "empty"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)  # no missions/ here, and none is read
+    result = runner.invoke(
+        app, ["mission", "next", "--from-hub", "--hub", str(plan_hub.root)]
+    )
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert f"| {US[0]} | {MISSION_ID} | done |  |" in out
+    assert f"| {US[1]} | {MISSION_ID} | ready |  |" in out
+    assert f"| {US[2]} | {MISSION_ID} | not ready (no published ticket) |  |" in out
+    assert f"| {US[3]} | {MISSION_ID} | blocked | US {US[2]} not done |" in out
+    assert out.rstrip().endswith(f"Next: {US[2]} — Story 3")
+
+
+def test_mission_next_from_hub_json_keeps_raw_status(plan_hub, tmp_path, monkeypatch):
+    from tests.test_planstatus import US
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["mission", "next", "--from-hub", "--hub", str(plan_hub.root), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert [s["status"] for s in data["stories"]] == [
+        "done",
+        "ready",
+        "to-draft",
+        "blocked",
+    ]
+    assert data["next"] == US[2]
+    assert data["notes"] == []
+
+
+def test_mission_next_from_hub_repo_filter_and_unknown_repo(
+    plan_hub, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    base = ["mission", "next", "--from-hub", "--hub", str(plan_hub.root)]
+    ok = runner.invoke(app, [*base, "--repo", "ba-one"])
+    assert ok.exit_code == 0 and "| done |" in ok.output
+    missing = runner.invoke(app, [*base, "--repo", "nope"])
+    assert missing.exit_code == 0
+    assert "note: no plan for repo 'nope' on the hub" in missing.output
+
+
+def test_mission_next_repo_needs_from_hub(tmp_path):
+    result = runner.invoke(app, ["mission", "next", "--repo", "ba-one"])
+    assert result.exit_code == 1
+    assert "--repo needs --from-hub" in result.output

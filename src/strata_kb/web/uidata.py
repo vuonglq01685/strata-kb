@@ -18,6 +18,7 @@ from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import count_tokens
 from strata_kb.models import Manifest, SectionEntry
+from strata_kb.planstatus import is_plan
 from strata_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("strata_kb.web.uidata")
@@ -94,9 +95,15 @@ _TAG_STRIP_RE = re.compile(r"<[^>]+>")
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-def _iter_manifests(hub: HubHandle) -> Iterator[tuple[str, Manifest]]:
+def _iter_manifests(
+    hub: HubHandle, *, plans: bool = False
+) -> Iterator[tuple[str, Manifest]]:
+    """Every published document's manifest. Generated plan documents live under the
+    Plans menu, so they are left out unless `plans` asks for them."""
     for repo in load_federation(hub.federation_dir):
         for doc in repo.index.docs:
+            if is_plan(doc.title, doc.tags) and not plans:
+                continue
             path = repo.kb_dir / doc.id / "_manifest.yaml"
             if not path.exists():
                 continue
@@ -137,6 +144,7 @@ def all_tags(hub: HubHandle) -> list[str]:
         t
         for repo in load_federation(hub.federation_dir)
         for doc in repo.index.docs
+        if not is_plan(doc.title, doc.tags)
         for t in doc.tags
     }
     return sorted(tags)
@@ -254,6 +262,6 @@ def prev_next(
 def status_map(hub: HubHandle) -> dict[tuple[str, str, str], str]:
     return {
         (repo_id, m.id, s.id): s.status
-        for repo_id, m in _iter_manifests(hub)
+        for repo_id, m in _iter_manifests(hub, plans=True)
         for s in m.sections
     }

@@ -683,3 +683,17 @@ def undiscardable_hub_cache():
                     os.chmod(probe_dir, 0o700)
 
     return _undiscardable
+
+
+@pytest.fixture
+def plan_hub(fed_hub: Path, tmp_path: Path):
+    """`fed_hub` plus a BA repo's published plan (`ba-one-plan`: four stories,
+    one published ticket, one ticket without a mission) and the Dev repo's
+    `dev-svc` history naming the first story."""
+    from strata_kb.hub import HubHandle
+    from tests.test_planingest import context_block
+    from tests.test_planstatus import publish_ba, publish_svc
+
+    publish_ba(fed_hub, tmp_path / "ba-one", context_block(fed_hub))
+    publish_svc(fed_hub)
+    return HubHandle(root=fed_hub)

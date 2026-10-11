@@ -26,7 +26,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from strata_kb import assetstore, searchdb
+from strata_kb import assetstore, planstatus, searchdb
 from strata_kb import hub as hub_mod
 from strata_kb.federation import load_federation
 from strata_kb.query import AmbiguousDocError, get_section, search, tokenize
@@ -409,7 +409,7 @@ def build_routes(
                 semantic_on=True,
             )
         if not q and tags:
-            docs = api.list_docs(config) or []
+            docs = planstatus.without_plans(api.list_docs(config) or [])
             matched = _match_tags(docs, tags)
             return _render_page(
                 "docs.html",
@@ -450,6 +450,7 @@ def build_routes(
             raise api.SnapshotCorruptError("", " ".join(str(exc).split())) from exc
         docs_count = len({r.doc_id for r in found})
         smap = uidata.status_map(hub)
+        plan_paths = planstatus.section_paths(hub) if found else {}
         top = max((r.score for r in found), default=1.0) or 1.0
         results = [
             {
@@ -463,7 +464,8 @@ def build_routes(
                 "score_pct": round(100 * r.score / top),
                 "body_html": md_render(r.content, terms=terms),
                 "file": f"{r.doc_id}/{r.section_id}",
-                "href": (
+                "href": planstatus.hit_href(plan_paths, r)
+                or (
                     f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
                     f"?repo={quote(r.source)}"
                 ),
@@ -525,7 +527,7 @@ def build_routes(
         )
 
     def docs_page(request: Request) -> HTMLResponse:
-        all_docs = api.list_docs(config) or []
+        all_docs = planstatus.without_plans(api.list_docs(config) or [])
         filter_raw = request.query_params.get("filter", "").strip()
         fq = filter_raw.lower()
         docs = [

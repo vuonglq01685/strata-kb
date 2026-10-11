@@ -154,7 +154,7 @@ def _build_ticket(
     sections = _default_sections(block)
     if overrides:
         sections.update(overrides)
-    parts = [title, ""]
+    parts = [title, "> Revision: 1", ""]
     for heading in ALL_HEADINGS:
         if heading == skip:
             continue
@@ -1048,8 +1048,8 @@ def test_legacy_nine_section_ticket_still_passes(fed_hub: Path, golden_block: st
     # from _default_sections ships 3 unticked rows, same as the golden
     # ticket — see test_unticked_definition_of_ready_boxes_are_a_warning_only)
     # + 1 extended-section trigger: the ACs say 'shown' and there is no
-    # '## UI / presentation spec'.
-    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS) + 1 + 3 + 1
+    # '## UI / presentation spec' + 1 missing-'> Revision:' warning.
+    assert len(_warnings(report)) == len(ticket.RECOMMENDED_HEADINGS) + 1 + 3 + 1 + 1
 
 
 def test_recommended_headings_constant_is_not_in_required():

@@ -18,7 +18,7 @@ endpoint và schema của bạn mà không phải đọc repository.
 
 | Có làm | Không làm |
 |---|---|
-| Đọc tri thức đã publish trên hub | Ingest tài liệu từ bên ngoài repo |
+| Đọc tri thức đã publish trên hub, gồm cả ticket BA đã publish | Ingest tài liệu từ bên ngoài repo |
 | Publish tri thức về **chính code của nó** | Publish tri thức nghiệp vụ |
 | Chạy quy trình hiện thực gồm năm lệnh | Tự merge hay tự ship bất cứ thứ gì |
 
@@ -204,7 +204,54 @@ Năm lệnh, được dựng sẵn cho Claude Code, GitHub Copilot và Cursor.
 bước đầu rồi gọi các pha theo thứ tự, tự phát hiện ticket đã đi tới đâu nên không
 bao giờ làm lại phần đã xong.
 
-## 4.1 Chọn điểm vào
+## 4.1 Chỉ cần id ticket là đủ
+
+Chỉ đưa cho trợ lý một id ticket (`M-<slug>-US<n>`, hoặc một tên ticket trơn).
+Intake lấy ticket **từ hub trước**: BA publish mọi ticket đã sẵn sàng trong tài
+liệu `<repo_id>-plan`, nên hub là nguồn sự thật.
+
+```bash
+kb ticket fetch M-checkout-US3          # hoặc <repo>:<id> nếu nhiều repo cùng có
+```
+
+- Lệnh tìm repo federation duy nhất có tài liệu `*-plan` chứa section đó. Nếu không
+  có, nó thoát `1`: ticket chưa được publish, hãy nhờ BA `kb publish`, hoặc đưa
+  đường dẫn hay dán nội dung. Nếu có nhiều repo, nó thoát `1` và nêu tên chúng;
+  hãy viết id dạng `<repo>:<id>`.
+- Nó ghi `docs/impl/<id>/ticket.md` (`--out` để đổi) gồm tiêu đề, một dòng nguồn gốc
+  và nội dung ticket:
+  `> Fetched from hub: <repo>:<doc> §<id> @ <hub rev> — do not edit; amend in the BA repo.`
+- Nó **ghi đè** file ở mỗi lần fetch. Bản sao này suy ra được từ hub, nên
+  `docs/impl/.gitignore` bỏ qua `*/ticket.md`: không bao giờ commit, không bao giờ
+  sửa. Nếu ticket sai, BA sửa đổi nó trong repo BA.
+- Id không phải một tên trơn (đường dẫn, `..`) bị từ chối.
+
+Khi không có CLI, trợ lý đọc section qua MCP (`kb_get_section`, `<doc> §<id>` ở mức
+`l3`) và lưu theo cùng cách. Một đường dẫn hay nội dung ticket được dán vẫn dùng
+được, như phương án dự phòng khi hub không có bản sao hoặc không kết nối được.
+
+Bản trên hub **không có `## Definition of Ready`**: có mặt trên hub nghĩa là BA đã
+tick mọi ô, nên không bước nào được dừng vì thiếu mục đó.
+
+`## Sequencing` của mission cha được đọc theo cùng cách khi không có file mission
+cục bộ (`kb get <doc> <M-id> --level l3`), nên bạn thấy được ticket bị chặn bởi gì
+mà không cần clone repo BA.
+
+### Trạng thái của ticket nghĩa là gì với bạn
+
+Menu **Plans** của hub (`/ui/plans`) và `kb mission next --from-hub
+[--repo <ba-repo>]` hiển thị mọi story của một mission đã publish là **done** (id
+của nó nằm trong một dòng `hist.*` của `-svc` của bạn, do `kb svc note` ghi lúc
+handover), **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã
+publish) hoặc **blocked** (kèm lý do). Hãy chọn story **ready**.
+
+Ở phía BA, `kb mission next` còn có thể báo một ticket là `draft` với lý do
+`parent mission rev <M> affects this story`: mission đã được sửa sau khi ticket
+được viết, và BA chưa soạn lại nó. Ticket như vậy không được publish, nên bạn thấy
+story là *not ready* và `kb ticket fetch` không tìm thấy gì. Hãy đợi BA; đừng hiện
+thực từ một bản cũ.
+
+## 4.2 Chọn điểm vào
 
 | Tình huống | Chạy |
 |---|---|
@@ -220,12 +267,13 @@ Mọi điểm vào đều kiểm tra lại độ mới của trích dẫn trư�
 publish kể từ phiên làm việc trước, nên một tham chiếu hôm qua còn `ok` thì hôm
 nay có thể đã `stale`. Chỉ kiểm tra lúc handover thì quá muộn.
 
-## 4.2 Công việc nằm ở đâu
+## 4.3 Công việc nằm ở đâu
 
 | File | Do ai ghi | Mục đích |
 |---|---|---|
 | `docs/impl/<id>/design.md` | `dev-design` | bản thiết kế |
 | `docs/impl/<id>/plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]`, mỗi task một dòng `Depends on:` |
+| `docs/impl/<id>/ticket.md` | `kb ticket fetch` | ticket lấy từ hub; bị gitignore, bị ghi đè ở mỗi lần fetch, không bao giờ sửa |
 | `docs/impl/<id>/context.md` | `dev-implement-ticket` | cache ngữ cảnh đã phân giải; bị gitignore, sinh lại khi cần |
 | `docs/impl/<id>/review/` | `dev-execute`, `dev-handover` | diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
 
@@ -241,8 +289,8 @@ chưa — **không bao giờ từ lịch sử hội thoại**. Bất kỳ pha n�
 từ đầu trong một phiên làm việc hoàn toàn mới.
 
 `kb init` không bao giờ sửa nội dung `docs/impl/` của bạn: nó thêm `.gitkeep`
-và một `.gitignore` để cache ngữ cảnh và các artefact review không bao giờ lọt
-vào pull request, và dời layout phẳng cũ vào `<id>/` — không bao giờ ghi đè.
+và một `.gitignore` để cache ngữ cảnh, ticket đã fetch và các artefact review không
+bao giờ lọt vào pull request, và dời layout phẳng cũ vào `<id>/` — không bao giờ ghi đè.
 Hãy commit các lần đổi tên.
 
 **Wave và lane.** Mỗi task trong kế hoạch có một dòng `Depends on:` ngay dưới
@@ -260,7 +308,7 @@ từ nhánh ticket, tối đa 3 lane cùng lúc, merge lại theo thứ tự tas
 `--no-ff`, toàn bộ test suite chạy một lần mỗi wave. Merge conflict nghĩa là kế
 hoạch sai, và được trả về `dev-plan`.
 
-## 4.3 Bốn cổng người, năm vòng review agent
+## 4.4 Bốn cổng người, năm vòng review agent
 
 Không gì trong quy trình này merge hay ship mà không có con người.
 
@@ -538,6 +586,9 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | `pr-lint` fail trên PR của Dependabot | Cổng này không tự bỏ qua một khi đã bắt buộc | Đúng như thiết kế. Hãy cân nhắc có giữ nó bắt buộc với PR của bot hay không. |
 | `pr-lint` fail: `no-review-verdict` | Mục `## Testing` của PR không có dòng `Blocking:` | Chạy A5 (review rủi ro merge của `dev-handover`) và ghi lại kết luận — dù review sạch vẫn phải ghi `Blocking: No` |
 | `pr-lint` fail: `review-blocking` | Mục `## Testing` ghi `Blocking: Yes` | Sửa các phát hiện BLOCKER rồi review lại; PR còn `Blocking: Yes` thì không bao giờ được merge |
+| `kb ticket fetch`: "is not on the hub" | BA chưa publish nó, hoặc nó bị bỏ khỏi plan (DoR chưa tick đủ, hoặc mission cha đã đi tiếp) | Nhờ BA `kb publish` (hoặc cho biết vì sao nó bị bỏ qua); hoặc đưa file ticket hay dán nội dung |
+| `kb ticket fetch`: "published by several repos" | Hai repo BA cùng publish một id | Viết id dạng `kb ticket fetch <repo>:<id>` |
+| `kb ticket fetch` không kết nối được hub | `hub:` chưa đặt hoặc không với tới được | Sửa `hub:` trong `.kb/config.yaml` (hoặc `STRATA_KB_HUB`), hoặc dùng đường dẫn/dán nội dung |
 | Một trích dẫn báo `stale` giữa chừng | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi BA. Đừng tự diễn giải lại tiêu chí chấp nhận. |
 | Không kết nối được MCP server | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`) — lệnh này chẩn đoán chính xác cái nào sai, chạy lại không kèm gì sẽ xác minh lại mà không cần nhập lại token |
 | `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |
@@ -562,6 +613,8 @@ thật.
 | `kb doctor [--no-refresh]` | Kiểm tra sức khoẻ KB (repo dev: làm mới `-code` trước) | `0` ok, `1` lỗi, `2` trích dẫn cũ |
 | `kb approve <doc> [--section <id>]` | Chuyển các section đã sửa sang `reviewed` | `0` ok |
 | `kb publish --pr` | Mở PR trên hub (lượt publish đầu của bước seed) | `0` ok |
+| `kb ticket fetch <id> [--out p] [--hub u]` | Lấy một ticket từ hub vào `docs/impl/<id>/ticket.md` | `0` ok, `1` không có trên hub, mơ hồ, hoặc id không an toàn |
+| `kb mission next --from-hub [--repo id]` | Trạng thái mọi story đã publish, chỉ từ hub | `0` |
 | `kb resolve <file>` | Kiểm tra trích dẫn của ticket | `0` ok, `1` hỏng, `2` cũ |
 | `kb diff <doc> --against <rev>` | Sửa đổi đã thay đổi những gì | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Tìm và lấy nội dung | `0` |

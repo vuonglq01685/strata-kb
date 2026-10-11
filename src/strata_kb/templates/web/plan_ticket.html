@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="reader">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/plans">Plans</a> <span class="sep">/</span>
+      <a href="/ui/plans?repo={{ repo | urlencode }}">{{ repo }}</a> <span class="sep">/</span>
+      {% if mission_linked %}<a href="/ui/plans/{{ group | urlencode }}?repo={{ repo | urlencode }}">{{ group }}</a>
+      <span class="sep">/</span> {% endif %}{{ ticket_id }}</p>
+    <h1 style="font-size:26px">{{ ticket.title }}</h1>
+  </div>
+  <article class="reader-body">{{ content_html | safe }}</article>
+</div>
+{% endblock %}
+{% block rail %}
+{% if toc %}
+<div class="rail-block">
+  <p class="kicker">On this page</p>
+  {% for t in toc %}
+  <a class="toc-link" href="#{{ t.anchor }}">{{ t.label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="rail-block">
+  <p class="kicker">Source</p>
+  <div class="rail-kv"><span>Ticket</span><span class="v">{{ ticket_id }}</span></div>
+  <div class="rail-kv"><span>Repo</span><span class="v">{{ repo }}</span></div>
+</div>
+{% endblock %}

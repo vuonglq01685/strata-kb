@@ -18,7 +18,7 @@ to the mission layer.
    `%%TODO: verify against codebase%%` in the BA-owned sections: these
    are the questions this pass must answer with an id, with
    `[NEW: D<n>]`, or by parking under `Open decisions`. Read the parent
-   mission too: `> Parent mission: M-<slug>` under the ticket's title
+   mission too: `> Parent mission: M-<slug> [@ rev <N>]` under the ticket's title
    points at `missions/M-<slug>.md`. Load its `## Technology decisions`
    table — its D-rows are the only legal targets of `[NEW: D<n>]`. With
    `--mission` that table is in the file you are filling. No parent
@@ -122,7 +122,8 @@ to the mission layer.
    D-row still `OPEN`: that FAIL is reported, not fixed. What the
    engine's own words mean:
    - `needs a parent mission to hold the decision` — no back-link. Ask
-     the BA to add `> Parent mission: M-<slug>` under the title, or
+     the BA to add `> Parent mission: M-<slug> @ rev <N>` under the title
+     (`<N>` = the mission's current `> Revision:`), or
      write `[NEW: <reason>]` instead.
    - `parent mission '<id>' not found under missions/` — pass
      `--missions-dir`; never delete the marker to silence it.

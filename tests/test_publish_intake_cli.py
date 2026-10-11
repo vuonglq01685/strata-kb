@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from strata_kb import cipublish, gitio
 from strata_kb import publish as publish_mod
+from strata_kb.cli import app
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -475,3 +478,105 @@ class TestCIPublish:
             )
         assert "without SME review" in str(exc.value)
         assert http.calls == []
+
+
+class TestBaPlanRefresh:
+    """`kb publish` in a ba repo regenerates the gitignored `-plan` before it
+    checks that `.kb/` is clean and tags."""
+
+    @pytest.fixture
+    def ba(self, tmp_path, fed_hub, monkeypatch):
+        from tests.test_planingest import context_block, mission_text, write_repo
+
+        monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+        root = tmp_path / "ba-repo"
+        (root / ".kb").mkdir(parents=True)
+        (root / ".kb" / "config.yaml").write_text(
+            'kind: ba\nhub: ""\nrepo_id: "demo"\nintake: "https://kb.test"\n',
+            encoding="utf-8",
+        )
+        # What `kb init --kind ba` writes: the plan and the index are generated.
+        (root / ".gitignore").write_text(
+            ".kb/*-plan/\n.kb/index.yaml\n", encoding="utf-8"
+        )
+        block = context_block(fed_hub)
+        write_repo(
+            root,
+            {
+                "M-demo.md": mission_text(block).replace("M-airspace-filter", "M-demo"),
+                "M-held.md": mission_text(block, ticked=False).replace(
+                    "M-airspace-filter", "M-held"
+                ),
+            },
+            {},
+        )
+        _git(root, "init", "-b", "main")
+        _git(root, "config", "user.email", "t@t")
+        _git(root, "config", "user.name", "t")
+        # Nothing generated is committed: a fresh clone has no index.yaml at all.
+        _git(root, "add", "-A")
+        _git(root, "commit", "-m", "init")
+        bare = tmp_path / "ba-origin.git"
+        _git(tmp_path, "clone", "--bare", str(root), str(bare))
+        _git(root, "remote", "add", "origin", str(bare))
+        monkeypatch.setattr(
+            publish_mod,
+            "_default_get_json",
+            lambda url: (200, {"state": "done", "pr_url": "https://gh/pull/9"}),
+        )
+        return root, bare
+
+    def test_publish_regenerates_plan_and_tags_a_clean_kb(self, ba):
+        root, bare = ba
+        plan_dir = root / ".kb" / "demo-plan"
+        # A fresh clone has neither -plan nor index.yaml: publish rebuilds both
+        # and must not trip over the (ignored) generated files.
+        assert not plan_dir.exists()
+        assert not (root / ".kb" / "index.yaml").exists()
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 0, result.output
+        assert (plan_dir / "_manifest.yaml").is_file()
+        assert "https://gh/pull/9" in result.output
+        assert "kb-publish/" in _git(bare, "tag", "--list")
+        # Review gate: `summarized` sections warn and never block, as `-code`
+        # does; only --require-reviewed would refuse.
+        assert "[warn] 1 section(s) in 1 doc(s) are published without SME review" in (
+            result.output
+        )
+        # The same sections would block under --require-reviewed.
+        assert publish_mod.unreviewed_gate(root / ".kb", True).blocked
+
+    @pytest.mark.parametrize(
+        ("rel", "folder"),
+        [
+            ("missions/M-demo.md", "missions"),  # tracked file edited
+            ("tickets/M-demo-US1.md", "tickets"),  # untracked file added
+        ],
+    )
+    def test_publish_refuses_uncommitted_plan_inputs(self, ba, rel, folder):
+        root, bare = ba
+        target = root / rel
+        target.parent.mkdir(exist_ok=True)
+        with target.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write("\nedit\n")
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 1
+        assert f"{folder}/ has uncommitted changes" in result.output
+        assert "kb-publish/" not in _git(bare, "tag", "--list")
+
+    def test_publish_reports_skipped_items(self, ba, monkeypatch, tmp_path):
+        root, _ = ba
+        summary = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 0, result.output
+        assert "skipped: missions/M-held.md" in result.output
+        assert "skipped: missions/M-held.md" in summary.read_text(encoding="utf-8")
+
+    def test_publish_stops_when_the_plan_cannot_be_built(self, ba):
+        root, bare = ba
+        shutil.rmtree(root / "missions")
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 1
+        assert "could not refresh demo-plan" in result.output
+        assert "kb-publish/" not in _git(bare, "tag", "--list")

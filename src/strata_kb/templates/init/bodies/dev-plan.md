@@ -24,6 +24,9 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
+`<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file
+`kb ticket fetch <ticket-id>` wrote from the hub.
+
 ## Steps
 
 - **Read the design** — read `docs/impl/<ticket-id>/design.md`. Its

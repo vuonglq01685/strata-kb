@@ -1,1 +1,4 @@
 {% macro status(s) %}<span class="badge badge-{{ s }}">{{ s }}</span>{% endmacro %}
+{# Plans: a story's derived status. `to-draft` reads "not ready" — the hub holds no ticket for it yet. #}
+{% macro plan_status(s) %}<span class="badge badge-{{ {'done': 'reviewed', 'ready': 'summarized'}.get(s, 'pending') }}">{{ 'not ready' if s == 'to-draft' else s }}</span>{% endmacro %}
+{% macro plan_counts(c) %}{% for k in ('done', 'ready', 'to-draft', 'blocked') %}{% if c.get(k) %}<span class="note">{{ c[k] }} {{ 'not ready' if k == 'to-draft' else k }}</span> {% endif %}{% endfor %}{% endmacro %}

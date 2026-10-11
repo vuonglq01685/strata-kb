@@ -20,6 +20,10 @@ seeing the diff, that the current .kb/ state should be published.
    local .kb differs from the published snapshot. For each doc with
    changes, run `kb diff <doc-id> --against HEAD` (use another git rev if
    the user names one) and present the added/changed sections.
+   In a `ba` repo, `kb publish` first regenerates `<repo_id>-plan` with
+   `kb plan-ingest`; run `kb plan-ingest` to see what will ship and what is
+   skipped (`kb doctor` does not diff `-plan`). Both `.kb/<repo_id>-plan/` and `.kb/index.yaml` are generated
+   and gitignored there.
 3. **Confirm — the gate.** State the hub (from `.kb/config.yaml`, or
    `STRATA_KB_HUB` if set) and that a publish PR will be opened on it
    (direct is picked for a hub with no git remote). Ask for one explicit go/no-go and wait.

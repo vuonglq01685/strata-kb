@@ -18,7 +18,7 @@ dependencies, endpoints and schema without reading your repository.
 
 | Does | Does not |
 |---|---|
-| Read the hub's published knowledge | Ingest documents from outside the repo |
+| Read the hub's published knowledge, including the BA's published tickets | Ingest documents from outside the repo |
 | Publish knowledge about **its own code** | Publish domain knowledge |
 | Run a five-command implementation workflow | Merge or ship anything by itself |
 
@@ -202,7 +202,54 @@ Five commands, scaffolded for Claude Code, GitHub Copilot and Cursor.
 the first four steps, then invokes the phases in order, detecting how far a
 ticket already got so it never redoes finished work.
 
-## 4.1 Pick your entry point
+## 4.1 A ticket id is enough
+
+Give the assistant only a ticket id (`M-<slug>-US<n>`, or a plain ticket stem).
+Intake gets the ticket **from the hub first**: the BA publishes every ready
+ticket in the `<repo_id>-plan` document, so the hub is the source of truth.
+
+```bash
+kb ticket fetch M-checkout-US3          # or <repo>:<id> if several repos hold it
+```
+
+- It finds the one federation repo whose `*-plan` document has that section. If
+  none does, it exits `1`: the ticket is not published yet, so ask the BA to
+  `kb publish`, or pass a path or paste the body. If several do, it exits `1`
+  and names them; qualify the id as `<repo>:<id>`.
+- It writes `docs/impl/<id>/ticket.md` (`--out` to change it) with the title, one
+  provenance line and the ticket body:
+  `> Fetched from hub: <repo>:<doc> §<id> @ <hub rev> — do not edit; amend in the BA repo.`
+- It **overwrites** the file on every fetch. The copy is derivable from the hub,
+  so `docs/impl/.gitignore` ignores `*/ticket.md`: never commit it, and never
+  edit it. If the ticket is wrong, the BA amends it in the BA repo.
+- An id that is not a plain name (a path, `..`) is refused.
+
+Without the CLI, the assistant reads the section through MCP (`kb_get_section`,
+`<doc> §<id>` at `l3`) and saves it the same way. A path or a pasted ticket body
+still works, as the fallback when the hub has no copy or cannot be reached.
+
+The hub copy has **no `## Definition of Ready`**: being on the hub means the BA
+ticked every box, so no step may stop on its absence.
+
+The parent mission's `## Sequencing` is read the same way when there is no local
+mission file (`kb get <doc> <M-id> --level l3`), so you can see what the ticket is
+blocked by without cloning the BA repo.
+
+### What a ticket's status means to you
+
+The hub's **Plans** menu (`/ui/plans`) and `kb mission next --from-hub
+[--repo <ba-repo>]` show every story of a published mission as **done** (its id is
+in a `hist.*` row of your `-svc`, which `kb svc note` writes at handover),
+**ready** (its ticket is published), **not ready** (no published ticket yet) or
+**blocked** (with reasons). Pick a **ready** one.
+
+On the BA side, `kb mission next` can also report a ticket `draft` with the reason
+`parent mission rev <M> affects this story`: the mission was amended after the
+ticket was written, and the BA has not re-authored it. Such a ticket is not
+published, so you see the story as *not ready* and `kb ticket fetch` finds
+nothing. Wait for the BA; do not implement from an older copy.
+
+## 4.2 Pick your entry point
 
 | Situation | Run |
 |---|---|
@@ -218,12 +265,13 @@ Every entry point re-checks citation freshness first. The hub may have published
 since your last session, so a reference that was `ok` yesterday can be `stale`
 today. Checking only at handover would be too late.
 
-## 4.2 Where work lives
+## 4.3 Where work lives
 
 | File | Written by | Purpose |
 |---|---|---|
 | `docs/impl/<id>/design.md` | `dev-design` | the design |
 | `docs/impl/<id>/plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes, a `Depends on:` line per task |
+| `docs/impl/<id>/ticket.md` | `kb ticket fetch` | the ticket fetched from the hub; gitignored, overwritten on every fetch, never edited |
 | `docs/impl/<id>/context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
 | `docs/impl/<id>/review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
 
@@ -238,8 +286,8 @@ is open — **never from conversation history**. Any phase resumes cold in a bra
 new session.
 
 `kb init` never edits your `docs/impl/` content: it adds `.gitkeep` and a
-`.gitignore` so the context cache and the review artefacts never land in a pull
-request, and moves an old flat layout into `<id>/` — never overwriting. Commit
+`.gitignore` so the context cache, the fetched ticket and the review artefacts
+never land in a pull request, and moves an old flat layout into `<id>/` — never overwriting. Commit
 the renames.
 
 **Waves and lanes.** Every task in the plan carries a `Depends on:` line under
@@ -257,7 +305,7 @@ the ticket branch, at most 3 lanes at a time, merged back in task order with
 `--no-ff`, the full suite run once per wave. A merge conflict means the plan
 was wrong and goes back to `dev-plan`.
 
-## 4.3 Four human gates, five agent review rounds
+## 4.4 Four human gates, five agent review rounds
 
 Nothing in this pipeline merges or ships without a human.
 
@@ -534,6 +582,9 @@ should look.
 | `pr-lint` fails on a Dependabot PR | The gate never self-skips once required | Expected. Decide whether to keep it required for bot PRs. |
 | `pr-lint` fails: `no-review-verdict` | The PR's `## Testing` section carries no `Blocking:` line | Run A5 (`dev-handover`'s merge-risk review) and record its verdict — even a clean review states `Blocking: No` |
 | `pr-lint` fails: `review-blocking` | The `## Testing` section says `Blocking: Yes` | Fix the BLOCKER findings and re-review; a PR with `Blocking: Yes` never merges |
+| `kb ticket fetch`: "is not on the hub" | The BA has not published it yet, or it was left out of the plan (an unticked DoR, or a parent mission that moved on) | Ask the BA to `kb publish` (or to say why it was skipped); or pass the ticket file or paste the body |
+| `kb ticket fetch`: "published by several repos" | Two BA repos publish the same id | Qualify it: `kb ticket fetch <repo>:<id>` |
+| `kb ticket fetch` cannot reach the hub | `hub:` unset or unreachable | Fix `hub:` in `.kb/config.yaml` (or `STRATA_KB_HUB`), or use the path or paste fallback |
 | A citation resolves `stale` mid-implementation | The hub published after the ticket was written | `kb diff`, then ask the analyst. Do not reinterpret the AC yourself. |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
 | `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |
@@ -557,6 +608,8 @@ Linux (CI) is that caveat, not real drift.
 | `kb doctor [--no-refresh]` | Check KB health (dev repos: refresh `-code` first) | `0` ok, `1` error, `2` stale citation |
 | `kb approve <doc> [--section <id>]` | Flip corrected sections to `reviewed` | `0` ok |
 | `kb publish --pr` | Open a hub PR (the seed's first publish) | `0` ok |
+| `kb ticket fetch <id> [--out p] [--hub u]` | Fetch a ticket from the hub into `docs/impl/<id>/ticket.md` | `0` ok, `1` not on the hub, ambiguous, or unsafe id |
+| `kb mission next --from-hub [--repo id]` | Status of every published story, from the hub alone | `0` |
 | `kb resolve <file>` | Check a ticket's citations | `0` ok, `1` broken, `2` stale |
 | `kb diff <doc> --against <rev>` | What an amendment changed | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Search and fetch | `0` |

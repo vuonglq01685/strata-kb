@@ -145,6 +145,13 @@ runs Intake → Resolve → Ground → Placeholders, then invokes `dev-design`,
 `dev-plan`, `dev-execute`, and `dev-handover` in order, detecting how far a
 ticket already got so it never redoes finished work.
 
+**A ticket id is enough.** Given only an id (`M-<slug>-US<n>`), Intake runs
+`kb ticket fetch <id>`, which reads the ticket from the hub and writes it to
+`docs/impl/<id>/ticket.md`. The hub is the source of truth; that copy is
+regenerated on every fetch and gitignored, so never edit it — amend the ticket
+in the BA repo. A path or a pasted body still works when the hub has no copy or
+is unreachable. If several repos publish the same id, qualify it: `<repo>:<id>`.
+
 ## Where work lives
 
 - `docs/impl/<ticket-id>/design.md` — the design produced by `dev-design`.
@@ -161,7 +168,7 @@ whether a PR is open — never from conversation history — so any phase can
 resume cold in a brand-new session. `kb init` never edits your
 `docs/impl/` content: it adds `docs/impl/.gitkeep` (so the directory exists
 before your first ticket does) and `docs/impl/.gitignore` (so the context
-cache and review artefacts never land in a PR), and moves an old flat
+cache, fetched tickets and review artefacts never land in a PR), and moves an old flat
 layout (`<id>-design.md`, `<id>-plan.md`, `<id>-context.md`, `<id>-review/`)
 into `<id>/` — never overwriting. `kb impl tidy` does the same move on
 demand. Commit the renames.

@@ -19,7 +19,9 @@ from strata_kb.mdutils import _SEP_ROW_RE
 from strata_kb.svcnote import _ESCAPED_PIPE_SENTINEL, ROW_RE
 from strata_kb.ticketcheck import (
     BARE_US_RE,
+    SUPERSEDED,
     US_ID_IN_CELL_RE,
+    Decision,
     DecisionTable,
     grounded_entries,
     parse_decisions,
@@ -181,20 +183,43 @@ def _mission_order(stories: list[Story]) -> list[Story]:
     )
 
 
+def effective_status(d: Decision, rows: dict[str, Decision]) -> tuple[str, str]:
+    """`(status_upper, reason)` of a decision: a `SUPERSEDED` row takes the
+    status of the row that `Supersedes` it, down the chain. A cycle or a
+    chain with no successor stays `SUPERSEDED`, with the reason saying why."""
+    cur, seen = d, {d.id}
+    while cur.status.strip().upper() == SUPERSEDED:
+        nxt = next((r for r in rows.values() if r.supersedes == cur.id), None)
+        if nxt is None:
+            return SUPERSEDED, f"{cur.id} SUPERSEDED (no superseding row)"
+        if nxt.id in seen:
+            return SUPERSEDED, f"supersede cycle {d.id}"
+        seen.add(nxt.id)
+        cur = nxt
+    return (
+        cur.status.strip().upper(),
+        f"{cur.id} {cur.status.strip() or 'OPEN'} (owner: {cur.owner or '?'})",
+    )
+
+
 def statuses(
     missions: list[ParsedMission],
     drafted: dict[str, tuple[int, int]],
     done: set[str] | None,
+    demoted: dict[str, str] | None = None,
 ) -> list[StoryStatus]:
     """One `StoryStatus` per backlog story, first rule that matches:
     done (id in `done`) → ready (ticket file, every DoR box ticked) → draft
     (ticket file, some box unticked, or no DoR section) → to-draft (no
     file, every dependency done, every D-row blocking it DECIDED) →
     blocked, with one reason per cause. `drafted` maps a ticket id to its
-    `dor_counts`. `done=None` means the hub could not answer: nothing is
-    done, and the caller says why in a note."""
+    `dor_counts`. A fully ticked ticket listed in `demoted` (US id →
+    reason) reads `draft` with that reason: its parent mission moved on
+    after the BA ticked it. `done=None` means the hub could not answer:
+    nothing is done, and the caller says why in a note."""
     known = {s.us_id for _m, stories, _d in missions for s in stories}
     done_set = done or set()
+    demoted_map = demoted or {}
     out: list[StoryStatus] = []
     for mission_id, stories, decisions in missions:
         # A `Blocks` cell may hold a bare `US<n>` (the same id rule as
@@ -211,7 +236,20 @@ def statuses(
             if s.us_id in drafted:
                 ticked, total = drafted[s.us_id]
                 if total and ticked == total:
-                    out.append(StoryStatus(s.us_id, s.mission_id, s.title, "ready", ()))
+                    if s.us_id in demoted_map:
+                        out.append(
+                            StoryStatus(
+                                s.us_id,
+                                s.mission_id,
+                                s.title,
+                                "draft",
+                                (demoted_map[s.us_id],),
+                            )
+                        )
+                    else:
+                        out.append(
+                            StoryStatus(s.us_id, s.mission_id, s.title, "ready", ())
+                        )
                     continue
                 why = (
                     f"DoR {ticked}/{total} ticked"
@@ -228,10 +266,11 @@ def statuses(
                     f"US {dep} not done" if dep in known else f"US {dep} unknown"
                 )
             for d, blocks in blocking:
-                if s.us_id in blocks and d.status.strip().upper() != DECIDED:
-                    reasons.append(
-                        f"{d.id} {d.status.strip() or 'OPEN'} (owner: {d.owner or '?'})"
-                    )
+                if s.us_id not in blocks:
+                    continue
+                status, reason = effective_status(d, decisions.rows)
+                if status != DECIDED:
+                    reasons.append(reason)
             status = "blocked" if reasons else "to-draft"
             out.append(
                 StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons))
@@ -257,14 +296,22 @@ def _next_line(results: list[StoryStatus]) -> str:
     )
 
 
-def render(results: list[StoryStatus], notes: list[str]) -> str:
+def render(
+    results: list[StoryStatus],
+    notes: list[str],
+    labels: dict[str, str] | None = None,
+) -> str:
+    """`labels` renames a status in the table only (the `Next:` line still
+    keys on the raw status)."""
+    labels = labels or {}
     lines = [f"note: {n}" for n in notes]
     if lines:
         lines.append("")
     lines += ["| US | Mission | Status | Reason |", "|---|---|---|---|"]
     for r in results:
         lines.append(
-            f"| {r.us_id} | {r.mission_id} | {r.status} | {'; '.join(r.reasons)} |"
+            f"| {r.us_id} | {r.mission_id} | {labels.get(r.status, r.status)} | "
+            f"{'; '.join(r.reasons)} |"
         )
     lines += ["", _next_line(results)]
     return "\n".join(lines)

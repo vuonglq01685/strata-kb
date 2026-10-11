@@ -37,10 +37,19 @@ edit above it.
 
 - **Intake** — run `kb impl tidy` first (it moves an old flat
   `docs/impl/<id>-*` layout into `docs/impl/<id>/` — commit the renames on
-  their own before the first task; no CLI → move them by hand); accept a pasted ticket body or a path; confirm ticket/US id
-  and branch; read the ticket's `## Dependencies` (`Blocked by:` /
-  `Blocks:`) and, when a `> Parent mission:` line is present, that
-  mission's `## Sequencing` row; if this story is blocked by something
+  their own before the first task; no CLI → move them by hand); get the ticket: given only an id, run
+  `kb ticket fetch <id>` first — the hub is the source of truth; it writes
+  `docs/impl/<id>/ticket.md`, your `<ticket-file>` (no CLI → MCP
+  `kb_get_section` `<doc> §<id>` at `l3`, saved to that path with headings
+  promoted one level and the provenance line `> Fetched from hub:
+  <repo>:<doc> §<id> @ <rev> — do not edit; amend in the BA repo.`); a
+  path or a pasted body is the fallback when the hub has no copy or is
+  unreachable. A fetched ticket has no `## Definition of Ready`: being on
+  the hub means DoR passed, so do not stop on its absence. Confirm
+  ticket/US id and branch; read the ticket's `## Dependencies` (`Blocked
+  by:` / `Blocks:`) and, when a `> Parent mission:` line is present, that
+  mission's `## Sequencing` row (from the local mission file, else `kb get
+  <doc> <M-id> --level l3` from the hub); if this story is blocked by something
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
 - **Resolve** — triage exactly as in the Freshness re-check above:

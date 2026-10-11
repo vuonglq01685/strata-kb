@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 
 from strata_kb.serving.auth import TokenAuthMiddleware
 from strata_kb.serving.config import ServerConfig
-from strata_kb.web import api, ui
+from strata_kb.web import api, planui, ui
 from strata_kb.web.headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger("strata_kb.web.app")
@@ -63,6 +63,8 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     routes += ui.build_routes(
         config, token, login_limiter=auth_limiter, trusted_proxies=trusted_proxies
     )
+    # planui builds on ui's page helpers, so it is wired here, not inside ui.
+    routes += planui.plan_routes(config)
     if intake_cfg is not None:
         from strata_kb import gitio
         from strata_kb import hub as hub_mod

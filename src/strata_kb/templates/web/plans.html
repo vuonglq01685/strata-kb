@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_partials/status.html" import plan_counts %}
+{% block main %}
+<div class="stack-lg">
+  <div class="page-head">
+    <p class="kicker accent">Business analysis</p>
+    <h1>Plans</h1>
+    <p class="lede">Missions and tickets the BA published, with their status
+      derived from the hub: a ticket on the hub is ready, a story in a Dev
+      repo's history is done. Read-only.</p>
+  </div>
+  {% for n in notes %}<p class="meta-line">note: {{ n }}</p>{% endfor %}
+  {% for r in repos %}
+  <div class="panel">
+    <div class="panel-head">
+      <h2><a href="/ui/plans?repo={{ r.repo | urlencode }}">{{ r.repo }}</a></h2>
+      <span class="note">{{ r.missions | length }} missions</span>
+    </div>
+    {% for m in r.missions %}
+    <div class="queue-row">
+      <a class="cite" href="/ui/plans/{{ m.mission_id | urlencode }}?repo={{ r.repo | urlencode }}">{{ m.mission_id }}</a>
+      <span class="file">{{ m.title }}</span>
+      {{ plan_counts(m.counts) }}
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No mission published yet.</p></div>
+    {% endfor %}
+    {% if r.unparented %}
+    <div class="queue-row">
+      <a class="cite" href="/ui/plans?repo={{ r.repo | urlencode }}">tickets without mission</a>
+      <span class="note">{{ r.unparented | length }} tickets</span>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>No plan on the hub yet.</p>
+    <p>A BA repo publishes its missions and tickets with <span class="mono">kb publish</span>.</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

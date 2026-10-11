@@ -30,6 +30,9 @@ edit above it.
   `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
+`<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file
+`kb ticket fetch <ticket-id>` wrote from the hub.
+
 Steps the skill enforces: read the design —
 `docs/impl/<ticket-id>/design.md`. Its header must say `status:
 approved`; a `draft` design means GATE 1 has not passed, so say so in

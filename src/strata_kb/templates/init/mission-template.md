@@ -1,4 +1,5 @@
 # <Mission title — one line, imperative>
+> Revision: 1
 
 <!-- Mission id format: lowercase letters/digits, hyphen-separated, e.g. M-checkout-v2 -->
 > Mission: M-<slug>
@@ -120,6 +121,17 @@ kb-context:
 - [ ] Sequencing covers the whole backlog
 - [ ] Every D-row blocking a story with no dependency is DECIDED (kb mission next shows it ready)
 - [ ] Architecture-impacting open questions closed
+
+## Change log
+<!-- Append-only: one row per revision >= 2, in order; bump `> Revision:` under
+the title in the same edit. Trigger is one or more of kb-context,
+architecture, scope, delivery (comma-separated). Affected is full US ids
+(M-<slug>-US<n>), or `-`.
+Review holds the amendment's maturity scores, e.g. `B4 D4 (agent)`;
+amendments are not recorded in Review record. -->
+| Rev | Date | Trigger | What changed | Affected | Review |
+|---|---|---|---|---|---|
+|   |   |   |   |   |   |
 
 ## Review record
 <!-- Filled by the maturity-review step (rubric: docs/review-rubric.md).

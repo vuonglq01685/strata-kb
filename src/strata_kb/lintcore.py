@@ -821,6 +821,7 @@ def check_context_block(
             Issue(
                 "error",
                 "hub unreachable — cannot resolve kb-context refs without a hub",
+                code="hub-unreachable",
             )
         )
     else:

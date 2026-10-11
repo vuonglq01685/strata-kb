@@ -290,7 +290,7 @@ def _build_mission(
     sections = _default_sections(block)
     if overrides:
         sections.update(overrides)
-    parts = [title, "", mission_line, ""]
+    parts = [title, "> Revision: 1", "", mission_line, ""]
     for heading in ALL_MISSION_HEADINGS:
         if heading == skip:
             continue

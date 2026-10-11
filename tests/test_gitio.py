@@ -245,6 +245,29 @@ def test_push_branch_to_local_bare_origin(tmp_path, run_git):
     assert "publish/demo" in out
 
 
+def test_remote_branch_exists_true_false_and_raises_on_bad_remote(tmp_path, run_git):
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    root = tmp_path / "repo"
+    run_git(tmp_path, "clone", str(origin), str(root))
+    run_git(root, "config", "user.name", "t")
+    run_git(root, "config", "user.email", "t@t")
+    (root / "a.txt").write_text("v1", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "v1")
+    gitio.checkout_branch(root, "publish/demo", "HEAD")
+    gitio.push_branch(root, "publish/demo")
+
+    assert gitio.remote_branch_exists(root, "publish/demo")
+    assert not gitio.remote_branch_exists(root, "publish/other")
+    # exact ref match: a longer name must not satisfy a prefix lookup
+    assert not gitio.remote_branch_exists(root, "publish/dem")
+
+    run_git(root, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
+    with pytest.raises(gitio.GitError):
+        gitio.remote_branch_exists(root, "publish/demo")
+
+
 def test_worktree_add_and_remove_leave_the_main_tree_on_its_branch(tmp_path, run_git):
     from strata_kb import gitio
 
@@ -819,3 +842,17 @@ anyio.run(main)
     out = anyio.run(_drive)
     assert b"CHILD-RESULT: pulled" in out
     assert (dest / "a.txt").read_text(encoding="utf-8") == "v2"
+
+
+def test_log_commits_newest_first(git_kb):
+    root = git_kb["root"]
+    rel = (git_kb["kb"] / "demo-doc" / "ch1-records.md").relative_to(root).as_posix()
+    commits = gitio.log_commits(root, rel)
+    assert [c[:7] for c in commits] == [git_kb["rev2"], git_kb["rev1"]]
+    assert all(len(c) == 40 for c in commits)
+    assert gitio.log_commits(root, "no/such/file.yaml") == []
+
+
+def test_log_commits_raises_outside_a_repo(tmp_path: Path):
+    with pytest.raises(gitio.GitError):
+        gitio.log_commits(tmp_path, "x.yaml")

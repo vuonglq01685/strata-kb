@@ -9,3 +9,7 @@
 # Old flat layout, until `kb impl tidy` moves it.
 *-context.md
 *-review/
+
+# A ticket fetched from the hub (`kb ticket fetch`) is derivable from it —
+# the BA repo owns the source, so never commit the copy.
+*/ticket.md

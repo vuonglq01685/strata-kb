@@ -27,8 +27,10 @@ citation block — saved to `tickets/<folder>/<ticket-id>.md`. The output is a
    verbatim.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog
-   row, and put `> Parent mission: <mission-id>` on its own line directly
-   under the ticket's H1 title. Save the ticket as
+   row, and put `> Parent mission: <mission-id> @ rev <N>` on its own line
+   directly under the ticket's H1 title (`<N>` = the mission's current
+   `> Revision:`; the `@ rev` part is optional, absent = rev 1). Save the
+   ticket as
    `tickets/<mission-id>/<mission-id>-US<n>.md` so the back-link check can
    find it. With no parent mission, ask the BA for a kebab-case folder
    name (an epic or feature, e.g. `epic-billing`) and save
@@ -188,6 +190,65 @@ citation block — saved to `tickets/<folder>/<ticket-id>.md`. The output is a
    guidance comments and without the BA-internal `## Definition of
    Ready` and `## Review record`; `## KB context`, `## Dependencies` and
    `## Technical grounding` stay — the Dev reads them.
+
+## Amend mode — `--amend <ticket>`
+
+`/ba-ticket-author --amend <ticket>` (a ticket id or a path under
+`tickets/`) changes a ticket that already exists. It does NOT run the
+workflow above from Intake: the ticket keeps its id and path, and every
+change is recorded in `## Change log`.
+
+1. **Read** the ticket and run `kb ticket stale --md <file>`; read the
+   findings for it (kind: the `Kind` column, `kb-context` or `architecture`).
+   With a
+   `> Parent mission:` line, read the mission's `## Change log` rows after
+   the ticket's `@ rev` pin that list this story in `Affected` — that is
+   why `kb mission next` flags the ticket `draft`.
+2. **Ask** the BA for the trigger(s) — one or more of `kb-context`,
+   `architecture`, `scope`, `delivery` — and what changed. The drift
+   findings pre-fill the answer; ask, don't guess.
+3. **`kb-context` trigger** — re-pin `## KB context` with the MCP tool
+   `kb_context_new` when available, otherwise `kb context new --refs
+   "<refs>"` (CLI), with the FULL ref list (kept + moved + new) — the tool
+   renders one block with one `version:`, so a partial list drops the
+   unchanged refs — and replace the whole block. Only the moved or new refs
+   need the BA's re-confirmation, and only the claims citing them need
+   re-checking. The `tags`
+   rule of step 5 still holds: never pass tags.
+4. **`architecture` trigger only** — run `/sa-ticket-ground` on the saved
+   file as a separate run (no shared context). It refreshes
+   `## Technical grounding` and the `Grounded on:` revision, then runs
+   `kb ticket check`. For any other trigger, skip the SA and `kb ticket
+   check`: they would force a re-ground after every dev commit. You still
+   never read `<repo>-code` or `<repo>-svc` yourself.
+5. **Apply the change rules** below.
+6. **Bump `> Revision:` and append the change-log row** `| Rev | Date |
+   Trigger | What changed | Affected | Review |`. In `Affected` write the
+   section names that changed, comma-separated, or `-`.
+7. **Lint** — `kb ticket lint <file>` until it reports `DoR: PASS`.
+8. **Maturity review of the changed sections only** — one round, the same
+   rubric and the same two passes as step 8 of the workflow. Write the
+   scores into the new row's `Review` cell (e.g. `B4 D4 (agent)`) —
+   never into `## Review record`.
+9. **Untick** the `## Definition of Ready` box(es) whose evidence changed;
+   only the BA re-ticks. Set the pin to the mission's current revision,
+   `> Parent mission: M-<slug> @ rev <N>`, once the ticket reflects every
+   change-log row since its old pin that lists this story; otherwise
+   leave the pin and tell the BA why.
+10. **Hand the diff to the BA.** The agent never ticks a DoR box, commits
+    or pushes. The BA's next `kb publish` ships the amended ticket.
+
+Change rules:
+
+- **Done stories are frozen.** When `kb mission next` reports the story
+  `done`, do not edit its ticket: new or changed work is a new story with
+  the next free US number, added to the mission with
+  `/ba-mission-plan --amend`.
+- **A `DECIDED` row is superseded, never edited.** A `[NEW: D<k>]` naming
+  a `SUPERSEDED` row fails `kb ticket check`: cite the superseding row
+  `D<n>` instead. When this ticket cites one, the amendment MUST include
+  the `architecture` trigger so `/sa-ticket-ground` re-points it; tell the
+  BA which other files cite the same row.
 
 ## Hard rules
 

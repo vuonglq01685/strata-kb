@@ -118,7 +118,7 @@ form a knowledge supply chain.
 |---|---|---|---|
 | `hub` | `federation/`, the search service | every child's publish | itself, and optionally an upstream hub |
 | `child` | domain documents from outside sources | — | yes |
-| `ba` | tickets and mission plans | the hub, read-only | no |
+| `ba` | tickets and mission plans | the hub, read-only | yes (`-plan` only) |
 | `dev` | product code, plus knowledge about that code | the hub, read-only | yes (`-code`, `-svc`) |
 
 ```
@@ -132,8 +132,8 @@ form a knowledge supply chain.
                                v   v
                           +----------+          read-only
                           |   hub    |<---------------------- ba
-                          |federation|                   (kb_search,
-                          +----+-----+                 kb_context_new)
+                          |federation|        reads: kb_search, kb_context_new
+                          +----+-----+        publishes: -plan (kb publish)
                                |
                    kb query / MCP / Web UI
 ```
@@ -150,9 +150,12 @@ ingests **nothing** and authors only knowledge about its own source code. Keepin
 these apart means a product repository can publish knowledge continuously from CI
 without ever acquiring the ability to add arbitrary documents to the corpus.
 
-A `ba` repository is strictly read-only against the knowledge base. It cites, it
-never contributes. That keeps requirements traceable to a knowledge version
-without giving the requirements process a way to change the knowledge.
+A `ba` repository is read-only against the *knowledge* base. It cites, it never
+contributes, and it never ingests or summarizes. That keeps requirements
+traceable to a knowledge version without giving the requirements process a way to
+change the knowledge. The one thing it publishes is its own plan, a generated
+document (`<repo_id>-plan`) listing only the missions and tickets the analyst has
+marked ready (§8). The plan sits beside the knowledge; it does not edit it.
 
 ---
 
@@ -243,6 +246,9 @@ One process serves three audiences over HTTP:
 | `/api/…` | programmatic callers | Bearer token or session cookie |
 | `/ui` | people | sign in with the token, session cookie stored |
 
+The UI has a **Plans** menu beside Documents (`/ui/plans`) for the missions and
+tickets that `ba` repos publish (§8.4).
+
 The same process also runs over stdio for a local agent. In every mode a hub is
 **mandatory** — resolved from `--hub`, the environment, or `.kb/config.yaml`, in
 that order — and the server refuses to start without one. It searches only the
@@ -295,7 +301,8 @@ credentialed URL, and mirroring it would publish a token.
 
 `kb ci-publish` is the CI route. It runs inside the publishing repository's own
 GitHub Actions job, authenticates to an intake service with GitHub Actions OIDC,
-and therefore needs no long-lived secret anywhere.
+and therefore needs no long-lived secret anywhere. `child`, `dev` and `ba`
+repositories all publish through it; the `ba` flow is described in §8.2.
 
 ## 5.3 Multi-tier federation
 
@@ -430,7 +437,119 @@ as a `dirty_tree` warning.
 
 ---
 
-# 8. The trust model
+# 8. Plan knowledge
+
+A `ba` repository is the third publisher. What it publishes is not domain
+knowledge and not code knowledge but **the plan**: the missions and tickets its
+analysts have reviewed, as one generated document, `<repo_id>-plan`.
+
+| Document | Origin | Regenerated | Needs review | Tagged |
+|---|---|---|---|---|
+| `<repo_id>-plan` | `kb plan-ingest`, deterministic, no model, offline | on demand from `missions/` and `tickets/` | no: a fully ticked Definition of Ready is the review | `plan, generated` |
+
+It follows `-code` in every mechanical respect. It is never committed
+(`.kb/*-plan/` is gitignored, and so is the `ba` repo's generated
+`.kb/index.yaml`), its revision lives in its manifest, and it is an ordinary
+four-layer document that build, query, federation and the Web UI read with no
+special-casing. Its sections are written `summarized`, never `pending`, so
+`kb build` passes without a model.
+
+## 8.1 What qualifies, and the document's shape
+
+A mission is published when it passes the structural `kb mission lint` **and**
+every box of its `## Definition of Ready` is ticked. A ticket needs the same from
+`kb ticket lint`, and `kb mission next` must not demote it to `draft` because its
+parent mission moved on. Citation resolution is **not** a gate: it needs the hub,
+and the pull-request lint already enforces it. Each item left out is reported as
+`skipped: <file> — <reason>` and never fails the command, so an unready item
+simply is not published, and one that stops qualifying drops out at the next
+publish.
+
+The document has one group per mission and a `tickets` group for the rest.
+Sections are `## <id> <title>`, with `M-<slug>-US<n>` as a story's id. L3 is the
+source with the title dropped, headings demoted one level and the BA-internal
+`## Review record` and `## Definition of Ready` removed; L2 keeps every table
+byte for byte (so the table invariant holds without relaxing `kb build`) plus the
+prose that summarises the item. A line starting with `## ` inside a code fence
+would split a section for every reader, so such an item is skipped until the line
+is indented.
+
+## 8.2 The publish flow
+
+Publishing is on demand. The hub's intake accepts only a `kb-publish/*` tag
+(never a branch push), so the plan travels the same tag-driven route a `child`
+repo uses:
+
+```
+  BA runs kb publish
+        |  kb plan-ingest + kb build      (local preview = what CI will send)
+        |  tag kb-publish/<ts>, push the tag
+        v
+  kb-publish.yml (tag trigger, OIDC)
+        |  kb plan-ingest + kb build + kb ci-publish
+        v
+  intake: verifies the OIDC token, looks the repo up in
+          federation/registry.yaml  -->  PR on the hub
+        |  review + merge
+        v
+  federation/<repo_id>/<repo_id>-plan  -->  kb query / MCP / Web UI
+```
+
+The registry entry, never the payload, decides the repo id it may write. (Its
+optional `workflow:` pin is compared with the full `job_workflow_ref`, which
+includes the tag, so it stays unset for tag-triggered publishing.) Nothing publishes on merge: the analyst
+decides when, and `/kb-publish` shows what changed before asking. A repo with no
+`intake:` configured falls back to the snapshot route.
+
+## 8.3 Drift: keeping missions and tickets current
+
+A mission is written once and reality then moves. Each mission and ticket carries
+a `> Revision: <N>` and an append-only `## Change log`, and two checks detect
+drift. Both run in the daily `kb-doctor` workflow through `kb ticket stale`, which
+keeps one `kb-stale-citations` issue:
+
+```
+  KB-context drift       cited hub section at its pinned hub commit
+                         vs the hub worktree        -->  ok | stale | broken
+
+  Architecture drift     ids cited in Services & order / Technical grounding
+                         (svc.* db.* api.* int.* cmd.*, minus [NEW: D<n>])
+                              |
+        Grounded on: <repo>-code @ <rev>   (the dev repo's commit)
+                              |  walk the hub history of the -code manifest;
+                              |  newest hub commit whose revision == <rev>
+                              v
+        <repo>-code §<id> @ <that hub commit>  --> the same resolve step
+                              -->  stale | broken, kind "architecture"
+        no hub commit carries <rev>  -->  one finding, "baseline not on hub"
+```
+
+Drift is judged **per cited section**, never on the document revision: `-code`'s
+revision moves on every dev commit, so comparing it would flag every mission on
+every merge. A merge that touches nothing a mission cites produces no finding.
+
+An amendment (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) records its
+trigger (`kb-context`, `architecture`, `scope`, `delivery`), bumps the revision
+and appends a change-log row. Only an `architecture` trigger invokes the SA and
+`kb ticket check`. Delivered stories are never rewritten: change lands as new
+stories or as superseding decisions (`SUPERSEDED`), and a ticket pinned
+`> Parent mission: M-<slug> @ rev <N>` is reported `draft` by `kb mission next`
+when its mission has since changed that story.
+
+## 8.4 Status on the hub
+
+Story status is derived, read-only, from what the hub already holds: `done` when
+the id is in a `hist.*` row of the dev repo's `-svc`, `ready` when the ticket is
+published, `not ready` when it is not, `blocked` with reasons. `kb mission next
+--from-hub` computes it in the CLI; the Web UI's **Plans** menu renders it, and
+`*-plan` documents are kept out of Documents, the overview counts and the tag
+rail. Nothing is stored and there is no write path. In the other direction, a dev
+given only a ticket id runs `kb ticket fetch`, which reads the ticket from the
+hub's `-plan` and restores its source shape.
+
+---
+
+# 9. The trust model
 
 Strata's correctness argument is a chain of four links, each of which can fail
 loudly and none of which can be skipped.
@@ -447,9 +566,11 @@ require it to be: it is confined to prose, its output is bounded by automated
 checks, and it cannot publish. Equally, the hub registry is a **mistake guard**,
 not an authentication mechanism — a publisher's remote URL is self-asserted.
 Branch protection on the hub and the OIDC intake are the controls that actually
-hold.
+hold. The same holds for a `ba` repository's plan: what ships is chosen by a
+human's ticked Definition of Ready, on a tag the human pushes, and it still
+reaches readers only through a hub pull request.
 
-## 8.1 Service security
+## 9.1 Service security
 
 - Every response carries a content security policy, frame denial, nosniff,
   referrer and permissions policies; HSTS over https.
@@ -466,9 +587,9 @@ hold.
 
 ---
 
-# 9. Deployment topologies
+# 10. Deployment topologies
 
-## 9.1 Single team
+## 10.1 Single team
 
 ```
   authors ──► child repo ──► hub repo ──► one service process
@@ -480,7 +601,7 @@ that authors content. This is the starting configuration and it scales further
 than most teams expect, because the service is stateless and the store is a Git
 clone.
 
-## 9.2 Organisation-wide
+## 10.2 Organisation-wide
 
 ```
      domain teams          product teams         requirements
@@ -493,10 +614,10 @@ clone.
 ```
 
 Every repository publishes to one hub; every consumer reads from it. The `ba` and
-`dev` repositories consume without contributing domain content, and the `dev`
-repositories contribute only knowledge about themselves.
+`dev` repositories contribute no domain content: `dev` repositories publish only
+knowledge about themselves, and `ba` repositories only their plan.
 
-## 9.3 Federated organisation
+## 10.3 Federated organisation
 
 ```
    team hub A ──┐
@@ -513,7 +634,7 @@ query-time filtering.
 
 ---
 
-# 10. Operational characteristics
+# 11. Operational characteristics
 
 | Property | Value |
 |---|---|
@@ -528,7 +649,7 @@ query-time filtering.
 
 ---
 
-# 11. Extension points
+# 12. Extension points
 
 Strata is intended to be extended along four seams, each of which was designed to
 absorb change without touching the core.
@@ -547,7 +668,7 @@ absorb change without touching the core.
 
 ---
 
-# 12. Summary
+# 13. Summary
 
 Strata's architecture is a single idea applied consistently: **put the expensive,
 error-prone work where it can be checked.**

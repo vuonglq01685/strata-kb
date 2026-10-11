@@ -589,6 +589,33 @@ def test_parse_decisions_reads_id_status_owner_by_header_name():
     assert table.rows["D2"].status == "OPEN"
 
 
+def test_parse_decisions_reads_supersedes():
+    text = (
+        "## Technology decisions\n"
+        "| # | Decision | Status | Owner | Blocks |\n"
+        "|---|---|---|---|---|\n"
+        "| D1 | Use RabbitMQ | SUPERSEDED | ana | US2 |\n"
+        "| D3 | Use Kafka \u2014 Supersedes D1 | DECIDED | ana | US2 |\n"
+    )
+    rows = ticketcheck.parse_decisions(text, "x").rows
+    assert rows["D3"].supersedes == "D1"
+    assert rows["D1"].supersedes is None
+
+
+def test_ticket_check_new_marker_on_superseded_row_names_successor(code_doc):
+    kb_dir, rev = code_doc
+    mission = (
+        MISSION.replace("| D1 | New svc.billing", "| D1 | Old svc.billing").replace(
+            "charges per flight plan | DECIDED", "charges per flight plan | SUPERSEDED"
+        )
+        + "| D3 | New svc.billing v2 \u2014 Supersedes D1 | DECIDED | tech-lead | M-demo-US1 |\n"
+    )
+    text = ticket(grounding(rev, Externals="int.stripe [NEW: D1]"), parent="M-demo")
+    report = run(text, kb_dir, load_decisions=decisions_of(mission))
+    msgs = [e for e in errors(report) if "D1" in e]
+    assert msgs and "D1 is SUPERSEDED by D3 \u2014 cite D3" in msgs[0]
+
+
 def test_parse_decisions_survives_a_reordered_table():
     text = (
         "## Technology decisions\n"
