@@ -132,7 +132,7 @@ def _real_mission_text(block: str) -> str:
     order = list(mission.REQUIRED_MISSION_HEADINGS)
     kb_index = order.index("## KB context")
     order[kb_index:kb_index] = list(mission.RECOMMENDED_MISSION_HEADINGS)
-    parts = [f"# {MISSION_ID}", "", f"> Mission: {MISSION_ID}", ""]
+    parts = [f"# {MISSION_ID}", "> Revision: 1", "", f"> Mission: {MISSION_ID}", ""]
     for heading in order:
         parts += [heading, sections[heading], ""]
     parts += ["## Review record", REVIEW_RECORD_BODY, ""]
@@ -220,8 +220,9 @@ def _real_ticket_text(block: str) -> str:
     }
     parts = [
         f"# {US_ID} — Show restrictive airspace details",
+        "> Revision: 1",
         "",
-        f"> Parent mission: {MISSION_ID}",
+        f"> Parent mission: {MISSION_ID} @ rev 1",
         "",
     ]
     # Required + recommended sections, recommended ones inserted before

@@ -15,7 +15,7 @@ import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb import acquality, lintcore, mission
+from strata_kb import acquality, lintcore, mission, planrev
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
 from strata_kb.ticketcheck import SERVICES_HEADING, grounded_entries
@@ -429,6 +429,7 @@ def lint(
         lintcore.open_question_rows(text) or []
     )
     issues += check_placeholders(text)
+    issues += planrev.check_revision(text)
     issues += lintcore.check_review_record(text)
 
     return LintReport(issues=issues, notes=notes)

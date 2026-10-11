@@ -13,7 +13,7 @@ import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb import acquality, lintcore, mission, missionlint, ticket
+from strata_kb import acquality, lintcore, mission, missionlint, planrev, ticket
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
 
@@ -676,6 +676,7 @@ def lint(
     issues += _check_owned_unknowns(text)
     issues += _check_nfr_targets(text)
     issues += _check_dor_checklist(text)
+    issues += planrev.check_revision(text)
     issues += lintcore.check_review_record(text)
 
     pm_issues, pm_notes = check_parent_mission(text, path, missions_dir)

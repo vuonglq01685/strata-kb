@@ -96,11 +96,13 @@ STORY_PARTS_RE = re.compile(
     re.I | re.S,
 )
 
-# '> Parent mission: M-<slug>' — an OPTIONAL back-link to a mission plan,
-# placed directly under the H1 title. Deliberately not a required
+# '> Parent mission: M-<slug> [@ rev <N>]' — an OPTIONAL back-link to a
+# mission plan, placed directly under the H1 title. Deliberately not a required
 # heading: REQUIRED_HEADINGS is a compatibility contract, so every
 # pre-existing ticket must keep passing without an edit.
-PARENT_MISSION_RE = re.compile(r"^>\s*Parent mission:\s*(\S+)\s*$", re.M)
+PARENT_MISSION_RE = re.compile(
+    r"^>\s*Parent mission:\s*(\S+)(?:\s+@\s*rev\s+(\d+))?\s*$", re.M
+)
 
 # Detects the '> Parent mission:' line regardless of whether it has a
 # usable value after the colon. PARENT_MISSION_RE requires >= 1 non-space

@@ -1,4 +1,8 @@
 # <Title — one line, imperative, with identifier>
+> Revision: 1
+<!-- Optional back-link to a mission plan, on its own line under the
+title: `> Parent mission: M-<slug> @ rev <N>` (N = mission revision this
+ticket was written against). -->
 
 <!-- CORE sections (Summary … Out of scope, then Technical grounding,
 Open questions, KB context) are every ticket's. EXTENDED sections
@@ -138,6 +142,16 @@ what goes into Jira. -->
 - [ ] Dependencies and Out of scope filled or "N/A — <reason>"; every extended section kept is filled, the rest deleted
 - [ ] Every open question has an owner
 - [ ] Technical grounding filled by SA; kb ticket check PASS; Open decisions empty; no value in an AC rests on a `DECIDED` note instead of a section id or a D-row
+
+## Change log
+<!-- Append-only: one row per revision >= 2, in order; bump `> Revision:` under
+the title in the same edit. Trigger is one or more of kb-context,
+architecture, scope, delivery (comma-separated). Affected is section names, or `-`.
+Review holds the amendment's maturity scores, e.g. `B4 D4 (agent)`;
+amendments are not recorded in Review record. -->
+| Rev | Date | Trigger | What changed | Affected | Review |
+|---|---|---|---|---|---|
+|   |   |   |   |   |   |
 
 ## Review record
 <!-- Filled by the maturity-review step (rubric: docs/review-rubric.md).
