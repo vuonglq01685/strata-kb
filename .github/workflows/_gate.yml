@@ -60,7 +60,18 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
-      - run: pytest -q
+      # Defender scans every temp file and git object the suite writes; on
+      # the hosted Windows runner that roughly doubles T1. The runner is
+      # thrown away after the job.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+      # Fetch cl100k_base once, before xdist starts several workers that
+      # would otherwise race to download and rename the same cache file.
+      - run: python -c "from strata_kb.mdutils import count_tokens; count_tokens('warm')"
+      # -n auto: one worker per vCPU (4 on hosted runners). --durations
+      # keeps the slowest tests visible in the log.
+      - run: pytest -q -n auto --durations=15
         env:
           # The e2e tests run `kb publish` / gitio.commit_* against a real git
           # clone — committing needs an identity, and the CI runner has no
