@@ -1606,8 +1606,12 @@ def publish_via_intake(
     poll_interval: float = 5.0,
     timeout: float = 600.0,
     http_get_json=None,
+    plan_inputs: tuple[Path, ...] = (),
 ) -> str:
     """Dev-machine intake flow: tag kb-publish/<ts>, push, poll for the PR URL.
+
+    `plan_inputs`: folders a ba repo's generated `-plan` is built from. `.kb/`
+    is gitignored there, so these must be clean too.
 
     Zero secrets: the tag push uses the developer's normal child-repo git
     access; the child's CI (OIDC) does the actual upload.
@@ -1631,6 +1635,12 @@ def publish_via_intake(
             ".kb/ has uncommitted changes — commit them first "
             "(the child CI publishes the tagged commit, not the working tree)"
         )
+    for folder in plan_inputs:
+        if folder.exists() and gitio.is_dirty(root, folder):
+            raise PublishError(
+                f"{folder.name}/ has uncommitted changes — commit them first "
+                "(the child CI publishes the tagged commit, not the working tree)"
+            )
     rid = repo_id or root.name
     commit = gitio.head_commit(root)
     tag_name = f"kb-publish/{datetime.now(UTC):%Y%m%d-%H%M%S}"

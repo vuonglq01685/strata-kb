@@ -325,3 +325,113 @@ def test_architecture_reads_ids_the_way_ticket_check_does(tmp_path, fed_hub, run
     text = path.read_text(encoding="utf-8")
     assert ticketstale._cited_ids(text) == ["svc.web", "db.table"]
     assert _arch(tmp_path, fed_hub) == []
+
+
+def test_architecture_bare_new_marker_row_is_not_cited(tmp_path, fed_hub, run_git):
+    # `[NEW]` without a reason is accepted (with a warning) by `kb ticket check`.
+    _publish(fed_hub, run_git, "aaaaaaa", svc_a="A1", svc_b="B1")
+    _publish(fed_hub, run_git, "bbbbbbb", svc_a="A1")
+    _ticket(tmp_path, "aaaaaaa", "- Services: `svc.a`\n- New: `svc.b` [NEW]")
+    assert _arch(tmp_path, fed_hub) == []
+
+
+def test_architecture_baseline_found_when_the_hub_sits_in_a_subdirectory(
+    tmp_path, fed_hub, run_git
+):
+    outer = tmp_path / "outer"
+    hub_root = outer / "sub"
+    shutil.copytree(fed_hub, hub_root, ignore=shutil.ignore_patterns(".git"))
+    run_git(outer, "init", "-b", "main")
+    _publish(hub_root, run_git, "aaaaaaa", svc_a="A1", svc_b="B1")
+    _publish(hub_root, run_git, "bbbbbbb", svc_a="A1", svc_b="B2")
+    _ticket(tmp_path, "aaaaaaa", "- Services: `svc.a`, `svc.b`")
+    [f] = ticketstale.scan([tmp_path / "tickets"], HubHandle(root=hub_root))
+    [ref] = f.refs
+    # a baseline resolved against the wrong root would say "baseline not on hub"
+    assert (ref.status, ref.reason) != ("stale", ticketstale.BASELINE_MISSING)
+    assert "svc.b" in ref.citation
+
+
+# --- delivered stories are not drift ----------------------------------------
+
+
+def _svc(fed_hub: Path, *done: str) -> None:
+    """`demo-svc` beside `demo-code`, its history naming the done stories."""
+    from strata_kb import models
+
+    doc = fed_hub / "federation" / "demo" / "demo-svc"
+    doc.mkdir()
+    models.save_yaml_model(
+        doc / "_manifest.yaml",
+        models.Manifest(
+            id="demo-svc",
+            title="demo-svc",
+            sections=[
+                models.SectionEntry(
+                    id="hist.x",
+                    title="History",
+                    summary="s",
+                    status="summarized",
+                    file="history",
+                )
+            ],
+        ),
+    )
+    rows = "".join(f"| {us} | Story | |\n" for us in done)
+    (doc / "history.md").write_text(
+        f"| Ticket | Title | Domain refs |\n| --- | --- | --- |\n{rows}",
+        encoding="utf-8",
+    )
+
+
+def _mission(root: Path, *stories: str) -> Path:
+    path = root / "missions" / "M-x.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backlog = "".join(f"| {us} | Story |\n" for us in stories)
+    path.write_text(
+        "# M\n\n## US backlog\n\n| US ID | Title |\n|---|---|\n"
+        f"{backlog}\n## Services & order\n"
+        "- Grounded on: demo:demo-code @ aaaaaaa\n- `svc.a`\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _drifted(fed_hub: Path, run_git) -> HubHandle:
+    _publish(fed_hub, run_git, "aaaaaaa", svc_a="A1")
+    _publish(fed_hub, run_git, "bbbbbbb", svc_a="A2")
+    return HubHandle(root=fed_hub)
+
+
+def test_architecture_done_ticket_is_not_drift(tmp_path, fed_hub, run_git):
+    hub = _drifted(fed_hub, run_git)
+    path = _ticket(tmp_path, "aaaaaaa", "- Services: `svc.a`")  # T-9.md
+    assert len(ticketstale.scan([path], hub)) == 1  # no -svc on the hub: as before
+    _svc(fed_hub, "T-9")
+    assert ticketstale.scan([path], hub) == []
+    other = _ticket(tmp_path, "aaaaaaa", "- Services: `svc.a`", name="T-10.md")
+    assert len(ticketstale.scan([other], hub)) == 1  # a story that is not done
+
+
+def test_architecture_mission_with_every_story_done_is_not_drift(
+    tmp_path, fed_hub, run_git
+):
+    hub = _drifted(fed_hub, run_git)
+    mission = _mission(tmp_path, "M-x-US1", "M-x-US2")
+    _svc(fed_hub, "M-x-US1", "M-x-US2")
+    assert ticketstale.scan([mission], hub) == []
+
+
+def test_architecture_mission_with_an_undone_story_is_still_reported(
+    tmp_path, fed_hub, run_git
+):
+    hub = _drifted(fed_hub, run_git)
+    mission = _mission(tmp_path, "M-x-US1", "M-x-US2")
+    _svc(fed_hub, "M-x-US1")
+    [f] = ticketstale.scan([mission], hub)
+    assert [r.kind for r in f.refs] == ["architecture"]
+
+
+def test_render_markdown_legend_explains_drift_under_delivery():
+    body = ticketstale.render_markdown([ticketstale.StaleFile("t.md", [])])
+    assert "mission under delivery" in body

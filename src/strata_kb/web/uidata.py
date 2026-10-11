@@ -98,11 +98,11 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 def _iter_manifests(
     hub: HubHandle, *, plans: bool = False
 ) -> Iterator[tuple[str, Manifest]]:
-    """Every published document's manifest. `*-plan` documents live under the
+    """Every published document's manifest. Generated plan documents live under the
     Plans menu, so they are left out unless `plans` asks for them."""
     for repo in load_federation(hub.federation_dir):
         for doc in repo.index.docs:
-            if is_plan(doc.id) and not plans:
+            if is_plan(doc.title, doc.tags) and not plans:
                 continue
             path = repo.kb_dir / doc.id / "_manifest.yaml"
             if not path.exists():
@@ -144,7 +144,7 @@ def all_tags(hub: HubHandle) -> list[str]:
         t
         for repo in load_federation(hub.federation_dir)
         for doc in repo.index.docs
-        if not is_plan(doc.id)
+        if not is_plan(doc.title, doc.tags)
         for t in doc.tags
     }
     return sorted(tags)

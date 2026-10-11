@@ -32,7 +32,13 @@ def publish_plan(hub: Path, repo_id: str, ba_root: Path, block_text: str) -> Non
         ba_root, ba_root / ".kb", "demo", ba_root / "missions", ba_root / "tickets"
     )
     doc_id = f"{repo_id}-plan"
-    entry = make_fed_entry(hub / "federation", repo_id, doc_id)
+    entry = make_fed_entry(
+        hub / "federation",
+        repo_id,
+        doc_id,
+        title=f"{repo_id} {planingest.TITLE_SUFFIX}",
+        tags=["plan", "generated"],
+    )
     shutil.rmtree(entry / doc_id)
     shutil.copytree(ba_root / ".kb" / "demo-plan", entry / doc_id)
     # the document id is the manifest's own
@@ -166,3 +172,11 @@ def test_hub_manifest_file_that_escapes_is_refused(plan_hub):
     _edit_manifest(plan_hub, f"file: {MISSION_ID}", "file: ../../../x")
     with pytest.raises(ticketfetch.TicketFetchError, match="not a plain file name"):
         ticketfetch.find(plan_hub, US1)
+
+
+def test_find_ignores_a_symlinked_plan_folder(plan_hub, tmp_path):
+    from tests.test_planstatus import add_symlinked_plan
+
+    add_symlinked_plan(plan_hub.root / "federation/ba-one", tmp_path / "outside")
+    # followed, the copy would make US1 ambiguous between two plan documents
+    assert ticketfetch.find(plan_hub, US1)[:2] == ("ba-one", "ba-one-plan")

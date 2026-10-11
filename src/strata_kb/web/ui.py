@@ -450,11 +450,7 @@ def build_routes(
             raise api.SnapshotCorruptError("", " ".join(str(exc).split())) from exc
         docs_count = len({r.doc_id for r in found})
         smap = uidata.status_map(hub)
-        plan_paths = (
-            planstatus.section_paths(hub)
-            if any(planstatus.is_plan(r.doc_id) for r in found)
-            else {}
-        )
+        plan_paths = planstatus.section_paths(hub) if found else {}
         top = max((r.score for r in found), default=1.0) or 1.0
         results = [
             {

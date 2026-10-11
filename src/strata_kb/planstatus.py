@@ -14,18 +14,18 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import missionnext, models, ticketcheck
+from strata_kb import missionnext, models, query, ticketcheck
 from strata_kb.federation import FederatedRepo, load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import slice_section
-from strata_kb.planingest import TICKETS_GROUP, promote_headings
+from strata_kb.planingest import TICKETS_GROUP, TITLE_SUFFIX, promote_headings
 from strata_kb.ticketfetch import safe_name
 
 logger = logging.getLogger("strata_kb.planstatus")
@@ -34,14 +34,16 @@ logger = logging.getLogger("strata_kb.planstatus")
 _PUBLISHED = (1, 1)
 
 
-def is_plan(doc_id: str) -> bool:
-    """A `<ba-repo>-plan` document: shown under Plans, never under Documents."""
-    return doc_id.endswith("-plan")
+def is_plan(title: str, tags: Iterable[str]) -> bool:
+    """A document `kb plan-ingest` generated: shown under Plans, never under
+    Documents. Marked by its title suffix and its `plan` + `generated` tags,
+    not by its id — any hand-ingested `release-plan` stays a plain document."""
+    return title.endswith(TITLE_SUFFIX) and {"plan", "generated"} <= set(tags)
 
 
 def without_plans(docs: list[dict]) -> list[dict]:
-    """Documents for the catalog: `*-plan` documents live under Plans."""
-    return [d for d in docs if not is_plan(d["id"])]
+    """Documents for the catalog: generated plan documents live under Plans."""
+    return [d for d in docs if not is_plan(d.get("title") or "", d.get("tags") or [])]
 
 
 @dataclass(frozen=True)
@@ -75,15 +77,24 @@ class PlanTicket:
     markdown: str  # the ticket L3, headings promoted back to `##`
 
 
-def _plan_docs(
+def plan_docs(
     hub: HubHandle, repo: str | None = None
 ) -> Iterator[tuple[FederatedRepo, models.Manifest]]:
+    """Every generated plan document of the federation (of `repo`, when
+    given). Each folder goes through `query.doc_dir`, so a symlinked folder
+    cannot lead out of its snapshot to the hub's unpublished `.kb/`."""
     for fed in load_federation(hub.federation_dir):
         if repo is not None and fed.meta.repo_id != repo:
             continue
-        for path in sorted(fed.kb_dir.glob("*-plan/_manifest.yaml")):
+        for entry in sorted(fed.index.docs, key=lambda d: d.id):
+            folder = query.doc_dir(fed.kb_dir, entry.id)
+            if folder is None or not is_plan(entry.title, entry.tags):
+                continue
+            path = folder / "_manifest.yaml"
             try:
-                yield fed, models.load_yaml_model(path, models.Manifest)
+                manifest = models.load_yaml_model(path, models.Manifest)
+            except FileNotFoundError:
+                continue
             except (
                 yaml.YAMLError,
                 OSError,
@@ -91,6 +102,9 @@ def _plan_docs(
                 ValidationError,
             ) as exc:
                 logger.warning("skipping plan manifest %s: %s", path, exc)
+                continue
+            if manifest.id == entry.id and is_plan(manifest.title, entry.tags):
+                yield fed, manifest
 
 
 def _l3_section(fed: FederatedRepo, doc: str, entry: models.SectionEntry) -> str | None:
@@ -98,8 +112,11 @@ def _l3_section(fed: FederatedRepo, doc: str, entry: models.SectionEntry) -> str
     when the group name is not a plain file name or the file does not hold it."""
     if not safe_name(entry.file):
         return None
+    folder = query.doc_dir(fed.kb_dir, doc)
+    if folder is None:
+        return None
     try:
-        l3 = (fed.kb_dir / doc / f"{entry.file}.raw.md").read_text(encoding="utf-8")
+        l3 = (folder / f"{entry.file}.raw.md").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
     return slice_section(l3, entry.id)
@@ -183,7 +200,7 @@ def hub_plans(
     """Every BA repo's plan with per-story status, and the notes explaining
     anything the hub could not answer (never an exception for that)."""
     notes: list[str] = []
-    plans = [_plan_repo(hub, fed, m, notes) for fed, m in _plan_docs(hub, repo)]
+    plans = [_plan_repo(hub, fed, m, notes) for fed, m in plan_docs(hub, repo)]
     return plans, notes
 
 
@@ -207,7 +224,7 @@ def ticket_holders(
     if not (safe_name(group) and safe_name(ticket_id)):
         return []
     found: list[tuple[str, PlanTicket]] = []
-    for fed, manifest in _plan_docs(hub, repo):
+    for fed, manifest in plan_docs(hub, repo):
         entry = next(
             (s for s in manifest.sections if s.id == ticket_id and s.file == group),
             None,
@@ -235,13 +252,13 @@ def section_paths(hub: HubHandle) -> dict[tuple[str, str, str], str]:
     the middle URL segment of its Plans page."""
     return {
         (fed.meta.repo_id, m.id, s.id): s.file
-        for fed, m in _plan_docs(hub)
+        for fed, m in plan_docs(hub)
         for s in m.sections
     }
 
 
 def hit_href(paths: dict[tuple[str, str, str], str], hit) -> str | None:
-    """Plans page of a search hit in a `*-plan` document (`paths` from
+    """Plans page of a search hit in a generated plan document (`paths` from
     `section_paths`); None for any other hit."""
     group = paths.get((hit.source, hit.doc_id, hit.section_id))
     return None if group is None else plan_href(hit.source, group, hit.section_id)

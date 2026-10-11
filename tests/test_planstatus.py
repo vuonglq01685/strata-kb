@@ -35,7 +35,13 @@ HISTORY = (
 def _mirror(hub: Path, ba_root: Path, repo_id: str) -> None:
     namespace, _, leaf = repo_id.rpartition("/")  # "mid/ba-x" nests under mid/
     doc_id = f"{leaf}-plan"
-    entry = make_fed_entry(hub / "federation" / namespace, leaf, doc_id)
+    entry = make_fed_entry(
+        hub / "federation" / namespace,
+        leaf,
+        doc_id,
+        title=f"{leaf} {planingest.TITLE_SUFFIX}",
+        tags=["plan", "generated"],
+    )
     shutil.rmtree(entry / doc_id)
     shutil.copytree(ba_root / ".kb" / "demo-plan", entry / doc_id)
     manifest = entry / doc_id / "_manifest.yaml"
@@ -74,6 +80,34 @@ def publish_ba(
 def publish_svc(hub: Path, history: str = HISTORY) -> None:
     entry = make_fed_entry(hub / "federation", "dev-one", "dev-svc", sec_id="hist.x")
     (entry / "dev-svc" / "history.md").write_text(history, encoding="utf-8")
+
+
+def add_symlinked_plan(repo_kb: Path, outside: Path) -> None:
+    """Index a second plan document `x-plan` whose folder is a symlink to a
+    copy of the first one at `outside` — a folder the snapshot does not own."""
+    from strata_kb import models
+
+    real = next(repo_kb.glob("*-plan"))
+    shutil.copytree(real, outside)
+    manifest = outside / "_manifest.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(real.name, "x-plan"),
+        encoding="utf-8",
+    )
+    try:
+        (repo_kb / "x-plan").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("this machine cannot create symlinks")
+    index = models.load_yaml_model(repo_kb / "index.yaml", models.KBIndex)
+    index.docs.append(
+        models.IndexEntry(
+            id="x-plan",
+            title=f"x {planingest.TITLE_SUFFIX}",
+            tags=["plan", "generated"],
+            summary="",
+        )
+    )
+    models.save_yaml_model(repo_kb / "index.yaml", index)
 
 
 def _statuses(repos: list[planstatus.PlanRepo]) -> dict[str, str]:
@@ -211,3 +245,22 @@ def test_section_paths_name_the_group_of_each_plan_section(plan_hub):
     assert paths[("ba-one", "ba-one-plan", MISSION_ID)] == MISSION_ID
     assert paths[("ba-one", "ba-one-plan", US[1])] == MISSION_ID
     assert paths[("ba-one", "ba-one-plan", "TAL-1580")] == planstatus.TICKETS_GROUP
+
+
+def test_a_symlinked_plan_folder_is_ignored(plan_hub, tmp_path):
+    add_symlinked_plan(plan_hub.root / "federation/ba-one", tmp_path / "outside")
+    repos, _ = planstatus.hub_plans(plan_hub)
+    assert [r.doc for r in repos] == ["ba-one-plan"]
+    assert {(r, d) for (r, d, _) in planstatus.section_paths(plan_hub)} == {
+        ("ba-one", "ba-one-plan")
+    }
+
+
+def test_only_generated_plan_documents_are_plans():
+    marked = ("ba-one — plan", ["plan", "generated"])
+    assert planstatus.is_plan(*marked)
+    assert not planstatus.is_plan("Release plan", ["plan", "generated"])
+    assert not planstatus.is_plan("ba-one — plan", ["plan"])
+    assert not planstatus.is_plan("ba-one — plan", ["generated"])
+    docs = [{"id": "release-plan", "title": "Release plan", "tags": ["ops"]}]
+    assert planstatus.without_plans(docs) == docs

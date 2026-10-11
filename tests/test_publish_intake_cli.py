@@ -543,7 +543,26 @@ class TestBaPlanRefresh:
         assert "[warn] 1 section(s) in 1 doc(s) are published without SME review" in (
             result.output
         )
-        assert not publish_mod.unreviewed_gate(root / ".kb", False).blocked
+        # The same sections would block under --require-reviewed.
+        assert publish_mod.unreviewed_gate(root / ".kb", True).blocked
+
+    @pytest.mark.parametrize(
+        ("rel", "folder"),
+        [
+            ("missions/M-demo.md", "missions"),  # tracked file edited
+            ("tickets/M-demo-US1.md", "tickets"),  # untracked file added
+        ],
+    )
+    def test_publish_refuses_uncommitted_plan_inputs(self, ba, rel, folder):
+        root, bare = ba
+        target = root / rel
+        target.parent.mkdir(exist_ok=True)
+        with target.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write("\nedit\n")
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 1
+        assert f"{folder}/ has uncommitted changes" in result.output
+        assert "kb-publish/" not in _git(bare, "tag", "--list")
 
     def test_publish_reports_skipped_items(self, ba, monkeypatch, tmp_path):
         root, _ = ba

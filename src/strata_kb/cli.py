@@ -2137,8 +2137,16 @@ def publish(
 
     if plan.route == "intake":
         try:
+            ba_root = kb_dir.resolve().parent
             pr_url = publish_mod.publish_via_intake(
-                kb_dir, plan.intake_url, effective_repo_id(repo_id, kb_dir)
+                kb_dir,
+                plan.intake_url,
+                effective_repo_id(repo_id, kb_dir),
+                plan_inputs=(
+                    (ba_root / "missions", ba_root / "tickets")
+                    if plan.refresh_plan
+                    else ()
+                ),
             )
         except (
             OSError,

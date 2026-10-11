@@ -8,12 +8,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
-from pydantic import ValidationError
-
-from strata_kb import gitio, models
+from strata_kb import gitio, query
 from strata_kb.errors import KbError
-from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import slice_section
 from strata_kb.planingest import promote_headings
@@ -48,25 +44,23 @@ def split_ref(ticket_ref: str) -> tuple[str | None, str]:
 def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
     """`(repo_id, doc_id, l3_file)` of the one `*-plan` document that lists
     section `<id>`."""
+    from strata_kb import planstatus  # lazy: planstatus imports safe_name from here
+
     repo, ticket_id = split_ref(ticket_ref)
     holders: list[tuple[str, str, Path]] = []
-    for fed in load_federation(hub.federation_dir):
-        if repo is not None and fed.meta.repo_id != repo:
-            continue
-        for manifest_path in sorted(fed.kb_dir.glob("*-plan/_manifest.yaml")):
-            try:
-                manifest = models.load_yaml_model(manifest_path, models.Manifest)
-            except (yaml.YAMLError, OSError, UnicodeDecodeError, ValidationError):
-                continue  # one unreadable document cannot hold the ticket
-            section = next((s for s in manifest.sections if s.id == ticket_id), None)
-            if section is not None:
-                if not safe_name(section.file):
-                    raise TicketFetchError(
-                        f"{manifest.id} on the hub lists {ticket_id} in file "
-                        f"'{section.file}', which is not a plain file name — refusing to read it"
-                    )
-                l3 = manifest_path.parent / f"{section.file}.raw.md"
-                holders.append((fed.meta.repo_id, manifest.id, l3))
+    # plan_docs skips unreadable documents and symlinked folders.
+    for fed, manifest in planstatus.plan_docs(hub, repo):
+        section = next((s for s in manifest.sections if s.id == ticket_id), None)
+        folder = query.doc_dir(fed.kb_dir, manifest.id)
+        if section is not None and folder is not None:
+            if not safe_name(section.file):
+                raise TicketFetchError(
+                    f"{manifest.id} on the hub lists {ticket_id} in file "
+                    f"'{section.file}', which is not a plain file name — refusing to read it"
+                )
+            holders.append(
+                (fed.meta.repo_id, manifest.id, folder / f"{section.file}.raw.md")
+            )
     if not holders:
         raise TicketFetchError(
             f"{ticket_id} is not on the hub — ask the BA to run kb publish, "

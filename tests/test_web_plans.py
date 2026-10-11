@@ -9,8 +9,9 @@ from starlette.testclient import TestClient
 from strata_kb.mcp import ServerConfig
 from strata_kb.serving.auth import TokenAuthMiddleware
 from strata_kb.web import ui
+from tests.conftest import make_fed_entry
 from tests.test_planingest import context_block
-from tests.test_planstatus import MISSION_ID, US, publish_ba
+from tests.test_planstatus import MISSION_ID, US, add_symlinked_plan, publish_ba
 
 TOKEN = "secret-token"
 
@@ -206,3 +207,32 @@ def test_search_hit_in_a_nested_plan_links_with_the_encoded_repo(plan_hub, tmp_p
     )
     resp = _client(plan_hub).get("/ui", params={"q": "dispatchers controlled airspace"})
     assert f'href="/ui/plans/{MISSION_ID}?repo=mid%2Fba-x"' in resp.text
+
+
+def test_a_hand_ingested_doc_named_like_a_plan_stays_a_document(plan_hub):
+    make_fed_entry(
+        plan_hub.root / "federation",
+        "ops-one",
+        "release-plan",
+        title="Release plan",
+        tags=["ops"],
+        l3="## 1.1 Section One\n\nZeppelin cutover checklist for releases.\n",
+    )
+    client = _client(plan_hub)
+    assert "release-plan" in client.get("/ui/docs").text
+    assert "release-plan" not in client.get("/ui/plans").text
+    hit = client.get("/ui", params={"q": "zeppelin cutover"}).text
+    assert "/ui/docs/release-plan" in hit
+    assert "/ui/plans/" not in hit
+
+
+def test_plans_ui_ignores_a_symlinked_plan_folder(plan_hub, tmp_path):
+    add_symlinked_plan(plan_hub.root / "federation/ba-one", tmp_path / "outside")
+    client = _client(plan_hub)
+    assert client.get("/ui/plans").text.count(f"/ui/plans/{MISSION_ID}?") == 1
+    assert (
+        client.get(
+            f"/ui/plans/{MISSION_ID}/{US[1]}", params={"repo": "ba-one"}
+        ).status_code
+        == 200
+    )
