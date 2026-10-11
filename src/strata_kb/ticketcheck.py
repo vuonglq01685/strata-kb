@@ -920,6 +920,7 @@ def _check_compose_facts(
             Issue(
                 "warning",
                 "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them",
+                code=UNVERIFIED,
             )
         )
     if not present:
@@ -950,6 +951,7 @@ def _check_compose_facts(
                     Issue(
                         "warning",
                         f"{field}: line does not parse — expected `svc.<name> — <values>` (got: {rest}) (line {lineno})",
+                        code=UNVERIFIED,
                     )
                 )
                 continue

@@ -323,12 +323,28 @@ def test_skipped_compose_checks_with_moved_revision_are_unverified(code_doc):
     ) in warnings(report)
 
 
+def test_dropped_compose_lines_with_moved_revision_are_unverified(code_doc):
+    kb_dir, _ = code_doc
+    text = ticket(grounding("deadbee", Volumes=None, Healthchecks=None, Devices=None))
+    report = run(
+        text,
+        kb_dir,
+        load_drift=lambda *a: [_drift_ref("svc.airspace-service", "ok")],
+    )
+    assert errors(report) == []
+    assert any("could not be verified since @deadbee" in w for w in warnings(report))
+
+
 def test_plain_warning_with_moved_revision_is_not_unverified(code_doc):
     kb_dir, rev = code_doc
     report = run(
         ticket(
             grounding(
-                "deadbee", Service="none", Volumes=None, Healthchecks=None, Devices=None
+                "deadbee",
+                Service="none",
+                Volumes="none",
+                Healthchecks="none",
+                Devices="none",
             )
         ),
         kb_dir,
