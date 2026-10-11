@@ -5,7 +5,8 @@
 `docs/superpowers/reviews/2026-10-10-full-framework-review.vi.md`, plus the
 "Out of scope" sections of the wave 3 specs
 (`2026-10-11-source-hygiene-design.md` and the 1.14.1 tooling gate).
-§8 of the review is fully done (1.10–1.16.2). Main is at **1.16.2**.
+§8 of the review is done (1.10–1.16.2), except the sparse-worktree half of
+item 6 (F7), which this spec moves to the backlog. Main is at **1.16.2**.
 
 ## Why
 
@@ -50,9 +51,11 @@ into.
 
 ### Measured today
 
-The numbers come from an AST walk over `src/strata_kb`. It counts parent
-package imports (importing `a.b.c` runs `a/__init__`). It ignores
-`if TYPE_CHECKING:` blocks.
+The numbers come from an AST walk over `src/strata_kb`. It ignores
+`if TYPE_CHECKING:` blocks. An import of `a.b.c` also counts as an edge to
+`a` and `a.b`, because importing it runs their `__init__`. The exception is a
+module's own parent packages: `doctor.checks.hub` importing `doctor` is not an
+edge, or every package that re-exports its submodules would count as a cycle.
 
 - **Module-level imports only:** no cycles. The `codeingest.core ⇄ extractors`
   cycle the review named is already gone.
@@ -81,14 +84,23 @@ changes.
      from there. `tests/test_doctor_checks.py` uses the doctor path.
    - `federation.entry_content_digest` drops its lazy import and the comment
      explaining it.
-2. **`AmbiguousDocError`** moves from `query.py` to `errors.py`, where the
-   other domain errors live. `query` re-exports it.
+   - `_ENTRY_SEGMENT_RE` is defined twice in a row, at `doctor/checks/hub.py`
+     lines 553 and 556, right above `_FED_TOP_SKIP`. Delete the second copy
+     in the same edit.
+2. **`AmbiguousDocError`** moves from `query.py` to `errors.py`. `query`
+   re-exports it.
+   - Today `errors.py` holds only the `KbError` family. `AmbiguousDocError`
+     is a `LookupError`, outside that family on purpose. Update the
+     `errors.py` docstring to say the module also holds error classes shared
+     across modules that are outside `KbError` (Claude's call: a leaf home
+     beats a one-class module). `InvalidLevelError` stays in `query`.
    - `kbcontext` imports it from `errors` at module level.
    - The lazy `query → kbcontext` import at `query.py:300` may stay lazy or
      go module-level. Builder's call; both are acyclic.
-   - `errors.py` discovers exception classes per module (see its docstring).
-     Check that the moved class is still found, and that the CLI's error
-     mapping for it is unchanged.
+   - `tests/test_cli_errors.py` allowlists the class as
+     `"strata_kb.query.AmbiguousDocError"`. Its sweep keys on
+     `cls.__module__`, so re-key the entry to `strata_kb.errors`. The CLI's
+     error mapping for the class must not change.
 3. **New leaf module `strata_kb/mdmask.py`** holds the Markdown masking
    primitives. It imports nothing but `re`:
    - `FENCE_RE`
@@ -111,6 +123,8 @@ changes.
 `strata_kb` modules, counting function-level imports and parent packages,
 ignoring `TYPE_CHECKING`.**
 
+- It uses the edge rules from "Measured today", including the exclusion for
+  a module's own parent packages.
 - On failure it prints the cycle.
 - Lazy imports kept for startup cost are fine. They add edges, not cycles.
 - The scanner in `test_layering.py` already walks the AST. Extend it rather
@@ -125,18 +139,21 @@ ignoring `TYPE_CHECKING`.**
 |---|---|---|
 | A1 | `_check_required_filled` in `ticketlint.py:185` and `missionlint.py:38` | **Fix.** Add `lintcore.check_required_filled(text, headings, exempt)`. Both linters call it with their own `REQUIRED_*` tuple and `_FILL_EXEMPT`. The message text stays as is. Keep `ticketlint`'s docstring rationale (why presence alone is not enough) on the shared function. |
 | A2 | `prlint.py` re-implements fence, comment and section scanning | **Mostly closed as intended.** prlint must stay standard-library only, and `lintcore` pulls in `doctor`, `kbcontext` and pydantic. Its scanner also does things lintcore does not: `~~~` fences, indented fences, unclosed fences, unterminated `<!--`, `#` and `##` headings with tab separators, duplicate counting, CRLF and BOM handling. Switching would change behaviour. **The one identical piece moves:** `prlint._COMMENT` becomes `mdmask.HTML_COMMENT_RE`. Add 2–3 lines to prlint's module docstring saying why it keeps its own scanner. |
-| A3 | `startswith("## ")` instead of `mdutils._iter_headings` | **Mostly closed as intended.** Five of the seven code sites are *section-boundary* checks: "any `## ` line ends a section". Those are `mdutils.section_map`, `mdutils.slice_subsection`, `summarize`, `lintcore.section_body` and `ticket.export_body`. Some of them run on ticket headings (`## User Story`), which are not the `## <sid> <title>` grammar. `_iter_headings` parses that grammar, so it is the wrong tool for them. `lintcore.check_duplicate_headings` counts every `## ` line on purpose. The two hits in `codeingest/core.py` are prose in docstrings. **One real re-derivation:** `codeingest/hublag.l3_sections` parses the section id by hand (`line[3:].split(" ", 1)[0]`). It switches to `mdutils.HEADING_RE.match(line)` and `group("sid")`, not fence-aware, matching today. **Named behaviour change:** a malformed `## ` line with an empty id, or a tab after `##`, no longer starts a section. `kb code-ingest` never writes such a line. |
+| A3 | `startswith("## ")` instead of `mdutils._iter_headings` | **Mostly closed as intended.** Five of the seven code sites are *section-boundary* checks: "any `## ` line ends a section". Those are `mdutils.section_map`, `mdutils.slice_subsection`, `summarize`, `lintcore.section_body` and `ticket.export_body`. Some of them run on ticket headings (`## User Story`), which are not the `## <sid> <title>` grammar. `_iter_headings` parses that grammar, so it is the wrong tool for them. `lintcore.check_duplicate_headings` counts every `## ` line on purpose. The two hits in `codeingest/core.py` are prose in docstrings. **One real re-derivation:** `codeingest/hublag.l3_sections` parses the section id by hand (`line[3:].split(" ", 1)[0]`). It switches to `mdutils.HEADING_RE.match(line)` and `group("sid")`, not fence-aware, matching today. **Named behaviour changes:** (1) a `## ` line that does not match `HEADING_RE` (for example an empty id) no longer starts a section; it becomes body text of the section before it. (2) `## svc.a<TAB>Title` reads as id `svc.a`, not `svc.a\tTitle`. `kb code-ingest` writes neither shape. |
 | A4 | Heading regexes in `web/mdrender.py`, `prlint.py`, `planwaves.py` | **Closed: different grammars on purpose.** The four regexes are generic ATX h1–h6 for rendering, h1/h2 with free text for PR sections, `#{2,4} Task N` for plan tasks, and `## <sid>` for KB sections. No change. |
 | A5 | Three result types (`prlint.Finding`, `doctor.issues.Issue`, `quality.Finding`) | **Decision: keep three types. Do not unify, do not add a shared protocol.** Their level sets differ (`warning` vs `quality`). Their keys differ (section, code, ref). Two of them back pinned, different `--json` contracts: `kb pr lint` uses `passed`/`findings`, the ticket and mission linters use `pass`/`errors`/`warnings`. A shared type would also pull `doctor` into standard-library-only prlint. A protocol nobody calls through is speculative. Record the reason in each type's docstring, one line each. |
 
 **Tests for A:** the existing linter suites cover A1 and A2 unchanged. Add one
-`hublag` test that pins the A3 behaviour: a `## <id> <title>` heading is read,
-and a `## ` line with an empty id is not.
+`hublag` test that pins both A3 changes: a `## <id> <title>` heading is read;
+a `## ` line with an empty id is kept as body text of the previous section;
+a tab-separated title is not part of the id.
 
 ### Delivery
 
 One PR, release **1.16.3**. The CHANGELOG lists the three moves, the new
-`mdmask` module, the A3 named change, and the decisions closing A2, A4 and A5.
+`mdmask` module, the A3 named change, and the decisions closing A2, A4 and A5. The PR also adds one line to item 6
+of the review's §8 saying the sparse-worktree half (F7) is deferred to this
+spec's backlog.
 
 ---
 
@@ -144,7 +161,10 @@ One PR, release **1.16.3**. The CHANGELOG lists the three moves, the new
 
 ### C6. pyright on `tests/`
 
-Measured today: `pyright tests` in basic mode reports **158 errors**.
+Measured today: `pyright tests` in basic mode reports **158 errors** after
+`uv sync --extra dev`. Run it with the project venv, for example
+`pyright --pythonpath .venv/bin/python tests`. Without the venv about 330
+errors show, because pytest and the other imports cannot be found.
 
 | Rule | Errors |
 |---|---|
@@ -155,7 +175,7 @@ Measured today: `pyright tests` in basic mode reports **158 errors**.
 | `reportGeneralTypeIssues` | 4 |
 | other | 7 |
 
-They are spread over about 60 files. The largest are `test_usage_ledger.py`
+They are spread over 37 files. The largest are `test_usage_ledger.py`
 (21), `test_codeingest_scaffold.py` (14) and `test_summarize.py` (13).
 
 **Decision: fix all of them in one pass, then set
@@ -171,11 +191,23 @@ How:
   `test_ingest_seam.py` imports `gen_e2e_fixture`, both from `scripts/`. Fix
   them with `extraPaths`, or with whatever path the tests already use at
   runtime. Builder's call.
-- **Tests that pass a wrong type on purpose** (to test validation) get a
-  targeted `# pyright: ignore[<rule>]` with a few words of reason. Never a bare
-  `# type: ignore`. Never a file-level or rule-level downgrade.
-- **If an error exposes a wrong annotation in `src/`, fix the annotation.** If
-  it exposes a real bug, stop and report it. Do not fix it inside this batch.
+- **A targeted `# pyright: ignore[<rule>]` with a few words of reason is
+  allowed** where the test is right and the checker cannot see it. Never a
+  bare `# type: ignore`. Never a file-level or rule-level downgrade. This
+  covers:
+  - tests that pass a wrong type on purpose, to test validation;
+  - platform-only names, such as `subprocess.CREATE_NO_WINDOW` in
+    `test_gitio.py`;
+  - private stdlib APIs, such as `TarInfo._create_pax_generic_header` in
+    `test_intake_core.py`;
+  - attributes set on stub modules or fakes, as in `test_parser.py`,
+    `test_images.py` and `test_summarize.py`. Prefer typing the fake properly
+    when that is a one-line change.
+- **If an error exposes a wrong annotation in `src/`, fix the annotation.**
+- **If an error exposes a real bug, do not fix it in this batch and do not
+  block on it.** Give it a targeted ignore whose reason says
+  "real bug, tracked", report it in the PR description, and open a
+  follow-up. The release numbering does not move.
 - `reportUnusedExpression` in `test_hashsync.py:80` is a warning today. Fix it
   anyway.
 
@@ -229,7 +261,8 @@ them apart.
 
 ### Today
 
-`build_routes` in `web/ui.py` (422 lines, 13 nested handlers and helpers),
+`build_routes` in `web/ui.py` (`ui.py:284` to the end of the file, about 500
+lines, 13 nested handlers and helpers),
 `web/api.py` and `web/intake_routes.py` define their handlers as closures. The
 closures capture `config`, `token`, the store factory, the login limiter and
 the proxy count.
@@ -253,6 +286,10 @@ The nested handlers cannot be read, tested or imported one at a time, and
   threadpool and async ones still run on the loop. Prefer this over
   `request.app.state`: it keeps handlers callable without an app and keeps
   `build_routes`' signature unchanged.
+- **Pass `name=` to every `Route`.** Starlette names a route after its
+  endpoint's `__name__`, and a `partial` has none of its own, so every route
+  would be named `"partial"`. Nothing calls `url_for` today, but the names
+  should stay what they are.
 - **Helpers that read only the context**, such as `_budget`, `_store_for`,
   `_disk_cache_dir` and `_find_asset`, become module-level functions that take
   the context.
@@ -282,7 +319,8 @@ The review measured a cost of 79 ms at 459 files and 257 ms at 1,143 files.
 The worst case is a whole-hub write per publish on a 1 GB hub. Nobody runs a
 hub that size today.
 
-Record it as an open item in the review's follow-up list, with a trigger:
+This section is the record of the open item (4a also points §8 item 6 of the
+review here). The trigger:
 
 > build it when a real hub passes about 5,000 files or 200 MB checked out,
 > **or** p95 intake publish latency passes 2 s.
@@ -298,6 +336,13 @@ file.
 - No rewrite of prlint onto lintcore (see A2).
 - No change to which imports are lazy for startup speed.
 - No ADR files.
+- pyright on `tests-gate/` (6 errors) and `scripts/`. Only `tests/` joins.
+- **Other §4.1/§4.2 findings that the owner's wave 4 list does not name**
+  stay out of this wave. They are candidates for a later wave, not closed:
+  - git calls outside `gitio` (`codeingest/localgit.py`, `publish.py`);
+  - 21 direct `yaml.safe_load` sites in 12 modules;
+  - business logic left in `cli.py`;
+  - about 56 functions over 80 lines (4c fixes only `ui.build_routes`).
 
 ## Left to the builder
 
