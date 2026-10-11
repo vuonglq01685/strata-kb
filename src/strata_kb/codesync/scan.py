@@ -201,12 +201,17 @@ def _sort_key(f: Finding) -> tuple[str, ...]:
 
 
 def run_scan(
-    root: Path, *, baseline_sha: str | None = None, baseline_source: str = "override"
+    root: Path,
+    *,
+    baseline_sha: str | None = None,
+    baseline_source: str = "override",
+    bot_ref: bool = True,
 ) -> ScanResult:
     """Findings between the baseline and the default branch's tip.
 
     `baseline_sha` overrides the baseline file (tests, recovery, the runner's
-    REST read) and is labelled `baseline_source`. GitError when a sha is not
+    REST read) and is labelled `baseline_source`. `bot_ref` False ignores the
+    local bot-branch tracking ref (the runner has no PR-state check for it). GitError when a sha is not
     in the repo's history."""
     root = root.resolve()
     scan_sha = baseline_mod.scan_ref(root)
@@ -216,7 +221,7 @@ def run_scan(
         )
         source = baseline_source
     else:
-        base, source = baseline_mod.resolve(root, scan_sha)
+        base, source = baseline_mod.resolve(root, scan_sha, bot_ref=bot_ref)
         if base is not None:
             base = gitio.resolve_commit(root, base)
     if base is None:

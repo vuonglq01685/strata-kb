@@ -22,7 +22,25 @@ logger = logging.getLogger("strata_kb.codesync.issue")
 LABEL = "kb-code-sync"
 TITLE = "kb code-sync: hub documents to update"
 
+# GitHub rejects an issue body over 65536 chars (422); stay well under.
+MAX_BODY_CHARS = 60000
+TRUNCATED_LINE = (
+    "... work order truncated: run `kb code-sync scan --md` locally for the rest."
+)
+
 _MARKER_RE = re.compile(re.escape(scan.DIGEST_PREFIX) + r"([0-9a-f]+) -->")
+
+
+def _issue_body(r: scan.ScanResult) -> str:
+    """The work order, cut to fit GitHub's body cap. The digest marker stays
+    the last line so the unchanged-check still finds it."""
+    body = scan.render_markdown(r)
+    if len(body) <= MAX_BODY_CHARS:
+        return body
+    marker = body.rstrip("\n").rsplit("\n", 1)[1]
+    tail = f"\n{TRUNCATED_LINE}\n\n{marker}\n"
+    head = body[: MAX_BODY_CHARS - len(tail)]
+    return head.rsplit("\n", 1)[0] + tail
 
 
 def sync_issue(
@@ -39,7 +57,7 @@ def sync_issue(
         comment = f"kb code-sync: nothing left to update as of {r.scan_sha[:12]}."
         ghapp.close_issue(repo_full, token, existing[0], comment, http=http)
         return "closed"
-    body = scan.render_markdown(r)
+    body = _issue_body(r)
     if existing is None:
         ghapp.create_issue(repo_full, token, TITLE, body, LABEL, http=http)
         return "created"

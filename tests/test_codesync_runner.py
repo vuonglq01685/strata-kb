@@ -22,8 +22,14 @@ REPO = "acme/kb-hub"
 class RouteHTTP:
     """Fake GitHub: a baseline-file GET, an issue list, and issue writes."""
 
-    def __init__(self, baseline_sha: str | None = None, open_issues=()):
+    def __init__(
+        self,
+        baseline_sha: str | None = None,
+        open_issues=(),
+        open_pr: bool = True,
+    ):
         self.baseline_sha = baseline_sha
+        self.open_pr = open_pr
         self.open_issues = list(open_issues)
         self.requests: list[tuple[str, str]] = []
 
@@ -36,6 +42,8 @@ class RouteHTTP:
             text = f"baseline: {self.baseline_sha}\n".encode()
             body = {"encoding": "base64", "content": base64.b64encode(text).decode()}
             return 200, json.dumps(body).encode()
+        if method == "GET" and "/pulls?" in url:
+            return 200, json.dumps([{"number": 3}] if self.open_pr else []).encode()
         if method == "GET":
             return 200, json.dumps(self.open_issues).encode()
         return 201, json.dumps({"number": 5}).encode()
@@ -84,14 +92,19 @@ def test_run_once_with_creds_reads_bot_branch_baseline_over_rest(
     code = runner.run_once(root, issue=True, http=http)
 
     assert code == 2
-    assert seen == {"baseline_sha": c1, "baseline_source": "bot-branch"}
+    assert seen == {
+        "baseline_sha": c1,
+        "baseline_source": "bot-branch",
+        "bot_ref": False,
+    }
     assert not fetches
-    assert http.methods() == ["GET", "GET", "POST", "POST"]
-    assert f"/contents/{baseline.BASELINE_FILE}" in http.requests[0][1]
-    assert f"ref={baseline.BOT_BRANCH.replace('/', '%2F')}" in http.requests[0][1]
+    assert http.methods() == ["GET", "GET", "GET", "POST", "POST"]
+    assert "/pulls?" in http.requests[0][1]
+    assert f"/contents/{baseline.BASELINE_FILE}" in http.requests[1][1]
+    assert f"ref={baseline.BOT_BRANCH.replace('/', '%2F')}" in http.requests[1][1]
 
 
-def test_run_once_falls_back_to_resolve_when_bot_branch_has_no_file(
+def test_run_once_falls_back_to_default_branch_when_bot_branch_has_no_file(
     hub_with_drift, monkeypatch, caplog
 ):
     root, c1 = hub_with_drift
@@ -104,10 +117,56 @@ def test_run_once_falls_back_to_resolve_when_bot_branch_has_no_file(
         return real(r, **kw)
 
     monkeypatch.setattr(scan, "run_scan", spy)
+    http = RouteHTTP(baseline_sha=None)
 
-    runner.run_once(root, issue=True, http=RouteHTTP(baseline_sha=None))
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        assert runner.run_once(root, issue=True, http=http) == 2
 
-    assert seen["baseline_sha"] is None
+    assert seen["baseline_sha"] is None and seen["bot_ref"] is False
+    assert http.methods()[-2:] == ["POST", "POST"]  # the issue is still synced
+    assert "issue created" in caplog.text
+
+
+def test_run_once_closed_pr_ignores_stale_tracking_ref_and_branch_file(
+    hub_with_drift, run_git, monkeypatch, caplog
+):
+    """A rejected round: no open PR, the branch file (or a stale local
+    origin/kb-bot/code-sync) names a sha that never landed. Both are ignored."""
+    root, c1 = hub_with_drift
+    monkeypatch.setenv("STRATA_KB_GH_TOKEN", "tok")
+    head = gitio.resolve_commit(root, "HEAD")
+    run_git(root, "update-ref", f"refs/remotes/origin/{baseline.BOT_BRANCH}", head)
+    http = RouteHTTP(baseline_sha=head, open_pr=False)  # rejected round's sha
+
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        code = runner.run_once(root, issue=True, http=http)
+
+    assert code == 2  # drift since c1 still reported, not hidden
+    assert "(baseline " + c1[:12] in caplog.text
+    assert all("/contents/" not in u for _, u in http.requests)
+    assert http.methods()[-2:] == ["POST", "POST"]
+
+
+def test_run_once_open_pr_check_error_scans_with_default_baseline(
+    hub_with_drift, monkeypatch, caplog
+):
+    root, c1 = hub_with_drift
+    monkeypatch.setenv("STRATA_KB_GH_TOKEN", "sekret-token")
+    requests: list[str] = []
+
+    def http(req):
+        requests.append(req.full_url)
+        return 500, b"{}"
+
+    with caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"):
+        code = runner.run_once(root, issue=True, http=http)
+
+    assert code == 2
+    assert len(requests) == 1 and "/pulls?" in requests[0]
+    assert "bot-branch baseline not read" in caplog.text
+    assert "issue not updated" in caplog.text
+    assert "## arch" in caplog.text
+    assert "sekret-token" not in caplog.text
 
 
 def test_run_once_without_creds_logs_and_returns(hub_with_drift, caplog):
@@ -309,6 +368,25 @@ def test_run_loop_survives_errors_and_sleeps_interval(tmp_path, monkeypatch, cap
     assert len(calls) == 2
     assert sleeps == [3600, 3600]
     assert "RuntimeError: boom" in caplog.text
+
+
+def test_run_loop_redacts_credentials_in_failure_log(tmp_path, monkeypatch, caplog):
+    def boom(root, *, issue, http):
+        raise RuntimeError("fetch https://user:SECRET@github.com/a/b.git failed")
+
+    monkeypatch.setattr(runner, "run_once", boom)
+
+    def sleep(n):
+        raise StopLoop
+
+    with (
+        caplog.at_level(logging.INFO, logger="strata_kb.codesync.runner"),
+        pytest.raises(StopLoop),
+    ):
+        runner.run_loop(tmp_path, interval=3600, issue=True, sleep=sleep)
+
+    assert "run failed" in caplog.text and "github.com" in caplog.text
+    assert "SECRET" not in caplog.text
 
 
 def test_interval_from_env_default(monkeypatch):

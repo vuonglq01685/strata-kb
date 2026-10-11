@@ -79,8 +79,10 @@ document, on one side only is reported.
    - `git fetch --prune origin` first: publish decisions read the local
      tracking refs.
    - `origin/kb-bot/code-sync` exists: look at its PRs with
-     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt`
-     (it may list several). Decide in this order:
+     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt,isCrossRepository`
+     (it may list several). **Ignore rows where `isCrossRepository` is
+     true**: fork PRs that happen to use the same branch name. Decide in this
+     order:
      - **Any PR is open**: that is the rolling PR. Continue.
        `git checkout kb-bot/code-sync` (git tracks the remote one if there
        is no local copy), then `git merge --ff-only origin/kb-bot/code-sync`
@@ -99,9 +101,9 @@ document, on one side only is reported.
    - A **local** `kb-bot/code-sync` already exists and the remote one does
      not (a PR that merged, a closed PR, or an earlier run that ended with
      nothing to do): run
-     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt`
-     and describe the case to the manager (merged / closed unmerged / no PR
-     ever). Run `git log --oneline origin/<default>..kb-bot/code-sync` and
+     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt,isCrossRepository`
+     (ignore rows where `isCrossRepository` is true) and describe the case
+     to the manager (merged / closed unmerged / no PR ever). Run `git log --oneline origin/<default>..kb-bot/code-sync` and
      show it: any commit listed is **not on the default branch** and would
      be lost, so warn the manager before asking. Ask whether to delete the
      old local branch. **Only on an explicit yes**, run

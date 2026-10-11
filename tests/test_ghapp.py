@@ -154,6 +154,18 @@ def test_find_open_issue_none_when_empty_and_error_hides_token():
     assert "ghs_secret" not in str(exc.value)
 
 
+def test_find_open_pr_returns_number_or_none_and_error_hides_token():
+    http = FakeHTTP([(200, [{"number": 4}]), (200, [])])
+    assert ghapp.find_open_pr("acme/kb-hub", "t", "kb-bot/code-sync", http=http) == 4
+    url = http.requests[0].full_url
+    assert "/repos/acme/kb-hub/pulls?" in url and "state=open" in url
+    assert "head=acme%3Akb-bot%2Fcode-sync" in url
+    assert ghapp.find_open_pr("acme/kb-hub", "t", "b", http=http) is None
+    with pytest.raises(ghapp.GHAppError) as exc:
+        ghapp.find_open_pr("a/b", "ghs_secret", "b", http=FakeHTTP([(500, {})]))
+    assert "ghs_secret" not in str(exc.value)
+
+
 def test_create_issue_ensures_label_then_posts():
     http = FakeHTTP([(422, {}), (201, {"number": 12})])
     n = ghapp.create_issue("a/b", "t", "T", "B", "kb-code-sync", http=http)

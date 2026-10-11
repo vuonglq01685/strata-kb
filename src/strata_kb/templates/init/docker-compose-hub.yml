@@ -37,6 +37,7 @@ services:
   hub-sync:
     image: ghcr.io/vuonglq01685/strata-kb:v{version}
     command: ["kb", "code-sync", "run", "--issue", "--loop"]
+    restart: unless-stopped
     env_file: .env
     mem_limit: 256m
     volumes:

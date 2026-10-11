@@ -64,10 +64,13 @@ def _github(root: Path, http) -> tuple[str, str] | str:
 
 def _rest_baseline(creds: tuple[str, str], http) -> tuple[str | None, str | None]:
     """`(sha, error)`: the baseline on the rolling PR branch, read over REST
-    (the image has no fetched bot branch). `sha` None with no error means the
-    branch has no file (404); `error` means the read failed."""
+    (the image has no fetched bot branch), trusted only while its PR is open:
+    a closed-unmerged round never landed. `sha` None with no error means no
+    open PR or no file (404); `error` means a GitHub call failed."""
     repo_full, token = creds
     try:
+        if ghapp.find_open_pr(repo_full, token, baseline.BOT_BRANCH, http=http) is None:
+            return None, None
         text = ghapp.read_file(
             repo_full, token, baseline.BASELINE_FILE, baseline.BOT_BRANCH, http=http
         )
@@ -84,7 +87,9 @@ def run_once(root: Path, *, issue: bool, http=ghapp._default_http) -> int:
         sha = None
         if isinstance(creds, tuple):
             sha, reason = _rest_baseline(creds, http)
-        r = scan.run_scan(root, baseline_sha=sha, baseline_source="bot-branch")
+        r = scan.run_scan(
+            root, baseline_sha=sha, baseline_source="bot-branch", bot_ref=False
+        )
     except (KbError, ValueError, yaml.YAMLError, OSError) as exc:
         # Never reach sync_issue: an error must not close or rewrite the issue.
         logger.error("code-sync scan failed: %s", " ".join(str(exc).split()))
@@ -123,5 +128,5 @@ def run_loop(
         try:
             run_once(root, issue=issue, http=http)
         except Exception as exc:  # noqa: BLE001 -- the service must outlive any one run
-            logger.error("code-sync run failed: %s: %s", type(exc).__name__, exc)
+            logger.error("code-sync run failed: %s", _why(exc))
         sleep(interval)

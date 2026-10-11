@@ -126,3 +126,29 @@ def test_issue_token_unreadable_pem_is_none(clean_env, monkeypatch, tmp_path, ca
     monkeypatch.setenv("STRATA_KB_GH_APP_KEY", str(tmp_path / "missing.pem"))
     assert issue.issue_token("a/b", http=FakeHTTP([])) is None
     assert "missing.pem" in caplog.text
+
+
+def _huge_result() -> scan.ScanResult:
+    return result(*(f"term{i:05d}" + "x" * 80 for i in range(1000)))
+
+
+def test_oversized_body_is_truncated_with_marker_last():
+    r = _huge_result()
+    assert len(scan.render_markdown(r)) > issue.MAX_BODY_CHARS
+    http = FakeHTTP([(200, []), (201, {}), (201, {"number": 5})])
+    assert issue.sync_issue(r, repo_full="a/b", token="t", http=http) == "created"
+    body = json.loads(http.requests[2].data)["body"]
+    assert len(body) <= issue.MAX_BODY_CHARS
+    assert "kb code-sync scan --md" in body
+    lines = body.splitlines()
+    assert lines[-1] == f"{scan.DIGEST_PREFIX}{scan.digest(r)} -->"
+    assert issue.TRUNCATED_LINE in lines
+
+
+def test_oversized_body_same_digest_is_unchanged():
+    r = _huge_result()
+    first = FakeHTTP([(200, []), (201, {}), (201, {"number": 5})])
+    issue.sync_issue(r, repo_full="a/b", token="t", http=first)
+    stored = json.loads(first.requests[2].data)["body"]
+    http = FakeHTTP([(200, [{"number": 5, "body": stored}])])
+    assert issue.sync_issue(r, repo_full="a/b", token="t", http=http) == "unchanged"

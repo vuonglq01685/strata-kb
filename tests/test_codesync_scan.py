@@ -374,6 +374,27 @@ def test_bot_branch_baseline_wins(code_sync_hub, run_git, tmp_path):
     assert c1 != c2
 
 
+def test_bot_ref_false_ignores_the_tracking_ref(code_sync_hub, run_git, tmp_path):
+    root, c1 = code_sync_hub
+    write_doc(root, "acme", "code", NO_LEDGER)
+    c2 = commit(root, run_git)
+    run_git(root, "checkout", "-q", "-b", "bot")
+    baseline.write(root, c2)
+    bot = commit(root, run_git)
+    run_git(root, "checkout", "-q", "-")
+    run_git(root, "branch", "-q", "-D", "bot")
+    baseline.write(root, c1)
+    commit(root, run_git)
+    _with_origin(root, run_git, tmp_path)
+    # Stale tracking ref (a closed PR's branch): bot_ref=False reads the default file.
+    run_git(root, "update-ref", f"refs/remotes/origin/{baseline.BOT_BRANCH}", bot)
+
+    r = scan.run_scan(root, bot_ref=False)
+
+    assert (r.baseline_sha, r.baseline_source) == (c1, "default-branch")
+    assert scan.run_scan(root).baseline_sha == c2
+
+
 def test_scan_ref_no_remote_is_head(code_sync_hub):
     root, c1 = code_sync_hub
     assert baseline.scan_ref(root) == c1

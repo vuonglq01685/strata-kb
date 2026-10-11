@@ -57,10 +57,13 @@ def scan_ref(root: Path) -> str:
     return gitio.resolve_commit(root, gitio.origin_head_ref(root))
 
 
-def resolve(root: Path, scan_sha: str) -> tuple[str | None, str]:
+def resolve(
+    root: Path, scan_sha: str, *, bot_ref: bool = True
+) -> tuple[str | None, str]:
     """`(baseline sha, source)`: the rolling PR branch's file when that
-    remote-tracking ref holds one, else the file at `scan_sha`."""
-    if gitio.rev_exists(root, _BOT_REF):
+    remote-tracking ref holds one, else the file at `scan_sha`. `bot_ref`
+    False never reads the local tracking ref: it can outlive a closed PR."""
+    if bot_ref and gitio.rev_exists(root, _BOT_REF):
         sha = read_at(root, _BOT_REF)
         if sha is not None:
             return sha, "bot-branch"

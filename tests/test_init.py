@@ -2867,7 +2867,8 @@ def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
             "## Images that may need a redraw",
             "## Rounds",
             "### Round <scan sha12>",
-            "--state all --json number,state,mergedAt",
+            "--state all --json number,state,mergedAt,isCrossRepository",
+            "isCrossRepository` is",
             "git log --oneline origin/<default>..kb-bot/code-sync",
             "there is no local branch of",
             "**Any PR is open**",
@@ -3145,11 +3146,13 @@ def test_hub_compose_has_hub_sync_service(tmp_path):
         assert sync["env_file"] == ".env", label
         assert sync["volumes"] == ["./:/data"], label
         assert sync["mem_limit"], label
+        assert sync["restart"] == "unless-stopped", label
         assert not sync.get("ports") and not sync.get("healthcheck"), label
         hub = doc["services"]["hub"]
         same = {k: v for k, v in sync.items() if k in ("image", "build")}
         assert same == {k: v for k, v in hub.items() if k in ("image", "build")}, label
         assert hub["ports"] == ["8321:8321"] and hub["mem_limit"] == "512m", label
+        assert "restart" not in hub, label
         for want in _HUB_MOUNTS:
             assert want in hub["volumes"], label
         _assert_no_dangling_volumes(doc, label)

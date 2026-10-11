@@ -3,9 +3,10 @@
 
 Mints an installation token for the hub repo from the App's id and private
 key (a short-lived RS256 JWT), opens -- or finds the already-open -- PR
-for a branch, and keeps a rolling labelled issue and reads repo files. Server-side only: intake.py and web/intake_routes.py call it,
-never the CLI. Every HTTP call goes through an injectable `http` callable so
-tests never touch api.github.com; tokens never appear in error messages.
+for a branch, and keeps a rolling labelled issue and reads repo files.
+Callers: intake.py, web/intake_routes.py and the `kb code-sync` runner. Every
+HTTP call goes through an injectable `http` callable so tests never touch
+api.github.com; tokens never appear in error messages.
 """
 
 from __future__ import annotations
@@ -26,9 +27,9 @@ _GH_URL_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$")
 class GHAppError(RuntimeError):
     """GitHub App call failed (token is never included in the message).
 
-    Deliberately stays out of the KbError family: server-side only (GitHub
-    App auth) -- never raised on a CLI-terminal path, so there is no `except
-    KbError` guard for it to hide from.
+    Deliberately stays out of the KbError family: raised by the server and by
+    `kb code-sync` (runner/issue), which catch it themselves, so there is no
+    CLI-terminal `except KbError` guard for it to hide from.
     """
 
 
@@ -137,6 +138,18 @@ def create_or_get_pr(
         if status2 == 200 and isinstance(prs, list) and prs:
             return prs[0]["html_url"]
     raise GHAppError(f"create PR on '{repo_full}' -> {status}")
+
+
+def find_open_pr(
+    repo_full: str, token: str, head_branch: str, http=_default_http
+) -> int | None:
+    """Number of an open PR from `head_branch` of this repo, else None."""
+    owner = repo_full.split("/")[0]
+    q = urllib.parse.urlencode({"head": f"{owner}:{head_branch}", "state": "open"})
+    status, prs = _call("GET", f"{API}/repos/{repo_full}/pulls?{q}", token, None, http)
+    if status != 200 or not isinstance(prs, list):
+        raise GHAppError(f"list pulls on '{repo_full}' -> {status}")
+    return prs[0]["number"] if prs else None
 
 
 def find_open_issue(
