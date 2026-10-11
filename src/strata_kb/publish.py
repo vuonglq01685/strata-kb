@@ -1332,6 +1332,8 @@ def publish(
 def _require_branch_pr(root: Path, branch: str, has_remote: bool) -> None:
     """Refuse `--branch` unless it is checked out, is not the default branch,
     and a PR can be opened -- a code-sync change never lands without review."""
+    if not gitio.valid_branch_name(root, branch):
+        raise PublishError(f"--branch '{branch}' is not a valid branch name")
     current = gitio.current_branch(root)
     if current != branch:
         raise PublishError(
@@ -1625,19 +1627,20 @@ def _publish_on_branch(
     of the checked-out `branch` (no reset, no force-push, no switch back)."""
     n_docs, changed, skipped = snapshot_fn(kb_abs, handle, rid, source_commit)
     federation.write_federation_index(handle.federation_dir, changed={rid})
-    committed = gitio.commit_paths(
-        handle.root, f"publish: {rid} @ {source_commit}", ["federation"]
-    )
+    gitio.commit_paths(handle.root, f"publish: {rid} @ {source_commit}", ["federation"])
     reported_commit = _reported_commit(handle, rid, source_commit, changed)
-    if not committed:
-        return PublishReport(
-            rid, reported_commit, n_docs, False, mode="pr", skipped=skipped, remote=True
-        )
-    gitio.push_branch(handle.root, branch, handle.token, force=False)
-    url = ghio.pr_url_for_branch(handle.root, branch)
-    if not url:
+    # Decide by the branch, not by `committed`: a baseline-only round or a
+    # rerun after a failed push has local commits and an unchanged mirror.
+    # A plain push is a no-op when origin/<branch> is up to date, so skip it
+    # only to avoid the network round-trip.
+    root = handle.root
+    unpushed = gitio.commits_ahead(root, f"origin/{branch}", branch) != 0
+    if unpushed:
+        gitio.push_branch(root, branch, handle.token, force=False)
+    url = ghio.pr_url_for_branch(root, branch)
+    if not url and gitio.commits_ahead(root, gitio.origin_head_ref(root), branch):
         url = ghio.create_pr(
-            handle.root,
+            root,
             branch,
             title=f"publish: {rid} @ {source_commit}",
             body=PR_BODY_TEMPLATE.format(rid=rid, commit=source_commit),
@@ -1646,7 +1649,7 @@ def _publish_on_branch(
         rid,
         reported_commit,
         n_docs,
-        True,
+        unpushed,
         mode="pr",
         pr_url=url,
         skipped=skipped,

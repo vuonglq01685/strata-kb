@@ -631,6 +631,25 @@ def origin_head_ref(root: Path) -> str:
     return ref[len(prefix) :]
 
 
+def valid_branch_name(root: Path, name: str) -> bool:
+    """True when `name` is a plain, well-formed branch name (not `HEAD`, not
+    an `@{-1}`-style shorthand)."""
+    if name == "HEAD":
+        return False
+    proc = _run(root, "check-ref-format", "--branch", name)
+    return proc.returncode == 0 and proc.stdout.strip() == name
+
+
+def commits_ahead(root: Path, base: str, head: str) -> int | None:
+    """Commits in `head` not in `base`; None when `base` does not exist."""
+    if _run(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode:
+        return None
+    proc = _run(root, "rev-list", "--count", f"{base}..{head}")
+    if proc.returncode != 0:
+        raise GitError(f"could not compare {base} and {head}: {proc.stderr.strip()}")
+    return int(proc.stdout.strip())
+
+
 def resolve_commit(root: Path, rev: str) -> str:
     """Full sha of `rev`; GitError if it does not name a commit."""
     proc = _run(root, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")

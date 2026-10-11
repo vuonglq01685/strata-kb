@@ -74,6 +74,49 @@ def test_branch_publish_commits_on_current_branch_without_reset(
     )
 
 
+def test_baseline_only_commit_is_pushed_and_gets_a_pr(hub_on_branch, gh, run_git):
+    hub = hub_on_branch
+    publish(hub / ".kb", str(hub), self_publish=True, branch=BRANCH)
+    gh["create"].clear()
+    # a later round changes no mirror content, only the baseline file
+    (hub / "kb-code-sync.yaml").write_text("baseline: abc\n", encoding="utf-8")
+    run_git(hub, "add", "-A")
+    run_git(hub, "commit", "-m", "kb: baseline")
+    head = run_git(hub, "rev-parse", "HEAD")
+    report = publish(hub / ".kb", str(hub), self_publish=True, branch=BRANCH)
+    assert run_git(hub, "rev-parse", "HEAD") == head  # no new commit
+    assert run_git(hub, "rev-parse", f"origin/{BRANCH}") == head
+    assert report.pushed and gh["create"] == [BRANCH]
+
+
+def test_rerun_after_a_failed_push_still_pushes(
+    hub_on_branch, gh, monkeypatch, run_git
+):
+    hub = hub_on_branch
+    real_push = gitio.push_branch
+
+    def failing(*a, **kw):
+        raise gitio.GitError("push branch failed: network")
+
+    monkeypatch.setattr(gitio, "push_branch", failing)
+    with pytest.raises(gitio.GitError):
+        publish(hub / ".kb", str(hub), self_publish=True, branch=BRANCH)
+    head = run_git(hub, "rev-parse", "HEAD")  # federation commit exists locally
+    monkeypatch.setattr(gitio, "push_branch", real_push)
+    report = publish(hub / ".kb", str(hub), self_publish=True, branch=BRANCH)
+    assert run_git(hub, "rev-parse", "HEAD") == head
+    assert run_git(hub, "rev-parse", f"origin/{BRANCH}") == head
+    assert report.pushed and report.pr_url
+
+
+def test_up_to_date_branch_does_not_push_again(hub_on_branch, gh):
+    hub = hub_on_branch
+    publish(hub / ".kb", str(hub), self_publish=True, branch=BRANCH)
+    gh["push"].clear()
+    report = publish(hub / ".kb", str(hub), self_publish=True, branch=BRANCH)
+    assert gh["push"] == [] and not report.pushed
+
+
 def test_branch_publish_reuses_open_pr(hub_on_branch, gh, monkeypatch):
     hub = hub_on_branch
     monkeypatch.setattr(
@@ -126,6 +169,24 @@ def test_branch_refuses_the_default_branch(hub_with_origin, gh, run_git):
         publish(hub / ".kb", str(hub), self_publish=True, branch=default)
     assert run_git(hub, "rev-parse", "HEAD") == head
     assert gh["push"] == []
+
+
+def test_branch_head_on_a_detached_checkout_is_refused(hub_on_branch, gh, run_git):
+    hub = hub_on_branch
+    run_git(hub, "checkout", "--detach")
+    head = run_git(hub, "rev-parse", "HEAD")
+    with pytest.raises(PublishError, match="not a valid branch name"):
+        publish(hub / ".kb", str(hub), self_publish=True, branch="HEAD")
+    assert run_git(hub, "rev-parse", "HEAD") == head
+    assert gh["push"] == []
+
+
+def test_branch_with_an_invalid_name_is_refused(hub_on_branch, gh, run_git):
+    hub = hub_on_branch
+    head = run_git(hub, "rev-parse", "HEAD")
+    with pytest.raises(PublishError, match="not a valid branch name"):
+        publish(hub / ".kb", str(hub), self_publish=True, branch="a..b")
+    assert run_git(hub, "rev-parse", "HEAD") == head
 
 
 def test_branch_refuses_non_self_publish(git_kb, hub_with_origin, gh):
