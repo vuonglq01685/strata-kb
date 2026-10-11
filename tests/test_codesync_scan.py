@@ -302,6 +302,20 @@ def test_no_baseline_file_is_note_and_exit_0(code_sync_hub):
     assert "note: no baseline — run kb code-sync baseline" in scan.render_markdown(r)
 
 
+def test_json_names_the_hub_repo_id_outside_the_digest(code_sync_hub, run_git):
+    root, c1 = code_sync_hub
+    write_doc(root, "acme", "code", NO_LEDGER)
+    commit(root, run_git)
+
+    r = scan.run_scan(root, baseline_sha=c1)
+
+    assert scan.to_json(r)["hub_repo_id"] == r.hub_repo_id != ""
+    assert scan.to_json(scan.run_scan(root))["hub_repo_id"] == r.hub_repo_id
+    assert scan.digest(r) == scan.digest(
+        scan.ScanResult(r.scan_sha, r.baseline_sha, "x", r.findings, ("n",), "other")
+    )
+
+
 def test_baseline_file_at_scan_sha_is_used(code_sync_hub, run_git):
     root, c1 = code_sync_hub
     baseline.write(root, c1)

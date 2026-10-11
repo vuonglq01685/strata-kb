@@ -36,28 +36,30 @@ Needs: a hub checkout (`kind: hub`), `gh` logged in, and `origin/HEAD` set.
 If `kb code-sync scan` says `origin/HEAD` is unset, tell the manager to run
 `git remote set-head origin --auto` and stop. In the steps below,
 `<default>` is the default branch (`git symbolic-ref --short
-refs/remotes/origin/HEAD`, without the `origin/`) and `<rid>` is `repo_id`
-in `.kb/config.yaml`.
+refs/remotes/origin/HEAD`, without the `origin/`) and `<rid>` is the scan
+JSON's `hub_repo_id` (the hub's own id under `federation/`).
 
-The draft check is a shell function. Shell state may not persist between
-tool calls, so define it **in the same command that calls it**. Call
-`draft_check <doc>` for a document, run from the hub root; any output means
-the document is not clean: stop. It compares only what code-sync edits,
+The draft check is two shell functions. Shell state may not persist between
+tool calls, so define them **in the same command that calls them**. Run from
+the hub root. `draft_check <rid> <doc>` checks one document;
+`draft_check_all <rid>` checks every document directory (one holding a
+`_manifest.yaml`) found under `.kb/` **or** `federation/<rid>/`, so a
+document deleted from `.kb/` but still mirrored is caught too. Any output
+means the tree is not clean: stop. They compare only what code-sync edits,
 `_manifest.yaml` and every `*.md` (including `*.raw.md`), because
 `kb publish` copies exactly those files byte for byte, while it withholds
-dotfiles and moves image assets to the asset store. The mirror directory is
-`federation/<rid>/`, with `<rid>` resolved the way `kb publish` resolves it
-(quotes in `.kb/config.yaml` make a plain `sed` wrong). The function runs
-`uv run python`; if `kb` is installed without uv, set `KB_PYTHON=python`
-(the interpreter that has `strata_kb`) first.
+dotfiles and moves image assets to the asset store. A file, or a whole
+document, on one side only is reported.
 
     draft_check() {
-      doc="$1"
-      rid="$(${KB_PYTHON:-uv run python} -c "from pathlib import Path; from strata_kb.config import effective_repo_id; print(effective_repo_id('', Path('.kb')) or Path.cwd().name)")" || { echo "cannot resolve repo_id"; return; }
-      a=".kb/$doc"; b="federation/$rid/$doc"
+      rid="$1"; doc="$2"; a=".kb/$doc"; b="federation/$rid/$doc"
       list() { (cd "$1" 2>/dev/null && find . -type f \( -name '_manifest.yaml' -o -name '*.md' \) | sed 's|^\./||' | grep -v -e '^\.' -e '/\.' | sort); }
       [ "$(list "$a")" = "$(list "$b")" ] || echo "$doc: file present on one side only"
       list "$a" | while IFS= read -r f; do cmp -s "$a/$f" "$b/$f" || echo "$doc/$f differs"; done
+    }
+    draft_check_all() {
+      rid="$1"
+      ls -d .kb/*/ "federation/$rid"/*/ 2>/dev/null | while IFS= read -r d; do [ -f "$d/_manifest.yaml" ] && basename "$d"; done | sort -u | while IFS= read -r doc; do draft_check "$rid" "$doc"; done
     }
 
 ## Workflow
@@ -68,26 +70,29 @@ dotfiles and moves image assets to the asset store. The mirror directory is
      Uncommitted work: stop and ask the manager to commit or stash it.
    - Run `kb code-sync scan --json` (read-only). Exit `1`: show the error
      and stop. Exit `0` here is **not** a reason to stop: this data predates
-     the fetch in step 2 and may be stale. For each touched `<doc>` run
-     `draft_check <doc>` (define it in the same command). Any output:
-     **stop** and tell the manager to publish (`/kb-publish`) or discard
-     the draft first. Never mix a half-written draft into a code-sync PR.
+     the fetch in step 2 and may be stale. Take `<rid>` from its
+     `hub_repo_id`, then run `draft_check_all <rid>` (define the functions in
+     the same command). Any output: **stop** and tell the manager to publish
+     (`/kb-publish`) or discard the draft first. Never mix a half-written
+     draft into a code-sync PR.
 2. **Branch.**
    - `git fetch --prune origin` first: publish decisions read the local
      tracking refs.
    - `origin/kb-bot/code-sync` exists: look at its PRs with
-     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt`.
-     - An **open** PR: continue. `git checkout kb-bot/code-sync` (git
-       tracks the remote one if there is no local copy), then
-       `git merge --ff-only origin/kb-bot/code-sync` (always; a failure
-       means the local copy diverged: stop and show it), then
-       `git merge origin/<default>`. Merge, never rebase and never reset:
-       earlier rounds stay. Merge conflict: stop and show it.
-     - The PR **merged** but the remote branch was kept (GitHub keeps it by
-       default): stop. Tell the manager the remote branch is left over and
-       that deleting it is theirs to do, never yours; then re-run.
-     - **Closed without merging**, or **no PR at all**: stop and ask the
-       manager what to do with the stale remote branch.
+     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt`
+     (it may list several). Decide in this order:
+     - **Any PR is open**: that is the rolling PR. Continue.
+       `git checkout kb-bot/code-sync` (git tracks the remote one if there
+       is no local copy), then `git merge --ff-only origin/kb-bot/code-sync`
+       (always; a failure means the local copy diverged: stop and show it),
+       then `git merge origin/<default>`. Merge, never rebase and never
+       reset: earlier rounds stay. Merge conflict: stop and show it.
+     - Else the **newest PR is merged** but the remote branch was kept
+       (GitHub keeps it by default): stop. Tell the manager the remote
+       branch is left over and that deleting it is theirs to do, never
+       yours; then re-run.
+     - Else (**closed without merging**, or **no PR at all**): stop and ask
+       the manager what to do with the stale remote branch.
    - It does not exist on the remote **and** there is no local branch of
      that name: create it with
      `git checkout --no-track -b kb-bot/code-sync origin/<default>`.
@@ -114,10 +119,13 @@ dotfiles and moves image assets to the asset store. The mirror directory is
      show. Each finding carries `doc_id`, `section_id`, `section_title`,
      `term`, `image`, `repo_id`, `code_doc_id`, `code_section_id`, `status`,
      `added`, `removed`.
-   - **Draft check, now, on this branch.** Before any edit, run
-     `draft_check <doc>` for **every** document the scan touches. The merge
-     in step 2 can bring an unpublished `.kb/<doc>` edit onto the branch.
-     Any output: stop, tell the manager to publish or discard the draft.
+   - **Draft check, now, on this branch.** Before any edit, take `<rid>`
+     from this scan's `hub_repo_id` and run `draft_check_all <rid>` over the
+     **whole** of `.kb/`: the merge in step 2 is what can bring an
+     unpublished draft onto the branch, in any document (`kb publish`
+     mirrors all of `.kb/`, not only the touched ones). Any output: stop,
+     tell the manager to publish or discard the draft. Do this before any
+     edit, baseline move or commit, so a stop strands nothing.
    - A `notes` entry saying a document **is not tagged authored** is
      exposed to a PDF re-ingest overwriting your fix. Tell the manager and
      suggest `kb authored <doc>`. Never run it yourself. Relay every other
@@ -154,13 +162,6 @@ dotfiles and moves image assets to the asset store. The mirror directory is
 8. **Commit and publish.**
    - `git add .kb kb-code-sync.yaml` and commit on `kb-bot/code-sync`
      (`docs: code-sync @ <scan sha12>`).
-   - **Draft check on the rest of `.kb/`.** `git merge origin/<default>`
-     can bring an unpublished draft of a document the scan does not touch,
-     and `kb publish` mirrors all of `.kb/`. In one command that defines
-     `draft_check`, run it for every document directory in `.kb/` (one holding
-     a `_manifest.yaml`) that this round did **not** edit, for example
-     `for d in $(ls -d .kb/*/ | xargs -n1 basename); do case " <edited docs> " in *" $d "*) ;; *) [ -f ".kb/$d/_manifest.yaml" ] && draft_check "$d";; esac; done`.
-     Any output: stop, tell the manager to publish or discard that draft.
    - `kb publish --branch kb-bot/code-sync`. It must be run on that branch;
      it pushes (never forced), mirrors `.kb/` into `federation/<rid>/`, and
      opens or reuses the PR. A refusal (direct mode, no remote, no `gh`):

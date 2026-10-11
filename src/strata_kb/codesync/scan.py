@@ -69,6 +69,7 @@ class ScanResult:
     baseline_source: str
     findings: tuple[Finding, ...]
     notes: tuple[str, ...]
+    hub_repo_id: str = ""  # outside the digest: names federation/<rid>/ for the skill
 
 
 def _fact_terms(kind: str, value: str) -> list[str]:
@@ -155,10 +156,14 @@ def _first_hit(
     return (image_term, True) if image_term is not None else None
 
 
+def hub_repo_id(root: Path) -> str:
+    return config.effective_repo_id("", root / ".kb") or root.name
+
+
 def _findings(
     root: Path, scan_sha: str, items: list[ChangedItem]
 ) -> tuple[list[Finding], list[str]]:
-    rid = config.effective_repo_id("", root / ".kb") or root.name
+    rid = hub_repo_id(root)
     patterns = [(item, [(t, _pattern(t)) for t in match_terms(item)]) for item in items]
     patterns = [(item, pats) for item, pats in patterns if pats]
     findings: list[Finding] = []
@@ -215,10 +220,17 @@ def run_scan(
         if base is not None:
             base = gitio.resolve_commit(root, base)
     if base is None:
-        return ScanResult(scan_sha, None, source, (), (NO_BASELINE_NOTE,))
+        return ScanResult(
+            scan_sha, None, source, (), (NO_BASELINE_NOTE,), hub_repo_id(root)
+        )
     findings, notes = _findings(root, scan_sha, code_changes(root, base, scan_sha))
     return ScanResult(
-        scan_sha, base, source, tuple(sorted(findings, key=_sort_key)), tuple(notes)
+        scan_sha,
+        base,
+        source,
+        tuple(sorted(findings, key=_sort_key)),
+        tuple(notes),
+        hub_repo_id(root),
     )
 
 
@@ -277,6 +289,7 @@ def to_json(r: ScanResult) -> dict:
         "baseline_sha": r.baseline_sha,
         "baseline_source": r.baseline_source,
         "notes": list(r.notes),
+        "hub_repo_id": r.hub_repo_id,
         "findings": [_finding_json(f) for f in r.findings],
     }
 

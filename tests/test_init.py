@@ -2860,8 +2860,9 @@ def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
             "git status --porcelain` must print nothing",
             "gh pr view kb-bot/code-sync --json body",
             "git branch -D kb-bot/code-sync",
-            "same command that calls it",
-            "effective_repo_id",
+            "same command that calls them",
+            "draft_check_all",
+            "hub_repo_id",
             "## Needs the SA",
             "## Images that may need a redraw",
             "## Rounds",
@@ -2869,6 +2870,8 @@ def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
             "--state all --json number,state,mergedAt",
             "git log --oneline origin/<default>..kb-bot/code-sync",
             "there is no local branch of",
+            "**Any PR is open**",
+            "newest PR is merged",
         ):
             assert needle in text, (rel, needle)
 
@@ -2880,7 +2883,7 @@ def _draft_check_script(repo: Path) -> str:
         .splitlines()
     )
     start = lines.index("    draft_check() {")
-    end = lines.index("    }", start)
+    end = lines.index("    }", lines.index("    draft_check_all() {"))
     return "\n".join(line[4:] for line in lines[start : end + 1])
 
 
@@ -2888,36 +2891,41 @@ def _draft_check_script(repo: Path) -> str:
     sys.platform == "win32" or shutil.which("bash") is None, reason="needs bash"
 )
 def test_kb_code_sync_draft_check_runs_against_a_real_hub(tmp_path: Path):
-    """The shipped shell function must stay silent for a clean doc (the
-    config's quoted repo_id included) and speak for any drift."""
+    """The shipped shell functions must stay silent for a clean tree and
+    speak for any drift: an edited file, a file on one side only, a document
+    deleted from .kb/ that the mirror still holds."""
     repo = tmp_path / "hubrepo"
     repo.mkdir()
     init_repo(repo, "hub")
-    for base in (repo / ".kb", repo / "federation" / "hubrepo"):
-        (base / "arch").mkdir(parents=True)
-        (base / "arch" / "_manifest.yaml").write_text("m\n", encoding="utf-8")
-        (base / "arch" / "a.md").write_text("l2\n", encoding="utf-8")
-        (base / "arch" / "a.raw.md").write_text("l3\n", encoding="utf-8")
-    script = _draft_check_script(repo) + '\ndraft_check "$1"\n'
-    env = {**os.environ, "KB_PYTHON": sys.executable}
+    rid = "hubrepo"  # init writes the folder name as repo_id
+    for doc in ("arch", "std"):
+        for base in (repo / ".kb", repo / "federation" / rid):
+            (base / doc).mkdir(parents=True)
+            (base / doc / "_manifest.yaml").write_text("m\n", encoding="utf-8")
+            (base / doc / "a.md").write_text("l2\n", encoding="utf-8")
+            (base / doc / "a.raw.md").write_text("l3\n", encoding="utf-8")
+    script = _draft_check_script(repo) + '\ndraft_check_all "$1"\n'
 
     def run() -> str:
-        proc = subprocess.run(
-            ["bash", "-c", script, "bash", "arch"],
+        return subprocess.run(
+            ["bash", "-c", script, "bash", rid],
             cwd=repo,
-            env=env,
             capture_output=True,
             text=True,
             check=True,
-        )
-        return proc.stdout
+        ).stdout
 
     assert run() == ""
-    (repo / ".kb" / "arch" / "a.raw.md").write_text("l3 edited\n", encoding="utf-8")
+    raw = repo / ".kb" / "arch" / "a.raw.md"
+    raw.write_text("l3 edited\n", encoding="utf-8")
     assert "arch/a.raw.md differs" in run()
-    (repo / ".kb" / "arch" / "a.raw.md").write_text("l3\n", encoding="utf-8")
-    (repo / ".kb" / "arch" / "b.md").write_text("new\n", encoding="utf-8")
-    assert "file present on one side only" in run()
+    raw.write_text("l3\n", encoding="utf-8")
+    (repo / ".kb" / "std" / "b.md").write_text("new\n", encoding="utf-8")
+    assert "std: file present on one side only" in run()
+    (repo / ".kb" / "std" / "b.md").unlink()
+    assert run() == ""
+    shutil.rmtree(repo / ".kb" / "std")
+    assert "std: file present on one side only" in run()
 
 
 _MCP_SETUP_WRAPPERS = [
