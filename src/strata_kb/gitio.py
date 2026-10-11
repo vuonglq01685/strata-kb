@@ -1,3 +1,13 @@
+"""gitio — every git subprocess call strata-kb makes.
+
+Small wrappers (rev-parse, show, status, clone, pull, commit, push, worktree,
+tag) that raise GitError on failure, plus BatchReader for many `read_at`s
+through one `git cat-file --batch`. Called from the CLI, the MCP stdio server,
+the HTTP server and the intake worker, so no call may assume a console. Any
+text that can carry a remote URL goes through `redact_url` before it is
+logged or raised; tokens reach git through the environment, never argv.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -70,12 +80,12 @@ def credential_env(url: str, token: str | None) -> dict[str, str]:
 
 
 def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    # P55: gitio is called from the CLI, the MCP stdio server, the HTTP
-    # server and the intake worker -- it cannot assume a console. An
-    # inherited stdin can be a protocol stream (the MCP server's stdin *is*
-    # the JSON-RPC channel); a git child that inherits it can block reading
-    # it forever (Wave J Critical). No call here writes to git's stdin, so
-    # DEVNULL is correct, not just convenient.
+    # gitio is called from the CLI, the MCP stdio server, the HTTP server
+    # and the intake worker -- it cannot assume a console. An inherited
+    # stdin can be a protocol stream (the MCP server's stdin *is* the
+    # JSON-RPC channel); a git child that inherits it can block reading it
+    # forever. No call here writes to git's stdin, so DEVNULL is correct,
+    # not just convenient.
     return subprocess.run(
         ["git", *args],
         cwd=root,
@@ -96,7 +106,7 @@ def _run_env(
     import os
 
     env = {**os.environ, **env_extra} if env_extra else None
-    # P55 -- see _run above.
+    # stdin=DEVNULL -- see _run above.
     return subprocess.run(
         ["git", *args],
         cwd=root,
@@ -121,7 +131,7 @@ def _run_network(
     the hub auto-pull thread, the intake worker) it also turns off git's tty
     and credential-manager prompts, which stdin=DEVNULL alone does not, so a
     missing credential fails instead of hanging -- and a hung remote cannot
-    hold a publish lock forever (2026-10-10 review §5.2 #9). Without one
+    hold a publish lock forever. Without one
     (the CLI), a developer's interactive credential prompt is unchanged."""
     if timeout is not None:
         env = {**env, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
@@ -208,15 +218,14 @@ def read_at(root: Path, rev: str, path: Path) -> str | None:
 
 class BatchReader:
     """`read_at` for many (rev, path) pairs through ONE `git cat-file --batch`
-    process, memoised. `kb resolve` used to start four git processes per
-    ref (`rev-parse` twice, `show` twice): 22 for five refs (2026-10-10
-    review §6.2 F8).
+    process, memoised. Plain `read_at` calls cost `kb resolve` four git
+    processes per ref (`rev-parse` twice, `show` twice): 22 for five refs.
 
     Same contract as `read_at` for files: the text (newlines normalised as
     text-mode `git show` did), None when the path is absent at that rev,
     GitError when the rev does not exist. A directory reads as None (`git
-    show` would print a tree listing; no caller reads one). Use as a context manager; `close()` ends the
-    process.
+    show` would print a tree listing; no caller reads one). Use as a context
+    manager; `close()` ends the process.
     """
 
     def __init__(self, root: Path) -> None:
@@ -308,9 +317,9 @@ def config_value(root: Path, key: str, *, local: bool = False) -> str:
     `local=True` scopes the read to `root`'s own `.git/config` (`--local`),
     ignoring anything set in the operator's global/system gitconfig --
     without it, a value set globally is indistinguishable from one written
-    into this clone's own config (the exact gap Important 2 found in
-    hub.py's `_cache_needs_reclone`, and the reason `doctor.py`'s credential
-    sweep already scopes its own read this way).
+    into this clone's own config (the gap this closes in hub.py's
+    `_cache_needs_reclone`, and the reason `doctor.py`'s credential sweep
+    scopes its own read this way).
     """
     args = ["config", "--local", "--get", key] if local else ["config", "--get", key]
     proc = _run(root, *args)
@@ -323,7 +332,7 @@ def clone(url: str, dest: Path) -> None:
     core.autocrlf=false / core.eol=lf are set on the command AND written into
     the clone's local config: with Git for Windows' default autocrlf=true a
     fresh checkout writes CRLF, hashsync hashes raw bytes, and the next
-    publish looks like a whole-tree change (F-D10).
+    publish looks like a whole-tree change.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     stripped, token = split_credentials(url)

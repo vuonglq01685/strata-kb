@@ -1,3 +1,12 @@
+"""embed — the optional local embedder behind semantic search.
+
+`default_embedder()` returns a process-wide cached fastembed model
+(bge-small-en-v1.5, 384 dimensions), or None when the `[embed]` extra is
+missing or the model cannot load; callers then fall back to keyword-only
+search. `searchdb` imports the score floor, the L2 head length and the vector
+serializer from here, so the indexer and the query side stay in step.
+"""
+
 from __future__ import annotations
 
 import logging

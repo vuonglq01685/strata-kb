@@ -1,4 +1,13 @@
 # src/strata_kb/hashsync.py
+"""hashsync — sha256 manifests and manifest-driven tree sync.
+
+Builds {relpath: sha256} manifests of a directory, diffs two of them into
+changed/deleted lists, and applies that diff by copying and unlinking files.
+Used by publish (local snapshot -> hub checkout), cipublish and the hub intake
+service; searchdb borrows `unlink_force`. Every destination path goes through
+`_guard`, which raises HashSyncError for a path resolving outside dest_root.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -14,7 +23,7 @@ from strata_kb.errors import KbError
 class HashSyncError(KbError):
     """A sync path escapes the destination root. Every call site (publish,
     intake) already converts it to a one-line CLI/HTTP message -- joins the
-    KbError family (Wave G fix round 2, item 7)."""
+    KbError family."""
 
 
 def build_manifest(root: Path, exclude: tuple[str, ...] = ()) -> dict[str, str]:

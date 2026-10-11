@@ -8,7 +8,7 @@ converts into a user-facing message", instead of re-enumerating
 `PublishError` / `GateError` / `CIPublishError` / `AssetStoreError` / ... at
 every call site.
 
-That enumeration is what kept failing in this batch: a new sibling (or a new
+That enumeration is what kept failing: a new sibling (or a new
 call site for an existing one) is added, one `except (...)` tuple is not
 updated, and the class it misses stops being "caught and turned into a
 message" and starts being "an uncaught traceback" -- silently, because nine
@@ -29,8 +29,7 @@ fail on its own, rather than reaching a user's terminal. One narrower claim
 than "every exception class strata_kb defines": `pkgutil`'s file-finder skips a
 directory with no `__init__.py` (a PEP 420 namespace portion) as "not a
 package", so a class defined only there is not swept -- latent today, since
-every subpackage in this tree has an `__init__.py` (Minor 3, Wave G fix
-round 2 re-review).
+every subpackage in this tree has an `__init__.py`.
 
 Deriving from `RuntimeError` (not replacing it) keeps every existing
 `except PublishError`, `except GateError`, `except SomeSpecificSubclass` and

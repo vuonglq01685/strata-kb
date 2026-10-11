@@ -1,3 +1,10 @@
+"""config — `ServerConfig`, the settings one MCP or web server runs with.
+
+A plain dataclass: the KB directory, the hub, the transport and the bind
+address. `strata_kb.mcp.parse_args()` builds it from the command line; the MCP
+server and the `web` app both read it.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,13 @@
+"""publish — `kb publish`: mirror a KB into a hub's federation/ tree.
+
+`plan` picks the route; `publish` mirrors `.kb/` into `federation/<repo-id>/`
+(direct push or PR), `publish_federation` sends a mid-tier hub's federation/
+to a higher hub, and `publish_via_intake` tags a commit for the child's CI to
+upload. Hub writes are hash-diffs (hashsync) gated by pubgate. With an asset
+store, a per-entry `_assets.yaml` may be the only pointer to a stored asset:
+never delete or overwrite one on the strength of a failed read.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -21,8 +31,8 @@ logger = logging.getLogger("strata_kb.publish")
 
 _LEGACY_ID_RE = re.compile(r"(^|-)x\d+$")
 
-# `git clean -e <spec>` takes a GITIGNORE PATTERN, not a path (task 21 fix
-# round 5, I4-1/P38) -- see _gitignore_literal below.
+# `git clean -e <spec>` takes a GITIGNORE PATTERN, not a path -- see
+# _gitignore_literal below.
 _GITIGNORE_META_RE = re.compile(r"([\\\[\]*?!#])")
 
 PR_BODY_TEMPLATE = (
@@ -66,19 +76,18 @@ def _neutralize_excludes(root: Path) -> None:
     )
 
 
-# Moved to federation.FED_TOP_EXCLUDE (F-D9 finding 5) so doctor.check_hub's
-# namespace-level stray sweep shares this one definition instead of reaching
-# into a private name in a sibling module -- kept as a local alias so every
-# existing reference below stays unchanged.
+# Defined in federation.FED_TOP_EXCLUDE so doctor.check_hub's namespace-level
+# stray sweep shares this one definition instead of reaching into a private
+# name in a sibling module -- kept as a local alias for the references below.
 _FED_TOP_EXCLUDE = federation.FED_TOP_EXCLUDE
 
 
 def _record_assets(record_path: Path) -> list[str]:
     """`.assets` at `record_path`, or [] when absent/corrupt/unreadable.
 
-    SOURCE-side reader only (task 21 fix round 3, P28) -- for the
-    destination's own hub-owned record, use _dest_record_assets below
-    instead; the two sides are not symmetric, see that function's docstring.
+    SOURCE-side reader only -- for the destination's own hub-owned record,
+    use _dest_record_assets below instead; the two sides are not symmetric,
+    see that function's docstring.
 
     Self-heals like assetstore._load_record (a stray bookkeeping file must
     not fail a whole publish) without reaching into that private helper
@@ -86,30 +95,26 @@ def _record_assets(record_path: Path) -> list[str]:
     record (upstream data this hub does not own) before folding it into
     dest's.
 
-    OSError is caught alongside the YAML/schema errors (task 21 fix round 2,
-    N3/m2): _load_record catches bare Exception, so the two readers of the
-    same on-disk file disagreed on exactly this one class -- an unreadable
-    record (a permission bit, a lock) used to propagate straight out of
-    _reconcile_asset_records' post-apply_sync window, past a guard that only
-    caught AssetStoreError, and reproduce the C1 outage's exact permanent
-    signature: raw bytes committed, changed=False on every retry, never
-    repaired. Self-healing this side to [] is safe -- the hub's own record
-    (read by _dest_record_assets) is authoritative, and nothing of the
-    hub's is at risk when upstream data cannot be read.
+    OSError is caught alongside the YAML/schema errors: _load_record catches
+    bare Exception, and the two readers of the same on-disk file must not
+    disagree on this one class -- an unreadable record (a permission bit, a
+    lock) would otherwise propagate straight out of _reconcile_asset_records'
+    post-apply_sync window, past a guard that only caught AssetStoreError,
+    and leave the permanent failure signature: raw bytes committed,
+    changed=False on every retry, never repaired. Self-healing this side to
+    [] is safe -- the hub's own record (read by _dest_record_assets) is
+    authoritative, and nothing of the hub's is at risk when upstream data
+    cannot be read.
 
-    That last clause holds for the READ. It did not hold for what
-    _reconcile_asset_records then DID with the result: Case A wrote these
-    names into the hub-owned record unfiltered, so a mangled upstream name
-    became the hub's problem after all, and cost the hub its record (wave
-    I-1 round 4, the Critical's third door). Since that fix this function
-    has exactly ONE caller, _inheritable_assets below, which applies the
-    name-shape filter to everything it returns before any of it can reach
-    a hub-owned record (wave I-1 round 5, Minor 2: the sentence here used
-    to say the leniency was kept "for the call sites that only read", and
-    after R2 there were none -- a reader would go looking for a set that
-    is empty). The leniency is still correct and still load-bearing: it is
-    what keeps a stray or half-written bookkeeping file in upstream data
-    this hub does not own from failing the whole publish, which is
+    That last clause holds for the READ, not for what is done with the
+    result: written into the hub-owned record unfiltered (Case A of
+    _reconcile_asset_records), a mangled upstream name becomes the hub's
+    problem after all and can cost the hub its record. So this function has
+    exactly ONE caller, _inheritable_assets below, which applies the
+    name-shape filter to everything it returns before any of it can reach a
+    hub-owned record. The leniency is still correct and still load-bearing:
+    it is what keeps a stray or half-written bookkeeping file in upstream
+    data this hub does not own from failing the whole publish, which is
     precisely what _inheritable_assets relies on when it drops-and-warns
     instead of raising.
     """
@@ -125,26 +130,23 @@ def _record_assets(record_path: Path) -> list[str]:
 def _dest_record_assets(record_path: Path) -> list[str]:
     """`.assets` at a hub-owned DESTINATION record; [] only when the file is
     genuinely absent -- an unreadable or corrupt one raises instead of
-    self-healing (task 21 fix round 3, P28, correcting this round's own
-    ruling from round 2).
+    self-healing.
 
-    Not a twin of _record_assets above. Round 2 widened _record_assets'
-    except to include OSError so an unreadable record would self-heal, which
-    is right for the SOURCE side (N3) but was wrong here: this reads THIS
-    hub's own bookkeeping file, whose names may be the only surviving
-    pointer into this hub's asset store. Self-healing an unreadable read to
-    [] let the union-merge in _reconcile_asset_records overwrite the file
-    with the source's names alone (dropping whatever the unreadable file
-    actually held), and when active_store was set, assetstore.
-    divert_and_record's own read of the same file (bare `except Exception`)
-    saw the same "empty" and unlinked it outright once nothing else
-    remained to write -- an unreadable file became a deleted file. The
-    corrupt-YAML variant is milder (the file survives, truncated to the
-    source's names) but the same principle applies: never delete or
-    overwrite data on the strength of a failed read of that data. The two
-    sides are not symmetric -- the source's own record is upstream data the
-    hub does not own (self-heal is correct there); this is hub-owned data
-    with nothing else backing it up.
+    Not a twin of _record_assets above. Self-healing an unreadable record is
+    right for the SOURCE side but wrong here: this reads THIS hub's own
+    bookkeeping file, whose names may be the only surviving pointer into this
+    hub's asset store. Self-healing an unreadable read to [] would let the
+    union-merge in _reconcile_asset_records overwrite the file with the source's
+    names alone (dropping whatever the unreadable file actually held), and when
+    active_store is set, assetstore.divert_and_record's own read of the same
+    file (bare `except Exception`) would see the same "empty" and unlink it
+    outright once nothing else remained to write -- an unreadable file would
+    become a deleted file. The corrupt-YAML variant is milder (the file
+    survives, truncated to the source's names) but the same principle applies:
+    never delete or overwrite data on the strength of a failed read of that
+    data. The two sides are not symmetric -- the source's own record is upstream
+    data the hub does not own (self-heal is correct there); this is hub-owned
+    data with nothing else backing it up.
 
     Raising a plain OSError (not a new exception type) keeps the failure
     inside _reconcile_asset_records' existing `except (assetstore.
@@ -154,70 +156,59 @@ def _dest_record_assets(record_path: Path) -> list[str]:
     assetstore.divert_and_record (whose own read would otherwise repeat the
     same mistake) once this has already raised.
 
-    Wave I-1 round 3 (P47, Important 3): this had no present-but-empty
-    check, the one gap left in P47 at the third of three call sites --
-    measured on the tree, a zero-byte DESTINATION record gave `record
-    after: False` (unlinked), the exact deletion closed at the other two
-    call sites (assetcmd.migrate_assets, intake._publish_in_worktree) via
-    assetstore.load_record. Grown in place rather than collapsed into that
-    function: see load_record's own docstring ("Made public...") for why --
-    in short, collapsing would swap this function's OSError for
+    A present-but-empty record raises too: read as [], a zero-byte
+    DESTINATION record ends up unlinked -- the deletion assetstore.load_record
+    prevents at the other two call sites (assetcmd.migrate_assets,
+    intake._publish_in_worktree). Grown in place rather than collapsed into
+    that function: see load_record's own docstring ("Made public...") for
+    why -- in short, collapsing would swap this function's OSError for
     AssetStoreError, and _reconcile_asset_records' read_failed flag (which
     protects an untracked record from the restore's `git clean` half) only
     watches for OSError at its inner boundary, so the swap would need to
-    widen that except too or silently regress ruling P33. Also picks up
-    load_record's other wave I-1 round 3 fix (Important 1): is_file() alone
-    would read a directory-shaped record as absent, which is the same P47
-    violation one level removed -- restore-or-remove-it, not delete.
+    widen that except too or silently lose that protection. As in
+    load_record, is_file() alone is not trusted: it would read a
+    directory-shaped record as absent, the same delete-on-a-failed-read one
+    level removed -- restore-or-remove-it, not delete.
 
-    Wave I-1 round 4 (Critical): round 3 stopped there and left
-    assetstore.load_record's OTHER two new checks -- per-entry name shape
-    and trailing newline -- on the source-of-truth side only. That
-    asymmetry deleted records. Measured end to end through a real
-    hub-to-hub publish with no monkeypatch, through three independent
-    doors: a truncated destination record and a newline-stripped one both
-    sailed past this function (no raise, so no read_failed, no abort, no
-    restore), _reconcile_asset_records went on to call assetstore.
-    divert_and_record on the same entry, ITS read of the SAME file went
-    through load_record, which DID have the checks and raised, its
-    deliberate self-heal turned that into `existing = []`, and with
-    nothing left to re-divert the merged set was empty and the record was
-    unlinked outright -- porcelain `D federation/.../_assets.yaml`, exit 0,
-    the object store left holding the only copy. Round 3's own premise
-    (save_yaml_model's non-atomic write producing truncated records) was
-    therefore made strictly WORSE at the destination by the commit that
-    added the detector: before it, all three doors left the record in
-    place. Two readers of one file must not disagree about what counts as
-    readable, so the checks below are the same ones, in the same order,
-    against the same module-owned regex -- only the exception type differs,
-    and it must (see above: OSError is what read_failed watches for).
+    The per-entry name-shape and trailing-newline checks below must stay
+    identical to assetstore.load_record's. With them on the source-of-truth side
+    only, a truncated destination record (save_yaml_model's write is not atomic)
+    or a newline-stripped one sails past this function (no raise, so no
+    read_failed, no abort, no restore), _reconcile_asset_records goes on to call
+    assetstore.divert_and_record on the same entry, ITS read of the SAME file
+    goes through load_record, which raises, its deliberate self-heal turns that
+    into `existing = []`, and with nothing left to re-divert the merged set is
+    empty and the record is unlinked outright -- porcelain `D
+    federation/.../_assets.yaml`, exit 0, the object store left holding the only
+    copy. A detector on one side only is strictly WORSE than none, which would
+    leave the record in place. Two readers of one file must not disagree about
+    what counts as readable, so the checks below are the same ones, in the same
+    order, against the same module-owned regex -- only the exception type
+    differs, and it must (see above: OSError is what read_failed watches for).
 
-    Wave I-1 round 5 (Critical, ruling P49): round 4's checks below keyed
-    on `Path(a).name`, and `Path` is WindowsPath here and PosixPath on CI,
-    so a backslash-spelled record entry was accepted on a Windows hub and
-    raised on a Linux one -- a platform split in a data-loss-adjacent
-    guard, and three red CI legs. The name-shape question now goes through
-    assetstore.is_asset_name, which takes the basename with POSIX
-    semantics on every host; see its docstring for why a backslash in a
-    record entry is an ordinary character rather than a separator, and for
-    the two places this codebase had already ruled that (divert_assets'
+    The name-shape question goes through assetstore.is_asset_name, which
+    takes the basename with POSIX semantics on every host. Keying on
+    `Path(a).name` would not: `Path` is WindowsPath on a Windows hub and
+    PosixPath on Linux, so a backslash-spelled record entry would be
+    accepted on one and raise on the other -- a platform split in a
+    data-loss-adjacent guard. See is_asset_name's docstring for why a
+    backslash in a record entry is an ordinary character rather than a
+    separator, and for the two other places that treat it so (divert_assets'
     as_posix() write and pubgate.is_kb_artifact's backslash refusal).
 
-    The third door is not here: a truncated SOURCE record reaches the
-    hub-owned record through _reconcile_asset_records' `inherited` merge,
-    which reads fed_src with the fully lenient _record_assets and used to
-    write whatever it found straight into dest's record -- past this
-    function entirely, because this function had already returned by then.
-    That one is closed at the merge, in _reconcile_asset_records.
+    One route to the hub-owned record does not pass through here: a
+    truncated SOURCE record reaches it through _reconcile_asset_records'
+    `inherited` merge, which reads fed_src with the fully lenient
+    _record_assets -- after this function has already returned. That one is
+    closed at the merge, by _inheritable_assets.
     """
     from strata_kb import assetstore
 
     if not record_path.is_file():
-        # os.path.lexists(), not Path.exists() -- wave I-1 round 4, Minor 4;
-        # see assetstore.load_record's matching branch for the measurement
-        # (a broken NTFS junction reads exists=False, lexists=True, and the
-        # "absent" answer flows on into the very deletion this branch exists
-        # to prevent).
+        # os.path.lexists(), not Path.exists() -- see assetstore.load_record's
+        # matching branch: a broken NTFS junction reads exists=False,
+        # lexists=True, and the "absent" answer flows on into the very
+        # deletion this branch exists to prevent.
         if os.path.lexists(record_path):
             raise OSError(
                 f"{assetstore.not_a_regular_file_clause(record_path)}, and "
@@ -287,21 +278,20 @@ def _inheritable_assets(src_record_path: Path, dest_record_path: Path) -> list[s
     asset names -- what _reconcile_asset_records' Case A may merge INTO this
     hub's own record.
 
-    Wave I-1 round 4, the Critical's third door. _record_assets (above) is
-    deliberately, correctly lenient: fed_src's record is upstream data this
-    hub does not own, and a stray bookkeeping file there must not fail a
-    whole publish. But Case A does not merely READ that data -- it writes it
-    into the hub-owned destination record, at which point a mangled upstream
-    name becomes this hub's problem. Measured end to end with real git and
-    no monkeypatch: a SOURCE record truncated mid-path was merged verbatim
-    into an otherwise-perfect destination record, assetstore.
-    divert_and_record's own read of that freshly-written file then rejected
-    it (assetstore.load_record's name-shape check), its self-heal turned the
-    raise into `existing = []`, and with nothing left to re-divert the
-    record was unlinked -- porcelain `D federation/.../_assets.yaml`, exit 0,
-    the object store holding the only copy. Hardening _dest_record_assets
-    alone does not close this one: the destination record was fine when it
-    was read; the corruption arrived afterwards, in the merge.
+    _record_assets (above) is deliberately, correctly lenient: fed_src's
+    record is upstream data this hub does not own, and a stray bookkeeping
+    file there must not fail a whole publish. But Case A does not merely
+    READ that data -- it writes it into the hub-owned destination record, at
+    which point a mangled upstream name becomes this hub's problem.
+    Unfiltered, a SOURCE record truncated mid-path is merged verbatim into an
+    otherwise-perfect destination record, assetstore.divert_and_record's own
+    read of that freshly-written file then rejects it (assetstore.
+    load_record's name-shape check), its self-heal turns the raise into
+    `existing = []`, and with nothing left to re-divert the record is
+    unlinked -- porcelain `D federation/.../_assets.yaml`, exit 0, the object
+    store holding the only copy. Hardening _dest_record_assets alone does not
+    close this one: the destination record is fine when it is read; the
+    corruption arrives afterwards, in the merge.
 
     Dropping rather than raising is the right shape here for the same reason
     _record_assets self-heals: an upstream record this hub does not own must
@@ -334,12 +324,12 @@ def _inheritable_assets(src_record_path: Path, dest_record_path: Path) -> list[s
 def _gitignore_literal(spec: str) -> str:
     """`spec` escaped so git matches it as a literal path, for the one
     place this codebase hands a path to a gitignore-pattern argument
-    (`git clean -e`) -- task 21 fix round 5, ruling P38.
+    (`git clean -e`).
 
     `-e` does NOT take a path. Measured on git 2.45.1 with real
     directories: `-e 'federation/mid/a[b]c/_assets.yaml'` DELETED
-    `a[b]c/_assets.yaml` (the file it was added to protect -- the exact
-    P28 deletion the exclusion exists to prevent, re-opened) and SPARED
+    `a[b]c/_assets.yaml` (the file it was added to protect -- the very
+    record deletion the exclusion exists to prevent) and SPARED
     `abc/_assets.yaml` instead, because the character class `[b]` matched
     `abc`. Defeat and widening in one run, silently. `[` and `]` are legal
     filenames on both platforms, and `pubgate.REPO_ID_RE` only covers
@@ -367,29 +357,27 @@ def _restore_federation_after_store_failure(
     whole federation/ tree), best-effort (logs on failure, never raises on
     its own).
 
-    `protect`, when given, is a path under dest excluded from the `git
-    clean` half (`git clean -fd -e <protect>`, the spec run through
-    _gitignore_literal first -- `-e` is a gitignore PATTERN, not a path,
-    and an unescaped `[`/`]` in the path both failed to protect it and
-    wrongly spared a different record; see that helper, ruling P38) even
-    when untracked (task 21 fix round 4, P33/M-2 -- the narrower alternative to a blanket
-    checkout-only restore for a dest-record read failure, see
-    _reconcile_asset_records). A hub-owned record this hub just refused to
-    read may be an entry's only surviving pointer into the store -- unlike
-    a plain mirrored file or a not-yet-diverted raw asset copy, which is
-    always re-copyable from fed_src on the next apply_sync, losing the
-    record is not something a later publish can re-derive.
+    `protect`, when given, is a path under dest excluded from the `git clean`
+    half (`git clean -fd -e <protect>`, the spec run through _gitignore_literal
+    first -- `-e` is a gitignore PATTERN, not a path, and an unescaped `[`/`]`
+    in the path would both fail to protect it and wrongly spare a different
+    record; see that helper) even when untracked (the narrower alternative to a
+    blanket checkout-only restore for a dest-record read failure, see
+    _reconcile_asset_records). A hub-owned record this hub just refused to read
+    may be an entry's only surviving pointer into the store -- unlike a plain
+    mirrored file or a not-yet-diverted raw asset copy, which is always
+    re-copyable from fed_src on the next apply_sync, losing the record is not
+    something a later publish can re-derive.
 
     Excluding just the record from `git clean`, rather than skipping the
-    whole clean half for that cause (the ruling's original framing),
-    matters: a scratch measurement showed the blanket skip is unsafe. Its
-    scenario -- a brand-new raw asset apply_sync had already copied into
-    the SAME entry, moments before a read failure fired on that entry's
-    (already-committed, unrelated) record -- survived a checkout-only
-    restore untracked (`git checkout` never touches untracked paths), then
-    matched dest against fed_src as "unchanged" on every retry thereafter:
-    never diverted, never committed, no durable copy anywhere -- worse than
-    the original C1 signature, not safer. Excluding only the record keeps
+    whole clean half for that cause, matters: the blanket skip is unsafe. A
+    brand-new raw asset apply_sync had already copied into the SAME entry,
+    moments before a read failure fired on that entry's (already-committed,
+    unrelated) record, survives a checkout-only restore untracked (`git
+    checkout` never touches untracked paths), then matches dest against
+    fed_src as "unchanged" on every retry thereafter: never diverted, never
+    committed, no durable copy anywhere -- worse than raw bytes committed
+    into hub git, not safer. Excluding only the record keeps
     that raw asset inside the ordinary cleaned set, restoring the
     all-or-nothing guarantee for everything except the one path whose loss
     is genuinely irreversible.
@@ -409,13 +397,13 @@ def _restore_federation_after_store_failure(
     and raises a different error type, so it is not folded into this same
     helper).
 
-    Scoped to `dest`, not "federation" (task 21 fix round 2, N1): for a
-    local-path hub, hub.resolve_hub hands back the operator's own directory
-    directly -- there is no clone in between -- so this used to run against
-    the operator's real working copy, over the whole federation/ tree.
-    Measured: an unrelated tracked edit elsewhere under federation/ got
-    reverted, and an unrelated untracked draft got deleted -- a publish that
-    fails must leave everything it did not write exactly as it found it.
+    Scoped to `dest`, not "federation": for a local-path hub,
+    hub.resolve_hub hands back the operator's own directory directly --
+    there is no clone in between -- so this runs against the operator's real
+    working copy. Over the whole federation/ tree it would revert an
+    unrelated tracked edit elsewhere under federation/ and delete an
+    unrelated untracked draft -- a publish that fails must leave everything
+    it did not write exactly as it found it.
     Both call sites only ever write under dest = handle.federation_dir / rid
     (checked by the is_relative_to guard each caller runs before writing
     anything), so a pathspec scoped to dest always covers everything this
@@ -499,7 +487,7 @@ def _snapshot(
         active_store = store if store is not None else assetstore.store_for_hub(handle)
     except (yaml.YAMLError, ValidationError, ValueError) as exc:
         # store_for_hub reads the HUB's own .kb/config.yaml (asset_store:) --
-        # a corrupt one must name itself, not the caller's (F-D9 finding 2).
+        # a corrupt one must name itself, not the caller's.
         raise PublishError(
             f"{handle.kb_dir / 'config.yaml'} (the hub's own config) is "
             f"unreadable: {exc}"
@@ -547,29 +535,28 @@ def _snapshot(
 def _iter_record_dirs(root: Path, record_name: str) -> list[tuple[str, Path]]:
     """(path-id, dir) of every directory under root directly holding a
     `record_name` file, DFS by name -- found the same way
-    hashsync.build_manifest finds files (root.rglob, no leaf predicate)
-    rather than through federation.iter_entry_dirs' _meta.yaml-AND-
-    index.yaml leaf predicate (task 21 fix round 2, N4/P18).
+    hashsync.build_manifest finds files (root.rglob, no leaf predicate) rather
+    than through federation.iter_entry_dirs' _meta.yaml-AND-index.yaml leaf
+    predicate.
 
-    _prepare_hub_to_hub_manifests used to enumerate entries for both the
-    per-entry asset-name synthesis and the RECORD_NAME pop via
-    iter_entry_dirs, but the manifests it populates are built by
-    build_manifest, which has no leaf predicate at all. An entry that is a
-    valid leaf when its record is written can stop being one on a later
-    publish (its _meta.yaml or index.yaml goes missing -- a state
-    federation.py explicitly tolerates, warned rather than rejected) without
-    the record disappearing from disk. iter_entry_dirs then walks straight
-    past it, so neither the synthesis (which keeps an already-diverted
-    asset's path "looking present" at the entry that diverted it) nor the
-    pop (which excludes the record from the plain file-diff) ever runs for
-    it again -- measured: the hub-owned record then reads as "deleted" on
-    the far side (popped there, not here) and gets removed while the store
-    may hold its only copy, and a raw binary the divert already stripped
-    out reads as "changed" and gets copied straight back into hub git. Both
-    outcomes are exactly what this task exists to prevent. Enumerating by
-    the record's own presence on disk, the same way build_manifest
-    enumerates files, is what keeps the two from disagreeing about what
-    counts as an entry with a record.
+    _prepare_hub_to_hub_manifests must not enumerate entries for the per-entry
+    asset-name synthesis and the RECORD_NAME pop via iter_entry_dirs: the
+    manifests it populates are built by build_manifest, which has no leaf
+    predicate at all. An entry that is a valid leaf when its record is written
+    can stop being one on a later publish (its _meta.yaml or index.yaml goes
+    missing -- a state federation.py explicitly tolerates, warned rather than
+    rejected) without the record disappearing from disk. iter_entry_dirs would
+    then walk straight past it, so neither the synthesis (which keeps an
+    already-diverted asset's path "looking present" at the entry that diverted
+    it) nor the pop (which excludes the record from the plain file-diff) would
+    ever run for it again: the hub-owned record then reads as "deleted" on the
+    far side (popped there, not here) and gets removed while the store may hold
+    its only copy, and a raw binary the divert already stripped out reads as
+    "changed" and gets copied straight back into hub git. Both outcomes are
+    exactly what diverting assets out of hub git exists to prevent. Enumerating
+    by the record's own presence on disk, the same way build_manifest enumerates
+    files, is what keeps the two from disagreeing about what counts as an entry
+    with a record.
     """
     if not root.is_dir():
         return []
@@ -586,25 +573,23 @@ def _prepare_hub_to_hub_manifests(
     """Build (src_man, dest_man, skipped, synthesized_src_only,
     dest_raw_assets) for _snapshot_federation's diff.
 
-    `dest_raw_assets` is the sorted dest-relative paths of every file
-    physically sitting at the destination that assetstore.divert_assets
-    would divert -- the probe that keeps _snapshot_federation's early
-    return from skipping _reconcile_asset_records on a publish whose plain
-    file diff is empty (task 21 fix round 5, ruling P37; see that early
-    return). Read straight off the freshly-built dest manifest BEFORE the
-    dest-side synthesis below adds already-diverted names to it, so it
-    costs no filesystem I/O at all: build_manifest has just walked and
-    hashed every regular file under dest, and its keys ARE the physically
-    present ones (synthesized names are exactly the assets with no bytes
-    left on disk, which is why they must not be counted here). The
-    predicate is divert_assets' own -- a file directly inside a directory
-    named `assets` whose name is content-addressed -- matched against
-    assetstore's single definition of that name rather than a copy, so
-    the gate and the divert cannot drift apart about what "divertible"
-    means (the class of disagreement N4/P18 and P31 were both about).
-    build_manifest skips symlinks, so a symlinked asset is not counted;
-    hashsync.apply_sync copies regular files only, so one cannot arrive
-    at dest through a publish.
+    `dest_raw_assets` is the sorted dest-relative paths of every file physically
+    sitting at the destination that assetstore.divert_assets would divert -- the
+    probe that keeps _snapshot_federation's early return from skipping
+    _reconcile_asset_records on a publish whose plain file diff is empty (see
+    that early return). Read straight off the freshly-built dest manifest BEFORE
+    the dest-side synthesis below adds already-diverted names to it, so it costs
+    no filesystem I/O at all: build_manifest has just walked and hashed every
+    regular file under dest, and its keys ARE the physically present ones
+    (synthesized names are exactly the assets with no bytes left on disk, which
+    is why they must not be counted here). The predicate is divert_assets' own
+    -- a file directly inside a directory named `assets` whose name is
+    content-addressed -- matched against assetstore's single definition of that
+    name rather than a copy, so the gate and the divert cannot drift apart about
+    what "divertible" means (the class of disagreement _iter_record_dirs and the
+    entry union in _reconcile_asset_records also guard against). build_manifest
+    skips symlinks, so a symlinked asset is not counted; hashsync.apply_sync
+    copies regular files only, so one cannot arrive at dest through a publish.
 
     RECORD_NAME (_assets.yaml) is popped from BOTH manifests
     unconditionally, whether or not active_store is set. A plain file-diff
@@ -614,8 +599,8 @@ def _prepare_hub_to_hub_manifests(
     one) would look deleted on the very next publish and get wiped --
     confirmed by running it. Popping it unconditionally, on both sides,
     means a publish where THIS hub currently has no store leaves whatever
-    dest already holds untouched instead of deleting or truncating it (I5)
-    -- _reconcile_asset_records' union-merge (also unconditional) is what
+    dest already holds untouched instead of deleting or truncating it --
+    _reconcile_asset_records' union-merge (also unconditional) is what
     actually grows it; nothing here ever shrinks it.
 
     The per-entry SOURCE-side asset-name synthesis (the loop over
@@ -624,9 +609,9 @@ def _prepare_hub_to_hub_manifests(
     -- migrated there, no physical bytes left in fed_src) must "look
     present" in src_man even when this hub has no store of its own, or a raw
     copy already sitting at dest from an earlier, storeless publish reads as
-    absent-from-source and apply_sync deletes it -- precisely "migrated
-    assets look deleted to an upstream hub", the outcome item 3 exists to
-    prevent (I6). synthesized_src_only tracks these paths (no physical file
+    absent-from-source and apply_sync deletes it -- precisely the
+    "migrated assets look deleted to an upstream hub" outcome this must
+    prevent. synthesized_src_only tracks these paths (no physical file
     anywhere in fed_src -- apply_sync's shutil.copy2 would crash on them) so
     the caller can keep them out of `changed`; their names still reach dest
     through _reconcile_asset_records' Case A, which reads fed_src's record
@@ -639,10 +624,9 @@ def _prepare_hub_to_hub_manifests(
     store, a stale raw source copy reappearing at dest is a redundant
     mirror of content the source still has, not a loss.
 
-    Both loops walk _iter_record_dirs, not federation.iter_entry_dirs (task
-    21 fix round 2, N4/P18): see that function's docstring for why a
-    leaf-validity predicate misses entries a plain manifest walk still
-    finds, and what breaks when the two disagree.
+    Both loops walk _iter_record_dirs, not federation.iter_entry_dirs: see that
+    function's docstring for why a leaf-validity predicate misses entries a
+    plain manifest walk still finds, and what breaks when the two disagree.
     """
     from strata_kb import assetstore, hashsync
 
@@ -683,33 +667,32 @@ def _asset_entry_root(parts: tuple[str, ...], leaves: frozenset[str]) -> str | N
     it at all.
 
     `leaves` is federation.iter_entry_dirs' own path-ids -- authoritative
-    by definition (ruling P39), so the nearest enclosing one wins outright.
-    Checking it first is what stops a deeper-than-usual asset
+    by definition, so the nearest enclosing one wins outright. Checking it
+    first is what stops a deeper-than-usual asset
     (`<entry>/<doc-id>/sub/assets/<name>`) from manufacturing a candidate
-    BELOW a real entry, which round 4 then dropped and reported as a
-    skipped `<entry>/<doc-id>/_assets.yaml` that does not exist (M4-1).
+    BELOW a real entry, which would then be dropped and reported as a
+    skipped `<entry>/<doc-id>/_assets.yaml` that does not exist.
 
-    With no enclosing leaf -- a marker-less entry, exactly the C-1 shape
-    this member exists for -- fall back to the layout: `<entry>/<doc-id>/
-    assets/<name>`, three up from the file, which is right at any
-    namespace depth because it walks UP from the file rather than down a
-    fixed count from dest. `<entry>/assets/<name>` (one level shallower)
-    is legal too -- assetstore.divert_assets matches `assets/*` at ANY
-    depth and pubgate.is_kb_artifact's asset rule is explicitly
-    depth-independent, so it mirrors to dest, and the plain-publish path
-    (_snapshot -> divert_and_record(dest)) diverts it correctly; round 4's
-    fixed arithmetic resolved it to the walk root and silently skipped it,
-    leaving raw bytes committed with changed=False forever (M4-3). Two
-    parents up covers it.
+    With no enclosing leaf -- a marker-less entry, exactly the shape this member
+    of _reconcile_asset_records' entry union exists for -- fall back to the
+    layout: `<entry>/<doc-id>/assets/<name>`, three up from the file, which is
+    right at any namespace depth because it walks UP from the file rather than
+    down a fixed count from dest. `<entry>/assets/<name>` (one level shallower)
+    is legal too -- assetstore.divert_assets matches `assets/*` at ANY depth and
+    pubgate.is_kb_artifact's asset rule is explicitly depth-independent, so it
+    mirrors to dest, and the plain-publish path (_snapshot ->
+    divert_and_record(dest)) diverts it correctly; fixed three-up arithmetic
+    would resolve it to the walk root and silently skip it, leaving raw bytes
+    committed with changed=False forever. Two parents up covers it.
 
     `assets/<name>` directly under the walk root has no entry above it at
     all: diverting it would write the record at namespace depth, the exact
-    wrong-depth artefact spec 11.2 forbids, so the caller reports it and
+    wrong-depth artefact the layout forbids (a record lives at
+    `<entry>/_assets.yaml`), so the caller reports it and
     leaves the bytes alone instead. Every root returned is a lexical
     prefix of a path rglob yielded under dest, so it is always inside the
     scope this function may touch -- no resolve()/relative_to() round trip,
-    and therefore no ValueError arm to swallow a real case (the arm that
-    silently hid this one).
+    and therefore no ValueError arm to swallow a real case silently.
     """
     for i in range(len(parts) - 1, 0, -1):
         cand = "/".join(parts[:i])
@@ -727,12 +710,12 @@ def _reconcile_asset_records(
 ) -> bool:
     """Per-entry RECORD_NAME reconciliation after apply_sync. Returns
     whether this pass changed the destination tree -- a record's bytes
-    changed, or a divert physically removed raw bytes from it (task 21 fix
-    round 5: the second half used to be missing, so a divert that merged no
-    NEW name into the record reported changed=False, _publish_direct never
-    committed, and the hub clone was left holding an uncommitted deletion).
-    Candidates dropped from the union are warned about directly rather than
-    returned for PublishReport.skipped -- see the filter loops below (M4-1).
+    changed, or a divert physically removed raw bytes from it (without the
+    second half, a divert that merges no NEW name into the record reports
+    changed=False, _publish_direct never commits, and the hub clone is left
+    holding an uncommitted deletion). Candidates dropped from the union are
+    warned about directly rather than returned for PublishReport.skipped --
+    see the filter loops below.
 
     Case A (union-merge, unconditional): names fed_src's own entry already
     recorded -- diverted at or below the source, no raw bytes anywhere in
@@ -741,14 +724,14 @@ def _reconcile_asset_records(
     _prepare_hub_to_hub_manifests would silently drop them instead of
     merely deferring their transfer. This runs regardless of active_store:
     it is a plain merge of two name sets, needs no store, and a union never
-    deletes or truncates what dest already has (I5) -- when this hub has no
+    deletes or truncates what dest already has -- when this hub has no
     store, this is the only thing still growing the record; when fed_src has
     nothing new (`inherited` empty), dest's own record is left exactly as
     it is, whether or not active_store is set. What may be inherited is
-    filtered by _inheritable_assets (wave I-1 round 4, the Critical's third
-    door): a name that is not content-addressed cannot be transferred
-    anyway, and merging one into the hub-owned record made that record
-    unreadable to assetstore.load_record -- whose caller then deleted it.
+    filtered by _inheritable_assets: a name that is not content-addressed
+    cannot be transferred anyway, and merging one into the hub-owned record
+    would make that record unreadable to assetstore.load_record -- whose
+    caller then deletes it.
 
     Case B (divert, gated on active_store): still-raw asset bytes that just
     landed under dest (copied in from a mid-tier hub with no store of its
@@ -757,77 +740,70 @@ def _reconcile_asset_records(
     above). Needs a real store, so it only runs when active_store is set.
 
     The whole per-entry body (Case A's read+write AND Case B's divert) runs
-    inside one try/except, not just the divert call (task 21 fix round 2,
-    N3): Case A's models.save_yaml_model write is unconditional now, and can
-    raise OSError (a lock, a full disk, a permission bit) exactly like a
-    store outage can -- the same unrecoverable-retry hazard
-    _restore_federation_after_store_failure exists to prevent, but with no
-    restore attempted at all if the guard only wrapped divert_and_record.
-    OSError is caught alongside AssetStoreError for the same reason --
-    _record_assets self-heals its own OSErrors now (see that function), so
-    the one left here is the union-merge's write. The DESTINATION record is
-    read with _dest_record_assets, not _record_assets (task 21 fix round 3,
-    P28): an unreadable destination record raises OSError -- caught by this
-    same except, restored and re-raised loudly -- instead of self-healing to
-    [] and letting the merge (or divert_and_record's own read of the same
-    file) overwrite or delete a record that may be the only surviving
-    pointer into this hub's store. The read happens unconditionally, before
-    both Case A's write and Case B's divert, so an unreadable record is
-    caught before divert_and_record is ever called for this entry -- not
-    just when Case A's union-merge would otherwise have run.
+    inside one try/except, not just the divert call: Case A's
+    models.save_yaml_model write is unconditional, and can raise OSError (a
+    lock, a full disk, a permission bit) exactly like a store outage can -- the
+    same unrecoverable-retry hazard _restore_federation_after_store_failure
+    exists to prevent, but with no restore attempted at all if the guard only
+    wrapped divert_and_record. OSError is caught alongside AssetStoreError for
+    the same reason -- _record_assets self-heals its own OSErrors (see that
+    function), so the one left here is the union-merge's write. The DESTINATION
+    record is read with _dest_record_assets, not _record_assets: an unreadable
+    destination record raises OSError -- caught by this same except, restored
+    and re-raised loudly -- instead of self-healing to [] and letting the merge
+    (or divert_and_record's own read of the same file) overwrite or delete a
+    record that may be the only surviving pointer into this hub's store. The
+    read happens unconditionally, before both Case A's write and Case B's
+    divert, so an unreadable record is caught before divert_and_record is ever
+    called for this entry -- not just when Case A's union-merge would otherwise
+    have run.
 
-    The entries walked are the union of federation.iter_entry_dirs(dest)
-    (valid leaves), _iter_record_dirs(dest, RECORD_NAME) (task 21 fix round
-    3, R2), and every directory that could CONTAIN divertible bytes (task
-    21 fix round 4, P31 -- below), not federation.iter_entry_dirs(dest)
+    The entries walked are the union of federation.iter_entry_dirs(dest) (valid
+    leaves), _iter_record_dirs(dest, RECORD_NAME), and every directory that
+    could CONTAIN divertible bytes (below), not federation.iter_entry_dirs(dest)
     alone. No two members of the union are enough by themselves: the leaf
-    predicate alone misses a half-broken entry (its _meta.yaml or
-    index.yaml gone, a state federation.py explicitly tolerates) that
-    already has a record and then receives a brand-new raw asset -- Case B
-    never runs for it, so the new bytes are never diverted and are
-    committed into hub git on this publish's own commit, changed=False on
-    every retry thereafter, the C1 signature, reached through the exact
-    branch N4/P18 was about. The record-presence walk alone would miss the
-    far more common opposite case: a brand-new entry, still a fully valid
-    leaf, that has never had a record before -- Case B is what *creates*
-    that first record, so skipping every entry without one yet would break
-    ordinary first-time hub-to-hub asset diversion outright.
+    predicate alone misses a half-broken entry (its _meta.yaml or index.yaml
+    gone, a state federation.py explicitly tolerates) that already has a record
+    and then receives a brand-new raw asset -- Case B never runs for it, so the
+    new bytes are never diverted and are committed into hub git on this
+    publish's own commit, changed=False on every retry thereafter -- the
+    permanent failure signature, reached through the leaf-predicate gap
+    _iter_record_dirs describes. The record-presence walk alone would miss the
+    far more common opposite case: a brand-new entry, still a fully valid leaf,
+    that has never had a record before -- Case B is what *creates* that first
+    record, so skipping every entry without one yet would break ordinary
+    first-time hub-to-hub asset diversion outright.
 
-    Ruling P31 (task 21 fix round 4, C-1): the first two members both key on
-    something an entry must already HAVE -- a valid leaf pair or an
-    existing record. An entry with NEITHER (an interrupted publish on or
-    before its *first* ever divert, so no record was ever written; the
-    brief's own motivating input) is in no walk at all, so Case B never
-    runs for it either, while hashsync.build_manifest (no leaf predicate)
-    still puts its raw asset bytes in src_man and apply_sync copies them
-    straight into the hub tree -- character for character the original
-    Critical, and `kb assets migrate` does not repair it later either,
+    The first two members both key on something an entry must already
+    HAVE -- a valid leaf pair or an existing record. An entry with NEITHER
+    (an interrupted publish on or before its *first* ever divert, so no
+    record was ever written) would be in no walk at all, so Case B would
+    never run for it either, while hashsync.build_manifest (no leaf
+    predicate) still puts its raw asset bytes in src_man and apply_sync
+    copies them straight into the hub tree -- raw binaries committed into
+    hub git, and `kb assets migrate` does not repair it later either,
     since assetcmd.migrate_assets enumerates with federation.iter_entry_dirs
     too. The third member closes this: every file assetstore.divert_assets
     itself would find (the same `rglob("assets/*")` basis), attributed to
     its entry by _asset_entry_root -- see that function for how the root is
-    chosen and why the fixed `f.parent.parent.parent` arithmetic round 4
-    shipped was not enough on its own (M4-3).
+    chosen and why fixed `f.parent.parent.parent` arithmetic is not enough
+    on its own.
 
-    Only a symlinked asset FILE is skipped here. The claim this docstring
-    used to make -- that this "mirrors federation.iter_entry_dirs' own
-    symlinked-dir guard" -- was broader than the code (task 21 fix round 5,
-    M4-2): `rglob("**/assets/*")`'s `**` does not descend into symlinked
+    Only a symlinked asset FILE is skipped here; this does NOT mirror
+    federation.iter_entry_dirs' symlinked-dir guard.
+    `rglob("**/assets/*")`'s `**` does not descend into symlinked
     directories, but the literal `assets` component is matched through
     is_dir(), which follows one, so a symlinked `assets` DIRECTORY is still
     entered and assetstore.divert_assets would unlink through it. Not a new
     exposure (divert_assets has always behaved that way, and
     hashsync.apply_sync copies regular files only, so a symlink cannot
-    arrive at dest through a publish) and NOT verified here: this
-    environment refuses os.symlink outright (WinError 1314), so the claim
-    is narrowed to what can be read off the code rather than widened to
-    something no test in this tree can exercise.
+    arrive at dest through a publish) and NOT verified by a test: the
+    Windows development environment refuses os.symlink outright (WinError
+    1314), so the claim is limited to what can be read off the code.
 
-    Ruling P39 (task 21 fix round 5, C4-2), which corrects ruling P34: the
-    discriminator for what counts as an entry ROOT in this union is
-    AUTHORITY first and containment second, and only the containment half
-    of P34 survives. The full reasoning sits with the two filter loops
-    below, next to the code that implements it.
+    The discriminator for what counts as an entry ROOT in this union is
+    AUTHORITY first and containment second. The full reasoning sits with the
+    two filter loops below, next to the code that implements it.
     """
     from strata_kb import assetstore
 
@@ -854,29 +830,28 @@ def _reconcile_asset_records(
             continue
         entries.setdefault(entry_rel, dest.joinpath(*entry_rel.split("/")))
 
-    # Ruling P39 (task 21 fix round 5, C4-2), correcting P34: the
-    # discriminator is AUTHORITY, not structure. Every directory
+    # The discriminator is AUTHORITY, not structure. Every directory
     # federation.iter_entry_dirs yields is an entry by definition -- that is
-    # the enumeration every reader uses and the one spec §11.2 fixes -- so
-    # it must always be its own divert root and must never be dropped or
-    # subsumed. P34 had only the structural half ("a proper descendant of
-    # another candidate is not an entry"), which is backwards the moment any
-    # other member yields a directory ABOVE a real entry: measured on a
-    # legacy namespace-level _assets.yaml (the artefact the old `kb assets
-    # migrate` bug left behind, per assetcmd._rid_dirs' own docstring) the
-    # leaf was deleted from the union, the record was written one level too
-    # high, and the record every reader consults never learned the new
-    # asset's name while the store held its only copy. Silently.
+    # the enumeration every reader uses and the one the record layout is
+    # fixed to -- so it must always be its own divert root and must never be
+    # dropped or subsumed. A structural rule alone ("a proper descendant of
+    # another candidate is not an entry") is backwards the moment any other
+    # member yields a directory ABOVE a real entry: on a legacy
+    # namespace-level _assets.yaml (the artefact the old `kb assets migrate`
+    # bug left behind, per assetcmd._rid_dirs' own docstring) the leaf is
+    # deleted from the union, the record is written one level too high, and
+    # the record every reader consults never learns the new asset's name
+    # while the store holds its only copy. Silently.
     #
     # So: first drop every non-leaf candidate that is a proper ANCESTOR of a
-    # leaf (it is a namespace, not an entry), then P34's surviving half --
-    # drop what is left that is a proper DESCENDANT of another candidate
-    # (M-3's stray record below entry level, which fed to divert_and_record
-    # as its own entry would be walked a second time over bytes the true
-    # entry's pass already consumed, and would be unlinked outright if it
-    # happened to be empty). Leaves are exempt from both loops, so P39's
-    # property holds unconditionally rather than by an argument about what
-    # the other members can produce. String prefix on the path-id is enough:
+    # leaf (it is a namespace, not an entry), then the structural rule --
+    # drop what is left that is a proper DESCENDANT of another candidate (a
+    # stray record below entry level, which fed to divert_and_record as its
+    # own entry would be walked a second time over bytes the true entry's
+    # pass already consumed, and would be unlinked outright if it happened to
+    # be empty). Leaves are exempt from both loops, so the authority rule
+    # holds unconditionally rather than by an argument about what the other
+    # members can produce. String prefix on the path-id is enough:
     # every id here came from the same dest-relative posix join, so a
     # genuine descendant always starts with "<ancestor>/".
     for entry_rel in sorted(entries):
@@ -909,16 +884,15 @@ def _reconcile_asset_records(
                     "an entry of its own -- left exactly as it is",
                 )
             )
-    # A thing the system drops must be a thing the operator can see it
-    # dropped (P34's own words) -- but through its own warning, not through
-    # PublishReport.skipped (task 21 fix round 5, M4-1). cli.
-    # _echo_publish_report renders that list as "N file(s) under .kb/ were
-    # not published (allowlist)", and for a destination-side reconcile drop
-    # all three of "under .kb/", "were not published" and "(allowlist)" are
-    # wrong; a warning that misstates its own cause trains operators to
-    # ignore warnings. These name the real path and the real reason, and
-    # reach the operator on stderr through logging's last-resort handler
-    # exactly like this module's other warnings do.
+    # A thing the system drops must be a thing the operator can see it dropped
+    # -- but through its own warning, not through PublishReport.skipped.
+    # cli._echo_publish_report renders that list as "N file(s) under .kb/ were
+    # not published (allowlist)", and for a destination-side reconcile drop all
+    # three of "under .kb/", "were not published" and "(allowlist)" are wrong; a
+    # warning that misstates its own cause trains operators to ignore warnings.
+    # These name the real path and the real reason, and reach the operator on
+    # stderr through logging's last-resort handler exactly like this module's
+    # other warnings do.
     for rel, reason in sorted(dropped):
         logger.warning("%s %s", (dest / rel).as_posix(), reason)
 
@@ -933,13 +907,12 @@ def _reconcile_asset_records(
             try:
                 existing = _dest_record_assets(dest_record)
             except OSError:
-                # P33 (task 21 fix round 4, M-2): nothing has been derived
-                # from this failed read yet -- Case A's write and Case B's
-                # divert below have not run for this entry. Protect just
-                # this record from the restore's clean half (see
-                # _restore_federation_after_store_failure's `protect`
-                # docstring for why a blanket checkout-only skip was
-                # measured unsafe instead).
+                # Nothing has been derived from this failed read yet --
+                # Case A's write and Case B's divert below have not run for
+                # this entry. Protect just this record from the restore's
+                # clean half (see _restore_federation_after_store_failure's
+                # `protect` docstring for why a blanket checkout-only skip
+                # is unsafe instead).
                 read_failed = True
                 raise
             if inherited:
@@ -996,7 +969,7 @@ def _snapshot_federation(
     đây nó là nội dung do hub nguồn ghi ra và đang được mirror lên, loại nó
     khiến lần publish sau XOÁ mất record trên hub đích.
 
-    F-D11 item 3: also honours `store` the same way _snapshot does, so a
+    Also honours `store` the same way _snapshot does, so a
     still-undiverted asset (raw bytes committed by a mid-tier hub with no
     store of its own) gets diverted into THIS hub's store instead of landing
     as a committed binary blob here too. `active_store` is resolved from
@@ -1026,9 +999,8 @@ def _snapshot_federation(
     try:
         active_store = store if store is not None else assetstore.store_for_hub(handle)
     except (yaml.YAMLError, ValidationError, ValueError) as exc:
-        # store_for_hub reads the HUB's own .kb/config.yaml (asset_store:) --
-        # a corrupt one must name itself, not the caller's (mirrors _snapshot,
-        # F-D9 finding 2).
+        # store_for_hub reads the HUB's own .kb/config.yaml (asset_store:) -- a
+        # corrupt one must name itself, not the caller's (mirrors _snapshot).
         raise PublishError(
             f"{handle.kb_dir / 'config.yaml'} (the hub's own config) is "
             f"unreadable: {exc}"
@@ -1046,7 +1018,7 @@ def _snapshot_federation(
             f"'{rid}' — refusing to wipe them; delete federation/{rid} on the hub "
             "manually if that is really intended"
         )
-    # Count only: build_federation_index would also hash every entry (F6).
+    # Count only: build_federation_index would also hash every entry.
     n_docs = sum(len(r.index.docs) for r in federation.load_federation(fed_src))
     changed, deleted = hashsync.diff_manifests(src_man, dest_man)
     changed = [p for p in changed if p not in synthesized_src_only]
@@ -1057,20 +1029,20 @@ def _snapshot_federation(
     # Only skip everything, including the reconcile pass below, when there
     # is truly nothing that could need it.
     #
-    # `dest_raw_assets` is the third such term (task 21 fix round 5, ruling
-    # P37): a publish against a hub that HAS a store must not leave
-    # divertible bytes at the destination, whether or not the plain file
-    # diff had any work to do. Gating the reconcile pass on that diff alone
-    # made the whole union above unreachable on exactly the publishes that
-    # matter -- once a raw asset is already sitting at dest with the same
-    # bytes as the source, src_man and dest_man agree, the diff is empty,
-    # and reconcile never ran. Measured on two reachable arms: a storeless
-    # publish followed by the hub gaining a store, and (worse) any hub that
-    # already ran the pre-round-4 code, whose committed raw binary no
-    # publish repaired and `kb assets migrate` could not reach either
-    # (assetcmd.migrate_assets enumerates with federation.iter_entry_dirs,
-    # which walks past a marker-less entry). Both are now repaired by an
-    # ordinary publish, which is why migrate_assets needs no widening.
+    # `dest_raw_assets` is the third such term: a publish against a hub
+    # that HAS a store must not leave divertible bytes at the destination,
+    # whether or not the plain file diff had any work to do. Gating the
+    # reconcile pass on that diff alone would make the whole union above
+    # unreachable on exactly the publishes that matter -- once a raw asset
+    # is already sitting at dest with the same bytes as the source, src_man
+    # and dest_man agree, the diff is empty, and reconcile never runs. Two
+    # reachable cases: a storeless publish followed by the hub gaining a
+    # store, and (worse) a hub holding a raw binary committed by an older
+    # version, which no publish would repair and `kb assets migrate` cannot
+    # reach either (assetcmd.migrate_assets enumerates with
+    # federation.iter_entry_dirs, which walks past a marker-less entry). An
+    # ordinary publish repairs both, which is why migrate_assets needs no
+    # widening.
     #
     # The probe costs no filesystem I/O: it is read off the dest manifest
     # build_manifest has already produced (see _prepare_hub_to_hub_
@@ -1093,8 +1065,8 @@ def _snapshot_federation(
 
 def _load_manifest_or_raise(man_path: Path) -> models.Manifest:
     """models.load_yaml_model(man_path, models.Manifest), with corrupt/schema-
-    invalid/non-UTF-8 YAML converted to a PublishError naming the file (F-D9
-    finding 2 -- yaml.YAMLError/ValidationError's own str() says nothing
+    invalid/non-UTF-8 YAML converted to a PublishError naming the file
+    (yaml.YAMLError/ValidationError's own str() says nothing
     about which file was being read; UnicodeDecodeError is a ValueError, not
     an OSError, so it needs listing explicitly rather than folding into an
     `except OSError` elsewhere)."""
@@ -1107,7 +1079,7 @@ def _load_manifest_or_raise(man_path: Path) -> models.Manifest:
 def warn_legacy_ids(kb_dir: Path) -> list[str]:
     """x{n} ids are the opaque fallback of the old CLI (< 2debcbc) or of headings
     that could not be slugged — warn so the repo re-ingests with the new CLI.
-    No reject: old data is still valid, just less readable (spec §6b)."""
+    No reject: old data is still valid, just less readable."""
     hits: list[str] = []
     for man_path in sorted(kb_dir.glob("*/_manifest.yaml")):
         manifest = _load_manifest_or_raise(man_path)
@@ -1130,7 +1102,7 @@ def unreviewed_sections(kb_dir: Path) -> tuple[int, int]:
 
     `hist.*` rows are excluded: they are machine-authored by `kb svc note`,
     which always leaves a fresh row `summarized`, and a whole-doc `kb
-    approve` deliberately never flips them (F-L7) -- counting them here
+    approve` deliberately never flips them -- counting them here
     would re-trip `--require-reviewed` after every `kb svc note` with no
     way to clear it short of naming the section explicitly.
     """
@@ -1159,7 +1131,7 @@ class UnreviewedGate:
 
 
 def unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> UnreviewedGate:
-    """Shared warn/refuse check for `kb publish` and `kb ci-publish` (R18):
+    """Shared warn/refuse check for `kb publish` and `kb ci-publish`:
     both call this — same message, same threshold — before any write/upload."""
     n_sec, n_docs = unreviewed_sections(kb_dir)
     if not n_sec:
@@ -1498,8 +1470,8 @@ def _reported_commit(
         meta = models.load_yaml_model(meta_path, federation.FederationMeta)
     except (OSError, ValidationError, yaml.YAMLError, UnicodeDecodeError):
         # UnicodeDecodeError is a ValueError, not an OSError -- without it, a
-        # non-UTF-8 _meta.yaml turned this best-effort fallback into a hard
-        # failure instead of just reporting source_commit (finding 7).
+        # non-UTF-8 _meta.yaml would turn this best-effort fallback into a
+        # hard failure instead of just reporting source_commit.
         return source_commit
     return meta.source_commit or source_commit
 
@@ -1582,9 +1554,9 @@ def _publish_pr(
                 remote=True,
             )
         # Read _meta.yaml (when changed=False) while still checked out on
-        # `branch` -- finding 7: computing this after the `finally` below has
-        # already run `gitio.checkout(handle.root, original)` made it read
-        # _meta.yaml off the original branch instead of the publish branch.
+        # `branch` -- computed after the `finally` below has run
+        # `gitio.checkout(handle.root, original)`, it would read _meta.yaml
+        # off the original branch instead of the publish branch.
         reported_commit = _reported_commit(handle, rid, source_commit, changed)
         gitio.push_branch(handle.root, branch, handle.token)
         url = ghio.pr_url_for_branch(handle.root, branch)

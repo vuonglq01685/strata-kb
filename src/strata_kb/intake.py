@@ -1,3 +1,13 @@
+"""intake — the hub side of `kb ci-publish`: verify, extract, open a PR.
+
+`verify_oidc` and `authorize` turn a child CI's GitHub OIDC token into a
+registered repo-id; `safe_extract` unpacks the attacker-controlled tar.gz under
+hard bounds (bytes, members, directories, pax metadata, path shape and length);
+`intake_publish` applies it on `publish/<rid>` in a throwaway git worktree and
+opens the hub PR. Every refusal is an `IntakeError` carrying an HTTP status;
+the routes that call this live in `web/intake_routes.py`.
+"""
+
 from __future__ import annotations
 
 import gzip
@@ -26,106 +36,87 @@ GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 JWKS_URL = GITHUB_ISSUER + "/.well-known/jwks"
 TAG_REF_PREFIX = "refs/tags/kb-publish/"
 DEFAULT_MAX_TAR = 50 * 1024 * 1024
-# LOW-5 (round 4): this bounds DECOMPRESSED STREAM bytes read while
-# extracting, not just the member content bytes a publisher thinks of as
-# "the archive" -- see _BoundedTarStream's docstring for the mechanism and
-# the measured before/after numbers for a many-small-files archive.
-# HIGH-2: total *content* bytes were capped but member *count* was not -- a
-# legitimate 50 MiB archive can carry ~11.1M zero-byte members (measured),
-# which starves the extraction threadpool and the container filesystem
-# creating inodes. A real KB entry's file count is small: a document
-# contributes two files per section group (an L2 .md and its L3 .raw.md,
-# sharing one `file:` stem) plus at most a few hundred `assets/` images,
-# and `_manifest.yaml`/`index.yaml` bookkeeping -- even an unusually large
+# This bounds DECOMPRESSED STREAM bytes read while extracting, not just the
+# member content bytes a publisher thinks of as "the archive" -- see
+# _BoundedTarStream's docstring for the mechanism and the measured
+# before/after numbers for a many-small-files archive.
+# Capping total *content* bytes does not cap member *count* -- a legitimate
+# 50 MiB archive can carry ~11.1M zero-byte members (measured), which would
+# starve the extraction threadpool and the container filesystem creating
+# inodes. A real KB entry's file count is small: a document contributes two
+# files per section group (an L2 .md and its L3 .raw.md, sharing one `file:`
+# stem) plus at most a few hundred `assets/` images, and
+# `_manifest.yaml`/`index.yaml` bookkeeping -- even an unusually large
 # multi-document repo-id plausibly tops out in the low thousands of files
 # per publish (kb ci-publish uploads only the changed set; a first publish
 # uploads the whole current .kb/, the largest case). 10,000 gives roughly an
 # order of magnitude of headroom over that, while bounding worst-case
-# extraction cost: the security review measured 20,000 members at 13.5s of
-# pure extraction, so 10,000 keeps a single request's worst case in the
-# single-digit seconds the 30-requests/60s-per-IP limiter already expects,
-# rather than the hours a 50 MiB, all-headers archive would otherwise cost.
+# extraction cost: 20,000 members measured at 13.5s of pure extraction, so
+# 10,000 keeps a single request's worst case in the single-digit seconds the
+# 30-requests/60s-per-IP limiter already expects, rather than the hours a
+# 50 MiB, all-headers archive would otherwise cost.
 MAX_TAR_MEMBERS = 10_000
-# HIGH-2 round 2: tarfile consumes a pax 'path=' extended header (or a GNU
-# long-name header) INSIDE tf.next(), before this module's loop ever sees
-# the member -- the member it yields carries the merged name, member.size
-# is only the file's own content size, and the header's real length was
-# charged a flat tarfile.BLOCKSIZE (512) regardless of how large it truly
-# was. The per-character scans in safe_extract (_reject_path_shape, and
-# _reject_display_spoofing added by round 1) then ran their full
-# O(len(name)) cost against that unbounded name: measured, a 97 KB gzip
-# upload carrying a 100 MB pax name cost 6.57s of CPU -- 5.35s of it in
-# _reject_display_spoofing alone -- for a nominal 512-byte charge against
-# a 50 MiB budget, a 26x increase in per-name-byte cost over the pre-round
-# baseline. A name longer than any real path can be is refused before any
-# of those scans run; the check is O(1) (Python caches str length), so it
-# costs nothing proportional to a name tarfile has already fully parsed by
-# the time `member` is yielded.
+# tarfile consumes a pax 'path=' extended header (or a GNU long-name header)
+# INSIDE tf.next(), before this module's loop ever sees the member -- the
+# member it yields carries the merged name, and member.size is only the file's
+# own content size. The per-character scans in safe_extract
+# (_reject_path_shape, _reject_display_spoofing) run their full O(len(name))
+# cost against that name: measured, with the header charged a flat
+# tarfile.BLOCKSIZE (512), a 97 KB gzip upload carrying a 100 MB pax name cost
+# 6.57s of CPU -- 5.35s of it in _reject_display_spoofing alone -- for a
+# nominal 512-byte charge against a 50 MiB budget. A name longer than any real
+# path can be is refused before any of those scans run; the check is O(1)
+# (Python caches str length), so it costs nothing proportional to a name
+# tarfile has already fully parsed by the time `member` is yielded.
 MAX_MEMBER_NAME = 4096  # POSIX PATH_MAX; no real repo-relative path is longer
 
-# N-3 (round 3): MAX_MEMBER_NAME bounds what the per-character scans below
-# cost, not what a Windows CLIENT can check out -- measured, a 390-char and
-# a 3000-char member path (both far under 4096) each give `git clone`
-# rc=128 with only 1 of 4 files checked out, on stock git for Windows;
-# `-c core.longpaths=true` clones the identical tree cleanly, which is the
-# only reason this is a bound rather than a refusal folded into
-# _reject_path_shape's HIGH-1 set. Sized off classic Windows MAX_PATH
-# (260 -- the limit a clone without core.longpaths hits), minus the
-# worst-case published prefix this member's own name cannot control:
-# "federation/" (11) + the longest legal repo-id (pubgate.REPO_ID_MAX) +
-# "/" (1). Computed from REPO_ID_MAX rather than a repeated literal so the
-# two cannot drift the way the device-name sets did (round 3's MEDIUM-2).
+# MAX_MEMBER_NAME bounds what the per-character scans below cost, not what
+# a Windows CLIENT can check out -- measured, a 390-char and a 3000-char
+# member path (both far under 4096) each give `git clone` rc=128 with only
+# 1 of 4 files checked out, on stock git for Windows; `-c
+# core.longpaths=true` clones the identical tree cleanly, which is the only
+# reason the Windows limit is a bound (MAX_MEMBER_PATH_LEN, below) rather
+# than a refusal folded into _reject_path_shape's set.
 #
-# LOW-7 (round 4): a re-review flagged this check as unreachable, reasoning
-# that `_reject_path_length` -- with its much smaller MAX_MEMBER_PATH_LEN
-# bound -- "runs on the very next line" and so would always refuse first.
-# Measured against this tree (a real tar member with a 5,003-character pax
-# `path=` name, no monkeypatching): false. This check runs in the loop
-# BEFORE `_reject_path_length` (see the "Bound the name before doing any
-# work" comment above the call site) and independently refuses it with
-# ITS OWN message ("longer than 4096 characters"); `_reject_path_length`
-# never runs. The two bounds guard different things -- this one bounds the
-# per-character-scan COST below, that one bounds what a Windows checkout
-# can survive -- and neither one's threshold shadows the other's check at
-# any name length, regardless of what MAX_MEMBER_PATH_LEN happens to be.
-# Kept unchanged; already pinned at the real (unpatched) 4096 threshold by
+# The MAX_MEMBER_NAME check is reachable even though `_reject_path_length`
+# has a much smaller bound: it runs in the loop BEFORE `_reject_path_length`
+# (see the "Bound the name before doing any work" comment above the call
+# site) and independently refuses an over-long name with ITS OWN message
+# ("longer than 4096 characters"); `_reject_path_length` never runs. Measured with a
+# real tar member carrying a 5,003-character pax `path=` name, no
+# monkeypatching. The two bounds guard different things -- this one bounds
+# the per-character-scan COST below, that one bounds what a Windows
+# checkout can survive -- and neither one's threshold shadows the other's
+# check at any name length, regardless of what MAX_MEMBER_PATH_LEN happens
+# to be. Pinned at the real (unpatched) 4096 threshold by
 # test_oversized_member_name_is_refused_before_any_per_character_scan,
 # which asserts on THIS check's own message, not a path-length one.
 #
-# MEDIUM-1 (round 4, P45): the pre-round-4 derivation above allocated the
-# ENTIRE Windows path budget to "federation/<repo-id>/<rel>" and left ZERO
-# characters for the client's OWN clone root, which sits in front of all of
-# it on disk. Reproduced on git 2.45.1.windows.1 with a FULLY COMPLIANT
-# publish (repo-id 64 = REPO_ID_MAX, member path 184 = the pre-round-4
-# bound, published path exactly 260 characters) cloned into
-# `C:\Users\Admin\kbt\c3`: `git clone` rc=128, 1 of 2 files checked out,
-# "Filename too long"; only `-c core.longpaths=true` clones it. That part
-# of round 4 was right and stands.
+# MAX_MEMBER_PATH_LEN must leave room for the client's OWN clone root, which
+# sits in front of "federation/<repo-id>/<rel>" on disk: giving the ENTIRE
+# Windows path budget to the published path leaves zero for it. Reproduced
+# on git 2.45.1.windows.1 with a fully compliant publish (repo-id 64 =
+# REPO_ID_MAX, member path 184, published path exactly 260 characters)
+# cloned into `C:\Users\Admin\kbt\c3`: `git clone` rc=128, 1 of 2 files
+# checked out, "Filename too long"; only `-c core.longpaths=true` clones it.
 #
-# M1 (round 5, P45/P59): round 4's replacement CEILING of 214 does not
-# reproduce and is withdrawn. Round 4 searched four clone-destination
-# lengths and read a convergence at 214 -- a number it could not explain,
-# 46 short of the textbook Windows MAX_PATH, and flagged as unexplained.
-# Re-measured here with a FULL INTEGER SWEEP of the total absolute checkout
-# path over [250, 266] at FIVE destination lengths (12, 24, 48, 72, 100
-# characters), repo built by `git update-index --cacheinfo` plumbing so the
-# source repo's own working tree never holds the long path, and
+# The ceiling was measured with a FULL INTEGER SWEEP of the total absolute
+# checkout path over [250, 266] at FIVE destination lengths (12, 24, 48, 72,
+# 100 characters), repo built by `git update-index --cacheinfo` plumbing so
+# the source repo's own working tree never holds the long path, and
 # `core.longpaths=false` forced on the clone command line with its value at
 # every config scope printed (all unset here):
 #
 #     ALL FIVE destination lengths: 259 -> rc=0, deep file present
 #                                   260 -> rc=128, "Filename too long"
 #
-# i.e. exactly classic MAX_PATH (260) minus its terminating NUL, agreeing
-# with the round-3 verdict and the round-4 re-review. Round 4's 214 was a
-# harness artifact: its cleanup used `shutil.rmtree(..., ignore_errors=True)`
-# on a clone directory whose git pack files are read-only on Windows, so the
-# directory survived and every subsequent iteration failed with "destination
-# path already exists" -- a failure that reads exactly like the ceiling. The
-# same artifact appeared in this round's first sweep (every destination
-# length "converging" on the LOW end of the sweep window) and vanished once
-# cleanup chmod'd before unlinking and each iteration got its own
-# destination name. See the round-5 report for both logs.
+# i.e. exactly classic MAX_PATH (260) minus its terminating NUL. When
+# re-measuring, beware a harness artifact that reads exactly like a lower
+# ceiling (an earlier sweep read a spurious 214 this way): cleaning up with
+# `shutil.rmtree(..., ignore_errors=True)` leaves a clone directory whose
+# git pack files are read-only on Windows, so every later iteration fails
+# with "destination path already exists". chmod before unlinking and give
+# each iteration its own destination name.
 #
 # The reserve, re-derived from 259, term by term -- what is reserved, for
 # what, and which terms are guesses:
@@ -134,9 +125,9 @@ MAX_MEMBER_NAME = 4096  # POSIX PATH_MAX; no real repo-relative path is longer
 #        that clones rc=0 without core.longpaths. Not a guess.
 #    -9  margin. A GUESS, and its size is 9 characters. It buys tolerance
 #        for a git build, Windows edition or locale that lands a few
-#        characters differently from the one measured here; nothing observed
-#        in this round needs it. 250 is also a round number, which makes the
-#        subtraction below legible.
+#        characters differently from the one measured here; nothing
+#        observed while measuring needs it. 250 is also a round number,
+#        which makes the subtraction below legible.
 #  = 250 SAFE_MAX_PATH -- the total absolute path this module budgets for.
 #   -64  CLIENT_PREFIX_RESERVE, the client's own clone root plus the
 #        separator joining it to the repo-relative path. `kb`'s primary
@@ -152,21 +143,20 @@ MAX_MEMBER_NAME = 4096  # POSIX PATH_MAX; no real repo-relative path is longer
 #   -11  len("federation/"), the published tree's fixed prefix.
 #   -64  REPO_ID_MAX -- the longest repo-id pubgate will accept. Computed
 #        from the constant rather than a repeated literal so the two cannot
-#        drift the way the device-name sets did (round 3's MEDIUM-2). Not a
-#        guess; it is a hard bound enforced at registration.
+#        drift apart. Not a guess; it is a hard bound enforced at
+#        registration.
 #    -1  the "/" between the repo-id and the member's own path.
 #  = 110 MAX_MEMBER_PATH_LEN.
 #
-# Checked against the shape this bound most has to admit, not only against
-# the break point (round 5, coordinator finding): on the DOCUMENTED DEFAULT
-# (`asset_store: mode: none`, so `assets_will_divert` is False and the
-# exemption at the call site below does not apply), a content-addressed
-# asset basename is `<64-hex-sha256>.png` = 68 characters, and
-# ingestcmd always nests assets under `<doc-id>/assets/`, so the SHORTEST
-# member path the product can produce is `d/assets/<sha>.png` = 77 and a
-# realistic one is `arinc-424/assets/<sha>.png` = 85. The round-4 bound of
-# 70 was BELOW the shortest producible one: `kb ci-publish` could not upload
-# any image at all on the default configuration, and the whole archive was
+# Checked against the shape this bound most has to admit, not only against the
+# break point: on the DOCUMENTED DEFAULT (`asset_store: mode: none`, so
+# `assets_will_divert` is False and the exemption at the call site below does
+# not apply), a content-addressed asset basename is `<64-hex-sha256>.png` = 68
+# characters, and ingestcmd always nests assets under `<doc-id>/assets/`, so
+# the SHORTEST member path the product can produce is `d/assets/<sha>.png` = 77
+# and a realistic one is `arinc-424/assets/<sha>.png` = 85. A bound below 77
+# would sit BELOW the shortest producible one: `kb ci-publish` could not upload
+# any image at all on the default configuration, and the whole archive would be
 # refused 400. At 110 both fit -- 85 with 25 characters to spare, which is
 # every doc-id up to 34 characters (110 - 1 - len("assets/") - 68).
 #
@@ -176,9 +166,9 @@ MAX_MEMBER_NAME = 4096  # POSIX PATH_MAX; no real repo-relative path is longer
 # a Windows client really does have to check it out -- so the Windows
 # constraint genuinely applies and exempting it would manufacture the
 # false-accept this bound exists to prevent (a long enough doc-id would
-# still push a content-addressed asset past the budget). The defect was
-# never the gate; it was that the number under it was smaller than the
-# smallest thing the gate had to let through.
+# still push a content-addressed asset past the budget). What matters is
+# that the number under the gate is never smaller than the smallest thing
+# the gate has to let through.
 #
 # The guarantee is scoped to the `kb` clone location above, not to an
 # arbitrary manual `git clone` destination a user might choose deeper still
@@ -192,21 +182,20 @@ MAX_MEMBER_PATH_LEN = (
     SAFE_MAX_PATH - CLIENT_PREFIX_RESERVE - len("federation/") - REPO_ID_MAX - 1
 )  # 110
 
-# MEDIUM-3 (round 3): MAX_TAR_MEMBERS bounds *files*; the byte budget below
-# bounds *declared bytes*; neither bounds how many directory LEVELS a
-# member's own path creates. Measured: 10,000 members x 8-deep paths -- a
-# 344 KB upload -- creates 80,000 directories (90,000 inodes with the
-# files) and ~50s of one worker, entirely inside both existing caps. A real
-# KB publish's directory count tracks its DOCUMENT count, not its file
-# count: each doc-id contributes at most a couple of directories (the
-# doc-id itself, an `assets/` child) no matter how many section files it
-# holds, so even an unusually large multi-document repo-id plausibly stays
-# in the low hundreds of directories -- 2,000 gives the same
+# MAX_TAR_MEMBERS bounds *files*; the byte budget below bounds *declared
+# bytes*; neither bounds how many directory LEVELS a member's own path creates.
+# Measured: 10,000 members x 8-deep paths -- a 344 KB upload -- creates 80,000
+# directories (90,000 inodes with the files) and ~50s of one worker, entirely
+# inside both existing caps. A real KB publish's directory count tracks its
+# DOCUMENT count, not its file count: each doc-id contributes at most a couple
+# of directories (the doc-id itself, an `assets/` child) no matter how many
+# section files it holds, so even an unusually large multi-document repo-id
+# plausibly stays in the low hundreds of directories -- 2,000 gives the same
 # order-of-magnitude headroom over that which MAX_TAR_MEMBERS gives over a
 # realistic file count.
 MAX_TAR_DIRECTORIES = 2_000
 
-# HIGH-1 (round 4) -- the round-3 fix bounded bytes READ from the stream,
+# The stream bound (_BoundedTarStream) bounds bytes READ from the stream,
 # not the memory those bytes cause once tarfile decodes them. A pax 'x'
 # (per-member extended) or 'g' (GLOBAL) header's body is fetched in ONE
 # `fileobj.read(self._block(size))` call and then parsed into a Python
@@ -215,12 +204,12 @@ MAX_TAR_DIRECTORIES = 2_000
 # GLOBAL header this dict is `TarFile.pax_headers` itself, retained for
 # the life of the archive; for an extended header it is a fresh copy of
 # the running global dict, but a single oversized one still costs the
-# same peak while it is being built. Measured (harness quoted in full in
-# the round-4 report): a 9.49 MB upload carrying one pax GLOBAL header of
-# 4,032,308 distinct tiny records is ACCEPTED by the round-3 fix at peak
-# RSS 1,038 MB against a 32.5 MB child-process baseline -- the stream
-# bound charges the header's ~9 MB wire size once, correctly, and stops
-# there; nothing bounds what parsing it builds.
+# same peak while it is being built. Measured with only the stream bound in
+# place: a 9.49 MB upload carrying one pax GLOBAL header of 4,032,308
+# distinct tiny records is ACCEPTED at peak RSS 1,038 MB against a 32.5 MB
+# child-process baseline -- the stream bound charges the header's ~9 MB
+# wire size once, correctly, and stops there; nothing else bounds what
+# parsing it builds.
 #
 # The stream bound cannot see this from the read() size alone: a
 # legitimate GNU long-name ('L') header -- the ONLY extension header type
@@ -253,8 +242,8 @@ MAX_TAR_DIRECTORIES = 2_000
 # test_pax_metadata_bomb_is_bounded_independent_of_max_bytes.
 MAX_PAX_METADATA_BYTES = 1024 * 1024
 
-# HIGH-1 (round 5, P43) -- the round-4 budget above charges the READ, and a
-# 512-byte header slips under it by construction: `_charge_metadata` returns
+# MAX_PAX_METADATA_BYTES charges the READ, and a 512-byte header slips under
+# it by construction: `_charge_metadata` returns
 # early on `n <= tarfile.BLOCKSIZE`, and a pax header body of 512 bytes or
 # less is fetched by exactly one `read(self._block(size))` = `read(512)`.
 # That early return is CORRECT and has to stay -- an ordinary member's own
@@ -270,18 +259,17 @@ MAX_PAX_METADATA_BYTES = 1024 * 1024
 # real member between each resets the recursion). CPython's `_proc_pax`
 # accumulates a GLOBAL header's records into `TarFile.pax_headers` itself --
 # shared and retained for the life of the archive -- and then EVERY ordinary
-# member runs `_proc_builtin` -> `_apply_pax_info(tarfile.pax_headers, ...)`
-# -> `self.pax_headers = pax_headers.copy()`, with every member's TarInfo
-# retained in `TarFile.members`. Member p copies a dict of R*p entries, so
-# retained entries total R*(1+2+...+P) = O(P^2) -- quadratic in member count,
-# from an upload that stays a few hundred KB. Measured on this tree before
-# this bound (harness and full search space in the round-5 report): 2,000
-# (global, member) pairs = a 239 KB upload -> 2,853 MB peak RSS, ACCEPTED,
-# with ZERO bytes charged against MAX_PAX_METADATA_BYTES and no single
-# header-phase read above 512; 3,000 pairs -> 6,703 MB. Controls isolate the
-# cause: 2,000 plain members with no pax at all peak at 37 MB, and 2,000
-# GLOBAL headers repeating the SAME keys at 41 MB -- it is distinct keys
-# ACCUMULATING, not header count or member count.
+# member runs `_proc_builtin` -> `_apply_pax_info(tarfile.pax_headers, ...)` ->
+# `self.pax_headers = pax_headers.copy()`, with every member's TarInfo retained
+# in `TarFile.members`. Member p copies a dict of R*p entries, so retained
+# entries total R*(1+2+...+P) = O(P^2) -- quadratic in member count, from an
+# upload that stays a few hundred KB. Measured without the bounds below: 2,000
+# (global, member) pairs = a 239 KB upload -> 2,853 MB peak RSS, ACCEPTED, with
+# ZERO bytes charged against MAX_PAX_METADATA_BYTES and no single header-phase
+# read above 512; 3,000 pairs -> 6,703 MB. Controls isolate the cause: 2,000
+# plain members with no pax at all peak at 37 MB, and 2,000 GLOBAL headers
+# repeating the SAME keys at 41 MB -- it is distinct keys ACCUMULATING, not
+# header count or member count.
 #
 # So bound the decoded pax-header POPULATION, observed from the member loop:
 # `member.pax_headers` is the dict this member actually retained, and it is
@@ -314,8 +302,8 @@ MAX_PAX_METADATA_BYTES = 1024 * 1024
 # the summed decoded length is already bounded indirectly (values arriving
 # in headers over 512 bytes are charged against MAX_PAX_METADATA_BYTES;
 # values arriving in headers under it are count-bounded by MAX_PAX_RECORDS).
-# It is checked anyway so that P43's "count OR summed length" is explicit and
-# observable rather than implied by two other budgets, and so a future change
+# It is checked anyway so that "count OR summed length" is an explicit,
+# observable bound rather than one implied by two other budgets, and so a future change
 # to `_charge_metadata` cannot quietly reopen the value side. 64 KiB is ~1000
 # characters per record at the record cap -- far past any legitimate header,
 # far under the ~1 MiB the read charge alone would permit.
@@ -326,10 +314,9 @@ MAX_PAX_RECORD_BYTES = 64 * 1024
 class IntakeError(RuntimeError):
     """Publish intake rejected the request; maps to an HTTP status.
 
-    Deliberately stays out of the KbError family (Wave G fix round 2, item
-    7): server-side only, carries (status, detail) and maps to an HTTP
-    response, not a CLI one-liner -- folding it in would make a CLI guard
-    claim a contract it does not have.
+    Deliberately stays out of the KbError family: server-side only, carries
+    (status, detail) and maps to an HTTP response, not a CLI one-liner --
+    folding it in would make a CLI guard claim a contract it does not have.
     """
 
     def __init__(self, status: int, detail: str) -> None:
@@ -412,23 +399,20 @@ def authorize(claims: dict, registry: models.Registry) -> str:
         ) from exc
 
 
-# MEDIUM-2 (round 3): round 2's CONIN$/CONOUT$/COM0/LPT0/superscript-alias
-# superset lived here as a local frozenset, unioned with pubgate.WIN32_DEVICES
-# at the one call site below, because pubgate.py belonged to another
-# implementer that round. It is in this round's scope, so the superset is
-# folded directly into pubgate.WIN32_DEVICES itself instead -- the drift this
-# was always meant to avoid (normalize_repo_id accepted 'LPT0' while this
-# module's member check refused it; a registry entry mapping a publisher to
-# that repo-id broke every Windows clone of the whole hub, measured) cannot
-# recur if there is only one set to drift from.
+# Reserved device names (CONIN$/CONOUT$/COM0/LPT0/the superscript aliases
+# included) live in ONE set, pubgate.WIN32_DEVICES, read here through
+# pubgate.is_reserved_device_name -- do not keep a local superset here. Two
+# sets drift: normalize_repo_id accepting 'LPT0' while this module's member
+# check refused it meant a registry entry mapping a publisher to that
+# repo-id broke every Windows clone of the whole hub (measured).
 
-# LOW-6 (round 3): '.git' (and the NTFS 8.3 short-name alias 'git~1' that
-# aliases it on a filesystem old enough to generate 8.3 names) reach the
-# hub's own `git add` and fail THERE -- a raw git stderr 502 instead of a
-# clean 400 naming the component -- because Windows/NTFS is not the only
-# consumer that refuses these; git itself does (core.protectNTFS), on every
-# platform this service could run on. A git rule, not a Windows one, so it
-# is checked unconditionally here rather than gated behind the Win32 set.
+# '.git' (and the NTFS 8.3 short-name alias 'git~1' that aliases it on a
+# filesystem old enough to generate 8.3 names) reach the hub's own `git add`
+# and fail THERE -- a raw git stderr 502 instead of a clean 400 naming the
+# component -- because Windows/NTFS is not the only consumer that refuses
+# these; git itself does (core.protectNTFS), on every platform this service
+# could run on. A git rule, not a Windows one, so it is checked unconditionally
+# here rather than gated behind the Win32 set.
 _GIT_DOTGIT_ALIASES = frozenset({".git", "git~1"})
 
 # Every character Windows refuses to put in a filename, other than ':'
@@ -456,28 +440,24 @@ def _reject_path_shape(label: str, rel: str) -> None:
     process happens to run on -- the hub is a Linux service writing a git
     repository that Windows, macOS and Linux clients all clone.
 
-    Round 2: enumerated by property, not by example. Round 1's list was
-    built from the review's own illustrations ('CON.md', 'NUL.md', a
-    trailing dot/space at the very END of a component) rather than the
-    rule those illustrations were showing, and that gap reproduced the
-    identical measured outcome -- git clone rc=128, 0 files checked out,
-    every repo-id on the hub -- for shapes the list did not happen to
-    name: 'NUL .txt' (Windows strips a trailing space between a device
-    name and its extension, so the device check must strip it too, not
-    just the whole-component trailing-dot/space check, which only looks
-    at the component's end); 'CONIN$'/'CONOUT$' (reserved names
-    pubgate.WIN32_DEVICES did not carry); 30 of the 31 non-NUL C0 control
-    characters (only NUL itself was refused); and '< > " | ? *'
-    (Windows-illegal, POSIX-legal, in no clause at all). The predicate
-    below is now the property itself: a component is refused when, on any
-    consumer platform, it cannot be created or does not round-trip to
-    itself -- every C0 control character (0x00-0x1F) and DEL (0x7F),
-    every character Windows cannot put in a filename, every reserved
-    device name in any case with a trailing space stripped from its stem
-    first, and any component that differs from itself after Windows'
-    trailing-dot-and-space stripping. Adding a platform's shape rule here
-    means adding one predicate to this loop, not auditing a list of
-    examples for coverage.
+    Enumerated by property, not by example. A list built from illustrations
+    ('CON.md', 'NUL.md', a trailing dot/space at the very END of a component)
+    rather than the rule they show reproduces the identical measured outcome --
+    git clone rc=128, 0 files checked out, every repo-id on the hub -- for
+    shapes the list does not happen to name: 'NUL .txt' (Windows strips a
+    trailing space between a device name and its extension, so the device check
+    must strip it too, not just the whole-component trailing-dot/space check,
+    which only looks at the component's end); 'CONIN$'/'CONOUT$'; the 31
+    non-NUL C0 control characters; and '< > " | ? *' (Windows-illegal,
+    POSIX-legal). The predicate below is the property itself: a component is
+    refused when, on any consumer platform, it cannot be created or does not
+    round-trip to itself -- every C0 control character (0x00-0x1F) and DEL
+    (0x7F), every character Windows cannot put in a filename, every reserved
+    device name in any case with a trailing space stripped from its stem first,
+    and any component that differs from itself after Windows'
+    trailing-dot-and-space stripping. Adding a platform's shape rule here means
+    adding one predicate to this loop, not auditing a list of examples for
+    coverage.
 
     Refuses, never rewrites: this only raises, it never hands back a
     modified name. Silently renaming a publisher's path would mean the hub
@@ -490,14 +470,12 @@ def _reject_path_shape(label: str, rel: str) -> None:
     spells a leading './x', and this function must not refuse that shape
     outright, only normalize past it.
 
-    Round 3: device names are read straight from `pubgate.WIN32_DEVICES`
-    now (MEDIUM-2) -- the local superset that used to live only here is
-    folded into pubgate's own set instead of unioned with it, so the
-    member-name rule and the repo-id rule (`pubgate.normalize_repo_id`)
-    share one definition and cannot drift apart again. `.git`/`git~1`
-    (LOW-6) are refused here too, on every platform, since it is git's own
-    core.protectNTFS rule this prevents from firing on the hub's commit,
-    not a Windows-only concern.
+    Device names come straight from `pubgate.WIN32_DEVICES` (via
+    `pubgate.is_reserved_device_name`), so the member-name rule and the
+    repo-id rule (`pubgate.normalize_repo_id`) share one definition and
+    cannot drift apart. `.git`/`git~1` are refused here too, on every
+    platform, since it is git's own core.protectNTFS rule this prevents
+    from firing on the hub's commit, not a Windows-only concern.
     """
     if "\\" in rel:
         raise IntakeError(400, f"{label} '{rel}' uses a backslash -- use posix paths")
@@ -539,12 +517,11 @@ def _reject_path_shape(label: str, rel: str) -> None:
                 f"{label} '{rel}': component '{part}' ends in a dot or space "
                 "-- Windows strips it silently",
             )
-        # round 4 (P30): the stem-extraction + trailing-space-strip +
-        # case-fold + membership check is now `pubgate.is_reserved_device_
-        # name`, the one shared predicate `normalize_repo_id` also calls --
-        # see its own comment for why two independent copies of this
-        # check (against the one shared WIN32_DEVICES set) was the actual
-        # drift risk, not the set's shape.
+        # The stem-extraction + trailing-space-strip + case-fold +
+        # membership check is `pubgate.is_reserved_device_name`, the one
+        # shared predicate `normalize_repo_id` also calls -- see its own
+        # comment for why two independent copies of this check (even
+        # against the one shared WIN32_DEVICES set) are a drift risk.
         stem = part.split(".", 1)[0]
         if is_reserved_device_name(stem):
             raise IntakeError(
@@ -558,28 +535,25 @@ def _reject_traversal(label: str, rel: str) -> list[str]:
     """The non-empty, non-'.' components of `rel`, or IntakeError if it is
     absolute, escapes upward ('..'), or is empty/'.' once stripped.
 
-    Works on the raw string, split on '/', before any `Path()` parse --
-    the pre-fix escape check ran `".." in Path(rel).parts`, and on this
-    Windows Python `Path("doc1/C:../evil.md").parts` does not contain '..'
-    at all (pathlib's Windows flavour discards everything before a drive
-    component when parsing, the exact mechanism HIGH-1 closes), so the
-    parsed check was blind to a traversal riding a drive-shaped segment.
+    Works on the raw string, split on '/', before any `Path()` parse -- do
+    not check `".." in Path(rel).parts`: on Windows Python
+    `Path("doc1/C:../evil.md").parts` does not contain '..' at all
+    (pathlib's Windows flavour discards everything before a drive component
+    when parsing), so a parsed check is blind to a traversal riding a
+    drive-shaped segment.
     Banning ':' in `_reject_path_shape` above already closes that specific
     case, but this stays raw-string-based rather than trusting a parse to
     agree with what was actually written on the wire.
 
-    N-9: with ':' and '\\' both banned by `_reject_path_shape`, a mutant
+    With ':' and '\\' both banned by `_reject_path_shape`, a mutant
     reverting this to `".." in Path(rel).parts` is very likely an
     equivalent mutant today -- no drive-shaped or backslash-shaped
-    traversal can reach here anymore either way. Left undocumented before,
-    this is exactly the "defense-in-depth claim no test can prove" this
-    round's re-review flagged; recorded here rather than pretending a test
-    could distinguish the two.
+    traversal can reach here anymore either way. This is a
+    defense-in-depth claim no test can prove, recorded here rather than
+    pretending a test could distinguish the two.
 
     One function, called from both `safe_extract`'s tar-member check and
-    `intake_publish`'s delete-path check, so the two cannot drift the way
-    they did before (member checked `Path(...).parts`, deletes checked a
-    separately-typed `Path(...).parts` too).
+    `intake_publish`'s delete-path check, so the two cannot drift apart.
     """
     if rel.startswith("/"):
         raise IntakeError(400, f"{label} '{rel}' is an absolute path")
@@ -597,23 +571,23 @@ def _reject_path_length(label: str, rel: str) -> None:
     once checked out under the client's own clone root, cannot be checked
     out on Windows without `core.longpaths`.
 
-    N-3 (round 3): MAX_MEMBER_NAME (4096) bounds what the per-character
-    scans below cost, not what a Windows client can check out -- measured,
-    both a 390-char and a 3000-char member path (far under 4096) give
-    `git clone` rc=128 with only 1 of 4 files checked out on stock git for
-    Windows. `-c core.longpaths=true` clones the identical tree cleanly,
-    which is why this is a bound (MEDIUM) rather than a HIGH refusal
-    folded into `_reject_path_shape`'s cross-platform-shape set -- unlike
-    those shapes, a real client-side workaround exists and is named in the
-    message below.
+    MAX_MEMBER_NAME (4096) bounds what the per-character scans cost, not
+    what a Windows client can check out -- measured, both a 390-char and a
+    3000-char member path (far under 4096) give `git clone` rc=128 with
+    only 1 of 4 files checked out on stock git for Windows. `-c
+    core.longpaths=true` clones the identical tree cleanly, which is why
+    this is a bound rather than a refusal folded into
+    `_reject_path_shape`'s cross-platform-shape set -- unlike those shapes,
+    a real client-side workaround exists and is named in the message
+    below.
 
-    MEDIUM-1 (round 4, P45): measures `len(rel.encode("utf-16-le")) // 2`
-    -- Windows' own MAX_PATH counts UTF-16 CODE UNITS, not Python
-    characters. `len(rel)` undercounts by half for any astral character
-    (outside the Basic Multilingual Plane, encoded as a UTF-16 surrogate
-    PAIR) -- exactly the kind of real writing-system content this
-    predicate must not silently under-budget, the same class of gap P44
-    closes for the display-spoofing predicate.
+    Measures `len(rel.encode("utf-16-le")) // 2` -- Windows' own MAX_PATH
+    counts UTF-16 CODE UNITS, not Python characters. `len(rel)` undercounts
+    by half for any astral character (outside the Basic Multilingual
+    Plane, encoded as a UTF-16 surrogate PAIR) -- exactly the kind of real
+    writing-system content this predicate must not silently under-budget,
+    the same class of gap `_SPELLING_EXCEPTIONS` closes for the
+    display-spoofing predicate.
 
     `errors="surrogatepass"`: a lone/unpaired surrogate (reachable here --
     this runs before `_reject_path_shape`'s own unpaired-surrogate check
@@ -636,39 +610,35 @@ def _reject_path_length(label: str, rel: str) -> None:
         )
 
 
-# round-4 LOW (M9/M9b/M21): a separate Bidi_Control=Yes range table
-# (Unicode 17.0.0 PropList.txt) used to live here, feeding an
-# `_is_bidi_control(cp) or _is_default_ignorable(cp)` check below. Checked
-# range-for-range against _DEFAULT_IGNORABLE_RANGES just below: all twelve
-# Bidi_Control code points (U+061C, U+200E-200F, U+202A-202E, U+2066-2069)
-# already fall inside it (U+200E-200F within 200B-200F, U+202A-202E and
-# U+2066-2069 transcribed there verbatim). Bidi_Control characters carry no
-# visible glyph of their own -- the same reason they are Default_Ignorable
-# -- and that inclusion is a property of the Unicode Character Database
-# itself, not an accident of this transcription, so `_is_bidi_control(cp)
-# or` never changed which characters this predicate refused: a mutation
-# deleting that disjunct passed every test in this file. Deleted rather
-# than kept as an unexercised safety net -- an unused code path that LOOKS
-# load-bearing (two clauses, docstring explaining why "two, not one") is
-# worse than no code path, because a future reader has no way to tell it
-# apart from a real one without doing this same audit again. If a future
-# Unicode version ever adds a Bidi_Control character that is NOT also
-# Default_Ignorable, `test_arabic_letter_mark_is_refused` and its
-# siblings below will not catch that on their own -- re-derive and re-add
-# the clause then, against the property tables current at the time.
+# No separate Bidi_Control=Yes range table (Unicode 17.0.0 PropList.txt) is
+# needed. Checked range-for-range against _DEFAULT_IGNORABLE_RANGES just below:
+# all twelve Bidi_Control code points (U+061C, U+200E-200F, U+202A-202E,
+# U+2066-2069) already fall inside it (U+200E-200F within 200B-200F,
+# U+202A-202E and U+2066-2069 transcribed there verbatim). Bidi_Control
+# characters carry no visible glyph of their own -- the same reason they are
+# Default_Ignorable -- and that inclusion is a property of the Unicode
+# Character Database itself, not an accident of this transcription, so an
+# `_is_bidi_control(cp) or` clause would never change which characters this
+# predicate refuses: a mutation deleting it would pass every test. Do not add
+# one as an unexercised safety net -- an unused code path that LOOKS
+# load-bearing (two clauses, docstring explaining why "two, not one") is worse
+# than no code path, because a future reader has no way to tell it apart from a
+# real one without doing this same audit again. If a future Unicode version
+# ever adds a Bidi_Control character that is NOT also Default_Ignorable,
+# `test_arabic_letter_mark_is_refused` and its siblings below will not catch
+# that on their own -- re-derive and add the clause then, against the property
+# tables current at the time.
 
-# Unicode 17.0.0 DerivedCoreProperties.txt, Default_Ignorable_Code_Point=Yes
-# -- characters with no visible glyph of their own, transcribed range-for-
-# range from the property (adjacent source ranges merged where contiguous,
-# e.g. 2060..2064 + 2065 + 2066..206F -> 2060..206F) rather than
-# re-derived. Round 3 (N-4 correction iii): `unicodedata.category(ch) ==
-# "Cf"` -- what shipped before this round -- is both too broad (it also
+# Unicode 17.0.0 DerivedCoreProperties.txt, Default_Ignorable_Code_Point=Yes --
+# characters with no visible glyph of their own, transcribed range-for-range
+# from the property (adjacent source ranges merged where contiguous, e.g.
+# 2060..2064 + 2065 + 2066..206F -> 2060..206F) rather than re-derived. Do not
+# use `unicodedata.category(ch) == "Cf"` instead: it is both too broad (it also
 # refuses Cf characters that are NOT default-ignorable, e.g. the Arabic
-# number-sign controls U+0600-0605) and too narrow (it misses
-# default-ignorable characters outside category Cf, e.g. U+034F COMBINING
-# GRAPHEME JOINER and the FE00-FE0F variation selectors, both category Mn
-# -- measured accepted today, and both invisible enough to spoof a
-# display name exactly as ZWSP does).
+# number-sign controls U+0600-0605) and too narrow (it misses default-ignorable
+# characters outside category Cf, e.g. U+034F COMBINING GRAPHEME JOINER and the
+# FE00-FE0F variation selectors, both category Mn, and both invisible enough to
+# spoof a display name exactly as ZWSP does).
 _DEFAULT_IGNORABLE_RANGES: tuple[tuple[int, int], ...] = (
     (0x00AD, 0x00AD),  # SOFT HYPHEN
     (0x034F, 0x034F),  # COMBINING GRAPHEME JOINER
@@ -689,21 +659,19 @@ _DEFAULT_IGNORABLE_RANGES: tuple[tuple[int, int], ...] = (
     (0xE0000, 0xE0FFF),  # TAG characters + Variation Selectors Supplement
 )
 
-# N-4 correction (ii): ZWNJ/ZWJ are part of a word's spelling in Persian,
-# Hindi, emoji ZWJ sequences and elsewhere -- they are Default_Ignorable
-# (invisible) but are carved out of the invisible-character refusal below,
-# the one explicit allowlist the ruling asks for.
+# ZWNJ/ZWJ are part of a word's spelling in Persian, Hindi, emoji ZWJ
+# sequences and elsewhere -- they are Default_Ignorable (invisible) but are
+# carved out of the invisible-character refusal below.
 _ZWNJ = 0x200C
 _ZWJ = 0x200D
 
-# P44 (round 4): the ZWJ/ZWNJ carve-out above is an instance of one test,
-# not a special case of its own -- "a character a user legitimately needs
-# in order to write the name they mean must be allowed; the collision key
-# (which already strips every Default_Ignorable code point before
-# comparing, see `_collision_key`), not the refusal, is what makes
-# allowing it safe. Refuse a character whose only function is to alter
-# how a sequence is DISPLAYED or ORDERED against what it says." Applying
-# that test to the rest of Default_Ignorable:
+# The ZWJ/ZWNJ carve-out above is an instance of one test, not a special case
+# of its own -- "a character a user legitimately needs in order to write the
+# name they mean must be allowed; the collision key (which already strips every
+# Default_Ignorable code point before comparing, see `_collision_key`), not the
+# refusal, is what makes allowing it safe. Refuse a character whose only
+# function is to alter how a sequence is DISPLAYED or ORDERED against what it
+# says." Applying that test to the rest of Default_Ignorable:
 #
 # RULED IN:
 #   - VARIATION SELECTOR-1..16 (U+FE00-FE0F) and the Variation Selectors
@@ -734,8 +702,8 @@ _ZWJ = 0x200D
 #     blank width -- a placeholder for an ABSENT jamo in an otherwise-
 #     incomplete syllable block, not a rendering of any real one. A name
 #     built from fillers alone spells nothing; that is exactly the
-#     all-invisible-name risk LOW-5 exists to close, not a script this
-#     refusal would erase.
+#     all-invisible-name risk `_reject_display_spoofing` exists to close,
+#     not a script this refusal would erase.
 #   - The Khmer inherent vowel signs (U+17B4, U+17B5): ordinary Khmer
 #     orthography never writes them -- the inherent vowel is implicit --
 #     so they exist for internal/technical representation, not for
@@ -744,21 +712,20 @@ _VARIATION_SELECTORS: tuple[tuple[int, int], ...] = (
     (0xFE00, 0xFE0F),  # VARIATION SELECTOR-1..16
     (0xE0100, 0xE01EF),  # VARIATION SELECTOR-17..256 (supplement)
 )
-# L1 (round 5, P44): the second range is the Variation Selectors Supplement
-# only. The surrounding Default_Ignorable block (U+E0000..U+E0FFF) ALSO holds
-# the TAG characters (U+E0020..U+E007F) that spell emoji subdivision flags
-# such as the England flag, and those are deliberately NOT exempted, so such
-# a name is refused while the VS16 heart `❤️.md` publishes. That asymmetry is
-# a decision, not an oversight: a variation selector only chooses a
-# presentation for a character that is already there, whereas the general TAG
-# mechanism was deprecated by Unicode precisely because it can carry
-# arbitrary invisible ASCII inside any string -- the single highest-value
-# spoofing primitive in this predicate's whole range -- and its one
-# non-deprecated use, RGI subdivision flags, has no realistic presence in a
-# published document filename. The cost of getting this wrong is asymmetric
-# too: refusing a flag emoji costs a publisher one rename, with the refusal
-# naming the character; admitting the TAG block would re-open invisible-text
-# smuggling for every name. Pinned by
+# The second range is the Variation Selectors Supplement only. The surrounding
+# Default_Ignorable block (U+E0000..U+E0FFF) ALSO holds the TAG characters
+# (U+E0020..U+E007F) that spell emoji subdivision flags such as the England
+# flag, and those are deliberately NOT exempted, so such a name is refused
+# while the VS16 heart `❤️.md` publishes. That asymmetry is a decision, not an
+# oversight: a variation selector only chooses a presentation for a character
+# that is already there, whereas the general TAG mechanism was deprecated by
+# Unicode precisely because it can carry arbitrary invisible ASCII inside any
+# string -- the single highest-value spoofing primitive in this predicate's
+# whole range -- and its one non-deprecated use, RGI subdivision flags, has no
+# realistic presence in a published document filename. The cost of getting this
+# wrong is asymmetric too: refusing a flag emoji costs a publisher one rename,
+# with the refusal naming the character; admitting the TAG block would re-open
+# invisible-text smuggling for every name. Pinned by
 # test_an_emoji_tag_sequence_is_refused_while_a_variation_selector_publishes.
 _MONGOLIAN_FVS = frozenset({0x180B, 0x180C, 0x180D, 0x180F})
 _SPELLING_EXCEPTIONS = frozenset(
@@ -775,33 +742,29 @@ def _is_default_ignorable(cp: int) -> bool:
 def _reject_display_spoofing(label: str, rel: str) -> None:
     """Refuse a bidi/formatting control character or a lone surrogate.
 
-    LOW-5: an RTL override or a zero-width character in a member name is
-    accepted verbatim today and makes a '.md' render as something else in
-    the hub PR diff a maintainer reviews to merge it -- a display-spoofing
-    risk independent of Unicode normalization (see `_collision_key`).
+    An RTL override or a zero-width character in a member name, accepted
+    verbatim, makes a '.md' render as something else in the hub PR diff a
+    maintainer reviews to merge it -- a display-spoofing risk independent
+    of Unicode normalization (see `_collision_key`).
 
-    Round 3 (N-4, corrected): refuses a character that has no visible
-    glyph (Default_Ignorable), minus an explicit allowlist. Round 3
-    originally also refused order-altering (Bidi_Control) characters as a
-    second, separate clause; round 4 removed it as dead code (see
-    `_DEFAULT_IGNORABLE_RANGES`'s comment above) once auditing it found
-    every Bidi_Control code point already inside Default_Ignorable, which
-    a lone-glyph-visibility rule was always going to catch on its own.
+    Refuses a character that has no visible glyph (Default_Ignorable),
+    minus an explicit allowlist. There is no separate clause for
+    order-altering (Bidi_Control) characters: every Bidi_Control code point
+    is already inside Default_Ignorable (see the comment above
+    `_DEFAULT_IGNORABLE_RANGES`), so a lone-glyph-visibility rule catches
+    them on its own.
 
-    Round 4 (P44): the allowlist is `_SPELLING_EXCEPTIONS` -- ZWNJ/ZWJ
-    (N-4 correction ii) plus variation selectors and the Mongolian free
-    variation selectors (see that set's own comment for the one-line test
-    applied to each Default_Ignorable character and why CGJ, the Hangul
-    fillers and the Khmer inherent vowel signs stay refused).
+    The allowlist is `_SPELLING_EXCEPTIONS` -- ZWNJ/ZWJ plus variation
+    selectors and the Mongolian free variation selectors (see that set's own
+    comment for the one-line test applied to each Default_Ignorable character
+    and why CGJ, the Hangul fillers and the Khmer inherent vowel signs stay
+    refused).
 
     U+00AD SOFT HYPHEN is deliberately NOT allowlisted alongside them: it
     is invisible and Default_Ignorable like they are, but unlike them it
     only hints an OPTIONAL hyphenation point -- no filesystem path needs a
     discretionary hyphen, dropping it loses no real content the way
-    refusing ZWNJ would lose Persian/Hindi/emoji names, and refusing it
-    matches what shipped before this round (it was already inside the
-    blanket `Cf` refusal). See the round-3 report for the fuller
-    reasoning.
+    refusing ZWNJ would lose Persian/Hindi/emoji names.
     """
     for ch in rel:
         cp = ord(ch)
@@ -821,34 +784,31 @@ def _collision_key(parts: list[str]) -> str:
     spelling; see `safe_extract`).
 
     Built as `NFC(casefold(name minus Default_Ignorable))`, folding three
-    findings into one key instead of three separate checks that could
-    drift apart:
+    rules into one key instead of three separate checks that could drift
+    apart:
 
-    - N-11 caveat / LOW-1: built from `parts` -- the components
-      `_reject_traversal` already normalized (dropped '' and '.',
-      checked '..') -- not the raw member name, so a leading './' or a
-      doubled '/' (which `Path()` already treats as the identical write
-      target) cannot dodge the check that exists to catch exactly that:
-      ['cafe.md', './cafe.md'] used to be accepted, silently overwriting
-      one with the other.
-    - LOW-2: casefolded, so ['A.md', 'a.md'] collides here too, instead of
+    - Built from `parts` -- the components `_reject_traversal` already
+      normalized (dropped '' and '.', checked '..') -- not the raw member
+      name, so a leading './' or a doubled '/' (which `Path()` already
+      treats as the identical write target) cannot dodge the check that
+      exists to catch exactly that: accepting ['cafe.md', './cafe.md']
+      would silently overwrite one with the other.
+    - Casefolded, so ['A.md', 'a.md'] collides here too, instead of
       silently losing one file on any case-folding consumer filesystem
       (Windows, default macOS) with no refusal at intake time at all.
-    - N-4 correction (iii): Default_Ignorable code points are stripped
-      before casefolding. The only default-ignorable characters that can
-      still reach this point are `_SPELLING_EXCEPTIONS` (round 4, P44:
-      ZWNJ/ZWJ, the variation selectors and the Mongolian free variation
-      selectors -- every other Default_Ignorable character is refused
-      outright by `_reject_display_spoofing` above) -- stripping them
-      here is what makes the collision rule the anti-spoof control N-4's
-      original ruling assumed it already was, and stripping the SAME
-      property this function refuses by (rather than an enumerated
-      subset of it) is what keeps a future addition to
-      `_SPELLING_EXCEPTIONS` closed by construction instead of needing a
-      second, separately-maintained list here. Measured: NFC and NFKC
-      both PRESERVE every invisible character, so 'report.md' and
-      'repor<ZWNJ>t.md' never collided on NFC alone; the premise had to
-      be made true, not assumed.
+    - Default_Ignorable code points are stripped before casefolding. The
+      only default-ignorable characters that can still reach this point
+      are `_SPELLING_EXCEPTIONS` (ZWNJ/ZWJ, the variation selectors and the
+      Mongolian free variation selectors -- every other Default_Ignorable
+      character is refused outright by `_reject_display_spoofing` above)
+      -- stripping them here is what makes the collision rule an
+      anti-spoof control for them, and stripping the SAME property this
+      function refuses by (rather than an enumerated subset of it) is what
+      keeps a future addition to `_SPELLING_EXCEPTIONS` closed by
+      construction instead of needing a second, separately-maintained list
+      here. Measured: NFC and NFKC both PRESERVE every invisible
+      character, so 'report.md' and 'repor<ZWNJ>t.md' would never collide
+      on NFC alone; the stripping is what makes them collide.
     """
     joined = "/".join(parts)
     stripped = "".join(ch for ch in joined if not _is_default_ignorable(ord(ch)))
@@ -858,19 +818,17 @@ def _collision_key(parts: list[str]) -> str:
 def _escape_for_log(name: str, limit: int = 200) -> str:
     """`name`, safe to place in a log line.
 
-    LOW-2: a tar member name is attacker-controlled and may contain a
-    newline, CR or ANSI escape -- unicode_escape renders all of those (and
-    the C0/DEL characters _reject_path_shape already refuses before this
-    is ever needed) as a literal, printable escape sequence rather than
-    letting them forge a fake log line. Length is capped independently so
-    one upload cannot flood the log.
+    A tar member name is attacker-controlled and may contain a newline, CR
+    or ANSI escape -- unicode_escape renders all of those (and the C0/DEL
+    characters _reject_path_shape already refuses before this is ever
+    needed) as a literal, printable escape sequence rather than letting
+    them forge a fake log line. Length is capped independently so one
+    upload cannot flood the log.
 
-    LOW-8 (round 3): the parenthetical above used to claim the NUL/control
-    characters the other two guards refuse can never reach here -- false
-    for C1 controls (0x80-0x9F) and U+2028/U+2029, neither of which either
-    guard refuses, and exactly the characters a terminal or a line-oriented
-    log reader treats specially. The escaping itself already handles them
-    correctly; only the claim was wrong.
+    Do not assume the other guards keep every control character out: C1
+    controls (0x80-0x9F) and U+2028/U+2029 are refused by neither, and are
+    exactly the characters a terminal or a line-oriented log reader treats
+    specially. The escaping handles them correctly.
     """
     text = name.encode("unicode_escape").decode("ascii")
     return text if len(text) <= limit else text[:limit] + "...(truncated)"
@@ -883,25 +841,24 @@ class _BoundedTarStream:
     decompressed bytes out of gzip before this raises. Everything else
     (`.tell()`, `.close()`) passes straight through.
 
-    HIGH-1 (round 3): the round-2 fix charged a member its real header
-    span (`offset_data - offset`) and refused a name over MAX_MEMBER_NAME
-    -- both AFTER `tf.next()` had already returned a fully-materialized,
-    fully-decoded member. But `tf.next()` itself, for a pax extended OR
-    global header, calls `tarfile.fileobj.read(self._block(self.size))`
-    for the HEADER'S OWN declared size -- attacker-controlled, unrelated
-    to any name-length bound -- before this module's loop body, or
-    MAX_MEMBER_NAME, or the byte budget, ever runs. Measured: a pax
-    GLOBAL ('g') header is charged a flat 512 regardless of real size (the
-    round-2 fix patches `next.offset` only for XHDTYPE/SOLARIS_XHDTYPE,
-    never XGLTYPE); a 4.75 MB upload can carry 5 GB of 'g' header,
-    ACCEPTED, uncharged, uncounted, 9.59s CPU; and a 1.94 MB upload drives
-    peak RSS to 8.0 GB doing it -- on BOTH the 'x' path round 2 already
-    charges correctly and the 'g' path it does not, because charging
-    after the read cannot bound the allocation the read already made.
-    Charging correctly-but-late fixes the accounting; it cannot fix the
-    memory. Only bounding the STREAM every header type reads from, before
-    tarfile is ever handed a read request it can act on, bounds both --
-    for whichever header type comes next, not an enumerated set of them.
+    The member loop in `safe_extract` charges a member its real header span
+    (`offset_data - offset`) and refuses a name over MAX_MEMBER_NAME -- both
+    AFTER `tf.next()` has already returned a fully-materialized, fully-decoded
+    member. But `tf.next()` itself, for a pax extended OR global header, calls
+    `tarfile.fileobj.read(self._block(self.size))` for the HEADER'S OWN
+    declared size -- attacker-controlled, unrelated to any name-length bound --
+    before this module's loop body, or MAX_MEMBER_NAME, or the byte budget,
+    ever runs. Measured without this wrapper: a pax GLOBAL ('g') header is
+    charged a flat 512 regardless of real size (tarfile patches `next.offset`
+    only for XHDTYPE/SOLARIS_XHDTYPE, never XGLTYPE); a 4.75 MB upload can
+    carry 5 GB of 'g' header, ACCEPTED, uncharged, uncounted, 9.59s CPU; and a
+    1.94 MB upload drives peak RSS to 8.0 GB doing it -- on BOTH the 'x' path
+    the loop charges correctly and the 'g' path it does not, because charging
+    after the read cannot bound the allocation the read already made. Charging
+    correctly-but-late fixes the accounting; it cannot fix the memory. Only
+    bounding the STREAM every header type reads from, before tarfile is ever
+    handed a read request it can act on, bounds both -- for whichever header
+    type comes next, not an enumerated set of them.
 
     `read()` charges the REQUESTED size before ever calling the inner
     stream, not the bytes actually returned: a `tarfile.fileobj.read(n)`
@@ -916,7 +873,7 @@ class _BoundedTarStream:
     `TarFile.fileobj` after `tarfile.open()` returns: for mode "r", the
     constructor reads the FIRST member eagerly
     (`self.firstmember = self.next()`, still inside `open()`) -- exactly
-    where this HIGH's own PoC (one pax GLOBAL header, then one ordinary
+    where the simplest attack (one pax GLOBAL header, then one ordinary
     member) sits. Measured: wrapping `tf.fileobj` after `tarfile.open()`
     returns leaves that first read completely unbounded -- the fix has to
     be handed to `tarfile.open()` as the `fileobj` argument itself, which
@@ -925,40 +882,35 @@ class _BoundedTarStream:
     "r:gz" (tarfile does its own gzip wrapping internally, too late to
     intercept).
 
-    LOW-5 (round 4): `_charge()` runs on every `read()`/`seek()` this class
-    services, which is every byte tarfile pulls from the stream for a
-    member -- its header block AND its content, block-padded to
-    `tarfile.BLOCKSIZE` (tar never stores a partial trailing block; the
-    padding bytes are real, still have to be read off the gzip stream, and
-    so are real decompressed bytes this charge is correct to count). For a
-    sub-block (<512-byte) file this roughly DOUBLES the effective per-
-    member cost against `max_bytes` versus the older, pre-round-3
-    accounting: measured, 10 members went from ~541 B/member of budget
-    (5,410 B total) to ~1,024 B/member (10,752 B total, header block plus
-    one padded content block each). This is correct -- those are real
-    bytes CPython allocates copying off the stream -- but it means a
-    publisher with many small files sitting near `max_tar_bytes` can newly
-    get a 413 that a purely "upload size vs. max_tar_bytes" mental model
-    would not predict; recorded here since neither the README nor any
-    other doc said so before this round.
+    `_charge()` runs on every `read()`/`seek()` this class services, which is
+    every byte tarfile pulls from the stream for a member -- its header block
+    AND its content, block-padded to `tarfile.BLOCKSIZE` (tar never stores a
+    partial trailing block; the padding bytes are real, still have to be read
+    off the gzip stream, and so are real decompressed bytes this charge is
+    correct to count). For a sub-block (<512-byte) file this roughly DOUBLES
+    the effective per-member cost against `max_bytes` versus counting content
+    plus header span only: measured, 10 members cost ~1,024 B/member
+    (10,752 B total, header block plus one padded content block each)
+    instead of ~541 B/member (5,410 B total). This is correct -- those are real bytes CPython
+    allocates copying off the stream -- but it means a publisher with many
+    small files sitting near `max_tar_bytes` can get a 413 that a purely
+    "upload size vs. max_tar_bytes" mental model would not predict.
 
-    HIGH-1 (round 4): the bound above charges bytes READ, not memory
-    ALLOCATED once tarfile decodes them -- a pax 'x'/'g' header's body is
-    fetched in one `read(n)` call and then parsed into a Python dict at
-    ~20x its wire size (measured; see MAX_PAX_METADATA_BYTES). `read()`
-    now ALSO charges any header-phase call requesting more than one
-    `tarfile.BLOCKSIZE` against a second, much smaller, cumulative budget
-    -- "header-phase" meaning `reading_content` is False, which
-    `safe_extract` sets True only around its own explicit
-    `tf.extractfile(member).read()` call, so a legitimate member's actual
-    content (arbitrarily large, already governed by the budget above) is
-    never charged against it. The charge happens inside `read()` itself,
-    the same call CPython's `_proc_pax` makes for every header in a
-    chain -- including ones that never return control to `safe_extract`'s
-    member loop because they are still being resolved recursively inside
-    a single `tf.next()` call -- so it bounds one giant header AND a chain
-    of smaller ones the same way, not only whatever the loop can see
-    after the fact.
+    The bound above charges bytes READ, not memory ALLOCATED once tarfile
+    decodes them -- a pax 'x'/'g' header's body is fetched in one `read(n)`
+    call and then parsed into a Python dict at ~20x its wire size (measured;
+    see MAX_PAX_METADATA_BYTES). `read()` therefore ALSO charges any
+    header-phase call requesting more than one `tarfile.BLOCKSIZE` against a
+    second, much smaller, cumulative budget -- "header-phase" meaning
+    `reading_content` is False, which `safe_extract` sets True only around its
+    own explicit `tf.extractfile(member).read()` call, so a legitimate member's
+    actual content (arbitrarily large, already governed by the budget above) is
+    never charged against it. The charge happens inside `read()` itself, the
+    same call CPython's `_proc_pax` makes for every header in a chain --
+    including ones that never return control to `safe_extract`'s member loop
+    because they are still being resolved recursively inside a single
+    `tf.next()` call -- so it bounds one giant header AND a chain of smaller
+    ones the same way, not only whatever the loop can see after the fact.
     """
 
     def __init__(
@@ -1044,13 +996,13 @@ def safe_extract(
 ) -> None:
     if len(data) > max_bytes:
         raise IntakeError(413, f"archive exceeds {max_bytes} bytes")
-    # HIGH-1: decompress ourselves and hand tarfile.open() the WRAPPED,
+    # Decompress ourselves and hand tarfile.open() the WRAPPED,
     # already-decompressed stream (mode "r:") instead of the raw
     # compressed bytes (mode "r:gz", where tarfile builds its own GzipFile
     # internally) -- TarFile.__init__ reads the first member eagerly, as
     # PART OF tarfile.open() itself, so wrapping tf.fileobj after open()
-    # returns would leave exactly that first read (where this HIGH's own
-    # PoC sits) unbounded. See _BoundedTarStream's docstring.
+    # returns would leave exactly that first read unbounded. See
+    # _BoundedTarStream's docstring.
     gz = gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb")
     bounded = _BoundedTarStream(gz, max_bytes)
     try:
@@ -1058,14 +1010,15 @@ def safe_extract(
         # tarfile only reads, seeks and tells here.
         tf = tarfile.open(fileobj=cast("IO[bytes]", bounded), mode="r:")  # noqa: SIM115 -- closed by `with tf:` below; opened outside it so open errors map to 400
     except (tarfile.TarError, OSError, EOFError, RecursionError) as exc:
-        # OSError/EOFError: opening tarfile no longer routes through
-        # tarfile's own gzopen(), which used to translate a GzipFile
+        # OSError/EOFError: opening tarfile does not route through
+        # tarfile's own gzopen(), which would translate a GzipFile
         # construction/read failure (bad magic bytes, truncated CRC
         # trailer) into a TarError itself -- replicated here so an invalid
         # or truncated archive still maps to this function's clean 400,
         # not an uncaught exception from the eager first read. RecursionError
-        # here is the LOW-5 case (chained headers) landing during that same
-        # eager first read rather than during later iteration.
+        # here is the chained-headers case (see the `except RecursionError`
+        # below) landing during that same eager first read rather than
+        # during later iteration.
         raise IntakeError(400, f"archive is not a valid tar.gz: {exc}") from exc
     dest_resolved = dest.resolve()
     with tf:
@@ -1091,31 +1044,29 @@ def safe_extract(
                 # are both O(1)/cheap arithmetic on data tarfile already
                 # parsed, so both run before _reject_path_shape /
                 # _reject_display_spoofing -- the two per-character scans a
-                # long pax/GNU name previously made expensive (see
-                # MAX_MEMBER_NAME's comment above).
+                # long pax/GNU name makes expensive (see MAX_MEMBER_NAME's
+                # comment above).
                 if len(member.name) > MAX_MEMBER_NAME:
                     raise IntakeError(
                         400,
                         f"tar member name is longer than {MAX_MEMBER_NAME} "
                         "characters -- shorten it",
                     )
-                # HIGH-1 (round 5, P43): bound the DECODED pax-header
-                # population this member inherited, not the bytes the
-                # header was read in -- see MAX_PAX_RECORDS's comment for
-                # why a read counter cannot see the input that matters
-                # (every header read is exactly one 512-byte block) and
-                # for the quadratic mechanism behind it. This is the
-                # quantity that drives retained memory: tarfile has
-                # already handed this member its own `pax_headers.copy()`
-                # and retained the TarInfo in `TarFile.members`, so
-                # bounding it HERE, once per member, is what keeps the
-                # next member's copy O(1) and the archive's total retained
-                # cost linear in member count. `len()` is O(1) and the
-                # summed length is O(MAX_PAX_RECORDS) once the count check
-                # above has passed, so a legitimate archive (empty dict)
-                # pays nothing. Deliberately placed after the name bound
-                # above so an over-long pax `path=` name still gets its own
-                # message rather than this one.
+                # Bound the DECODED pax-header population this member
+                # inherited, not the bytes the header was read in -- see
+                # MAX_PAX_RECORDS's comment for why a read counter cannot see
+                # the input that matters (every header read is exactly one
+                # 512-byte block) and for the quadratic mechanism behind it.
+                # This is the quantity that drives retained memory: tarfile has
+                # already handed this member its own `pax_headers.copy()` and
+                # retained the TarInfo in `TarFile.members`, so bounding it
+                # HERE, once per member, is what keeps the next member's copy
+                # O(1) and the archive's total retained cost linear in member
+                # count. `len()` is O(1) and the summed length is
+                # O(MAX_PAX_RECORDS) once the count check above has passed, so
+                # a legitimate archive (empty dict) pays nothing. Deliberately
+                # placed after the name bound above so an over-long pax `path=`
+                # name still gets its own message rather than this one.
                 pax = member.pax_headers
                 if pax:
                     if len(pax) > MAX_PAX_RECORDS:
@@ -1142,59 +1093,52 @@ def safe_extract(
                             "format (`tar --format=gnu`), which writes no "
                             "pax headers at all",
                         )
-                # MEDIUM-1 exemption: a content-addressed asset
+                # Exemption: a content-addressed asset
                 # (doc/.../assets/<sha256>.png|webp) that this publish will
-                # actually divert to the configured asset store never lands
-                # in the published git tree a Windows client checks out --
-                # divert_and_record strips it back out and replaces it with
-                # a name-only reference in _assets.yaml before anything is
-                # committed. Its basename length is fixed by the hash
-                # function (not attacker-chosen), and its full path can
-                # legitimately run past MAX_MEMBER_PATH_LEN simply from
-                # normal doc/section nesting, so binding it to the
-                # Windows-checkout bound would refuse real uploads for a
-                # constraint that does not apply to them. When no store is
-                # configured for this publish, the same-shaped file is NOT
-                # diverted and stays a real tracked path -- the bound must
-                # still apply, so the exemption is gated on
-                # `assets_will_divert`, which the caller sets from the same
+                # actually divert to the configured asset store never lands in
+                # the published git tree a Windows client checks out --
+                # divert_and_record strips it back out and replaces it with a
+                # name-only reference in _assets.yaml before anything is
+                # committed. Its basename length is fixed by the hash function
+                # (not attacker-chosen), and its full path can legitimately run
+                # past MAX_MEMBER_PATH_LEN simply from normal doc/section
+                # nesting, so binding it to the Windows-checkout bound would
+                # refuse real uploads for a constraint that does not apply to
+                # them. When no store is configured for this publish, the
+                # same-shaped file is NOT diverted and stays a real tracked
+                # path -- the bound must still apply, so the exemption is gated
+                # on `assets_will_divert`, which the caller sets from the same
                 # resolved store used later to decide whether diversion
                 # actually happens (see intake_publish).
                 #
-                # Round 5 (M1): re-examined and KEPT as `assets_will_divert`,
-                # not widened to "the name is content-addressed". At the
-                # round-4 bound of 70 this gate looked like the bug -- on the
-                # documented default (`asset_store: mode: none`) it is always
-                # False, and the shortest asset path the product can produce
-                # is 77, so no image could be published at all. But widening
-                # the gate would drop the Windows bound for a file that
-                # really does get committed and checked out; the number was
-                # what was wrong, and MAX_MEMBER_PATH_LEN is now 110. See its
-                # comment for the arithmetic and
+                # The gate is `assets_will_divert`, deliberately not widened to
+                # "the name is content-addressed": on the documented default
+                # (`asset_store: mode: none`) it is always False, so the
+                # shortest asset path the product can produce (77) must fit
+                # under MAX_MEMBER_PATH_LEN (110) on its own. Widening the gate
+                # would drop the Windows bound for a file that really does get
+                # committed and checked out. See MAX_MEMBER_PATH_LEN's comment
+                # for the arithmetic and
                 # test_content_addressed_assets_publish_on_the_default_store,
                 # which pins both halves (77 and 85 accepted undiverted, a
                 # genuinely over-long asset path still refused).
                 if not (assets_will_divert and _is_diverted_asset_name(member.name)):
                     _reject_path_length("tar member", member.name)
-                # Headers are not free (HIGH-2): a member's declared content
-                # may be 0 bytes, but tarfile still spent header bytes
-                # decompressing and parsing it, so a bomb of all-zero-byte
-                # members must count against the byte budget too, not just
-                # the member-count cap above. `offset_data - offset` is the
-                # REAL span every header block for this member consumed --
-                # the ustar/GNU header, plus any pax extended header that
-                # preceded it -- not a flat tarfile.BLOCKSIZE that charged a
-                # multi-megabyte pax name the same nominal 512 bytes as an
-                # ordinary short one (round-2 HIGH-2: measured 26x CPU
-                # amplification from that gap, closed here plus the length
-                # bound above). This is now belt-and-suspenders with
-                # _BoundedTarStream above for ordinary/pax/GNU headers --
-                # kept because it also charges a GNU sparse member's
-                # EXPANDED size, which the stream bound cannot see (sparse
-                # "holes" are synthesized zero-fill, never actually read
-                # from the stream), so it catches a declared-size bomb the
-                # stream-read bound does not. Round-4 LOW (M20): this claim
-                # was unproven -- pinned by
+                # Headers are not free: a member's declared content may be 0
+                # bytes, but tarfile still spent header bytes decompressing and
+                # parsing it, so a bomb of all-zero-byte members must count
+                # against the byte budget too, not just the member-count cap
+                # above. `offset_data - offset` is the REAL span every header
+                # block for this member consumed -- the ustar/GNU header, plus
+                # any pax extended header that preceded it -- not a flat
+                # tarfile.BLOCKSIZE that would charge a multi-megabyte pax name
+                # the same nominal 512 bytes as an ordinary short one. This is
+                # belt-and-suspenders with _BoundedTarStream above for
+                # ordinary/pax/GNU headers -- kept because it also charges a
+                # GNU sparse member's EXPANDED size, which the stream bound
+                # cannot see (sparse "holes" are synthesized zero-fill, never
+                # actually read from the stream), so it catches a declared-size
+                # bomb the stream-read bound does not. Pinned by
                 # test_sparse_member_is_charged_by_its_expanded_size_not_its_wire_size
                 # (a 40-byte-on-the-wire pax GNU.sparse.realsize member
                 # declaring 10,000,020 bytes real size is refused at a
@@ -1208,9 +1152,9 @@ def safe_extract(
                     )
                 _reject_path_shape("tar member", member.name)
                 parts = _reject_traversal("tar member", member.name)
-                # MEDIUM-3: bound the number of DISTINCT directory paths this
-                # archive would create, not just the number of files or
-                # declared bytes -- see MAX_TAR_DIRECTORIES's comment.
+                # Bound the number of DISTINCT directory paths this archive
+                # would create, not just the number of files or declared bytes
+                # -- see MAX_TAR_DIRECTORIES's comment.
                 for i in range(1, len(parts)):
                     seen_dirs.add("/".join(parts[:i]))
                 if len(seen_dirs) > MAX_TAR_DIRECTORIES:
@@ -1220,9 +1164,8 @@ def safe_extract(
                         "directories",
                     )
                 _reject_display_spoofing("tar member", member.name)
-                # LOW-5 / N-11 caveat (LOW-1) / LOW-2 / N-4(iii): one
-                # collision key now covers normalization, traversal-
-                # equivalence, case-folding and invisible-character
+                # One collision key covers normalization,
+                # traversal-equivalence, case-folding and invisible-character
                 # stripping together -- see _collision_key's docstring.
                 key = _collision_key(parts)
                 if key in seen_keys and seen_keys[key] != member.name:
@@ -1234,16 +1177,15 @@ def safe_extract(
                 seen_keys[key] = member.name
                 rel = Path(member.name)
                 try:
-                    # N-5: resolve() itself can raise. MAX_MEMBER_NAME (4096
-                    # characters) bounds the scans above, but it is still
-                    # well past classic Windows path-length limits once
-                    # joined to `dest`'s own prefix -- a long member name can
-                    # raise ValueError('path too long for Windows') right
-                    # here, and this used to sit OUTSIDE the translation
-                    # below, so that one shape reached the route's generic
-                    # backstop as a 500 instead of this function's own clean
-                    # 400. Everything from here through the write is one
-                    # translated region now.
+                    # resolve() itself can raise. MAX_MEMBER_NAME (4096
+                    # characters) bounds the scans above, but it is still well
+                    # past classic Windows path-length limits once joined to
+                    # `dest`'s own prefix -- a long member name can raise
+                    # ValueError('path too long for Windows') right here, so it
+                    # sits INSIDE the translation below; outside it, that one
+                    # shape would reach the route's generic backstop as a 500
+                    # instead of this function's own clean 400. Everything from
+                    # here through the write is one translated region.
                     target = (dest / rel).resolve()
                     if not target.is_relative_to(dest_resolved):
                         raise IntakeError(
@@ -1252,12 +1194,12 @@ def safe_extract(
                     target.parent.mkdir(parents=True, exist_ok=True)
                     src = tf.extractfile(member)
                     assert src is not None  # noqa: S101 -- type narrowing, isreg() checked above
-                    # HIGH-1 (round 4): this is the one place a read of the
-                    # member's own (already-budgeted) content is expected
-                    # to be large -- exempt it from the header-metadata
-                    # budget, which exists to bound tarfile's OWN internal
-                    # pax/GNU header parsing, not a legitimate file's
-                    # bytes. See _BoundedTarStream's docstring.
+                    # This is the one place a read of the member's own
+                    # (already-budgeted) content is expected to be large --
+                    # exempt it from the header-metadata budget, which exists
+                    # to bound tarfile's OWN internal pax/GNU header parsing,
+                    # not a legitimate file's bytes. See _BoundedTarStream's
+                    # docstring.
                     bounded.reading_content = True
                     try:
                         payload = src.read()
@@ -1265,47 +1207,40 @@ def safe_extract(
                         bounded.reading_content = False
                     target.write_bytes(payload)
                 except (OSError, ValueError) as exc:
-                    # MEDIUM-2: a member shape that reaches here unrejected
-                    # -- e.g. one member named 'assets' (a file) followed by
-                    # 'assets/x.png' -- raises PermissionError/
-                    # FileExistsError/NotADirectoryError depending on OS and
-                    # order, and a resolve() on an embedded-NUL name raises
-                    # ValueError. Unhandled, this was an uncaught 500 with
-                    # the job's status left at "processing" forever (the
-                    # route catches only IntakeError, GitError and
-                    # GHAppError). Every path out of extraction must reach a
-                    # terminal state.
+                    # A member shape that reaches here unrejected -- e.g. one
+                    # member named 'assets' (a file) followed by 'assets/x.png'
+                    # -- raises PermissionError/FileExistsError/
+                    # NotADirectoryError depending on OS and order, and a
+                    # resolve() on an embedded-NUL name raises ValueError. Unhandled, this would be an uncaught 500 with
+                    # the job's status left at "processing" forever (the route
+                    # catches only IntakeError, GitError and GHAppError). Every
+                    # path out of extraction must reach a terminal state.
                     raise IntakeError(
                         400, f"tar member '{member.name}' cannot be written: {exc}"
                     ) from exc
         except RecursionError as exc:
-            # Round 3, review-waveH-fix2-verdict.md's LOW-5 (a distinct
-            # finding from this module's own pre-existing "LOW-5" label a
-            # few lines above, which is about NFC/case/traversal
-            # collisions, not recursion): CPython's tar header parser
-            # recurses once per chained extended/GNU-longname header
-            # (`_proc_pax`/`_proc_gnulong` each fetch the NEXT header via a
-            # recursive call). Measured: 1,200 chained 'g' headers -- a
-            # 6.4 KB upload -- hits
-            # RecursionError inside `tf.next()`, which is neither OSError
-            # nor ValueError nor tarfile.TarError, so it used to escape
-            # this function entirely and reach the route's generic 500
-            # backstop -- an attacker-chosen 500 on a surface whose whole
-            # point is that attacker-chosen input gets a 400.
+            # CPython's tar header parser recurses once per chained
+            # extended/GNU-longname header (`_proc_pax`/`_proc_gnulong` each
+            # fetch the NEXT header via a recursive call). Measured: 1,200
+            # chained 'g' headers -- a 6.4 KB upload -- hits RecursionError
+            # inside `tf.next()`, which is neither OSError nor ValueError nor
+            # tarfile.TarError, so without this clause it would escape this
+            # function entirely and reach the route's generic 500 backstop --
+            # an attacker-chosen 500 on a surface whose whole point is that
+            # attacker-chosen input gets a 400.
             raise IntakeError(
                 400, "archive contains pathologically nested extended headers"
             ) from exc
         except tarfile.TarError as exc:
             # A malformed/truncated archive can also fail mid-iteration,
-            # not just at tarfile.open() -- the pre-round-3 code only
-            # wrapped open() itself, leaving this the same kind of
-            # uncaught-500 gap RecursionError above has.
+            # not just at tarfile.open() -- wrapping only open() would leave
+            # the same kind of uncaught-500 gap RecursionError above has.
             raise IntakeError(400, f"archive is not a valid tar.gz: {exc}") from exc
 
 
 # Network git calls in the intake worker run while holding repo_lock(rid) and
-# the hub write lock: a hung remote must not block publishing for every rid
-# (2026-10-10 review §5.2 #9). Matches hub.PULL_TIMEOUT_SECONDS.
+# the hub write lock: a hung remote must not block publishing for every rid.
+# Matches hub.PULL_TIMEOUT_SECONDS.
 INTAKE_GIT_TIMEOUT_SECONDS = 300
 
 
@@ -1416,11 +1351,11 @@ def intake_config_from_env(hub_ref: str) -> IntakeConfig | None:
 
 
 def _resolve_hub_or_503(hub_ref: str) -> hub_mod.HubHandle:
-    # resolve_hub can now raise gitio.GitError (Important 3, hub.py's
-    # _discard_cache) when a stale cache cannot be removed -- e.g. Windows
-    # holding a lock on <cache>/.kb-work/search.sqlite3 while a request is
-    # served. Before that guard, this was an unhandled 500; a locked cache
-    # is exactly the transient, recoverable condition 503 exists for.
+    # resolve_hub can raise gitio.GitError (hub.py's _discard_cache) when a
+    # stale cache cannot be removed -- e.g. Windows holding a lock on
+    # <cache>/.kb-work/search.sqlite3 while a request is served. Unguarded,
+    # this would be an unhandled 500; a locked cache is exactly the transient,
+    # recoverable condition 503 exists for.
     try:
         handle = hub_mod.resolve_hub(hub_ref)
     except gitio.GitError as exc:
@@ -1456,14 +1391,14 @@ def check_serving_clone(handle: hub_mod.HubHandle) -> list[str]:
             handle.root, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"
         )
         if head_check.returncode != 0:
-            # I-1: default_branch() falls back to current_branch() when
-            # origin/HEAD is unset, so `current != default` below can never
-            # be true here -- comparing a value against itself and finding
-            # it always equal is not the same as the clone being healthy.
-            # This is exactly the shape tests/conftest.py's hub_with_origin
-            # builds (a real bare origin pushed to, but no `remote set-head`
-            # run against it), and the same shape resolve_hub's local-path
-            # branch (hub.py) produces for any hub directory used directly.
+            # default_branch() falls back to current_branch() when origin/HEAD
+            # is unset, so `current != default` below can never be true here --
+            # comparing a value against itself and finding it always equal is
+            # not the same as the clone being healthy. This is exactly the
+            # shape tests/conftest.py's hub_with_origin builds (a real bare
+            # origin pushed to, but no `remote set-head` run against it), and
+            # the same shape resolve_hub's local-path branch (hub.py) produces
+            # for any hub directory used directly.
             return [
                 f"the hub clone at {handle.root} has no origin/HEAD, so its "
                 "default branch cannot be determined; fix with: git -C "
@@ -1483,15 +1418,15 @@ def _reclaim_leaked_worktrees(root: Path) -> None:
     """Force-remove any registered `publish/*` worktree, other than the main
     one, whose directory still exists.
 
-    I-5: `git worktree prune` (called just before this) only forgets a
-    worktree record once its directory is gone. A crash between
-    `worktree_add` and `worktree_remove` in `intake_publish` can leave the
-    directory in place -- `tempfile.TemporaryDirectory` cannot guarantee
-    cleanup after a hard kill -- so the record survives forever and the
-    next publish for that repo-id fails with "already used by worktree at
-    ...", a permanent 502 for that one repo-id until an operator removes it
-    by hand. This is the automatic version of that removal, run at the
-    same startup check that already prunes the gone-directory case.
+    `git worktree prune` (called just before this) only forgets a worktree
+    record once its directory is gone. A crash between `worktree_add` and
+    `worktree_remove` in `intake_publish` can leave the directory in place --
+    `tempfile.TemporaryDirectory` cannot guarantee cleanup after a hard kill --
+    so the record survives forever and the next publish for that repo-id fails
+    with "already used by worktree at ...", a permanent 502 for that one
+    repo-id until an operator removes it by hand. This is the automatic version
+    of that removal, run at the same startup check that already prunes the
+    gone-directory case.
     """
     proc = gitio._run(root, "worktree", "list", "--porcelain")
     if proc.returncode != 0:
@@ -1526,15 +1461,14 @@ def _dest_for_rid(federation_dir: Path, rid: str) -> Path:
     flow, but intake_publish/hub_manifest are callable directly (tests,
     tooling) -- re-validate rather than trust the caller.
 
-    LOW-3: this used to re-implement a weaker check (`REPO_ID_RE.fullmatch`
-    plus a literal '.'/'..' check) instead of calling
-    `pubgate.normalize_repo_id` the way authorize() does -- so a rid that
-    normalize_repo_id would refuse (over the length cap, ending in a dot,
-    a reserved Windows device name) passed here, and -- because this is the
-    check that unconditionally runs on every intake_publish call, not just
-    authorize()'s -- the case-collision guard never ran on the real HTTP
-    path at all. `existing` is best-effort (the directories already on
-    disk under handle.root's federation/, not a lock-held read), matching
+    Calls `pubgate.normalize_repo_id` the way authorize() does rather than a
+    weaker local check (`REPO_ID_RE.fullmatch` plus a literal '.'/'..' check),
+    which would pass a rid normalize_repo_id refuses (over the length cap,
+    ending in a dot, a reserved Windows device name). This is the check that
+    unconditionally runs on every intake_publish call, not just authorize()'s,
+    so it is also where the case-collision guard runs on the real HTTP path.
+    `existing` is best-effort (the directories already on disk under
+    handle.root's federation/, not a lock-held read), matching
     normalize_repo_id's own "mistake guard, not exhaustive" scope.
     """
     from strata_kb.pubgate import GateError, normalize_repo_id
@@ -1576,17 +1510,16 @@ def _clean_deletes(deletes: list[str]) -> list[str]:
     """Validate every caller-supplied delete path, and drop the hub-owned
     ones -- comparing (and returning) the NORMALIZED spelling.
 
-    MEDIUM-1: the filter this replaces compared the raw attacker string for
-    EXACT equality against ("_meta.yaml", assetstore.RECORD_NAME), while
-    the deletion this list drives (hashsync._guard, later) resolves a
-    NORMALIZED path -- so a leading './', a trailing space/dot, or a case
-    difference on a case-folding filesystem all read the same file on disk
-    but compared unequal here, and each one let a publish erase the hub's
-    own '_assets.yaml' bookkeeping for its own entry (measured: './',
-    './/', and, filesystem-dependent, a case difference). Comparing on the
-    normalized basename -- and passing that same normalized spelling
-    onward, so divert_and_record subtracts the identical string -- closes
-    every one of those spellings in the one place this list is built,
+    Do not compare the raw attacker string for EXACT equality against
+    ("_meta.yaml", assetstore.RECORD_NAME): the deletion this list drives
+    (hashsync._guard, later) resolves a NORMALIZED path -- so a leading './', a
+    trailing space/dot, or a case difference on a case-folding filesystem all
+    read the same file on disk but compare unequal, and each one would let a
+    publish erase the hub's own '_assets.yaml' bookkeeping for its own entry
+    (measured: './', './/', and, filesystem-dependent, a case difference).
+    Comparing on the normalized basename -- and passing that same normalized
+    spelling onward, so divert_and_record subtracts the identical string --
+    closes every one of those spellings in the one place this list is built,
     rather than requiring the exact same spelling to be re-derived at each
     downstream consumer.
     """
@@ -1594,16 +1527,16 @@ def _clean_deletes(deletes: list[str]) -> list[str]:
     for rel in deletes:
         _reject_path_shape("delete path", rel)
         parts = _reject_traversal("delete path", rel)
-        # N-10: hub-owned bookkeeping lives ONLY at the rid root --
-        # assetstore.py writes RECORD_NAME as `dest / RECORD_NAME` and
-        # intake.py writes `_meta.yaml` the same way, never nested -- so
-        # matching on `parts[-1]` regardless of depth silently dropped a
-        # child's own, legitimately nested `doc1/_assets.yaml` or
-        # `doc1/_meta.yaml` delete too. len(parts) == 1 keeps exactly
-        # MEDIUM-1's protection (every normalized spelling of the
-        # top-level file: '_assets.yaml', './_assets.yaml', '_ASSETS.yaml'
-        # all normalize to a single-part list) without over-refusing a
-        # nested file that merely shares the same name.
+        # Hub-owned bookkeeping lives ONLY at the rid root -- assetstore.py
+        # writes RECORD_NAME as `dest / RECORD_NAME` and intake.py writes
+        # `_meta.yaml` the same way, never nested -- so matching on `parts[-1]`
+        # regardless of depth would silently drop a child's own, legitimately
+        # nested `doc1/_assets.yaml` or `doc1/_meta.yaml` delete too.
+        # len(parts) == 1 keeps exactly the normalized-spelling protection
+        # above (every normalized spelling of the top-level file:
+        # '_assets.yaml', './_assets.yaml', '_ASSETS.yaml' all normalize to a
+        # single-part list) without over-refusing a nested file that merely
+        # shares the same name.
         if len(parts) == 1 and parts[0].rstrip(". ").casefold() in _HUB_OWNED_BASENAMES:
             continue  # hub-owned bookkeeping; silently ignored, never deleted
         clean.append("/".join(parts))
@@ -1624,19 +1557,19 @@ def intake_publish(
 
     Returns the PR URL, or "" when the snapshot changes nothing.
 
-    The write happens in a fresh `git worktree`, never in the hub's own
-    serving checkout (`handle.root`) -- that checkout is what `kb query`,
-    the MCP tools and the web UI read from. Checking `handle.root` itself
-    out onto publish/<rid> (the old approach) meant two concurrent publishes
-    for different repo-ids shared one working tree: whichever checkout ran
-    last decided both what the read side served and what the next publish's
-    PR was based on, and a crash could leave the clone stuck off its default
-    branch for good (F-D3, F-D4). A worktree per publish means handle.root's
-    own checkout is never touched here.
+    The write happens in a fresh `git worktree`, never in the hub's own serving
+    checkout (`handle.root`) -- that checkout is what `kb query`, the MCP tools
+    and the web UI read from. Checking `handle.root` itself out onto
+    publish/<rid> (the old approach) meant two concurrent publishes for
+    different repo-ids shared one working tree: whichever checkout ran last
+    decided both what the read side served and what the next publish's PR was
+    based on, and a crash could leave the clone stuck off its default branch
+    for good. A worktree per publish means handle.root's own checkout is never
+    touched here.
 
     `store` is a test seam -- None means use the hub's own configured store
-    (`assetstore.store_for_hub`), which is None (spec A behavior, unchanged)
-    when the hub declares no `asset_store` block.
+    (`assetstore.store_for_hub`), which is None (no asset diversion) when the
+    hub declares no `asset_store` block.
     """
     from strata_kb import publish as publish_mod
 
@@ -1651,11 +1584,11 @@ def intake_publish(
         # extraction step below (safe_extract) needs to know whether asset
         # diversion is active for THIS publish too, to exempt content-
         # addressed asset paths from the Windows-checkout length bound
-        # (round 4, P45) -- they only get exempt when they will actually be
-        # diverted out of the published tree, which this same resolved
-        # value also governs later. store_for_hub is a plain config read
-        # off the already-resolved handle, so resolving it here instead of
-        # later changes no behavior.
+        # (MAX_MEMBER_PATH_LEN) -- they only get exempt when they will actually
+        # be diverted out of the published tree, which this same resolved value
+        # also governs later. store_for_hub is a plain config read off the
+        # already-resolved handle, so resolving it here instead of later
+        # changes no behavior.
         active_store = store if store is not None else assetstore.store_for_hub(handle)
         _dest_for_rid(handle.federation_dir, rid)  # validate before any write
         publish_mod._neutralize_excludes(handle.root)
@@ -1754,11 +1687,11 @@ def _publish_in_worktree(
     entirely in the caller -- this function never touches handle.root's own
     checkout, only `work`.
 
-    `active_store` is already resolved by the caller (the `store` test seam
-    if given, else `assetstore.store_for_hub(handle)`) -- resolved once,
-    before `safe_extract` ran, so that call and this one agree on whether
-    diversion is active for this publish (round 4, P45's asset-path length
-    exemption depends on the two staying in sync).
+    `active_store` is already resolved by the caller (the `store` test seam if
+    given, else `assetstore.store_for_hub(handle)`) -- resolved once, before
+    `safe_extract` ran, so that call and this one agree on whether diversion is
+    active for this publish (safe_extract's asset-path length exemption depends
+    on the two staying in sync).
     """
     from strata_kb import pubgate
     from strata_kb import publish as publish_mod
@@ -1782,11 +1715,10 @@ def _publish_in_worktree(
         if stray.is_file():
             stray.unlink()
     if skipped:
-        # LOW-2: `skipped` names are attacker-controlled (an uploaded tar
-        # member name) and may carry a newline/CR/ANSI escape that could
-        # forge a fake log line -- escape each one, and cap both the
-        # per-name and the joined-list length so one upload cannot flood
-        # the log either.
+        # `skipped` names are attacker-controlled (an uploaded tar member name)
+        # and may carry a newline/CR/ANSI escape that could forge a fake log
+        # line -- escape each one, and cap both the per-name and the
+        # joined-list length so one upload cannot flood the log either.
         _LOG_SHOWN = 50
         shown = ", ".join(_escape_for_log(rel) for rel in skipped[:_LOG_SHOWN])
         more = (
@@ -1808,18 +1740,17 @@ def _publish_in_worktree(
         _restore_worktree_federation(work)
         raise IntakeError(400, str(exc)) from exc
     if active_store is not None:
-        # P32: read this rid's committed record BEFORE divert_and_record
-        # runs. Intake is explicitly incremental -- only files that
-        # actually changed in this upload get diverted -- so the names of
-        # everything diverted by an EARLIER publish live only in this
-        # record; divert_and_record's own read of it self-heals a failure
-        # to empty (needed elsewhere, see its docstring), and on that
-        # self-heal its merge degrades to a plain overwrite: "nothing new
-        # to divert" would unlink the record outright, and "one new asset
-        # uploaded" would replace it with just that one name, dropping
-        # every earlier one -- while the store still holds all of them.
-        # Pre-checking here means neither ever happens: load_record raises
-        # before divert_and_record is ever called, so nothing is derived
+        # Read this rid's committed record BEFORE divert_and_record runs.
+        # Intake is explicitly incremental -- only files that actually changed
+        # in this upload get diverted -- so the names of everything diverted by
+        # an EARLIER publish live only in this record; divert_and_record's own
+        # read of it self-heals a failure to empty (needed elsewhere, see its
+        # docstring), and on that self-heal its merge degrades to a plain
+        # overwrite: "nothing new to divert" would unlink the record outright,
+        # and "one new asset uploaded" would replace it with just that one
+        # name, dropping every earlier one -- while the store still holds all
+        # of them. Pre-checking here means neither ever happens: load_record
+        # raises before divert_and_record is ever called, so nothing is derived
         # from the failed read.
         try:
             assetstore.load_record(dest)

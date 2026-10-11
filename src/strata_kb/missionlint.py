@@ -1,6 +1,6 @@
 """Structural checks for the BA mission-plan Definition-of-Ready gate.
 
-There is deliberately NO MCP tool (spec §9) — the traceability checks
+There is deliberately NO MCP tool — the traceability checks
 need filesystem access the shared server does not have, so an MCP copy
 would be a strictly degraded gate.
 
@@ -222,7 +222,7 @@ def check_placeholders(text: str) -> list[Issue]:
 def check_technology_decisions(text: str) -> list[Issue]:
     """New-template check (warning). Every C4 '%%TODO%%' placeholder
     needs an owned row in '## Technology decisions' — a placeholder
-    without an owner sits until a Dev trips over it (spec NT3). Exact
+    without an owner sits until a Dev trips over it. Exact
     placeholder-to-row matching is not decidable, so the check is
     count-based: at least as many data rows as C4 placeholders."""
     todo_count = 0
@@ -265,7 +265,7 @@ def check_sequencing(text: str, us_ids: list[str]) -> list[Issue]:
     """New-template check (warning). '## Sequencing' must cover every
     backlog US id — Devs never infer ordering. A missing section is
     already reported by the recommended-sections check; this one only
-    fires on partial coverage. Per spec, any recommended section may be
+    fires on partial coverage. Any recommended section may be
     satisfied with 'N/A — <reason>' instead — `check_recommended_sections`
     advertises that escape hatch, so a body that opens with 'N/A' (after
     stripping HTML comments) is honored here too rather than treated as a
@@ -349,7 +349,8 @@ def lint(
     tickets_dir: Path | None = None,
     fail_on_stale: bool = False,
 ) -> LintReport:
-    """Run the mission DoR gate. Checks run in spec §5.1 order.
+    """Run the mission DoR gate. Checks run in the order of the template's
+    sections.
 
     `path` enables the filename half of check 1; `tickets_dir` enables the
     coverage check. Each omission is recorded as a note rather than

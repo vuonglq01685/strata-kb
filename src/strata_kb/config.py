@@ -1,3 +1,12 @@
+"""config — the `.kb/config.yaml` model and hub resolution.
+
+`KBConfig` is the parsed file (hub, repo id, repo kind, intake URL, asset
+store, languages, code-ingest settings); `load_config()` returns defaults when
+the file is absent. `require_hub()` and `effective_repo_id()` fold the CLI or
+environment value over the file, and `require_hub()` raises `HubConfigError`
+when neither names a hub.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,11 +28,11 @@ HUB_GUIDE = (
 class HubConfigError(KbError):
     """The hub is mandatory (federation is the only read source) but not
     configured. Every raise site's caller already converts it to a one-line
-    CLI message -- joins the KbError family (Wave G fix round 2, item 7)."""
+    CLI message -- joins the KbError family."""
 
 
 class AssetStoreConfig(BaseModel):
-    """Object-store settings for image assets (spec B). Credentials never
+    """Object-store settings for image assets. Credentials never
     live here — boto3's standard chain (env / instance role) supplies them."""
 
     mode: Literal["none", "s3"] = "none"
@@ -34,8 +43,8 @@ class AssetStoreConfig(BaseModel):
 
 
 class CodeIngestConfig(BaseModel):
-    """`code_ingest:` — the one ingest configuration local runs and CI share
-    (spec 2026-09-25 §4.2). `db` stays explicit-only, exactly like `--db`:
+    """`code_ingest:` — the one ingest configuration local runs and CI share.
+    `db` stays explicit-only, exactly like `--db`:
     a stray test fixture must never become published knowledge."""
 
     db: list[str] = Field(default_factory=list)

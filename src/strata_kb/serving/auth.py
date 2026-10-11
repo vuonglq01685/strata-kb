@@ -1,3 +1,13 @@
+"""auth — bearer-token and session-cookie auth for the HTTP servers.
+
+`TokenAuthMiddleware` wraps the one ASGI app `web.app.create_app` builds (MCP
+over HTTP, /api, /ui, /intake). It accepts `Authorization: Bearer <token>` or
+the `strata_kb_session` cookie (`make_session` / `verify_session`: an HMAC of
+the token, never the token itself), rate-limits requests that present a
+credential, and lets EXEMPT_PATHS through. Every verdict goes through
+`is_authorized_request`, so there is one cookie parser and one header reader.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -35,8 +45,8 @@ EXEMPT_PREFIXES = ("/ui/static/",)
 def make_session(token: str, now: float | None = None) -> str:
     """`<issued-at>.<hmac_sha256(token, issued-at)>`.
 
-    The cookie is derived from the token instead of being the token (M4):
-    /api and /mcp accept the token, so a cookie that WAS the token made
+    The cookie is derived from the token instead of being the token: /api
+    and /mcp accept the token, so a cookie that WAS the token would make
     every browser session an admin-equivalent credential at rest. Stateless
     on purpose — a server-side store would add a second sweeper to bound
     and would log everyone out on restart.
@@ -69,23 +79,21 @@ def verify_session(value: str, token: str, now: float | None = None) -> bool:
 def is_authorized_request(request, token: str) -> bool:
     """The Request-level twin of TokenAuthMiddleware._authorized -- for code
     that has a Starlette Request (not a bare ASGI scope) and needs the same
-    verdict. _authorized DELEGATES here (fix round 1, Critical) rather than
-    re-parsing, so there is one cookie parser for both, not a twin someone
-    can drift out of sync: a second hand-rolled parser (stdlib SimpleCookie,
-    which _authorized used to carry) disagreed with Starlette's own
-    `request.cookies` (cookie_parser) on 8 of 26 measured real Cookie-header
-    shapes, in both directions.
+    verdict. _authorized DELEGATES here rather than re-parsing, so there is
+    one cookie parser for both, not a twin someone can drift out of sync: a
+    second hand-rolled parser (stdlib SimpleCookie) disagreed with
+    Starlette's own `request.cookies` (cookie_parser) on 8 of 26 measured
+    real Cookie-header shapes, in both directions.
 
-    Fix round 3 (Critical): this was ALSO called directly from api.py's
-    /api/health handler to vary its response body by auth. Don't do that
-    again for an auth-exempt route -- /api/health sits in EXEMPT_PATHS, so
+    Do not call this from an auth-exempt route to vary its response by auth
+    (e.g. /api/health's body). Such a route sits in EXEMPT_PATHS, so
     TokenAuthMiddleware's rate limiter never runs for it; an auth-varying
-    body there let a caller compare guesses against the token at unmetered,
+    body there lets a caller compare guesses against the token at unmetered,
     full speed (measured: 20/20 wrong guesses -> 200, limiter never touched)
-    -- a strictly worse channel than the duplicate-header ones fixed above,
-    since it needs no header trickery at all. This function is only safe to
-    call from a path the middleware itself meters (i.e. not in EXEMPT_PATHS/
-    EXEMPT_PREFIXES)."""
+    -- a strictly worse channel than the duplicate-header ones
+    _credential_presented guards against, since it needs no header trickery
+    at all. This function is only safe to call from a path the middleware
+    itself meters (i.e. not in EXEMPT_PATHS/EXEMPT_PREFIXES)."""
     auth_header = request.headers.get("authorization", "")
     try:
         if hmac.compare_digest(auth_header, f"Bearer {token}"):
@@ -106,7 +114,7 @@ def cookie_is_secure(request, trusted_proxies: int = 0) -> bool:
     onto the END of the header, so the hop that matters is the
     trusted_proxies-th from the right, not the first (leftmost) entry --
     which a client in front of the chain can set to whatever it likes.
-    Fix round 1: a forged leftmost entry can only push Secure ON (the
+    A forged leftmost entry could only push Secure ON (the
     scheme == "https" branch above wins unconditionally, so it can never be
     spoofed OFF) -- self-DoS via a dropped cookie, not a downgrade -- but
     reading one trusted-hop header leftmost and the other right-anchored in
@@ -135,18 +143,18 @@ class TokenAuthMiddleware:
         self.app = app
         self.token = token
         # The SAME limiter instance the login form uses (app.py builds one and
-        # injects it into both). Separate buckets would leave the bypass M6
-        # describes open in the other direction: spend on the header, retry on
-        # the form.
+        # injects it into both). Separate buckets would leave the bypass
+        # _credential_presented describes open in the other direction: spend
+        # on the header, retry on the form.
         self.limiter = limiter
         self.trusted_proxies = trusted_proxies
 
     def _authorized(self, scope) -> bool:
         # Delegates to is_authorized_request instead of re-parsing: a second
         # cookie parser here is exactly the drift class that helper's
-        # docstring warns about (fix round 1, Critical). Request(scope) with
-        # no receive is enough -- headers/cookies need no body read (same
-        # pattern already used below in __call__).
+        # docstring warns about. Request(scope) with no receive is enough --
+        # headers/cookies need no body read (same pattern already used below
+        # in __call__).
         return is_authorized_request(Request(scope), self.token)
 
     def _credential_presented(self, scope) -> bool:
@@ -154,36 +162,32 @@ class TokenAuthMiddleware:
         header or a strata_kb_session cookie), valid or not -- gates the
         rate limiter.
 
-        Fix round 1 (Critical): M6 is "a failed attempt at the shared
-        secret" -- absence of a credential is not an attempt at it. Before
-        this gate, the limiter counted every anonymous browser hit
-        (including the automatic /favicon.ico every browser fires), so 5
-        ordinary page views from a logged-out visitor -- zero bad tokens,
-        zero login attempts -- locked out the FIRST subsequent login POST
-        carrying the correct token.
+        The limiter charges "a failed attempt at the shared secret" --
+        absence of a credential is not an attempt at it. Without this gate,
+        the limiter counts every anonymous browser hit (including the
+        automatic /favicon.ico every browser fires), so 5 ordinary page views
+        from a logged-out visitor -- zero bad tokens, zero login attempts --
+        lock out the FIRST subsequent login POST carrying the correct token.
 
-        Fix round 1 (Critical): the cookie check MUST use the same parser as
-        _authorized (Request.cookies / Starlette's cookie_parser), not
-        SimpleCookie. Task 11's re-review established the invariant
-        `_authorized ⟹ _credential_presented` -- if this stayed on
-        SimpleCookie after _authorized moved off it, a Cookie header
-        SimpleCookie rejects but cookie_parser accepts would authorize
-        without ever being counted as a credential attempt, reopening an
-        unlimited-retry channel at the shared secret.
+        The cookie check MUST use the same parser as _authorized
+        (Request.cookies / Starlette's cookie_parser), not SimpleCookie. The
+        invariant is `_authorized ⟹ _credential_presented`: with two parsers,
+        a Cookie header SimpleCookie rejects but cookie_parser accepts would
+        authorize without ever being counted as a credential attempt,
+        opening an unlimited-retry channel at the shared secret.
 
-        Fix round 2 (Critical): the Authorization header read MUST also use
-        the same first-duplicate-wins semantics as _authorized (Starlette's
-        Headers.get, via Request(scope)) -- the old _decode_headers dict
-        comprehension was last-duplicate-wins. A guess sent as
-        `Authorization: Bearer <guess>` plus a second, empty `Authorization:`
-        header (two distinct entries a real ASGI server delivers verbatim)
-        made _authorized compare the first (the real guess) while this method
-        saw only the second (empty, falsy) -- the guess was evaluated but
-        never charged to the limiter: an unlimited-rate brute-force channel.
-        One Request(scope) instance now backs both header reads in this
-        method, and it is built fresh from the same scope _authorized used,
-        so the two can no longer disagree about which duplicate is "the"
-        Authorization header."""
+        The Authorization header read MUST also use the same
+        first-duplicate-wins semantics as _authorized (Starlette's
+        Headers.get, via Request(scope)); a last-duplicate-wins dict
+        comprehension does not. A guess sent as `Authorization: Bearer
+        <guess>` plus a second, empty `Authorization:` header (two distinct
+        entries a real ASGI server delivers verbatim) would make _authorized
+        compare the first (the real guess) while this method saw only the
+        second (empty, falsy) -- the guess evaluated but never charged to the
+        limiter: an unlimited-rate brute-force channel. One Request(scope)
+        instance backs both header reads in this method, and it is built
+        fresh from the same scope _authorized used, so the two cannot
+        disagree about which duplicate is "the" Authorization header."""
         request = Request(scope)
         if request.headers.get("authorization", ""):
             return True
@@ -212,7 +216,7 @@ class TokenAuthMiddleware:
                 logger.warning("auth rate-limited for %s on %s", key, path)
                 if path == "/" or path.startswith("/ui"):
                     # Same lockout-notice class as login_post's 429/413
-                    # (ui.py, L22/L23): a caching intermediary or the
+                    # (ui.py): a caching intermediary or the
                     # browser's own bfcache serving this stale after the
                     # window clears would wrongly keep showing "locked out".
                     await send(
@@ -249,11 +253,11 @@ class TokenAuthMiddleware:
         if path == "/" or path.startswith("/ui"):
             # anonymous browser hit — normal flow, redirect without logging.
             #
-            # Fix (final review item 1): also clear strata_kb_session here.
-            # SESSION_MAX_AGE (12h) guarantees every user's own cookie ages
-            # out mid-day; without this, the browser keeps resending the
-            # dead-but-real cookie on every page view, _credential_presented
-            # charges each one (M6, above), and 5 requests -- two or three
+            # Also clear strata_kb_session here. SESSION_MAX_AGE (12h)
+            # guarantees every user's own cookie ages out mid-day; without
+            # this, the browser keeps resending the dead-but-real cookie on
+            # every page view, _credential_presented charges each one (see
+            # its docstring), and 5 requests -- two or three
             # page opens -- exhausts the budget and 429s the NEXT login POST,
             # even with the correct token. Chose clearing over teaching
             # verify_session to distinguish aged-out-but-signed from forged:

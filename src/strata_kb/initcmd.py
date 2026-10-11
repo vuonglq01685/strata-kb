@@ -1,3 +1,13 @@
+"""initcmd — `kb init`: scaffold a repo as a hub, child, BA or dev KB.
+
+`init_repo()` writes the template map for the kind (`template_map()`): it
+creates missing files and refreshes changed scaffold templates, but leaves
+PROTECTED_FILES alone unless forced and only ever merges into `.gitignore`.
+It also appends `kind:`, `langs:` and `asset_store:` to `.kb/config.yaml`
+without rewriting what is there, and creates the BA/dev `*.local.md` overrides
+once. Templates live under `strata_kb/templates/init/`.
+"""
+
 from __future__ import annotations
 
 import re
@@ -18,7 +28,7 @@ KINDS = (KIND_HUB, KIND_CHILD, KIND_BA, KIND_DEV)
 COMMON_TEMPLATES: dict[str, str] = {
     ".kb/index.yaml": "index.yaml",
     # Both spellings: README once said `sources/`, the scaffold `source/`, and
-    # whoever followed the README had no ignore rule (2026-10-10 review H13).
+    # whoever followed the README had no ignore rule.
     "source/.gitignore": "source-gitignore.txt",
     "sources/.gitignore": "source-gitignore.txt",
     ".claude/skills/kb-summarize/SKILL.md": "claude-skill-kb-summarize.md",
@@ -85,8 +95,8 @@ CHILD_TEMPLATES: dict[str, str] = {
 # Kind `ba` — requirements repo. It consumes the shared KB (via the
 # ba-ticket-author skill + MCP) and versions tickets; it authors no KB
 # documents itself, so it carries none of the ingest/summarize/publish
-# machinery. Deliberately NOT merged with COMMON_TEMPLATES (spec §8): a ba
-# repo gets exactly this set, nothing from the hub/child authoring stack.
+# machinery. Deliberately NOT merged with COMMON_TEMPLATES: a ba repo gets
+# exactly this set, nothing from the hub/child authoring stack.
 BA_TEMPLATES: dict[str, str] = {
     **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-ba.yaml",
@@ -121,7 +131,7 @@ BA_TEMPLATES: dict[str, str] = {
 # PROTECTED_FILES (that set means "never written", which would freeze the
 # BASE rubric at whatever version first scaffolded a repo). Same contract
 # `conventions.scaffold_conventions` gives the dev side's
-# `docs/conventions/<lang>.local.md` (C11).
+# `docs/conventions/<lang>.local.md`.
 BA_LOCAL_OVERRIDES: dict[str, str] = {
     "docs/review-rubric.local.md": "review-rubric-local-stub.md",
     "docs/ac-quality.local.md": "ac-quality-local-stub.md",
@@ -189,17 +199,17 @@ def scaffold_dev_local_overrides(target: Path, report: InitReport) -> None:
 
 
 # Kind `dev` — product code repo. It consumes the shared KB while implementing
-# BA tickets and publishes knowledge about its OWN source code. Like BA_TEMPLATES
-# this is deliberately NOT merged with COMMON_TEMPLATES (spec §4): a dev repo
-# never ingests outside documents, so it carries none of the ingest/docker stack.
+# BA tickets and publishes knowledge about its OWN source code. Like
+# BA_TEMPLATES this is deliberately NOT merged with COMMON_TEMPLATES: a dev
+# repo never ingests outside documents, so it carries none of the ingest/docker
+# stack.
 DEV_TEMPLATES: dict[str, str] = {
     **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-dev.yaml",
     ".kb/index.yaml": "index.yaml",
-    # Minor 1 (Wave G fix round 2): a dev repo publishes .kb/ (its own source
-    # knowledge) exactly like a child does, so it needs the same hashed-tree-
-    # vs-CRLF-normalisation exemption (F-D10) -- it had neither this nor any
-    # exemption of its own before.
+    # A dev repo publishes .kb/ (its own source knowledge) exactly like a
+    # child does, so it needs the same hashed-tree-vs-CRLF-normalisation
+    # exemption.
     ".gitattributes": "gitattributes-child.txt",
     ".mcp.json": "mcp-child.json",
     ".claude/settings.json": "claude-settings-usage.json",
@@ -208,7 +218,7 @@ DEV_TEMPLATES: dict[str, str] = {
     "docs/impl/.gitignore": "impl-gitignore.txt",
     "QUICKSTART-DEV.md": "QUICKSTART-dev.md",
     ".github/workflows/kb-code.yml": "kb-code.yml",
-    # Batch 7 (E1 + E2): the PR evidence gate. The template is the section
+    # The PR evidence gate. The template is the section
     # list dev-handover already assembles; the workflow makes it a required
     # check; the document names the four TDD exemption categories a plan's
     # `Exempt:` lines may use.
@@ -225,10 +235,10 @@ DEV_TEMPLATES: dict[str, str] = {
             "dev-plan",
             "dev-execute",
             "dev-handover",
-            # Stage C: the one-time bootstrap skill. Added to this tuple
-            # (not to the tests' DEV_WORKFLOW_SKILLS lists — it implements
-            # no ticket, so the ticket-shaped SHARED-* canon doesn't apply
-            # to it) so it gets the same four-way wrapper layout for free.
+            # The one-time bootstrap skill. Added to this tuple (not to the
+            # tests' DEV_WORKFLOW_SKILLS lists — it implements no ticket, so
+            # the ticket-shaped SHARED-* canon doesn't apply to it) so it gets
+            # the same four-way wrapper layout for free.
             "dev-code-seed",
         )
         for path, resource in (
@@ -238,12 +248,11 @@ DEV_TEMPLATES: dict[str, str] = {
             (f".cursor/commands/{skill}.md", f"cursor-{skill}.md"),
         )
     },
-    # Stage C: the twelve wrapper rows the seed flow (and later, ongoing
-    # amends) needs from the existing authoring skills — paths copied
-    # verbatim from COMMON_TEMPLATES so both maps resolve to the exact same
-    # package resources. `kb-publish` genuinely has NO `.claude/commands/`
-    # resource in the package (see COMMON_TEMPLATES above) — this map must
-    # not invent one.
+    # The twelve wrapper rows the seed flow (and later, ongoing amends) needs
+    # from the existing authoring skills — paths copied verbatim from
+    # COMMON_TEMPLATES so both maps resolve to the exact same package
+    # resources. `kb-publish` genuinely has NO `.claude/commands/` resource in
+    # the package (see COMMON_TEMPLATES above) — this map must not invent one.
     ".claude/skills/kb-summarize/SKILL.md": "claude-skill-kb-summarize.md",
     ".claude/commands/kb-summarize.md": "claude-command-kb-summarize.md",
     ".github/instructions/kb-summarize.instructions.md": "copilot-kb-summarize.instructions.md",
@@ -286,11 +295,10 @@ SCAFFOLDED_WORKFLOW_NAMES: frozenset[str] = frozenset(
 #
 # `.gitignore` is NOT in this set — it gets its own merge-only handling
 # (`_apply_gitignore`, below) instead of the generic skip-unless-force rule.
-# R18 (final-branch review, Critical): a hub's own ignore rules (`.env`,
-# credentials, editor cruft) must survive `kb init --force` too, not just a
-# routine re-init — `--force` exists to refresh protected *scaffold* data
-# (index.yaml, config.yaml), never to un-ignore a bearer token that
-# `kb docker-setup` already wrote to `.env`.
+# A hub's own ignore rules (`.env`, credentials, editor cruft) must survive
+# `kb init --force` too, not just a routine re-init — `--force` exists to
+# refresh protected *scaffold* data (index.yaml, config.yaml), never to
+# un-ignore a bearer token that `kb docker-setup` already wrote to `.env`.
 PROTECTED_FILES: frozenset[str] = frozenset(
     {".kb/index.yaml", ".kb/config.yaml", ".claude/settings.json"}
 )
@@ -299,7 +307,7 @@ _KB_WORK_LINE = ".kb-work/"
 
 
 def _apply_gitignore(dest: Path, template_text: str, report: InitReport) -> None:
-    """Merge-only, under EVERY mode — including `--force` (R18).
+    """Merge-only, under EVERY mode — including `--force`.
 
     A hub's `.gitignore` may carry secret-exclusion rules (`.env`,
     credentials) a maintainer added after scaffolding; `kb docker-setup`
@@ -339,9 +347,9 @@ _CODE_DOC_LINE = ".kb/*-code/"
 
 
 def _ensure_code_doc_ignored(target: Path, report: InitReport) -> None:
-    """Dev repos: `-code` is derived on demand and never committed (spec
-    2026-09-25 §4.1). A glob, because repo_id is often unset at init time
-    and `-code` is a reserved suffix. Append-only, like `_apply_gitignore`."""
+    """Dev repos: `-code` is derived on demand and never committed. A glob,
+    because repo_id is often unset at init time and `-code` is a reserved
+    suffix. Append-only, like `_apply_gitignore`."""
     dest = target / ".gitignore"
     if not dest.exists():
         dest.write_text(_CODE_DOC_LINE + "\n", encoding="utf-8", newline="\n")
@@ -523,7 +531,7 @@ def init_repo(
     changed. Protected data (``.kb/index.yaml``, ``.kb/config.yaml``,
     ``.claude/settings.json``) is left alone unless ``force=True``. The root
     ``.gitignore`` is handled separately and is always merge-only — it is
-    never wholesale-overwritten, even with ``force=True`` (R18).
+    never wholesale-overwritten, even with ``force=True``.
     """
     templates = template_map(kind)
     repo_id = target.resolve().name

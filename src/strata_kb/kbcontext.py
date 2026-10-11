@@ -1,3 +1,13 @@
+"""kbcontext — the `kb-context:` block that pins a document's KB refs.
+
+Owns the block's model (`KBContext`, `KBRef`), `parse`/`render` for the YAML
+block inside markdown, and `build_context_block`, which `kb context new`
+uses to validate refs against the hub federation, qualify each with its
+repo id, derive tags and pin the hub's HEAD commit. A document pins exactly
+one block: re-running `kb context new` would rewrite `version` and falsify
+when the document was grounded.
+"""
+
 from __future__ import annotations
 
 import difflib
@@ -274,14 +284,14 @@ def _age_label(hub: HubHandle) -> str:
     """The one place a hub's cache age is rendered as text, so the stale-hub
     wording in a warning and in `_unknown_tag_message` cannot drift apart.
 
-    `age_seconds == 0.0` falls through to "unknown age" — a pre-existing
-    quirk of the truthiness check this helper simply preserves rather than
-    fixes. It is safe in practice, not because 0.0 never occurs (`hub.py:90`
-    returns exactly that on a successful pull), but because both call sites
-    here are inside `if hub.stale:`, and the only constructor that sets
-    `stale=True` (`hub.py:97`) passes either `None` or a value already
-    proven greater than `_ttl()` — never 0.0. Correcting the truthiness
-    check anyway is out of this task's scope.
+    `age_seconds == 0.0` falls through to "unknown age" — a quirk of the
+    truthiness check this helper simply preserves rather than fixes. It is safe
+    in practice, not because 0.0 never occurs (`hub.py:90` returns exactly that
+    on a successful pull), but because both call sites here are inside `if
+    hub.stale:`, and the only constructor that sets `stale=True` (`hub.py:97`)
+    passes either `None` or a value already proven greater than `_ttl()` —
+    never 0.0. Correcting the truthiness check anyway would be a separate
+    change.
     """
     return f"~{hub.age_seconds:.0f}s" if hub.age_seconds else "unknown age"
 

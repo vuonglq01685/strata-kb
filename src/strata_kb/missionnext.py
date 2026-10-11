@@ -1,8 +1,7 @@
 """`kb mission next` engine — which story is done, ready, draft, to-draft or blocked.
 
-Read-only query over every mission plan in a BA repo (spec
-2026-09-24-mission-next-greenfield-design §3). Inputs are text, a dict of
-DoR counts and a set; `cli.py`'s `kb mission next` reads the files and the
+Read-only query over every mission plan in a BA repo. Inputs are text,
+a dict of DoR counts and a set; `cli.py`'s `kb mission next` reads the files and the
 hub. `done` is derived from the hub's `<repo>-svc` history tables (`kb svc
 note` rows), never from a status column — a hand-maintained status rots the
 moment a ticket merges.
@@ -198,7 +197,7 @@ def statuses(
     done_set = done or set()
     out: list[StoryStatus] = []
     for mission_id, stories, decisions in missions:
-        # A `Blocks` cell may hold a bare `US<n>` (spec §3.2: same id rule as
+        # A `Blocks` cell may hold a bare `US<n>` (the same id rule as
         # `Depends on`); resolve it against this mission's id once, not once
         # per story.
         blocking = [

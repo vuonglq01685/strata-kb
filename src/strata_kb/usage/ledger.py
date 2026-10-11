@@ -3,8 +3,8 @@
 One row per Claude Code transcript row that carried a `usage` block. Files are
 named after the ticket (`<stem>.jsonl`) rather than after the session, so a
 ticket's cost travels with the ticket in git history and a PR can carry its own
-number (roadmap B4). Rows with no ticket go to `_unattributed.jsonl` so a gap in
-attribution is visible instead of being guessed at.
+number. Rows with no ticket go to `_unattributed.jsonl` so a gap in attribution
+is visible instead of being guessed at.
 
 Append-only and de-duplicated by the transcript row's `uuid`: the `Stop` hook
 re-ingests the same growing transcript every turn, so appending must be safe to
@@ -37,7 +37,7 @@ STEM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 class LedgerError(KbError):
     """A ticket id cannot be turned into a ledger file name. Its CLI call
     site already converts it to a one-line message -- joins the KbError
-    family (Wave G fix round 2, item 7)."""
+    family."""
 
 
 def is_safe_stem(stem: str) -> bool:
@@ -285,9 +285,9 @@ def append_rows(kb_dir: Path, rows: list[UsageRow]) -> AppendReport:
 
 def read_rows_from(kb_dirs: list[Path]) -> list[UsageRow]:
     """Rows of several ledgers, e.g. a Dev repo's and its BA repo's, so one
-    report can price a ticket end to end (2026-10-10 review B4). A row read
-    twice (the same `.kb/` named twice, or a ledger copied between repos) is
-    kept once, keyed on its session and uuid."""
+    report can price a ticket end to end. A row read twice (the same `.kb/`
+    named twice, or a ledger copied between repos) is kept once, keyed on its
+    session and uuid."""
     seen: set[tuple[str, str]] = set()
     merged: list[UsageRow] = []
     for kb_dir in kb_dirs:

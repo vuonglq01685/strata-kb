@@ -8,14 +8,14 @@ unreadable file becomes a warning naming the file, and every other reader
 still runs (matching `deps.py`, `services.py` and `commands.py`'s
 discipline).
 
-**Recognised DDL, and why (spec §3.9).** Only `CREATE TABLE` and `ALTER
+**Recognised DDL, and why.** Only `CREATE TABLE` and `ALTER
 TABLE ... ADD COLUMN` are recognised by the `sql` reader. Every other
 `ALTER TABLE` form — `RENAME`, `DROP`, `ALTER COLUMN`, `ADD CONSTRAINT`,
 `ADD INDEX`, etc. — either warns (`RENAME`/`DROP` via `UNSUPPORTED_RE`;
 `ADD CONSTRAINT`/`ADD INDEX` via `_ADD_NON_COLUMN_RE`, since either would
 otherwise be misread as `ADD COLUMN` and fabricate a phantom column) or is
-quietly left unrecognised (any other ALTER form outside the brief's
-scope). This is a deliberate, narrow slice: the emitted `db.<table>`
+quietly left unrecognised (any other ALTER form is out of scope). This
+is a deliberate, narrow slice: the emitted `db.<table>`
 sections are meant to be *ground truth* — every column shown is one this
 code actually saw declared, never one it inferred — so a Dev agent reading
 this document can trust it completely, at the cost of not describing every
@@ -26,15 +26,14 @@ runs, and a top-level entry is only ever treated as a table constraint
 at a real word boundary — a column literally named `unique_code` or
 `constraint_name` is still a column.
 
-**Quoting, and the dual-scan disagreement guard (Rulings R36 → R38).**
+**Quoting, and the dual-scan disagreement guard.**
 Comment-stripping and column-splitting both run every quote/backtick/
 bracket span through the shared `_scan_sql` scanner (below). Standard SQL
 (SQLite, Postgres with `standard_conforming_strings=on` — the default
 since 9.1 — MSSQL, Oracle) treats `\\` inside a `'`/`"` literal as an
 ordinary character; MySQL treats it as an escape. No single tracker can
 be correct for both at once, so `_scan_sql` takes a `backslash_escapes`
-flag and `_resolve_scan` (Ruling R38, superseding R36's original
-runaway-to-EOF-only guard) runs it *twice* per file/body, once each way,
+flag and `_resolve_scan` runs it *twice* per file/body, once each way,
 and picks a reading by this order: if exactly one reading is clean (does
 not run off the end of the text still inside an open quote/bracket/
 comment — a *desync*), use it, no warning; if both are clean and agree,
@@ -42,8 +41,8 @@ use it, no warning; if both are clean but disagree, the dialect is
 genuinely ambiguous from this text alone — warn, naming the file, and
 take the backslash-as-literal (standard SQL) reading, since that is every
 engine in this set except MySQL; if both desync, warn and fall back to a
-quote-blind split. R36's original guard only asked "did a span run off
-the end?", which cannot distinguish MySQL's `'it\'s'` (needs the escape
+quote-blind split. A guard that only asks "did a span run off the
+end?" cannot distinguish MySQL's `'it\'s'` (needs the escape
 reading) from standard SQL's `'\'` followed by an ordinary English
 contrastive apostrophe in a later comment (needs the literal reading,
 and *looks* clean to the escape reading too — just wrong) — hence the
@@ -56,22 +55,22 @@ about to swallow everything up to some unrelated, later `]`. Ground truth
 that occasionally warns instead of answering is still ground truth;
 ground truth that silently drops or fabricates a column is not.
 
-**Ruling R3 (controller) — the `--db` detection gap is B8's, not this
-task's.** `SchemaExtractor.detect(root)` has no way to see
+**The `--db` detection gap is closed in `core.run()`, not here.**
+`SchemaExtractor.detect(root)` has no way to see
 `opts.db_paths` (the `Extractor` protocol never passes `opts` to
 `detect()`), so on a repo with *no* migration/prisma/alembic/EF source,
 `detect()` returns `False`, `core.run()` skips calling `extract()`
-entirely, and an explicit `--db` path is silently never read. Task B8
-closes this by making `run()` treat `schema` as detected whenever
+entirely, and an explicit `--db` path is silently never read.
+`core.run()` closes this by treating `schema` as detected whenever
 `opts.db_paths` is non-empty. Nothing here works around it — a caller
-that wants `--db`-only ingestion to work must go through B8's fix, not
-this module.
+that wants `--db`-only ingestion to work must go through `core.run()`,
+not this module.
 
 **`SchemaExtractor.detect(self, root)` cannot see `opts.kb_dir`** — same
 structural exception `deps.py` and `commands.py` document: the `Extractor`
 protocol's `detect()` is never passed `opts`, so this is the one walk in
 this module that calls the glob helper without a `kb_dir` to prune. Every
-walk inside `extract()` does thread `opts.kb_dir` through (Ruling R24).
+walk inside `extract()` does thread `opts.kb_dir` through.
 
 **Reader precedence.** When two *readers* claim the same table name, the
 first one in `_READER_ORDER` — `sql, prisma, alembic, ef, sqlite` — wins
@@ -84,7 +83,7 @@ Migration files are deduplicated and sorted by path before being replayed
 in that order, so a later `ALTER TABLE ... ADD COLUMN` deterministically
 accumulates onto the table an earlier file's `CREATE TABLE` produced.
 
-**Security (never a secret channel, spec §3.11).** The `sqlite` reader is
+**Security (never a secret channel).** The `sqlite` reader is
 the *only* code path in this module that ever opens a `.db` file, and it
 only ever does so for paths in `opts.db_paths` — a path merely discovered
 on disk (e.g. a stray fixture `.db` sitting in the repo) is never touched.
@@ -97,9 +96,10 @@ be misread as URI syntax that could relax that mode.
 
 **Shared normalisation.** All five readers build their `TableRecord`s
 through the same two small helpers, `_clean_name` (strip SQL identifier
-quoting) and `_clean_type` (collapse whitespace) — Task B4's postmortem
-was a secret-sanitisation rule applied in one of two duplicated code paths
-and not the other; the fix here is that there is only one path.
+quoting) and `_clean_type` (collapse whitespace). A rule applied in one
+of two duplicated code paths and not the other is how a secret once
+leaked from `services.py`; the defence here is that there is only one
+path.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def _clean_type(raw: str) -> str:
     """Collapse embedded whitespace/newlines to single spaces — the one
     place every reader's column *type-and-constraints* text is cleaned.
     Never appends a closing paren: a literal like `DEFAULT '('` is
-    genuinely unbalanced and must stay visibly so (Ruling R36)."""
+    genuinely unbalanced and must stay visibly so."""
     return " ".join(raw.split())
 
 
@@ -154,8 +154,7 @@ def _warn_duplicate(kind: str, name: str, rel: str, warnings: list[str]) -> None
     """Shared wording for "this reader saw the same table/model name
     twice" — sql's own re-`CREATE TABLE`, and each of prisma/alembic/ef's
     repeated definitions all route through this one helper rather than
-    four differently-worded warnings (task review round 1, Minor 4's
-    "five-paths-one-rule" note)."""
+    four differently-worded warnings."""
     warnings.append(f"duplicate {kind} {name!r} in {rel}; keeping first")
 
 
@@ -171,7 +170,7 @@ def _dirname(rel: str) -> str:
     An empty `rel` (an unset `TableRecord.created_in`) returns `""`, never
     `"."` — the `_apply_sql_file` guards below compare two `_dirname(...)`
     results, and "created_in was never set" must never compare equal to
-    "created at the repo root" (carried finding from Task 7's review)."""
+    "created at the repo root"."""
     if not rel:
         return ""
     return rel.rsplit("/", 1)[0] if "/" in rel else "."
@@ -197,14 +196,14 @@ def _reconstruct_ddl(name: str, columns: list[tuple[str, str]], pk: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# glob-via-walk_tree (Ruling R7: no hand-rolled unpruned walk)
+# glob-via-walk_tree (no hand-rolled unpruned walk)
 # ---------------------------------------------------------------------------
 
 
 def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
     """Resolve one `**/<dir>.../<file-glob>` pattern into matching file
     paths under `root`, through `walk_tree`'s pruned, deterministic
-    traversal — never `rglob`/`glob`/`os.walk` (Ruling R7). The pattern's
+    traversal — never `rglob`/`glob`/`os.walk`. The pattern's
     middle segments (if any) must match the *trailing* components of a
     directory's relative path — e.g. `"**/db/migration/*.sql"` only
     matches a directory whose last two path components are `("db",
@@ -225,8 +224,7 @@ def _glob_via_walk(root: Path, kb_dir: Path | None, pattern: str) -> list[Path]:
         # A `raise` here (not an `assert`) because every call site is
         # library code operating on module-constant patterns — an
         # `assert` would silently vanish under `python -O` and this
-        # invariant would stop being checked at all (task review round
-        # 1, Minor 12).
+        # invariant would stop being checked at all.
         raise ValueError(f"unsupported glob shape: {pattern!r}")
     file_glob = parts[-1]
     dir_suffix = tuple(parts[1:-1])
@@ -266,17 +264,17 @@ MIGRATION_GLOBS = (
 )
 
 # CREATE_RE matches only the *header* up to and including the table's
-# opening paren — never the body (task review, Critical 1). The original
-# pattern captured the body with `\((?P<body>.*?)\);`, a non-greedy scan
-# for the first literal "');'" anywhere in the *rest of the file*. A
-# dialect trailing clause between the table's real closing paren and its
-# terminating `;` — MySQL `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
-# SQLite `) WITHOUT ROWID;`, Postgres `) PARTITION BY RANGE (id);` — has
-# no "');'" adjacency at the table's real end, so that scan ran past it
-# into the *next* CREATE TABLE statement (or off the end of the file for
-# a final table with no trailing `;` at all), smearing one table's tail
-# into another's columns and silently deleting the next table outright.
-# The body is now bounded by `_matching_close_paren` (paren-depth
+# opening paren — never the body. Do not capture the body with
+# `\((?P<body>.*?)\);`, a non-greedy scan for the first literal "');'"
+# anywhere in the *rest of the file*: a dialect trailing clause between
+# the table's real closing paren and its terminating `;` — MySQL
+# `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`, SQLite `) WITHOUT ROWID;`,
+# Postgres `) PARTITION BY RANGE (id);` — has no "');'" adjacency at the
+# table's real end, so that scan runs past it into the *next* CREATE
+# TABLE statement (or off the end of the file for a final table with no
+# trailing `;` at all), smearing one table's tail into another's columns
+# and silently deleting the next table outright. The body is instead
+# bounded by `_matching_close_paren` (paren-depth
 # counting from the header's own open paren), which stops at the
 # table's real closing paren regardless of what dialect-specific clause
 # follows it — see `_apply_sql_file`.
@@ -290,7 +288,7 @@ CREATE_RE = re.compile(
 # can warn when that count exceeds how many `CREATE_RE` actually matched
 # — a statement recognised by eye but not by the regex (a name shape
 # outside `[A-Za-z_][\w.]*`, for instance) must be reported, never
-# silently skipped without a trace (spec §3.9).
+# silently skipped without a trace.
 _CREATE_TABLE_KEYWORD_RE = re.compile(r"CREATE\s+TABLE", re.I)
 
 ADD_COL_RE = re.compile(
@@ -300,7 +298,7 @@ ADD_COL_RE = re.compile(
 )
 UNSUPPORTED_RE = re.compile(r"ALTER\s+TABLE\s+.*?\b(RENAME|DROP)\b", re.I)
 
-# Not in the brief verbatim, but needed to *scope* UNSUPPORTED_RE and
+# Needed to *scope* UNSUPPORTED_RE and
 # ADD_COL_RE to one ALTER statement at a time. UNSUPPORTED_RE carries
 # only re.I (no re.S), so its `.*?` can never itself cross a newline —
 # scoping is not needed to stop it running past a newline. It IS needed
@@ -310,16 +308,15 @@ UNSUPPORTED_RE = re.compile(r"ALTER\s+TABLE\s+.*?\b(RENAME|DROP)\b", re.I)
 # about by the former *and* matched and consumed as a column by the
 # latter. Scoping each ALTER to its own `...;` span first, and checking
 # UNSUPPORTED_RE against that span before ADD_COL_RE ever sees it, is
-# what makes the skip real (task review round 1 — controller correction
-# to this comment's original, incorrect rationale).
+# what makes the skip real.
 _ALTER_STMT_RE = re.compile(r"ALTER\s+TABLE\s+.*?;", re.S | re.I)
 
 # Shared keyword fragment: a top-level CREATE TABLE body entry starting
 # with one of these (at a `\b` word boundary — never a bare `startswith`,
 # which would also swallow a real column named e.g. `unique_code` or
-# `constraint_name`, task review round 1, Important 1) is a table
-# constraint, not a column. `ADD_COL_RE`'s "ADD (?:COLUMN\s+)?" also
-# matches "ADD CONSTRAINT ..."/"ADD INDEX ..." (Important 3), so
+# `constraint_name`) is a table constraint, not a column.
+# `ADD_COL_RE`'s "ADD (?:COLUMN\s+)?" also matches
+# "ADD CONSTRAINT ..."/"ADD INDEX ...", so
 # `_ADD_NON_COLUMN_RE` reuses the same fragment plus INDEX.
 _CONSTRAINT_KEYWORDS_FRAGMENT = r"PRIMARY\s+KEY|FOREIGN\s+KEY|CONSTRAINT|UNIQUE|CHECK"
 _TABLE_CONSTRAINT_RE = re.compile(rf"^(?:{_CONSTRAINT_KEYWORDS_FRAGMENT})\b", re.I)
@@ -341,7 +338,8 @@ class _ScanResult:
     when the scanner reached the end of the input while still inside a
     quote/backtick/bracket span or an unterminated (possibly nested)
     block comment, *or* a bracket span's content contained a `)` with no
-    matching `(` inside it — see Ruling R38 in the module docstring."""
+    matching `(` inside it — see the dual-scan guard in the module
+    docstring."""
 
     segments: list[tuple[str, str]]
     desynced: bool
@@ -349,10 +347,10 @@ class _ScanResult:
 
 def _scan_sql(text: str, *, backslash_escapes: bool) -> _ScanResult:
     """The one shared quote/comment-aware scanner behind both
-    `_strip_sql_comments` and `_split_top_level` (task review round 2 —
-    two independent, hand-rolled trackers is exactly how they drifted
-    out of sync with each other in round 1's fix, missing backtick and
-    bracket identifiers entirely). Tracks single- and double-quoted
+    `_strip_sql_comments` and `_split_top_level` (two independent,
+    hand-rolled trackers drift out of sync with each other — one once
+    missed backtick and bracket identifiers entirely). Tracks single- and
+    double-quoted
     string literals, backtick- and bracket-quoted identifiers, `--` line
     comments, and properly nested `/* ... */` block comments. Inside any
     of the four quoted-span kinds, a doubled closing character (`''`,
@@ -362,7 +360,7 @@ def _scan_sql(text: str, *, backslash_escapes: bool) -> _ScanResult:
     MySQL convention) when `backslash_escapes` is True — standard SQL
     disagrees and treats `\\` as an ordinary character, which is exactly
     why this is a caller-supplied flag rather than always-on: see
-    `_resolve_scan` (Ruling R38), which runs this scanner both ways and
+    `_resolve_scan`, which runs this scanner both ways and
     picks a reading, rather than guessing which dialect a file uses.
     `desynced=True` when a quote/bracket/comment ran all the way to the
     end of `text` without closing — the reading is untrustworthy — or
@@ -405,7 +403,7 @@ def _scan_sql(text: str, *, backslash_escapes: bool) -> _ScanResult:
                             # this bracket span -- treat the '[' as never
                             # having been a real identifier-quote opener
                             # rather than let it keep searching for some
-                            # later, unrelated ']' (Ruling R38).
+                            # later, unrelated ']'.
                             break
                         bracket_paren_depth -= 1
                 if c == close:
@@ -460,7 +458,7 @@ def _scan_sql(text: str, *, backslash_escapes: bool) -> _ScanResult:
 
 @dataclass
 class _ScanResolution:
-    """The outcome of `_resolve_scan` (Ruling R38). `segments` is the
+    """The outcome of `_resolve_scan`. `segments` is the
     `_ScanResult.segments` list to actually use, or `None` when *both*
     backslash readings desynced and the caller must fall back to its own
     quote-blind strategy. `ambiguous` is True when both readings were
@@ -477,8 +475,8 @@ def _resolve_scan(text: str) -> _ScanResolution:
     literal as an escape (MySQL), once as an ordinary character
     (standard SQL: SQLite, Postgres with `standard_conforming_strings=on`
     — the default since 9.1 — MSSQL, Oracle) — and resolve which reading
-    to trust, in this order (Ruling R38, superseding R36's original
-    "did a span merely run off the end?" guard):
+    to trust, in this order (a bare "did a span merely run off the end?"
+    guard is not enough — see the module docstring):
 
     1. Exactly one reading is clean (not desynced) -> use it, no warning.
     2. Both clean and produce the *same* partition -> use it, no warning.
@@ -492,7 +490,7 @@ def _resolve_scan(text: str) -> _ScanResolution:
     body like `DEFAULT 'it\\'s', b INT, c INT` has the escape reading
     clean and the literal reading desynced (it never finds a real close
     after re-opening on the trailing `s'`) — step 1 must win outright,
-    with **no** warning, or Ruling R36's MySQL fix would regress back to
+    with **no** warning, or MySQL escape handling would regress back to
     a "disagreement -> always fall back to quote-blind" rule that mangles
     this exact case (quote-blind would cut a bogus `s'` fragment)."""
     escaped = _scan_sql(text, backslash_escapes=True)
@@ -519,7 +517,7 @@ _AMBIGUOUS_DIALECT_NOTE = (
 def _strip_sql_comments(text: str, rel: str, warnings: list[str]) -> str:
     """Remove `-- ...` line comments and (possibly nested) `/* ... */`
     block comments from raw migration-file text before any DDL regex
-    ever sees it (task review round 1, Important 2) — left in place, a
+    ever sees it — left in place, a
     comment sitting between two column definitions (`id INT, -- the id,
     unique\\n  name TEXT`) both fabricates a bogus column from the
     comment's own text and, via a stray keyword like "unique" it happens
@@ -531,12 +529,11 @@ def _strip_sql_comments(text: str, rel: str, warnings: list[str]) -> str:
     reading at all (both backslash readings desynced), this file's
     actual quoting convention defeated the tracker entirely; rather than
     trust a text some comments may have been incorrectly stripped from,
-    warn and return the text completely unstripped (Ruling R38) —
+    warn and return the text completely unstripped —
     naming plainly that a table or column below may be **fabricated**
     from commented-out DDL that never got stripped, or that a real one
     may be missing, since "comments unstripped" alone does not convey
-    that risk to a reader relying on this document as ground truth
-    (task review round 3)."""
+    that risk to a reader relying on this document as ground truth."""
     resolution = _resolve_scan(text)
     if resolution.segments is None:
         warnings.append(
@@ -579,9 +576,9 @@ def _mask_quoted_spans(text: str) -> str:
 
 
 def _split_top_level_quote_blind(body: str) -> list[str]:
-    """The original (pre-Minor-10) paren-depth-0 split, with no quote
-    awareness at all — Ruling R36 part 2's fallback for when `_scan_sql`
-    desyncs. A quote-blind split can over-split on a literal's own comma
+    """A plain paren-depth-0 split, with no quote awareness at all — the
+    fallback for when `_scan_sql` desyncs. A quote-blind split can
+    over-split on a literal's own comma
     or paren (visibly wrong: an extra, oddly-shaped "column"), but it
     can never silently swallow a real column the way a desynced
     quote-aware split can — and in a module whose whole point is to be
@@ -613,14 +610,13 @@ def _split_top_level(body: str, rel: str, warnings: list[str]) -> list[str]:
     comma (`DEFAULT 'a,b'`), an unbalanced paren inside a literal
     (`DEFAULT ')'`), or a quoted identifier containing a comma
     (`"odd,name" TEXT`) must never skew the depth count or fragment a
-    column definition (task review round 1, Minor 10), on top of the
-    brief's own `DECIMAL(10,2)` / `PRIMARY KEY (a, b)` cases. If
+    column definition, on top of the plain `DECIMAL(10,2)` /
+    `PRIMARY KEY (a, b)` cases. If
     `_resolve_scan` can't produce a trustworthy reading at all (both
     backslash readings desynced), this body's actual quoting defeated
     the tracker — warn naming the file and fall back to
     `_split_top_level_quote_blind`, which can over-split (a column's
-    name or type may look odd) but never silently deletes a column
-    (Ruling R38)."""
+    name or type may look odd) but never silently deletes a column."""
     resolution = _resolve_scan(body)
     if resolution.segments is None:
         warnings.append(
@@ -664,7 +660,7 @@ def _split_sql_columns(
     it starts with a constraint keyword at a `\\b` word boundary
     (`_TABLE_CONSTRAINT_RE`) — never a bare `startswith`, which would
     also discard a real column named e.g. `unique_code` or
-    `constraint_name` (task review round 1, Important 1). `PRIMARY KEY
+    `constraint_name`. `PRIMARY KEY
     (...)` is captured into `pk` verbatim. An inline `PRIMARY KEY` on a
     column (no separate table constraint) is also detected, recording
     that column's bare name."""
@@ -692,8 +688,8 @@ def _apply_sql_file(
     text = _strip_sql_comments(text, rel, warnings)
     # Same length as `text`, quoted spans replaced with filler — used only
     # to find the table's real closing paren and terminating `;` without a
-    # literal's own `(`, `)`, or `;` throwing off the scan (task review,
-    # Critical 1). `text` itself (unmasked) is what column text is sliced
+    # literal's own `(`, `)`, or `;` throwing off the scan. `text`
+    # itself (unmasked) is what column text is sliced
     # from, so a real literal like `DEFAULT '('` is preserved verbatim.
     masked = _mask_quoted_spans(text)
 
@@ -720,8 +716,8 @@ def _apply_sql_file(
                 # Two independent migration directories (a per-service
                 # schema and a Flyway tree, say) that both create a table
                 # of this name describe two different tables. Merging
-                # them fabricated a schema that exists nowhere (reviewer
-                # G-4); the first in sorted-path order is kept whole and
+                # them would fabricate a schema that exists nowhere; the
+                # first in sorted-path order is kept whole and
                 # the warning names both files.
                 warnings.append(
                     f"duplicate CREATE TABLE {name!r} in {rel} — keeping the "
@@ -731,8 +727,8 @@ def _apply_sql_file(
             else:
                 # A same-directory re-CREATE (most plausibly `IF NOT
                 # EXISTS` re-asserting a table) must not discard the
-                # ALTER TABLE ... ADD COLUMNs already accumulated (task
-                # review round 1, Minor 4) — keep the first, warn.
+                # ALTER TABLE ... ADD COLUMNs already accumulated — keep
+                # the first, warn.
                 _warn_duplicate("CREATE TABLE", name, rel, warnings)
             continue
         columns, pk = _split_sql_columns(body, rel, warnings)
@@ -748,7 +744,7 @@ def _apply_sql_file(
     # A `CREATE TABLE` occurrence CREATE_RE never matched at all (a name
     # shape outside `[A-Za-z_][\w.]*`, for instance) must be reported —
     # ground truth that silently drops a table is exactly what this reader
-    # promises never to do (spec §3.9, task review Critical 1 part 2).
+    # promises never to do.
     total = len(_CREATE_TABLE_KEYWORD_RE.findall(text))
     if total > matched:
         warnings.append(
@@ -770,8 +766,7 @@ def _apply_sql_file(
         if _ADD_NON_COLUMN_RE.match(col_text):
             # "ALTER TABLE ... ADD CONSTRAINT/INDEX ..." matches
             # ADD_COL_RE's optional "(?:COLUMN\s+)?" just as well as a
-            # real "ADD COLUMN" does (Ruling R35, task review round 1,
-            # Important 3) — recording it as a column named "CONSTRAINT"
+            # real "ADD COLUMN" does — recording it as a column named "CONSTRAINT"
             # would fabricate structure, so skip it and warn instead.
             warnings.append(
                 f"ALTER TABLE ADD CONSTRAINT/INDEX (not a column) skipped in {rel}: {stmt.strip()}"
@@ -803,14 +798,13 @@ def _apply_sql_file(
             record.pk = cname
 
     # A trailing ALTER TABLE ... RENAME/DROP with no terminating ';' is
-    # never matched by _ALTER_STMT_RE above (task review round 1, Minor
-    # 6 — a regression introduced by adding that scoping regex) — but
-    # it's still unsupported DDL and still deserves its warning, even
+    # never matched by _ALTER_STMT_RE above (that scoping regex needs the
+    # ';') — but it's still unsupported DDL and still deserves its warning, even
     # though (lacking a ';') it was never going to be misapplied as a
     # column either way. When no ALTER in this file ever terminates with
     # ';', last_end stays 0 and `tail` is the *entire* file — the warning
-    # is bounded to the regex match itself (task review round 2, Minor),
-    # not the whole tail, or a large migration would dump its full text
+    # is bounded to the regex match itself, not the whole tail, or a
+    # large migration would dump its full text
     # into one warning string.
     tail = text[last_end:]
     tail_match = UNSUPPORTED_RE.search(tail)
@@ -837,12 +831,10 @@ def _read_sql(
         try:
             _apply_sql_file(text, rel, tables, warnings)
         except Exception as exc:  # noqa: BLE001 -- defense in depth, see comment below
-            # Defense in depth (task review round 1, Minor 5): a
-            # parse-time bug on this one file must never unwind past
-            # this loop and discard every other file's already-
-            # accumulated tables with a warning that names no file —
-            # exactly the defect class this stage has already shipped
-            # twice.
+            # Defense in depth: a parse-time bug on this one file must
+            # never unwind past this loop and discard every other file's
+            # already-accumulated tables with a warning that names no
+            # file — a defect class that is easy to reintroduce.
             warnings.append(f"could not parse {rel}: {exc}")
     return tables, warnings
 
@@ -904,7 +896,7 @@ def _read_prisma(
             continue
         try:
             _apply_prisma_file(text, rel, tables, warnings)
-        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql (Minor 5)
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
             warnings.append(f"could not parse {rel}: {exc}")
     return tables, warnings
 
@@ -916,9 +908,9 @@ def _read_prisma(
 ALEMBIC_GLOB = "**/versions/*.py"
 ALEMBIC_TABLE_RE = re.compile(r"op\.create_table\(\s*['\"](\w+)['\"]")
 # Only the column *name* is captured; the type is the call's first
-# top-level argument, found by balanced-paren scanning (reviewer G-13 —
-# `[^,)]+` stopped at the first paren, so `sa.Integer()` rendered as
-# `sa.Integer(`). `primary_key=True` among the remaining arguments marks
+# top-level argument, found by balanced-paren scanning (`[^,)]+` would
+# stop at the first paren, rendering `sa.Integer()` as `sa.Integer(`).
+# `primary_key=True` among the remaining arguments marks
 # the column as the PK.
 ALEMBIC_COLUMN_RE = re.compile(r"sa\.Column\(\s*['\"](\w+)['\"]\s*,")
 
@@ -945,9 +937,8 @@ def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
     `scope` (one `op.create_table(...)` call's text). `pk` is a bare
     column name for a single primary key, or a `PRIMARY KEY (a, b)`
     clause for a composite one — the same form `_pk_clause`/
-    `_reconstruct_ddl` and `_pk_columns` already parse (reviewer G-13
-    round 2: a composite PK must not be silently reduced to its first
-    column)."""
+    `_reconstruct_ddl` and `_pk_columns` already parse (a composite PK
+    must not be silently reduced to its first column)."""
     columns: list[tuple[str, str]] = []
     pk_names: list[str] = []
     for cm in ALEMBIC_COLUMN_RE.finditer(scope):
@@ -958,8 +949,8 @@ def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
         # `len(scope) - 1` (never closed), that index is *at* the last
         # real character, and the exclusive slice below would silently
         # drop it — turning a visibly truncated `sa.Integer(` into a
-        # plausible-looking, wrong, complete `sa.Integer` (reviewer
-        # G-13 round 2). Slice through the end of `scope` instead so the
+        # plausible-looking, wrong, complete `sa.Integer`. Slice through
+        # the end of `scope` instead so the
         # truncation stays visible.
         end = call_close if scope[call_close : call_close + 1] == ")" else len(scope)
         args = _split_top_level_quote_blind(scope[cm.end() : end])
@@ -1017,7 +1008,7 @@ def _read_alembic(
             continue
         try:
             _apply_alembic_file(text, rel, tables, warnings)
-        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql (Minor 5)
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
             warnings.append(f"could not parse {rel}: {exc}")
     return tables, warnings
 
@@ -1052,7 +1043,7 @@ def _apply_ef_file(
 def _read_ef(
     root: Path, opts: CodeIngestOptions
 ) -> tuple[dict[str, TableRecord], list[str]]:
-    """No column regex is given for EF in the brief — only the table
+    """No column regex is defined for EF — only the table
     name is recognised, so every EF-sourced `TableRecord` has an empty
     column list and `columns_known=False`, which the renderer states in
     the document."""
@@ -1070,7 +1061,7 @@ def _read_ef(
             continue
         try:
             _apply_ef_file(text, rel, tables, warnings)
-        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql (Minor 5)
+        except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
             warnings.append(f"could not parse {rel}: {exc}")
     return tables, warnings
 
@@ -1081,15 +1072,15 @@ def _read_ef(
 
 
 def _path_label(root: Path, path: Path) -> str:
-    """A label for a `--db` path, never the absolute host path (task
-    review, Important 4). The common case — `path` sits under `root` —
-    renders the familiar repo-relative form via `relposix`. An out-of-
-    root `--db` used to fall back to `path.as_posix()`, the fully-
-    qualified path `CodeIngestOptions.__post_init__` already resolved —
-    which includes the OS user name on a typical developer machine and,
-    worse, made this module's output depend on *whose* machine ingested
-    the repo (spec §3.5's determinism guarantee: the same repo ingested
-    by two developers must produce the same bytes). `--db:<basename>` is
+    """A label for a `--db` path, never the absolute host path. The
+    common case — `path` sits under `root` — renders the familiar
+    repo-relative form via `relposix`. An out-of-root `--db` must not
+    fall back to `path.as_posix()`, the fully-qualified path
+    `CodeIngestOptions.__post_init__` already resolved — which includes
+    the OS user name on a typical developer machine and, worse, would make
+    this module's output depend on *whose* machine ingested the repo (the
+    same repo ingested by two developers must produce the same bytes).
+    `--db:<basename>` is
     stable across machines and carries no host/username information,
     while still naming which `--db` file a warning or a table's source
     refers to."""
@@ -1105,9 +1096,9 @@ def _sqlite_uri(path: Path, mode: str) -> str:
     *before* the query string is appended, so a `%`, `#`, `?` or `&`
     character sitting in the path can never be misread as URI syntax —
     in particular, a raw `?` in the path could otherwise start a second,
-    path-controlled query string ahead of our own `?mode=ro` (task
-    review round 1, Minor 9 — spec §3.11's read-only guarantee must not
-    be something a crafted path can turn off)."""
+    path-controlled query string ahead of our own `?mode=ro` (the
+    read-only guarantee must not be something a crafted path can turn
+    off)."""
     return f"{path.resolve().as_uri()}?mode={mode}"
 
 
@@ -1145,7 +1136,7 @@ def _read_sqlite(
     root: Path, opts: CodeIngestOptions
 ) -> tuple[dict[str, TableRecord], list[str]]:
     """The only code path in this module that opens a `.db` file — and
-    only for a path already in `opts.db_paths` (spec §3.11: never a file
+    only for a path already in `opts.db_paths` (never a file
     merely discovered on disk). Opened read-only via `_sqlite_uri`'s
     `mode=ro` URI, so even a live application database handed to `--db`
     cannot be mutated. A missing path warns; it never raises."""
@@ -1237,7 +1228,7 @@ def _pk_columns(pk: str) -> set[str]:
     L2 table's `PK` cell per row — handles both a bare column name and a
     `PRIMARY KEY (a, b)` table-constraint clause. Casefolded because SQL
     identifiers are case-insensitive: `PRIMARY KEY (ID)` must still mark
-    a column declared `id` (task review round 1, Minor 7)."""
+    a column declared `id`."""
     if not pk:
         return set()
     m = _PK_LIST_RE.search(pk)
@@ -1262,7 +1253,7 @@ def _render_section(record: TableRecord) -> CodeSection:
     else:
         # An EF migration names the table but this reader extracts no
         # columns from it — say so in the document, never an empty table
-        # a reader would take for "no columns" (reviewer G-13).
+        # a reader would take for "no columns".
         l2_lines = [
             "_Columns not extracted: EF Core migrations are recognised by table name only._"
         ]
@@ -1279,13 +1270,13 @@ def _render_section(record: TableRecord) -> CodeSection:
     # composite keys this way). Rendering the clause after a bare `PK `
     # prefix stuttered — `PK PRIMARY KEY (team_id, user_id)` — so the
     # summary shows just the column list for a composite key, matching
-    # the single-column `PK id` shape (reviewer finding 1). A clause that
+    # the single-column `PK id` shape. A clause that
     # matches but names no columns (`PRIMARY KEY ()`/`PRIMARY KEY (   )`)
     # must degrade to "none detected" too, not a value-less `PK ` — the
-    # `or` runs *after* picking the matched group, not before (fix wave 3,
-    # finding 1). `" ".join(...split())` then collapses a composite
-    # clause wrapped across source lines back to the one-line field this
-    # summary is persisted as (fix wave 3, finding 2).
+    # `or` runs *after* picking the matched group, not before.
+    # `" ".join(...split())` then collapses a composite clause wrapped
+    # across source lines back to the one-line field this summary is
+    # persisted as.
     pk_match = _PK_LIST_RE.search(record.pk)
     pk_phrase = " ".join(
         (
@@ -1311,8 +1302,8 @@ class SchemaExtractor:
     name = "schema"
 
     def detect(self, root: Path) -> bool:
-        # Ruling R24's structural exception (matches deps.py / commands.py
-        # precedent): Extractor.detect(self, root) is never given opts, so
+        # Structural exception (matches deps.py / commands.py):
+        # Extractor.detect(self, root) is never given opts, so
         # this walk can't be pruned by a non-default --kb-dir; extract()'s
         # walks all thread opts.kb_dir through via _glob_via_walk.
         for pattern in (*MIGRATION_GLOBS, PRISMA_GLOB, ALEMBIC_GLOB, EF_GLOB):

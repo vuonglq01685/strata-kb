@@ -1,3 +1,13 @@
+"""searchdb — the hub's SQLite search index, `.kb-work/search.db`.
+
+Owns one derived file per hub: an FTS5 keyword index and an optional
+sqlite-vec semantic index over every federated section. `open_fresh` (what
+query.py calls) opens it and syncs incrementally by repo fingerprint;
+`fts_search`, `knn_search` and `rrf_merge` are the two legs and their fusion.
+The file is disposable: a corrupt one is deleted and rebuilt, but a lock or
+caller error must never reach `delete_db` (see `classify_db_error`).
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -46,7 +56,7 @@ class TooManyTagsError(ValueError):
 SCHEMA_VERSION = "2"
 K_LEG = 50  # top-k per leg fed into RRF
 RRF_K = 60  # standard RRF constant
-MAX_TAGS = 100  # F-C10: `tags` is agent-supplied and expands to one SQL bind each
+MAX_TAGS = 100  # `tags` is agent-supplied and expands to one SQL bind each
 DB_NAME = "search.db"
 _KNN_OVERFETCH = 4  # vec0 cannot pre-filter by tag — over-fetch, then filter after
 _EMBED_BATCH = 256  # sections per embedder.embed() call
@@ -97,11 +107,11 @@ _VEC_WARMED = False
 def warm_vec() -> bool:
     """Import sqlite_vec exactly once, off any event loop. Never raises.
 
-    Reviewer C F-C1: this import pulls numpy's native `_multiarray_umath`, and
-    doing it inside a tool call that FastMCP runs inline on the asyncio
-    event-loop thread deadlocks on Windows — the server stays alive and never
-    answers. Every entry point that owns an event loop calls this before the
-    loop starts; the CLI does not, so `kb` keeps its startup time."""
+    This import pulls numpy's native `_multiarray_umath`, and doing it inside a
+    tool call that FastMCP runs inline on the asyncio event-loop thread
+    deadlocks on Windows — the server stays alive and never answers. Every entry
+    point that owns an event loop calls this before the loop starts; the CLI
+    does not, so `kb` keeps its startup time."""
     global _VEC_MODULE, _VEC_WARMED
     if _VEC_WARMED:
         return _VEC_MODULE is not None
@@ -161,11 +171,11 @@ def is_lock_error(exc: sqlite3.Error) -> bool:
 def classify_db_error(exc: sqlite3.Error) -> str:
     """'lock' | 'client' | 'corrupt' — what to do about a sqlite error.
 
-    Reviewer C F-C2/F-C10: `IntegrityError` (a lost UNIQUE race between two
-    cold builds) and `OperationalError: too many SQL variables` (an oversized
-    client-supplied `tags` list) are both CALLER problems. They were diagnosed
-    as corruption, so the index every user of the hub shares was deleted — and
-    on Windows the unlink then raised PermissionError in the user's face."""
+    `IntegrityError` (a lost UNIQUE race between two cold builds) and
+    `OperationalError: too many SQL variables` (an oversized client-supplied
+    `tags` list) are both CALLER problems. Diagnosing them as corruption
+    would delete the index every user of the hub shares — and on Windows the
+    unlink then raises PermissionError in the user's face."""
     if is_lock_error(exc):
         return "lock"
     if isinstance(exc, sqlite3.IntegrityError):
@@ -258,8 +268,8 @@ def delete_db(hub: HubHandle) -> None:
     connection first (Windows cannot unlink an open file — spec windows-support
     §R5).
 
-    Reviewer C F-C2: a bare `unlink()` raised `PermissionError [WinError 32]`
-    straight at the user when another process still held the file. hashsync's
+    A bare `unlink()` raises `PermissionError [WinError 32]` straight at the
+    user when another process still holds the file. hashsync's
     force-unlink (chmod +w, retry) exists for exactly this case; a file still
     held after it becomes a clean IndexBusyError, never a traceback.
 
@@ -328,7 +338,7 @@ def open_db(hub: HubHandle) -> sqlite3.Connection:
                 else "vec_sections exists but sqlite-vec is not installed"
             )
         except sqlite3.DatabaseError as exc:
-            # F-C2: route through the same classifier query._search_index uses —
+            # Route through the same classifier query._search_index uses —
             # lock = contention, client = caller input. Neither is corruption,
             # so neither may reach delete_db() (spec §2 — "no client input
             # reaches delete_db()").
@@ -352,24 +362,24 @@ def open_db(hub: HubHandle) -> sqlite3.Connection:
 def _repo_fingerprint(repo_dir: Path) -> str:
     """Stat manifest of the whole federation entry directory.
 
-    Reviewer C F-C3: hashing only `_meta.yaml` and `index.yaml` made an edit
-    committed directly in `federation/` on the hub invisible to search forever,
-    while `kb get` returned it.
+    Hashing only `_meta.yaml` and `index.yaml` would make an edit committed
+    directly in `federation/` on the hub invisible to search forever, while
+    `kb get` returns it.
 
     Stat, don't read: this runs on EVERY query, so its cost must not scale with
     corpus bytes. (relpath, size, mtime_ns) catches both committed and
     uncommitted hub-side edits; `kb reindex --force` is the escape hatch for
     the theoretical edit that preserves all three.
 
-    Review round 2 (F-C3 findings 1+2): walks with `os.scandir` +
-    `DirEntry.is_dir(follow_symlinks=False)` / `.is_file(follow_symlinks=False)`
-    / `.stat(follow_symlinks=False)` — the standard fast-walk recipe — instead
-    of `Path.rglob` + `Path.stat`. `DirEntry.stat()` reuses the stat data the
-    directory enumeration already returned (no extra syscall per file on
-    Windows); `is_dir(follow_symlinks=False)` / `is_file(follow_symlinks=False)`
-    both report False for a symlink entry (of either a file or a directory)
-    without following it — that's how a symlinked directory is skipped
-    without ever being descended into.
+    Walks with `os.scandir` + `DirEntry.is_dir(follow_symlinks=False)` /
+    `.is_file(follow_symlinks=False)` / `.stat(follow_symlinks=False)` — the
+    standard fast-walk recipe — instead of `Path.rglob` + `Path.stat`.
+    `DirEntry.stat()` reuses the stat data the directory enumeration already
+    returned (no extra syscall per file on Windows);
+    `is_dir(follow_symlinks=False)` / `is_file(follow_symlinks=False)` both
+    report False for a symlink entry (of either a file or a directory) without
+    following it — that's how a symlinked directory is skipped without ever
+    being descended into.
 
     The relpath is built by plain string slicing (`entry.path` is always
     `<repo_dir><sep><...>` because the walk only ever scans paths it built
@@ -437,7 +447,7 @@ def _section_parts(
 
     `texts` caches each file's text for one document: the same string
     object then hits `mdutils.section_map`'s memo, so a 500-section file is
-    read and split once, not 500 times (2026-10-10 review §6.2 F2)."""
+    read and split once, not 500 times."""
     texts = {} if texts is None else texts
 
     def _text(path: Path) -> str | None:
@@ -670,14 +680,14 @@ def _sync_conn(
     vectors_strict: bool = True,
 ) -> SyncReport:
     report = SyncReport()
-    # (path_id, dir) only — no content read yet. `load_federation` would
-    # also fill in each doc's manifest-derived revision
-    # (federation._with_manifest_revisions, spec 2026-09-25 §4.1), which
-    # means a manifest parse per `-code` doc even for a repo the fingerprint
-    # check below is about to skip untouched — defeating the "0 manifest
-    # parses on an unchanged repo" guarantee (spec §3.4). Fingerprint first
-    # from the cheap listing, and only load (and revision-fill) a repo once
-    # its fingerprint says it actually changed.
+    # (path_id, dir) only — no content read yet. `load_federation` would also
+    # fill in each doc's manifest-derived revision
+    # (federation._with_manifest_revisions), which means a manifest parse per
+    # `-code` doc even for a repo the fingerprint check below is about to skip
+    # untouched — defeating the "0 manifest parses on an unchanged repo"
+    # guarantee (spec §3.4). Fingerprint first from the cheap listing, and only
+    # load (and revision-fill) a repo once its fingerprint says it actually
+    # changed.
     entries = iter_entry_dirs(hub.federation_dir)
     live_ids = {path_id for path_id, _ in entries}
     stored_fp = dict(conn.execute("SELECT repo_id, fingerprint FROM repos"))
@@ -707,11 +717,11 @@ def _sync_conn(
                 conn.execute("DELETE FROM repos WHERE repo_id = ?", (path_id,))
                 conn.commit()
             continue  # broken entry — already logged by _load_entry
-        # F-C2: `stored_fp` was read outside any lock, so two cold processes
-        # both got here and the loser broke UNIQUE. Take the write lock FIRST,
-        # then re-read this repo's fingerprint inside it: the loser now sees
-        # the winner's row and skips instead of inserting (spec §5 — losing the
-        # race only wastes work, never corrupts data).
+        # `stored_fp` was read outside any lock, so two cold processes can both
+        # get here and the loser would break UNIQUE. Take the write lock FIRST,
+        # then re-read this repo's fingerprint inside it: the loser now sees the
+        # winner's row and skips instead of inserting (spec §5 — losing the race
+        # only wastes work, never corrupts data).
         if conn.in_transaction:
             conn.commit()
         conn.execute("BEGIN IMMEDIATE")
@@ -785,8 +795,8 @@ def open_fresh(hub: HubHandle, embedder: Embedder | None) -> sqlite3.Connection:
 def tokenize(text: str) -> list[str]:
     """Query-side tokens, symmetric with the index's `unicode61` tokenizer.
 
-    Reviewer C F-C9: `[a-z0-9]+` dropped every non-ASCII letter while the FTS
-    index holds them, so a Vietnamese query was shredded into 1-2 character
+    Not `[a-z0-9]+`: that drops every non-ASCII letter while the FTS index
+    holds them, so a Vietnamese query is shredded into 1-2 character
     fragments and answered confidently with junk. `[^\\W_]+` is unicode61's own
     rule: alphanumerics are token characters, and underscore is a separator.
     NFC-normalise first: an NFD query (macOS, some IMEs) spells each accented
@@ -803,7 +813,7 @@ def _norm_tags(tags: list[str] | None) -> list[str]:
     if len(out) > MAX_TAGS:
         # Refuse, do not truncate: a silently shortened filter returns results
         # the caller did not ask for. The published federation vocabulary is a
-        # handful of tags, so no real caller meets this cap (F-C10).
+        # handful of tags, so no real caller meets this cap.
         raise TooManyTagsError(
             f"too many tags ({len(out)}) — at most {MAX_TAGS} are accepted"
         )

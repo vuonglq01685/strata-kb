@@ -166,7 +166,7 @@ MEASURABLE_RE = re.compile(
 OPEN_OWNER_RE = re.compile(r"OPEN\(([^)]*)\)")
 
 # An owner that names nobody. 'OPEN(TBD)' is a placeholder wearing the
-# costume of an owned unknown — reviewer E's G1 capstone passed on it.
+# costume of an owned unknown and must not count as owned.
 _UNOWNED: frozenset[str] = frozenset(
     {"", "?", "-", "tbd", "todo", "n/a", "na", "chưa rõ", "chưa có"}
 )
@@ -281,7 +281,7 @@ def parse_review_row(cells: list[str]) -> ReviewRow | str:
 
 def _marker_is_owned(group1: str) -> bool:
     """Whether an ``OPEN(...)``'s captured content names a real owner,
-    for ``weasel_hits``'s muting decision and, since Task 3,
+    for ``weasel_hits``'s muting decision and
     ``ticketlint._check_ac_shell``'s line-level shell-command suppression.
 
     A marker may carry a free-text note after the owner —

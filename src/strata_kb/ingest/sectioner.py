@@ -1,3 +1,13 @@
+"""sectioner — split the parsed item stream into addressable sections.
+
+Builds a heading tree from `DocItem`s (chapter/appendix/attachment patterns
+in `HeadingConfig`, or PDF-outline `Part`s) and cuts it into `SectionUnit`s
+of a bounded token size. Entry points: `build_units_with_notes` (units plus
+the decisions an ingest report prints), `build_units`, and `uncovered`,
+which must come back empty because L3 is the complete-content layer. Unit
+ids are unique: a section is addressed by id alone.
+"""
+
 from __future__ import annotations
 
 import logging

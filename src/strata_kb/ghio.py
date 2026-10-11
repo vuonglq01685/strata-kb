@@ -1,3 +1,10 @@
+"""ghio — thin wrapper over the GitHub CLI (`gh`) for publish.
+
+Answers whether `gh` can open a PR on a checkout's origin, finds the open PR
+for a branch, and creates one. Only publish.py calls it. Every `gh` call has a
+60 s timeout; a timeout reads as a failed call (exit 124), never as a hang.
+"""
+
 from __future__ import annotations
 
 import json
@@ -12,8 +19,7 @@ _GH_TIMEOUT_SECONDS = 60
 
 class GHError(KbError):
     """GitHub CLI (`gh`) failed or is missing. Every cli.py call site already
-    catches it and prints a one-line message -- joins the KbError family
-    (Wave G fix round 2, item 7)."""
+    catches it and prints a one-line message -- joins the KbError family."""
 
 
 def _run_gh(root: Path, *args: str) -> subprocess.CompletedProcess[str]:

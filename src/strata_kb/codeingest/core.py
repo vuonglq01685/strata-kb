@@ -1,8 +1,8 @@
 """codeingest.core — protocol, deterministic orchestration, and KB writer.
 
 `kb code-ingest` turns a codebase into a 4-layer KB document at
-`.kb/<repo_id>-code/` without any LLM in the loop: extractors (Tasks B2-B7)
-each look for one kind of evidence (services, deps, commands, ...) and
+`.kb/<repo_id>-code/` without any LLM in the loop: extractors each look
+for one kind of evidence (services, deps, commands, ...) and
 produce `CodeSection`s; `run()` here sorts them, writes one `<group>.md` +
 `<group>.raw.md` pair per group, and upserts the manifest + KB index. Output
 must be a pure function of the working tree — no wall-clock, no network.
@@ -38,7 +38,7 @@ from strata_kb.mdutils import _HEADING_RE
 # — the whole point of `_slice_known_section` below — to tell a real
 # section heading apart from a human's own free-form '## Something'
 # subheading. Re-implementing the regex here instead of importing it would
-# risk the two definitions drifting apart (Defect 4 in this stage).
+# risk the two definitions drifting apart.
 
 
 @dataclass
@@ -64,13 +64,12 @@ class CodeIngestError(KbError):
     still be `None`), so a caller can surface warnings already collected
     (e.g. "could not read _manifest.yaml") instead of only this
     exception's own message, and can tell whether the -code document was
-    already written and indexed before a later --scaffold-svc refusal
-    (Important 5 follow-up, review round 3): without this, the CLI's
-    error path only ever showed `str(exc)` and silently discarded
-    `report.warnings`, so a corrupt -svc manifest surfaced as "no matching
-    entry in _manifest.yaml — restore the manifest entries" with no hint
-    that the manifest was simply unreadable, and no indication that the
-    -code document's own write had already succeeded.
+    already written and indexed before a later --scaffold-svc refusal.
+    Without this, the CLI's error path would only show `str(exc)` and
+    silently discard `report.warnings`, so a corrupt -svc manifest would
+    surface as "no matching entry in _manifest.yaml — restore the manifest
+    entries" with no hint that the manifest was simply unreadable, and no
+    indication that the -code document's own write had already succeeded.
     """
 
     def __init__(self, message: str, report: CodeIngestReport | None = None) -> None:
@@ -119,8 +118,8 @@ def _render_group(
     `sections` must already be sorted — the renderer only lays them out.
     `preamble`, when non-empty, is emitted verbatim right after the H1 +
     banner block and before the first section — the one piece of
-    free-standing human prose `scaffold_svc()` can lift and preserve
-    (Ruling R46b): it sits above every section heading, so
+    free-standing human prose `scaffold_svc()` can lift and preserve:
+    it sits above every section heading, so
     `_slice_known_section()` (which only ever lifts text starting at a
     heading) can never reach it on its own, and without this parameter
     every `--scaffold-svc` re-render would silently drop it.
@@ -151,17 +150,14 @@ def _write_group(path: Path, text: str) -> None:
 def run(opts: CodeIngestOptions) -> CodeIngestReport:
     report = CodeIngestReport(doc_id=opts.doc_id)
 
-    # Controller Ruling R47(a): three rounds of this guard were each
-    # defeated by a new way to *spell* the same directory ("demo-svc/",
-    # "Demo-svc", ...) because every comparison so far compared the raw
-    # `opts.doc_id` *string*. Every comparison below is against a path
-    # instead — never against `opts.doc_id` itself — but Controller
-    # Ruling R48b (review round 5) split that into two different
-    # questions that need two different path forms, after round 5's
-    # first attempt (a single `.resolve()`d path for everything) refused
-    # a legitimate setup: a document directory that is itself a junction
-    # to storage elsewhere (Windows junctions need no privilege; symlinks
-    # are ordinary on Linux/macOS).
+    # Never compare the raw `opts.doc_id` *string*: every string
+    # comparison can be defeated by a new way to *spell* the same
+    # directory ("demo-svc/", "Demo-svc", ...). Every comparison below is
+    # against a path instead, and the guard asks two different questions
+    # that need two different path forms. A single `.resolve()`d path for
+    # everything would refuse a legitimate setup: a document directory
+    # that is itself a junction to storage elsewhere (Windows junctions
+    # need no privilege; symlinks are ordinary on Linux/macOS).
     #
     # - Containment ("did this id escape --kb-dir?") is judged on the
     #   *logical* path below: "."/".."/repeated-separator segments
@@ -169,9 +165,9 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
     #   the way is followed. A junctioned document directory is logically
     #   still "inside" --kb-dir; only a doc_id that is textually absolute
     #   or walks out via ".." has actually escaped. Judging containment
-    #   on the *resolved* (link-following) path instead — what this
-    #   guard did before this ruling — refused that legitimate junction
-    #   outright, naming --repo-id/--doc-id as the cause when neither was.
+    #   on the *resolved* (link-following) path instead would refuse that
+    #   legitimate junction outright, naming --repo-id/--doc-id as the
+    #   cause when neither was.
     # - Identity ("is this the reserved slot / an already-curated
     #   destination?") is judged on the *resolved* path, which does
     #   follow links: two different-looking paths that are the same
@@ -183,9 +179,10 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
     # Known, undefeated limitation (documented rather than silently left
     # closed): a *chain* of junctions/symlinks could still be logically
     # contained while physically elsewhere by the time identity is
-    # judged below. This is strictly narrower than the over-fire this
-    # ruling closed (a single legitimate junction refusing the command
-    # outright), and honest documentation of it beats a guard that blocks
+    # judged below. This is strictly narrower than the over-fire the
+    # logical/resolved split avoids (a single legitimate junction refusing
+    # the command outright), and honest documentation of it beats a guard
+    # that blocks
     # a legitimate setup.
     logical_dir = Path(os.path.normpath(str(opts.kb_dir / opts.doc_id)))
 
@@ -203,26 +200,25 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             "subdirectory",
             report=report,
         )
-    # Controller Ruling R47(d): a doc_id whose final path component ends
-    # in a space or a dot is never normalised by pathlib and was never
-    # validated before use. Windows silently strips a trailing space/dot
+    # A doc_id whose final path component ends in a space or a dot is
+    # never normalised by pathlib. Windows silently strips a trailing space/dot
     # from the *final* component of a single filesystem call — so
     # `doc_dir.mkdir()` quietly creates "demo-code", not "demo-code " —
     # but does NOT apply that stripping to an *interior* component of a
     # longer path, so `(doc_dir / "services.md").write_text(...)`, where
     # "demo-code " is no longer the final component, looks up the
-    # literal space-suffixed name, finds nothing, and raised a raw
+    # literal space-suffixed name, finds nothing, and raises a raw
     # `FileNotFoundError` out of `_write_group` instead of the
     # `CodeIngestError` every other bad input here raises. Rejecting it
     # outright — on every OS, not just Windows — also avoids the sibling
     # hazard of two different --doc-id spellings ("demo-code" and
     # "demo-code ") silently aliasing one directory while `index.yaml`
     # and `_manifest.yaml` still record whichever spelling was typed
-    # last (the same "two entries, one directory" shape R47 was opened
-    # to close). Judged on `logical_dir` — this is a property of the
-    # literal characters typed, not of what a link happens to lead to,
-    # so it fires unconditionally, whether or not anything exists yet at
-    # the target (Ruling R48b).
+    # last (the same "two entries, one directory" shape the path-based
+    # comparisons above exist to prevent). Judged on `logical_dir` — this
+    # is a property of the literal characters typed, not of what a link
+    # happens to lead to, so it fires unconditionally, whether or not
+    # anything exists yet at the target.
     if logical_dir.name != logical_dir.name.rstrip(" ."):
         raise CodeIngestError(
             f"--doc-id {opts.doc_id!r} ends in a trailing space or dot "
@@ -232,25 +228,19 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             report=report,
         )
 
-    # Identity from here on (Ruling R48b): `doc_dir` follows any
+    # Identity from here on: `doc_dir` follows any
     # symlink/junction to the real target, exactly like every read/write
     # below it does.
     doc_dir = logical_dir.resolve()
 
-    # Controller Ruling R48a(2): round 4's blanket "-svc is a reserved
-    # suffix, full stop, regardless of repo_id" check is restored here.
-    # R47(a) only objected to comparing the *raw* `opts.doc_id` string,
-    # not to the concept — but round 5 also narrowed the check's *scope*
-    # to only *this run's own* `<repo_id>-svc` slot, in the same round it
-    # dropped the `index.yaml` "curated" tag signal (Ruling R47c). That
-    # left a doc_id ending in "-svc" for an *unrelated* repo_id (e.g.
+    # "-svc" is a reserved suffix, full stop, regardless of repo_id. Do
+    # not narrow this to only *this run's own* `<repo_id>-svc` slot: that
+    # leaves a doc_id ending in "-svc" for an *unrelated* repo_id (e.g.
     # `--repo-id other --doc-id demo-svc`) covered by the destination
-    # check alone — and the destination check's only signal for a
-    # freshly-scaffolded document with no notes yet was, at that point, a
-    # human-editable banner inside `services.md` (Ruling R48a(1) restores
-    # a machine-owned signal for that; see `_is_curated_destination()`
-    # below). Computed on the *resolved* final component, per R48b — not
-    # the raw string, and not the pre-link `logical_dir` — so a
+    # check alone, whose signals for a freshly-scaffolded document with
+    # no notes yet are weaker (see `_is_curated_destination()` below).
+    # Computed on the *resolved* final component — not the raw string,
+    # and not the pre-link `logical_dir` — so a
     # "-svc"-suffixed *name* is still what's being judged
     # (case-insensitively, via `.casefold()`, which needs no filesystem
     # query to work: only the separator/dot spellings collapsed in
@@ -264,11 +254,10 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
         )
 
     manifest_path = doc_dir / "_manifest.yaml"
-    # Loaded once, here, and reused below for tokens_by_id (Ruling R47e):
-    # round 4's guard called `_load_manifest_guarded` a second time on
-    # this exact path purely to preserve token counts, so a wrong-shaped
-    # `_manifest.yaml` emitted the identical "could not read" warning
-    # twice instead of the one review round 2 intended.
+    # Loaded once, here, and reused below for tokens_by_id: calling
+    # `_load_manifest_guarded` a second time on this exact path purely to
+    # preserve token counts would make a wrong-shaped `_manifest.yaml`
+    # emit the identical "could not read" warning twice instead of once.
     existing_code_manifest = _load_manifest_guarded(manifest_path, opts.doc_id, report)
 
     # (b) Destination check: the durable half — protects the actual
@@ -288,7 +277,7 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             report=report,
         )
 
-    # Reviewer G-1: the curated guard above knows what a -svc document
+    # The curated guard above knows what a -svc document
     # looks like; it cannot recognise *any other* human document that
     # happens to sit at this run's destination — which the stale-.md prune
     # below would then delete. The property that matters is "did this
@@ -310,16 +299,17 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
     for extractor in ALL_EXTRACTORS:
         detected = extractor.detect(opts.repo_root)
         if extractor.name == "schema" and opts.db_paths:
-            # Ruling R3: `Extractor.detect(self, root)` is never passed
-            # `opts` (the frozen protocol B1 published), so
+            # `Extractor.detect(self, root)` is never passed
+            # `opts` (the protocol is frozen), so
             # SchemaExtractor.detect() cannot see opts.db_paths — on a repo
             # with no migration/prisma/alembic/EF source it would return
             # False and extract() would never run, silently dropping an
             # explicit --db. Treat schema as detected whenever the caller
             # named an explicit db path, regardless of what detect() saw.
-            # (Covered by tests/test_cli_codeingest.py — see the "Ruling
-            # R3" section there; the CLI is the only caller that can hand
-            # this a fresh repo with no migrations at all.)
+            # (Covered by tests/test_cli_codeingest.py's
+            # test_db_flag_works_with_no_migration_files_present; the CLI
+            # is the only caller that can hand this a fresh repo with no
+            # migrations at all.)
             detected = True
         if not detected:
             continue
@@ -329,12 +319,12 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
         owned.extend((extractor.name, sec) for sec in result.sections)
         report.warnings.extend(result.warnings)
 
-    # Gate on what extract() actually *produced*, not on what detect() said
-    # (task review, Important 1). Every extractor's detect() is
+    # Gate on what extract() actually *produced*, not on what detect()
+    # said. Every extractor's detect() is
     # deliberately looser than its extract() — an ordinary typo in --db, or
     # a pyproject.toml holding only an unrelated [tool.*] table, can make
     # detect() return True while extract() finds nothing real. Keying the
-    # gate off report.detected let that slip through and ship a tree-only
+    # gate off report.detected would let that slip through and ship a tree-only
     # document with exit 0. report.detected is left untouched for
     # reporting (the CLI still shows what fired).
     if not any(
@@ -364,8 +354,7 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
     sections = [sec for _, sec in owned]
 
     # `existing_code_manifest` was already loaded once, above, to feed
-    # the destination check — reused here rather than read a second time
-    # (Ruling R47e).
+    # the destination check — reused here rather than read a second time.
     tokens_by_id: dict[str, models.SectionTokens] = {}
     if existing_code_manifest is not None:
         tokens_by_id = {s.id: s.tokens for s in existing_code_manifest.sections}
@@ -408,7 +397,7 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             id=opts.doc_id,
             title=f"{opts.repo_id} — code knowledge",
             revision=short_commit,
-            # G-15: `source_sha256` is the PDF ingest's content hash; a git
+            # `source_sha256` is the PDF ingest's content hash; a git
             # SHA-1 does not belong in it. `revision` carries the commit.
             source_sha256="",
             ingested=_head_date(opts.repo_root),
@@ -427,8 +416,8 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
         models.save_yaml_model(manifest_path, manifest)
         report.files_written.append(manifest_path.name)
     except OSError as exc:
-        # Ruling R47(d), defense in depth: the explicit trailing-space/
-        # dot rejection above closes the exact reported crash; this
+        # Defense in depth: the explicit trailing-space/dot rejection
+        # above closes the known crash; this
         # catches the surrounding class (a reserved device name, a
         # character this OS's filesystem rejects, ...) the same way,
         # rather than letting a raw traceback out of a filesystem call
@@ -439,7 +428,7 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
             report=report,
         ) from exc
 
-    # Spec 2026-09-25 §4.1: `-code` is gitignored, `index.yaml` is not — a
+    # `-code` is gitignored, `index.yaml` is not — a
     # revision here would churn the committed index on every local ingest.
     # The manifest carries the revision; federation.load_federation reads it.
     _upsert_index_entry(
@@ -463,14 +452,13 @@ def _load_manifest_guarded(
     manifest_path: Path, doc_id: str, report: CodeIngestReport
 ) -> models.Manifest | None:
     """Guards the top-level shape of a possibly-hand-edited `_manifest.
-    yaml` before reading it back (Defect 3 in this stage: a wrong-shaped
-    top-level document unwinding past a per-file handler deleted a whole
-    reader's output with no file named). A missing or malformed manifest
+    yaml` before reading it back (a wrong-shaped top-level document
+    unwinding past a per-file handler would delete a whole reader's
+    output with no file named). A missing or malformed manifest
     degrades to "no prior state" with a named warning, rather than
     crashing the whole command.
 
-    Shared by two read-backs (Important 5 — only one of these three total
-    reads in this module was guarded at all before this fix): `run()`'s
+    Shared by two read-backs: `run()`'s
     own read of the `-code` document's prior manifest (used only to
     preserve token counts — losing that on a corrupt file is harmless,
     `kb build` recomputes them from scratch) and `scaffold_svc()`'s read
@@ -534,15 +522,14 @@ def _is_curated_destination(
 ) -> bool:
     """True when `doc_dir` already holds a curated document — checked by
     inspecting the actual target on disk, never by comparing `doc_id`
-    strings (Controller Ruling R47, replacing review round 4's guard).
+    strings.
 
-    **Primary, machine-owned signal (Controller Ruling R48a(1)).** Round
-    5's first attempt made the "Responsibility text is human-owned"
-    banner `scaffold_svc()` writes into `services.md` the *only* signal
-    that exists from a document's first scaffold run — but that banner
-    lives inside a file the whole point of `--scaffold-svc` is to hand a
-    human for editing. Two states silently destroyed human content as a
-    result: a human rewriting `services.md`'s prose without preserving
+    **Primary, machine-owned signal.** Do not make the "Responsibility
+    text is human-owned" banner `scaffold_svc()` writes into `services.md`
+    the *only* signal that exists from a document's first scaffold run:
+    that banner lives inside a file the whole point of `--scaffold-svc`
+    is to hand a human for editing. Two states would silently destroy
+    human content: a human rewriting `services.md`'s prose without preserving
     the banner line, and a curated document with reviewed summaries in
     `_manifest.yaml` but no `services.md` on disk at all — a state this
     codebase explicitly supports and self-heals from elsewhere (see
@@ -559,24 +546,23 @@ def _is_curated_destination(
       cannot collide: measured on both documents, never equal to the
       other).
     - any section's `status` is `"pending"` or `"reviewed"`, **and**
-      `manifest.id != doc_id` (Controller Ruling R49(1), added at Task
-      B10) — `run()` always writes `-code` sections with
+      `manifest.id != doc_id` — `run()` always writes `-code` sections with
       `status="summarized"` and never anything else; `scaffold_svc()`
       never writes `"summarized"` for a `svc.*` section (new ones start
       `"pending"`, existing ones keep whatever status they already had,
       which can only itself have started as `"pending"` and possibly
       been promoted to `"reviewed"` by a human). The `manifest.id !=
-      doc_id` half closes a regression verified at Task B10: two
-      ordinary sibling commands write exactly those statuses onto a
+      doc_id` half is needed because two ordinary sibling commands write
+      exactly those statuses onto a
       `-code` document's *own* manifest — `kb summarize --redo --all`
       (`summarize.redo_reset()`, iterating every doc in
       `index.yaml`) and `kb approve --all-changed` with no DOC_ID
       (`review.approve_all_changed()` / `approve_sections()`, same
-      iteration). Without the identity gate, either command left its own
-      `-code` document permanently unable to re-ingest itself: the
-      manifest this check reads back at line ~330 above IS the one
-      those commands just mutated, `manifest.id` always equals `doc_id`
-      in that case, and the status signal fired on the document's own
+      iteration). Without the identity gate, either command would leave
+      its own `-code` document permanently unable to re-ingest itself:
+      the manifest this check reads back in `run()` IS the one those
+      commands just mutated, `manifest.id` always equals `doc_id` in
+      that case, and the status signal would fire on the document's own
       prior run rather than on a genuinely different one. Gating on
       identity keeps the signal doing its job for a *foreign* document —
       a manifest whose `id` names an unrelated document that happens to
@@ -586,11 +572,8 @@ def _is_curated_destination(
     and both survive a human rewriting its prose (there is no reason for
     curated-prose editing to touch either).
 
-    **Three more signals below are present in the code but, per Ruling
-    R49(4), this docstring no longer claims each has an isolating test —
-    it previously did, and that claim was false: no isolating test exists
-    for any of the three, and writing one for each is recorded as
-    parked, not done (see Task B10's brief). The banner in particular is
+    **Three more signals below are present in the code, but none of the
+    three has an isolating test. The banner in particular is
     not merely secondary: when `manifest` is `None` (a missing or
     unreadable `_manifest.yaml` — see `_load_manifest_guarded()` above),
     neither the title check, the status check, nor the second bullet
@@ -598,22 +581,21 @@ def _is_curated_destination(
     `if manifest is not None:` sub-check above, alongside title and
     status, not as separate code down here) can run at all, so a
     curated document with an unreadable manifest is refused by the
-    banner alone. Treating it as safe to delete because the docstring
-    once called it "secondary" would silently strip that state's only
-    protection.**
+    banner alone. Treating it as secondary and safe to delete would
+    silently strip that state's only protection.**
     - the "Responsibility text is human-owned" banner in `services.md`.
     - `manifest` (the caller's own single guarded read of this
       directory's `_manifest.yaml`, passed in rather than reloaded here
-      so a wrong-shaped file only ever produces one warning — Ruling
-      R47e) carrying any `flow.*`/`hist.*` section.
+      so a wrong-shaped file only ever produces one warning) carrying
+      any `flow.*`/`hist.*` section.
     - `flows.md`/`history.md` already on disk.
 
-    Deliberately drops review round 4's `index.yaml` "curated"-tag
-    signal (Ruling R47c) — it compared `doc_id` strings (the class of
-    comparison R47 ends) and was self-defeating: `--tags curated` on an
-    ordinary `-code` run wrote that tag onto the document's *own* index
-    entry, so that document's next run found its own prior tag and
-    refused itself forever.
+    Deliberately has no `index.yaml` "curated"-tag signal: it would
+    compare `doc_id` strings (the class of comparison this check avoids)
+    and is self-defeating: `--tags curated` on an ordinary `-code` run
+    writes that tag onto the document's *own* index entry, so that
+    document's next run would find its own prior tag and refuse itself
+    forever.
 
     Degrades toward *not* refusing when a signal can't be read — a
     destination check is exactly the kind of guard that over-fires, so
@@ -656,10 +638,10 @@ def _upsert_index_entry(
     `-svc` scaffold (`scaffold_svc()`) — the only difference between the
     two callers is which tag pair and summary sentence they pass in, so
     one function upserts both rather than two near-duplicate copies of
-    the same merge logic (Defect 4 in this stage: duplicated logic fixed
-    in one branch three rounds running).
+    the same merge logic (duplicated logic tends to get fixed in one
+    branch only).
 
-    A wrong-shaped `index.yaml` (Defect 3 / Important 5) degrades to
+    A wrong-shaped `index.yaml` degrades to
     "leave the file untouched this run" rather than either crashing the
     whole command or — the more dangerous alternative — silently
     replacing it with a fresh empty index, which would erase every
@@ -697,7 +679,7 @@ def _upsert_index_entry(
         preserved = [t for t in entry.tags if t not in wanted]
         entry.title = title
         entry.revision = revision
-        # Final review, Important 2: `entry.summary` may already hold a
+        # `entry.summary` may already hold a
         # real, LLM-drafted L0 doc summary written by `summarize.
         # _fill_doc_summaries()` — and once written, no `kb summarize` run
         # can ever produce it again (that function skips any doc with no
@@ -723,7 +705,7 @@ def _upsert_index_entry(
 
 
 # ---------------------------------------------------------------------------
-# --scaffold-svc — the curated `.kb/<repo_id>-svc/` document (Ruling R10)
+# --scaffold-svc — the curated `.kb/<repo_id>-svc/` document
 # ---------------------------------------------------------------------------
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -734,11 +716,11 @@ def _name_tokens(text: str) -> set[str]:
     evidence builder uses to decide whether a file path or a `db.*`
     table id "belongs" to a service. Requiring the service's tokens to
     be a *subset* of the target's tokens (`wanted <= _name_tokens(x)`,
-    never `wanted & _name_tokens(x)`) is what Important-3 fixed: a bare
-    intersection matched on any *single* shared token, so
-    `svc.airspace-service` (tokens {airspace, service}) claimed every
-    other `*/service.py` in the repo purely via the token `service`, and
-    `svc.cache-db` claimed every SQL migration and `db.*` table purely
+    never `wanted & _name_tokens(x)`) matters: a bare intersection
+    matches on any *single* shared token, so `svc.airspace-service`
+    (tokens {airspace, service}) would claim every other `*/service.py`
+    in the repo purely via the token `service`, and `svc.cache-db` would
+    claim every SQL migration and `db.*` table purely
     via the token `db`. Subset containment still matches the case this
     exists for — `{airspace, service} <= {src, airspace, service, py}`
     for `src/airspace/service.py` — while dropping every one of those
@@ -748,7 +730,7 @@ def _name_tokens(text: str) -> set[str]:
     since it doesn't also contain `service`) — this codebase's evidence
     is meant to warn/omit rather than fabricate throughout (see
     schema.py's own docstring), and precision matters more than recall
-    for a join key Stage C treats as ground truth."""
+    for a join key the curated `-svc` document treats as ground truth."""
     return set(_TOKEN_RE.findall(text.lower()))
 
 
@@ -760,8 +742,8 @@ def _service_evidence(
 ) -> str:
     """Deterministic, sorted, fenced L3 evidence for one `svc.*` section:
     the section's own extractor-rendered evidence (image/ports/env-keys —
-    already sanitised, spec §3.11) plus a bare list of file paths whose
-    name tokens are a superset of the service's own (Important 3), and
+    already sanitised) plus a bare list of file paths whose
+    name tokens are a superset of the service's own, and
     the `db.*` table ids it appears to reach by the same rule — tokenising
     only the table name *after* the `db.` namespace prefix (`s.id.split(
     ".", 1)[1]`), never the prefix itself, so a service named `*-db`
@@ -770,12 +752,11 @@ def _service_evidence(
 
     `tree_entries` is `walk_tree(root, kb_dir)`'s result, walked exactly
     once by the caller and shared across every service in this run — a
-    per-service full tree walk was a real (if minor) performance defect
-    the controller review flagged.
+    per-service full tree walk would be a real (if minor) performance
+    cost.
 
-    Controller Ruling R42 (Critical 1): this function used to also open
-    each matched file and embed its first-5-line docstring/comment
-    header as "evidence". Removed entirely, not narrowed — a file's
+    Never open a matched file to embed its docstring/comment header as
+    "evidence" — not even narrowed to the first few lines: a file's
     *content* can carry a secret (a DSN in a header comment, a password
     on an `.env`-shaped file's first line) no matter how comment-shaped
     the surrounding text looks, and no content classifier can reliably
@@ -783,7 +764,7 @@ def _service_evidence(
     published to the hub (`publish.py`'s snapshot syncs all of `.kb/`),
     so the only safe rule is to never open the file at all. Only the
     *path* — never a byte of the file's content — is evidence here;
-    Stage C's `dev-code-seed` has the actual repo checked out when a
+    `dev-code-seed` has the actual repo checked out when a
     human needs to read further.
     """
     wanted = _name_tokens(sec.title)
@@ -803,8 +784,7 @@ def _service_evidence(
         if wanted and wanted <= _name_tokens(s.id.split(".", 1)[1])
     )
 
-    # Stage C task review (R6, following the Stage B handover's item 2, and
-    # Minor 7 extending it to "files:"): a bare "files:"/"tables:" label
+    # A bare "files:"/"tables:" label
     # reads as the factual claim "this service touches no files/tables"
     # when it renders "- none" -- but both matches are the identical
     # same-name-token-superset heuristic (see the docstring above) that
@@ -812,8 +792,7 @@ def _service_evidence(
     # honestly as what they are, so "- none" reads as "no name match
     # found", not "no files/tables found" -- leaving one bare and the
     # other relabelled would make two lines in the same fenced block claim
-    # different epistemic strength from the same rule. The rendered list
-    # shape below is otherwise unchanged.
+    # different epistemic strength from the same rule.
     lines = ["```text", "files (name-match heuristic; absence proves nothing):"]
     if files:
         lines.extend(f"  - {f}" for f in files)
@@ -837,8 +816,8 @@ def _body_only(heading_and_body: str) -> str:
     `_render_group()` re-derives that heading itself from a
     `CodeSection`'s own `id`/`title`, so re-feeding a slice through it
     verbatim would duplicate the heading. Splitting it back off here is
-    what makes "lift the old slice out and re-emit it unchanged" (Step
-    4) actually round-trip byte-for-byte."""
+    what makes "lift the old slice out and re-emit it unchanged"
+    actually round-trip byte-for-byte."""
     _heading, _, rest = heading_and_body.partition("\n")
     return rest.lstrip("\n")
 
@@ -856,8 +835,8 @@ def _heading_id_counts(text: str) -> dict[str, int]:
     from `_manifest.yaml` (`sid in known_ids`) — a human subheading has
     neither, so it never affects `_slice_known_section()`'s boundary.
 
-    The *count* (not just membership) matters (review round 3, Important
-    1): `_slice_known_section()`'s boundary check treats the *first*
+    The *count* (not just membership) matters:
+    `_slice_known_section()`'s boundary check treats the *first*
     occurrence of a known id after a section's start as that section's
     end, so if a known id occurs more than once, the *first* repeat —
     wherever it is, a "See also" line quoting a different section, a
@@ -884,7 +863,7 @@ def _slice_known_section(text: str, sid: str, known_ids: set[str]) -> str | None
     """Like `mdutils.slice_section()`, but the end boundary is only a
     line that is itself a *real* `## <id> <title>` heading for one of
     this document's own `known_ids` — never merely any line starting
-    with `"## "` (Controller Ruling R43 / Critical 2).
+    with `"## "`.
     `mdutils.slice_section()`'s boundary check is a bare
     `str.startswith("## ")`, so a human's own free-form subheading inside
     a reviewed body (`## Ownership`, `## Runbook`) is indistinguishable
@@ -925,9 +904,9 @@ def _extract_preamble(text: str, known_ids: set[str]) -> str:
     """Whatever a human wrote between the banner line and the first known
     section heading in `text` — the one piece of free-standing prose
     `_slice_known_section()` can never reach on its own, since it only
-    ever lifts text starting *at* a heading (Ruling R46b: same class as
-    R43, the third instance of "human L2 content silently dropped" found
-    on this task). `_render_group()` always writes exactly `# <doc_id>`,
+    ever lifts text starting *at* a heading (the same "human L2 content
+    silently dropped" class `_slice_known_section()` guards against).
+    `_render_group()` always writes exactly `# <doc_id>`,
     a blank line, the banner, and a blank line before the first section,
     so the preamble — if any — starts right after that fixed four-line
     header and ends at the first line that is itself a real heading for
@@ -959,21 +938,20 @@ def scaffold_svc(opts, sections, report) -> None:
 
     Absent section -> create as pending with the TODO:summarize marker and L3
     code evidence. Present section -> refresh L3 evidence ONLY; never touch L2
-    or status (spec 8.2). Upsert, never clobber.
+    or status. Upsert, never clobber.
     """
     svc_doc_id = f"{opts.repo_id}-svc"
-    # Same containment-vs-identity split as run()'s guard (Ruling R48b):
+    # Same containment-vs-identity split as run()'s guard:
     # --repo-id is just as user-controlled as --doc-id, and svc_doc_id is
     # built from it with simple string interpolation — a --repo-id
     # containing ".." segments could otherwise resolve this document's
     # own target outside --kb-dir entirely. Containment is judged on the
     # *logical* (link-free) path — a legitimate junction/symlink at
     # `.kb/<repo_id>-svc` pointing at storage elsewhere is logically
-    # still inside --kb-dir, and refusing it here (what this guard did
-    # before this ruling) locked out the very command whose job is to
-    # maintain that document, naming --repo-id as the cause when it
-    # was not. `doc_dir` itself (used for every read/write below) still
-    # follows the link, exactly as before.
+    # still inside --kb-dir, and refusing it here would lock out the very
+    # command whose job is to maintain that document, naming --repo-id as
+    # the cause when it was not. `doc_dir` itself (used for every
+    # read/write below) still follows the link.
     logical_dir = Path(os.path.normpath(str(opts.kb_dir / svc_doc_id)))
     if not logical_dir.is_relative_to(opts.kb_dir):
         raise CodeIngestError(
@@ -1000,7 +978,7 @@ def scaffold_svc(opts, sections, report) -> None:
             else:
                 # "flows" (flow.*) and "history" (hist.*) are reserved for
                 # human-authored content nothing in code-ingest produces
-                # yet (Stage C's `kb svc note`) — code-ingest has no
+                # (`kb svc note` writes them) — code-ingest has no
                 # ownership claim over them, so they pass through
                 # untouched: not upserted, not orphaned, not deleted.
                 other_entries.append(entry)
@@ -1008,8 +986,7 @@ def scaffold_svc(opts, sections, report) -> None:
     old_l2_text = l2_path.read_text(encoding="utf-8") if l2_path.exists() else ""
     old_l3_text = l3_path.read_text(encoding="utf-8") if l3_path.exists() else ""
 
-    # Controller Ruling R43 (Critical 2), the refuse-and-error fallback,
-    # extended in review round 3 (Important 1) to also cover repeated
+    # The refuse-and-error fallback, covering both stray and repeated
     # heading ids:
     #
     # (a) Stray — services.md has a *real* '## svc.<id> <title>' heading
@@ -1031,8 +1008,8 @@ def scaffold_svc(opts, sections, report) -> None:
     #     quote a real heading verbatim — is silently read as a section
     #     break, and everything between the two occurrences is dropped.
     #     Every preserved (non-refusing) case has each known id exactly
-    #     once, so this closes all three reproductions with no false
-    #     refusals against them.
+    #     once, so this catches all three shapes with no false refusals
+    #     against a preserved case.
     #
     # Neither the upsert path nor the orphan path can represent either
     # shape of "real content, unknown provenance" or "ambiguous section
@@ -1064,14 +1041,14 @@ def scaffold_svc(opts, sections, report) -> None:
 
     all_ids = sorted(set(current_by_id) | set(existing_entries))
     known_ids = set(all_ids)
-    # Ruling R46b: whatever a human wrote above the first section heading
+    # Whatever a human wrote above the first section heading
     # (a document-level note, e.g.) is otherwise invisible to every slice
     # above — they all start *at* a heading — so it has to be lifted
     # separately, once, here. Only L2 is human-owned (L3's own banner
     # says "regenerated"; nothing suggests a human would write free prose
     # there, and nothing preserves it if they do).
     l2_preamble = _extract_preamble(old_l2_text, known_ids)
-    # Walked exactly once for this whole document (Minor perf fix) and
+    # Walked exactly once for this whole document and
     # shared by every service's _service_evidence() call below, instead
     # of one full repo walk per service.
     tree_entries = walk_tree(opts.repo_root, opts.kb_dir)
@@ -1104,7 +1081,7 @@ def scaffold_svc(opts, sections, report) -> None:
             # whatever the existing manifest entry already holds, and the
             # L2 body is lifted from the old file verbatim using this
             # document's own known ids as the *only* valid section
-            # boundary (Ruling R43): a human subheading like
+            # boundary: a human subheading like
             # "## Ownership" inside the body can never truncate anything
             # after it, unlike mdutils.slice_section()'s bare "## " check.
             title = existing.title
@@ -1115,7 +1092,7 @@ def scaffold_svc(opts, sections, report) -> None:
             if old_l2_slice is None:
                 # The manifest still names this section but its heading
                 # itself is gone from services.md (the whole file was
-                # deleted, or just this heading was). Important 4: status
+                # deleted, or just this heading was). Status
                 # and summary are durable state that survived in the
                 # manifest regardless — keep them, and self-heal the L2
                 # body from the summary already on record instead of
@@ -1204,12 +1181,12 @@ def scaffold_svc(opts, sections, report) -> None:
         _write_group(
             l3_path, _render_group(rendered_sections, "l3", banner, svc_doc_id)
         )
-        # Qualified with the document id (Minor fix): the -code doc's own
+        # Qualified with the document id: the -code doc's own
         # `run()` contribution to `report.files_written` uses bare names,
         # and with --scaffold-svc both documents share several file names
         # (services.md, services.raw.md, _manifest.yaml) — without the
-        # prefix, the CLI's "files written" count was ambiguous between
-        # the two documents and each pair appeared to be listed twice.
+        # prefix, the CLI's "files written" count is ambiguous between
+        # the two documents and each pair appears to be listed twice.
         report.files_written.append(f"{svc_doc_id}/{l2_path.name}")
         report.files_written.append(f"{svc_doc_id}/{l3_path.name}")
 
@@ -1217,7 +1194,7 @@ def scaffold_svc(opts, sections, report) -> None:
             id=svc_doc_id,
             title=f"{opts.repo_id} — curated service knowledge",
             revision=short_commit,
-            # G-15: `source_sha256` is a content hash, not a git SHA — see
+            # `source_sha256` is a content hash, not a git SHA — see
             # the matching comment in run()'s manifest above.
             source_sha256="",
             ingested=_head_date(opts.repo_root),
@@ -1228,7 +1205,7 @@ def scaffold_svc(opts, sections, report) -> None:
         models.save_yaml_model(manifest_path, manifest)
         report.files_written.append(f"{svc_doc_id}/{manifest_path.name}")
     except OSError as exc:
-        # Same defense-in-depth as run()'s write section (Ruling R47d):
+        # Same defense-in-depth as run()'s write section:
         # --repo-id is just as capable of producing an OS-rejected
         # directory name as --doc-id is.
         raise CodeIngestError(

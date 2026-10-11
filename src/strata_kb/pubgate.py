@@ -17,19 +17,17 @@ from strata_kb.errors import KbError
 
 REPO_ID_MAX = 64
 REPO_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-# Round 3 (MEDIUM-2, review-waveH-fix2-verdict.md): CONIN$/CONOUT$ (the
+# Besides CON/PRN/AUX/NUL and COM1-9/LPT1-9: CONIN$/CONOUT$ (the
 # console-handle names git's own is_valid_win32_path also reserves), COM0/
 # LPT0 (Win32 numbers ports from 0, not just 1-9) and the superscript-digit
-# aliases COM¹²³/LPT¹²³ (NTFS treats them as
-# COM1-3/LPT1-3) used to live in a second, LOCAL frozenset in intake.py,
-# unioned with this one at its one call site because intake.py could edit
-# this file but pubgate.py belonged to another implementer that round. The
-# result was measured: normalize_repo_id("LPT0") accepted it as a repo-id
-# while intake.py's member-name rule refused it as a tar member -- and a
-# registry entry mapping a publisher to repo-id "LPT0" reached the hub tree
-# through _dest_for_rid instead, breaking `git clone` for every tenant on
-# the hub, not just that one. One set, used by both the repo-id rule below
-# and intake.py's member-name rule, is what keeps that from recurring.
+# aliases COM¹²³/LPT¹²³ (NTFS treats them as COM1-3/LPT1-3). Keep ONE copy
+# of this set: a second, local set elsewhere drifts, and the drift is not
+# cosmetic -- with LPT0 in only one copy, normalize_repo_id("LPT0") accepts
+# it as a repo-id while intake.py's member-name rule refuses it as a tar
+# member, and a registry entry mapping a publisher to repo-id "LPT0" reaches
+# the hub tree through _dest_for_rid, breaking `git clone` for every tenant
+# on the hub, not just that one. One set, used by both the repo-id rule
+# below and intake.py's member-name rule, keeps that from happening.
 WIN32_DEVICES = frozenset(
     {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
     | {f"COM{i}" for i in range(0, 10)}
@@ -39,27 +37,22 @@ WIN32_DEVICES = frozenset(
 )
 
 
-# Round 4 (LOW, P30): the re-review's form question was "shipped as one
-# device SET, not one predicate" -- close the form, or defend the set.
-# Kept as a set, deliberately: this is a finite, externally-defined
-# vocabulary (Win32's reserved DOS device names, including the NTFS
-# superscript-digit aliases, which are not expressible as a `\d`-style
-# digit pattern and would have to be spelled out character-by-character
-# in a "predicate" too), not a computable rule family a regex would
-# generalize better than a set already does -- and the set is proven
-# correct (0 drift over 302,621 fuzz candidates). What genuinely was
-# duplicated -- and is the real drift risk P30 is naming -- is the CHECK:
-# `normalize_repo_id` below and intake.py's member-name shape rule each
-# independently reimplemented "extract the stem, strip a trailing space,
-# upper-case, test membership" against this one shared set, which is
-# exactly the kind of two-independent-copies gap WIN32_DEVICES itself was
-# unified to close for the SET in round 3 (MEDIUM-2's drift: LPT0 accepted
-# as a repo-id, refused as a tar member). `is_reserved_device_name` below
-# closes it for the check too -- one predicate, both call sites -- and
-# "adding a platform" now means adding both its names to this set AND, if
-# its stem-extraction rule ever differs from Windows' (trailing-space
-# stripping), one clause to that one function, not auditing two
-# independent copies of it.
+# WIN32_DEVICES is a set, not a pattern, deliberately: this is a finite,
+# externally-defined vocabulary (Win32's reserved DOS device names,
+# including the NTFS superscript-digit aliases, which are not expressible as
+# a `\d`-style digit pattern and would have to be spelled out
+# character-by-character in a "predicate" too), not a computable rule family
+# a regex would generalize better than a set already does -- and the set is
+# proven correct (0 drift over 302,621 fuzz candidates). The real drift risk
+# is the CHECK: "extract the stem, strip a trailing space, upper-case, test
+# membership" must not be reimplemented independently by `normalize_repo_id`
+# below and intake.py's member-name shape rule -- two copies of the check
+# drift exactly as two copies of the set would (LPT0 accepted as a repo-id,
+# refused as a tar member). `is_reserved_device_name` is that one predicate
+# for both call sites, so adding a platform means adding its names to this
+# set AND, if its stem-extraction rule ever differs from Windows'
+# (trailing-space stripping), one clause to that one function, not auditing
+# two independent copies of it.
 def is_reserved_device_name(stem: str) -> bool:
     """True when `stem` (the part of a name before its first '.') names a
     reserved Windows device on any consumer platform, after stripping a

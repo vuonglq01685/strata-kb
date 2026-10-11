@@ -1,9 +1,8 @@
 """Extractor registry for `kb code-ingest`.
 
-Tasks B2-B7 each appended one `Extractor` instance here; as of Task B7
-(the last extractor task) the set is complete, in this fixed, documented
-order, so `core.run()`'s reports (detected / sections_by_extractor) read
-the same way on every run:
+One `Extractor` instance per extractor, in this fixed, documented order,
+so `core.run()`'s reports (detected / sections_by_extractor) read the
+same way on every run:
 
     services, deps, commands, tree, schema, integrations, api
 """

@@ -1,8 +1,8 @@
 """commands extractor — cmd.build / cmd.test / cmd.lint / cmd.run.
 
 These are the sections `dev-execute` and `dev-handover` read to satisfy the
-evidence rule (spec §3.14) — this is the task that makes Stage A's
-verification gate executable: until these sections exist, a Dev agent has
+evidence rule — they make the verification gate executable: until these
+sections exist, a Dev agent has
 no machine-readable answer to "how do I test this repo?".
 
 Seven readers surface command evidence from seven sources — CI workflows,
@@ -29,7 +29,7 @@ checked independently against `PURPOSE_KEYWORDS` — and the line's
 purpose is the first purpose in `PURPOSE_KEYWORDS`'s own declaration
 order — `test` before `lint` before `build` before `run` — that is named
 by *any* non-excluded segment, never whichever segment happens to come
-first (R3-1, re-review round 3: position is not evidence of purpose —
+first (position is not evidence of purpose —
 the leftmost segment of a chained line is routinely `cd`, `rm`, `mkdir`
 or an install step, none of which say anything about what the line is
 *for*; `rm -rf build && pytest -q` is a `test` line even though its
@@ -37,7 +37,7 @@ first segment's own last token is literally `build`). This is also why
 `pytest` (whose last four letters spell "test") is never miscounted as a
 generic `build`: `test` is checked, across every segment, before `build`
 ever is. The npm reader folds its `npm run <name>` / `npm test`
-invocation into the same string it classifies and displays (Ruling R2):
+invocation into the same string it classifies and displays:
 a script's raw body is still what's shown and matched primarily, but the
 invocation travels alongside it rather than replacing it, which also lets a
 reserved script name (`start`) pull in the `run` purpose's `"start"` keyword
@@ -46,8 +46,8 @@ reader differs deliberately: its command is `make <target>` — the recipe body
 is never shown or classified, only the target name embedded in that string.
 
 Before a segment's tokens are even checked against `PURPOSE_KEYWORDS`,
-`_classify()` drops two shapes that are not commands at all (fix wave,
-2026-09-16, findings C1/I5): a segment whose leading tokens are a
+`_classify()` drops two shapes that are not commands at all: a segment
+whose leading tokens are a
 package-manager install verb (`pip install`, `npm ci`, `apt-get
 install`, ...) — the *installed package name* can itself be a keyword
 (`pip install build twine` classified as `build`), which whole-token
@@ -56,7 +56,7 @@ shell-conditional segment (`test "$code" = "401"`), which is an exact
 match against the bare `"test"` keyword every Makefile/raw-`test`
 invocation still needs. Excluding a segment removes only its own
 contribution to the purposes considered above; it never demotes another
-segment in the same line (R2-3: `npm ci && npm run build` classifies as
+segment in the same line (`npm ci && npm run build` classifies as
 `build` from its second segment, not `None` from treating the whole
 line as one excluded unit). See `_is_install_line`/`_is_shell_conditional`.
 
@@ -159,16 +159,15 @@ def _step_dir_label(step: dict, lines: list[str]) -> str | None:
     `None`. Used only to annotate the source label (`... (in web/)`) — the
     command text itself is never rewritten into `cd web && ...`; rewriting
     invites its own errors, and the label alone is enough to stop a
-    subdirectory-only command from being read as root-runnable
-    (task review round 1, Finding 1 / controller ruling R33).
+    subdirectory-only command from being read as root-runnable.
 
-    R34(a): a block with *more than one* standalone `cd <dir>` line
+    A block with *more than one* standalone `cd <dir>` line
     (`cd web` ... `cd ../api` ...) can't be resolved without tracking the
     shell's cwd across the whole block, which is out of scope — the label
     is advisory, never a rewritten command. Returning the first `cd`'s
     target anyway would claim a directory that's flatly wrong for a later
-    command in the same block — worse than the pre-fix silence this
-    mechanism exists to improve on — so more than one match means `None`,
+    command in the same block — worse than no label at all — so more
+    than one match means `None`,
     deliberately, rather than a guess."""
     working_dir = step.get("working-directory")
     if isinstance(working_dir, str) and working_dir.strip():
@@ -195,8 +194,8 @@ def _defaults_working_directory(
     container: object, rel: str, scope_desc: str, warnings: list[str]
 ) -> str | None:
     """`container["defaults"]["run"]["working-directory"]` — `container`
-    is either a job mapping or the top-level workflow document (Ruling
-    R34: the same fallback GitHub Actions itself applies, extended to
+    is either a job mapping or the top-level workflow document (the
+    same fallback GitHub Actions itself applies, extended to
     every level a Dev agent could encounter it at). Every level's type is
     guarded — `defaults`, `defaults.run`, or the value itself may be a
     non-mapping / non-string in a malformed workflow — and a wrong shape
@@ -326,17 +325,15 @@ def _token_matches_keyword(token: str, keyword: str) -> bool:
     )
 
 
-# C1 (final whole-branch review): a *whole-token* match still fires when
+# A *whole-token* match still fires when
 # the installed package name itself is a `PURPOSE_KEYWORDS` entry --
 # `pip install build twine` classified as `build` (the package `build`),
 # `pip install ruff` as `lint` (the package `ruff`) -- so an install step
 # outranked the real command it precedes in every CI job that installs
-# its own tooling before running it. Spec Decision 6 assumed whole-token
-# matching alone closed this ("the install step ... no longer classifies
-# at all"); it does not, whenever the package name coincides with a
-# keyword, which is the common case. This is not solved by reinstating
-# "last line wins" (ruled out by the plan's Task 12 Step 2 and by Decision
-# 6 for other reasons) -- instead, a line whose leading tokens are a
+# its own tooling before running it. Whole-token matching alone does not
+# close this whenever the package name coincides with a keyword, which is
+# the common case. "Last line wins" is not the answer either (it breaks
+# other cases) -- instead, a line whose leading tokens are a
 # package-manager install verb is recognised as setup and dropped before
 # classification ever runs, regardless of what package name follows.
 _INSTALL_VERBS: tuple[tuple[str, ...], ...] = (
@@ -375,18 +372,18 @@ def _is_install_line(tokens: list[str]) -> bool:
     `_classify` builds them) *start* with one of `_INSTALL_VERBS` --
     matched only at position 0, unlike `_classify`'s scan-anywhere keyword
     search, because this is asked about one already-split SEGMENT of a
-    logical line (`_split_unquoted_segments`, R2-3), never the whole
+    logical line (`_split_unquoted_segments`), never the whole
     line: a `&&`/`;`-chained segment that follows an install step
     (`npm ci && npm run build`) very much does have something after it,
     and does contribute its own purpose to the line -- see `_classify`'s
-    docstring (R2-3 originally, corrected by R3-1) for how the purposes
+    docstring for how the purposes
     of every non-excluded segment combine. This function's only job is
     whether ITS segment's purpose is "install a tool", which is setup,
     never a command a Dev agent should be told to run."""
     return any(tuple(tokens[: len(verb)]) == verb for verb in _INSTALL_VERBS)
 
 
-# I5 (same review, same intake-filter surface as C1): the bare keyword
+# The bare keyword
 # `"test"` (needed so a Makefile `test:` target or a raw `test`
 # invocation classifies at all) is also an exact token match against the
 # shell builtin/`[`/`[[` conditional -- `release.yml#docker-verify`'s
@@ -415,14 +412,12 @@ def _is_shell_conditional(tokens: list[str]) -> bool:
 def _split_unquoted_segments(text: str) -> list[str]:
     """Split `text` on `&&`/`;` into logical segments, ignoring either
     operator when it appears inside a single- or double-quoted run
-    (`echo "a && b"` is one segment, not two). R2-3 (re-review round 2):
-    `_classify` used to treat a whole `&&`-chained line as one
-    classification unit, so `_is_install_line`/`_is_shell_conditional`
-    matching the *first* segment (`npm ci && npm run build`, `pip
-    install -e .[dev] && pytest -q`) dropped the entire line to `None`,
-    silencing the real command that follows -- a regression this fix
-    wave itself introduced, in the exact accuracy class (G-2: name the
-    command that actually runs) the whole batch exists to close.
+    (`echo "a && b"` is one segment, not two). `_classify` must not treat
+    a whole `&&`-chained line as one classification unit: then
+    `_is_install_line`/`_is_shell_conditional` matching the *first*
+    segment (`npm ci && npm run build`, `pip install -e .[dev] && pytest
+    -q`) would drop the entire line to `None`, silencing the real command
+    that follows -- the command that actually runs is the one to name.
 
     Only a plain matching quote pair is handled -- no backslash-escaping
     of a quote inside a quote, no nesting. Real CI/tox/shell `run:`
@@ -490,7 +485,7 @@ def _keyword_purpose(tokens: list[str]) -> str | None:
     `_token_matches_keyword`) already stripped by the caller, a
     multi-word keyword must match that many consecutive tokens the same
     way. A bare substring match classified `/dev/null` as `run` and
-    `:latest` as `test` (reviewer G-2); this still can't -- only a whole
+    `:latest` as `test`; this can't -- only a whole
     token, or a keyword prefix cut by `-`/`:`, counts. Only ever called
     on ONE segment's tokens (see `_classify`) -- it has no notion of
     "the rest of the line" and returns as soon as any keyword in the
@@ -509,8 +504,7 @@ def _classify(text: str) -> str | None:
     segment of `text` (split on unquoted `&&`/`;` by
     `_split_unquoted_segments`) whose own tokens aren't excluded by one
     of the two guards below -- purpose priority across every segment,
-    never "whichever segment comes first" (R3-1, re-review round 3,
-    correcting R2-3's own fix): position in a `&&`/`;`-chained line is
+    never "whichever segment comes first": position in a `&&`/`;`-chained line is
     not evidence of purpose. `rm -rf build && pytest -q` and `cd build
     && make test` both classify as `test`, not `build`, even though
     each one's *first* segment's own last token happens to be `build` --
@@ -522,12 +516,11 @@ def _classify(text: str) -> str | None:
     segments too.
 
     A single-segment `text` (no `&&`/`;` at all -- the overwhelmingly
-    common case) is simply `_keyword_purpose` of that one segment,
-    unchanged from before R2-3/R3-1 ever existed.
+    common case) is simply `_keyword_purpose` of that one segment.
 
     Two guards run before a segment's tokens are even checked against
-    `PURPOSE_KEYWORDS`, both added in the same fix wave (C1/I5) and both
-    applied here -- the one function every reader that classifies a
+    `PURPOSE_KEYWORDS`, both applied here -- the one function every
+    reader that classifies a
     shell line (CI `run:`, `*.sh`, tox `commands =`) already shares, so a
     single check point covers all three rather than three copies of it.
     Placing the guards inside `_classify` itself (rather than only in
@@ -541,14 +534,14 @@ def _classify(text: str) -> str | None:
     either guard.
     - `_is_install_line`: a segment whose leading tokens are a package-
       manager install verb (`pip install`, `npm ci`, `apt-get install`,
-      ...) is setup, never a command to run (C1) -- `pip install build
-      twine` no longer classifies as `build` merely because `build`
-      happens to be an installed package name -- but (R2-3) excluding a
+      ...) is setup, never a command to run -- `pip install build
+      twine` does not classify as `build` merely because `build`
+      happens to be an installed package name -- but excluding a
       segment removes only ITS OWN contribution: `npm ci && npm run
       build` still classifies as `build`, from its second segment.
     - `_is_shell_conditional`: a `test`/`[`/`[[` shell conditional is not
-      a test *command* (I5) -- `test "$code" = "401"` no longer
-      classifies as `test`, and (R2-3) only its own segment is excluded
+      a test *command* -- `test "$code" = "401"` does not
+      classify as `test`, and only its own segment is excluded
       when it's chained with `&&` (`[ "$OK" = 1 ] && make build` still
       classifies as `build`).
     """
@@ -574,7 +567,7 @@ def _classify(text: str) -> str | None:
 def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
     """Every `run:` step across every workflow file except those `kb init`
     scaffolds (`initcmd.SCAFFOLDED_WORKFLOW_NAMES`), in file order (via
-    `walk_tree`, Ruling R7) then job order (`sorted` job names, matching
+    `walk_tree`) then job order (`sorted` job names, matching
     `services.py`'s convention of sorting a parsed mapping's keys) then
     step order (a step list's position is meaningful — the file's own
     execution order — so it is never re-sorted). A multi-line `run:`
@@ -585,7 +578,7 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
     doesn't actually run at the repo root; without that, a
     subdirectory-only command reads as root-runnable, which is worse than
     not having it at all. The directory is resolved with GitHub Actions'
-    own precedence (Ruling R34): the step's own `working-directory:` or a
+    own precedence: the step's own `working-directory:` or a
     leading `cd <dir>` in its block (`_step_dir_label`), else the job's
     `defaults.run.working-directory`, else the workflow's
     (`_defaults_working_directory`, checked at both scopes)."""
@@ -658,7 +651,7 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
                         )
                         continue
                     lines = join_continuations(run)
-                    # Ruling R34: step's own directory beats the job's
+                    # The step's own directory beats the job's
                     # `defaults.run.working-directory`, which beats the
                     # workflow's -- GitHub Actions' own precedence.
                     dir_label = (
@@ -684,7 +677,7 @@ def _read_ci(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list
 
 def _read_npm(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], list[str]]:
     """Every `scripts` entry of every `package.json` at depth <= 2.
-    Ruling R2: the command is the raw script body, with the `npm run
+    The command is the raw script body, with the `npm run
     <name>` / `npm test` invocation folded in alongside it (never
     replacing it) so both forms are visible and both are available to
     `_classify()` — the invocation is what lets the reserved `"start"`
@@ -734,7 +727,7 @@ def _read_npm(root: Path, opts: CodeIngestOptions) -> tuple[list[Candidate], lis
 def _read_make(root: Path) -> tuple[list[Candidate], list[str]]:
     """A root `Makefile`'s target names. Unlike every other reader, the
     displayed and classified command is `make <target>` — never the
-    recipe body — per Ruling R2's carve-out for this reader."""
+    recipe body."""
     path = root / "Makefile"
     if not path.is_file():
         return [], []
@@ -780,8 +773,8 @@ def _tox_commands(text: str) -> list[tuple[str, str]]:
     """`(invocation, logical command line)` for every `commands =` value
     of `[testenv]` (invocation `tox`) and `[testenv:<name>]` (`tox -e
     <name>`), continuations joined. Env names alone say nothing about
-    what an env runs (reviewer G-2: `envlist = py311` + `commands =
-    pytest -q` contributed nothing)."""
+    what an env runs (`envlist = py311` + `commands = pytest -q` would
+    contribute nothing)."""
     parser = configparser.ConfigParser(interpolation=None)
     parser.read_string(text)
     found: list[tuple[str, str]] = []
@@ -858,7 +851,7 @@ def _read_shell(
     at least once the candidate is `bash <script>` with the script as
     source — a Dev agent is told to run the script, not one line torn out
     of it. `bash scripts/gate.sh` is aero's own documented release gate
-    and was invisible before this reader (reviewer G-2)."""
+    and would be invisible without this reader."""
     candidates: list[Candidate] = []
     warnings: list[str] = []
     for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
@@ -913,7 +906,7 @@ def _read_presence(
     candidates bypass `_classify()` entirely (unlike every other reader).
     Maven and Gradle each contribute one default `build` command; .NET,
     Go, Rust and Swift each contribute both a `build` and a `test`
-    default, per the brief's table.
+    default.
 
     Dart/`pubspec.yaml` deliberately has no entry here: presence alone
     can't tell a pure-Dart package (`dart test`) from a Flutter app
@@ -1026,7 +1019,7 @@ def _select(
     all_candidates: list[Candidate], purpose: str
 ) -> tuple[Candidate, list[Candidate]] | None:
     """`all_candidates` is already CI-first, then local readers in the
-    brief's fixed order (npm, make, python, shell, pubspec,
+    fixed order (npm, make, python, shell, pubspec,
     presence-based) — so the first match for a purpose is, by
     construction, the first CI-sourced candidate if one exists, else the
     first local one. Everything else for that purpose is an alternative,
@@ -1054,8 +1047,8 @@ def _render_section(
     # with a plaintext credential in it -- `curl https://admin:pw@host/x`,
     # a `git+https://token@...` clone step, ... -- so every command text
     # is run through `redact_userinfo` before it reaches l2_md, l3_md, or
-    # `summary` below (task review, Important 2; `.kb/` republishes this
-    # to the federation hub, an audience wider than the source repo).
+    # `summary` below (`.kb/` republishes this to the federation hub, an
+    # audience wider than the source repo).
     _, raw_command, source = primary
     command = redact_userinfo(raw_command)
     alternatives = [
@@ -1147,16 +1140,15 @@ class CommandsExtractor:
             try:
                 found, warns = reader(*args)
             except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors DepsExtractor
-                # A human label, not `reader.__name__` (Finding 2, task
-                # review round 1): a private function name leaking into a
-                # user-visible KB warning is both unhelpful and, per
-                # defect #3's signature, a whole reader's output silently
-                # gone with no file named.
+                # A human label, not `reader.__name__`: a private function
+                # name leaking into a user-visible KB warning is unhelpful,
+                # and leaves a whole reader's output silently gone with no
+                # file named.
                 found, warns = [], [f"could not read {label}: {exc}"]
             warnings.extend(warns)
             return found
 
-        # CI first, then every local reader in the brief's fixed order —
+        # CI first, then every local reader in a fixed order —
         # this list's order IS the priority rule (see `_select`).
         all_candidates: list[Candidate] = (
             _run(_read_ci, "CI workflow", root, opts)

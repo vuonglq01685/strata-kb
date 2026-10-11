@@ -41,9 +41,7 @@ class AssetStoreError(KbError):
     CLI guard downstream that already catches KbError for PublishError/
     GateError/CIPublishError needs no separate arm to also turn a store
     failure into a clean message -- see cli.py's hub-to-hub `except` tuple,
-    which used to miss this class entirely (routed finding, Task 21 review)
-    because _snapshot_federation did not touch the asset store until 3845ee5/
-    01cbd0a wired it in."""
+    which _snapshot_federation's asset-store calls now reach."""
 
 
 class AssetIntegrityError(AssetStoreError):
@@ -180,22 +178,20 @@ def asset_sha(entry: str) -> str | None:
     that basename is not a content-addressed asset name.
 
     PurePosixPath, never bare `Path` -- and that is the whole point of this
-    function existing (wave I-1 round 5, Critical; ruling P49: the property
-    is platform-independent, so the mechanism must not be). `Path` binds to
-    WindowsPath or PosixPath depending on which interpreter happens to be
-    running, and the two disagree about exactly one input: an entry spelled
-    with backslashes. `Path("doc-a\\\\assets\\\\<sha>.png").name` is
-    `"<sha>.png"` on Windows and the WHOLE STRING on Linux. Every caller
-    keyed on `Path(a).name`, so a backslash-spelled hub record was
-    ACCEPTED on a Windows hub and HARD-FAILED the publish on a Linux one,
-    and the same upstream name was merged on Windows and silently dropped on
-    Linux -- two operators getting different answers out of the same bytes,
-    which is the one thing this whole wave exists to stop. It also reddened
-    three of the five CI legs (ubuntu-latest x 3.11/3.12/3.13).
+    function existing: the property is platform-independent, so the mechanism
+    must not be. `Path` binds to WindowsPath or PosixPath depending on which
+    interpreter happens to be running, and the two disagree about exactly one
+    input: an entry spelled with backslashes.
+    `Path("doc-a\\\\assets\\\\<sha>.png").name` is `"<sha>.png"` on Windows and
+    the WHOLE STRING on Linux. A caller keyed on `Path(a).name` therefore
+    ACCEPTS a backslash-spelled hub record on a Windows hub and HARD-FAILS the
+    publish on a Linux one, and merges the same upstream name on Windows while
+    silently dropping it on Linux -- two operators getting different answers
+    out of the same bytes.
 
     A backslash in a record entry is therefore an ORDINARY CHARACTER IN A
-    FILENAME, not a separator. That is not a new ruling, it is the one this
-    codebase already had, in two places:
+    FILENAME, not a separator. That is the rule this codebase already
+    follows in two places:
 
     * divert_assets below computes `path.relative_to(tree_root).as_posix()`
       for every diverted asset -- forward slashes, always, on every host --
@@ -212,8 +208,7 @@ def asset_sha(entry: str) -> str | None:
     So `"doc-a\\\\assets\\\\<sha>.png"` names one single component whose
     name contains backslashes, which _ASSET_NAME_RE cannot match -- and a
     record containing it is mangled, on Windows exactly as much as on Linux.
-    Round 4's test asserted the Windows accident as if it were the contract;
-    that test is the side that changed.
+    Do not treat the Windows behaviour as the contract.
     """
     m = _ASSET_NAME_RE.match(PurePosixPath(entry).name)
     return m.group(1) if m else None
@@ -224,11 +219,11 @@ def is_asset_name(entry: str) -> bool:
 
     The one shared answer for all four readers of that question -- this
     module's load_record and synthesized_asset_entries, and publish's
-    _dest_record_assets and _inheritable_assets, which used to reach across
-    for the private _ASSET_NAME_RE and apply their own `Path(a).name`
-    (the round-4 re-review's Nit, closed here because the platform fix
-    needed a shared seam anyway). Depth-independent, exactly like divert_assets'
-    `assets/*` scan and pubgate.is_kb_artifact's asset rule.
+    _dest_record_assets and _inheritable_assets. Do not let a reader reach
+    for the private _ASSET_NAME_RE and apply its own `Path(a).name`: that
+    reintroduces the platform split asset_sha exists to close.
+    Depth-independent, exactly like divert_assets' `assets/*` scan and
+    pubgate.is_kb_artifact's asset rule.
     """
     return asset_sha(entry) is not None
 
@@ -238,16 +233,14 @@ BAD_NAMES_SHOWN = 3
 
 def not_a_regular_file_clause(record_path: Path) -> str:
     """`<path> exists but is not a regular file -- it may be a directory, or
-    a link whose target is gone` -- the subject of both readers' P47 refusal
-    when something that is not a file is sitting at the record path.
+    a link whose target is gone` -- the subject of both readers' refusal
+    when something that is not a file is sitting at the record path (an
+    existing record path is evidence names existed, so it never reads as
+    absent).
 
-    Wave I-1 round 5, Minor 1: round 4 gave load_record's message the "or a
-    link whose target is gone" half when it widened that branch to
-    os.path.lexists, and did not give it to publish._dest_record_assets'
-    matching message -- the exact drift bad_name_clause was extracted to
-    prevent, in the very commit that extracted it, and nothing was pinning
-    either half (reverting the clause left 38 tests passing). Shared now,
-    and asserted by both dangling-link tests.
+    Shared between load_record and publish._dest_record_assets so the two
+    messages cannot drift apart (the "or a link whose target is gone" half
+    covers the os.path.lexists branch); both dangling-link tests assert it.
     """
     return (
         f"{record_path} exists but is not a regular file -- it may be a "
@@ -260,20 +253,19 @@ def restore_clause(record_path: Path) -> str:
     actually do that>`: the way-forward every hard refusal in both readers
     ends with.
 
-    Wave I-1 round 5, Important 1. Every one of those eight messages used to
-    offer `git checkout -- <path>` as its example, and that command cannot
-    recover the shape the messages are about. It restores the working tree
-    from the INDEX, and by the time a publish refuses a record the
-    corruption is in the index too -- an interrupted publish's own `git add
-    -A`, or any routine one, puts it there, and it is what a hub looks like
-    after the failure this message reports. Measured end to end through the
-    real CLI: rc=0, no output, `record now == corrupt? True`, and the next
-    publish fails with the identical message. The operator loops, silently.
-    In the other branch -- corruption never staged -- the publish's own
-    abort-and-restore has already repaired the file before the message is
-    ever read, so the command is unnecessary there too. It never did useful
-    work in either branch, and a command that silently does nothing costs
-    more than no command at all: it spends the trust the next message needs.
+    Do not offer `git checkout -- <path>` as the example: that command cannot
+    recover the shape the messages are about. It restores the working tree from
+    the INDEX, and by the time a publish refuses a record the corruption is in
+    the index too -- an interrupted publish's own `git add -A`, or any routine
+    one, puts it there, and it is what a hub looks like after the failure this
+    message reports. Measured end to end through the real CLI: rc=0, no output,
+    `record now == corrupt? True`, and the next publish fails with the
+    identical message. The operator loops, silently. In the other branch --
+    corruption never staged -- the publish's own abort-and-restore has already
+    repaired the file before the message is ever read, so the command is
+    unnecessary there too. It does no useful work in either branch, and a
+    command that silently does nothing costs more than no command at all: it
+    spends the trust the next message needs.
 
     Names the commit-scoped form instead, plus the `git log` that finds the
     commit, plus why not to reach for the short form out of habit. Shared
@@ -294,11 +286,10 @@ def bad_name_clause(bad: list[str]) -> str:
     name` -- the subject of both readers' name-shape refusal, for one mangled
     entry or many.
 
-    Wave I-1 round 4, Nit 2: the message named `bad[0]` only, so a
-    hand-edited or multiply-mangled record told the operator about exactly
-    one of its bad entries and left the rest to be found one failed retry at
-    a time. Capped at BAD_NAMES_SHOWN so a wholly-garbled record cannot turn
-    one error line into a dump of its entire contents.
+    Names several entries, not just `bad[0]`, so a hand-edited or
+    multiply-mangled record does not leave the operator to find its bad entries
+    one failed retry at a time. Capped at BAD_NAMES_SHOWN so a wholly-garbled
+    record cannot turn one error line into a dump of its entire contents.
 
     Shared with publish._dest_record_assets (which decides what counts as
     bad through is_asset_name above) so the two readers of this same file
@@ -316,10 +307,10 @@ def load_record(dest: Path) -> models.AssetsRecord:
     """`.assets` at dest's RECORD_NAME; empty only when the file is
     genuinely absent — a present-but-unreadable (OSError) or
     present-but-corrupt (bad YAML / bad schema) record raises instead of
-    self-healing to empty (task 21 fix round, P32 — extending P28's
-    dest-side rule from publish._dest_record_assets into the one shared
-    reader every hub-owned-record caller goes through; this used to be
-    `_load_record`, with a bare `except Exception`).
+    self-healing to empty. This is the one shared reader every
+    hub-owned-record caller goes through, applying the same dest-side rule
+    as publish._dest_record_assets; do not loosen it back to a bare
+    `except Exception` that returns empty.
 
     This file may be the hub's only index of what the object store holds:
     lose it and the bytes are orphaned — still on disk, referenced by
@@ -336,26 +327,25 @@ def load_record(dest: Path) -> models.AssetsRecord:
     paper over it.
 
     Corrupt YAML/schema is folded into the same raise as an unreadable
-    file, not treated as absent: publish._dest_record_assets — the one
-    call site that already implemented P28 correctly before this round —
-    has drawn that line since it was written, and nothing measured in this
-    tree depends on a corrupt hub-owned record silently reading back
-    empty (the one test that exercised a corrupt record,
+    file, not treated as absent: publish._dest_record_assets has drawn
+    that line since it was written, and nothing measured in this tree
+    depends on a corrupt hub-owned record silently reading back empty (the
+    one test that exercised a corrupt record,
     test_divert_and_record_corrupt_record_treated_as_empty, does so
     through divert_and_record's own lenient read below, not this
-    function, and keeps passing unmodified).
+    function).
 
-    Present-but-EMPTY is folded in too (wave I-1 round 2, Critical 1 /
-    ruling P47): models.load_yaml_model is `yaml.safe_load(...) or {}`, so
-    a zero-byte file, a whitespace-only one, or literal `{}` all parse as
-    a *successful* read of an AssetsRecord with no assets -- the except
-    above never fires, and the caller derives "nothing to preserve" from a
-    read that never actually failed. Measured end to end at both call
-    sites below (assetcmd.migrate_assets and intake._publish_in_worktree):
-    a re-run over a zero-byte committed record unlinked it, and an
-    incremental intake upload over one replaced it with just the current
-    upload -- the exact signature the OSError/YAMLError guard above exists
-    to prevent, reached through a shape neither unreadable nor corrupt.
+    Present-but-EMPTY is folded in too: models.load_yaml_model is
+    `yaml.safe_load(...) or {}`, so a zero-byte file, a whitespace-only
+    one, or literal `{}` all parse as a *successful* read of an
+    AssetsRecord with no assets -- the except above never fires, and the
+    caller derives "nothing to preserve" from a read that never actually
+    failed. Measured end to end at both call sites below
+    (assetcmd.migrate_assets and intake._publish_in_worktree): a re-run
+    over a zero-byte committed record unlinked it, and an incremental
+    intake upload over one replaced it with just the current upload --
+    the exact signature the OSError/YAMLError guard above exists to
+    prevent, reached through a shape neither unreadable nor corrupt.
 
     The distinguishing property this leans on: nothing in this codebase
     ever WRITES a record with an empty assets list. divert_and_record
@@ -374,97 +364,86 @@ def load_record(dest: Path) -> models.AssetsRecord:
 
     A record truncated mid-list to a shorter but still non-empty list is
     NOT indistinguishable from a genuinely shorter list written on purpose
-    (wave I-1 round 3, Important 2 -- that claim, made in round 2 and
-    endorsed by the re-review, was measured false). Truncation lands
-    mid-path, not on an entry boundary, because save_yaml_model's write is
-    not atomic and a truncated file simply stops wherever the interrupting
-    failure landed. Measured on a real 5-asset record (423 bytes),
-    truncated at every one of its 423 byte offsets and fed back through
-    this function: 18 already raise (bad YAML/schema), 1 is caught by the
-    empty check above, and of the 404 that survive both, 395 are caught
-    exactly by is_asset_name above -- _ASSET_NAME_RE applied to each
-    entry's POSIX basename, the same module-owned regex divert_assets
-    already uses to decide what counts as a recorded name, not a new
-    heuristic -- and a further 5 (400 of 404) are caught by requiring the
-    file's own text to end with a trailing
-    newline, which every write through save_yaml_model's yaml.safe_dump
-    produces and a truncation almost never leaves intact. 4 of the 423
-    offsets (91, 174, 257, 340) are caught by neither check, and they are
-    irreducible in a stronger sense than "ambiguous" (wave I-1 round 4,
-    item 6, correcting this docstring upward): each of those truncations is
-    BYTE-IDENTICAL to save_yaml_model's own output for the correspondingly
-    shorter list -- verified for all four -- so there is no content
-    difference for any check to find, and NO content-based detector can
-    ever exist for them. Making save_yaml_model atomic (temp-file-and-
-    rename, routed to that round, not this one) removes the CAUSE; it does
-    not enable a detector, because there is nothing left to detect. The
-    residue is also structural rather than incidental: an N-entry record
-    has exactly N-1 such boundary offsets out of roughly 83N, so the ratio
-    improves as records grow.
+    (that claim was measured false). Truncation lands mid-path, not on an
+    entry boundary, because save_yaml_model's write is not atomic and a
+    truncated file simply stops wherever the interrupting failure landed.
+    Measured on a real 5-asset record (423 bytes), truncated at every one
+    of its 423 byte offsets and fed back through this function: 18 already
+    raise (bad YAML/schema), 1 is caught by the empty check above, and of
+    the 404 that survive both, 395 are caught exactly by is_asset_name
+    above -- _ASSET_NAME_RE applied to each entry's POSIX basename, the
+    same module-owned regex divert_assets already uses to decide what
+    counts as a recorded name, not a new heuristic -- and a further 5 (400
+    of 404) are caught by requiring the file's own text to end with a
+    trailing newline, which every write through save_yaml_model's
+    yaml.safe_dump produces and a truncation almost never leaves intact.
+    4 of the 423 offsets (91, 174, 257, 340) are caught by neither check,
+    and they are irreducible in a stronger sense than "ambiguous": each of
+    those truncations is BYTE-IDENTICAL to save_yaml_model's own output
+    for the correspondingly shorter list -- verified for all four -- so
+    there is no content difference for any check to find, and NO
+    content-based detector can ever exist for them. Making save_yaml_model
+    atomic (temp-file-and-rename) removes the CAUSE; it does not enable a
+    detector, because there is nothing left to detect. The residue is also
+    structural rather than incidental: an N-entry record has exactly N-1
+    such boundary offsets out of roughly 83N, so the ratio improves as
+    records grow.
 
     Made public (not left `_load_record`) because assetcmd.py and
-    intake.py reach across modules to call it as that pre-flight check, the
-    same way publish.py's _dest_record_assets used to duplicate this exact
-    logic. Wave I-1 round 3 brought publish.py into scope and left
-    _dest_record_assets uncollapsed on purpose: collapsing it to call this
-    function would change what it raises from a plain OSError to
-    AssetStoreError, and _reconcile_asset_records' own read_failed
-    detection (the flag deciding whether the record is protected from the
-    restore's `git clean` half) only watches for OSError at that inner
-    boundary -- collapsing without also widening that except would quietly
-    stop protecting an untracked unreadable/empty/dir-shaped record during
-    the exact restore ruling P33 exists for. _dest_record_assets instead
-    grew the same new checks in place, keeping its OSError contract exactly
-    as every existing caller and test already expects it. See that
-    function's docstring.
+    intake.py reach across modules to call it as that pre-flight check.
+    publish._dest_record_assets is left uncollapsed on purpose: collapsing
+    it to call this function would change what it raises from a plain
+    OSError to AssetStoreError, and _reconcile_asset_records' own
+    read_failed detection (the flag deciding whether the record is
+    protected from the restore's `git clean` half) only watches for
+    OSError at that inner boundary -- collapsing without also widening
+    that except would quietly stop protecting an untracked
+    unreadable/empty/dir-shaped record during the exact restore that flag
+    exists for. _dest_record_assets instead carries the same checks in
+    place, keeping its OSError contract exactly as every existing caller
+    and test already expects it. See that function's docstring.
 
-    Round 3 gave _dest_record_assets only the first two of those checks
-    (present-but-empty, present-but-not-a-regular-file) and left the
-    name-shape and trailing-newline checks on this side alone. That
-    asymmetry was not a cosmetic gap: measured end to end through a real
-    hub-to-hub publish, a truncated or newline-stripped DESTINATION record
-    sailed past _dest_record_assets, so nothing aborted and nothing was
+    Those checks must stay symmetric across the two readers. If
+    _dest_record_assets lacked the name-shape and trailing-newline checks,
+    a truncated or newline-stripped DESTINATION record would sail past it
+    in a real hub-to-hub publish, so nothing aborts and nothing is
     restored, and then divert_and_record's deliberate self-heal below
-    turned THIS function's raise into `existing = []` and unlinked the
-    hub-owned record outright -- exit 0, store holding the only copy. The
-    corruption these two checks exist to detect became strictly more
-    dangerous than before they existed. Wave I-1 round 4 closes it by
-    giving _dest_record_assets the same two checks; the two readers of this
-    one file must never again disagree about what counts as readable.
+    turns THIS function's raise into `existing = []` and unlinks the
+    hub-owned record outright -- exit 0, store holding the only copy (this
+    was measured end to end). The two readers of this one file must never
+    disagree about what counts as readable.
 
     divert_and_record's own read of this file, and synthesized_asset_
     entries' below, deliberately do NOT let this raise escape — see their
     docstrings for why self-healing is still correct there.
     """
     record_path = dest / RECORD_NAME
-    # is_file(), not exists() (Minor 5, wave I-1 round 2) -- but not for
-    # the reason first given for that change. exists() and is_file() share
-    # the same OSError handling for a failed stat (CPython's _ignore_error
-    # re-raises through either; a permission-denied stat raises either
-    # way), so a failed stat was never the actual divergence between them
-    # (wave I-1 round 3, Important 1 -- the round-2 premise was measured
-    # false). The real divergence is a record path that EXISTS but is not
-    # a regular file (in practice, a directory) -- there exists() is True
-    # and is_file() is False. Ruling P47: an EXISTING record path is
-    # evidence names existed; only its ABSENCE may read as "nothing to
-    # preserve" -- so that shape must raise, not silently return absent.
-    # Reading it as absent here (the round-2 shape) let divert_and_record
+    # is_file(), not exists() -- but not because of a failed stat. exists()
+    # and is_file() share the same OSError handling for a failed stat
+    # (CPython's _ignore_error re-raises through either; a
+    # permission-denied stat raises either way), so a failed stat is not
+    # the divergence between them. The real divergence is a record path
+    # that EXISTS but is not a regular file (in practice, a directory) --
+    # there exists() is True and is_file() is False. An EXISTING record
+    # path is evidence names existed; only its ABSENCE may read as
+    # "nothing to preserve" -- so that shape must raise, not silently
+    # return absent. Reading it as absent here would let divert_and_record
     # upload a new asset, unlink the raw bytes from the hub tree, then hit
     # an uncaught PermissionError writing the directory-shaped record path
     # -- past migrate's own AssetStoreError-only restore guard, leaving an
     # uncommitted deletion sitting in the hub clone with nothing to undo it.
     #
-    # os.path.lexists(), not Path.exists() (wave I-1 round 4, Minor 4): both
-    # is_file() and exists() FOLLOW a link, so a link at the record path
-    # whose target is gone reads as exists()=False -- absent -- when
-    # something is in fact sitting there. Measured with a broken NTFS
-    # junction: exists=False, is_file=False, lexists=True, and the record
-    # "absent" answer flows straight on into the same delete-on-a-failed-
-    # read this branch exists to prevent. lexists() is exactly the "is
-    # anything at this name" question P47 asks, and it strictly widens the
-    # raise: it is True everywhere exists() was (an lstat that succeeds for
-    # a directory succeeds for a link too) and additionally where only the
-    # link entry survives. It cannot narrow the ABSENT answer either --
+    # os.path.lexists(), not Path.exists(): both is_file() and exists()
+    # FOLLOW a link, so a link at the record path whose target is gone
+    # reads as exists()=False -- absent -- when something is in fact
+    # sitting there. Measured with a broken NTFS junction: exists=False,
+    # is_file=False, lexists=True, and the record "absent" answer flows
+    # straight on into the same delete-on-a-failed-read this branch exists
+    # to prevent. lexists() is exactly the "is anything at this name"
+    # question to ask, and it strictly widens the raise: it is True
+    # everywhere exists() was (an lstat that succeeds for a directory
+    # succeeds for a link too) and additionally where only the link entry
+    # survives. It cannot narrow the ABSENT answer either --
     # os.path.lexists swallows the OSError from a failed lstat, but this
     # branch is only reached once is_file() has already returned cleanly,
     # and is_file() re-raises a failed stat (measured, CPython 3.11.15's
@@ -511,7 +490,7 @@ def load_record(dest: Path) -> models.AssetsRecord:
             "shorter list (this tree's record writers, divert_and_record "
             "below and publish._reconcile_asset_records, are both "
             "is_asset_name-fenced and only ever persist names matching "
-            "that shape; wave I-1 round 3, Important 2). refusing to treat "
+            "that shape). refusing to treat "
             "it as this entry's complete set. "
             f"{restore_clause(record_path)}, or confirm the record really "
             "is this short and rewrite it, then retry."
@@ -521,8 +500,8 @@ def load_record(dest: Path) -> models.AssetsRecord:
             f"{record_path} does not end with a trailing newline -- every "
             "record this codebase writes does (models.save_yaml_model's "
             "yaml.safe_dump always terminates one), so a missing one is "
-            "evidence of a truncated write, not a complete list (wave I-1 "
-            "round 3, Important 2). refusing to treat it as this entry's "
+            "evidence of a truncated write, not a complete list. "
+            "refusing to treat it as this entry's "
             f"complete set. {restore_clause(record_path)}, or confirm the "
             "record really is complete and rewrite it, then retry."
         )
@@ -552,7 +531,7 @@ def divert_and_record(dest: Path, store, deletes: list[str] | None = None) -> li
     surviving index of a name nothing else in the tree still holds — must
     call load_record(dest) themselves BEFORE calling this, and abort on
     its raise rather than reach this point at all. assetcmd.migrate_assets
-    and intake.intake_publish do exactly that (P32)."""
+    and intake.intake_publish do exactly that."""
     diverted = divert_assets(dest, store)
     try:
         existing = load_record(dest).assets
@@ -590,12 +569,12 @@ def synthesized_asset_entries(dest: Path) -> dict[str, str]:
             "%s unreadable (%s) — treating as empty", dest / RECORD_NAME, exc
         )
         assets = []
-    # The `if sha` guard is belt-and-braces and no mutant can kill it (wave
-    # I-1 round 5, measured: replacing it with `entries[rel] = asset_sha(rel)
-    # or ""` leaves 133 passing). load_record above raises if ANY entry fails
-    # is_asset_name, and the except turns that into assets = [], so by the
-    # time this loop runs every entry has already passed the same check --
-    # it has been unreachable-as-false since round 3 gave load_record the
+    # The `if sha` guard is belt-and-braces and no mutant can kill it
+    # (measured: replacing it with `entries[rel] = asset_sha(rel) or ""`
+    # leaves every test passing). load_record above raises if ANY entry
+    # fails is_asset_name, and the except turns that into assets = [], so
+    # by the time this loop runs every entry has already passed the same
+    # check -- it is unreachable-as-false while load_record keeps its
     # name-shape check. Kept rather than dropped: it is the only thing
     # standing between a future narrowing of load_record's checks and a
     # manifest entry carrying an empty sha, and it costs one branch. Stated

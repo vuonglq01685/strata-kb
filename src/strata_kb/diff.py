@@ -1,3 +1,11 @@
+"""diff — what changed in one KB document since a git revision (`kb diff`).
+
+`diff_doc` compares the worktree's manifest and L2/L3 section slices with
+the same files at `against` (default HEAD) and reports added, removed and
+changed sections (title, summary, L2 prose, L3 content) plus a reorder
+flag; `render_diff` prints it. Read-only. `review.py` reuses `diff_doc`.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -155,7 +163,7 @@ def diff_doc(kb_dir: Path, doc_id: str, against: str = "HEAD") -> DiffReport:
 
     # Order, restricted to ids present on both sides: an add or a remove
     # alone shifts the sequence without being a reorder, and reporting it as
-    # one would fire on every amendment (M14).
+    # one would fire on every amendment.
     common = new_by_id.keys() & old_by_id.keys()
     report.order_changed = [s.id for s in new.sections if s.id in common] != [
         s.id for s in old.sections if s.id in common

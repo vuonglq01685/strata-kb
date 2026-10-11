@@ -1,3 +1,13 @@
+"""review — `kb approve`: sign off summarized sections as reviewed.
+
+`approve_sections` flips `summarized` → `reviewed` in a document's manifest
+and records who signed, when, and the sha256 of the L2 slice they saw, so a
+later `kb build` catches post-review edits. `check_approvable` must pass
+first: approval signs COMMITTED content, so the doc must be clean and build
+strictly. `approve_all_changed` is the CI form, scoped to sections changed
+since a git rev.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,7 +21,7 @@ from strata_kb.mdutils import heading_occurrences, slice_section
 
 # `hist.*` rows (MACHINE_SECTION_PREFIX) are written by `kb svc note`, so a
 # whole-document approve has nothing to sign off there; naming one
-# explicitly still works (reviewer F L7).
+# explicitly still works.
 from strata_kb.quality import MACHINE_SECTION_PREFIX
 
 

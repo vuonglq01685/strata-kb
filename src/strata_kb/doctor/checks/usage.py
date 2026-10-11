@@ -10,7 +10,7 @@ from strata_kb.doctor.issues import Issue
 
 def check_usage_log(kb_dir: Path) -> list[Issue]:
     """The Stop hook swallows every failure into ingest-errors.log; this is
-    the one place a human hears about it (reviewer F L3)."""
+    the one place a human hears about it."""
     from strata_kb.usage.ledger import hook_errors
 
     count, last = hook_errors(kb_dir)

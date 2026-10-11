@@ -4,7 +4,7 @@ A `Content-Length` check alone does not bound a body: a chunked request
 carries no `Content-Length`, and Starlette's own form limits are per field
 (1 MiB × 1000 fields by default). Wrapping `receive` bounds the bytes taken
 off the wire before any parser buffers them. Shared by the intake upload
-(`web/intake_routes.py`) and `POST /ui/login` (2026-10-10 review §5.2 #2).
+(`web/intake_routes.py`) and `POST /ui/login`.
 """
 
 from __future__ import annotations

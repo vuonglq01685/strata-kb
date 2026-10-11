@@ -1,6 +1,6 @@
 """`kb ticket tidy` — move flat `tickets/*.md` into `tickets/<mission-id>/`.
 
-Spec 2026-09-29-ticket-status-decision-defaults-design §7. Idempotent: a
+Idempotent: a
 file already inside a folder is never touched; a destination that exists
 is a conflict, never an overwrite. No git here — the BA commits and git
 detects the rename.

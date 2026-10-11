@@ -1,22 +1,21 @@
 """The one place a compose `environment:` block's *keys* are extracted and
-sanitised (Ruling R40).
+sanitised.
 
 **Why this module exists.** This exact rule — "take only the key half of
-an `environment:` entry, never the value" — has now caused a Critical
-secret leak twice, in two different extractor modules that each kept
-their own copy of it:
+an `environment:` entry, never the value" — has caused a secret leak
+twice, in two different extractor modules that each kept their own copy
+of it:
 
-  - `services.py` (Task B4): its own `_sanitize_env_key` took three
-    review rounds to close, because each round patched only the one
-    branch of `_env_keys_from` a reported reproduction exercised.
-  - `integrations.py` (Task B7): copied `services.py`'s already-fixed
-    function verbatim, which *carried the fix for the round-3 defect
-    forward correctly* but reintroduced a DIFFERENT bug the round-3 fix
-    never had to consider, because nobody had reason to re-examine a
-    function that looked already-hardened.
+  - `services.py`: its own `_sanitize_env_key` was patched one branch of
+    `_env_keys_from` at a time, each fix covering only the branch a
+    reported reproduction exercised.
+  - `integrations.py`: copied `services.py`'s already-fixed function
+    verbatim, which *carried the earlier fix forward correctly* but kept
+    a DIFFERENT bug that fix never had to consider, because nobody had
+    reason to re-examine a function that looked already-hardened.
 
 That second bug is the reason this module exists and looks the way it
-does. The pre-R40 sanitiser was `str(raw).split("=", 1)[0]`, then
+does. The earlier sanitiser was `str(raw).split("=", 1)[0]`, then
 whitespace-collapse: "keep everything up to the first `=`". That is
 correct when the source syntax genuinely uses `=` (`KEY=value`, or a
 YAML-mangled single-pair mapping whose key text still contains a literal
@@ -43,9 +42,9 @@ away to nothing" already did. This also makes the embedded-newline and
 embedded-pipe cases moot: a leftover `\n` or `|` after the token fails
 the full-string match too, for the same reason a leftover `:` does.
 
-**Ruling R41 (round 2 of this fix): the token class was too narrow.**
-The first version of `_KEY_TOKEN_RE` only accepted `[A-Za-z_][A-Za-z0-9_]*`
-— a bare identifier. That silently dropped, with no warning, every
+**The token class must not be a bare identifier.** A version of
+`_KEY_TOKEN_RE` that only accepted `[A-Za-z_][A-Za-z0-9_]*`
+silently dropped, with no warning, every
 dotted or hyphenated key real compose files actually use (Elasticsearch/
 Kibana's own documented `environment:` shape: `ES_JAVA_OPTS`,
 `cluster.name`, `discovery.type`, `xpack.security.enabled`; also a
@@ -56,15 +55,15 @@ underscore, dot, hyphen — after a leading letter or underscore) restores
 those keys while changing nothing about what the fix actually closes:
 `:`, `/`, `@`, and whitespace are still outside the class and still
 cannot be absorbed by the token or by the trailing-whitespace match, so all three
-of the Critical's original reproductions (a `:`-delimited list-string
+of the leak's original reproductions (a `:`-delimited list-string
 value, a mapping key containing a colon, and the quoted-string variant)
-remain rejected — re-verified explicitly after this change, not assumed.
+remain rejected.
 
 Both `services.py` and `integrations.py` import from here rather than
 keeping their own copy. Fix it once, in the one place that both modules
 are required to use, and it cannot drift out of sync between them again.
 
-**`redact_userinfo` (task review, Important 2).** A second, unrelated
+**`redact_userinfo`.** A second, unrelated
 class of committed credential: a URL's own `user:pass@` (or bare
 `token@`) userinfo segment, sitting in plain sight in a PEP 508 direct-URL
 Python dependency, an npm `git+https://token@...` git dependency, an
@@ -85,14 +84,14 @@ import re
 # Matches an env-var-shaped token and *only* that token: optional leading
 # whitespace, an optional shell "export " prefix, then a key-shaped token
 # (a leading letter/underscore, then letters/digits/underscore/dot/hyphen
-# -- Ruling R41 widened this from a bare identifier to also accept the
+# -- wider than a bare identifier so it also accepts the
 # dotted/hyphenated keys real compose files use, e.g. Elasticsearch's
 # `cluster.name` or a hyphenated `MY-APP_TOKEN`), then optional trailing
 # whitespace. Used with `.fullmatch()`, never `.match()` -- the whole
 # remainder must be consumed, or the candidate is rejected outright
 # rather than truncated to its token-shaped prefix (see module
-# docstring: truncating instead of rejecting is exactly how the Critical
-# leaked a `:`-delimited value that happened to start with a real key --
+# docstring: truncating instead of rejecting is exactly how a secret
+# leaked: a `:`-delimited value that happened to start with a real key --
 # `:`, `/`, `@`, and whitespace are still outside the class, so widening
 # it does not reopen that leak).
 _KEY_TOKEN_RE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.\-]*)\s*")
@@ -105,7 +104,7 @@ def sanitize_env_key(raw: object) -> str:
     single-pair-mapping key that is actually the key. (3) Require the
     *entire* remainder to be a key-shaped token (`_KEY_TOKEN_RE`,
     full-string match — letters/digits/underscore/dot/hyphen after a
-    leading letter or underscore, Ruling R41) — a `:`-delimited value
+    leading letter or underscore) — a `:`-delimited value
     with no `=` at all, an embedded newline, or any other leftover text
     after the token means the candidate was never a clean key, so it is
     rejected, not truncated to its token-shaped prefix. Returns `""` for

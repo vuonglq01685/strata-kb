@@ -1,3 +1,12 @@
+"""llm — run a headless LLM CLI (`claude -p` or `copilot`) on one prompt.
+
+`detect_runner` picks the runner (CLI flag, then `index.yaml`'s `llm:`
+config, then whichever CLI is on PATH) and `Runner.run` makes one call,
+returning the reply text or raising `RunnerError`. The prompt always travels
+on stdin, never argv. Used by `kb summarize` and `kb ingest`'s
+auto-summarize step.
+"""
+
 from __future__ import annotations
 
 import json
@@ -10,10 +19,10 @@ from strata_kb.errors import KbError
 from strata_kb.models import LLMConfig
 
 # `claude -p` has no public effort flag; a thinking budget is the closest
-# supported knob for effort=high (spec §6 — best-effort). It scales with the
-# prompt: a fixed 31,999 per section paid the same for a two-line section as
-# for a 60,000-character one (2026-10-10 review §6.2 F12). Half the prompt's
-# characters (about twice its tokens), clamped.
+# supported knob for effort=high (best-effort). It scales with the prompt: a
+# fixed 31,999 per section would pay the same for a two-line section as for a
+# 60,000-character one. Half the prompt's characters (about twice its
+# tokens), clamped.
 HIGH_EFFORT_THINKING_TOKENS = "31999"
 MIN_THINKING_TOKENS = 4000
 MAX_THINKING_TOKENS = int(HIGH_EFFORT_THINKING_TOKENS)
@@ -40,7 +49,7 @@ class Runner:
 
         The prompt ALWAYS travels on stdin: an argv prompt is cut at the
         first newline and %VAR%-expanded by cmd.exe when the executable is
-        an npm `.cmd` shim on Windows (review B-1), and hits ARG_MAX on
+        an npm `.cmd` shim on Windows, and hits ARG_MAX on
         every platform for long sections.
 
         copilot: no `-p`/`--prompt` flag is passed — GitHub's docs say to
@@ -50,8 +59,7 @@ class Runner:
         automate-copilot-cli/run-cli-programmatically). `-p` takes a value
         (docs.github.com/en/copilot/reference/copilot-cli-reference/
         cli-programmatic-reference), so a bare `-p` would consume
-        `--model` as the prompt and ignore stdin entirely (controller
-        ruling R7)."""
+        `--model` as the prompt and ignore stdin entirely."""
         if self.name == "claude":
             cmd = [
                 self.executable,

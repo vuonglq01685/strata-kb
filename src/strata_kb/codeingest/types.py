@@ -2,7 +2,7 @@
 
 Every extractor imports these from here, never from `core`, so `core` can
 import the extractor registry at the top of its module instead of at the
-bottom (the import cycle the 2026-10-10 review §4.2 named).
+bottom, which would otherwise be an import cycle.
 """
 
 from __future__ import annotations
@@ -40,10 +40,10 @@ class CodeIngestOptions:
 
     def __post_init__(self) -> None:
         # A relative `kb_dir` is relative to the process CWD — the same
-        # rule every other `kb` command's --kb-dir follows (reviewer G-11
-        # replaced Ruling R23's repo-root resolution, which no help text
-        # documented and which wrote inside a repo the operator had not
-        # pointed at). `tree.walk_tree()` prunes an absolute kb_dir only
+        # rule every other `kb` command's --kb-dir follows. Do not resolve
+        # it against the repo root instead: no help text documented that,
+        # and it wrote inside a repo the operator had not pointed at.
+        # `tree.walk_tree()` prunes an absolute kb_dir only
         # when it lies inside repo_root, so a KB outside the repo is
         # simply not pruned — correct. `db_paths` keep resolving against
         # `repo_root`: a --db names a file inside the repository.

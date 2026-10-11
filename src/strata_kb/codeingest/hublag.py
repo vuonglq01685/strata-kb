@@ -1,5 +1,5 @@
 """Does the hub's `<repo_id>-code` match what the default branch would
-produce? (spec 2026-09-25 §4.3a)
+produce?
 
 Content, not commits: the intake opens no PR when nothing changed, so the
 hub's recorded commit may trail main legitimately. L3 only: it is the
@@ -67,7 +67,7 @@ def _worktree_db_paths(
     while CI (whose `repo_root` IS the checkout) writes the familiar
     `data/app.sqlite` label, so every schema section compares as "changed"
     even when nothing did. The database's CONTENT still comes from the real
-    checkout, never from the worktree's git tree (spec §4.3a step 2: a `--db`
+    checkout, never from the worktree's git tree (a `--db`
     path is data, not code, and `origin/main`'s commit never carries it) --
     only the path handed to code-ingest is relocated, so the label matches.
     """
@@ -84,7 +84,7 @@ def _worktree_db_paths(
             # continues for exactly this case; passing the path through
             # unchanged lets that same warning fire here instead of
             # `shutil.copyfile` raising and turning the whole check
-            # "unknown" (Important 5).
+            # "unknown".
             out.append(db_path)
             continue
         dest = work / rel
@@ -110,7 +110,7 @@ def check(
         )
     try:
         # origin/HEAD only -- never the branch that happens to be checked
-        # out (controller ruling: gitio.default_branch's fallback would
+        # out (gitio.default_branch's fallback would
         # otherwise let a feature branch stand in for "main" right after
         # `git remote add` + `push -u`, before anyone runs `git remote
         # set-head origin --auto`).

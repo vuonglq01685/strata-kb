@@ -1,5 +1,5 @@
 """Scan every ticket and mission for citations the hub has moved since they
-were pinned (2026-10-10 review H14).
+were pinned.
 
 `kb ticket lint` checks citations when a PR touches a ticket. A ticket that
 merged last month is never looked at again, though the hub keeps

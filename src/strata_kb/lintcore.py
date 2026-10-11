@@ -271,10 +271,10 @@ def check_headings(text: str, required: tuple[str, ...]) -> list[Issue]:
     `citation_scan_text` have always shared `FENCE_RE`. The verdict is
     unaffected in practice, because an unpaired fence also fails the diagram
     check, whose error names the offending section. Comments are stripped
-    BEFORE fences: a required section wrapped in '<!-- ... -->' (reviewer
-    E's G5) is invisible in the rendered document, so it must not count as
-    present either — templates ship guidance comments that BAs sometimes
-    leave in place instead of replacing with real content."""
+    BEFORE fences: a required section wrapped in '<!-- ... -->' is
+    invisible in the rendered document, so it must not count as present
+    either — templates ship guidance comments that BAs sometimes leave in
+    place instead of replacing with real content."""
     present = {line.strip() for line in _visible_text(text).splitlines()}
     return [
         Issue("error", f"missing required heading: '{heading}'")
@@ -416,7 +416,7 @@ def open_question_rows(text: str) -> list[str] | None:
 
 def check_open_question_owners(rows: list[str]) -> list[Issue]:
     """Warning per open-question row without an 'owner:' tag — an unknown
-    without an owner sits until a Dev trips over it (spec NT3)."""
+    without an owner sits until a Dev trips over it."""
     return [
         Issue(
             "warning",
@@ -478,17 +478,17 @@ REVIEW_ROUND_CAP = 3
 
 def check_review_record(text: str) -> list[Issue]:
     """'## Review record' missing, still empty, or still holding the
-    template placeholder is a warning — unchanged from before this task.
+    template placeholder is a warning.
 
     Once there is a real table, its SHAPE is checked at ERROR level: a
     malformed row, a wrong or missing header, no data rows at all, a
     non-'gap-verifier' reviewer in rounds 2-3 (the gap-verifier pass,
-    docs/review-rubric.md — round 4 and beyond are outside that pass and
+    docs/review-rubric.md — rounds 4 and beyond are outside that pass and
     are not held to it, since a 4th round is itself only a warning), or
     rounds that do not increase. A fabricated or hand-edited row should be
-    visible as a hard failure, not a silent pass — that is what let
-    reviewer E's T18 (`| 2026-09-08 | 1 | 5 | 5 |  |`, an empty reviewer
-    cell with a self-declared 5/5) through with no warning at all.
+    visible as a hard failure, not a silent pass — otherwise a row like
+    `| 2026-09-08 | 1 | 5 | 5 |  |` (an empty reviewer cell with a
+    self-declared 5/5) gets through with no warning at all.
 
     Once the shape is sound, its JUDGMENT stays at WARNING level: a score
     below the maturity threshold, or more than the rubric's 3-round cap.
@@ -861,7 +861,7 @@ def check_context_block(
     ref/citation checks are meaningless and are skipped).
 
     `fail_on_stale` promotes a stale ref from a warning to an error — the
-    default stays a warning (the 2026-07-17 spec's deliberate choice); the
+    default stays a warning (a deliberate choice); the
     flag exists so a caller (`kb ticket lint --fail-on-stale`) can opt in."""
     try:
         ctx = kbcontext.parse(text)

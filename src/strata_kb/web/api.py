@@ -1,3 +1,13 @@
+"""api — the read-only JSON routes under `/api/*`.
+
+`build_routes` returns the Starlette routes (health, doc list, manifest,
+section, search); `hub_handle`, `list_docs` and `load_manifest` are shared
+with the web UI. Every read goes through the federation hub cache, and a hub
+that cannot be resolved is reported as a 503 rather than an unhandled 500.
+All routes but `health` are plain `def` so Starlette runs them off the event
+loop.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -37,20 +47,17 @@ def hub_handle(config: ServerConfig):
     # below already treats None as "hub unreachable" (HUB_DOWN); folding the
     # exception into that same None reuses the guard every route already
     # has, instead of letting it crash the request as an unhandled 500.
-    # Same shape as mcp._hub (Wave G fix round 3).
+    # Same shape as mcp._hub.
     #
-    # N-6 (Wave G fix round 4 re-review, review-waveG-fix3-verdict.md and
-    # review-webapi-guard-verdict.md Important 1): a bare
-    # `except ... return None` here discarded the ONLY diagnostic -- a full
-    # locked-cache request sweep at DEBUG across all loggers produced zero
-    # strata_kb.* records. Worse, in that exact condition HUB_DOWN_DETAIL's
-    # "and no local cache" is false on both halves (the hub can be
-    # perfectly reachable, and the whole reason this raised is that a
-    # cache DOES exist -- it is merely locked); the detail text above was
-    # softened to stop asserting that. resolve_hub's own clone/pull
-    # failures already log at warning (see hub.py) -- match that shape
-    # instead of being one of the two silent guards (mcp._hub is the
-    # other, fixed identically).
+    # Log before returning None: a bare `except ... return None` would
+    # discard the ONLY diagnostic -- a locked-cache request sweep at DEBUG
+    # across all loggers would produce zero strata_kb.* records. In that
+    # exact condition "no local cache" would be false on both halves (the
+    # hub can be perfectly reachable, and the whole reason this raised is
+    # that a cache DOES exist -- it is merely locked), which is why
+    # HUB_DOWN_DETAIL does not assert it. resolve_hub's own clone/pull
+    # failures already log at warning (see hub.py); this matches that shape,
+    # as mcp._hub does.
     try:
         return resolve_hub(config.hub)
     except gitio.GitError as exc:
@@ -85,8 +92,8 @@ class SnapshotCorruptError(Exception):
     """A published snapshot's _manifest.yaml does not parse or validate.
 
     uidata._iter_manifests survives this (the doc simply does not list), so
-    /ui keeps working — but the doc routes used to propagate it into a bare
-    500 with no shell (M8).
+    /ui keeps working. The doc routes raise it so app.py's handler can answer
+    with a 503 (JSON or an error page) instead of a bare 500 with no shell.
     """
 
     def __init__(self, doc_id: str = "", detail: str = "") -> None:
@@ -128,16 +135,16 @@ def build_routes(config: ServerConfig) -> list[Route]:
     # threadpool. As `async def` they ran manifest parsing, hub resolution
     # (a git subprocess, a pull when the TTL expired) and file reads on the
     # event loop -- one slow page froze MCP and REST for every agent
-    # (2026-10-10 review §6.2 F3: /api/health took 9 s while /ui rendered).
+    # (/api/health took 9 s while /ui rendered).
     async def health(request: Request) -> JSONResponse:
-        # Fix round 3: this route is auth-exempt (EXEMPT_PATHS, auth.py) so
+        # This route is auth-exempt (EXEMPT_PATHS, auth.py) so
         # TokenAuthMiddleware never calls the limiter for it -- an
         # auth-varying body here would let a caller compare guesses against
         # the token at full, unmetered speed (measured: 20/20 wrong guesses
-        # -> 200, limiter never touched). The route does not vary by auth at
-        # all now; unauthenticated liveness (L22) is satisfied by returning
-        # liveness to everyone. hub_configured/hub_reachable stay available
-        # through the authenticated /ui and `kb doctor`.
+        # -> 200, limiter never touched). So the route does not vary by auth
+        # at all; unauthenticated liveness is satisfied by returning liveness
+        # to everyone. hub_configured/hub_reachable stay available through
+        # the authenticated /ui and `kb doctor`.
         return JSONResponse({"status": "ok"})
 
     def docs(request: Request) -> JSONResponse:
@@ -255,7 +262,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
                     # content_tokens, not tokens: this response carries only
                     # r.content, never r.snippet -- reporting the budget-spend
                     # figure (tokens) here would describe text the caller
-                    # never received (M17).
+                    # never received.
                     "tokens": r.content_tokens,
                     "content": r.content,
                     "source": r.source,

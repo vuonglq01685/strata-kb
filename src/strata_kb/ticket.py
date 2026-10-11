@@ -4,7 +4,7 @@ Single source of truth for the required-heading list and the User Story
 format that `ticketlint.py` enforces. `REQUIRED_HEADINGS` is a
 compatibility contract between the BA's local install, the shared MCP
 server, and CI — changing it is a breaking change (minor/major release
-only, changelog entry mandatory; see spec §3.6).
+only, changelog entry mandatory).
 
 English headings are fixed (the lint contract); ticket body text follows
 the BA's working language.
@@ -32,7 +32,7 @@ REQUIRED_HEADINGS: tuple[str, ...] = (
 RECOMMENDED_HEADINGS: tuple[str, ...] = (
     "## Dependencies",
     "## Out of scope",
-    "## Technical grounding",  # SA-owned (spec 2026-09-20-sa-grounding-design §3)
+    "## Technical grounding",  # SA-owned
     "## Open questions",
 )
 
@@ -99,7 +99,7 @@ STORY_PARTS_RE = re.compile(
 # '> Parent mission: M-<slug>' — an OPTIONAL back-link to a mission plan,
 # placed directly under the H1 title. Deliberately not a required
 # heading: REQUIRED_HEADINGS is a compatibility contract, so every
-# pre-existing ticket must keep passing without an edit (spec §4.4).
+# pre-existing ticket must keep passing without an edit.
 PARENT_MISSION_RE = re.compile(r"^>\s*Parent mission:\s*(\S+)\s*$", re.M)
 
 # Detects the '> Parent mission:' line regardless of whether it has a

@@ -1,9 +1,8 @@
 """`kb plan waves` engine — dependency waves of a dev plan.
 
 A `docs/impl/<ticket-id>/plan.md` written by `dev-plan` carries, per
-`### Task <n>` heading, a `Depends on:` line and a `**Files:**` list (spec
-2026-09-24-mission-next-greenfield-design §5). Two tasks with no dependency
-path between them must be file-disjoint — that is what lets `dev-execute`
+`### Task <n>` heading, a `Depends on:` line and a `**Files:**` list. Two
+tasks with no dependency path between them must be file-disjoint — that is what lets `dev-execute`
 run a wave in parallel worktree lanes and merge them back without conflict.
 This module checks that and computes the waves. Text in, errors and waves
 out; no filesystem, CLI or MCP imports.

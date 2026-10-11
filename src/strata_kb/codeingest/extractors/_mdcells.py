@@ -1,4 +1,4 @@
-"""The one shared L2 Markdown-table-cell escaper (task review, Important 3).
+"""The one shared L2 Markdown-table-cell escaper.
 
 **Why this module exists.** `api.py`, `commands.py`, `deps.py`,
 `integrations.py`, `schema.py`, and `services.py` each kept their own

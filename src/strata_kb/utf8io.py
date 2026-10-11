@@ -1,3 +1,10 @@
+"""utf8io — force the standard streams to UTF-8.
+
+`force_utf8_streams()` is called once at import time by `strata_kb.cli` and at
+startup by `strata_kb.mcp`, before anything is printed or read, so non-ASCII
+output and input survive Windows pipes and redirects.
+"""
+
 from __future__ import annotations
 
 import sys

@@ -101,8 +101,8 @@ def aggregate(
     """Fold ledger rows into totals sliced every way the report needs.
 
     `today` and `generated` are explicit parameters, not `date.today()` calls,
-    so the aggregate is deterministic and testable; Task 5's CLI passes the
-    real values in.
+    so the aggregate is deterministic and testable; the CLI passes the real
+    values in.
     """
     agg = Aggregate(
         total=Bucket(key="total"),
@@ -211,9 +211,8 @@ SUMMARY_MAX_PHASES = 6
 
 
 def render_summary(agg: Aggregate, ticket: str = "") -> str:
-    """The short `## Usage` block a PR body carries (2026-10-10 review B4):
-    one total line and at most SUMMARY_MAX_PHASES phase rows, the costliest
-    first. The full breakdown stays in `kb usage report`."""
+    """The short `## Usage` block a PR body carries: one total line and at
+    most SUMMARY_MAX_PHASES phase rows, the costliest first. The full breakdown stays in `kb usage report`."""
     subject = f" for {ticket}" if ticket else ""
     lines = [
         "## Usage",

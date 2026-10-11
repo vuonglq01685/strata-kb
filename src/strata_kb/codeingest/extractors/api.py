@@ -9,14 +9,14 @@ operation's own HTTP method and path are genuine, structural facts read
 straight off the document -- nothing here infers or guesses a route that
 isn't literally declared.
 
-**Security (never a secret channel, spec §3.11) -- the one sanctioned
-exception, and its limit (task review, Important 2).** An OpenAPI/Swagger
-document is committed source, not a runtime secret store: unlike a `.env`
-file or a compose `environment:` block (which may only ever contribute
-*key names*, never values -- `integrations.py` in this same task enforces
-that), this module reads and emits `servers[*].url` **as the literal URL
-text**. That is deliberate and the *only* place in either of this task's
-two extractors where a raw string value, not just a sanitised key name,
+**Security (never a secret channel) -- the one sanctioned exception, and
+its limit.** An OpenAPI/Swagger document is committed source, not a
+runtime secret store: unlike a `.env` file or a compose `environment:`
+block (which may only ever contribute *key names*, never values --
+`integrations.py` enforces that), this module reads and emits
+`servers[*].url` **as the literal URL text**. That is deliberate and the
+*only* place in this module or `integrations.py` where a raw string
+value, not just a sanitised key name,
 reaches rendered output -- because a server URL's host and path,
 describing where a committed, public API contract is hosted, is already
 public information, not a secret. That is **not** true of the URL's own
@@ -33,7 +33,7 @@ mapping), is a warning naming the file; every other file this extractor
 finds still contributes its own sections (matching deps.py/services.py/
 schema.py's discipline).
 
-**Tag-id collisions never abort the run (Important review finding).**
+**Tag-id collisions never abort the run.**
 `CodeSection.id` must be unique across the whole extractor set --
 `core.run()` raises a fatal `CodeIngestError` on any duplicate, which
 would abort the entire `kb code-ingest` command with no KB written at
@@ -46,19 +46,17 @@ genuine collision can be (a) warned about and (b) rendered as one merged
 section with a deterministic, name-derived display tag (the
 lexicographically smallest of the colliding spellings) -- never a
 crash. Merging, rather than inventing a disambiguating suffix the way
-`services.py` does for the analogous service-name collision (Rulings
-R30/R31), was chosen because `services.py`'s `svc.<name>` id is a
-public join key Stage C's `kb svc note` depends on staying unique per
-service -- `api.<tag>` carries no such downstream stability contract,
-so the extra complexity of a hash-suffix scheme isn't justified for
-what both the reviewer and this module's author agree is a very
-unlikely input shape.
+`services.py` does for the analogous service-name collision, was chosen
+because `services.py`'s `svc.<name>` id is a public join key
+`kb svc note` depends on staying unique per service -- `api.<tag>`
+carries no such downstream stability contract, so the extra complexity
+of a hash-suffix scheme isn't justified for a very unlikely input shape.
 
 **`ApiExtractor.detect(self, root)` cannot see `opts.kb_dir`** -- the same
 structural exception `deps.py`, `commands.py`, and `schema.py` document:
 the `Extractor` protocol's `detect()` is never passed `opts`, so
 `find_openapi_files()` is called with `kb_dir=None` there; `extract()`
-threads `opts.kb_dir` through (Ruling R24).
+threads `opts.kb_dir` through.
 """
 
 from __future__ import annotations
@@ -79,7 +77,7 @@ from strata_kb.codeingest.types import CodeIngestOptions, CodeSection, ExtractRe
 # The one "**/"-prefixed pattern matches its trailing filename glob at any
 # depth. Both shapes are resolved through `find_openapi_files()` below,
 # via `walk_tree`'s pruned, deterministic traversal -- never
-# rglob/glob/os.walk (Ruling R7).
+# rglob/glob/os.walk.
 API_GLOBS: tuple[str, ...] = (
     "openapi*.y*ml",
     "openapi*.json",
@@ -93,14 +91,14 @@ _METHODS: tuple[str, ...] = ("get", "post", "put", "patch", "delete", "head", "o
 
 def find_openapi_files(root: Path, kb_dir: Path | None) -> list[Path]:
     """Resolve `API_GLOBS` into matching files under `root`, through the
-    one pruned, deterministic `walk_tree` traversal (Ruling R7) instead of
+    one pruned, deterministic `walk_tree` traversal instead of
     a hand-rolled `rglob`/`glob`/`os.walk`. Exposed (not underscore-
     prefixed) so `integrations.py`'s `detect()` can ask "is there a
     committed OpenAPI/Swagger file here" without re-implementing this
     same mixed root-only/any-depth glob resolution a second time --
-    exactly the kind of duplicated logic that let Task B4's secret leak
-    survive two rounds of "fix the reported branch" before a shared
-    helper closed it for good.
+    exactly the kind of duplicated logic that let the compose env-key
+    secret leak survive repeated "fix the reported branch" patches until
+    a shared helper (`_envkeys.py`) closed it.
     """
     matches: set[Path] = set()
     for depth, reldir, filenames in walk_tree(root, kb_dir):
@@ -126,7 +124,7 @@ class _Operation:
 
 
 def _op_tag(op: dict) -> str:
-    """The brief's rule verbatim: the first entry of `tags`, or the
+    """The section-grouping rule: the first entry of `tags`, or the
     literal string `"surface"`. An empty/blank first tag, or a `tags`
     list that isn't a list of strings, is treated the same as "no tags at
     all" -- rather than fabricating a section id from a blank or
@@ -160,9 +158,9 @@ def _safe_tag_id(tag: str) -> str:
 def _display_tag(tag: str) -> str:
     """Rendered `title` text -- collapse any whitespace run (including a
     literal newline) to a single space, so a tag containing one can never
-    split the rendered `"## <id> <title>"` heading into two lines (Minor
-    review finding: an OpenAPI tag is free text an author could have
-    typed with an embedded newline). Unlike `_safe_tag_id`, this doesn't
+    split the rendered `"## <id> <title>"` heading into two lines (an
+    OpenAPI tag is free text an author could have typed with an embedded
+    newline). Unlike `_safe_tag_id`, this doesn't
     hyphenate -- `title` is prose, it only needs to stay one line."""
     collapsed = " ".join(tag.split())
     return collapsed if collapsed else "surface"
@@ -177,8 +175,8 @@ def _extract_servers(data: dict, rel: str, warnings: list[str]) -> list[str]:
     `"servers" in data` first (rather than `.get("servers", [])` then a
     truthiness check) is what makes that distinction correct -- a
     truthiness check alone would let a wrong-shaped-but-falsy value like
-    `servers: {}` slip through silently while `servers: {url: ...}` warned
-    (Minor review finding). A list entry that isn't a mapping with a
+    `servers: {}` slip through silently while `servers: {url: ...}` warned.
+    A list entry that isn't a mapping with a
     string `url` is skipped without its own warning -- one entry's shape
     doesn't invalidate the whole (correctly-typed) list."""
     if "servers" not in data:
@@ -190,7 +188,7 @@ def _extract_servers(data: dict, rel: str, warnings: list[str]) -> list[str]:
             if isinstance(entry, dict):
                 url = entry.get("url")
                 if isinstance(url, str) and url:
-                    # `redact_userinfo` (task review, Important 2): a
+                    # `redact_userinfo`: a
                     # committed `servers[*].url` may carry a `user:pass@`
                     # or bare `token@` credential -- a server URL's host
                     # and path are public information about a committed
@@ -293,15 +291,15 @@ def _read_openapi(
 def _render_section(
     tag_id: str, display_tag: str, ops: list[_Operation], servers: set[str]
 ) -> CodeSection:
-    # Brief's rule: group operations by tag, sorted by (path, method) --
-    # extended with (source, summary) as a tiebreak (Minor review
-    # finding) so the key is total for two operations sharing one
+    # Group operations by tag, sorted by (path, method) -- extended with
+    # (source, summary) as a tiebreak so the key is total for two
+    # operations sharing one
     # (path, method) under the same tag id but declared in different
     # files: without it, output order for that tie depended on
     # `sorted()`'s stability plus the *incidental* fact that this
     # module's own input ordering (sorted file list, in-file YAML
     # mapping order) already happened to be deterministic -- exactly the
-    # kind of implicit invariant this stage has been burned by before.
+    # kind of implicit invariant that is easy to break unnoticed.
     ops_sorted = sorted(ops, key=lambda o: (o.path, o.method, o.source, o.summary))
     servers_str = ", ".join(sorted(servers)) if servers else "none declared"
 
@@ -322,13 +320,12 @@ def _render_section(
 
     methods = ", ".join(sorted({o.method for o in ops_sorted}))
     files = ", ".join(sorted({o.source for o in ops_sorted}))
-    # Sanitised once, used for both title and summary -- round 2 review
-    # finding: title went through `_display_tag` but summary still
-    # interpolated the raw `display_tag`, so a tag containing a literal
-    # newline reached `summary` (and, via core.run(), _manifest.yaml)
-    # unsanitised even though the same newline could no longer split the
-    # rendered heading. Same field-sanitisation rule, applied to the one
-    # field the previous round missed.
+    # Sanitised once, used for both title and summary: interpolating the
+    # raw `display_tag` into `summary` would let a tag containing a
+    # literal newline reach `summary` (and, via core.run(),
+    # _manifest.yaml) unsanitised even though the same newline can no
+    # longer split the rendered heading. Same field-sanitisation rule for
+    # both fields.
     clean_tag = _display_tag(display_tag)
     summary = (
         f"API tag {clean_tag}: {len(ops_sorted)} operations ({methods}) from {files}."

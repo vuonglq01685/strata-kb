@@ -1,28 +1,28 @@
 """services extractor — one section per running container, cross-stack.
 
-`svc.<name>` is **the join key** the whole Dev feature is built on: Stage
-C's curated `-svc` document reuses these ids and `kb svc note` validates
+`svc.<name>` is **the join key** the whole Dev feature is built on: the
+curated `-svc` document reuses these ids and `kb svc note` validates
 ticket <-> service history against them, so a name emitted here becomes a
-stable public identifier (spec §3.12 — key by container manifest kind,
-never by language, which is why one extractor covers compose, Dockerfile,
-k8s and sln). The section id is `svc.<slug>`, where `<slug>` is normally
+stable public identifier (keyed by container manifest kind, never by
+language, which is why one extractor covers compose, Dockerfile, k8s and
+sln). The section id is `svc.<slug>`, where `<slug>` is normally
 `slugify_id(name)` but may carry a short deterministic suffix (a
-truncation-collision disambiguator, Ruling R30) or be a name-hash fallback
-(an all-punctuation/emoji/empty name that would otherwise slug to `""`,
-Ruling R31) — see `_assign_slugs()`. `title`, the L2 description, and
-`summary` all keep the real `name` verbatim regardless; only the id is
-ever slugified, so the human-readable, grep-able name is never lost even
-when the id had to be mangled or hashed (review findings 2-4).
+truncation-collision disambiguator) or be a name-hash fallback (an
+all-punctuation/emoji/empty name that would otherwise slug to `""`) —
+see `_assign_slugs()`. `title`, the L2 description, and `summary` all
+keep the real `name` verbatim regardless; only the id is ever slugified,
+so the human-readable, grep-able name is never lost even when the id had
+to be mangled or hashed.
 
 Five readers below share a uniform return shape, `(list[ServiceRecord],
 list[warning])`, and each degrades rather than raises: a malformed or
 wrong-shaped manifest becomes a warning naming the file, never a crash,
 and the other readers still run. `environment:` is read in both the
 mapping and `KEY=value` list forms, but only the *key* ever survives into
-a `ServiceRecord` — never the value (spec §3.11). The manifest kinds are
+a `ServiceRecord` — never the value. The manifest kinds are
 compose, Dockerfile, k8s, `.sln`, and a workspace `package.json`.
 
-Ruling R1 (controller): the Dockerfile fallback fires whenever the
+The Dockerfile fallback fires whenever the
 compose readers produced zero services — a parse failure counts as "no
 services", exactly like no compose file being present at all — so
 `extract()` decides the fallback from `_read_compose()`'s result, not
@@ -53,16 +53,15 @@ from strata_kb.codeingest.extractors.tree import IGNORED_DIRS, relposix, walk_tr
 from strata_kb.codeingest.types import CodeIngestOptions, CodeSection, ExtractResult
 from strata_kb.mdutils import slugify_id
 
-# Ruling R27: `compose.yaml` is the Compose Specification's preferred
+# `compose.yaml` is the Compose Specification's preferred
 # filename and what Docker Compose v2 scaffolds by default; `docker-
 # compose.yml` is the legacy/v1 name. Both are globbed and merged into one
 # sorted, de-duplicated listing so determinism never depends on which
-# pattern matched (Important review finding 7).
+# pattern matched.
 _COMPOSE_GLOBS = ("compose*.y*ml", "docker-compose*.y*ml")
 _K8S_KINDS = frozenset({"Deployment", "StatefulSet", "Service"})
 # Visual Studio's well-known project-type GUID for a Solution Folder — an
-# organisational grouping, never a buildable project. `_read_sln` skips it
-# (Important review finding 6).
+# organisational grouping, never a buildable project. `_read_sln` skips it.
 _SLN_FOLDER_TYPE_GUID = "{2150E333-8FDC-42A3-9474-1A3956D46DE4}"
 _SLN_PROJECT_RE = re.compile(r'^Project\("(\{[0-9A-Fa-f-]+\})"\)\s*=\s*"([^"]+)"')
 _PEP508_SPLIT_RE = re.compile(r"[><=!~\[;]")
@@ -77,14 +76,12 @@ class ServiceRecord:
     env_keys: list[str] = field(default_factory=list)
     source: str = ""  # the file this record came from, e.g. "docker-compose.yml"
     directory: str = ""  # the service's own code directory, when known
-    command: str = ""  # Dockerfile CMD/ENTRYPOINT as one shell line (Task 11)
+    command: str = ""  # Dockerfile CMD/ENTRYPOINT as one shell line
     env_files: list[str] = field(
         default_factory=list
     )  # compose env_file *names*, never opened
-    base_image: str = ""  # FROM of a built service (Task 11); feeds technology
-    volumes: list[str] = field(
-        default_factory=list
-    )  # compose named volumes, sorted (spec 2026-09-23 §4)
+    base_image: str = ""  # FROM of a built service; feeds technology
+    volumes: list[str] = field(default_factory=list)  # compose named volumes, sorted
     healthcheck: str = ""  # one-line `healthcheck.test`; "" = none; "disabled"
     devices: list[str] = field(
         default_factory=list
@@ -201,17 +198,17 @@ def _env_keys_from(value: object) -> list[str]:
     """Extract only the *keys* of an `environment:` block, de-duplicated
     and sorted so the result never depends on the source mapping's
     iteration order. The extraction and sanitisation rule itself now
-    lives in `_envkeys.env_keys_from` / `_envkeys.sanitize_env_key`
-    (Ruling R40, Task B7) — this module and `integrations.py` both
-    import from there rather than each keeping an independent copy.
+    lives in `_envkeys.env_keys_from` / `_envkeys.sanitize_env_key` —
+    this module and `integrations.py` both import from there rather than
+    each keeping an independent copy.
 
-    That rule has caused a Critical secret leak twice from two
-    separately-maintained copies of it: once here (Task B4, three
-    review rounds, each fixing one branch of a multi-branch function at
-    a time), and once in `integrations.py` (Task B7), whose author
-    copied this already-fixed function verbatim rather than importing
-    it — and inherited a *different* bug the round-3 fix here never had
-    to consider (a `:`-delimited value with no `=` at all was returned
+    That rule has caused a secret leak twice from two
+    separately-maintained copies of it: once here (each fix closing one
+    branch of a multi-branch function at a time), and once in
+    `integrations.py`, whose author copied this already-fixed function
+    verbatim rather than importing it — and inherited a *different* bug
+    the earlier fix here never had to consider (a `:`-delimited value
+    with no `=` at all was returned
     whole, credentials included, because the old rule only ever
     stripped text *after* an `=`). Both defects are now closed in the
     one place `_envkeys` lives, so this module has nothing left to fix
@@ -233,18 +230,17 @@ def _within_repo(root: Path, candidate: Path) -> bool:
     that still starts with `..` when `root` is merely a textual prefix of
     `candidate`'s parts followed by a `..` component (`root.glob("../*")`
     matches exactly this way, since `Path.glob` never collapses a
-    pattern's own `..` component) — that gap is I2. Deliberately not
+    pattern's own `..` component). Deliberately not
     `candidate.resolve().is_relative_to(root.resolve())`: resolving
     follows a symlink out of the repo before this check ever runs, which
     is precisely the divergence `_read_compose`'s build-context boundary
     (below) depends on catching (see
-    `test_dockerfile_symlink_segment_is_not_read_outside_the_repo`, I1) —
+    `test_dockerfile_symlink_segment_is_not_read_outside_the_repo`) —
     a symlinked segment must be judged by where it textually collapses
     to, not where the OS would actually follow it.
 
     Shared by that compose `build:` boundary and `_read_workspaces`'s
-    workspace-glob boundary (I2) — one boundary rule, used both places,
-    per the review's recommendation 4."""
+    workspace-glob boundary — one boundary rule, used both places."""
     normalised = Path(os.path.normpath(candidate))
     try:
         normalised.relative_to(root)
@@ -274,9 +270,9 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
     """Every `compose*.y*ml` or `docker-compose*.y*ml` directly at the
     repo root (overrides and profile files live there by convention,
     never nested — this is a plain directory listing, not a recursive
-    walk, so R7 doesn't apply). A parse failure, or a wrong-shaped
-    top-level document, warns naming the file and contributes zero
-    services for it; per Ruling R1 the caller treats that the same as no
+    walk, so `walk_tree` pruning doesn't apply). A parse failure, or a
+    wrong-shaped top-level document, warns naming the file and
+    contributes zero services for it; the caller treats that the same as no
     compose file at all."""
     records: list[ServiceRecord] = []
     warnings: list[str] = []
@@ -321,7 +317,7 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
             if not image and build is not None:
                 # A `build:` service has no image name, but it has a
                 # Dockerfile — and that Dockerfile's runtime stage, EXPOSE
-                # and CMD are the knowledge a reader wants (reviewer G-8:
+                # and CMD are the knowledge a reader wants (without them,
                 # aero's own hub service rendered an empty image).
                 context, dockerfile_path = _resolve_build(path.parent, build)
                 # normpath (not resolve) collapses `./` and `../` textually
@@ -330,22 +326,22 @@ def _read_compose(root: Path) -> tuple[list[ServiceRecord], list[str]]:
                 # both use `normalised`, never `dockerfile_path` — a
                 # symlink in a collapsed segment can't pull in a file from
                 # outside the repo while labelling it as the checked
-                # in-repo path (re-review finding 3).
+                # in-repo path.
                 normalised = (
                     Path(os.path.normpath(dockerfile_path))
                     if dockerfile_path is not None
                     else None
                 )
-                # Fix wave finding 1 (previous wave): a build context that
+                # A build context that
                 # escapes the repo root (e.g. `build: ../outside`) must
                 # never render this machine's absolute path — that breaks
                 # Determinism (same repo, two machines, different
                 # documents) and leaks this machine's filesystem layout.
-                # Declined by policy: no read. Kept as its own wording
-                # (re-review finding 2), distinct from a genuinely missing
+                # Declined by policy: no read. Kept as its own wording,
+                # distinct from a genuinely missing
                 # Dockerfile below — the file often exists, it was
                 # deliberately not read, and the document should say which
-                # situation this is. `_within_repo` (I2) is the same
+                # situation this is. `_within_repo` is the same
                 # boundary check `_read_workspaces` uses further down this
                 # module; this call site keeps its own `normalised`/
                 # `dockerfile_rel` bookkeeping around it rather than
@@ -433,13 +429,12 @@ def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
     keeping only its *last* occurrence, Docker's own rule for repeats)
     and joined with a space when both are present — Docker runs
     ENTRYPOINT with CMD concatenated on as its default arguments; either
-    one alone is unchanged (fix wave finding 2: `last CMD/ENTRYPOINT`
-    silently dropped ENTRYPOINT's executable whenever both were set).
-    Both reset at each new `FROM` — a build/dev stage's directive never
-    runs in the real container, so it must never join the runtime
-    stage's (re-review finding 1: tracking two variables without
-    resetting them let a non-final stage's directive leak into the
-    final command). Continuations joined.
+    one alone is unchanged (a single `last CMD/ENTRYPOINT` would silently
+    drop ENTRYPOINT's executable whenever both are set). Both reset at
+    each new `FROM` — a build/dev stage's directive never runs in the
+    real container, so it must never join the runtime stage's (without
+    the reset, a non-final stage's directive leaks into the final
+    command). Continuations joined.
 
     `FROM` and the resulting command are attacker-adjacent content — a
     registry reference or a command line can carry a `user:pass@` — so
@@ -473,7 +468,7 @@ def _parse_dockerfile(text: str) -> tuple[str, list[str], str]:
 
 
 def _read_dockerfile(root: Path, repo_id: str) -> tuple[list[ServiceRecord], list[str]]:
-    """A root `Dockerfile`, read only as the Ruling-R1 fallback (the
+    """A root `Dockerfile`, read only as the compose fallback (the
     caller only calls this when `_read_compose()` produced zero
     services). Yields one service named `repo_id`."""
     path = root / "Dockerfile"
@@ -522,8 +517,8 @@ def _first_container(containers: object) -> tuple[str, list[str]]:
 
 
 def _read_k8s(root: Path, kb_dir: Path | None) -> tuple[list[ServiceRecord], list[str]]:
-    """`*.y*ml` under any directory, pruned via `walk_tree` (Ruling R7 —
-    a bare recursive glob would re-parse the KB's own generated output and
+    """`*.y*ml` under any directory, pruned via `walk_tree` (a bare
+    recursive glob would re-parse the KB's own generated output and
     vendored charts). Reads with `yaml.safe_load_all` since a manifest may
     hold more than one `---`-separated document; only documents whose
     `kind` is Deployment/StatefulSet/Service become a service, named from
@@ -598,7 +593,7 @@ def _read_sln(root: Path) -> tuple[list[ServiceRecord], list[str]]:
     a folder is an organisational grouping in Visual Studio, not a
     buildable project; without this filter every folder name (commonly
     `src`, or a literal `Solution Items`) becomes a permanent public
-    `svc.<name>` join key (Important review finding 6). No image, ports,
+    `svc.<name>` join key. No image, ports,
     or depends_on are recoverable from a solution file alone; those
     fields stay empty rather than guessed."""
     records: list[ServiceRecord] = []
@@ -635,11 +630,10 @@ def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
     named from that package's `name` (else the directory name -- or,
     when the match is the repo root itself, `repo_id`; see the `name =`
     assignment below), with `directory` set so the Technology column
-    reads the package's own dependencies. Listed in the spec and README
-    from the start, never implemented (reviewer G-6); without it a Node
-    monorepo has no `svc.*` and no Stage-D join key. A workspace glob
-    that resolves outside `--repo-root` (`_within_repo`) is rejected
-    with a warning, never read (I2) -- the same boundary the compose
+    reads the package's own dependencies. Without it a Node monorepo has
+    no `svc.*` and no join key. A workspace glob that resolves outside
+    `--repo-root` (`_within_repo`) is rejected with a warning, never
+    read -- the same boundary the compose
     `build:` context above already enforces."""
     path = root / "package.json"
     if not path.is_file():
@@ -672,7 +666,7 @@ def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
             if not match.is_dir():
                 continue
             if not _within_repo(root, match):
-                # I2: `Path.glob` accepts a `..` component in `pattern`
+                # `Path.glob` accepts a `..` component in `pattern`
                 # (`root.glob("../secret*")` matches a sibling directory)
                 # and `relposix()`/`Path.relative_to()` alone would not
                 # catch it -- see `_within_repo`'s docstring. Never render
@@ -686,17 +680,17 @@ def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
                     "is outside the repository; not read"
                 )
                 continue
-            # R2-4 (re-review round 2): `match` itself can still carry a
+            # `match` itself can still carry a
             # literal, un-normalised `..` component even once it has
             # passed `_within_repo` above -- `../*` matching the repo
             # root itself is exactly this case (`_within_repo` judges
             # the *normalised* path, which is `root`, but `match` is
             # literally `root/../<checkout-dir-name>`). Publishing
-            # `relposix(root, match)` verbatim put this checkout's own
-            # directory name into the published `-code` document, so two
-            # clones into differently-named directories produced
-            # different output -- a determinism break, the exact class
-            # I2 (this same function) was opened to close. Deriving
+            # `relposix(root, match)` verbatim would put this checkout's
+            # own directory name into the published `-code` document, so
+            # two clones into differently-named directories would produce
+            # different output -- a determinism break, the same class the
+            # `_within_repo` check exists to close. Deriving
             # `rel_dir`/`pkg`/`name` from the same normalised path
             # `_within_repo` already judged keeps the published path
             # free of anything checkout- or machine-specific.
@@ -708,9 +702,9 @@ def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
             if not pkg.is_file() or rel_dir in seen:
                 continue
             seen.add(rel_dir)
-            # R3-3 (re-review round 3): when `match` is the repo root
+            # When `match` is the repo root
             # itself (`rel_dir == "."` -- the `../*`-matches-`root` case
-            # R2-4 already normalises), `normalised.name` is the
+            # normalised above), `normalised.name` is the
             # CHECKOUT DIRECTORY's own basename: machine-dependent,
             # since nothing constrains what a clone is named, and
             # normalising the path can't help -- the normalised path *is*
@@ -743,7 +737,7 @@ def _read_workspaces(root: Path, repo_id: str) -> tuple[list[ServiceRecord], lis
 
 
 # ---------------------------------------------------------------------------
-# de-duplication and id assignment (Rulings R30, R31)
+# de-duplication and id assignment
 # ---------------------------------------------------------------------------
 
 _NAME_NORMALIZE_RE = re.compile(r"[\W_]+")
@@ -752,13 +746,13 @@ _NAME_NORMALIZE_RE = re.compile(r"[\W_]+")
 def _normalize_name(name: str) -> str:
     """The same normalization `mdutils.slugify_id` applies (NFKC,
     `[\\W_]+` -> `-`, strip, lower) but WITHOUT its 40-char cap. Used as
-    the *dedupe* key (Ruling R30 part 1) so `api_gateway` and
+    the *dedupe* key so `api_gateway` and
     `api-gateway` (spelling drift — DNS-1123 forbids underscores in k8s
-    names but compose allows them) still merge, exactly as before, while
+    names but compose allows them) still merge, while
     two distinct 40+ character names that only coincide *after*
     truncation are correctly treated as different services and are never
-    silently merged (that used to delete one of them with zero
-    warnings — Important review finding, round 2)."""
+    silently merged (that would delete one of them with zero
+    warnings)."""
     text = unicodedata.normalize("NFKC", name)
     return _NAME_NORMALIZE_RE.sub("-", text).strip("-").lower()
 
@@ -766,7 +760,7 @@ def _normalize_name(name: str) -> str:
 def _dedupe_key(name: str) -> str:
     """`_normalize_name(name)`, except when that normalizes away to an
     empty string (a name made entirely of punctuation/emoji/underscores,
-    or an empty raw name — Ruling R31) — then the raw name itself is the
+    or an empty raw name) — then the raw name itself is the
     key, so two *different* degenerate names (`"+++"` vs `"..."`, both
     normalizing to `""`) are not forced to merge just because they share
     an empty normalized form."""
@@ -775,7 +769,7 @@ def _dedupe_key(name: str) -> str:
 
 
 def _safe_slug(name: str) -> str:
-    """`slugify_id(name)`, guaranteed non-empty (Ruling R31). A name made
+    """`slugify_id(name)`, guaranteed non-empty. A name made
     entirely of punctuation/emoji/underscores (or an empty raw name, e.g.
     a compose `services: {"": {...}}` key) normalizes to `""` via
     `slugify_id`'s own regex, which would ship the degenerate public join
@@ -791,9 +785,9 @@ def _safe_slug(name: str) -> str:
 def _stable_suffix(seed: str) -> str:
     """A short suffix derived only from `seed` (the record's own full
     normalized name) — never from sibling order or an index — so a
-    truncation-collision disambiguation (Ruling R30 part 3) never shifts
+    truncation-collision disambiguation never shifts
     a service's id when an unrelated sibling service is added or
-    removed. Stage C's `kb svc note` validates ticket <-> service history
+    removed. `kb svc note` validates ticket <-> service history
     against this id, so its stability matters more than its brevity."""
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:6]
 
@@ -801,23 +795,23 @@ def _stable_suffix(seed: str) -> str:
 def _dedupe(records: list[ServiceRecord]) -> tuple[list[ServiceRecord], list[str]]:
     """De-duplicates on `_dedupe_key(rec.name)` — the *untruncated*
     normalized name, never the raw name and never the (possibly
-    truncated) id slug (Important review finding 2 / Ruling R30).
+    truncated) id slug.
 
     First occurrence wins, EXCEPT when the record kept so far has no
     image and a later record for the same key does: a bare k8s `Service`
     document commonly lists before its `Deployment` (a `01-service.yaml`
     / `02-deployment.yaml` layout), and letting an image-less `Service`
-    permanently shadow the real image was a silent data-loss bug
-    (Important review finding 5, round 1). The fix only *fills* the
+    permanently shadow the real image would be silent data loss. This
+    only *fills* the
     image field via `dataclasses.replace` — it does NOT swap in the
     later record wholesale, which would silently discard the kept
     record's `ports`/`depends_on`/`env_keys` and re-attribute its
-    `source` (Important review finding, round 2): a compose service with
+    `source`: a compose service with
     neither `image:` nor `build:` has `image == ""` but real
     ports/depends_on/environment, and a later k8s record that only
     supplies the image must not erase them. (`build:` itself always
-    yields a descriptive, non-empty image string as of Task 11/G-8 —
-    see `_resolve_build`/`_parse_dockerfile` — so it no longer reaches
+    yields a descriptive, non-empty image string —
+    see `_resolve_build`/`_parse_dockerfile` — so it does not reach
     this path, but the same fill-not-swap guarantee still matters for
     any other reader that legitimately produces an empty image.)
 
@@ -825,8 +819,8 @@ def _dedupe(records: list[ServiceRecord]) -> tuple[list[ServiceRecord], list[str
     k8s, sln), so absent the image-fill override this still naturally
     prefers the compose record — the one closest to what actually runs.
     Warns on the image fill (so it's visible, not silent), on two
-    non-empty images actually disagreeing, and — per Ruling R30 part 4 —
-    on every merge where the raw names differ, so a same-normalized-but-
+    non-empty images actually disagreeing, and on every merge where the
+    raw names differ, so a same-normalized-but-
     differently-spelled merge (`api_gateway`/`api-gateway`) is always
     visible even when neither of the other two conditions applies."""
     kept: dict[str, ServiceRecord] = {}
@@ -872,20 +866,18 @@ def _assign_slugs(records: list[ServiceRecord]) -> tuple[list[str], list[str]]:
     """One safe, unique id slug per (already-deduped) record — parallel
     to `records`.
 
-    Ruling R30 part 3 requires the disambiguation suffix to come only
-    from a record's own full normalized name — "never from sibling order
-    or an index" — specifically so a service's id never shifts merely
-    because an unrelated sibling was added or removed in some run. An
-    earlier version of this function only added a suffix when it
-    detected an *actual* collision among the records passed in for that
-    one call — which technically doesn't use sibling order or an index,
-    but still means the presence of the suffix depends on which siblings
-    happen to be present, which is exactly the instability R30 part 3
-    rules out (caught by
-    `test_truncation_collision_id_is_stable_when_a_sibling_is_removed`
-    reverting to that approach).
+    The disambiguation suffix must come only from a record's own full
+    normalized name — never from sibling order or an index — so a
+    service's id never shifts merely because an unrelated sibling was
+    added or removed in some run. Do not add a suffix only when an
+    *actual* collision is detected among the records passed in for one
+    call: that technically doesn't use sibling order or an index, but
+    still makes the presence of the suffix depend on which siblings
+    happen to be present, which is exactly the instability to avoid
+    (`test_truncation_collision_id_is_stable_when_a_sibling_is_removed`
+    catches that approach).
 
-    The per-record pass below fixes that: whether a record's id gets a
+    The per-record pass below avoids it: whether a record's id gets a
     suffix depends *only* on that record's own normalized name length
     relative to `_ID_CAP` — never on whether any other record happens to
     share the same truncated prefix in this particular run. Every name
@@ -900,10 +892,9 @@ def _assign_slugs(records: list[ServiceRecord]) -> tuple[list[str], list[str]]:
     truncation-length prefix of the long one, and the long one's
     mandatory suffix breaks that tie too.
 
-    What the per-record pass does NOT cover — a prior version of this
-    docstring overclaimed "collision-free by construction, no need to
-    inspect siblings at all", which was wrong (review finding, round 3):
-    `_safe_slug()`'s Ruling R31 hash fallback (`"unnamed-<sha256[:8]>"`,
+    What the per-record pass does NOT cover — it is not "collision-free
+    by construction, no need to inspect siblings at all":
+    `_safe_slug()`'s hash fallback (`"unnamed-<sha256[:8]>"`,
     used when a name normalizes to `""`) shares its plain-string output
     format with ordinary slugs, so it can coincide with a REAL service
     that happens to be named exactly that fallback string (e.g. one
@@ -931,7 +922,7 @@ def _assign_slugs(records: list[ServiceRecord]) -> tuple[list[str], list[str]]:
             final = base
         slugs.append(final)
 
-    # Final uniqueness pass: closes the R31-hash-fallback-namespace
+    # Final uniqueness pass: closes the `_safe_slug` hash-fallback-namespace
     # collision above (and, incidentally, the residual birthday-paradox
     # risk of `_stable_suffix`'s 24-bit space) without ever choosing
     # which colliding record keeps the unsuffixed form.
@@ -958,8 +949,8 @@ def _assign_slugs(records: list[ServiceRecord]) -> tuple[list[str], list[str]]:
 
 
 # Infrastructure images have no dependency manifest to read; label them by
-# repository name (reviewer G-8: Technology was `none` on every service in
-# every fixture). Matched on the image's base name, exactly.
+# repository name (otherwise Technology is `none` on every such service).
+# Matched on the image's base name, exactly.
 _INFRA_IMAGES: dict[str, str] = {
     "postgres": "PostgreSQL",
     "postgresql": "PostgreSQL",
@@ -1004,7 +995,7 @@ def _dep_names_from_directory(directory: Path) -> list[str]:
     Technology column. Deliberately narrower than `deps.DepsExtractor` —
     it only labels a service's stack, so a parse failure degrades to an
     empty list silently rather than a warning; the four readers above are
-    the ones the brief holds to a warn-by-name contract."""
+    the ones held to a warn-by-name contract."""
     names: list[str] = []
 
     package_json = directory / "package.json"
@@ -1079,22 +1070,22 @@ def _lead_sentence(name: str, record: ServiceRecord) -> str:
 
 
 def _render_section(root: Path, record: ServiceRecord, slug: str) -> CodeSection:
-    # Important review findings 2-4: only the id is slugified
+    # Only the id is slugified
     # (`mdutils._HEADING_RE` requires the id token to be `\S+`, and
     # `slugify_id` — unlike `mdutils.slugify` — keeps non-ASCII scripts
     # intact instead of collapsing them to an empty string). `title`, the
     # L2 description, and `summary` all keep `record.name` verbatim, so
     # the real, grep-able name still appears somewhere in the emitted
     # document even when the id had to be mangled. `slug` is precomputed
-    # by `_assign_slugs()` (Rulings R30/R31), not derived here, so a
-    # truncation-collision disambiguation or an R31 empty-name fallback
+    # by `_assign_slugs()`, not derived here, so a
+    # truncation-collision disambiguation or an empty-name hash fallback
     # is visible to the caller across the whole record set at once.
     name = record.name
-    # New Important review finding (round 3): a raw name that is empty
+    # A raw name that is empty
     # or all-whitespace (e.g. a compose `services: {"": {...}}` key)
     # makes `_safe_slug()`'s hash fallback keep the *id* non-empty, but
-    # `title` (kept verbatim from `name` for every other input, per
-    # findings 2-4 above) would still be `""` — an unparseable
+    # `title` (kept verbatim from `name` for every other input, as
+    # above) would still be `""` — an unparseable
     # `"## svc.<hash> "` heading with no title token at all, which
     # `kb build` rejects even though the id itself now looks fine.
     # `title` falls back to the already-unique, already-non-empty `slug`
@@ -1181,9 +1172,9 @@ class ServicesExtractor:
     name = "services"
 
     def detect(self, root: Path) -> bool:
-        # Minor review finding: without the `.is_file()` filter, a
-        # *directory* named like a compose/sln file made `detect()` True
-        # while `extract()` (which does filter) returned nothing.
+        # Without the `.is_file()` filter, a *directory* named like a
+        # compose/sln file would make `detect()` True while `extract()`
+        # (which does filter) returns nothing.
         if any(p.is_file() for pattern in _COMPOSE_GLOBS for p in root.glob(pattern)):
             return True
         if (root / "Dockerfile").is_file():
@@ -1220,7 +1211,7 @@ class ServicesExtractor:
         if compose_records:
             records = list(compose_records)
         else:
-            # Ruling R1: compose producing zero services — whether from no
+            # Compose producing zero services — whether from no
             # compose file, or a parse failure just warned about above —
             # is what triggers the Dockerfile fallback.
             try:
@@ -1262,7 +1253,7 @@ class ServicesExtractor:
         merged, dedupe_warnings = _dedupe(records)
         warnings.extend(dedupe_warnings)
 
-        # One safe, unique id slug per deduped record (Rulings R30/R31),
+        # One safe, unique id slug per deduped record,
         # computed once over the whole set so a truncation collision
         # between two siblings can be detected and disambiguated.
         slugs, slug_warnings = _assign_slugs(merged)

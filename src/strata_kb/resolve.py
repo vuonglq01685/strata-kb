@@ -1,3 +1,13 @@
+"""resolve — turn a ticket's kb-context refs into pinned, checked content.
+
+`resolve_refs` reads each `repo:doc §section` ref at the block's pinned hub
+commit and compares it with the hub's current worktree: `ok`, `stale` (the
+text was amended) or `broken` (the target is gone or unreadable, which CI
+must be able to block on). Also owns the per-ticket context cache
+(`docs/impl/<ticket-id>/context.md`) and its tamper check. Used by the CLI,
+the MCP server, `kb doctor` and `kb ticket stale`.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -50,9 +60,9 @@ BAD_MANIFEST = "bad-manifest"
 def _worktree_section(kb_dir: Path, ref: KBRef) -> tuple[str | None, str]:
     """(content, problem). `problem` is '' when the content was read.
 
-    Reviewer C F-C6: this used to return None for all three failures, so
-    `_resolve_one` collapsed "the cited standard section no longer exists" into
-    the same `stale` bucket as "someone reworded a sentence"."""
+    The problem is reported, not folded into None: otherwise `_resolve_one`
+    would collapse "the cited standard section no longer exists" into the same
+    `stale` bucket as "someone reworded a sentence"."""
     manifest_path = kb_dir / ref.doc_id / "_manifest.yaml"
     if not manifest_path.exists():
         return None, MISSING_DOC
@@ -137,7 +147,7 @@ def _resolve_one(
     }
     if problem:
         # broken, not stale: CI must be able to BLOCK on a citation whose target
-        # is gone, and must not treat it like an amendment (F-C6). The pinned
+        # is gone, and must not treat it like an amendment. The pinned
         # bytes still resolve, so they travel with the failure.
         return ResolvedRef(
             ref=ref,
@@ -179,9 +189,9 @@ def resolve_refs(hub: HubHandle, ctx: KBContext) -> list[ResolvedRef]:
         return [_broken(ref, reason, pinned_rev=ctx.version) for ref in ctx.refs]
 
     if ctx.hub_version and ctx.hub_version != ctx.version:
-        # F-C6 nit: `hub_version` was parsed and never read, so a legacy
-        # two-version block whose `version` happened to be a real hub commit
-        # resolved silently as ok — pinning something nobody chose.
+        # `hub_version` must be checked, not just parsed: otherwise a legacy
+        # two-version block whose `version` happens to be a real hub commit
+        # resolves silently as ok — pinning something nobody chose.
         reason = (
             f"kb-context carries both version {ctx.version} and hub_version "
             f"{ctx.hub_version} — a legacy two-version block; re-pin with "
@@ -241,7 +251,7 @@ def render_resolved(results: list[ResolvedRef], include_content: bool = True) ->
     return "\n".join(parts).strip()
 
 
-# --- Context cache (docs/impl/<ticket-id>/context.md), reviewer F H3 --------
+# --- Context cache (docs/impl/<ticket-id>/context.md) ----------------------
 # The CLI owns everything above CACHE_MARKER (header + resolved sections);
 # the agent owns the `## Placeholder map` below it. The sha256 covers the
 # bytes between the "## Resolved sections" heading line and the marker line,

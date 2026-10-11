@@ -29,25 +29,25 @@ def _kb_tree_digest(
     That is the same pair of roots `publish._snapshot` builds its two
     manifests against, which is what makes the relative paths below
     comparable, and what makes handing them to `is_kb_artifact` correct
-    (Ruling P40: the path must be relative to the entry whose artefacts are
-    being judged, never to some other root).
+    (the path must be relative to the entry whose artefacts are being
+    judged, never to some other root).
 
     Two exclusions, for two different reasons:
 
     * `_meta.yaml` is snapshot-only -- written by `_snapshot` on the hub
       side, never present locally -- so it would differ on every healthy
       pair.
-    * Ruling P54: everything `pubgate.is_kb_artifact()` refuses. `_snapshot`
-      filters the local manifest through exactly that predicate before
-      diffing, so a file it refuses can never reach the hub -- `config.yaml`
-      above all, which this batch's own credential-leak fix stopped
-      publishing, and which `kb init` writes into every real KB. Hashing it
-      here made the two sides permanently unequal and produced a warning no
-      operator could ever clear, on advice ("run `kb publish`") naming the
-      command they had just run. Calling the predicate rather than keeping a
-      second hand-maintained exclusion list beside it is the point: the next
-      change to what publish strips cannot desynchronise the two again.
-      (`_assets.yaml` falls out of the same call -- it is hub-owned
+    * Everything `pubgate.is_kb_artifact()` refuses. `_snapshot` filters
+      the local manifest through exactly that predicate before diffing, so
+      a file it refuses can never reach the hub -- `config.yaml` above
+      all, which publish never mirrors (it can hold credentials) and which
+      `kb init` writes into every real KB. Hashing it here would make the
+      two sides permanently unequal and produce a warning no operator
+      could ever clear, on advice ("run `kb publish`") naming the command
+      they had just run. Calling the predicate rather than keeping a
+      second hand-maintained exclusion list beside it is the point: the
+      next change to what publish strips cannot desynchronise the two
+      again. (`_assets.yaml` falls out of the same call -- it is hub-owned
       bookkeeping `divert_and_record` writes, and `_snapshot` excludes it
       from the destination manifest by name for that reason.)
 
@@ -56,24 +56,19 @@ def _kb_tree_digest(
     it, with the "delete them on the hub, and rotate any credential they
     contain" advice that shape actually needs.
 
-    Item 7's second, milder finding (wave L1 brief): that advice is stale
-    for a stray inside a recognized entry -- a republish from that entry's
-    own source repo already deletes it (the same diff/apply_sync mechanism
-    this digest mirrors), so "kb doctor: OK" beside that warning does not
-    mean the next publish is a no-op. The slim-layout stray sweep's
-    message was corrected (it says so and names the remedy: republish
-    upgrades the entry and clears the stray automatically, rotate the
-    credential regardless). The leaf-entry stray sweep's message was
-    measured to be exactly `tests-gate/conftest.py`'s
-    LEGACY_CONFIG_MIRROR_WARNING golden-fixture string -- a real, currently
-    running regression assertion this wave does not own and must not touch
-    -- so it is left with the stale wording rather than reached into
-    forbidden territory; the finding is real and reported, not silently
-    dropped.
+    That advice is stale for a stray inside a recognized entry: a republish
+    from that entry's own source repo already deletes it (the same
+    diff/apply_sync mechanism this digest mirrors), so "kb doctor: OK"
+    beside that warning does not mean the next publish is a no-op. The
+    slim-layout stray sweep's message says so and names the remedy
+    (republish upgrades the entry and clears the stray automatically;
+    rotate the credential regardless). The leaf-entry stray sweep's message
+    still has the older wording because it is pinned verbatim by
+    `tests-gate/conftest.py`'s LEGACY_CONFIG_MIRROR_WARNING golden fixture;
+    change the two together.
 
-    `synthesized` (item 7, wave L1 brief -- ruling P54's other half):
-    caller-supplied {relpath: sha256hex}, merged in on top of the files
-    actually found on disk under `root`, exactly the way
+    `synthesized`: caller-supplied {relpath: sha256hex}, merged in on top
+    of the files actually found on disk under `root`, exactly the way
     publish._snapshot's `dest_man.update(assetstore.synthesized_asset_
     entries(dest))` merges into its own destination manifest before
     diffing. Without this, an asset diverted to an object store -- its
@@ -81,30 +76,30 @@ def _kb_tree_digest(
     it -- is simply absent from this function's walk of the hub-side
     root, so the hub-side digest permanently differs from the local one
     (which still holds the real bytes on disk) on any hub with an asset
-    store: `_snapshot` and this check agreed on the *predicate* for what
-    counts (`is_kb_artifact`) but not on *what a diverted asset's
-    physical absence means*, so the earlier P54 fix left this half open
-    and reproduced P54's own symptom -- a warning that never clears, on
-    advice naming the command the operator just ran.
+    store. Agreeing with `_snapshot` on the *predicate* for what counts
+    (`is_kb_artifact`) is not enough; the two must also agree on *what a
+    diverted asset's physical absence means*, or the check reproduces the
+    same symptom -- a warning that never clears, on advice naming the
+    command the operator just ran.
 
-    This is WHY the digest is now built as a {relpath: sha256-of-content}
+    This is WHY the digest is built as a {relpath: sha256-of-content}
     manifest (hashed once more, aggregated, at the end) rather than a
     single running hash over raw bytes read in file order: `synthesized`
     only ever knows a diverted asset's sha (asset_sha, read from its
     content-addressed filename -- spec A guarantees filename sha ==
     sha256(bytes), so this is exact, not an approximation), never its
     raw bytes (they are gone from this tree by construction), so there
-    is no way to fold it into a single ongoing byte-stream hash the way
-    the previous version did. A manifest entry is comparable on equal
-    footing whether its sha256 came from hashing real bytes or from
-    reading a content-addressed filename -- hashsync.build_manifest /
-    diff_manifests already rely on exactly that equivalence for
-    `_snapshot`'s own diff, so this mirrors it rather than inventing a
-    second notion of "what should be there". `synthesized` is caller-
-    supplied, not computed here, because it must come from the SAME
-    store `_snapshot` itself would resolve (assetstore.store_for_hub)
-    and only ever applies to the hub-side call -- the local `.kb/` side
-    has no asset store of its own to synthesize against.
+    is no way to fold it into a single ongoing byte-stream hash. A
+    manifest entry is comparable on equal footing whether its sha256 came
+    from hashing real bytes or from reading a content-addressed filename
+    -- hashsync.build_manifest / diff_manifests already rely on exactly
+    that equivalence for `_snapshot`'s own diff, so this mirrors it rather
+    than inventing a second notion of "what should be there".
+    `synthesized` is caller-supplied, not computed here, because it must
+    come from the SAME store `_snapshot` itself would resolve
+    (assetstore.store_for_hub) and only ever applies to the hub-side call
+    -- the local `.kb/` side has no asset store of its own to synthesize
+    against.
     """
     import hashlib
 
@@ -116,14 +111,14 @@ def _kb_tree_digest(
             continue
         rel = path.relative_to(root).as_posix()
         if exclude_docs and rel.split("/", 1)[0] in exclude_docs:
-            continue  # a dev repo's -code is branch-local (spec 2026-09-25 §4.3)
+            continue  # a dev repo's -code is branch-local
         if not pubgate.is_kb_artifact(rel):
             continue
-        # Legacy self-heal: a hub cache cloned before F-D10 (which now forces
-        # core.autocrlf=false and ships .gitattributes) still has a CRLF
+        # Legacy self-heal: a hub cache cloned before clones forced
+        # core.autocrlf=false and shipped .gitattributes still has a CRLF
         # working tree, and neutralize_line_endings runs on clone, never on
         # pull. Normalising here keeps a byte-identical tree from reading as
-        # drift until the TTL re-clone (H3c).
+        # drift until the TTL re-clone.
         manifest[rel] = hashlib.sha256(
             path.read_bytes().replace(b"\r\n", b"\n")
         ).hexdigest()
@@ -139,13 +134,13 @@ def _kb_tree_digest(
 
 
 def _ignoring_digests(idx: models.FederationIndex) -> models.FederationIndex:
-    """Fix round 1, Critical 1: `content_sha256` is live (recomputed on every
-    call to build_federation_index), so comparing it as part of "is the
-    stored aggregate index in sync with the snapshots" makes that check fire
-    on every hub that predates 0.25 (stored defaults to "") and on every
-    tampered snapshot (stored is the old digest, rebuilt is the new one) --
-    the latter also means `kb reindex` would silently launder the tamper by
-    overwriting the stored digest with the live one. That verdict belongs to
+    """`content_sha256` is live (recomputed on every call to
+    build_federation_index), so comparing it as part of "is the stored
+    aggregate index in sync with the snapshots" makes that check fire on every
+    hub that predates 0.25 (stored defaults to "") and on every tampered
+    snapshot (stored is the old digest, rebuilt is the new one) -- the latter
+    also means `kb reindex` would silently launder the tamper by overwriting
+    the stored digest with the live one. That verdict belongs to
     check_published_digests alone; strip the field before this equality."""
     return idx.model_copy(
         update={"docs": [d.model_copy(update={"content_sha256": ""}) for d in idx.docs]}
@@ -162,7 +157,7 @@ def check_hub(
 ) -> tuple[list[Issue], bool]:
     """Hub-first health. Returns (issues, hub_stale).
 
-    ``warn_untracked_index`` gates the F-C17 ``.kb-work/`` warning: only the
+    ``warn_untracked_index`` gates the ``.kb-work/`` warning: only the
     hub maintainer's own checkout can act on "add it to the hub's
     .gitignore", so child/dev/ba callers (who reach a hub or its cache clone
     read-only) must leave it off.
@@ -191,11 +186,11 @@ def check_hub(
         issues.append(Issue("warning", f"hub cache is stale (pull failed, age {age})"))
         hub_stale = True
 
-    # The URL itself is never put in the message -- gitio.redact_url exists
-    # for that, and here the config key alone is enough to find it. --local
-    # scopes this to handle.root's own .git/config: without it, a
-    # remote.*.url defined in the operator's global/system gitconfig is
-    # misreported as living in this clone's own config (M3).
+    # The URL itself is never put in the message -- gitio.redact_url exists for
+    # that, and here the config key alone is enough to find it. --local scopes
+    # this to handle.root's own .git/config: without it, a remote.*.url defined
+    # in the operator's global/system gitconfig is misreported as living in this
+    # clone's own config.
     for line in gitio._run(
         handle.root, "config", "--local", "--get-regexp", r"^remote\..*\.url$"
     ).stdout.splitlines():
@@ -212,11 +207,11 @@ def check_hub(
                 )
             )
 
-    # GIT_CONFIG_COUNT/KEY/VALUE (how credential_env hands git a token
-    # without putting it in argv) needs git >= 2.31 -- on an older git the
-    # env is silently ignored and the operator gets git's own opaque auth
-    # error instead of a message naming the way forward (M4). Only worth
-    # checking when this hub ref actually carries a credential.
+    # GIT_CONFIG_COUNT/KEY/VALUE (how credential_env hands git a token without
+    # putting it in argv) needs git >= 2.31 -- on an older git the env is
+    # silently ignored and the operator gets git's own opaque auth error instead
+    # of a message naming the way forward. Only worth checking when this hub ref
+    # actually carries a credential.
     if handle.token is not None:
         proc = gitio._run(handle.root, "--version")
         match = re.search(r"(\d+)\.(\d+)", proc.stdout)
@@ -250,8 +245,7 @@ def check_hub(
                         "warning",
                         "the search index at .kb-work/ is neither ignored "
                         "nor meant to be committed — add '.kb-work/' to the "
-                        "hub's .gitignore before someone runs `git add -A` "
-                        "(F-C17)",
+                        "hub's .gitignore before someone runs `git add -A`",
                     )
                 )
 
@@ -265,14 +259,13 @@ def check_hub(
             scan_broken_entries,
         )
 
-        # Important 3 (Wave G fix round 2 re-review), Ruling P36: a fully
-        # valid leaf entry nested beneath a broken one (exactly one of
-        # _meta.yaml/index.yaml) is reached by neither iter_entry_dirs
-        # (stops at the broken ancestor) nor iter_namespace_dirs
-        # (`continue`s at a leaf without sweeping it) -- scan_broken_entries
-        # is an additive walk that finds exactly those leaves, plus every
-        # broken entry directory itself, without changing what
-        # iter_entry_dirs yields (load_federation still sees exactly that).
+        # A fully valid leaf entry nested beneath a broken one (exactly one of
+        # _meta.yaml/index.yaml) is reached by neither iter_entry_dirs (stops at
+        # the broken ancestor) nor iter_namespace_dirs (`continue`s at a leaf
+        # without sweeping it) -- scan_broken_entries is an additive walk that
+        # finds exactly those leaves, plus every broken entry directory itself,
+        # without changing what iter_entry_dirs yields (load_federation still
+        # sees exactly that).
         broken_entries, nested_leaves = scan_broken_entries(fed)
 
         def _enclosing_entry(ns_rel: str) -> Path | None:
@@ -331,42 +324,37 @@ def check_hub(
                     )
                 )
 
-        # N-4 (Wave G fix round 4, review-waveG-fix3-verdict.md): every one
-        # of the three federation.py walkers `continue`s past a directory
-        # using the old slim layout (Phase 3, a 'manifests/' subdirectory)
-        # -- so nothing above ever looked at what sits directly beside a
-        # slim entry's manifests/, which is exactly the shape a leaked
-        # credential takes there, at ANY depth (a slim entry nested inside
-        # a broken one included -- this is what makes the broken-entry
-        # message above's "its own subtree is still scanned for strays"
-        # true for that shape instead of false). Reuses
-        # iter_namespace_dirs's own walk as the traversal frontier -- it
-        # already visits every namespace directory at every depth,
-        # federation/ itself included (ns_rel "") -- instead of a second
-        # recursive walk: checking each ns_dir's OWN direct children for
-        # the slim-layout shape catches one wherever it sits, replacing
-        # the old federation/-only (depth-1) check this loop supersedes.
-        # manifests/'s own contents are left alone on purpose -- that is
-        # legitimate old-format payload a slim publish DID write, not
-        # something "a publish would never write"; is_kb_artifact has no
-        # opinion on that format and would false-positive on it.
+        # Every one of the three federation.py walkers `continue`s past a
+        # directory using the old slim layout (Phase 3, a 'manifests/'
+        # subdirectory) -- so nothing above ever looked at what sits directly
+        # beside a slim entry's manifests/, which is exactly the shape a leaked
+        # credential takes there, at ANY depth (a slim entry nested inside a
+        # broken one included -- this is what makes the broken-entry message
+        # above's "its own subtree is still scanned for strays" true for that
+        # shape instead of false). Reuses iter_namespace_dirs's own walk as the
+        # traversal frontier -- it already visits every namespace directory at
+        # every depth, federation/ itself included (ns_rel "") -- instead of a
+        # second recursive walk: checking each ns_dir's OWN direct children for
+        # the slim-layout shape catches one wherever it sits, not only at depth
+        # 1 under federation/. manifests/'s own contents are left alone on
+        # purpose -- that is legitimate old-format payload a slim publish DID
+        # write, not something "a publish would never write"; is_kb_artifact has
+        # no opinion on that format and would false-positive on it.
         for ns_rel, ns_dir in iter_namespace_dirs(fed):
             for slim_dir in sorted(c for c in ns_dir.iterdir() if c.is_dir()):
                 if not (slim_dir / "manifests").is_dir():
                     continue
-                # Minor 1 (round-4 re-review), Ruling P39: holding
-                # manifests/ is a structural heuristic, and a directory that
-                # merely LOOKS like an entry to one is not an entry. A
-                # directory named `assets` INSIDE an entry is an asset
-                # directory by is_kb_artifact's own rule -- `parts[-2] ==
-                # "assets"` makes its direct children artefacts -- so it can
-                # never be an entry root, and calling it one cost twice: the
-                # slim-layout Issue was wrong, and resolving the stray sweep
-                # against it stripped its own contents of exactly the asset
-                # exemption P40 restored (a legitimate <entry>/<doc>/assets/
-                # pic.png reported as a leaked stray). With NO entry above
-                # it there is no asset directory to confuse it with -- P40's
-                # "assets only exist inside an entry" -- and `assets` is a
+                # Holding manifests/ is a structural heuristic, and a directory
+                # that merely LOOKS like an entry to one is not an entry. A
+                # directory named `assets` INSIDE an entry is an asset directory
+                # by is_kb_artifact's own rule -- `parts[-2] == "assets"` makes
+                # its direct children artefacts -- so it can never be an entry
+                # root, and calling it one costs twice: the slim-layout Issue is
+                # wrong, and resolving the stray sweep against it strips its own
+                # contents of the asset exemption (a legitimate
+                # <entry>/<doc>/assets/pic.png reported as a leaked stray). With
+                # NO entry above it there is no asset directory to confuse it
+                # with -- assets only exist inside an entry -- and `assets` is a
                 # legal repo-id, so federation/assets stays reportable.
                 if slim_dir.name == "assets" and _enclosing_entry(ns_rel) is not None:
                     continue
@@ -398,42 +386,37 @@ def check_hub(
                         )
                     )
 
-        # F-D9 finding 5: iter_entry_dirs only ever yields leaves, so nothing
-        # above looks at a file dropped directly under federation/ itself or
-        # under an intermediate namespace directory (e.g. federation/<mid>/
-        # after a hub-to-hub publish) -- exactly where a mid hub's own
-        # top-level federation/ files land under _snapshot_federation, so
-        # the credential-leak case this warning exists for was the one case
-        # it missed. Same predicate as the leaf sweep above, plus
+        # iter_entry_dirs only ever yields leaves, so nothing above looks at a
+        # file dropped directly under federation/ itself or under an
+        # intermediate namespace directory (e.g. federation/<mid>/ after a
+        # hub-to-hub publish) -- exactly where a mid hub's own top-level
+        # federation/ files land under _snapshot_federation, so without this
+        # sweep the credential-leak case this warning exists for would be the
+        # one case it misses. Same predicate as the leaf sweep above, plus
         # FED_TOP_EXCLUDE (a hub's own index.yaml/registry.yaml/.gitkeep) --
-        # M2: legitimate only directly under federation/ itself (ns_rel ==
-        # ""), so it must not be exempted at a nested namespace directory
-        # too, where those same names are just as suspicious as any other
-        # stray.
+        # legitimate only directly under federation/ itself (ns_rel == ""), so
+        # it must not be exempted at a nested namespace directory too, where
+        # those same names are just as suspicious as any other stray.
         #
-        # P40 (Wave G fix round 4, superseding Ruling P35's ambiguous
-        # "entry-relative"): the path handed to is_kb_artifact must be
-        # relative to THE ENTRY WHOSE ARTIFACTS ARE BEING JUDGED -- and if
-        # there is no entry above the file, no asset exemption applies at
-        # all, because assets only exist inside an entry. ns_dir here may
-        # be a genuine namespace directory with no entry above it at all
-        # (federation/ itself, or a plain grouping directory -- including
-        # one that happens to be named "assets", or to start with a dot),
-        # or it may BE a broken entry's own root, or a directory NESTED
-        # inside one (e.g. <broken-entry>/doc-a/assets/). The round-3 fix
-        # passed the fed-relative path unconditionally, which put the
-        # wrong thing in is_kb_artifact's parts[-2] slot for the first
-        # case -- the namespace directory's OWN basename, not a real
-        # "assets" parent -- silently exempting a stray sitting directly
-        # inside any non-leaf directory named "assets" (N-1), and put a
-        # dot-prefixed namespace segment where is_kb_artifact's dotfile
-        # check looks, wrongly rejecting a legitimate asset beneath one
-        # (N-7). Find the nearest enclosing broken-entry root, if any (the
-        # innermost match, for a broken entry nested inside another), and
-        # resolve against THAT; with none, resolve against nothing -- pass
+        # The path handed to is_kb_artifact must be relative to THE ENTRY WHOSE
+        # ARTIFACTS ARE BEING JUDGED -- and if there is no entry above the file,
+        # no asset exemption applies at all, because assets only exist inside an
+        # entry. ns_dir here may be a genuine namespace directory with no entry
+        # above it at all (federation/ itself, or a plain grouping directory --
+        # including one that happens to be named "assets", or to start with a
+        # dot), or it may BE a broken entry's own root, or a directory NESTED
+        # inside one (e.g. <broken-entry>/doc-a/assets/). Do not pass the
+        # fed-relative path unconditionally: that puts the wrong thing in
+        # is_kb_artifact's parts[-2] slot for the first case -- the namespace
+        # directory's OWN basename, not a real "assets" parent -- silently
+        # exempting a stray sitting directly inside any non-leaf directory named
+        # "assets", and puts a dot-prefixed namespace segment where
+        # is_kb_artifact's dotfile check looks, wrongly rejecting a legitimate
+        # asset beneath one. Find the nearest enclosing broken-entry root, if
+        # any (the innermost match, for a broken entry nested inside another),
+        # and resolve against THAT; with none, resolve against nothing -- pass
         # the bare basename, which can never satisfy is_kb_artifact's
-        # `len(parts) >= 2` asset rule, so no exemption applies, exactly as
-        # P40 requires.
+        # `len(parts) >= 2` asset rule, so no exemption applies.
         for ns_rel, ns_dir in iter_namespace_dirs(fed):
             top_exclude = FED_TOP_EXCLUDE if not ns_rel else ()
             entry_root = _enclosing_entry(ns_rel)
@@ -475,10 +458,10 @@ def check_hub(
                 )
             )
         else:
-            # Hoisted once (Fix round 1, Important 3): build_federation_index
-            # hashes every published entry's content to fill content_sha256 --
-            # computing it again inside check_published_digests would hash
-            # the whole hub tree a second time on every `kb doctor` run.
+            # Hoisted once: build_federation_index hashes every published
+            # entry's content to fill content_sha256 -- computing it again
+            # inside check_published_digests would hash the whole hub tree a
+            # second time on every `kb doctor` run.
             rebuilt = build_federation_index(fed)
             if _ignoring_digests(stored) != _ignoring_digests(rebuilt):
                 issues.append(
@@ -488,32 +471,31 @@ def check_hub(
                         "run `kb reindex`",
                     )
                 )
-            # Fix round 2, item 2: last-wins here, first-wins in
-            # check_published_digests's own `expected.setdefault(...)` --
-            # identical today only because build_federation_index hoists one
-            # digest per repo and stamps every entry (one per doc) with it;
-            # if that ever becomes per-doc, the two must be reconciled.
+            # Last-wins here, first-wins in check_published_digests's own
+            # `expected.setdefault(...)` -- identical today only because
+            # build_federation_index hoists one digest per repo and stamps every
+            # entry (one per doc) with it; if that ever becomes per-doc, the two
+            # must be reconciled.
             issues += check_published_digests(
                 fed, {d.repo_id: d.content_sha256 for d in rebuilt.docs}
             )
 
     if repo_id:
         entry = fed / repo_id
-        # Fix round 4: a self-hub (its own configured hub resolves to
-        # itself -- handle.kb_dir IS kb_dir) does not ordinarily publish
-        # itself into its own federation/<repo_id>/; "has not published to
-        # the hub yet — run `kb publish`" is meaningless there (you cannot
-        # publish a hub to itself in the usual sense), and a pre-existing
-        # test (test_cli_doctor_hub_kind_self_hub_no_false_warnings) already
-        # asserted this warning must not appear for that shape. A CHILD, or
-        # a mid-hub pointed at a genuinely different upstream, still gets
-        # the warning -- only identity with the configured hub suppresses
-        # it. Checked here (not by the cli.py call site) because check_hub
-        # already has both pieces of identity it needs (kb_dir, handle) and
-        # needs no git lookup to compare them, unlike cli.py's own
-        # source_root/upstream computation a few lines down its own call
-        # site, which requires a real git repo and has its own error path
-        # when there isn't one.
+        # A self-hub (its own configured hub resolves to itself -- handle.kb_dir
+        # IS kb_dir) does not ordinarily publish itself into its own
+        # federation/<repo_id>/; "has not published to the hub yet — run `kb
+        # publish`" is meaningless there (you cannot publish a hub to itself in
+        # the usual sense), and
+        # test_cli_doctor_hub_kind_self_hub_no_false_warnings asserts this
+        # warning must not appear for that shape. A CHILD, or a mid-hub pointed
+        # at a genuinely different upstream, still gets the warning -- only
+        # identity with the configured hub suppresses it. Checked here (not by
+        # the cli.py call site) because check_hub already has both pieces of
+        # identity it needs (kb_dir, handle) and needs no git lookup to compare
+        # them, unlike cli.py's own source_root/upstream computation a few lines
+        # down its own call site, which requires a real git repo and has its own
+        # error path when there isn't one.
         is_self_hub = handle.kb_dir.resolve() == kb_dir.resolve()
         if not entry.is_dir():
             if not is_self_hub:
@@ -526,13 +508,13 @@ def check_hub(
         else:
             from strata_kb import assetstore
 
-            # Item 7 (wave L1 brief), ruling P54's other half: the hub-side
-            # digest must see a diverted asset the same way publish._snapshot
-            # does -- assetstore.store_for_hub reads the HUB's own config
-            # (handle.kb_dir), the exact source _snapshot itself resolves
-            # from when no store override is passed. A corrupt/unreachable
-            # config is reported separately by check_asset_store; here it
-            # just means "no store known" -- no synthesis, same as before.
+            # The hub-side digest must see a diverted asset the same way
+            # publish._snapshot does -- assetstore.store_for_hub reads the HUB's
+            # own config (handle.kb_dir), the exact source _snapshot itself
+            # resolves from when no store override is passed. A
+            # corrupt/unreachable config is reported separately by
+            # check_asset_store; here it just means "no store known" -- no
+            # synthesis, same as before.
             synthesized: dict[str, str] = {}
             try:
                 active_store = assetstore.store_for_hub(handle)
@@ -589,22 +571,21 @@ def _fed_tree_digest(
     chỉ đổi source_commit của một leaf mà không đổi nội dung nào khác).
 
     `skip` defaults to _FED_TOP_SKIP (root IS the top of a federation/ tree,
-    e.g. check_federation_publish's fed_src/dest). Final review item 2: a
-    LEAF entry (federation/<rid>/, e.g. entry_content_digest's root) has its
-    own index.yaml -- the doc titles/revisions/tags/summaries mirrored from
-    that repo's .kb -- which is real content, not the top-level aggregate
-    index.yaml/registry.yaml this set was written to exempt. The exclusion
-    is by bare relative name, not depth, so a leaf root must pass a
-    narrower `skip` or its own index.yaml silently drops out of the digest."""
+    e.g. check_federation_publish's fed_src/dest). A LEAF entry
+    (federation/<rid>/, e.g. entry_content_digest's root) has its own
+    index.yaml -- the doc titles/revisions/tags/summaries mirrored from that
+    repo's .kb -- which is real content, not the top-level aggregate
+    index.yaml/registry.yaml this set was written to exempt. The exclusion is
+    by bare relative name, not depth, so a leaf root must pass a narrower
+    `skip` or its own index.yaml silently drops out of the digest."""
     import hashlib
 
-    # Fix round 1, Important 4: fold over a {rel: sha256hex} manifest, sorted
-    # by the STRING key, exactly like _kb_tree_digest -- not directly over
-    # sorted(root.rglob("*")) (Path order), which is case-folded on Windows
-    # and case-sensitive on POSIX. A digest is now written on the publisher's
-    # machine and verified on the operator's, so a platform-dependent fold
-    # order is a real red-on-an-untampered-hub risk, not a same-process
-    # curiosity -- and free to fix now, before any hub has one on disk.
+    # Fold over a {rel: sha256hex} manifest, sorted by the STRING key, exactly
+    # like _kb_tree_digest -- not directly over sorted(root.rglob("*")) (Path
+    # order), which is case-folded on Windows and case-sensitive on POSIX. A
+    # digest is written on the publisher's machine and verified on the
+    # operator's, so a platform-dependent fold order is a real
+    # red-on-an-untampered-hub risk, not a same-process curiosity.
     manifest: dict[str, str] = {}
     for path in root.rglob("*"):
         if not path.is_file():
@@ -612,11 +593,11 @@ def _fed_tree_digest(
         rel = path.relative_to(root).as_posix()
         if rel in skip:
             continue
-        # Legacy self-heal: a hub cache cloned before F-D10 (which now forces
-        # core.autocrlf=false and ships .gitattributes) still has a CRLF
+        # Legacy self-heal: a hub cache cloned before clones forced
+        # core.autocrlf=false and shipped .gitattributes still has a CRLF
         # working tree, and neutralize_line_endings runs on clone, never on
         # pull. Normalising here keeps a byte-identical tree from reading as
-        # drift until the TTL re-clone (H3c).
+        # drift until the TTL re-clone.
         manifest[rel] = hashlib.sha256(
             path.read_bytes().replace(b"\r\n", b"\n")
         ).hexdigest()
