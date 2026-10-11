@@ -296,14 +296,22 @@ def _next_line(results: list[StoryStatus]) -> str:
     )
 
 
-def render(results: list[StoryStatus], notes: list[str]) -> str:
+def render(
+    results: list[StoryStatus],
+    notes: list[str],
+    labels: dict[str, str] | None = None,
+) -> str:
+    """`labels` renames a status in the table only (the `Next:` line still
+    keys on the raw status)."""
+    labels = labels or {}
     lines = [f"note: {n}" for n in notes]
     if lines:
         lines.append("")
     lines += ["| US | Mission | Status | Reason |", "|---|---|---|---|"]
     for r in results:
         lines.append(
-            f"| {r.us_id} | {r.mission_id} | {r.status} | {'; '.join(r.reasons)} |"
+            f"| {r.us_id} | {r.mission_id} | {labels.get(r.status, r.status)} | "
+            f"{'; '.join(r.reasons)} |"
         )
     lines += ["", _next_line(results)]
     return "\n".join(lines)

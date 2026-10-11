@@ -4,6 +4,7 @@
     <a href="/ui" class="{{ 'active' if shell.screen == 'overview' else '' }}">Overview</a>
     <a href="/ui?q=" class="{{ 'active' if shell.screen == 'search' else '' }}">Search</a>
     <a href="/ui/docs" class="{{ 'active' if shell.screen in ('docs', 'doc') else '' }}">Documents</a>
+    <a href="/ui/plans"{% if shell.screen in ('plans', 'plan') %} class="active"{% endif %}>Plans</a>
     {% if shell.screen == 'section' %}<a href="#" class="active">Reader</a>{% endif %}
     <a href="/ui/login">Sign in</a>
   </nav>

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_partials/status.html" import plan_counts %}
+{% block main %}
+<div class="stack-md">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/plans">Plans</a> <span class="sep">/</span> {{ plan.repo }}</p>
+    <h1 style="font-size:26px">{{ plan.repo }}</h1>
+    <p class="meta-line"><span>{{ plan.doc }}</span><span class="sep">·</span>
+      <span>{{ plan.missions | length }} missions</span></p>
+  </div>
+  {% for n in notes %}<p class="meta-line">note: {{ n }}</p>{% endfor %}
+  <div class="panel">
+    <div class="panel-head"><h2>Missions</h2></div>
+    {% for m in plan.missions %}
+    <div class="queue-row">
+      <a class="cite" href="/ui/plans/{{ plan.repo | urlencode }}/{{ m.mission_id | urlencode }}">{{ m.mission_id }}</a>
+      <span class="file">{{ m.title }}</span>
+      {{ plan_counts(m.counts) }}
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No mission published yet.</p></div>
+    {% endfor %}
+  </div>
+  {% if plan.unparented %}
+  <div class="panel">
+    <div class="panel-head"><h2>Tickets without mission</h2>
+      <span class="note">{{ plan.unparented | length }}</span></div>
+    {% for id, title in plan.unparented %}
+    <div class="queue-row">
+      <a class="cite" href="/ui/plans/{{ plan.repo | urlencode }}/{{ group | urlencode }}/{{ id | urlencode }}">{{ id }}</a>
+      <span class="file">{{ title }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

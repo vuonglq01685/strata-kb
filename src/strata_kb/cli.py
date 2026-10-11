@@ -3231,13 +3231,47 @@ def mission_next(
     json_output: bool = typer.Option(
         False, "--json", help="Emit the report as JSON instead of text"
     ),
+    from_hub: bool = typer.Option(
+        False,
+        "--from-hub",
+        help="Read the published plan (<ba-repo>-plan) from the hub instead of "
+        "missions/ and tickets/: a story with a published ticket is ready, "
+        "and to-draft reads 'not ready (no published ticket)'",
+    ),
+    repo: str = typer.Option(
+        "", "--repo", help="With --from-hub: only this BA repo's plan"
+    ),
 ) -> None:
     """Which story next: every backlog story across missions/ as done /
     ready / draft / to-draft / blocked. Done is derived from the hub's
     <repo>-svc history (kb svc note rows); ready and draft from the
     ticket's Definition of Ready checklist. Read-only; exit 0 after a
     report."""
-    from strata_kb import missionnext, planrev, ticketcheck
+    from strata_kb import missionnext, planrev, planstatus, ticketcheck
+
+    if repo and not from_hub:
+        typer.secho("--repo needs --from-hub", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if from_hub:
+        handle, reason = _hub_or_reason(hub, kb_dir)
+        notes = [] if handle is not None else [f"hub unavailable ({reason})"]
+        plans, plan_notes = (
+            planstatus.hub_plans(handle, repo or None) if handle else ([], [])
+        )
+        notes += plan_notes
+        if handle is not None and not plans:
+            notes.append(
+                f"no plan for repo '{repo}' on the hub"
+                if repo
+                else "no <repo>-plan document on the hub"
+            )
+        results = [s for r in plans for m in r.missions for s in m.stories]
+        if json_output:
+            typer.echo(json.dumps(missionnext.to_json(results, notes)))
+        else:
+            labels = {"to-draft": "not ready (no published ticket)"}
+            typer.echo(missionnext.render(results, notes, labels))
+        return
 
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
         if d is not None and not d.is_dir():

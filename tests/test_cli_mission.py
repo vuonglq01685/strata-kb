@@ -777,3 +777,64 @@ def test_mission_next_demotes_ready_ticket_behind_its_mission_revision(tmp_path)
         "| M-platform-US1 | M-platform | draft | "
         "parent mission rev 2 affects this story |" in result.output
     )
+
+
+# --- kb mission next --from-hub -------------------------------------------
+
+
+def test_mission_next_from_hub_prints_the_four_statuses(
+    plan_hub, tmp_path, monkeypatch
+):
+    from tests.test_planstatus import US
+
+    cwd = tmp_path / "empty"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)  # no missions/ here, and none is read
+    result = runner.invoke(
+        app, ["mission", "next", "--from-hub", "--hub", str(plan_hub.root)]
+    )
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert f"| {US[0]} | {MISSION_ID} | done |  |" in out
+    assert f"| {US[1]} | {MISSION_ID} | ready |  |" in out
+    assert f"| {US[2]} | {MISSION_ID} | not ready (no published ticket) |  |" in out
+    assert f"| {US[3]} | {MISSION_ID} | blocked | US {US[2]} not done |" in out
+    assert out.rstrip().endswith(f"Next: {US[2]} — Story 3")
+
+
+def test_mission_next_from_hub_json_keeps_raw_status(plan_hub, tmp_path, monkeypatch):
+    from tests.test_planstatus import US
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        ["mission", "next", "--from-hub", "--hub", str(plan_hub.root), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert [s["status"] for s in data["stories"]] == [
+        "done",
+        "ready",
+        "to-draft",
+        "blocked",
+    ]
+    assert data["next"] == US[2]
+    assert data["notes"] == []
+
+
+def test_mission_next_from_hub_repo_filter_and_unknown_repo(
+    plan_hub, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    base = ["mission", "next", "--from-hub", "--hub", str(plan_hub.root)]
+    ok = runner.invoke(app, [*base, "--repo", "ba-one"])
+    assert ok.exit_code == 0 and "| done |" in ok.output
+    missing = runner.invoke(app, [*base, "--repo", "nope"])
+    assert missing.exit_code == 0
+    assert "note: no plan for repo 'nope' on the hub" in missing.output
+
+
+def test_mission_next_repo_needs_from_hub(tmp_path):
+    result = runner.invoke(app, ["mission", "next", "--repo", "ba-one"])
+    assert result.exit_code == 1
+    assert "--repo needs --from-hub" in result.output
