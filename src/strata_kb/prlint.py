@@ -1,9 +1,14 @@
 """Lint a pull-request description against the required-section canon.
 
 Pure text plus a local plan-file read: no hub access, no git, no network,
-standard library only — so the CI job that runs it needs only a read-only
-checkout (for `docs/impl/<ticket-id>/plan.md`), no token, and works on fork
-PRs.
+standard library plus the leaf `strata_kb.mdmask` — so the CI job that runs
+it needs only a read-only checkout (for `docs/impl/<ticket-id>/plan.md`), no
+token, and works on fork PRs.
+
+It keeps its own fence, comment and section scanner rather than `lintcore`'s:
+it handles `~~~`, indented and unclosed fences, an unterminated `<!--`, and
+`#`/`##` headings separated by a tab, and it counts duplicate sections. It
+must also stay clear of `lintcore`'s dependencies (doctor, pydantic).
 
 `REQUIRED_SECTIONS` below is the single source of truth for the section list.
 The shipped PR template and the `dev-handover` wrappers are pinned against it
@@ -19,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from strata_kb.mdmask import HTML_COMMENT_RE
+
 # Kept short on purpose: what the ticket asked, what the PR changed, how it
 # was tested. Everything else (kb-context, placeholder map, TDD exemptions,
 # A5's finding table) already lives on the branch. The optional `## Notes`
@@ -32,7 +39,6 @@ REQUIRED_SECTIONS: tuple[str, ...] = ("Ticket", "Changes", "Testing")
 # visible to a reviewer either way — but the error message below always
 # names the `##` form, because that is what the shipped template uses.
 _HEADING = re.compile(r"^#{1,2}[ \t]+(?P<name>.+?)[ \t]*$")
-_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 # An unterminated `<!--` is treated as commented through the end of the
 # section: it reads as empty and fails, rather than passing on text that
 # nobody reviewing the PR can actually see.
@@ -205,7 +211,7 @@ def _split_sections(body: str) -> list[tuple[str, str]]:
 
 def _visible(content: str) -> str:
     """The section's content with HTML comments removed."""
-    text = _COMMENT.sub("", content)
+    text = HTML_COMMENT_RE.sub("", content)
     text = _UNTERMINATED_COMMENT.sub("", text)
     return text.strip()
 
