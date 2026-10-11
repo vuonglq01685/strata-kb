@@ -139,3 +139,17 @@ def test_struct_tree_and_hist_have_no_facts(l2):
     assert facts_for("hist.2024", "svc", tree, "x") == frozenset()
     assert facts_for("mystery.x", "code", tree, "x") == frozenset()
     assert facts_for("flow.x", "code", tree, "x") == frozenset()
+
+
+def test_db_facts_keep_escaped_pipes_in_type_cell():
+    body = (
+        "| Column | Type | PK |\n| --- | --- | --- |\n"
+        "| c | TEXT CHECK (a \\|\\| b) | yes |\n"
+        "| d | INT |  |\n"
+    )
+    facts = facts_for("db.t", "code", body, "")
+    assert ("column_type", "c:TEXT CHECK (a || b)") in facts
+    assert ("pk", "c") in facts
+    assert ("column_type", "d:INT") in facts
+    changed = facts_for("db.t", "code", body.replace("a \\|\\| b", "a \\|\\| z"), "")
+    assert changed != facts

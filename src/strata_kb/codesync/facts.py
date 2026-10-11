@@ -41,10 +41,29 @@ def _svc_code(l2: str, _l3: str) -> frozenset[Fact]:
     )
 
 
+_SEPARATOR_ROW_RE = re.compile(r"^\|[\s:|-]+\|$")
+
+
+def _rows(l2: str) -> list[list[str]]:
+    """Table rows as cell lists, split on unescaped `|` only and with `\\|`
+    unescaped: `lintcore.table_rows` splits on escaped pipes too, which cuts
+    a db Type cell like `TEXT CHECK (a \\|\\| b)` short and shifts PK."""
+    rows: list[list[str]] = []
+    for raw in l2.splitlines():
+        line = raw.strip()
+        if not (line.startswith("|") and line.endswith("|")):
+            continue
+        if _SEPARATOR_ROW_RE.match(line):
+            continue
+        cells = ticketcheck._ESCAPED_CELL_SPLIT_RE.split(line[1:-1])
+        rows.append([c.strip().replace("\\|", "|") for c in cells])
+    return rows
+
+
 def _table(l2: str, *columns: str) -> list[list[str]]:
     """Data rows of the L2's table (each -code section has one), one cell
     per named column in the order given; empty when a column is missing."""
-    rows = lintcore.table_rows(l2)
+    rows = _rows(l2)
     idx = [lintcore.table_column(rows, c) for c in columns]
     cols = [i for i in idx if i is not None]
     if len(cols) < len(columns):
