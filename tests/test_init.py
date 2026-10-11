@@ -3009,3 +3009,31 @@ def test_sa_ticket_ground_asks_for_the_parent_mission_pin():
         text = initcmd.read_template(name)
         assert "needs a parent mission" in text, name
         assert "> Parent mission: M-<slug> @ rev <N>" in text, name
+
+
+def test_hub_compose_has_hub_sync_service(tmp_path):
+    """`hub-sync` runs the daily code-sync loop beside `hub`, on the same
+    image and the same /data checkout; `hub` itself is untouched."""
+    from strata_kb import initcmd
+
+    dest = tmp_path / "hub"
+    dest.mkdir()
+    initcmd.init_repo(dest, "hub")
+    template = _compose_services((dest / "docker-compose.yml").read_text("utf-8"))
+    root = Path(__file__).resolve().parent.parent / "docker-compose.yml"
+    repo_root = _compose_services(root.read_text(encoding="utf-8"))
+
+    for label, doc in (("template", template), ("repo-root", repo_root)):
+        sync = doc["services"]["hub-sync"]
+        assert sync["command"] == ["kb", "code-sync", "run", "--issue", "--loop"], label
+        assert sync["env_file"] == ".env", label
+        assert sync["volumes"] == ["./:/data"], label
+        assert sync["mem_limit"], label
+        assert not sync.get("ports") and not sync.get("healthcheck"), label
+        hub = doc["services"]["hub"]
+        same = {k: v for k, v in sync.items() if k in ("image", "build")}
+        assert same == {k: v for k, v in hub.items() if k in ("image", "build")}, label
+        assert hub["ports"] == ["8321:8321"] and hub["mem_limit"] == "512m", label
+        for want in _HUB_MOUNTS:
+            assert want in hub["volumes"], label
+        _assert_no_dangling_volumes(doc, label)

@@ -941,6 +941,41 @@ def code_sync_baseline(
     typer.echo(sha)
 
 
+@code_sync_app.command("run")
+def code_sync_run(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    issue: bool = typer.Option(
+        False, "--issue", help="Create/update/close the rolling GitHub issue"
+    ),
+    loop: bool = typer.Option(
+        False,
+        "--loop",
+        help="Repeat every STRATA_KB_CODE_SYNC_INTERVAL seconds (default 86400)",
+    ),
+) -> None:
+    """One scan plus issue update (the hub-sync job); logs to stderr.
+    Exit 0 nothing to do, 2 findings, 1 error. --loop never exits."""
+    import logging
+
+    from strata_kb.codesync import runner
+    from strata_kb.errors import KbError
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+    interval = runner.interval_from_env() if loop else 0
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if loop:
+        runner.run_loop(root, interval=interval, issue=issue)
+    code = runner.run_once(root, issue=issue)
+    if code:
+        raise typer.Exit(code)
+
+
 _LLM_CHOICES = ("", "claude", "copilot", "none")
 
 
