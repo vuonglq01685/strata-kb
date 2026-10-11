@@ -556,3 +556,67 @@ def test_parent_mission_read_from_hub_plan(code_doc, fed_hub, run_git, tmp_path)
     assert result.exit_code == 0, result.output
     assert f"parent mission '{MISSION_ID}' not found" not in result.output
     assert "D1 (DECIDED" in result.output
+
+
+def test_unreadable_local_mission_does_not_fall_through_to_the_hub(
+    code_doc, fed_hub, run_git, tmp_path
+):
+    """Only a missing local mission file falls back to the hub's plan: a file
+    that is there but unreadable (non-UTF-8) stays 'not found'."""
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    publish_plan(fed_hub, "ba-one", tmp_path / "ba-one", context_block(fed_hub))
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish ba-one plan")
+    (tmp_path / "tickets").mkdir()
+    (tmp_path / "missions").mkdir()
+    (tmp_path / "missions" / f"{MISSION_ID}.md").write_bytes(b"\xff\xfe not utf-8")
+    path = tmp_path / "tickets" / "t.md"
+    path.write_text(
+        ticket(
+            grounding(
+                rev,
+                Service="svc.billing [NEW: D1]",
+                Volumes=None,
+                Healthchecks=None,
+                Devices=None,
+            ),
+            parent=MISSION_ID,
+        ),
+        encoding="utf-8",
+    )
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+    result = runner.invoke(
+        app,
+        ["ticket", "check", str(path), "--kb-dir", str(empty_kb)]
+        + ["--hub", str(fed_hub)],
+    )
+    assert result.exit_code == 1, result.output
+    assert f"parent mission '{MISSION_ID}' not found" in result.output
+
+
+def test_drift_baseline_failure_degrades_to_the_no_baseline_warning(
+    code_doc, fed_hub, run_git, tmp_path, monkeypatch
+):
+    """drift_refs raising past KbError (an undecodable hub L2, a path outside
+    the checkout) is the no-baseline warning, never a traceback."""
+    from strata_kb import ticketstale
+
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {"services.md": ("Container `gpuworker`", "Container `gpuworker` (v2)")},
+    )
+
+    def boom(*args, **kwargs):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(ticketstale, "drift_refs", boom)
+    result = _check_against_hub(ticket(grounding(rev)), fed_hub, tmp_path)
+    assert result.exit_code == 0, result.output
+    assert result.exception is None
+    assert "no baseline to diff" in result.output

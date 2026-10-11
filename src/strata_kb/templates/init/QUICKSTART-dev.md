@@ -158,9 +158,9 @@ ticket has no `## Technical grounding`). A `-code` that moved since the SA
 grounded the ticket is not a failure: PASS with a `[warn]` means the cited
 names still hold, so read the diff and decide. A FAIL carrying `re-run
 /sa-ticket-ground` means a cited fact is gone: STOP and send it back to the BA,
-who has the SA re-ground it. If the run also says it checked against the local
-`-code` (hub unreachable), your own branch may be the cause: retry with the hub
-first.
+who has the SA re-ground it. If the run also prints `checked against the local
+-code, not the hub's copy`, your own branch may be the cause: re-run once the
+hub is reachable and holds the -code.
 
 ## Where work lives
 

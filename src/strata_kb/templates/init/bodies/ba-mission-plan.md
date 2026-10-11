@@ -183,9 +183,9 @@ recorded in `## Change log`. A new mission is never created by `--amend`.
 4. **`architecture` trigger only** — hand off to `sa-ticket-ground
    --mission` on the mission. It refreshes `## Services & order` and the
    `Grounded on:` revision, then runs `kb ticket check`. For any other
-   trigger, skip the SA and `kb ticket check`: they would force a
-   re-ground after every dev commit. You still never read `<repo>-code`
-   or `<repo>-svc` yourself.
+   trigger, skip the SA and `kb ticket check`: a mission's own stories
+   change the svc.* sections it cites while it is being delivered. You
+   still never read `<repo>-code` or `<repo>-svc` yourself.
 5. **Apply the change rules** below.
 6. **Bump `> Revision:` and append the change-log row** `| Rev | Date |
    Trigger | What changed | Affected | Review |`. In `Affected` write FULL

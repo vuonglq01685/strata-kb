@@ -370,7 +370,7 @@ def _judge_new(
                 issues,
                 Issue(
                     "error",
-                    f"parent mission '{decisions.mission_id}' not found under missions/ — pass --missions-dir, or write [NEW: <reason>] (line {lineno})",
+                    f"parent mission '{decisions.mission_id}' not found under missions/ or in the hub's plan — pass --missions-dir, or write [NEW: <reason>] (line {lineno})",
                     code=DECISION,
                 ),
             )
@@ -511,7 +511,9 @@ def _judge_drift(
     the fact checks already ran against the current document — judge them."""
     try:
         drift = load_drift(repo, doc_id, rev) if load_drift is not None else None
-    except KbError:  # incl. gitio.GitError: no baseline, not a failure
+    except (KbError, OSError, ValueError):
+        # No baseline, not a failure: KbError incl. gitio.GitError, plus what
+        # drift_refs can raise past it (OSError; ValueError incl. UnicodeDecodeError).
         drift = None
 
     def current_section(sid: str) -> str | None:

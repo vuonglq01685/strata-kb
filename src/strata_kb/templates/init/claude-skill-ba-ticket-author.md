@@ -236,7 +236,7 @@ change is recorded in `## Change log`.
    refreshes `## Technical grounding` and the `Grounded on:` revision,
    then runs the check. For any other trigger, run the SA only when the
    check FAILs with `re-run /sa-ticket-ground`; a `[warn] grounded @…`
-   is a PASS, not a re-ground. A FAIL without that line (an open decision,
+   is a PASS, not a re-ground. A FAIL without the `re-run /sa-ticket-ground` line (an open decision,
    an undecided `[NEW: D<k>]`) is reported to the BA. You still never read `<repo>-code` or
    `<repo>-svc` yourself.
 5. **Apply the change rules** below.

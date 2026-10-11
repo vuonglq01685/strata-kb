@@ -2931,7 +2931,8 @@ def ticket_check(
         "--missions-dir",
         help="Where mission files live, for `[NEW: D<n>]` references to the "
         "parent mission's Technology decisions (default: the ticket file's "
-        "sibling 'missions/' directory)",
+        "sibling 'missions/' directory; a mission missing there is read from "
+        "the hub's plan)",
     ),
     heading: str = typer.Option(
         "## Technical grounding",
@@ -3010,8 +3011,10 @@ def ticket_check(
             mission_path = resolved_missions / f"{mission_id}.md"
             try:
                 mission_text = mission_path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                pass  # no local file: the hub's plan may hold the mission
             except (OSError, UnicodeDecodeError):
-                pass
+                return None  # there but unreadable: not the hub's to override
             else:
                 return ticketcheck.parse_decisions(mission_text, str(mission_path))
         handle, _ = hub_handle()

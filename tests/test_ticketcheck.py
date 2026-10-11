@@ -366,6 +366,24 @@ def test_load_drift_error_degrades(code_doc):
     assert NO_BASELINE_DEADBEE.format(rev=rev) in warnings(report)
 
 
+def test_load_drift_non_kb_errors_degrade(code_doc):
+    """drift_refs can raise past KbError (undecodable L2, a path outside the
+    checkout): still the no-baseline warning, never a traceback."""
+    kb_dir, rev = code_doc
+    for exc in (
+        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+        OSError("disk gone"),
+        ValueError("not relative"),
+    ):
+
+        def load_drift(repo, doc_id, old_rev, exc=exc):
+            raise exc
+
+        report = run(ticket(grounding("deadbee")), kb_dir, load_drift=load_drift)
+        assert report.passed, exc
+        assert NO_BASELINE_DEADBEE.format(rev=rev) in warnings(report), exc
+
+
 def test_open_decision_new_marker_with_moved_revision_is_not_drift(code_doc):
     kb_dir, _ = code_doc
     text = ticket(grounding("deadbee", Tables="db.invoice [NEW: D2]"), parent="M-demo")
@@ -890,6 +908,10 @@ def test_decision_reference_with_no_loader_is_treated_as_not_found(code_doc):
     text = ticket(grounding(rev, Externals="int.stripe [NEW: D1]"), parent="M-demo")
     report = run(text, kb_dir)  # load_decisions=None: caller supplied no missions dir
     assert any("parent mission 'M-demo' not found" in e for e in errors(report))
+    assert any(
+        "not found under missions/ or in the hub's plan — pass --missions-dir" in e
+        for e in errors(report)
+    )
 
 
 def test_free_text_new_with_a_decisions_table_present_warns(code_doc):

@@ -54,8 +54,8 @@ grounding** runs `kb ticket check docs/impl/<id>/ticket.md` (your
 `<ticket-file>`) when the ticket has a `## Technical grounding` section: PASS
 shows every `[warn]` to the Dev, who decides; FAIL with `re-run /sa-ticket-ground` STOPs as a blocker for
 the BA (the SA re-grounds on the current `-code`), unless the run also printed
-the local-fallback note `checked against the local -code (hub unreachable)` —
-then retry with the hub first; FAIL without it is reported to the BA and
+the local-fallback note `checked against the local -code, not the hub's copy` —
+then re-run once the hub is reachable and holds the -code; FAIL without it is reported to the BA and
 STOPs; no section or no CLI skips with a note; **Resolve** triages exactly as in the
 Freshness re-check above; the full resolve is `kb resolve --write-cache
 docs/impl/<ticket-id>/context.md <ticket-file>`, which writes the header

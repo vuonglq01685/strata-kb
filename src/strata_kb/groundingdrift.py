@@ -59,9 +59,9 @@ def judge(
     if any(i.level == "error" and i.code != DECISION_CODE for i in fact_issues):
         notes = (
             [
-                "checked against the local -code (hub unreachable) — your "
-                "branch's own changes may cause this; re-run with the hub "
-                "before sending it back"
+                "checked against the local -code, not the hub's copy — your "
+                "branch's own changes may cause this; re-run against the hub's "
+                "-code before sending it back"
             ]
             if local_fallback
             else []

@@ -54,8 +54,9 @@ edit above it.
   not be verified), the Dev decides, continue. FAIL with `re-run
   /sa-ticket-ground` → STOP, blocker for the BA (the SA re-grounds on the
   current `-code`) — unless the run also printed the local-fallback note
-  (`checked against the local -code (hub unreachable)`): your branch's own
-  changes may cause it, so retry with the hub first. FAIL without that line
+  (`checked against the local -code, not the hub's copy`): your branch's own
+  changes may cause it, so re-run once the hub is reachable and holds the
+  -code. FAIL without that line
   → report the errors to the BA and STOP. No `## Technical grounding` →
   skip, with a note. No CLI → skip, with a note.
 - **Resolve** — triage exactly as in the Freshness re-check above:

@@ -191,9 +191,10 @@ Anti-goals
   lookup). Not on the hub either → today's behaviour.
 - **Local `-code` fallback.** When `load_doc` returned the local fallback
   (`doc.source` says so), a Tier 2 result adds a note: `checked against the
-  local -code (hub unreachable) — your branch's own changes may cause this;
-  re-run with the hub before sending it back`. The dev skill treats that as
-  "retry with the hub", not as a BA blocker.
+  local -code, not the hub's copy — your branch's own changes may cause this;
+  re-run against the hub's -code before sending it back`. The dev skill treats
+  that as "re-run once the hub is reachable and holds the -code", not as a BA
+  blocker.
 - **Release.** Minor bump to 1.18.0 (behaviour change of a gate), CHANGELOG
   entry, README `kb ticket check` row updated.
 

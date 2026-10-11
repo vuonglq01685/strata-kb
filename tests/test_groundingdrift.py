@@ -25,8 +25,8 @@ UNVERIFIED = (
     "— check them by hand"
 )
 LOCAL = (
-    "checked against the local -code (hub unreachable) — your branch's own "
-    "changes may cause this; re-run with the hub before sending it back"
+    "checked against the local -code, not the hub's copy — your branch's own "
+    "changes may cause this; re-run against the hub's -code before sending it back"
 )
 
 
