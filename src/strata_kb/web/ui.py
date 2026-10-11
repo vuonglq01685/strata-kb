@@ -219,11 +219,6 @@ def render_error_page(
     )
 
 
-def _browsable(docs: list[dict]) -> list[dict]:
-    """Documents for the catalog: `*-plan` documents live under Plans."""
-    return [d for d in docs if not planstatus.is_plan(d["id"])]
-
-
 def _match_tags(docs: list[dict], tags: list[str]) -> list[dict]:
     tagset = {t.lower() for t in tags}
     return [
@@ -267,17 +262,6 @@ async def static_file(request: Request) -> Response:
         data,
         media_type=media,
         headers={"Cache-Control": "public, max-age=86400"},
-    )
-
-
-def _plan_href(plan_paths: dict[tuple[str, str, str], str], hit) -> str | None:
-    """Plans page of a hit in a `*-plan` document; None for any other hit."""
-    group = plan_paths.get((hit.source, hit.doc_id, hit.section_id))
-    if group is None:
-        return None
-    base = f"/ui/plans/{quote(hit.source, safe='')}/{quote(group, safe='')}"
-    return (
-        base if group == hit.section_id else f"{base}/{quote(hit.section_id, safe='')}"
     )
 
 
@@ -425,7 +409,7 @@ def build_routes(
                 semantic_on=True,
             )
         if not q and tags:
-            docs = _browsable(api.list_docs(config) or [])
+            docs = planstatus.without_plans(api.list_docs(config) or [])
             matched = _match_tags(docs, tags)
             return _render_page(
                 "docs.html",
@@ -484,7 +468,7 @@ def build_routes(
                 "score_pct": round(100 * r.score / top),
                 "body_html": md_render(r.content, terms=terms),
                 "file": f"{r.doc_id}/{r.section_id}",
-                "href": _plan_href(plan_paths, r)
+                "href": planstatus.hit_href(plan_paths, r)
                 or (
                     f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
                     f"?repo={quote(r.source)}"
@@ -547,7 +531,7 @@ def build_routes(
         )
 
     def docs_page(request: Request) -> HTMLResponse:
-        all_docs = _browsable(api.list_docs(config) or [])
+        all_docs = planstatus.without_plans(api.list_docs(config) or [])
         filter_raw = request.query_params.get("filter", "").strip()
         fq = filter_raw.lower()
         docs = [
@@ -689,108 +673,6 @@ def build_routes(
             shell_extra=shell_extra,
         )
 
-    def _hub_unreachable() -> HTMLResponse:
-        return render_error_page(
-            config,
-            status=503,
-            title="Hub unreachable",
-            detail="The federation is the only read source.",
-        )
-
-    def _plans_or_error(
-        repo: str | None = None,
-    ) -> tuple[list[planstatus.PlanRepo], list[str], HTMLResponse | None]:
-        """(plans, notes, None), or an error page when the hub is down or
-        `repo` has no plan. `repo` is only compared with federation ids, never
-        used to build a path."""
-        hub = api.hub_handle(config)
-        if hub is None:
-            return [], [], _hub_unreachable()
-        plans, notes = planstatus.hub_plans(hub, repo)
-        if repo is not None and not plans:
-            err = render_error_page(
-                config, status=404, title="Not found", detail=f"Unknown plan '{repo}'."
-            )
-            return [], notes, err
-        return plans, notes, None
-
-    def plans_page(request: Request) -> HTMLResponse:
-        plans, notes, err = _plans_or_error()
-        return err or _render_page(
-            "plans.html",
-            config,
-            screen="plans",
-            title="Plans",
-            repos=plans,
-            notes=notes,
-        )
-
-    def plan_repo_page(request: Request) -> HTMLResponse:
-        repo = request.path_params["repo"]
-        plans, notes, err = _plans_or_error(repo)
-        return err or _render_page(
-            "plan_repo.html",
-            config,
-            screen="plan",
-            title=f"Plans · {repo}",
-            plan=plans[0],
-            notes=notes,
-            group=planstatus.TICKETS_GROUP,
-        )
-
-    def plan_mission_page(request: Request) -> HTMLResponse:
-        repo, mission_id = request.path_params["repo"], request.path_params["mission"]
-        plans, _, err = _plans_or_error(repo)
-        if err:
-            return err
-        mission = next(
-            (m for m in plans[0].missions if m.mission_id == mission_id), None
-        )
-        if mission is None:
-            return render_error_page(
-                config,
-                status=404,
-                title="Not found",
-                detail=f"Unknown mission '{mission_id}'.",
-            )
-        return _render_page(
-            "plan_mission.html",
-            config,
-            screen="plan",
-            title=f"{mission.mission_id} — Plans",
-            mission=mission,
-        )
-
-    def plan_ticket_page(request: Request) -> HTMLResponse:
-        repo, group, story = (
-            request.path_params[k] for k in ("repo", "mission", "story")
-        )
-        hub = api.hub_handle(config)
-        if hub is None:
-            return _hub_unreachable()
-        ticket = planstatus.read_ticket(hub, repo, group, story)
-        if ticket is None:
-            return render_error_page(
-                config,
-                status=404,
-                title="Not found",
-                detail=f"Unknown ticket '{story}'.",
-            )
-        content_html, toc = uidata.inject_heading_anchors(md_render(ticket.markdown))
-        return _render_page(
-            "plan_ticket.html",
-            config,
-            screen="plan",
-            title=f"{story} — Plans",
-            repo=repo,
-            group=group,
-            mission_linked=group != planstatus.TICKETS_GROUP,
-            ticket_id=story,
-            ticket=ticket,
-            content_html=content_html,
-            toc=toc,
-        )
-
     asset_name_re = re.compile(r"^[0-9a-f]{64}\.(?:png|webp)$")
     asset_cache: dict[str, Path] = {}
 
@@ -897,6 +779,10 @@ def build_routes(
             headers={"Cache-Control": "private, max-age=31536000, immutable"},
         )
 
+    # planui imports this module's page helpers, so it can only be imported
+    # once they exist: here, not at the top.
+    from strata_kb.web import planui
+
     return [
         Route("/ui", home, methods=["GET"]),
         Route("/ui/login", login_get, methods=["GET"]),
@@ -905,10 +791,7 @@ def build_routes(
         Route("/ui/docs", docs_page, methods=["GET"]),
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),
         Route("/ui/docs/{doc}/{section}", section_page, methods=["GET"]),
-        Route("/ui/plans", plans_page, methods=["GET"]),
-        Route("/ui/plans/{repo}", plan_repo_page, methods=["GET"]),
-        Route("/ui/plans/{repo}/{mission}", plan_mission_page, methods=["GET"]),
-        Route("/ui/plans/{repo}/{mission}/{story}", plan_ticket_page, methods=["GET"]),
+        *planui.plan_routes(config),
         Route("/ui/static/{path:path}", static_file, methods=["GET"]),
         Route("/assets/{name}", asset, methods=["GET"]),
     ]

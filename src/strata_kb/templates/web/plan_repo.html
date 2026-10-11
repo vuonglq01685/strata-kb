@@ -13,7 +13,7 @@
     <div class="panel-head"><h2>Missions</h2></div>
     {% for m in plan.missions %}
     <div class="queue-row">
-      <a class="cite" href="/ui/plans/{{ plan.repo | urlencode }}/{{ m.mission_id | urlencode }}">{{ m.mission_id }}</a>
+      <a class="cite" href="/ui/plans/{{ m.mission_id | urlencode }}?repo={{ plan.repo | urlencode }}">{{ m.mission_id }}</a>
       <span class="file">{{ m.title }}</span>
       {{ plan_counts(m.counts) }}
     </div>
@@ -27,7 +27,7 @@
       <span class="note">{{ plan.unparented | length }}</span></div>
     {% for id, title in plan.unparented %}
     <div class="queue-row">
-      <a class="cite" href="/ui/plans/{{ plan.repo | urlencode }}/{{ group | urlencode }}/{{ id | urlencode }}">{{ id }}</a>
+      <a class="cite" href="/ui/plans/{{ group | urlencode }}/{{ id | urlencode }}?repo={{ plan.repo | urlencode }}">{{ id }}</a>
       <span class="file">{{ title }}</span>
     </div>
     {% endfor %}

@@ -28,7 +28,7 @@ class TicketFetchError(KbError):
 _SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-def _safe(name: str) -> bool:
+def safe_name(name: str) -> bool:
     return _SAFE_NAME_RE.fullmatch(name) is not None and name not in (".", "..")
 
 
@@ -38,7 +38,7 @@ def split_ref(ticket_ref: str) -> tuple[str | None, str]:
     repo, sep, ticket_id = ticket_ref.strip().rpartition(":")
     if not sep:
         repo, ticket_id = "", ticket_ref.strip()
-    if not _safe(ticket_id):
+    if not safe_name(ticket_id):
         raise TicketFetchError(
             f"'{ticket_id}' is not a ticket id — use letters, digits, '.', '_' or '-'"
         )
@@ -60,7 +60,7 @@ def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
                 continue  # one unreadable document cannot hold the ticket
             section = next((s for s in manifest.sections if s.id == ticket_id), None)
             if section is not None:
-                if not _safe(section.file):
+                if not safe_name(section.file):
                     raise TicketFetchError(
                         f"{manifest.id} on the hub lists {ticket_id} in file "
                         f"'{section.file}', which is not a plain file name — refusing to read it"

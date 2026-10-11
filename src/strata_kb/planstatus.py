@@ -16,6 +16,7 @@ import logging
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
 import yaml
 from pydantic import ValidationError
@@ -25,7 +26,7 @@ from strata_kb.federation import FederatedRepo, load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import slice_section
 from strata_kb.planingest import TICKETS_GROUP, promote_headings
-from strata_kb.ticketfetch import _safe
+from strata_kb.ticketfetch import safe_name
 
 logger = logging.getLogger("strata_kb.planstatus")
 
@@ -36,6 +37,11 @@ _PUBLISHED = (1, 1)
 def is_plan(doc_id: str) -> bool:
     """A `<ba-repo>-plan` document: shown under Plans, never under Documents."""
     return doc_id.endswith("-plan")
+
+
+def without_plans(docs: list[dict]) -> list[dict]:
+    """Documents for the catalog: `*-plan` documents live under Plans."""
+    return [d for d in docs if not is_plan(d["id"])]
 
 
 @dataclass(frozen=True)
@@ -90,7 +96,7 @@ def _plan_docs(
 def _l3_section(fed: FederatedRepo, doc: str, entry: models.SectionEntry) -> str | None:
     """The `## <id> <title>` slice of a plan section's L3 group file; None
     when the group name is not a plain file name or the file does not hold it."""
-    if not _safe(entry.file):
+    if not safe_name(entry.file):
         return None
     try:
         l3 = (fed.kb_dir / doc / f"{entry.file}.raw.md").read_text(encoding="utf-8")
@@ -181,13 +187,26 @@ def hub_plans(
     return plans, notes
 
 
-def read_ticket(
-    hub: HubHandle, repo: str, group: str, ticket_id: str
-) -> PlanTicket | None:
-    """A published ticket of `group` (a mission id, or `tickets` for one
-    without a mission); None when ids are not plain names or it is not there."""
-    if not (_safe(repo) and _safe(group) and _safe(ticket_id)):
-        return None
+def mission_holders(
+    hub: HubHandle, mission_id: str, repo: str | None = None
+) -> list[PlanMission]:
+    """Every published mission of that id (in `repo`, when given). `repo` is
+    only compared with federation ids, never joined into a path."""
+    if not safe_name(mission_id):
+        return []
+    plans, _ = hub_plans(hub, repo)
+    return [m for p in plans for m in p.missions if m.mission_id == mission_id]
+
+
+def ticket_holders(
+    hub: HubHandle, group: str, ticket_id: str, repo: str | None = None
+) -> list[tuple[str, PlanTicket]]:
+    """(repo, ticket) for every published ticket `ticket_id` of `group` (a
+    mission id, or `tickets` for one without a mission); empty when ids are
+    not plain names or none holds it."""
+    if not (safe_name(group) and safe_name(ticket_id)):
+        return []
+    found: list[tuple[str, PlanTicket]] = []
     for fed, manifest in _plan_docs(hub, repo):
         entry = next(
             (s for s in manifest.sections if s.id == ticket_id and s.file == group),
@@ -195,10 +214,20 @@ def read_ticket(
         )
         section = _l3_section(fed, manifest.id, entry) if entry else None
         if entry is not None and section is not None and entry.id != entry.file:
-            return PlanTicket(
-                entry.title, promote_headings(section.partition("\n")[2].strip("\n"))
-            )
-    return None
+            body = promote_headings(section.partition("\n")[2].strip("\n"))
+            found.append((fed.meta.repo_id, PlanTicket(entry.title, body)))
+    return found
+
+
+def plan_href(repo: str, group: str, section_id: str) -> str:
+    """Plans page of a plan section: the mission page when it is the group's
+    own section, else the ticket page. The repo rides in `?repo=` since a
+    nested federation id contains `/`."""
+    q = f"?repo={quote(repo, safe='')}"
+    seg = quote(group, safe="")
+    if group == section_id:
+        return f"/ui/plans/{seg}{q}"
+    return f"/ui/plans/{seg}/{quote(section_id, safe='')}{q}"
 
 
 def section_paths(hub: HubHandle) -> dict[tuple[str, str, str], str]:
@@ -209,3 +238,10 @@ def section_paths(hub: HubHandle) -> dict[tuple[str, str, str], str]:
         for fed, m in _plan_docs(hub)
         for s in m.sections
     }
+
+
+def hit_href(paths: dict[tuple[str, str, str], str], hit) -> str | None:
+    """Plans page of a search hit in a `*-plan` document (`paths` from
+    `section_paths`); None for any other hit."""
+    group = paths.get((hit.source, hit.doc_id, hit.section_id))
+    return None if group is None else plan_href(hit.source, group, hit.section_id)

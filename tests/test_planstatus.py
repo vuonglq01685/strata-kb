@@ -33,8 +33,9 @@ HISTORY = (
 
 
 def _mirror(hub: Path, ba_root: Path, repo_id: str) -> None:
-    doc_id = f"{repo_id}-plan"
-    entry = make_fed_entry(hub / "federation", repo_id, doc_id)
+    namespace, _, leaf = repo_id.rpartition("/")  # "mid/ba-x" nests under mid/
+    doc_id = f"{leaf}-plan"
+    entry = make_fed_entry(hub / "federation" / namespace, leaf, doc_id)
     shutil.rmtree(entry / doc_id)
     shutil.copytree(ba_root / ".kb" / "demo-plan", entry / doc_id)
     manifest = entry / doc_id / "_manifest.yaml"
@@ -133,32 +134,70 @@ def test_hub_plans_repo_filter(plan_hub, tmp_path):
     assert planstatus.hub_plans(plan_hub, "nope") == ([], [])
 
 
-def test_read_ticket_and_unparented_group(plan_hub):
-    t = planstatus.read_ticket(plan_hub, "ba-one", MISSION_ID, US[1])
-    assert t is not None
+def test_ticket_holders_and_unparented_group(plan_hub):
+    ((repo, t),) = planstatus.ticket_holders(plan_hub, MISSION_ID, US[1])
+    assert repo == "ba-one"
     assert t.title.startswith("TAL-1580")
     assert "## Acceptance Criteria" in t.markdown
     assert "### Acceptance Criteria" not in t.markdown
-    loose = planstatus.read_ticket(
-        plan_hub, "ba-one", planstatus.TICKETS_GROUP, "TAL-1580"
-    )
-    assert loose is not None
+    loose = planstatus.ticket_holders(plan_hub, planstatus.TICKETS_GROUP, "TAL-1580")
+    assert [r for r, _ in loose] == ["ba-one"]
 
 
 @pytest.mark.parametrize(
-    "repo, mission, story",
+    "repo, group, story",
     [
         ("ba-one", MISSION_ID, "M-nope"),  # unknown story
         ("ba-one", "M-other", US[1]),  # story is in another mission
         ("ba-one", MISSION_ID, US[2]),  # backlog story without a ticket
         ("nope", MISSION_ID, US[1]),
-        ("..", MISSION_ID, US[1]),
         ("ba-one", "../x", US[1]),
         ("ba-one", MISSION_ID, "a/b"),
+        (None, MISSION_ID, ".."),
     ],
 )
-def test_read_ticket_unknown_or_unsafe_is_none(plan_hub, repo, mission, story):
-    assert planstatus.read_ticket(plan_hub, repo, mission, story) is None
+def test_ticket_holders_unknown_or_unsafe_is_empty(plan_hub, repo, group, story):
+    assert planstatus.ticket_holders(plan_hub, group, story, repo) == []
+
+
+def test_holders_without_repo_name_every_publisher(plan_hub, tmp_path):
+    publish_ba(
+        plan_hub.root, tmp_path / "ba-two", context_block(plan_hub.root), "ba-two"
+    )
+    assert [m.repo for m in planstatus.mission_holders(plan_hub, MISSION_ID)] == [
+        "ba-one",
+        "ba-two",
+    ]
+    assert [
+        m.repo for m in planstatus.mission_holders(plan_hub, MISSION_ID, "ba-two")
+    ] == ["ba-two"]
+    assert planstatus.mission_holders(plan_hub, "../x") == []
+    both = planstatus.ticket_holders(plan_hub, MISSION_ID, US[1])
+    assert [r for r, _ in both] == ["ba-one", "ba-two"]
+
+
+def test_nested_federation_repo_is_a_plan_repo(plan_hub, tmp_path):
+    publish_ba(
+        plan_hub.root, tmp_path / "mid-ba", context_block(plan_hub.root), "mid/ba-x"
+    )
+    (only,), _ = planstatus.hub_plans(plan_hub, "mid/ba-x")
+    assert (only.repo, only.doc) == ("mid/ba-x", "ba-x-plan")
+    ((repo, _),) = planstatus.ticket_holders(plan_hub, MISSION_ID, US[1], "mid/ba-x")
+    assert repo == "mid/ba-x"
+
+
+def test_plan_href_puts_the_repo_in_the_query():
+    assert (
+        planstatus.plan_href("mid/ba-x", "M-a", "M-a")
+        == "/ui/plans/M-a?repo=mid%2Fba-x"
+    )
+    assert (
+        planstatus.plan_href("ba", "M-a", "M-a-US1") == "/ui/plans/M-a/M-a-US1?repo=ba"
+    )
+    assert (
+        planstatus.plan_href("ba", "tickets", "TAL-1")
+        == "/ui/plans/tickets/TAL-1?repo=ba"
+    )
 
 
 def test_unreadable_plan_manifest_is_skipped(plan_hub):
