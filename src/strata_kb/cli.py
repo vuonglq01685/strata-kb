@@ -2225,6 +2225,12 @@ def publish(
         "--require-reviewed",
         help="Fail when any section other than machine-authored `hist.*` is not reviewed",
     ),
+    branch: str = typer.Option(
+        "",
+        "--branch",
+        help="Hub self-publish only: commit the mirror on this checked-out "
+        "branch and open/reuse its PR (no reset, no force-push)",
+    ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
     from strata_kb import publish as publish_mod
@@ -2235,6 +2241,19 @@ def publish(
     # root hub with no `hub:`, intake on a hub-to-hub publish) is a
     # PublishError, which the root guard prints as one line.
     plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
+    if branch:
+        # Before any refresh or write. publish() re-checks the git-side rules.
+        if direct:
+            raise publish_mod.PublishError("--branch cannot be combined with --direct")
+        if plan.route == "intake":
+            raise publish_mod.PublishError(
+                "--branch cannot be used with `intake:` -- the intake route opens "
+                "its own PR"
+            )
+        if plan.route != "snapshot" or not plan.self_publish:
+            raise publish_mod.PublishError(
+                "--branch only applies to a hub's self-publish"
+            )
     # A hand publish sends the -code CI would send for this commit — never a
     # stale or summarized copy. No --no-refresh here: skipping it is exactly
     # the divergence this prevents.
@@ -2320,6 +2339,7 @@ def publish(
             repo_id=effective_repo_id(repo_id, kb_dir),
             mode=plan.mode,
             self_publish=plan.self_publish,
+            branch=branch or None,
         )
     except (OSError, *_CONFIG_READ_ERRORS) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)

@@ -467,8 +467,10 @@ def push_branch(
     token: str | None = None,
     *,
     timeout: float | None = None,
+    force: bool = True,
 ) -> None:
-    """Force-push the working branch (publish/<rid> is owned by the publisher).
+    """Force-push the working branch (publish/<rid> is owned by the publisher);
+    `force=False` for a branch with history to keep (`kb publish --branch`).
     `timeout`: see `_run_network`."""
     stripped, embedded = split_credentials(remote_url(root))
     proc = _run_network(
@@ -476,7 +478,7 @@ def push_branch(
         credential_env(stripped, token or embedded),
         f"push branch '{branch}'",
         "push",
-        "--force",
+        *(["--force"] if force else []),
         "origin",
         branch,
         timeout=timeout,

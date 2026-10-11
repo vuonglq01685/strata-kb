@@ -1288,6 +1288,7 @@ def publish(
     max_retries: int = 3,
     mode: str = "auto",
     self_publish: bool = False,
+    branch: str | None = None,
 ) -> PublishReport:
     kb_abs = kb_dir.resolve()
     warn_legacy_ids(kb_abs)
@@ -1301,6 +1302,8 @@ def publish(
     # is exempt from governance: requiring the hub owner to register
     # themselves and open a PR against themselves would only break it.
     is_self = self_publish or handle.root.resolve() == source_root.resolve()
+    if branch and not is_self:
+        raise PublishError("--branch only applies to a hub's self-publish")
     registry_map = None if is_self else _governed_registry(handle, hub_label)
     rid = repo_id or source_root.name
     if registry_map is not None:
@@ -1311,6 +1314,9 @@ def publish(
     _neutralize_excludes(handle.root)
 
     has_remote = gitio.has_remote(handle.root)
+    if branch:
+        _require_branch_pr(handle.root, branch, has_remote)
+        return _publish_on_branch(kb_abs, handle, rid, source_commit, branch)
     mode = pubgate.decide_mode(
         mode,
         has_remote=has_remote,
@@ -1321,6 +1327,29 @@ def publish(
     if mode == "pr":
         return _publish_pr(kb_abs, handle, rid, source_commit)
     return _publish_direct(kb_abs, handle, rid, source_commit, max_retries)
+
+
+def _require_branch_pr(root: Path, branch: str, has_remote: bool) -> None:
+    """Refuse `--branch` unless it is checked out, is not the default branch,
+    and a PR can be opened -- a code-sync change never lands without review."""
+    current = gitio.current_branch(root)
+    if current != branch:
+        raise PublishError(
+            f"--branch {branch} must be checked out, but the hub is on "
+            f"'{current}' -- run `git checkout {branch}` first"
+        )
+    if not has_remote or not ghio.can_open_pr(root):
+        raise PublishError(
+            "--branch needs a hub remote and the GitHub CLI able to open a PR "
+            "-- it never publishes without a PR"
+        )
+    # origin_head_ref raises (not guesses) when origin/HEAD is unset: the
+    # checked-out branch would always equal `branch` and hide the mistake.
+    if gitio.origin_head_ref(root) == f"origin/{branch}":
+        raise PublishError(
+            f"--branch {branch} is the hub's default branch -- publishing "
+            "there would skip the PR"
+        )
 
 
 def publish_federation(
@@ -1572,6 +1601,47 @@ def _publish_pr(
             )
     finally:
         gitio.checkout(handle.root, original)
+    return PublishReport(
+        rid,
+        reported_commit,
+        n_docs,
+        True,
+        mode="pr",
+        pr_url=url,
+        skipped=skipped,
+        remote=True,
+    )
+
+
+def _publish_on_branch(
+    kb_abs: Path,
+    handle: hub_mod.HubHandle,
+    rid: str,
+    source_commit: str,
+    branch: str,
+    snapshot_fn=_snapshot,
+) -> PublishReport:
+    """`_publish_pr` for a rolling branch: commit the federation mirror on top
+    of the checked-out `branch` (no reset, no force-push, no switch back)."""
+    n_docs, changed, skipped = snapshot_fn(kb_abs, handle, rid, source_commit)
+    federation.write_federation_index(handle.federation_dir, changed={rid})
+    committed = gitio.commit_paths(
+        handle.root, f"publish: {rid} @ {source_commit}", ["federation"]
+    )
+    reported_commit = _reported_commit(handle, rid, source_commit, changed)
+    if not committed:
+        return PublishReport(
+            rid, reported_commit, n_docs, False, mode="pr", skipped=skipped, remote=True
+        )
+    gitio.push_branch(handle.root, branch, handle.token, force=False)
+    url = ghio.pr_url_for_branch(handle.root, branch)
+    if not url:
+        url = ghio.create_pr(
+            handle.root,
+            branch,
+            title=f"publish: {rid} @ {source_commit}",
+            body=PR_BODY_TEMPLATE.format(rid=rid, commit=source_commit),
+        )
     return PublishReport(
         rid,
         reported_commit,
