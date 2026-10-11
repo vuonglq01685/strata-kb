@@ -119,6 +119,11 @@ app.add_typer(plan_app, name="plan")
 impl_app = typer.Typer(help="Dev work folders: docs/impl/<ticket-id>/.")
 app.add_typer(impl_app, name="impl")
 
+code_sync_app = typer.Typer(
+    help="Keep hub docs in step with the code docs: scan for drift, set the baseline."
+)
+app.add_typer(code_sync_app, name="code-sync")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -833,6 +838,20 @@ def ingest(
         typer.echo("kb build: OK")
 
 
+def _require_hub_kind(kb_dir: Path, command: str) -> None:
+    """Exit 1 unless `kb_dir`'s config says `kind: hub`."""
+    from strata_kb import config
+
+    kind = config.load_config(kb_dir).kind
+    if kind != "hub":
+        typer.secho(
+            f"{command} runs only on a kind: hub repo (this one is "
+            f"kind: {kind or 'unset'})",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+
 @app.command()
 def authored(
     doc_id: str = typer.Argument(..., help="Document ID to mark"),
@@ -841,23 +860,85 @@ def authored(
 ) -> None:
     """Tag a hub doc `authored`: its markdown is the master, `kb ingest` refuses it."""
     from strata_kb import authored as authored_mod
-    from strata_kb import config
 
     try:
-        kind = config.load_config(kb_dir).kind
-        if kind != "hub":
-            typer.secho(
-                f"kb authored runs only on a kind: hub repo (this one is "
-                f"kind: {kind or 'unset'})",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(1)
+        _require_hub_kind(kb_dir, "kb authored")
         changed = authored_mod.set_authored(kb_dir, doc_id, not off)
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     state = "unmarked" if off else "marked"
     typer.echo(f"kb authored: {doc_id} {state if changed else 'already ' + state}")
+
+
+def _code_sync_root(kb_dir: Path, command: str) -> Path:
+    """The hub repo root, after the hub-kind check."""
+    from strata_kb import gitio
+
+    _require_hub_kind(kb_dir, command)
+    return gitio.git_root(kb_dir.resolve().parent)
+
+
+@code_sync_app.command("scan")
+def code_sync_scan(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    baseline: str = typer.Option(
+        "", "--baseline", help="Compare against this hub commit, not the baseline file"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    md: bool = typer.Option(False, "--md", help="Emit the Markdown work order"),
+) -> None:
+    """Hub docs that name something the code docs changed since the baseline.
+    Exit 0 nothing to do, 2 findings, 1 error."""
+    from strata_kb.codesync import scan
+    from strata_kb.errors import KbError
+
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+        result = scan.run_scan(root, baseline_sha=baseline or None)
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if json_output:
+        typer.echo(json.dumps(scan.to_json(result)))
+    elif md:
+        typer.echo(scan.render_markdown(result), nl=False)
+    else:
+        for note in result.notes:
+            typer.echo(f"note: {note}")
+        for f in result.findings:
+            typer.echo(f"{f.doc_id} §{f.section_id}: {scan.line(f)}")
+        if not result.findings:
+            typer.echo("kb code-sync: nothing to update")
+    code = scan.exit_code(result)
+    if code:
+        raise typer.Exit(code)
+
+
+@code_sync_app.command("baseline")
+def code_sync_baseline(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    at: str = typer.Option(
+        "", "--at", help="Hub commit to record (default: the scan sha)"
+    ),
+) -> None:
+    """Record the hub commit the code-sync is current at, in kb-code-sync.yaml."""
+    from strata_kb import gitio
+    from strata_kb.codesync import baseline as baseline_mod
+    from strata_kb.errors import KbError
+
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+        sha = (
+            gitio.resolve_commit(root, baseline_mod.check_sha(at))
+            if at
+            else baseline_mod.scan_ref(root)
+        )
+        baseline_mod.write(root, sha)
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo(sha)
 
 
 _LLM_CHOICES = ("", "claude", "copilot", "none")

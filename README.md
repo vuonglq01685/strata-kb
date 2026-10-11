@@ -260,6 +260,7 @@ that follows it.
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
 | `kb authored` | Tag a hub doc `authored` (markdown is the master; `kb ingest` refuses it) |
+| `kb code-sync` | `scan` hub docs that name code that changed since the baseline (`--md`, `--json`; exit 2 on findings); `baseline` records the commit |
 | `kb status` | List sections still pending summarization |
 | `kb build` | Validate the store: no blanks, table integrity, quality rules, token counts |
 | `kb approve` | Mark sections reviewed (`summarized` → `reviewed`) |

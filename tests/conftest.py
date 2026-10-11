@@ -502,6 +502,38 @@ def fed_hub(tmp_path: Path, run_git) -> Path:
     return hub
 
 
+ARCH_L3 = (
+    "## 4.2 Payment flow\n\n"
+    "payment-service calls ledger, which posts to the payments table.\n"
+)
+
+
+@pytest.fixture
+def code_sync_hub(fed_hub: Path, run_git):
+    """`(root, base_sha)`: fed_hub plus a `kind: hub` config, an `authored`
+    hub-owned doc `federation/kb-hub/arch/` naming ledger and payments, and
+    the dev repo `acme`'s `-code` / `-svc` docs, all committed."""
+    from strata_kb.config import KBConfig
+    from tests.test_codesync_changes import BASE_SECTIONS, commit, write_doc, write_svc
+
+    models.save_yaml_model(
+        fed_hub / ".kb" / "config.yaml",
+        KBConfig(kind="hub", hub=".", repo_id="kb-hub"),
+    )
+    make_fed_entry(
+        fed_hub / "federation",
+        "kb-hub",
+        "arch",
+        tags=["authored"],
+        sec_id="4.2",
+        sec_title="Payment flow",
+        l3=ARCH_L3,
+    )
+    write_doc(fed_hub, "acme", "code", BASE_SECTIONS)
+    write_svc(fed_hub, "Checkout calls the ledger service.")
+    return fed_hub, commit(fed_hub, run_git)
+
+
 # ==========================================================================
 # Web /ui session fixtures (M4, Task 9) — shared by tests/test_web_session.py
 # and every web-lane task that follows it (10-13). Function-scoped: Task 11
