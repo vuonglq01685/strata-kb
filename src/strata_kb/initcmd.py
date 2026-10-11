@@ -127,13 +127,26 @@ BA_LOCAL_OVERRIDES: dict[str, str] = {
 }
 
 
-def _init_template_text(name: str) -> str:
-    return (
-        resources.files("strata_kb")
-        .joinpath("templates/init")
-        .joinpath(name)
-        .read_text(encoding="utf-8")
+# A template whose last line is this directive is a stub: its own frontmatter
+# (and, for some, a heading) followed by a body shared with the other tools'
+# copies of the same skill, kept once under templates/init/bodies/ (1.16.0).
+_INCLUDE_RE = re.compile(r"<!-- strata-kb:include (bodies/[a-z0-9-]+\.md) -->\n\Z")
+
+
+def read_template(name: str) -> str:
+    """The text `kb init` writes for template `name`, shared body included."""
+    base = resources.files("strata_kb").joinpath("templates/init")
+    text = base.joinpath(name).read_text(encoding="utf-8")
+    match = _INCLUDE_RE.search(text)
+    if match is None:
+        return text
+    return text[: match.start()] + base.joinpath(match.group(1)).read_text(
+        encoding="utf-8"
     )
+
+
+def _init_template_text(name: str) -> str:
+    return read_template(name)
 
 
 def _scaffold_local_overrides(
@@ -511,16 +524,11 @@ def init_repo(
     never wholesale-overwritten, even with ``force=True`` (R18).
     """
     templates = template_map(kind)
-    base = resources.files("strata_kb").joinpath("templates/init")
     repo_id = target.resolve().name
     report = InitReport()
     for rel, resource_name in templates.items():
         dest = target / rel
-        text = _render(
-            resource_name,
-            base.joinpath(resource_name).read_text(encoding="utf-8"),
-            repo_id,
-        )
+        text = _render(resource_name, read_template(resource_name), repo_id)
         if rel == ".gitignore":
             _apply_gitignore(dest, text, report)
             continue

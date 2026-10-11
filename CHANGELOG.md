@@ -3,6 +3,10 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.15.2 — 2026-10-11
+
+- Skill templates: a skill's Copilot and Cursor copies, and for seven skills its Claude skill too, now share one body under `templates/init/bodies/`. Each copy keeps only its own frontmatter and intro. `kb init` writes exactly the same files as 1.15.1, byte for byte; an edit to a shared skill is now made once.
+
 ## 1.15.1 — 2026-10-10
 
 Internal structure only; no behaviour, message or exit-code change.

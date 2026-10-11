@@ -164,8 +164,9 @@ def test_all_init_templates_exist_as_package_resources():
 
 
 def _read_init_template(name: str) -> str:
-    base = resources.files("strata_kb").joinpath("templates/init")
-    return base.joinpath(name).read_text(encoding="utf-8")
+    from strata_kb.initcmd import read_template
+
+    return read_template(name)
 
 
 def test_ba_ticket_author_templates_exist_as_package_resources():
@@ -1969,11 +1970,9 @@ SUMMARIZE_WRAPPERS = [
 
 
 def _tpl(name: str) -> str:
-    return (
-        resources.files("strata_kb.templates.init")
-        .joinpath(name)
-        .read_text(encoding="utf-8")
-    )
+    from strata_kb.initcmd import read_template
+
+    return read_template(name)
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -3241,6 +3240,8 @@ def test_dev_implement_ticket_runs_impl_tidy_at_intake():
 
 def test_no_template_names_the_flat_impl_layout():
     flat = _re.compile(r"docs/impl/<(ticket-id|id)>-(design|plan|context|review)")
+    from strata_kb.initcmd import read_template
+
     for f in resources.files("strata_kb").joinpath("templates/init").iterdir():
         if f.is_file():
-            assert not flat.search(f.read_text(encoding="utf-8")), f.name
+            assert not flat.search(read_template(f.name)), f.name

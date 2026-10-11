@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from strata_kb import models
 from strata_kb.cli import app
 from strata_kb.federation import FederationMeta, write_federation_index
+from strata_kb.initcmd import read_template
 from tests.test_ticketcheck import MISSION, grounding, mission_with_services, ticket
 
 runner = CliRunner()
@@ -218,11 +219,7 @@ def test_docs_name_the_check_command():
         "copilot-sa-ticket-ground.prompt.md",
         "cursor-sa-ticket-ground.md",
     ):
-        text = (
-            resources.files("strata_kb")
-            .joinpath(f"templates/init/{name}")
-            .read_text(encoding="utf-8")
-        )
+        text = read_template(name)
         assert "has no `ticket check` command yet" not in text, name
     changelog = (_P(__file__).resolve().parents[1] / "CHANGELOG.md").read_text(
         encoding="utf-8"
