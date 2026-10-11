@@ -706,7 +706,8 @@ and the BA sets `intake:` in `.kb/config.yaml`. An existing `ba` repo adds
 **`ba-ticket-author`** runs a nine-step pipeline: **Intake** (the business
 need — capability, role, value) → **Parent mission** (optional; reads
 `missions/<mission-id>.md`, takes the story title from the backlog row, writes a
-`> Parent mission: <mission-id>` line under the title and saves as
+`> Parent mission: <mission-id> @ rev <N>` line under the title (`@ rev` is
+optional; absent means rev 1) and saves as
 `tickets/<mission-id>/<mission-id>-US<n>.md`) → **Ground** (`kb_search` surfaces candidates,
 the BA picks) → **Draft** (story, acceptance criteria, use cases, sequence and
 business-flow Mermaid diagrams, citing `doc-id §section` for every claim touching
@@ -746,6 +747,34 @@ review → Review**, saving `missions/M-<slug>.md` with a C4 **Level 1** (System
 Context) *and* **Level 2** (Container) diagram plus a user-story backlog whose
 ids derive from the mission id.
 
+**Keeping them current.** Every mission and ticket carries `> Revision: <N>`
+under its title (absent reads as 1, with a lint warning) and an append-only
+`## Change log` before `## Review record`:
+`| Rev | Date | Trigger | What changed | Affected | Review |`. With `N > 1` the
+log must hold exactly one row per revision `2..N`, in order, and each `Trigger`
+is one or more of `kb-context`, `architecture`, `scope`, `delivery`; lint fails
+otherwise. `Affected` lists full story ids (`M-<slug>-US<n>`) in a mission and
+section names in a ticket. `Review` holds the amendment's maturity scores, never
+`## Review record`.
+
+`/ba-mission-plan --amend M-<slug>` and `/ba-ticket-author --amend <ticket>`
+make the change. They read the file and its `kb ticket stale --md` findings,
+ask for the trigger, re-pin `## KB context` with `kb_context_new` for the refs
+that moved, and run `sa-ticket-ground` (`--mission` for a mission) plus `kb
+ticket check` only for an `architecture` trigger. Then they bump `Revision`,
+append the row, lint, review the changed sections for one round and hand the
+diff to the BA. The agent never ticks a Definition of Ready box (an amended
+ticket gets the affected boxes unticked), commits or pushes. The rules: a story
+`kb mission next` reports `done` is frozen and new work gets the next free US
+number; a `DECIDED` decision is superseded, never edited. The superseding row
+says `Supersedes D<k>` in its Decision cell and `D<k>` becomes `SUPERSEDED`;
+`kb ticket check` then rejects a `[NEW: D<k>]` naming it and points at the
+superseding row, and `kb mission next` judges a `SUPERSEDED` blocker by the row
+that supersedes it. A ticket's parent line is `> Parent mission: M-<slug> @ rev
+<N>`; when the mission's revision is higher and a later change-log row lists the
+story in `Affected`, `kb mission next` reports the ticket `draft` with reason
+`parent mission rev <M> affects this story`, and `kb plan-ingest` leaves it out.
+
 | Command | Purpose | Exit |
 |---|---|---|
 | `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required sections present; every `## KB context` ref resolves at its pinned commit; every inline `doc-id §section` citation is backed by a pinned ref and vice versa | `0` PASS, `1` FAIL, `2` stale |
@@ -772,7 +801,13 @@ A ticket is checked again after it merges: `ba` and `dev` repos also get
 `.github/workflows/kb-doctor.yml`, which runs `kb ticket stale` every day (and on
 demand) over `tickets/` and `missions/`. While any citation is stale or broken it
 keeps one open issue labelled `kb-stale-citations` listing them; once everything
-is current again it closes that issue. It needs the same `STRATA_KB_HUB` variable
+is current again it closes that issue. Besides KB-context citations, `kb ticket
+stale` compares the `svc.*` ids of a mission's `## Services & order` and the ids
+of a ticket's `## Technical grounding` with the `-code` document they were
+grounded on (`Kind` column: `kb-context` or `architecture`); a cited section
+that changed is `stale`, one that is gone is `broken`, and a `Grounded on:`
+revision that is not on the hub is one `stale` finding, `baseline not on hub`.
+Only cited sections count. It needs the same `STRATA_KB_HUB` variable
 and `KB_HUB_TOKEN` secret as `kb-ticket-lint.yml`.
 
 Scaffold with `kb init --kind ba`; the generated `QUICKSTART-BA.md` covers

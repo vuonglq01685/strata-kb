@@ -1,6 +1,6 @@
 ---
 description: Draft a Dev-ready ticket (story, ACs, use cases, Mermaid diagrams) grounded in the KB with pinned citations, via the ba-ticket-author skill
-argument-hint: "[business need]"
+argument-hint: "[business need | --amend <ticket>]"
 ---
 
 Invoke the `ba-ticket-author` skill with the Skill tool and follow its
@@ -15,14 +15,27 @@ line ask the BA for its folder and run
 only with its reasons acknowledged by the BA and carried into the
 handover.
 
+With `--amend <ticket>`, skip Intake and follow the skill's `## Amend mode`:
+read the ticket and its `kb ticket stale --md` findings, ask the BA for the
+trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`), re-pin with
+`kb_context_new` only the refs that moved, run `/sa-ticket-ground` and
+`kb ticket check` ONLY for an `architecture` trigger, bump `> Revision:` and
+append a `## Change log` row (`Affected` = section names), run `kb ticket
+lint` until `DoR: PASS`, review the changed sections only (one round, scores
+in the row's `Review` cell, never in `## Review record`), untick the DoR
+boxes whose evidence changed and update the `@ rev` pin. A `done` story's
+ticket is frozen: new work gets the next free US number. A `DECIDED` row is
+superseded, never edited. The agent never ticks DoR, commits or pushes.
+
 Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
 to `tickets/<mission-id>/<mission-id>-US<n>.md` under a parent mission, so
 the back-link check can find it; otherwise ask the BA for a kebab-case
 folder name (an epic or feature, e.g. `epic-billing`) and never invent
 the folder name.
 When the BA names a parent mission, read it for the story title, put
-`> Parent mission: <mission-id>` on its own line directly under the
-ticket's H1 title, and inherit its pinned refs as STARTING CANDIDATES
+`> Parent mission: <mission-id> @ rev <N>` on its own line directly
+under the ticket's H1 title (`<N>` = the mission's current `> Revision:`;
+`@ rev` is optional, absent = rev 1), and inherit its pinned refs as STARTING CANDIDATES
 ONLY — never copy its `kb-context` wholesale; pin the ticket's own refs
 fresh. Hard rules the skill enforces: citations are mandatory
 for standard claims; budget `kb_search` at 500–800 tokens for broad

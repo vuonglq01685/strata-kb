@@ -2975,3 +2975,14 @@ def test_other_dev_skills_accept_a_fetched_ticket_file():
     for skill in ("dev-plan", "dev-design", "dev-execute", "dev-handover"):
         for name in (f"claude-skill-{skill}.md", f"claude-command-{skill}.md"):
             assert "docs/impl/<ticket-id>/ticket.md" in initcmd.read_template(name)
+
+
+def test_ba_skills_document_amend_mode():
+    for stem in ("ba-mission-plan", "ba-ticket-author"):
+        for name in (
+            f"claude-skill-{stem}.md",
+            f"claude-command-{stem}.md",
+            f"copilot-{stem}.prompt.md",
+            f"cursor-{stem}.md",
+        ):
+            assert "--amend" in initcmd.read_template(name), name

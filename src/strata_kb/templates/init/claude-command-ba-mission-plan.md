@@ -1,13 +1,14 @@
 ---
 description: Draft an epic-level Mission Plan (C4 L1/L2 diagrams, scope, US backlog) grounded in the KB with pinned citations, via the ba-mission-plan skill
-argument-hint: "[business need]"
+argument-hint: "[business need | --amend M-<slug>]"
 ---
 
 # /ba-mission-plan — draft a grounded, epic-level mission plan
 
 Invoke the `ba-mission-plan` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the business need when given; when
-empty, ask for it during Intake. Use a mission for a large feature that
+empty, ask for it during Intake. With `--amend M-<slug>`, follow the
+`## Amend mode` section instead of Intake. Use a mission for a large feature that
 spans several User Stories — small work goes straight to
 `/ba-ticket-author`; a mission is not mandatory.
 
@@ -169,6 +170,55 @@ spans several User Stories — small work goes straight to
    remaining owned gaps to the BA in the handover summary.
 9. **Review → save** — write the final Markdown to
    `missions/<mission-id>.md`. Hand it to the BA to review and commit.
+
+## Amend mode — `--amend <M-id>`
+
+`/ba-mission-plan --amend M-<slug>` changes a mission that already exists
+(committed, perhaps already published). It does NOT run the workflow above
+from Intake: the mission keeps its id and filename, and every change is
+recorded in `## Change log`. A new mission is never created by `--amend`.
+
+1. **Read** `missions/<M-id>.md`, then run `kb ticket stale --md
+   missions/<M-id>.md` and read the findings for it (reason
+   `kb-context` or `architecture`). Run `kb mission next` as well, to see
+   which stories are `done`.
+2. **Ask** the BA for the trigger(s) — one or more of `kb-context`,
+   `architecture`, `scope`, `delivery` — and what changed. The drift
+   findings pre-fill the answer; ask, don't guess.
+3. **`kb-context` trigger** — re-pin `## KB context` with the MCP tool
+   `kb_context_new` when available, otherwise `kb context new --refs
+   "<refs>"` (CLI), only for the refs that moved or are new. The `tags`
+   rule of step 6 still holds: never pass tags.
+4. **`architecture` trigger only** — hand off to `sa-ticket-ground
+   --mission` on the mission. It refreshes `## Services & order` and the
+   `Grounded on:` revision, then runs `kb ticket check`. For any other
+   trigger, skip the SA and `kb ticket check`: they would force a
+   re-ground after every dev commit. You still never read `<repo>-code`
+   or `<repo>-svc` yourself.
+5. **Apply the change rules** below.
+6. **Bump `> Revision:` and append the change-log row** `| Rev | Date |
+   Trigger | What changed | Affected | Review |`. In `Affected` write FULL
+   story ids (`M-<slug>-US<n>`), comma-separated, or `-` — a bare `US<n>`
+   is not matched by `kb mission next`, so a ticket would never be flagged.
+7. **Lint** — `kb mission lint <file>` until it reports `DoR: PASS`.
+8. **Maturity review of the changed sections only** — one round, the same
+   rubric and the same two perspectives as step 8 of the workflow. Write
+   the scores into the new row's `Review` cell (e.g. `B4 D4 (agent)`) —
+   never into `## Review record`.
+9. **Hand the diff to the BA.** The agent never ticks a DoR box, commits
+   or pushes. The BA's next `kb publish` ships the amended mission.
+
+Change rules:
+
+- **Done stories are frozen.** A story `kb mission next` reports `done`
+  keeps its backlog row unchanged. New or changed work becomes a new row
+  with the next free US number — numbers are never reused or renumbered.
+- Stories not yet done may be edited; list each in the row's `Affected`.
+- **A `DECIDED` row is superseded, never edited.** Add a row `D<n>` with
+  `Supersedes D<k>` in its Decision cell, and set `D<k>`'s status to
+  `SUPERSEDED`. Later `[NEW: D<k>]` citations must name `D<n>`.
+- Tickets already written against this mission keep their `@ rev` pin; the
+  BA re-authors a flagged story with `/ba-ticket-author --amend`.
 
 ## Hard rules
 

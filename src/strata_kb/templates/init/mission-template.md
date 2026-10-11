@@ -125,7 +125,8 @@ kb-context:
 ## Change log
 <!-- Append-only: one row per revision >= 2, in order; bump `> Revision:` under
 the title in the same edit. Trigger is one or more of kb-context,
-architecture, scope, delivery (comma-separated). Affected is US ids, or `-`.
+architecture, scope, delivery (comma-separated). Affected is full US ids
+(M-<slug>-US<n>), or `-`.
 Review holds the amendment's maturity scores, e.g. `B4 D4 (agent)`;
 amendments are not recorded in Review record. -->
 | Rev | Date | Trigger | What changed | Affected | Review |

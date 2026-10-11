@@ -59,8 +59,9 @@ publish one thing: its **plan**, the ready missions and tickets, as the
    2. **Parent mission (optional)** — if this ticket implements a story
       from a mission plan, name the mission. It reads
       `missions/<mission-id>.md`, takes the story title from the US
-      backlog row, and writes `> Parent mission: <mission-id>` on its own
-      line directly under the ticket's title — the input the back-link
+      backlog row, and writes `> Parent mission: <mission-id> @ rev <N>` on its
+      own line directly under the ticket's title (`<N>` is the mission's
+      current revision; `@ rev` is optional, and absent means rev 1) — the input the back-link
       check (see below) reads. The ticket is then saved as
       `tickets/<mission-id>/<mission-id>-US<n>.md` instead of
       `tickets/<folder>/<ticket-id>.md`, so that check can find it. With
@@ -172,7 +173,7 @@ Per mission:
 4. Commit the mission, then draft each story with `/ba-ticket-author`,
    naming the parent mission. Tickets are saved as
    `tickets/M-<slug>/M-<slug>-US<n>.md` and carry a
-   `> Parent mission: M-<slug>` line.
+   `> Parent mission: M-<slug> @ rev <N>` line.
 
 What the mission gate enforces: required structure, an L1 and an L2
 diagram, a well-formed backlog whose ids derive from the mission id, and
@@ -329,6 +330,28 @@ a private hub the gate fails there with a hub-unreachable message. That is
 the gate refusing to go green without checking, not a network fault — merge
 fork contributions through a branch in this repository, or make the hub
 readable without a token.
+
+## Amending a mission or ticket
+
+Once a mission or ticket is merged, change it with
+`/ba-mission-plan --amend M-<slug>` or `/ba-ticket-author --amend <ticket>`,
+not by hand. The agent reads the file and its `kb ticket stale --md`
+findings, asks you for the trigger (`kb-context`, `architecture`, `scope`,
+`delivery`), then bumps `> Revision:` and appends a row to `## Change log`.
+In a mission's `Affected` cell it writes full story ids
+(`M-<slug>-US<n>`), because `kb mission next` matches only full ids.
+
+- The SA (`/sa-ticket-ground`) and `kb ticket check` run only for an
+  `architecture` trigger.
+- A story `kb mission next` reports `done` is frozen: new work gets the next
+  free US number. A `DECIDED` decision is superseded by a new row, never
+  edited.
+- The amendment's maturity scores go in the Change log `Review` cell, never
+  in `## Review record`.
+- A ticket whose mission moved on past its `@ rev` pin, with a change-log row
+  listing its story, shows as `draft` in `kb mission next`.
+- The agent never ticks a Definition of Ready box, commits or pushes: you
+  re-tick, review the diff and commit. The next `kb publish` ships it.
 
 ## Upgrading an existing BA repo
 

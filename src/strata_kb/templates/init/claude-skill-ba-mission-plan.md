@@ -16,5 +16,6 @@ Use a mission for a large feature that spans several User Stories. Small
 work goes straight to `/ba-ticket-author` — a mission is not mandatory.
 
 An optional argument gives the business need directly; no argument = ask
-for it during Intake.
+for it during Intake. `--amend <M-id>` changes an existing mission instead
+— see `## Amend mode` below.
 <!-- strata-kb:include bodies/ba-mission-plan.md -->
