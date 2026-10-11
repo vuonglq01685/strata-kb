@@ -12,6 +12,7 @@ All notable changes to Strata are recorded here. This project follows
 - **Parent mission from the hub.** A ticket outside a BA repo (such as `docs/impl/<id>/ticket.md` in a Dev repo) reads its parent mission's decisions from the hub `<repo_id>-plan` document when no local `missions/` holds it, so `[NEW: D<k>]` rows are checked there too.
 - **`ba-ticket-author` amend rule.** `kb ticket check` now runs on every amend, whatever the trigger. The SA still runs first for an `architecture` trigger; for any other trigger it runs only when the check FAILs with `re-run /sa-ticket-ground`, and the "re-run by hand" rule follows the same test instead of "when `-code` moves". `ba-mission-plan` is unchanged. `sa-ticket-ground` learns that a `[warn] grounded @…` is a PASS.
 - **Public helpers.** `ticketstale.drift_refs` and `ticketstale.cited_ids` are now public: other modules may call them. `kb ticket stale`, its exit codes and `kb-doctor.yml` are unchanged.
+- **Docs follow.** The BA, Dev and architecture guides (English and Vietnamese), `QUICKSTART-ba.md`, `QUICKSTART-dev.md` and the README describe the tiered check, the Dev-side Check step and the split amend rule (tickets check on every amend; missions only for `architecture`).
 
 ## 1.17.0 — 2026-10-11
 

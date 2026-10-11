@@ -899,7 +899,7 @@ across sessions. State is derived from which artifacts exist — never stored in
 sidecar file.
 
 ```
-/dev-implement-ticket <ticket>   → intake · resolve · ground · placeholders
+/dev-implement-ticket <ticket>   → intake · check · resolve · ground · placeholders
                                  → dev-design    ── GATE 1: Dev approves design
                                  → dev-plan      ── GATE 2: Dev approves plan
                                  → dev-execute      (repeatable, resumable)

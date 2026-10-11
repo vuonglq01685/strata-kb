@@ -116,8 +116,11 @@ document, so other repos can read them from the hub.
       into Jira yourself — the guidance comments and the BA-internal
       `## Definition of Ready` / `## Review record` are left out; the
       assistant never pushes to the tracker for you.
-Run `/sa-ticket-ground tickets/<folder>/<ticket-id>.md` by hand only to
-re-ground a ticket after `<repo>-code` has moved.
+Run `/sa-ticket-ground tickets/<folder>/<ticket-id>.md` by hand only when
+`kb ticket check` fails with `re-run /sa-ticket-ground`. A `Grounded on:`
+revision that moved is not a failure by itself: while every cited fact still
+holds the check passes, with a `[warn]` and a diff for each cited section that
+changed.
 
 ### Greenfield repos: what `[NEW: D<n>]` means
 
@@ -582,8 +585,10 @@ tiering change shows up in the report the next ticket generates.
   — run the SA grounding gate: every id in `## Technical grounding` must
   exist in the hub's `<repo>-code` document, every `[NEW: D<n>]` must name a
   `DECIDED` row of the parent mission's `## Technology decisions`
-  (`--missions-dir`, default the sibling `missions/`), and `Open decisions`
-  must be empty (`Grounding: PASS`). `--heading "## Services & order"`
+  (`--missions-dir`, default the sibling `missions/`, then the hub's plan),
+  and `Open decisions` must be empty (`Grounding: PASS`). A moved
+  `Grounded on:` revision fails only when a cited fact is gone; then the
+  output ends with `re-run /sa-ticket-ground`. `--heading "## Services & order"`
   checks a mission plan's SA section against its own table
 - `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`
   — which story is `done` / `ready` / `draft` / `to-draft` / `blocked` across

@@ -189,7 +189,7 @@ auto-merge.
 Five commands, scaffolded for Claude Code, GitHub Copilot and Cursor.
 
 ```
-/dev-implement-ticket <ticket>     intake · resolve · ground · placeholders
+/dev-implement-ticket <ticket>     intake · check · resolve · ground · placeholders
         │
         ├─► dev-design       ── A1: independent reviewer ── GATE 1: you approve the design
         ├─► dev-plan         ── A2: independent reviewer ── GATE 2: you approve the plan
@@ -199,7 +199,7 @@ Five commands, scaffolded for Claude Code, GitHub Copilot and Cursor.
 ```
 
 `/dev-implement-ticket` is also the orchestrator: given a fresh ticket it runs
-the first four steps, then invokes the phases in order, detecting how far a
+the first five steps, then invokes the phases in order, detecting how far a
 ticket already got so it never redoes finished work.
 
 ## 4.1 A ticket id is enough
@@ -234,6 +234,23 @@ ticked every box, so no step may stop on its absence.
 The parent mission's `## Sequencing` is read the same way when there is no local
 mission file (`kb get <doc> <M-id> --level l3`), so you can see what the ticket is
 blocked by without cloning the BA repo.
+
+### The grounding check
+
+Right after Intake the flow runs `kb ticket check docs/impl/<id>/ticket.md` (your
+`<ticket-file>`; skipped with a note when the ticket has no `## Technical
+grounding`). It reads the hub's `-code` and, for a `[NEW: D<n>]`, the parent
+mission from the hub's plan when no local `missions/` holds it. The `Grounded on:`
+revision moves with every commit you merge, so a mismatch alone never fails:
+
+| Output | Meaning | What to do |
+|---|---|---|
+| PASS, `[note] grounded @<old>, still valid at @<new> — cited sections unchanged` | Nothing the ticket cites changed | Carry on |
+| PASS, `[warn] … §<id> changed; cited names still hold, review the diff:` | A cited section changed, every cited name is still there | Read the diff and decide; carry on unless it changes the ticket's meaning |
+| PASS, `[warn] some cited facts could not be verified …` | A check was skipped (e.g. a tree cap) | Check those facts by hand |
+| FAIL, `… re-run /sa-ticket-ground` | A cited id, column, route, command, file or compose fact is gone | Stop: a blocker for the BA, whose SA re-grounds the ticket |
+| FAIL, plus `[note] checked against the local -code, not the hub's copy …` | The hub was unreachable or lacks `-code`; your branch may be the cause | Re-run once the hub is reachable and holds the `-code` |
+| FAIL without the re-ground line | An open decision or an undecided `[NEW: D<k>]` | Report it to the BA and stop |
 
 ### What a ticket's status means to you
 
@@ -502,7 +519,7 @@ document is regenerated from your working tree whenever a command needs it:
 `kb svc note`, `kb build`, `kb doctor` and `kb publish` refresh it first when
 it is missing, older than `HEAD`, or your tracked files have changes. A new
 file counts once it is tracked (`git add`). `kb ticket check` reads the hub
-copy first — that is what the SA grounded on.
+copy first — that is what the SA grounded on (§4.1).
 
 `kb doctor`'s published-snapshot comparison leaves `-code` out entirely (dev
 repos never match the hub on it); `kb publish` is what actually refreshes it
@@ -585,6 +602,8 @@ should look.
 | `kb ticket fetch`: "is not on the hub" | The BA has not published it yet, or it was left out of the plan (an unticked DoR, or a parent mission that moved on) | Ask the BA to `kb publish` (or to say why it was skipped); or pass the ticket file or paste the body |
 | `kb ticket fetch`: "published by several repos" | Two BA repos publish the same id | Qualify it: `kb ticket fetch <repo>:<id>` |
 | `kb ticket fetch` cannot reach the hub | `hub:` unset or unreachable | Fix `hub:` in `.kb/config.yaml` (or `STRATA_KB_HUB`), or use the path or paste fallback |
+| `kb ticket check` fails with `re-run /sa-ticket-ground` | A fact the ticket cites is gone from `-code` | Stop and hand the ticket back to the BA; the SA re-grounds it |
+| `kb ticket check`: `[warn] … review the diff` | A cited section changed but its cited names still exist | Read the diff; implement unless it changes what the ticket means |
 | A citation resolves `stale` mid-implementation | The hub published after the ticket was written | `kb diff`, then ask the analyst. Do not reinterpret the AC yourself. |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
 | `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |
@@ -609,6 +628,7 @@ Linux (CI) is that caveat, not real drift.
 | `kb approve <doc> [--section <id>]` | Flip corrected sections to `reviewed` | `0` ok |
 | `kb publish --pr` | Open a hub PR (the seed's first publish) | `0` ok |
 | `kb ticket fetch <id> [--out p] [--hub u]` | Fetch a ticket from the hub into `docs/impl/<id>/ticket.md` | `0` ok, `1` not on the hub, ambiguous, or unsafe id |
+| `kb ticket check <file> [--hub u]` | The ticket's grounding against the hub's `-code`; a moved revision fails only when a cited fact is gone | `0` PASS, `1` FAIL |
 | `kb mission next --from-hub [--repo id]` | Status of every published story, from the hub alone | `0` |
 | `kb resolve <file>` | Check a ticket's citations | `0` ok, `1` broken, `2` stale |
 | `kb diff <doc> --against <rev>` | What an amendment changed | `0` |
