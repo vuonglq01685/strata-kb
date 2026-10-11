@@ -242,6 +242,38 @@ Register the BA repo in `federation/registry.yaml` like any child, and
 optionally pin `workflow:` to its `kb-publish.yml`. Document this in
 QUICKSTART-ba and README §12.
 
+### A6. Dev side — a ticket id is enough (owner decision, added during build)
+
+A Dev given only a ticket id (`M-<slug>-US<n>`, or a plain ticket stem)
+gets the ticket **from the hub first**.
+
+- New `kb ticket fetch <id> [--out <path>] [--hub <url>]`:
+  - finds the federation repo(s) publishing a `*-plan` document whose
+    manifest has section `<id>`. `<repo>:<id>` qualifies the id when
+    several repos hold it;
+  - not found → exit 1 with a clear message (not published yet: ask the
+    BA to `kb publish`, or pass a path or paste). Ambiguous → exit 1,
+    naming the holders;
+  - writes the ticket restored to its source shape:
+    - `# <section title>`;
+    - one provenance line,
+      `> Fetched from hub: <repo>:<doc> §<id> @ <hub short rev> — do not edit; amend in the BA repo.`;
+    - the L3 body with every heading promoted one level (fence-aware, the
+      inverse of plan-ingest's demotion);
+  - the default `--out` is `docs/impl/<id>/ticket.md`, overwritten on every
+    fetch. It is derivable, so `docs/impl/.gitignore` ignores
+    `*/ticket.md`.
+- The dev skills' Intake order becomes:
+  1. id only → `kb ticket fetch <id>`. With no CLI, use MCP `kb_get_section`
+     for `<doc> §<id>` at `l3`, then save it as above;
+  2. a path or a pasted body still works, as the fallback when the hub has
+     no copy or is unreachable.
+  The parent mission's `## Sequencing` is read from the hub the same way
+  (`kb get <doc> <M-id> --level l3`) when there is no local mission file.
+- The hub copy has no `## Definition of Ready` (plan-ingest drops it).
+  Being on the hub means its DoR was fully ticked. No dev step may require
+  that section.
+
 ### A5. Docs
 
 - README: §3 role table (`ba` row), §12 (replace "never ingests, summarizes or

@@ -304,3 +304,60 @@ Selection and rendering follow spec §4 A1 exactly:
 - [ ] **Step 3: Docs.** README §12 additions. Add a `CHANGELOG.md` entry `## 1.17.0 — <date>` in the file's existing style, covering every user-visible change from Tasks 1–8 and the QUICKSTART manual step for existing ba repos. Bump `pyproject.toml` and run `uv lock`.
 - [ ] **Step 4: Full gate:** `.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/pyright && .venv/bin/pytest -q -n auto`. Expected: all green. If `uv lock --check` is part of T2 (`scripts/gate.sh`), run it too.
 - [ ] **Step 5: Commit** `feat: amend mode for BA missions and tickets; 1.17.0`.
+
+### Task 9: Dev side — fetch a ticket from the hub by id (runs before Task 8)
+
+**Files:**
+- Create: `src/strata_kb/ticketfetch.py`
+- Modify: `src/strata_kb/planingest.py` (add `promote_headings`, next to `demote_headings`)
+- Modify: `src/strata_kb/cli.py` (new `@ticket_app.command("fetch")`, beside `ticket stale` at `:~2637`)
+- Modify: `src/strata_kb/templates/init/impl-gitignore.txt` (add `*/ticket.md` with a one-line why-comment)
+- Modify: the dev skill templates that run Intake (`bodies/dev-implement-ticket.md`, `claude-command-dev-implement-ticket.md`, `claude-skill-dev-implement-ticket.md`; grep `<ticket-file>` and `accept a pasted ticket body or a path` for every copy), `QUICKSTART-dev.md`
+- Test: `tests/test_ticketfetch.py`, `tests/test_cli_ticket.py`, plus template tests in `tests/test_init.py`
+
+**Interfaces:**
+- Consumes:
+  - `planingest.demote_headings` and its fence rule (`_fenced`);
+  - `federation.load_federation(hub.federation_dir)` (repos with `.meta.repo_id` and `.kb_dir`);
+  - `models.Manifest`, `mdutils.slice_section`, `gitio.head_commit(hub.root)`;
+  - the CLI's existing hub resolution helper (the one `ticket stale` uses).
+- Produces:
+  - `planingest.promote_headings(markdown: str) -> str`: fence-aware inverse of `demote_headings`. `###`→`##`, `####`→`###`, and so on. A `##` line stays as is.
+  - `ticketfetch.TicketFetchError(KbError)`
+  - `ticketfetch.find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]`. It returns `(repo_id, doc_id, l3_file)`. `ticket_ref` is `<id>` or `<repo>:<id>`. Holders are federation repos with a doc whose id ends `-plan` and whose manifest lists section `<id>`.
+    - none: `TicketFetchError` with message `<id> is not on the hub — ask the BA to run kb publish, or pass the ticket file / paste it`;
+    - several: `TicketFetchError` naming the holders, with the hint `qualify it as <repo>:<id>`.
+  - `ticketfetch.render(hub: HubHandle, ticket_ref: str) -> str`. It renders the restored ticket per spec §4 A6. The provenance line is exactly `> Fetched from hub: <repo>:<doc> §<id> @ <hub short rev> — do not edit; amend in the BA repo.`
+  - CLI `kb ticket fetch <TICKET> [--out PATH] [--hub URL]`.
+    - The default `--out` is `docs/impl/<id>/ticket.md`, creating parents.
+    - It always overwrites and writes with `encoding="utf-8", newline="\n"`.
+    - On success it prints `fetched: <repo>:<doc> §<id> -> <path>`.
+    - Exit `1` on `TicketFetchError` or when the hub is unavailable.
+
+- [ ] **Step 1: Failing tests.** Build the hub fixture like `tests/test_ticketstale.py` / `tests/test_ticketcheck.py`: a git hub with `federation/<repo>/<repo>-plan/` written by `planingest.run` from the shipped templates, so the round trip is real.
+  - `test_promote_headings_inverse_of_demote`: `promote_headings(demote_headings(md)) == md` for a ticket body with fences that hold `#` / `###` lines.
+  - `test_find_single_holder`.
+  - `test_find_qualified_ref`.
+  - `test_find_missing_raises_with_publish_hint`.
+  - `test_find_ambiguous_names_holders`: two repos publish the same id.
+  - `test_render_restores_ticket_shape`:
+    - the H1 is the section title and the provenance line follows it;
+    - `## Acceptance Criteria` and `## KB context` are back at H2;
+    - `> Parent mission:` and `> Revision:` lines are kept;
+    - `kbcontext.parse(rendered)` succeeds.
+  - `test_render_passes_ticket_lint_structure`: `ticketlint.lint(rendered, None)` has no error other than `hub-unreachable` and a missing `## Definition of Ready`. Assert that exact allowance, so a regression in restoration shows up.
+  - `tests/test_cli_ticket.py`: `kb ticket fetch M-demo-US1 --hub <fixture>` writes `docs/impl/M-demo-US1/ticket.md` and prints the `fetched:` line; an unknown id exits `1` with the hint.
+- [ ] **Step 2: Run** `.venv/bin/pytest tests/test_ticketfetch.py tests/test_cli_ticket.py -q`. Expected: FAIL.
+- [ ] **Step 3: Implement** `promote_headings`, `ticketfetch.py` and the CLI command.
+- [ ] **Step 4: Skills and docs.**
+  - **Intake in every dev-implement-ticket copy:**
+    - "Ticket id only → `kb ticket fetch <id>` first (hub is the source of truth; no CLI → MCP `kb_get_section` `<doc> §<id>` at `l3`, saved to `docs/impl/<id>/ticket.md` with headings promoted one level and the provenance line). A path or a pasted body is the fallback when the hub has no copy or is unreachable."
+    - The parent mission's `## Sequencing` comes from the hub (`kb get <doc> <M-id> --level l3`) when there is no local mission file.
+    - The fetched ticket has no `## Definition of Ready`: being on the hub means DoR passed. Do not stop on its absence. (Check that no dev step requires that section.)
+  - **Other dev skills:** `dev-plan`, `dev-design`, `dev-execute` and `dev-handover` take `<ticket-file>`. Add one line to each saying `docs/impl/<id>/ticket.md` from `kb ticket fetch` is a valid `<ticket-file>`.
+  - **impl gitignore:** add `*/ticket.md`.
+  - **`QUICKSTART-dev.md`:** add a short "a ticket id is enough" note.
+  - **README:** add a `kb ticket fetch` command-table row (the README command-table test requires it).
+- [ ] **Step 5: Template test** `test_dev_implement_ticket_fetches_from_hub_first`: every dev-implement-ticket template, read via `initcmd.read_template`, contains `kb ticket fetch`. Assert also that `impl-gitignore.txt` contains `*/ticket.md`.
+- [ ] **Step 6: Run** `.venv/bin/pytest tests/test_ticketfetch.py tests/test_cli_ticket.py tests/test_init.py tests/test_planingest.py -q -n auto`, then the full suite once. Expected: only the 19 baseline failures.
+- [ ] **Step 7: Commit** `feat: kb ticket fetch — dev takes a ticket id and reads it from the hub`.
