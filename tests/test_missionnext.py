@@ -285,6 +285,51 @@ def test_lowercase_decided_status_still_counts_as_decided():
     assert by["M-platform-US1"].reasons == ()
 
 
+def _statuses_with_decisions(*rows: str):
+    text = (
+        "# Kafka\n> Mission: M-k\n\n## US backlog\n| US ID | Title |\n|---|---|\n"
+        "| M-k-US2 | Events |\n\n## Technology decisions\n"
+        "| # | Decision | Status | Owner | Blocks |\n|---|---|---|---|---|\n"
+        + "\n".join(rows)
+        + "\n"
+    )
+    return {
+        s.us_id: s
+        for s in missionnext.statuses([missionnext.parse_mission(text)], {}, set())
+    }["M-k-US2"]
+
+
+def test_mission_next_superseded_blocker_follows_successor_decided():
+    s = _statuses_with_decisions(
+        "| D1 | Use RabbitMQ | SUPERSEDED | ana | US2 |",
+        "| D3 | Use Kafka \u2014 Supersedes D1 | DECIDED | ana | |",
+    )
+    assert s.status == "to-draft"
+
+
+def test_mission_next_superseded_blocker_successor_open_blocks():
+    s = _statuses_with_decisions(
+        "| D1 | Use RabbitMQ | SUPERSEDED | ana | US2 |",
+        "| D3 | Use Kafka \u2014 Supersedes D1 | OPEN | bob | |",
+    )
+    assert s.status == "blocked"
+    assert s.reasons == ("D3 OPEN (owner: bob)",)
+
+
+def test_mission_next_supersede_cycle_blocks():
+    s = _statuses_with_decisions(
+        "| D1 | A \u2014 Supersedes D2 | SUPERSEDED | ana | US2 |",
+        "| D2 | B \u2014 Supersedes D1 | SUPERSEDED | ana | |",
+    )
+    assert s.status == "blocked"
+    assert s.reasons == ("supersede cycle D1",)
+
+
+def test_mission_next_superseded_without_successor_blocks():
+    s = _statuses_with_decisions("| D1 | Use RabbitMQ | SUPERSEDED | ana | US2 |")
+    assert s.reasons == ("D1 SUPERSEDED (no superseding row)",)
+
+
 def test_render_table_and_next_line():
     parsed = [missionnext.parse_mission(PLATFORM), missionnext.parse_mission(CATALOG)]
     results = missionnext.statuses(parsed, {"M-platform-US1": FULL}, {"M-platform-US1"})

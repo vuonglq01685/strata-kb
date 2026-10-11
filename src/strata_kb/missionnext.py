@@ -19,7 +19,9 @@ from strata_kb.mdutils import _SEP_ROW_RE
 from strata_kb.svcnote import _ESCAPED_PIPE_SENTINEL, ROW_RE
 from strata_kb.ticketcheck import (
     BARE_US_RE,
+    SUPERSEDED,
     US_ID_IN_CELL_RE,
+    Decision,
     DecisionTable,
     grounded_entries,
     parse_decisions,
@@ -181,6 +183,25 @@ def _mission_order(stories: list[Story]) -> list[Story]:
     )
 
 
+def effective_status(d: Decision, rows: dict[str, Decision]) -> tuple[str, str]:
+    """`(status_upper, reason)` of a decision: a `SUPERSEDED` row takes the
+    status of the row that `Supersedes` it, down the chain. A cycle or a
+    chain with no successor stays `SUPERSEDED`, with the reason saying why."""
+    cur, seen = d, {d.id}
+    while cur.status.strip().upper() == SUPERSEDED:
+        nxt = next((r for r in rows.values() if r.supersedes == cur.id), None)
+        if nxt is None:
+            return SUPERSEDED, f"{cur.id} SUPERSEDED (no superseding row)"
+        if nxt.id in seen:
+            return SUPERSEDED, f"supersede cycle {d.id}"
+        seen.add(nxt.id)
+        cur = nxt
+    return (
+        cur.status.strip().upper(),
+        f"{cur.id} {cur.status.strip() or 'OPEN'} (owner: {cur.owner or '?'})",
+    )
+
+
 def statuses(
     missions: list[ParsedMission],
     drafted: dict[str, tuple[int, int]],
@@ -228,10 +249,11 @@ def statuses(
                     f"US {dep} not done" if dep in known else f"US {dep} unknown"
                 )
             for d, blocks in blocking:
-                if s.us_id in blocks and d.status.strip().upper() != DECIDED:
-                    reasons.append(
-                        f"{d.id} {d.status.strip() or 'OPEN'} (owner: {d.owner or '?'})"
-                    )
+                if s.us_id not in blocks:
+                    continue
+                status, reason = effective_status(d, decisions.rows)
+                if status != DECIDED:
+                    reasons.append(reason)
             status = "blocked" if reasons else "to-draft"
             out.append(
                 StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons))
