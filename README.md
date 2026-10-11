@@ -750,17 +750,18 @@ parent. A section is `## <id> <title>`. L3 is the source with the H1 dropped, th
 headings demoted one level, and `## Review record` and `## Definition of Ready`
 removed (`## Open questions` stays); L2 keeps every table verbatim plus the
 summary and business goal (missions) or the story and acceptance criteria
-(tickets). The index entry is tagged `plan`. An item that stops qualifying drops
+(tickets). The index entry is tagged `plan, generated`. An item that stops qualifying drops
 out on the next publish; `/kb-publish` shows the BA what is in the plan before
 the go/no-go (run `kb plan-ingest` to see the `skipped:` lines).
 
 To turn this on, the hub operator adds the repo to `federation/registry.yaml`
-(under the same name as `repo_id`, optionally pinning `workflow:` to the repo's
-`.github/workflows/kb-publish.yml`), and the BA sets `intake:` in
+(the key is the repo's `owner/repo`, mapped to its `repo_id`; leave `workflow:`
+unset, because the intake compares it to the full `job_workflow_ref`, which
+includes the publish tag), and the BA sets `intake:` in
 `.kb/config.yaml`. An existing `ba` repo adds `intake:` by hand and re-runs `kb
 init --kind ba` to get the workflow, the `kb-publish` skill, `.gitattributes`
 and the gitignore lines; until `intake:` is set, `kb publish` takes the
-snapshot route. A hub redeploy is needed once to get the intake fix that opens a
+snapshot route (a direct mirror or a PR on the hub, no CI). A hub redeploy is needed once to get the intake fix that opens a
 new PR when the old `publish/<repo-id>` branch was deleted. On the hub the plan
 shows up under the **Plans** menu (section 10) and to agents as the document
 `<repo_id>-plan`, next to `-code` and `-svc`.
@@ -1214,7 +1215,7 @@ me wrong" should check which command it ran, not only the code.
 | Every hub command fails with a git auth error | git older than 2.31 with a credentialed `hub:` URL | Upgrade git, or switch `hub:` to ssh — see [Requirements](#requirements) |
 | `kb query` returns nothing | No tag or content match, or `--budget` too small | Drop `--tags`, raise `--budget`, check spelling — and query in the document's own language |
 | `kb publish` refuses on a governed hub | `gh` cannot open a PR on that host | Authenticate `gh` for the host (`GH_HOST=<host>` for Enterprise) until `gh repo view` succeeds inside the hub clone, then `--pr` |
-| `kb publish` in a `ba` repo takes the snapshot route, or the intake rejects the tag | `intake:` is empty in `.kb/config.yaml`, or the repo is not in the hub's `federation/registry.yaml` (or is pinned to another `workflow:`) | Set `intake:`, and ask the hub operator to register the repo under the same name as `repo_id` — see [§12](#12-ba-repos--tickets-and-missions) |
+| `kb publish` in a `ba` repo takes the snapshot route, or the intake rejects the tag | `intake:` is empty in `.kb/config.yaml`, or the repo is not in the hub's `federation/registry.yaml` (or a `workflow:` pin is set, which never matches a tag-triggered publish) | Set `intake:`, and ask the hub operator to map the repo's `owner/repo` to your `repo_id` in the registry, with no `workflow:` pin — see [§12](#12-ba-repos--tickets-and-missions) |
 | A mission or ticket is missing from `<repo_id>-plan` | It did not qualify | `kb plan-ingest` prints a `skipped: <file> — <reason>` line for each; fix what it names |
 | `kb ticket fetch <id>` exits `1` | The id is not on the hub (the BA has not published it), or several repos hold it | Ask the BA to `kb publish`, or qualify the id as `<repo>:<id>`, or pass the ticket by path or paste |
 | `kb doctor` names files inside a federation entry | An older publish mirrored more than `.kb/` artefacts | Publish again to strip them, and **rotate any credential they contained** — removing a file does not remove it from git history |

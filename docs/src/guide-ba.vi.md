@@ -120,9 +120,9 @@ việc yêu cầu check mới chặn.
 Publish cần hai thứ, mỗi bên một việc:
 
 1. **Người vận hành hub đăng ký repo của bạn** trong `federation/registry.yaml`
-   của hub, dưới cùng tên với `repo_id` của bạn. Họ cũng có thể ghim `workflow:`
-   vào `.github/workflows/kb-publish.yml` của bạn, để hub không nhận file workflow
-   nào khác từ bạn.
+   của hub: khoá là `owner/repo` của bạn, ánh xạ tới `repo_id` của bạn. Họ để trống
+   `workflow:`, vì intake so nó với toàn bộ `job_workflow_ref`, trong đó có tag
+   publish, nên một ghim sẽ không bao giờ khớp.
 2. **Bạn đặt `intake:`** trong `.kb/config.yaml` thành URL của dịch vụ intake của
    hub (người vận hành đưa cho bạn). Repo tạo trước tính năng này không có key
    `intake:`: hãy thêm `intake: <url>` bằng tay, rồi chạy lại `kb init --kind ba`.
@@ -130,7 +130,7 @@ Publish cần hai thứ, mỗi bên một việc:
    Copilot và Cursor) và `.gitattributes`, và thêm `.kb/*-plan/` và
    `.kb/index.yaml` vào `.gitignore`. Nó không đụng tới `config.yaml` của bạn.
 
-Cho tới khi đặt `intake:`, `kb publish` không có nơi nào để gửi plan. Cả
+Cho tới khi đặt `intake:`, `kb publish` đi đường snapshot (mirror trực tiếp hoặc PR trên hub, không qua CI hay intake). Cả
 `.kb/<repo_id>-plan/` lẫn `.kb/index.yaml` đều do `kb plan-ingest` sinh ra nên được
 gitignore: đừng bao giờ commit chúng.
 
@@ -409,8 +409,10 @@ Các lý do bạn có thể gặp:
 
 Một mục bị bỏ qua không bao giờ làm lệnh fail và không chặn publish. Khi chạy
 trong GitHub Actions, các dòng này cũng được ghi vào step summary. `kb plan-ingest`
-chỉ thoát `1` khi gặp file không đọc được, đầu vào sai dạng mà lint báo là lỗi,
-hoặc cờ sai.
+chỉ thoát `1` khi không chạy được: file đầu vào không đọc được hoặc không phải
+UTF-8, thiếu `--missions-dir` hay `--tickets-dir`, repo id không hợp lệ, đích đến
+không do nó sinh ra, `index.yaml` hỏng, hoặc ghi thất bại. Lỗi lint là lý do bỏ qua,
+không phải lỗi chạy.
 
 ## 5.2 Publish
 
@@ -726,7 +728,7 @@ kb mission lint missions/M-checkout.md
 | `kb mcp-setup` báo "token bị từ chối" dù đã xin được token mới từ người quản trị hub | Chạy lại không kèm gì chỉ đọc lại đúng token *cũ* từ `.env` ra — lệnh chỉ hỏi lại khi trên đĩa chưa có gì | Chạy `STRATA_KB_HTTP_TOKEN=<token-mới> kb mcp-setup`, hoặc xoá dòng `STRATA_KB_HTTP_TOKEN` trong `.env` rồi chạy lại |
 | `kb query` không tìm thấy gì | Tài liệu chưa được publish, hoặc tag quá hẹp | Bỏ `--tags`; hỏi chủ hub xem PR publish đã merge chưa |
 | `kb publish` không gắn tag và không khởi động CI | `intake:` đang rỗng trong `.kb/config.yaml`, nên nó đi đường snapshot | Đặt `intake:` (2.5) |
-| Intake từ chối lần publish của bạn | Repo chưa có trong `federation/registry.yaml` của hub, hoặc registry ghim một `workflow:` khác | Nhờ người vận hành hub đăng ký `repo_id` và ghim `.github/workflows/kb-publish.yml` |
+| Intake từ chối lần publish của bạn | Repo chưa có trong `federation/registry.yaml` của hub, hoặc mục của nó đặt ghim `workflow:` (intake so nó với toàn bộ `job_workflow_ref`, trong đó có tag, nên không bao giờ khớp) | Nhờ người vận hành hub ánh xạ `owner/repo` của bạn tới `repo_id` và để trống `workflow:` |
 | `kb publish` dừng với ".kb/ has uncommitted changes" | Có gì đó dưới `.kb/` khác với `HEAD` — thường là `.kb/index.yaml` hoặc `.kb/<repo_id>-plan/` đang bị theo dõi | Commit phần bạn tự sửa; `git rm --cached` các file do máy sinh rồi chạy lại `kb init --kind ba` để chúng được gitignore |
 | Một mission hay ticket vắng mặt trong plan | Nó không đủ điều kiện | Chạy `kb plan-ingest` và đọc dòng `skipped:` của nó (5.1) |
 | Lint: lỗi "change log" sau khi sửa đổi | `Revision` được tăng mà không có dòng tương ứng, hoặc một `Trigger` viết sai | Thêm đúng một dòng cho mỗi revision `2..N`, theo thứ tự, dùng bốn giá trị trigger |
@@ -752,8 +754,8 @@ kb mission lint missions/M-checkout.md
 | `kb ticket stale [paths]` | Mọi ticket và mission có trích dẫn mà hub đã dịch chuyển, `kb-context` và `architecture` (`--md`, `--json`) | `0` còn mới, `2` chỉ cũ, `1` hỏng |
 | `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Story nào done, ready, draft, to-draft hay blocked | `0` |
-| `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` đầu vào không đọc được hoặc cờ sai |
-| `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0` |
+| `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
+| `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
 **Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/sa-ticket-ground`, `/kb-publish`.
 

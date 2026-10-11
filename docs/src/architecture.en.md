@@ -495,8 +495,9 @@ repo uses:
   federation/<repo_id>/<repo_id>-plan  -->  kb query / MCP / Web UI
 ```
 
-The registry entry, never the payload, decides the repo id it may write, and may
-pin the one workflow allowed to use it. Nothing publishes on merge: the analyst
+The registry entry, never the payload, decides the repo id it may write. (Its
+optional `workflow:` pin is compared with the full `job_workflow_ref`, which
+includes the tag, so it stays unset for tag-triggered publishing.) Nothing publishes on merge: the analyst
 decides when, and `/kb-publish` shows what changed before asking. A repo with no
 `intake:` configured falls back to the snapshot route.
 

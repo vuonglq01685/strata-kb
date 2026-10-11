@@ -35,9 +35,11 @@ document, so other repos can read them from the hub.
 5. **Publish the plan (optional, once per repo)** — so missions and tickets
    reach the hub:
    1. **Register the repo on the hub.** Ask the hub maintainer to add this
-      repo to the hub's `federation/registry.yaml`, under the same name as
-      `repo_id` in `.kb/config.yaml`. They may also pin `workflow:` to this
-      repo's `.github/workflows/kb-publish.yml`.
+      repo to the hub's `federation/registry.yaml`: the key is this repo's
+      `owner/repo`, mapped to the `repo_id` in `.kb/config.yaml`. Leave
+      `workflow:` unset: the intake compares it to the full
+      `job_workflow_ref`, which includes the publish tag, so a pin never
+      matches.
    2. **Set `intake:`** in `.kb/config.yaml` to the hub's intake service URL
       (the maintainer gives you this). An existing BA repo has no such key:
       add `intake: <url>` by hand, then re-run `kb init --kind ba` to pick up

@@ -330,23 +330,24 @@ repos:
   acme/payments: payments                # a dev repo: -code and -svc
   acme/requirements:                     # a ba repo: -plan
     repo_id: acme-requirements
-    workflow: "<job_workflow_ref claim of its kb-publish.yml>"
 ```
 
 - The `repo_id` must equal `repo_id:` in that repo's `.kb/config.yaml`. It also
   names the published documents: a `ba` repo with `repo_id: acme-requirements`
   publishes `acme-requirements-plan`.
-- `workflow:` is optional. When set, the intake rejects any OIDC token minted by a
-  different workflow, and the value is compared as-is with the token's
-  `job_workflow_ref` claim. For a `ba` repo the workflow is its
-  `.github/workflows/kb-publish.yml`, which a tag push `kb-publish/*` starts.
+- The registry key is the repo's `owner/repo`, mapped to its `repo_id`. Leave
+  `workflow:` unset for tag-triggered publishing (every `ba` publish, and `child`
+  repos using `kb publish`): the intake compares it to the full
+  `job_workflow_ref`, which ends in `@refs/tags/kb-publish/<timestamp>`, so a pin
+  never matches and every publish would be refused. The tag push
+  `kb-publish/*` starts `.github/workflows/kb-publish.yml`.
 - Intake accepts only `refs/tags/kb-publish/*`. A `ba` repo therefore publishes
   when the BA runs `kb publish`, never automatically on merge.
 - The BA also sets `intake: <url>` in the repo's `.kb/config.yaml` (an existing
   `ba` repo adds it by hand and re-runs `kb init --kind ba`).
 
 A published `<repo>-plan` document appears in the federation like `-code`: in the
-aggregate index, to `kb query` and to MCP (tagged `plan`), and under the **Plans**
+aggregate index, to `kb query` and to MCP (tagged `plan, generated`), and under the **Plans**
 menu of the web UI (§10.2). The hub PR it opens is reviewed and merged like any
 other. If a PR is closed or merged and its `publish/<repo-id>` branch deleted, the
 next publish opens a fresh PR; this fix ships with 1.17.0, so **redeploy the

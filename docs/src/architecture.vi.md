@@ -493,8 +493,9 @@ nhận push nhánh), nên plan đi theo cùng con đường dựa trên tag mà 
   federation/<repo_id>/<repo_id>-plan  -->  kb query / MCP / Web UI
 ```
 
-Mục trong registry, không bao giờ là payload, quyết định repo id mà nó được ghi, và
-có thể ghim đúng một workflow được phép dùng nó. Không có gì publish khi merge: BA
+Mục trong registry, không bao giờ là payload, quyết định repo id mà nó được ghi. (Ghim
+`workflow:` tuỳ chọn của nó được so với toàn bộ `job_workflow_ref`, trong đó có tag,
+nên để trống với publish kích hoạt bằng tag.) Không có gì publish khi merge: BA
 quyết định khi nào, và `/kb-publish` cho xem thay đổi trước khi hỏi. Repo chưa cấu
 hình `intake:` sẽ quay về đường snapshot.
 

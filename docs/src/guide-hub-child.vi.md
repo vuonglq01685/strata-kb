@@ -327,23 +327,24 @@ repos:
   acme/payments: payments                # một repo dev: -code và -svc
   acme/requirements:                     # một repo ba: -plan
     repo_id: acme-requirements
-    workflow: "<job_workflow_ref claim của kb-publish.yml của nó>"
 ```
 
 - `repo_id` phải bằng `repo_id:` trong `.kb/config.yaml` của repo đó. Nó cũng đặt
   tên cho các tài liệu được publish: repo `ba` có `repo_id: acme-requirements`
   publish ra `acme-requirements-plan`.
-- `workflow:` là tuỳ chọn. Khi đặt, intake từ chối mọi token OIDC do workflow khác
-  phát hành, và giá trị được so nguyên văn với claim `job_workflow_ref` của token.
-  Với repo `ba`, workflow đó là `.github/workflows/kb-publish.yml`, được khởi động
-  bởi lần push tag `kb-publish/*`.
+- Khoá registry là `owner/repo` của repo, ánh xạ tới `repo_id` của nó. Với publish
+  kích hoạt bằng tag (mọi lần publish của `ba`, và repo `child` dùng `kb publish`),
+  hãy để trống `workflow:`: intake so nó với toàn bộ `job_workflow_ref`, kết thúc
+  bằng `@refs/tags/kb-publish/<timestamp>`, nên một ghim không bao giờ khớp và mọi
+  lần publish sẽ bị từ chối. Lần push tag `kb-publish/*` khởi động
+  `.github/workflows/kb-publish.yml`.
 - Intake chỉ nhận `refs/tags/kb-publish/*`. Vì vậy repo `ba` publish khi BA chạy
   `kb publish`, không bao giờ tự động khi merge.
 - BA cũng đặt `intake: <url>` trong `.kb/config.yaml` của repo (repo `ba` có sẵn
   thêm nó bằng tay rồi chạy lại `kb init --kind ba`).
 
 Một tài liệu `<repo>-plan` đã publish xuất hiện trong federation giống như `-code`:
-trong index tổng hợp, với `kb query` và MCP (gắn tag `plan`), và dưới menu **Plans**
+trong index tổng hợp, với `kb query` và MCP (gắn tag `plan, generated`), và dưới menu **Plans**
 của web UI (mục 10.2). PR hub mà nó mở được review và merge như mọi PR khác. Nếu một
 PR đã đóng hoặc đã merge và nhánh `publish/<repo-id>` của nó đã bị xoá, lần publish
 kế tiếp mở một PR mới; bản sửa này đi cùng 1.17.0, nên hãy **triển khai lại dịch vụ
