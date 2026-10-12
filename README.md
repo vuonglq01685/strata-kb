@@ -260,7 +260,7 @@ that follows it.
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
 | `kb authored` | Tag a hub doc `authored` (markdown is the master; `kb ingest` refuses it) |
-| `kb code-sync` | Hub only. `scan` lists hub docs that name code that changed since the baseline (`--md`, `--json`, `--baseline <sha>`; exit `0` nothing, `2` findings, `1` error); `baseline [--at <sha>]` records the commit the sync is current at; `run [--issue] [--loop]` is the `hub-sync` job: one scan, optionally the `kb-code-sync` issue update, optionally forever |
+| `kb code-sync` | Hub only. `scan` lists hub docs that name code that changed since the baseline (`--md`, `--json`, `--baseline <sha>`; exit `0` nothing, `2` findings, `1` error); `issue [--json]` finds the hub job's own `kb-code-sync` issue among the open ones (needs `gh`; exit `0` a usable one, `2` none, `1` error); `baseline [--at <sha>]` records the commit the sync is current at; `run [--issue] [--loop]` is the `hub-sync` job: one scan, optionally the `kb-code-sync` issue update, optionally forever |
 | `kb status` | List sections still pending summarization |
 | `kb build` | Validate the store: no blanks, table integrity, quality rules, token counts |
 | `kb approve` | Mark sections reviewed (`summarized` → `reviewed`) |
@@ -569,6 +569,26 @@ One issue labelled `kb-code-sync` stays open while there are findings: it is
 created when they appear, rewritten only when the findings change, and closed
 with a comment when the scan finds nothing. A scan error never closes it.
 
+**Categories.** Every finding falls in one category, and the work order lists
+them in this order: `removed` (code gone, prose likely wrong), `changed`
+(facts changed, check and fix), `added` (new code, docs may need a mention),
+`image` (the name sits in a picture's description; it may need a redraw).
+`kb code-sync scan --json` gives each finding a `category` and a `counts` object.
+
+**The job's issue.** The first line of the issue body is an identity marker
+(`<!-- kb-code-sync work-order v1 scan:<sha> baseline:<sha> -->`) and the last
+is the findings digest. `kb code-sync issue` lists the open `kb-code-sync`
+issues and judges each one; `/kb-code-sync` works only from the one it calls
+usable, and takes nothing from it but the baseline sha. It never reads issue
+text or comments and never edits, closes, comments on or relabels an issue.
+
+| Kind | Meaning | Used? |
+|---|---|---|
+| `current` | The job wrote it, and a local scan from its baseline gives the same findings | yes |
+| `stale` | The job wrote it, but the code moved since; the local scan is newer | yes |
+| `duplicate` | The job wrote it, but a newer job issue exists | reported only |
+| `foreign` | No identity marker, no digest, no baseline, or the baseline is not in the hub's history | reported only |
+
 **Sprint cadence.** Detection is daily. The hub manager runs `/kb-code-sync` in
 their agent any time the issue is open; the skill re-runs the scan, judges each
 finding (fix, no change needed, or needs the SA), edits the sections,
@@ -585,8 +605,8 @@ hub repos only, as the standard four wrapper files (Claude Code skill and comman
 | Need | Why |
 |---|---|
 | `origin/HEAD` set (`git remote set-head origin --auto`) | The scan reads the default branch's tip; a hub with a remote and no `origin/HEAD` exits `1` |
-| GitHub App with `issues: write` | `hub-sync` calls the issues REST API. The intake App must have the permission added and the installation re-approved by an org admin |
-| `STRATA_KB_GH_TOKEN` | Token fallback, only when the App (`STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY`) is not configured |
+| GitHub App with `issues: write`, `pull_requests: read`, `contents: read` | `hub-sync` calls the issues REST API and reads the baseline from the hub repo. The intake App must have the permissions added and the installation re-approved by an org admin |
+| `STRATA_KB_GH_TOKEN` | Token fallback, only when the App (`STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY`) is not configured; it needs the same three permissions on the hub repo |
 | `STRATA_KB_CODE_SYNC_INTERVAL` | Seconds between scans (default `86400`, minimum `60`) |
 | `gh`, logged in, on the manager's machine | `kb publish --branch` and the PR title and body |
 
@@ -1238,8 +1258,8 @@ second PR *there*, and merging that one is what makes it live.
 | `STRATA_KB_INTAKE` | Intake service URL (http(s) only) |
 | `STRATA_KB_INTAKE_AUDIENCE` | OIDC audience the intake expects |
 | `STRATA_KB_TRUSTED_PROXIES` | Number of trusted reverse proxies (default `0`) — see [§10](#10-mcp-server-and-web-ui) |
-| `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service, and for `hub-sync`'s `kb-code-sync` issue (needs `issues: write`) |
-| `STRATA_KB_GH_TOKEN` | Token for `hub-sync`'s issue calls when no GitHub App is configured |
+| `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service, and for `hub-sync`'s `kb-code-sync` issue (needs `issues: write`, `pull_requests: read`, `contents: read`) |
+| `STRATA_KB_GH_TOKEN` | Token for `hub-sync`'s issue calls when no GitHub App is configured (needs `issues: write`, `pull_requests: read`, `contents: read` on the hub repo) |
 | `STRATA_KB_CODE_SYNC_INTERVAL` | Seconds between `hub-sync` scans (default `86400`) |
 
 ---

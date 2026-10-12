@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from strata_kb import models
+from strata_kb import ghio, models
 from strata_kb.cli import app
-from strata_kb.codesync import baseline
+from strata_kb.codesync import baseline, scan
 from strata_kb.config import KBConfig
-from tests.test_codesync_changes import SCAN_SECTIONS, _svc, commit, write_doc
+from tests.test_codesync_changes import SCAN_SECTIONS, _db, _svc, commit, write_doc
 
 runner = CliRunner()
 NO_LEDGER = {
@@ -137,3 +137,130 @@ def test_half_published_hub_doc_exits_1(code_sync_hub, run_git):
 
     assert result.exit_code == 1
     assert "ch1.raw.md is missing" in result.output
+
+
+# --- kb code-sync issue ----------------------------------------------------
+
+
+def _job_issue(root: Path, run_git, number: int = 7) -> tuple[dict, str]:
+    """The hub moved after c1 and the job wrote the issue; `(issue, c1)`."""
+    c1 = run_git(root, "rev-parse", "HEAD")
+    write_doc(root, "acme", "code", NO_LEDGER)
+    commit(root, run_git)
+    body = scan.render_markdown(scan.run_scan(root, baseline_sha=c1))
+    issue = {
+        "number": number,
+        "url": f"https://github.com/o/hub/issues/{number}",
+        "createdAt": "2026-10-11T08:00:00Z",
+        "body": body,
+    }
+    return issue, c1
+
+
+def _gh_issues(monkeypatch, issues) -> list:
+    seen: list = []
+
+    def fake(root, label):
+        seen.append(label)
+        return issues
+
+    monkeypatch.setattr(ghio, "list_open_issues", fake)
+    return seen
+
+
+def test_issue_current_exit_0_text_and_json(code_sync_hub, run_git, monkeypatch):
+    root, _ = code_sync_hub
+    issue, c1 = _job_issue(root, run_git)
+    foreign = {**issue, "number": 9, "body": "hello"}
+    seen = _gh_issues(monkeypatch, [foreign, issue])
+
+    text = runner.invoke(app, ["code-sync", "issue", *_kb(root)])
+    data = runner.invoke(app, ["code-sync", "issue", "--json", *_kb(root)])
+
+    assert seen == ["kb-code-sync", "kb-code-sync"]
+    assert text.exit_code == 0, text.output
+    assert text.output.splitlines()[0].startswith("#7 [current] ")
+    assert text.output.splitlines()[1] == "#9 [foreign] no work-order marker"
+    assert data.exit_code == 0, data.output
+    out = json.loads(data.output)
+    assert (out["usable"], out["baseline_sha"]) == (7, c1)
+    assert [(i["number"], i["kind"]) for i in out["issues"]] == [
+        (7, "current"),
+        (9, "foreign"),
+    ]
+
+
+def test_issue_stale_is_usable(code_sync_hub, run_git, monkeypatch):
+    root, _ = code_sync_hub
+    issue, c1 = _job_issue(root, run_git)
+    write_doc(
+        root,
+        "acme",
+        "code",
+        {**NO_LEDGER, "db.payments": ("payments", _db("amount", "refund_id"))},
+    )
+    commit(root, run_git)
+    _gh_issues(monkeypatch, [issue])
+
+    result = runner.invoke(app, ["code-sync", "issue", "--json", *_kb(root)])
+
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.output)
+    assert (out["usable"], out["baseline_sha"]) == (7, c1)
+    assert out["issues"][0]["kind"] == "stale"
+
+
+def test_issue_none_usable_exits_2(code_sync_hub, monkeypatch):
+    root, _ = code_sync_hub
+    foreign = {"number": 3, "url": "u", "createdAt": "t", "body": "x"}
+    _gh_issues(monkeypatch, [foreign])
+
+    text = runner.invoke(app, ["code-sync", "issue", *_kb(root)])
+    data = runner.invoke(app, ["code-sync", "issue", "--json", *_kb(root)])
+
+    assert text.exit_code == 2
+    assert "#3 [foreign]" in text.output
+    assert data.exit_code == 2
+    out = json.loads(data.output)
+    assert (out["usable"], out["baseline_sha"]) == (None, None)
+    assert out["issues"][0]["number"] == 3
+
+
+def test_issue_no_open_issues_exits_2(code_sync_hub, monkeypatch):
+    root, _ = code_sync_hub
+    _gh_issues(monkeypatch, [])
+
+    result = runner.invoke(app, ["code-sync", "issue", "--json", *_kb(root)])
+
+    assert result.exit_code == 2
+    assert json.loads(result.output) == {
+        "usable": None,
+        "baseline_sha": None,
+        "issues": [],
+    }
+
+
+def test_issue_gh_failure_exits_1(code_sync_hub, monkeypatch):
+    root, _ = code_sync_hub
+
+    def boom(root, label):
+        raise ghio.GHError("gh issue list failed: bad token")
+
+    monkeypatch.setattr(ghio, "list_open_issues", boom)
+
+    result = runner.invoke(app, ["code-sync", "issue", *_kb(root)])
+
+    assert result.exit_code == 1
+    assert "bad token" in result.output
+
+
+def test_issue_non_hub_exits_1(code_sync_hub, monkeypatch):
+    root, _ = code_sync_hub
+    models.save_yaml_model(root / ".kb" / "config.yaml", KBConfig(kind="child"))
+    seen = _gh_issues(monkeypatch, [])
+
+    result = runner.invoke(app, ["code-sync", "issue", *_kb(root)])
+
+    assert result.exit_code == 1
+    assert "kind: hub" in result.output
+    assert seen == []

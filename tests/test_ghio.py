@@ -1,3 +1,4 @@
+import json
 import subprocess
 
 import pytest
@@ -123,3 +124,51 @@ def test_run_gh_returns_synthetic_failure_on_timeout(tmp_path, monkeypatch):
     proc = ghio._run_gh(tmp_path, "repo", "view", "--json", "name")
     assert proc.returncode == 124
     assert "timed out" in proc.stderr
+
+
+def test_list_open_issues_argv_and_parse(tmp_path, monkeypatch):
+    seen: dict = {}
+    issues = [{"number": 3, "url": "u", "createdAt": "t", "body": "b"}]
+
+    def fake(root, *args):
+        seen["args"] = args
+        seen["root"] = root
+        return _proc(0, json.dumps(issues))
+
+    monkeypatch.setattr(ghio, "_run_gh", fake)
+
+    assert ghio.list_open_issues(tmp_path, "kb-code-sync") == issues
+    assert seen["root"] == tmp_path
+    assert seen["args"] == (
+        "issue",
+        "list",
+        "--label",
+        "kb-code-sync",
+        "--state",
+        "open",
+        "--json",
+        "number,url,createdAt,body",
+        "--limit",
+        "100",
+    )
+
+
+def test_list_open_issues_failure_raises_with_stderr(tmp_path, monkeypatch):
+    monkeypatch.setattr(ghio, "_run_gh", lambda root, *a: _proc(1, "", "bad token"))
+    with pytest.raises(ghio.GHError, match="bad token"):
+        ghio.list_open_issues(tmp_path, "kb-code-sync")
+
+
+def test_list_open_issues_without_gh_says_install(tmp_path, monkeypatch):
+    def missing(root, *a):
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr(ghio, "_run_gh", missing)
+    with pytest.raises(ghio.GHError, match="install"):
+        ghio.list_open_issues(tmp_path, "kb-code-sync")
+
+
+def test_list_open_issues_bad_json_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(ghio, "_run_gh", lambda root, *a: _proc(0, "not json"))
+    with pytest.raises(ghio.GHError):
+        ghio.list_open_issues(tmp_path, "kb-code-sync")

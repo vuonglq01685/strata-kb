@@ -915,6 +915,48 @@ def code_sync_scan(
         raise typer.Exit(code)
 
 
+@code_sync_app.command("issue")
+def code_sync_issue(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Which open kb-code-sync issue is the hub job's work order.
+    Exit 0 a current or stale one exists, 2 none, 1 error."""
+    from dataclasses import asdict
+
+    from strata_kb import ghio
+    from strata_kb.codesync import issue as issue_mod
+    from strata_kb.codesync import workorder
+    from strata_kb.errors import KbError
+
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+        verdicts = workorder.classify(
+            root, ghio.list_open_issues(root, issue_mod.LABEL)
+        )
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    usable = next((v for v in verdicts if v.kind in workorder.USABLE), None)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "usable": usable.number if usable else None,
+                    "baseline_sha": usable.baseline_sha if usable else None,
+                    "issues": [asdict(v) for v in verdicts],
+                }
+            )
+        )
+    else:
+        for v in verdicts:
+            typer.echo(f"#{v.number} [{v.kind}] {v.reason}")
+        if not verdicts:
+            typer.echo("kb code-sync: no open kb-code-sync issue")
+    if usable is None:
+        raise typer.Exit(2)
+
+
 @code_sync_app.command("baseline")
 def code_sync_baseline(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),

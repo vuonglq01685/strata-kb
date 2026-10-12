@@ -50,6 +50,23 @@ MIN_TERM_LEN = 4
 NO_BASELINE_NOTE = "no baseline — run kb code-sync baseline"
 
 DIGEST_PREFIX = "<!-- kb-code-sync digest:"
+DIGEST_RE = re.compile(re.escape(DIGEST_PREFIX) + r"([0-9a-f]{64}) -->")
+
+# First line of the work-order issue: how `kb code-sync issue` recognises the
+# hub job's own issue among everything else carrying the label.
+WORK_ORDER_PREFIX = "<!-- kb-code-sync work-order v1 "
+_WORK_ORDER_RE = re.compile(
+    re.escape(WORK_ORDER_PREFIX)
+    + r"scan:([0-9a-f]{40}) baseline:([0-9a-f]{7,40}|none) -->"
+)
+
+CATEGORY_ORDER = ("removed", "changed", "added", "image")
+_CATEGORY_HEADINGS = {
+    "removed": "Removed — code gone, prose likely wrong",
+    "changed": "Changed — facts changed, check and fix",
+    "added": "Added — new code, docs may need a mention",
+    "image": "Images — may need a redraw",
+}
 
 
 @dataclass(frozen=True)
@@ -70,6 +87,24 @@ class ScanResult:
     findings: tuple[Finding, ...]
     notes: tuple[str, ...]
     hub_repo_id: str = ""  # outside the digest: names federation/<rid>/ for the skill
+
+
+def work_order_marker(r: ScanResult) -> str:
+    return (
+        f"{WORK_ORDER_PREFIX}scan:{r.scan_sha} baseline:{r.baseline_sha or 'none'} -->"
+    )
+
+
+def parse_work_order_marker(line: str) -> tuple[str, str | None] | None:
+    """`(scan sha, baseline sha or None)` of an exact marker line, else None."""
+    m = _WORK_ORDER_RE.fullmatch(line)
+    if m is None:
+        return None
+    return m.group(1), None if m.group(2) == "none" else m.group(2)
+
+
+def category(f: Finding) -> str:
+    return "image" if f.image else f.item.status
 
 
 def _fact_terms(kind: str, value: str) -> list[str]:
@@ -295,6 +330,9 @@ def to_json(r: ScanResult) -> dict:
         "baseline_source": r.baseline_source,
         "notes": list(r.notes),
         "hub_repo_id": r.hub_repo_id,
+        "counts": {
+            c: sum(category(f) == c for f in r.findings) for c in CATEGORY_ORDER
+        },
         "findings": [_finding_json(f) for f in r.findings],
     }
 
@@ -307,6 +345,7 @@ def _finding_json(f: Finding) -> dict:
         "section_title": f.section_title,
         "term": f.term,
         "image": f.image,
+        "category": category(f),
         "repo_id": i.repo_id,
         "code_doc_id": i.doc_id,
         "code_section_id": i.section_id,
@@ -334,13 +373,18 @@ def exit_code(r: ScanResult) -> int:
 
 def render_markdown(r: ScanResult) -> str:
     base = f"{r.baseline_sha[:12]} ({r.baseline_source})" if r.baseline_sha else "none"
-    n = len(r.findings)
-    lines = [f"Scan: {r.scan_sha[:12]} · Baseline: {base} · {n} finding(s)"]
+    lines = [work_order_marker(r)]
+    lines.append(
+        f"Scan: {r.scan_sha[:12]} · Baseline: {base} · {len(r.findings)} finding(s)"
+    )
     lines += [f"note: {note}" for note in r.notes]
-    for (doc_id, sid, title, image), group in groupby(
-        r.findings, key=lambda f: (f.doc_id, f.section_id, f.section_title, f.image)
-    ):
-        lines += ["", f"## {doc_id} §{sid} {title}" + ("  (image)" if image else "")]
-        lines += [f"- {line(f)}" for f in group]
+    ordered = sorted(r.findings, key=lambda f: CATEGORY_ORDER.index(category(f)))
+    for cat, in_cat in groupby(ordered, key=category):
+        lines += ["", f"## {_CATEGORY_HEADINGS[cat]}"]
+        for (doc_id, sid, title), group in groupby(
+            in_cat, key=lambda f: (f.doc_id, f.section_id, f.section_title)
+        ):
+            lines += ["", f"### {doc_id} §{sid} {title}"]
+            lines += [f"- {line(f)}" for f in group]
     lines += ["", f"{DIGEST_PREFIX}{digest(r)} -->"]
     return "\n".join(lines) + "\n"

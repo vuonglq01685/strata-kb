@@ -441,9 +441,9 @@ def test_output_is_byte_identical_on_repeat(code_sync_hub, run_git):
     assert scan.digest(a) == scan.digest(b)
     md = scan.render_markdown(a)
     assert md.endswith(f"<!-- kb-code-sync digest:{scan.digest(a)} -->\n")
-    assert "## arch §4.2 Payment flow" in md
+    assert "### arch §4.2 Payment flow" in md
     assert "`Depends on` no longer lists `ledger`" in md
-    assert f"Scan: {a.scan_sha[:12]}" in md.splitlines()[0]
+    assert f"Scan: {a.scan_sha[:12]}" in md.splitlines()[1]
 
 
 def test_digest_ignores_header(code_sync_hub, run_git):
@@ -482,3 +482,125 @@ def test_write_then_read_round_trip(code_sync_hub, run_git):
     commit(root, run_git)
     assert baseline.read_at(root, "HEAD") == c1
     assert baseline.read_at(root, c1) is None
+
+
+# --- identity marker -------------------------------------------------------
+
+SCAN = "a" * 40
+BASE = "b" * 40
+
+
+def test_markdown_first_line_is_the_identity_marker(code_sync_hub, run_git):
+    root, c1 = code_sync_hub
+    write_doc(root, "acme", "code", NO_LEDGER)
+    commit(root, run_git)
+
+    r = scan.run_scan(root, baseline_sha=c1)
+
+    first = scan.render_markdown(r).splitlines()[0]
+    assert first == (
+        f"<!-- kb-code-sync work-order v1 scan:{r.scan_sha} baseline:{c1} -->"
+    )
+    assert first == scan.work_order_marker(r)
+    assert first.startswith(scan.WORK_ORDER_PREFIX)
+
+
+def test_markdown_without_baseline_marks_baseline_none(code_sync_hub):
+    root, _ = code_sync_hub
+
+    r = scan.run_scan(root)
+
+    assert scan.render_markdown(r).splitlines()[0] == (
+        f"<!-- kb-code-sync work-order v1 scan:{r.scan_sha} baseline:none -->"
+    )
+
+
+@pytest.mark.parametrize("baseline", [BASE, "b" * 7, "none"])
+def test_parse_marker_accepts_the_exact_format(baseline):
+    line = f"<!-- kb-code-sync work-order v1 scan:{SCAN} baseline:{baseline} -->"
+
+    assert scan.parse_work_order_marker(line) == (
+        SCAN,
+        None if baseline == "none" else baseline,
+    )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"<!-- kb-code-sync work-order v1 scan:{'a' * 39} baseline:{BASE} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{'A' * 40} baseline:{BASE} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{SCAN} baseline:{'B' * 40} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{SCAN} baseline:{'b' * 6} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{SCAN} baseline:{'b' * 41} -->",
+        f"<!--  kb-code-sync work-order v1 scan:{SCAN} baseline:{BASE} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{SCAN}  baseline:{BASE} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{SCAN} baseline:{BASE}  -->",
+        f"<!-- kb-code-sync work-order v2 scan:{SCAN} baseline:{BASE} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{SCAN} baseline:{BASE} -->\n",
+        f"x <!-- kb-code-sync work-order v1 scan:{SCAN} baseline:{BASE} -->",
+        f"<!-- kb-code-sync work-order v1 scan:{SCAN} baseline: -->",
+        "",
+    ],
+)
+def test_parse_marker_rejects_variants(line):
+    assert scan.parse_work_order_marker(line) is None
+
+
+# --- categories ------------------------------------------------------------
+
+
+def _finding(
+    status: str, *, image=False, doc="arch", sid="4.2", sec="m"
+) -> scan.Finding:
+    item = ChangedItem("acme", "acme-code", sec, "T", status, frozenset(), frozenset())
+    return scan.Finding(doc, sid, "Payment flow", "ledger", image, item)
+
+
+def _result(*findings: scan.Finding) -> scan.ScanResult:
+    return scan.ScanResult(SCAN, BASE, "override", findings, (), "kb-hub")
+
+
+def test_category_order_and_derivation():
+    assert scan.CATEGORY_ORDER == ("removed", "changed", "added", "image")
+    assert scan.category(_finding("removed")) == "removed"
+    assert scan.category(_finding("changed")) == "changed"
+    assert scan.category(_finding("added")) == "added"
+    assert scan.category(_finding("removed", image=True)) == "image"
+
+
+def test_json_carries_category_and_all_counts():
+    r = _result(
+        _finding("changed", sid="1"),
+        _finding("changed", sid="2"),
+        _finding("added", image=True, sid="3"),
+    )
+
+    data = scan.to_json(r)
+
+    assert [f["category"] for f in data["findings"]] == ["changed", "changed", "image"]
+    assert data["counts"] == {"removed": 0, "changed": 2, "added": 0, "image": 1}
+    assert list(data["counts"]) == list(scan.CATEGORY_ORDER)
+
+
+def test_markdown_groups_by_category_in_order_and_omits_empty():
+    r = _result(
+        _finding("added", sid="1", sec="s1"),
+        _finding("removed", sid="2", sec="s2"),
+        _finding("changed", image=True, sid="3", sec="s3"),
+        _finding("added", doc="zeta", sid="9", sec="s4"),
+    )
+
+    lines = scan.render_markdown(r).splitlines()
+
+    headings = [x for x in lines if x.startswith("## ")]
+    assert headings == [
+        "## Removed — code gone, prose likely wrong",
+        "## Added — new code, docs may need a mention",
+        "## Images — may need a redraw",
+    ]
+    sections = [x for x in lines if x.startswith("### ")]
+    assert [x.split()[1] for x in sections] == ["arch", "arch", "zeta", "arch"]
+    assert sections[1] == "### arch §1 Payment flow"
+    assert not any("Changed" in x for x in lines if x.startswith("## "))
+    assert lines[-1].startswith(scan.DIGEST_PREFIX)

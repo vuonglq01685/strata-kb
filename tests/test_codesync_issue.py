@@ -142,6 +142,8 @@ def test_oversized_body_is_truncated_with_marker_last():
     assert "kb code-sync scan --md" in body
     lines = body.splitlines()
     assert lines[-1] == f"{scan.DIGEST_PREFIX}{scan.digest(r)} -->"
+    assert lines[0] == scan.work_order_marker(r)
+    assert scan.parse_work_order_marker(lines[0]) == (SHA, None)
     assert issue.TRUNCATED_LINE in lines
 
 
