@@ -468,7 +468,7 @@ level, and the two BA-internal sections removed. `## Open questions` stays. The
 L2 text keeps every table byte for byte, plus the mission's summary and business
 goal or the ticket's story and acceptance criteria. Agents search it with
 `kb_search`; people read it in the web UI under **Ticket**, a menu beside
-Documents:
+Document:
 
 | Page | Shows |
 |---|---|

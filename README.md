@@ -492,9 +492,10 @@ local `.kb/` is a drafting desk; nobody queries it.
 dev --kind kb`, MCP `kb_search(..., kinds=["dev", "kb"])` and REST
 `/api/search?q=…&kind=dev&kind=kb` (an unknown value answers `400` with error
 code `unknown_kind`; the CLI and MCP print the error instead). Each REST
-`/api/search` result, and each entry of `/api/docs`, carries its `kind`. A kind filter narrows the candidates before ranking, so a
-menu search in the Web UI can list more hits than the kind chip of the top
-search shows: the chip only filters the one budgeted search the top box ran.
+`/api/search` result, and each entry of `/api/docs`, carries its `kind`. A kind
+filter narrows the candidates before ranking, so a menu search in the Web UI can
+list more hits than the kind chip of the top search shows: the chip only filters
+the one budgeted search the top box ran.
 The agent skills pass the kind they need: BA skills search `--kind kb --kind
 dev`; `dev-implement-ticket` searches `--kind dev` for its own code (plus
 separate `--kind ba` and `--kind kb` lookups); `sa-ticket-ground` searches
@@ -593,8 +594,8 @@ entry with no `kind` still publishes: the repo's own kind is recorded.
 
 Leaves published before 1.20.0 have no recorded kind. They are not rewritten
 and nothing moves under `federation/`: the kind is inferred when read (a
-`<repo_id>-plan` document is `ba`, `-code` and `-svc` are `dev`, anything else
-is `kb`), so the Web UI and kind-filtered search are right immediately. The
+generated plan document, with a plan title and the `plan`/`generated` tags, is
+`ba`; `-code` and `-svc` are `dev`; anything else is `kb`), so the Web UI and kind-filtered search are right immediately. The
 inferred kind is recorded the next time the repo's content changes and is
 published.
 
@@ -607,12 +608,16 @@ the entries it cannot infer. It edits `registry.yaml` line by line, so comments
 survive, and never commits: review the change and open the hub PR yourself. An
 invalid `registry.yaml` makes it exit `1`.
 
-**Upgrade order.** Upgrade the hub first. Then upgrade every publisher that
+**Upgrade order.** Upgrade the hub (and its intake service) first. Then upgrade every publisher that
 reads the registry itself (local or direct `kb publish`, and child hubs) and
 only then run `kb init --kind hub` and commit the registry: an older strata-kb
 rejects a registry that has `kind:`. Publishers on the intake route are
 unaffected. Old clients keep publishing meanwhile: the registry kind wins and the
 leaf kind is inferred.
+
+`kb init --kind hub` on a hub whose registry has kind-less entries asks to fill
+them. Decline until the publishers are upgraded. A non-interactive run without
+`--yes` exits `1` until the kinds are filled.
 
 ### Code sync
 
@@ -822,7 +827,7 @@ links to its Ticket page. The CLI twin is
 
 | Tool | Purpose | Main params |
 |---|---|---|
-| `kb_search` | Find sections by natural language and return L2 within a token budget. Ranking is capped: each leg is capped at 50 results before fusion, and the tool says so when matches were dropped. It also flags when the top two results are the same section published by two repos, when their keyword scores tie exactly, or when both are hybrid-confirmed within the ambiguity ratio. | `query`, `tags`, `budget` |
+| `kb_search` | Find sections by natural language and return L2 within a token budget. Ranking is capped: each leg is capped at 50 results before fusion, and the tool says so when matches were dropped. It also flags when the top two results are the same section published by two repos, when their keyword scores tie exactly, or when both are hybrid-confirmed within the ambiguity ratio. | `query`, `tags`, `budget`, `kinds` |
 | `kb_get_section` | Fetch exactly one section | `doc`, `section`, `level` |
 | `kb_context_new` | Pin a `kb-context` citation block at the hub's current commit, from confirmed refs | `refs`, `tags` |
 | `kb_resolve` | Resolve a `kb-context` block (or a ticket containing one) — sections at the pinned version plus freshness | `kb_context` |

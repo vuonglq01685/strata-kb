@@ -246,7 +246,7 @@ One process serves three audiences over HTTP:
 | `/api/…` | programmatic callers | Bearer token or session cookie |
 | `/ui` | people | sign in with the token, session cookie stored |
 
-The UI has a **Ticket** menu beside Documents (`/ui/tickets`) for the missions and
+The UI has a **Ticket** menu beside Document (`/ui/tickets`) for the missions and
 tickets that `ba` repos publish (§8.4).
 
 The same process also runs over stdio for a local agent. In every mode a hub is
@@ -551,8 +551,8 @@ Story status is derived, read-only, from what the hub already holds: `done` when
 the id is in a `hist.*` row of the dev repo's `-svc`, `ready` when the ticket is
 published, `not ready` when it is not, `blocked` with reasons. `kb mission next
 --from-hub` computes it in the CLI; the Web UI's **Ticket** menu renders it, and
-`*-plan` documents are kept out of Documents, the overview counts and the tag
-rail. Nothing is stored and there is no write path. In the other direction, a dev
+`*-plan` documents appear under Ticket, not Document, and the overview counts
+per kind. Nothing is stored and there is no write path. In the other direction, a dev
 given only a ticket id runs `kb ticket fetch`, which reads the ticket from the
 hub's `-plan` and restores its source shape.
 

@@ -245,7 +245,7 @@ Một tiến trình phục vụ ba nhóm đối tượng qua HTTP:
 | `/api/…` | người gọi lập trình | Bearer token hoặc cookie phiên |
 | `/ui` | con người | đăng nhập bằng token, lưu cookie phiên |
 
-UI có menu **Ticket** nằm cạnh Documents (`/ui/tickets`) cho các mission và ticket mà
+UI có menu **Ticket** nằm cạnh Document (`/ui/tickets`) cho các mission và ticket mà
 repo `ba` publish (mục 8.4).
 
 Cũng tiến trình đó chạy qua stdio cho agent cục bộ. Ở mọi chế độ, hub là **bắt
@@ -548,8 +548,8 @@ story đó.
 Trạng thái story được suy ra, chỉ đọc, từ những gì hub đã có: `done` khi id nằm
 trong một dòng `hist.*` của `-svc` của repo dev, `ready` khi ticket đã publish,
 `not ready` khi chưa, `blocked` kèm lý do. `kb mission next --from-hub` tính nó ở
-CLI; menu **Ticket** của Web UI hiển thị nó, và tài liệu `*-plan` được giữ ngoài
-Documents, số đếm tổng quan và dải tag. Không có gì được lưu và không có đường ghi.
+CLI; menu **Ticket** của Web UI hiển thị nó, và tài liệu `*-plan` nằm ở menu
+Ticket, không nằm ở Document, và trang tổng quan đếm theo từng loại. Không có gì được lưu và không có đường ghi.
 Theo chiều ngược lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc
 ticket từ `-plan` của hub và khôi phục dạng nguồn của nó.
 

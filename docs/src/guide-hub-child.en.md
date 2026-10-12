@@ -402,7 +402,7 @@ Python at all.
 
 ## 10.2 The Ticket menu
 
-The web UI has a **Ticket** menu beside Documents. It shows what `ba` repos publish
+The web UI has a **Ticket** menu beside Document. It shows what `ba` repos publish
 as `<repo>-plan` documents, with a status per story derived from the hub alone:
 **done** (the id is in a `hist.*` row of the Dev repo's `-svc`), **ready** (its
 ticket is published), **not ready** (no published ticket yet) or **blocked** (with
@@ -416,8 +416,8 @@ reasons). Nothing new is stored and there is no write path.
 
 The repo is a query parameter because nested federation ids contain `/`. Without
 `?repo=` the one repo that holds the id is used; if several do, the page is a 404
-naming them. `*-plan` documents are left out of Documents, the overview counts and
-the tag rail; a search hit inside one links to its Ticket page. The CLI twin is
+naming them. `*-plan` documents appear under Ticket, not Document, and the
+overview counts per kind; a search hit inside one links to its Ticket page. The CLI twin is
 `kb mission next --from-hub [--repo <ba-repo>]`.
 
 ## 10.3 Before you expose it

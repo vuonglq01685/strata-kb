@@ -462,7 +462,7 @@ Bản L3 là nguồn của bạn đã bỏ dòng tiêu đề, hạ mọi heading
 hai mục nội bộ của BA. `## Open questions` được giữ. Bản L2 giữ nguyên từng byte
 mọi bảng, cộng thêm tóm tắt và mục tiêu nghiệp vụ của mission, hoặc story và tiêu
 chí chấp nhận của ticket. Agent tìm nó bằng `kb_search`; con người đọc trên web UI
-ở menu **Ticket**, nằm cạnh Documents:
+ở menu **Ticket**, nằm cạnh Document:
 
 | Trang | Hiển thị |
 |---|---|

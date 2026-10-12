@@ -389,7 +389,7 @@ Python cục bộ.
 
 ## 10.2 Menu Ticket
 
-Web UI có menu **Ticket** nằm cạnh Documents. Nó hiển thị những gì các repo `ba`
+Web UI có menu **Ticket** nằm cạnh Document. Nó hiển thị những gì các repo `ba`
 publish dưới dạng tài liệu `<repo>-plan`, với trạng thái từng story được suy ra
 chỉ từ hub: **done** (id nằm trong một dòng `hist.*` của `-svc` của repo Dev),
 **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã publish)
@@ -403,8 +403,8 @@ hoặc **blocked** (kèm lý do). Không có gì mới được lưu và không 
 
 Repo là tham số truy vấn vì id federation lồng nhau có chứa `/`. Không có `?repo=`
 thì dùng repo duy nhất đang giữ id đó; nếu có nhiều repo, trang là 404 nêu tên
-chúng. Tài liệu `*-plan` bị loại khỏi Documents, số đếm ở trang tổng quan và dải
-tag; một kết quả tìm kiếm nằm trong đó dẫn tới trang Ticket của nó. Bản CLI tương
+chúng. Tài liệu `*-plan` nằm ở menu Ticket, không nằm ở Document, và trang tổng quan
+đếm theo từng loại; một kết quả tìm kiếm nằm trong đó dẫn tới trang Ticket của nó. Bản CLI tương
 ứng là `kb mission next --from-hub [--repo <ba-repo>]`.
 
 ## 10.3 Trước khi mở ra ngoài
