@@ -202,6 +202,26 @@ def hub_plans(
     return plans, notes
 
 
+# `kb mission next --from-hub` and MCP kb_mission_next: a story with no
+# published ticket is not "to draft" from the reader's side.
+FROM_HUB_LABELS = {"to-draft": "not ready (no published ticket)"}
+
+
+def next_from_hub(
+    hub: HubHandle, repo: str | None = None
+) -> tuple[list[missionnext.StoryStatus], list[str]]:
+    """Every story of the plans published on the hub (of `repo`, when given),
+    and the notes; `kb mission next --from-hub` and MCP kb_mission_next."""
+    plans, notes = hub_plans(hub, repo)
+    if not plans:
+        notes.append(
+            f"no plan for repo '{repo}' on the hub"
+            if repo
+            else "no <repo>-plan document on the hub"
+        )
+    return [s for r in plans for m in r.missions for s in m.stories], notes
+
+
 def mission_holders(
     hub: HubHandle, mission_id: str, repo: str | None = None
 ) -> list[PlanMission]:

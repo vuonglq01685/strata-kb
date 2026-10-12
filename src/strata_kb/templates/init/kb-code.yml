@@ -1,17 +1,22 @@
 name: kb-code
 
+# Publishing is `kb publish`: it tags the commit kb-publish/<ts> and pushes the
+# tag, and the intake accepts an OIDC token only from a refs/tags/kb-publish/*
+# ref (a push to main is refused with HTTP 403, #100). workflow_dispatch
+# re-runs a publish only when started on such a tag.
 on:
   push:
-    branches: [main, master]
+    tags: ["kb-publish/*"]
   pull_request:
   workflow_dispatch:
 
-# Two quick merges must not race two `kb ci-publish` runs each opening their
-# own hub PR against the same -code document (task review, Important 7).
+# Two quick `kb publish` runs must not race two `kb ci-publish` runs each
+# opening their own hub PR against the same -code document (task review,
+# Important 7). Every publish tag shares one group; PRs keep one per ref.
 # cancel-in-progress stays false: a publish run must finish once started,
-# never be killed mid-PR — the next push's run simply waits its turn.
+# never be killed mid-PR — the next tag's run simply waits its turn.
 concurrency:
-  group: kb-code-${{ github.ref }}
+  group: kb-code-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
   cancel-in-progress: false
 
 jobs:
@@ -33,7 +38,7 @@ jobs:
       - run: kb build
 
   publish:
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/kb-publish/')
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -11,6 +11,12 @@ score it.
 The argument is the ticket (or mission) file path; `--mission` switches
 to the mission layer.
 
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket check` has no MCP tool and stays CLI.
+
 ## Workflow
 
 1. **Intake** — read the document. Identify the product repo id

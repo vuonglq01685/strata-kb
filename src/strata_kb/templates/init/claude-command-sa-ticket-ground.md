@@ -7,6 +7,12 @@ Invoke the `sa-ticket-ground` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the file path, and `--mission`
 through when given.
 
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket check` has no MCP tool and stays CLI.
+
 Pipeline: Intake → Load → Fill → Gate → Handover. Hard rules the skill
 enforces: every line of the SA-owned section (`## Technical grounding`,
 or `## Services & order` with `--mission`) points at a section id that

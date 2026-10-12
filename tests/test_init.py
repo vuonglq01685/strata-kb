@@ -1888,6 +1888,19 @@ def test_kb_code_workflow_points_db_flags_to_the_config():
     assert "--db <path>" not in text
 
 
+def test_kb_code_workflow_publishes_only_from_a_publish_tag(tmp_path: Path):
+    """#100: the intake refuses every ref but refs/tags/kb-publish/*, so a
+    publish on push to main could only ever get HTTP 403."""
+    init_repo(tmp_path, "dev")
+    path = tmp_path / ".github" / "workflows" / "kb-code.yml"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    triggers = workflow[True]  # YAML 1.1 reads the bare `on:` key as True
+    assert triggers["push"] == {"tags": ["kb-publish/*"]}
+    publish = workflow["jobs"]["publish"]
+    assert publish["if"] == "startsWith(github.ref, 'refs/tags/kb-publish/')"
+    assert publish["permissions"]["id-token"] == "write"
+
+
 def test_init_kind_dev_scaffolds_the_child_gitattributes_exemption(tmp_path: Path):
     """Minor 1 (Wave G fix round 2): a dev repo publishes .kb/ (its own
     source knowledge) exactly like a child does, but DEV_TEMPLATES carried

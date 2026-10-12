@@ -13,6 +13,7 @@ import argparse
 import inspect
 import logging
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -300,7 +301,62 @@ def create_server(config: ServerConfig) -> MCPServer:
 
         return await anyio.to_thread.run_sync(_run)
 
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_mission_next(repo: str | None = None) -> str:
+        """Which story next, from the plans BA repos published to the hub
+        (`<ba-repo>-plan`): every backlog story as done / ready / not ready
+        (no published ticket) / blocked, then the next one to take. Done comes
+        from the product repo's -svc history; a story with a published ticket
+        is ready. `repo` limits it to one BA repo's plan. Same report as `kb
+        mission next --from-hub`; a BA's unpublished missions/ and tickets/
+        drafts need the CLI (`kb mission next` in the BA repo)."""
+
+        def _run() -> str:
+            from strata_kb import missionnext, planstatus
+
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            results, notes = planstatus.next_from_hub(hub, repo or None)
+            return stale_hub_note(hub) + missionnext.render(
+                results, notes, planstatus.FROM_HUB_LABELS
+            )
+
+        return await anyio.to_thread.run_sync(_run)
+
     return mcp
+
+
+_LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+_HOST_NAME_RE = re.compile(r"^[A-Za-z0-9.-]+$")
+
+
+def transport_security_from_env():
+    """FastMCP's DNS-rebinding check, its localhost allowlist plus each name in
+    STRATA_KB_ALLOWED_HOSTS. Without it, /mcp behind a reverse proxy at a real
+    name answers 421 Invalid Host header (#101)."""
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    raw = os.environ.get("STRATA_KB_ALLOWED_HOSTS", "")
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    for name in names:
+        if not _HOST_NAME_RE.fullmatch(name):
+            raise SystemExit(
+                f"STRATA_KB_ALLOWED_HOSTS entry '{name}' is not a host name — "
+                "list bare names separated by commas, e.g. kb.example.com "
+                "(no scheme, port or path)"
+            )
+    hosts = [f"{h}:*" for h in _LOCAL_HOSTS]
+    origins = [f"http://{h}:*" for h in _LOCAL_HOSTS]
+    for name in names:
+        hosts += [name, f"{name}:*"]
+        origins += [f"{s}://{name}{p}" for s in ("https", "http") for p in ("", ":*")]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
 
 
 def create_http_app(config: ServerConfig, token: str):
@@ -308,10 +364,12 @@ def create_http_app(config: ServerConfig, token: str):
     from strata_kb.intake import intake_config_from_env
     from strata_kb.web.app import create_app
 
+    server = create_server(config)
+    server.settings.transport_security = transport_security_from_env()
     return create_app(
         config,
         token,
-        mcp_server=create_server(config),
+        mcp_server=server,
         intake_cfg=intake_config_from_env(config.hub),
     )
 

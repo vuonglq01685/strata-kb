@@ -30,7 +30,7 @@ def test_readme_pins_the_path_scoped_auto_merge_constraint():
     # (keyed by repo id, not by document -- intake.py:302-330), so a
     # whole-PR or whole-repo auto-merge rule for "-code" would also
     # auto-merge any "-svc" amend riding along in that same PR.
-    assert "opens one hub PR per push, not per document" in text
+    assert "opens one hub PR per publish, not per document" in text
     assert "path-scoped to `.kb/<repo_id>-code/**`" in text
     assert "never a whole-PR or whole-repo rule" in text
 

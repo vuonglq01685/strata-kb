@@ -21,13 +21,23 @@ trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`), re-pin with
 `kb_context_new` (FULL ref list, whole block replaced), run `kb ticket check`
 on every amend (`/sa-ticket-ground` first for an `architecture` trigger, else
 only when the check FAILs with `re-run /sa-ticket-ground`; any other FAIL goes to the BA), bump `> Revision:` and
-append a `## Change log` row (`Affected` = section names), run `kb ticket
-lint` until `DoR: PASS`, review the changed sections only (one round, scores
+append a `## Change log` row (`Affected` = section names), run `kb_ticket_lint` (CLI
+fallback `kb ticket lint`) until `DoR: PASS`, review the changed sections only (one round, scores
 in the row's `Review` cell, never in `## Review record`), untick the DoR
 boxes whose evidence changed and update the `@ rev` pin. A `done` story's
 ticket is frozen: new work gets the next free US number. A `DECIDED` row is
 superseded, never edited (a superseded row still cited by a `[NEW: D<k>]`
 forces the `architecture` trigger). The agent never ticks DoR, commits or pushes.
+
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket tidy`, `kb ticket check`, `kb ticket stale`, `kb
+ticket export` and `kb publish` have no MCP tool and stay CLI. `kb
+mission next` stays CLI too: it reads this repo's unpublished
+`missions/` and `tickets/`, which `kb_mission_next` (the published plan
+only) cannot see.
 
 Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
 to `tickets/<mission-id>/<mission-id>-US<n>.md` under a parent mission, so
@@ -53,7 +63,10 @@ validated against the hub vocabulary and an unknown one is an error,
 and the BA's intake tags are search keywords for `kb query --tags`,
 nothing more;
 code detail becomes `%%TODO: verify against codebase%%`, never
-invented, never looked up by you; `kb ticket lint` must report `DoR: PASS` before handover;
+invented, never looked up by you; `kb_ticket_lint` (CLI fallback `kb ticket lint`) must report `DoR: PASS` before handover — over MCP the
+`> Parent mission:` back-link checks are skipped, so with that line run
+`kb ticket lint <file>` once before handover (no CLI → tell the BA the
+back-link was not verified; CI runs the full check on the PR);
 report the authoring cost at handover with `kb usage report --ticket
 <ticket-id> --md`, reporting `no usage recorded yet` as-is rather than
 guessing a number;

@@ -81,8 +81,10 @@ document, so other repos can read them from the hub.
       words call for one that is missing.
    5. **Pin** — once you confirm which sections apply, it calls
       `kb_context_new` and embeds the returned `## KB context` block.
-   6. **Lint** — it runs `kb ticket lint` and fixes errors until it
-      reports `DoR: PASS`.
+   6. **Lint** — it runs the MCP tool `kb_ticket_lint` (the `kb ticket lint`
+      CLI is the fallback) and fixes errors until it reports `DoR: PASS`.
+      With a `> Parent mission:` line it also runs the CLI once for the
+      full back-link check.
    7. **Ground technical** — it saves the draft and invokes
       `/sa-ticket-ground` on it as a separate run (no shared context).
       That fills the SA-owned `## Technical grounding` section from the hub's
@@ -201,7 +203,7 @@ is reported as one of five states, and the report ends with
 
 | State | Means |
 |---|---|
-| `done` | the ticket id is in a `hist.*` row of the hub's `-svc` document — the Dev ran `kb svc note` at handover and CI published it on merge |
+| `done` | the ticket id is in a `hist.*` row of the hub's `-svc` document — the Dev ran `kb svc note` at handover and ran `kb publish` after the merge |
 | `ready` | the ticket file exists and every `## Definition of Ready` box is ticked — waiting for a Dev |
 | `draft` | the ticket file exists and a DoR box is still unticked (`DoR 5/8 ticked`), or it has no DoR section |
 | `to-draft` | no ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED` |

@@ -1,3 +1,4 @@
+import pytest
 from starlette.testclient import TestClient
 
 from strata_kb import ghapp, intake
@@ -86,6 +87,58 @@ def test_full_http_app_serves_mcp_and_api_together(fed_hub):
         assert "serverInfo" in resp.text
         assert client.get("/api/health").status_code == 200
         assert client.get("/ui", headers=AUTH).status_code == 200
+
+
+def _post_initialize(fed_hub, base_url: str, origin: str | None = None):
+    # A fresh app per request: FastMCP's session manager runs once per app.
+    app = create_http_app(_config(fed_hub), TOKEN)
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "0"},
+        },
+    }
+    headers = {
+        **AUTH,
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        **({"Origin": origin} if origin else {}),
+    }
+    with TestClient(app, base_url=base_url) as client:
+        return client.post("/mcp", json=payload, headers=headers)
+
+
+def test_mcp_accepts_a_host_listed_in_allowed_hosts(fed_hub, monkeypatch):
+    """#101: FastMCP's DNS-rebinding check allowed only a localhost Host, so
+    /mcp behind a reverse proxy at a real name answered 421."""
+    monkeypatch.setenv("STRATA_KB_ALLOWED_HOSTS", "kb.example.com, kb.internal")
+    resp = _post_initialize(fed_hub, "https://kb.example.com", "https://kb.example.com")
+    assert resp.status_code == 200
+    assert "serverInfo" in resp.text
+    assert _post_initialize(fed_hub, "http://kb.internal:8321").status_code == 200
+    assert _post_initialize(fed_hub, "http://localhost:8321").status_code == 200
+
+
+def test_mcp_still_rejects_an_unlisted_host_or_origin(fed_hub, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_ALLOWED_HOSTS", "kb.example.com")
+    assert _post_initialize(fed_hub, "https://evil.example").status_code == 421
+    resp = _post_initialize(fed_hub, "https://kb.example.com", "https://evil.example")
+    assert resp.status_code == 403
+
+
+def test_mcp_without_allowed_hosts_stays_localhost_only(fed_hub, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_ALLOWED_HOSTS", raising=False)
+    assert _post_initialize(fed_hub, "https://kb.example.com").status_code == 421
+
+
+def test_allowed_hosts_refuses_a_url_instead_of_a_host_name(fed_hub, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_ALLOWED_HOSTS", "https://kb.example.com")
+    with pytest.raises(SystemExit, match="STRATA_KB_ALLOWED_HOSTS"):
+        create_http_app(_config(fed_hub), TOKEN)
 
 
 def test_hub_locked_cache_returns_503_not_a_crash(

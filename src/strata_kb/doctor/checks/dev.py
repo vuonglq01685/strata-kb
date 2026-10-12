@@ -88,6 +88,6 @@ def check_hub_lag(
             "warning",
             f"hub {repo_id}-code lags {report.ref} (as of {report.ref_date}) — "
             f"{'; '.join(parts)} — check for a pending -code PR on the hub, or the "
-            "latest kb-code.yml run",
+            "latest kb-code.yml run (run `kb publish` to publish it)",
         )
     ]

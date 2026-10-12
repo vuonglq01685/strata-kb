@@ -54,6 +54,9 @@ jobs:
     with:
       tag: ${{ github.ref_name }}
       windows: true
+      # A release is gated on GitHub-hosted machines; PRs and main keep the
+      # self-hosted runner (ci.yml leaves this at its default).
+      linux-runner: ubuntu-latest
 
   # docker-verify / pypi / docker-release stay GitHub-hosted on purpose: they
   # need a Docker daemon, and the heavy [ingest] image build (torch, docling)

@@ -431,7 +431,7 @@ SHARED_BLOCKS = {
 # deletes or rewords a hard rule now fails here, where the pairwise-only
 # version did not.
 SHARED_BLOCK_TEXT = {
-    "SHARED-FRESHNESS": "## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`\n  the current hub version. Do NOT use `kb diff` — it compares the local\n  `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
+    "SHARED-FRESHNESS": "## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb_get_section` (else `kb get …\n  --level l3`) the hub's version. Do NOT use `kb diff` — it compares\n  the local `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
     "SHARED-HARD-RULES": '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
     "SHARED-NEXT-STEP": "## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n",
 }
@@ -970,8 +970,8 @@ def test_kb_code_workflow_has_both_triggers():
 
 def test_kb_code_trigger_list_is_pinned():
     # Task review, Important 7: nothing bounds the `on:` block today --
-    # adding `pull_request_target` later would make the publish job's
-    # `if: github.event_name != 'pull_request'` true for a PR-controlled
+    # adding `pull_request_target` later would have made the publish job's
+    # old `if: github.event_name != 'pull_request'` true for a PR-controlled
     # ref, running `kb ci-publish` with `id-token: write` against
     # attacker-influenced content. Pinning the exact trigger set (not
     # just "push/pull_request/workflow_dispatch are present", which a
@@ -985,7 +985,9 @@ def test_kb_code_trigger_list_is_pinned():
     # key, not a typo.
     triggers = wf[True]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
-    assert triggers["push"] == {"branches": ["main", "master"]}
+    # #100: the intake accepts only refs/tags/kb-publish/*; a branch push
+    # could only ever be refused with HTTP 403.
+    assert triggers["push"] == {"tags": ["kb-publish/*"]}
 
 
 def test_kb_code_publish_job_runs_the_full_chain():
@@ -1018,20 +1020,21 @@ def test_kb_code_has_no_hardcoded_url_or_token():
     assert "id-token: write" in text
 
 
-def test_kb_code_publish_job_if_is_pinned_to_negated_pull_request():
-    # Regression guard: `if: github.event_name != 'pull_request'` on the
-    # publish job is the ONLY thing stopping a same-repo branch PR from
+def test_kb_code_publish_job_if_is_pinned_to_a_publish_tag():
+    # Regression guard: the publish job's `if:` is the ONLY thing stopping a
+    # same-repo branch PR (ref refs/pull/<n>/merge) from
     # running `kb ci-publish` with `id-token: write` and publishing
     # unreviewed content to the hub (fork PRs are separately protected by
     # GitHub withholding a write-scoped GITHUB_TOKEN, but that protection
-    # does not cover same-repo PRs). A substring check like
-    # `"pull_request" in condition` would still pass if this were inverted
-    # to `==` -- pin the exact expression so both deleting the `if:` and
-    # flipping the operator fail this test.
+    # does not cover same-repo PRs). Since #100 it also keeps a
+    # workflow_dispatch on a branch from a publish the intake would refuse.
+    # Pin the exact expression so deleting or loosening the `if:` fails.
     import yaml
 
     wf = yaml.safe_load(_read_init_template("kb-code.yml"))
-    assert wf["jobs"]["publish"]["if"] == "github.event_name != 'pull_request'"
+    assert (
+        wf["jobs"]["publish"]["if"] == "startsWith(github.ref, 'refs/tags/kb-publish/')"
+    )
 
 
 def test_kb_code_validate_job_has_read_only_permissions():
@@ -1045,14 +1048,17 @@ def test_kb_code_validate_job_has_read_only_permissions():
 
 
 def test_kb_code_workflow_has_a_concurrency_group():
-    # Task review, Important 7: without this, two quick merges race two
+    # Task review, Important 7: without this, two quick publishes race two
     # `kb ci-publish` runs, each opening its own hub PR against the same
-    # -code document.
+    # -code document. Each publish tag is its own ref, so every publish run
+    # shares the one 'publish' group; PRs keep a group per ref.
     import yaml
 
     wf = yaml.safe_load(_read_init_template("kb-code.yml"))
     concurrency = wf["concurrency"]
-    assert concurrency["group"] == "kb-code-${{ github.ref }}"
+    assert concurrency["group"] == (
+        "kb-code-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}"
+    )
     assert concurrency["cancel-in-progress"] is False
 
 

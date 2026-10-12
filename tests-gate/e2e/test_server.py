@@ -110,6 +110,7 @@ EXPECTED_TOOLS = {
     "kb_context_new",
     "kb_resolve",
     "kb_ticket_lint",
+    "kb_mission_next",
 }
 
 
@@ -127,7 +128,7 @@ async def _handshake(params):
         return tools, hit
 
 
-def test_mcp_stdio_exposes_exactly_the_five_tools(mcp_stdio_params):
+def test_mcp_stdio_exposes_exactly_the_six_tools(mcp_stdio_params):
     tools, hit = asyncio.run(_handshake(mcp_stdio_params))
 
     assert {t.name for t in tools.tools} == EXPECTED_TOOLS

@@ -7,6 +7,9 @@
 # One deliberate exception: the Windows rows. Linux jobs run on the self-hosted
 # runner (Hostinger VPS, no minutes); Windows needs a GitHub-hosted runner
 # (2x minutes), so it only runs when release.yml passes `windows: true`.
+# Where the Linux jobs run is not a test difference: release.yml passes
+# `linux-runner: ubuntu-latest` so a release is gated on clean GitHub-hosted
+# machines, while PRs and main keep the self-hosted runner.
 name: gate
 on:
   workflow_call:
@@ -21,11 +24,16 @@ on:
         type: boolean
         required: false
         default: false
+      linux-runner:
+        description: "Runner label for the Linux jobs (release: ubuntu-latest, see header)."
+        type: string
+        required: false
+        default: self-hosted
 
 jobs:
   t0-lint:
     name: T0 lint (ruff, format, pyright)
-    runs-on: self-hosted
+    runs-on: ${{ inputs.linux-runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [self-hosted]
+        os: ["${{ inputs.linux-runner }}"]
         python: ["3.11", "3.12", "3.13"]
         include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.11"},{"os":"windows-latest","python":"3.13"}]') || fromJSON('[]') }}
     steps:
@@ -86,7 +94,7 @@ jobs:
 
   t2-package:
     name: T2 packaging
-    runs-on: self-hosted
+    runs-on: ${{ inputs.linux-runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -125,7 +133,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [self-hosted]
+        os: ["${{ inputs.linux-runner }}"]
         python: ["3.11", "3.12", "3.13"]
         include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
     steps:
@@ -169,7 +177,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [self-hosted]
+        os: ["${{ inputs.linux-runner }}"]
         python: ["3.11", "3.12", "3.13"]
         include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
     steps:

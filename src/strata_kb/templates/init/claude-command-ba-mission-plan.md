@@ -12,6 +12,15 @@ empty, ask for it during Intake. With `--amend M-<slug>`, follow the
 spans several User Stories — small work goes straight to
 `/ba-ticket-author`; a mission is not mandatory.
 
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb mission lint`, `kb ticket check`, `kb ticket stale` and `kb
+publish` have no MCP tool and stay CLI. `kb mission next` stays CLI too:
+it reads this repo's unpublished `missions/` and `tickets/`, which
+`kb_mission_next` (the published plan only) cannot see.
+
 ## Workflow
 
 1. **Intake** — collect the business need at epic level: what capability,

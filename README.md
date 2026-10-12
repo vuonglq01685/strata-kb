@@ -294,7 +294,7 @@ that follows it.
 | `kb ticket stale` | Every ticket and mission whose citations the hub moved since they were pinned (`--md` / `--json`); `0` current, `2` stale only, `1` broken |
 | `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
 | `kb mission next` | Which story next: done / ready / draft / to-draft / blocked across `missions/`, done derived from the hub's `<repo>-svc` history, ready and draft from the ticket's Definition of Ready checklist |
-| `kb mission next --from-hub` | The same report from the hub's published `<ba-repo>-plan` alone, with no `missions/` or `tickets/` (`--repo <ba-repo>` to pick one); a published ticket is `ready`, and `to-draft` reads `not ready (no published ticket)` |
+| `kb mission next --from-hub` | The same report from the hub's published `<ba-repo>-plan` alone, with no `missions/` or `tickets/` (`--repo <ba-repo>` to pick one); a published ticket is `ready`, and `to-draft` reads `not ready (no published ticket)`; MCP `kb_mission_next` gives the same report |
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their `> Parent mission: M-x [@ rev N]` line; `--into <folder>` for the rest |
 | `kb impl tidy` | Move flat `docs/impl/<id>-{design,plan,context}.md` and `<id>-review/` into `docs/impl/<id>/`; never overwrites |
 | `kb pr lint` | Check a pull-request description carries its evidence |
@@ -823,9 +823,10 @@ repo rides in `?repo=` because nested federation ids contain `/`; without it the
 one repo holding the id is used, and several holders give a 404 page naming
 them. `*-plan` documents appear under Ticket, not Document; a search hit in one
 links to its Ticket page. The CLI twin is
-`kb mission next --from-hub [--repo <ba-repo>] [--json]`.
+`kb mission next --from-hub [--repo <ba-repo>] [--json]`; over MCP it is
+`kb_mission_next`.
 
-### The five MCP tools
+### The six MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
@@ -834,6 +835,7 @@ links to its Ticket page. The CLI twin is
 | `kb_context_new` | Pin a `kb-context` citation block at the hub's current commit, from confirmed refs | `refs`, `tags` |
 | `kb_resolve` | Resolve a `kb-context` block (or a ticket containing one) — sections at the pinned version plus freshness | `kb_context` |
 | `kb_ticket_lint` | Run the Definition-of-Ready gate over a draft ticket | `ticket_markdown` |
+| `kb_mission_next` | Which story next, from the plans published on the hub — the `kb mission next --from-hub` report (a BA's unpublished `missions/` and `tickets/` need the CLI) | `repo` |
 
 ### Security
 
@@ -1303,8 +1305,8 @@ completed the seed needs no further per-ticket documentation discipline.
   actual security boundary.
 - **Decide the hub's auto-merge policy for `-code` PRs, and exclude `-svc`.**
   This is a constraint on *how* the policy is implemented: `kb ci-publish` opens
-  one hub PR per push, not per document — the intake keys the publish branch by
-  repo id and reuses it while a PR is pending — so a push carrying both a
+  one hub PR per publish, not per document — the intake keys the publish branch by
+  repo id and reuses it while a PR is pending — so a publish carrying both a
   regenerated `-code` and an already-merged `-svc` amend lands both in one PR.
   The rule must therefore be **path-scoped to `.kb/<repo_id>-code/**`**, never a
   whole-PR or whole-repo rule, or it will auto-merge `-svc` content riding
@@ -1313,9 +1315,11 @@ completed the seed needs no further per-ticket documentation discipline.
   `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` into `.env` and verifies them.
 - **Budget the one-time seed:** ~10–15 min per service.
 
-`kb-code.yml` ships two jobs: on `push` to the default branch it regenerates
-`-code`, builds and publishes; on `pull_request` it runs `kb build` only and
-**never publishes**. `--scaffold-svc` is deliberately never passed in CI — CI
+`kb-code.yml` ships two jobs: on a `kb-publish/*` tag (pushed by `kb publish`)
+it regenerates `-code`, builds and publishes; on `pull_request` it runs
+`kb build` only and **never publishes**. A push to the default branch publishes
+nothing: the intake accepts a publish only from a `kb-publish/*` tag, so a dev
+repo publishes with `kb publish` after a merge, like a `ba` repo. `--scaffold-svc` is deliberately never passed in CI — CI
 must never create `pending` content, since that would fail its own build step.
 
 ---
@@ -1371,6 +1375,7 @@ second PR *there*, and merging that one is what makes it live.
 | `STRATA_KB_INTAKE` | Intake service URL (http(s) only) |
 | `STRATA_KB_INTAKE_AUDIENCE` | OIDC audience the intake expects |
 | `STRATA_KB_TRUSTED_PROXIES` | Number of trusted reverse proxies (default `0`) — see [§10](#10-mcp-server-and-web-ui) |
+| `STRATA_KB_ALLOWED_HOSTS` | HTTP server only: host names `/mcp` accepts besides localhost, comma-separated (e.g. `kb.example.com`); unset, `/mcp` behind a proxy at a real name answers `421 Invalid Host header` |
 | `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service, and for `hub-sync`'s `kb-code-sync` issue (needs `issues: write`, `pull_requests: read`, `contents: read`) |
 | `STRATA_KB_GH_TOKEN` | Token for `hub-sync`'s issue calls when no GitHub App is configured (needs `issues: write`, `pull_requests: read`, `contents: read` on the hub repo) |
 | `STRATA_KB_CODE_SYNC_INTERVAL` | Seconds between `hub-sync` scans (default `86400`) |
