@@ -301,6 +301,30 @@ def create_server(config: ServerConfig) -> MCPServer:
 
         return await anyio.to_thread.run_sync(_run)
 
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_mission_next(repo: str | None = None) -> str:
+        """Which story next, from the plans BA repos published to the hub
+        (`<ba-repo>-plan`): every backlog story as done / ready / not ready
+        (no published ticket) / blocked, then the next one to take. Done comes
+        from the product repo's -svc history; a story with a published ticket
+        is ready. `repo` limits it to one BA repo's plan. Same report as `kb
+        mission next --from-hub`; a BA's unpublished missions/ and tickets/
+        drafts need the CLI (`kb mission next` in the BA repo)."""
+
+        def _run() -> str:
+            from strata_kb import missionnext, planstatus
+
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            results, notes = planstatus.next_from_hub(hub, repo or None)
+            return stale_hub_note(hub) + missionnext.render(
+                results, notes, planstatus.FROM_HUB_LABELS
+            )
+
+        return await anyio.to_thread.run_sync(_run)
+
     return mcp
 
 

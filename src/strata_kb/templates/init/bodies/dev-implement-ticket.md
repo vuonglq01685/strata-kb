@@ -11,6 +11,15 @@ offer the next step instead of redoing phases that are already finished.
 strata-kb specific; the phases it runs map to brainstorming, writing-plans,
 and subagent-driven-development.*
 
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket fetch`, `kb ticket check`, `kb impl tidy`, `kb svc
+note` and the cache-writing `kb resolve --status-only --cache` /
+`--write-cache` stay CLI-first; where a step below names an MCP path for
+one, it is only the no-CLI fallback.
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -24,9 +33,9 @@ edit above it.
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
 - **stale** → show BOTH versions, humans decide: the resolve gives the
-  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`
-  the current hub version. Do NOT use `kb diff` — it compares the local
-  `.kb/` worktree to a local git rev, not this repo to the hub.
+  pinned content and the reason, `kb_get_section` (else `kb get …
+  --level l3`) the hub's version. Do NOT use `kb diff` — it compares
+  the local `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 ## Steps
@@ -44,8 +53,8 @@ edit above it.
   the hub means DoR passed, so do not stop on its absence. Confirm
   ticket/US id and branch; read the ticket's `## Dependencies` (`Blocked
   by:` / `Blocks:`) and, when a `> Parent mission:` line is present, that
-  mission's `## Sequencing` row (from the local mission file, else `kb get
-  <doc> <M-id> --level l3` from the hub); if this story is blocked by something
+  mission's `## Sequencing` row (from the local mission file, else `kb_get_section` `<doc> <M-id>` at `l3`, CLI fallback `kb get
+  <doc> <M-id> --level l3`, from the hub); if this story is blocked by something
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
 - **Check the grounding** — if the ticket has a `## Technical grounding`
@@ -65,31 +74,33 @@ edit above it.
   `kb resolve --write-cache docs/impl/<ticket-id>/context.md <ticket-file>`:
   the command writes the header and the resolved sections; you never
   edit above the `<!-- kb:placeholder-map -->` marker.
-- **Ground** — read resolved L2; escalate to L3 via
-  `kb get <doc> <section> --level l3` (or the `kb_get_section` MCP tool
-  when your client exposes it) only for a value that will be encoded in
-  code or tests, and only for a section already chosen; then `kb query
-  --kind dev` both own-repo documents, budgeted at 500–800 tokens for broad
-  discovery — `<repo_id>-code` for
-  structure and `<repo_id>-svc` for responsibility, each restricted with
-  `--tags <repo_id>-code` / `--tags <repo_id>-svc` — (or the `kb_search`
-  MCP tool with `kinds=["dev"]` and `tags=["<repo_id>-code"]` /
-  `tags=["<repo_id>-svc"]` when available) and then read the actual code. State the rule:
+- **Ground** — read resolved L2; escalate to L3 via the `kb_get_section`
+  MCP tool (CLI fallback: `kb get <doc> <section> --level l3`) only for a
+  value that will be encoded in code or tests, and only for a section
+  already chosen; then `kb_search` with `kinds=["dev"]` over both own-repo
+  documents, budgeted at 500–800 tokens for broad discovery —
+  `<repo_id>-code` for structure and `<repo_id>-svc` for responsibility,
+  each restricted with `tags=["<repo_id>-code"]` /
+  `tags=["<repo_id>-svc"]` — (CLI fallback: `kb query --kind dev` with
+  `--tags <repo_id>-code` / `--tags <repo_id>-svc`) and then read the
+  actual code. State the rule:
   *knowledge orients, code decides* — skip whichever document is missing
   and read the code directly for that half.
-  A `<repo_id>-code` missing from the hub is not yet published — CI
-  publishes it on merge to the default branch; `kb doctor` says whether
-  the hub lags. A `<repo_id>-svc` missing from the hub is either not yet
+  A `<repo_id>-code` missing from the hub is not yet published — a
+  push to the default branch publishes nothing; tell the Dev to run `kb publish` after the
+  merge (it tags `kb-publish/<ts>` and `kb-code.yml` publishes from the
+  tag); `kb doctor` says whether the hub lags. A `<repo_id>-svc` missing from the hub is either not yet
   seeded (`dev-code-seed`) or seeded and not yet published — check
   `.kb/<repo_id>-svc/` locally: present → say "seeded, unpublished: run
   `kb publish --pr`" in one line; absent → "not seeded". Reads stay
   hub-only either way; never report it as a KB gap.
 - **Ticket and mission lookup** — one separate query,
-  `kb query "<ticket or mission topic>" --kind ba` (MCP:
-  `kinds=["ba"]`), for the ticket and its parent mission as published by
+  `kb_search` for `"<ticket or mission topic>"` with `kinds=["ba"]`
+  (CLI fallback: `kb query … --kind ba`), for the ticket and its parent mission as published by
   the BA. Cite what you use.
 - **Knowledge lookup** — one separate query,
-  `kb query "<domain term>" --kind kb` (MCP: `kinds=["kb"]`), for the
+  `kb_search` for `"<domain term>"` with `kinds=["kb"]` (CLI fallback:
+  `kb query … --kind kb`), for the
   domain knowledge the ticket cites. Never mix it into the `--kind dev`
   query.
 - **Placeholders** — for each `%%TODO: verify against codebase%%`, verify

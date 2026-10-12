@@ -144,3 +144,63 @@ def test_kb_publish_confirm_shows_hub_menu_line(name):
     assert "`hub` and `child` repos → Document" in text, name
     assert "`kind:` in `.kb/config.yaml`" in text, name
     assert "`[info] kind: …` line `kb doctor` prints" in text, name
+
+
+HUB_READERS = [
+    "ba-mission-plan",
+    "ba-ticket-author",
+    "dev-design",
+    "dev-execute",
+    "dev-handover",
+    "dev-implement-ticket",
+    "dev-plan",
+    "sa-ticket-ground",
+]
+
+
+def _rendered_copies(skill: str) -> list[str]:
+    return [
+        f"claude-skill-{skill}.md",
+        f"claude-command-{skill}.md",
+        f"cursor-{skill}.md",
+        f"copilot-{skill}.prompt.md",
+    ]
+
+
+def _stepped_copies(skill: str) -> list[str]:
+    # The claude-command copy is condensed prose with no step labels.
+    return [n for n in _rendered_copies(skill) if not n.startswith("claude-command")]
+
+
+@pytest.mark.parametrize("name", [n for s in HUB_READERS for n in _rendered_copies(s)])
+def test_hub_reading_skills_reach_the_hub_through_mcp_first(name):
+    text = " ".join(read_template(name).split())
+    assert "Hub access — MCP first" in text, name
+    assert "(CLI, primary)" not in text, name
+    assert "`kb_ticket_lint` as a fallback" not in text, name
+
+
+@pytest.mark.parametrize("name", _stepped_copies("ba-ticket-author"))
+def test_ba_ticket_author_lints_through_mcp_before_the_cli(name):
+    text = " ".join(read_template(name).split())
+    lint = text.index("**Lint**")
+    assert text.index("kb_ticket_lint", lint) < text.index("kb ticket lint", lint), name
+
+
+@pytest.mark.parametrize("name", _stepped_copies("dev-implement-ticket"))
+def test_dev_implement_ticket_grounds_through_mcp_before_the_cli(name):
+    text = " ".join(read_template(name).split())
+    ground = text.index("**Ground**")
+    assert text.index("kb_search", ground) < text.index("kb query", ground), name
+    assert text.index("kb_get_section", ground) < text.index("kb get", ground), name
+    # #100: a push to main publishes nothing; `kb publish` does.
+    assert "on merge to the default branch" not in text, name
+
+
+@pytest.mark.parametrize("name", _templates())
+def test_no_template_claims_a_merge_publishes(name):
+    # #100: a dev repo publishes from a kb-publish/* tag (`kb publish`), never
+    # on a push or merge to the default branch.
+    text = " ".join(read_template(name).split())
+    for claim in ("published it on merge", "on merge to the default branch"):
+        assert claim not in text, name

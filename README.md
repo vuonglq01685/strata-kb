@@ -294,7 +294,7 @@ that follows it.
 | `kb ticket stale` | Every ticket and mission whose citations the hub moved since they were pinned (`--md` / `--json`); `0` current, `2` stale only, `1` broken |
 | `kb mission lint` | Definition-of-Ready gate for a BA mission plan |
 | `kb mission next` | Which story next: done / ready / draft / to-draft / blocked across `missions/`, done derived from the hub's `<repo>-svc` history, ready and draft from the ticket's Definition of Ready checklist |
-| `kb mission next --from-hub` | The same report from the hub's published `<ba-repo>-plan` alone, with no `missions/` or `tickets/` (`--repo <ba-repo>` to pick one); a published ticket is `ready`, and `to-draft` reads `not ready (no published ticket)` |
+| `kb mission next --from-hub` | The same report from the hub's published `<ba-repo>-plan` alone, with no `missions/` or `tickets/` (`--repo <ba-repo>` to pick one); a published ticket is `ready`, and `to-draft` reads `not ready (no published ticket)`; MCP `kb_mission_next` gives the same report |
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their `> Parent mission: M-x [@ rev N]` line; `--into <folder>` for the rest |
 | `kb impl tidy` | Move flat `docs/impl/<id>-{design,plan,context}.md` and `<id>-review/` into `docs/impl/<id>/`; never overwrites |
 | `kb pr lint` | Check a pull-request description carries its evidence |
@@ -823,9 +823,10 @@ repo rides in `?repo=` because nested federation ids contain `/`; without it the
 one repo holding the id is used, and several holders give a 404 page naming
 them. `*-plan` documents appear under Ticket, not Document; a search hit in one
 links to its Ticket page. The CLI twin is
-`kb mission next --from-hub [--repo <ba-repo>] [--json]`.
+`kb mission next --from-hub [--repo <ba-repo>] [--json]`; over MCP it is
+`kb_mission_next`.
 
-### The five MCP tools
+### The six MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
@@ -834,6 +835,7 @@ links to its Ticket page. The CLI twin is
 | `kb_context_new` | Pin a `kb-context` citation block at the hub's current commit, from confirmed refs | `refs`, `tags` |
 | `kb_resolve` | Resolve a `kb-context` block (or a ticket containing one) — sections at the pinned version plus freshness | `kb_context` |
 | `kb_ticket_lint` | Run the Definition-of-Ready gate over a draft ticket | `ticket_markdown` |
+| `kb_mission_next` | Which story next, from the plans published on the hub — the `kb mission next --from-hub` report (a BA's unpublished `missions/` and `tickets/` need the CLI) | `repo` |
 
 ### Security
 

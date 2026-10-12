@@ -3604,23 +3604,15 @@ def mission_next(
         raise typer.Exit(1)
     if from_hub:
         handle, reason = _hub_or_reason(hub, kb_dir)
-        notes = [] if handle is not None else [f"hub unavailable ({reason})"]
-        plans, plan_notes = (
-            planstatus.hub_plans(handle, repo or None) if handle else ([], [])
+        results, notes = (
+            planstatus.next_from_hub(handle, repo or None)
+            if handle is not None
+            else ([], [f"hub unavailable ({reason})"])
         )
-        notes += plan_notes
-        if handle is not None and not plans:
-            notes.append(
-                f"no plan for repo '{repo}' on the hub"
-                if repo
-                else "no <repo>-plan document on the hub"
-            )
-        results = [s for r in plans for m in r.missions for s in m.stories]
         if json_output:
             typer.echo(json.dumps(missionnext.to_json(results, notes)))
         else:
-            labels = {"to-draft": "not ready (no published ticket)"}
-            typer.echo(missionnext.render(results, notes, labels))
+            typer.echo(missionnext.render(results, notes, planstatus.FROM_HUB_LABELS))
         return
 
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):

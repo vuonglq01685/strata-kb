@@ -6,6 +6,15 @@ Dev has approved the design at GATE 1. Your job: turn that design into
 
 *Counterpart in the superpowers plugin: `superpowers:writing-plans`.*
 
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket fetch`, `kb plan waves`, `kb pr lint`, `kb svc note`
+and the cache-writing `kb resolve --status-only --cache` /
+`--write-cache` stay CLI-first; where a step below names an MCP path for
+one, it is only the no-CLI fallback.
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -19,9 +28,9 @@ edit above it.
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
 - **stale** → show BOTH versions, humans decide: the resolve gives the
-  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`
-  the current hub version. Do NOT use `kb diff` — it compares the local
-  `.kb/` worktree to a local git rev, not this repo to the hub.
+  pinned content and the reason, `kb_get_section` (else `kb get …
+  --level l3`) the hub's version. Do NOT use `kb diff` — it compares
+  the local `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 `<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file

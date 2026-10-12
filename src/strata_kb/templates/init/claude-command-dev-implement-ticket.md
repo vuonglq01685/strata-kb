@@ -16,6 +16,15 @@ than redoing finished phases.
 strata-kb specific; the phases it runs map to brainstorming, writing-plans,
 and subagent-driven-development.*
 
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket fetch`, `kb ticket check`, `kb impl tidy`, `kb svc
+note` and the cache-writing `kb resolve --status-only --cache` /
+`--write-cache` stay CLI-first; where a step below names an MCP path for
+one, it is only the no-CLI fallback.
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -29,9 +38,9 @@ edit above it.
 - **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
   citation that no longer resolves.
 - **stale** → show BOTH versions, humans decide: the resolve gives the
-  pinned content and the reason, `kb get <doc-id> <section> [--level l3]`
-  the current hub version. Do NOT use `kb diff` — it compares the local
-  `.kb/` worktree to a local git rev, not this repo to the hub.
+  pinned content and the reason, `kb_get_section` (else `kb get …
+  --level l3`) the hub's version. Do NOT use `kb diff` — it compares
+  the local `.kb/` worktree to a local git rev, not this repo to the hub.
 - **ok** → continue.
 
 Steps the skill enforces: **Intake** runs `kb impl tidy` first (it moves an
@@ -48,8 +57,8 @@ unreachable; a fetched ticket has no `## Definition of Ready` (being on
 the hub means DoR passed), so its absence is not a stop — then reads the
 ticket's `## Dependencies` (`Blocked by:` / `Blocks:`) and, when a
 `> Parent mission:` line is present, that mission's `## Sequencing` row
-(from the local mission file, else `kb get <doc> <M-id> --level l3` from
-the hub), and stops if there is no `kb-context` block to resolve; **Check the
+(from the local mission file, else `kb_get_section` `<doc> <M-id>` at `l3`,
+CLI fallback `kb get <doc> <M-id> --level l3`, from the hub), and stops if there is no `kb-context` block to resolve; **Check the
 grounding** runs `kb ticket check docs/impl/<id>/ticket.md` (your
 `<ticket-file>`) when the ticket has a `## Technical grounding` section: PASS
 shows every `[warn]` to the Dev, who decides; FAIL with `re-run /sa-ticket-ground` STOPs as a blocker for
@@ -61,14 +70,17 @@ Freshness re-check above; the full resolve is `kb resolve --write-cache
 docs/impl/<ticket-id>/context.md <ticket-file>`, which writes the header
 and the resolved sections — you never edit above the
 `<!-- kb:placeholder-map -->` marker; **Ground**
-reads resolved L2, calling `kb_get_section` only for a section already
+reads resolved L2, calling `kb_get_section` (CLI fallback `kb get <doc>
+<section> --level l3`) only for a section already
 chosen and escalating to L3 only for a value that will be encoded in code
-or tests, then searches within a 500–800 token budget for broad discovery
+or tests, then searches with `kb_search` (`kinds=["dev"]`, `tags=["<repo_id>-code"]` /
+`tags=["<repo_id>-svc"]`; CLI fallback `kb query --kind dev --tags
+<repo_id>-code` / `--tags <repo_id>-svc`) within a 500–800 token budget for broad discovery
 — `<repo_id>-code` and `<repo_id>-svc` for structure and responsibility
 before reading the actual code, skipping whichever document is missing and
 reading the code directly for that half — a `<repo_id>-code` missing from
-the hub is not yet published (CI publishes it on merge to the default
-branch; `kb doctor` says whether the hub lags), and a `<repo_id>-svc`
+the hub is not yet published (a push to the default branch publishes nothing; tell the Dev to run `kb publish` after the merge — it tags `kb-publish/<ts>` and `kb-code.yml`
+publishes from the tag; `kb doctor` says whether the hub lags), and a `<repo_id>-svc`
 missing from the hub is either not yet seeded (`dev-code-seed`) or seeded
 and not yet published, checked via `.kb/<repo_id>-svc/` locally (present →
 say "seeded, unpublished: run `kb publish --pr`"; absent → "not seeded"),

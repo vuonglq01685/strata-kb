@@ -15,6 +15,16 @@ An optional argument gives the business need directly; no argument = ask
 for it during Intake. `--amend <ticket>` changes an existing
 ticket instead — see `## Amend mode` below.
 
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket tidy`, `kb ticket check`, `kb ticket stale`, `kb
+ticket export` and `kb publish` have no MCP tool and stay CLI. `kb
+mission next` stays CLI too: it reads this repo's unpublished
+`missions/` and `tickets/`, which `kb_mission_next` (the published plan
+only) cannot see.
+
 ## Workflow
 
 1. **Intake** — collect the business need: what capability, for which
@@ -119,9 +129,14 @@ ticket instead — see `## Amend mode` below.
    validated against the hub vocabulary and an unknown one is an error.
    The tags the BA gave at Intake are search keywords for
    `kb query --tags`, nothing more.
-6. **Lint** — run `kb ticket lint <file>` (CLI, primary) against the
-   draft; fall back to the MCP tool `kb_ticket_lint` when the CLI is not
-   available in this environment. Fix every error and re-run until it
+6. **Lint** — run the MCP tool `kb_ticket_lint` on the draft; fall back to
+   `kb ticket lint <file>` (CLI) when the client does not expose it. Over
+   MCP the `> Parent mission:` back-link checks (the mission exists, the
+   story is in its backlog) are skipped and reported as a note: when the
+   ticket has that line, run `kb ticket lint <file>` once more before
+   handover for the full check — no CLI → tell the BA the back-link was not
+   verified (CI `kb-ticket-lint.yml` runs the full check on the PR). Fix
+   every error and re-run until it
    reports `DoR: PASS`. Report any remaining warnings to the BA — they
    are not blockers, but they are the BA's judgment call.
 7. **Ground technical** — once lint reports `DoR: PASS`, save the draft
@@ -152,8 +167,8 @@ ticket instead — see `## Amend mode` below.
    checklist with pass/fail per item, and a gap list where every gap
    names the section it lives in and a proposed fix.
 
-   Apply the fixes, re-run `kb ticket lint`, and record the row. **Round
-   1 is the whole review by default**: what is still open after the
+   Apply the fixes, re-run `kb_ticket_lint` (CLI: `kb ticket lint`), and
+   record the row. **Round 1 is the whole review by default**: what is still open after the
    fixes is handed over as owned `OPEN(<owner>)` questions, and a score
    below 4 is reported, not chased. Rounds 2 and 3 run only when the BA
    asks for them or the ticket carries more than 6 ACs; then stop early
@@ -245,7 +260,10 @@ change is recorded in `## Change log`.
 6. **Bump `> Revision:` and append the change-log row** `| Rev | Date |
    Trigger | What changed | Affected | Review |`. In `Affected` write the
    section names that changed, comma-separated, or `-`.
-7. **Lint** — `kb ticket lint <file>` until it reports `DoR: PASS`.
+7. **Lint** — `kb_ticket_lint` (CLI: `kb ticket lint <file>`) until it reports `DoR: PASS`;
+   with a `> Parent mission:` line, run `kb ticket lint <file>` (CLI) once
+   more after the last edit (step 9 included) and before handover — MCP
+   skips the back-link checks.
 8. **Maturity review of the changed sections only** — one round, the same
    rubric and the same two passes as step 8 of the workflow. Write the
    scores into the new row's `Review` cell (e.g. `B4 D4 (agent)`) —

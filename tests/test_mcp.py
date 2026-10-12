@@ -50,13 +50,14 @@ def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_five_tools(fed_hub):
+async def test_lists_exactly_six_tools(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
         assert sorted(t.name for t in tools.tools) == [
             "kb_context_new",
             "kb_get_section",
+            "kb_mission_next",
             "kb_resolve",
             "kb_search",
             "kb_ticket_lint",
@@ -568,3 +569,40 @@ async def test_mcp_kb_search_kinds(tmp_path):
         )
         assert bad.isError is False
         assert "unknown kind" in _text(bad)
+
+
+# --- kb_mission_next: `kb mission next --from-hub` over MCP -------------------
+
+
+@pytest.mark.anyio
+async def test_kb_mission_next_reports_the_published_plan(plan_hub):
+    from tests.test_planstatus import MISSION_ID, US
+
+    server = create_server(_config(plan_hub.root))
+    async with connect_client(server, raise_exceptions=True) as client:
+        out = _text(await client.call_tool("kb_mission_next", {}))
+    assert f"| {US[0]} | {MISSION_ID} | done |  |" in out
+    assert f"| {US[1]} | {MISSION_ID} | ready |  |" in out
+    assert f"| {US[2]} | {MISSION_ID} | not ready (no published ticket) |  |" in out
+    assert f"| {US[3]} | {MISSION_ID} | blocked | US {US[2]} not done |" in out
+    assert out.rstrip().endswith(f"Next: {US[2]} — Story 3")
+
+
+@pytest.mark.anyio
+async def test_kb_mission_next_repo_filter_and_unknown_repo(plan_hub):
+    server = create_server(_config(plan_hub.root))
+    async with connect_client(server, raise_exceptions=True) as client:
+        ok = _text(await client.call_tool("kb_mission_next", {"repo": "ba-one"}))
+        missing = _text(await client.call_tool("kb_mission_next", {"repo": "nope"}))
+    assert "| done |" in ok
+    assert "note: no plan for repo 'nope' on the hub" in missing
+
+
+@pytest.mark.anyio
+async def test_kb_mission_next_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
+    server = create_server(config)
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_mission_next", {})
+        assert "hub unreachable" in _text(result)
