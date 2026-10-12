@@ -90,6 +90,40 @@
       "type": "object"
     }
   },
+  "kb_mission_next": {
+    "description": "Which story next, from the plans BA repos published to the hub\n(`<ba-repo>-plan`): every backlog story as done / ready / not ready\n(no published ticket) / blocked, then the next one to take. Done comes\nfrom the product repo's -svc history; a story with a published ticket\nis ready. `repo` limits it to one BA repo's plan. Same report as `kb\nmission next --from-hub`; a BA's unpublished missions/ and tickets/\ndrafts need the CLI (`kb mission next` in the BA repo).",
+    "inputSchema": {
+      "properties": {
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        }
+      },
+      "title": "kb_mission_nextArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_mission_nextOutput",
+      "type": "object"
+    }
+  },
   "kb_resolve": {
     "description": "Accept a kb-context block (or the raw ticket text containing one); return the cited sections at their pinned version + freshness ok/stale/broken.",
     "inputSchema": {
