@@ -368,8 +368,31 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
 _FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
 
 
+def non_kb_leaves(fed_root: Path) -> list[str]:
+    """Sorted path-ids of the leaves under `fed_root` whose kind is not `kb`.
+
+    Walks iter_entry_dirs, not load_federation: that hides nested non-kb
+    leaves, which are exactly the ones a child hub must also keep off its
+    parent. A leaf whose kind is unreadable (a broken entry) is not listed."""
+    return sorted(
+        path_id
+        for path_id, entry in iter_entry_dirs(fed_root)
+        if resolve_leaf_kind(entry) not in (None, kinds.KB)
+    )
+
+
+def kb_only_fed_digest(fed_root: Path) -> str:
+    """`_fed_tree_digest(fed_root)` without the files under non-kb leaves --
+    what a child hub actually publishes upward."""
+    return _fed_tree_digest(
+        fed_root, exclude_prefixes=tuple(f"{p}/" for p in non_kb_leaves(fed_root))
+    )
+
+
 def _fed_tree_digest(
-    root: Path, skip: frozenset[str] | set[str] = _FED_TOP_SKIP
+    root: Path,
+    skip: frozenset[str] | set[str] = _FED_TOP_SKIP,
+    exclude_prefixes: tuple[str, ...] = (),
 ) -> str:
     """Digest deterministic của một cây federation — bỏ file tầng đỉnh mà
     publish không mirror (index/registry/.gitkeep). KHÔNG bỏ _meta.yaml ở
@@ -400,7 +423,7 @@ def _fed_tree_digest(
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
-        if rel in skip:
+        if rel in skip or rel.startswith(exclude_prefixes):
             continue
         # Legacy self-heal: a hub cache cloned before clones forced
         # core.autocrlf=false and shipped .gitattributes still has a CRLF

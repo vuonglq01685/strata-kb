@@ -2323,6 +2323,12 @@ def publish(
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(1) from None
         _echo_publish_report(report)
+        from strata_kb import federation, gitio
+
+        fed_root = gitio.git_root(kb_dir.resolve()) / "federation"
+        for leaf in report.skipped_leaves:
+            kind = federation.resolve_leaf_kind(fed_root / leaf)
+            typer.echo(f"  skipped  {leaf} (kind {kind} stays on this hub)")
         return
 
     # The gate applies only to routes that publish .kb/ (self-publish,

@@ -56,6 +56,8 @@ class PublishReport:
     pr_url: str = ""
     skipped: list[str] = field(default_factory=list)
     remote: bool = False
+    # Leaves a child hub kept to itself: only `kb` leaves go upward.
+    skipped_leaves: list[str] = field(default_factory=list)
 
 
 def _neutralize_excludes(root: Path) -> None:
@@ -641,8 +643,14 @@ def _prepare_hub_to_hub_manifests(
     # .kb/ never has one to begin with; here it is hub-written content
     # genuinely being mirrored upward).
     src_man, skipped = pubgate.split_allowlist(src_man, keep_records=True)
+    # Only kb leaves go upward: dropping the rest from src_man makes the diff
+    # below delete any that an older release already pushed.
+    keep_local = tuple(f"{leaf}/" for leaf in federation.non_kb_leaves(fed_src))
+    src_man = {k: v for k, v in src_man.items() if not k.startswith(keep_local)}
     synthesized_src_only: set[str] = set()
     for entry_rel, entry_dir in _iter_record_dirs(fed_src, assetstore.RECORD_NAME):
+        if f"{entry_rel}/".startswith(keep_local):
+            continue
         for rel, sha in assetstore.synthesized_asset_entries(entry_dir).items():
             path = f"{entry_rel}/{rel}"
             src_man[path] = sha
@@ -1022,7 +1030,12 @@ def _snapshot_federation(
             "manually if that is really intended"
         )
     # Count only: build_federation_index would also hash every entry.
-    n_docs = sum(len(r.index.docs) for r in federation.load_federation(fed_src))
+    kb_only = set(federation.non_kb_leaves(fed_src))
+    n_docs = sum(
+        len(r.index.docs)
+        for r in federation.load_federation(fed_src)
+        if r.meta.repo_id not in kb_only
+    )
     changed, deleted = hashsync.diff_manifests(src_man, dest_man)
     changed = [p for p in changed if p not in synthesized_src_only]
     # A record-only change (a Case A name newly reaches this hub with no
@@ -1502,17 +1515,20 @@ def publish_federation(
         hub_label=hub_label,
     )
     if mode == "pr":
-        return _publish_pr(
+        report = _publish_pr(
             fed_src, handle, rid, source_commit, snapshot_fn=_snapshot_federation
         )
-    return _publish_direct(
-        fed_src,
-        handle,
-        rid,
-        source_commit,
-        max_retries,
-        snapshot_fn=_snapshot_federation,
-    )
+    else:
+        report = _publish_direct(
+            fed_src,
+            handle,
+            rid,
+            source_commit,
+            max_retries,
+            snapshot_fn=_snapshot_federation,
+        )
+    report.skipped_leaves = federation.non_kb_leaves(fed_src)
+    return report
 
 
 def _push_with_retry(handle: hub_mod.HubHandle, rid: str, max_retries: int) -> bool:

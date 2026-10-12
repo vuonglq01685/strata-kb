@@ -15,6 +15,7 @@ from strata_kb.doctor.issues import Issue, _flatten
 from strata_kb.federation import (  # noqa: F401 -- _FED_TOP_SKIP re-exported
     _FED_TOP_SKIP,
     _fed_tree_digest,
+    kb_only_fed_digest,
 )
 
 if TYPE_CHECKING:
@@ -652,7 +653,7 @@ def check_federation_publish(
                     "run `kb publish`",
                 )
             )
-        elif _fed_tree_digest(fed_src) != _fed_tree_digest(dest):
+        elif kb_only_fed_digest(fed_src) != _fed_tree_digest(dest):
             issues.append(
                 Issue(
                     "warning",

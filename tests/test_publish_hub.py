@@ -339,3 +339,110 @@ def test_cli_hub_to_hub_publish_error_is_one_line_not_a_traceback(mid_hub, root_
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "federation cycle detected" in result.output
+
+
+# --- a child hub publishes only its kb leaves upward ------------------------
+
+
+def _mixed_hub(tmp_path: Path, run_git, leaves: dict[str, str]) -> Path:
+    """Hub git repo whose federation/ holds one leaf per `{path-id: doc-id}`;
+    a `-code` doc id makes a leaf infer to `dev`, a `-plan` one to `ba`."""
+    root = tmp_path / "mixed"
+    (root / ".kb").mkdir(parents=True)
+    fed = root / "federation"
+    for rid, doc_id in leaves.items():
+        kwargs = (
+            {"title": "T — plan", "tags": ["plan", "generated"]}
+            if doc_id.endswith("-plan")
+            else {}
+        )
+        make_fed_entry(fed, rid, doc_id, **kwargs)
+    (root / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: mid\n", encoding="utf-8"
+    )
+    (root / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    _git_repo(run_git, root)
+    return root
+
+
+def test_publish_federation_sends_only_kb(tmp_path, run_git, root_hub):
+    src = _mixed_hub(
+        tmp_path, run_git, {"k1": "k1-doc", "b1": "b1-plan", "d1": "d1-code"}
+    )
+
+    report = publish.publish_federation(
+        src / ".kb", str(root_hub), repo_id="mid", mode="direct"
+    )
+
+    fed = root_hub / "federation" / "mid"
+    assert (fed / "k1" / "index.yaml").exists()
+    assert not (fed / "b1").exists()
+    assert not (fed / "d1").exists()
+    assert report.skipped_leaves == ["b1", "d1"]
+    assert report.n_docs == 1
+
+
+def test_publish_federation_removes_previously_pushed_non_kb(
+    tmp_path, run_git, root_hub
+):
+    src = _mixed_hub(tmp_path, run_git, {"k1": "k1-doc", "d1": "d1-code"})
+    fed = root_hub / "federation"
+    make_fed_entry(fed / "mid", "d1", "d1-code")  # pushed by an older release
+    run_git(root_hub, "add", "-A")
+    run_git(root_hub, "commit", "-m", "old publish")
+
+    publish.publish_federation(src / ".kb", str(root_hub), repo_id="mid", mode="direct")
+
+    assert not (fed / "mid" / "d1").exists()
+    assert (fed / "mid" / "k1").exists()
+    deleted = run_git(
+        root_hub, "log", "--no-renames", "--diff-filter=D", "--name-only", "--format="
+    )
+    assert "federation/mid/d1/index.yaml" in deleted
+
+
+def test_publish_federation_all_non_kb_with_existing_dest_refuses(
+    tmp_path, run_git, root_hub
+):
+    src = _mixed_hub(tmp_path, run_git, {"d1": "d1-code"})
+    fed = root_hub / "federation"
+    make_fed_entry(fed / "mid", "k1", "k1-doc")
+    run_git(root_hub, "add", "-A")
+    run_git(root_hub, "commit", "-m", "old publish")
+
+    with pytest.raises(publish.PublishError, match="refusing to wipe"):
+        publish.publish_federation(
+            src / ".kb", str(root_hub), repo_id="mid", mode="direct"
+        )
+
+    assert (fed / "mid" / "k1").exists()
+
+
+def test_publish_federation_does_not_send_a_nested_non_kb_leaf(
+    tmp_path, run_git, root_hub
+):
+    src = _mixed_hub(tmp_path, run_git, {"k1": "k1-doc"})
+    make_fed_entry(src / "federation" / "old-hub", "d2", "d2-code")
+    run_git(src, "add", "-A")
+    run_git(src, "commit", "-m", "grandchild")
+
+    report = publish.publish_federation(
+        src / ".kb", str(root_hub), repo_id="mid", mode="direct"
+    )
+
+    assert not (root_hub / "federation" / "mid" / "old-hub" / "d2").exists()
+    assert report.skipped_leaves == ["old-hub/d2"]
+
+
+def test_cli_hub_publish_prints_a_line_per_skipped_leaf(tmp_path, run_git, root_hub):
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    src = _mixed_hub(tmp_path, run_git, {"k1": "k1-doc", "d1": "d1-code"})
+    result = CliRunner().invoke(
+        app,
+        ["publish", "--kb-dir", str(src / ".kb"), "--hub", str(root_hub), "--direct"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "  skipped  d1 (kind dev stays on this hub)" in result.output

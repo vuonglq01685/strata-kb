@@ -835,3 +835,46 @@ def test_doctor_resolves_an_asset_against_the_INNERMOST_broken_entry(
     assert any("config.yaml" in m and "would never write" in m for m in warnings), (
         warnings
     )
+
+
+def test_doctor_federation_publish_ignores_filtered_leaves(tmp_path, run_git):
+    from strata_kb.doctor.checks.hub import check_federation_publish
+    from strata_kb.publish import publish_federation
+
+    src = tmp_path / "mid"
+    (src / ".kb").mkdir(parents=True)
+    make_fed_entry(src / "federation", "k1", "k1-doc")
+    make_fed_entry(src / "federation", "d1", "d1-code")
+    (src / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: mid\n", encoding="utf-8"
+    )
+    (src / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    for args in (
+        ("init",),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@t.local"),
+        ("add", "-A"),
+        ("commit", "-m", "v1"),
+    ):
+        run_git(src, *args)
+    root = tmp_path / "root-hub"
+    (root / ".kb").mkdir(parents=True)
+    (root / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: root-hub\n", encoding="utf-8"
+    )
+    (root / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (root / "federation").mkdir()
+    (root / "federation" / ".gitkeep").write_text("", encoding="utf-8")
+    for args in (
+        ("init",),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@t.local"),
+        ("add", "-A"),
+        ("commit", "-m", "v1"),
+    ):
+        run_git(root, *args)
+
+    publish_federation(src / ".kb", str(root), repo_id="mid", mode="direct")
+
+    issues = check_federation_publish(src, HubHandle(root=root), "mid")
+    assert not [i for i in issues if "differs from the published" in i.message]
