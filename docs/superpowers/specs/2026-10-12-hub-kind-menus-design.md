@@ -1,6 +1,6 @@
 # Hub kinds — Document / Ticket / Code menus and kind-filtered search
 
-Status: builder-checked, awaiting owner approval · 2026-10-12
+Status: builder-checked, owner review round 2 · 2026-10-12
 
 ## 1. Intent
 
@@ -34,31 +34,53 @@ an agent asks for the kind it needs and gets nothing else.
 Goals
 
 1. **Registry has kind.** `federation/registry.yaml` entries carry `kind`
-   (`kb | ba | dev`, plus `hub` for a mid-tier hub — §5). The hub declares
-   each repo's kind.
+   (`kb | ba | dev`). The hub declares each repo's kind. A child hub is
+   registered on its parent as `kb`.
 2. **Kind travels with content.** Every federation leaf records its kind, so
-   nested hubs (child-hub published into a root hub) keep the kinds of the
-   repos inside them, which the root registry does not list.
+   the UI and search never have to guess for newly published content.
 3. **Publish enforces kind.** A publish whose repo kind (from the publisher's
    config) disagrees with the registry entry's kind is rejected.
-4. **Upgrade path.** Re-running `kb init --kind hub` on an existing hub fills
+4. **Child hub sends only `kb` upward.** A child hub accepts `ba`/`dev`
+   publishes and has the full Document · Ticket · Code menus itself, exactly
+   like a root hub. When it publishes to its parent (`publish_federation`,
+   `publish.py:1357`), only `kb` leaves go up: its own self-entry and nested
+   `kb` leaves. `ba`/`dev` leaves are skipped and listed as skipped in the
+   report — not an error. The parent also rejects a child-hub publish that
+   still contains a non-`kb` leaf (guards a child hub running an older
+   version). **Owner-approved consequence:** `ba`/`dev` content a child hub
+   pushed to its parent before this change is removed from the parent on
+   its next publish (git history keeps it; the child hub still has it).
+5. **Child repos know their kind before publishing.** After an upgrade:
+   - `kb init` keeps the recorded kind (already true: `_resolve_kind`,
+     `cli.py:191`; a conflicting `--kind` errors). A repo with no recorded
+     kind must declare one (`--kind`, or the interactive prompt).
+   - `kb publish` refuses when kind is unrecorded, and its preview (and the
+     `/kb-publish` skill's confirm step) shows `kind: <kind> → hub menu:
+     <menu>` before anything is sent.
+   - The publish carries the repo's kind; the hub checks it against the
+     registry (Goal 3) and the rejection names both kinds and the registry
+     line to fix, so the publisher sees it in the intake status.
+   - `kb doctor` in a child repo shows the local kind and the kind the hub's
+     registry holds for this repo; it warns when the registry has none or
+     they differ.
+6. **Hub upgrade path.** Re-running `kb init --kind hub` on an existing hub fills
    in `kind` for registry entries that lack it, after the operator confirms.
    Existing leaves are not rewritten: a leaf without a recorded kind gets it
    inferred at read time (§5), so the UI and search are correct immediately.
    No directory moves.
-5. **UI menus.** Left rail becomes: Overview · Document · Ticket · Code.
+7. **UI menus.** Left rail becomes: Overview · Document · Ticket · Code.
    - Plans is renamed Ticket (same pages).
    - The separate "Search" rail item is removed; the top search box stays.
    - Each menu has its own search box that searches only that kind.
    - Overview stays as today, with counts broken down per kind.
-6. **Top search = all kinds, option A** (owner's pick from the mockup): one
+8. **Top search = all kinds, option A** (owner's pick from the mockup): one
    mixed list ranked by relevance; each hit carries a kind badge; chips above
    the list (All n · Document n · Ticket n · Code n) narrow it without leaving
    the page.
-7. **Query filter.** `kb query --kind <kb|ba|dev>` (repeatable), MCP
+9. **Query filter.** `kb query --kind <kb|ba|dev>` (repeatable), MCP
    `kb_search(..., kinds=[...])`, and REST `/api/search?kind=` filter by kind.
    No filter = all kinds, exactly as today.
-8. **Agents pick the kind.** Skill bodies pass the right filter. Only bodies
+10. **Agents pick the kind.** Skill bodies pass the right filter. Only bodies
    that already search change; no new search steps are added elsewhere.
    - BA (`ba-mission-plan`, `ba-ticket-author`): `--kind kb --kind dev` —
      knowledge plus code so tickets are grounded in real code.
@@ -141,7 +163,10 @@ Anti-goals (a failure even if it "works")
   = menus + per-menu search; section 2 option A = top search).
 - Per-menu search searches that kind only; top search searches all kinds,
   displayed as option A (mixed list, kind badges, kind chips).
-- Agent filters per role as in Goal 8. No filter = all kinds.
+- Agent filters per role as in Goal 10. No filter = all kinds.
+- A child hub has full menus and accepts `ba`/`dev`, but sends only `kb`
+  to its parent; removing previously pushed `ba`/`dev` from the parent is
+  accepted.
 - Code menu content = `-code` + `-svc` (with `hist.*`); no `docs/impl`
   publishing.
 
@@ -160,23 +185,20 @@ Anti-goals (a failure even if it "works")
   On publish, the hub writes the leaf's `kind` from the registry entry
   (governed hub) or from the publisher's config kind mapped per §1
   (ungoverned hub).
-- **Registry kinds are `kb | ba | dev | hub`.** `hub` is the entry kind for a
-  mid-tier hub that publishes a whole federation (`publish_federation`,
-  `publish.py:1357`). Its own top-level leaf is `kb`; leaves nested under it
-  (`federation/<mid>/<rid>/…`) keep the kinds the mid hub recorded (the mid
-  hub enforced its own registry when they were published to it). This is
-  the one place the root trusts recorded kinds from a publisher, and it
-  already trusts that registered hub with the content itself.
+- **Child-hub filter runs on both sides.** The child hub filters before
+  sending (so nothing `ba`/`dev` leaves it); the parent re-checks every leaf
+  of a `kb`-registered publish by the same resolution order and rejects on
+  any non-`kb` leaf. A legacy nested leaf with no recorded kind is judged by
+  suffix inference.
 - **Mismatch rejects the publish** with a message naming both kinds and the
   registry line to fix: a repo whose config kind maps to something other
-  than its registry kind (`child`/`hub` config vs `kb`/`hub` entry both
-  pass; `ba` vs `dev` fails). Applies to the intake route and the local
+  than its registry kind (`child`/`hub` config vs a `kb` entry
+  passes; `ba` vs `dev` fails). Applies to the intake route and the local
   snapshot route where the registry is consulted today.
 - **Upgrade = `kb init --kind hub` re-run**, same contract as today's
   `kb init` (writes files, never commits): for each registry entry without
   `kind`, propose one from what that repo has published (suffix inference;
-  a repo id that is a nested-federation container → `hub`; mixed or empty →
-  ask), print the proposed diff, write after the operator confirms
+  a child hub → `kb`; mixed or empty → ask), print the proposed diff, write after the operator confirms
   (interactive; `--yes` for CI). It edits `registry.yaml` line by line so
   operator comments survive. The operator commits/PRs it like any hub
   change; until then, read-time inference already shows content correctly.
@@ -193,7 +215,23 @@ Anti-goals (a failure even if it "works")
 - **Per-menu search is real search** (`query.search` with a kind filter), not
   the current substring filter; results render inside the menu.
 - **`kb doctor`** gains a hub check: registry entries without `kind`, and
-  leaves whose recorded kind disagrees with the registry.
+  leaves whose recorded kind disagrees with the registry. `check_kind`'s
+  message is updated to list all four repo kinds.
+
+## 5a. Engine vs skills
+
+Correctness lives in the engine; skills only choose what to ask for.
+
+- **Engine:** registry `kind`; kind check on publish (intake and snapshot
+  routes); child-hub upward filter and parent re-check; read-time kind
+  inference for legacy leaves; kind in the search DB; `--kind` on
+  `kb query` / MCP `kb_search` / REST `/api/search` (unknown value = error);
+  UI menus and per-menu search; `kb publish` kind preview and refusal when
+  unset; `kb doctor` checks; the `kb init` registry upgrade.
+- **Skills:** which `--kind` each agent passes (Goal 10), and showing the
+  kind line in `/kb-publish`'s confirm step. A wrong filter in a skill only
+  narrows or widens a search; it cannot misfile content, because every
+  write path is checked by the engine.
 
 ## 6. Left to the builder
 
