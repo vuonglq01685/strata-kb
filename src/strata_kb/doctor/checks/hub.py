@@ -675,6 +675,11 @@ def _recorded_kind(entry_dir: Path) -> str:
         return ""
 
 
+def _casefolded(by_rid: dict[str, str]) -> dict[str, str]:
+    """Keys casefolded, as publish does, so `My-Repo` cannot dodge a pin."""
+    return {k.casefold(): v for k, v in by_rid.items()}
+
+
 def check_registry_kinds(hub_root: Path) -> list[Issue]:
     """Kind consistency on the hub itself: registry entries without a kind,
     leaves whose recorded kind is unknown or clashes with the registry, and
@@ -695,7 +700,7 @@ def check_registry_kinds(hub_root: Path) -> list[Issue]:
                     "to fill it",
                 )
             )
-    pinned = federation.registry_kinds(registry)
+    pinned = _casefolded(federation.registry_kinds(registry))
     for path_id, entry_dir in federation.iter_entry_dirs(fed):
         recorded = _recorded_kind(entry_dir)
         if recorded and recorded not in kinds.HUB_KINDS:
@@ -718,25 +723,24 @@ def check_registry_kinds(hub_root: Path) -> list[Issue]:
                         "republish from an upgraded child hub",
                     )
                 )
-        elif recorded and pinned.get(path_id) and recorded != pinned[path_id]:
+        elif (want := pinned.get(path_id.casefold())) and recorded and recorded != want:
             issues.append(
                 Issue(
                     "error",
                     f"federation/{path_id} recorded kind '{recorded}' but "
-                    f"registry says '{pinned[path_id]}'",
+                    f"registry says '{want}'",
                 )
             )
     return issues
 
 
-def check_published_kind(kb_dir: Path, handle: HubHandle) -> list[Issue]:
+def check_published_kind(kb_dir: Path, handle: HubHandle, cfg_kind: str) -> list[Issue]:
     """Child side: tell the operator which hub menu this repo lands in, and
-    catch a registry pin that `kb publish` would refuse. The rid is resolved
-    exactly as `publish.publish` does."""
+    catch a registry pin that `kb publish` would refuse. The rid comes from
+    `publish.resolve_publish_identity`, the very call `publish` makes."""
     from strata_kb import config as config_mod
     from strata_kb import pubgate, publish
 
-    cfg_kind = config_mod.load_config(kb_dir).kind
     try:
         issues = [Issue("info", publish.kind_line(cfg_kind))]
         repo_kind = kinds.hub_kind(cfg_kind)
@@ -748,21 +752,21 @@ def check_published_kind(kb_dir: Path, handle: HubHandle) -> list[Issue]:
         return issues  # no repo to identify, so no registry entry to compare
     if handle.root.resolve() == source_root.resolve():
         return issues  # self-publish is exempt from the registry
-    label = gitio.redact_url(str(handle.root))
     try:
-        registry = publish._load_hub_registry(handle, label)
-        registry_map = federation.registry_map(registry)
-        rid = config_mod.effective_repo_id("", kb_dir) or source_root.name
-        if registry_map:
-            rid = pubgate.resolve_identity(
-                registry_map, gitio.remote_url(source_root), rid, label
-            )
+        registry, rid = publish.resolve_publish_identity(
+            handle,
+            gitio.redact_url(str(handle.root)),
+            source_root,
+            config_mod.effective_repo_id("", kb_dir),
+            is_self=False,
+        )
     except (publish.PublishError, pubgate.GateError) as exc:
         return [*issues, Issue("error", _flatten(exc))]
-    if not registry_map:
+    if registry is None or not federation.registry_map(registry):
         return issues  # ungoverned hub: nothing is pinned
-    pinned = {k.casefold(): v for k, v in federation.registry_kinds(registry).items()}
-    registry_kind = pinned.get(rid.casefold(), "")
+    registry_kind = _casefolded(federation.registry_kinds(registry)).get(
+        rid.casefold(), ""
+    )
     if not registry_kind:
         issues.append(Issue("warning", "hub registry has no kind for this repo"))
     elif registry_kind != repo_kind:

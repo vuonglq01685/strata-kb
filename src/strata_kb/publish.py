@@ -1233,6 +1233,28 @@ def _existing_entry_names(handle: hub_mod.HubHandle) -> list[str]:
     )
 
 
+def resolve_publish_identity(
+    handle: hub_mod.HubHandle,
+    hub_label: str,
+    source_root: Path,
+    repo_id: str | None,
+    is_self: bool,
+) -> tuple[models.Registry | None, str]:
+    """(registry, repo-id) a publish from `source_root` to `handle` uses: a
+    governed hub's registry decides the id; otherwise `repo_id` or the repo
+    directory name. Shared with `kb doctor` so both see the same id."""
+    registry = None if is_self else _load_hub_registry(handle, hub_label)
+    registry_map = (
+        (federation.registry_map(registry) or None) if registry is not None else None
+    )
+    rid = repo_id or source_root.name
+    if registry_map is not None:
+        rid = pubgate.resolve_identity(
+            registry_map, gitio.remote_url(source_root), repo_id, hub_label
+        )
+    return registry, pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
+
+
 @dataclass(frozen=True)
 class PublishPlan:
     """Where `kb publish` sends this `.kb/`, decided before anything is
@@ -1375,16 +1397,9 @@ def publish(
     is_self = self_publish or handle.root.resolve() == source_root.resolve()
     if branch and not is_self:
         raise PublishError("--branch only applies to a hub's self-publish")
-    registry = None if is_self else _load_hub_registry(handle, hub_label)
-    registry_map = (
-        (federation.registry_map(registry) or None) if registry is not None else None
+    registry, rid = resolve_publish_identity(
+        handle, hub_label, source_root, repo_id, is_self
     )
-    rid = repo_id or source_root.name
-    if registry_map is not None:
-        rid = pubgate.resolve_identity(
-            registry_map, gitio.remote_url(source_root), repo_id, hub_label
-        )
-    rid = pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
     _neutralize_excludes(handle.root)
 
     has_remote = gitio.has_remote(handle.root)
@@ -1405,7 +1420,7 @@ def publish(
         mode,
         has_remote=has_remote,
         can_pr=_can_pr(mode, has_remote, handle.root),
-        governed=registry_map is not None,
+        governed=registry is not None and bool(federation.registry_map(registry)),
         hub_label=hub_label,
     )
     if mode == "pr":

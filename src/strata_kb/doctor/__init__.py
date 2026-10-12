@@ -163,7 +163,7 @@ def run(
         )
         issues += hub_issues
         if cfg_kind:
-            issues += check_published_kind(kb_dir, handle)
+            issues += check_published_kind(kb_dir, handle, cfg_kind)
         if cfg_kind == "dev":
             repo_root = kb_dir.resolve().parent
             issues += check_dev_sync(kb_dir, repo_root, repo_id)

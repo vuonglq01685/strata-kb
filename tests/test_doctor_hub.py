@@ -974,3 +974,13 @@ def test_doctor_reports_an_unreadable_registry(tmp_path):
     issues = check_registry_kinds(tmp_path)
     assert [i.level for i in issues] == ["error"]
     assert "registry.yaml" in issues[0].message
+
+
+def test_doctor_registry_kind_lookup_is_casefolded(tmp_path):
+    entry = make_fed_entry(tmp_path / "federation", "Repo-A", "doc-a")
+    _set_meta_kind(entry, "ba")
+    _registry(tmp_path, {"o/repo-a": {"repo_id": "repo-a", "kind": "dev"}})
+    issues = check_registry_kinds(tmp_path)
+    assert [i.message for i in issues] == [
+        "federation/Repo-A recorded kind 'ba' but registry says 'dev'"
+    ]

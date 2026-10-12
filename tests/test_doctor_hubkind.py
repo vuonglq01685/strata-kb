@@ -191,13 +191,17 @@ def _registry(hub: Path, entry) -> None:
     )
 
 
+def _cfg_kind(kb: Path) -> str:
+    return yaml.safe_load((kb / "config.yaml").read_text(encoding="utf-8"))["kind"]
+
+
 def _msgs(issues) -> list[tuple[str, str]]:
     return [(i.level, i.message) for i in issues]
 
 
 def test_doctor_prints_hub_menu_for_the_repo_kind(git_kb, fed_hub, run_git):
     kb = _child(git_kb, run_git, "ba")
-    issues = check_published_kind(kb, HubHandle(root=fed_hub))
+    issues = check_published_kind(kb, HubHandle(root=fed_hub), _cfg_kind(kb))
     assert _msgs(issues) == [("info", "kind: ba → hub menu: Ticket")]
 
 
@@ -206,7 +210,7 @@ def test_doctor_warns_when_hub_registry_has_no_kind_for_this_repo(
 ):
     kb = _child(git_kb, run_git, "child", "https://github.com/o/demo.git")
     _registry(fed_hub, "demo")
-    issues = check_published_kind(kb, HubHandle(root=fed_hub))
+    issues = check_published_kind(kb, HubHandle(root=fed_hub), _cfg_kind(kb))
     assert _msgs(issues) == [
         ("info", "kind: kb → hub menu: Document"),
         ("warning", "hub registry has no kind for this repo"),
@@ -216,7 +220,7 @@ def test_doctor_warns_when_hub_registry_has_no_kind_for_this_repo(
 def test_doctor_errors_when_hub_registry_kind_clashes(git_kb, fed_hub, run_git):
     kb = _child(git_kb, run_git, "dev", "https://github.com/o/demo.git")
     _registry(fed_hub, {"repo_id": "demo", "kind": "ba"})
-    issues = check_published_kind(kb, HubHandle(root=fed_hub))
+    issues = check_published_kind(kb, HubHandle(root=fed_hub), _cfg_kind(kb))
     assert _msgs(issues) == [
         ("info", "kind: dev → hub menu: Code"),
         (
@@ -229,13 +233,13 @@ def test_doctor_errors_when_hub_registry_kind_clashes(git_kb, fed_hub, run_git):
 def test_doctor_registry_kind_agreeing_is_clean(git_kb, fed_hub, run_git):
     kb = _child(git_kb, run_git, "ba", "https://github.com/o/demo.git")
     _registry(fed_hub, {"repo_id": "demo", "kind": "ba"})
-    issues = check_published_kind(kb, HubHandle(root=fed_hub))
+    issues = check_published_kind(kb, HubHandle(root=fed_hub), _cfg_kind(kb))
     assert _msgs(issues) == [("info", "kind: ba → hub menu: Ticket")]
 
 
 def test_doctor_ungoverned_hub_has_no_registry_warning(git_kb, fed_hub, run_git):
     kb = _child(git_kb, run_git, "child")
-    issues = check_published_kind(kb, HubHandle(root=fed_hub))
+    issues = check_published_kind(kb, HubHandle(root=fed_hub), _cfg_kind(kb))
     assert [i.level for i in issues] == ["info"]
 
 
@@ -254,3 +258,14 @@ def test_doctor_run_registers_the_hub_registry_check(git_kb, fed_hub, run_git):
     )
     result = doctor.run(kb, HubHandle(root=fed_hub))
     assert any("has no kind" in i.message for i in result.issues)
+
+
+def test_doctor_unset_repo_id_follows_the_registry_like_publish(
+    git_kb, fed_hub, run_git
+):
+    kb = git_kb["kb"]
+    (kb / "config.yaml").write_text("kind: ba\n", encoding="utf-8")
+    run_git(git_kb["root"], "remote", "add", "origin", "https://github.com/o/demo.git")
+    _registry(fed_hub, {"repo_id": "demo-kb", "kind": "ba"})
+    issues = check_published_kind(kb, HubHandle(root=fed_hub), "ba")
+    assert _msgs(issues) == [("info", "kind: ba → hub menu: Ticket")]
