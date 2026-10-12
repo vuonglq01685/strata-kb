@@ -970,8 +970,8 @@ def test_kb_code_workflow_has_both_triggers():
 
 def test_kb_code_trigger_list_is_pinned():
     # Task review, Important 7: nothing bounds the `on:` block today --
-    # adding `pull_request_target` later would make the publish job's
-    # `if: github.event_name != 'pull_request'` true for a PR-controlled
+    # adding `pull_request_target` later would have made the publish job's
+    # old `if: github.event_name != 'pull_request'` true for a PR-controlled
     # ref, running `kb ci-publish` with `id-token: write` against
     # attacker-influenced content. Pinning the exact trigger set (not
     # just "push/pull_request/workflow_dispatch are present", which a
@@ -985,7 +985,9 @@ def test_kb_code_trigger_list_is_pinned():
     # key, not a typo.
     triggers = wf[True]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
-    assert triggers["push"] == {"branches": ["main", "master"]}
+    # #100: the intake accepts only refs/tags/kb-publish/*; a branch push
+    # could only ever be refused with HTTP 403.
+    assert triggers["push"] == {"tags": ["kb-publish/*"]}
 
 
 def test_kb_code_publish_job_runs_the_full_chain():
@@ -1018,20 +1020,21 @@ def test_kb_code_has_no_hardcoded_url_or_token():
     assert "id-token: write" in text
 
 
-def test_kb_code_publish_job_if_is_pinned_to_negated_pull_request():
-    # Regression guard: `if: github.event_name != 'pull_request'` on the
-    # publish job is the ONLY thing stopping a same-repo branch PR from
+def test_kb_code_publish_job_if_is_pinned_to_a_publish_tag():
+    # Regression guard: the publish job's `if:` is the ONLY thing stopping a
+    # same-repo branch PR (ref refs/pull/<n>/merge) from
     # running `kb ci-publish` with `id-token: write` and publishing
     # unreviewed content to the hub (fork PRs are separately protected by
     # GitHub withholding a write-scoped GITHUB_TOKEN, but that protection
-    # does not cover same-repo PRs). A substring check like
-    # `"pull_request" in condition` would still pass if this were inverted
-    # to `==` -- pin the exact expression so both deleting the `if:` and
-    # flipping the operator fail this test.
+    # does not cover same-repo PRs). Since #100 it also keeps a
+    # workflow_dispatch on a branch from a publish the intake would refuse.
+    # Pin the exact expression so deleting or loosening the `if:` fails.
     import yaml
 
     wf = yaml.safe_load(_read_init_template("kb-code.yml"))
-    assert wf["jobs"]["publish"]["if"] == "github.event_name != 'pull_request'"
+    assert (
+        wf["jobs"]["publish"]["if"] == "startsWith(github.ref, 'refs/tags/kb-publish/')"
+    )
 
 
 def test_kb_code_validate_job_has_read_only_permissions():
@@ -1045,14 +1048,17 @@ def test_kb_code_validate_job_has_read_only_permissions():
 
 
 def test_kb_code_workflow_has_a_concurrency_group():
-    # Task review, Important 7: without this, two quick merges race two
+    # Task review, Important 7: without this, two quick publishes race two
     # `kb ci-publish` runs, each opening its own hub PR against the same
-    # -code document.
+    # -code document. Each publish tag is its own ref, so every publish run
+    # shares the one 'publish' group; PRs keep a group per ref.
     import yaml
 
     wf = yaml.safe_load(_read_init_template("kb-code.yml"))
     concurrency = wf["concurrency"]
-    assert concurrency["group"] == "kb-code-${{ github.ref }}"
+    assert concurrency["group"] == (
+        "kb-code-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}"
+    )
     assert concurrency["cancel-in-progress"] is False
 
 

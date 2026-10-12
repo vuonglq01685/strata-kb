@@ -3,9 +3,9 @@
 This repo is a **product code** repo: it consumes the shared knowledge base
 while implementing BA tickets, and it publishes two knowledge documents
 about its OWN source code back to the hub. Generated structure
-(`<repo_id>-code`) is automatic — `.github/workflows/kb-code.yml` runs
-`kb code-ingest` → `kb build` → `kb ci-publish` on every push to `main` or
-`master`; locally, `kb svc note`, `kb build` and `kb publish` regenerate it
+(`<repo_id>-code`) is generated, never written by hand — `kb publish`
+tags the commit `kb-publish/<ts>` and `.github/workflows/kb-code.yml`
+runs `kb code-ingest` → `kb build` → `kb ci-publish` on that tag; locally, `kb svc note`, `kb build` and `kb publish` regenerate it
 from your working tree — it is never committed (`.gitignore`:
 `.kb/*-code/`). Curated responsibility knowledge (`<repo_id>-svc`) is bootstrapped
 once via `/dev-code-seed` (see "Onboarding an existing project (once)"
@@ -24,17 +24,17 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
 3. **Point at the intake for publishing** — fill `intake:` in
    `.kb/config.yaml` with the hub's intake service URL, then ask the hub
    maintainer to add this repo under `repos:` in the hub's
-   `federation/registry.yaml`. `kb-code.yml` uses both to publish
-   `<repo_id>-code` automatically on every push to `main` or `master` —
-   and, once `<repo_id>-svc` content is committed to that branch, the
-   very same `kb ci-publish` step republishes it too: it diffs the whole
+   `federation/registry.yaml`. **Publishing is `kb publish`**, run from
+   the default branch after a merge: it tags the commit `kb-publish/<ts>`
+   and pushes the tag, and `kb-code.yml` publishes `<repo_id>-code` from
+   that tag. A push to `main` publishes nothing — the intake accepts a
+   publish only from a `kb-publish/*` tag. The same `kb ci-publish` step
+   republishes committed `<repo_id>-svc` content too: it diffs the whole
    `.kb/` tree, not `-code` alone, so a merged `-svc` amend rides the
-   next push out to the hub with no separate command. What CI never
-   does is *create* `-svc` content — `--scaffold-svc` is never passed
-   there. The one-time seed below still runs `kb publish --pr` by hand
-   for its first-ever publish, simply because that happens *before*
-   anything has merged to the default branch yet, so there is no push
-   for `kb-code.yml` to react to.
+   next `kb publish` out to the hub with no separate command. What CI
+   never does is *create* `-svc` content — `--scaffold-svc` is never
+   passed there. The one-time seed below runs `kb publish --pr`, which
+   opens the hub PR directly instead of going through the tag.
    Whether the hub PR `kb ci-publish` opens for `<repo_id>-code` then
    auto-merges is a **hub-side branch-protection/labeling policy** — not
    `kb-code.yml`'s own behavior — so ask the hub maintainer whether (and
@@ -44,9 +44,9 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
    document is LLM-drafted and always needs a human review before it can
    publish.
    **One consequence that matters more than it sounds:** `kb ci-publish`
-   opens **one** hub PR per push, not one per document — the intake
+   opens **one** hub PR per publish, not one per document — the intake
    keys the publish branch by repo id and reuses it while a PR is
-   pending, so a push carrying a regenerated `-code` alongside an
+   pending, so a publish carrying a regenerated `-code` alongside an
    already-merged `-svc` amend lands both in that **same** PR. A hub
    auto-merge rule that fires on "this is a `dev` repo's `-code` publish"
    would therefore also auto-merge whatever `-svc` content rode along
@@ -108,10 +108,8 @@ and it walks seven steps:
    must pass before you publish; resolve or remove anything still
    `pending` (`--allow-pending` is only for the middle of a seed, never
    for what you publish). Then commit and run `kb publish --pr` to open
-   a PR on the hub — plain `kb publish` would instead tag the commit and
-   poll the intake service for up to ten minutes, waiting on a
-   tag-triggered CI run this repo never has (`kb-code.yml` has no tag
-   trigger), then fail with a misleading "check the Actions run" error.
+   a PR on the hub — plain `kb publish` also works, through the tag and
+   `kb-code.yml`, but `--pr` opens the review PR straight away.
    **That hub PR is reviewed by a BA or architect**, the same
    as any other hub content — this is curated knowledge, not generated
    knowledge, so it publishes through review, not auto-merge (see the
@@ -250,7 +248,7 @@ advancing on its own say-so.
   (a Dependabot bump, a revert) included, so make that required-check
   decision knowingly.
 - **Unreviewed knowledge cannot reach the hub** — `kb build` (run by
-  `kb-code.yml` on push and PR) exits 1 while any `<repo_id>-svc`
+  `kb-code.yml` on a publish tag and on PRs) exits 1 while any `<repo_id>-svc`
   section is `pending`.
 - **The context cache is CLI-owned** — `kb resolve --status-only --cache`
   refuses a cache whose version, ref set or resolved block differs from
@@ -286,15 +284,16 @@ measures compliance with it. The only check is the human at the gate.
 The two code-knowledge documents stay current in two different ways —
 neither needs new per-ticket discipline from you:
 
-- **`<repo_id>-code`** needs nothing from you. `kb-code.yml` re-runs
-  `kb code-ingest` → `kb build` → `kb ci-publish` on every push to the
-  default branch, so it always reflects the current commit's structure;
+- **`<repo_id>-code`** needs one command from you: `kb publish` after a
+  merge. `kb-code.yml` then runs `kb code-ingest` → `kb build` →
+  `kb ci-publish` on the `kb-publish/*` tag, so the hub reflects the
+  tagged commit's structure;
   locally, `kb svc note`, `kb build` and `kb publish` regenerate it from
   your working tree — it is never committed (`.gitignore`: `.kb/*-code/`).
   Since 1.3.0 each `svc.*` record also carries its
   named volumes, the healthcheck command and device reservations
   from compose, so the SA grounds those instead of deciding them —
-  run CI once (any merge) after upgrading before the BA re-grounds.
+  run `kb publish` once after upgrading before the BA re-grounds.
 - **`<repo_id>-svc`** accrues automatically at handover: `dev-handover`
   runs `kb svc note <service> --ticket <id> --title "<title>" --refs
   "<refs>"` for every service a ticket touched, appending one row to

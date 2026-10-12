@@ -27,6 +27,15 @@ one proxy in the chain, an overwriting hop discards the proxies before it,
 so the key silently falls back to the peer, which is the exact
 shared-bucket failure described below.
 
+Also set `STRATA_KB_ALLOWED_HOSTS` to the public host name(s) the proxy serves,
+comma-separated, e.g. `STRATA_KB_ALLOWED_HOSTS=kb.example.com`. `/mcp` keeps
+the MCP SDK's DNS-rebinding check, which accepts only a localhost `Host` (and
+`Origin`) unless told otherwise, so without it `/mcp` answers
+`421 Invalid Host header` while `/api` and `/ui` work. Each name is accepted
+with any port, over `http` and `https`. List bare names only: a scheme, port
+or path stops the server at startup. Rewriting `Host` to `localhost:8321` at
+the proxy is no longer needed.
+
 Every response carries `Content-Security-Policy` (`script-src 'self'`),
 `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: strict-origin-when-cross-origin` and a

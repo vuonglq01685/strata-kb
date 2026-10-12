@@ -1303,8 +1303,8 @@ completed the seed needs no further per-ticket documentation discipline.
   actual security boundary.
 - **Decide the hub's auto-merge policy for `-code` PRs, and exclude `-svc`.**
   This is a constraint on *how* the policy is implemented: `kb ci-publish` opens
-  one hub PR per push, not per document — the intake keys the publish branch by
-  repo id and reuses it while a PR is pending — so a push carrying both a
+  one hub PR per publish, not per document — the intake keys the publish branch by
+  repo id and reuses it while a PR is pending — so a publish carrying both a
   regenerated `-code` and an already-merged `-svc` amend lands both in one PR.
   The rule must therefore be **path-scoped to `.kb/<repo_id>-code/**`**, never a
   whole-PR or whole-repo rule, or it will auto-merge `-svc` content riding
@@ -1313,9 +1313,11 @@ completed the seed needs no further per-ticket documentation discipline.
   `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` into `.env` and verifies them.
 - **Budget the one-time seed:** ~10–15 min per service.
 
-`kb-code.yml` ships two jobs: on `push` to the default branch it regenerates
-`-code`, builds and publishes; on `pull_request` it runs `kb build` only and
-**never publishes**. `--scaffold-svc` is deliberately never passed in CI — CI
+`kb-code.yml` ships two jobs: on a `kb-publish/*` tag (pushed by `kb publish`)
+it regenerates `-code`, builds and publishes; on `pull_request` it runs
+`kb build` only and **never publishes**. A push to the default branch publishes
+nothing: the intake accepts a publish only from a `kb-publish/*` tag, so a dev
+repo publishes with `kb publish` after a merge, like a `ba` repo. `--scaffold-svc` is deliberately never passed in CI — CI
 must never create `pending` content, since that would fail its own build step.
 
 ---
@@ -1371,6 +1373,7 @@ second PR *there*, and merging that one is what makes it live.
 | `STRATA_KB_INTAKE` | Intake service URL (http(s) only) |
 | `STRATA_KB_INTAKE_AUDIENCE` | OIDC audience the intake expects |
 | `STRATA_KB_TRUSTED_PROXIES` | Number of trusted reverse proxies (default `0`) — see [§10](#10-mcp-server-and-web-ui) |
+| `STRATA_KB_ALLOWED_HOSTS` | HTTP server only: host names `/mcp` accepts besides localhost, comma-separated (e.g. `kb.example.com`); unset, `/mcp` behind a proxy at a real name answers `421 Invalid Host header` |
 | `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service, and for `hub-sync`'s `kb-code-sync` issue (needs `issues: write`, `pull_requests: read`, `contents: read`) |
 | `STRATA_KB_GH_TOKEN` | Token for `hub-sync`'s issue calls when no GitHub App is configured (needs `issues: write`, `pull_requests: read`, `contents: read` on the hub repo) |
 | `STRATA_KB_CODE_SYNC_INTERVAL` | Seconds between `hub-sync` scans (default `86400`) |
