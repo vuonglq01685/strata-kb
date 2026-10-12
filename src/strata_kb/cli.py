@@ -119,6 +119,11 @@ app.add_typer(plan_app, name="plan")
 impl_app = typer.Typer(help="Dev work folders: docs/impl/<ticket-id>/.")
 app.add_typer(impl_app, name="impl")
 
+code_sync_app = typer.Typer(
+    help="Keep hub docs in step with the code docs: scan for drift, set the baseline."
+)
+app.add_typer(code_sync_app, name="code-sync")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -831,6 +836,187 @@ def ingest(
         typer.secho(f"  [build] {warn}", fg=typer.colors.YELLOW)
     if build_report.ok:
         typer.echo("kb build: OK")
+
+
+def _require_hub_kind(kb_dir: Path, command: str) -> None:
+    """Exit 1 unless `kb_dir`'s config says `kind: hub`."""
+    from strata_kb import config
+
+    kind = config.load_config(kb_dir).kind
+    if kind != "hub":
+        typer.secho(
+            f"{command} runs only on a kind: hub repo (this one is "
+            f"kind: {kind or 'unset'})",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+
+@app.command()
+def authored(
+    doc_id: str = typer.Argument(..., help="Document ID to mark"),
+    off: bool = typer.Option(False, "--off", help="Remove the authored tag"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Tag a hub doc `authored`: its markdown is the master, `kb ingest` refuses it."""
+    from strata_kb import authored as authored_mod
+
+    try:
+        _require_hub_kind(kb_dir, "kb authored")
+        changed = authored_mod.set_authored(kb_dir, doc_id, not off)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    state = "unmarked" if off else "marked"
+    typer.echo(f"kb authored: {doc_id} {state if changed else 'already ' + state}")
+
+
+def _code_sync_root(kb_dir: Path, command: str) -> Path:
+    """The hub repo root, after the hub-kind check."""
+    from strata_kb import gitio
+
+    _require_hub_kind(kb_dir, command)
+    return gitio.git_root(kb_dir.resolve().parent)
+
+
+@code_sync_app.command("scan")
+def code_sync_scan(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    baseline: str = typer.Option(
+        "", "--baseline", help="Compare against this hub commit, not the baseline file"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    md: bool = typer.Option(False, "--md", help="Emit the Markdown work order"),
+) -> None:
+    """Hub docs that name something the code docs changed since the baseline.
+    Exit 0 nothing to do, 2 findings, 1 error."""
+    from strata_kb.codesync import scan
+    from strata_kb.errors import KbError
+
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+        result = scan.run_scan(root, baseline_sha=baseline or None)
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if json_output:
+        typer.echo(json.dumps(scan.to_json(result)))
+    elif md:
+        typer.echo(scan.render_markdown(result), nl=False)
+    else:
+        for note in result.notes:
+            typer.echo(f"note: {note}")
+        for f in result.findings:
+            typer.echo(f"{f.doc_id} §{f.section_id}: {scan.line(f)}")
+        if not result.findings:
+            typer.echo("kb code-sync: nothing to update")
+    code = scan.exit_code(result)
+    if code:
+        raise typer.Exit(code)
+
+
+@code_sync_app.command("issue")
+def code_sync_issue(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Which open kb-code-sync issue is the hub job's work order.
+    Exit 0 a current or stale one exists, 2 none, 1 error."""
+    from dataclasses import asdict
+
+    from strata_kb import ghio
+    from strata_kb.codesync import issue as issue_mod
+    from strata_kb.codesync import workorder
+    from strata_kb.errors import KbError
+
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+        verdicts = workorder.classify(
+            root, ghio.list_open_issues(root, issue_mod.LABEL)
+        )
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    usable = next((v for v in verdicts if v.kind in workorder.USABLE), None)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "usable": usable.number if usable else None,
+                    "baseline_sha": usable.baseline_sha if usable else None,
+                    "issue_baseline_sha": usable.issue_baseline_sha if usable else None,
+                    "issues": [asdict(v) for v in verdicts],
+                }
+            )
+        )
+    else:
+        for v in verdicts:
+            typer.echo(f"#{v.number} [{v.kind}] {v.reason}")
+        if not verdicts:
+            typer.echo("kb code-sync: no open kb-code-sync issue")
+    if usable is None:
+        raise typer.Exit(2)
+
+
+@code_sync_app.command("baseline")
+def code_sync_baseline(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    at: str = typer.Option(
+        "", "--at", help="Hub commit to record (default: the scan sha)"
+    ),
+) -> None:
+    """Record the hub commit the code-sync is current at, in kb-code-sync.yaml."""
+    from strata_kb import gitio
+    from strata_kb.codesync import baseline as baseline_mod
+    from strata_kb.errors import KbError
+
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+        sha = (
+            gitio.resolve_commit(root, baseline_mod.check_sha(at))
+            if at
+            else baseline_mod.scan_ref(root)
+        )
+        baseline_mod.write(root, sha)
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo(sha)
+
+
+@code_sync_app.command("run")
+def code_sync_run(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    issue: bool = typer.Option(
+        False, "--issue", help="Create/update/close the rolling GitHub issue"
+    ),
+    loop: bool = typer.Option(
+        False,
+        "--loop",
+        help="Repeat every STRATA_KB_CODE_SYNC_INTERVAL seconds (default 86400)",
+    ),
+) -> None:
+    """One scan plus issue update (the hub-sync job); logs to stderr.
+    Exit 0 nothing to do, 2 findings, 1 error. --loop never exits."""
+    import logging
+
+    from strata_kb.codesync import runner
+    from strata_kb.errors import KbError
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+    interval = runner.interval_from_env() if loop else 0
+    try:
+        root = _code_sync_root(kb_dir, "kb code-sync")
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if loop:
+        runner.run_loop(root, interval=interval, issue=issue)
+    code = runner.run_once(root, issue=issue)
+    if code:
+        raise typer.Exit(code)
 
 
 _LLM_CHOICES = ("", "claude", "copilot", "none")
@@ -2082,6 +2268,12 @@ def publish(
         "--require-reviewed",
         help="Fail when any section other than machine-authored `hist.*` is not reviewed",
     ),
+    branch: str = typer.Option(
+        "",
+        "--branch",
+        help="Hub self-publish only: commit the mirror on this checked-out "
+        "branch and open/reuse its PR (no reset, no force-push)",
+    ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
     from strata_kb import publish as publish_mod
@@ -2092,6 +2284,19 @@ def publish(
     # root hub with no `hub:`, intake on a hub-to-hub publish) is a
     # PublishError, which the root guard prints as one line.
     plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
+    if branch:
+        # Before any refresh or write. publish() re-checks the git-side rules.
+        if direct:
+            raise publish_mod.PublishError("--branch cannot be combined with --direct")
+        if plan.route == "intake":
+            raise publish_mod.PublishError(
+                "--branch cannot be used with `intake:` -- the intake route opens "
+                "its own PR"
+            )
+        if plan.route != "snapshot" or not plan.self_publish:
+            raise publish_mod.PublishError(
+                "--branch only applies to a hub's self-publish"
+            )
     # A hand publish sends the -code CI would send for this commit — never a
     # stale or summarized copy. No --no-refresh here: skipping it is exactly
     # the divergence this prevents.
@@ -2177,6 +2382,7 @@ def publish(
             repo_id=effective_repo_id(repo_id, kb_dir),
             mode=plan.mode,
             self_publish=plan.self_publish,
+            branch=branch or None,
         )
     except (OSError, *_CONFIG_READ_ERRORS) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)

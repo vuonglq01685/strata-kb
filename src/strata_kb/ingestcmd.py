@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata_kb import models
+from strata_kb import authored, models
 from strata_kb.ingest import parser, scaffold, sectioner
 from strata_kb.ingest.scaffold import ScaffoldReport
 
@@ -153,6 +153,8 @@ def _run_ingest(
     warn: Callable[[str], None],
 ) -> ScaffoldReport:
     scaffold.validate_doc_id(opts.doc_id)  # before doc_id touches any path
+    if authored.is_authored(opts.kb_dir, opts.doc_id):
+        raise ValueError(authored.refusal_message(opts.doc_id))
     manifest_path = opts.kb_dir / opts.doc_id / "_manifest.yaml"
     previous = None
     if manifest_path.exists():

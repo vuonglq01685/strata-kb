@@ -23,6 +23,14 @@ def test_head_commit_returns_short_hash(git_kb):
     assert gitio.head_commit(git_kb["root"]) == git_kb["rev2"]
 
 
+def test_is_ancestor(git_kb):
+    root, r1, r2 = git_kb["root"], git_kb["rev1"], git_kb["rev2"]
+    assert gitio.is_ancestor(root, r1, r2)
+    assert gitio.is_ancestor(root, r1, r1)
+    assert not gitio.is_ancestor(root, r2, r1)
+    assert not gitio.is_ancestor(root, "deadbeef", r2)
+
+
 def test_rev_exists(git_kb):
     assert gitio.rev_exists(git_kb["root"], git_kb["rev1"])
     assert not gitio.rev_exists(git_kb["root"], "deadbeef")
@@ -856,3 +864,22 @@ def test_log_commits_newest_first(git_kb):
 def test_log_commits_raises_outside_a_repo(tmp_path: Path):
     with pytest.raises(gitio.GitError):
         gitio.log_commits(tmp_path, "x.yaml")
+
+
+def test_resolve_commit_full_sha(git_kb):
+    root = git_kb["root"]
+    full = gitio.resolve_commit(root, git_kb["rev1"])
+    assert len(full) == 40 and full.startswith(git_kb["rev1"])
+    assert gitio.resolve_commit(root, "HEAD").startswith(git_kb["rev2"])
+    with pytest.raises(gitio.GitError):
+        gitio.resolve_commit(root, "deadbeef")
+
+
+def test_ls_tree_lists_blobs_at_rev(git_kb):
+    root = git_kb["root"]
+    files = gitio.ls_tree(root, git_kb["rev1"], ".kb/demo-doc")
+    assert ".kb/demo-doc/_manifest.yaml" in files
+    assert all(f.startswith(".kb/demo-doc/") for f in files)
+    assert gitio.ls_tree(root, git_kb["rev1"], "nope") == []
+    with pytest.raises(gitio.GitError):
+        gitio.ls_tree(root, "deadbeef", ".kb")

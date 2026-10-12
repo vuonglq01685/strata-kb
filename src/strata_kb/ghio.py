@@ -88,3 +88,42 @@ def create_pr(root: Path, branch: str, title: str, body: str) -> str:
         raise GHError(f"gh pr create failed: {proc.stderr.strip()}")
     lines = proc.stdout.strip().splitlines()
     return lines[-1] if lines else ""
+
+
+def list_open_issues(root: Path, label: str) -> list[dict]:
+    """Open issues carrying `label` (number, url, createdAt, body), newest
+    100 at most."""
+    try:
+        proc = _run_gh(
+            root,
+            "issue",
+            "list",
+            "--label",
+            label,
+            "--state",
+            "open",
+            "--json",
+            "number,url,createdAt,body",
+            "--limit",
+            "100",
+        )
+    except FileNotFoundError:
+        raise GHError("gh not found: install and authenticate the GitHub CLI") from None
+    if proc.returncode != 0:
+        raise GHError(f"gh issue list failed: {proc.stderr.strip()}")
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError as exc:
+        raise GHError(f"gh issue list returned invalid JSON: {exc}") from None
+    if not (
+        isinstance(data, list)
+        and all(
+            isinstance(i, dict)
+            and isinstance(i.get("number"), int)
+            and not isinstance(i.get("number"), bool)
+            and isinstance(i.get("body"), str)
+            for i in data
+        )
+    ):
+        raise GHError("gh issue list returned an unexpected shape")
+    return data

@@ -120,3 +120,121 @@ def test_create_pr_refuses_a_non_object_reply():
     http = FakeHTTP([(201, ["https://github.com/acme/kb-hub/pull/5"])])
     with pytest.raises(ghapp.GHAppError):
         ghapp.create_or_get_pr("acme/kb-hub", "ghs_x", "b", "t", "b", http=http)
+
+
+# --- rolling issue + contents helpers --------------------------------------
+
+
+def test_find_open_issue_returns_newest_and_skips_pull_requests():
+    http = FakeHTTP(
+        [
+            (
+                200,
+                [
+                    {"number": 9, "body": "pr", "pull_request": {}},
+                    {"number": 7, "body": "newest"},
+                    {"number": 3, "body": "older"},
+                ],
+            )
+        ]
+    )
+    assert ghapp.find_open_issue("acme/kb-hub", "t", "kb-code-sync", http=http) == (
+        7,
+        "newest",
+    )
+    url = http.requests[0].full_url
+    assert "labels=kb-code-sync" in url and "state=open" in url
+    assert "direction=desc" in url
+
+
+def test_find_open_issue_accept_skips_bodies_it_rejects():
+    http = FakeHTTP(
+        [(200, [{"number": 9, "body": "human"}, {"number": 7, "body": "job"}])]
+    )
+    found = ghapp.find_open_issue(
+        "a/b", "t", "l", http=http, accept=lambda body: body == "job"
+    )
+    assert found == (7, "job")
+    http = FakeHTTP([(200, [{"number": 9, "body": None}])])
+    assert ghapp.find_open_issue("a/b", "t", "l", http=http, accept=bool) is None
+
+
+def test_find_open_issue_none_when_empty_and_error_hides_token():
+    assert ghapp.find_open_issue("a/b", "t", "l", http=FakeHTTP([(200, [])])) is None
+    with pytest.raises(ghapp.GHAppError) as exc:
+        ghapp.find_open_issue("a/b", "ghs_secret", "l", http=FakeHTTP([(500, {})]))
+    assert "ghs_secret" not in str(exc.value)
+
+
+def test_find_open_pr_returns_number_or_none_and_error_hides_token():
+    http = FakeHTTP([(200, [{"number": 4}]), (200, [])])
+    assert ghapp.find_open_pr("acme/kb-hub", "t", "kb-bot/code-sync", http=http) == 4
+    url = http.requests[0].full_url
+    assert "/repos/acme/kb-hub/pulls?" in url and "state=open" in url
+    assert "head=acme%3Akb-bot%2Fcode-sync" in url
+    assert ghapp.find_open_pr("acme/kb-hub", "t", "b", http=http) is None
+    with pytest.raises(ghapp.GHAppError) as exc:
+        ghapp.find_open_pr("a/b", "ghs_secret", "b", http=FakeHTTP([(500, {})]))
+    assert "ghs_secret" not in str(exc.value)
+
+
+def test_create_issue_ensures_label_then_posts():
+    http = FakeHTTP([(422, {}), (201, {"number": 12})])
+    n = ghapp.create_issue("a/b", "t", "T", "B", "kb-code-sync", http=http)
+    assert n == 12
+    assert http.requests[0].full_url.endswith("/repos/a/b/labels")
+    assert json.loads(http.requests[0].data)["name"] == "kb-code-sync"
+    assert http.requests[1].full_url.endswith("/repos/a/b/issues")
+    assert json.loads(http.requests[1].data) == {
+        "title": "T",
+        "body": "B",
+        "labels": ["kb-code-sync"],
+    }
+
+
+def test_create_issue_fails_loudly_on_label_or_issue_error():
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.create_issue("a/b", "t", "T", "B", "l", http=FakeHTTP([(403, {})]))
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.create_issue(
+            "a/b", "t", "T", "B", "l", http=FakeHTTP([(201, {}), (500, {})])
+        )
+
+
+def test_update_issue_body_patches():
+    http = FakeHTTP([(200, {})])
+    ghapp.update_issue_body("a/b", "t", 4, "new", http=http)
+    assert http.requests[0].get_method() == "PATCH"
+    assert http.requests[0].full_url.endswith("/repos/a/b/issues/4")
+    assert json.loads(http.requests[0].data) == {"body": "new"}
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.update_issue_body("a/b", "t", 4, "x", http=FakeHTTP([(404, {})]))
+
+
+def test_close_issue_comments_then_closes():
+    http = FakeHTTP([(201, {}), (200, {})])
+    ghapp.close_issue("a/b", "t", 4, "done", http=http)
+    assert http.requests[0].full_url.endswith("/issues/4/comments")
+    assert json.loads(http.requests[0].data) == {"body": "done"}
+    assert http.requests[1].get_method() == "PATCH"
+    assert json.loads(http.requests[1].data)["state"] == "closed"
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.close_issue("a/b", "t", 4, "c", http=FakeHTTP([(500, {})]))
+
+
+def test_read_file_decodes_and_404_is_none():
+    import base64
+
+    enc = base64.encodebytes("baseline: abc\nünï\n".encode()).decode()
+    http = FakeHTTP([(200, {"content": enc, "encoding": "base64"})])
+    out = ghapp.read_file(
+        "a/b", "t", "kb-code-sync.yaml", "kb-bot/code-sync", http=http
+    )
+    assert out == "baseline: abc\nünï\n"
+    url = http.requests[0].full_url
+    assert "/contents/kb-code-sync.yaml" in url and "ref=kb-bot%2Fcode-sync" in url
+    assert ghapp.read_file("a/b", "t", "x", "main", http=FakeHTTP([(404, {})])) is None
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.read_file("a/b", "t", "x", "main", http=FakeHTTP([(500, {})]))
+    with pytest.raises(ghapp.GHAppError):  # a directory listing is not a file
+        ghapp.read_file("a/b", "t", "x", "main", http=FakeHTTP([(200, [])]))

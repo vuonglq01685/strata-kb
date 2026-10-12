@@ -467,8 +467,10 @@ def push_branch(
     token: str | None = None,
     *,
     timeout: float | None = None,
+    force: bool = True,
 ) -> None:
-    """Force-push the working branch (publish/<rid> is owned by the publisher).
+    """Force-push the working branch (publish/<rid> is owned by the publisher);
+    `force=False` for a branch with history to keep (`kb publish --branch`).
     `timeout`: see `_run_network`."""
     stripped, embedded = split_credentials(remote_url(root))
     proc = _run_network(
@@ -476,7 +478,7 @@ def push_branch(
         credential_env(stripped, token or embedded),
         f"push branch '{branch}'",
         "push",
-        "--force",
+        *(["--force"] if force else []),
         "origin",
         branch,
         timeout=timeout,
@@ -627,6 +629,60 @@ def origin_head_ref(root: Path) -> str:
             "origin/HEAD is not set — run `git remote set-head origin --auto`"
         )
     return ref[len(prefix) :]
+
+
+def valid_branch_name(root: Path, name: str) -> bool:
+    """True when `name` is a plain, well-formed branch name (not `HEAD`, not
+    an `@{-1}`-style shorthand)."""
+    if name == "HEAD":
+        return False
+    proc = _run(root, "check-ref-format", "--branch", name)
+    return proc.returncode == 0 and proc.stdout.strip() == name
+
+
+def commits_ahead(root: Path, base: str, head: str) -> int | None:
+    """Commits in `head` not in `base`; None when `base` does not exist."""
+    if _run(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode:
+        return None
+    proc = _run(root, "rev-list", "--count", f"{base}..{head}")
+    if proc.returncode != 0:
+        raise GitError(f"could not compare {base} and {head}: {proc.stderr.strip()}")
+    return int(proc.stdout.strip())
+
+
+def is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    """Is commit `ancestor` reachable from `descendant`? A missing rev is no."""
+    proc = _run(root, "merge-base", "--is-ancestor", ancestor, descendant)
+    if proc.returncode not in (0, 1, 128):
+        raise GitError(
+            f"could not compare {ancestor} and {descendant}: {proc.stderr.strip()}"
+        )
+    return proc.returncode == 0
+
+
+def resolve_commit(root: Path, rev: str) -> str:
+    """Full sha of `rev`; GitError if it does not name a commit."""
+    proc = _run(root, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
+    if proc.returncode != 0:
+        raise GitError(
+            f"rev '{rev}' does not exist in the repo (force-push or shallow clone?)"
+        )
+    return proc.stdout.strip()
+
+
+def ls_tree(root: Path, rev: str, relpath: str) -> list[str]:
+    """POSIX paths of the blobs under `relpath` at `rev`, repo-relative.
+
+    Empty when `relpath` is absent at `rev`; GitError when `rev` is missing
+    (same split as `path_exists_at`)."""
+    sha = resolve_commit(root, rev)
+    posix_relpath = relpath.replace("\\", "/")
+    proc = _run(root, "ls-tree", "-r", "-z", "--name-only", sha, "--", posix_relpath)
+    if proc.returncode != 0:
+        raise GitError(
+            f"git ls-tree failed for '{posix_relpath}': {proc.stderr.strip()}"
+        )
+    return [p for p in proc.stdout.split("\0") if p]
 
 
 def path_exists_at(root: Path, rev: str, relpath: str) -> bool:

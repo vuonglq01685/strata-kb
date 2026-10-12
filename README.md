@@ -259,6 +259,8 @@ that follows it.
 | `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
+| `kb authored` | Tag a hub doc `authored` (markdown is the master; `kb ingest` refuses it) |
+| `kb code-sync` | Hub only. `scan` lists hub docs that name code that changed since the baseline (`--md`, `--json`, `--baseline <sha>`; exit `0` nothing, `2` findings, `1` error); `issue [--json]` finds the hub job's own `kb-code-sync` issue among the open ones (needs `gh`; exit `0` a usable one, `2` none, `1` error); `baseline [--at <sha>]` records the commit the sync is current at; `run [--issue] [--loop]` is the `hub-sync` job: one scan, optionally the `kb-code-sync` issue update, optionally forever |
 | `kb status` | List sections still pending summarization |
 | `kb build` | Validate the store: no blanks, table integrity, quality rules, token counts |
 | `kb approve` | Mark sections reviewed (`summarized` → `reviewed`) |
@@ -266,7 +268,7 @@ that follows it.
 | `kb get` | Fetch exactly one section at a chosen level |
 | `kb stats` | Token size per level, per document |
 | `kb tags` | List every tag published on the hub federation |
-| `kb publish` | Mirror `.kb/` (L0→L3) to the hub's `federation/<repo-id>/` and rebuild the index |
+| `kb publish` | Mirror `.kb/` (L0→L3) to the hub's `federation/<repo-id>/` and rebuild the index; `--branch <name>` (hub self-publish only) commits the mirror on that checked-out branch and opens or reuses its PR |
 | `kb ci-publish` | Publish from a child's or `ba` repo's GitHub Actions job via OIDC, no secrets |
 | `kb reindex` | Rebuild `federation/index.yaml` when it has drifted |
 | `kb doctor` | Store health check; `--context` also checks citation staleness |
@@ -526,6 +528,7 @@ the aggregate index. The hub comes from `.kb/config.yaml` (`hub:` + `repo_id:`);
 | `--pr` | Open or update a pull request on the hub. Needs a git remote, and `gh` able to open a PR on that host. |
 | `--direct` | Commit directly. Refused on a *governed* hub — one carrying a non-empty `federation/registry.yaml` — that has a git remote. |
 | *(neither)* | It picks direct only for a hub with no git remote; for a remote hub it opens a PR, or refuses when `gh` cannot open one. |
+| `--branch <name>` | Hub self-publish only (see [Code sync](#code-sync)). You must be on `<name>`. It mirrors `.kb/` into `federation/<repo-id>/`, commits on top of the branch (no `checkout -B`, no reset), pushes without force, and opens or reuses the PR. It refuses the default branch, direct mode, the intake route, and any case where no PR would open. |
 
 A *governed* hub that `gh` cannot open a pull request on has no publish route
 in this release — see "Known limitations" in [`CHANGELOG.md`](CHANGELOG.md) for
@@ -542,6 +545,76 @@ GitHub Actions job, authenticates to an intake service with GitHub Actions OIDC,
 secrets. Uploaded paths are capped at 110 UTF-16 code units so that
 `federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH`. A path
 crossing the cap is refused with `400` and the whole upload fails.
+
+### Code sync
+
+A hub document written by hand or ingested from a PDF (architecture, standards,
+designs) goes stale when the `-code` / `-svc` documents it names change. Code
+sync finds those documents and keeps them true, without an LLM in the daily job.
+
+**Mark the documents.** A hub document whose markdown is now the master gets the
+tag `authored`: `kb authored <doc>` (`--off` removes it). `kb ingest` then
+refuses to re-ingest it, so a PDF can no longer overwrite the hand fixes.
+`kb summarize --redo` stays allowed. A document tagged `code-sync-skip` is left
+out of the scan. `kb code-sync scan` prints a `note:` for each hub document that
+is not `authored`.
+
+**Daily detection.** The `hub-sync` compose service runs
+`kb code-sync run --issue --loop`: scan, update the issue, sleep. It never pulls,
+commits or pushes (the `hub` service pulls `/data`). The scan compares the
+`-code` / `-svc` documents between the baseline commit (`kb-code-sync.yaml` at
+the hub root) and the tip of the default branch, and lists hub sections that
+name something added, removed or changed. Same inputs give byte-identical output.
+One issue labelled `kb-code-sync` stays open while there are findings: it is
+created when they appear, rewritten only when the findings change, and closed
+with a comment when the scan finds nothing. A scan error never closes it.
+
+**Categories.** Every finding falls in one category, and the work order lists
+them in this order: `removed` (code gone, prose likely wrong), `changed`
+(facts changed, check and fix), `added` (new code, docs may need a mention),
+`image` (the name sits in a picture's description; it may need a redraw).
+`kb code-sync scan --json` gives each finding a `category` and a `counts` object.
+
+**The job's issue.** The first line of the issue body is an identity marker
+(`<!-- kb-code-sync work-order v1 scan:<sha> baseline:<sha> -->`) and the last
+is the findings digest. `kb code-sync issue` lists the open `kb-code-sync`
+issues and judges each one; `/kb-code-sync` works only from the one it calls
+usable, and takes nothing from it: it scans from the baseline recorded in git,
+which `kb code-sync issue --json` prints as `baseline_sha`. It never reads
+issue text or comments and never edits, closes, comments on or relabels an
+issue. The job in turn only rewrites or closes an issue that carries the
+identity marker, so a labelled issue a person opened is left alone.
+
+| Kind | Meaning | Used? |
+|---|---|---|
+| `current` | The job wrote it, its baseline is the recorded one, and a local scan gives the same findings | yes |
+| `stale` | The job wrote it, but its baseline or findings differ from a local scan (the reason says which); a baseline moved by an earlier round lands here | yes, scanned from the recorded baseline |
+| `duplicate` | The job wrote it, but a newer job issue exists | reported only |
+| `foreign` | No identity marker, no digest, no baseline, or the baseline is not in the default branch's history | reported only |
+
+**Sprint cadence.** Detection is daily. The hub manager runs `/kb-code-sync` in
+their agent any time the issue is open; the skill re-runs the scan, judges each
+finding (fix, no change needed, or needs the SA), edits the sections,
+re-summarizes, runs `kb build --strict`, moves the baseline
+(`kb code-sync baseline --at <scan sha>`), commits, and publishes with
+`kb publish --branch kb-bot/code-sync`. That is one rolling pull request: later
+runs merge the default branch into `kb-bot/code-sync` and add to it. At sprint
+review (every two weeks) the SA or hub manager reviews the PR, may run
+`kb approve`, and merges. The skill never merges and never approves. It ships to
+hub repos only, as the standard four wrapper files (Claude Code skill and command, Copilot prompt, Cursor command).
+
+**Prerequisites.**
+
+| Need | Why |
+|---|---|
+| `origin/HEAD` set (`git remote set-head origin --auto`) | The scan reads the default branch's tip; a hub with a remote and no `origin/HEAD` exits `1` |
+| GitHub App with `issues: write`, `pull_requests: read`, `contents: read` | `hub-sync` calls the issues REST API and reads the baseline from the hub repo. The intake App must have the permissions added and the installation re-approved by an org admin |
+| `STRATA_KB_GH_TOKEN` | Token fallback, only when the App (`STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY`) is not configured; it needs the same three permissions on the hub repo |
+| `STRATA_KB_CODE_SYNC_INTERVAL` | Seconds between scans (default `86400`, minimum `60`) |
+| `gh`, logged in, on the manager's machine | `kb publish --branch` and the PR title and body |
+
+With no credentials, `hub-sync` still scans and logs the work order, logs one
+line that the issue was not updated and why, and keeps running.
 
 ### Multi-tier federation
 
@@ -1188,7 +1261,9 @@ second PR *there*, and merging that one is what makes it live.
 | `STRATA_KB_INTAKE` | Intake service URL (http(s) only) |
 | `STRATA_KB_INTAKE_AUDIENCE` | OIDC audience the intake expects |
 | `STRATA_KB_TRUSTED_PROXIES` | Number of trusted reverse proxies (default `0`) — see [§10](#10-mcp-server-and-web-ui) |
-| `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service |
+| `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service, and for `hub-sync`'s `kb-code-sync` issue (needs `issues: write`, `pull_requests: read`, `contents: read`) |
+| `STRATA_KB_GH_TOKEN` | Token for `hub-sync`'s issue calls when no GitHub App is configured (needs `issues: write`, `pull_requests: read`, `contents: read` on the hub repo) |
+| `STRATA_KB_CODE_SYNC_INTERVAL` | Seconds between `hub-sync` scans (default `86400`) |
 
 ---
 

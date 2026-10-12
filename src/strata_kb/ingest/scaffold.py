@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from strata_kb import models
+from strata_kb import authored, models
 from strata_kb.ingest.sectioner import HeadingConfig, SectionUnit
 from strata_kb.mdutils import count_tokens, extract_image_descs, slugify
 
@@ -281,6 +281,8 @@ def scaffold_doc(
     used_bookmarks: bool = False,
 ) -> ScaffoldReport:
     validate_doc_id(doc_id)
+    if authored.is_authored(kb_dir, doc_id):
+        raise ValueError(authored.refusal_message(doc_id))
     validate_unit_ids(units)
 
     doc_dir = kb_dir / doc_id

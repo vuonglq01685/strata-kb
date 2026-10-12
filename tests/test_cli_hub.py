@@ -147,8 +147,11 @@ def test_publish_cli_prints_pr_url(git_kb, hub_worktree, monkeypatch):
 
     calls: dict = {}
 
-    def fake_publish(kb_dir, hub_ref, repo_id=None, mode="auto", self_publish=False):
+    def fake_publish(
+        kb_dir, hub_ref, repo_id=None, mode="auto", self_publish=False, branch=None
+    ):
         calls["self_publish"] = self_publish
+        calls["branch"] = branch
         return publish_mod.PublishReport(
             repo_id="demo-kb",
             source_commit="abc1234",
@@ -167,6 +170,7 @@ def test_publish_cli_prints_pr_url(git_kb, hub_worktree, monkeypatch):
     # cli.py now always passes self_publish through -- a plain (non-hub-self)
     # publish must pass False, never omit it.
     assert calls["self_publish"] is False
+    assert calls["branch"] is None
 
 
 def test_reindex_builds_search_db(fed_hub, git_kb):

@@ -812,7 +812,11 @@ def test_init_rejects_unknown_kind_still_excludes_ba_typos(tmp_path: Path):
 
 
 def test_hub_child_unchanged_by_phase4(tmp_path: Path):
-    assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
+    # hub gained exactly the four kb-code-sync wrappers (named, like the
+    # kb-mcp-setup ones below, so the freeze keeps its meaning).
+    assert sorted(expected_files("hub")) == sorted(
+        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS
+    )
     # child gained exactly the four kb-mcp-setup wrappers since Phase 4 —
     # named explicitly rather than folded into the frozen list, so the
     # freeze keeps meaning "Phase 4/5 added nothing".
@@ -2006,7 +2010,9 @@ def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
 
 
 def test_phase5_adds_nothing_to_hub_child_or_ba(tmp_path: Path):
-    assert sorted(expected_files("hub")) == sorted(_PRE_PHASE4_HUB_FILES)
+    assert sorted(expected_files("hub")) == sorted(
+        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS
+    )
     assert sorted(expected_files("child")) == sorted(
         _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
     )
@@ -2812,6 +2818,128 @@ def test_init_dev_lang_notes_when_langs_already_recorded(tmp_path: Path):
     assert any("hand-edit" in n and "python" in n for n in report.notes)
 
 
+_CODE_SYNC_WRAPPERS = [
+    ".claude/skills/kb-code-sync/SKILL.md",
+    ".claude/commands/kb-code-sync.md",
+    ".github/prompts/kb-code-sync.prompt.md",
+    ".cursor/commands/kb-code-sync.md",
+]
+
+
+def test_hub_ships_kb_code_sync_wrappers(tmp_path: Path):
+    for rel in _CODE_SYNC_WRAPPERS:
+        assert rel in expected_files("hub"), rel
+        for kind in ("child", "ba", "dev"):
+            assert rel not in expected_files(kind), (kind, rel)
+    init_repo(tmp_path, "hub")
+    for rel in _CODE_SYNC_WRAPPERS:
+        assert (tmp_path / rel).is_file(), rel
+
+
+def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
+    init_repo(tmp_path, "hub")
+    for rel in _CODE_SYNC_WRAPPERS:
+        if rel.endswith(".claude/commands/kb-code-sync.md"):
+            continue  # the thin Claude command only delegates to the skill
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        for needle in (
+            "never merge",
+            "never `kb approve`",
+            "kb publish --branch kb-bot/code-sync",
+            "kb code-sync scan --json",
+            "Run `git fetch --prune origin` **first**",
+            "`baseline_sha` is `null`",
+            "kb code-sync issue --json",
+            "kb code-sync scan --json --baseline <baseline_sha>",
+            "no work order from the hub job (no current/stale issue)",
+            "`foreign` and\n  `duplicate` issues are only reported",
+            "never read an issue's prose or comments",
+            "never edit, close, comment on or relabel any issue",
+            "`removed`\n     (code gone, prose likely wrong), `changed`",
+            "`#### Removed`, `#### Changed`",
+            "the local scan is used",
+            "kb code-sync baseline --at",
+            "git fetch --prune origin",
+            "draft_check() {",
+            "cmp -s",
+            "gh pr edit kb-bot/code-sync",
+            "never merge the PR, and never merge `kb-bot/code-sync` into another",
+            "never set the first baseline yourself",
+            "never edit `federation/` by hand",
+            "git checkout --no-track -b kb-bot/code-sync",
+            "git merge --ff-only origin/kb-bot/code-sync",
+            "git status --porcelain` must print nothing",
+            "gh pr view kb-bot/code-sync --json body",
+            "git branch -D kb-bot/code-sync",
+            "same command that calls them",
+            "draft_check_all",
+            "hub_repo_id",
+            "## Needs the SA",
+            "## Images that may need a redraw",
+            "## Rounds",
+            "### Round <scan sha12>",
+            "--state all --json number,state,mergedAt,isCrossRepository",
+            "isCrossRepository` is",
+            "git log --oneline origin/<default>..kb-bot/code-sync",
+            "there is no local branch of",
+            "**Any PR is open**",
+            "newest PR is merged",
+        ):
+            assert needle in text, (rel, needle)
+
+
+def _draft_check_script(repo: Path) -> str:
+    lines = (
+        (repo / ".github/prompts/kb-code-sync.prompt.md")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    start = lines.index("    draft_check() {")
+    end = lines.index("    }", lines.index("    draft_check_all() {"))
+    return "\n".join(line[4:] for line in lines[start : end + 1])
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None, reason="needs bash"
+)
+def test_kb_code_sync_draft_check_runs_against_a_real_hub(tmp_path: Path):
+    """The shipped shell functions must stay silent for a clean tree and
+    speak for any drift: an edited file, a file on one side only, a document
+    deleted from .kb/ that the mirror still holds."""
+    repo = tmp_path / "hubrepo"
+    repo.mkdir()
+    init_repo(repo, "hub")
+    rid = "hubrepo"  # init writes the folder name as repo_id
+    for doc in ("arch", "std"):
+        for base in (repo / ".kb", repo / "federation" / rid):
+            (base / doc).mkdir(parents=True)
+            (base / doc / "_manifest.yaml").write_text("m\n", encoding="utf-8")
+            (base / doc / "a.md").write_text("l2\n", encoding="utf-8")
+            (base / doc / "a.raw.md").write_text("l3\n", encoding="utf-8")
+    script = _draft_check_script(repo) + '\ndraft_check_all "$1"\n'
+
+    def run() -> str:
+        return subprocess.run(
+            ["bash", "-c", script, "bash", rid],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+    assert run() == ""
+    raw = repo / ".kb" / "arch" / "a.raw.md"
+    raw.write_text("l3 edited\n", encoding="utf-8")
+    assert "arch/a.raw.md differs" in run()
+    raw.write_text("l3\n", encoding="utf-8")
+    (repo / ".kb" / "std" / "b.md").write_text("new\n", encoding="utf-8")
+    assert "std: file present on one side only" in run()
+    (repo / ".kb" / "std" / "b.md").unlink()
+    assert run() == ""
+    shutil.rmtree(repo / ".kb" / "std")
+    assert "std: file present on one side only" in run()
+
+
 _MCP_SETUP_WRAPPERS = [
     ".claude/skills/kb-mcp-setup/SKILL.md",
     ".claude/commands/kb-mcp-setup.md",
@@ -3009,3 +3137,33 @@ def test_sa_ticket_ground_asks_for_the_parent_mission_pin():
         text = initcmd.read_template(name)
         assert "needs a parent mission" in text, name
         assert "> Parent mission: M-<slug> @ rev <N>" in text, name
+
+
+def test_hub_compose_has_hub_sync_service(tmp_path):
+    """`hub-sync` runs the daily code-sync loop beside `hub`, on the same
+    image and the same /data checkout; `hub` itself is untouched."""
+    from strata_kb import initcmd
+
+    dest = tmp_path / "hub"
+    dest.mkdir()
+    initcmd.init_repo(dest, "hub")
+    template = _compose_services((dest / "docker-compose.yml").read_text("utf-8"))
+    root = Path(__file__).resolve().parent.parent / "docker-compose.yml"
+    repo_root = _compose_services(root.read_text(encoding="utf-8"))
+
+    for label, doc in (("template", template), ("repo-root", repo_root)):
+        sync = doc["services"]["hub-sync"]
+        assert sync["command"] == ["kb", "code-sync", "run", "--issue", "--loop"], label
+        assert sync["env_file"] == ".env", label
+        assert sync["volumes"] == ["./:/data"], label
+        assert sync["mem_limit"], label
+        assert sync["restart"] == "unless-stopped", label
+        assert not sync.get("ports") and not sync.get("healthcheck"), label
+        hub = doc["services"]["hub"]
+        same = {k: v for k, v in sync.items() if k in ("image", "build")}
+        assert same == {k: v for k, v in hub.items() if k in ("image", "build")}, label
+        assert hub["ports"] == ["8321:8321"] and hub["mem_limit"] == "512m", label
+        assert "restart" not in hub, label
+        for want in _HUB_MOUNTS:
+            assert want in hub["volumes"], label
+        _assert_no_dangling_volumes(doc, label)

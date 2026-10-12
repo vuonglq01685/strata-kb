@@ -2,19 +2,23 @@
 """ghapp — GitHub App REST calls for the hub intake service.
 
 Mints an installation token for the hub repo from the App's id and private
-key (a short-lived RS256 JWT), and opens -- or finds the already-open -- PR
-for a branch. Server-side only: intake.py and web/intake_routes.py call it,
-never the CLI. Every HTTP call goes through an injectable `http` callable so
-tests never touch api.github.com; tokens never appear in error messages.
+key (a short-lived RS256 JWT), opens -- or finds the already-open -- PR
+for a branch, and keeps a rolling labelled issue and reads repo files.
+Callers: intake.py, web/intake_routes.py and the `kb code-sync` runner. Every
+HTTP call goes through an injectable `http` callable so tests never touch
+api.github.com; tokens never appear in error messages.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 
 API = "https://api.github.com"
@@ -24,9 +28,9 @@ _GH_URL_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$")
 class GHAppError(RuntimeError):
     """GitHub App call failed (token is never included in the message).
 
-    Deliberately stays out of the KbError family: server-side only (GitHub
-    App auth) -- never raised on a CLI-terminal path, so there is no `except
-    KbError` guard for it to hide from.
+    Deliberately stays out of the KbError family: raised by the server and by
+    `kb code-sync` (runner/issue), which catch it themselves, so there is no
+    CLI-terminal `except KbError` guard for it to hide from.
     """
 
 
@@ -135,3 +139,112 @@ def create_or_get_pr(
         if status2 == 200 and isinstance(prs, list) and prs:
             return prs[0]["html_url"]
     raise GHAppError(f"create PR on '{repo_full}' -> {status}")
+
+
+def find_open_pr(
+    repo_full: str, token: str, head_branch: str, http=_default_http
+) -> int | None:
+    """Number of an open PR from `head_branch` of this repo, else None."""
+    owner = repo_full.split("/")[0]
+    q = urllib.parse.urlencode({"head": f"{owner}:{head_branch}", "state": "open"})
+    status, prs = _call("GET", f"{API}/repos/{repo_full}/pulls?{q}", token, None, http)
+    if status != 200 or not isinstance(prs, list):
+        raise GHAppError(f"list pulls on '{repo_full}' -> {status}")
+    return prs[0]["number"] if prs else None
+
+
+def find_open_issue(
+    repo_full: str,
+    token: str,
+    label: str,
+    http=_default_http,
+    accept: Callable[[str], bool] = lambda body: True,
+) -> tuple[int, str] | None:
+    """(number, body) of the newest open issue carrying `label` whose body
+    `accept`s, else None."""
+    q = urllib.parse.urlencode(
+        {"labels": label, "state": "open", "sort": "created", "direction": "desc"}
+    )
+    status, data = _call(
+        "GET", f"{API}/repos/{repo_full}/issues?{q}", token, None, http
+    )
+    if status != 200 or not isinstance(data, list):
+        raise GHAppError(f"list issues on '{repo_full}' -> {status}")
+    for item in data:  # the issues API also returns PRs
+        body = item.get("body") or ""
+        if "pull_request" not in item and accept(body):
+            return item["number"], body
+    return None
+
+
+def create_issue(
+    repo_full: str,
+    token: str,
+    title: str,
+    body: str,
+    label: str,
+    http=_default_http,
+) -> int:
+    status, _ = _call(
+        "POST", f"{API}/repos/{repo_full}/labels", token, {"name": label}, http
+    )
+    if status not in (201, 422):  # 422 = label already exists
+        raise GHAppError(f"create label on '{repo_full}' -> {status}")
+    status, data = _call(
+        "POST",
+        f"{API}/repos/{repo_full}/issues",
+        token,
+        {"title": title, "body": body, "labels": [label]},
+        http,
+    )
+    if status != 201 or not isinstance(data, dict):
+        raise GHAppError(f"create issue on '{repo_full}' -> {status}")
+    return data["number"]
+
+
+def update_issue_body(
+    repo_full: str, token: str, number: int, body: str, http=_default_http
+) -> None:
+    status, _ = _call(
+        "PATCH",
+        f"{API}/repos/{repo_full}/issues/{number}",
+        token,
+        {"body": body},
+        http,
+    )
+    if status != 200:
+        raise GHAppError(f"update issue #{number} on '{repo_full}' -> {status}")
+
+
+def close_issue(
+    repo_full: str, token: str, number: int, comment: str, http=_default_http
+) -> None:
+    base = f"{API}/repos/{repo_full}/issues/{number}"
+    status, _ = _call("POST", f"{base}/comments", token, {"body": comment}, http)
+    if status != 201:
+        raise GHAppError(f"comment on issue #{number} of '{repo_full}' -> {status}")
+    status, _ = _call(
+        "PATCH",
+        base,
+        token,
+        {"state": "closed", "state_reason": "completed"},
+        http,
+    )
+    if status != 200:
+        raise GHAppError(f"close issue #{number} on '{repo_full}' -> {status}")
+
+
+def read_file(
+    repo_full: str, token: str, path: str, ref: str, http=_default_http
+) -> str | None:
+    """UTF-8 text of `path` at `ref` via the contents API; None when absent."""
+    url = (
+        f"{API}/repos/{repo_full}/contents/{urllib.parse.quote(path)}"
+        f"?ref={urllib.parse.quote(ref, safe='')}"
+    )
+    status, data = _call("GET", url, token, None, http)
+    if status == 404:
+        return None
+    if status != 200 or not isinstance(data, dict) or data.get("encoding") != "base64":
+        raise GHAppError(f"read '{path}' on '{repo_full}' -> {status}")
+    return base64.b64decode(data["content"]).decode("utf-8")
