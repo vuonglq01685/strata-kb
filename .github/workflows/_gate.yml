@@ -3,6 +3,10 @@
 # INVARIANT: a tag runs NOTHING new compared to a PR. If you are about to add a
 # step that "only runs on release", stop — that is exactly how the old pipeline
 # let bugs slip through to the very last minute. Add it here, so PRs run it too.
+#
+# One deliberate exception: the Windows rows. Linux jobs run on the self-hosted
+# runner (Hostinger VPS, no minutes); Windows needs a GitHub-hosted runner
+# (2x minutes), so it only runs when release.yml passes `windows: true`.
 name: gate
 on:
   workflow_call:
@@ -12,11 +16,16 @@ on:
         type: string
         required: false
         default: ""
+      windows:
+        description: "Add the windows-latest rows (release only, see header)."
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   t0-lint:
     name: T0 lint (ruff, format, pyright)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,15 +54,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
         python: ["3.11", "3.12", "3.13"]
-        include:
-          # Windows on the python floor+ceiling only — OS-specific risk does
-          # not multiply with python minor; 3.12 is covered on ubuntu.
-          - os: windows-latest
-            python: "3.11"
-          - os: windows-latest
-            python: "3.13"
+        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.11"},{"os":"windows-latest","python":"3.13"}]') || fromJSON('[]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -83,7 +86,7 @@ jobs:
 
   t2-package:
     name: T2 packaging
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -122,11 +125,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
         python: ["3.11", "3.12", "3.13"]
-        include:
-          - os: windows-latest
-            python: "3.12"
+        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -168,11 +169,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [self-hosted]
         python: ["3.11", "3.12", "3.13"]
-        include:
-          - os: windows-latest
-            python: "3.12"
+        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
     steps:
       - uses: actions/checkout@v4
         with:
