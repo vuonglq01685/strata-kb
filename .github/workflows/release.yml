@@ -53,7 +53,11 @@ jobs:
     uses: ./.github/workflows/_gate.yml
     with:
       tag: ${{ github.ref_name }}
+      windows: true
 
+  # docker-verify / pypi / docker-release stay GitHub-hosted on purpose: they
+  # need a Docker daemon, and the heavy [ingest] image build (torch, docling)
+  # must not compete with the hub for RAM on the self-hosted VPS.
   docker-verify:
     name: Build image + smoke (not a release tag yet)
     needs: gate
