@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from strata_kb import models
 from strata_kb.errors import AmbiguousDocError  # also re-exported
+from strata_kb.kinds import normalize_kinds
 from strata_kb.mdutils import count_tokens, slice_section, slice_subsection
 from strata_kb.searchdb import tokenize  # re-export (web/ui.py import)
 
@@ -63,6 +64,7 @@ class QueryResult:
     source: str = ""  # repo-id within the federation
     match_mode: str = "keyword"  # "keyword" | "semantic" | "hybrid"
     snippet: str = ""  # L3 excerpt around the match when no term appears in L2
+    kind: str = ""  # "kb" | "ba" | "dev" — what the source repo holds (search only)
 
 
 @dataclass
@@ -129,7 +131,11 @@ def _l3_snippet(hub: HubHandle, row: SectionRow, terms: list[str], content: str)
 
 
 def _search_index(
-    hub: HubHandle, embedder, text: str, tags: list[str] | None
+    hub: HubHandle,
+    embedder,
+    text: str,
+    tags: list[str] | None,
+    kinds: list[str] | None = None,
 ) -> tuple[
     list[tuple[int, float, str]],
     dict[int, SectionRow],
@@ -166,11 +172,13 @@ def _search_index(
                 logger.warning("search.db busy — serving existing index: %s", exc)
                 conn = searchdb.open_db(hub)
                 busy = True
-            fts_hits = searchdb.fts_search(conn, text, tags)
+            fts_hits = searchdb.fts_search(conn, text, tags, kinds=kinds)
             knn_hits: list[tuple[int, float]] = []
             if embedder is not None:
                 try:
-                    knn_hits = searchdb.knn_search(conn, embedder, text, tags)
+                    knn_hits = searchdb.knn_search(
+                        conn, embedder, text, tags, kinds=kinds
+                    )
                 except sqlite3.DatabaseError:
                     raise  # index corrupt — let the rebuild branch handle it
                 except Exception as exc:  # noqa: BLE001 -- embedding best-effort, must not break the query
@@ -332,9 +340,12 @@ def search_detailed(
     semantic: bool = False,
     use_semantic: bool = True,
     embedder=None,  # strata_kb.embed.Embedder | None — injectable for tests
+    kinds: list[str] | None = None,
 ) -> SearchOutcome:
     from strata_kb import embed as embed_mod
     from strata_kb import searchdb
+
+    kind_list = normalize_kinds(kinds)  # UnknownKindError propagates to the caller
 
     if embedder is None:
         embedder = embed_mod.default_embedder()
@@ -353,7 +364,7 @@ def search_detailed(
         )
         return SearchOutcome(results=[], notes=notes)
     fused, rows, truncated, fts_scores, busy = _search_index(
-        hub, embedder if use_semantic else None, text, tags
+        hub, embedder if use_semantic else None, text, tags, kind_list
     )
 
     results: list[QueryResult] = []
@@ -386,6 +397,7 @@ def search_detailed(
                 match_mode=mode,
                 snippet=snippet,
                 content_tokens=content_tokens,
+                kind=row.kind,
             )
         )
         result_rowids.append(rowid)
@@ -422,6 +434,7 @@ def search(
     semantic: bool = False,
     use_semantic: bool = True,
     embedder=None,
+    kinds: list[str] | None = None,
 ) -> list[QueryResult]:
     """Backwards-compatible view of `search_detailed` — results only."""
     return search_detailed(
@@ -432,6 +445,7 @@ def search(
         semantic=semantic,
         use_semantic=use_semantic,
         embedder=embedder,
+        kinds=kinds,
     ).results
 
 
