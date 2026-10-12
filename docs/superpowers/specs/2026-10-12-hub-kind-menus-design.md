@@ -45,9 +45,11 @@ Goals
    like a root hub. When it publishes to its parent (`publish_federation`,
    `publish.py:1357`), only `kb` leaves go up: its own self-entry and nested
    `kb` leaves. `ba`/`dev` leaves are skipped and listed as skipped in the
-   report — not an error. The parent also rejects a child-hub publish that
-   still contains a non-`kb` leaf (guards a child hub running an older
-   version). **Owner-approved consequence:** `ba`/`dev` content a child hub
+   report — not an error. The parent also refuses to serve a non-`kb`
+   leaf nested under a child hub (guards a child hub running an older
+   version): a hub-to-hub publish writes straight into the parent's clone,
+   so the guard is on the read side — UI and search ignore such a leaf and
+   `kb doctor` on the parent names it for deletion. **Owner-approved consequence:** `ba`/`dev` content a child hub
    pushed to its parent before this change is removed from the parent on
    its next publish (git history keeps it; the child hub still has it).
 5. **Child repos know their kind before publishing.** After an upgrade:
