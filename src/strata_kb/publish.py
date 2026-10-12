@@ -11,6 +11,7 @@ never delete or overwrite one on the strength of a failed read.
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import os
 import re
@@ -22,7 +23,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import federation, ghio, gitio, models, pubgate
+from strata_kb import federation, ghio, gitio, kinds, models, pubgate
 from strata_kb import hub as hub_mod
 from strata_kb.errors import KbError
 from strata_kb.review import MACHINE_SECTION_PREFIX
@@ -456,6 +457,7 @@ def _snapshot(
     source_commit: str,
     source_url: str | None = None,
     store=None,
+    kind: str = "",
 ) -> tuple[int, bool, list[str]]:
     """Sync .kb/ → federation/<rid>/ by hash-diff; return (n_docs, changed, skipped).
 
@@ -527,6 +529,7 @@ def _snapshot(
         ),
         source_commit=source_commit,
         published_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        kind=kind,
     )
     models.save_yaml_model(dest / "_meta.yaml", meta)
     return len(local_index.docs), True, skipped
@@ -1145,22 +1148,48 @@ def unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> UnreviewedGate:
     return UnreviewedGate(line=f"[warn] {msg}", blocked=False)
 
 
-def _governed_registry(
-    handle: hub_mod.HubHandle, hub_label: str
-) -> dict[str, str] | None:
-    """{owner/repo: repo_id} when the hub carries a non-empty registry, else None.
-
-    An unreadable registry is fatal here exactly as it is in intake.authorize:
-    a hub whose registry cannot be parsed must never be treated as ungoverned.
-    """
+def _load_hub_registry(handle: hub_mod.HubHandle, hub_label: str) -> models.Registry:
+    """An unreadable registry is fatal here exactly as it is in
+    intake.authorize: a hub whose registry cannot be parsed must never be
+    treated as ungoverned."""
     try:
-        registry = federation.load_registry(handle.federation_dir)
+        return federation.load_registry(handle.federation_dir)
     except federation.RegistryError as exc:
         raise PublishError(
             f"{exc} -- fix the file on hub '{hub_label}', or ask the hub "
             "owner to fix it"
         ) from exc
-    return federation.registry_map(registry) or None
+
+
+def _governed_registry(
+    handle: hub_mod.HubHandle, hub_label: str
+) -> dict[str, str] | None:
+    """{owner/repo: repo_id} when the hub carries a non-empty registry, else None."""
+    return federation.registry_map(_load_hub_registry(handle, hub_label)) or None
+
+
+def kind_line(repo_kind: str) -> str:
+    """What `kb publish` tells the operator before it writes anything."""
+    hub_kind = kinds.hub_kind(repo_kind)
+    return f"kind: {hub_kind} → hub menu: {kinds.MENU[hub_kind]}"
+
+
+def _publish_kind(cfg_kind: str, registry: models.Registry | None, rid: str) -> str:
+    """The hub kind to record for `rid`: the registry's pin wins; the repo's
+    own kind is only checked against it. Both sides casefolded so `My-Repo`
+    cannot dodge a pin recorded for `my-repo`."""
+    pinned = {
+        k.casefold(): v
+        for k, v in (
+            federation.registry_kinds(registry) if registry is not None else {}
+        ).items()
+    }
+    try:
+        return kinds.check_publish_kind(
+            pinned.get(rid.casefold(), ""), kinds.hub_kind(cfg_kind)
+        )
+    except kinds.KindMismatchError as exc:
+        raise PublishError(kinds.mismatch_message(exc, rid)) from exc
 
 
 def _existing_entry_names(handle: hub_mod.HubHandle) -> list[str]:
@@ -1197,6 +1226,7 @@ class PublishPlan:
     intake_url: str = ""
     refresh_code: bool = False
     refresh_plan: bool = False
+    repo_kind: str = ""
 
 
 def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
@@ -1217,6 +1247,12 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
             "or remove it to fall back to defaults"
         ) from exc
+    if not cfg.kind:
+        raise PublishError(
+            f"repo kind is not recorded in {kb_dir / 'config.yaml'} -- run "
+            "`kb init --kind <child|ba|dev|hub>` to record it; the hub needs it "
+            "to file this repo under the right menu"
+        )
     mode = "pr" if pr else "direct" if direct else "auto"
     wants_intake = bool(cfg.intake) and not pr and not direct
     if cfg.kind != "hub":
@@ -1226,6 +1262,7 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             intake_url=cfg.intake or "",
             refresh_code=cfg.kind == "dev",
             refresh_plan=cfg.kind == "ba",
+            repo_kind=cfg.kind,
         )
     try:
         hub_ref = require_hub(hub_flag, kb_dir)
@@ -1260,13 +1297,16 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             hub_ref=str(source_root),
             self_publish=True,
             intake_url=cfg.intake or "",
+            repo_kind=cfg.kind,
         )
     if wants_intake:
         raise PublishError(
             "intake publish is not supported for hub-to-hub publish — "
             "remove `intake:` from .kb/config.yaml or pass --direct/--pr"
         )
-    return PublishPlan(route="federation", mode=mode, hub_ref=hub_ref)
+    return PublishPlan(
+        route="federation", mode=mode, hub_ref=hub_ref, repo_kind=cfg.kind
+    )
 
 
 def _can_pr(explicit: str, has_remote: bool, root: Path) -> bool:
@@ -1304,7 +1344,10 @@ def publish(
     is_self = self_publish or handle.root.resolve() == source_root.resolve()
     if branch and not is_self:
         raise PublishError("--branch only applies to a hub's self-publish")
-    registry_map = None if is_self else _governed_registry(handle, hub_label)
+    registry = None if is_self else _load_hub_registry(handle, hub_label)
+    registry_map = (
+        (federation.registry_map(registry) or None) if registry is not None else None
+    )
     rid = repo_id or source_root.name
     if registry_map is not None:
         rid = pubgate.resolve_identity(
@@ -1316,7 +1359,17 @@ def publish(
     has_remote = gitio.has_remote(handle.root)
     if branch:
         _require_branch_pr(handle.root, branch, has_remote)
-        return _publish_on_branch(kb_abs, handle, rid, source_commit, branch)
+    from strata_kb import config as config_mod
+
+    # Still before any write: an unrecorded or clashing kind refuses here.
+    snapshot_fn = functools.partial(
+        _snapshot,
+        kind=_publish_kind(config_mod.load_config(kb_abs).kind, registry, rid),
+    )
+    if branch:
+        return _publish_on_branch(
+            kb_abs, handle, rid, source_commit, branch, snapshot_fn=snapshot_fn
+        )
     mode = pubgate.decide_mode(
         mode,
         has_remote=has_remote,
@@ -1325,8 +1378,10 @@ def publish(
         hub_label=hub_label,
     )
     if mode == "pr":
-        return _publish_pr(kb_abs, handle, rid, source_commit)
-    return _publish_direct(kb_abs, handle, rid, source_commit, max_retries)
+        return _publish_pr(kb_abs, handle, rid, source_commit, snapshot_fn=snapshot_fn)
+    return _publish_direct(
+        kb_abs, handle, rid, source_commit, max_retries, snapshot_fn=snapshot_fn
+    )
 
 
 def _require_branch_pr(root: Path, branch: str, has_remote: bool) -> None:

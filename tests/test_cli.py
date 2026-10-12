@@ -366,3 +366,18 @@ def test_build_bad_effort_literal_is_a_clean_error_not_a_traceback(fixture_kb):
     assert result.exit_code == 1
     assert not isinstance(result.exception, ValueError), result.exception
     assert "[error]" in result.output
+
+
+def test_publish_prints_kind_line(git_kb, hub_worktree, monkeypatch):
+    from strata_kb import cli as cli_mod
+
+    (git_kb["kb"] / "config.yaml").write_text("kind: dev\n", encoding="utf-8")
+    # `dev` refreshes its -code from the repo before publishing; skip that here.
+    monkeypatch.setattr(cli_mod, "_refresh_dev_code", lambda kb_dir: None)
+    result = runner.invoke(
+        app,
+        ["publish", "--hub", str(hub_worktree), "--kb-dir", str(git_kb["kb"])],
+    )
+    assert result.exit_code == 0, result.output
+    assert "kind: dev → hub menu: Code" in result.output
+    assert result.output.index("kind: dev") < result.output.index("kb publish:")

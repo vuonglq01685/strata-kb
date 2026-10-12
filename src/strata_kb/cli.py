@@ -2284,6 +2284,7 @@ def publish(
     # root hub with no `hub:`, intake on a hub-to-hub publish) is a
     # PublishError, which the root guard prints as one line.
     plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
+    typer.echo(publish_mod.kind_line(plan.repo_kind))
     if branch:
         # Before any refresh or write. publish() re-checks the git-side rules.
         if direct:

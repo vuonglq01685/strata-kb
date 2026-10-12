@@ -84,3 +84,13 @@ def check_publish_kind(registry_kind: str, repo_kind: str) -> str:
     if registry_kind and repo_kind and registry_kind != repo_kind:
         raise KindMismatchError(registry_kind, repo_kind)
     return registry_kind or repo_kind
+
+
+def mismatch_message(exc: KindMismatchError, repo: str) -> str:
+    """One wording for a registry/repo kind clash, shared by `kb publish` and
+    the intake 403."""
+    return (
+        f"kind mismatch: registry says '{exc.registry_kind}' for {repo}, this "
+        f"repo publishes as '{exc.repo_kind}' — fix kind: in "
+        "federation/registry.yaml or the repo's .kb/config.yaml"
+    )

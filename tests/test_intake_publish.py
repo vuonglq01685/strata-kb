@@ -108,6 +108,57 @@ def test_intake_publish_creates_branch_and_pr(hub, monkeypatch):
     _git(hub, "checkout", "main")
 
 
+def test_intake_publish_records_kind(hub, monkeypatch):
+    http = FakeHTTP(
+        [(200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/1"})]
+    )
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    intake.intake_publish(
+        _cfg(hub, http),
+        "flight-docs",
+        "abc1234",
+        "acme/flight-docs",
+        [],
+        _kb_archive(),
+        kind="dev",
+    )
+    _git(hub, "checkout", "publish/flight-docs")
+    meta = (hub / "federation" / "flight-docs" / "_meta.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "kind: dev" in meta
+
+
+def test_intake_publish_legacy_client_without_kind_is_accepted(hub, monkeypatch):
+    http = FakeHTTP(
+        [(200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/1"})]
+    )
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    pr = intake.intake_publish(
+        _cfg(hub, http), "flight-docs", "abc1234", "acme/flight-docs", [], _kb_archive()
+    )
+    assert pr
+    _git(hub, "checkout", "publish/flight-docs")
+    meta = (hub / "federation" / "flight-docs" / "_meta.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "kind: dev" not in meta
+    assert "kind: kb" not in meta and "kind: ba" not in meta
+
+
+def test_registry_entry_kind_reads_the_callers_entry():
+    from strata_kb import models
+
+    reg = models.Registry(
+        repos={"a/x": models.RegistryEntry(repo_id="x", kind="ba"), "a/y": "y"}
+    )
+    assert intake.registry_entry_kind({"repository": "a/x"}, reg) == "ba"
+    assert intake.registry_entry_kind({"repository": "a/y"}, reg) == ""
+    assert intake.registry_entry_kind({"repository": "a/none"}, reg) == ""
+
+
 def test_intake_publish_threads_the_hub_token_into_pull_and_push(tmp_path, monkeypatch):
     """Important 1 (mutants MU5/MU6): intake's freshest-main pull
     (gitio.pull(handle.root, token=handle.token), intake.py) and its

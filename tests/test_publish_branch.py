@@ -245,6 +245,7 @@ def test_plain_self_publish_still_uses_publish_rid_branch(
     hub_with_origin, monkeypatch, run_git
 ):
     hub = hub_with_origin
+    (hub / ".kb" / "config.yaml").write_text("kind: hub\nhub: .\n", encoding="utf-8")
     created = []
     monkeypatch.setattr("strata_kb.ghio.can_open_pr", lambda root: True)
     monkeypatch.setattr("strata_kb.ghio.pr_url_for_branch", lambda root, b: "")

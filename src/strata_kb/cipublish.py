@@ -18,8 +18,9 @@ from pathlib import Path
 
 import typer
 
-from strata_kb import gitio, hashsync, httpio, pubgate
+from strata_kb import gitio, hashsync, httpio, kinds, pubgate
 from strata_kb import publish as publish_mod
+from strata_kb.config import load_config
 from strata_kb.errors import KbError
 
 
@@ -147,6 +148,8 @@ def run(
     _check_unreviewed_gate(kb_dir, require_reviewed)
     http = http or _default_http
     kb_abs = kb_dir.resolve()
+    # Before the token request or any upload: an unrecorded kind is a local fix.
+    hub_kind = kinds.hub_kind(load_config(kb_abs).kind)
     root = gitio.git_root(kb_abs)
     rid = repo_id or root.name
     commit = gitio.head_commit(root)
@@ -182,7 +185,7 @@ def run(
 
     archive = _build_archive(kb_abs, changed)
     body, content_type = _multipart(
-        {"source_commit": commit, "deletes": deleted}, archive
+        {"source_commit": commit, "deletes": deleted, "kind": hub_kind}, archive
     )
     status, raw = http(
         "POST",

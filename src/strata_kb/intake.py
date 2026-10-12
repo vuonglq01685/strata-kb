@@ -399,6 +399,30 @@ def authorize(claims: dict, registry: models.Registry) -> str:
         ) from exc
 
 
+def registry_entry_kind(claims: dict, registry: models.Registry) -> str:
+    """The kind the registry pins for the caller's repo ("" = not pinned)."""
+    entry = registry.resolve(claims.get("repository", ""))
+    return entry.kind if entry is not None else ""
+
+
+def publish_kind(raw: object, registry_kind: str, repo: str) -> str:
+    """The kind to record for an upload: the registry's pin wins, the payload
+    (`meta.kind`, absent from older clients) is only checked against it."""
+    from strata_kb import kinds
+
+    if raw in (None, ""):
+        return registry_kind
+    if not isinstance(raw, str):
+        raise IntakeError(400, "field 'meta.kind' must be a string")
+    try:
+        payload_kind = kinds.normalize_kinds([raw])[0]
+        return kinds.check_publish_kind(registry_kind, payload_kind)
+    except kinds.UnknownKindError as exc:
+        raise IntakeError(400, str(exc)) from exc
+    except kinds.KindMismatchError as exc:
+        raise IntakeError(403, kinds.mismatch_message(exc, repo)) from exc
+
+
 # Reserved device names (CONIN$/CONOUT$/COM0/LPT0/the superscript aliases
 # included) live in ONE set, pubgate.WIN32_DEVICES, read here through
 # pubgate.is_reserved_device_name -- do not keep a local superset here. Two
@@ -1551,6 +1575,7 @@ def intake_publish(
     deletes: list[str],
     archive: bytes,
     store=None,
+    kind: str = "",
 ) -> str:
     """Apply an uploaded snapshot on branch publish/<rid>, in its own git
     worktree, and open the hub PR.
@@ -1673,6 +1698,7 @@ def intake_publish(
                     tmp_kb,
                     active_store,
                     http,
+                    kind,
                 )
             finally:
                 with _hub_write_lock:
@@ -1701,6 +1727,7 @@ def _publish_in_worktree(
     tmp_kb: Path,
     active_store,
     http,
+    kind: str = "",
 ) -> str:
     """Apply the extracted snapshot inside `work` (a worktree already checked
     out onto `branch`, rooted at `base`) and open the PR against `base`.
@@ -1802,6 +1829,7 @@ def _publish_in_worktree(
         source_url=f"https://github.com/{source_repo_full}",
         source_commit=source_commit,
         published_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        kind=kind,
     )
     models.save_yaml_model(dest / "_meta.yaml", meta)
     federation.write_federation_index(work / "federation", changed={rid})

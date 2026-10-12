@@ -213,6 +213,8 @@ def git_kb(fixture_kb: Path, run_git) -> dict:
     Returns: {"root", "kb", "rev1", "rev2"}.
     """
     root = fixture_kb.parent
+    # A publishing child records its repo kind (kb publish refuses without).
+    (fixture_kb / "config.yaml").write_text("kind: child\n", encoding="utf-8")
     run_git(root, "init")
     run_git(root, "config", "user.name", "test")
     run_git(root, "config", "user.email", "test@test.local")
