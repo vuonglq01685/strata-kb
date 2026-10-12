@@ -19,6 +19,7 @@ import yaml
 from pydantic import ValidationError
 
 from strata_kb import (
+    kinds,
     lintcore,
     missionlint,
     missionnext,
@@ -31,7 +32,7 @@ from strata_kb.codeingest.types import CodeSection
 from strata_kb.errors import KbError
 from strata_kb.mdutils import _FENCE_RE, extract_tables
 
-TITLE_SUFFIX = "— plan"
+TITLE_SUFFIX = kinds.PLAN_TITLE_SUFFIX
 TICKETS_GROUP = "tickets"
 HUB_UNREACHABLE = "hub-unreachable"
 # Prose the L2 keeps; every table is kept regardless (build._check_tables).

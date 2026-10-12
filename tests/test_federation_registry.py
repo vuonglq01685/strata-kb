@@ -113,3 +113,38 @@ def test_case_colliding_registry_keys_are_rejected(tmp_path):
         federation.load_registry(tmp_path)
     assert "Org/Repo" in str(exc.value)
     assert "org/repo" in str(exc.value)
+
+
+def test_registry_entry_kind_optional(tmp_path):
+    import yaml
+
+    (tmp_path / "registry.yaml").write_text(
+        yaml.safe_dump({"repos": {"a/x": "x", "a/y": {"repo_id": "y", "kind": "dev"}}}),
+        encoding="utf-8",
+        newline="\n",
+    )
+    reg = federation.load_registry(tmp_path)
+    assert reg.resolve("a/x").kind == ""
+    assert reg.resolve("a/y").kind == "dev"
+    assert federation.registry_kinds(reg) == {"y": "dev"}
+
+
+def test_registry_entry_rejects_bad_kind(tmp_path):
+    import yaml
+
+    (tmp_path / "registry.yaml").write_text(
+        yaml.safe_dump({"repos": {"a/y": {"repo_id": "y", "kind": "code"}}}),
+        encoding="utf-8",
+        newline="\n",
+    )
+    with pytest.raises(federation.RegistryError):
+        federation.load_registry(tmp_path)
+
+
+def test_registry_entry_model_rejects_bad_kind():
+    from pydantic import ValidationError
+
+    from strata_kb import models
+
+    with pytest.raises(ValidationError):
+        models.RegistryEntry(repo_id="y", kind="code")

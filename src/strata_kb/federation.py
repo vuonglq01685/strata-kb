@@ -19,7 +19,7 @@ from typing import NamedTuple
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from strata_kb import models
+from strata_kb import kinds, models
 
 logger = logging.getLogger("strata_kb.federation")
 
@@ -76,17 +76,30 @@ def registry_map(registry: models.Registry) -> dict[str, str]:
     return out
 
 
+def registry_kinds(registry: models.Registry) -> dict[str, str]:
+    """{repo_id: kind} for entries that pin a kind (empty kinds skipped)."""
+    out: dict[str, str] = {}
+    for repo in registry.repos:
+        entry = registry.resolve(repo)
+        if entry is not None and entry.kind:
+            out[entry.repo_id] = entry.kind
+    return out
+
+
 class FederationMeta(BaseModel):
     repo_id: str
     source_url: str = ""
     source_commit: str
     published_at: str = ""
+    # "" = not recorded; readers infer it from the docs (kinds.infer_kind).
+    kind: str = ""
 
 
 @dataclass
 class FederatedRepo:
     meta: FederationMeta
     index: models.KBIndex
+    kind: str
     kb_dir: Path  # federation/<repo-id>/ — a full .kb mirror (L0→L3)
 
 
@@ -285,6 +298,24 @@ def _with_manifest_revisions(index: models.KBIndex, entry_dir: Path) -> models.K
     return index
 
 
+def _read_leaf(child: Path) -> tuple[FederationMeta, models.KBIndex, str]:
+    """A leaf's `_meta.yaml`, `index.yaml` and resolved kind (the recorded one,
+    else inferred from the index). Raises on a broken file."""
+    meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
+    index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
+    return meta, index, meta.kind or kinds.infer_kind(index.docs)
+
+
+def resolve_leaf_kind(entry_dir: Path) -> str | None:
+    """The kind of the leaf at `entry_dir`, or None if it is unreadable. No
+    nested filter -- this is how callers find the non-kb leaves `_load_entry`
+    hides."""
+    try:
+        return _read_leaf(entry_dir)[2]
+    except (OSError, yaml.YAMLError, ValidationError, UnicodeDecodeError):
+        return None
+
+
 def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
     """One leaf entry → FederatedRepo, or None if its `_meta.yaml`/
     `index.yaml` is broken (logged, not raised — a caller looping over many
@@ -300,8 +331,7 @@ def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
     to use.
     """
     try:
-        meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
-        index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
+        meta, index, kind = _read_leaf(child)
     except (yaml.YAMLError, ValidationError, UnicodeDecodeError) as exc:
         # UnicodeDecodeError is a ValueError, not a yaml.YAMLError/
         # ValidationError -- a non-UTF-8 _meta.yaml/index.yaml must skip
@@ -310,9 +340,17 @@ def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
         # publish's own aggregate-index rebuild).
         logger.warning("federation/%s is broken — skipping: %s", path_id, exc)
         return None
+    if "/" in path_id and kind != kinds.KB:
+        logger.warning(
+            "federation/%s is a nested %s entry — only kb entries may nest; ignoring",
+            path_id,
+            kind,
+        )
+        return None
     return FederatedRepo(
         meta=meta.model_copy(update={"repo_id": path_id}),
         index=_with_manifest_revisions(index, child),
+        kind=kind,
         kb_dir=child,
     )
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
@@ -25,8 +25,9 @@ from pydantic import ValidationError
 from strata_kb import missionnext, models, query, ticketcheck
 from strata_kb.federation import FederatedRepo, load_federation
 from strata_kb.hub import HubHandle
+from strata_kb.kinds import is_plan
 from strata_kb.mdutils import slice_section
-from strata_kb.planingest import TICKETS_GROUP, TITLE_SUFFIX, promote_headings
+from strata_kb.planingest import TICKETS_GROUP, promote_headings
 
 logger = logging.getLogger("strata_kb.planstatus")
 
@@ -41,13 +42,6 @@ _SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 def safe_name(name: str) -> bool:
     return _SAFE_NAME_RE.fullmatch(name) is not None and name not in (".", "..")
-
-
-def is_plan(title: str, tags: Iterable[str]) -> bool:
-    """A document `kb plan-ingest` generated: shown under Plans, never under
-    Documents. Marked by its title suffix and its `plan` + `generated` tags,
-    not by its id — any hand-ingested `release-plan` stays a plain document."""
-    return title.endswith(TITLE_SUFFIX) and {"plan", "generated"} <= set(tags)
 
 
 def without_plans(docs: list[dict]) -> list[dict]:

@@ -2364,3 +2364,37 @@ def test_hub_to_hub_dir_shaped_dest_record_aborts_when_the_plain_diff_is_empty(
     # the operator's call, not this code's
     assert dest_record.is_dir()
     assert store.get(name_y) == data_y
+
+
+def _set_kind(entry: Path, kind: str) -> None:
+    meta = entry / "_meta.yaml"
+    meta.write_text(
+        meta.read_text(encoding="utf-8") + f"kind: {kind}\n", encoding="utf-8"
+    )
+
+
+def test_leaf_kind_recorded_beats_inferred(tmp_path):
+    fed = tmp_path / "federation"
+    _set_kind(make_fed_entry(fed, "r1", "x-code"), "kb")
+    make_fed_entry(fed, "r2", "y-code")
+    kinds_by_id = {r.meta.repo_id: r.kind for r in federation.load_federation(fed)}
+    assert kinds_by_id == {"r1": "kb", "r2": "dev"}
+
+
+def test_nested_non_kb_leaf_is_ignored(tmp_path):
+    fed = tmp_path / "federation"
+    make_fed_entry(fed / "mid", "d1", "svc-code")
+    make_fed_entry(fed / "mid", "k1", "notes")
+    ids = [r.meta.repo_id for r in federation.load_federation(fed)]
+    assert ids == ["mid/k1"]
+
+
+def test_resolve_leaf_kind_sees_nested_non_kb(tmp_path):
+    fed = tmp_path / "federation"
+    d1 = make_fed_entry(fed / "mid", "d1", "svc-code")
+    k1 = make_fed_entry(fed / "mid", "k1", "notes")
+    assert federation.resolve_leaf_kind(d1) == "dev"
+    assert federation.resolve_leaf_kind(k1) == "kb"
+    assert federation.resolve_leaf_kind(fed / "nope") is None
+    (k1 / "index.yaml").write_text("docs: [", encoding="utf-8")
+    assert federation.resolve_leaf_kind(k1) is None

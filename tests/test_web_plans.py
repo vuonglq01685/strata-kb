@@ -175,38 +175,38 @@ def test_several_holders_without_repo_is_a_404_naming_them(plan_hub, tmp_path):
         assert client.get(path, params={"repo": "ba-two"}).status_code == 200
 
 
-def test_nested_federation_repo_links_resolve(plan_hub, tmp_path):
+def test_plan_repo_links_resolve(plan_hub, tmp_path):
     publish_ba(
-        plan_hub.root, tmp_path / "mid-ba", context_block(plan_hub.root), "mid/ba-x"
+        plan_hub.root, tmp_path / "ba-x-repo", context_block(plan_hub.root), "ba-x"
     )
     client = _client(plan_hub)
     index = client.get("/ui/plans").text
-    repo_link = 'href="/ui/plans?repo=mid/ba-x"'
+    repo_link = 'href="/ui/plans?repo=ba-x"'
     assert repo_link in index
     hrefs = {
         h.replace("&amp;", "&")
-        for h in re.findall(r'href="(/ui/plans[^"]*repo=mid/ba-x)"', index)
+        for h in re.findall(r'href="(/ui/plans[^"]*repo=ba-x)"', index)
     }
     assert hrefs  # repo page, mission page, tickets-without-mission
     pages = [
-        "/ui/plans?repo=mid/ba-x",
-        f"/ui/plans/{MISSION_ID}?repo=mid/ba-x",
-        f"/ui/plans/{MISSION_ID}/{US[1]}?repo=mid/ba-x",
-        "/ui/plans/tickets/TAL-1580?repo=mid/ba-x",
+        "/ui/plans?repo=ba-x",
+        f"/ui/plans/{MISSION_ID}?repo=ba-x",
+        f"/ui/plans/{MISSION_ID}/{US[1]}?repo=ba-x",
+        "/ui/plans/tickets/TAL-1580?repo=ba-x",
     ]
     for path in {*hrefs, *pages}:
         assert client.get(path).status_code == 200, path
-    # a link rendered on the mission page points back to a nested ticket page
-    mission = client.get(f"/ui/plans/{MISSION_ID}?repo=mid/ba-x").text
-    assert f'href="/ui/plans/{MISSION_ID}/{US[1]}?repo=mid/ba-x"' in mission
+    # a link rendered on the mission page points back to a ticket page
+    mission = client.get(f"/ui/plans/{MISSION_ID}?repo=ba-x").text
+    assert f'href="/ui/plans/{MISSION_ID}/{US[1]}?repo=ba-x"' in mission
 
 
-def test_search_hit_in_a_nested_plan_links_with_the_encoded_repo(plan_hub, tmp_path):
+def test_nested_ba_leaf_has_no_search_hit(plan_hub, tmp_path):
     publish_ba(
         plan_hub.root, tmp_path / "mid-ba", context_block(plan_hub.root), "mid/ba-x"
     )
     resp = _client(plan_hub).get("/ui", params={"q": "dispatchers controlled airspace"})
-    assert f'href="/ui/plans/{MISSION_ID}?repo=mid%2Fba-x"' in resp.text
+    assert "mid%2Fba-x" not in resp.text and "mid/ba-x" not in resp.text
 
 
 def test_a_hand_ingested_doc_named_like_a_plan_stays_a_document(plan_hub):
