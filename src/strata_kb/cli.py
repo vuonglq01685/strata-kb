@@ -2323,11 +2323,7 @@ def publish(
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(1) from None
         _echo_publish_report(report)
-        from strata_kb import federation, gitio
-
-        fed_root = gitio.git_root(kb_dir.resolve()) / "federation"
-        for leaf in report.skipped_leaves:
-            kind = federation.resolve_leaf_kind(fed_root / leaf)
+        for leaf, kind in report.skipped_leaves:
             typer.echo(f"  skipped  {leaf} (kind {kind} stays on this hub)")
         return
 

@@ -56,8 +56,9 @@ class PublishReport:
     pr_url: str = ""
     skipped: list[str] = field(default_factory=list)
     remote: bool = False
-    # Leaves a child hub kept to itself: only `kb` leaves go upward.
-    skipped_leaves: list[str] = field(default_factory=list)
+    # (path-id, kind) of the leaves a child hub kept to itself: only `kb`
+    # leaves go upward.
+    skipped_leaves: list[tuple[str, str]] = field(default_factory=list)
 
 
 def _neutralize_excludes(root: Path) -> None:
@@ -573,7 +574,7 @@ def _iter_record_dirs(root: Path, record_name: str) -> list[tuple[str, Path]]:
 
 
 def _prepare_hub_to_hub_manifests(
-    fed_src: Path, dest: Path, active_store
+    fed_src: Path, dest: Path, active_store, keep_local: tuple[str, ...] = ()
 ) -> tuple[dict[str, str], dict[str, str], list[str], set[str], list[str]]:
     """Build (src_man, dest_man, skipped, synthesized_src_only,
     dest_raw_assets) for _snapshot_federation's diff.
@@ -629,6 +630,11 @@ def _prepare_hub_to_hub_manifests(
     store, a stale raw source copy reappearing at dest is a redundant
     mirror of content the source still has, not a loss.
 
+    `keep_local` is the "<path-id>/" prefixes of the non-kb leaves a child hub
+    keeps to itself. Their source files never enter src_man, and their dest
+    side is left raw (no record pop, no asset synthesis) so the diff deletes
+    whatever an older release pushed there, `_assets.yaml` included.
+
     Both loops walk _iter_record_dirs, not federation.iter_entry_dirs: see that
     function's docstring for why a leaf-validity predicate misses entries a
     plain manifest walk still finds, and what breaks when the two disagree.
@@ -645,7 +651,6 @@ def _prepare_hub_to_hub_manifests(
     src_man, skipped = pubgate.split_allowlist(src_man, keep_records=True)
     # Only kb leaves go upward: dropping the rest from src_man makes the diff
     # below delete any that an older release already pushed.
-    keep_local = tuple(f"{leaf}/" for leaf in federation.non_kb_leaves(fed_src))
     src_man = {k: v for k, v in src_man.items() if not k.startswith(keep_local)}
     synthesized_src_only: set[str] = set()
     for entry_rel, entry_dir in _iter_record_dirs(fed_src, assetstore.RECORD_NAME):
@@ -665,6 +670,8 @@ def _prepare_hub_to_hub_manifests(
         and assetstore.is_asset_name(rel)
     )
     for entry_rel, entry_dir in _iter_record_dirs(dest, assetstore.RECORD_NAME):
+        if f"{entry_rel}/".startswith(keep_local):
+            continue
         if active_store is not None:
             for rel, sha in assetstore.synthesized_asset_entries(entry_dir).items():
                 dest_man[f"{entry_rel}/{rel}"] = sha
@@ -717,7 +724,11 @@ def _asset_entry_root(parts: tuple[str, ...], leaves: frozenset[str]) -> str | N
 
 
 def _reconcile_asset_records(
-    fed_src: Path, dest: Path, handle: hub_mod.HubHandle, active_store
+    fed_src: Path,
+    dest: Path,
+    handle: hub_mod.HubHandle,
+    active_store,
+    keep_local: tuple[str, ...] = (),
 ) -> bool:
     """Per-entry RECORD_NAME reconciliation after apply_sync. Returns
     whether this pass changed the destination tree -- a record's bytes
@@ -908,6 +919,8 @@ def _reconcile_asset_records(
         logger.warning("%s %s", (dest / rel).as_posix(), reason)
 
     for entry_rel, entry_dir in sorted(entries.items()):
+        if f"{entry_rel}/".startswith(keep_local):
+            continue  # a non-kb leaf: the diff deletes it, nothing to reconcile
         dest_record = entry_dir / assetstore.RECORD_NAME
         before = dest_record.read_bytes() if dest_record.is_file() else None
         read_failed = False
@@ -964,6 +977,7 @@ def _snapshot_federation(
     source_commit: str,
     source_url: str | None = None,
     store=None,
+    non_kb: dict[str, str] | None = None,
 ) -> tuple[int, bool, list[str]]:
     """Sync federation/ (hub trung gian) → federation/<rid>/ trên hub cấp trên.
 
@@ -1016,13 +1030,16 @@ def _snapshot_federation(
             f"{handle.kb_dir / 'config.yaml'} (the hub's own config) is "
             f"unreadable: {exc}"
         ) from exc
+    if non_kb is None:
+        non_kb = federation.non_kb_leaf_kinds(fed_src)
+    keep_local = tuple(f"{leaf}/" for leaf in non_kb)
     (
         src_man,
         dest_man,
         skipped,
         synthesized_src_only,
         dest_raw_assets,
-    ) = _prepare_hub_to_hub_manifests(fed_src, dest, active_store)
+    ) = _prepare_hub_to_hub_manifests(fed_src, dest, active_store, keep_local)
     if not src_man and dest_man:
         raise PublishError(
             "source federation/ is empty but the hub already holds entries under "
@@ -1030,11 +1047,10 @@ def _snapshot_federation(
             "manually if that is really intended"
         )
     # Count only: build_federation_index would also hash every entry.
-    kb_only = set(federation.non_kb_leaves(fed_src))
     n_docs = sum(
         len(r.index.docs)
         for r in federation.load_federation(fed_src)
-        if r.meta.repo_id not in kb_only
+        if r.meta.repo_id not in non_kb
     )
     changed, deleted = hashsync.diff_manifests(src_man, dest_man)
     changed = [p for p in changed if p not in synthesized_src_only]
@@ -1075,7 +1091,9 @@ def _snapshot_federation(
         return n_docs, False, skipped
     if changed or deleted:
         hashsync.apply_sync(fed_src, dest, changed, deleted)
-    record_changed = _reconcile_asset_records(fed_src, dest, handle, active_store)
+    record_changed = _reconcile_asset_records(
+        fed_src, dest, handle, active_store, keep_local
+    )
     return n_docs, bool(changed or deleted or record_changed), sorted(skipped)
 
 
@@ -1514,20 +1532,17 @@ def publish_federation(
         governed=registry_map is not None,
         hub_label=hub_label,
     )
+    non_kb = federation.non_kb_leaf_kinds(fed_src)
+    snapshot_fn = functools.partial(_snapshot_federation, non_kb=non_kb)
     if mode == "pr":
         report = _publish_pr(
-            fed_src, handle, rid, source_commit, snapshot_fn=_snapshot_federation
+            fed_src, handle, rid, source_commit, snapshot_fn=snapshot_fn
         )
     else:
         report = _publish_direct(
-            fed_src,
-            handle,
-            rid,
-            source_commit,
-            max_retries,
-            snapshot_fn=_snapshot_federation,
+            fed_src, handle, rid, source_commit, max_retries, snapshot_fn=snapshot_fn
         )
-    report.skipped_leaves = federation.non_kb_leaves(fed_src)
+    report.skipped_leaves = sorted(non_kb.items())
     return report
 
 

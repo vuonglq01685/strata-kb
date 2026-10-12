@@ -368,17 +368,23 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
 _FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
 
 
-def non_kb_leaves(fed_root: Path) -> list[str]:
-    """Sorted path-ids of the leaves under `fed_root` whose kind is not `kb`.
+def non_kb_leaf_kinds(fed_root: Path) -> dict[str, str]:
+    """{path-id: kind} of the leaves under `fed_root` whose kind is not `kb`.
 
     Walks iter_entry_dirs, not load_federation: that hides nested non-kb
     leaves, which are exactly the ones a child hub must also keep off its
     parent. A leaf whose kind is unreadable (a broken entry) is not listed."""
-    return sorted(
-        path_id
-        for path_id, entry in iter_entry_dirs(fed_root)
-        if resolve_leaf_kind(entry) not in (None, kinds.KB)
-    )
+    out: dict[str, str] = {}
+    for path_id, entry in iter_entry_dirs(fed_root):
+        kind = resolve_leaf_kind(entry)
+        if kind is not None and kind != kinds.KB:
+            out[path_id] = kind
+    return out
+
+
+def non_kb_leaves(fed_root: Path) -> list[str]:
+    """Sorted path-ids of the leaves whose resolved kind is not `kb`."""
+    return sorted(non_kb_leaf_kinds(fed_root))
 
 
 def kb_only_fed_digest(fed_root: Path) -> str:

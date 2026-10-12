@@ -378,7 +378,7 @@ def test_publish_federation_sends_only_kb(tmp_path, run_git, root_hub):
     assert (fed / "k1" / "index.yaml").exists()
     assert not (fed / "b1").exists()
     assert not (fed / "d1").exists()
-    assert report.skipped_leaves == ["b1", "d1"]
+    assert report.skipped_leaves == [("b1", "ba"), ("d1", "dev")]
     assert report.n_docs == 1
 
 
@@ -431,7 +431,7 @@ def test_publish_federation_does_not_send_a_nested_non_kb_leaf(
     )
 
     assert not (root_hub / "federation" / "mid" / "old-hub" / "d2").exists()
-    assert report.skipped_leaves == ["old-hub/d2"]
+    assert report.skipped_leaves == [("old-hub/d2", "dev")]
 
 
 def test_cli_hub_publish_prints_a_line_per_skipped_leaf(tmp_path, run_git, root_hub):
@@ -446,3 +446,36 @@ def test_cli_hub_publish_prints_a_line_per_skipped_leaf(tmp_path, run_git, root_
     )
     assert result.exit_code == 0, result.output
     assert "  skipped  d1 (kind dev stays on this hub)" in result.output
+
+
+def test_publish_federation_drops_the_parents_asset_record_of_a_non_kb_leaf(
+    tmp_path, run_git, root_hub
+):
+    from strata_kb import assetstore, models
+    from strata_kb.doctor.checks.hub import check_federation_publish
+
+    src = _mixed_hub(tmp_path, run_git, {"k1": "k1-doc", "d1": "d1-code"})
+    record = models.AssetsRecord(assets=[f"d1-code/assets/{'a' * 64}.png"])
+    models.save_yaml_model(src / "federation" / "d1" / assetstore.RECORD_NAME, record)
+    run_git(src, "add", "-A")
+    run_git(src, "commit", "-m", "record")
+    fed = root_hub / "federation"
+    make_fed_entry(fed / "mid", "d1", "d1-code")  # pushed by an older release
+    models.save_yaml_model(fed / "mid" / "d1" / assetstore.RECORD_NAME, record)
+    run_git(root_hub, "add", "-A")
+    run_git(root_hub, "commit", "-m", "old publish")
+
+    publish.publish_federation(src / ".kb", str(root_hub), repo_id="mid", mode="direct")
+
+    assert not (fed / "mid" / "d1").exists()
+    assert run_git(root_hub, "ls-files", "federation/mid/d1") == ""
+    assert (fed / "mid" / "k1").exists()
+    assert not [
+        i
+        for i in check_federation_publish(src, HubHandle(root=root_hub), "mid")
+        if "differs from the published" in i.message
+    ]
+    head = run_git(root_hub, "rev-parse", "HEAD")
+    publish.publish_federation(src / ".kb", str(root_hub), repo_id="mid", mode="direct")
+    assert run_git(root_hub, "rev-parse", "HEAD") == head
+    assert not (fed / "mid" / "d1").exists()
