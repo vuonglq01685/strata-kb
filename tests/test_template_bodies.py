@@ -84,3 +84,46 @@ def test_dev_implement_ticket_runs_ticket_check(name):
     text = " ".join(read_template(name).split())
     assert "kb ticket check docs/impl/<id>/ticket.md" in text, name
     assert "re-run /sa-ticket-ground" in text, name
+
+
+def _body(name: str) -> str:
+    return " ".join(BASE.joinpath("bodies", name).read_text(encoding="utf-8").split())
+
+
+@pytest.mark.parametrize("name", ["ba-mission-plan.md", "ba-ticket-author.md"])
+def test_ba_bodies_search_kb_and_dev_kinds(name):
+    assert "--kind kb --kind dev" in _body(name)
+    assert 'kinds=["kb","dev"]' in _body(name)
+
+
+def test_dev_implement_ticket_names_each_kind_it_searches():
+    text = _body("dev-implement-ticket.md")
+    for kind in ("--kind dev", "--kind ba", "--kind kb"):
+        assert kind in text, kind
+
+
+def test_sa_ticket_ground_searches_dev_kind():
+    assert "--kind dev" in _body("sa-ticket-ground.md")
+
+
+def test_kb_code_sync_searches_kb_kind():
+    assert "--kind kb" in _body("kb-code-sync.md")
+
+
+@pytest.mark.parametrize("name", ["dev-design.md", "dev-plan.md", "dev-execute.md"])
+def test_dev_flow_bodies_carry_no_kind_filter(name):
+    assert "--kind" not in _body(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "claude-skill-kb-publish.md",
+        "cursor-kb-publish.md",
+        "copilot-kb-publish.prompt.md",
+    ],
+)
+def test_kb_publish_confirm_shows_hub_menu_line(name):
+    text = " ".join(read_template(name).split())
+    assert "hub menu" in text, name
+    assert "kb init --kind" in text, name

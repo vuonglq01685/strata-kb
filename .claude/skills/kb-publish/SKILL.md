@@ -28,11 +28,18 @@ seeing the diff, that the current .kb/ state should be published.
    and gitignored there.
 3. **Confirm — the gate.** State the hub (from `.kb/config.yaml`, or
    `STRATA_KB_HUB` if set) and that a publish PR will be opened on it
-   (direct is picked for a hub with no git remote). Ask for one explicit go/no-go and wait.
+   (direct is picked for a hub with no git remote). Also state the repo's kind
+   and the hub menu it lands in, as `kb publish` prints it:
+   `kind: <hub kind> → hub menu: <Document|Ticket|Code>` (`kb` and `child`
+   repos → Document, `ba` → Ticket, `dev` → Code). If the kind is
+   unrecorded, stop: tell the user to run `kb init --kind <child|ba|dev|hub>`
+   first. Ask for one explicit go/no-go and wait.
 4. **Execute** (only after confirmation): `kb publish`. Relay the result:
-   repo-id, source commit, doc count, and the **PR URL** — remind the user
+   the `kind: … → hub menu: …` line, repo-id, source commit, doc count, and the **PR URL** — remind the user
    the content goes live when that PR is merged on the hub.
 5. **Errors.**
+   - Kind unrecorded (message mentions `kb init --kind`) → stop; the user
+     runs `kb init --kind <child|ba|dev|hub>`, then publishes again.
    - Missing hub config → tell the user to fill `hub:` in `.kb/config.yaml`.
    - `gh` missing in PR mode → install GitHub CLI, or `kb publish --direct`
      only if direct pushes are allowed for this hub.

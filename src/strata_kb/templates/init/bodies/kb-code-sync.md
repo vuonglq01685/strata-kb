@@ -177,7 +177,7 @@ document, on one side only is reported.
    - Read the cited `-code` / `-svc` section at both shas:
      `git diff <baseline_sha> <scan_sha> -- federation/<repo_id>/<code_doc_id>`
      and `git show <scan_sha>:federation/<repo_id>/<code_doc_id>/<file>.raw.md`.
-   - Run `kb query` around the change (the term, the service, the thing
+   - Run `kb query … --kind kb` around the change (the term, the service, the thing
      that was added or removed) to find **related** sections that do not
      name it. Each query hit is a candidate only.
    - Decide, per section: **fix**, **no change needed** (the mention is still
