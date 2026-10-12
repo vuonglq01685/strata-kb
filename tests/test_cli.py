@@ -381,3 +381,47 @@ def test_publish_prints_kind_line(git_kb, hub_worktree, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "kind: dev → hub menu: Code" in result.output
     assert result.output.index("kind: dev") < result.output.index("kb publish:")
+
+
+def test_cli_query_kind_filter(tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    hub = make_kinds_hub(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "query",
+            "refund",
+            "--kb-dir",
+            str(hub / ".kb"),
+            "--hub",
+            str(hub),
+            "--kind",
+            "dev",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "[d-repo:refund-code" in result.output
+    assert "k-repo" not in result.output and "b-repo" not in result.output
+
+
+def test_cli_query_unknown_kind_exit_1(tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    hub = make_kinds_hub(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "query",
+            "refund",
+            "--kb-dir",
+            str(hub / ".kb"),
+            "--hub",
+            str(hub),
+            "--kind",
+            "code",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "unknown kind" in result.output
+    assert "Traceback" not in result.output

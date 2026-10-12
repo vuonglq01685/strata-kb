@@ -66,7 +66,7 @@ async def test_lists_exactly_five_tools(fed_hub):
 # Snapshot of the core four tools' wire contract (name -> parameter names).
 # kb_ticket_lint is new (Task 3) and must not perturb these.
 _CORE_FOUR_PARAMS = {
-    "kb_search": {"query", "tags", "budget"},
+    "kb_search": {"query", "tags", "budget", "kinds"},
     "kb_get_section": {"doc", "section", "level", "repo"},
     "kb_context_new": {"refs", "tags"},
     "kb_resolve": {"kb_context"},
@@ -548,3 +548,23 @@ async def test_kb_get_section_level_validation(fed_hub):
             {"doc": "arinc-kb:arinc-424", "section": "5.3", "level": "L3"},
         )
         assert "Verbatim" in _text(good)
+
+
+@pytest.mark.anyio
+async def test_mcp_kb_search_kinds(tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    hub = make_kinds_hub(tmp_path)
+    server = create_server(ServerConfig(kb_dir=hub / ".kb", hub=str(hub)))
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_search", {"query": "refund", "kinds": ["dev"]}
+        )
+        assert result.isError is False
+        assert "d-repo:refund-code" in _text(result)
+        assert "k-repo" not in _text(result) and "b-repo" not in _text(result)
+        bad = await client.call_tool(
+            "kb_search", {"query": "refund", "kinds": ["code"]}
+        )
+        assert bad.isError is False
+        assert "unknown kind" in _text(bad)

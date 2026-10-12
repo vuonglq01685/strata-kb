@@ -2112,25 +2112,36 @@ def query(
         "--semantic",
         help="Warn when embeddings are unavailable (hybrid runs both legs automatically)",
     ),
+    kind: list[str] = typer.Option(
+        [],
+        "--kind",
+        help="Limit to a kind: kb (Document), ba (Ticket), dev (Code); repeatable, omit for all",
+    ),
 ) -> None:
     """Hybrid search (FTS5 keyword + semantic KNN, RRF-fused) → L2 sections within budget, with citations."""
     import sqlite3
 
     from strata_kb import searchdb
+    from strata_kb.kinds import UnknownKindError
     from strata_kb.query import search_detailed
 
     handle = _hub_or_exit(hub, kb_dir)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
     try:
         outcome = search_detailed(
-            handle, text, tags=tag_list, budget=budget, semantic=semantic
+            handle,
+            text,
+            tags=tag_list,
+            budget=budget,
+            semantic=semantic,
+            kinds=kind or None,
         )
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
         typer.secho(f"search index rejected the query: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
-    except searchdb.TooManyTagsError as exc:
+    except (searchdb.TooManyTagsError, UnknownKindError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     for note in outcome.notes:

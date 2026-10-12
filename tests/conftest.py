@@ -389,6 +389,25 @@ def intake_cfg(hub_with_origin, tmp_path, monkeypatch):
     )
 
 
+def make_kinds_hub(tmp_path: Path) -> Path:
+    """A hub with one kb, one ba (plan) and one dev (`-code`) repo, all matching 'refund'."""
+    fed = tmp_path / "federation"
+    (tmp_path / ".kb").mkdir()
+    make_fed_entry(
+        fed, "k-repo", "refund-notes", l2="## 1.1 Refund\n\nrefund policy.\n"
+    )
+    make_fed_entry(
+        fed,
+        "b-repo",
+        "refund-plan",
+        title="Refund — plan",
+        tags=["plan", "generated"],
+        l2="## 1.1 Refund\n\nrefund ticket.\n",
+    )
+    make_fed_entry(fed, "d-repo", "refund-code", l2="## 1.1 Refund\n\nrefund code.\n")
+    return tmp_path
+
+
 def make_fed_entry(
     federation_dir: Path,
     repo_id: str,
