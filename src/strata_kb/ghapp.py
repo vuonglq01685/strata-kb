@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 
 API = "https://api.github.com"
@@ -153,9 +154,14 @@ def find_open_pr(
 
 
 def find_open_issue(
-    repo_full: str, token: str, label: str, http=_default_http
+    repo_full: str,
+    token: str,
+    label: str,
+    http=_default_http,
+    accept: Callable[[str], bool] = lambda body: True,
 ) -> tuple[int, str] | None:
-    """(number, body) of the newest open issue carrying `label`, else None."""
+    """(number, body) of the newest open issue carrying `label` whose body
+    `accept`s, else None."""
     q = urllib.parse.urlencode(
         {"labels": label, "state": "open", "sort": "created", "direction": "desc"}
     )
@@ -165,8 +171,9 @@ def find_open_issue(
     if status != 200 or not isinstance(data, list):
         raise GHAppError(f"list issues on '{repo_full}' -> {status}")
     for item in data:  # the issues API also returns PRs
-        if "pull_request" not in item:
-            return item["number"], item.get("body") or ""
+        body = item.get("body") or ""
+        if "pull_request" not in item and accept(body):
+            return item["number"], body
     return None
 
 

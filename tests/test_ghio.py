@@ -168,6 +168,24 @@ def test_list_open_issues_without_gh_says_install(tmp_path, monkeypatch):
         ghio.list_open_issues(tmp_path, "kb-code-sync")
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"number": 1, "body": "x"},
+        [1],
+        [{"body": "x"}],
+        [{"number": "3", "body": "x"}],
+        [{"number": True, "body": "x"}],
+        [{"number": 3, "body": None}],
+        [{"number": 3}],
+    ],
+)
+def test_list_open_issues_bad_shape_raises(tmp_path, monkeypatch, payload):
+    monkeypatch.setattr(ghio, "_run_gh", lambda root, *a: _proc(0, json.dumps(payload)))
+    with pytest.raises(ghio.GHError, match="unexpected shape"):
+        ghio.list_open_issues(tmp_path, "kb-code-sync")
+
+
 def test_list_open_issues_bad_json_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(ghio, "_run_gh", lambda root, *a: _proc(0, "not json"))
     with pytest.raises(ghio.GHError):

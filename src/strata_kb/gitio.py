@@ -650,6 +650,16 @@ def commits_ahead(root: Path, base: str, head: str) -> int | None:
     return int(proc.stdout.strip())
 
 
+def is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    """Is commit `ancestor` reachable from `descendant`? A missing rev is no."""
+    proc = _run(root, "merge-base", "--is-ancestor", ancestor, descendant)
+    if proc.returncode not in (0, 1, 128):
+        raise GitError(
+            f"could not compare {ancestor} and {descendant}: {proc.stderr.strip()}"
+        )
+    return proc.returncode == 0
+
+
 def resolve_commit(root: Path, rev: str) -> str:
     """Full sha of `rev`; GitError if it does not name a commit."""
     proc = _run(root, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")

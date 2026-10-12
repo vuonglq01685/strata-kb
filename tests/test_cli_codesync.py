@@ -143,11 +143,13 @@ def test_half_published_hub_doc_exits_1(code_sync_hub, run_git):
 
 
 def _job_issue(root: Path, run_git, number: int = 7) -> tuple[dict, str]:
-    """The hub moved after c1 and the job wrote the issue; `(issue, c1)`."""
+    """c1 is recorded, the code docs moved after it and the job wrote the
+    issue from that state; `(issue, c1)`."""
     c1 = run_git(root, "rev-parse", "HEAD")
+    baseline.write(root, c1)
     write_doc(root, "acme", "code", NO_LEDGER)
     commit(root, run_git)
-    body = scan.render_markdown(scan.run_scan(root, baseline_sha=c1))
+    body = scan.render_markdown(scan.run_scan(root))
     issue = {
         "number": number,
         "url": f"https://github.com/o/hub/issues/{number}",
@@ -184,6 +186,7 @@ def test_issue_current_exit_0_text_and_json(code_sync_hub, run_git, monkeypatch)
     assert data.exit_code == 0, data.output
     out = json.loads(data.output)
     assert (out["usable"], out["baseline_sha"]) == (7, c1)
+    assert out["issue_baseline_sha"] == c1
     assert [(i["number"], i["kind"]) for i in out["issues"]] == [
         (7, "current"),
         (9, "foreign"),
@@ -222,7 +225,11 @@ def test_issue_none_usable_exits_2(code_sync_hub, monkeypatch):
     assert "#3 [foreign]" in text.output
     assert data.exit_code == 2
     out = json.loads(data.output)
-    assert (out["usable"], out["baseline_sha"]) == (None, None)
+    assert (out["usable"], out["baseline_sha"], out["issue_baseline_sha"]) == (
+        None,
+        None,
+        None,
+    )
     assert out["issues"][0]["number"] == 3
 
 
@@ -236,8 +243,52 @@ def test_issue_no_open_issues_exits_2(code_sync_hub, monkeypatch):
     assert json.loads(result.output) == {
         "usable": None,
         "baseline_sha": None,
+        "issue_baseline_sha": None,
         "issues": [],
     }
+
+
+def test_issue_rerun_after_baseline_moved_scans_from_the_recorded_baseline(
+    code_sync_hub, run_git, monkeypatch
+):
+    root, _ = code_sync_hub
+    issue, c1 = _job_issue(root, run_git)
+    moved = scan.run_scan(root).scan_sha
+    baseline.write(root, moved)
+    commit(root, run_git)
+    _gh_issues(monkeypatch, [issue])
+
+    result = runner.invoke(app, ["code-sync", "issue", "--json", *_kb(root)])
+
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.output)
+    assert out["issues"][0]["kind"] == "stale"
+    assert (out["usable"], out["baseline_sha"], out["issue_baseline_sha"]) == (
+        7,
+        moved,
+        c1,
+    )
+    scanned = runner.invoke(
+        app, ["code-sync", "scan", "--json", "--baseline", moved, *_kb(root)]
+    )
+    assert json.loads(scanned.output)["findings"] == []
+
+
+def test_issue_without_recorded_baseline_is_usable_with_null_baseline(
+    code_sync_hub, run_git, monkeypatch
+):
+    root, _ = code_sync_hub
+    issue, _ = _job_issue(root, run_git)
+    (root / baseline.BASELINE_FILE).unlink()
+    commit(root, run_git)
+    _gh_issues(monkeypatch, [issue])
+
+    result = runner.invoke(app, ["code-sync", "issue", "--json", *_kb(root)])
+
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.output)
+    assert (out["usable"], out["baseline_sha"]) == (7, None)
+    assert "no recorded baseline" in out["issues"][0]["reason"]
 
 
 def test_issue_gh_failure_exits_1(code_sync_hub, monkeypatch):

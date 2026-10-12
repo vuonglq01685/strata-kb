@@ -944,6 +944,7 @@ def code_sync_issue(
                 {
                     "usable": usable.number if usable else None,
                     "baseline_sha": usable.baseline_sha if usable else None,
+                    "issue_baseline_sha": usable.issue_baseline_sha if usable else None,
                     "issues": [asdict(v) for v in verdicts],
                 }
             )

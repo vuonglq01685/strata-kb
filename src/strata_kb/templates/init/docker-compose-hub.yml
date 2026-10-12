@@ -31,9 +31,8 @@ services:
   # Daily `kb code-sync` scan: updates the `kb-code-sync` issue on this hub's
   # GitHub repo (needs STRATA_KB_GH_TOKEN, or the intake GitHub App with
   # `issues: write`, `pull_requests: read`, `contents: read`; see .env).
-  # Read-only on /data -- it never pulls, commits
-  # or pushes; the `hub` service above keeps /data current. No model cache,
-  # no port. mem_limit is an estimate (a pure-Python git scan, no embedding
+  # Read-only on /data -- it never pulls, commits or pushes; the `hub` service
+  # above keeps /data current. No model cache, no port. mem_limit is an estimate (a pure-Python git scan, no embedding
   # model), not a `docker stats` measurement -- retune if it proves wrong.
   hub-sync:
     image: ghcr.io/vuonglq01685/strata-kb:v{version}

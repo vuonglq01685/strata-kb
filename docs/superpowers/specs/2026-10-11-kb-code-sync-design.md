@@ -206,20 +206,39 @@ Same contract as `kb ticket stale`:
 - Exit `0` nothing to do, `2` findings, `1` error (bad hub, missing baseline
   sha, unreadable doc).
 
-Work order shape, grouped by hub document, then section:
+Work order shape. The first line is an identity marker; findings are grouped by
+category (`removed`, `changed`, `added`, `image`; empty ones omitted), then by
+hub document and section:
 
 ```
-## arch §4.2 Payment flow
+<!-- kb-code-sync work-order v1 scan:<40 hex> baseline:<hex or none> -->
+Scan: 1a2b3c4d5e6f · Baseline: 9f8e7d6c5b4a (default-branch) · 3 finding(s)
+
+## Removed — code gone, prose likely wrong
+
+### arch §4.2 Payment flow
 - payment-service — `-code §svc.payment-service` (acme-code):
   `Depends on` no longer lists `ledger`
+
+## Changed — facts changed, check and fix
+
+### arch §4.2 Payment flow
 - orders — `-code §db.orders` (acme-code): column `refund_id` added
-## arch §6 Integrations  (image)
+
+## Images — may need a redraw
+
+### arch §6 Integrations
 - STRIPE_KEY — `-code §int.stripe` (acme-code): removed
+
+<!-- kb-code-sync digest:<64 hex> -->
 ```
 
 Header lines: scan sha, baseline sha, counts, the `note:` lines from §4 and
-§5.1. A stable digest of the findings (excluding the header timestamp) goes in
-an HTML comment so the issue updater can tell "same work order" from "new".
+§5.1. The identity marker lets `kb code-sync issue` tell the job's own issue
+from any other issue with the label. A stable digest of the findings
+(excluding the header) is the last line, in an HTML comment, so the issue
+updater can tell "same work order" from "new". The job rewrites or closes only
+a labelled issue whose first line is the identity marker.
 
 ## 6. Part C — `hub-sync` service and the rolling issue
 

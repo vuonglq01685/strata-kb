@@ -2847,6 +2847,8 @@ def test_kb_code_sync_body_states_hard_rules(tmp_path: Path):
             "never `kb approve`",
             "kb publish --branch kb-bot/code-sync",
             "kb code-sync scan --json",
+            "Run `git fetch --prune origin` **first**",
+            "`baseline_sha` is `null`",
             "kb code-sync issue --json",
             "kb code-sync scan --json --baseline <baseline_sha>",
             "no work order from the hub job (no current/stale issue)",

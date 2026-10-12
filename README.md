@@ -579,15 +579,18 @@ them in this order: `removed` (code gone, prose likely wrong), `changed`
 (`<!-- kb-code-sync work-order v1 scan:<sha> baseline:<sha> -->`) and the last
 is the findings digest. `kb code-sync issue` lists the open `kb-code-sync`
 issues and judges each one; `/kb-code-sync` works only from the one it calls
-usable, and takes nothing from it but the baseline sha. It never reads issue
-text or comments and never edits, closes, comments on or relabels an issue.
+usable, and takes nothing from it: it scans from the baseline recorded in git,
+which `kb code-sync issue --json` prints as `baseline_sha`. It never reads
+issue text or comments and never edits, closes, comments on or relabels an
+issue. The job in turn only rewrites or closes an issue that carries the
+identity marker, so a labelled issue a person opened is left alone.
 
 | Kind | Meaning | Used? |
 |---|---|---|
-| `current` | The job wrote it, and a local scan from its baseline gives the same findings | yes |
-| `stale` | The job wrote it, but the code moved since; the local scan is newer | yes |
+| `current` | The job wrote it, its baseline is the recorded one, and a local scan gives the same findings | yes |
+| `stale` | The job wrote it, but its baseline or findings differ from a local scan (the reason says which); a baseline moved by an earlier round lands here | yes, scanned from the recorded baseline |
 | `duplicate` | The job wrote it, but a newer job issue exists | reported only |
-| `foreign` | No identity marker, no digest, no baseline, or the baseline is not in the hub's history | reported only |
+| `foreign` | No identity marker, no digest, no baseline, or the baseline is not in the default branch's history | reported only |
 
 **Sprint cadence.** Detection is daily. The hub manager runs `/kb-code-sync` in
 their agent any time the issue is open; the skill re-runs the scan, judges each

@@ -23,6 +23,14 @@ def test_head_commit_returns_short_hash(git_kb):
     assert gitio.head_commit(git_kb["root"]) == git_kb["rev2"]
 
 
+def test_is_ancestor(git_kb):
+    root, r1, r2 = git_kb["root"], git_kb["rev1"], git_kb["rev2"]
+    assert gitio.is_ancestor(root, r1, r2)
+    assert gitio.is_ancestor(root, r1, r1)
+    assert not gitio.is_ancestor(root, r2, r1)
+    assert not gitio.is_ancestor(root, "deadbeef", r2)
+
+
 def test_rev_exists(git_kb):
     assert gitio.rev_exists(git_kb["root"], git_kb["rev1"])
     assert not gitio.rev_exists(git_kb["root"], "deadbeef")

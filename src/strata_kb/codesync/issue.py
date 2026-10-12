@@ -50,7 +50,15 @@ def sync_issue(
     token: str,
     http=ghapp._default_http,
 ) -> Literal["created", "updated", "unchanged", "closed", "none"]:
-    existing = ghapp.find_open_issue(repo_full, token, LABEL, http=http)
+    # Only issues carrying the job's identity marker are ours: a human-labelled
+    # issue (or one from before the marker) is never rewritten or closed.
+    existing = ghapp.find_open_issue(
+        repo_full,
+        token,
+        LABEL,
+        http=http,
+        accept=lambda body: scan.body_marker(body) is not None,
+    )
     if not r.findings:
         if existing is None:
             return "none"

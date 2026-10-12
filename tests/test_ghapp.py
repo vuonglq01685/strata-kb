@@ -147,6 +147,18 @@ def test_find_open_issue_returns_newest_and_skips_pull_requests():
     assert "direction=desc" in url
 
 
+def test_find_open_issue_accept_skips_bodies_it_rejects():
+    http = FakeHTTP(
+        [(200, [{"number": 9, "body": "human"}, {"number": 7, "body": "job"}])]
+    )
+    found = ghapp.find_open_issue(
+        "a/b", "t", "l", http=http, accept=lambda body: body == "job"
+    )
+    assert found == (7, "job")
+    http = FakeHTTP([(200, [{"number": 9, "body": None}])])
+    assert ghapp.find_open_issue("a/b", "t", "l", http=http, accept=bool) is None
+
+
 def test_find_open_issue_none_when_empty_and_error_hides_token():
     assert ghapp.find_open_issue("a/b", "t", "l", http=FakeHTTP([(200, [])])) is None
     with pytest.raises(ghapp.GHAppError) as exc:

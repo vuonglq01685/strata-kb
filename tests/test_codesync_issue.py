@@ -71,14 +71,32 @@ def test_new_digest_updates_body():
     assert json.loads(http.requests[1].data) == {"body": scan.render_markdown(new)}
 
 
-def test_existing_issue_without_marker_is_rewritten():
-    http = FakeHTTP([(200, [{"number": 5, "body": None}]), (200, {})])
+def test_labelled_issue_without_marker_is_never_touched():
+    human = [{"number": 8, "body": None}, {"number": 6, "body": "please fix docs"}]
+    http = FakeHTTP([(200, human), (201, {}), (201, {"number": 9})])
     out = issue.sync_issue(result("alpha"), repo_full="a/b", token="t", http=http)
-    assert out == "updated"
+    assert out == "created"
+    assert http.methods() == ["GET", "POST", "POST"]  # no PATCH on #8 or #6
+
+
+def test_newer_human_issue_does_not_hide_the_jobs_issue():
+    old = scan.render_markdown(result("alpha"))
+    new = result("alpha", "beta")
+    labelled = [{"number": 8, "body": "human"}, {"number": 5, "body": old}]
+    http = FakeHTTP([(200, labelled), (200, {})])
+    assert issue.sync_issue(new, repo_full="a/b", token="t", http=http) == "updated"
+    assert http.requests[1].full_url.endswith("/issues/5")
+
+
+def test_zero_findings_never_closes_a_markerless_issue():
+    http = FakeHTTP([(200, [{"number": 8, "body": "human"}])])
+    assert issue.sync_issue(result(), repo_full="a/b", token="t", http=http) == "none"
+    assert http.methods() == ["GET"]
 
 
 def test_zero_findings_closes_with_comment():
-    http = FakeHTTP([(200, [{"number": 5, "body": "old"}]), (201, {}), (200, {})])
+    body = scan.render_markdown(result("alpha"))
+    http = FakeHTTP([(200, [{"number": 5, "body": body}]), (201, {}), (200, {})])
     assert issue.sync_issue(result(), repo_full="a/b", token="t", http=http) == "closed"
     assert json.loads(http.requests[1].data) == {
         "body": "kb code-sync: nothing left to update as of a1b2c3d4e5f6."

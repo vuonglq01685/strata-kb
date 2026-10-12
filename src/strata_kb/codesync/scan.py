@@ -103,6 +103,13 @@ def parse_work_order_marker(line: str) -> tuple[str, str | None] | None:
     return m.group(1), None if m.group(2) == "none" else m.group(2)
 
 
+def body_marker(body: str | None) -> tuple[str, str | None] | None:
+    """`parse_work_order_marker` of an issue body's first line. `splitlines`
+    also takes CRLF, which GitHub stores when a body is edited in its UI."""
+    lines = (body or "").splitlines()
+    return parse_work_order_marker(lines[0]) if lines else None
+
+
 def category(f: Finding) -> str:
     return "image" if f.image else f.item.status
 
