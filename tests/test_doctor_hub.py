@@ -1,7 +1,10 @@
 import hashlib
 import subprocess
+from pathlib import Path
 
-from strata_kb.doctor import check_hub
+import yaml
+
+from strata_kb.doctor import check_hub, check_registry_kinds
 from strata_kb.hub import HubHandle
 from strata_kb.publish import publish
 from tests.conftest import make_fed_entry
@@ -835,3 +838,149 @@ def test_doctor_resolves_an_asset_against_the_INNERMOST_broken_entry(
     assert any("config.yaml" in m and "would never write" in m for m in warnings), (
         warnings
     )
+
+
+def test_doctor_federation_publish_ignores_filtered_leaves(tmp_path, run_git):
+    from strata_kb.doctor.checks.hub import check_federation_publish
+    from strata_kb.publish import publish_federation
+
+    src = tmp_path / "mid"
+    (src / ".kb").mkdir(parents=True)
+    make_fed_entry(src / "federation", "k1", "k1-doc")
+    make_fed_entry(src / "federation", "d1", "d1-code")
+    (src / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: mid\n", encoding="utf-8"
+    )
+    (src / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    for args in (
+        ("init",),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@t.local"),
+        ("add", "-A"),
+        ("commit", "-m", "v1"),
+    ):
+        run_git(src, *args)
+    root = tmp_path / "root-hub"
+    (root / ".kb").mkdir(parents=True)
+    (root / ".kb" / "config.yaml").write_text(
+        "kind: hub\nrepo_id: root-hub\n", encoding="utf-8"
+    )
+    (root / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (root / "federation").mkdir()
+    (root / "federation" / ".gitkeep").write_text("", encoding="utf-8")
+    for args in (
+        ("init",),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@t.local"),
+        ("add", "-A"),
+        ("commit", "-m", "v1"),
+    ):
+        run_git(root, *args)
+
+    publish_federation(src / ".kb", str(root), repo_id="mid", mode="direct")
+
+    issues = check_federation_publish(src, HubHandle(root=root), "mid")
+    assert not [i for i in issues if "differs from the published" in i.message]
+
+
+# --- check_registry_kinds (hub side) ---------------------------------------
+
+
+def _set_meta_kind(entry: Path, kind: str) -> None:
+    meta = entry / "_meta.yaml"
+    data = yaml.safe_load(meta.read_text(encoding="utf-8"))
+    data["kind"] = kind
+    meta.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+
+def _registry(hub: Path, repos: dict) -> None:
+    (hub / "federation" / "registry.yaml").write_text(
+        yaml.safe_dump({"repos": repos}), encoding="utf-8"
+    )
+
+
+def test_doctor_registry_kind_clean_when_all_set(tmp_path):
+    fed = tmp_path / "federation"
+    entry = make_fed_entry(fed, "repo-a", "doc-a")
+    _set_meta_kind(entry, "kb")
+    _registry(tmp_path, {"o/repo-a": {"repo_id": "repo-a", "kind": "kb"}})
+    assert check_registry_kinds(tmp_path) == []
+
+
+def test_doctor_warns_registry_entry_without_kind(tmp_path):
+    make_fed_entry(tmp_path / "federation", "repo-a", "doc-a")
+    _registry(tmp_path, {"o/repo-a": "repo-a"})
+    issues = check_registry_kinds(tmp_path)
+    assert [(i.level, i.message) for i in issues] == [
+        (
+            "warning",
+            "registry entry o/repo-a has no kind — run kb init --kind hub to fill it",
+        )
+    ]
+
+
+def test_doctor_errors_when_recorded_kind_disagrees_with_registry(tmp_path):
+    entry = make_fed_entry(tmp_path / "federation", "repo-a", "doc-a")
+    _set_meta_kind(entry, "ba")
+    _registry(tmp_path, {"o/repo-a": {"repo_id": "repo-a", "kind": "dev"}})
+    issues = check_registry_kinds(tmp_path)
+    assert [(i.level, i.message) for i in issues] == [
+        ("error", "federation/repo-a recorded kind 'ba' but registry says 'dev'")
+    ]
+
+
+def test_doctor_ignores_inferred_kind_when_comparing_to_registry(tmp_path):
+    # no kind recorded in _meta.yaml: inference is not a "recorded" kind
+    make_fed_entry(tmp_path / "federation", "repo-a", "doc-a-code")
+    _registry(tmp_path, {"o/repo-a": {"repo_id": "repo-a", "kind": "kb"}})
+    assert check_registry_kinds(tmp_path) == []
+
+
+def test_doctor_flags_nested_non_kb_leaf(tmp_path):
+    entry = make_fed_entry(tmp_path / "federation" / "mid", "repo-b", "doc-b")
+    _set_meta_kind(entry, "dev")
+    issues = check_registry_kinds(tmp_path)
+    assert [(i.level, i.message) for i in issues] == [
+        (
+            "error",
+            "federation/mid/repo-b is a nested 'dev' leaf — only kb may be "
+            "published hub-to-hub; delete it or republish from an upgraded "
+            "child hub",
+        )
+    ]
+
+
+def test_doctor_nested_kb_leaf_is_fine(tmp_path):
+    entry = make_fed_entry(tmp_path / "federation" / "mid", "repo-b", "doc-b")
+    _set_meta_kind(entry, "kb")
+    assert check_registry_kinds(tmp_path) == []
+
+
+def test_doctor_flags_unknown_recorded_kind(tmp_path):
+    entry = make_fed_entry(tmp_path / "federation", "repo-a", "doc-a")
+    _set_meta_kind(entry, "code")
+    issues = check_registry_kinds(tmp_path)
+    assert [(i.level, i.message) for i in issues] == [
+        (
+            "error",
+            "federation/repo-a records unknown kind 'code' — expected kb, ba or dev",
+        )
+    ]
+
+
+def test_doctor_reports_an_unreadable_registry(tmp_path):
+    make_fed_entry(tmp_path / "federation", "repo-a", "doc-a")
+    (tmp_path / "federation" / "registry.yaml").write_text("repos: [", encoding="utf-8")
+    issues = check_registry_kinds(tmp_path)
+    assert [i.level for i in issues] == ["error"]
+    assert "registry.yaml" in issues[0].message
+
+
+def test_doctor_registry_kind_lookup_is_casefolded(tmp_path):
+    entry = make_fed_entry(tmp_path / "federation", "Repo-A", "doc-a")
+    _set_meta_kind(entry, "ba")
+    _registry(tmp_path, {"o/repo-a": {"repo_id": "repo-a", "kind": "dev"}})
+    issues = check_registry_kinds(tmp_path)
+    assert [i.message for i in issues] == [
+        "federation/Repo-A recorded kind 'ba' but registry says 'dev'"
+    ]

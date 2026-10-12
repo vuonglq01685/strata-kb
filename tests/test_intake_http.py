@@ -444,7 +444,9 @@ def _slow_fake_publish_factory(intervals, lock, sleep_seconds=0.3):
     git worktree per concurrent call."""
     import time as time_mod
 
-    def fake_publish(cfg, rid, source_commit, source_repo_full, deletes, archive):
+    def fake_publish(
+        cfg, rid, source_commit, source_repo_full, deletes, archive, kind=""
+    ):
         start = time_mod.monotonic()
         time_mod.sleep(sleep_seconds)
         end = time_mod.monotonic()
@@ -614,6 +616,43 @@ def test_publish_invalid_registry_503(client, hub_with_registry):
     resp = _post(c, _jwt(pem))
     assert resp.status_code == 503
     assert resp.json()["error"] == "intake_rejected"
+
+
+def _post_kind(client, token, kind):
+    return client.post(
+        "/intake/publish",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"meta": json.dumps({"source_commit": "abc1234", "kind": kind})},
+        files={"archive": ("kb.tar.gz", _archive(), "application/gzip")},
+    )
+
+
+def _pin_registry_kind(hub, kind):
+    (hub / "federation" / "registry.yaml").write_text(
+        f"repos:\n  acme/flight-docs:\n    repo_id: flight-docs\n    kind: {kind}\n",
+        encoding="utf-8",
+    )
+
+
+def test_intake_kind_mismatch_403(client, hub_with_registry):
+    c, pem = client
+    _pin_registry_kind(hub_with_registry, "ba")
+    resp = _post_kind(c, _jwt(pem), "dev")
+    assert resp.status_code == 403
+    assert "kind mismatch" in resp.json()["detail"]
+
+
+def test_intake_unknown_payload_kind_400(client):
+    c, pem = client
+    resp = _post_kind(c, _jwt(pem), "code")
+    assert resp.status_code == 400
+    assert "unknown kind" in resp.json()["detail"]
+
+
+def test_intake_matching_kind_is_accepted(client, hub_with_registry):
+    c, pem = client
+    _pin_registry_kind(hub_with_registry, "dev")
+    assert _post_kind(c, _jwt(pem), "dev").status_code == 200
 
 
 def test_publish_rate_limited_429(hub_with_registry, keypair, tmp_path, monkeypatch):

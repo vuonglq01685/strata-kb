@@ -2,8 +2,9 @@ import pytest
 
 from strata_kb import models
 from strata_kb.hub import HubHandle
+from strata_kb.kinds import UnknownKindError
 from strata_kb.query import AmbiguousDocError, get_section, search
-from tests.conftest import make_fed_entry
+from tests.conftest import FakeEmbedder, make_fed_entry
 
 
 def _handle(fed_hub) -> HubHandle:
@@ -147,7 +148,7 @@ def test_search_use_semantic_false_skips_embedder(monkeypatch):
 
     seen = {}
 
-    def spy(hub, embedder, text, tags):
+    def spy(hub, embedder, text, tags, kinds):
         seen["embedder"] = embedder
         return [], {}, False, {}, False
 
@@ -165,7 +166,7 @@ def test_search_use_semantic_default_passes_embedder(monkeypatch):
 
     seen = {}
 
-    def spy(hub, embedder, text, tags):
+    def spy(hub, embedder, text, tags, kinds):
         seen["embedder"] = embedder
         return [], {}, False, {}, False
 
@@ -310,3 +311,71 @@ def test_ambiguous_doc_error_is_one_class_with_the_same_message():
     assert str(err) == (
         "doc 'd' exists in 2 federation repos — qualify the ref: a:d, b:d"
     )
+
+
+def _kinds_hub(tmp_path):
+    fed = tmp_path / "federation"
+    (tmp_path / ".kb").mkdir()
+    make_fed_entry(
+        fed, "k-repo", "refund-notes", l2="## 1.1 Refund\n\nrefund policy.\n"
+    )
+    make_fed_entry(
+        fed,
+        "b-repo",
+        "refund-plan",
+        title="Refund — plan",
+        tags=["plan", "generated"],
+        l2="## 1.1 Refund\n\nrefund ticket.\n",
+    )
+    make_fed_entry(
+        fed,
+        "d-repo",
+        "refund-code",
+        tags=["code", "generated"],
+        l2="## 1.1 Refund\n\nrefund code.\n",
+    )
+    return HubHandle(root=tmp_path)
+
+
+def test_search_kind_filter(tmp_path):
+    hub = _kinds_hub(tmp_path)
+    got = {r.source: r.kind for r in search(hub, "refund")}
+    assert got == {"k-repo": "kb", "b-repo": "ba", "d-repo": "dev"}
+    assert {r.kind for r in search(hub, "refund", kinds=["dev"])} == {"dev"}
+    two = search(hub, "refund", kinds=["kb", "ba"])
+    assert {r.kind for r in two} == {"kb", "ba"}
+
+
+def test_search_kind_filter_semantic_leg(tmp_path):
+    hub = _kinds_hub(tmp_path)
+    got = search(hub, "refund", kinds=["ba"], embedder=FakeEmbedder())
+    assert got and {r.kind for r in got} == {"ba"}
+
+
+def test_search_unknown_kind_raises(tmp_path):
+    with pytest.raises(UnknownKindError):
+        search(_kinds_hub(tmp_path), "refund", kinds=["code"])
+
+
+def test_search_nested_non_kb_never_returned(tmp_path):
+    hub = _kinds_hub(tmp_path)
+    make_fed_entry(
+        tmp_path / "federation" / "mid",
+        "d1",
+        "svc-code",
+        tags=["code", "generated"],
+        l2="## 1.1 R\n\nrefund.\n",
+    )
+    assert "mid/d1" not in {r.source for r in search(hub, "refund")}
+    assert "mid/d1" not in {r.source for r in search(hub, "refund", kinds=["dev"])}
+
+
+def test_search_nested_leaf_ignored_after_indexing_is_dropped(tmp_path):
+    hub = _kinds_hub(tmp_path)
+    entry = make_fed_entry(
+        tmp_path / "federation" / "mid", "d1", "notes", l2="## 1.1 R\n\nrefund.\n"
+    )
+    assert "mid/d1" in {r.source for r in search(hub, "refund")}  # indexed as kb
+    meta = entry / "_meta.yaml"
+    meta.write_text(meta.read_text(encoding="utf-8") + "kind: dev\n", encoding="utf-8")
+    assert "mid/d1" not in {r.source for r in search(hub, "refund")}

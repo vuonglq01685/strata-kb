@@ -13,6 +13,7 @@ from strata_kb.publish import (
     PublishError,
     _dest_record_assets,
     _neutralize_excludes,
+    plan,
     publish,
     unreviewed_sections,
 )
@@ -842,3 +843,48 @@ def test_the_recovery_the_refusal_names_actually_restores_the_record(tmp_path, r
     run_git(root, "checkout", good_commit, "--", str(record_path))
     assert record_path.read_bytes() == good
     assert _dest_record_assets(record_path) == [entry]
+
+
+def _set_repo_kind(kb: Path, kind: str) -> None:
+    (kb / "config.yaml").write_text(f"kind: {kind}\n", encoding="utf-8")
+
+
+def test_snapshot_records_kind(git_kb, hub_worktree):
+    _set_repo_kind(git_kb["kb"], "dev")
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+    meta = models.load_yaml_model(
+        hub_worktree / "federation" / "demo-kb" / "_meta.yaml", FederationMeta
+    )
+    assert meta.kind == "dev"
+
+
+def test_kind_only_change_rewrites_meta_and_commits(git_kb, hub_worktree, run_git):
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+    meta_path = hub_worktree / "federation" / "demo-kb" / "_meta.yaml"
+    assert models.load_yaml_model(meta_path, FederationMeta).kind == "kb"
+    before = run_git(hub_worktree, "rev-list", "--count", "HEAD")
+
+    _set_repo_kind(git_kb["kb"], "dev")  # content untouched, kind changes
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+
+    assert models.load_yaml_model(meta_path, FederationMeta).kind == "dev"
+    assert int(run_git(hub_worktree, "rev-list", "--count", "HEAD")) > int(before)
+    # and a third, identical publish is a true no-op again
+    after = run_git(hub_worktree, "rev-list", "--count", "HEAD")
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+    assert run_git(hub_worktree, "rev-list", "--count", "HEAD") == after
+
+
+def test_publish_refuses_unrecorded_kind(tmp_path):
+    kb = tmp_path / ".kb"
+    kb.mkdir()
+    (kb / "config.yaml").write_text("hub: ../hub\n", encoding="utf-8")
+    with pytest.raises(PublishError, match="kb init --kind"):
+        plan(kb, "", pr=False, direct=False)
+
+
+def test_kind_line_names_the_hub_menu():
+    from strata_kb.publish import kind_line
+
+    assert kind_line("dev") == "kind: dev → hub menu: Code"
+    assert kind_line("hub") == "kind: kb → hub menu: Document"

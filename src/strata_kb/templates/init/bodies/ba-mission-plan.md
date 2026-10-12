@@ -11,7 +11,9 @@
    create. Never ask whether the repo is greenfield; the SA sees that in
    `-code`.
 2. **Ground** — use the MCP tool `kb_search` when it is available;
-   otherwise fall back to `kb query "<text>" --tags <tags>` (CLI).
+   otherwise fall back to `kb query "<text>" --tags <tags> --kind kb --kind dev`
+   (CLI). Pass `kinds=["kb","dev"]` to `kb_search`: you read knowledge and
+   code, never other tickets.
    **Budget the search:** 500–800 tokens for broad discovery — enough
    for the citation plus a summary to choose from; `kb_get_section`
    only for a section already chosen; L3 only for a value that will be

@@ -44,6 +44,24 @@ mark { background: #d9e5f9; color: inherit; padding: 0 1px; border-radius: 2px; 
 .badge-summarized { color: var(--accent); background: var(--accent-bg); border-color: var(--accent-line); }
 .badge-reviewed { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
 .badge-mode { color: var(--muted); background: var(--field); border-color: var(--line); font-weight: 500; }
+/* hub kinds: Document (kb), Ticket (ba), Code (dev) -- hues from the approved mockup */
+:root { --kind-kb: #1a6e3c; --kind-ba: #92600a; --kind-dev: #6a3fb5;
+  --kind-kb-bg: #e4f3e9; --kind-ba-bg: #faf0dc; --kind-dev-bg: #f0eafa; }
+.badge-kb { color: var(--kind-kb); background: var(--kind-kb-bg); border-color: var(--kind-kb); }
+.badge-ba { color: var(--kind-ba); background: var(--kind-ba-bg); border-color: var(--kind-ba); }
+.badge-dev { color: var(--kind-dev); background: var(--kind-dev-bg); border-color: var(--kind-dev); }
+.kind-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.kind-chip { font: 500 12px/1.7 var(--sans); color: var(--body-c); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 11px; }
+.kind-chip:hover { color: var(--accent); border-color: var(--accent); }
+.kind-chip.on { color: #fff; background: var(--accent); border-color: var(--accent); }
+.kind-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; }
+.kind-count { font: 500 11px/1.5 var(--mono); color: var(--muted); }
+.kind-count b { font-weight: 600; }
+.kc-kb b { color: var(--kind-kb); } .kc-ba b { color: var(--kind-ba); } .kc-dev b { color: var(--kind-dev); }
+/* a menu's own search box: dashed, like the mockup, to read as "this menu only" */
+.filter-bar.menu-search input { border: 1px dashed var(--accent); }
+.nav a .k { margin-left: auto; font: 400 10px/1.4 var(--mono); color: var(--faint); }
 .chip { font: 500 11px/1.7 var(--mono); color: var(--accent); background: var(--accent-bg);
   border: 1px solid #dbe6f8; border-radius: 999px; padding: 2px 9px; }
 .chip:hover { color: #fff; background: var(--accent); border-color: var(--accent); }

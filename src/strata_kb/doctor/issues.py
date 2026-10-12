@@ -21,7 +21,7 @@ class Issue:
     """One doctor, ticket-lint or mission-lint result. `prlint.Finding` and
     `quality.Finding` are separate on purpose: other levels, other keys."""
 
-    level: Literal["error", "warning"]
+    level: Literal["error", "warning", "info"]
     message: str
     # A stable machine tag for the checks a caller needs to tell apart —
     # today only "stale-ref", so `kb ticket lint --fail-on-stale` can

@@ -53,12 +53,13 @@ class TooManyTagsError(ValueError):
     """`tags` exceeded MAX_TAGS — refused rather than silently truncated."""
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 K_LEG = 50  # top-k per leg fed into RRF
 RRF_K = 60  # standard RRF constant
 MAX_TAGS = 100  # `tags` is agent-supplied and expands to one SQL bind each
 DB_NAME = "search.db"
-_KNN_OVERFETCH = 4  # vec0 cannot pre-filter by tag — over-fetch, then filter after
+# vec0 cannot pre-filter by tag or kind — over-fetch, then filter after
+_KNN_OVERFETCH = 4
 _EMBED_BATCH = 256  # sections per embedder.embed() call
 _BUSY_TIMEOUT_MS = 5000
 # bm25 column weights (title, summary, body_l2, body_l3) — title strongest,
@@ -75,6 +76,7 @@ class SectionRow:
     title: str
     file: str
     doc_revision: str
+    kind: str
 
 
 @dataclass
@@ -207,7 +209,8 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     """CREATE TABLE IF NOT EXISTS repos(
     repo_id TEXT PRIMARY KEY,
-    fingerprint TEXT NOT NULL
+    fingerprint TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT ''
 )""",
     """CREATE TABLE IF NOT EXISTS sections(
     id INTEGER PRIMARY KEY,
@@ -735,9 +738,10 @@ def _sync_conn(
         before_updated = report.sections_updated
         _sync_repo(conn, repo, report)
         conn.execute(
-            "INSERT INTO repos(repo_id, fingerprint) VALUES(?, ?) "
-            "ON CONFLICT(repo_id) DO UPDATE SET fingerprint = excluded.fingerprint",
-            (repo.meta.repo_id, fp),
+            "INSERT INTO repos(repo_id, fingerprint, kind) VALUES(?, ?, ?) "
+            "ON CONFLICT(repo_id) DO UPDATE SET fingerprint = excluded.fingerprint, "
+            "kind = excluded.kind",
+            (repo.meta.repo_id, fp, repo.kind),
         )
         report.repos_synced += 1
         if report.sections_updated > before_updated:
@@ -831,6 +835,7 @@ def fts_search(
     text: str,
     tags: list[str] | None = None,
     k: int = K_LEG,
+    kinds: list[str] | None = None,
 ) -> list[tuple[int, float]]:
     """Keyword leg — (section_rowid, score) best-first; score = -bm25 (positive)."""
     match = _fts_match(text)
@@ -849,9 +854,30 @@ def fts_search(
             f" AND t.doc_id = s.doc_id AND t.tag IN ({placeholders}))"
         )
         params += tag_list
+    if kinds:
+        sql += f" AND {_KIND_FILTER.format(','.join('?' * len(kinds)))}"
+        params += kinds
     sql += f" ORDER BY bm25(fts, {_BM25_WEIGHTS}) LIMIT ?"  # lower bm25 = better match
     params.append(k)
     return [(rowid, score) for rowid, score in conn.execute(sql, params)]
+
+
+# `s` is the sections table. `kinds` is already normalised by the caller.
+_KIND_FILTER = "s.repo_id IN (SELECT repo_id FROM repos WHERE kind IN ({}))"
+
+
+def _kind_rowids(
+    conn: sqlite3.Connection, rowids: list[int], kinds: list[str]
+) -> set[int]:
+    if not rowids:
+        return set()
+    ph_rows = ",".join("?" * len(rowids))
+    rows = conn.execute(
+        f"SELECT s.id FROM sections s WHERE s.id IN ({ph_rows}) AND "  # noqa: S608 -- ph_rows is a "?"-count string only, values bind via the list below
+        + _KIND_FILTER.format(",".join("?" * len(kinds))),
+        [*rowids, *kinds],
+    )
+    return {r[0] for r in rows}
 
 
 def _tagged_rowids(
@@ -876,6 +902,7 @@ def knn_search(
     text: str,
     tags: list[str] | None = None,
     k: int = K_LEG,
+    kinds: list[str] | None = None,
 ) -> list[tuple[int, float]]:
     """Semantic leg — (section_rowid, score) best-first, score = 1/(1+distance),
     already filtered by SEMANTIC_MIN_SCORE. vec0 cannot pre-filter by tag →
@@ -884,7 +911,7 @@ def knn_search(
         return []
     query_vec = embedder.embed([text])[0]
     tag_list = _norm_tags(tags)
-    fetch_k = k * _KNN_OVERFETCH if tag_list else k
+    fetch_k = k * _KNN_OVERFETCH if tag_list or kinds else k
     rows = conn.execute(
         "SELECT rowid, distance FROM vec_sections "
         "WHERE embedding MATCH ? AND k = ? ORDER BY distance",
@@ -897,6 +924,9 @@ def knn_search(
     ]
     if tag_list:
         allowed = _tagged_rowids(conn, [h[0] for h in hits], tag_list)
+        hits = [h for h in hits if h[0] in allowed]
+    if kinds:
+        allowed = _kind_rowids(conn, [h[0] for h in hits], kinds)
         hits = [h for h in hits if h[0] in allowed]
     return hits[:k]
 
@@ -934,8 +964,9 @@ def load_sections(
         return {}
     placeholders = ",".join("?" * len(ids))
     rows = conn.execute(
-        "SELECT id, repo_id, doc_id, section_id, title, file, doc_revision "  # noqa: S608 -- placeholders is a "?"-count string only, values bind via `ids` below
-        f"FROM sections WHERE id IN ({placeholders})",
+        "SELECT s.id, s.repo_id, s.doc_id, s.section_id, s.title, s.file, "  # noqa: S608 -- placeholders is a "?"-count string only, values bind via `ids` below
+        "s.doc_revision, COALESCE(r.kind, '') FROM sections s "
+        f"LEFT JOIN repos r ON r.repo_id = s.repo_id WHERE s.id IN ({placeholders})",
         ids,
     )
     return {r[0]: SectionRow(*r) for r in rows}

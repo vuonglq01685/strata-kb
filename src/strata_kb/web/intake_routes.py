@@ -21,7 +21,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from strata_kb import federation, ghapp, gitio, intake
+from strata_kb import federation, ghapp, gitio, intake, models
 from strata_kb.serving.ratelimit import (
     INTAKE_MAX_ATTEMPTS,
     INTAKE_READ_MAX_ATTEMPTS,
@@ -186,13 +186,17 @@ def build_intake_routes(
             status_code=401,
         )
 
-    async def _caller_rid(token: str) -> tuple[str, dict]:
-        """OIDC claims -> the caller's registered repo-id (registry decides)."""
+    async def _authorize(token: str) -> tuple[str, dict, models.Registry]:
         claims = await run_in_threadpool(
             intake.verify_oidc, token, cfg.audience, cfg.key_resolver
         )
         registry = await run_in_threadpool(_load_registry)
-        return intake.authorize(claims, registry), claims
+        return intake.authorize(claims, registry), claims, registry
+
+    async def _caller_rid(token: str) -> tuple[str, dict]:
+        """OIDC claims -> the caller's registered repo-id (registry decides)."""
+        rid, claims, _ = await _authorize(token)
+        return rid, claims
 
     def _read_limited(request: Request) -> JSONResponse | None:
         client_ip = client_key(request, cfg.trusted_proxies)
@@ -312,7 +316,7 @@ def build_intake_routes(
                 raise intake.IntakeError(
                     413, f"request body exceeds {max_body_bytes} bytes"
                 )
-            rid, claims = await _caller_rid(token)
+            rid, claims, registry = await _authorize(token)
             capped = await _parse_capped_form(request, max_body_bytes)
             form = await capped.form()
             try:
@@ -322,11 +326,17 @@ def build_intake_routes(
                 meta = json.loads(meta_field)
                 source_commit = str(meta["source_commit"])
                 deletes = [str(d) for d in meta.get("deletes", [])]
+                raw_kind = meta.get("kind")
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise intake.IntakeError(
                     400,
                     "field 'meta' must be JSON with source_commit (+ optional deletes)",
                 ) from exc
+            kind = intake.publish_kind(
+                raw_kind,
+                intake.registry_entry_kind(claims, registry),
+                claims["repository"],
+            )
             upload = form.get("archive")
             if upload is None:
                 raise intake.IntakeError(400, "multipart field 'archive' required")
@@ -372,6 +382,7 @@ def build_intake_routes(
                         claims["repository"],
                         deletes,
                         archive,
+                        kind=kind,
                     )
             except intake.IntakeError as exc:
                 store.set(rid, source_commit, "error", detail=exc.detail)

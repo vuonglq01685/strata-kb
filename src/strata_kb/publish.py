@@ -11,6 +11,7 @@ never delete or overwrite one on the strength of a failed read.
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import os
 import re
@@ -22,7 +23,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import federation, ghio, gitio, models, pubgate
+from strata_kb import federation, ghio, gitio, kinds, models, pubgate
 from strata_kb import hub as hub_mod
 from strata_kb.errors import KbError
 from strata_kb.review import MACHINE_SECTION_PREFIX
@@ -55,6 +56,9 @@ class PublishReport:
     pr_url: str = ""
     skipped: list[str] = field(default_factory=list)
     remote: bool = False
+    # (path-id, kind) of the leaves a child hub kept to itself: only `kb`
+    # leaves go upward.
+    skipped_leaves: list[tuple[str, str]] = field(default_factory=list)
 
 
 def _neutralize_excludes(root: Path) -> None:
@@ -449,6 +453,20 @@ def _restore_federation_after_store_failure(
         )
 
 
+def kind_drifted(dest: Path, kind: str) -> bool:
+    """True when `dest` already holds a leaf whose recorded kind is not `kind`
+    (a blank `kind` never drifts: nothing to record)."""
+    if not kind or not (dest / "_meta.yaml").is_file():
+        return False
+    try:
+        recorded = models.load_yaml_model(
+            dest / "_meta.yaml", federation.FederationMeta
+        )
+    except (OSError, yaml.YAMLError, ValidationError, ValueError):
+        return False
+    return recorded.kind != kind
+
+
 def _snapshot(
     kb_abs: Path,
     handle: hub_mod.HubHandle,
@@ -456,6 +474,7 @@ def _snapshot(
     source_commit: str,
     source_url: str | None = None,
     store=None,
+    kind: str = "",
 ) -> tuple[int, bool, list[str]]:
     """Sync .kb/ → federation/<rid>/ by hash-diff; return (n_docs, changed, skipped).
 
@@ -466,7 +485,9 @@ def _snapshot(
     changed=False: content on the hub already matches the local snapshot byte
     for byte — nothing is written, not even _meta.yaml (published_at only
     moves when content actually changed, so a back-to-back 2nd publish is a
-    true no-op: no commit, no PR).
+    true no-op: no commit, no PR). The one exception: the kind to record
+    differs from the leaf's recorded kind -- only _meta.yaml is rewritten
+    (changed=True).
 
     The aggregate index.yaml is NOT written here — see publish()/_publish_direct():
     index.yaml is committed separately from the <rid>/ commit so that two repos
@@ -506,18 +527,22 @@ def _snapshot(
         dest_man.update(assetstore.synthesized_asset_entries(dest))
     changed, deleted = hashsync.diff_manifests(local_man, dest_man)
     if not changed and not deleted:
-        return len(local_index.docs), False, skipped
-    hashsync.apply_sync(kb_abs, dest, changed, deleted)
-    if active_store is not None:
-        try:
-            assetstore.divert_and_record(dest, active_store, deleted)
-        except assetstore.AssetStoreError:
-            # apply_sync above already wrote asset bytes (and any other
-            # changed/deleted files) into the hub clone's working tree
-            # before this failed -- see _restore_federation_after_store_failure
-            # for why an uncleaned failure here is unrecoverable.
-            _restore_federation_after_store_failure(handle, dest)
-            raise
+        # Content is in sync, but a kind change (registry pin, repo kind) is
+        # still a real change: the leaf's _meta.yaml must record it.
+        if not kind_drifted(dest, kind):
+            return len(local_index.docs), False, skipped
+    else:
+        hashsync.apply_sync(kb_abs, dest, changed, deleted)
+        if active_store is not None:
+            try:
+                assetstore.divert_and_record(dest, active_store, deleted)
+            except assetstore.AssetStoreError:
+                # apply_sync above already wrote asset bytes (and any other
+                # changed/deleted files) into the hub clone's working tree
+                # before this failed -- see _restore_federation_after_store_failure
+                # for why an uncleaned failure here is unrecoverable.
+                _restore_federation_after_store_failure(handle, dest)
+                raise
     meta = federation.FederationMeta(
         repo_id=rid,
         source_url=(
@@ -527,6 +552,7 @@ def _snapshot(
         ),
         source_commit=source_commit,
         published_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        kind=kind,
     )
     models.save_yaml_model(dest / "_meta.yaml", meta)
     return len(local_index.docs), True, skipped
@@ -568,7 +594,7 @@ def _iter_record_dirs(root: Path, record_name: str) -> list[tuple[str, Path]]:
 
 
 def _prepare_hub_to_hub_manifests(
-    fed_src: Path, dest: Path, active_store
+    fed_src: Path, dest: Path, active_store, keep_local: tuple[str, ...] = ()
 ) -> tuple[dict[str, str], dict[str, str], list[str], set[str], list[str]]:
     """Build (src_man, dest_man, skipped, synthesized_src_only,
     dest_raw_assets) for _snapshot_federation's diff.
@@ -624,6 +650,11 @@ def _prepare_hub_to_hub_manifests(
     store, a stale raw source copy reappearing at dest is a redundant
     mirror of content the source still has, not a loss.
 
+    `keep_local` is the "<path-id>/" prefixes of the non-kb leaves a child hub
+    keeps to itself. Their source files never enter src_man, and their dest
+    side is left raw (no record pop, no asset synthesis) so the diff deletes
+    whatever an older release pushed there, `_assets.yaml` included.
+
     Both loops walk _iter_record_dirs, not federation.iter_entry_dirs: see that
     function's docstring for why a leaf-validity predicate misses entries a
     plain manifest walk still finds, and what breaks when the two disagree.
@@ -638,8 +669,13 @@ def _prepare_hub_to_hub_manifests(
     # .kb/ never has one to begin with; here it is hub-written content
     # genuinely being mirrored upward).
     src_man, skipped = pubgate.split_allowlist(src_man, keep_records=True)
+    # Only kb leaves go upward: dropping the rest from src_man makes the diff
+    # below delete any that an older release already pushed.
+    src_man = {k: v for k, v in src_man.items() if not k.startswith(keep_local)}
     synthesized_src_only: set[str] = set()
     for entry_rel, entry_dir in _iter_record_dirs(fed_src, assetstore.RECORD_NAME):
+        if f"{entry_rel}/".startswith(keep_local):
+            continue
         for rel, sha in assetstore.synthesized_asset_entries(entry_dir).items():
             path = f"{entry_rel}/{rel}"
             src_man[path] = sha
@@ -654,6 +690,8 @@ def _prepare_hub_to_hub_manifests(
         and assetstore.is_asset_name(rel)
     )
     for entry_rel, entry_dir in _iter_record_dirs(dest, assetstore.RECORD_NAME):
+        if f"{entry_rel}/".startswith(keep_local):
+            continue
         if active_store is not None:
             for rel, sha in assetstore.synthesized_asset_entries(entry_dir).items():
                 dest_man[f"{entry_rel}/{rel}"] = sha
@@ -706,7 +744,11 @@ def _asset_entry_root(parts: tuple[str, ...], leaves: frozenset[str]) -> str | N
 
 
 def _reconcile_asset_records(
-    fed_src: Path, dest: Path, handle: hub_mod.HubHandle, active_store
+    fed_src: Path,
+    dest: Path,
+    handle: hub_mod.HubHandle,
+    active_store,
+    keep_local: tuple[str, ...] = (),
 ) -> bool:
     """Per-entry RECORD_NAME reconciliation after apply_sync. Returns
     whether this pass changed the destination tree -- a record's bytes
@@ -897,6 +939,8 @@ def _reconcile_asset_records(
         logger.warning("%s %s", (dest / rel).as_posix(), reason)
 
     for entry_rel, entry_dir in sorted(entries.items()):
+        if f"{entry_rel}/".startswith(keep_local):
+            continue  # a non-kb leaf: the diff deletes it, nothing to reconcile
         dest_record = entry_dir / assetstore.RECORD_NAME
         before = dest_record.read_bytes() if dest_record.is_file() else None
         read_failed = False
@@ -953,6 +997,7 @@ def _snapshot_federation(
     source_commit: str,
     source_url: str | None = None,
     store=None,
+    non_kb: dict[str, str] | None = None,
 ) -> tuple[int, bool, list[str]]:
     """Sync federation/ (hub trung gian) → federation/<rid>/ trên hub cấp trên.
 
@@ -1005,13 +1050,25 @@ def _snapshot_federation(
             f"{handle.kb_dir / 'config.yaml'} (the hub's own config) is "
             f"unreadable: {exc}"
         ) from exc
+    if non_kb is None:
+        non_kb = federation.non_kb_leaf_kinds(fed_src)
+    keep_local = tuple(f"{leaf}/" for leaf in non_kb)
     (
         src_man,
         dest_man,
         skipped,
         synthesized_src_only,
         dest_raw_assets,
-    ) = _prepare_hub_to_hub_manifests(fed_src, dest, active_store)
+    ) = _prepare_hub_to_hub_manifests(fed_src, dest, active_store, keep_local)
+    if not src_man and dest_man and non_kb:
+        held = ", ".join(f"{leaf} ({kind})" for leaf, kind in sorted(non_kb.items()))
+        raise PublishError(
+            f"source federation/ has no kb leaves: {held} stay here, because "
+            "only kb leaves go upward -- but the hub already holds earlier-pushed "
+            f"entries under '{rid}', and publishing would remove them all; "
+            f"refusing to wipe a whole namespace -- delete federation/{rid} on "
+            "the hub manually if that is really intended"
+        )
     if not src_man and dest_man:
         raise PublishError(
             "source federation/ is empty but the hub already holds entries under "
@@ -1019,7 +1076,11 @@ def _snapshot_federation(
             "manually if that is really intended"
         )
     # Count only: build_federation_index would also hash every entry.
-    n_docs = sum(len(r.index.docs) for r in federation.load_federation(fed_src))
+    n_docs = sum(
+        len(r.index.docs)
+        for r in federation.load_federation(fed_src)
+        if r.meta.repo_id not in non_kb
+    )
     changed, deleted = hashsync.diff_manifests(src_man, dest_man)
     changed = [p for p in changed if p not in synthesized_src_only]
     # A record-only change (a Case A name newly reaches this hub with no
@@ -1059,7 +1120,9 @@ def _snapshot_federation(
         return n_docs, False, skipped
     if changed or deleted:
         hashsync.apply_sync(fed_src, dest, changed, deleted)
-    record_changed = _reconcile_asset_records(fed_src, dest, handle, active_store)
+    record_changed = _reconcile_asset_records(
+        fed_src, dest, handle, active_store, keep_local
+    )
     return n_docs, bool(changed or deleted or record_changed), sorted(skipped)
 
 
@@ -1145,22 +1208,41 @@ def unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> UnreviewedGate:
     return UnreviewedGate(line=f"[warn] {msg}", blocked=False)
 
 
-def _governed_registry(
-    handle: hub_mod.HubHandle, hub_label: str
-) -> dict[str, str] | None:
-    """{owner/repo: repo_id} when the hub carries a non-empty registry, else None.
-
-    An unreadable registry is fatal here exactly as it is in intake.authorize:
-    a hub whose registry cannot be parsed must never be treated as ungoverned.
-    """
+def _load_hub_registry(handle: hub_mod.HubHandle, hub_label: str) -> models.Registry:
+    """An unreadable registry is fatal here exactly as it is in
+    intake.authorize: a hub whose registry cannot be parsed must never be
+    treated as ungoverned."""
     try:
-        registry = federation.load_registry(handle.federation_dir)
+        return federation.load_registry(handle.federation_dir)
     except federation.RegistryError as exc:
         raise PublishError(
             f"{exc} -- fix the file on hub '{hub_label}', or ask the hub "
             "owner to fix it"
         ) from exc
-    return federation.registry_map(registry) or None
+
+
+def kind_line(repo_kind: str) -> str:
+    """What `kb publish` tells the operator before it writes anything."""
+    hub_kind = kinds.hub_kind(repo_kind)
+    return f"kind: {hub_kind} → hub menu: {kinds.MENU[hub_kind]}"
+
+
+def _publish_kind(cfg_kind: str, registry: models.Registry | None, rid: str) -> str:
+    """The hub kind to record for `rid`: the registry's pin wins; the repo's
+    own kind is only checked against it. Both sides casefolded so `My-Repo`
+    cannot dodge a pin recorded for `my-repo`."""
+    pinned = {
+        k.casefold(): v
+        for k, v in (
+            federation.registry_kinds(registry) if registry is not None else {}
+        ).items()
+    }
+    try:
+        return kinds.check_publish_kind(
+            pinned.get(rid.casefold(), ""), kinds.hub_kind(cfg_kind)
+        )
+    except kinds.KindMismatchError as exc:
+        raise PublishError(kinds.mismatch_message(exc, rid)) from exc
 
 
 def _existing_entry_names(handle: hub_mod.HubHandle) -> list[str]:
@@ -1171,6 +1253,28 @@ def _existing_entry_names(handle: hub_mod.HubHandle) -> list[str]:
     return sorted(
         p.name for p in fed.iterdir() if p.is_dir() and p.name not in _FED_TOP_EXCLUDE
     )
+
+
+def resolve_publish_identity(
+    handle: hub_mod.HubHandle,
+    hub_label: str,
+    source_root: Path,
+    repo_id: str | None,
+    is_self: bool,
+) -> tuple[models.Registry | None, str]:
+    """(registry, repo-id) a publish from `source_root` to `handle` uses: a
+    governed hub's registry decides the id; otherwise `repo_id` or the repo
+    directory name. Shared with `kb doctor` so both see the same id."""
+    registry = None if is_self else _load_hub_registry(handle, hub_label)
+    registry_map = (
+        (federation.registry_map(registry) or None) if registry is not None else None
+    )
+    rid = repo_id or source_root.name
+    if registry_map is not None:
+        rid = pubgate.resolve_identity(
+            registry_map, gitio.remote_url(source_root), repo_id, hub_label
+        )
+    return registry, pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
 
 
 @dataclass(frozen=True)
@@ -1197,6 +1301,7 @@ class PublishPlan:
     intake_url: str = ""
     refresh_code: bool = False
     refresh_plan: bool = False
+    repo_kind: str = ""
 
 
 def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
@@ -1217,6 +1322,12 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             f"{kb_dir / 'config.yaml'} is unreadable ({exc}) -- fix the file, "
             "or remove it to fall back to defaults"
         ) from exc
+    if not cfg.kind:
+        raise PublishError(
+            f"repo kind is not recorded in {kb_dir / 'config.yaml'} -- run "
+            "`kb init --kind <child|ba|dev|hub>` to record it; the hub needs it "
+            "to file this repo under the right menu"
+        )
     mode = "pr" if pr else "direct" if direct else "auto"
     wants_intake = bool(cfg.intake) and not pr and not direct
     if cfg.kind != "hub":
@@ -1226,6 +1337,7 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             intake_url=cfg.intake or "",
             refresh_code=cfg.kind == "dev",
             refresh_plan=cfg.kind == "ba",
+            repo_kind=cfg.kind,
         )
     try:
         hub_ref = require_hub(hub_flag, kb_dir)
@@ -1260,13 +1372,16 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             hub_ref=str(source_root),
             self_publish=True,
             intake_url=cfg.intake or "",
+            repo_kind=cfg.kind,
         )
     if wants_intake:
         raise PublishError(
             "intake publish is not supported for hub-to-hub publish — "
             "remove `intake:` from .kb/config.yaml or pass --direct/--pr"
         )
-    return PublishPlan(route="federation", mode=mode, hub_ref=hub_ref)
+    return PublishPlan(
+        route="federation", mode=mode, hub_ref=hub_ref, repo_kind=cfg.kind
+    )
 
 
 def _can_pr(explicit: str, has_remote: bool, root: Path) -> bool:
@@ -1304,29 +1419,37 @@ def publish(
     is_self = self_publish or handle.root.resolve() == source_root.resolve()
     if branch and not is_self:
         raise PublishError("--branch only applies to a hub's self-publish")
-    registry_map = None if is_self else _governed_registry(handle, hub_label)
-    rid = repo_id or source_root.name
-    if registry_map is not None:
-        rid = pubgate.resolve_identity(
-            registry_map, gitio.remote_url(source_root), repo_id, hub_label
-        )
-    rid = pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
+    registry, rid = resolve_publish_identity(
+        handle, hub_label, source_root, repo_id, is_self
+    )
     _neutralize_excludes(handle.root)
 
     has_remote = gitio.has_remote(handle.root)
     if branch:
         _require_branch_pr(handle.root, branch, has_remote)
-        return _publish_on_branch(kb_abs, handle, rid, source_commit, branch)
+    from strata_kb import config as config_mod
+
+    # Still before any write: an unrecorded or clashing kind refuses here.
+    snapshot_fn = functools.partial(
+        _snapshot,
+        kind=_publish_kind(config_mod.load_config(kb_abs).kind, registry, rid),
+    )
+    if branch:
+        return _publish_on_branch(
+            kb_abs, handle, rid, source_commit, branch, snapshot_fn=snapshot_fn
+        )
     mode = pubgate.decide_mode(
         mode,
         has_remote=has_remote,
         can_pr=_can_pr(mode, has_remote, handle.root),
-        governed=registry_map is not None,
+        governed=registry is not None and bool(federation.registry_map(registry)),
         hub_label=hub_label,
     )
     if mode == "pr":
-        return _publish_pr(kb_abs, handle, rid, source_commit)
-    return _publish_direct(kb_abs, handle, rid, source_commit, max_retries)
+        return _publish_pr(kb_abs, handle, rid, source_commit, snapshot_fn=snapshot_fn)
+    return _publish_direct(
+        kb_abs, handle, rid, source_commit, max_retries, snapshot_fn=snapshot_fn
+    )
 
 
 def _require_branch_pr(root: Path, branch: str, has_remote: bool) -> None:
@@ -1388,13 +1511,17 @@ def publish_federation(
     if handle is None:
         raise PublishError(f"could not reach hub '{gitio.redact_url(hub_ref)}'")
     hub_label = gitio.redact_url(hub_ref)
-    registry_map = _governed_registry(handle, hub_label)
+    registry = _load_hub_registry(handle, hub_label)
+    registry_map = federation.registry_map(registry) or None
     rid = repo_id or source_root.name
     if registry_map is not None:
         rid = pubgate.resolve_identity(
             registry_map, gitio.remote_url(source_root), repo_id, hub_label
         )
     rid = pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
+    # A hub is a `kb` repo to its parent: refuse before any write when the
+    # parent's registry pins this hub as ba or dev.
+    _publish_kind("hub", registry, rid)
     try:
         dest_rid = config_mod.load_config(handle.kb_dir).repo_id or None
     except Exception as exc:
@@ -1446,18 +1573,18 @@ def publish_federation(
         governed=registry_map is not None,
         hub_label=hub_label,
     )
+    non_kb = federation.non_kb_leaf_kinds(fed_src)
+    snapshot_fn = functools.partial(_snapshot_federation, non_kb=non_kb)
     if mode == "pr":
-        return _publish_pr(
-            fed_src, handle, rid, source_commit, snapshot_fn=_snapshot_federation
+        report = _publish_pr(
+            fed_src, handle, rid, source_commit, snapshot_fn=snapshot_fn
         )
-    return _publish_direct(
-        fed_src,
-        handle,
-        rid,
-        source_commit,
-        max_retries,
-        snapshot_fn=_snapshot_federation,
-    )
+    else:
+        report = _publish_direct(
+            fed_src, handle, rid, source_commit, max_retries, snapshot_fn=snapshot_fn
+        )
+    report.skipped_leaves = sorted(non_kb.items())
+    return report
 
 
 def _push_with_retry(handle: hub_mod.HubHandle, rid: str, max_retries: int) -> bool:

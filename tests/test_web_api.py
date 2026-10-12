@@ -274,3 +274,27 @@ def test_search_index_busy_503(client_factory, fed_hub, monkeypatch):
     resp = client_factory(hub=str(fed_hub)).get("/api/search", params={"q": "x"})
     assert resp.status_code == 503
     assert resp.json()["error"] == "index_busy"
+
+
+def test_api_search_kind_filter(client_factory, tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    hub = make_kinds_hub(tmp_path)
+    data = (
+        client_factory(hub=str(hub))
+        .get("/api/search", params={"q": "refund", "kind": "ba"})
+        .json()
+    )
+    assert data["results"]
+    assert {r["kind"] for r in data["results"]} == {"ba"}
+
+
+def test_api_search_unknown_kind_400(client_factory, tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    hub = make_kinds_hub(tmp_path)
+    resp = client_factory(hub=str(hub)).get(
+        "/api/search", params={"q": "refund", "kind": "code"}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "unknown_kind"

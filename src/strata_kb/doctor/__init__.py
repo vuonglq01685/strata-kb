@@ -27,6 +27,8 @@ from strata_kb.doctor.checks.hub import (  # noqa: F401 -- re-exported
     check_federation_publish,
     check_hub,
     check_published_digests,
+    check_published_kind,
+    check_registry_kinds,
 )
 from strata_kb.doctor.checks.local import (  # noqa: F401 -- re-exported
     SOURCE_DIRS,
@@ -150,6 +152,7 @@ def run(
                 if not (repo_id and dest_rid and dest_rid == repo_id):
                     upstream = handle
             issues += check_federation_publish(source_root, upstream, repo_id)
+            issues += check_registry_kinds(source_root)
     else:
         # The generated doc (dev `-code`, ba `-plan`) is rebuilt per branch
         # and CI publishes it, so it is left out of the snapshot compare.
@@ -159,6 +162,8 @@ def run(
             kb_dir, handle, repo_id=repo_id, code_doc=generated
         )
         issues += hub_issues
+        if cfg_kind:
+            issues += check_published_kind(kb_dir, handle, cfg_kind)
         if cfg_kind == "dev":
             repo_root = kb_dir.resolve().parent
             issues += check_dev_sync(kb_dir, repo_root, repo_id)

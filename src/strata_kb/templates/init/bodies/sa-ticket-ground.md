@@ -26,7 +26,8 @@ to the mission layer.
 2. **Load** — from `<repo-id>-code` on the hub only, via the MCP tool
    `kb_get_section` (fallback: `kb get <repo-id>-code <section-id>`),
    discovering ids with `kb_search` (fallback: `kb query`) restricted to
-   that document. For a ticket: `struct.tree` (L3 for the file list),
+   that document and to the code menu: `--kind dev --tags <repo-id>-code`
+   (MCP: `kinds=["dev"]`, `tags=["<repo-id>-code"]`). For a ticket: `struct.tree` (L3 for the file list),
    every `svc.*`, `cmd.test`, and the `db.*` / `api.*` / `int.*` sections
    whose names match the ticket's nouns. From each `svc.*` also read its
    `Volumes`, `Healthcheck` and `Devices` rows — the compose facts the

@@ -19,7 +19,7 @@ from typing import NamedTuple
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from strata_kb import models
+from strata_kb import kinds, models
 
 logger = logging.getLogger("strata_kb.federation")
 
@@ -41,7 +41,7 @@ class RegistryError(RuntimeError):
     """federation/registry.yaml is unreadable — intake must fail closed.
 
     Deliberately stays out of the KbError family: not CLI-reachable -- both
-    callers (publish's _governed_registry, intake's authorize path) already
+    callers (publish's _load_hub_registry, intake's authorize path) already
     convert it to their own message/HTTP response themselves, fail-closed by
     design.
     """
@@ -76,17 +76,30 @@ def registry_map(registry: models.Registry) -> dict[str, str]:
     return out
 
 
+def registry_kinds(registry: models.Registry) -> dict[str, str]:
+    """{repo_id: kind} for entries that pin a kind (empty kinds skipped)."""
+    out: dict[str, str] = {}
+    for repo in registry.repos:
+        entry = registry.resolve(repo)
+        if entry is not None and entry.kind:
+            out[entry.repo_id] = entry.kind
+    return out
+
+
 class FederationMeta(BaseModel):
     repo_id: str
     source_url: str = ""
     source_commit: str
     published_at: str = ""
+    # "" = not recorded; readers infer it from the docs (kinds.infer_kind).
+    kind: str = ""
 
 
 @dataclass
 class FederatedRepo:
     meta: FederationMeta
     index: models.KBIndex
+    kind: str
     kb_dir: Path  # federation/<repo-id>/ — a full .kb mirror (L0→L3)
 
 
@@ -285,6 +298,53 @@ def _with_manifest_revisions(index: models.KBIndex, entry_dir: Path) -> models.K
     return index
 
 
+_warned: set[str] = set()
+
+
+def _warn_once(key: str, message: str, *args: object) -> None:
+    """Log a warning once per process per `key` -- load_federation runs on
+    every request, and a standing hub problem must not flood the log."""
+    if key in _warned:
+        return
+    _warned.add(key)
+    logger.warning(message, *args)
+
+
+def _recorded_leaf_kind(meta: FederationMeta, child: Path) -> str:
+    """The kind `_meta.yaml` records, normalised (stripped, lowercased); "" when
+    unrecorded or not in the hub vocabulary, so readers fall back to
+    inference instead of crashing on a hand-edited value. `kb doctor` still
+    flags the raw value."""
+    recorded = meta.kind.strip().lower()
+    if recorded and recorded not in kinds.HUB_KINDS:
+        _warn_once(
+            f"kind:{child}",
+            "federation leaf %s records unknown kind '%s' -- inferring its kind",
+            child,
+            meta.kind,
+        )
+        return ""
+    return recorded
+
+
+def _read_leaf(child: Path) -> tuple[FederationMeta, models.KBIndex, str]:
+    """A leaf's `_meta.yaml`, `index.yaml` and resolved kind (the recorded one,
+    else inferred from the index). Raises on a broken file."""
+    meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
+    index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
+    return meta, index, _recorded_leaf_kind(meta, child) or kinds.infer_kind(index.docs)
+
+
+def resolve_leaf_kind(entry_dir: Path) -> str | None:
+    """The kind of the leaf at `entry_dir`, or None if it is unreadable. No
+    nested filter -- this is how callers find the non-kb leaves `_load_entry`
+    hides."""
+    try:
+        return _read_leaf(entry_dir)[2]
+    except (OSError, yaml.YAMLError, ValidationError, UnicodeDecodeError):
+        return None
+
+
 def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
     """One leaf entry → FederatedRepo, or None if its `_meta.yaml`/
     `index.yaml` is broken (logged, not raised — a caller looping over many
@@ -300,8 +360,7 @@ def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
     to use.
     """
     try:
-        meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
-        index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
+        meta, index, kind = _read_leaf(child)
     except (yaml.YAMLError, ValidationError, UnicodeDecodeError) as exc:
         # UnicodeDecodeError is a ValueError, not a yaml.YAMLError/
         # ValidationError -- a non-UTF-8 _meta.yaml/index.yaml must skip
@@ -310,9 +369,18 @@ def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
         # publish's own aggregate-index rebuild).
         logger.warning("federation/%s is broken — skipping: %s", path_id, exc)
         return None
+    if "/" in path_id and kind != kinds.KB:
+        _warn_once(
+            f"nested:{child}",
+            "federation/%s is a nested %s entry — only kb entries may nest; ignoring",
+            path_id,
+            kind,
+        )
+        return None
     return FederatedRepo(
         meta=meta.model_copy(update={"repo_id": path_id}),
         index=_with_manifest_revisions(index, child),
+        kind=kind,
         kb_dir=child,
     )
 
@@ -330,8 +398,37 @@ def load_federation(federation_dir: Path) -> list[FederatedRepo]:
 _FED_TOP_SKIP = {"index.yaml", "registry.yaml", ".gitkeep"}
 
 
+def non_kb_leaf_kinds(fed_root: Path) -> dict[str, str]:
+    """{path-id: kind} of the leaves under `fed_root` whose kind is not `kb`.
+
+    Walks iter_entry_dirs, not load_federation: that hides nested non-kb
+    leaves, which are exactly the ones a child hub must also keep off its
+    parent. A leaf whose kind is unreadable (a broken entry) is not listed."""
+    out: dict[str, str] = {}
+    for path_id, entry in iter_entry_dirs(fed_root):
+        kind = resolve_leaf_kind(entry)
+        if kind is not None and kind != kinds.KB:
+            out[path_id] = kind
+    return out
+
+
+def non_kb_leaves(fed_root: Path) -> list[str]:
+    """Sorted path-ids of the leaves whose resolved kind is not `kb`."""
+    return sorted(non_kb_leaf_kinds(fed_root))
+
+
+def kb_only_fed_digest(fed_root: Path) -> str:
+    """`_fed_tree_digest(fed_root)` without the files under non-kb leaves --
+    what a child hub actually publishes upward."""
+    return _fed_tree_digest(
+        fed_root, exclude_prefixes=tuple(f"{p}/" for p in non_kb_leaves(fed_root))
+    )
+
+
 def _fed_tree_digest(
-    root: Path, skip: frozenset[str] | set[str] = _FED_TOP_SKIP
+    root: Path,
+    skip: frozenset[str] | set[str] = _FED_TOP_SKIP,
+    exclude_prefixes: tuple[str, ...] = (),
 ) -> str:
     """Digest deterministic của một cây federation — bỏ file tầng đỉnh mà
     publish không mirror (index/registry/.gitkeep). KHÔNG bỏ _meta.yaml ở
@@ -362,7 +459,7 @@ def _fed_tree_digest(
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
-        if rel in skip:
+        if rel in skip or rel.startswith(exclude_prefixes):
             continue
         # Legacy self-heal: a hub cache cloned before clones forced
         # core.autocrlf=false and shipped .gitattributes still has a CRLF

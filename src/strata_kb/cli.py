@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from typer.core import TyperGroup
 
 from strata_kb import models
+from strata_kb.kinds import HUB_KINDS
 from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
@@ -229,6 +230,85 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
     raise typer.Exit(1)
 
 
+def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
+    """Record a kind on every kind-less federation/registry.yaml entry.
+    Silent when there is nothing to do; never commits."""
+    import difflib
+
+    from strata_kb import registrykind
+    from strata_kb.federation import RegistryError
+
+    fed = hub / "federation"
+    reg_path = fed / "registry.yaml"
+    if not reg_path.is_file():
+        return
+    try:
+        proposals = registrykind.propose(fed)
+    except RegistryError as exc:
+        typer.secho(f"{exc} — kinds not recorded", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if not proposals:
+        return
+    interactive = _stdin_isatty()
+    unresolved = [k for k, v in proposals.items() if not v]
+    if unresolved and yes:
+        typer.secho(
+            "federation/registry.yaml has entries without a kind: "
+            + ", ".join(unresolved)
+            + " (no kind could be inferred — set them by hand)",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    if not interactive and not yes:
+        # An automated hub upgrade must not fail during the window before
+        # every publisher is upgraded (README "Upgrade order"): warn, write
+        # nothing, exit 0.
+        typer.secho(
+            "warning: federation/registry.yaml has entries without a kind: "
+            + ", ".join(proposals)
+            + " — re-run `kb init --kind hub --yes` once publishers are upgraded",
+            fg=typer.colors.YELLOW,
+        )
+        return
+    for key in unresolved:
+        while True:
+            answer = typer.prompt(
+                f"Kind for registry entry {key} (kb, ba, dev; blank to skip)",
+                default="",
+                show_default=False,
+            )
+            answer = answer.strip().lower()
+            if answer in ("", *HUB_KINDS):
+                break
+            typer.secho(
+                f"Error: {answer!r} is not one of kb, ba, dev.", fg=typer.colors.RED
+            )
+        proposals[key] = answer
+    chosen = {k: v for k, v in proposals.items() if v}
+    if not chosen:
+        return
+    old = reg_path.read_bytes().decode("utf-8")
+    try:
+        new = registrykind.apply(old, chosen)
+    except ValueError as exc:
+        typer.secho(f"registry.yaml not changed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo(
+        "".join(
+            difflib.unified_diff(
+                old.splitlines(keepends=True),
+                new.splitlines(keepends=True),
+                "federation/registry.yaml",
+                "federation/registry.yaml",
+            )
+        )
+    )
+    if not yes and not typer.confirm("Write these kinds to federation/registry.yaml?"):
+        return
+    reg_path.write_bytes(new.encode("utf-8"))
+    typer.echo("next: commit federation/registry.yaml and open a PR")
+
+
 @app.command()
 def init(
     path: Path = typer.Argument(Path("."), help="Target directory (default: current)"),
@@ -258,6 +338,11 @@ def init(
         "detectable (repeatable): python, ts, java, go, dotnet, php, rust, "
         "swift, dart, e2e-playwright. Dev kind only; recorded in "
         ".kb/config.yaml so a plain re-init keeps it.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Hub kind only: write the proposed registry kinds without asking.",
     ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
@@ -309,6 +394,8 @@ def init(
         f"kb init ({resolved}): {len(report.created)} created, "
         f"{len(report.updated)} updated, {len(report.skipped)} skipped."
     )
+    if resolved == "hub":
+        _upgrade_registry_kinds(path, yes)
     typer.echo("Next steps:")
     if resolved == "hub":
         typer.echo(
@@ -2112,25 +2199,36 @@ def query(
         "--semantic",
         help="Warn when embeddings are unavailable (hybrid runs both legs automatically)",
     ),
+    kind: list[str] = typer.Option(
+        [],
+        "--kind",
+        help="Limit to a kind: kb (Document), ba (Ticket), dev (Code); repeatable, omit for all",
+    ),
 ) -> None:
     """Hybrid search (FTS5 keyword + semantic KNN, RRF-fused) → L2 sections within budget, with citations."""
     import sqlite3
 
     from strata_kb import searchdb
+    from strata_kb.kinds import UnknownKindError
     from strata_kb.query import search_detailed
 
     handle = _hub_or_exit(hub, kb_dir)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] or None
     try:
         outcome = search_detailed(
-            handle, text, tags=tag_list, budget=budget, semantic=semantic
+            handle,
+            text,
+            tags=tag_list,
+            budget=budget,
+            semantic=semantic,
+            kinds=kind or None,
         )
     except sqlite3.DatabaseError as exc:
         if searchdb.classify_db_error(exc) != "client":
             raise
         typer.secho(f"search index rejected the query: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
-    except searchdb.TooManyTagsError as exc:
+    except (searchdb.TooManyTagsError, UnknownKindError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     for note in outcome.notes:
@@ -2284,6 +2382,7 @@ def publish(
     # root hub with no `hub:`, intake on a hub-to-hub publish) is a
     # PublishError, which the root guard prints as one line.
     plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
+    typer.echo(publish_mod.kind_line(plan.repo_kind))
     if branch:
         # Before any refresh or write. publish() re-checks the git-side rules.
         if direct:
@@ -2322,6 +2421,8 @@ def publish(
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(1) from None
         _echo_publish_report(report)
+        for leaf, kind in report.skipped_leaves:
+            typer.echo(f"  skipped  {leaf} (kind {kind} stays on this hub)")
         return
 
     # The gate applies only to routes that publish .kb/ (self-publish,
@@ -3834,7 +3935,10 @@ def doctor(
     issues = kind_issues + result.issues
 
     for issue in issues:
-        color = typer.colors.RED if issue.level == "error" else typer.colors.YELLOW
+        color = {
+            "error": typer.colors.RED,
+            "warning": typer.colors.YELLOW,
+        }.get(issue.level)
         typer.secho(f"[{issue.level}] {issue.message}", fg=color)
     if any(i.level == "error" for i in issues):
         raise typer.Exit(1)

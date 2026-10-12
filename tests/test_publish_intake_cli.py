@@ -41,6 +41,8 @@ def child(tmp_path):
     kb = root / ".kb"
     kb.mkdir()
     (kb / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    # ci-publish sends the repo's kind; an unrecorded one is refused.
+    (kb / "config.yaml").write_text("kind: child\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-m", "init")
     bare = tmp_path / "child-origin.git"
@@ -280,6 +282,7 @@ class TestCIPublish:
         from strata_kb import hashsync
 
         local = hashsync.build_manifest(root / ".kb")
+        local.pop("config.yaml", None)  # the hub can never hold this file
         http = FakeHTTP(
             {
                 "https://actions.local/token": (200, {"value": "oidc-jwt"}),
@@ -305,7 +308,7 @@ class TestCIPublish:
         from strata_kb import hashsync
 
         (root / ".kb" / "config.yaml").write_text(
-            'hub: "https://x-access-token:ghs_SECRET@github.com/org/kb-hub.git"\n',
+            'kind: child\nhub: "https://x-access-token:ghs_SECRET@github.com/org/kb-hub.git"\n',
             encoding="utf-8",
         )
         local = hashsync.build_manifest(root / ".kb")
@@ -360,6 +363,27 @@ class TestCIPublish:
         archive = _archive_from_multipart(body)
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tf:
             assert "index.yaml" in tf.getnames()
+
+    def test_ci_publish_sends_kind(self, child, monkeypatch):
+        root, _ = child
+        self._env(monkeypatch)
+        (root / ".kb" / "config.yaml").write_text("kind: dev\n", encoding="utf-8")
+        http = FakeHTTP(
+            {
+                "https://kb.test/intake/manifest": (200, {"files": {}}),
+                "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+                "https://kb.test/intake/publish": (
+                    200,
+                    {"repo_id": "child-a", "pr_url": "https://gh/pull/8"},
+                ),
+            }
+        )
+        cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+        body = http.posted[0][2].decode("latin-1")
+        meta_json = (
+            body.split('name="meta"')[1].split("\r\n\r\n", 1)[1].split("\r\n")[0]
+        )
+        assert json.loads(meta_json)["kind"] == "dev"
 
     def test_manifest_endpoint_down_falls_back_to_full_upload(self, child, monkeypatch):
         root, _ = child

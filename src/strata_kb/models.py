@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import Literal, TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from strata_kb import kinds
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -193,6 +195,15 @@ class RegistryEntry(BaseModel):
 
     repo_id: str
     workflow: str = ""
+    # "" = not pinned; the leaf's own kind is inferred at read time.
+    kind: str = ""
+
+    @field_validator("kind")
+    @classmethod
+    def _check_kind(cls, value: str) -> str:
+        if value and value not in kinds.HUB_KINDS:
+            raise ValueError(f"kind must be one of {list(kinds.HUB_KINDS)} or empty")
+        return value
 
 
 class Registry(BaseModel):

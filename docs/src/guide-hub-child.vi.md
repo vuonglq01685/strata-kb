@@ -344,7 +344,7 @@ repos:
   thêm nó bằng tay rồi chạy lại `kb init --kind ba`).
 
 Một tài liệu `<repo>-plan` đã publish xuất hiện trong federation giống như `-code`:
-trong index tổng hợp, với `kb query` và MCP (gắn tag `plan, generated`), và dưới menu **Plans**
+trong index tổng hợp, với `kb query` và MCP (gắn tag `plan, generated`), và dưới menu **Ticket**
 của web UI (mục 10.2). PR hub mà nó mở được review và merge như mọi PR khác. Nếu một
 PR đã đóng hoặc đã merge và nhánh `publish/<repo-id>` của nó đã bị xoá, lần publish
 kế tiếp mở một PR mới; bản sửa này đi cùng 1.17.0, nên hãy **triển khai lại dịch vụ
@@ -387,9 +387,9 @@ docker compose run --rm hub kb ingest source/handbook.pdf --id hr-handbook
 Trên child, `kb docker-setup` kéo image ingest về để việc ingest không cần
 Python cục bộ.
 
-## 10.2 Menu Plans
+## 10.2 Menu Ticket
 
-Web UI có menu **Plans** nằm cạnh Documents. Nó hiển thị những gì các repo `ba`
+Web UI có menu **Ticket** nằm cạnh Document. Nó hiển thị những gì các repo `ba`
 publish dưới dạng tài liệu `<repo>-plan`, với trạng thái từng story được suy ra
 chỉ từ hub: **done** (id nằm trong một dòng `hist.*` của `-svc` của repo Dev),
 **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã publish)
@@ -397,14 +397,14 @@ hoặc **blocked** (kèm lý do). Không có gì mới được lưu và không 
 
 | Route | Hiển thị |
 |---|---|
-| `/ui/plans` | Mọi repo BA và các mission của chúng, kèm số lượng theo trạng thái. `?repo=<id>` cho một repo |
-| `/ui/plans/{mission}?repo=<id>` | Tóm tắt mission và bảng backlog |
-| `/ui/plans/{mission}/{story}?repo=<id>` | Ticket. Ticket không có mission là `/ui/plans/tickets/{story}?repo=<id>` |
+| `/ui/tickets` | Mọi repo BA và các mission của chúng, kèm số lượng theo trạng thái. `?repo=<id>` cho một repo |
+| `/ui/tickets/{mission}?repo=<id>` | Tóm tắt mission và bảng backlog |
+| `/ui/tickets/{mission}/{story}?repo=<id>` | Ticket. Ticket không có mission là `/ui/tickets/tickets/{story}?repo=<id>` |
 
 Repo là tham số truy vấn vì id federation lồng nhau có chứa `/`. Không có `?repo=`
 thì dùng repo duy nhất đang giữ id đó; nếu có nhiều repo, trang là 404 nêu tên
-chúng. Tài liệu `*-plan` bị loại khỏi Documents, số đếm ở trang tổng quan và dải
-tag; một kết quả tìm kiếm nằm trong đó dẫn tới trang Plans của nó. Bản CLI tương
+chúng. Tài liệu `*-plan` nằm ở menu Ticket, không nằm ở Document, và trang tổng quan
+đếm theo từng loại; một kết quả tìm kiếm nằm trong đó dẫn tới trang Ticket của nó. Bản CLI tương
 ứng là `kb mission next --from-hub [--repo <ba-repo>]`.
 
 ## 10.3 Trước khi mở ra ngoài

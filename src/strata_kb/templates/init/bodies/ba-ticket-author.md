@@ -40,7 +40,9 @@ citation block — saved to `tickets/<folder>/<ticket-id>.md`. The output is a
    narrow; a wholesale copy drags in refs the ticket never cites. Confirm
    and pin the ticket's own refs fresh in step 5.
 3. **Ground** — use the MCP tool `kb_search` when it is available;
-   otherwise fall back to `kb query "<text>" --tags <tags>` (CLI).
+   otherwise fall back to `kb query "<text>" --tags <tags> --kind kb --kind dev`
+   (CLI). Pass `kinds=["kb","dev"]` to `kb_search`: you read knowledge and
+   code, never other tickets.
    **Budget the search:** 500–800 tokens for broad discovery — enough
    for the citation plus a summary to choose from; `kb_get_section`
    only for a section already chosen; L3 only for a value that will be

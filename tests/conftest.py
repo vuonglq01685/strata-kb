@@ -213,6 +213,8 @@ def git_kb(fixture_kb: Path, run_git) -> dict:
     Returns: {"root", "kb", "rev1", "rev2"}.
     """
     root = fixture_kb.parent
+    # A publishing child records its repo kind (kb publish refuses without).
+    (fixture_kb / "config.yaml").write_text("kind: child\n", encoding="utf-8")
     run_git(root, "init")
     run_git(root, "config", "user.name", "test")
     run_git(root, "config", "user.email", "test@test.local")
@@ -385,6 +387,31 @@ def intake_cfg(hub_with_origin, tmp_path, monkeypatch):
         http=fake_http,
         push_via_token_url=False,
     )
+
+
+def make_kinds_hub(tmp_path: Path) -> Path:
+    """A hub with one kb, one ba (plan) and one dev (`-code`) repo, all matching 'refund'."""
+    fed = tmp_path / "federation"
+    (tmp_path / ".kb").mkdir()
+    make_fed_entry(
+        fed, "k-repo", "refund-notes", l2="## 1.1 Refund\n\nrefund policy.\n"
+    )
+    make_fed_entry(
+        fed,
+        "b-repo",
+        "refund-plan",
+        title="Refund — plan",
+        tags=["plan", "generated"],
+        l2="## 1.1 Refund\n\nrefund ticket.\n",
+    )
+    make_fed_entry(
+        fed,
+        "d-repo",
+        "refund-code",
+        tags=["code", "generated"],
+        l2="## 1.1 Refund\n\nrefund code.\n",
+    )
+    return tmp_path
 
 
 def make_fed_entry(

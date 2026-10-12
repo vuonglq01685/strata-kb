@@ -57,7 +57,9 @@ def _make_repo(
             ]
         ),
     )
-    (kb / "config.yaml").write_text(f"hub: {hub}\nrepo_id: {name}\n", encoding="utf-8")
+    (kb / "config.yaml").write_text(
+        f"kind: child\nhub: {hub}\nrepo_id: {name}\n", encoding="utf-8"
+    )
     run_git(root, "init")
     run_git(root, "config", "user.name", "t")
     run_git(root, "config", "user.email", "t@t")

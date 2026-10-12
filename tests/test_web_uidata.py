@@ -158,6 +158,33 @@ def test_store_stats_shapes(fed_hub):
     assert stats.l0_tokens >= 0
 
 
+def test_store_stats_counts_docs_per_kind(tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    stats = uidata.store_stats(_hub(make_kinds_hub(tmp_path)))
+    assert stats.by_kind == {"kb": 1, "ba": 1, "dev": 1}
+    assert stats.docs == 3
+
+
+def test_store_stats_by_kind_defaults_empty():
+    assert uidata.StoreStats(0, 0, 0, 0).by_kind == {}
+
+
+def test_all_tags_scoped_to_kinds(tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    hub = _hub(make_kinds_hub(tmp_path))
+    make_fed_entry(
+        hub.root / "federation",
+        "s-repo",
+        "billing-svc",
+        tags=["code", "curated", "ledger"],
+    )
+    assert "ledger" in uidata.all_tags(hub)
+    assert "ledger" in uidata.all_tags(hub, kinds=["dev"])
+    assert "ledger" not in uidata.all_tags(hub, kinds=["kb"])
+
+
 def test_store_stats_docs_matches_catalog_when_manifest_broken(fed_hub):
     # store_stats() used to count docs off the federation index (repo.index.docs),
     # while catalog() counts manifest-backed docs via _iter_manifests. A broken

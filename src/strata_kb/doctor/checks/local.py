@@ -190,7 +190,7 @@ def check_kb(kb_dir: Path) -> list[Issue]:
 
 
 def check_kind(kb_dir: Path) -> list[Issue]:
-    """Warn when the repo's hub|child kind is not recorded in config.yaml."""
+    """Warn when the repo's kind is not recorded in config.yaml."""
     from strata_kb.config import load_config
 
     try:
@@ -211,7 +211,7 @@ def check_kind(kb_dir: Path) -> list[Issue]:
             Issue(
                 "warning",
                 "repo kind is not recorded in .kb/config.yaml — run `kb init` "
-                "to record kind: hub|child",
+                "to record kind: hub|child|ba|dev",
             )
         ]
     return []

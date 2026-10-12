@@ -44,7 +44,7 @@ def test_open_db_rebuilds_on_schema_version_mismatch(tmp_path):
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
     conn.execute("UPDATE meta SET value='0' WHERE key='schema_version'")
-    conn.execute("INSERT INTO repos VALUES('old-repo', 'fp')")
+    conn.execute("INSERT INTO repos(repo_id, fingerprint) VALUES('old-repo', 'fp')")
     conn.commit()
     conn.close()
     conn = searchdb.open_db(hub)  # version mismatch → delete + recreate
@@ -139,7 +139,7 @@ def test_open_db_warm_read_only_under_writer_lock(tmp_path, monkeypatch):
     # parallel with a long sync holding the writer lock (spec §3.2), index untouched
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
-    conn.execute("INSERT INTO repos VALUES('r', 'fp')")
+    conn.execute("INSERT INTO repos(repo_id, fingerprint) VALUES('r', 'fp')")
     conn.commit()
     conn.close()
     monkeypatch.setattr(searchdb, "_BUSY_TIMEOUT_MS", 100)
@@ -199,7 +199,7 @@ def test_open_db_corrupt_rebuild_leaves_no_open_connection(tmp_path, monkeypatch
 def test_delete_db_removes_wal_shm(tmp_path):
     hub = _handle(tmp_path)
     conn = searchdb.open_db(hub)
-    conn.execute("INSERT INTO repos VALUES('r', 'fp')")
+    conn.execute("INSERT INTO repos(repo_id, fingerprint) VALUES('r', 'fp')")
     conn.commit()
     conn.close()
     path = searchdb.db_path(hub)
@@ -1159,3 +1159,55 @@ def test_tag_list_at_the_cap_is_accepted(fed_hub):
     hub = HubHandle(root=fed_hub)
     tags = [f"t{i}" for i in range(searchdb.MAX_TAGS - 1)] + ["arinc424"]
     assert query_mod.search(hub, "airspace", tags=tags)
+
+
+def test_schema_v2_cache_rebuilds_with_kind(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    conn = searchdb.open_db(hub)
+    conn.execute("DROP TABLE repos")
+    conn.execute(
+        "CREATE TABLE repos(repo_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL)"
+    )
+    conn.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
+    conn.commit()
+    conn.close()
+    conn = searchdb.open_fresh(hub, None)
+    try:
+        hits = searchdb.fts_search(conn, "airspace", kinds=["kb"])
+        assert hits
+        rows = searchdb.load_sections(conn, [h[0] for h in hits])
+        assert {r.kind for r in rows.values()} == {"kb"}
+        assert searchdb.fts_search(conn, "airspace", kinds=["dev"]) == []
+    finally:
+        conn.close()
+
+
+def test_kind_change_resyncs(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    conn = searchdb.open_fresh(hub, None)
+    kind = "SELECT kind FROM repos WHERE repo_id='arinc-kb'"
+    try:
+        assert conn.execute(kind).fetchone() == ("kb",)
+    finally:
+        conn.close()
+    meta = fed_hub / "federation" / "arinc-kb" / "_meta.yaml"
+    meta.write_text(meta.read_text(encoding="utf-8") + "kind: ba\n", encoding="utf-8")
+    conn = searchdb.open_fresh(hub, None)
+    try:
+        assert conn.execute(kind).fetchone() == ("ba",)
+        hits = searchdb.fts_search(conn, "airspace", kinds=["ba"])
+        rows = searchdb.load_sections(conn, [h[0] for h in hits])
+        assert rows and {r.repo_id for r in rows.values()} == {"arinc-kb"}
+    finally:
+        conn.close()
+
+
+def test_knn_search_kind_filter_post_knn(fed_hub):
+    hub = HubHandle(root=fed_hub)
+    emb = FakeEmbedder()
+    conn = searchdb.open_fresh(hub, emb)
+    try:
+        assert searchdb.knn_search(conn, emb, "corridor", kinds=["dev"]) == []
+        assert searchdb.knn_search(conn, emb, "corridor", kinds=["kb"])
+    finally:
+        conn.close()

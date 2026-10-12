@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from strata_kb import gitio, models, searchdb
+from strata_kb.kinds import UnknownKindError
 from strata_kb.query import (
     AmbiguousDocError,
     InvalidLevelError,
@@ -77,7 +78,7 @@ def list_docs(config: ServerConfig) -> list[dict] | None:
     if hub is None:
         return None
     return [
-        {**d.model_dump(), "repo": repo.meta.repo_id}
+        {**d.model_dump(), "repo": repo.meta.repo_id, "kind": repo.kind}
         for repo in load_federation(hub.federation_dir)
         for d in repo.index.docs
     ]
@@ -239,9 +240,17 @@ def build_routes(config: ServerConfig) -> list[Route]:
         if hub is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
         try:
-            results = search(hub, q, tags=tags, budget=budget)
+            results = search(
+                hub,
+                q,
+                tags=tags,
+                budget=budget,
+                kinds=request.query_params.getlist("kind") or None,
+            )
         except searchdb.TooManyTagsError as exc:
             return _error(400, "too_many_tags", str(exc))
+        except UnknownKindError as exc:
+            return _error(400, "unknown_kind", str(exc))
         except searchdb.IndexBusyError as exc:
             return _error(503, "index_busy", str(exc))
         except (yaml.YAMLError, ValidationError, ValueError) as exc:
@@ -266,6 +275,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
                     "tokens": r.content_tokens,
                     "content": r.content,
                     "source": r.source,
+                    "kind": r.kind,
                 }
                 for r in results
             ],

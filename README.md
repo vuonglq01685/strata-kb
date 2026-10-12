@@ -125,6 +125,15 @@ the choice as `kind:` in `.kb/config.yaml`. Non-interactive runs pass
 | **`ba`** | Requirements repo. Drafts Dev-ready tickets — and, for large features, epic-level mission plans — grounded in the KB, versioned under `tickets/` and `missions/` and gated by CI Definition-of-Ready checks. Never ingests or summarizes KB content; it publishes only its own plan (`<repo_id>-plan`, from the ready missions and tickets) to the hub. |
 | **`dev`** | Product code repo. Implements BA tickets grounded in the KB through a five-command agent workflow. Never ingests outside documents; it publishes knowledge about *its own source code* — generated (`-code`) and curated (`-svc`). |
 
+**Hub kinds.** On the hub every repo files under one of three kinds, recorded
+in its `_meta.yaml` and shown as a menu in the Web UI (section 10): `hub` and
+`child` publish **`kb`** (the **Document** menu), `ba` publishes **`ba`**
+(**Ticket**) and `dev` publishes **`dev`** (**Code**). A repo has exactly one
+kind, fixed by `kb init --kind`; the mapping is not configurable. `kb publish`
+refuses a repo whose kind is not recorded in `.kb/config.yaml` (run
+`kb init --kind <child|ba|dev|hub>`) and prints `kind: <kind> → hub menu: <menu>`
+before it sends anything.
+
 Re-running `kb init` refreshes scaffold files (skills, templates, workflows) and
 preserves `.kb/index.yaml`, `.kb/config.yaml` and `.claude/settings.json` unless
 `--force`. `--lang <id>` (dev, repeatable) forces a conventions pack whose
@@ -254,7 +263,7 @@ that follows it.
 
 | Command | Purpose |
 |---|---|
-| `kb init` | Scaffold or refresh a KB repo of a given kind |
+| `kb init` | Scaffold or refresh a KB repo of a given kind. On a hub (`--kind hub [--yes]`) it also records the hub kind of registry entries that lack one — see [Registry kinds](#registry-kinds-and-the-1200-upgrade) |
 | `kb docker-setup` | Prepare the repo for Docker (hub: `.env` + token + start; child: pull image) |
 | `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
@@ -465,6 +474,7 @@ continuous service. Entitlement is calculated per the table below.
 | `--tags` | Only search documents carrying these tags (document-level pre-filter); a document id is also accepted as a tag. |
 | `--budget` | Maximum tokens returned. **Advisory:** the first result is always returned whatever its size, and sections are never cut mid-way — that is what keeps tables verbatim. |
 | `--semantic` | Force semantic search; warns clearly when embeddings are unavailable |
+| `--kind` | Only search one kind of repo: `kb` (Document), `ba` (Ticket) or `dev` (Code). Repeatable; omit for all kinds, exactly as before. An unknown value is an error, never ignored |
 
 Every result carries a citation of the form `<repo-id>:<doc-id> §<section> (<revision>)`
 — e.g. `ops:hr-handbook §4.12 (2026 edition)` — so the federation repo, document
@@ -477,6 +487,19 @@ call happens during a lookup** — it is pure code, fast, and free.
 
 `kb query`, MCP and the Web UI all read **only** the hub's `federation/`. The
 local `.kb/` is a drafting desk; nobody queries it.
+
+**Searching by kind.** The same filter is on every entry point: `kb query --kind
+dev --kind kb`, MCP `kb_search(..., kinds=["dev", "kb"])` and REST
+`/api/search?q=…&kind=dev&kind=kb` (an unknown value answers `400` with error
+code `unknown_kind`; the CLI and MCP print the error instead). Each REST
+`/api/search` result, and each entry of `/api/docs`, carries its `kind`. A kind
+filter narrows the candidates before ranking, so a menu search in the Web UI can
+list more hits than the kind chip of the top search shows: the chip only filters
+the one budgeted search the top box ran.
+The agent skills pass the kind they need: BA skills search `--kind kb --kind
+dev`; `dev-implement-ticket` searches `--kind dev` for its own code (plus
+separate `--kind ba` and `--kind kb` lookups); `sa-ticket-ground` searches
+`--kind dev`; `kb-code-sync` searches `--kind kb`.
 
 ### `kb get`
 
@@ -545,6 +568,58 @@ GitHub Actions job, authenticates to an intake service with GitHub Actions OIDC,
 secrets. Uploaded paths are capped at 110 UTF-16 code units so that
 `federation/<repo-id>/<path>` stays inside a Windows client's `MAX_PATH`. A path
 crossing the cap is refused with `400` and the whole upload fails.
+
+### Registry kinds and the 1.20.0 upgrade
+
+`federation/registry.yaml` entries carry the hub kind of each repo. An entry is
+either a plain `repo_id` string (still valid, kind unknown) or a mapping
+`{repo_id, kind, workflow?}` with `kind` one of `kb`, `ba`, `dev`:
+
+```yaml
+repos:
+  acme/handbook: {repo_id: handbook, kind: kb}
+  acme/billing: {repo_id: billing, kind: dev}
+  acme/billing-reqs: {repo_id: billing-reqs, kind: ba}
+```
+
+On a governed hub the registry decides the kind; the publisher's own kind is
+only checked against it. Both the snapshot route (`kb publish`) and the intake
+route (`kb ci-publish`) record the kind in the leaf's `_meta.yaml`. A repo whose
+kind maps to something else than its registry entry (`child` or `hub` against
+`kb` is fine; `ba` against `dev` is not) is refused: `kb publish` exits with
+`kind mismatch: registry says '<kind>' for <repo>, this repo publishes as
+'<kind>' — fix kind: in federation/registry.yaml or the repo's
+.kb/config.yaml`, and the intake answers `403` with the same text. A registry
+entry with no `kind` still publishes: the repo's own kind is recorded.
+
+Leaves published before 1.20.0 have no recorded kind. They are not rewritten
+and nothing moves under `federation/`: the kind is inferred when read (a
+generated plan document, with a plan title and the `plan`/`generated` tags, is
+`ba`; a `-code` or `-svc` document with the `code` tag is `dev`; anything
+else is `kb`), so the Web UI and kind-filtered search are right immediately.
+The kind is recorded on the repo's next publish that carries one (the registry
+pin, or an upgraded publisher's own kind), even with unchanged content: that
+publish opens one PR that only updates `_meta.yaml`.
+
+**`kb init --kind hub`** on an existing hub fills in the missing registry kinds.
+It proposes one per kind-less entry from what that repo has published, a
+namespace holding nested leaves (a child hub) is proposed as `kb`, and it asks
+for any entry with nothing published yet (or nothing readable) to infer from. It prints the diff
+and asks before writing; `--yes` writes without asking, but exits `1` naming
+the entries it cannot infer. It edits `registry.yaml` line by line, so comments
+survive, and never commits: review the change and open the hub PR yourself. An
+invalid `registry.yaml` makes it exit `1`.
+
+**Upgrade order.** Upgrade the hub (and its intake service) first. Then upgrade every publisher that
+reads the registry itself (local or direct `kb publish`, and child hubs) and
+only then run `kb init --kind hub` and commit the registry: an older strata-kb
+rejects a registry that has `kind:`. Publishers on the intake route are
+unaffected. Old clients keep publishing meanwhile: the registry kind wins and the
+leaf kind is inferred.
+
+`kb init --kind hub` on a hub whose registry has kind-less entries asks to fill
+them. Decline until the publishers are upgraded. A non-interactive run without
+`--yes` prints a warning naming the entries, writes nothing and exits `0`, so automated hub upgrades keep working; re-run with `--yes` once the publishers are upgraded.
 
 ### Code sync
 
@@ -626,6 +701,16 @@ ref). Publishing refuses with `federation cycle detected` when a chain would loo
 content back. Scope a search by choosing which hub you query: a team hub returns
 the team's knowledge, the root hub returns everything.
 
+**Only `kb` goes upward.** A child hub has the full Document, Ticket and Code
+menus itself and accepts `ba` and `dev` publishes, but when it publishes to its
+parent it sends only its own `kb` leaves (its own documents and the nested `kb`
+leaves of hubs below it). `kb publish` prints one `skipped  <leaf> (kind <kind>
+stays on this hub)` line for each leaf held back. A `ba` or `dev` leaf the child
+hub pushed to its parent before 1.20.0 is removed from the parent on its next
+publish (git history keeps it, and the child hub still has it). A parent never
+serves a non-`kb` leaf nested under a child hub: the Web UI and search ignore it
+and `kb doctor` names it.
+
 Hub-to-hub publishing needs direct git access upstream, or `gh` for `--pr`. The
 intake/OIDC route is for child, `dev` and `ba` repos only. An emptied local `federation/` will not
 propagate deletions upstream — publish refuses rather than wipe entries.
@@ -650,7 +735,13 @@ section id whose manifest rows span more than one file, a `## ` heading absent
 from the manifest, published content modified in place on the hub, files a
 publish would never have written (named one by one, with "rotate any credential
 they contain"), a hub clone storing a credential in its own `.git/config`, and a
-git older than 2.31. `federation/index.yaml` records `content_sha256` per
+git older than 2.31. On the hub it also checks kinds: registry entries without a
+`kind` (warning, fix with `kb init --kind hub`), a leaf whose recorded kind
+clashes with the registry or is unknown, and non-`kb` leaves nested under a child
+hub (errors). In a child repo it prints the hub menu the repo lands in as an `info`
+line (`kind: kb → hub menu: Document`) and flags a hub registry that has no kind
+for the repo (warning) or a different one (error: publishing will be refused).
+`federation/index.yaml` records `content_sha256` per
 snapshot so tampering is detectable.
 
 ### Try it end to end
@@ -693,17 +784,36 @@ The HTTP server keeps the hub fresh by itself: every
 HEAD moved, so a merged hub PR is searchable without a restart. A diverged or
 hand-edited checkout is never touched; the pull fails with a logged warning.
 
-### Plans — missions and tickets on the hub
+### Menus — Overview, Document, Ticket, Code
 
-The UI's **Plans** menu sits beside Documents. It shows what BA repos publish as
-`<repo_id>-plan` documents, with a status derived from what the hub already
-holds: nothing new is stored and there is no write path.
+The left rail is **Overview · Document · Ticket · Code**. Each menu lists one
+kind and has its own search box, which is a real search (`kb query` with that
+kind) rendered inside the menu; the tag cloud follows the menu. Overview counts
+documents per kind.
+
+| Menu | Kind | Shows |
+|---|---|---|
+| Document | `kb` | Ingested and hub-authored documents. The `?filter=` substring box is gone: use the menu search (`?q=`) |
+| Ticket | `ba` | The `<repo_id>-plan` documents BA repos publish, as missions and tickets with a derived status |
+| Code | `dev` | `<repo_id>-code` (generated) and `<repo_id>-svc` (curated, with the `hist.*` ticket history) at `/ui/code` |
+
+The top search box searches **all kinds** in one relevance-ranked list. Each hit
+carries a kind badge, and the chips above the list (All, Document, Ticket, Code,
+with counts) narrow it without leaving the page (`/ui?q=…&kind=dev`). The chip
+filters the one budgeted search the top box ran, so the menu's own search can
+list more hits than the chip shows. A tag-only browse with `?kind=` stays inside
+that kind's menu; an unknown `?kind=` shows the empty state.
+
+The Ticket menu shows what BA repos publish as `<repo_id>-plan` documents, with
+a status derived from what the hub already holds: nothing new is stored and
+there is no write path. It used to be called Plans: `/ui/plans…` answers `301`
+to the same path under `/ui/tickets…`, query string kept, so old links work.
 
 | Route | Shows |
 |---|---|
-| `/ui/plans` | Every BA repo and its missions, each with status counts. `?repo=<id>` shows one repo, including its "tickets without mission" |
-| `/ui/plans/{mission}?repo=<id>` | The mission summary and its backlog: each story's status, its reasons and a link to its ticket |
-| `/ui/plans/{mission}/{story}?repo=<id>` | The ticket (L3, rendered like the section reader). A ticket with no mission is `/ui/plans/tickets/{story}?repo=<id>` |
+| `/ui/tickets` | Every BA repo and its missions, each with status counts. `?repo=<id>` shows one repo, including its "tickets without mission" |
+| `/ui/tickets/{mission}?repo=<id>` | The mission summary and its backlog: each story's status, its reasons and a link to its ticket |
+| `/ui/tickets/{mission}/{story}?repo=<id>` | The ticket (L3, rendered like the section reader). A ticket with no mission is `/ui/tickets/tickets/{story}?repo=<id>` |
 
 Status per story, in this order: **done** (the story id is in a `hist.*` row of
 the Dev repo's `-svc`, found from the mission's `Grounded on:` line), **ready**
@@ -711,15 +821,15 @@ the Dev repo's `-svc`, found from the mission's `Grounded on:` line), **ready**
 published ticket, every dependency done) or **blocked** (with its reasons). The
 repo rides in `?repo=` because nested federation ids contain `/`; without it the
 one repo holding the id is used, and several holders give a 404 page naming
-them. `*-plan` documents no longer appear under Documents, in the overview
-counts or in the tag rail; a search hit in one links to its Plans page. The CLI
-twin is `kb mission next --from-hub [--repo <ba-repo>] [--json]`.
+them. `*-plan` documents appear under Ticket, not Document; a search hit in one
+links to its Ticket page. The CLI twin is
+`kb mission next --from-hub [--repo <ba-repo>] [--json]`.
 
 ### The five MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
-| `kb_search` | Find sections by natural language and return L2 within a token budget. Ranking is capped: each leg is capped at 50 results before fusion, and the tool says so when matches were dropped. It also flags when the top two results are the same section published by two repos, when their keyword scores tie exactly, or when both are hybrid-confirmed within the ambiguity ratio. | `query`, `tags`, `budget` |
+| `kb_search` | Find sections by natural language and return L2 within a token budget. Ranking is capped: each leg is capped at 50 results before fusion, and the tool says so when matches were dropped. It also flags when the top two results are the same section published by two repos, when their keyword scores tie exactly, or when both are hybrid-confirmed within the ambiguity ratio. | `query`, `tags`, `budget`, `kinds` |
 | `kb_get_section` | Fetch exactly one section | `doc`, `section`, `level` |
 | `kb_context_new` | Pin a `kb-context` citation block at the hub's current commit, from confirmed refs | `refs`, `tags` |
 | `kb_resolve` | Resolve a `kb-context` block (or a ticket containing one) — sections at the pinned version plus freshness | `kb_context` |
@@ -836,7 +946,7 @@ init --kind ba` to get the workflow, the `kb-publish` skill, `.gitattributes`
 and the gitignore lines; until `intake:` is set, `kb publish` takes the
 snapshot route (a direct mirror or a PR on the hub, no CI). A hub redeploy is needed once to get the intake fix that opens a
 new PR when the old `publish/<repo-id>` branch was deleted. On the hub the plan
-shows up under the **Plans** menu (section 10) and to agents as the document
+shows up under the **Ticket** menu (section 10) and to agents as the document
 `<repo_id>-plan`, next to `-code` and `-svc`.
 
 **`ba-ticket-author`** runs a nine-step pipeline: **Intake** (the business
@@ -1025,7 +1135,7 @@ Sequencing` is read the same way (`kb get <doc> <M-id> --level l3`) when there i
 no local mission file. A ticket whose mission moved on after it was written is
 `draft` on the BA side (`kb mission next`, reason `parent mission rev <M> affects
 this story`) and is left out of `-plan`: a Dev sees the story as *not ready* in
-Plans, and `kb ticket fetch` finds nothing until the BA amends and republishes.
+the Ticket menu, and `kb ticket fetch` finds nothing until the BA amends and republishes.
 
 ### `kb code-ingest` — the generated document
 

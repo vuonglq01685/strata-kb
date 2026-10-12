@@ -10,11 +10,12 @@ from typing import TYPE_CHECKING
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import gitio, models
+from strata_kb import federation, gitio, kinds, models
 from strata_kb.doctor.issues import Issue, _flatten
 from strata_kb.federation import (  # noqa: F401 -- _FED_TOP_SKIP re-exported
     _FED_TOP_SKIP,
     _fed_tree_digest,
+    kb_only_fed_digest,
 )
 
 if TYPE_CHECKING:
@@ -652,7 +653,7 @@ def check_federation_publish(
                     "run `kb publish`",
                 )
             )
-        elif _fed_tree_digest(fed_src) != _fed_tree_digest(dest):
+        elif kb_only_fed_digest(fed_src) != _fed_tree_digest(dest):
             issues.append(
                 Issue(
                     "warning",
@@ -660,4 +661,120 @@ def check_federation_publish(
                     f"federation/{repo_id} on the upstream hub — run `kb publish`",
                 )
             )
+    return issues
+
+
+def _recorded_kind(entry_dir: Path) -> str:
+    """The `kind` written in a leaf's `_meta.yaml`, "" when none or unreadable
+    (resolve_leaf_kind infers one; an inferred kind is not "recorded")."""
+    try:
+        return models.load_yaml_model(
+            entry_dir / federation.ENTRY_META_NAME, federation.FederationMeta
+        ).kind
+    except (OSError, yaml.YAMLError, ValidationError, UnicodeDecodeError):
+        return ""
+
+
+def _casefolded(by_rid: dict[str, str]) -> dict[str, str]:
+    """Keys casefolded, as publish does, so `My-Repo` cannot dodge a pin."""
+    return {k.casefold(): v for k, v in by_rid.items()}
+
+
+def check_registry_kinds(hub_root: Path) -> list[Issue]:
+    """Kind consistency on the hub itself: registry entries without a kind,
+    leaves whose recorded kind is unknown or clashes with the registry, and
+    non-kb leaves nested under another hub's namespace."""
+    fed = hub_root / "federation"
+    issues: list[Issue] = []
+    try:
+        registry = federation.load_registry(fed)
+    except federation.RegistryError as exc:
+        return [Issue("error", str(exc))]
+    for repo in registry.repos:
+        entry = registry.resolve(repo)
+        if entry is not None and not entry.kind:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"registry entry {repo} has no kind — run kb init --kind hub "
+                    "to fill it",
+                )
+            )
+    pinned = _casefolded(federation.registry_kinds(registry))
+    for path_id, entry_dir in federation.iter_entry_dirs(fed):
+        recorded = _recorded_kind(entry_dir)
+        if recorded and recorded not in kinds.HUB_KINDS:
+            issues.append(
+                Issue(
+                    "error",
+                    f"federation/{path_id} records unknown kind '{recorded}' — "
+                    "expected kb, ba or dev",
+                )
+            )
+            continue
+        resolved = federation.resolve_leaf_kind(entry_dir)
+        if "/" in path_id:
+            if resolved is not None and resolved != kinds.KB:
+                issues.append(
+                    Issue(
+                        "error",
+                        f"federation/{path_id} is a nested '{resolved}' leaf — "
+                        "only kb may be published hub-to-hub; delete it or "
+                        "republish from an upgraded child hub",
+                    )
+                )
+        elif (want := pinned.get(path_id.casefold())) and recorded and recorded != want:
+            issues.append(
+                Issue(
+                    "error",
+                    f"federation/{path_id} recorded kind '{recorded}' but "
+                    f"registry says '{want}'",
+                )
+            )
+    return issues
+
+
+def check_published_kind(kb_dir: Path, handle: HubHandle, cfg_kind: str) -> list[Issue]:
+    """Child side: tell the operator which hub menu this repo lands in, and
+    catch a registry pin that `kb publish` would refuse. The rid comes from
+    `publish.resolve_publish_identity`, the very call `publish` makes."""
+    from strata_kb import config as config_mod
+    from strata_kb import pubgate, publish
+
+    try:
+        issues = [Issue("info", publish.kind_line(cfg_kind))]
+        repo_kind = kinds.hub_kind(cfg_kind)
+    except kinds.UnknownKindError:
+        return []  # check_kind already reported the unrecorded kind
+    try:
+        source_root = gitio.git_root(kb_dir.resolve())
+    except gitio.GitError:
+        return issues  # no repo to identify, so no registry entry to compare
+    if handle.root.resolve() == source_root.resolve():
+        return issues  # self-publish is exempt from the registry
+    try:
+        registry, rid = publish.resolve_publish_identity(
+            handle,
+            gitio.redact_url(str(handle.root)),
+            source_root,
+            config_mod.effective_repo_id("", kb_dir),
+            is_self=False,
+        )
+    except (publish.PublishError, pubgate.GateError) as exc:
+        return [*issues, Issue("error", _flatten(exc))]
+    if registry is None or not federation.registry_map(registry):
+        return issues  # ungoverned hub: nothing is pinned
+    registry_kind = _casefolded(federation.registry_kinds(registry)).get(
+        rid.casefold(), ""
+    )
+    if not registry_kind:
+        issues.append(Issue("warning", "hub registry has no kind for this repo"))
+    elif registry_kind != repo_kind:
+        issues.append(
+            Issue(
+                "error",
+                f"hub registry says '{registry_kind}' but this repo is "
+                f"'{repo_kind}' — publishing will be refused",
+            )
+        )
     return issues

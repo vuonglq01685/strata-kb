@@ -5,7 +5,8 @@ import pytest
 import yaml
 
 from strata_kb import models, pubgate
-from strata_kb.publish import publish
+from strata_kb.federation import FederationMeta
+from strata_kb.publish import PublishError, publish
 
 
 @pytest.fixture
@@ -154,3 +155,35 @@ def test_registry_map_flattens_the_model():
 
     reg = models.Registry(repos={"org/repo": "rid"})
     assert federation.registry_map(reg) == {"org/repo": "rid"}
+
+
+def _kind_registry(hub, run_git, kind):
+    fed = hub / "federation"
+    fed.mkdir(exist_ok=True)
+    (fed / "registry.yaml").write_text(
+        yaml.safe_dump({"repos": {"org/x": {"repo_id": "x", "kind": kind}}}),
+        encoding="utf-8",
+        newline="\n",
+    )
+    run_git(hub, "add", "-A")
+    run_git(hub, "commit", "-m", "hub: register org/x with a kind")
+
+
+def test_snapshot_kind_mismatch_refused(hub_worktree, git_kb, run_git):
+    _kind_registry(hub_worktree, run_git, "ba")
+    (git_kb["kb"] / "config.yaml").write_text("kind: dev\n", encoding="utf-8")
+    _set_remote(run_git, git_kb["root"], "https://github.com/org/x.git")
+    with pytest.raises(PublishError, match="kind mismatch"):
+        publish(git_kb["kb"], str(hub_worktree), repo_id=None, mode="direct")
+    assert not (hub_worktree / "federation" / "x").exists()
+
+
+def test_snapshot_registry_kind_recorded(hub_worktree, git_kb, run_git):
+    _kind_registry(hub_worktree, run_git, "kb")
+    (git_kb["kb"] / "config.yaml").write_text("kind: child\n", encoding="utf-8")
+    _set_remote(run_git, git_kb["root"], "https://github.com/org/x.git")
+    publish(git_kb["kb"], str(hub_worktree), repo_id=None, mode="direct")
+    meta = models.load_yaml_model(
+        hub_worktree / "federation" / "x" / "_meta.yaml", FederationMeta
+    )
+    assert meta.kind == "kb"

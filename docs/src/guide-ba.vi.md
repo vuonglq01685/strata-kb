@@ -376,7 +376,7 @@ story nào được đánh `done` chừng nào hub chưa trả lời được.
 không cần `missions/` hay `tickets/`. Story có ticket đã publish là `ready`;
 `to-draft` hiện là `not ready (no published ticket)`; các trạng thái chỉ thấy ở
 repo (`draft`, việc hạ cấp theo revision) không thấy được từ hub, vì những ticket
-như vậy không được publish. Menu Plans của hub (mục 5.3) hiển thị đúng điều đó
+như vậy không được publish. Menu Ticket của hub (mục 5.3) hiển thị đúng điều đó
 trên trình duyệt.
 
 ---
@@ -462,13 +462,13 @@ Bản L3 là nguồn của bạn đã bỏ dòng tiêu đề, hạ mọi heading
 hai mục nội bộ của BA. `## Open questions` được giữ. Bản L2 giữ nguyên từng byte
 mọi bảng, cộng thêm tóm tắt và mục tiêu nghiệp vụ của mission, hoặc story và tiêu
 chí chấp nhận của ticket. Agent tìm nó bằng `kb_search`; con người đọc trên web UI
-ở menu **Plans**, nằm cạnh Documents:
+ở menu **Ticket**, nằm cạnh Document:
 
 | Trang | Hiển thị |
 |---|---|
-| `/ui/plans` | Mọi repo BA và các mission của chúng, kèm số lượng theo trạng thái. `?repo=<id>` cho một repo, gồm cả "tickets without mission" |
-| `/ui/plans/<mission>?repo=<id>` | Tóm tắt mission và backlog: trạng thái từng story, lý do, liên kết tới ticket |
-| `/ui/plans/<mission>/<story>?repo=<id>` | Chính ticket đó |
+| `/ui/tickets` | Mọi repo BA và các mission của chúng, kèm số lượng theo trạng thái. `?repo=<id>` cho một repo, gồm cả "tickets without mission" |
+| `/ui/tickets/<mission>?repo=<id>` | Tóm tắt mission và backlog: trạng thái từng story, lý do, liên kết tới ticket |
+| `/ui/tickets/<mission>/<story>?repo=<id>` | Chính ticket đó |
 
 Trạng thái được suy ra và chỉ đọc: **done** (story có trong lịch sử `-svc` của repo
 Dev), **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã

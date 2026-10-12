@@ -24,6 +24,7 @@ import anyio.to_thread
 from mcp.server.fastmcp import FastMCP as MCPServer
 
 from strata_kb import gitio, kbcontext
+from strata_kb.kinds import UnknownKindError
 from strata_kb.query import get_section, search_detailed, stale_hub_note
 from strata_kb.resolve import render_resolved, resolve_refs
 from strata_kb.serving.auth import (
@@ -146,7 +147,10 @@ def create_server(config: ServerConfig) -> MCPServer:
     @mcp.tool()
     @_canonical_docstring
     async def kb_search(
-        query: str, tags: list[str] | None = None, budget: int = 2000
+        query: str,
+        tags: list[str] | None = None,
+        budget: int = 2000,
+        kinds: list[str] | None = None,
     ) -> str:
         """Find sections by hybrid search (FTS5 keyword + semantic KNN, RRF-fused);
         return L2 content within the token budget, with citations. Returns the
@@ -157,21 +161,25 @@ def create_server(config: ServerConfig) -> MCPServer:
         before writing story content from them. Citing more than one section
         for a single story is normal. Once confirmed, call kb_context_new with
         the confirmed refs to pin them for the ticket. Results come from the
-        hub federation — unpublished local content never appears."""
+        hub federation — unpublished local content never appears. `kinds`
+        limits results to `kb` (Document), `ba` (Ticket) or `dev` (Code); omit
+        for all."""
 
         def _run() -> str:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
             try:
-                outcome = search_detailed(hub, query, tags=tags, budget=budget)
+                outcome = search_detailed(
+                    hub, query, tags=tags, budget=budget, kinds=kinds
+                )
             except searchdb.IndexBusyError as exc:
                 return str(exc)
             except sqlite3.DatabaseError as exc:
                 if searchdb.classify_db_error(exc) != "client":
                     raise
                 return f"search index rejected the query: {exc}"
-            except searchdb.TooManyTagsError as exc:
+            except (searchdb.TooManyTagsError, UnknownKindError) as exc:
                 return str(exc)
             notes = "".join(outcome.notes)
             if not outcome.results:

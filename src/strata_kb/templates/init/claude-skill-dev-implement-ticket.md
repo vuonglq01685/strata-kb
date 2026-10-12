@@ -72,9 +72,11 @@ edit above it.
 - **Ground** — read resolved L2; escalate to L3 via `kb_get_section … l3`
   (or `kb get <doc> <section> --level l3`) only for a value that will be
   encoded in code or tests, and call `kb_get_section` only for a section
-  already chosen; then `kb_search` both own-repo documents, budgeted at
-  500–800 tokens for broad discovery —
-  `<repo_id>-code` for structure and `<repo_id>-svc` for responsibility —
+  already chosen; then `kb_search` (`kinds=["dev"]`; CLI: `kb query --kind dev`) both
+  own-repo documents, budgeted at 500–800 tokens for broad discovery —
+  `<repo_id>-code` for structure and `<repo_id>-svc` for responsibility,
+  each restricted with `--tags <repo_id>-code` / `--tags <repo_id>-svc`
+  (MCP: `tags=["<repo_id>-code"]` / `tags=["<repo_id>-svc"]`) —
   and then read the actual code. State the rule: *knowledge orients, code
   decides* — skip whichever document is missing and read the code
   directly for that half. A `<repo_id>-code` missing from the hub is not
@@ -84,6 +86,14 @@ edit above it.
   published — check `.kb/<repo_id>-svc/` locally: present → say "seeded,
   unpublished: run `kb publish --pr`" in one line; absent → "not seeded".
   Reads stay hub-only either way; never report it as a KB gap.
+- **Ticket and mission lookup** — one separate query,
+  `kb query "<ticket or mission topic>" --kind ba` (MCP:
+  `kinds=["ba"]`), for the ticket and its parent mission as published by
+  the BA. Cite what you use.
+- **Knowledge lookup** — one separate query,
+  `kb query "<domain term>" --kind kb` (MCP: `kinds=["kb"]`), for the
+  domain knowledge the ticket cites. Never mix it into the `--kind dev`
+  query.
 - **Placeholders** — for each `%%TODO: verify against codebase%%`, verify
   the real name against the codebase and record `placeholder → verified
   value (file:line or code-knowledge ref)`; report the list to the BA;

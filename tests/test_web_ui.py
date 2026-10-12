@@ -1639,19 +1639,18 @@ def test_rail_legend_is_compact(fed_hub):
     assert "awaiting SME" not in rail
 
 
-def test_docs_filter_param_filters_server_side(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs?filter=arinc")
+def test_docs_menu_q_is_a_real_search_scoped_to_the_menu(fed_hub):
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs?q=restrictive")
     main = _main(resp)
     assert "arinc-424" in main
     assert "icao-annex-2" not in main
-    assert "1 of 2 documents" in main
+    assert "sections in Document" in main
 
 
-def test_docs_filter_matches_tags_too(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs?filter=airspace")
-    main = _main(resp)
-    assert "icao-annex-2" in main
-    assert "arinc-424" not in main
+def test_docs_menu_search_form_posts_q_to_the_menu(fed_hub):
+    main = _main(_client(fed_hub / ".kb", str(fed_hub)).get("/ui/docs"))
+    assert 'action="/ui/docs"' in main and 'name="q"' in main
+    assert "Search in Document" in main
 
 
 def test_docs_cards_have_open_sections_link_and_filter_text(fed_hub):
@@ -1860,3 +1859,231 @@ def test_asset_route_never_reads_the_hubs_own_unpublished_kb(fed_hub):
     resp = client.get(f"/assets/{sha}.png", headers=AUTH_HEADERS)
     assert resp.status_code == 200
     assert resp.content == b"UNPUBLISHED"
+
+
+# --- hub kind menus: Document / Ticket / Code ---------------------------------
+
+
+def _kinds_client(tmp_path):
+    from tests.conftest import make_kinds_hub
+
+    hub = make_kinds_hub(tmp_path)
+    return _menus_client(hub), hub
+
+
+def _menus_client(hub) -> TestClient:
+    from strata_kb.web import planui
+
+    config = ServerConfig(kb_dir=hub / ".kb", hub=str(hub))
+    routes = ui.build_routes(config, TOKEN) + planui.plan_routes(config)
+    return TestClient(Starlette(routes=routes))
+
+
+def _kinds_client_with_svc(tmp_path):
+    """make_kinds_hub plus a `-svc` doc and a tag that only the code docs carry."""
+    from tests.conftest import make_kinds_hub
+
+    hub = make_kinds_hub(tmp_path)
+    make_fed_entry(
+        hub / "federation",
+        "s-repo",
+        "billing-svc",
+        tags=["code", "curated", "ledger-only-tag"],
+    )
+    make_fed_entry(hub / "federation", "e-repo", "refund-extra", tags=["doc-only-tag"])
+    return _menus_client(hub), hub
+
+
+def test_rail_has_document_ticket_code(fed_hub):
+    text = _client(fed_hub / ".kb", str(fed_hub)).get("/ui").text
+    rail = _left_rail_text(text)
+    for href, label in (
+        ("/ui/docs", "Document"),
+        ("/ui/tickets", "Ticket"),
+        ("/ui/code", "Code"),
+    ):
+        assert re.search(rf'<a href="{href}"[^>]*>{label}<', rail), href
+    assert 'href="/ui?q="' not in rail
+    assert ">Plans<" not in rail and ">Documents<" not in rail
+
+
+def _left_rail_text(text: str) -> str:
+    start = text.index('<aside class="rail rail-left"')
+    return text[start : text.index("</aside>", start)]
+
+
+def test_docs_menu_lists_kb_only(tmp_path):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    docs = _main(client.get("/ui/docs"))
+    assert "refund-notes" in docs
+    assert "refund-plan" not in docs and "refund-code" not in docs
+    assert "billing-svc" not in docs
+    code = _main(client.get("/ui/code"))
+    assert "refund-code" in code and "billing-svc" in code
+    assert "refund-notes" not in code and "refund-plan" not in code
+
+
+def test_menu_search_scoped(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    code = _main(client.get("/ui/code", params={"q": "refund"}))
+    assert "refund-code" in code
+    assert "refund-notes" not in code and "refund-plan" not in code
+    docs = _main(client.get("/ui/docs", params={"q": "refund"}))
+    assert "refund-notes" in docs
+    assert "refund-code" not in docs and "refund-plan" not in docs
+    tickets = _main(client.get("/ui/tickets", params={"q": "refund"}))
+    assert "refund-plan" in tickets
+    assert "refund-notes" not in tickets and "refund-code" not in tickets
+
+
+def test_top_search_badges_and_chips(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    main = _main(client.get("/ui", params={"q": "refund"}))
+    for chip in ("All 3", "Document 1", "Ticket 1", "Code 1"):
+        assert re.search(rf"kind-chip[^>]*>\s*{chip}\s*<", main), chip
+    for kind, label in (("kb", "Document"), ("ba", "Ticket"), ("dev", "Code")):
+        assert f'class="badge badge-{kind}">{label}<' in main
+    # "All" links without a kind param
+    assert re.search(r'<a class="kind-chip on" href="/ui\?q=refund[^"]*"', main)
+    assert "kind=" not in re.search(r'<a class="kind-chip on" href="([^"]*)"', main)[1]
+
+    dev = _main(client.get("/ui", params={"q": "refund", "kind": "dev"}))
+    assert "refund-code" in dev
+    assert "refund-notes" not in dev and "refund-plan" not in dev
+    for chip in ("All 3", "Document 1", "Ticket 1", "Code 1"):
+        assert re.search(rf"kind-chip[^>]*>\s*{chip}\s*<", dev), chip
+    assert re.search(r'<a class="kind-chip on" href="[^"]*kind=dev', dev)
+
+
+def test_ui_search_unknown_kind_empty_state(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    resp = client.get("/ui", params={"q": "refund", "kind": "code"})
+    assert resp.status_code == 200
+    assert "No matching section found." in resp.text
+
+
+def test_overview_counts_per_kind(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    main = _main(client.get("/ui"))
+    for label in ("Document", "Ticket", "Code"):
+        assert re.search(rf"kind-count[^>]*>\s*{label}\s*<[^>]*>\s*1\s*<", main), label
+
+
+def test_tag_cloud_scoped_to_menu(tmp_path):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    docs = _left_rail_text(client.get("/ui/docs").text)
+    code = _left_rail_text(client.get("/ui/code").text)
+    assert 'data-text="ledger-only-tag"' not in docs
+    assert 'data-text="doc-only-tag"' in docs
+    assert 'data-text="ledger-only-tag"' in code
+    assert 'data-text="doc-only-tag"' not in code
+    top = _left_rail_text(client.get("/ui").text)
+    assert 'data-text="ledger-only-tag"' in top and 'data-text="doc-only-tag"' in top
+
+
+def test_reader_back_link_goes_to_the_menu_of_the_docs_kind(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    kb = client.get("/ui/docs/refund-notes").text
+    assert 'class="tree-back" href="/ui/docs"' in kb
+    code = client.get("/ui/docs/refund-code").text
+    assert 'class="tree-back" href="/ui/code"' in code
+    assert '<a href="/ui/code" class="active">Code<' in code
+
+
+def test_code_menu_hub_down_shows_empty_state_even_with_a_query(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    client = _client(tmp_path / ".kb", str(tmp_path / "missing-hub"))
+    for params in ({}, {"q": "refund"}):
+        resp = client.get("/ui/code", params=params)
+        assert resp.status_code == 200
+        assert "No matching section found" in _main(resp) or (
+            "No documents in the store yet." in _main(resp)
+        )
+
+
+def test_code_menu_empty_state_without_dev_repos(fed_hub):
+    main = _main(_client(fed_hub / ".kb", str(fed_hub)).get("/ui/code"))
+    assert "No documents in the store yet." in main
+    assert "refund" not in main and "icao-annex-2" not in main
+
+
+def test_kind_param_narrows_a_tag_only_browse(tmp_path):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    both = client.get("/ui", params={"tags": "ledger-only-tag"})
+    assert "billing-svc" in both.text
+    none = client.get("/ui", params={"tags": "ledger-only-tag", "kind": "kb"})
+    assert "billing-svc" not in _main(none)
+
+
+@pytest.mark.parametrize(
+    "kind, tag, label, path, other_kind",
+    [
+        ("dev", "ledger-only-tag", "Code", "/ui/code", "kb"),
+        ("DEV", "ledger-only-tag", "Code", "/ui/code", "kb"),
+        ("kb", "doc-only-tag", "Document", "/ui/docs", "dev"),
+    ],
+)
+def test_tag_browse_with_kind_stays_in_that_menu(
+    tmp_path, kind, tag, label, path, other_kind
+):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    resp = client.get("/ui", params={"tags": tag, "kind": kind})
+    assert resp.status_code == 200
+    main = _main(resp)
+    assert f"<h1>{label}</h1>" in main
+    assert f'action="{path}"' in main
+    rail = _left_rail_text(resp.text)
+    assert f'<a href="{path}" class="active">{label}<' in rail
+    norm = kind.lower()
+    hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail) + re.findall(
+        r'class="chip on" href="([^"]+)"', main
+    )
+    assert hrefs
+    # removing the last selected tag goes back to the menu itself
+    assert all(f"kind={norm}" in h or h == path for h in hrefs), hrefs
+
+
+def test_tag_browse_with_ba_kind_is_the_ticket_menu(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    resp = client.get("/ui", params={"tags": "plan", "kind": "ba"})
+    assert resp.status_code == 200
+    main = _main(resp)
+    assert "<h1>Ticket</h1>" in main and 'action="/ui/tickets"' in main
+    assert "refund-plan" in main
+    rail = _left_rail_text(resp.text)
+    assert '<a href="/ui/tickets" class="active">Ticket<' in rail
+    hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail)
+    assert hrefs and all("kind=ba" in h or h == "/ui/tickets" for h in hrefs), hrefs
+
+
+def test_search_screen_tag_hrefs_keep_the_kind_chip(tmp_path):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    rail = _left_rail_text(
+        client.get("/ui", params={"q": "refund", "kind": "dev"}).text
+    )
+    hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail)
+    assert hrefs and all("kind=dev" in h for h in hrefs), hrefs
+
+
+@pytest.mark.parametrize("recorded", ["Code", "DEV"])
+def test_reader_survives_a_wrong_case_recorded_kind(tmp_path, recorded):
+    client, hub = _kinds_client(tmp_path)
+    meta = hub / "federation" / "d-repo" / "_meta.yaml"
+    meta.write_text(
+        meta.read_text(encoding="utf-8") + f"kind: {recorded}\n", encoding="utf-8"
+    )
+    resp = client.get("/ui/docs/refund-code")
+    assert resp.status_code == 200
+    # "DEV" is normalised; "Code" is unknown and falls back to inference (dev)
+    assert 'class="tree-back" href="/ui/code"' in resp.text
+
+
+@pytest.mark.parametrize(
+    "kind, tag, path",
+    [("dev", "ledger-only-tag", "/ui/code"), ("kb", "doc-only-tag", "/ui/docs")],
+)
+def test_removing_the_last_tag_in_a_menu_returns_to_the_menu(tmp_path, kind, tag, path):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    main = _main(client.get("/ui", params={"tags": tag, "kind": kind}))
+    on = re.findall(r'class="chip on" href="([^"]+)"', main)
+    assert on == [path], on

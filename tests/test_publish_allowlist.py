@@ -9,7 +9,7 @@ runner = CliRunner()
 def test_config_yaml_and_dotfiles_never_reach_the_hub(git_kb, hub_worktree, run_git):
     kb = git_kb["kb"]
     (kb / "config.yaml").write_text(
-        'hub: "https://x-access-token:ghs_SECRET@github.com/org/kb-hub.git"\n',
+        'kind: child\nhub: "https://x-access-token:ghs_SECRET@github.com/org/kb-hub.git"\n',
         encoding="utf-8",
         newline="\n",
     )
@@ -41,7 +41,9 @@ def test_an_already_mirrored_config_is_removed_on_the_next_publish(
     leaked hub-side copy, so that pre-fix the file is RE-MIRRORED (content
     differs -> "changed") on the next publish instead of deleted."""
     (git_kb["kb"] / "config.yaml").write_text(
-        "hub: https://real-hub.example/kb-hub.git\n", encoding="utf-8", newline="\n"
+        "kind: child\nhub: https://real-hub.example/kb-hub.git\n",
+        encoding="utf-8",
+        newline="\n",
     )
     run_git(git_kb["root"], "add", "-A")
     run_git(git_kb["root"], "commit", "-m", "child: add its own config.yaml")
@@ -67,7 +69,9 @@ def test_cli_publish_prints_the_skip_warning(git_kb, hub_worktree, run_git):
     line (report.skipped) had no coverage -- reverting it still passed the
     48-test wave set."""
     (git_kb["kb"] / "config.yaml").write_text(
-        "hub: https://real-hub.example/kb-hub.git\n", encoding="utf-8", newline="\n"
+        "kind: child\nhub: https://real-hub.example/kb-hub.git\n",
+        encoding="utf-8",
+        newline="\n",
     )
     run_git(git_kb["root"], "add", "-A")
     run_git(git_kb["root"], "commit", "-m", "child: add config.yaml")
